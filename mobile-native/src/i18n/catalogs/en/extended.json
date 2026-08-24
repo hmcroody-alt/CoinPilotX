@@ -2223,6 +2223,273 @@
           "body": "Premium removes the limit on how many holdings you can track. The prices, values and history are the same either way.",
           "action": "See Premium"
         }
+      },
+      "alerts": {
+        "title": "Alert Management",
+        "loading": "Loading your alerts…",
+        "loadError": "Your alerts could not load.",
+        "subtitle": "Your crypto and market alerts, as PulseSoc has them set.",
+        "subtitleOffline": "Showing the alerts saved on this device.",
+        "refresh": "Refresh",
+        "refreshing": "Refreshing",
+        "hero": {
+          "eyebrow": "Your alerts",
+          "body": "Create, edit, pause, resume, duplicate and test your alerts, and look back at what each one has done."
+        },
+        "worker": {
+          "linked": "Checks running",
+          "stale": "Checks delayed"
+        },
+        "readiness": {
+          "title": "Delivery readiness",
+          "check": "Check",
+          "checking": "Checking",
+          "test": "Test",
+          "testing": "Testing",
+          "unknown": "PulseSoc decides when this is ready.",
+          "needsSetup": "Needs setup",
+          "refreshed": "Delivery readiness refreshed.",
+          "refreshFailed": "Delivery readiness could not refresh.",
+          "tested": "{{channel}} test complete.",
+          "testFailed": "That delivery test failed."
+        },
+        "channels": {
+          "in_app": "In-app",
+          "email": "Email",
+          "push": "Push",
+          "sms": "SMS",
+          "telegram": "Telegram",
+          "toggle": "{{channel}}: {{state}}",
+          "on": "On",
+          "off": "Off",
+          "default": "PulseSoc decides"
+        },
+        "form": {
+          "createTitle": "Create alert",
+          "editTitle": "Edit alert",
+          "basic": "Basic",
+          "advanced": "Advanced",
+          "watchTitle": "What this alert watches",
+          "watchAsset": "One asset",
+          "watchList": "A watchlist",
+          "symbolLabel": "Alert symbol",
+          "symbolPlaceholder": "Symbol",
+          "targetLabel": "Alert target value",
+          "targetPlaceholder": "Target value",
+          "noteLabel": "Alert note",
+          "notePlaceholder": "Optional note",
+          "save": "Save changes",
+          "saving": "Saving",
+          "create": "Create alert",
+          "cancelEdit": "Cancel edit",
+          "created": "Alert created.",
+          "updated": "Alert updated.",
+          "saveFailed": "Alert could not be saved."
+        },
+        "premium": {
+          "notice": "Multi-condition alerts, watchlist alerts and time windows are part of PulseSoc Premium.",
+          "lockedBody": "Advanced alerts — several conditions in one rule, whole-watchlist rules, and time windows — are part of PulseSoc Premium."
+        },
+        "watchlist": {
+          "fallbackName": "Watchlist {{id}}",
+          "unavailable": "Unavailable",
+          "assets_one": "{{count}} asset",
+          "assets_other": "{{count}} assets"
+        },
+        "conditions": {
+          "above": "Above",
+          "below": "Below",
+          "moves_up_percent": "Moves up %",
+          "moves_down_percent": "Moves down %",
+          "volatility_above": "Volatility above %"
+        },
+        "comparators": {
+          "above": "Above",
+          "below": "Below",
+          "crosses_above": "Crosses above",
+          "crosses_below": "Crosses below"
+        },
+        "logic": {
+          "and": "All of these",
+          "or": "Any of these",
+          "andHint": "The alert fires only while all of these are true at once.",
+          "orHint": "The alert fires when any one of these is true."
+        },
+        "clause": {
+          "title": "Conditions",
+          "heading": "Condition {{position}}",
+          "valueLabel": "Condition {{position}} value",
+          "percentPlaceholder": "Percent, for example {{example}}",
+          "valuePlaceholder": "Value",
+          "add": "Add condition",
+          "remove": "Remove",
+          "windowLabel": "Time window",
+          "noWindow": "No window",
+          "noWindows": "No time window can be measured for this asset yet.",
+          "windowCleared": "That time window is not measurable for this asset yet, so it was cleared.",
+          "max_one": "One alert can hold up to {{count}} condition.",
+          "max_other": "One alert can hold up to {{count}} conditions."
+        },
+        "list": {
+          "title": "Crypto and market alerts",
+          "empty": "You have no alerts yet. Create your first one above.",
+          "subject": "{{subject}} alert",
+          "watchlistSubject": "{{name}} watchlist",
+          "watchlistFallback": "Watchlist",
+          "meta_one": "{{count}} history event · {{channels}}",
+          "meta_other": "{{count}} history events · {{channels}}",
+          "detail": "Detail",
+          "edit": "Edit",
+          "pause": "Pause",
+          "resume": "Resume",
+          "test": "Test",
+          "duplicate": "Duplicate",
+          "delete": "Delete"
+        },
+        "status": {
+          "active": "Active",
+          "paused": "Paused",
+          "triggered": "Triggered",
+          "disabled": "Disabled",
+          "expired": "Ended"
+        },
+        "actions": {
+          "paused": "Alert paused.",
+          "resumed": "Alert resumed.",
+          "deleted": "Alert deleted.",
+          "duplicated": "Alert duplicated.",
+          "tested": "Test alert sent.",
+          "failed": "That alert action failed.",
+          "editUnavailable": "Editing a multi-condition or watchlist alert is not available in the app yet. Delete it and create it again to change it."
+        },
+        "delete": {
+          "prompt": "Confirm delete for {{subject}} {{condition}}.",
+          "body": "Delete this alert? It is removed from your PulseSoc account and this cannot be undone.",
+          "cancel": "Cancel",
+          "canceled": "Delete canceled.",
+          "confirm": "Confirm delete",
+          "deleting": "Deleting"
+        },
+        "detail": {
+          "title": "Alert detail",
+          "summary_one": "Status: {{status}}. Source: {{source}}. Fired {{count}} time.",
+          "summary_other": "Status: {{status}}. Source: {{source}}. Fired {{count}} times.",
+          "sourcePulseSoc": "PulseSoc",
+          "channels": "Channels: {{channels}}",
+          "lastChecked": "Last checked: {{value}}",
+          "lastTriggered": "Last triggered: {{value}}",
+          "notRecorded": "not recorded",
+          "notTriggered": "not triggered"
+        },
+        "history": {
+          "title": "Alert history",
+          "empty": "No alert history yet. Events appear here after an alert fires or you send a test.",
+          "truncated": "Showing the newest {{shown}} of {{total}} alert history events.",
+          "market": "Market",
+          "recorded": "recorded",
+          "fallback": "{{condition}} at {{observed}} against {{target}}",
+          "unknownCondition": "Alert",
+          "unknownValue": "unknown",
+          "unknownTarget": "target",
+          "noTimestamp": "No timestamp"
+        },
+        "managed": {
+          "title": "Managed by PulseSoc",
+          "body": "Account administration, advanced Intelligence editing, data source management, and other alert types are handled on the PulseSoc website. They are not available in the app yet.",
+          "notifications": "Notifications"
+        },
+        "validation": {
+          "watchlistRequired": "Choose a watchlist for this alert to watch.",
+          "watchlistUnavailable": "That watchlist cannot be used for an alert right now.",
+          "symbolRequired": "Add an asset symbol before saving the alert.",
+          "symbolInvalid": "Use a valid asset symbol such as BTC, ETH, or SOL.",
+          "premiumLocked": "Multi-condition alerts are part of PulseSoc Premium.",
+          "clauseRequired": "Add at least one condition before saving the alert.",
+          "clauseMetric": "{{position}}: choose what to measure.",
+          "clauseComparator": "{{position}}: choose a supported comparison.",
+          "clauseValue": "{{position}}: add a value.",
+          "clauseNumeric": "{{position}}: use a numeric value.",
+          "clausePositive": "{{position}}: {{metric}} must be greater than zero.",
+          "clauseTooLarge": "{{position}}: that value is too large for a safe threshold.",
+          "clauseNotWindowable": "{{position}}: {{metric}} cannot be measured over a time window.",
+          "clauseWindowUnavailable": "{{position}}: that time window cannot be measured for this asset yet.",
+          "clauseComparatorWindow": "{{position}}: {{comparator}} cannot be used with a time window.",
+          "targetRequired": "Add a target value before saving the alert.",
+          "targetNumeric": "Use a numeric target value.",
+          "targetPositive": "Target value must be greater than zero.",
+          "targetTooLarge": "Target value is too large for a safe alert threshold.",
+          "conditionUnsupported": "Choose a supported alert condition.",
+          "channelRequired": "Choose at least one delivery channel."
+        }
+      },
+      "watchlists": {
+        "title": "Watchlists",
+        "subtitle": "Track the assets you care about with live market data.",
+        "loadError": "Watchlists could not load.",
+        "actionFailed": "That did not work.",
+        "offline": "Offline — showing the last prices we received.",
+        "pricesUnavailable": "Live prices are temporarily unavailable.",
+        "asOf": "Prices as of {{timestamp}}",
+        "tabs": {
+          "lists": "My Watchlists",
+          "favorites": "Favorites"
+        },
+        "create": {
+          "title": "Create watchlist",
+          "placeholder": "e.g. My Crypto",
+          "label": "New watchlist name",
+          "submit": "Create Watchlist",
+          "creating": "Creating…",
+          "nameRequired": "Name your watchlist first.",
+          "created": "Watchlist created."
+        },
+        "rename": {
+          "action": "Rename",
+          "save": "Save",
+          "cancel": "Cancel",
+          "placeholder": "Watchlist name",
+          "label": "Watchlist name",
+          "nameRequired": "A watchlist needs a name.",
+          "renamed": "Watchlist renamed."
+        },
+        "delete": {
+          "action": "Delete",
+          "title": "Delete watchlist",
+          "body": "Delete “{{name}}”? Its assets are removed from this list. Your alerts and favorites are kept.",
+          "cancel": "Cancel",
+          "confirm": "Delete",
+          "deleted": "Watchlist deleted."
+        },
+        "assets": {
+          "add": "Add asset",
+          "done": "Done",
+          "searchPlaceholder": "Search assets, e.g. BTC",
+          "searchLabel": "Search assets",
+          "noMatches": "No tracked asset matches that.",
+          "empty": "No assets yet. Use “Add asset” to track something.",
+          "added": "{{symbol}} added.",
+          "removed": "{{symbol}} removed.",
+          "remove": "Remove",
+          "removeLabel": "Remove {{symbol}}",
+          "favorite": "Favorite {{symbol}}",
+          "unfavorite": "Unfavorite {{symbol}}",
+          "favoritesUpdated": "Favorites updated.",
+          "cap": "Cap {{value}}",
+          "a11y": "{{name}}, {{price}}",
+          "average": "avg {{percent}}",
+          "alerts_one": "{{count}} alert",
+          "alerts_other": "{{count}} alerts",
+          "count_one": "{{count}} asset",
+          "count_other": "{{count}} assets"
+        },
+        "empty": {
+          "title": "No watchlists yet",
+          "body": "Create one above to start tracking prices, market moves and alerts for the assets you follow."
+        },
+        "favorites": {
+          "title": "Favorites",
+          "empty": "Star an asset to keep it here. Favorites follow your account."
+        }
       }
     }
   }

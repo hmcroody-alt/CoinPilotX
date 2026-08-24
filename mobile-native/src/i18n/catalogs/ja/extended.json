@@ -2208,6 +2208,267 @@
           "body": "Premium は登録できる保有資産の上限をなくします。価格・評価額・履歴はどちらでも同じです。",
           "action": "Premium を見る"
         }
+      },
+      "alerts": {
+        "title": "アラート管理",
+        "loading": "アラートを読み込んでいます…",
+        "loadError": "アラートを読み込めませんでした。",
+        "subtitle": "PulseSoc に設定されているとおりの、暗号資産と市場のアラートです。",
+        "subtitleOffline": "この端末に保存されているアラートを表示しています。",
+        "refresh": "更新",
+        "refreshing": "更新中",
+        "hero": {
+          "eyebrow": "あなたのアラート",
+          "body": "アラートの作成、編集、一時停止、再開、複製、テストができます。それぞれのアラートがこれまでに動作した記録も振り返れます。"
+        },
+        "worker": {
+          "linked": "チェック稼働中",
+          "stale": "チェック遅延中"
+        },
+        "readiness": {
+          "title": "配信の準備状況",
+          "check": "確認",
+          "checking": "確認中",
+          "test": "テスト",
+          "testing": "テスト中",
+          "unknown": "準備が整うタイミングは PulseSoc が判断します。",
+          "needsSetup": "設定が必要",
+          "refreshed": "配信の準備状況を更新しました。",
+          "refreshFailed": "配信の準備状況を更新できませんでした。",
+          "tested": "{{channel}} のテストが完了しました。",
+          "testFailed": "その配信テストは失敗しました。"
+        },
+        "channels": {
+          "in_app": "アプリ内",
+          "email": "メール",
+          "push": "プッシュ",
+          "sms": "SMS",
+          "telegram": "Telegram",
+          "toggle": "{{channel}}：{{state}}",
+          "on": "オン",
+          "off": "オフ",
+          "default": "PulseSoc が判断"
+        },
+        "form": {
+          "createTitle": "アラートを作成",
+          "editTitle": "アラートを編集",
+          "basic": "基本",
+          "advanced": "詳細",
+          "watchTitle": "このアラートが監視する対象",
+          "watchAsset": "単一の資産",
+          "watchList": "ウォッチリスト",
+          "symbolLabel": "アラートのシンボル",
+          "symbolPlaceholder": "シンボル",
+          "targetLabel": "アラートの基準値",
+          "targetPlaceholder": "基準値",
+          "noteLabel": "アラートのメモ",
+          "notePlaceholder": "メモ（任意）",
+          "save": "変更を保存",
+          "saving": "保存中",
+          "create": "アラートを作成",
+          "cancelEdit": "編集をキャンセル",
+          "created": "アラートを作成しました。",
+          "updated": "アラートを更新しました。",
+          "saveFailed": "アラートを保存できませんでした。"
+        },
+        "premium": {
+          "notice": "複数条件のアラート、ウォッチリストのアラート、測定期間の指定は PulseSoc Premium の機能です。",
+          "lockedBody": "高度なアラート（一つのルールに複数の条件、ウォッチリスト全体を対象にするルール、測定期間の指定）は PulseSoc Premium の機能です。"
+        },
+        "watchlist": {
+          "fallbackName": "ウォッチリスト {{id}}",
+          "unavailable": "利用できません",
+          "assets_other": "{{count}} 件の資産"
+        },
+        "conditions": {
+          "above": "上回る",
+          "below": "下回る",
+          "moves_up_percent": "% 上昇",
+          "moves_down_percent": "% 下落",
+          "volatility_above": "ボラティリティ % 超"
+        },
+        "comparators": {
+          "above": "上回る",
+          "below": "下回る",
+          "crosses_above": "上抜け",
+          "crosses_below": "下抜け"
+        },
+        "logic": {
+          "and": "すべてに該当",
+          "or": "いずれかに該当",
+          "andHint": "すべての条件が同時に満たされている間だけ、アラートが作動します。",
+          "orHint": "いずれかの条件が満たされたときに、アラートが作動します。"
+        },
+        "clause": {
+          "title": "条件",
+          "heading": "条件 {{position}}",
+          "valueLabel": "条件 {{position}} の値",
+          "percentPlaceholder": "パーセント（例: {{example}}）",
+          "valuePlaceholder": "値",
+          "add": "条件を追加",
+          "remove": "削除",
+          "windowLabel": "測定期間",
+          "noWindow": "期間なし",
+          "noWindows": "この資産ではまだ測定期間を計測できません。",
+          "windowCleared": "その測定期間はこの資産ではまだ計測できないため、解除されました。",
+          "max_other": "一つのアラートに設定できる条件は最大 {{count}} 件です。"
+        },
+        "list": {
+          "title": "暗号資産と市場のアラート",
+          "empty": "アラートはまだありません。上のフォームから最初のアラートを作成してください。",
+          "subject": "{{subject}} のアラート",
+          "watchlistSubject": "{{name}} ウォッチリスト",
+          "watchlistFallback": "ウォッチリスト",
+          "meta_other": "{{count}} 件の履歴 · {{channels}}",
+          "detail": "詳細",
+          "edit": "編集",
+          "pause": "一時停止",
+          "resume": "再開",
+          "test": "テスト",
+          "duplicate": "複製",
+          "delete": "削除"
+        },
+        "status": {
+          "active": "稼働中",
+          "paused": "一時停止中",
+          "triggered": "作動済み",
+          "disabled": "無効",
+          "expired": "終了"
+        },
+        "actions": {
+          "paused": "アラートを一時停止しました。",
+          "resumed": "アラートを再開しました。",
+          "deleted": "アラートを削除しました。",
+          "duplicated": "アラートを複製しました。",
+          "tested": "テストのアラートを送信しました。",
+          "failed": "そのアラート操作は失敗しました。",
+          "editUnavailable": "複数条件のアラートやウォッチリストのアラートは、まだアプリ内で編集できません。変更するには、削除してから作り直してください。"
+        },
+        "delete": {
+          "prompt": "{{subject}} {{condition}} の削除を確定します。",
+          "body": "このアラートを削除しますか？PulseSoc アカウントから削除され、元に戻せません。",
+          "cancel": "キャンセル",
+          "canceled": "削除をキャンセルしました。",
+          "confirm": "削除を確定",
+          "deleting": "削除中"
+        },
+        "detail": {
+          "title": "アラートの詳細",
+          "summary_other": "状態：{{status}}。取得元：{{source}}。これまでに {{count}} 回作動しました。",
+          "sourcePulseSoc": "PulseSoc",
+          "channels": "チャネル：{{channels}}",
+          "lastChecked": "最終確認：{{value}}",
+          "lastTriggered": "最終作動：{{value}}",
+          "notRecorded": "記録なし",
+          "notTriggered": "作動なし"
+        },
+        "history": {
+          "title": "アラート履歴",
+          "empty": "アラート履歴はまだありません。アラートが作動するか、テストを送信すると、ここに表示されます。",
+          "truncated": "アラート履歴 {{total}} 件のうち、新しい {{shown}} 件を表示しています。",
+          "market": "市場",
+          "recorded": "記録済み",
+          "fallback": "{{condition}}：観測値 {{observed}}、基準値 {{target}}",
+          "unknownCondition": "アラート",
+          "unknownValue": "不明",
+          "unknownTarget": "基準値",
+          "noTimestamp": "日時なし"
+        },
+        "managed": {
+          "title": "PulseSoc が管理",
+          "body": "アカウントの管理、高度な Intelligence の編集、データ提供元の管理、その他のアラート種別は、PulseSoc のウェブサイトで扱います。アプリ内ではまだ利用できません。",
+          "notifications": "通知"
+        },
+        "validation": {
+          "watchlistRequired": "このアラートが監視するウォッチリストを選んでください。",
+          "watchlistUnavailable": "そのウォッチリストは現在アラートに使用できません。",
+          "symbolRequired": "アラートを保存する前に、資産のシンボルを入力してください。",
+          "symbolInvalid": "BTC、ETH、SOL などの有効な資産シンボルを入力してください。",
+          "premiumLocked": "複数条件のアラートは PulseSoc Premium の機能です。",
+          "clauseRequired": "アラートを保存する前に、条件を少なくとも一つ追加してください。",
+          "clauseMetric": "{{position}}：測定する対象を選んでください。",
+          "clauseComparator": "{{position}}：対応している比較方法を選んでください。",
+          "clauseValue": "{{position}}：値を入力してください。",
+          "clauseNumeric": "{{position}}：数値を入力してください。",
+          "clausePositive": "{{position}}：{{metric}} はゼロより大きい値にしてください。",
+          "clauseTooLarge": "{{position}}：その値は安全なしきい値としては大きすぎます。",
+          "clauseNotWindowable": "{{position}}：{{metric}} は測定期間を指定して計測できません。",
+          "clauseWindowUnavailable": "{{position}}：その測定期間はこの資産ではまだ計測できません。",
+          "clauseComparatorWindow": "{{position}}：{{comparator}} は測定期間と組み合わせて使用できません。",
+          "targetRequired": "アラートを保存する前に、基準値を入力してください。",
+          "targetNumeric": "基準値には数値を入力してください。",
+          "targetPositive": "基準値はゼロより大きい値にしてください。",
+          "targetTooLarge": "基準値が、安全なアラートのしきい値としては大きすぎます。",
+          "conditionUnsupported": "対応しているアラート条件を選んでください。",
+          "channelRequired": "配信チャネルを少なくとも一つ選んでください。"
+        }
+      },
+      "watchlists": {
+        "title": "ウォッチリスト",
+        "subtitle": "気になる資産を、ライブの市場データで追跡します。",
+        "loadError": "ウォッチリストを読み込めませんでした。",
+        "actionFailed": "その操作は完了できませんでした。",
+        "offline": "オフラインです。最後に取得した価格を表示しています。",
+        "pricesUnavailable": "ライブ価格を一時的に取得できません。",
+        "asOf": "{{timestamp}} 時点の価格",
+        "tabs": {
+          "lists": "マイウォッチリスト",
+          "favorites": "お気に入り"
+        },
+        "create": {
+          "title": "ウォッチリストを作成",
+          "placeholder": "例: マイクリプト",
+          "label": "新しいウォッチリスト名",
+          "submit": "ウォッチリストを作成",
+          "creating": "作成中…",
+          "nameRequired": "先にウォッチリストの名前を入力してください。",
+          "created": "ウォッチリストを作成しました。"
+        },
+        "rename": {
+          "action": "名前を変更",
+          "save": "保存",
+          "cancel": "キャンセル",
+          "placeholder": "ウォッチリスト名",
+          "label": "ウォッチリスト名",
+          "nameRequired": "ウォッチリストには名前が必要です。",
+          "renamed": "ウォッチリストの名前を変更しました。"
+        },
+        "delete": {
+          "action": "削除",
+          "title": "ウォッチリストを削除",
+          "body": "「{{name}}」を削除しますか？このリストからは資産が取り除かれます。アラートとお気に入りはそのまま残ります。",
+          "cancel": "キャンセル",
+          "confirm": "削除",
+          "deleted": "ウォッチリストを削除しました。"
+        },
+        "assets": {
+          "add": "資産を追加",
+          "done": "完了",
+          "searchPlaceholder": "資産を検索（例: BTC）",
+          "searchLabel": "資産を検索",
+          "noMatches": "該当する追跡対象の資産はありません。",
+          "empty": "資産はまだありません。「資産を追加」から追跡を始めてください。",
+          "added": "{{symbol}} を追加しました。",
+          "removed": "{{symbol}} を削除しました。",
+          "remove": "削除",
+          "removeLabel": "{{symbol}} を削除",
+          "favorite": "{{symbol}} をお気に入りに追加",
+          "unfavorite": "{{symbol}} をお気に入りから削除",
+          "favoritesUpdated": "お気に入りを更新しました。",
+          "cap": "時価総額 {{value}}",
+          "a11y": "{{name}}、{{price}}",
+          "average": "平均 {{percent}}",
+          "alerts_other": "{{count}} 件のアラート",
+          "count_other": "{{count}} 件の資産"
+        },
+        "empty": {
+          "title": "ウォッチリストはまだありません",
+          "body": "上から作成すると、フォローしている資産の価格、市場の動き、アラートの追跡を始められます。"
+        },
+        "favorites": {
+          "title": "お気に入り",
+          "empty": "資産にスターを付けると、ここに表示されます。お気に入りはアカウントに保存されます。"
+        }
       }
     }
   }

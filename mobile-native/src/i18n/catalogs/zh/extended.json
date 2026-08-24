@@ -2215,6 +2215,267 @@
           "body": "Premium 取消可追踪持仓数量的上限——价格、价值和历史记录两者完全相同。",
           "action": "查看 Premium"
         }
+      },
+      "alerts": {
+        "title": "提醒管理",
+        "loading": "正在加载你的提醒…",
+        "loadError": "无法加载你的提醒。",
+        "subtitle": "你的加密货币与市场提醒，以 PulseSoc 中保存的设置为准。",
+        "subtitleOffline": "正在显示此设备上保存的提醒。",
+        "refresh": "刷新",
+        "refreshing": "正在刷新",
+        "hero": {
+          "eyebrow": "你的提醒",
+          "body": "创建、编辑、暂停、恢复、复制和测试你的提醒，并回顾每条提醒的记录。"
+        },
+        "worker": {
+          "linked": "检查运行中",
+          "stale": "检查有延迟"
+        },
+        "readiness": {
+          "title": "送达准备情况",
+          "check": "检查",
+          "checking": "正在检查",
+          "test": "测试",
+          "testing": "正在测试",
+          "unknown": "由 PulseSoc 决定何时就绪。",
+          "needsSetup": "需要设置",
+          "refreshed": "送达准备情况已刷新。",
+          "refreshFailed": "无法刷新送达准备情况。",
+          "tested": "{{channel}} 测试完成。",
+          "testFailed": "该送达测试失败。"
+        },
+        "channels": {
+          "in_app": "站内",
+          "email": "邮件",
+          "push": "推送",
+          "sms": "短信",
+          "telegram": "Telegram",
+          "toggle": "{{channel}}：{{state}}",
+          "on": "开",
+          "off": "关",
+          "default": "由 PulseSoc 决定"
+        },
+        "form": {
+          "createTitle": "创建提醒",
+          "editTitle": "编辑提醒",
+          "basic": "基础",
+          "advanced": "进阶",
+          "watchTitle": "此提醒监测的对象",
+          "watchAsset": "单个资产",
+          "watchList": "自选列表",
+          "symbolLabel": "提醒币种代码",
+          "symbolPlaceholder": "币种代码",
+          "targetLabel": "提醒目标值",
+          "targetPlaceholder": "目标值",
+          "noteLabel": "提醒备注",
+          "notePlaceholder": "备注（可选）",
+          "save": "保存修改",
+          "saving": "正在保存",
+          "create": "创建提醒",
+          "cancelEdit": "取消编辑",
+          "created": "提醒已创建。",
+          "updated": "提醒已更新。",
+          "saveFailed": "无法保存该提醒。"
+        },
+        "premium": {
+          "notice": "多条件提醒、自选列表提醒和时间窗口属于 PulseSoc Premium。",
+          "lockedBody": "进阶提醒——在一条规则中设置多个条件、针对整个自选列表的规则，以及时间窗口——属于 PulseSoc Premium。"
+        },
+        "watchlist": {
+          "fallbackName": "自选列表 {{id}}",
+          "unavailable": "不可用",
+          "assets_other": "{{count}} 项资产"
+        },
+        "conditions": {
+          "above": "高于",
+          "below": "低于",
+          "moves_up_percent": "涨幅 %",
+          "moves_down_percent": "跌幅 %",
+          "volatility_above": "波动率高于 %"
+        },
+        "comparators": {
+          "above": "高于",
+          "below": "低于",
+          "crosses_above": "上穿",
+          "crosses_below": "下穿"
+        },
+        "logic": {
+          "and": "全部满足",
+          "or": "任一满足",
+          "andHint": "只有以下条件同时成立时，提醒才会触发。",
+          "orHint": "以下任一条件成立时，提醒就会触发。"
+        },
+        "clause": {
+          "title": "条件",
+          "heading": "条件 {{position}}",
+          "valueLabel": "条件 {{position}} 的数值",
+          "percentPlaceholder": "百分比，例如 {{example}}",
+          "valuePlaceholder": "数值",
+          "add": "添加条件",
+          "remove": "移除",
+          "windowLabel": "时间窗口",
+          "noWindow": "不设窗口",
+          "noWindows": "目前还无法为该资产计算任何时间窗口。",
+          "windowCleared": "该时间窗口目前还无法为此资产计算，已清除。",
+          "max_other": "单条提醒最多可包含 {{count}} 个条件。"
+        },
+        "list": {
+          "title": "加密货币与市场提醒",
+          "empty": "你还没有提醒。在上方创建你的首条提醒。",
+          "subject": "{{subject}} 提醒",
+          "watchlistSubject": "{{name}} 自选列表",
+          "watchlistFallback": "自选列表",
+          "meta_other": "{{count}} 条历史记录 · {{channels}}",
+          "detail": "详情",
+          "edit": "编辑",
+          "pause": "暂停",
+          "resume": "恢复",
+          "test": "测试",
+          "duplicate": "复制",
+          "delete": "删除"
+        },
+        "status": {
+          "active": "启用中",
+          "paused": "已暂停",
+          "triggered": "已触发",
+          "disabled": "已停用",
+          "expired": "已结束"
+        },
+        "actions": {
+          "paused": "提醒已暂停。",
+          "resumed": "提醒已恢复。",
+          "deleted": "提醒已删除。",
+          "duplicated": "提醒已复制。",
+          "tested": "测试提醒已发送。",
+          "failed": "该提醒操作失败。",
+          "editUnavailable": "应用内暂不支持编辑多条件提醒或自选列表提醒。如需更改，请删除后重新创建。"
+        },
+        "delete": {
+          "prompt": "确认删除 {{subject}} {{condition}}。",
+          "body": "要删除这条提醒吗？它会从你的 PulseSoc 账号中移除，且无法撤销。",
+          "cancel": "取消",
+          "canceled": "已取消删除。",
+          "confirm": "确认删除",
+          "deleting": "正在删除"
+        },
+        "detail": {
+          "title": "提醒详情",
+          "summary_other": "状态：{{status}}。来源：{{source}}。已触发 {{count}} 次。",
+          "sourcePulseSoc": "PulseSoc",
+          "channels": "渠道：{{channels}}",
+          "lastChecked": "上次检查：{{value}}",
+          "lastTriggered": "上次触发：{{value}}",
+          "notRecorded": "未记录",
+          "notTriggered": "未触发"
+        },
+        "history": {
+          "title": "提醒历史",
+          "empty": "还没有提醒历史。提醒触发或你发送测试后，相关事件会显示在这里。",
+          "truncated": "正在显示 {{total}} 条提醒历史事件中最新的 {{shown}} 条。",
+          "market": "市场",
+          "recorded": "已记录",
+          "fallback": "{{condition}}：{{observed}}，对比 {{target}}",
+          "unknownCondition": "提醒",
+          "unknownValue": "未知",
+          "unknownTarget": "目标值",
+          "noTimestamp": "无时间记录"
+        },
+        "managed": {
+          "title": "由 PulseSoc 管理",
+          "body": "账号管理、进阶 Intelligence 编辑、数据源管理以及其他提醒类型均在 PulseSoc 网站上处理。应用内暂不支持这些功能。",
+          "notifications": "通知"
+        },
+        "validation": {
+          "watchlistRequired": "请为此提醒选择要监测的自选列表。",
+          "watchlistUnavailable": "该自选列表目前无法用于提醒。",
+          "symbolRequired": "保存提醒前请填写币种代码。",
+          "symbolInvalid": "请使用有效的币种代码，例如 BTC、ETH 或 SOL。",
+          "premiumLocked": "多条件提醒属于 PulseSoc Premium。",
+          "clauseRequired": "保存提醒前请至少添加一个条件。",
+          "clauseMetric": "{{position}}：请选择要衡量的指标。",
+          "clauseComparator": "{{position}}：请选择支持的比较方式。",
+          "clauseValue": "{{position}}：请填写数值。",
+          "clauseNumeric": "{{position}}：数值必须为数字。",
+          "clausePositive": "{{position}}：{{metric}} 必须大于零。",
+          "clauseTooLarge": "{{position}}：该数值过大，无法作为安全的阈值。",
+          "clauseNotWindowable": "{{position}}：{{metric}} 无法按时间窗口计算。",
+          "clauseWindowUnavailable": "{{position}}：该时间窗口目前还无法为此资产计算。",
+          "clauseComparatorWindow": "{{position}}：{{comparator}} 不能与时间窗口一起使用。",
+          "targetRequired": "保存提醒前请填写目标值。",
+          "targetNumeric": "目标值必须为数字。",
+          "targetPositive": "目标值必须大于零。",
+          "targetTooLarge": "目标值过大，无法作为安全的提醒阈值。",
+          "conditionUnsupported": "请选择支持的提醒条件。",
+          "channelRequired": "请至少选择一个送达渠道。"
+        }
+      },
+      "watchlists": {
+        "title": "自选列表",
+        "subtitle": "用实时行情跟踪你关注的资产。",
+        "loadError": "无法加载自选列表。",
+        "actionFailed": "操作未能完成。",
+        "offline": "离线——正在显示我们收到的最新价格。",
+        "pricesUnavailable": "实时价格暂时不可用。",
+        "asOf": "价格更新于 {{timestamp}}",
+        "tabs": {
+          "lists": "我的自选列表",
+          "favorites": "收藏"
+        },
+        "create": {
+          "title": "创建自选列表",
+          "placeholder": "例如 我的加密货币",
+          "label": "新自选列表名称",
+          "submit": "创建自选列表",
+          "creating": "正在创建…",
+          "nameRequired": "请先为自选列表命名。",
+          "created": "自选列表已创建。"
+        },
+        "rename": {
+          "action": "重命名",
+          "save": "保存",
+          "cancel": "取消",
+          "placeholder": "自选列表名称",
+          "label": "自选列表名称",
+          "nameRequired": "自选列表需要一个名称。",
+          "renamed": "自选列表已重命名。"
+        },
+        "delete": {
+          "action": "删除",
+          "title": "删除自选列表",
+          "body": "要删除“{{name}}”吗？其中的资产会从该列表中移除。你的提醒和收藏会保留。",
+          "cancel": "取消",
+          "confirm": "删除",
+          "deleted": "自选列表已删除。"
+        },
+        "assets": {
+          "add": "添加资产",
+          "done": "完成",
+          "searchPlaceholder": "搜索资产，例如 BTC",
+          "searchLabel": "搜索资产",
+          "noMatches": "没有匹配的可跟踪资产。",
+          "empty": "还没有资产。使用“添加资产”开始跟踪。",
+          "added": "已添加 {{symbol}}。",
+          "removed": "已移除 {{symbol}}。",
+          "remove": "移除",
+          "removeLabel": "移除 {{symbol}}",
+          "favorite": "收藏 {{symbol}}",
+          "unfavorite": "取消收藏 {{symbol}}",
+          "favoritesUpdated": "收藏已更新。",
+          "cap": "市值 {{value}}",
+          "a11y": "{{name}}，{{price}}",
+          "average": "平均 {{percent}}",
+          "alerts_other": "{{count}} 条提醒",
+          "count_other": "{{count}} 项资产"
+        },
+        "empty": {
+          "title": "还没有自选列表",
+          "body": "在上方创建一个，开始跟踪你关注资产的价格、市场变动和提醒。"
+        },
+        "favorites": {
+          "title": "收藏",
+          "empty": "收藏某个资产后，它会保留在这里。收藏会跟随你的账号。"
+        }
       }
     }
   }

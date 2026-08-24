@@ -13,7 +13,6 @@ import {
   AlertOptions,
   AlertRule,
   AlertWindowOption,
-  alertConditionLabel,
   alertEnabledChannels,
   alertStatusLabel,
   alertSubjectLabel,
@@ -33,6 +32,7 @@ import {
   updateCryptoAlert
 } from "../api/alerts";
 import { Panel } from "../components/Panel";
+import { I18nContextValue, useTranslation } from "../i18n";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { createThemedStyles } from "../theme/themedStyles";
@@ -59,26 +59,98 @@ const emptyForm: AlertFormPayload = {
 
 const emptyClause: AlertClause = { metric: "price", comparator: "above", value: "", windowMinutes: 0 };
 
+/** How many history events the panel renders before it says how many it held back. */
+const HISTORY_SHOWN = 12;
+
+/** The example a percentage input shows. Copy carries no figures, so it is passed in. */
+const PERCENT_EXAMPLE = "-5";
+
+type Translate = I18nContextValue["t"];
+
+/** The sentence each action falls back to when the server sends no message. */
+const ACTION_DONE_KEYS = {
+  pause: "premium:crypto.alerts.actions.paused",
+  resume: "premium:crypto.alerts.actions.resumed",
+  delete: "premium:crypto.alerts.actions.deleted",
+  duplicate: "premium:crypto.alerts.actions.duplicated",
+  test: "premium:crypto.alerts.actions.tested"
+} as const;
+
 // The server publishes each comparator's key and whether it is a level or a
 // crossing test, but not a label: its own labels are notification copy, not UI
 // strings. These are the app's words for the same four keys.
-const COMPARATOR_LABELS: Record<string, string> = {
-  above: "Above",
-  below: "Below",
-  crosses_above: "Crosses above",
-  crosses_below: "Crosses below"
-};
-
-function comparatorLabel(key: string) {
-  return COMPARATOR_LABELS[key] || key.replace(/_/g, " ");
+function comparatorLabel(t: Translate, key: string) {
+  return t(`premium:crypto.alerts.comparators.${key}`, { defaultValue: key.replace(/_/g, " ") });
 }
 
-// One sentence, said the same way whether the member pressed Advanced before the
-// entitlement answer arrived or after it. Two wordings for one refusal would read
-// as two different refusals.
-const PREMIUM_ALERT_NOTICE = "Multi-condition alerts, watchlist alerts and time windows are part of PulseSoc Premium.";
+/** The enum vocabularies the server sends as keys and this screen has to name. */
+function conditionLabel(t: Translate, value: string) {
+  return t(`premium:crypto.alerts.conditions.${value}`, { defaultValue: value.replace(/_/g, " ") });
+}
+
+function channelLabel(t: Translate, channel: string) {
+  return t(`premium:crypto.alerts.channels.${channel}`, { defaultValue: channel.replace(/_/g, " ") });
+}
+
+function statusLabel(t: Translate, status?: string) {
+  const key = String(status || "active");
+  return t(`premium:crypto.alerts.status.${key}`, { defaultValue: alertStatusLabel(key) });
+}
+
+/**
+ * What this rule watches, in the member's language.
+ *
+ * `alertSubjectLabel` in the API module composes the same thing in English. It
+ * is left alone because other callers depend on it; a watchlist rule's subject
+ * is rebuilt here so the one screen that renders it can translate the noun.
+ */
+function subjectLabel(t: Translate, alert: AlertRule) {
+  if (alert.is_watchlist_rule || alert.watchlist_id) {
+    return alert.watchlist_name
+      ? t("premium:crypto.alerts.list.watchlistSubject", { name: alert.watchlist_name })
+      : t("premium:crypto.alerts.list.watchlistFallback");
+  }
+  return alertSubjectLabel(alert);
+}
+
+/**
+ * How this rule reads.
+ *
+ * The server-rendered summary wins wherever there is one, exactly as it does in
+ * `alertConditionLabel` — it is the only description that stays true for a
+ * compound rule. Only the fallback, which this screen can name from its own
+ * vocabulary, is translated.
+ */
+function conditionSummary(t: Translate, alert: AlertRule) {
+  if (alert.condition_summary) return alert.condition_summary;
+  const condition = alert.condition
+    ? conditionLabel(t, String(alert.condition))
+    : t("premium:crypto.alerts.history.unknownCondition");
+  const threshold = alert.threshold ?? "";
+  return threshold ? `${condition} ${threshold}` : condition;
+}
+
+/** Which channels this rule delivers on, or who decides when it names none. */
+function channelSummary(t: Translate, alert: AlertRule) {
+  const enabled = alertEnabledChannels(alert).map((channel) => channelLabel(t, channel));
+  return enabled.length ? enabled.join(", ") : t("premium:crypto.alerts.channels.default");
+}
 
 export function AlertManagementScreen({ route, navigation }: Props) {
+  const { t } = useTranslation();
+  /**
+   * The translator, reachable from `load` without being a dependency of it.
+   *
+   * `load` is the initial-load effect's only dependency, so anything it closes
+   * over decides how often the alert state is fetched. `t` happens to be stable
+   * today, but that is a property of a file this screen does not own.
+   */
+  const translate = useRef(t);
+  translate.current = t;
+  // One sentence, said the same way whether the member pressed Advanced before
+  // the entitlement answer arrived or after it. Two wordings for one refusal
+  // would read as two different refusals.
+  const premiumNotice = t("premium:crypto.alerts.premium.notice");
   const routeParams = route.params as (
     { alertId?: number; alert_id?: number; id?: number; presetSymbol?: string } | undefined
   );
@@ -124,16 +196,13 @@ export function AlertManagementScreen({ route, navigation }: Props) {
   const maxClauses = options?.advanced.max_clauses || 1;
   const logicItems = (options?.advanced.logic_modes || ["and"]).map((mode) => ({
     key: mode,
-    label: mode === "or" ? "Any of these" : "All of these"
+    label: mode === "or" ? t("premium:crypto.alerts.logic.or") : t("premium:crypto.alerts.logic.and")
   }));
   // Ordered by the server, labelled by the app. Falling back to the local list
   // only covers the case where the options call failed outright — the basic form
   // has always worked offline and must keep working.
   const basicConditionItems = (options?.basic.conditions.length ? options.basic.conditions : ALERT_CONDITIONS.map((item) => item.value))
-    .map((value) => ({
-      key: value,
-      label: ALERT_CONDITIONS.find((item) => item.value === value)?.label || value.replace(/_/g, " ")
-    }));
+    .map((value) => ({ key: value, label: conditionLabel(t, value) }));
 
   useEffect(() => {
     selectedIdRef.current = selectedId;
@@ -176,8 +245,8 @@ export function AlertManagementScreen({ route, navigation }: Props) {
     if (optionsLoading || !premiumLocked) return;
     if (form.mode !== "advanced" && !form.watchlistId) return;
     setForm((current) => ({ ...current, mode: "basic", clauses: [], watchlistId: null }));
-    setNotice(PREMIUM_ALERT_NOTICE);
-  }, [optionsLoading, premiumLocked, form.mode, form.watchlistId]);
+    setNotice(premiumNotice);
+  }, [optionsLoading, premiumLocked, form.mode, form.watchlistId, premiumNotice]);
 
   useEffect(() => {
     // A window chosen for one asset can be unanswerable for the next one. Left
@@ -192,10 +261,7 @@ export function AlertManagementScreen({ route, navigation }: Props) {
       clauses: (current.clauses || []).map((clause) =>
         clause.windowMinutes && !allowed.has(clause.windowMinutes) ? { ...clause, windowMinutes: 0 } : clause)
     }));
-    setNotice(
-      options?.window_message ||
-      "That time window is not measurable for this asset yet, so it was cleared."
-    );
+    setNotice(options?.window_message || t("premium:crypto.alerts.clause.windowCleared"));
   }, [windowKey, clauseWindowKey, optionsLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = useCallback(async (mode: "initial" | "refresh" = "initial") => {
@@ -225,7 +291,9 @@ export function AlertManagementScreen({ route, navigation }: Props) {
           setHistoryEvents(history?.events || []);
         }
       }
-      setError(loadError instanceof Error ? loadError.message : "Alert Management could not load.");
+      setError(
+        loadError instanceof Error ? loadError.message : translate.current("premium:crypto.alerts.loadError")
+      );
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -254,7 +322,7 @@ export function AlertManagementScreen({ route, navigation }: Props) {
       // they did. Pause, delete and duplicate all still work on them.
       setSelectedId(alert.id);
       setError("");
-      setNotice("Editing a multi-condition or watchlist alert is not available in the app yet. Delete it and create it again to change it.");
+      setNotice(t("premium:crypto.alerts.actions.editUnavailable"));
       return;
     }
     setEditingId(alert.id);
@@ -290,7 +358,7 @@ export function AlertManagementScreen({ route, navigation }: Props) {
   }
 
   async function saveForm() {
-    const validationError = validateAlertForm(form, options);
+    const validationError = validateAlertForm(t, form, options);
     if (validationError) {
       setError(validationError);
       setNotice("");
@@ -304,9 +372,12 @@ export function AlertManagementScreen({ route, navigation }: Props) {
       resetForm();
       await load("refresh");
       if (result.alert_id) setSelectedId(result.alert_id);
-      setNotice(result.message || (editingId ? "Alert updated." : "Alert created."));
+      setNotice(
+        result.message ||
+        t(editingId ? "premium:crypto.alerts.form.updated" : "premium:crypto.alerts.form.created")
+      );
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Alert could not be saved.");
+      setError(saveError instanceof Error ? saveError.message : t("premium:crypto.alerts.form.saveFailed"));
     } finally {
       setBusy("");
     }
@@ -326,9 +397,9 @@ export function AlertManagementScreen({ route, navigation }: Props) {
       if (action === "delete") setPendingDeleteId(null);
       await load("refresh");
       if (action === "duplicate" && result.alert_id) setSelectedId(result.alert_id);
-      setNotice(result.message || `${action} complete.`);
+      setNotice(result.message || t(ACTION_DONE_KEYS[action]));
     } catch (actionError) {
-      setError(actionError instanceof Error ? actionError.message : "Alert action failed.");
+      setError(actionError instanceof Error ? actionError.message : t("premium:crypto.alerts.actions.failed"));
     } finally {
       setBusy("");
     }
@@ -336,7 +407,10 @@ export function AlertManagementScreen({ route, navigation }: Props) {
 
   function confirmDelete(alert: AlertRule) {
     setPendingDeleteId(alert.id);
-    setNotice(`Confirm delete for ${alertSubjectLabel(alert)} ${alertConditionLabel(alert)}.`);
+    setNotice(t("premium:crypto.alerts.delete.prompt", {
+      subject: subjectLabel(t, alert),
+      condition: conditionSummary(t, alert)
+    }));
     setError("");
   }
 
@@ -346,9 +420,13 @@ export function AlertManagementScreen({ route, navigation }: Props) {
     try {
       const channel_readiness = await getAlertChannelReadiness();
       setState((current) => current ? { ...current, channel_readiness } : current);
-      setNotice("Channel readiness refreshed.");
+      setNotice(t("premium:crypto.alerts.readiness.refreshed"));
     } catch (readinessError) {
-      setError(readinessError instanceof Error ? readinessError.message : "Channel readiness could not refresh.");
+      setError(
+        readinessError instanceof Error
+          ? readinessError.message
+          : t("premium:crypto.alerts.readiness.refreshFailed")
+      );
     } finally {
       setBusy("");
     }
@@ -359,10 +437,15 @@ export function AlertManagementScreen({ route, navigation }: Props) {
     setError("");
     try {
       const result = await testAlertChannel(channel);
-      setNotice(result.message || `${channel.replace("_", " ")} test complete.`);
+      setNotice(
+        result.message ||
+        t("premium:crypto.alerts.readiness.tested", { channel: channelLabel(t, channel) })
+      );
       if (result.channel_readiness) setState((current) => current ? { ...current, channel_readiness: result.channel_readiness || current.channel_readiness } : current);
     } catch (channelError) {
-      setError(channelError instanceof Error ? channelError.message : "Channel test failed.");
+      setError(
+        channelError instanceof Error ? channelError.message : t("premium:crypto.alerts.readiness.testFailed")
+      );
     } finally {
       setBusy("");
     }
@@ -372,7 +455,7 @@ export function AlertManagementScreen({ route, navigation }: Props) {
     return (
       <View style={styles.center}>
         <ActivityIndicator color={colors.accent} />
-        <Text style={styles.centerText}>Loading Alert Management</Text>
+        <Text style={styles.centerText}>{t("premium:crypto.alerts.loading")}</Text>
       </View>
     );
   }
@@ -380,12 +463,18 @@ export function AlertManagementScreen({ route, navigation }: Props) {
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
       <View style={styles.header}>
-        <Text style={styles.title}>Alert Management</Text>
-        <Text style={styles.subtitle}>{offline ? "Showing cached alert state." : "Your crypto and market alerts, as PulseSoc has them set."}</Text>
+        <Text style={styles.title}>{t("premium:crypto.alerts.title")}</Text>
+        <Text style={styles.subtitle}>
+          {t(offline ? "premium:crypto.alerts.subtitleOffline" : "premium:crypto.alerts.subtitle")}
+        </Text>
       </View>
 
       <View style={styles.topActions}>
-        <ActionButton label={refreshing ? "Refreshing" : "Refresh"} disabled={refreshing} onPress={() => load("refresh").catch(() => undefined)} />
+        <ActionButton
+          label={t(refreshing ? "premium:crypto.alerts.refreshing" : "premium:crypto.alerts.refresh")}
+          disabled={refreshing}
+          onPress={() => load("refresh").catch(() => undefined)}
+        />
       </View>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -394,45 +483,66 @@ export function AlertManagementScreen({ route, navigation }: Props) {
       <Panel>
         <View style={styles.heroRow}>
           <View style={styles.heroCopy}>
-            <Text style={styles.eyebrow}>Your alerts</Text>
+            <Text style={styles.eyebrow}>{t("premium:crypto.alerts.hero.eyebrow")}</Text>
             <Text style={styles.score}>{alerts.length}</Text>
-            <Text style={styles.muted}>Create, edit, pause, resume, duplicate, test, and inspect alert history without duplicating alert engine logic.</Text>
+            <Text style={styles.muted}>{t("premium:crypto.alerts.hero.body")}</Text>
           </View>
           <View style={styles.statusPill}>
-            <Text style={styles.statusPillText}>{state?.worker?.stale ? "Worker stale" : "Worker linked"}</Text>
+            <Text style={styles.statusPillText}>
+              {t(state?.worker?.stale ? "premium:crypto.alerts.worker.stale" : "premium:crypto.alerts.worker.linked")}
+            </Text>
           </View>
         </View>
       </Panel>
 
       <Panel>
         <View style={styles.panelHeader}>
-          <Text style={styles.sectionTitle}>Delivery readiness</Text>
-          <ActionButton label={busy === "readiness" ? "Checking" : "Check"} variant="secondary" disabled={busy === "readiness"} onPress={refreshReadiness} />
+          <Text style={styles.sectionTitle}>{t("premium:crypto.alerts.readiness.title")}</Text>
+          <ActionButton
+            label={t(busy === "readiness" ? "premium:crypto.alerts.readiness.checking" : "premium:crypto.alerts.readiness.check")}
+            variant="secondary"
+            disabled={busy === "readiness"}
+            onPress={refreshReadiness}
+          />
         </View>
         {ALERT_CHANNELS.map((channel) => (
           <View key={channel} style={styles.readinessRow}>
             <View style={styles.readinessCopy}>
-              <Text style={styles.rowTitle}>{channel.replace("_", " ")}</Text>
-              <Text style={styles.muted}>{readiness[channel]?.message || "PulseSoc decides when this is ready."}</Text>
+              <Text style={styles.rowTitle}>{channelLabel(t, channel)}</Text>
+              <Text style={styles.muted}>
+                {readiness[channel]?.message || t("premium:crypto.alerts.readiness.unknown")}
+              </Text>
             </View>
-            <Text style={[styles.pill, readiness[channel]?.ready ? styles.readyPill : styles.warnPill]}>{readiness[channel]?.label || "Needs setup"}</Text>
-            <ActionButton label={busy === `channel:${channel}` ? "Testing" : "Test"} variant="secondary" disabled={busy === `channel:${channel}`} onPress={() => runChannelTest(channel)} />
+            <Text style={[styles.pill, readiness[channel]?.ready ? styles.readyPill : styles.warnPill]}>
+              {readiness[channel]?.label || t("premium:crypto.alerts.readiness.needsSetup")}
+            </Text>
+            <ActionButton
+              label={t(busy === `channel:${channel}` ? "premium:crypto.alerts.readiness.testing" : "premium:crypto.alerts.readiness.test")}
+              variant="secondary"
+              disabled={busy === `channel:${channel}`}
+              onPress={() => runChannelTest(channel)}
+            />
           </View>
         ))}
       </Panel>
 
       <Panel>
-        <Text style={styles.sectionTitle}>{editingId ? "Edit alert" : "Create alert"}</Text>
+        <Text style={styles.sectionTitle}>
+          {t(editingId ? "premium:crypto.alerts.form.editTitle" : "premium:crypto.alerts.form.createTitle")}
+        </Text>
 
         {!editingId ? (
           <View style={styles.fieldGroup}>
             <SegmentRow
-              items={[{ key: "basic", label: "Basic" }, { key: "advanced", label: "Advanced" }]}
+              items={[
+                { key: "basic", label: t("premium:crypto.alerts.form.basic") },
+                { key: "advanced", label: t("premium:crypto.alerts.form.advanced") }
+              ]}
               value={advanced ? "advanced" : "basic"}
               onSelect={(mode) => {
                 if (mode === "advanced" && premiumLocked) {
                   setError("");
-                  setNotice(PREMIUM_ALERT_NOTICE);
+                  setNotice(premiumNotice);
                   return;
                 }
                 setError("");
@@ -447,16 +557,19 @@ export function AlertManagementScreen({ route, navigation }: Props) {
               }}
             />
             {premiumLocked ? (
-              <Text style={styles.muted}>Advanced alerts — several conditions in one rule, whole-watchlist rules, and time windows — are part of PulseSoc Premium.</Text>
+              <Text style={styles.muted}>{t("premium:crypto.alerts.premium.lockedBody")}</Text>
             ) : null}
           </View>
         ) : null}
 
         {!editingId && watchlistOptions.length ? (
           <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>What this alert watches</Text>
+            <Text style={styles.fieldLabel}>{t("premium:crypto.alerts.form.watchTitle")}</Text>
             <SegmentRow
-              items={[{ key: "asset", label: "One asset" }, { key: "list", label: "A watchlist" }]}
+              items={[
+                { key: "asset", label: t("premium:crypto.alerts.form.watchAsset") },
+                { key: "list", label: t("premium:crypto.alerts.form.watchList") }
+              ]}
               value={form.watchlistId ? "list" : "asset"}
               onSelect={(target) => {
                 setError("");
@@ -486,9 +599,13 @@ export function AlertManagementScreen({ route, navigation }: Props) {
                 onPress={() => setForm((current) => ({ ...current, watchlistId: watchlist.id }))}
               >
                 <View style={styles.rowHead}>
-                  <Text style={styles.rowTitle}>{watchlist.name || `Watchlist ${watchlist.id}`}</Text>
+                  <Text style={styles.rowTitle}>
+                    {watchlist.name || t("premium:crypto.alerts.watchlist.fallbackName", { id: watchlist.id })}
+                  </Text>
                   <Text style={[styles.pill, watchlist.eligible ? styles.readyPill : styles.warnPill]}>
-                    {watchlist.eligible ? `${watchlist.symbols.length} assets` : "Unavailable"}
+                    {watchlist.eligible
+                      ? t("premium:crypto.alerts.watchlist.assets", { count: watchlist.symbols.length })
+                      : t("premium:crypto.alerts.watchlist.unavailable")}
                   </Text>
                 </View>
                 {/* The reason comes from the same check creation runs, so a list
@@ -499,9 +616,9 @@ export function AlertManagementScreen({ route, navigation }: Props) {
           </View>
         ) : (
           <TextInput
-            accessibilityLabel="Alert symbol"
+            accessibilityLabel={t("premium:crypto.alerts.form.symbolLabel")}
             autoCapitalize="characters"
-            placeholder="Symbol"
+            placeholder={t("premium:crypto.alerts.form.symbolPlaceholder")}
             placeholderTextColor={colors.muted}
             style={styles.input}
             value={form.assetSymbol}
@@ -511,16 +628,14 @@ export function AlertManagementScreen({ route, navigation }: Props) {
 
         {advanced && !editingId ? (
           <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Conditions</Text>
+            <Text style={styles.fieldLabel}>{t("premium:crypto.alerts.clause.title")}</Text>
             <SegmentRow
               items={logicItems}
               value={form.logic || "and"}
               onSelect={(logic) => setForm((current) => ({ ...current, logic }))}
             />
             <Text style={styles.rowMeta}>
-              {form.logic === "or"
-                ? "The alert fires when any one of these is true."
-                : "The alert fires only while all of these are true at once."}
+              {t(form.logic === "or" ? "premium:crypto.alerts.logic.orHint" : "premium:crypto.alerts.logic.andHint")}
             </Text>
             {clauses.map((clause, index) => (
               <ClauseEditor
@@ -542,20 +657,22 @@ export function AlertManagementScreen({ route, navigation }: Props) {
             ))}
             {clauses.length < maxClauses ? (
               <ActionButton
-                label="Add condition"
+                label={t("premium:crypto.alerts.clause.add")}
                 variant="secondary"
                 onPress={() => setForm((current) => ({ ...current, clauses: [...(current.clauses || []), { ...emptyClause }] }))}
               />
             ) : (
-              <Text style={styles.rowMeta}>One alert can hold up to {maxClauses} conditions.</Text>
+              <Text style={styles.rowMeta}>
+                {t("premium:crypto.alerts.clause.max", { count: maxClauses })}
+              </Text>
             )}
           </View>
         ) : (
           <>
             <TextInput
-              accessibilityLabel="Alert target value"
+              accessibilityLabel={t("premium:crypto.alerts.form.targetLabel")}
               keyboardType="numeric"
-              placeholder="Target value"
+              placeholder={t("premium:crypto.alerts.form.targetPlaceholder")}
               placeholderTextColor={colors.muted}
               style={styles.input}
               value={form.targetValue}
@@ -572,28 +689,36 @@ export function AlertManagementScreen({ route, navigation }: Props) {
         )}
 
         <View style={styles.channelGrid}>
-          <ChannelToggle label="In-app" value={form.notifyInApp} onPress={() => setForm((current) => ({ ...current, notifyInApp: !current.notifyInApp }))} />
-          <ChannelToggle label="Email" value={form.notifyEmail} onPress={() => setForm((current) => ({ ...current, notifyEmail: !current.notifyEmail }))} />
-          <ChannelToggle label="Push" value={form.notifyPush} onPress={() => setForm((current) => ({ ...current, notifyPush: !current.notifyPush }))} />
-          <ChannelToggle label="SMS" value={form.notifySMS} onPress={() => setForm((current) => ({ ...current, notifySMS: !current.notifySMS }))} />
-          <ChannelToggle label="Telegram" value={form.notifyTelegram} onPress={() => setForm((current) => ({ ...current, notifyTelegram: !current.notifyTelegram }))} />
+          <ChannelToggle label={channelLabel(t, "in_app")} value={form.notifyInApp} onPress={() => setForm((current) => ({ ...current, notifyInApp: !current.notifyInApp }))} />
+          <ChannelToggle label={channelLabel(t, "email")} value={form.notifyEmail} onPress={() => setForm((current) => ({ ...current, notifyEmail: !current.notifyEmail }))} />
+          <ChannelToggle label={channelLabel(t, "push")} value={form.notifyPush} onPress={() => setForm((current) => ({ ...current, notifyPush: !current.notifyPush }))} />
+          <ChannelToggle label={channelLabel(t, "sms")} value={form.notifySMS} onPress={() => setForm((current) => ({ ...current, notifySMS: !current.notifySMS }))} />
+          <ChannelToggle label={channelLabel(t, "telegram")} value={form.notifyTelegram} onPress={() => setForm((current) => ({ ...current, notifyTelegram: !current.notifyTelegram }))} />
         </View>
         <TextInput
-          accessibilityLabel="Alert note"
-          placeholder="Optional note"
+          accessibilityLabel={t("premium:crypto.alerts.form.noteLabel")}
+          placeholder={t("premium:crypto.alerts.form.notePlaceholder")}
           placeholderTextColor={colors.muted}
           style={styles.input}
           value={form.note}
           onChangeText={(note) => setForm((current) => ({ ...current, note }))}
         />
         <View style={styles.topActions}>
-          <ActionButton label={busy === "save" ? "Saving" : editingId ? "Save changes" : "Create alert"} disabled={busy === "save"} onPress={saveForm} />
-          {editingId ? <ActionButton label="Cancel edit" variant="secondary" onPress={resetForm} /> : null}
+          <ActionButton
+            label={busy === "save"
+              ? t("premium:crypto.alerts.form.saving")
+              : editingId
+                ? t("premium:crypto.alerts.form.save")
+                : t("premium:crypto.alerts.form.create")}
+            disabled={busy === "save"}
+            onPress={saveForm}
+          />
+          {editingId ? <ActionButton label={t("premium:crypto.alerts.form.cancelEdit")} variant="secondary" onPress={resetForm} /> : null}
         </View>
       </Panel>
 
       <Panel>
-        <Text style={styles.sectionTitle}>Crypto and market alerts</Text>
+        <Text style={styles.sectionTitle}>{t("premium:crypto.alerts.list.title")}</Text>
         {alerts.length ? alerts.map((alert) => (
           <AlertCard
             key={alert.id}
@@ -608,46 +733,70 @@ export function AlertManagementScreen({ route, navigation }: Props) {
             onConfirmDelete={() => runAction(alert, "delete")}
             onCancelDelete={() => {
               setPendingDeleteId(null);
-              setNotice("Delete canceled.");
+              setNotice(t("premium:crypto.alerts.delete.canceled"));
             }}
             onDuplicate={() => runAction(alert, "duplicate")}
             onTest={() => runAction(alert, "test")}
             pendingDelete={pendingDeleteId === alert.id}
           />
-        )) : <Text style={styles.muted}>You have no alerts yet. Create your first one above.</Text>}
+        )) : <Text style={styles.muted}>{t("premium:crypto.alerts.list.empty")}</Text>}
       </Panel>
 
       {selectedAlert ? (
         <Panel>
-          <Text style={styles.sectionTitle}>Alert detail</Text>
-          <Text style={styles.detailTitle}>{alertSubjectLabel(selectedAlert)} {alertConditionLabel(selectedAlert)}</Text>
-          <Text style={styles.muted}>Status: {alertStatusLabel(selectedAlert.status)}. Source: {selectedAlert.source || "server"}. Trigger count: {selectedAlert.trigger_count || 0}.</Text>
-          <Text style={styles.muted}>Channels: {alertEnabledChannels(selectedAlert).join(", ") || "server delivery"}</Text>
-          <Text style={styles.muted}>Last checked: {selectedAlert.last_checked_at || "not recorded"}</Text>
-          <Text style={styles.muted}>Last triggered: {selectedAlert.last_triggered_at || "not triggered"}</Text>
+          <Text style={styles.sectionTitle}>{t("premium:crypto.alerts.detail.title")}</Text>
+          <Text style={styles.detailTitle}>{subjectLabel(t, selectedAlert)} {conditionSummary(t, selectedAlert)}</Text>
+          <Text style={styles.muted}>
+            {t("premium:crypto.alerts.detail.summary", {
+              count: selectedAlert.trigger_count || 0,
+              status: statusLabel(t, selectedAlert.status),
+              source: selectedAlert.source || t("premium:crypto.alerts.detail.sourcePulseSoc")
+            })}
+          </Text>
+          <Text style={styles.muted}>{t("premium:crypto.alerts.detail.channels", { channels: channelSummary(t, selectedAlert) })}</Text>
+          <Text style={styles.muted}>
+            {t("premium:crypto.alerts.detail.lastChecked", {
+              value: selectedAlert.last_checked_at || t("premium:crypto.alerts.detail.notRecorded")
+            })}
+          </Text>
+          <Text style={styles.muted}>
+            {t("premium:crypto.alerts.detail.lastTriggered", {
+              value: selectedAlert.last_triggered_at || t("premium:crypto.alerts.detail.notTriggered")
+            })}
+          </Text>
         </Panel>
       ) : null}
 
       <Panel>
-        <Text style={styles.sectionTitle}>Alert history</Text>
-        {recentEvents.length ? recentEvents.slice(0, 12).map((event, index) => (
+        <Text style={styles.sectionTitle}>{t("premium:crypto.alerts.history.title")}</Text>
+        {recentEvents.length ? recentEvents.slice(0, HISTORY_SHOWN).map((event, index) => (
           <View key={`${event.id || index}-${event.created_at || index}`} style={styles.eventRow}>
             <View style={styles.rowHead}>
-              <Text style={styles.rowTitle}>{event.symbol || selectedAlert?.asset_symbol || "MARKET"}</Text>
-              <Text style={styles.pill}>{event.status || "recorded"}</Text>
+              <Text style={styles.rowTitle}>{event.symbol || selectedAlert?.asset_symbol || t("premium:crypto.alerts.history.market")}</Text>
+              <Text style={styles.pill}>{event.status || t("premium:crypto.alerts.history.recorded")}</Text>
             </View>
-            <Text style={styles.muted}>{event.message || `${event.condition || "alert"} at ${event.observed_value ?? "unknown"} against ${event.threshold_value ?? "target"}`}</Text>
-            <Text style={styles.rowMeta}>{event.created_at || "No timestamp"}</Text>
+            <Text style={styles.muted}>
+              {event.message || t("premium:crypto.alerts.history.fallback", {
+                condition: event.condition ? conditionLabel(t, String(event.condition)) : t("premium:crypto.alerts.history.unknownCondition"),
+                observed: event.observed_value ?? t("premium:crypto.alerts.history.unknownValue"),
+                target: event.threshold_value ?? t("premium:crypto.alerts.history.unknownTarget")
+              })}
+            </Text>
+            <Text style={styles.rowMeta}>{event.created_at || t("premium:crypto.alerts.history.noTimestamp")}</Text>
           </View>
-        )) : <Text style={styles.muted}>No alert history yet. Events appear here after an alert fires or you send a test.</Text>}
-        {recentEvents.length > 12 ? <Text style={styles.rowMeta}>Showing the newest 12 of {recentEvents.length} alert history events.</Text> : null}
+        )) : <Text style={styles.muted}>{t("premium:crypto.alerts.history.empty")}</Text>}
+        {recentEvents.length > HISTORY_SHOWN ? (
+          <Text style={styles.rowMeta}>
+            {t("premium:crypto.alerts.history.truncated", { shown: HISTORY_SHOWN, total: recentEvents.length })}
+          </Text>
+        ) : null}
       </Panel>
 
       <Panel>
-        <Text style={styles.sectionTitle}>Managed by PulseSoc</Text>
-        <Text style={styles.muted}>Account administration, advanced Intelligence editing, data source management, and other alert types are handled on the PulseSoc website. They are not available in the app yet.</Text>
+        <Text style={styles.sectionTitle}>{t("premium:crypto.alerts.managed.title")}</Text>
+        <Text style={styles.muted}>{t("premium:crypto.alerts.managed.body")}</Text>
         <View style={styles.topActions}>
-          <ActionButton label="Notifications" variant="secondary" onPress={() => navigation.navigate("NotificationCenter")} />
+          <ActionButton label={t("premium:crypto.alerts.managed.notifications")} variant="secondary" onPress={() => navigation.navigate("NotificationCenter")} />
         </View>
       </Panel>
     </ScrollView>
@@ -683,6 +832,7 @@ function AlertCard({
   onTest: () => void;
   pendingDelete: boolean;
 }) {
+  const { t } = useTranslation();
   const active = (alert.status || "active") === "active";
   return (
     <View style={[styles.alertCard, selected ? styles.alertCardSelected : undefined]}>
@@ -690,26 +840,35 @@ function AlertCard({
         <View style={styles.rowHead}>
           {/* A watchlist rule has no symbol of its own, so naming it by one would
               render every such rule as the same anonymous " alert". */}
-          <Text style={styles.rowTitle}>{alertSubjectLabel(alert)} alert</Text>
-          <Text style={[styles.pill, active ? styles.readyPill : styles.warnPill]}>{alertStatusLabel(alert.status)}</Text>
+          <Text style={styles.rowTitle}>{t("premium:crypto.alerts.list.subject", { subject: subjectLabel(t, alert) })}</Text>
+          <Text style={[styles.pill, active ? styles.readyPill : styles.warnPill]}>{statusLabel(t, alert.status)}</Text>
         </View>
-        <Text style={styles.muted}>{alertConditionLabel(alert)}</Text>
-        <Text style={styles.rowMeta}>{alert.history_count || 0} history events - {alertEnabledChannels(alert).join(", ") || "server delivery"}</Text>
+        <Text style={styles.muted}>{conditionSummary(t, alert)}</Text>
+        <Text style={styles.rowMeta}>
+          {t("premium:crypto.alerts.list.meta", { count: alert.history_count || 0, channels: channelSummary(t, alert) })}
+        </Text>
       </Pressable>
       <View style={styles.actionGrid}>
-        <ActionButton label="Detail" variant="secondary" onPress={onSelect} />
-        <ActionButton label="Edit" variant="secondary" onPress={onEdit} />
-        {active ? <ActionButton label="Pause" variant="secondary" disabled={busy} onPress={onPause} /> : <ActionButton label="Resume" variant="secondary" disabled={busy} onPress={onResume} />}
-        <ActionButton label="Test" variant="secondary" disabled={busy} onPress={onTest} />
-        <ActionButton label="Duplicate" variant="secondary" disabled={busy} onPress={onDuplicate} />
-        <ActionButton label="Delete" variant="danger" disabled={busy} onPress={onDelete} />
+        <ActionButton label={t("premium:crypto.alerts.list.detail")} variant="secondary" onPress={onSelect} />
+        <ActionButton label={t("premium:crypto.alerts.list.edit")} variant="secondary" onPress={onEdit} />
+        {active
+          ? <ActionButton label={t("premium:crypto.alerts.list.pause")} variant="secondary" disabled={busy} onPress={onPause} />
+          : <ActionButton label={t("premium:crypto.alerts.list.resume")} variant="secondary" disabled={busy} onPress={onResume} />}
+        <ActionButton label={t("premium:crypto.alerts.list.test")} variant="secondary" disabled={busy} onPress={onTest} />
+        <ActionButton label={t("premium:crypto.alerts.list.duplicate")} variant="secondary" disabled={busy} onPress={onDuplicate} />
+        <ActionButton label={t("premium:crypto.alerts.list.delete")} variant="danger" disabled={busy} onPress={onDelete} />
       </View>
       {pendingDelete ? (
         <View style={styles.confirmBox}>
-          <Text style={styles.confirmText}>Delete this alert? It is removed from your PulseSoc account and this cannot be undone.</Text>
+          <Text style={styles.confirmText}>{t("premium:crypto.alerts.delete.body")}</Text>
           <View style={styles.topActions}>
-            <ActionButton label="Cancel" variant="secondary" disabled={busy} onPress={onCancelDelete} />
-            <ActionButton label={busy ? "Deleting" : "Confirm delete"} variant="danger" disabled={busy} onPress={onConfirmDelete} />
+            <ActionButton label={t("premium:crypto.alerts.delete.cancel")} variant="secondary" disabled={busy} onPress={onCancelDelete} />
+            <ActionButton
+              label={busy ? t("premium:crypto.alerts.delete.deleting") : t("premium:crypto.alerts.delete.confirm")}
+              variant="danger"
+              disabled={busy}
+              onPress={onConfirmDelete}
+            />
           </View>
         </View>
       ) : null}
@@ -729,7 +888,8 @@ function AlertCard({
  * advanced vocabulary on screen either, so the basic path validates exactly as
  * it always did rather than blocking on an answer that never arrived.
  */
-function validateAlertForm(form: AlertFormPayload, options: AlertOptions | null) {
+function validateAlertForm(t: Translate, form: AlertFormPayload, options: AlertOptions | null) {
+  const invalid = (key: string, values?: Record<string, unknown>) => t(`premium:crypto.alerts.validation.${key}`, values);
   const hasChannel = form.notifyInApp || form.notifyEmail || form.notifyPush || form.notifySMS || form.notifyTelegram;
   const advanced = form.mode === "advanced";
 
@@ -738,50 +898,50 @@ function validateAlertForm(form: AlertFormPayload, options: AlertOptions | null)
     // Eligibility is the server's own preflight answer, carried in the options
     // payload — re-deriving it here is how the form and the gate start to differ.
     const watchlist = (options?.watchlists || []).find((entry) => entry.id === form.watchlistId);
-    if (!watchlist) return "Choose a watchlist for this alert to watch.";
-    if (!watchlist.eligible) return watchlist.message || "That watchlist cannot be used for an alert right now.";
+    if (!watchlist) return invalid("watchlistRequired");
+    if (!watchlist.eligible) return watchlist.message || invalid("watchlistUnavailable");
   } else {
     const symbol = form.assetSymbol.trim().toUpperCase();
-    if (!symbol) return "Add an asset symbol before saving the alert.";
-    if (!/^[A-Z0-9.$:-]{2,24}$/.test(symbol)) return "Use a valid asset symbol such as BTC, ETH, or SOL.";
+    if (!symbol) return invalid("symbolRequired");
+    if (!/^[A-Z0-9.$:-]{2,24}$/.test(symbol)) return invalid("symbolInvalid");
   }
 
   if (advanced) {
-    if (options?.advanced.locked) return "Multi-condition alerts are part of PulseSoc Premium.";
+    if (options?.advanced.locked) return invalid("premiumLocked");
     const clauses = form.clauses || [];
-    if (!clauses.length) return "Add at least one condition before saving the alert.";
+    if (!clauses.length) return invalid("clauseRequired");
     const maxClauses = options?.advanced.max_clauses || clauses.length;
-    if (clauses.length > maxClauses) return `One alert can hold up to ${maxClauses} conditions.`;
+    if (clauses.length > maxClauses) return t("premium:crypto.alerts.clause.max", { count: maxClauses });
     const offered = new Set((options?.windows || []).map((window) => window.minutes));
     const windowComparators = new Set(options?.advanced.window_comparators || []);
     for (let index = 0; index < clauses.length; index += 1) {
       const clause = clauses[index];
-      const position = `Condition ${index + 1}`;
+      const position = t("premium:crypto.alerts.clause.heading", { position: index + 1 });
       const metric = (options?.advanced.metrics || []).find((entry) => entry.key === clause.metric);
-      if (!metric) return `${position}: choose what to measure.`;
+      if (!metric) return invalid("clauseMetric", { position });
       if (!(options?.advanced.comparators || []).some((entry) => entry.key === clause.comparator)) {
-        return `${position}: choose a supported comparison.`;
+        return invalid("clauseComparator", { position });
       }
       const raw = String(clause.value || "").trim();
-      if (!raw) return `${position}: add a value.`;
+      if (!raw) return invalid("clauseValue", { position });
       const value = Number(raw);
-      if (!Number.isFinite(value)) return `${position}: use a numeric value.`;
+      if (!Number.isFinite(value)) return invalid("clauseNumeric", { position });
       // A percentage change is genuinely negative half the time; a price, a
       // volume or a market cap never is, and a negative one would arm forever.
-      if (!metric.percent && value <= 0) return `${position}: ${metric.label} must be greater than zero.`;
-      if (Math.abs(value) > 1_000_000_000_000) return `${position}: that value is too large for a safe threshold.`;
+      if (!metric.percent && value <= 0) return invalid("clausePositive", { position, metric: metric.label });
+      if (Math.abs(value) > 1_000_000_000_000) return invalid("clauseTooLarge", { position });
       if (!clause.windowMinutes) continue;
-      if (!metric.windowable) return `${position}: ${metric.label} cannot be measured over a time window.`;
+      if (!metric.windowable) return invalid("clauseNotWindowable", { position, metric: metric.label });
       // The offered set comes from what has actually been sampled. Sending a
       // window outside it would create the one failure mode this whole options
       // endpoint exists to prevent: a rule that looks healthy and never decides.
       if (!offered.has(clause.windowMinutes)) {
-        return options?.window_message || `${position}: that time window cannot be measured for this asset yet.`;
+        return options?.window_message || invalid("clauseWindowUnavailable", { position });
       }
       // A window's baseline moves with every sample, so a crossing over one
       // would fire on the baseline shifting rather than on the market moving.
       if (windowComparators.size && !windowComparators.has(clause.comparator)) {
-        return `${position}: ${comparatorLabel(clause.comparator).toLowerCase()} cannot be used with a time window.`;
+        return invalid("clauseComparatorWindow", { position, comparator: comparatorLabel(t, clause.comparator) });
       }
     }
   } else {
@@ -790,14 +950,14 @@ function validateAlertForm(form: AlertFormPayload, options: AlertOptions | null)
     const conditions = options?.basic.conditions.length
       ? options.basic.conditions
       : ALERT_CONDITIONS.map((condition) => condition.value);
-    if (!rawTarget) return "Add a target value before saving the alert.";
-    if (!Number.isFinite(target)) return "Use a numeric target value.";
-    if (target <= 0) return "Target value must be greater than zero.";
-    if (target > 1_000_000_000_000) return "Target value is too large for a safe alert threshold.";
-    if (!conditions.includes(form.condition)) return "Choose a supported alert condition.";
+    if (!rawTarget) return invalid("targetRequired");
+    if (!Number.isFinite(target)) return invalid("targetNumeric");
+    if (target <= 0) return invalid("targetPositive");
+    if (target > 1_000_000_000_000) return invalid("targetTooLarge");
+    if (!conditions.includes(form.condition)) return invalid("conditionUnsupported");
   }
 
-  if (!hasChannel) return "Choose at least one delivery channel.";
+  if (!hasChannel) return invalid("channelRequired");
   return "";
 }
 
@@ -866,7 +1026,9 @@ function ClauseEditor({
   onChange: (patch: Partial<AlertClause>) => void;
   onRemove: () => void;
 }) {
+  const { t } = useTranslation();
   const metric = metrics.find((entry) => entry.key === clause.metric) || null;
+  const heading = t("premium:crypto.alerts.clause.heading", { position: index + 1 });
   const windowed = Boolean(clause.windowMinutes);
   // With a window on, only the level comparators are offered — the server
   // refuses the crossings, and offering one it would refuse is worse than not
@@ -874,13 +1036,13 @@ function ClauseEditor({
   const offeredComparators = (windowed && windowComparators.length
     ? comparators.filter((entry) => windowComparators.includes(entry.key))
     : comparators
-  ).map((entry) => ({ key: entry.key, label: comparatorLabel(entry.key) }));
+  ).map((entry) => ({ key: entry.key, label: comparatorLabel(t, entry.key) }));
 
   return (
     <View style={styles.clauseCard}>
       <View style={styles.rowHead}>
-        <Text style={styles.rowTitle}>Condition {index + 1}</Text>
-        {canRemove ? <ActionButton label="Remove" variant="secondary" onPress={onRemove} /> : null}
+        <Text style={styles.rowTitle}>{heading}</Text>
+        {canRemove ? <ActionButton label={t("premium:crypto.alerts.clause.remove")} variant="secondary" onPress={onRemove} /> : null}
       </View>
 
       <SegmentRow
@@ -901,9 +1063,11 @@ function ClauseEditor({
       />
 
       <TextInput
-        accessibilityLabel={`Condition ${index + 1} value`}
+        accessibilityLabel={t("premium:crypto.alerts.clause.valueLabel", { position: index + 1 })}
         keyboardType="numbers-and-punctuation"
-        placeholder={metric?.percent ? "Percent, for example -5" : "Value"}
+        placeholder={metric?.percent
+          ? t("premium:crypto.alerts.clause.percentPlaceholder", { example: PERCENT_EXAMPLE })
+          : t("premium:crypto.alerts.clause.valuePlaceholder")}
         placeholderTextColor={colors.muted}
         style={styles.input}
         value={clause.value}
@@ -913,9 +1077,12 @@ function ClauseEditor({
       {metric?.windowable ? (
         windows.length ? (
           <>
-            <Text style={styles.rowMeta}>Measured over</Text>
+            <Text style={styles.rowMeta}>{t("premium:crypto.alerts.clause.windowLabel")}</Text>
             <SegmentRow
-              items={[{ key: "0", label: "No window" }, ...windows.map((window) => ({ key: String(window.minutes), label: window.label }))]}
+              items={[
+                { key: "0", label: t("premium:crypto.alerts.clause.noWindow") },
+                ...windows.map((window) => ({ key: String(window.minutes), label: window.label }))
+              ]}
               value={String(clause.windowMinutes || 0)}
               onSelect={(next) => {
                 const windowMinutes = Number(next) || 0;
@@ -933,7 +1100,7 @@ function ClauseEditor({
         ) : (
           // Not an error and not a missing feature: the series simply has not
           // observed this asset for long enough to answer any window yet.
-          <Text style={styles.rowMeta}>{windowMessage || "No time window can be measured for this asset yet."}</Text>
+          <Text style={styles.rowMeta}>{windowMessage || t("premium:crypto.alerts.clause.noWindows")}</Text>
         )
       ) : null}
     </View>
@@ -941,9 +1108,16 @@ function ClauseEditor({
 }
 
 function ChannelToggle({ label, value, onPress }: { label: string; value: boolean; onPress: () => void }) {
+  const { t } = useTranslation();
+  // One key rather than a state word glued to a channel name: the two do not
+  // sit in that order, or with that separator, in every language.
+  const text = t("premium:crypto.alerts.channels.toggle", {
+    channel: label,
+    state: value ? t("premium:crypto.alerts.channels.on") : t("premium:crypto.alerts.channels.off")
+  });
   return (
     <Pressable accessibilityRole="button" style={[styles.channelToggle, value ? styles.channelToggleActive : undefined]} onPress={onPress}>
-      <Text style={[styles.channelToggleText, value ? styles.channelToggleTextActive : undefined]}>{value ? "On" : "Off"} - {label}</Text>
+      <Text style={[styles.channelToggleText, value ? styles.channelToggleTextActive : undefined]}>{text}</Text>
     </Pressable>
   );
 }

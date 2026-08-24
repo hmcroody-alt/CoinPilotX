@@ -2223,6 +2223,273 @@
           "body": "Premium इस सीमा को हटा देता है कि आप कितनी होल्डिंग्स ट्रैक कर सकते हैं। क़ीमतें, मूल्य और इतिहास दोनों में एक जैसे हैं।",
           "action": "Premium देखें"
         }
+      },
+      "alerts": {
+        "title": "अलर्ट प्रबंधन",
+        "loading": "आपके अलर्ट लोड हो रहे हैं…",
+        "loadError": "आपके अलर्ट लोड नहीं हो सके।",
+        "subtitle": "आपके क्रिप्टो और बाज़ार अलर्ट, जैसे PulseSoc में सेट हैं।",
+        "subtitleOffline": "इस डिवाइस पर सेव किए गए अलर्ट दिखाए जा रहे हैं।",
+        "refresh": "रिफ़्रेश करें",
+        "refreshing": "रिफ़्रेश हो रहा है",
+        "hero": {
+          "eyebrow": "आपके अलर्ट",
+          "body": "अपने अलर्ट बनाएं, एडिट करें, रोकें, फिर शुरू करें, डुप्लिकेट करें और टेस्ट करें, और देखें कि हर एक ने अब तक क्या किया।"
+        },
+        "worker": {
+          "linked": "जाँच चल रही है",
+          "stale": "जाँच में देरी"
+        },
+        "readiness": {
+          "title": "डिलीवरी की तैयारी",
+          "check": "जाँचें",
+          "checking": "जाँच हो रही है",
+          "test": "टेस्ट करें",
+          "testing": "टेस्ट हो रहा है",
+          "unknown": "यह कब तैयार है, PulseSoc तय करता है।",
+          "needsSetup": "सेटअप ज़रूरी",
+          "refreshed": "डिलीवरी की तैयारी रिफ़्रेश हो गई।",
+          "refreshFailed": "डिलीवरी की तैयारी रिफ़्रेश नहीं हो सकी।",
+          "tested": "{{channel}} का टेस्ट पूरा हुआ।",
+          "testFailed": "वह डिलीवरी टेस्ट विफल रहा।"
+        },
+        "channels": {
+          "in_app": "इन-ऐप",
+          "email": "ईमेल",
+          "push": "पुश",
+          "sms": "एसएमएस",
+          "telegram": "Telegram",
+          "toggle": "{{channel}}: {{state}}",
+          "on": "चालू",
+          "off": "बंद",
+          "default": "PulseSoc तय करता है"
+        },
+        "form": {
+          "createTitle": "अलर्ट बनाएं",
+          "editTitle": "अलर्ट एडिट करें",
+          "basic": "बुनियादी",
+          "advanced": "एडवांस्ड",
+          "watchTitle": "यह अलर्ट किस पर नज़र रखता है",
+          "watchAsset": "एक एसेट",
+          "watchList": "एक वॉचलिस्ट",
+          "symbolLabel": "अलर्ट का सिंबल",
+          "symbolPlaceholder": "सिंबल",
+          "targetLabel": "अलर्ट का लक्ष्य मान",
+          "targetPlaceholder": "लक्ष्य मान",
+          "noteLabel": "अलर्ट का नोट",
+          "notePlaceholder": "वैकल्पिक नोट",
+          "save": "बदलाव सेव करें",
+          "saving": "सेव हो रहा है",
+          "create": "अलर्ट बनाएं",
+          "cancelEdit": "एडिट रद्द करें",
+          "created": "अलर्ट बन गया।",
+          "updated": "अलर्ट अपडेट हो गया।",
+          "saveFailed": "अलर्ट सेव नहीं हो सका।"
+        },
+        "premium": {
+          "notice": "कई शर्तों वाले अलर्ट, वॉचलिस्ट अलर्ट और समय विंडो PulseSoc Premium का हिस्सा हैं।",
+          "lockedBody": "एडवांस्ड अलर्ट — एक ही नियम में कई शर्तें, पूरी वॉचलिस्ट पर नियम, और समय विंडो — PulseSoc Premium का हिस्सा हैं।"
+        },
+        "watchlist": {
+          "fallbackName": "वॉचलिस्ट {{id}}",
+          "unavailable": "उपलब्ध नहीं",
+          "assets_one": "{{count}} एसेट",
+          "assets_other": "{{count}} एसेट्स"
+        },
+        "conditions": {
+          "above": "ऊपर",
+          "below": "नीचे",
+          "moves_up_percent": "% चढ़े",
+          "moves_down_percent": "% गिरे",
+          "volatility_above": "उतार-चढ़ाव % से ऊपर"
+        },
+        "comparators": {
+          "above": "ऊपर",
+          "below": "नीचे",
+          "crosses_above": "ऊपर पार करे",
+          "crosses_below": "नीचे पार करे"
+        },
+        "logic": {
+          "and": "ये सभी",
+          "or": "इनमें से कोई",
+          "andHint": "अलर्ट तभी ट्रिगर होता है जब ये सभी एक साथ सही हों।",
+          "orHint": "अलर्ट तब ट्रिगर होता है जब इनमें से कोई एक सही हो।"
+        },
+        "clause": {
+          "title": "शर्तें",
+          "heading": "शर्त {{position}}",
+          "valueLabel": "शर्त {{position}} का मान",
+          "percentPlaceholder": "प्रतिशत, उदाहरण के लिए {{example}}",
+          "valuePlaceholder": "मान",
+          "add": "शर्त जोड़ें",
+          "remove": "हटाएं",
+          "windowLabel": "समय विंडो",
+          "noWindow": "कोई विंडो नहीं",
+          "noWindows": "इस एसेट के लिए अभी कोई समय विंडो नहीं मापी जा सकती।",
+          "windowCleared": "वह समय विंडो इस एसेट के लिए अभी मापी नहीं जा सकती, इसलिए उसे हटा दिया गया।",
+          "max_one": "एक अलर्ट में ज़्यादा से ज़्यादा {{count}} शर्त हो सकती है।",
+          "max_other": "एक अलर्ट में ज़्यादा से ज़्यादा {{count}} शर्तें हो सकती हैं।"
+        },
+        "list": {
+          "title": "क्रिप्टो और बाज़ार अलर्ट",
+          "empty": "आपके पास अभी कोई अलर्ट नहीं है। ऊपर अपना पहला अलर्ट बनाएं।",
+          "subject": "{{subject}} अलर्ट",
+          "watchlistSubject": "{{name}} वॉचलिस्ट",
+          "watchlistFallback": "वॉचलिस्ट",
+          "meta_one": "{{count}} इतिहास घटना · {{channels}}",
+          "meta_other": "{{count}} इतिहास घटनाएं · {{channels}}",
+          "detail": "विवरण",
+          "edit": "एडिट करें",
+          "pause": "रोकें",
+          "resume": "फिर शुरू करें",
+          "test": "टेस्ट करें",
+          "duplicate": "डुप्लिकेट करें",
+          "delete": "डिलीट करें"
+        },
+        "status": {
+          "active": "सक्रिय",
+          "paused": "रोका गया",
+          "triggered": "ट्रिगर हुआ",
+          "disabled": "बंद",
+          "expired": "समाप्त"
+        },
+        "actions": {
+          "paused": "अलर्ट रोक दिया गया।",
+          "resumed": "अलर्ट फिर शुरू हो गया।",
+          "deleted": "अलर्ट डिलीट हो गया।",
+          "duplicated": "अलर्ट डुप्लिकेट हो गया।",
+          "tested": "टेस्ट अलर्ट भेज दिया गया।",
+          "failed": "वह अलर्ट कार्रवाई विफल रही।",
+          "editUnavailable": "कई शर्तों वाले या वॉचलिस्ट अलर्ट को एडिट करना ऐप में अभी उपलब्ध नहीं है। उसे बदलने के लिए उसे डिलीट करें और दोबारा बनाएं।"
+        },
+        "delete": {
+          "prompt": "{{subject}} {{condition}} को डिलीट करने की पुष्टि करें।",
+          "body": "इस अलर्ट को डिलीट करें? यह आपके PulseSoc खाते से हट जाता है और इसे वापस नहीं लाया जा सकता।",
+          "cancel": "रद्द करें",
+          "canceled": "डिलीट रद्द किया गया।",
+          "confirm": "डिलीट की पुष्टि करें",
+          "deleting": "डिलीट हो रहा है"
+        },
+        "detail": {
+          "title": "अलर्ट का विवरण",
+          "summary_one": "स्थिति: {{status}}। स्रोत: {{source}}। {{count}} बार ट्रिगर हुआ।",
+          "summary_other": "स्थिति: {{status}}। स्रोत: {{source}}। {{count}} बार ट्रिगर हुआ।",
+          "sourcePulseSoc": "PulseSoc",
+          "channels": "चैनल: {{channels}}",
+          "lastChecked": "आख़िरी जाँच: {{value}}",
+          "lastTriggered": "आख़िरी बार ट्रिगर: {{value}}",
+          "notRecorded": "दर्ज नहीं",
+          "notTriggered": "ट्रिगर नहीं हुआ"
+        },
+        "history": {
+          "title": "अलर्ट इतिहास",
+          "empty": "अभी कोई अलर्ट इतिहास नहीं है। किसी अलर्ट के ट्रिगर होने या आपके टेस्ट भेजने के बाद घटनाएं यहाँ दिखेंगी।",
+          "truncated": "{{total}} अलर्ट इतिहास घटनाओं में से सबसे नई {{shown}} दिखाई जा रही हैं।",
+          "market": "बाज़ार",
+          "recorded": "दर्ज",
+          "fallback": "{{condition}} {{observed}} पर, {{target}} के मुक़ाबले",
+          "unknownCondition": "अलर्ट",
+          "unknownValue": "अज्ञात",
+          "unknownTarget": "लक्ष्य",
+          "noTimestamp": "कोई समय दर्ज नहीं"
+        },
+        "managed": {
+          "title": "PulseSoc द्वारा प्रबंधित",
+          "body": "खाता प्रशासन, एडवांस्ड इंटेलिजेंस एडिटिंग, डेटा स्रोत प्रबंधन और दूसरे तरह के अलर्ट PulseSoc वेबसाइट पर संभाले जाते हैं। ये ऐप में अभी उपलब्ध नहीं हैं।",
+          "notifications": "नोटिफ़िकेशन"
+        },
+        "validation": {
+          "watchlistRequired": "चुनें कि यह अलर्ट किस वॉचलिस्ट पर नज़र रखे।",
+          "watchlistUnavailable": "उस वॉचलिस्ट को अभी अलर्ट के लिए इस्तेमाल नहीं किया जा सकता।",
+          "symbolRequired": "अलर्ट सेव करने से पहले एसेट का सिंबल जोड़ें।",
+          "symbolInvalid": "BTC, ETH या SOL जैसा सही एसेट सिंबल इस्तेमाल करें।",
+          "premiumLocked": "कई शर्तों वाले अलर्ट PulseSoc Premium का हिस्सा हैं।",
+          "clauseRequired": "अलर्ट सेव करने से पहले कम से कम एक शर्त जोड़ें।",
+          "clauseMetric": "{{position}}: चुनें कि क्या मापना है।",
+          "clauseComparator": "{{position}}: कोई समर्थित तुलना चुनें।",
+          "clauseValue": "{{position}}: कोई मान जोड़ें।",
+          "clauseNumeric": "{{position}}: संख्या वाला मान इस्तेमाल करें।",
+          "clausePositive": "{{position}}: {{metric}} शून्य से बड़ा होना चाहिए।",
+          "clauseTooLarge": "{{position}}: वह मान सुरक्षित सीमा के लिए बहुत बड़ा है।",
+          "clauseNotWindowable": "{{position}}: {{metric}} को समय विंडो पर नहीं मापा जा सकता।",
+          "clauseWindowUnavailable": "{{position}}: वह समय विंडो इस एसेट के लिए अभी मापी नहीं जा सकती।",
+          "clauseComparatorWindow": "{{position}}: {{comparator}} को समय विंडो के साथ इस्तेमाल नहीं किया जा सकता।",
+          "targetRequired": "अलर्ट सेव करने से पहले लक्ष्य मान जोड़ें।",
+          "targetNumeric": "संख्या वाला लक्ष्य मान इस्तेमाल करें।",
+          "targetPositive": "लक्ष्य मान शून्य से बड़ा होना चाहिए।",
+          "targetTooLarge": "लक्ष्य मान सुरक्षित अलर्ट सीमा के लिए बहुत बड़ा है।",
+          "conditionUnsupported": "कोई समर्थित अलर्ट शर्त चुनें।",
+          "channelRequired": "कम से कम एक डिलीवरी चैनल चुनें।"
+        }
+      },
+      "watchlists": {
+        "title": "वॉचलिस्ट",
+        "subtitle": "जिन एसेट्स की आपको परवाह है, उन्हें लाइव बाज़ार डेटा के साथ ट्रैक करें।",
+        "loadError": "वॉचलिस्ट लोड नहीं हो सकीं।",
+        "actionFailed": "वह काम नहीं हुआ।",
+        "offline": "ऑफ़लाइन — हमें आख़िरी बार मिली क़ीमतें दिखाई जा रही हैं।",
+        "pricesUnavailable": "लाइव क़ीमतें फ़िलहाल उपलब्ध नहीं हैं।",
+        "asOf": "{{timestamp}} तक की क़ीमतें",
+        "tabs": {
+          "lists": "मेरी वॉचलिस्ट",
+          "favorites": "पसंदीदा"
+        },
+        "create": {
+          "title": "वॉचलिस्ट बनाएं",
+          "placeholder": "जैसे मेरी क्रिप्टो",
+          "label": "नई वॉचलिस्ट का नाम",
+          "submit": "वॉचलिस्ट बनाएं",
+          "creating": "बनाई जा रही है…",
+          "nameRequired": "पहले अपनी वॉचलिस्ट को नाम दें।",
+          "created": "वॉचलिस्ट बन गई।"
+        },
+        "rename": {
+          "action": "नाम बदलें",
+          "save": "सेव करें",
+          "cancel": "रद्द करें",
+          "placeholder": "वॉचलिस्ट का नाम",
+          "label": "वॉचलिस्ट का नाम",
+          "nameRequired": "वॉचलिस्ट का नाम होना ज़रूरी है।",
+          "renamed": "वॉचलिस्ट का नाम बदल गया।"
+        },
+        "delete": {
+          "action": "डिलीट करें",
+          "title": "वॉचलिस्ट डिलीट करें",
+          "body": "“{{name}}” को डिलीट करें? इसके एसेट्स इस लिस्ट से हट जाएंगे। आपके अलर्ट और पसंदीदा बने रहेंगे।",
+          "cancel": "रद्द करें",
+          "confirm": "डिलीट करें",
+          "deleted": "वॉचलिस्ट डिलीट हो गई।"
+        },
+        "assets": {
+          "add": "एसेट जोड़ें",
+          "done": "हो गया",
+          "searchPlaceholder": "एसेट्स खोजें, जैसे BTC",
+          "searchLabel": "एसेट्स खोजें",
+          "noMatches": "उससे मेल खाता कोई ट्रैक किया गया एसेट नहीं है।",
+          "empty": "अभी कोई एसेट नहीं। कुछ ट्रैक करने के लिए “एसेट जोड़ें” का इस्तेमाल करें।",
+          "added": "{{symbol}} जोड़ा गया।",
+          "removed": "{{symbol}} हटाया गया।",
+          "remove": "हटाएं",
+          "removeLabel": "{{symbol}} हटाएं",
+          "favorite": "{{symbol}} को पसंदीदा बनाएं",
+          "unfavorite": "{{symbol}} को पसंदीदा से हटाएं",
+          "favoritesUpdated": "पसंदीदा अपडेट हो गए।",
+          "cap": "मार्केट कैप {{value}}",
+          "a11y": "{{name}}, {{price}}",
+          "average": "औसत {{percent}}",
+          "alerts_one": "{{count}} अलर्ट",
+          "alerts_other": "{{count}} अलर्ट",
+          "count_one": "{{count}} एसेट",
+          "count_other": "{{count}} एसेट्स"
+        },
+        "empty": {
+          "title": "अभी कोई वॉचलिस्ट नहीं",
+          "body": "जिन एसेट्स को आप फ़ॉलो करते हैं, उनकी क़ीमतें, बाज़ार के बदलाव और अलर्ट ट्रैक करना शुरू करने के लिए ऊपर एक वॉचलिस्ट बनाएं।"
+        },
+        "favorites": {
+          "title": "पसंदीदा",
+          "empty": "किसी एसेट को स्टार करें ताकि वह यहाँ रहे। पसंदीदा आपके अकाउंट के साथ चलते हैं।"
+        }
       }
     }
   }

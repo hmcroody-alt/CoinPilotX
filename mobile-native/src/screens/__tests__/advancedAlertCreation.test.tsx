@@ -45,9 +45,18 @@ import {
   type AlertOptions,
   type AlertWatchlistOption
 } from "../../api/alerts";
+import { activateLocale } from "../../i18n/engine";
 import { AlertManagementScreen } from "../AlertManagementScreen";
 
 type ScreenProps = React.ComponentProps<typeof AlertManagementScreen>;
+
+// This screen's copy lives in the `premium` namespace, which is extended-tier and
+// so is not in memory by default. Loading the real English catalog keeps the
+// assertions below written in the words a member actually reads; without it every
+// label degrades to a humanized key and the queries silently stop matching.
+beforeAll(async () => {
+  await activateLocale("en");
+});
 
 /**
  * An options payload shaped exactly as the endpoint builds one, run through the

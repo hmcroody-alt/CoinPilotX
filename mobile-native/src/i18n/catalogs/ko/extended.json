@@ -2215,6 +2215,267 @@
           "body": "Premium은 추적할 수 있는 보유 자산 수의 한도를 없앱니다 — 시세, 평가액, 기록은 어느 쪽이든 동일합니다.",
           "action": "Premium 보기"
         }
+      },
+      "alerts": {
+        "title": "알림 관리",
+        "loading": "알림을 불러오는 중…",
+        "loadError": "알림을 불러오지 못했습니다.",
+        "subtitle": "PulseSoc에 설정된 암호화폐·시장 알림입니다.",
+        "subtitleOffline": "이 기기에 저장된 알림을 표시합니다.",
+        "refresh": "새로 고침",
+        "refreshing": "새로 고치는 중",
+        "hero": {
+          "eyebrow": "내 알림",
+          "body": "알림을 만들고 수정하고 일시중지·재개·복제·테스트할 수 있으며, 각 알림이 어떻게 동작했는지 되짚어 볼 수 있습니다."
+        },
+        "worker": {
+          "linked": "확인 진행 중",
+          "stale": "확인 지연됨"
+        },
+        "readiness": {
+          "title": "알림 전송 준비 상태",
+          "check": "확인",
+          "checking": "확인 중",
+          "test": "테스트",
+          "testing": "테스트 중",
+          "unknown": "준비 여부는 PulseSoc이 판단합니다.",
+          "needsSetup": "설정 필요",
+          "refreshed": "알림 전송 준비 상태를 새로 고쳤습니다.",
+          "refreshFailed": "알림 전송 준비 상태를 새로 고치지 못했습니다.",
+          "tested": "{{channel}} 테스트를 마쳤습니다.",
+          "testFailed": "해당 전송 테스트에 실패했습니다."
+        },
+        "channels": {
+          "in_app": "앱 내",
+          "email": "이메일",
+          "push": "푸시",
+          "sms": "문자",
+          "telegram": "텔레그램",
+          "toggle": "{{channel}} {{state}}",
+          "on": "켜짐",
+          "off": "꺼짐",
+          "default": "PulseSoc이 판단"
+        },
+        "form": {
+          "createTitle": "알림 만들기",
+          "editTitle": "알림 수정",
+          "basic": "기본",
+          "advanced": "고급",
+          "watchTitle": "이 알림이 지켜볼 대상",
+          "watchAsset": "자산 하나",
+          "watchList": "관심목록",
+          "symbolLabel": "알림 심볼",
+          "symbolPlaceholder": "심볼",
+          "targetLabel": "알림 목표값",
+          "targetPlaceholder": "목표값",
+          "noteLabel": "알림 메모",
+          "notePlaceholder": "메모(선택)",
+          "save": "변경 사항 저장",
+          "saving": "저장 중",
+          "create": "알림 만들기",
+          "cancelEdit": "수정 취소",
+          "created": "알림을 만들었습니다.",
+          "updated": "알림을 수정했습니다.",
+          "saveFailed": "알림을 저장하지 못했습니다."
+        },
+        "premium": {
+          "notice": "여러 조건을 묶은 알림, 관심목록 알림, 시간 구간은 PulseSoc 프리미엄에 포함됩니다.",
+          "lockedBody": "고급 알림, 즉 규칙 하나에 여러 조건을 담거나 관심목록 전체를 대상으로 하거나 시간 구간을 두는 기능은 PulseSoc 프리미엄에 포함됩니다."
+        },
+        "watchlist": {
+          "fallbackName": "관심목록 {{id}}",
+          "unavailable": "사용할 수 없음",
+          "assets_other": "자산 {{count}}개"
+        },
+        "conditions": {
+          "above": "초과",
+          "below": "미만",
+          "moves_up_percent": "% 상승",
+          "moves_down_percent": "% 하락",
+          "volatility_above": "변동성 % 초과"
+        },
+        "comparators": {
+          "above": "초과",
+          "below": "미만",
+          "crosses_above": "상향 돌파",
+          "crosses_below": "하향 돌파"
+        },
+        "logic": {
+          "and": "모두 충족",
+          "or": "하나만 충족",
+          "andHint": "여기 조건이 동시에 모두 맞을 때만 알림이 발동합니다.",
+          "orHint": "여기 조건 중 하나만 맞아도 알림이 발동합니다."
+        },
+        "clause": {
+          "title": "조건",
+          "heading": "조건 {{position}}",
+          "valueLabel": "조건 {{position}} 값",
+          "percentPlaceholder": "퍼센트, 예: {{example}}",
+          "valuePlaceholder": "값",
+          "add": "조건 추가",
+          "remove": "삭제",
+          "windowLabel": "시간 구간",
+          "noWindow": "구간 없음",
+          "noWindows": "이 자산은 아직 측정할 수 있는 시간 구간이 없습니다.",
+          "windowCleared": "이 자산에서는 해당 시간 구간을 아직 측정할 수 없어 선택을 해제했습니다.",
+          "max_other": "알림 하나에는 조건을 최대 {{count}}개까지 담을 수 있습니다."
+        },
+        "list": {
+          "title": "암호화폐·시장 알림",
+          "empty": "아직 알림이 없습니다. 위에서 첫 알림을 만드세요.",
+          "subject": "{{subject}} 알림",
+          "watchlistSubject": "{{name}} 관심목록",
+          "watchlistFallback": "관심목록",
+          "meta_other": "기록 {{count}}건 · {{channels}}",
+          "detail": "상세",
+          "edit": "수정",
+          "pause": "일시중지",
+          "resume": "다시 시작",
+          "test": "테스트",
+          "duplicate": "복제",
+          "delete": "삭제"
+        },
+        "status": {
+          "active": "작동 중",
+          "paused": "일시중지",
+          "triggered": "발동됨",
+          "disabled": "사용 안 함",
+          "expired": "종료됨"
+        },
+        "actions": {
+          "paused": "알림을 일시중지했습니다.",
+          "resumed": "알림을 다시 시작했습니다.",
+          "deleted": "알림을 삭제했습니다.",
+          "duplicated": "알림을 복제했습니다.",
+          "tested": "테스트 알림을 보냈습니다.",
+          "failed": "해당 알림 작업에 실패했습니다.",
+          "editUnavailable": "여러 조건 알림과 관심목록 알림은 아직 앱에서 수정할 수 없습니다. 바꾸려면 삭제한 뒤 다시 만드세요."
+        },
+        "delete": {
+          "prompt": "{{subject}} {{condition}} 삭제를 확인하세요.",
+          "body": "이 알림을 삭제할까요? PulseSoc 계정에서 삭제되며 되돌릴 수 없습니다.",
+          "cancel": "취소",
+          "canceled": "삭제를 취소했습니다.",
+          "confirm": "삭제 확인",
+          "deleting": "삭제 중"
+        },
+        "detail": {
+          "title": "알림 상세",
+          "summary_other": "상태: {{status}}. 출처: {{source}}. {{count}}회 발동했습니다.",
+          "sourcePulseSoc": "PulseSoc",
+          "channels": "채널: {{channels}}",
+          "lastChecked": "마지막 확인: {{value}}",
+          "lastTriggered": "마지막 발동: {{value}}",
+          "notRecorded": "기록 없음",
+          "notTriggered": "발동 없음"
+        },
+        "history": {
+          "title": "알림 기록",
+          "empty": "아직 알림 기록이 없습니다. 알림이 발동하거나 테스트를 보내면 여기에 표시됩니다.",
+          "truncated": "알림 기록 {{total}}건 중 최신 {{shown}}건을 표시합니다.",
+          "market": "시장",
+          "recorded": "기록됨",
+          "fallback": "{{condition}} · 관측 {{observed}} · 기준 {{target}}",
+          "unknownCondition": "알림",
+          "unknownValue": "알 수 없음",
+          "unknownTarget": "목표값",
+          "noTimestamp": "시각 없음"
+        },
+        "managed": {
+          "title": "PulseSoc에서 관리",
+          "body": "계정 관리, 고급 인텔리전스 편집, 데이터 출처 관리, 그 밖의 알림 유형은 PulseSoc 웹사이트에서 처리합니다. 아직 앱에서는 사용할 수 없습니다.",
+          "notifications": "알림"
+        },
+        "validation": {
+          "watchlistRequired": "이 알림이 지켜볼 관심목록을 선택하세요.",
+          "watchlistUnavailable": "그 관심목록은 지금 알림에 사용할 수 없습니다.",
+          "symbolRequired": "알림을 저장하기 전에 자산 심볼을 입력하세요.",
+          "symbolInvalid": "BTC, ETH, SOL 같은 유효한 자산 심볼을 입력하세요.",
+          "premiumLocked": "여러 조건을 묶은 알림은 PulseSoc 프리미엄에 포함됩니다.",
+          "clauseRequired": "알림을 저장하기 전에 조건을 하나 이상 추가하세요.",
+          "clauseMetric": "{{position}}: 측정할 항목을 선택하세요.",
+          "clauseComparator": "{{position}}: 지원되는 비교 방식을 선택하세요.",
+          "clauseValue": "{{position}}: 값을 입력하세요.",
+          "clauseNumeric": "{{position}}: 숫자 값을 입력하세요.",
+          "clausePositive": "{{position}}: {{metric}}은(는) 양수여야 합니다.",
+          "clauseTooLarge": "{{position}}: 그 값은 안전한 기준값으로 쓰기에 너무 큽니다.",
+          "clauseNotWindowable": "{{position}}: {{metric}}은(는) 시간 구간으로 측정할 수 없습니다.",
+          "clauseWindowUnavailable": "{{position}}: 이 자산에서는 해당 시간 구간을 아직 측정할 수 없습니다.",
+          "clauseComparatorWindow": "{{position}}: {{comparator}}은(는) 시간 구간과 함께 쓸 수 없습니다.",
+          "targetRequired": "알림을 저장하기 전에 목표값을 입력하세요.",
+          "targetNumeric": "목표값은 숫자로 입력하세요.",
+          "targetPositive": "목표값은 양수여야 합니다.",
+          "targetTooLarge": "목표값이 안전한 알림 기준으로 쓰기에 너무 큽니다.",
+          "conditionUnsupported": "지원되는 알림 조건을 선택하세요.",
+          "channelRequired": "알림 채널을 하나 이상 선택하세요."
+        }
+      },
+      "watchlists": {
+        "title": "관심목록",
+        "subtitle": "관심 있는 자산을 실시간 시장 데이터로 추적합니다.",
+        "loadError": "관심목록을 불러오지 못했습니다.",
+        "actionFailed": "처리하지 못했습니다.",
+        "offline": "오프라인 — 마지막으로 받은 시세를 표시합니다.",
+        "pricesUnavailable": "실시간 시세를 일시적으로 이용할 수 없습니다.",
+        "asOf": "{{timestamp}} 기준 시세",
+        "tabs": {
+          "lists": "내 관심목록",
+          "favorites": "즐겨찾기"
+        },
+        "create": {
+          "title": "관심목록 만들기",
+          "placeholder": "예: 내 암호화폐",
+          "label": "새 관심목록 이름",
+          "submit": "관심목록 만들기",
+          "creating": "만드는 중…",
+          "nameRequired": "관심목록 이름을 먼저 입력하세요.",
+          "created": "관심목록을 만들었습니다."
+        },
+        "rename": {
+          "action": "이름 변경",
+          "save": "저장",
+          "cancel": "취소",
+          "placeholder": "관심목록 이름",
+          "label": "관심목록 이름",
+          "nameRequired": "관심목록에는 이름이 필요합니다.",
+          "renamed": "관심목록 이름을 변경했습니다."
+        },
+        "delete": {
+          "action": "삭제",
+          "title": "관심목록 삭제",
+          "body": "“{{name}}”을(를) 삭제할까요? 이 목록에서 자산이 사라집니다. 알림과 즐겨찾기는 그대로 유지됩니다.",
+          "cancel": "취소",
+          "confirm": "삭제",
+          "deleted": "관심목록을 삭제했습니다."
+        },
+        "assets": {
+          "add": "자산 추가",
+          "done": "완료",
+          "searchPlaceholder": "자산 검색, 예: BTC",
+          "searchLabel": "자산 검색",
+          "noMatches": "일치하는 추적 자산이 없습니다.",
+          "empty": "아직 자산이 없습니다. “자산 추가”로 추적을 시작하세요.",
+          "added": "{{symbol}}을(를) 추가했습니다.",
+          "removed": "{{symbol}}을(를) 삭제했습니다.",
+          "remove": "삭제",
+          "removeLabel": "{{symbol}} 삭제",
+          "favorite": "{{symbol}} 즐겨찾기 추가",
+          "unfavorite": "{{symbol}} 즐겨찾기 해제",
+          "favoritesUpdated": "즐겨찾기를 업데이트했습니다.",
+          "cap": "시가총액 {{value}}",
+          "a11y": "{{name}}, {{price}}",
+          "average": "평균 {{percent}}",
+          "alerts_other": "알림 {{count}}개",
+          "count_other": "자산 {{count}}개"
+        },
+        "empty": {
+          "title": "아직 관심목록이 없습니다",
+          "body": "위에서 하나 만들어 관심 자산의 시세, 시장 변동, 알림을 추적해 보세요."
+        },
+        "favorites": {
+          "title": "즐겨찾기",
+          "empty": "자산에 별을 표시하면 여기에 모입니다. 즐겨찾기는 계정을 따라갑니다."
+        }
       }
     }
   }

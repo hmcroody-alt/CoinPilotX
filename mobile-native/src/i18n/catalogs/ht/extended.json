@@ -2216,6 +2216,267 @@
           "body": "Premium retire limit sou konbyen pozisyon ou ka swiv. Pri, valè ak istwa yo menm nan tou de ka yo.",
           "action": "Gade Premium"
         }
+      },
+      "alerts": {
+        "title": "Jesyon alèt",
+        "loading": "N ap chaje alèt ou yo…",
+        "loadError": "Nou pa t ka chaje alèt ou yo.",
+        "subtitle": "Alèt kripto ak mache ou yo, jan PulseSoc mete yo.",
+        "subtitleOffline": "N ap montre alèt ki sere sou aparèy sa a.",
+        "refresh": "Rafrechi",
+        "refreshing": "N ap rafrechi",
+        "hero": {
+          "eyebrow": "Alèt ou yo",
+          "body": "Kreye, modifye, fè poz, kontinye, kopye epi teste alèt ou yo, epi gade sa chak grenn te fè."
+        },
+        "worker": {
+          "linked": "Siveyans ap fèt",
+          "stale": "Siveyans an reta"
+        },
+        "readiness": {
+          "title": "Eta livrezon",
+          "check": "Tcheke",
+          "checking": "N ap tcheke",
+          "test": "Tès",
+          "testing": "N ap teste",
+          "unknown": "PulseSoc deside kilè sa a pare.",
+          "needsSetup": "Bezwen konfigirasyon",
+          "refreshed": "Eta livrezon an rafrechi.",
+          "refreshFailed": "Eta livrezon an pa t ka rafrechi.",
+          "tested": "Tès {{channel}} la fini.",
+          "testFailed": "Tès livrezon sa a pa t mache."
+        },
+        "channels": {
+          "in_app": "Nan aplikasyon an",
+          "email": "Imèl",
+          "push": "Push",
+          "sms": "SMS",
+          "telegram": "Telegram",
+          "toggle": "{{channel}}: {{state}}",
+          "on": "Aktive",
+          "off": "Dezaktive",
+          "default": "PulseSoc deside"
+        },
+        "form": {
+          "createTitle": "Kreye yon alèt",
+          "editTitle": "Modifye alèt la",
+          "basic": "Baz",
+          "advanced": "Avanse",
+          "watchTitle": "Sa alèt sa a ap siveye",
+          "watchAsset": "Yon sèl aktif",
+          "watchList": "Yon lis siveyans",
+          "symbolLabel": "Senbòl alèt la",
+          "symbolPlaceholder": "Senbòl",
+          "targetLabel": "Valè sib alèt la",
+          "targetPlaceholder": "Valè sib",
+          "noteLabel": "Nòt alèt la",
+          "notePlaceholder": "Nòt opsyonèl",
+          "save": "Anrejistre chanjman yo",
+          "saving": "N ap anrejistre",
+          "create": "Kreye alèt la",
+          "cancelEdit": "Anile modifikasyon an",
+          "created": "Alèt la kreye.",
+          "updated": "Alèt la mete ajou.",
+          "saveFailed": "Nou pa t ka anrejistre alèt la."
+        },
+        "premium": {
+          "notice": "Alèt ak plizyè kondisyon, alèt sou lis siveyans ak fenèt tan fè pati PulseSoc Premium.",
+          "lockedBody": "Alèt avanse — plizyè kondisyon nan yon sèl règ, règ sou tout yon lis siveyans, ak fenèt tan — fè pati PulseSoc Premium."
+        },
+        "watchlist": {
+          "fallbackName": "Lis siveyans {{id}}",
+          "unavailable": "Pa disponib",
+          "assets_other": "{{count}} aktif"
+        },
+        "conditions": {
+          "above": "Pi wo",
+          "below": "Pi ba",
+          "moves_up_percent": "Monte %",
+          "moves_down_percent": "Desann %",
+          "volatility_above": "Volatilite pi wo %"
+        },
+        "comparators": {
+          "above": "Pi wo",
+          "below": "Pi ba",
+          "crosses_above": "Travèse anwo",
+          "crosses_below": "Travèse anba"
+        },
+        "logic": {
+          "and": "Tout sa yo",
+          "or": "Nenpòt nan sa yo",
+          "andHint": "Alèt la deklanche sèlman lè tout sa yo vre an menm tan.",
+          "orHint": "Alèt la deklanche lè nenpòt youn nan sa yo vre."
+        },
+        "clause": {
+          "title": "Kondisyon",
+          "heading": "Kondisyon {{position}}",
+          "valueLabel": "Valè kondisyon {{position}}",
+          "percentPlaceholder": "Pousantaj, pa egzanp {{example}}",
+          "valuePlaceholder": "Valè",
+          "add": "Ajoute yon kondisyon",
+          "remove": "Retire",
+          "windowLabel": "Fenèt tan",
+          "noWindow": "Pa gen fenèt",
+          "noWindows": "Poko gen fenèt tan ki ka mezire pou aktif sa a.",
+          "windowCleared": "Fenèt tan sa a poko ka mezire pou aktif sa a, kidonk nou retire l.",
+          "max_other": "Yon alèt ka kenbe jiska {{count}} kondisyon."
+        },
+        "list": {
+          "title": "Alèt kripto ak mache",
+          "empty": "Ou poko gen alèt. Kreye premye a anwo a.",
+          "subject": "Alèt {{subject}}",
+          "watchlistSubject": "Lis siveyans {{name}}",
+          "watchlistFallback": "Lis siveyans",
+          "meta_other": "{{count}} evènman istwa · {{channels}}",
+          "detail": "Detay",
+          "edit": "Modifye",
+          "pause": "Fè poz",
+          "resume": "Kontinye",
+          "test": "Tès",
+          "duplicate": "Fè kopi",
+          "delete": "Siprime"
+        },
+        "status": {
+          "active": "Aktif",
+          "paused": "An poz",
+          "triggered": "Deklanche",
+          "disabled": "Dezaktive",
+          "expired": "Fini"
+        },
+        "actions": {
+          "paused": "Alèt la an poz.",
+          "resumed": "Alèt la ap mache ankò.",
+          "deleted": "Alèt la siprime.",
+          "duplicated": "Kopi alèt la fèt.",
+          "tested": "Alèt tès la voye.",
+          "failed": "Aksyon sa a sou alèt la pa t mache.",
+          "editUnavailable": "Ou poko ka modifye yon alèt ak plizyè kondisyon oswa yon alèt sou lis siveyans nan aplikasyon an. Siprime l epi kreye l ankò pou chanje l."
+        },
+        "delete": {
+          "prompt": "Konfime siprime a pou {{subject}} {{condition}}.",
+          "body": "Siprime alèt sa a? Li retire nan kont PulseSoc ou epi ou p ap ka defè sa.",
+          "cancel": "Anile",
+          "canceled": "Siprime a anile.",
+          "confirm": "Konfime siprime a",
+          "deleting": "N ap siprime"
+        },
+        "detail": {
+          "title": "Detay alèt la",
+          "summary_other": "Estati: {{status}}. Sous: {{source}}. Li deklanche {{count}} fwa.",
+          "sourcePulseSoc": "PulseSoc",
+          "channels": "Kanal: {{channels}}",
+          "lastChecked": "Dènye fwa tcheke: {{value}}",
+          "lastTriggered": "Dènye fwa deklanche: {{value}}",
+          "notRecorded": "pa anrejistre",
+          "notTriggered": "pa deklanche"
+        },
+        "history": {
+          "title": "Istwa alèt la",
+          "empty": "Poko gen istwa alèt. Evènman yo parèt isit la apre yon alèt deklanche oswa apre ou voye yon tès.",
+          "truncated": "N ap montre {{shown}} pi resan yo sou {{total}} evènman istwa alèt.",
+          "market": "Mache",
+          "recorded": "anrejistre",
+          "fallback": "{{condition}} nan {{observed}} kont {{target}}",
+          "unknownCondition": "Alèt",
+          "unknownValue": "enkoni",
+          "unknownTarget": "sib",
+          "noTimestamp": "Pa gen dat ak lè"
+        },
+        "managed": {
+          "title": "PulseSoc jere sa",
+          "body": "Administrasyon kont, modifikasyon Entèlijans avanse, jesyon sous done, ak lòt kalite alèt fèt sou sit entènèt PulseSoc la. Yo poko disponib nan aplikasyon an.",
+          "notifications": "Notifikasyon"
+        },
+        "validation": {
+          "watchlistRequired": "Chwazi yon lis siveyans pou alèt sa a siveye.",
+          "watchlistUnavailable": "Lis siveyans sa a pa ka sèvi pou yon alèt kounye a.",
+          "symbolRequired": "Ajoute yon senbòl aktif anvan ou anrejistre alèt la.",
+          "symbolInvalid": "Sèvi ak yon senbòl aktif ki valab tankou BTC, ETH oswa SOL.",
+          "premiumLocked": "Alèt ak plizyè kondisyon fè pati PulseSoc Premium.",
+          "clauseRequired": "Ajoute omwen yon kondisyon anvan ou anrejistre alèt la.",
+          "clauseMetric": "{{position}}: chwazi sa pou mezire.",
+          "clauseComparator": "{{position}}: chwazi yon konparezon ki sipòte.",
+          "clauseValue": "{{position}}: ajoute yon valè.",
+          "clauseNumeric": "{{position}}: sèvi ak yon valè nimerik.",
+          "clausePositive": "{{position}}: {{metric}} dwe pi gran pase zewo.",
+          "clauseTooLarge": "{{position}}: valè sa a twò gwo pou yon limit ki an sekirite.",
+          "clauseNotWindowable": "{{position}}: {{metric}} pa ka mezire sou yon fenèt tan.",
+          "clauseWindowUnavailable": "{{position}}: fenèt tan sa a poko ka mezire pou aktif sa a.",
+          "clauseComparatorWindow": "{{position}}: {{comparator}} pa ka sèvi ak yon fenèt tan.",
+          "targetRequired": "Ajoute yon valè sib anvan ou anrejistre alèt la.",
+          "targetNumeric": "Sèvi ak yon valè sib nimerik.",
+          "targetPositive": "Valè sib la dwe pi gran pase zewo.",
+          "targetTooLarge": "Valè sib la twò gwo pou yon limit alèt ki an sekirite.",
+          "conditionUnsupported": "Chwazi yon kondisyon alèt ki sipòte.",
+          "channelRequired": "Chwazi omwen yon kanal livrezon."
+        }
+      },
+      "watchlists": {
+        "title": "Lis siveyans",
+        "subtitle": "Swiv aktif ki enterese ou yo ak done mache an dirèk.",
+        "loadError": "Nou pa t ka chaje lis siveyans yo.",
+        "actionFailed": "Sa pa t mache.",
+        "offline": "Ou pa konekte — n ap montre dènye pri nou te resevwa yo.",
+        "pricesUnavailable": "Pri an dirèk yo pa disponib pou kounye a.",
+        "asOf": "Pri yo nan dat {{timestamp}}",
+        "tabs": {
+          "lists": "Lis siveyans mwen yo",
+          "favorites": "Favori"
+        },
+        "create": {
+          "title": "Kreye yon lis siveyans",
+          "placeholder": "pa egzanp Kripto mwen",
+          "label": "Non nouvo lis siveyans lan",
+          "submit": "Kreye lis siveyans lan",
+          "creating": "N ap kreye…",
+          "nameRequired": "Bay lis siveyans ou an yon non anvan.",
+          "created": "Lis siveyans lan kreye."
+        },
+        "rename": {
+          "action": "Chanje non",
+          "save": "Anrejistre",
+          "cancel": "Anile",
+          "placeholder": "Non lis siveyans lan",
+          "label": "Non lis siveyans lan",
+          "nameRequired": "Yon lis siveyans bezwen yon non.",
+          "renamed": "Non lis siveyans lan chanje."
+        },
+        "delete": {
+          "action": "Siprime",
+          "title": "Siprime lis siveyans lan",
+          "body": "Siprime “{{name}}”? Aktif li yo retire nan lis sa a. Alèt ou yo ak favori ou yo rete.",
+          "cancel": "Anile",
+          "confirm": "Siprime",
+          "deleted": "Lis siveyans lan siprime."
+        },
+        "assets": {
+          "add": "Ajoute yon aktif",
+          "done": "Fini",
+          "searchPlaceholder": "Chèche aktif, pa egzanp BTC",
+          "searchLabel": "Chèche aktif",
+          "noMatches": "Pa gen aktif nou swiv ki koresponn ak sa.",
+          "empty": "Poko gen aktif. Sèvi ak “Ajoute yon aktif” pou kòmanse swiv youn.",
+          "added": "{{symbol}} ajoute.",
+          "removed": "{{symbol}} retire.",
+          "remove": "Retire",
+          "removeLabel": "Retire {{symbol}}",
+          "favorite": "Mete {{symbol}} nan favori",
+          "unfavorite": "Retire {{symbol}} nan favori",
+          "favoritesUpdated": "Favori yo mete ajou.",
+          "cap": "Kapitalizasyon {{value}}",
+          "a11y": "{{name}}, {{price}}",
+          "average": "mwayèn {{percent}}",
+          "alerts_other": "{{count}} alèt",
+          "count_other": "{{count}} aktif"
+        },
+        "empty": {
+          "title": "Poko gen lis siveyans",
+          "body": "Kreye youn anwo a pou kòmanse swiv pri, mouvman mache ak alèt pou aktif ou swiv yo."
+        },
+        "favorites": {
+          "title": "Favori",
+          "empty": "Mete yon zetwal sou yon aktif pou kenbe l isit la. Favori yo swiv kont ou."
+        }
       }
     }
   }
