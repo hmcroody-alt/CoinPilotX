@@ -463,9 +463,29 @@ def list_alerts(conn: Any, user_id: int) -> list[dict[str, Any]]:
     result = alert_engine.list_alert_rules(int(user_id), limit=200)
     alerts = result.get("alerts") or []
     history_counts = _alert_history_counts(conn, int(user_id), [int(alert.get("id") or 0) for alert in alerts])
+    names = _watchlist_names(conn, int(user_id),
+                            [_safe_int(alert.get("watchlist_id"), 0) for alert in alerts])
     for alert in alerts:
         alert["history_count"] = history_counts.get(int(alert.get("id") or 0), 0)
+        # A list rule is about no single asset, so the engine leaves its symbol
+        # blank. Without the list's name every such rule reads as the same
+        # anonymous card and the member cannot tell which of them is which.
+        alert["watchlist_name"] = names.get(_safe_int(alert.get("watchlist_id"), 0), "")
     return alerts
+
+
+def _watchlist_names(conn: Any, user_id: int, watchlist_ids: list[int]) -> dict[int, str]:
+    wanted = sorted({watchlist_id for watchlist_id in watchlist_ids if watchlist_id})
+    if not wanted:
+        return {}
+    cur = conn.cursor()
+    placeholders = ",".join(["?"] * len(wanted))
+    cur.execute(
+        f"SELECT id, name FROM crypto_watchlists WHERE user_id=? AND id IN ({placeholders})",
+        (int(user_id), *wanted),
+    )
+    return {_safe_int((_row_dict(row) or {}).get("id"), 0): str((_row_dict(row) or {}).get("name") or "")
+            for row in cur.fetchall()}
 
 
 def _alert_history_counts(conn: Any, user_id: int, alert_ids: list[int]) -> dict[int, int]:
@@ -825,6 +845,13 @@ def alert_options(conn: Any, user_id: int, symbol: Any = "",
                  "kind": "crossing" if key in crypto_alert_conditions.CROSSING_COMPARATORS else "level"}
                 for key in crypto_alert_conditions.COMPARATORS
             ],
+            # A window's baseline advances every sample, so a crossing over one
+            # would fire on the baseline moving rather than the market moving.
+            # Validation refuses that combination; publishing it here is what
+            # keeps the form from offering a pairing it would then be told off
+            # for, instead of the form re-deriving the same rule and drifting.
+            "window_comparators": [key for key in crypto_alert_conditions.COMPARATORS
+                                   if key in crypto_alert_conditions.LEVEL_COMPARATORS],
         },
         "windows": windows["windows"],
         "window_coverage": windows["coverage"],

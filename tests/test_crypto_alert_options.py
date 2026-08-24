@@ -379,6 +379,24 @@ def test_crossing_comparators_are_distinguished_from_level_ones():
     check("above is a level", kinds["above"], "level")
 
 
+def test_a_window_offers_only_the_level_comparators():
+    """A window's baseline advances every sample, so a crossing over one fires on
+    the baseline moving rather than the market moving. Validation refuses that
+    pairing; the form must not offer it and then be told off for it."""
+    user_id = premium_user()
+    seed_series("MMM", span_minutes=1440)
+    payload = options(user_id, symbol="MMM")
+    check("levels only", payload["advanced"]["window_comparators"], ["above", "below"])
+
+    refused = alert_engine.create_alert_rule(
+        user_id, symbol="MMM", channels={"push": True},
+        condition_spec={"logic": "and", "clauses": [
+            {"metric": "price", "comparator": "crosses_above", "value": 1.0,
+             "window_minutes": 60}]},
+    )
+    check("and creation agrees it is not offerable", refused.get("ok"), False)
+
+
 def test_the_basic_conditions_keep_a_stable_order():
     """Published as a list, so an unordered set here would reshuffle the buttons
     between requests."""
@@ -435,6 +453,7 @@ TESTS = [
     test_a_free_accounts_lists_are_locked_not_hidden,
     test_windowable_metrics_are_marked_and_the_deltas_are_not,
     test_crossing_comparators_are_distinguished_from_level_ones,
+    test_a_window_offers_only_the_level_comparators,
     test_the_basic_conditions_keep_a_stable_order,
     test_every_offered_window_is_one_creation_accepts,
     test_coverage_detail_is_reported_per_asset,

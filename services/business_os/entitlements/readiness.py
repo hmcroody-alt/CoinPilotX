@@ -134,9 +134,15 @@ _REGISTRY: tuple[Feature, ...] = (
             "evaluation path. Time-window conditions now evaluate against a real "
             "sampled series (services.market_observations, written only by "
             "alert_worker) and a window the series cannot answer is undecidable "
-            "rather than zero. They are still not advertised: no surface offers "
-            "them yet, and a window is only honest to sell once the creation UI "
-            "offers exactly what coverage() reports it can answer."
+            "rather than zero. The condition this note used to carry is now met: "
+            "the creation form renders from /api/crypto/alerts/options, which "
+            "derives its window list solely from market_observations.coverage() "
+            "for the chosen asset (the intersection, for a watchlist rule), so "
+            "the form cannot offer a window the rule it creates could not "
+            "decide. Advertise time windows only as a capability, never with a "
+            "specific duration: which durations exist for an asset depends on "
+            "how long it has been sampled, so '24h price windows' is a claim no "
+            "benefits string can keep."
         ),
     ),
     Feature(
