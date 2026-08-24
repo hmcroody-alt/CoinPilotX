@@ -2042,7 +2042,16 @@
       "expires": "Fin",
       "cancelPending": "Cet abonnement doit prendre fin et ne sera pas renouvelé.",
       "none": "Nous n'avons pas d'informations de facturation pour cette adhésion.",
-      "founderNone": "Adhésion fondateur : aucune facturation, rien à renouveler."
+      "founderNone": "Adhésion fondateur : aucune facturation, rien à renouveler.",
+      "planValue": "PulseSoc Premium — {{period}}",
+      "planValueUnknown": "PulseSoc Premium",
+      "price": "Prix",
+      "renewsOn": "Se renouvelle le",
+      "expiresOn": "Se termine le",
+      "since": "Abonné depuis",
+      "loadingValue": "Chargement",
+      "graceNote": "Apple réessaie votre paiement. Votre accès reste actif entre-temps.",
+      "retryNote": "Votre dernier paiement n'a pas abouti. Mettez à jour votre moyen de paiement dans l'App Store pour continuer."
     },
     "period": {
       "monthly": "Mensuel",
@@ -2054,7 +2063,8 @@
     "provider": {
       "apple_iap": "Apple",
       "stripe": "Carte",
-      "unknown": "—"
+      "unknown": "—",
+      "apple_app_store": "Apple App Store"
     },
     "subStatus": {
       "active": "Actif",
@@ -2507,6 +2517,17 @@
           "empty": "Marquez un actif d'une étoile pour le garder ici. Vos favoris suivent votre compte."
         }
       }
+    },
+    "subState": {
+      "active": "Actif",
+      "trialing": "Essai",
+      "grace": "En période de grâce",
+      "billing_retry": "Nouvelle tentative de paiement",
+      "canceled": "Résilié — renouvellement désactivé",
+      "expired": "Expiré",
+      "revoked": "Révoqué",
+      "paused": "En pause",
+      "unknown": "Indisponible"
     }
   }
 }

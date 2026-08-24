@@ -2036,7 +2036,16 @@
       "expires": "종료일",
       "cancelPending": "이 구독은 종료 예정이며 갱신되지 않습니다.",
       "none": "이 멤버십의 결제 정보가 없습니다.",
-      "founderNone": "창립 멤버십 — 결제도 갱신도 없습니다."
+      "founderNone": "창립 멤버십 — 결제도 갱신도 없습니다.",
+      "planValue": "PulseSoc Premium — {{period}}",
+      "planValueUnknown": "PulseSoc Premium",
+      "price": "가격",
+      "renewsOn": "갱신일",
+      "expiresOn": "종료일",
+      "since": "구독 시작일",
+      "loadingValue": "불러오는 중",
+      "graceNote": "Apple에서 결제를 다시 시도하고 있습니다. 그동안 이용은 계속됩니다.",
+      "retryNote": "지난 결제가 완료되지 않았습니다. 계속하려면 App Store에서 결제 수단을 업데이트하세요."
     },
     "period": {
       "monthly": "월간",
@@ -2048,7 +2057,8 @@
     "provider": {
       "apple_iap": "Apple",
       "stripe": "카드",
-      "unknown": "—"
+      "unknown": "—",
+      "apple_app_store": "App Store"
     },
     "subStatus": {
       "active": "이용 중",
@@ -2493,6 +2503,17 @@
           "empty": "자산에 별을 표시하면 여기에 모입니다. 즐겨찾기는 계정을 따라갑니다."
         }
       }
+    },
+    "subState": {
+      "active": "활성",
+      "trialing": "체험",
+      "grace": "유예 기간",
+      "billing_retry": "결제 재시도",
+      "canceled": "취소됨 — 자동 갱신 꺼짐",
+      "expired": "만료됨",
+      "revoked": "취소 처리됨",
+      "paused": "일시 중지됨",
+      "unknown": "확인 불가"
     }
   }
 }

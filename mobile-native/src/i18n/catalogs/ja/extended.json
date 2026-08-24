@@ -2029,7 +2029,16 @@
       "expires": "終了日",
       "cancelPending": "このサブスクリプションは終了予定で、更新されません。",
       "none": "このメンバーシップの請求情報はありません。",
-      "founderNone": "創設メンバーシップ — 請求も更新もありません。"
+      "founderNone": "創設メンバーシップ — 請求も更新もありません。",
+      "planValue": "PulseSoc Premium — {{period}}",
+      "planValueUnknown": "PulseSoc Premium",
+      "price": "価格",
+      "renewsOn": "更新日",
+      "expiresOn": "終了日",
+      "since": "利用開始日",
+      "loadingValue": "読み込み中",
+      "graceNote": "Appleがお支払いを再試行しています。その間もご利用は継続されます。",
+      "retryNote": "前回のお支払いが完了しませんでした。続けるにはApp Storeでお支払い方法を更新してください。"
     },
     "period": {
       "monthly": "月額",
@@ -2041,7 +2050,8 @@
     "provider": {
       "apple_iap": "Apple",
       "stripe": "カード",
-      "unknown": "—"
+      "unknown": "—",
+      "apple_app_store": "App Store"
     },
     "subStatus": {
       "active": "有効",
@@ -2486,6 +2496,17 @@
           "empty": "資産にスターを付けると、ここに表示されます。お気に入りはアカウントに保存されます。"
         }
       }
+    },
+    "subState": {
+      "active": "有効",
+      "trialing": "トライアル",
+      "grace": "猶予期間中",
+      "billing_retry": "支払い再試行中",
+      "canceled": "キャンセル済み — 自動更新オフ",
+      "expired": "期限切れ",
+      "revoked": "取り消し済み",
+      "paused": "一時停止中",
+      "unknown": "利用できません"
     }
   }
 }

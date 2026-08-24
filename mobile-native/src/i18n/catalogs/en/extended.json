@@ -2042,7 +2042,16 @@
       "expires": "Ends",
       "cancelPending": "This subscription is set to end and will not renew.",
       "none": "We don't have billing details for this membership.",
-      "founderNone": "Founding membership — no billing, nothing to renew."
+      "founderNone": "Founding membership — no billing, nothing to renew.",
+      "planValue": "PulseSoc Premium — {{period}}",
+      "planValueUnknown": "PulseSoc Premium",
+      "price": "Price",
+      "renewsOn": "Renews on",
+      "expiresOn": "Expires on",
+      "since": "Subscription since",
+      "loadingValue": "Loading",
+      "graceNote": "Apple is retrying your payment. Your access stays on in the meantime.",
+      "retryNote": "Your last payment didn't go through. Update your payment method in the App Store to continue."
     },
     "period": {
       "monthly": "Monthly",
@@ -2054,7 +2063,8 @@
     "provider": {
       "apple_iap": "Apple",
       "stripe": "Card",
-      "unknown": "—"
+      "unknown": "—",
+      "apple_app_store": "Apple App Store"
     },
     "subStatus": {
       "active": "Active",
@@ -2507,6 +2517,17 @@
           "empty": "Star an asset to keep it here. Favorites follow your account."
         }
       }
+    },
+    "subState": {
+      "active": "Active",
+      "trialing": "Trial",
+      "grace": "In grace period",
+      "billing_retry": "Billing retry",
+      "canceled": "Cancelled — auto-renew off",
+      "expired": "Expired",
+      "revoked": "Revoked",
+      "paused": "Paused",
+      "unknown": "Unavailable"
     }
   }
 }

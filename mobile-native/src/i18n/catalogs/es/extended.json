@@ -2042,7 +2042,16 @@
       "expires": "Finaliza",
       "cancelPending": "Esta suscripción está programada para finalizar y no se renovará.",
       "none": "No tenemos datos de facturación para esta membresía.",
-      "founderNone": "Membresía de fundador: sin facturación, nada que renovar."
+      "founderNone": "Membresía de fundador: sin facturación, nada que renovar.",
+      "planValue": "PulseSoc Premium — {{period}}",
+      "planValueUnknown": "PulseSoc Premium",
+      "price": "Precio",
+      "renewsOn": "Se renueva el",
+      "expiresOn": "Finaliza el",
+      "since": "Suscrito desde",
+      "loadingValue": "Cargando",
+      "graceNote": "Apple está reintentando tu pago. Mientras tanto, tu acceso sigue activo.",
+      "retryNote": "Tu último pago no se completó. Actualiza tu método de pago en la App Store para continuar."
     },
     "period": {
       "monthly": "Mensual",
@@ -2054,7 +2063,8 @@
     "provider": {
       "apple_iap": "Apple",
       "stripe": "Tarjeta",
-      "unknown": "—"
+      "unknown": "—",
+      "apple_app_store": "Apple App Store"
     },
     "subStatus": {
       "active": "Activa",
@@ -2507,6 +2517,17 @@
           "empty": "Marca un activo con la estrella para tenerlo aquí. Los favoritos van con tu cuenta."
         }
       }
+    },
+    "subState": {
+      "active": "Activa",
+      "trialing": "Prueba",
+      "grace": "En período de gracia",
+      "billing_retry": "Reintento de cobro",
+      "canceled": "Cancelada — renovación desactivada",
+      "expired": "Vencida",
+      "revoked": "Revocada",
+      "paused": "En pausa",
+      "unknown": "No disponible"
     }
   }
 }

@@ -75,17 +75,60 @@ export type PremiumFounder = {
 };
 
 /**
+ * The state the subscription card switches on.
+ *
+ * Distinct from `status`, which is the provider's own word for the same thing.
+ * `status` is not safe to display: rows written before the Apple adapter had a
+ * fixed vocabulary can hold anything, so the server closes this set and maps
+ * everything it does not recognise to `unknown`.
+ */
+export type PremiumSubscriptionState =
+  | "active"
+  | "trialing"
+  | "grace"
+  | "billing_retry"
+  | "canceled"
+  | "expired"
+  | "revoked"
+  | "paused"
+  | "unknown";
+
+/**
  * Safe billing facts. The server returns no subscription id, no transaction id
  * and no receipt, so there is nothing here a screen could leak.
+ *
+ * `renews_at` and `expires_at` are deliberately two fields rather than one date
+ * plus a flag. They are never both set: the same instant means "you will be
+ * charged" or "your access stops", and which one it is has already been decided
+ * server-side so no screen can render the wrong verb next to the right date.
  */
 export type PremiumSubscription = {
   provider: string;
   plan_key: string;
   billing_period: string;
+  /** The provider's own status word. Diagnostic — render `state` instead. */
   status: string;
   current_period_end: string | null;
   cancel_at_period_end: boolean;
+  state: PremiumSubscriptionState;
+  auto_renew: boolean;
+  renews_at: string | null;
+  expires_at: string | null;
+  /**
+   * The Apple product identifier behind this subscription, derived from the
+   * plan key the server set from a verified `productId`. The app needs it to ask
+   * StoreKit for *this member's* localized price — which is why no price, and no
+   * currency, is ever sent from the server.
+   */
+  product_id: string | null;
+  /** Verified original purchase date. `null` means omit the row, not "unknown". */
+  original_purchase_at: string | null;
 };
+
+const SUBSCRIPTION_STATES: readonly PremiumSubscriptionState[] = [
+  "active", "trialing", "grace", "billing_retry",
+  "canceled", "expired", "revoked", "paused", "unknown"
+];
 
 /**
  * One advertised benefit. The server has already filtered this list to
@@ -178,20 +221,45 @@ export function normalizePremiumCenter(input: Partial<PremiumCenter> | null | un
       founder_number: Number(founder?.founder_number || 0),
       price_cents: typeof founder?.price_cents === "number" ? founder.price_cents : null
     },
-    subscription: subscription
-      ? {
-          provider: String(subscription.provider || ""),
-          plan_key: String(subscription.plan_key || ""),
-          billing_period: String(subscription.billing_period || ""),
-          status: String(subscription.status || ""),
-          current_period_end: subscription.current_period_end || null,
-          cancel_at_period_end: Boolean(subscription.cancel_at_period_end)
-        }
-      : null,
+    subscription: subscription ? normalizeSubscription(subscription) : null,
     benefits: Array.isArray(input?.benefits) ? input.benefits : [],
     not_yet: Array.isArray(input?.not_yet) ? input.not_yet : [],
     notices: Array.isArray(input?.notices) ? input.notices : [],
     not_verification: String(input?.not_verification || "")
+  };
+}
+
+/**
+ * Fill in the subscription facts without ever upgrading a silence into a claim.
+ *
+ * Two defaults carry real weight. An unrecognised `state` becomes `unknown`
+ * rather than `active`, so a payload this build does not understand shows a
+ * cautious card instead of asserting a live membership. And `auto_renew` falls
+ * back to the inverse of `cancel_at_period_end` rather than to `true`, so an
+ * older server that predates the field still produces the honest verb.
+ */
+function normalizeSubscription(input: Partial<PremiumSubscription>): PremiumSubscription {
+  const state = SUBSCRIPTION_STATES.includes(input.state as PremiumSubscriptionState)
+    ? (input.state as PremiumSubscriptionState)
+    : "unknown";
+  const cancelAtPeriodEnd = Boolean(input.cancel_at_period_end);
+  const autoRenew = typeof input.auto_renew === "boolean" ? input.auto_renew : !cancelAtPeriodEnd;
+  const periodEnd = input.current_period_end || null;
+  return {
+    provider: String(input.provider || ""),
+    plan_key: String(input.plan_key || ""),
+    billing_period: String(input.billing_period || ""),
+    status: String(input.status || ""),
+    current_period_end: periodEnd,
+    cancel_at_period_end: cancelAtPeriodEnd,
+    state,
+    auto_renew: autoRenew,
+    // Recomputed rather than trusted, so the two can never both be set — the
+    // one bug that would put "Renews" above the date a member loses access.
+    renews_at: autoRenew && state !== "expired" ? input.renews_at ?? periodEnd : null,
+    expires_at: !autoRenew || state === "expired" ? input.expires_at ?? periodEnd : null,
+    product_id: input.product_id || null,
+    original_purchase_at: input.original_purchase_at || null
   };
 }
 

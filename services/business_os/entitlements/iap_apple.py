@@ -299,14 +299,51 @@ def _ms_to_iso(value: Any) -> Optional[str]:
 # Apple notificationType -> our lifecycle intent.
 #   grant   : project active entitlements (SUBSCRIBED, DID_RENEW, OFFER_REDEEMED,
 #             DID_CHANGE_RENEWAL_PREF keeps access, PRICE_INCREASE informational)
-#   grace   : keep access but flag grace (GRACE_PERIOD / billing retry)
+#   grace   : keep access but flag grace (Apple is holding access open)
 #   revoke  : strip access now (REFUND, REVOKE)
-#   expire  : let it lapse at period end (EXPIRED, DID_CHANGE_RENEWAL_STATUS off)
+#   expire  : let it lapse at period end (EXPIRED)
+#   record  : land the row, change nothing; existing grants lapse at period_end
 _GRANT_TYPES = {"SUBSCRIBED", "DID_RENEW", "OFFER_REDEEMED",
                 "DID_CHANGE_RENEWAL_PREF", "RENEWAL_EXTENDED"}
+#: Kept for defensiveness only. Apple does **not** emit ``GRACE_PERIOD`` as a
+#: notificationType — a failed renewal always arrives as ``DID_FAIL_TO_RENEW``
+#: and the *subtype* says whether Apple is holding access open. Matching on the
+#: type alone meant grace was never once detected in production, while the unit
+#: test passed because it hand-built a notification Apple never sends.
 _GRACE_TYPES = {"GRACE_PERIOD"}
+_FAIL_TO_RENEW = "DID_FAIL_TO_RENEW"
+_RENEWAL_STATUS_CHANGED = "DID_CHANGE_RENEWAL_STATUS"
 _REVOKE_TYPES = {"REFUND", "REVOKE"}
 _EXPIRE_TYPES = {"EXPIRED"}
+
+#: The only status strings this adapter may write. The member-facing Premium
+#: screen renders each of these from a translated catalog, so anything outside
+#: this set would surface to a paying member as raw provider jargon.
+APPLE_SUBSCRIPTION_STATUSES = frozenset(
+    {"active", "grace_period", "billing_retry", "canceled", "expired",
+     "refunded", "unknown"}
+)
+
+
+def _auto_renew_from(renewal: Optional[Mapping[str, Any]], subtype: Any) -> Optional[bool]:
+    """Apple's auto-renew flag, or ``None`` when this notification doesn't say.
+
+    ``renewalInfo.autoRenewStatus`` is authoritative when present. The subtype is
+    a fallback for the renewal-status notification, which always carries one.
+    ``None`` is a real answer and must stay distinguishable from ``False``: the
+    caller preserves the stored flag rather than guessing that a member who never
+    cancelled has cancelled.
+    """
+    if isinstance(renewal, Mapping) and renewal.get("autoRenewStatus") is not None:
+        try:
+            return int(renewal["autoRenewStatus"]) == 1
+        except (TypeError, ValueError):
+            pass
+    if subtype == "AUTO_RENEW_ENABLED":
+        return True
+    if subtype == "AUTO_RENEW_DISABLED":
+        return False
+    return None
 
 
 def normalize_notification(verified: Mapping[str, Any]) -> Optional[dict]:
@@ -333,22 +370,42 @@ def normalize_notification(verified: Mapping[str, Any]) -> Optional[dict]:
     plan_key = APPLE_PRODUCT_TO_PLAN.get(product_id) if product_id else None
     subject_id = (txn.get("appAccountToken") or data.get("appAccountToken"))
 
-    if ntype in _REVOKE_TYPES:
-        intent = "revoke"
-    elif ntype in _GRACE_TYPES:
-        intent = "grace"
-    elif ntype in _EXPIRE_TYPES:
-        intent = "expire"
-    elif ntype in _GRANT_TYPES:
-        intent = "grant"
-    else:
-        intent = "record"  # informational; land the sub row, do not change access
+    renewal = data.get("renewalInfo")
+    auto_renew = _auto_renew_from(renewal if isinstance(renewal, Mapping) else None, subtype)
 
-    # status string kept close to Apple's semantics for the provider row
-    status = {
-        "grant": "active", "grace": "grace_period", "revoke": "refunded",
-        "expire": "expired", "record": (ntype or "unknown").lower(),
-    }[intent]
+    # Intent decides access; status decides what the member is *told*. They are
+    # deliberately not the same axis: a subscription in billing retry and one
+    # that simply expired both stop conferring access, but telling a member their
+    # card failed is very different from telling them their plan ended.
+    if ntype in _REVOKE_TYPES:
+        intent, status = "revoke", "refunded"
+    elif ntype in _GRACE_TYPES or (ntype == _FAIL_TO_RENEW and subtype == "GRACE_PERIOD"):
+        intent, status = "grace", "grace_period"
+    elif ntype == _FAIL_TO_RENEW:
+        # Billing retry with no grace period configured. Access already lapsed at
+        # the expiry date, so 'record' is correct — it neither extends the grant
+        # nor strips it early, it just lets period_end do its job.
+        intent, status = "record", "billing_retry"
+    elif ntype in _EXPIRE_TYPES:
+        intent, status = "expire", "expired"
+    elif ntype == _RENEWAL_STATUS_CHANGED:
+        # This one notification fires in BOTH directions. Reading the type alone
+        # meant a member who switched auto-renew back ON was recorded as
+        # cancelling, and was then told their subscription was about to end while
+        # Apple was in fact about to charge them again.
+        if auto_renew is False:
+            intent, status = "record", "canceled"
+        else:
+            intent, status = "grant", "active"
+    elif ntype in _GRANT_TYPES:
+        intent, status = "grant", "active"
+    else:
+        # Genuinely informational (PRICE_INCREASE, CONSUMPTION_REQUEST, anything
+        # Apple adds later). `None` means "do not overwrite what we already know".
+        # The old code lowercased the notification type into the status column,
+        # so an unrecognised notification would put a string like
+        # "price_increase" in front of the member as their subscription status.
+        intent, status = "record", None
 
     return {
         "provider_subscription_id": str(original_txn_id),
@@ -359,7 +416,9 @@ def normalize_notification(verified: Mapping[str, Any]) -> Optional[dict]:
         "intent": intent,
         "notification_type": ntype,
         "subtype": subtype,
+        "auto_renew": auto_renew,
         "current_period_end": _ms_to_iso(txn.get("expiresDate")),
+        "original_purchase_at": _ms_to_iso(txn.get("originalPurchaseDate")),
     }
 
 
@@ -382,22 +441,39 @@ def apply_apple_notification(signed_payload: str, *,
     if owned:
         conn = db.connect()
     try:
-        if norm["subject_id"] is None:
-            prior = conn.execute(
-                "SELECT subject_id FROM business_os_ent_provider_subs "
-                "WHERE provider='apple_app_store' AND provider_subscription_id=? LIMIT 1",
-                (norm["provider_subscription_id"],),
-            ).fetchone()
-            if prior:
-                norm["subject_id"] = str(_row_first(prior))
+        # Read the stored row up front. Apple notifications are partial by design
+        # — an informational one carries no renewal info and no meaningful status
+        # — so anything this notification does not assert is carried forward
+        # rather than overwritten with a default.
+        prior = conn.execute(
+            "SELECT subject_id, status, cancel_at_period_end "
+            "FROM business_os_ent_provider_subs "
+            "WHERE provider='apple_app_store' AND provider_subscription_id=? LIMIT 1",
+            (norm["provider_subscription_id"],),
+        ).fetchone()
+        prior_subject = _row_at(prior, 0, "subject_id")
+        prior_status = _row_at(prior, 1, "status")
+        prior_cancel = _row_at(prior, 2, "cancel_at_period_end")
+
+        if norm["subject_id"] is None and prior_subject not in (None, ""):
+            norm["subject_id"] = str(prior_subject)
+
+        status = norm["status"] or (str(prior_status) if prior_status else "unknown")
+        # `None` auto-renew means this notification is silent on the subject, not
+        # that renewal is off. Guessing `False` here would tell a member in good
+        # standing that their subscription is ending.
+        cancel_at_period_end = (
+            bool(prior_cancel) if norm["auto_renew"] is None else not norm["auto_renew"]
+        )
+
         # Always record the provider subscription row (even unmapped plans).
         _prov.upsert_provider_subscription(
             provider="apple_app_store",
             provider_subscription_id=norm["provider_subscription_id"],
             subject_id=norm["subject_id"] or norm["provider_subscription_id"],
-            plan_key=norm["plan_key"], status=norm["status"],
+            plan_key=norm["plan_key"], status=status,
             current_period_end=norm["current_period_end"],
-            cancel_at_period_end=(norm["notification_type"] == "DID_CHANGE_RENEWAL_STATUS"),
+            cancel_at_period_end=cancel_at_period_end,
             subject_type=subject_type, raw=verified, conn=conn,
         )
         result = {"recorded": True, "projected": False, "revoked": False,
@@ -505,15 +581,24 @@ def apply_verified_subscription_transaction(signed_transaction: str, *,
         conn = db.connect()
     try:
         prior = conn.execute(
-            "SELECT subject_id FROM business_os_ent_provider_subs WHERE provider_subscription_id=? LIMIT 1",
+            "SELECT subject_id, cancel_at_period_end FROM business_os_ent_provider_subs "
+            "WHERE provider_subscription_id=? LIMIT 1",
             (original_id,),
         ).fetchone()
-        if prior and str(_row_first(prior)) != str(subject_id):
+        prior_subject = _row_at(prior, 0, "subject_id")
+        if prior is not None and str(prior_subject) != str(subject_id):
             raise AppleJWSError("transaction already belongs to another account")
+        # A signed transaction carries no renewalInfo, so a purchase or restore
+        # cannot observe auto-renew. A fresh subscription is renewing by
+        # definition; an existing one keeps whatever Apple last told us, because
+        # restoring a subscription you already cancelled must not silently
+        # re-advertise it as renewing.
         _prov.upsert_provider_subscription(
             provider="apple_app_store", provider_subscription_id=original_id,
             subject_id=str(subject_id), plan_key=plan_key, status="active",
-            current_period_end=period_end, subject_type="user", raw=txn, conn=conn,
+            current_period_end=period_end,
+            cancel_at_period_end=bool(_row_at(prior, 1, "cancel_at_period_end")),
+            subject_type="user", raw=txn, conn=conn,
         )
         projection = _svc.sync_subscription_entitlements(
             str(subject_id), plan_key, status="active", source="apple_app_store",
@@ -538,3 +623,21 @@ def _row_first(row):
         return row[0]
     except Exception:  # noqa: BLE001
         return row["entitlement_key"]
+
+
+def _row_at(row, index: int, name: str):
+    """Read one column from a row by position, falling back to name.
+
+    SQLite hands back tuples, psycopg hands back something indexable, and
+    ``sqlite3.Row`` supports both. ``None`` for a missing row is a valid answer
+    (no prior subscription), so this never raises.
+    """
+    if row is None:
+        return None
+    try:
+        return row[index]
+    except Exception:  # noqa: BLE001
+        try:
+            return row[name]
+        except Exception:  # noqa: BLE001
+            return None

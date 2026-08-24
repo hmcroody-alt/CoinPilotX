@@ -40,6 +40,7 @@ The honesty invariants this file is built to make structurally true
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 from typing import Any, Optional
@@ -129,6 +130,107 @@ _SUB_PUBLIC_COLUMNS = (
     "provider", "plan_key", "status", "current_period_end", "cancel_at_period_end",
 )
 
+#: Read but never returned. ``raw_json`` holds the entire decoded Apple payload —
+#: transaction id, receipt, device data. Exactly one scalar is lifted out of it
+#: (:func:`_original_purchase_at`); the blob itself must not leave this module.
+#: It is kept out of :data:`_SUB_PUBLIC_COLUMNS` so the projection below
+#: physically cannot include it.
+_SUB_PRIVATE_COLUMNS = ("raw_json",)
+
+#: Canonical plan_key -> Apple product identifier; the inverse of
+#: ``iap_apple.APPLE_PRODUCT_TO_PLAN``. The plan key was itself derived from a
+#: cryptographically verified ``productId``, so round-tripping it back still
+#: reports what Apple signed rather than what a client claimed. The app needs the
+#: identifier to ask StoreKit for the member's own localized price — which is why
+#: the price is never stored or guessed here.
+_PLAN_TO_APPLE_PRODUCT = {
+    "pulse_premium_monthly": "com.pulsesoc.premium.monthly",
+    "pulse_premium_annual": "com.pulsesoc.premium.annual",
+    "pulse_premium_trial": "com.pulsesoc.premium.trial",
+    "pulse_business_monthly": "com.pulsesoc.business.monthly",
+}
+
+#: Provider status -> the state the member-facing screen switches on. Providers
+#: disagree about spelling ("canceled"/"cancelled"), and rows written before the
+#: Apple adapter had a fixed status vocabulary may hold anything at all. Every
+#: unknown resolves to ``"unknown"`` instead of being passed through: a raw
+#: provider status string must never reach a member's screen.
+_SUB_STATE = {
+    "active": "active",
+    "trialing": "trialing",
+    "trial": "trialing",
+    "grace_period": "grace",
+    "grace": "grace",
+    "billing_retry": "billing_retry",
+    "past_due": "billing_retry",
+    "canceled": "canceled",
+    "cancelled": "canceled",
+    "expired": "expired",
+    "refunded": "revoked",
+    "revoked": "revoked",
+    "paused": "paused",
+}
+
+
+def _is_past(iso_value: Any) -> bool:
+    """True only when ``iso_value`` is a timestamp that has definitely passed."""
+    if not iso_value:
+        return False
+    try:
+        from datetime import datetime, timezone
+        parsed = datetime.fromisoformat(str(iso_value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed <= datetime.now(timezone.utc)
+    except (ValueError, TypeError):
+        # An unparseable date is not evidence of expiry. Answering "expired" on a
+        # formatting bug would take a paying member's screen away from them.
+        return False
+
+
+def _subscription_state(status: Any, *, current_period_end: Any) -> str:
+    """The member-facing state, cross-checked against the clock.
+
+    A missed or delayed ``EXPIRED`` notification would otherwise leave a lapsed
+    row reading ``active`` indefinitely, which is the one thing this screen may
+    not do. The period end is a fact Apple signed, so it outranks a status string
+    that may simply be stale.
+    """
+    state = _SUB_STATE.get(str(status or "").strip().lower(), "unknown")
+    if state in ("active", "trialing", "canceled") and _is_past(current_period_end):
+        return "expired"
+    return state
+
+
+def _original_purchase_at(raw_json: Any) -> Optional[str]:
+    """The verified original purchase date, or ``None`` when unknown.
+
+    Reads exactly one field out of the stored Apple payload and returns nothing
+    else. Two shapes land in that column: a bare signed transaction (purchase and
+    restore) and a full notification (``data.transactionInfo``). ``None`` is a
+    normal answer, and the caller omits the row rather than inventing a date.
+    """
+    if not raw_json:
+        return None
+    try:
+        raw = json.loads(raw_json) if isinstance(raw_json, (str, bytes, bytearray)) else raw_json
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(raw, dict):
+        return None
+    txn = raw
+    data = raw.get("data")
+    if isinstance(data, dict) and isinstance(data.get("transactionInfo"), dict):
+        txn = data["transactionInfo"]
+    value = txn.get("originalPurchaseDate")
+    if value in (None, ""):
+        return None
+    try:
+        from services.business_os.entitlements.iap_apple import _ms_to_iso
+    except Exception:  # noqa: BLE001
+        return None
+    return _ms_to_iso(value)
+
 
 def subscription_summary(user_id: Any, *, subject_type: str = "user") -> Optional[dict]:
     """Safe billing facts for the member's own subscription, or ``None``.
@@ -150,7 +252,7 @@ def subscription_summary(user_id: Any, *, subject_type: str = "user") -> Optiona
         conn = db.connect()
         try:
             cur = conn.execute(
-                f"SELECT {', '.join(_SUB_PUBLIC_COLUMNS)} "
+                f"SELECT {', '.join(_SUB_PUBLIC_COLUMNS + _SUB_PRIVATE_COLUMNS)} "
                 "FROM business_os_ent_provider_subs "
                 "WHERE subject_type = ? AND subject_id = ? "
                 # Newest first: a member who resubscribed after lapsing has more
@@ -166,18 +268,38 @@ def subscription_summary(user_id: Any, *, subject_type: str = "user") -> Optiona
         return None
     if row is None:
         return None
+    columns = _SUB_PUBLIC_COLUMNS + _SUB_PRIVATE_COLUMNS
     try:
-        data = {k: row[k] for k in _SUB_PUBLIC_COLUMNS}
+        data = {k: row[k] for k in columns}
     except (TypeError, IndexError, KeyError):
-        data = dict(zip(_SUB_PUBLIC_COLUMNS, tuple(row)))
+        data = dict(zip(columns, tuple(row)))
     plan_key = str(data.get("plan_key") or "")
+    period_end = data.get("current_period_end") or None
+    auto_renew = not bool(data.get("cancel_at_period_end"))
+    state = _subscription_state(data.get("status"), current_period_end=period_end)
     return {
         "provider": str(data.get("provider") or ""),
         "plan_key": plan_key,
         "billing_period": _PLAN_PERIOD.get(plan_key, ""),
         "status": str(data.get("status") or ""),
-        "current_period_end": data.get("current_period_end") or None,
+        "current_period_end": period_end,
         "cancel_at_period_end": bool(data.get("cancel_at_period_end")),
+        # --- added for the member-facing subscription card -------------------
+        # `state` is the field a screen should switch on. `status` stays as the
+        # provider's own word for compatibility with existing callers, but it is
+        # not safe to display.
+        "state": state,
+        # Auto-renew decides one word on the member's screen: whether the date
+        # below is when they will be charged again or when their access stops.
+        "auto_renew": auto_renew,
+        "renews_at": period_end if auto_renew and state != "expired" else None,
+        "expires_at": period_end if (not auto_renew or state == "expired") else None,
+        # The verified Apple identifier, so the app can ask StoreKit for this
+        # member's own localized price instead of assuming a currency.
+        "product_id": _PLAN_TO_APPLE_PRODUCT.get(plan_key) or None,
+        # Absent when we have never seen a signed original purchase date. The
+        # screen omits the row; it does not print a placeholder.
+        "original_purchase_at": _original_purchase_at(data.get("raw_json")),
     }
 
 

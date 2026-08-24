@@ -2036,7 +2036,16 @@
       "expires": "结束日期",
       "cancelPending": "此订阅将结束，不会续订。",
       "none": "我们没有此会员资格的扣费信息。",
-      "founderNone": "创始会员资格 — 无扣费，无需续订。"
+      "founderNone": "创始会员资格 — 无扣费，无需续订。",
+      "planValue": "PulseSoc Premium — {{period}}",
+      "planValueUnknown": "PulseSoc Premium",
+      "price": "价格",
+      "renewsOn": "续订日期",
+      "expiresOn": "结束日期",
+      "since": "订阅始于",
+      "loadingValue": "加载中",
+      "graceNote": "Apple 正在重新尝试扣款。在此期间你仍可继续使用。",
+      "retryNote": "上次付款未成功。请在 App Store 更新付款方式以继续使用。"
     },
     "period": {
       "monthly": "按月",
@@ -2048,7 +2057,8 @@
     "provider": {
       "apple_iap": "Apple",
       "stripe": "银行卡",
-      "unknown": "—"
+      "unknown": "—",
+      "apple_app_store": "App Store"
     },
     "subStatus": {
       "active": "生效中",
@@ -2493,6 +2503,17 @@
           "empty": "收藏某个资产后，它会保留在这里。收藏会跟随你的账号。"
         }
       }
+    },
+    "subState": {
+      "active": "有效",
+      "trialing": "试用",
+      "grace": "宽限期内",
+      "billing_retry": "重新扣款中",
+      "canceled": "已取消 — 自动续订已关闭",
+      "expired": "已过期",
+      "revoked": "已撤销",
+      "paused": "已暂停",
+      "unknown": "无法获取"
     }
   }
 }

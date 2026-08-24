@@ -2037,7 +2037,16 @@
       "expires": "Fini",
       "cancelPending": "Abònman sa a pral fini e li p ap renouvle.",
       "none": "Nou pa gen enfòmasyon fakti pou manm sa a.",
-      "founderNone": "Manm fondatè — pa gen fakti, pa gen anyen pou renouvle."
+      "founderNone": "Manm fondatè — pa gen fakti, pa gen anyen pou renouvle.",
+      "planValue": "PulseSoc Premium — {{period}}",
+      "planValueUnknown": "PulseSoc Premium",
+      "price": "Pri",
+      "renewsOn": "Renouvle nan",
+      "expiresOn": "Fini nan",
+      "since": "Abònman depi",
+      "loadingValue": "Ap chaje",
+      "graceNote": "Apple ap eseye peman ou an ankò. Aksè ou rete aktif pandan tan sa a.",
+      "retryNote": "Dènye peman ou an pa t pase. Mete metòd peman ou ajou nan App Store pou kontinye."
     },
     "period": {
       "monthly": "Chak mwa",
@@ -2049,7 +2058,8 @@
     "provider": {
       "apple_iap": "Apple",
       "stripe": "Kat",
-      "unknown": "—"
+      "unknown": "—",
+      "apple_app_store": "Apple App Store"
     },
     "subStatus": {
       "active": "Aktif",
@@ -2494,6 +2504,17 @@
           "empty": "Mete yon zetwal sou yon aktif pou kenbe l isit la. Favori yo swiv kont ou."
         }
       }
+    },
+    "subState": {
+      "active": "Aktif",
+      "trialing": "Esè",
+      "grace": "Nan peryòd gras",
+      "billing_retry": "Nouvo esè peman",
+      "canceled": "Anile — renouvèlman otomatik fèmen",
+      "expired": "Fini",
+      "revoked": "Revoke",
+      "paused": "An poz",
+      "unknown": "Pa disponib"
     }
   }
 }
