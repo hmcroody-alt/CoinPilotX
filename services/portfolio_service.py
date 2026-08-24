@@ -113,8 +113,14 @@ def has_premium_portfolio(user_id):
         return True
 
 
+#: The code a ceiling refusal carries, so a client can tell "you have reached
+#: the free limit" apart from "that symbol is not a symbol" and open the right
+#: surface. Mirrors how the alert engine answers a capability denial.
+PREMIUM_REQUIRED = "premium_required"
+
+
 def _limit_check(user_id, kind):
-    """May this account add one more of ``kind``?
+    """May this account add one more of ``kind``? ``(ok, message, code)``.
 
     Enforced on creation only, and deliberately never on read. An account that
     is already over the ceiling — because the ceiling was published for a long
@@ -126,24 +132,42 @@ def _limit_check(user_id, kind):
     ceiling = FREE_LIMITS.get(kind)
     table = _LIMIT_TABLES.get(kind)
     if not ceiling or not table:
-        return True, ""
+        return True, "", ""
     if has_premium_portfolio(user_id):
-        return True, ""
+        return True, "", ""
     try:
         current = _count_table(user_id, table)
     except Exception:  # noqa: BLE001
         # A table that cannot be counted is not evidence of an over-limit
         # account, and refusing on it would break adding for everyone.
-        return True, ""
+        return True, "", ""
     if current < ceiling:
-        return True, ""
-    return False, LIMIT_MESSAGES[kind]
+        return True, "", ""
+    return False, LIMIT_MESSAGES[kind], PREMIUM_REQUIRED
+
+
+def _limit_refusal(message, code):
+    """The one shape a ceiling refusal takes, wherever it is raised.
+
+    Deliberately identical to the shape ``services.alert_engine`` already
+    returns for a capability denial — ``ok``/``code``/``capability``/``message``
+    — so one client handler serves both and neither has to be special-cased.
+
+    ``error`` duplicates ``code`` because the native client reads
+    ``data.error_code`` or ``data.error`` when it builds ``PulseApiError.code``;
+    a refusal carrying only ``code`` would arrive at the app as an untyped
+    failure and the upgrade sheet would never open. ``_crypto_api_result``
+    duplicates it for exactly the same reason.
+    """
+    from services import premium_crypto_access
+    return {"ok": False, "message": message, "code": code, "error": code,
+            "capability": premium_crypto_access.PORTFOLIO}
 
 
 def add_portfolio_item(user_id, symbol, coin_name="", amount=0, average_buy_price=0, notes=""):
-    ok, message = _limit_check(user_id, "holdings")
+    ok, message, code = _limit_check(user_id, "holdings")
     if not ok:
-        return {"ok": False, "message": message}
+        return _limit_refusal(message, code)
     symbol = (symbol or "").upper().strip()[:16]
     if not symbol:
         return {"ok": False, "message": "Enter a coin symbol like BTC, ETH, or SOL."}
@@ -207,9 +231,9 @@ def delete_portfolio_item(user_id, item_id):
 
 
 def add_watchlist_item(user_id, symbol, coin_name=""):
-    ok, message = _limit_check(user_id, "watchlist")
+    ok, message, code = _limit_check(user_id, "watchlist")
     if not ok:
-        return {"ok": False, "message": message}
+        return _limit_refusal(message, code)
     symbol = (symbol or "").upper().strip()[:16]
     if not symbol:
         return {"ok": False, "message": "Enter a coin symbol like BTC, ETH, or SOL."}
@@ -236,9 +260,9 @@ def delete_watchlist_item(user_id, item_id):
 
 
 def create_price_alert(user_id, alert_type, symbol, target_value, condition="above", channel="telegram"):
-    ok, message = _limit_check(user_id, "alerts")
+    ok, message, code = _limit_check(user_id, "alerts")
     if not ok:
-        return {"ok": False, "message": message}
+        return _limit_refusal(message, code)
     symbol = (symbol or "").upper().strip()[:16]
     if not symbol:
         return {"ok": False, "message": "Enter a coin symbol."}

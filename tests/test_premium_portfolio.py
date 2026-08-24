@@ -275,6 +275,22 @@ def test_the_refusal_names_premium_rather_than_a_bare_error():
     assert "Premium" in ps.add_portfolio_item(uid, "NOPE", amount=1)["message"]
 
 
+def test_a_ceiling_refusal_is_machine_readable_not_just_a_sentence():
+    """A client has to tell "you have reached the free limit" apart from "that
+    is not a symbol" without matching on English, or it cannot open the upgrade
+    surface for the first and must not open it for the second. The shape mirrors
+    the alert engine's capability denial so one client handler serves both."""
+    uid = _new_user()
+    for index in range(ps.FREE_LIMITS["holdings"]):
+        ps.add_portfolio_item(uid, f"J{index}", amount=1)
+    refused = ps.add_portfolio_item(uid, "OVER", amount=1)
+    assert refused["code"] == ps.PREMIUM_REQUIRED
+    assert refused["capability"] == premium_crypto_access.PORTFOLIO
+
+    # A bad symbol is a different failure and must not offer an upgrade.
+    assert ps.add_portfolio_item(_new_user(), "", amount=1).get("code") is None
+
+
 def test_premium_has_no_ceiling():
     uid = _new_user(premium=True)
     for index in range(ps.FREE_LIMITS["holdings"] + 4):
@@ -290,7 +306,7 @@ def test_the_legacy_watchlist_is_not_capped():
     uid = _new_user()
     for index in range(12):
         assert ps.add_watchlist_item(uid, f"W{index}")["ok"] is True
-    assert ps._limit_check(uid, "watchlist") == (True, "")
+    assert ps._limit_check(uid, "watchlist") == (True, "", "")
 
 
 def test_an_account_already_over_the_ceiling_keeps_everything_it_has():
@@ -318,7 +334,7 @@ def test_the_dead_legacy_alert_path_is_not_newly_restricted():
     """``create_price_alert`` writes to ``user_alerts``, which no live route
     reaches. Dropping its ceiling from FREE_LIMITS must leave it permitted, not
     accidentally refuse it."""
-    assert ps._limit_check(_new_user(), "alerts") == (True, "")
+    assert ps._limit_check(_new_user(), "alerts") == (True, "", "")
 
 
 def test_an_unresolvable_entitlement_does_not_lock_a_member_out():
@@ -353,14 +369,14 @@ def test_the_advertised_limits_come_from_the_gate_that_enforces_them():
     """A dashboard promising unlimited holdings while the add path refuses is
     the same split-brain this whole change exists to close."""
     free = ps._limit_check(_new_user(), "holdings")
-    assert free == (True, "")  # an empty free account may still add
+    assert free == (True, "", "")  # an empty free account may still add
 
     uid = _new_user()
     for index in range(ps.FREE_LIMITS["holdings"]):
         _hold(uid, f"H{index}", 1, basis=1.0)
     assert ps._limit_check(uid, "holdings")[0] is False
     _PREMIUM_USERS.add(uid)
-    assert ps._limit_check(uid, "holdings") == (True, "")
+    assert ps._limit_check(uid, "holdings") == (True, "", "")
 
 
 def test_the_readiness_registry_names_this_gate():
@@ -371,6 +387,92 @@ def test_the_readiness_registry_names_this_gate():
     assert feature is not None
     assert feature.sellable is True
     assert feature.enforced_by == "services.portfolio_service._limit_check"
+
+
+# --------------------------------------------------------------------------
+# The line between what this store knows and what it may be sold as
+#
+# PulseSoc has two portfolio backends. `portfolio_items` — the one every live
+# route reads — stores an amount and an average buy price and nothing else.
+# `services/business_os/crypto` keeps an append-only transaction log with
+# FIFO/average lots, which is the only place a *realized* gain could honestly
+# come from, and it is dark behind BUSINESS_OS_CRYPTO with its routes 404.
+#
+# Keeping one live backend is settled. The hazard that outlives that decision is
+# a promise that outruns the data: "tax lots", "trade history" and "realized
+# P/L" are the three phrases somebody reaches for when writing marketing copy
+# for a portfolio, and all three are unanswerable from an average basis. There
+# is no amount of care in a valuation function that stops a benefits string, so
+# the constraint is asserted here rather than left as a note.
+# --------------------------------------------------------------------------
+#: Phrases that require a transaction ledger to be true of a holding.
+_UNBACKED_CLAIMS = ("realized", "realised", "tax lot", "cost basis history",
+                    "trade history", "transaction history")
+
+
+def test_nothing_advertises_a_number_this_store_cannot_produce():
+    """No sellable entitlement may be *labelled* with a ledger claim.
+
+    The label is what reaches a member. Notes are exempt on purpose — the
+    portfolio note names all three phrases in order to forbid them, and a check
+    that could not tell a prohibition from a promise would push the prohibition
+    out of the file that needs it most.
+    """
+    from services.business_os.entitlements import readiness as rd
+    offenders = [
+        (feature["key"], feature["label"])
+        for feature in rd.sellable_features()
+        for claim in _UNBACKED_CLAIMS
+        if claim in str(feature["label"]).lower()
+    ]
+    assert offenders == [], (
+        f"These sellable labels promise a ledger that portfolio_items does not "
+        f"have: {offenders}. Realized P/L becomes true by lighting up "
+        f"services/business_os/crypto and reconciling the two stores, never by "
+        f"deriving it from an average buy price."
+    )
+
+
+def test_the_portfolio_payload_states_only_unrealized_value():
+    """A field named for a realized gain would be read as one.
+
+    Every P/L key here is computed as live value minus average basis, which is
+    an *unrealized* position and nothing else. The test pins the vocabulary, so
+    that adding a realized figure has to be a deliberate act of naming rather
+    than something that arrives by autocompletion next to `pnl_value`.
+    """
+    _PRICES.clear()
+    _PRICES["BTC"] = 60000.0
+    uid = _new_user()
+    _hold(uid, "BTC", 1, basis=50000.0)
+    portfolio = ps.calculate_user_portfolio(uid)
+    keys = set(portfolio) | set(portfolio["holdings"][0])
+    for key in keys:
+        for claim in _UNBACKED_CLAIMS:
+            assert claim.replace(" ", "_") not in key.lower(), (
+                f"`{key}` names something portfolio_items cannot compute."
+            )
+    # And the P/L it does state is the unrealized one, still arithmetic.
+    assert portfolio["holdings"][0]["pnl_value"] == 10000.0
+
+
+def test_the_second_portfolio_backend_stays_dark_and_disjoint():
+    """One live store, and the dark one does not quietly become a second.
+
+    If `business_os/crypto` ever wrote to `portfolio_items`, the two would be
+    one store with two cost-basis models and no owner. Asserting the table names
+    are disjoint is cheap and catches the merge nobody announced.
+    """
+    from services.business_os.crypto import schema as bos_schema
+    source = open(bos_schema.__file__, encoding="utf-8").read()
+    for table in ps._LIMIT_TABLES.values():
+        assert f" {table} " not in source and f"{table}(" not in source, (
+            f"{table} is the live portfolio's table; the dark backend must not "
+            f"share it."
+        )
+    # Dark by default: an unset flag is off, not on.
+    assert bos_schema.FLAG_ENV == "BUSINESS_OS_CRYPTO"
+    assert os.environ.get(bos_schema.FLAG_ENV) in (None, "", "0", "off", "false")
 
 
 if __name__ == "__main__":

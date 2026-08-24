@@ -36251,17 +36251,49 @@ def account_status_api():
     return response
 
 
+def _portfolio_status(result, failure=400):
+    """The status code for a portfolio service result.
+
+    A ceiling refusal is not a malformed request. The member sent a perfectly
+    valid holding and the account simply is not entitled to a fourth one, so it
+    answers 403 — the same distinction the crypto alert routes draw for a
+    capability denial. Returning 400 would tell the client it had sent something
+    wrong, which is the exact class of untruth this whole area is being cleaned
+    of, and it would leave "fix your input" as the only sensible thing for a
+    client to do about a state only a subscription can change.
+    """
+    if result.get("ok"):
+        return 200
+    return 403 if result.get("code") == portfolio_service.PREMIUM_REQUIRED else failure
+
+
 @webhook_app.route("/api/portfolio", methods=["GET", "POST"])
 def portfolio_api():
+    """Read and add holdings.
+
+    These writes used to run through ``api_pro_required``, which — despite the
+    name — performs no entitlement check at all: it 401s an anonymous caller and
+    otherwise returns the paid-digital 403 to iOS native and ``None`` to everyone
+    else. Its only effect here was to make the whole portfolio unreachable from
+    the iOS app, including a free member adding their *first* holding, which
+    came back as ``iap_required`` — a statement about a purchase that was not
+    being asked for.
+
+    That block was a leftover from one old helper rather than a policy.
+    ``/api/crypto/alerts`` creates advanced compound and watchlist alerts, which
+    are explicitly paid Premium capabilities, and it has never blocked iOS
+    native; the native alert screen writes them today. The entitlement itself is
+    now enforced where it belongs, in
+    ``portfolio_service._limit_check``, for every caller and every platform
+    alike, and a refusal comes back as a typed ``premium_required`` rather than
+    as an unreachable route. The login check above is untouched.
+    """
     init_db()
     user = api_account_user()
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     if request.method == "GET":
         return jsonify({"ok": True, "portfolio": portfolio_service.calculate_user_portfolio(user["user_id"])})
-    gated = api_pro_required(user, "Portfolio Tracker")
-    if gated:
-        return gated
     payload = request.get_json(silent=True) or {}
     result = portfolio_service.add_portfolio_item(
         user["user_id"],
@@ -36272,7 +36304,7 @@ def portfolio_api():
         clean_html(payload.get("notes", "")),
     )
     log_product_event(user["user_id"], "portfolio_item_added", {"symbol": payload.get("symbol", ""), "ok": result.get("ok")})
-    return jsonify(result), (200 if result.get("ok") else 400)
+    return jsonify(result), _portfolio_status(result)
 
 
 @webhook_app.route("/portfolio", methods=["GET"])
@@ -36316,9 +36348,6 @@ def portfolio_item_api(item_id):
     user = api_account_user()
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
-    gated = api_pro_required(user, "Portfolio Tracker")
-    if gated:
-        return gated
     if request.method == "DELETE":
         result = portfolio_service.delete_portfolio_item(user["user_id"], item_id)
         log_product_event(user["user_id"], "portfolio_item_deleted", {"item_id": item_id, "ok": result.get("ok")})
@@ -36338,13 +36367,10 @@ def watchlist_api():
         return jsonify({"ok": False, "message": "Login required."}), 401
     if request.method == "GET":
         return jsonify({"ok": True, "watchlist": portfolio_service.get_watchlist(user["user_id"])})
-    gated = api_pro_required(user, "Watchlist")
-    if gated:
-        return gated
     payload = request.get_json(silent=True) or {}
     result = portfolio_service.add_watchlist_item(user["user_id"], clean_html(payload.get("symbol", "")), clean_html(payload.get("coin_name", "")))
     log_product_event(user["user_id"], "watchlist_item_added", {"symbol": payload.get("symbol", ""), "ok": result.get("ok")})
-    return jsonify(result), (200 if result.get("ok") else 400)
+    return jsonify(result), _portfolio_status(result)
 
 
 @webhook_app.route("/api/watchlist/<int:item_id>", methods=["DELETE"])
@@ -36353,9 +36379,6 @@ def watchlist_item_api(item_id):
     user = api_account_user()
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
-    gated = api_pro_required(user, "Watchlist")
-    if gated:
-        return gated
     result = portfolio_service.delete_watchlist_item(user["user_id"], item_id)
     return jsonify(result), (200 if result.get("ok") else 404)
 
