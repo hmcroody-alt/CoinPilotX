@@ -84,24 +84,35 @@ export function PageCreateScreen({ navigation, route }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const handleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleRequest = useRef(0);
 
   useEffect(() => {
     if (handleTimer.current) clearTimeout(handleTimer.current);
     const candidate = handle.trim();
     if (!candidate) {
       setHandleState(null);
+      // The spinner belongs to a check that is no longer going to happen. It
+      // used to be left running, so clearing the field left it turning beside
+      // an empty box with nothing behind it and no way to stop it.
+      setCheckingHandle(false);
       return;
     }
     setCheckingHandle(true);
+    // Answers can land out of order — a slow check for an earlier handle
+    // arriving after a fast one for the current handle would blank a verdict
+    // that had already been given.
+    const seq = ++handleRequest.current;
     handleTimer.current = setTimeout(async () => {
       try {
         const result = await checkPageHandle(candidate);
-        setHandleState(result);
+        if (seq === handleRequest.current) setHandleState(result);
       } catch {
         // Fail closed: an unknown state is "not available yet", never "available".
-        setHandleState({ candidate, handle: candidate, available: false, reason: "Couldn't check that handle right now." });
+        if (seq === handleRequest.current) {
+          setHandleState({ candidate, handle: candidate, available: false, reason: "Couldn't check that handle right now." });
+        }
       } finally {
-        setCheckingHandle(false);
+        if (seq === handleRequest.current) setCheckingHandle(false);
       }
     }, 450);
     return () => {
@@ -109,8 +120,26 @@ export function PageCreateScreen({ navigation, route }: Props) {
     };
   }, [handle]);
 
+  const trimmedHandle = handle.trim();
+  /**
+   * An availability verdict is only about the handle it was asked about.
+   *
+   * `handleState` outlives the text it describes: the check is debounced by
+   * 450ms, so from the keystroke that changes the handle until the answer
+   * comes back, the last verdict is still sitting in state. Reading it
+   * unconditionally meant "@nightsignal is available" stayed on screen — and,
+   * worse, kept Next enabled — over a handle nobody had checked. The wizard let
+   * that through to the review step and the server refused the create with a
+   * 409 three screens later.
+   *
+   * The server echoes the candidate it answered about for exactly this reason,
+   * so the verdict is matched to the box rather than assumed to be current.
+   */
+  const handleVerdict =
+    handleState && handleState.candidate === trimmedHandle ? handleState : null;
+
   const identityComplete =
-    Boolean(pageType) && name.trim().length >= 2 && Boolean(handleState?.available);
+    Boolean(pageType) && name.trim().length >= 2 && Boolean(handleVerdict?.available);
   const canSubmit = identityComplete && confirmOwner && !submitting;
 
   function selectFlavorCategory(item: FlavorCategory) {
@@ -134,15 +163,24 @@ export function PageCreateScreen({ navigation, route }: Props) {
         phone: phone.trim(),
         website: website.trim(),
         location: location.trim(),
+        // Literal rather than `confirmOwner`, and the two are indistinguishable
+        // by test: `canSubmit` already requires the switch, so this line is only
+        // reached with it on. Written as a constant because that is what it is.
         confirm_owner: true
       });
-      // Flavored flows open management (per Presence); the generic flow opens
-      // the new public page.
-      if (flavor) {
-        navigation.replace("PagesHub", { focusPageId: page.id });
-      } else {
-        navigation.replace("Page", { handle: page.handle, title: page.name });
-      }
+      /**
+       * Every flow lands on setup, flavoured or not.
+       *
+       * The generic flow used to open the new presence's public page, which for
+       * a minute-old presence is the one screen in the app with nothing on it:
+       * no avatar, no cover, no posts, nothing connected, and every module
+       * unbacked. Management is where the next step actually is — the server
+       * already works out which sections are not ready and names the one thing
+       * each is missing, and the hub renders exactly that. Creation hands the
+       * owner to it rather than to a blank page they then have to find their
+       * own way out of.
+       */
+      navigation.replace("PagesHub", { focusPageId: page.id });
     } catch (submitError) {
       // Map to actionable copy without ever exposing raw backend internals.
       // 4xx messages are the server's own safe contract (e.g. "That handle is
@@ -240,8 +278,10 @@ export function PageCreateScreen({ navigation, route }: Props) {
             />
             {checkingHandle ? <ActivityIndicator color={colors.accent} /> : null}
           </View>
-          {handleState ? (
-            <Text style={handleState.available ? styles.handleOk : styles.handleBad}>{handleState.reason}</Text>
+          {handleVerdict ? (
+            <Text style={handleVerdict.available ? styles.handleOk : styles.handleBad}>
+              {handleVerdict.reason}
+            </Text>
           ) : null}
           <Text style={styles.note}>
             Profile and cover images can be added from management right after creation.

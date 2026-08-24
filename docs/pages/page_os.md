@@ -95,6 +95,26 @@ underneath says who it will open for.
 - Deep links: `pulse/pages/create`, `pulse/pages`, `pulse/pages/:handle`
   (static paths declared before the catch-all).
 
+### Creation lands on setup, and the handle verdict is not assumed to be current
+
+`check_handle` echoes the candidate it answered about, and the wizard now
+matches that echo against what is in the box before reading the verdict. It
+did not, and the check is debounced by 450ms — so from the keystroke that
+changed the handle until the answer came back, "Available." stayed on screen
+over an address nobody had checked and Next stayed enabled. The wizard carried
+that through Details and Review, and the server refused the create with a 409
+three screens after the point where it could have been said. Answers are also
+sequence-guarded, because a slow check for an earlier handle arriving after a
+fast one for the current handle would otherwise blank a verdict already given.
+
+Every flow now lands on `PagesHub` with the new page focused. The generic entry
+point used to open the new presence's public page, which for a minute-old
+presence is the emptiest screen in the app: no avatar, no cover, no posts, and
+every module unbacked. Management already knows what to do about that — the
+`sections` array carries `ready` and a `setup` line naming the one thing each
+unready section is missing — so which door an owner came through no longer
+decides whether they are shown their next step or a blank page.
+
 ## The measured block (Overview)
 
 `manage_overview()` builds the one place numbers are reported, and it is the
