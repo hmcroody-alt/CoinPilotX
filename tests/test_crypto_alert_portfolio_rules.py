@@ -102,12 +102,13 @@ premium_crypto_access.allowed_for_user_id = lambda user_id, key: int(user_id or 
 
 
 def _schema():
-    """Two tables `bot.init_db()` owns, which this suite does not import — 111k
-    lines and a Flask app to read one of them.
+    """The one table `bot.init_db()` owns that this suite reads, which it does
+    not import — 111k lines and a Flask app to get at it.
 
-    ``notification_delivery_logs`` is here only because ``list_alert_rules``
-    decorates every rule with its last delivery status and queries it
-    unguarded; nothing in this file writes to it.
+    ``notification_delivery_logs`` is deliberately absent: ``list_alert_rules``
+    decorates every rule from it, and this suite standing in for a database that
+    has never run ``init_db()`` is what holds that decoration to degrading
+    instead of raising.
     """
     conn = user_context.connect()
     cur = conn.cursor()
@@ -116,13 +117,6 @@ def _schema():
             id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, symbol TEXT,
             coin_name TEXT, amount REAL, average_buy_price REAL, notes TEXT,
             created_at TEXT, updated_at TEXT)""")
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS notification_delivery_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER,
-            notification_id INTEGER, alert_rule_id INTEGER, alert_event_id INTEGER,
-            channel TEXT, status TEXT, provider TEXT, provider_response TEXT,
-            error_message TEXT, retry_count INTEGER DEFAULT 0,
-            created_at TEXT, sent_at TEXT)""")
     conn.commit()
     conn.close()
 
