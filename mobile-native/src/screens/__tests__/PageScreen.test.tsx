@@ -11,6 +11,7 @@
  *      music", which is a different and false statement.
  */
 import React from "react";
+import { processColor } from "react-native";
 import { fireEvent, render, waitFor } from "@testing-library/react-native";
 
 const mockGetPage = jest.fn();
@@ -34,6 +35,8 @@ jest.mock("../../api/marketplace", () => ({
 }));
 
 import { PageScreen } from "../PageScreen";
+import { colors } from "../../theme/colors";
+import { presenceAccent } from "../../theme/presenceAccent";
 
 const nav = () => ({ navigate: jest.fn(), setOptions: jest.fn() });
 
@@ -799,5 +802,78 @@ describe("following says what the server said", () => {
     const { view } = show();
     await waitFor(() => expect(view.queryByText("Follow")).toBeTruthy());
     expect(view.queryByText(/Only the team can open this presence/)).toBeNull();
+  });
+});
+
+describe("the page is drawn in its own type's colour", () => {
+  // The accent table is tested on its own in `theme/presenceAccent.test.ts`.
+  // What is tested here is only that it reaches the screen, on the controls
+  // that carry a presence's identity — a table nothing reads is a very
+  // well-tested constant.
+  function flatten(style: unknown): Record<string, unknown> {
+    return Object.assign({}, ...[style].flat(Infinity).filter(Boolean)) as Record<string, unknown>;
+  }
+
+  it("colours the identity controls from the page type, not from the app accent", async () => {
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Follow")).toBeTruthy());
+
+    const artist = presenceAccent("ARTIST");
+    // An artist is violet. `colors.accent` is teal, and was what every one of
+    // these read before — so asserting the accent's own value here is not a
+    // tautology: it is the difference between the type deciding and nothing
+    // deciding.
+    expect(flatten(view.getByText("Follow").props.style).color).toBe(artist.ink);
+    expect(flatten(view.getByText("@nightsignal · Artist").props.style).color).toBe(artist.base);
+    expect(flatten(view.getByText("Posts").props.style).color).toBe(artist.base);
+    // The initial standing in for a missing avatar, and the ring around it.
+    expect(flatten(view.getByText("N").props.style).color).toBe(artist.base);
+  });
+
+  it("fills the primary action itself, not only its caption", async () => {
+    // The caption assertion above passes for a violet word on a teal button.
+    // Colouring the ink and forgetting the fill is the likelier half to miss,
+    // because it is the half that is not a word.
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Follow")).toBeTruthy());
+
+    const button = view.getByTestId("page-follow");
+    expect(flatten(button.props.style).backgroundColor).toBe(presenceAccent("ARTIST").base);
+  });
+
+  it("washes a coverless page in the accent instead of leaving a grey bar", async () => {
+    // A presence with no cover is the state every presence starts in, so this
+    // is the first thing anyone sees of a new page.
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Follow")).toBeTruthy());
+
+    // LinearGradient turns colour strings into platform ints before they
+    // reach props, so the expectation goes through the same conversion.
+    expect(view.getByTestId("page-cover-wash").props.colors).toEqual(
+      presenceAccent("ARTIST").wash.map((stop) => processColor(stop))
+    );
+  });
+
+  it("draws a restaurant differently from an artist", async () => {
+    // Two page types, one component, one screenshot apart. If the lookup were
+    // hard-coded to a single hue every assertion above would still pass.
+    mockGetPage.mockResolvedValue(page({ page_type: "RESTAURANT", handle: "ash", name: "Ash" }));
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Follow")).toBeTruthy());
+
+    const drawn = flatten(view.getByText("@ash · Restaurant").props.style).color;
+    expect(drawn).toBe(presenceAccent("RESTAURANT").base);
+    expect(drawn).not.toBe(presenceAccent("ARTIST").base);
+  });
+
+  it("leaves the verified badge alone", async () => {
+    // A verification badge is a claim about trust, and a trust marker that is
+    // a different colour on every page is one people stop reading. It stays
+    // brand teal on a violet page on purpose.
+    mockGetPage.mockResolvedValue(page({ verified: true }));
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Verified")).toBeTruthy());
+
+    expect(flatten(view.getByText("Verified").props.style).color).toBe(colors.accent);
   });
 });

@@ -148,6 +148,35 @@ only place that decides what counts as a real one. It is assembled from data
 - `overview` and `completeness` are management-only and are asserted absent
   from `public_view`.
 
+## The type is visible before the words are
+
+`src/theme/presenceAccent.ts` gives each page type a hue: creative violet,
+commerce cyan, community magenta, enterprise teal. This is the same sentence the
+top of this document already makes — the type controls presentation — reaching
+the viewer through colour rather than through a tab set.
+
+It is a `Record<PageType, PresenceHue>` and not a grouping function, for the
+reason directly above: a grouping function needs a fall-through, the fall-through
+is silent, and the types nobody thought about are exactly the ones it swallows.
+A seventeenth page type fails the build here until somebody says what colour it
+is. `presenceAccent()` does have a fall-through — to brand teal — but only for a
+type string this build has never heard of, which is a thing a newer server can
+genuinely send and which a screen cannot refuse to render over.
+
+Two things are deliberately outside it. The Presence tile on the profile and the
+hub header stay fixed brand teal (`presenceTheme`), because they stand for all of
+a member's presences at once and so must stand for none in particular. And the
+`Verified` badge stays brand teal on every page: a trust marker that is a
+different colour on every page is one people stop reading.
+
+`presenceAccent.test.ts` asserts no hex. It holds the table exhaustive, holds the
+alpha ramp inside the restraint bands `profileNeon` documents, and holds every
+hue to 4.5:1 on the three surfaces it is drawn on. That last one is what produced
+the `ink` token: the obvious primary action is a bright fill with a white caption,
+and white on teal is about 1.6:1 — so filled actions caption in the dark
+background colour, and the only gradient in the system is a cover wash that
+carries no text.
+
 ## The joins are tested, not just the calls
 
 `tests/pages/test_page_os.py` tests one call at a time. The two defects this

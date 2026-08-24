@@ -11,6 +11,7 @@ import {
   Text,
   View
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import {
   getPage,
   getPageByHandle,
@@ -29,6 +30,7 @@ import { PulseApiError } from "../api/pulseApi";
 import type { PulsePost } from "../api/feed";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
+import { presenceAccent } from "../theme/presenceAccent";
 import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Page">;
@@ -277,15 +279,43 @@ export function PageScreen({ route, navigation }: Props) {
    */
   const isPublic = page.status === "ACTIVE" || page.status === "PAUSED";
 
+  /**
+   * The colour this presence is drawn in, from its type.
+   *
+   * The type already decides the tab set and the labels; this is the same fact
+   * reaching the viewer before the words do. It is one lookup at the top rather
+   * than a colour picked per style rule, so a restaurant cannot end up with an
+   * artist's tab underline because one line was missed.
+   *
+   * `verified` is deliberately left out of it below. A verification badge is a
+   * claim about trust, and a trust marker that is a different colour on every
+   * page is a trust marker people stop reading — it stays brand teal wherever
+   * it appears.
+   */
+  const tone = presenceAccent(page.page_type);
+
   const header = (
     <View>
-      {page.cover_url ? <Image source={{ uri: page.cover_url }} style={styles.cover} /> : <View style={styles.cover} />}
+      {page.cover_url ? (
+        <Image source={{ uri: page.cover_url }} style={styles.cover} />
+      ) : (
+        // No cover is not a reason for a grey bar. The wash is the presence's
+        // own accent falling away to nothing, so an unfurnished page still
+        // reads as somebody's rather than as a loading state.
+        <LinearGradient colors={tone.wash} style={styles.cover} testID="page-cover-wash">
+          <View style={[styles.coverEdge, { backgroundColor: tone.border }]} />
+        </LinearGradient>
+      )}
       <View style={styles.hero}>
         {page.avatar_url ? (
-          <Image source={{ uri: page.avatar_url }} style={styles.avatar} />
+          <Image source={{ uri: page.avatar_url }} style={[styles.avatar, { borderColor: tone.base }]} />
         ) : (
-          <View style={[styles.avatar, styles.avatarFallback]}>
-            <Text style={styles.avatarInitial}>{page.name.slice(0, 1).toUpperCase()}</Text>
+          <View
+            style={[styles.avatar, styles.avatarFallback, { backgroundColor: tone.fill, borderColor: tone.base }]}
+          >
+            <Text style={[styles.avatarInitial, { color: tone.base }]}>
+              {page.name.slice(0, 1).toUpperCase()}
+            </Text>
           </View>
         )}
         <View style={styles.heroText}>
@@ -293,7 +323,9 @@ export function PageScreen({ route, navigation }: Props) {
             <Text style={styles.name}>{page.name}</Text>
             {page.verified ? <Text style={styles.verified}>Verified</Text> : null}
           </View>
-          <Text style={styles.handle}>@{page.handle} · {pageTypeLabel(page.page_type)}</Text>
+          <Text style={[styles.handle, { color: tone.base }]}>
+            @{page.handle} · {pageTypeLabel(page.page_type)}
+          </Text>
           {page.category ? <Text style={styles.category}>{page.category}</Text> : null}
           <Text style={styles.counts}>
             {page.followers_count} followers · {page.posts_count} posts
@@ -305,11 +337,22 @@ export function PageScreen({ route, navigation }: Props) {
         {isPublic ? (
           <Pressable
             accessibilityRole="button"
-            style={[styles.actionPrimary, following && styles.actionFollowing]}
+            testID="page-follow"
+            style={[
+              styles.actionPrimary,
+              { backgroundColor: tone.base },
+              following && [styles.actionFollowing, { borderColor: tone.base }]
+            ]}
             disabled={followBusy}
             onPress={onFollow}
           >
-            <Text style={[styles.actionPrimaryText, following && styles.actionFollowingText]}>
+            <Text
+              style={[
+                styles.actionPrimaryText,
+                { color: tone.ink },
+                following && { color: tone.base }
+              ]}
+            >
               {following ? "Following" : "Follow"}
             </Text>
           </Pressable>
@@ -345,10 +388,13 @@ export function PageScreen({ route, navigation }: Props) {
             key={tabKey}
             accessibilityRole="button"
             accessibilityState={{ selected: tab === tabKey }}
-            style={[styles.tabButton, tab === tabKey && styles.tabActive]}
+            style={[
+              styles.tabButton,
+              tab === tabKey && [styles.tabActive, { borderBottomColor: tone.base }]
+            ]}
             onPress={() => setTab(tabKey)}
           >
-            <Text style={[styles.tabText, tab === tabKey && styles.tabTextActive]}>
+            <Text style={[styles.tabText, tab === tabKey && { color: tone.base }]}>
               {tabKey.charAt(0).toUpperCase() + tabKey.slice(1)}
             </Text>
           </Pressable>
@@ -401,8 +447,10 @@ export function PageScreen({ route, navigation }: Props) {
         <Text style={styles.empty}>{headline}</Text>
         <Text style={styles.aboutMeta}>{teamHint}</Text>
         {action ? (
-          <Pressable accessibilityRole="button" style={styles.linkCard} onPress={action.go}>
-            <Text style={styles.linkCardText}>{action.label}</Text>
+          <Pressable accessibilityRole="button" style={[styles.linkCard, { backgroundColor: tone.fill, borderColor: tone.border }]}
+            onPress={action.go}
+          >
+            <Text style={[styles.linkCardText, { color: tone.base }]}>{action.label}</Text>
           </Pressable>
         ) : null}
       </View>
@@ -631,7 +679,7 @@ export function PageScreen({ route, navigation }: Props) {
                     {[when, event.venue].filter(Boolean).join(" · ")}
                   </Text>
                 ) : null}
-                {price ? <Text style={styles.eventPrice}>{price}</Text> : null}
+                {price ? <Text style={[styles.eventPrice, { color: tone.base }]}>{price}</Text> : null}
               </View>
             );
           })}
@@ -838,6 +886,14 @@ const styles = createThemedStyles(() => ({
   cover: {
     backgroundColor: colors.surfaceRaised,
     height: 130,
+    justifyContent: "flex-end",
+    width: "100%"
+  },
+  // A single hairline where the wash meets the page. It is what stops an
+  // accent-filled block from reading as a placeholder rectangle, and it is
+  // cheaper and steadier than a gradient behind a header that scrolls.
+  coverEdge: {
+    height: StyleSheet.hairlineWidth * 2,
     width: "100%"
   },
   empty: {
