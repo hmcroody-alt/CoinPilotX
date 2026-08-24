@@ -269,6 +269,10 @@ export function PortfolioScreen({ navigation }: Props) {
   const complete = portfolio ? totalsCoverEverything(portfolio) : true;
   const ranked = portfolio ? rankableHoldings(portfolio) : [];
   const valuation = portfolio?.valuation;
+  // No holding has a buy price, so there is no basis to measure a gain against.
+  const basisKnown = (valuation?.basisKnown ?? 0) > 0;
+  const aggregatePnl = basisKnown ? portfolio?.pnlValue ?? null : null;
+  const aggregateMove = basisKnown ? portfolio?.pnlPercent ?? null : null;
 
   return (
     <ScrollView
@@ -294,8 +298,13 @@ export function PortfolioScreen({ navigation }: Props) {
               })}
         </Text>
         <Text style={styles.total}>{formatPrice(portfolio?.totalValue ?? null)}</Text>
-        <Text style={[styles.totalMove, { color: moveColor(portfolio?.pnlPercent ?? null) }]}>
-          {formatSignedPrice(portfolio?.pnlValue ?? null)} · {formatPercent(portfolio?.pnlPercent ?? null)}
+        {/* The aggregate P/L sums the holdings whose basis is known. When that
+            set is empty the sum is 0, but 0 here would mean "you are exactly
+            break-even" -- a claim nothing in the data supports. Undecidable is
+            not break-even, so the number becomes "--" like every other unknown
+            on this screen, and the note below names the holdings responsible. */}
+        <Text style={[styles.totalMove, { color: moveColor(aggregateMove) }]}>
+          {formatSignedPrice(aggregatePnl)} · {formatPercent(aggregateMove)}
         </Text>
         {/* The caveat lives with the number it qualifies. Below the fold it would
             be a footnote on a figure the member has already read and believed. */}

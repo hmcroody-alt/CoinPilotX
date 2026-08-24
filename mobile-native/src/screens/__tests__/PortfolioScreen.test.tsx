@@ -170,6 +170,48 @@ describe("A number the server withheld is never rendered as a number", () => {
     expect(getByText(/premium:crypto\.portfolio\.row\.noBasis/)).toBeTruthy();
     expect(queryAllByText("$0.00")).toHaveLength(0);
   });
+
+  /**
+   * The aggregate P/L sums the holdings whose basis is known. With none known
+   * that sum is 0, and 0 renders as "+$0.000000 · +0.00%" — which reads as
+   * "you are exactly break-even", a claim the data does not support, sitting
+   * directly above the screen's own note that no holding has a buy price.
+   *
+   * `$0.00` never appears here (six decimals below $1), so the sibling test
+   * above cannot catch this. It has to be asserted on its own.
+   */
+  it("shows no aggregate P/L when no holding has a basis", async () => {
+    serve({
+      holdings: [noBasis],
+      total_value: 120000,
+      // What the server really sends for an empty decidable subset.
+      pnl_value: 0,
+      pnl_percent: 0,
+      valuation: { complete: true, holdings: 1, priced: 1, unpriced: 0, unpriced_symbols: [], basis_known: 0 }
+    });
+    const { getByText, queryByText, queryAllByText } = await show();
+
+    expect(queryByText(/\$0\.000000/)).toBeNull();
+    expect(queryByText(/\+0\.00%/)).toBeNull();
+    // The undecidable spelling every other unknown on this screen uses.
+    expect(getByText("-- · --")).toBeTruthy();
+    // The total itself is still known and still shown; only the gain is not.
+    // Twice: the single holding's value column, and the total covering it.
+    expect(queryAllByText("$120,000.00")).toHaveLength(2);
+  });
+
+  it("still shows the aggregate P/L when some holding has a basis", async () => {
+    serve({
+      holdings: [priced, noBasis],
+      total_value: 120000,
+      pnl_value: 20000,
+      pnl_percent: 20,
+      valuation: { complete: true, holdings: 2, priced: 2, unpriced: 0, unpriced_symbols: [], basis_known: 1 }
+    });
+    const { getByText } = await show();
+
+    expect(getByText("+$20,000.00 · +20.00%")).toBeTruthy();
+  });
 });
 
 describe("The screen loads the portfolio once", () => {
