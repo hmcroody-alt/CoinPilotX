@@ -2157,6 +2157,63 @@
     "free": {
       "heading": "始终免费",
       "body": "动态、发帖、Reels、状态、消息、通话、直播、个人主页、安全和账号找回始终免费。高级会员只做加法，不会拿走任何功能。"
+    },
+    "crypto": {
+      "portfolio": {
+        "title": "投资组合",
+        "subtitle": "以实时价格计算你的持仓价值。",
+        "loadError": "无法加载你的投资组合。",
+        "footnote": "此处为未实现盈亏：按今日价格计算的持仓价值，对比你填写的平均买入价。PulseSoc 不记录单笔交易。",
+        "total": {
+          "label": "总价值",
+          "partialLabel": "{{holdings}} 项持仓中 {{priced}} 项的总价值",
+          "incomplete": "部分持仓暂时无法获取实时价格。总额仅包含其余持仓。",
+          "basisNote_other": "{{count}} 项持仓没有买入价，因此不显示盈亏。"
+        },
+        "row": {
+          "units": "{{amount}} 单位",
+          "avg": "均价 {{price}}",
+          "noBasis": "无买入价",
+          "price": "价格 {{price}}",
+          "priceUnavailable": "价格暂不可用"
+        },
+        "form": {
+          "title": "添加持仓",
+          "symbolLabel": "币种代码",
+          "symbolPlaceholder": "例如 BTC",
+          "amountLabel": "数量",
+          "amountPlaceholder": "你持有多少",
+          "basisLabel": "平均买入价",
+          "basisPlaceholder": "每枚的买入价格",
+          "basisHint": "如果不知道买入价，可以留空。我们仍会计算持仓价值，只是不会显示它的盈亏。",
+          "symbolRequired": "请输入 BTC、ETH 或 SOL 之类的代码。",
+          "amountRequired": "请输入你持有的数量。",
+          "submit": "添加持仓",
+          "adding": "正在添加…",
+          "added": "已添加持仓。",
+          "addFailed": "无法添加该持仓。"
+        },
+        "holdings": {
+          "title": "持仓",
+          "empty": "还没有持仓。在上方添加第一项。"
+        },
+        "movers": {
+          "title": "涨跌最大",
+          "excluded_other": "{{count}} 项未参与排名：没有实时价格或没有买入价。"
+        },
+        "remove": {
+          "title": "移除持仓",
+          "body": "要把 {{symbol}} 从投资组合中移除吗？这不会影响你的自选列表或提醒。",
+          "a11y": "移除 {{symbol}}",
+          "done": "已移除持仓。",
+          "failed": "无法移除该持仓。"
+        },
+        "upgrade": {
+          "title": "已达到免费上限",
+          "body": "Premium 取消可追踪持仓数量的上限——价格、价值和历史记录两者完全相同。",
+          "action": "查看 Premium"
+        }
+      }
     }
   }
 }

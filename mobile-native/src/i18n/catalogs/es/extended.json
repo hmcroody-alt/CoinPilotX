@@ -2163,6 +2163,65 @@
     "free": {
       "heading": "Siempre gratis",
       "body": "Tu feed, publicaciones, reels, estados, mensajes, llamadas, vídeo en directo, perfil, seguridad y recuperación de cuenta siguen siendo gratis. Premium suma a PulseSoc; nunca quita nada."
+    },
+    "crypto": {
+      "portfolio": {
+        "title": "Cartera",
+        "subtitle": "Tus posiciones, valoradas con precios en vivo.",
+        "loadError": "No se pudo cargar tu cartera.",
+        "footnote": "Los valores no están realizados: son tus posiciones al precio de hoy, frente al precio medio de compra que introdujiste. PulseSoc no registra operaciones individuales.",
+        "total": {
+          "label": "Valor total",
+          "partialLabel": "Valor total de {{priced}} de {{holdings}} posiciones",
+          "incomplete": "No hay precios en vivo para algunas posiciones. El total solo cubre las demás.",
+          "basisNote_one": "{{count}} posición no tiene precio de compra, así que no tiene ganancia ni pérdida.",
+          "basisNote_other": "{{count}} posiciones no tienen precio de compra, así que no tienen ganancia ni pérdida."
+        },
+        "row": {
+          "units": "{{amount}} unidades",
+          "avg": "med. {{price}}",
+          "noBasis": "sin precio de compra",
+          "price": "Precio {{price}}",
+          "priceUnavailable": "Precio no disponible"
+        },
+        "form": {
+          "title": "Añadir posición",
+          "symbolLabel": "Símbolo de la moneda",
+          "symbolPlaceholder": "p. ej. BTC",
+          "amountLabel": "Cantidad",
+          "amountPlaceholder": "Cuánto tienes",
+          "basisLabel": "Precio medio de compra",
+          "basisPlaceholder": "Lo que pagaste, por moneda",
+          "basisHint": "Deja el precio de compra en blanco si no lo sabes. Igualmente valoraremos la posición y simplemente no mostraremos ganancia ni pérdida.",
+          "symbolRequired": "Introduce un símbolo como BTC, ETH o SOL.",
+          "amountRequired": "Introduce cuánto tienes.",
+          "submit": "Añadir posición",
+          "adding": "Añadiendo…",
+          "added": "Posición añadida.",
+          "addFailed": "No se pudo añadir esa posición."
+        },
+        "holdings": {
+          "title": "Posiciones",
+          "empty": "Aún no hay posiciones. Añade la primera arriba."
+        },
+        "movers": {
+          "title": "Mayores movimientos",
+          "excluded_one": "{{count}} posición no se clasifica: no tiene precio en vivo o no tiene precio de compra.",
+          "excluded_other": "{{count}} posiciones no se clasifican: no tienen precio en vivo o no tienen precio de compra."
+        },
+        "remove": {
+          "title": "Eliminar posición",
+          "body": "¿Eliminar {{symbol}} de tu cartera? Esto no afecta a tus listas ni a tus alertas.",
+          "a11y": "Eliminar {{symbol}}",
+          "done": "Posición eliminada.",
+          "failed": "No se pudo eliminar esa posición."
+        },
+        "upgrade": {
+          "title": "Has alcanzado el límite gratuito",
+          "body": "Premium quita el límite de posiciones que puedes seguir. Los precios, valores e historial son los mismos en ambos casos.",
+          "action": "Ver Premium"
+        }
+      }
     }
   }
 }

@@ -2163,6 +2163,65 @@
     "free": {
       "heading": "Immer kostenlos",
       "body": "Feed, Beiträge, Reels, Status, Nachrichten, Anrufe, Live-Video, Profil, Sicherheit und Kontowiederherstellung bleiben kostenlos. Premium ergänzt PulseSoc; es nimmt nie etwas weg."
+    },
+    "crypto": {
+      "portfolio": {
+        "title": "Portfolio",
+        "subtitle": "Deine Bestände, bewertet zu Live-Kursen.",
+        "loadError": "Dein Portfolio konnte nicht geladen werden.",
+        "footnote": "Die Werte sind nicht realisiert: deine Bestände zum heutigen Kurs, gegen den von dir eingetragenen durchschnittlichen Kaufpreis. PulseSoc erfasst keine einzelnen Trades.",
+        "total": {
+          "label": "Gesamtwert",
+          "partialLabel": "Gesamtwert von {{priced}} von {{holdings}} Beständen",
+          "incomplete": "Für einige Bestände sind keine Live-Kurse verfügbar. Die Summe umfasst nur deine übrigen Bestände.",
+          "basisNote_one": "{{count}} Bestand hat keinen Kaufpreis und damit weder Gewinn noch Verlust.",
+          "basisNote_other": "{{count}} Bestände haben keinen Kaufpreis und damit weder Gewinn noch Verlust."
+        },
+        "row": {
+          "units": "{{amount}} Einheiten",
+          "avg": "Ø {{price}}",
+          "noBasis": "kein Kaufpreis",
+          "price": "Kurs {{price}}",
+          "priceUnavailable": "Kurs nicht verfügbar"
+        },
+        "form": {
+          "title": "Bestand hinzufügen",
+          "symbolLabel": "Coin-Symbol",
+          "symbolPlaceholder": "z. B. BTC",
+          "amountLabel": "Menge",
+          "amountPlaceholder": "Wie viel du hältst",
+          "basisLabel": "Durchschnittlicher Kaufpreis",
+          "basisPlaceholder": "Was du pro Coin gezahlt hast",
+          "basisHint": "Lass den Kaufpreis leer, wenn du ihn nicht kennst. Wir bewerten den Bestand trotzdem und zeigen dafür einfach keinen Gewinn oder Verlust an.",
+          "symbolRequired": "Gib ein Symbol wie BTC, ETH oder SOL ein.",
+          "amountRequired": "Gib ein, wie viel du hältst.",
+          "submit": "Bestand hinzufügen",
+          "adding": "Wird hinzugefügt…",
+          "added": "Bestand hinzugefügt.",
+          "addFailed": "Dieser Bestand konnte nicht hinzugefügt werden."
+        },
+        "holdings": {
+          "title": "Bestände",
+          "empty": "Noch keine Bestände. Füge oben deinen ersten hinzu."
+        },
+        "movers": {
+          "title": "Größte Bewegungen",
+          "excluded_one": "{{count}} Bestand wird nicht gewertet: kein Live-Kurs oder kein Kaufpreis.",
+          "excluded_other": "{{count}} Bestände werden nicht gewertet: kein Live-Kurs oder kein Kaufpreis."
+        },
+        "remove": {
+          "title": "Bestand entfernen",
+          "body": "{{symbol}} aus deinem Portfolio entfernen? Deine Watchlists und Alarme bleiben unberührt.",
+          "a11y": "{{symbol}} entfernen",
+          "done": "Bestand entfernt.",
+          "failed": "Dieser Bestand konnte nicht entfernt werden."
+        },
+        "upgrade": {
+          "title": "Du hast das kostenlose Limit erreicht",
+          "body": "Premium hebt die Obergrenze für die Anzahl deiner Bestände auf. Kurse, Werte und Verlauf sind in beiden Fällen dieselben.",
+          "action": "Premium ansehen"
+        }
+      }
     }
   }
 }

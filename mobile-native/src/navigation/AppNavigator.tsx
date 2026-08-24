@@ -25,6 +25,7 @@ import { AccountHealthAppealsScreen } from "../screens/AccountHealthAppealsScree
 import { ActivityInboxScreen } from "../screens/ActivityInboxScreen";
 import { AlertManagementScreen } from "../screens/AlertManagementScreen";
 import { AssetDetailScreen } from "../screens/AssetDetailScreen";
+import { PortfolioScreen } from "../screens/PortfolioScreen";
 import { WatchlistsScreen } from "../screens/WatchlistsScreen";
 import { ActivityRoute } from "../screens/ActivityRoute";
 import { AdvertisingRoute } from "../screens/AdvertisingRoute";
@@ -545,6 +546,7 @@ export function AppNavigator() {
       <Stack.Screen name="UndxActionCenter" component={UndxActionCenterScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.undxActionCenter") })} />
       <Stack.Screen name="UndxCapabilities" component={UndxCapabilitiesScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.undxCapabilities") })} />
       <Stack.Screen name="Watchlists" component={WatchlistsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.watchlists") })} />
+      <Stack.Screen name="Portfolio" component={PortfolioScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.portfolio") })} />
       {/* This is the first-frame title only: AssetDetailScreen calls
           `setOptions` on mount and replaces it with the asset's name, which is a
           proper noun and so is deliberately not routed through the catalog. The

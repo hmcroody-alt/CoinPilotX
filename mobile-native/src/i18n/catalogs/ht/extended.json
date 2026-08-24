@@ -2158,6 +2158,63 @@
     "free": {
       "heading": "Toujou gratis",
       "body": "Fil ou, piblikasyon, reels, estati, mesaj, apèl, videyo an dirèk, pwofil, sekirite ak rekiperasyon kont rete gratis. Premium ajoute sou PulseSoc; li pa janm retire anyen."
+    },
+    "crypto": {
+      "portfolio": {
+        "title": "Pòtfolyo",
+        "subtitle": "Sa ou genyen yo, evalye ak pri an dirèk.",
+        "loadError": "Nou pa t kapab chaje pòtfolyo ou a.",
+        "footnote": "Valè yo pa reyalize: se sa ou genyen jodi a nan pri jodi a, kont pri acha mwayèn ou te antre a. PulseSoc pa swiv chak tranzaksyon.",
+        "total": {
+          "label": "Valè total",
+          "partialLabel": "Valè total pou {{priced}} sou {{holdings}}",
+          "incomplete": "Pri an dirèk pa disponib pou kèk nan sa ou genyen yo. Total la kouvri lòt yo sèlman.",
+          "basisNote_other": "{{count}} nan sa ou genyen yo pa gen pri acha, kidonk yo pa gen ni pwofi ni pèt."
+        },
+        "row": {
+          "units": "{{amount}} inite",
+          "avg": "mwayèn {{price}}",
+          "noBasis": "pa gen pri acha",
+          "price": "Pri {{price}}",
+          "priceUnavailable": "Pri pa disponib"
+        },
+        "form": {
+          "title": "Ajoute yon pozisyon",
+          "symbolLabel": "Senbòl pyès la",
+          "symbolPlaceholder": "egzanp BTC",
+          "amountLabel": "Kantite",
+          "amountPlaceholder": "Konbyen ou genyen",
+          "basisLabel": "Pri acha mwayèn",
+          "basisPlaceholder": "Sa ou te peye, pou chak pyès",
+          "basisHint": "Kite pri acha a vid si ou pa konnen l. N ap toujou evalye pozisyon an, e senpleman nou p ap montre ni pwofi ni pèt pou li.",
+          "symbolRequired": "Antre yon senbòl tankou BTC, ETH oswa SOL.",
+          "amountRequired": "Antre konbyen ou genyen.",
+          "submit": "Ajoute pozisyon an",
+          "adding": "N ap ajoute…",
+          "added": "Pozisyon an ajoute.",
+          "addFailed": "Nou pa t kapab ajoute pozisyon sa a."
+        },
+        "holdings": {
+          "title": "Sa ou genyen",
+          "empty": "Poko gen anyen. Ajoute premye a anwo a."
+        },
+        "movers": {
+          "title": "Pi gwo mouvman",
+          "excluded_other": "{{count}} pa klase: yo pa gen pri an dirèk oswa yo pa gen pri acha."
+        },
+        "remove": {
+          "title": "Retire pozisyon an",
+          "body": "Retire {{symbol}} nan pòtfolyo ou? Sa pa afekte lis siveyans ou yo ni alèt ou yo.",
+          "a11y": "Retire {{symbol}}",
+          "done": "Pozisyon an retire.",
+          "failed": "Nou pa t kapab retire pozisyon sa a."
+        },
+        "upgrade": {
+          "title": "Ou rive nan limit gratis la",
+          "body": "Premium retire limit sou konbyen pozisyon ou ka swiv. Pri, valè ak istwa yo menm nan tou de ka yo.",
+          "action": "Gade Premium"
+        }
+      }
     }
   }
 }

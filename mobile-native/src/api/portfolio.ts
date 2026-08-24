@@ -21,7 +21,7 @@
  * that is silently short.
  */
 
-import { pulseApi } from "./pulseApi";
+import { PulseApiError, pulseApi } from "./pulseApi";
 
 export type PortfolioHolding = {
   id: number;
@@ -176,4 +176,71 @@ export function rankableHoldings(portfolio: Portfolio): PortfolioHolding[] {
  */
 export function totalsCoverEverything(portfolio: Portfolio): boolean {
   return portfolio.valuation.complete;
+}
+
+/* ------------------------------------------------------------------ *
+ * Writes
+ * ------------------------------------------------------------------ */
+
+/**
+ * The refusal code the server sends when a free account is at its ceiling.
+ *
+ * The same string `services/alert_engine` returns for a capability denial, and
+ * the same one `portfolio_service.PREMIUM_REQUIRED` raises. Three places agree
+ * on one word so a client can branch on it.
+ */
+export const PREMIUM_REQUIRED = "premium_required";
+
+/**
+ * Is this failure "you need Premium", as opposed to anything else?
+ *
+ * Worth a named predicate rather than an inline comparison, because the two
+ * failures a screen must not confuse are *the ceiling* and *a bad symbol*: one
+ * should offer an upgrade and the other must not, and getting that backwards
+ * shows a paywall to somebody who simply mistyped. Matching on the code and
+ * never on the message also means a copy edit or a translation cannot silently
+ * turn the upgrade path off.
+ */
+export function isPremiumRequired(error: unknown): boolean {
+  return error instanceof PulseApiError && error.code === PREMIUM_REQUIRED;
+}
+
+export type NewHolding = {
+  symbol: string;
+  amount: number;
+  averageBuyPrice?: number | null;
+  coinName?: string;
+  notes?: string;
+};
+
+/**
+ * Adds a holding.
+ *
+ * `average_buy_price` is omitted entirely when the member did not give one,
+ * rather than sent as 0. The server reads an absent basis as "unknown" and will
+ * report the holding's value without claiming a profit for it; sending 0 would
+ * assert it was acquired for nothing and manufacture a 100%-gain row.
+ */
+export async function addHolding(input: NewHolding): Promise<{ ok: boolean; message: string }> {
+  const body: Record<string, unknown> = {
+    symbol: input.symbol.trim().toUpperCase(),
+    amount: input.amount
+  };
+  if (input.averageBuyPrice !== null && input.averageBuyPrice !== undefined) {
+    body.average_buy_price = input.averageBuyPrice;
+  }
+  if (input.coinName) body.coin_name = input.coinName;
+  if (input.notes) body.notes = input.notes;
+  const response = await pulseApi<{ ok?: boolean; message?: string }>("/api/portfolio", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+  return { ok: response?.ok !== false, message: String(response?.message || "") };
+}
+
+export async function deleteHolding(id: number): Promise<{ ok: boolean; message: string }> {
+  const response = await pulseApi<{ ok?: boolean; message?: string }>(`/api/portfolio/${id}`, {
+    method: "DELETE"
+  });
+  return { ok: response?.ok !== false, message: String(response?.message || "") };
 }

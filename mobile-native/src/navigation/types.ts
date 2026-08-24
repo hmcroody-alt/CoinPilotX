@@ -436,6 +436,7 @@ export type RootStackParamList = {
     | { alertId?: number; alert_id?: number; id?: number; presetSymbol?: string; title?: string }
     | undefined;
   Watchlists: { title?: string } | undefined;
+  Portfolio: { title?: string } | undefined;
   AssetDetail: { symbol: string; name?: string; title?: string };
   AccountCenter: { section?: "account" | "security" | "privacy" | "devices"; title?: string } | undefined;
   AccountSettings: { title?: string } | undefined;

@@ -2157,6 +2157,63 @@
     "free": {
       "heading": "언제나 무료",
       "body": "피드, 게시물, 릴스, 스테이터스, 메시지, 통화, 라이브 방송, 프로필, 보안, 계정 복구는 계속 무료입니다. 프리미엄은 PulseSoc에 더하는 것이지 무언가를 빼앗지 않습니다."
+    },
+    "crypto": {
+      "portfolio": {
+        "title": "포트폴리오",
+        "subtitle": "보유 자산을 실시간 시세로 평가합니다.",
+        "loadError": "포트폴리오를 불러오지 못했습니다.",
+        "footnote": "표시된 손익은 미실현입니다. 입력하신 평균 매수가 대비 오늘 시세 기준 보유 평가액이며, PulseSoc은 개별 거래를 기록하지 않습니다.",
+        "total": {
+          "label": "총 평가액",
+          "partialLabel": "{{holdings}}개 중 {{priced}}개의 총 평가액",
+          "incomplete": "일부 보유 자산의 실시간 시세를 가져오지 못했습니다. 합계에는 나머지 자산만 포함됩니다.",
+          "basisNote_other": "{{count}}개 자산은 매수가가 없어 손익이 표시되지 않습니다."
+        },
+        "row": {
+          "units": "{{amount}} 단위",
+          "avg": "평균 {{price}}",
+          "noBasis": "매수가 없음",
+          "price": "시세 {{price}}",
+          "priceUnavailable": "시세 없음"
+        },
+        "form": {
+          "title": "보유 자산 추가",
+          "symbolLabel": "코인 심볼",
+          "symbolPlaceholder": "예: BTC",
+          "amountLabel": "수량",
+          "amountPlaceholder": "보유 수량",
+          "basisLabel": "평균 매수가",
+          "basisPlaceholder": "코인당 매수 금액",
+          "basisHint": "매수가를 모르면 비워 두세요. 평가액은 그대로 보여 드리고, 해당 자산의 손익만 표시하지 않습니다.",
+          "symbolRequired": "BTC, ETH, SOL 같은 심볼을 입력하세요.",
+          "amountRequired": "보유 수량을 입력하세요.",
+          "submit": "보유 자산 추가",
+          "adding": "추가 중…",
+          "added": "보유 자산을 추가했습니다.",
+          "addFailed": "해당 보유 자산을 추가하지 못했습니다."
+        },
+        "holdings": {
+          "title": "보유 자산",
+          "empty": "아직 보유 자산이 없습니다. 위에서 첫 자산을 추가하세요."
+        },
+        "movers": {
+          "title": "변동 폭이 큰 자산",
+          "excluded_other": "{{count}}개는 순위에서 제외됩니다. 실시간 시세 또는 매수가가 없습니다."
+        },
+        "remove": {
+          "title": "보유 자산 삭제",
+          "body": "{{symbol}}을(를) 포트폴리오에서 삭제할까요? 관심목록과 알림에는 영향이 없습니다.",
+          "a11y": "{{symbol}} 삭제",
+          "done": "보유 자산을 삭제했습니다.",
+          "failed": "해당 보유 자산을 삭제하지 못했습니다."
+        },
+        "upgrade": {
+          "title": "무료 한도에 도달했습니다",
+          "body": "Premium은 추적할 수 있는 보유 자산 수의 한도를 없앱니다 — 시세, 평가액, 기록은 어느 쪽이든 동일합니다.",
+          "action": "Premium 보기"
+        }
+      }
     }
   }
 }

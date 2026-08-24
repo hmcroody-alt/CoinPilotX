@@ -2163,6 +2163,65 @@
     "free": {
       "heading": "Sempre gratuito",
       "body": "Seu feed, publicações, reels, status, mensagens, chamadas, vídeo ao vivo, perfil, segurança e recuperação de conta continuam gratuitos. O Premium soma ao PulseSoc; nunca tira nada."
+    },
+    "crypto": {
+      "portfolio": {
+        "title": "Carteira",
+        "subtitle": "As suas posições, avaliadas a preços em tempo real.",
+        "loadError": "Não foi possível carregar a sua carteira.",
+        "footnote": "Os valores não são realizados: são as suas posições ao preço de hoje, face ao preço médio de compra que introduziu. O PulseSoc não regista negociações individuais.",
+        "total": {
+          "label": "Valor total",
+          "partialLabel": "Valor total de {{priced}} de {{holdings}} posições",
+          "incomplete": "Não há preços em tempo real para algumas posições. O total cobre apenas as restantes.",
+          "basisNote_one": "{{count}} posição não tem preço de compra, por isso não tem lucro nem prejuízo.",
+          "basisNote_other": "{{count}} posições não têm preço de compra, por isso não têm lucro nem prejuízo."
+        },
+        "row": {
+          "units": "{{amount}} unidades",
+          "avg": "méd. {{price}}",
+          "noBasis": "sem preço de compra",
+          "price": "Preço {{price}}",
+          "priceUnavailable": "Preço indisponível"
+        },
+        "form": {
+          "title": "Adicionar posição",
+          "symbolLabel": "Símbolo da moeda",
+          "symbolPlaceholder": "ex. BTC",
+          "amountLabel": "Quantidade",
+          "amountPlaceholder": "Quanto tem",
+          "basisLabel": "Preço médio de compra",
+          "basisPlaceholder": "Quanto pagou, por moeda",
+          "basisHint": "Deixe o preço de compra em branco se não o souber. Continuaremos a avaliar a posição e simplesmente não mostraremos lucro nem prejuízo.",
+          "symbolRequired": "Introduza um símbolo como BTC, ETH ou SOL.",
+          "amountRequired": "Introduza quanto tem.",
+          "submit": "Adicionar posição",
+          "adding": "A adicionar…",
+          "added": "Posição adicionada.",
+          "addFailed": "Não foi possível adicionar essa posição."
+        },
+        "holdings": {
+          "title": "Posições",
+          "empty": "Ainda não há posições. Adicione a primeira acima."
+        },
+        "movers": {
+          "title": "Maiores variações",
+          "excluded_one": "{{count}} posição não é classificada: não tem preço em tempo real ou não tem preço de compra.",
+          "excluded_other": "{{count}} posições não são classificadas: não têm preço em tempo real ou não têm preço de compra."
+        },
+        "remove": {
+          "title": "Remover posição",
+          "body": "Remover {{symbol}} da sua carteira? Isto não afeta as suas listas nem os seus alertas.",
+          "a11y": "Remover {{symbol}}",
+          "done": "Posição removida.",
+          "failed": "Não foi possível remover essa posição."
+        },
+        "upgrade": {
+          "title": "Atingiu o limite gratuito",
+          "body": "O Premium remove o limite de posições que pode seguir. Os preços, valores e histórico são os mesmos em qualquer dos casos.",
+          "action": "Ver Premium"
+        }
+      }
     }
   }
 }

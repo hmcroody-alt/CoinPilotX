@@ -2163,6 +2163,65 @@
     "free": {
       "heading": "Always free",
       "body": "Your feed, posts, reels, status, messages, calls, live video, profile, security and account recovery stay free. Premium adds to PulseSoc; it never takes anything away."
+    },
+    "crypto": {
+      "portfolio": {
+        "title": "Portfolio",
+        "subtitle": "Your holdings, valued at live prices.",
+        "loadError": "Your portfolio could not load.",
+        "footnote": "Values are unrealised: your holdings at today's price, against the average buy price you entered. PulseSoc does not track individual trades.",
+        "total": {
+          "label": "Total value",
+          "partialLabel": "Total value of {{priced}} of {{holdings}} holdings",
+          "incomplete": "Live prices are unavailable for some holdings. The total covers your other holdings only.",
+          "basisNote_one": "{{count}} holding has no buy price, so it has no profit or loss.",
+          "basisNote_other": "{{count}} holdings have no buy price, so they have no profit or loss."
+        },
+        "row": {
+          "units": "{{amount}} units",
+          "avg": "avg {{price}}",
+          "noBasis": "no buy price",
+          "price": "Price {{price}}",
+          "priceUnavailable": "Price unavailable"
+        },
+        "form": {
+          "title": "Add holding",
+          "symbolLabel": "Coin symbol",
+          "symbolPlaceholder": "e.g. BTC",
+          "amountLabel": "Amount",
+          "amountPlaceholder": "How much you hold",
+          "basisLabel": "Average buy price",
+          "basisPlaceholder": "What you paid, per coin",
+          "basisHint": "Leave the buy price blank if you don't know it. We'll still value the holding, and simply won't show a profit or loss for it.",
+          "symbolRequired": "Enter a coin symbol like BTC, ETH or SOL.",
+          "amountRequired": "Enter how much of it you hold.",
+          "submit": "Add holding",
+          "adding": "Adding…",
+          "added": "Holding added.",
+          "addFailed": "That holding could not be added."
+        },
+        "holdings": {
+          "title": "Holdings",
+          "empty": "No holdings yet. Add your first one above."
+        },
+        "movers": {
+          "title": "Biggest moves",
+          "excluded_one": "{{count}} holding isn't ranked: it has no live price or no buy price.",
+          "excluded_other": "{{count}} holdings aren't ranked: they have no live price or no buy price."
+        },
+        "remove": {
+          "title": "Remove holding",
+          "body": "Remove {{symbol}} from your portfolio? This does not affect your watchlists or alerts.",
+          "a11y": "Remove {{symbol}}",
+          "done": "Holding removed.",
+          "failed": "That holding could not be removed."
+        },
+        "upgrade": {
+          "title": "You've reached the free limit",
+          "body": "Premium removes the limit on how many holdings you can track. The prices, values and history are the same either way.",
+          "action": "See Premium"
+        }
+      }
     }
   }
 }

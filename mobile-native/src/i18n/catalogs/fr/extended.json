@@ -2163,6 +2163,65 @@
     "free": {
       "heading": "Toujours gratuit",
       "body": "Votre fil, vos publications, reels, statuts, messages, appels, vidéo en direct, profil, sécurité et récupération de compte restent gratuits. Premium ajoute à PulseSoc ; il n'enlève jamais rien."
+    },
+    "crypto": {
+      "portfolio": {
+        "title": "Portefeuille",
+        "subtitle": "Vos positions, valorisées aux cours en direct.",
+        "loadError": "Votre portefeuille n'a pas pu être chargé.",
+        "footnote": "Les valeurs sont latentes : vos positions au cours du jour, face au prix d'achat moyen que vous avez saisi. PulseSoc ne suit pas les transactions individuelles.",
+        "total": {
+          "label": "Valeur totale",
+          "partialLabel": "Valeur totale de {{priced}} position(s) sur {{holdings}}",
+          "incomplete": "Les cours en direct sont indisponibles pour certaines positions. Le total ne couvre que les autres.",
+          "basisNote_one": "{{count}} position n'a pas de prix d'achat, elle n'a donc ni gain ni perte.",
+          "basisNote_other": "{{count}} positions n'ont pas de prix d'achat, elles n'ont donc ni gain ni perte."
+        },
+        "row": {
+          "units": "{{amount}} unités",
+          "avg": "moy. {{price}}",
+          "noBasis": "pas de prix d'achat",
+          "price": "Cours {{price}}",
+          "priceUnavailable": "Cours indisponible"
+        },
+        "form": {
+          "title": "Ajouter une position",
+          "symbolLabel": "Symbole de la crypto",
+          "symbolPlaceholder": "ex. BTC",
+          "amountLabel": "Quantité",
+          "amountPlaceholder": "Ce que vous détenez",
+          "basisLabel": "Prix d'achat moyen",
+          "basisPlaceholder": "Ce que vous avez payé, par unité",
+          "basisHint": "Laissez le prix d'achat vide si vous ne le connaissez pas. Nous valoriserons quand même la position et n'afficherons simplement ni gain ni perte.",
+          "symbolRequired": "Saisissez un symbole comme BTC, ETH ou SOL.",
+          "amountRequired": "Saisissez la quantité détenue.",
+          "submit": "Ajouter la position",
+          "adding": "Ajout…",
+          "added": "Position ajoutée.",
+          "addFailed": "Cette position n'a pas pu être ajoutée."
+        },
+        "holdings": {
+          "title": "Positions",
+          "empty": "Aucune position pour l'instant. Ajoutez la première ci-dessus."
+        },
+        "movers": {
+          "title": "Plus fortes variations",
+          "excluded_one": "{{count}} position n'est pas classée : pas de cours en direct ou pas de prix d'achat.",
+          "excluded_other": "{{count}} positions ne sont pas classées : pas de cours en direct ou pas de prix d'achat."
+        },
+        "remove": {
+          "title": "Supprimer la position",
+          "body": "Supprimer {{symbol}} de votre portefeuille ? Vos listes de suivi et vos alertes ne sont pas affectées.",
+          "a11y": "Supprimer {{symbol}}",
+          "done": "Position supprimée.",
+          "failed": "Cette position n'a pas pu être supprimée."
+        },
+        "upgrade": {
+          "title": "Vous avez atteint la limite gratuite",
+          "body": "Premium supprime la limite du nombre de positions que vous pouvez suivre. Les cours, les valeurs et l'historique sont identiques dans les deux cas.",
+          "action": "Voir Premium"
+        }
+      }
     }
   }
 }

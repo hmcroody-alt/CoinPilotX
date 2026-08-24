@@ -15,12 +15,22 @@
 
 const mockPulseApi = jest.fn();
 
+// The real `PulseApiError` is kept deliberately. `isPremiumRequired` is an
+// `instanceof` test, so a mock that replaced the class with a stub — or dropped
+// it, leaving `instanceof undefined` to throw — would decide these cases for
+// reasons that have nothing to do with the code under test.
 jest.mock("../pulseApi", () => ({
+  ...jest.requireActual("../pulseApi"),
   pulseApi: (...args: unknown[]) => mockPulseApi(...args)
 }));
 
+import { PulseApiError } from "../pulseApi";
 import {
+  PREMIUM_REQUIRED,
+  addHolding,
+  deleteHolding,
   getPortfolio,
+  isPremiumRequired,
   normalizeHolding,
   normalizePortfolio,
   rankableHoldings,
@@ -203,5 +213,94 @@ describe("The portfolio is read from the one endpoint that serves it", () => {
   it("survives an ok response carrying no portfolio", async () => {
     mockPulseApi.mockResolvedValue({ ok: true });
     await expect(getPortfolio()).resolves.toMatchObject({ holdings: [] });
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Writes
+ *
+ * The read path's job is not to invent a number the server withheld. The write
+ * path has the mirror-image job: not to state a number the *member* withheld.
+ * A blank buy price sent as 0 asserts the coin was acquired for nothing, and
+ * the server would faithfully report a 100% gain on it — the same fabrication
+ * as before, entered from the other end.
+ * ------------------------------------------------------------------ */
+
+describe("Adding a holding states only what the member actually entered", () => {
+  beforeEach(() => mockPulseApi.mockReset());
+
+  const bodyOf = () => JSON.parse(mockPulseApi.mock.calls[0][1].body as string);
+
+  it("omits the buy price entirely when it was left blank", async () => {
+    mockPulseApi.mockResolvedValue({ ok: true, message: "Added" });
+    await addHolding({ symbol: "btc", amount: 2 });
+
+    const body = bodyOf();
+    expect(body).not.toHaveProperty("average_buy_price");
+    expect(mockPulseApi).toHaveBeenCalledWith("/api/portfolio", expect.objectContaining({ method: "POST" }));
+  });
+
+  it("omits it for an explicit null too — 'I don't know' is not zero", async () => {
+    mockPulseApi.mockResolvedValue({ ok: true });
+    await addHolding({ symbol: "eth", amount: 1, averageBuyPrice: null });
+    expect(bodyOf()).not.toHaveProperty("average_buy_price");
+  });
+
+  it("sends a real zero when the member typed one", async () => {
+    // An airdrop genuinely cost nothing. The rule is about silence, not about
+    // the digit — dropping a deliberate 0 would be its own small lie.
+    mockPulseApi.mockResolvedValue({ ok: true });
+    await addHolding({ symbol: "doge", amount: 100, averageBuyPrice: 0 });
+    expect(bodyOf().average_buy_price).toBe(0);
+  });
+
+  it("normalizes the symbol so the server is not asked to guess", async () => {
+    mockPulseApi.mockResolvedValue({ ok: true });
+    await addHolding({ symbol: "  sol  ", amount: 3 });
+    expect(bodyOf().symbol).toBe("SOL");
+  });
+
+  it("leaves out the optional text fields rather than sending empty strings", async () => {
+    mockPulseApi.mockResolvedValue({ ok: true });
+    await addHolding({ symbol: "BTC", amount: 1, coinName: "", notes: "" });
+    const body = bodyOf();
+    expect(body).not.toHaveProperty("coin_name");
+    expect(body).not.toHaveProperty("notes");
+  });
+
+  it("deletes by id through the one endpoint that owns the holding", async () => {
+    mockPulseApi.mockResolvedValue({ ok: true, message: "Removed" });
+    await expect(deleteHolding(7)).resolves.toEqual({ ok: true, message: "Removed" });
+    expect(mockPulseApi).toHaveBeenCalledWith("/api/portfolio/7", { method: "DELETE" });
+  });
+});
+
+describe("A ceiling and a mistake are different failures", () => {
+  /**
+   * These two must never be confused. The first should offer to upgrade; the
+   * second must not, because showing a paywall to somebody who merely mistyped
+   * a ticker charges them for their own typo.
+   */
+  it("recognises the ceiling by its code", () => {
+    expect(isPremiumRequired(new PulseApiError("Free plan limit", 403, PREMIUM_REQUIRED))).toBe(true);
+  });
+
+  it("does not recognise a bad symbol as a ceiling", () => {
+    expect(isPremiumRequired(new PulseApiError("Unknown symbol", 400, "invalid_symbol"))).toBe(false);
+    expect(isPremiumRequired(new PulseApiError("Bad request", 400))).toBe(false);
+  });
+
+  it("never matches on the message, so a copy edit cannot switch the upgrade off", () => {
+    // Same refusal, translated. The code is what carries the meaning.
+    expect(isPremiumRequired(new PulseApiError("Límite del plan gratuito", 403, PREMIUM_REQUIRED))).toBe(true);
+    // And an English sentence that merely mentions Premium is not a ceiling.
+    expect(isPremiumRequired(new PulseApiError("premium_required", 400, "invalid_symbol"))).toBe(false);
+  });
+
+  it("is not fooled by something that is not an API error at all", () => {
+    expect(isPremiumRequired(new Error("offline"))).toBe(false);
+    expect(isPremiumRequired({ code: PREMIUM_REQUIRED })).toBe(false);
+    expect(isPremiumRequired(null)).toBe(false);
+    expect(isPremiumRequired(undefined)).toBe(false);
   });
 });

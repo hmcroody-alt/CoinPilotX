@@ -2150,6 +2150,63 @@
     "free": {
       "heading": "ずっと無料",
       "body": "フィード、投稿、リール、ステータス、メッセージ、通話、ライブ配信、プロフィール、セキュリティ、アカウント復旧は無料のままです。プレミアムは PulseSoc に機能を足すもので、何かを取り上げることはありません。"
+    },
+    "crypto": {
+      "portfolio": {
+        "title": "ポートフォリオ",
+        "subtitle": "保有資産をライブ価格で評価します。",
+        "loadError": "ポートフォリオを読み込めませんでした。",
+        "footnote": "表示は含み損益です。入力した平均取得単価に対する、本日価格での保有評価額です。PulseSoc は個々の取引を記録しません。",
+        "total": {
+          "label": "評価額合計",
+          "partialLabel": "{{holdings}} 件中 {{priced}} 件の評価額合計",
+          "incomplete": "一部の保有資産はライブ価格を取得できませんでした。合計はそれ以外の保有資産のみを含みます。",
+          "basisNote_other": "{{count}} 件は取得単価がないため、損益は表示されません。"
+        },
+        "row": {
+          "units": "{{amount}} 単位",
+          "avg": "平均 {{price}}",
+          "noBasis": "取得単価なし",
+          "price": "価格 {{price}}",
+          "priceUnavailable": "価格を取得できません"
+        },
+        "form": {
+          "title": "保有資産を追加",
+          "symbolLabel": "銘柄シンボル",
+          "symbolPlaceholder": "例: BTC",
+          "amountLabel": "数量",
+          "amountPlaceholder": "保有している数量",
+          "basisLabel": "平均取得単価",
+          "basisPlaceholder": "単位あたりの取得額",
+          "basisHint": "取得単価が分からない場合は空欄のままで構いません。評価額は表示され、その資産の損益だけが表示されません。",
+          "symbolRequired": "BTC、ETH、SOL などのシンボルを入力してください。",
+          "amountRequired": "保有数量を入力してください。",
+          "submit": "保有資産を追加",
+          "adding": "追加中…",
+          "added": "保有資産を追加しました。",
+          "addFailed": "その保有資産を追加できませんでした。"
+        },
+        "holdings": {
+          "title": "保有資産",
+          "empty": "保有資産はまだありません。上のフォームから最初の資産を追加してください。"
+        },
+        "movers": {
+          "title": "変動の大きい資産",
+          "excluded_other": "{{count}} 件はランキング対象外です。ライブ価格または取得単価がありません。"
+        },
+        "remove": {
+          "title": "保有資産を削除",
+          "body": "{{symbol}} をポートフォリオから削除しますか？ウォッチリストやアラートには影響しません。",
+          "a11y": "{{symbol}} を削除",
+          "done": "保有資産を削除しました。",
+          "failed": "その保有資産を削除できませんでした。"
+        },
+        "upgrade": {
+          "title": "無料の上限に達しました",
+          "body": "Premium は登録できる保有資産の上限をなくします。価格・評価額・履歴はどちらでも同じです。",
+          "action": "Premium を見る"
+        }
+      }
     }
   }
 }
