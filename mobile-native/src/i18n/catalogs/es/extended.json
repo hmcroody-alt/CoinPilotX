@@ -1611,6 +1611,22 @@
           "all": "Todo"
         }
       }
+    },
+    "dashboardMap": {
+      "openSection": "Abrir {{section}}",
+      "sections": {
+        "account": "Centro de mando de la cuenta",
+        "network": "Centro de mando de la red",
+        "creator": "Centro de mando del creador",
+        "intelligence": "Centro de mando de inteligencia",
+        "economy": "Centro de mando de economía",
+        "media": "Centro de mando de medios",
+        "crypto": "Centro de mando cripto",
+        "safety": "Centro de mando de seguridad",
+        "ads": "Centro de mando de anuncios",
+        "ai": "Centro de mando de IA",
+        "system": "Centro de mando del sistema"
+      }
     }
   },
   "settings": {

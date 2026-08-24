@@ -1611,6 +1611,22 @@
           "all": "Alle"
         }
       }
+    },
+    "dashboardMap": {
+      "openSection": "{{section}} öffnen",
+      "sections": {
+        "account": "Konto-Kommandozentrale",
+        "network": "Netzwerk-Kommandozentrale",
+        "creator": "Creator-Kommandozentrale",
+        "intelligence": "Intelligenz-Kommandozentrale",
+        "economy": "Wirtschafts-Kommandozentrale",
+        "media": "Medien-Kommandozentrale",
+        "crypto": "Krypto-Kommandozentrale",
+        "safety": "Sicherheits-Kommandozentrale",
+        "ads": "Anzeigen-Kommandozentrale",
+        "ai": "KI-Kommandozentrale",
+        "system": "System-Kommandozentrale"
+      }
     }
   },
   "settings": {

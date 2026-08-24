@@ -1609,6 +1609,22 @@
           "all": "全部"
         }
       }
+    },
+    "dashboardMap": {
+      "openSection": "打开{{section}}",
+      "sections": {
+        "account": "账户指挥中心",
+        "network": "网络指挥中心",
+        "creator": "创作者指挥中心",
+        "intelligence": "情报指挥中心",
+        "economy": "经济指挥中心",
+        "media": "媒体指挥中心",
+        "crypto": "加密货币指挥中心",
+        "safety": "安全指挥中心",
+        "ads": "广告指挥中心",
+        "ai": "AI 指挥中心",
+        "system": "系统指挥中心"
+      }
     }
   },
   "settings": {

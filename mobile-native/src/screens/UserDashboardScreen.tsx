@@ -1,11 +1,18 @@
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
+import * as Haptics from "expo-haptics";
 import { ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { DashboardCard, DashboardModuleKey, loadUserDashboardState, UserDashboardState } from "../api/dashboard";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
+import {
+  dashboardSectionForGroupKey,
+  dashboardSectionScrollOffset,
+  groupKeyForSectionParam
+} from "../core/dashboardMapNavigation";
 import { DashboardModuleGroup, DashboardModuleItem, DashboardQuickAction } from "../data/dashboardModules";
+import { useTranslation } from "../i18n";
 import { classifyDashboardActionRoute, dashboardModuleParamsForRoute, openDashboardRoute } from "../navigation/dashboardRouting";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
@@ -16,6 +23,8 @@ type DashboardNavigation = NativeStackNavigationProp<RootStackParamList>;
 
 export function UserDashboardScreen() {
   const navigation = useNavigation<DashboardNavigation>();
+  const route = useRoute();
+  const { t } = useTranslation();
   const [state, setState] = useState<UserDashboardState | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -23,9 +32,92 @@ export function UserDashboardScreen() {
   const pulse = useRef(new Animated.Value(0)).current;
   const reducedMotion = useLogiNexusReducedMotion();
 
+  // Production Dashboard Map → section navigation. Section positions are
+  // measured onLayout (content-relative), so jumps are exact regardless of how
+  // tall earlier sections render on this device or in this data state.
+  const scrollRef = useRef<ScrollView>(null);
+  const sectionLayoutsRef = useRef<Record<string, number>>({});
+  const pendingSectionGroupRef = useRef<string | null>(null);
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const highlightAnim = useRef(new Animated.Value(0)).current;
+  const [highlightedGroupKey, setHighlightedGroupKey] = useState<string | null>(null);
+  const sectionParam = (route.params as { section?: string } | undefined)?.section;
+
   useEffect(() => {
     load("initial").catch(() => undefined);
   }, []);
+
+  useEffect(() => () => {
+    if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+  }, []);
+
+  const emphasizeGroup = useCallback(
+    (groupKey: string) => {
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+      setHighlightedGroupKey(groupKey);
+      if (reducedMotion) {
+        // Reduce Motion: static emphasis that clears itself — no pulse.
+        highlightAnim.setValue(0.9);
+        highlightTimerRef.current = setTimeout(() => {
+          setHighlightedGroupKey(null);
+          highlightAnim.setValue(0);
+        }, 1400);
+        return;
+      }
+      highlightAnim.setValue(0);
+      Animated.sequence([
+        Animated.timing(highlightAnim, { toValue: 1, duration: 220, useNativeDriver: true }),
+        Animated.delay(650),
+        Animated.timing(highlightAnim, { toValue: 0, duration: 480, useNativeDriver: true })
+      ]).start(({ finished }) => {
+        if (finished) setHighlightedGroupKey(null);
+      });
+    },
+    [highlightAnim, reducedMotion]
+  );
+
+  const scrollToGroup = useCallback(
+    (groupKey: string): boolean => {
+      const layoutY = sectionLayoutsRef.current[groupKey];
+      if (layoutY === undefined) return false;
+      scrollRef.current?.scrollTo({ y: dashboardSectionScrollOffset(layoutY), animated: !reducedMotion });
+      emphasizeGroup(groupKey);
+      return true;
+    },
+    [emphasizeGroup, reducedMotion]
+  );
+
+  const consumePendingSection = useCallback(() => {
+    const groupKey = pendingSectionGroupRef.current;
+    if (groupKey && scrollToGroup(groupKey)) pendingSectionGroupRef.current = null;
+  }, [scrollToGroup]);
+
+  const registerSectionLayout = useCallback(
+    (groupKey: string, layoutY: number) => {
+      sectionLayoutsRef.current[groupKey] = layoutY;
+      consumePendingSection();
+    },
+    [consumePendingSection]
+  );
+
+  // Deep section entry: MissionControl(section="crypto") and friends. Unknown
+  // ids are ignored — never an approximate landing.
+  useEffect(() => {
+    const groupKey = groupKeyForSectionParam(sectionParam);
+    if (!groupKey) return;
+    pendingSectionGroupRef.current = groupKey;
+    consumePendingSection();
+  }, [sectionParam, consumePendingSection]);
+
+  function jumpToGroup(groupKey: string) {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+    scrollToGroup(groupKey);
+  }
+
+  function tileAccessibilityLabel(group: DashboardModuleGroup): string {
+    const section = dashboardSectionForGroupKey(group.key);
+    return t("discovery:dashboardMap.openSection", { section: section ? t(section.labelKey) : group.title });
+  }
 
   useEffect(() => {
     if (reducedMotion) {
@@ -67,6 +159,7 @@ export function UserDashboardScreen() {
 
   return (
     <ScrollView
+      ref={scrollRef}
       style={styles.root}
       contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load("refresh").catch(() => undefined)} />}
@@ -137,7 +230,14 @@ export function UserDashboardScreen() {
       <Section title="Production Dashboard Map" subtitle="Your dashboard, grouped. A few advanced modules still open on the PulseSoc website.">
         <View style={styles.moduleRail}>
           {moduleGroups.map((group) => (
-            <Pressable accessibilityRole="button" key={`rail-${group.key}`} style={styles.railChip} onPress={() => undefined}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={tileAccessibilityLabel(group)}
+              key={`rail-${group.key}`}
+              testID={`dashboard-map-tile-${group.key}`}
+              style={({ pressed }) => [styles.railChip, pressed ? styles.railChipPressed : null]}
+              onPress={() => jumpToGroup(group.key)}
+            >
               <Text style={styles.railGlyph}>{group.icon}</Text>
               <View style={styles.railCopy}>
                 <Text style={styles.railLabel}>{group.label}</Text>
@@ -149,7 +249,17 @@ export function UserDashboardScreen() {
       </Section>
 
       {moduleGroups.map((group) => (
-        <ModuleGroupSection key={group.key} group={group} onOpen={(module) => openDashboardModule(navigation, group, module)} />
+        <View
+          key={group.key}
+          testID={`dashboard-map-section-${group.key}`}
+          style={styles.sectionAnchor}
+          onLayout={(event) => registerSectionLayout(group.key, event.nativeEvent.layout.y)}
+        >
+          <ModuleGroupSection group={group} onOpen={(module) => openDashboardModule(navigation, group, module)} />
+          {highlightedGroupKey === group.key ? (
+            <Animated.View pointerEvents="none" style={[styles.sectionHighlight, { opacity: highlightAnim }]} />
+          ) : null}
+        </View>
       ))}
 
       <Section title="Dashboard Quick Actions" subtitle="Jump straight to the things you use most.">
@@ -669,6 +779,10 @@ const styles = createThemedStyles(() => ({
     minWidth: 150,
     padding: 10
   },
+  railChipPressed: {
+    borderColor: "rgba(37,208,167,0.6)",
+    transform: [{ scale: 0.97 }]
+  },
   railCopy: {
     gap: 2
   },
@@ -692,6 +806,20 @@ const styles = createThemedStyles(() => ({
   },
   section: {
     gap: 12
+  },
+  sectionAnchor: {
+    position: "relative"
+  },
+  sectionHighlight: {
+    borderColor: "rgba(37,208,167,0.55)",
+    borderRadius: 8,
+    borderWidth: 1,
+    backgroundColor: "rgba(37,208,167,0.07)",
+    bottom: -6,
+    left: -6,
+    position: "absolute",
+    right: -6,
+    top: -6
   },
   sectionSubtitle: {
     color: colors.muted,

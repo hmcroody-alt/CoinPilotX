@@ -1611,6 +1611,22 @@
           "all": "All"
         }
       }
+    },
+    "dashboardMap": {
+      "openSection": "Open {{section}}",
+      "sections": {
+        "account": "Account Command Center",
+        "network": "Network Command Center",
+        "creator": "Creator Command Center",
+        "intelligence": "Intelligence Command Center",
+        "economy": "Economy Command Center",
+        "media": "Media Command Center",
+        "crypto": "Crypto Command Center",
+        "safety": "Safety Command Center",
+        "ads": "Ads Command Center",
+        "ai": "AI Command Center",
+        "system": "System Command Center"
+      }
     }
   },
   "settings": {

@@ -1609,6 +1609,22 @@
           "all": "Tout"
         }
       }
+    },
+    "dashboardMap": {
+      "openSection": "Louvri {{section}}",
+      "sections": {
+        "account": "Sant kòmandman kont",
+        "network": "Sant kòmandman rezo",
+        "creator": "Sant kòmandman kreyatè",
+        "intelligence": "Sant kòmandman entèlijans",
+        "economy": "Sant kòmandman ekonomi",
+        "media": "Sant kòmandman medya",
+        "crypto": "Sant kòmandman kripto",
+        "safety": "Sant kòmandman sekirite",
+        "ads": "Sant kòmandman piblisite",
+        "ai": "Sant kòmandman AI",
+        "system": "Sant kòmandman sistèm"
+      }
     }
   },
   "settings": {
