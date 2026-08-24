@@ -160,6 +160,12 @@ export function openNativeRoute(navigation: NativeRouteNavigation, routePath: st
   });
   else if (path === "/pulse/intelligence") navigation.navigate("IntelligenceCenter", { title: "Intelligence" });
   else if (path === "/pulse/alerts") navigation.navigate("AlertManagement", { title: "Alerts" });
+  // No `title` param on purpose. The header falls back to
+  // `t("common:screens.portfolio")` only when none is passed, so the hardcoded
+  // English titles elsewhere in this chain are the reason a French member sees
+  // "Watchlists" above a translated screen. `/pulse/premium` sets the same
+  // precedent one line above.
+  else if (path === "/pulse/portfolio") navigation.navigate("Portfolio");
   else if (path === "/pulse/courses") navigation.navigate("Courses", { title: "Courses" });
   else if (path === "/terms" || path === "/privacy") navigation.navigate("Tabs", { screen: "Settings" });
   else openDashboardRoute(navigation, route.relative);

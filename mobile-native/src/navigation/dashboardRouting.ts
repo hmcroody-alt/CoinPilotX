@@ -115,6 +115,15 @@ export function openDashboardRoute(navigation: DashboardNavigation, route: strin
     navigation.navigate("BuyerOrders", { title: "Purchase History" });
     return;
   }
+  // Above the `/premium` rule deliberately. The server serves the portfolio at
+  // `/pulse/premium/portfolio` as well as `/pulse/portfolio` and `/portfolio`,
+  // and `includes("/premium")` matches the longest of those — so under the old
+  // order a link to a member's own holdings opened the upgrade screen instead.
+  // Ordering is the whole fix; both rules are otherwise unchanged.
+  if (path.includes("/portfolio")) {
+    navigation.navigate("Portfolio");
+    return;
+  }
   if (path.includes("/subscriptions") || path.includes("/premium")) {
     navigation.navigate("Premium");
     return;

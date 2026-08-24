@@ -86,6 +86,7 @@ export const masterNavigationSections: MasterNavigationSection[] = [
       { label: "Alert Management", route: "/pulse/alerts", status: "native", description: "Crypto, market, and intelligence alert controls." },
       { label: "Crypto Command", route: "/dashboard/crypto/alerts", status: "shell", description: "Crypto alerts and command-center shell." },
       { label: "Watchlists", route: "/dashboard/crypto/watchlists", status: "native", description: "Live crypto watchlists, prices, charts, and alerts." },
+      { label: "Portfolio", route: "/pulse/portfolio", status: "native", description: "Your holdings and their live value. Free up to the plan limit." },
       { label: "Scam Shield", route: "/scam-shield/scan", status: "native", description: "Check something that looks like a scam." }
     ]
   },
