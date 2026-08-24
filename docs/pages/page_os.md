@@ -148,6 +148,48 @@ only place that decides what counts as a real one. It is assembled from data
 - `overview` and `completeness` are management-only and are asserted absent
   from `public_view`.
 
+## The joins are tested, not just the calls
+
+`tests/pages/test_page_os.py` tests one call at a time. The two defects this
+work exists to close do not live in one call — real backend capability that
+nothing reaches, and controls with nothing behind them, both survive a suite
+where every piece is individually correct and the agreement between them is
+what fails. `tests/pages/test_page_journeys.py` walks a presence from empty to
+furnished, from both sides, and pins three joins:
+
+- **The advertised tab is the readable tab.** `module_availability` decides
+  which tabs a viewer is offered; a different function answers each tab. A tab
+  a stranger is offered must not report itself unconnected when opened.
+- **The setup line resolves.** `SETUP_RESOLUTIONS` carries out the one thing
+  each unready section's `setup` names and asserts the section flips to
+  `ready`. The table is asserted exhaustive against the sections the three
+  representative page types actually produce, so advice that leads nowhere
+  fails a test rather than shipping. `verification` is the one section an owner
+  cannot resolve alone, and its line says so instead of offering a step.
+- **The same page reads differently to the team and to a stranger, in exactly
+  the ways it should.** A visitor is never handed a setup prompt, and never
+  handed a tab that is the team's to fill.
+
+### A tab is advertised on the pointer, not on today's row count
+
+`module_availability` asks whether the presence is *pointed at a source*, not
+how many rows that source returns right now. So an artist between releases
+keeps their Music section and it says "connected, nothing published" — rather
+than the section vanishing from their page and reappearing on release day, a
+presence changing shape under its own audience for something the owner did not
+do. The alternative also costs a query into music_service, Marketplace and the
+events domain on every public page load, to decide which headings to draw. The
+tab is the promise that a section exists; the module read is where the honest
+empty state lives, which is why `page_music` reports `linked` separately from
+`tracks`.
+
+Events are the one conjunction: the tab needs a linked business *and* an
+environment that serves events, because with `BUSINESS_OS_EVENTS` off the whole
+domain raises 503 and a linked business would otherwise raise a tab that cannot
+load. Both halves are pinned separately — a flag that is global would otherwise
+be enough on its own to give every venue in the product a dates tab with no
+dates in it.
+
 ## Hard rules
 
 - Real metrics only — no fabricated followers, reviews, or analytics.

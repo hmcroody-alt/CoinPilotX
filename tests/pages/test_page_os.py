@@ -33,6 +33,7 @@ from unittest import mock
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, REPO_ROOT)
 
+import services  # noqa: E402
 from services import pulsesoc_pages, schema_guard  # noqa: E402
 from services.pulsesoc_pages import PageError  # noqa: E402
 
@@ -173,6 +174,30 @@ def events_switched(on):
     delegation itself; everything else states which world it is testing.
     """
     with mock.patch.object(pulsesoc_pages, "events_enabled", return_value=bool(on)):
+        yield
+
+
+@contextmanager
+def stub_catalogue(search_tracks):
+    """Stand in for the canonical music catalogue for this block.
+
+    Two things are replaced and the second one is the one that matters.
+    `page_music` does `from services import music_service`, and that reads the
+    attribute on the `services` package first, falling back to `sys.modules`
+    only when there is none. `bot.py` imports the real module — so the moment
+    any test in the run imports bot, the attribute is set for the rest of the
+    process and a `sys.modules` swap is silently ignored.
+
+    That is the worst shape a fixture can have: it works when the file is run
+    alone, so it passes review and passes locally, and in a full suite it
+    quietly hands the real catalogue an in-memory database that does not
+    contain it. Both of these tests' music cases failed exactly that way, and
+    only in company.
+    """
+    module = types.ModuleType("services.music_service")
+    module.search_tracks = search_tracks
+    with mock.patch.dict(sys.modules, {"services.music_service": module}), \
+            mock.patch.object(services, "music_service", module, create=True):
         yield
 
 
@@ -2175,25 +2200,13 @@ class MusicModuleTests(unittest.TestCase):
     def setUp(self):
         self.conn = make_conn()
         self.page_id = create(self.conn)["id"]
-        self._saved = sys.modules.get("services.music_service")
-
-    def tearDown(self):
-        if self._saved is None:
-            sys.modules.pop("services.music_service", None)
-        else:
-            sys.modules["services.music_service"] = self._saved
-
-    def _stub_catalogue(self, search_tracks):
-        module = types.ModuleType("services.music_service")
-        module.search_tracks = search_tracks
-        sys.modules["services.music_service"] = module
 
     def test_unlinked_presence_returns_empty_without_touching_the_catalogue(self):
         def explode(*_a, **_kw):
             raise AssertionError("catalogue must not be queried for an unlinked presence")
 
-        self._stub_catalogue(explode)
-        out = pulsesoc_pages.page_music(self.conn, self.page_id)
+        with stub_catalogue(explode):
+            out = pulsesoc_pages.page_music(self.conn, self.page_id)
         self.assertFalse(out["linked"])
         self.assertEqual(out["tracks"], [])
 
@@ -2202,9 +2215,9 @@ class MusicModuleTests(unittest.TestCase):
             {"id": "1", "title": "Signal", "artist": OWNER_ARTIST},
             {"id": "2", "title": "Borrowed", "artist": STRANGER_ARTIST},
         ]
-        self._stub_catalogue(lambda query="", limit=12, **kw: list(tracks))
         pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, "music_artist", OWNER_ARTIST.lower())
-        out = pulsesoc_pages.page_music(self.conn, self.page_id)
+        with stub_catalogue(lambda query="", limit=12, **kw: list(tracks)):
+            out = pulsesoc_pages.page_music(self.conn, self.page_id)
         self.assertTrue(out["linked"])
         self.assertEqual([t["title"] for t in out["tracks"]], ["Signal"])
 
@@ -2212,10 +2225,10 @@ class MusicModuleTests(unittest.TestCase):
         def boom(*_a, **_kw):
             raise RuntimeError("catalogue down")
 
-        self._stub_catalogue(boom)
         pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, "music_artist", OWNER_ARTIST)
-        with self.assertRaises(PageError) as ctx:
-            pulsesoc_pages.page_music(self.conn, self.page_id)
+        with stub_catalogue(boom):
+            with self.assertRaises(PageError) as ctx:
+                pulsesoc_pages.page_music(self.conn, self.page_id)
         self.assertEqual(ctx.exception.status_code, 503)
 
 
