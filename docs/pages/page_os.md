@@ -182,6 +182,24 @@ will never ask for. The extraction asserts it found something before it
 trusts what it found, so a rewrite of the screen fails loudly instead of
 reporting perfect agreement about nothing.
 
+### The type lists are sent where they can be, and checked where they cannot
+
+`BUSINESS_PAGE_TYPES` had a third copy, in TypeScript, as two frozensets in
+`PresenceHubScreen`. It had already drifted, and in the worst direction: types
+neither set named fell through to "business", so an OTHER presence was offered a
+Business OS door the server does not think it has. A page type is a string on
+both sides of the wire, so nothing — not the compiler, not a test — could see
+the two disagree. `public_view` now sends `business_os_capable` and the hub
+reads it. Nothing private travels with it; `page_type` is already public and the
+mapping is a constant, so the point is not secrecy but that one place decides.
+A server that omits the field withholds the button, because a shorter card is a
+smaller loss than a door onto nothing.
+
+`PAGE_TYPES` cannot be sent — the create wizard needs the list before there is a
+page to send it with — so it is checked instead, against the client's `as const`
+array, in order: agreeing on membership while disagreeing on the first choice
+offered is still a drift.
+
 ### A tab is advertised on the pointer, not on today's row count
 
 `module_availability` asks whether the presence is *pointed at a source*, not

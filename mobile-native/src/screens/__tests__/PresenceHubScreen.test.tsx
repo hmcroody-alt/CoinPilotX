@@ -96,7 +96,9 @@ describe("every control on a presence card goes somewhere of its own", () => {
   });
 
   it("keeps Business OS on a business presence, where there is a third place to go", async () => {
-    mockListMyPages.mockResolvedValue([presence({ page_type: "BUSINESS", name: "Vault Coffee" })]);
+    mockListMyPages.mockResolvedValue([
+      presence({ page_type: "BUSINESS", name: "Vault Coffee", business_os_capable: true })
+    ]);
     const { view, navigation } = show();
     await waitFor(() => expect(view.queryByText("Vault Coffee")).toBeTruthy());
     fireEvent.press(view.getByText("Business OS"));
@@ -106,6 +108,36 @@ describe("every control on a presence card goes somewhere of its own", () => {
   it("does not invent a third door for an artist to keep the cards symmetrical", async () => {
     const { view } = show();
     await waitFor(() => expect(view.queryByText("Night Signal")).toBeTruthy());
+    expect(view.queryByText("Business OS")).toBeNull();
+  });
+
+  it("asks the server which presences have a Business OS rather than deciding here", async () => {
+    // This file used to carry its own copy of the server's
+    // `BUSINESS_PAGE_TYPES`, as two frozensets, and the copy had drifted: a
+    // type in neither set fell through to "business", so an OTHER presence was
+    // offered a door the server does not think it has. A page type is a string
+    // on both sides of the wire, so nothing could see the two disagree.
+    //
+    // The type below is a real one the copy got wrong. The button is withheld
+    // because the server said so, not because this file now names it in the
+    // right set — the fixture keeps the type and flips only the server's word.
+    mockListMyPages.mockResolvedValue([
+      presence({ page_type: "OTHER", name: "Loose Ends", business_os_capable: false })
+    ]);
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Loose Ends")).toBeTruthy());
+    expect(view.queryByText("Business OS")).toBeNull();
+  });
+
+  it("withholds the door when an older server does not say either way", async () => {
+    // A missing field must read as "no". A shorter card is a smaller loss than
+    // a button that lands on a Business OS this presence has no seat in, and
+    // this is the same presence type the test above is told yes about.
+    mockListMyPages.mockResolvedValue([
+      presence({ page_type: "BUSINESS", name: "Vault Coffee", business_os_capable: undefined })
+    ]);
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Vault Coffee")).toBeTruthy());
     expect(view.queryByText("Business OS")).toBeNull();
   });
 });

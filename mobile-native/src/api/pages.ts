@@ -72,6 +72,13 @@ export type PulsePage = {
   /** Which optional modules have real backing data. The server hides unbacked
    * tabs from the public and keeps them for the team as setup prompts. */
   modules?: Record<string, boolean>;
+  /**
+   * Whether this presence's operations continue into Business OS, decided by
+   * the server from `BUSINESS_PAGE_TYPES`. Optional because an older server
+   * does not send it, and a missing field must read as "no" — offering a door
+   * onto nothing is worse than a shorter card.
+   */
+  business_os_capable?: boolean;
   created_at?: string;
   viewer?: { role: PageRole | null; following: boolean };
   /** Present only on "my pages" rows. */

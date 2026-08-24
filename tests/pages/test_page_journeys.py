@@ -570,6 +570,84 @@ class AdvertisedTabIsReadableTests(unittest.TestCase):
             branches - renderable, set(),
             "PageScreen draws a tab the server will never send")
 
+    def test_the_client_knows_the_same_sixteen_page_types(self):
+        """The closed set is closed on both sides of the wire.
+
+        `PAGE_TYPES` exists twice — a Python tuple and a TypeScript `as const`
+        array that the client's `PageType` union is derived from. A type added
+        to one and not the other does not fail to compile and does not fail a
+        test: the server accepts a create the client cannot name, or the client
+        offers a type the server refuses at the first step of the wizard.
+
+        The same duplication in `BUSINESS_PAGE_TYPES` had already drifted in
+        exactly this way, which is why `business_os_capable` is now sent rather
+        than re-derived. This list cannot be sent — the wizard needs it before
+        there is a page — so it is checked instead.
+        """
+        source_path = os.path.join(REPO_ROOT, "mobile-native", "src", "api", "pages.ts")
+        self.assertTrue(os.path.exists(source_path), "the pages API client has moved")
+        with open(source_path, encoding="utf-8") as handle:
+            source = handle.read()
+
+        declared = re.search(r"export const PAGE_TYPES = \[(.*?)\] as const;", source, re.S)
+        self.assertIsNotNone(
+            declared, "PAGE_TYPES is no longer declared in the shape this test reads")
+        client_types = re.findall(r'"([A-Z_]+)"', declared.group(1))
+
+        # Order is part of it: the wizard renders the type chooser in this
+        # order, and the server's tuple is the list the product was designed
+        # around. Comparing sets would let the two agree on membership while
+        # showing a different first choice.
+        self.assertEqual(client_types, list(pulsesoc_pages.PAGE_TYPES))
+
+    def test_every_page_type_is_told_whether_it_has_a_business_os(self):
+        """The Business OS door is decided once, for all sixteen types.
+
+        The hub used to decide it from its own copy of `BUSINESS_PAGE_TYPES`,
+        and the copy defaulted anything it did not recognise to "business" — so
+        the types the copy forgot were exactly the ones that got a door onto
+        nothing. A test that only checked BUSINESS and ARTIST would have passed
+        throughout; the failure lived in the types nobody thought about.
+
+        So this walks the whole closed set, and asserts the answer arrives for
+        every one of them rather than only that it is right where it is present:
+        a missing key reads as "no" on the client, which is safe but silent, and
+        would hide the field disappearing from a type's view entirely.
+        """
+        conn = make_conn()
+        for index, page_type in enumerate(pulsesoc_pages.PAGE_TYPES):
+            with self.subTest(page_type=page_type):
+                page_id = create(
+                    conn, page_type=page_type, name=f"Page {index}",
+                    handle=f"page{index}")["id"]
+                view = pulsesoc_pages.public_view(
+                    conn, pulsesoc_pages._load_page(conn, page_id), viewer_user_id=STRANGER)
+                self.assertIn("business_os_capable", view)
+                self.assertEqual(
+                    view["business_os_capable"],
+                    page_type in pulsesoc_pages.BUSINESS_PAGE_TYPES)
+
+    def test_the_two_kinds_of_presence_are_actually_told_apart(self):
+        """Not every type answers the same way.
+
+        The assertion above compares the field against the constant it is
+        derived from, so it holds just as well if both are wrong together — and
+        `x in frozenset()` is always False. These two are named outright: a
+        restaurant has operations to run, an artist has none, and the hub draws
+        a different card for each.
+        """
+        conn = make_conn()
+        restaurant = create(conn, page_type="RESTAURANT", name="Ash", handle="ash")["id"]
+        artist = create(conn, page_type="ARTIST", name="Vale", handle="vale")["id"]
+
+        def capable(page_id):
+            return pulsesoc_pages.public_view(
+                conn, pulsesoc_pages._load_page(conn, page_id),
+                viewer_user_id=STRANGER)["business_os_capable"]
+
+        self.assertIs(capable(restaurant), True)
+        self.assertIs(capable(artist), False)
+
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

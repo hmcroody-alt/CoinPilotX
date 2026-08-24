@@ -613,6 +613,20 @@ def public_view(conn: Any, page: dict, viewer_user_id: int | None = None) -> dic
         "videos_count": counts["videos"],
         "tabs": _visible_tabs(page, availability, bool(viewer_role)),
         "modules": availability,
+        # Whether this presence's operations continue into Business OS.
+        #
+        # Derived from `BUSINESS_PAGE_TYPES` and sent rather than left to the
+        # client, because the client had grown its own copy of the list — two
+        # frozensets in `PresenceHubScreen` — and the copy had already drifted:
+        # it defaulted anything it did not recognise to "business", so an OTHER
+        # presence was offered a Business OS door the server does not think it
+        # has. That is the exact failure the comment on `BUSINESS_PAGE_TYPES`
+        # warns about, in a language where nothing could see it happen.
+        #
+        # Nothing private travels with it: `page_type` is already public and
+        # the mapping is a constant, so this is a fact a caller could work out
+        # anyway — the point is that only one place works it out.
+        "business_os_capable": (page.get("page_type") or "") in BUSINESS_PAGE_TYPES,
         "shop_seller_id": shop_seller_id,
         "created_at": page.get("created_at"),
         "viewer": {"role": viewer_role, "following": following},

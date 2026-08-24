@@ -17,18 +17,23 @@ import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Presence">;
 
-/** Page types whose management naturally continues into Business OS. */
-const BUSINESS_TYPES = new Set([
-  "BUSINESS", "BRAND", "STORE", "RESTAURANT", "PROFESSIONAL_SERVICE",
-  "LOCAL_BUSINESS", "NONPROFIT", "ORGANIZATION", "MEDIA", "VENUE", "EDUCATION"
-]);
-
-const ARTIST_TYPES = new Set(["ARTIST", "CREATOR", "PUBLIC_FIGURE", "SPORTS_TEAM"]);
-
-function presenceKind(page: PulsePage): "artist" | "business" {
-  if (ARTIST_TYPES.has(page.page_type)) return "artist";
-  if (BUSINESS_TYPES.has(page.page_type)) return "business";
-  return "business";
+/**
+ * Whether this presence has a Business OS to go to, as decided by the server.
+ *
+ * This used to be two frozensets in this file — a third copy of the server's
+ * `BUSINESS_PAGE_TYPES`, whose own comment says a second copy is a second
+ * thing to forget when a page type is added. It had already drifted: anything
+ * the two sets did not name fell through to "business", so an OTHER presence
+ * was offered a Business OS door the server does not think it has. Nothing
+ * could catch that, because the divergence was between a Python constant and a
+ * TypeScript literal.
+ *
+ * `business_os_capable` is now sent with the page. An older server that omits
+ * it withholds the button, which is the safe way round: a missing door is a
+ * shorter card, a door onto nothing is the thing this whole mission is about.
+ */
+function hasBusinessOs(page: PulsePage): boolean {
+  return page.business_os_capable === true;
 }
 
 /**
@@ -185,7 +190,6 @@ export function PresenceHubScreen({ navigation }: Props) {
         <Text style={styles.empty}>You haven't created a Presence yet.</Text>
       ) : (
         pages.map((page) => {
-          const kind = presenceKind(page);
           const pending = pendingModules(page);
           return (
             <View key={page.id} style={styles.presenceCard}>
@@ -252,7 +256,7 @@ export function PresenceHubScreen({ navigation }: Props) {
                   the two cards look symmetrical would be the same mistake in a
                   new place.
                 */}
-                {kind === "business" ? (
+                {hasBusinessOs(page) ? (
                   <Pressable
                     accessibilityRole="button"
                     style={styles.presenceAction}
