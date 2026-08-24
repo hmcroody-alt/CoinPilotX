@@ -50,7 +50,7 @@ export type AuthStackParamList = {
 };
 
 export type AppTabParamList = {
-  Dashboard: undefined;
+  Dashboard: { section?: string } | undefined;
   Home: {
     openComposer?: boolean;
     composerMode?: "post" | "status" | "reel";
@@ -80,8 +80,8 @@ export type AppTabParamList = {
 
 export type RootStackParamList = {
   Tabs: NavigatorScreenParams<AppTabParamList> | undefined;
-  UserDashboard: { title?: string } | undefined;
-  UserDashboardWeb: { title?: string } | undefined;
+  UserDashboard: { title?: string; section?: string } | undefined;
+  UserDashboardWeb: { title?: string; section?: string } | undefined;
   DashboardComposeAlias: undefined;
   DashboardMusicAlias: undefined;
   Music: ({ trackId?: string; track?: string; artistId?: number; artist?: number; openUpload?: boolean; title?: string; surface?: "post" | "status" | "reel" } & ProfileOsParams) | undefined;

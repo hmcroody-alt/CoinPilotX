@@ -1442,6 +1442,22 @@
       "newCollection": "Nouvelle collection",
       "collectionName": "Nom de la collection",
       "saveToCollection": "Enregistrer dans une collection"
+    },
+    "dashboardMap": {
+      "openSection": "Ouvrir {{section}}",
+      "sections": {
+        "account": "Centre de commande du compte",
+        "network": "Centre de commande du réseau",
+        "creator": "Centre de commande créateur",
+        "intelligence": "Centre de commande de l'intelligence",
+        "economy": "Centre de commande de l'économie",
+        "media": "Centre de commande des médias",
+        "crypto": "Centre de commande crypto",
+        "safety": "Centre de commande de la sécurité",
+        "ads": "Centre de commande des publicités",
+        "ai": "Centre de commande de l'IA",
+        "system": "Centre de commande du système"
+      }
     }
   },
   "settings": {

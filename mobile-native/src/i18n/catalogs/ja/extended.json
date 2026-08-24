@@ -1432,6 +1432,22 @@
       "newCollection": "新しいコレクション",
       "collectionName": "コレクション名",
       "saveToCollection": "コレクションに保存"
+    },
+    "dashboardMap": {
+      "openSection": "{{section}}を開く",
+      "sections": {
+        "account": "アカウント・コマンドセンター",
+        "network": "ネットワーク・コマンドセンター",
+        "creator": "クリエイター・コマンドセンター",
+        "intelligence": "インテリジェンス・コマンドセンター",
+        "economy": "エコノミー・コマンドセンター",
+        "media": "メディア・コマンドセンター",
+        "crypto": "暗号資産コマンドセンター",
+        "safety": "セーフティ・コマンドセンター",
+        "ads": "広告コマンドセンター",
+        "ai": "AIコマンドセンター",
+        "system": "システム・コマンドセンター"
+      }
     }
   },
   "settings": {

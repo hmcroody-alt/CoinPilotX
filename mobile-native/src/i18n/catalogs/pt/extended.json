@@ -1442,6 +1442,22 @@
       "newCollection": "Nova coleção",
       "collectionName": "Nome da coleção",
       "saveToCollection": "Salvar na coleção"
+    },
+    "dashboardMap": {
+      "openSection": "Abrir {{section}}",
+      "sections": {
+        "account": "Central de comando da conta",
+        "network": "Central de comando da rede",
+        "creator": "Central de comando do criador",
+        "intelligence": "Central de comando de inteligência",
+        "economy": "Central de comando de economia",
+        "media": "Central de comando de mídia",
+        "crypto": "Central de comando cripto",
+        "safety": "Central de comando de segurança",
+        "ads": "Central de comando de anúncios",
+        "ai": "Central de comando de IA",
+        "system": "Central de comando do sistema"
+      }
     }
   },
   "settings": {

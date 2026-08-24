@@ -1440,6 +1440,22 @@
       "newCollection": "새 컬렉션",
       "collectionName": "컬렉션 이름",
       "saveToCollection": "컬렉션에 저장"
+    },
+    "dashboardMap": {
+      "openSection": "{{section}} 열기",
+      "sections": {
+        "account": "계정 커맨드 센터",
+        "network": "네트워크 커맨드 센터",
+        "creator": "크리에이터 커맨드 센터",
+        "intelligence": "인텔리전스 커맨드 센터",
+        "economy": "경제 커맨드 센터",
+        "media": "미디어 커맨드 센터",
+        "crypto": "크립토 커맨드 센터",
+        "safety": "안전 커맨드 센터",
+        "ads": "광고 커맨드 센터",
+        "ai": "AI 커맨드 센터",
+        "system": "시스템 커맨드 센터"
+      }
     }
   },
   "settings": {
