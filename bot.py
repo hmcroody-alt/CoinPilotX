@@ -36303,7 +36303,7 @@ def pulse_premium_portfolio_page():
     """
     script = """
     const holdings=document.getElementById('portfolioHoldings'),notice=document.getElementById('portfolioNotice'),money=value=>new Intl.NumberFormat(undefined,{style:'currency',currency:'USD',maximumFractionDigits:2}).format(Number(value||0)),esc=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
-    async function loadPortfolio(){try{const d=await pulseApi('/api/portfolio');const p=d.portfolio||{};document.getElementById('portfolioTotal').textContent=money(p.total_value);document.getElementById('portfolioPnl').textContent=`P/L ${money(p.pnl_value)} (${Number(p.pnl_percent||0).toFixed(2)}%)`;const rows=p.holdings||[];holdings.innerHTML=rows.length?rows.map(h=>`<article class="holding-row"><div><strong>${esc(h.symbol)}</strong><div class="legacy-holding">${h.legacy?'Original portfolio holding':'Portfolio holding'}</div></div><span>${Number(h.amount||0).toLocaleString()} units</span><span>${h.price==null?'Price unavailable':money(h.price)}</span><span>${money(h.value)}</span>${h.id?`<button type="button" data-delete-holding="${Number(h.id)}">Remove</button>`:'<span class="legacy-holding">Preserved</span>'}</article>`).join(''):'<p class="muted">No holdings yet. Add your first asset.</p>';if(p.warning)notice.textContent=p.warning}catch(err){holdings.innerHTML=`<p class="muted">${esc(err.message)}</p>`}}
+    async function loadPortfolio(){try{const d=await pulseApi('/api/portfolio');const p=d.portfolio||{};document.getElementById('portfolioTotal').textContent=money(p.total_value);document.getElementById('portfolioPnl').textContent=`P/L ${money(p.pnl_value)} (${Number(p.pnl_percent||0).toFixed(2)}%)`;const rows=p.holdings||[];holdings.innerHTML=rows.length?rows.map(h=>`<article class="holding-row"><div><strong>${esc(h.symbol)}</strong><div class="legacy-holding">${h.legacy?'Original portfolio holding':'Portfolio holding'}</div></div><span>${Number(h.amount||0).toLocaleString()} units</span><span>${h.price==null?'Price unavailable':money(h.price)}</span><span>${h.value==null?'—':money(h.value)}</span>${h.id?`<button type="button" data-delete-holding="${Number(h.id)}">Remove</button>`:'<span class="legacy-holding">Preserved</span>'}</article>`).join(''):'<p class="muted">No holdings yet. Add your first asset.</p>';if(p.warning)notice.textContent=p.warning}catch(err){holdings.innerHTML=`<p class="muted">${esc(err.message)}</p>`}}
     document.getElementById('portfolioAddForm').addEventListener('submit',async e=>{e.preventDefault();notice.textContent='Adding holding...';try{const d=await pulseApi('/api/portfolio',{method:'POST',body:JSON.stringify({symbol:document.getElementById('portfolioSymbol').value,amount:document.getElementById('portfolioAmount').value,average_buy_price:document.getElementById('portfolioAverage').value})});notice.textContent=d.message||'Holding added.';e.target.reset();await loadPortfolio()}catch(err){notice.textContent=err.message}});
     holdings.addEventListener('click',async e=>{const btn=e.target.closest('[data-delete-holding]');if(!btn)return;if(!confirm('Remove this holding from your portfolio?'))return;try{const d=await pulseApi('/api/portfolio/'+btn.dataset.deleteHolding,{method:'DELETE'});notice.textContent=d.message||'Holding removed.';await loadPortfolio()}catch(err){notice.textContent=err.message}});loadPortfolio();
     """
@@ -115762,12 +115762,22 @@ async def website_portfolio_command(update: Update, context: ContextTypes.DEFAUL
     if holdings:
         lines.append("\nTop holdings:")
         for item in holdings[:6]:
+            # `value` and `pnl_percent` are None whenever the price or the cost
+            # basis is missing, so each is rendered only once it exists. The key
+            # read here used to be `current_value`, which the portfolio service
+            # has never produced — this loop raised KeyError for anyone with a
+            # holding, so the command has never printed one.
+            value = item.get("value")
+            pnl_percent = item.get("pnl_percent")
+            value_text = "price unavailable" if value is None else f"≈ ${value:,.2f}"
+            pnl_text = "" if pnl_percent is None else f" ({pnl_percent:+.2f}% P/L)"
             lines.append(
-                f"• {item['symbol']}: {item['amount']:.6g} ≈ ${item['current_value']:,.2f} "
-                f"({item['pnl_percent']:+.2f}% P/L)"
+                f"• {item.get('symbol')}: {float(item.get('amount') or 0):.6g} {value_text}{pnl_text}"
             )
     else:
         lines.append("\nNo website holdings saved yet. Add holdings from your dashboard.")
+    if data.get("warning"):
+        lines.append(f"\n{data['warning']}")
     lines.append("\nDashboard: https://pulsesoc.com/dashboard")
     lines.append("Educational information only. Not financial, betting, investment, or legal advice.")
     await update.message.reply_text("\n".join(lines), reply_markup=account_reply_markup(update.effective_user.id))

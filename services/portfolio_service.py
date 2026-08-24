@@ -4,7 +4,37 @@ from datetime import datetime
 from . import market_data, pro_access, user_context
 
 SAFETY = "Portfolio tracker is educational only. CoinPlotXAI Inc. does not hold funds or provide financial advice."
-FREE_LIMITS = {"holdings": 3, "watchlist": 5, "alerts": 2}
+
+#: What a free account may *add*. Premium removes the ceiling entirely.
+#:
+#: These numbers are not new. They were already published to every client in the
+#: dashboard's ``limits`` block while :func:`_limit_check` returned "allowed"
+#: unconditionally — so the product has been stating a rule it did not apply.
+#: Enforcing them makes the existing statement true rather than inventing a
+#: restriction, and it is what gives ``premium.crypto.portfolio`` a gate that
+#: reads it instead of a grant that changes nothing.
+#:
+#: There is deliberately no alert ceiling here any more. The one this dict used
+#: to advertise applied to ``user_alerts``, the legacy table behind
+#: :func:`create_price_alert`, which no live route reaches. Alerts now run
+#: through ``services.alert_engine`` and are gated on *capability* — compound and
+#: watchlist rules are Premium, single-threshold rules are free and unlimited —
+#: so a count would have described no shipping behaviour.
+FREE_LIMITS = {"holdings": 3, "watchlist": 5}
+
+#: Which table each ceiling counts. Values are module constants, never input.
+_LIMIT_TABLES = {"holdings": "portfolio_items", "watchlist": "watchlist_items"}
+
+LIMIT_MESSAGES = {
+    "holdings": (
+        f"A free portfolio tracks up to {FREE_LIMITS['holdings']} holdings. "
+        "PulseSoc Premium removes the limit."
+    ),
+    "watchlist": (
+        f"A free watchlist holds up to {FREE_LIMITS['watchlist']} coins. "
+        "PulseSoc Premium removes the limit."
+    ),
+}
 
 
 def _now():
@@ -51,8 +81,56 @@ def _count_table(user_id, table, active_only=False):
     return count
 
 
+def has_premium_portfolio(user_id):
+    """Does this account hold ``premium.crypto.portfolio``?
+
+    Resolved through :mod:`services.premium_crypto_access` — the same reader the
+    alert engine consults — so the portfolio and the alerts cannot end up with
+    different opinions about who is a member. That module already owns the
+    off/shadow/canonical precedence and the account-hold rule; this is a caller,
+    not a fourth authority.
+
+    An import failure is treated as *entitled*. This gate only ever removes a
+    ceiling, so the two ways it can be wrong are not symmetric: failing open
+    lets a free account add a fourth holding, failing closed tells a paying
+    member they cannot touch their own portfolio. The first is recoverable.
+    """
+    try:
+        from services import premium_crypto_access
+        return bool(
+            premium_crypto_access.allowed_for_user_id(
+                user_id, premium_crypto_access.PORTFOLIO
+            )
+        )
+    except Exception:  # noqa: BLE001 — a missing reader must not lock anyone out
+        return True
+
+
 def _limit_check(user_id, kind):
-    return True, ""
+    """May this account add one more of ``kind``?
+
+    Enforced on creation only, and deliberately never on read. An account that
+    is already over the ceiling — because the ceiling was published for a long
+    time without being applied — keeps every holding it has and continues to see
+    all of them; it simply cannot add another until it removes one or
+    subscribes. Trimming to make the limit true retroactively would delete a
+    member's own records to settle a bookkeeping question.
+    """
+    ceiling = FREE_LIMITS.get(kind)
+    table = _LIMIT_TABLES.get(kind)
+    if not ceiling or not table:
+        return True, ""
+    if has_premium_portfolio(user_id):
+        return True, ""
+    try:
+        current = _count_table(user_id, table)
+    except Exception:  # noqa: BLE001
+        # A table that cannot be counted is not evidence of an over-limit
+        # account, and refusing on it would break adding for everyone.
+        return True, ""
+    if current < ceiling:
+        return True, ""
+    return False, LIMIT_MESSAGES[kind]
 
 
 def add_portfolio_item(user_id, symbol, coin_name="", amount=0, average_buy_price=0, notes=""):
@@ -182,6 +260,67 @@ def delete_alert(user_id, alert_id):
     return {"ok": bool(changed), "message": "Alert deleted." if changed else "Alert not found."}
 
 
+def _value_holding(item, live):
+    """Value one holding, keeping "unknown" distinct from "zero" at every step.
+
+    Two facts can go missing independently and they fail in different ways:
+
+    * **No live price.** The holding's value is unknown. Calling it zero makes a
+      total that silently omits the asset, and — because profit used to be
+      computed as ``value - cost`` regardless — turns an unquoted asset into a
+      fabricated total loss that then flows into the portfolio percentage, the
+      "top loser" slot, and the saved snapshot.
+    * **No cost basis.** Holdings carried over from the original CoinPilotX
+      portfolio have an amount but no buy price. Their value is knowable and
+      their profit is not; reporting break-even would invent a basis they never
+      had.
+
+    So ``price``/``value``/``cost``/``pnl_value``/``pnl_percent`` are each
+    ``None`` when the input for them is absent, and ``priced`` states which case
+    the caller is looking at without having to test for ``None``.
+    """
+    amount = float(item.get("amount") or 0)
+    basis = float(item.get("average_buy_price") or 0)
+    priced = bool(live) and live.get("price") is not None
+    price = float(live.get("price") or 0) if priced else None
+    value = amount * price if price is not None else None
+    # A legacy row's basis is absent rather than zero, so it earns no cost line.
+    cost = amount * basis if (basis > 0 and not item.get("legacy")) else None
+    if value is None or cost is None:
+        pnl = None
+        pnl_percent = None
+    else:
+        pnl = value - cost
+        pnl_percent = (pnl / cost * 100) if cost else None
+    return {
+        "price": price,
+        "value": value,
+        "cost": cost,
+        "pnl_value": pnl,
+        "pnl_percent": pnl_percent,
+        "change_24h": live.get("change_24h") if priced else None,
+        "priced": priced,
+    }
+
+
+def _valuation_warning(unpriced):
+    """Name the assets the totals leave out, rather than hinting at an outage.
+
+    The old wording — "Live price feed temporarily unavailable." — told a member
+    something was wrong but not that the total under it was short, which is the
+    part that actually matters when reading a number.
+    """
+    if not unpriced:
+        return ""
+    shown = ", ".join(unpriced[:4])
+    if len(unpriced) > 4:
+        shown += f" and {len(unpriced) - 4} more"
+    return (
+        f"Live prices are unavailable for {shown}. "
+        "The totals below cover your other holdings only."
+    )
+
+
 def calculate_user_portfolio(user_id):
     conn = user_context.connect()
     cur = conn.cursor()
@@ -212,28 +351,26 @@ def calculate_user_portfolio(user_id):
     total_value = 0.0
     total_cost = 0.0
     total_pnl = 0.0
-    warning = ""
+    unpriced = []
     for item in holdings:
-        live = get_live_price(item.get("symbol"))
-        if not live or live.get("price") is None:
-            warning = "Live price feed temporarily unavailable."
-            price = None
-            value = 0.0
-            change = None
+        valued = _value_holding(item, get_live_price(item.get("symbol")))
+        if valued["value"] is None:
+            unpriced.append(str(item.get("symbol") or "").upper() or "?")
         else:
-            price = float(live.get("price") or 0)
-            value = float(item.get("amount") or 0) * price
-            change = live.get("change_24h")
-        cost = float(item.get("amount") or 0) * float(item.get("average_buy_price") or 0)
-        pnl = 0.0 if item.get("legacy") else value - cost
-        pnl_percent = (pnl / cost * 100) if cost and not item.get("legacy") else 0
-        total_value += value
-        total_cost += cost
-        total_pnl += pnl
-        enriched.append({**item, "price": price, "value": value, "cost": cost, "pnl_value": pnl, "pnl_percent": pnl_percent, "change_24h": change})
+            total_value += valued["value"]
+        # A cost only joins the basis once its value side is known. Adding it
+        # otherwise would divide a partial gain by a whole basis and report the
+        # missing prices as a loss.
+        if valued["pnl_value"] is not None:
+            total_cost += valued["cost"]
+            total_pnl += valued["pnl_value"]
+        enriched.append({**item, **valued})
     total_pnl_percent = (total_pnl / total_cost * 100) if total_cost else 0
-    top_gainer = max(enriched, key=lambda x: x.get("pnl_percent", -999999), default=None)
-    top_loser = min(enriched, key=lambda x: x.get("pnl_percent", 999999), default=None)
+    # Only holdings with a real P/L can be ranked. Including the others would
+    # let an asset that simply could not be priced win "top loser".
+    ranked = [h for h in enriched if h.get("pnl_percent") is not None]
+    top_gainer = max(ranked, key=lambda h: h["pnl_percent"], default=None)
+    top_loser = min(ranked, key=lambda h: h["pnl_percent"], default=None)
     return {
         "holdings": enriched,
         "total_value": total_value,
@@ -242,7 +379,17 @@ def calculate_user_portfolio(user_id):
         "pnl_percent": total_pnl_percent,
         "top_gainer": top_gainer,
         "top_loser": top_loser,
-        "warning": warning,
+        # What the totals above actually cover. A caller that renders a total
+        # without reading this is showing a sum over an unstated subset.
+        "valuation": {
+            "complete": not unpriced,
+            "holdings": len(enriched),
+            "priced": len(enriched) - len(unpriced),
+            "unpriced": len(unpriced),
+            "unpriced_symbols": unpriced,
+            "basis_known": len(ranked),
+        },
+        "warning": _valuation_warning(unpriced),
     }
 
 
@@ -332,6 +479,7 @@ def get_user_dashboard_data(user_id):
         and bool(user.get("stripe_subscription_id") or user.get("stripe_customer_id"))
     )
     trialing = pro and status == "trialing" and not paid_pro
+    portfolio_premium = has_premium_portfolio(user_id)
     portfolio = calculate_user_portfolio(user_id)
     watchlist = get_watchlist(user_id)
     alerts = get_alerts(user_id)
@@ -352,7 +500,16 @@ def get_user_dashboard_data(user_id):
             "telegram_linked": bool(user.get("telegram_user_id")),
             "telegram_username": user.get("telegram_username") or "",
         },
-        "limits": {"pro": pro, **({} if pro else FREE_LIMITS)},
+        # The advertised ceiling and the enforced one have to come from one
+        # reader. `pro` above is the legacy subscription flag and stays in the
+        # payload for the surfaces that already read it, but what the limits say
+        # is now decided by the same gate `_limit_check` applies, so the
+        # dashboard cannot promise unlimited holdings while the add path refuses.
+        "limits": {
+            "pro": pro,
+            "portfolio_premium": portfolio_premium,
+            **({} if portfolio_premium else FREE_LIMITS),
+        },
         "portfolio": portfolio,
         "watchlist": watchlist,
         "alerts": alerts,
@@ -366,6 +523,19 @@ def get_user_dashboard_data(user_id):
 
 
 def save_snapshot(user_id, portfolio):
+    """Record today's totals — but only when they cover the whole portfolio.
+
+    A snapshot is history: it is read back long after the minute that produced
+    it, when nothing remains to say a price feed was down. Writing one while a
+    holding could not be priced would put a permanently, invisibly short total
+    into the series, and a run of them would read as a real drawdown. No row is
+    better than a wrong one, because the next complete pass writes a right one.
+
+    The default is ``True`` so a caller still passing the older portfolio shape
+    keeps its existing behaviour rather than silently never snapshotting.
+    """
+    if not (portfolio.get("valuation") or {}).get("complete", True):
+        return
     try:
         conn = user_context.connect()
         cur = conn.cursor()

@@ -146,11 +146,29 @@ _REGISTRY: tuple[Feature, ...] = (
         ),
     ),
     Feature(
-        "premium.crypto.portfolio", "Premium crypto portfolio", NEXT_WAVE,
+        "premium.crypto.portfolio", "Unlimited portfolio and watchlist", BETA,
+        enforced_by="services.portfolio_service._limit_check",
         note=(
-            "Entitlement key is registered. The portfolio backend exists but is "
-            "still gated by the legacy api_pro_required check and has no native "
-            "client. Promote when the gate reads this key."
+            "What this key buys is precisely one thing: the removal of the free "
+            "ceilings of 3 holdings and 5 watchlist coins. It does not buy a "
+            "different portfolio — free and Premium accounts get the same "
+            "valuation, the same history and the same insight text — so it must "
+            "be advertised as 'unlimited', never as 'premium analytics'. "
+            "Correcting the record: this entry previously said the portfolio was "
+            "'gated by the legacy api_pro_required check'. It was not. That "
+            "function (bot.py) checks login and blocks iOS native requests, and "
+            "otherwise returns None; it performs no entitlement check at all "
+            "despite the name, and GET /api/portfolio was ungated entirely. The "
+            "ceilings were published in the dashboard's limits block the whole "
+            "time while _limit_check returned 'allowed' unconditionally. "
+            "Enforced on creation only: an account already over a ceiling keeps "
+            "and sees every holding it has. Two claims stay out of bounds. There "
+            "is no transaction ledger behind portfolio_items — only amount and "
+            "average buy price — so nothing here may be sold as realized P/L, "
+            "tax lots or trade history; unrealized value against an average "
+            "basis is the whole of it. And the iOS native app cannot reach the "
+            "portfolio write routes at all (api_pro_required returns the "
+            "paid-digital 403), so no iOS surface may advertise this yet."
         ),
     ),
     Feature(

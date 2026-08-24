@@ -172,7 +172,7 @@ def test_crypto_keys_are_seeded_on_every_plan_that_confers_membership():
 #: Crypto capabilities a real gate reads today. Adding a key here is the
 #: deliberate act of declaring it sellable, and belongs in the same change that
 #: ships its gate — never ahead of it.
-GATED_TODAY = {pca.ADVANCED_ALERTS}
+GATED_TODAY = {pca.ADVANCED_ALERTS, pca.PORTFOLIO}
 
 
 def test_crypto_capabilities_are_not_advertised_before_a_gate_reads_them():
