@@ -217,6 +217,41 @@ exist — the page-type branch no longer layers over them, because both of their
 values were being overwritten and their presence only suggested they still
 decided something.
 
+### The header names the presence when the screen acts on one
+
+`PageEdit`, `PageTeam` and `PageConnections` take a `pageId` and change or
+display that one presence. Every caller already sent the name alongside the id —
+`PageScreen` and `PagesHubScreen` both pass `title: page.name` — and all three
+routes declared static titles and discarded it. The result was a header reading
+"Team & access" over the subtitle "Who can act for this presence": a
+demonstrative with no antecedent anywhere on screen, on a screen that can change
+somebody's role. A member with an artist page and a restaurant could not tell
+from the header which team they were about to edit.
+
+They now read `route.params?.title || t("common:screens.…")`, matching `Page`
+and `ProfileDetail`. The fallback is not decoration: a deep link can arrive with
+an id and no name, and a header rendering `undefined` is worse than a generic
+one, so the test asserts the whole expression rather than just the param.
+
+The other three Presence routes are asserted *not* to do this, which is the half
+that stops the rule being applied by reflex. `Presence` and `PagesHub` are about
+all of a member's presences at once, and `PageCreate` is about one that does not
+exist yet — a name in those headers would either be wrong or be a claim about
+something the screen does not operate on. `title?: string` is a repo-wide param
+convention on around a hundred routes, most of which ignore it deliberately, so
+the invariant is scoped to the routes where the name is the difference between
+editing the right presence and the wrong one.
+
+The check lives in `navigatorLocalization.test.ts`, which reads `AppNavigator.tsx`
+as text rather than importing it — importing pulls in the whole screen graph to
+answer a question about string literals. That harness now strips comments before
+extracting title options, because the paragraph explaining this change quotes
+`title: page.name` and the extractor was counting the sentence as a 130th header
+title. `stripComments` is covered by its own fixture tests in both directions:
+that a `title:` inside a comment is ignored, and that code sitting *between* two
+comments survives — a stripper greedy across both blocks would make a route
+vanish from a count that is pinned exactly.
+
 ## The joins are tested, not just the calls
 
 `tests/pages/test_page_os.py` tests one call at a time. The two defects this

@@ -516,9 +516,29 @@ export function AppNavigator() {
       <Stack.Screen name="ProfileDetail" component={ProfileScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.profile") })} />
       <Stack.Screen name="Page" component={PageScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.page") })} />
       <Stack.Screen name="PageCreate" component={PageCreateScreen} options={{ title: t("common:screens.createPage") }} />
-      <Stack.Screen name="PageConnections" component={PageConnectionsScreen} options={{ title: t("common:screens.pageConnections") }} />
-      <Stack.Screen name="PageTeam" component={PageTeamScreen} options={{ title: t("common:screens.pageTeam") }} />
-      <Stack.Screen name="PageEdit" component={PageEditScreen} options={{ title: t("common:screens.editPage") }} />
+      {/*
+        These three name the presence they are about to change, the same way
+        `Page` and `ProfileDetail` above do.
+
+        Every caller already passes it — `PageScreen` and `PagesHubScreen` both
+        send `title: page.name`, and the route types have declared it since they
+        were written — and all three screens dropped it on the floor. What was
+        left was a header reading "Team & access" over the subtitle "Who can act
+        for this presence", on a screen that can change somebody's role, with
+        nothing anywhere saying which presence. The subtitles are written with a
+        demonstrative — "this presence", "this presence is connected to" — and
+        the antecedent was never on screen; the value that supplies it was
+        arriving and being discarded.
+
+        So the name takes the title and the existing subtitle keeps the
+        function: "Night Signal" over "Who can act for this presence" says both
+        things, where the previous pair said one of them twice. The generic
+        title stays as the fallback, for a deep link that arrives with an id and
+        no name.
+      */}
+      <Stack.Screen name="PageConnections" component={PageConnectionsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.pageConnections") })} />
+      <Stack.Screen name="PageTeam" component={PageTeamScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.pageTeam") })} />
+      <Stack.Screen name="PageEdit" component={PageEditScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.editPage") })} />
       <Stack.Screen name="PagesHub" component={PagesHubScreen} options={{ title: t("common:screens.yourPages") }} />
       <Stack.Screen name="Presence" component={PresenceHubScreen} options={{ title: t("common:screens.presence") }} />
       <Stack.Screen name="PulseIdentity" component={PulseIdentityScreen} options={{ title: t("common:screens.pulseIdentity") }} />
