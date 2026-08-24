@@ -27,6 +27,7 @@ setup prompt, and never shown a tab whose emptiness is the team's problem.
 """
 
 import os
+import re
 import sys
 import unittest
 from contextlib import contextmanager
@@ -522,6 +523,52 @@ class AdvertisedTabIsReadableTests(unittest.TestCase):
         for page_type, tabs in pulsesoc_pages.TYPE_TABS.items():
             with self.subTest(page_type=page_type):
                 self.assertEqual(set(tabs) - set(pulsesoc_pages.RENDERABLE_TABS), set())
+
+    def test_the_servers_renderable_set_is_actually_the_screens_branch_set(self):
+        """And `RENDERABLE_TABS` is checked against the screen it describes.
+
+        The test above only says TYPE_TABS stays inside RENDERABLE_TABS. What
+        nothing checked is the sentence RENDERABLE_TABS' own comment makes:
+        that it *is* PageScreen's branch set. It is a claim about a file in
+        another language, so it has been true by attention rather than by
+        anything, and the failure it guards against is silent in both
+        directions.
+
+        A tab in the constant with no branch behind it reaches a matching
+        build as "This section needs a newer version of the app" — on the
+        newest version of the app. A branch with no tab in the constant is
+        working client code the server will never ask for, which is the
+        mission's first defect exactly: capability nothing reaches.
+        """
+        source_path = os.path.join(
+            REPO_ROOT, "mobile-native", "src", "screens", "PageScreen.tsx")
+        self.assertTrue(
+            os.path.exists(source_path),
+            "PageScreen.tsx has moved; RENDERABLE_TABS now describes nothing")
+        with open(source_path, encoding="utf-8") as handle:
+            source = handle.read()
+
+        branches = set(re.findall(r'tab === "([a-z_]+)"', source))
+        # The three storefront tabs share one branch, because they differ only
+        # in the word on the button.
+        for group in re.findall(r"const SHOP_TABS = \[([^\]]*)\]", source):
+            branches.update(re.findall(r'"([a-z_]+)"', group))
+
+        # The extraction is the fragile part, so it is asserted before it is
+        # trusted: a rewrite that changes the shapes above would otherwise find
+        # nothing and report perfect agreement.
+        self.assertGreaterEqual(
+            len(branches), 6,
+            f"found only {sorted(branches)} in PageScreen — the shapes this "
+            "test reads for have changed, and it is no longer checking anything")
+
+        renderable = set(pulsesoc_pages.RENDERABLE_TABS)
+        self.assertEqual(
+            renderable - branches, set(),
+            "the server offers a tab PageScreen has no branch for")
+        self.assertEqual(
+            branches - renderable, set(),
+            "PageScreen draws a tab the server will never send")
 
 
 if __name__ == "__main__":  # pragma: no cover

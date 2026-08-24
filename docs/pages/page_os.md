@@ -170,6 +170,18 @@ furnished, from both sides, and pins three joins:
   the ways it should.** A visitor is never handed a setup prompt, and never
   handed a tab that is the team's to fill.
 
+### `RENDERABLE_TABS` is checked against the screen it claims to describe
+
+The constant's comment says it *is* `PageScreen`'s branch set. That is a claim
+about a file in another language, and it was true by attention rather than by
+anything. It is now read out of `PageScreen.tsx` and compared both ways: a tab
+in the constant with no branch behind it reaches a matching build as "This
+section needs a newer version of the app" on the newest version of the app,
+and a branch with no tab in the constant is working client code the server
+will never ask for. The extraction asserts it found something before it
+trusts what it found, so a rewrite of the screen fails loudly instead of
+reporting perfect agreement about nothing.
+
 ### A tab is advertised on the pointer, not on today's row count
 
 `module_availability` asks whether the presence is *pointed at a source*, not
