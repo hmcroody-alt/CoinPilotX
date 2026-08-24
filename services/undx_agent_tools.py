@@ -41,8 +41,27 @@ from services.undx_agent_contracts import (
 #: Fields of an alert rule that may be shown to a user or a model. Anything not
 #: named here — metadata blobs, source refs, delivery logs, internal ids — is
 #: dropped rather than filtered, so a newly added column cannot leak by default.
+#:
+#: The drop-by-default rule is the right one, and it has a cost that has to be paid
+#: deliberately: a rule shape the projection has not been taught is not rejected here,
+#: it is quietly described as something simpler than it is. Compound conditions and
+#: watchlist/portfolio scoping were added to ``alert_engine`` without this list being
+#: extended, so every scoped compound rule reached the model as ``symbol: ""``,
+#: ``threshold: None`` and the legacy fallback condition — a rule that reads as broken,
+#: and that ``resolve_alert_reference`` then had to identify from an empty description.
 _ALERT_FIELDS = ("id", "symbol", "condition", "threshold_value", "status", "active",
-                 "alert_type", "created_at", "updated_at", "trigger_count")
+                 "alert_type", "created_at", "updated_at", "trigger_count",
+                 # What the rule actually watches. ``condition_summary`` is rendered
+                 # once, server-side, by ``alert_engine._public_rule`` precisely so the
+                 # web UI, the native UI, the notification copy and this projection
+                 # cannot describe one rule four different ways; it is carried, never
+                 # re-derived. It is empty for a basic rule, whose ``condition`` and
+                 # ``threshold_value`` already say everything there is to say.
+                 "condition_summary", "is_advanced",
+                 # Scope. A scoped rule has no symbol on purpose — it is about a list or
+                 # about everything held, and naming one coin would be read as a claim
+                 # that it watches only that coin.
+                 "watchlist_id", "is_watchlist_rule", "is_portfolio_rule")
 
 
 def _alert_record(rule: dict[str, Any] | None) -> dict[str, Any]:
@@ -62,6 +81,11 @@ def _alert_record(rule: dict[str, Any] | None) -> dict[str, Any]:
     record["alert_id"] = int(rule.get("id") or 0)
     record["threshold"] = rule.get("threshold_value")
     record["paused"] = clean(rule.get("status") or "active", 24) == "paused"
+    # ``clean`` turns None into "", which is right for prose and wrong for a nullable
+    # id: an unscoped rule would arrive carrying an empty watchlist rather than no
+    # watchlist, and "" is a value a model will try to say something about.
+    if rule.get("watchlist_id") is None:
+        record["watchlist_id"] = None
     metadata = rule.get("metadata")
     if isinstance(metadata, str):
         try:
@@ -70,10 +94,18 @@ def _alert_record(rule: dict[str, Any] | None) -> dict[str, Any]:
             metadata = {}
     if not isinstance(metadata, dict):
         metadata = {}
-    record["display_name"] = clean(
-        metadata.get("note") or f"{record.get('symbol') or 'Crypto'} alert",
-        80,
-    )
+    # A member's own note wins. Failing that the name is built from what the rule
+    # watches, which for a scoped rule is not a coin: falling back to the symbol alone
+    # named every portfolio and watchlist rule "Crypto alert", so an account holding
+    # several of them offered the model a set of identically-named things to choose
+    # between — and ``resolve_alert_reference`` is required to find exactly one.
+    if record.get("is_portfolio_rule"):
+        fallback = "Portfolio alert"
+    elif record.get("is_watchlist_rule"):
+        fallback = "Watchlist alert"
+    else:
+        fallback = f"{record.get('symbol') or 'Crypto'} alert"
+    record["display_name"] = clean(metadata.get("note") or fallback, 80)
     record["channels"] = {
         name: bool(channels.get(name))
         for name in ("in_app", "push", "email", "sms", "telegram")
@@ -926,6 +958,8 @@ def verification_status(u, a): return _personal_read(u, a, "verification.status"
 def support_tickets_list(u, a): return _personal_read(u, a, "support.tickets.list", "support_tickets_list")
 def creator_analytics_summary(u, a): return _personal_read(u, a, "creator.analytics.summary", "creator_analytics_summary")
 def localization_preferences(u, a): return _personal_read(u, a, "localization.preferences", "localization_preferences")
+def crypto_portfolio_summary(u, a): return _personal_read(u, a, "crypto.portfolio.summary", "crypto_portfolio_summary")
+def crypto_market_window(u, a): return _personal_read(u, a, "crypto.market.window", "crypto_market_window")
 
 
 def translation_content_translate(user_id: int, arguments: dict[str, Any]) -> ToolResult:
@@ -1047,6 +1081,8 @@ EXECUTORS: dict[str, Callable[[int, dict[str, Any]], ToolResult]] = {
     "support_tickets_list": support_tickets_list,
     "creator_analytics_summary": creator_analytics_summary,
     "localization_preferences": localization_preferences,
+    "crypto_portfolio_summary": crypto_portfolio_summary,
+    "crypto_market_window": crypto_market_window,
     "translation_content_translate": translation_content_translate,
     "presence_privacy_status": presence_privacy_status,
 }

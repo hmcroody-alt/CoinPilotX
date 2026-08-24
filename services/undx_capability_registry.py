@@ -917,6 +917,17 @@ _ORDER_ID = FieldSpec("order_id", "int", required=True, minimum=1)
 _LIVE_ID = FieldSpec("live_id", "int", required=True, minimum=1)
 _DAYS = FieldSpec("days", "int", required=False, minimum=1, maximum=90, default=7)
 
+# Imported rather than restated so the windows UNDX may ask for are exactly the
+# windows the observation series can answer. A hardcoded copy here would drift the
+# first time either list changed, and the failure would be silent: the registry
+# would keep offering a window the series refuses, and the refusal reads like a
+# statement about the market rather than about our own sampling.
+# ``crypto_alert_conditions`` imports nothing from services, so this cannot cycle.
+from services.crypto_alert_conditions import (  # noqa: E402
+    WINDOW_CHOICES as _WINDOW_CHOICES,
+    WINDOWABLE_METRICS as _WINDOWABLE_METRICS,
+)
+
 for _spec in (
     CapabilitySpec("activity.daily_summary", "Summarize authorized PulseSoc activity with provenance",
                    ("what happened today", "what changed since yesterday", "daily activity summary"),
@@ -1103,6 +1114,42 @@ for _spec in (
                    RiskLevel.READ_ONLY, ConfirmationPolicy.NEVER, "pulsesoc.presence.privacy.status",
                    PermissionScope.SELF_ACCOUNT_ONLY, (), "presence_privacy_status", "",
                    "/pulse/settings/privacy", CardType.CONTENT_RESULT, "presence_read"),
+    # Crypto intelligence (Premium). Read-only and never confirmed, like every
+    # other personal read: the entitlement is enforced inside the read model, and
+    # an unentitled member gets a grounded "this is part of Premium" answer rather
+    # than a refusal, so there is nothing here for a confirmation step to guard.
+    CapabilitySpec("crypto.portfolio.summary",
+                   "Summarize the user's holdings, their current value, and unrealized profit against average buy price",
+                   ("how is my portfolio doing", "what do i hold", "summarize my crypto portfolio"),
+                   RiskLevel.READ_ONLY, ConfirmationPolicy.NEVER, "pulsesoc.crypto.portfolio.summary",
+                   PermissionScope.SELF_ACCOUNT_ONLY, (), "crypto_portfolio_summary", "",
+                   "/pulse/portfolio", CardType.CONTENT_RESULT, "crypto_read"),
+    CapabilitySpec("crypto.market.window",
+                   "Report how one asset moved over a measured window, or why that window cannot be measured",
+                   # No ticker appears in a phrasing. A coin name is the *subject* of
+                   # almost every crypto sentence, including the ones about pausing a
+                   # rule, so "how has bitcoin moved" makes this capability score on
+                   # "bitcoin" alone and crowd the alert capabilities out of a bounded
+                   # focus. The phrasings name the operation -- movement over a stated
+                   # window -- and the asset arrives in ``symbol``, where it belongs.
+                   ("how much has it moved", "price change over the last",
+                    "how has it performed in the last", "movement in the last"),
+                   RiskLevel.READ_ONLY, ConfirmationPolicy.NEVER, "pulsesoc.crypto.market.window",
+                   PermissionScope.SELF_ACCOUNT_ONLY,
+                   (
+                       FieldSpec("symbol", "identifier", required=True, max_length=24),
+                       # Constrained to the metrics the worker actually samples and
+                       # the windows the series can answer. A free-form window would
+                       # let the model ask for "the last week" against 72 hours of
+                       # retention and read the refusal as a market fact.
+                       FieldSpec("metric", "enum", required=False,
+                                 choices=tuple(sorted(_WINDOWABLE_METRICS)), default="price"),
+                       FieldSpec("minutes", "enum", required=False,
+                                 choices=tuple(str(w) for w in _WINDOW_CHOICES), default="60"),
+                   ),
+                   "crypto_market_window", "",
+                   "/pulse/crypto/alerts", CardType.CONTENT_RESULT, "crypto_read",
+                   target_field="symbol"),
 ):
     _register(_spec)
 

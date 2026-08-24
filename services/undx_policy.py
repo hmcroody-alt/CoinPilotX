@@ -169,6 +169,12 @@ PRODUCTION_TOOL_REGISTRY: dict[str, dict[str, Any]] = {
             ("creator.analytics.summary", "creator_analytics_summary", "user_id"),
             ("localization.preferences", "localization_preferences", "user_id"),
             ("presence.privacy.status", "presence_privacy_status", "user_id"),
+            # Premium, and gated inside the read model rather than here. This map
+            # decides risk and confirmation, not entitlement, and a read that is
+            # refused still returns a grounded answer ("this is part of Premium")
+            # rather than an error -- so it is read_only like its neighbours.
+            ("crypto.portfolio.summary", "crypto_portfolio_summary", "user_id"),
+            ("crypto.market.window", "crypto_market_window", "user_id"),
         )
     },
     "web.search": {"method": None, "route": "services.pulse_ai_web_search.search", "risk": "medium", "confirmation": False},
