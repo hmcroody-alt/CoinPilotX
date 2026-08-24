@@ -17,13 +17,15 @@ const mockGetPage = jest.fn();
 const mockListPosts = jest.fn();
 const mockListMusic = jest.fn();
 const mockListEvents = jest.fn();
+const mockToggleFollow = jest.fn();
 jest.mock("../../api/pages", () => ({
   ...jest.requireActual("../../api/pages"),
   getPage: (...args: unknown[]) => mockGetPage(...args),
   getPageByHandle: (...args: unknown[]) => mockGetPage(...args),
   listPagePosts: (...args: unknown[]) => mockListPosts(...args),
   listPageMusic: (...args: unknown[]) => mockListMusic(...args),
-  listPageEvents: (...args: unknown[]) => mockListEvents(...args)
+  listPageEvents: (...args: unknown[]) => mockListEvents(...args),
+  togglePageFollow: (...args: unknown[]) => mockToggleFollow(...args)
 }));
 
 const mockSearchMarketplace = jest.fn();
@@ -83,6 +85,7 @@ beforeEach(() => {
   mockListPosts.mockResolvedValue({ posts: [], has_more: false, next_offset: 0 });
   mockListMusic.mockResolvedValue({ artist: "Night Signal", tracks: [], linked: true });
   mockListEvents.mockResolvedValue({ enabled: true, linked: true, events: [] });
+  mockToggleFollow.mockResolvedValue({ page_id: 7, following: true, followers_count: 4 });
   mockSearchMarketplace.mockResolvedValue({ items: [] });
 });
 
@@ -147,6 +150,44 @@ describe("modules load lazily and fail independently", () => {
     await waitFor(() => expect(view.queryByText("Music")).toBeTruthy());
     fireEvent.press(view.getByText("Music"));
     await waitFor(() => expect(view.queryByText("Signal")).toBeTruthy());
+  });
+
+  /**
+   * The link stores a catalogue *name*, and connecting one is an ordinary
+   * `manage_links` write — so a presence pointed at somebody else's releases
+   * renders identically to one pointed at its own. The name on screen is the
+   * only thing that tells them apart, and it is the visitor, not the team, who
+   * most needs to know whose work they are being shown.
+   */
+  it("names the catalogue when it is not this presence's own", async () => {
+    mockListMusic.mockResolvedValue({
+      artist: "Other Artist",
+      linked: true,
+      tracks: [{ id: "t1", title: "Signal", artist: "Other Artist" }]
+    });
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Music")).toBeTruthy());
+    fireEvent.press(view.getByText("Music"));
+
+    await waitFor(() =>
+      expect(view.queryByText("From the catalogue of Other Artist.")).toBeTruthy()
+    );
+  });
+
+  it("stays quiet when the catalogue is the presence's own", async () => {
+    mockListMusic.mockResolvedValue({
+      artist: "Night Signal",
+      linked: true,
+      tracks: [{ id: "t1", title: "Signal", artist: "Night Signal" }]
+    });
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Music")).toBeTruthy());
+    fireEvent.press(view.getByText("Music"));
+    await waitFor(() => expect(view.queryByText("Signal")).toBeTruthy());
+
+    // Restating the page's own name is noise, and noise is what stops the line
+    // above being read on the one page where it means something.
+    expect(view.queryByText(/From the catalogue of/)).toBeNull();
   });
 
   it("says an empty catalogue is empty, not broken", async () => {
@@ -418,25 +459,53 @@ describe("empty modules read differently for the team than for a visitor", () =>
     fireEvent.press(view.getByText("Music"));
     await waitFor(() => expect(view.queryByText("No music yet.")).toBeTruthy());
     expect(view.queryByText("Connect an artist profile")).toBeNull();
-    expect(
-      view.queryByText(
-        "Tracks are uploaded to an artist profile. Connect the one these releases live under and they appear here."
-      )
-    ).toBeNull();
+    // Neither hint, not merely the one that happens not to apply: how a
+    // presence is wired is the team's business and nobody else's.
+    expect(view.queryByText(/appear here/)).toBeNull();
+    expect(view.queryByText(/Connect the one these releases live under/)).toBeNull();
   });
 
-  it("gives the team the same fact plus the step that fixes it", async () => {
+  /**
+   * "Nothing is connected" and "the connected catalogue is empty" are the same
+   * empty list and want opposite sentences. The screen used to read only
+   * `tracks`, so it gave the connect-a-catalogue answer to both — and the team
+   * it misdirected was precisely the one that had already done the connecting.
+   */
+  it("gives the team the step that fixes it when nothing is connected", async () => {
+    mockListMusic.mockResolvedValue({ artist: "", tracks: [], linked: false });
     mockGetPage.mockResolvedValue(page(team));
     const { view, navigation } = show();
     await waitFor(() => expect(view.queryByText("Music")).toBeTruthy());
     fireEvent.press(view.getByText("Music"));
     await waitFor(() => expect(view.queryByText("No music yet.")).toBeTruthy());
 
+    // The sentence, not just the button: "Releases published to  appear here."
+    // is what a collapsed branch produces, and it reads like a working screen.
+    expect(
+      view.getByText(
+        "Tracks are uploaded to an artist profile. Connect the one these releases live under and they appear here."
+      )
+    ).toBeTruthy();
+
     fireEvent.press(view.getByText("Connect an artist profile"));
     expect(navigation.navigate).toHaveBeenCalledWith("PageConnections", {
       pageId: 7,
       title: "Night Signal"
     });
+  });
+
+  it("does not send the team to connect a catalogue they already connected", async () => {
+    // The default fixture is a linked catalogue with nothing in it yet.
+    mockGetPage.mockResolvedValue(page(team));
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Music")).toBeTruthy());
+    fireEvent.press(view.getByText("Music"));
+    await waitFor(() => expect(view.queryByText("No music yet.")).toBeTruthy());
+
+    expect(view.queryByText("Connect an artist profile")).toBeNull();
+    // And says where the releases would come from, since publishing them is
+    // not something this screen can offer a door to.
+    expect(view.getByText("Releases published to Night Signal appear here.")).toBeTruthy();
   });
 
   it("offers the composer, not Connections, when the missing thing is a post", async () => {
@@ -585,5 +654,150 @@ describe("empty modules read differently for the team than for a visitor", () =>
       pageId: 7,
       title: "Night Signal"
     });
+  });
+});
+
+/**
+ * The Follow button is the one control on this screen a stranger is meant to
+ * press, and it was the only one that could fail in silence.
+ *
+ * Two separate faults, one symptom. The screen never read `status`, so a
+ * presence that is not published still rendered a Follow button — and the
+ * server answers that with a flat 403, because an unpublished presence is not
+ * accepting followers. Meanwhile `onFollow` caught every rejection and threw it
+ * away. The result was a button that lifted under the finger, changed nothing,
+ * and said nothing; the reading is "this app is broken", not "this presence is
+ * not published yet".
+ *
+ * The visitor cannot reach that state at all — `_load_visible_page` answers a
+ * non-member with 404 rather than confirming the presence exists — so the only
+ * person who ever saw the dead button was somebody on the team, and they are
+ * the one person who can do something about it.
+ */
+describe("following says what the server said", () => {
+  const team = { viewer: { role: "OWNER", following: false } };
+
+  it("follows and takes the server's count rather than adding one itself", async () => {
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Follow")).toBeTruthy());
+    expect(view.getByText("3 followers · 1 posts")).toBeTruthy();
+
+    fireEvent.press(view.getByText("Follow"));
+    await waitFor(() => expect(view.queryByText("Following")).toBeTruthy());
+    expect(mockToggleFollow).toHaveBeenCalledWith(7);
+    // 4 because the server said 4, not because the screen incremented 3.
+    expect(view.getByText("4 followers · 1 posts")).toBeTruthy();
+  });
+
+  it("unfollows back down to the server's count", async () => {
+    mockGetPage.mockResolvedValue(page({ viewer: { role: null, following: true } }));
+    mockToggleFollow.mockResolvedValue({ page_id: 7, following: false, followers_count: 2 });
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Following")).toBeTruthy());
+
+    fireEvent.press(view.getByText("Following"));
+    await waitFor(() => expect(view.queryByText("Follow")).toBeTruthy());
+    expect(view.getByText("2 followers · 1 posts")).toBeTruthy();
+  });
+
+  it("repeats the server's refusal instead of swallowing it", async () => {
+    const { PulseApiError } = jest.requireActual("../../api/pulseApi");
+    mockToggleFollow.mockRejectedValue(
+      new PulseApiError("This page isn't accepting followers right now.", 403)
+    );
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Follow")).toBeTruthy());
+
+    fireEvent.press(view.getByText("Follow"));
+    await waitFor(() =>
+      expect(view.queryByText("This page isn't accepting followers right now.")).toBeTruthy()
+    );
+  });
+
+  it("leaves the follow state alone when the server refuses", async () => {
+    const { PulseApiError } = jest.requireActual("../../api/pulseApi");
+    mockToggleFollow.mockRejectedValue(new PulseApiError("Nope.", 403));
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Follow")).toBeTruthy());
+
+    fireEvent.press(view.getByText("Follow"));
+    await waitFor(() => expect(view.queryByText("Nope.")).toBeTruthy());
+    // Still not following, and still 3 — the button does not get to claim a
+    // follow the server declined to record.
+    expect(view.queryByText("Following")).toBeNull();
+    expect(view.getByText("3 followers · 1 posts")).toBeTruthy();
+  });
+
+  it("still says something when the failure carries no message of its own", async () => {
+    mockToggleFollow.mockRejectedValue(new Error("Network request failed"));
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Follow")).toBeTruthy());
+
+    fireEvent.press(view.getByText("Follow"));
+    await waitFor(() => expect(view.queryByText("That did not go through.")).toBeTruthy());
+    // The raw failure is not the sentence: "Network request failed" is a fact
+    // about a socket, not about this presence.
+    expect(view.queryByText("Network request failed")).toBeNull();
+  });
+
+  it("clears a stale refusal when the next attempt is made", async () => {
+    const { PulseApiError } = jest.requireActual("../../api/pulseApi");
+    mockToggleFollow.mockRejectedValueOnce(new PulseApiError("Try again in a moment.", 503));
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Follow")).toBeTruthy());
+
+    fireEvent.press(view.getByText("Follow"));
+    await waitFor(() => expect(view.queryByText("Try again in a moment.")).toBeTruthy());
+
+    fireEvent.press(view.getByText("Follow"));
+    await waitFor(() => expect(view.queryByText("Following")).toBeTruthy());
+    // A message about the attempt that failed must not outlive the one that
+    // worked, or a followed presence sits under a line saying it did not work.
+    expect(view.queryByText("Try again in a moment.")).toBeNull();
+  });
+
+  it("does not offer a follow the server will refuse on an unpublished presence", async () => {
+    mockGetPage.mockResolvedValue(page({ ...team, status: "UNPUBLISHED" }));
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Share")).toBeTruthy());
+
+    expect(view.queryByText("Follow")).toBeNull();
+    expect(
+      view.getByText("Not published yet. Only the team can open this presence, and nobody can follow it.")
+    ).toBeTruthy();
+    expect(mockToggleFollow).not.toHaveBeenCalled();
+  });
+
+  it("says deactivated rather than unpublished when that is what it is", async () => {
+    // Two different states the team put the presence into deliberately, and
+    // the step back is different for each. One sentence for both would send an
+    // owner looking for a Publish button that is not the one they need.
+    mockGetPage.mockResolvedValue(page({ ...team, status: "DEACTIVATED" }));
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Share")).toBeTruthy());
+
+    expect(view.queryByText("Follow")).toBeNull();
+    expect(
+      view.getByText("Deactivated. Only the team can open this presence, and nobody can follow it.")
+    ).toBeTruthy();
+  });
+
+  it("keeps the follow control on a paused presence, which is still public", async () => {
+    // PAUSED is a posting state, not a visibility state: the server keeps
+    // answering follows for it, so withholding the button here would take away
+    // a working control rather than hiding a dead one.
+    mockGetPage.mockResolvedValue(page({ status: "PAUSED" }));
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Follow")).toBeTruthy());
+
+    expect(view.queryByText(/Only the team can open this presence/)).toBeNull();
+    fireEvent.press(view.getByText("Follow"));
+    await waitFor(() => expect(view.queryByText("Following")).toBeTruthy());
+  });
+
+  it("says nothing about publishing on a presence that is published", async () => {
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Follow")).toBeTruthy());
+    expect(view.queryByText(/Only the team can open this presence/)).toBeNull();
   });
 });

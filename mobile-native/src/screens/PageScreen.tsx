@@ -25,6 +25,7 @@ import {
 } from "../api/pages";
 import { searchMarketplace, type MarketplaceListing } from "../api/marketplace";
 import { PULSE_API_BASE_URL } from "../api/config";
+import { PulseApiError } from "../api/pulseApi";
 import type { PulsePost } from "../api/feed";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
@@ -75,7 +76,6 @@ function useLazyModule<T>(active: boolean, key: string, empty: T, load: () => Pr
 }
 
 // Stable identities: a fresh [] each render would reset every module.
-const EMPTY_TRACKS: PageTrack[] = [];
 const EMPTY_LISTINGS: MarketplaceListing[] = [];
 const EMPTY_POSTS: PulsePost[] = [];
 const SHOP_TABS = ["shop", "merch", "menu"];
@@ -92,6 +92,23 @@ const SHOP_TABS = ["shop", "merch", "menu"];
  */
 type PageEventsResult = { enabled: boolean; linked: boolean; events: PageEvent[] };
 const EMPTY_EVENTS: PageEventsResult = { enabled: false, linked: false, events: [] };
+
+/**
+ * Music carries its flags for the same reason, one case fewer.
+ *
+ * "No catalogue is connected" and "the connected catalogue has no releases" are
+ * the same empty list and need different sentences — this tab used to tell a
+ * team that had already connected an artist profile to go and connect one, and
+ * they would have gone looking for a step they had taken.
+ *
+ * `artist` is the catalogue this presence publishes under. It is worth carrying
+ * because it is the one place a visitor can see that a presence is showing
+ * *somebody else's* releases: the link stores a name, connecting one is a
+ * `manage_links` write, and a presence pointed at the wrong catalogue looks
+ * exactly like a presence pointed at the right one until the name is on screen.
+ */
+type PageMusicResult = { artist: string; linked: boolean; tracks: PageTrack[] };
+const EMPTY_MUSIC: PageMusicResult = { artist: "", linked: false, tracks: [] };
 
 /**
  * A stored date as something to read, or the raw text when it is not a date.
@@ -156,12 +173,13 @@ export function PageScreen({ route, navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
+  const [followError, setFollowError] = useState("");
   const [error, setError] = useState("");
 
   const pageKey = page ? String(page.id) : "";
   const sellerId = Number(page?.shop_seller_id || 0);
-  const music = useLazyModule<PageTrack[]>(tab === "music", pageKey, EMPTY_TRACKS, () =>
-    listPageMusic(Number(pageKey)).then((result) => result.tracks)
+  const music = useLazyModule<PageMusicResult>(tab === "music", pageKey, EMPTY_MUSIC, () =>
+    listPageMusic(Number(pageKey))
   );
   const shop = useLazyModule<MarketplaceListing[]>(
     SHOP_TABS.includes(tab) && sellerId > 0,
@@ -203,6 +221,7 @@ export function PageScreen({ route, navigation }: Props) {
   async function onFollow() {
     if (!page || followBusy) return;
     setFollowBusy(true);
+    setFollowError("");
     try {
       const result = await togglePageFollow(page.id);
       setPage({
@@ -210,8 +229,15 @@ export function PageScreen({ route, navigation }: Props) {
         followers_count: result.followers_count,
         viewer: { role: page.viewer?.role || null, following: result.following }
       });
-    } catch {
-      // keep prior state; server remains authoritative
+    } catch (toggleError) {
+      // The prior state stands — the server is authoritative about who follows
+      // what, and this screen does not get to pretend otherwise. But the
+      // refusal is said out loud. Swallowing it left the button lifting under
+      // the finger and changing nothing, which reads as a broken app rather
+      // than as a page that is not accepting followers.
+      setFollowError(
+        toggleError instanceof PulseApiError ? toggleError.message : "That did not go through."
+      );
     } finally {
       setFollowBusy(false);
     }
@@ -239,6 +265,17 @@ export function PageScreen({ route, navigation }: Props) {
 
   const following = Boolean(page.viewer?.following);
   const isTeam = Boolean(page.viewer?.role);
+  /**
+   * Whether anyone outside the team can reach this presence at all.
+   *
+   * The server answers a follow on an UNPUBLISHED or DEACTIVATED page with a
+   * flat 403, and `_load_visible_page` answers a *visitor* with a 404 — so the
+   * only person who can be looking at a hidden presence is a member of its own
+   * team, and the only Follow button that ever reached this state was one the
+   * server was always going to refuse. The same fact is why a link to it is not
+   * worth sending yet: it opens for nobody but the people who already have it.
+   */
+  const isPublic = page.status === "ACTIVE" || page.status === "PAUSED";
 
   const header = (
     <View>
@@ -265,16 +302,21 @@ export function PageScreen({ route, navigation }: Props) {
       </View>
 
       <View style={styles.actions}>
-        <Pressable
-          accessibilityRole="button"
-          style={[styles.actionPrimary, following && styles.actionFollowing]}
-          disabled={followBusy}
-          onPress={onFollow}
-        >
-          <Text style={[styles.actionPrimaryText, following && styles.actionFollowingText]}>
-            {following ? "Following" : "Follow"}
-          </Text>
-        </Pressable>
+        {isPublic ? (
+          <Pressable
+            accessibilityRole="button"
+            style={[styles.actionPrimary, following && styles.actionFollowing]}
+            disabled={followBusy}
+            onPress={onFollow}
+          >
+            <Text style={[styles.actionPrimaryText, following && styles.actionFollowingText]}>
+              {following ? "Following" : "Follow"}
+            </Text>
+          </Pressable>
+        ) : null}
+        {/* Share stays: the team still has reason to copy their own link while
+            they finish setting the presence up. What changes is that the note
+            below says who it will open for. */}
         <Pressable accessibilityRole="button" style={styles.actionSecondary} onPress={onShare}>
           <Text style={styles.actionSecondaryText}>Share</Text>
         </Pressable>
@@ -288,6 +330,14 @@ export function PageScreen({ route, navigation }: Props) {
           </Pressable>
         ) : null}
       </View>
+      {isPublic ? null : (
+        <Text style={styles.actionNote}>
+          {page.status === "DEACTIVATED"
+            ? "Deactivated. Only the team can open this presence, and nobody can follow it."
+            : "Not published yet. Only the team can open this presence, and nobody can follow it."}
+        </Text>
+      )}
+      {followError ? <Text style={styles.actionError}>{followError}</Text> : null}
 
       <View style={styles.tabBar}>
         {page.tabs.map((tabKey) => (
@@ -399,16 +449,32 @@ export function PageScreen({ route, navigation }: Props) {
       if (music.state === "error") {
         return moduleFailure(music.retry);
       }
-      if (!music.data.length) {
+      if (!music.data.tracks.length) {
         return emptyModule(
           "No music yet.",
-          "Tracks are uploaded to an artist profile. Connect the one these releases live under and they appear here.",
-          { label: "Connect an artist profile", go: goConnections }
+          music.data.linked
+            ? // Already connected. Releases are published to the catalogue
+              // itself, not from here, so there is no step left to offer — the
+              // same shape as a shop that is connected and has no listings.
+              `Releases published to ${music.data.artist} appear here.`
+            : "Tracks are uploaded to an artist profile. Connect the one these releases live under and they appear here.",
+          music.data.linked ? null : { label: "Connect an artist profile", go: goConnections }
         );
       }
       return (
         <View>
-          {music.data.map((track) => (
+          {/*
+            Named only when it differs from the presence. "From the catalogue of
+            Night Signal" on Night Signal's own page is noise, and noise is what
+            stops a line like this being read on the one page where it matters —
+            the presence quietly publishing somebody else's releases.
+          */}
+          {music.data.artist && music.data.artist !== page.name ? (
+            <Text style={styles.moduleSource}>
+              From the catalogue of {music.data.artist}.
+            </Text>
+          ) : null}
+          {music.data.tracks.map((track) => (
             <Pressable
               key={track.id}
               accessibilityRole="button"
@@ -692,6 +758,21 @@ const styles = createThemedStyles(() => ({
   actionFollowingText: {
     color: colors.accent
   },
+  // A refusal reads differently from a standing fact, so it is coloured
+  // differently: `actionError` is something that just went wrong, `actionNote`
+  // is how the presence is set up.
+  actionError: {
+    color: colors.danger,
+    fontSize: 13,
+    paddingHorizontal: 16,
+    paddingTop: 8
+  },
+  actionNote: {
+    color: colors.muted,
+    fontSize: 13,
+    paddingHorizontal: 16,
+    paddingTop: 8
+  },
   actionPrimary: {
     alignItems: "center",
     backgroundColor: colors.accent,
@@ -808,6 +889,12 @@ const styles = createThemedStyles(() => ({
     color: colors.accent,
     fontSize: 14,
     fontWeight: "900"
+  },
+  moduleSource: {
+    color: colors.muted,
+    fontSize: 12,
+    paddingBottom: 4,
+    paddingTop: 2
   },
   moduleSpinner: {
     padding: 24

@@ -58,6 +58,22 @@ Pinned in `tests/pages/test_page_os.py::HiddenPresenceTests`, which drives a
 `PUBLIC_READS` table rather than one route, so a *new* public read that forgets the
 rule fails a test instead of becoming another copy nobody compared.
 
+### The honest 403 has to be shown to somebody
+
+That 403 only ever reaches a team member, and for its whole life `PageScreen` threw
+it away: `onFollow` caught every rejection into an empty block and the button lifted
+under the finger having changed nothing. The screen also never read `status` at all,
+so the presence its own team had unpublished still rendered a Follow button the server
+was always going to refuse. Two faults, one symptom, and the symptom reads as "this
+app is broken" rather than "this presence is not published".
+
+The client now mirrors the server's own predicate — `ACTIVE || PAUSED`, `isPublic` —
+and withholds the control instead of offering a dead one, saying which of the two
+hidden states it is in, because unpublishing and deactivating are different acts with
+different steps back. Refusals that do arrive are repeated in the server's words.
+Share stays: the team has reason to copy their own link before launch, and the note
+underneath says who it will open for.
+
 ## Backend surface
 
 - `services/pulsesoc_pages.py` — all business logic. Lazy `ensure_tables()` (additive,
