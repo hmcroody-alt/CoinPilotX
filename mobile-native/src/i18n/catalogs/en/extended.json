@@ -2071,7 +2071,9 @@
         "advanced": "Advanced UNDX"
       },
       "crypto": {
-        "advanced_alerts": "Advanced crypto alerts"
+        "advanced_alerts": "Advanced crypto alerts",
+        "portfolio": "Unlimited portfolio holdings",
+        "intelligence": "UNDX crypto intelligence"
       },
       "creator_studio_pro": "Creator Studio Pro",
       "founder_hub_access": "Founder Hub access",

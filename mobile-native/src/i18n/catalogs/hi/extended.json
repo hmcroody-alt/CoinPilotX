@@ -2071,7 +2071,9 @@
         "advanced": "एडवांस्ड UNDX"
       },
       "crypto": {
-        "advanced_alerts": "एडवांस्ड क्रिप्टो अलर्ट"
+        "advanced_alerts": "एडवांस्ड क्रिप्टो अलर्ट",
+        "portfolio": "असीमित पोर्टफ़ोलियो होल्डिंग",
+        "intelligence": "UNDX क्रिप्टो इंटेलिजेंस"
       },
       "creator_studio_pro": "Creator Studio Pro",
       "founder_hub_access": "Founder Hub का एक्सेस",

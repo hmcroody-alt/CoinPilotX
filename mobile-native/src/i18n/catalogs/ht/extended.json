@@ -2066,7 +2066,9 @@
         "advanced": "UNDX avanse"
       },
       "crypto": {
-        "advanced_alerts": "Alèt kripto avanse"
+        "advanced_alerts": "Alèt kripto avanse",
+        "portfolio": "Pozisyon pòtfèy san limit",
+        "intelligence": "Entèlijans kripto UNDX"
       },
       "creator_studio_pro": "Creator Studio Pro",
       "founder_hub_access": "Aksè nan Founder Hub",

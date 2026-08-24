@@ -191,11 +191,29 @@ _REGISTRY: tuple[Feature, ...] = (
         ),
     ),
     Feature(
-        "premium.crypto.intelligence", "UNDX crypto intelligence", NEXT_WAVE,
+        "premium.crypto.intelligence", "UNDX crypto intelligence", BETA,
+        enforced_by="services.undx_personal_intelligence_service._crypto_entitled",
         note=(
-            "Entitlement key is registered. UNDX has no grounded crypto "
-            "portfolio/alert fact builder yet. Promote when one exists AND "
-            "reads this key. Never advertise trading or price prediction."
+            "The condition this entry used to carry is met: grounded reads now "
+            "exist (undx_personal_intelligence_service.crypto_portfolio_summary "
+            "and .crypto_market_window) and both check this key through "
+            "premium_crypto_access, which is the single authority the alert "
+            "engine, the portfolio service and the HTTP routes also use. "
+            "BETA rather than PRODUCTION, and the gap is worth naming because it "
+            "bounds what may be advertised. What UNDX can answer is: what you "
+            "hold and what it is worth, and how ONE asset moved over a window "
+            "the observation series actually covers. What it cannot answer, and "
+            "what no copy may imply, is portfolio performance over time -- the "
+            "series samples symbols, not portfolios, and holdings are not "
+            "versioned, so there is no record of what was held when a window "
+            "opened; weighting today's holdings by past prices would produce a "
+            "number for a portfolio nobody owned. Realized profit and loss is "
+            "equally unavailable: portfolio_items stores an amount and an "
+            "average buy price with no transaction ledger behind it, so only "
+            "unrealized P/L against that average is computable and it is "
+            "labelled as such in the payload. Advertise as reading the member's "
+            "own holdings and measured market movement. Never advertise "
+            "trading, price prediction, or performance history."
         ),
     ),
 

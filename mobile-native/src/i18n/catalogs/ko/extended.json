@@ -2065,7 +2065,9 @@
         "advanced": "고급 UNDX"
       },
       "crypto": {
-        "advanced_alerts": "고급 암호화폐 알림"
+        "advanced_alerts": "고급 암호화폐 알림",
+        "portfolio": "무제한 포트폴리오 보유 종목",
+        "intelligence": "UNDX 암호화폐 인텔리전스"
       },
       "creator_studio_pro": "Creator Studio Pro",
       "founder_hub_access": "Founder Hub 이용",

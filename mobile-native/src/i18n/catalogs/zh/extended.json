@@ -2065,7 +2065,9 @@
         "advanced": "UNDX 进阶功能"
       },
       "crypto": {
-        "advanced_alerts": "进阶加密货币提醒"
+        "advanced_alerts": "进阶加密货币提醒",
+        "portfolio": "无限持仓组合",
+        "intelligence": "UNDX 加密货币智能"
       },
       "creator_studio_pro": "Creator Studio Pro",
       "founder_hub_access": "Founder Hub 权限",

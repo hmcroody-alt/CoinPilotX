@@ -2155,7 +2155,9 @@
         "advanced": "UNDX المتقدم"
       },
       "crypto": {
-        "advanced_alerts": "تنبيهات العملات الرقمية المتقدمة"
+        "advanced_alerts": "تنبيهات العملات الرقمية المتقدمة",
+        "portfolio": "حيازات محفظة غير محدودة",
+        "intelligence": "ذكاء UNDX للعملات الرقمية"
       },
       "creator_studio_pro": "Creator Studio Pro",
       "founder_hub_access": "الوصول إلى Founder Hub",

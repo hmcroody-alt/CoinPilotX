@@ -172,7 +172,17 @@ def test_crypto_keys_are_seeded_on_every_plan_that_confers_membership():
 #: Crypto capabilities a real gate reads today. Adding a key here is the
 #: deliberate act of declaring it sellable, and belongs in the same change that
 #: ships its gate — never ahead of it.
-GATED_TODAY = {pca.ADVANCED_ALERTS, pca.PORTFOLIO}
+#:
+#: INTELLIGENCE joined on the change that shipped its gate:
+#: ``undx_personal_intelligence_service._crypto_entitled`` resolves this key
+#: through ``premium_crypto_access``, and both grounded reads
+#: (``crypto_portfolio_summary`` and ``crypto_market_window``) return the locked
+#: outcome when it says no. It is BETA rather than PRODUCTION because of what
+#: those reads cannot answer — portfolio performance over time and realized
+#: profit and loss are structurally unavailable, having no versioned holdings
+#: and no transaction ledger behind them — and ``readiness`` carries that bound
+#: as the feature's note so the copy cannot outrun the capability.
+GATED_TODAY = {pca.ADVANCED_ALERTS, pca.PORTFOLIO, pca.INTELLIGENCE}
 
 
 def test_crypto_capabilities_are_not_advertised_before_a_gate_reads_them():

@@ -2058,7 +2058,9 @@
         "advanced": "UNDX アドバンス"
       },
       "crypto": {
-        "advanced_alerts": "高度な暗号資産アラート"
+        "advanced_alerts": "高度な暗号資産アラート",
+        "portfolio": "ポートフォリオの保有銘柄が無制限",
+        "intelligence": "UNDX 暗号資産インテリジェンス"
       },
       "creator_studio_pro": "Creator Studio Pro",
       "founder_hub_access": "Founder Hub へのアクセス",
