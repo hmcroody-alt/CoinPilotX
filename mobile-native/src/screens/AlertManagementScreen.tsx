@@ -6,19 +6,24 @@ import {
   ALERT_CONDITIONS,
   AlertChannel,
   ChannelReadiness,
+  AlertClause,
   AlertEvent,
   AlertFormPayload,
   AlertManagementState,
+  AlertOptions,
   AlertRule,
+  AlertWindowOption,
   alertConditionLabel,
   alertEnabledChannels,
   alertStatusLabel,
+  alertSubjectLabel,
   createCryptoAlert,
   deleteAlert,
   duplicateCryptoAlert,
   getAlertChannelReadiness,
   getAlertManagementState,
   getCryptoAlertHistory,
+  getCryptoAlertOptions,
   loadCachedAlertManagementState,
   loadCachedCryptoAlertHistory,
   pauseAlert,
@@ -45,8 +50,33 @@ const emptyForm: AlertFormPayload = {
   notifyPush: true,
   notifySMS: false,
   notifyTelegram: false,
-  note: ""
+  note: "",
+  mode: "basic",
+  logic: "and",
+  clauses: [],
+  watchlistId: null
 };
+
+const emptyClause: AlertClause = { metric: "price", comparator: "above", value: "", windowMinutes: 0 };
+
+// The server publishes each comparator's key and whether it is a level or a
+// crossing test, but not a label: its own labels are notification copy, not UI
+// strings. These are the app's words for the same four keys.
+const COMPARATOR_LABELS: Record<string, string> = {
+  above: "Above",
+  below: "Below",
+  crosses_above: "Crosses above",
+  crosses_below: "Crosses below"
+};
+
+function comparatorLabel(key: string) {
+  return COMPARATOR_LABELS[key] || key.replace(/_/g, " ");
+}
+
+// One sentence, said the same way whether the member pressed Advanced before the
+// entitlement answer arrived or after it. Two wordings for one refusal would read
+// as two different refusals.
+const PREMIUM_ALERT_NOTICE = "Multi-condition alerts, watchlist alerts and time windows are part of PulseSoc Premium.";
 
 export function AlertManagementScreen({ route, navigation }: Props) {
   const routeParams = route.params as (
@@ -73,15 +103,100 @@ export function AlertManagementScreen({ route, navigation }: Props) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
+  const [options, setOptions] = useState<AlertOptions | null>(null);
+  const [optionsLoading, setOptionsLoading] = useState(true);
 
   const alerts = state?.alerts || [];
   const selectedAlert = useMemo(() => alerts.find((alert) => alert.id === selectedId) || null, [alerts, selectedId]);
   const readiness = (state?.channel_readiness || {}) as Record<AlertChannel, ChannelReadiness>;
   const recentEvents = historyEvents.length ? historyEvents : state?.events || [];
+  const advanced = form.mode === "advanced";
+  const clauses = form.clauses || [];
+  const offeredWindows = options?.windows || [];
+  const premiumLocked = Boolean(options && options.advanced.locked);
+  // The list rule and the single-asset rule ask about different assets, so a
+  // list being chosen is what decides which the options call is about.
+  const symbolQuery = form.watchlistId ? "" : String(form.assetSymbol || "").trim().toUpperCase();
+  const watchlistQuery = form.watchlistId || null;
+  const windowKey = offeredWindows.map((window) => window.minutes).join(",");
+  const clauseWindowKey = clauses.map((clause) => clause.windowMinutes).join(",");
+  const watchlistOptions = options?.watchlists || [];
+  const maxClauses = options?.advanced.max_clauses || 1;
+  const logicItems = (options?.advanced.logic_modes || ["and"]).map((mode) => ({
+    key: mode,
+    label: mode === "or" ? "Any of these" : "All of these"
+  }));
+  // Ordered by the server, labelled by the app. Falling back to the local list
+  // only covers the case where the options call failed outright — the basic form
+  // has always worked offline and must keep working.
+  const basicConditionItems = (options?.basic.conditions.length ? options.basic.conditions : ALERT_CONDITIONS.map((item) => item.value))
+    .map((value) => ({
+      key: value,
+      label: ALERT_CONDITIONS.find((item) => item.value === value)?.label || value.replace(/_/g, " ")
+    }));
 
   useEffect(() => {
     selectedIdRef.current = selectedId;
   }, [selectedId]);
+
+  useEffect(() => {
+    // Debounced because the symbol changes on every keystroke: without it a
+    // five-character ticker asks five times, and the last answer to arrive is
+    // not necessarily the answer to the last question.
+    let cancelled = false;
+    setOptionsLoading(true);
+    const timer = setTimeout(() => {
+      // Anything shorter than the server's own minimum is sent as no symbol at
+      // all. A half-typed "B" is not a question worth a 400, and the empty
+      // answer carries the honest "choose an asset" reason instead.
+      getCryptoAlertOptions(symbolQuery.length >= 2 ? symbolQuery : "", watchlistQuery)
+        .then((next) => {
+          if (!cancelled) setOptions(next);
+        })
+        .catch(() => {
+          // No options means no advanced vocabulary and no windows offered. That
+          // is the safe direction to fail in: the basic form still works.
+          if (!cancelled) setOptions(null);
+        })
+        .finally(() => {
+          if (!cancelled) setOptionsLoading(false);
+        });
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [symbolQuery, watchlistQuery]);
+
+  useEffect(() => {
+    // The entitlement answer arrives a moment after the form does, so there is a
+    // gap in which the Advanced button is pressable by an account that cannot use
+    // it. Leaving it there would hand a free member a builder whose every field
+    // the server refuses; this also catches an entitlement lapsing mid-session.
+    if (optionsLoading || !premiumLocked) return;
+    if (form.mode !== "advanced" && !form.watchlistId) return;
+    setForm((current) => ({ ...current, mode: "basic", clauses: [], watchlistId: null }));
+    setNotice(PREMIUM_ALERT_NOTICE);
+  }, [optionsLoading, premiumLocked, form.mode, form.watchlistId]);
+
+  useEffect(() => {
+    // A window chosen for one asset can be unanswerable for the next one. Left
+    // in place it would create exactly the rule this whole endpoint exists to
+    // prevent: one that looks healthy and can never be decided.
+    if (optionsLoading) return;
+    const allowed = new Set(offeredWindows.map((window) => window.minutes));
+    const stale = clauses.filter((clause) => clause.windowMinutes && !allowed.has(clause.windowMinutes));
+    if (!stale.length) return;
+    setForm((current) => ({
+      ...current,
+      clauses: (current.clauses || []).map((clause) =>
+        clause.windowMinutes && !allowed.has(clause.windowMinutes) ? { ...clause, windowMinutes: 0 } : clause)
+    }));
+    setNotice(
+      options?.window_message ||
+      "That time window is not measurable for this asset yet, so it was cleared."
+    );
+  }, [windowKey, clauseWindowKey, optionsLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = useCallback(async (mode: "initial" | "refresh" = "initial") => {
     setError("");
@@ -132,10 +247,21 @@ export function AlertManagementScreen({ route, navigation }: Props) {
   }, [selectedId]);
 
   function startEdit(alert: AlertRule) {
+    if (alert.is_advanced || alert.is_watchlist_rule) {
+      // The edit path saves a single condition and threshold and does not touch
+      // the stored clauses or the watched list. Opening one of these rules in it
+      // would show a rule the member never wrote and save over half of the one
+      // they did. Pause, delete and duplicate all still work on them.
+      setSelectedId(alert.id);
+      setError("");
+      setNotice("Editing a multi-condition or watchlist alert is not available in the app yet. Delete it and create it again to change it.");
+      return;
+    }
     setEditingId(alert.id);
     setSelectedId(alert.id);
     setNotice("");
     setForm({
+      ...emptyForm,
       assetSymbol: alert.asset_symbol || alert.symbol || "BTC",
       targetValue: String(alert.threshold ?? alert.threshold_value ?? alert.target_value ?? ""),
       condition: alert.condition || "above",
@@ -155,8 +281,16 @@ export function AlertManagementScreen({ route, navigation }: Props) {
     setForm(presetSymbol ? { ...emptyForm, assetSymbol: presetSymbol } : emptyForm);
   }
 
+  function setClause(index: number, patch: Partial<AlertClause>) {
+    setForm((current) => ({
+      ...current,
+      clauses: (current.clauses || []).map((clause, position) =>
+        position === index ? { ...clause, ...patch } : clause)
+    }));
+  }
+
   async function saveForm() {
-    const validationError = validateAlertForm(form);
+    const validationError = validateAlertForm(form, options);
     if (validationError) {
       setError(validationError);
       setNotice("");
@@ -202,7 +336,7 @@ export function AlertManagementScreen({ route, navigation }: Props) {
 
   function confirmDelete(alert: AlertRule) {
     setPendingDeleteId(alert.id);
-    setNotice(`Confirm delete for ${alert.asset_symbol || alert.symbol} ${alertConditionLabel(alert)}.`);
+    setNotice(`Confirm delete for ${alertSubjectLabel(alert)} ${alertConditionLabel(alert)}.`);
     setError("");
   }
 
@@ -289,36 +423,154 @@ export function AlertManagementScreen({ route, navigation }: Props) {
 
       <Panel>
         <Text style={styles.sectionTitle}>{editingId ? "Edit alert" : "Create alert"}</Text>
-        <TextInput
-          accessibilityLabel="Alert symbol"
-          autoCapitalize="characters"
-          placeholder="Symbol"
-          placeholderTextColor={colors.muted}
-          style={styles.input}
-          value={form.assetSymbol}
-          onChangeText={(assetSymbol) => setForm((current) => ({ ...current, assetSymbol }))}
-        />
-        <TextInput
-          accessibilityLabel="Alert target value"
-          keyboardType="numeric"
-          placeholder="Target value"
-          placeholderTextColor={colors.muted}
-          style={styles.input}
-          value={form.targetValue}
-          onChangeText={(targetValue) => setForm((current) => ({ ...current, targetValue }))}
-        />
-        <View style={styles.segmentWrap}>
-          {ALERT_CONDITIONS.map((condition) => (
-            <Pressable
-              accessibilityRole="button"
-              key={condition.value}
-              style={[styles.segment, form.condition === condition.value ? styles.segmentActive : undefined]}
-              onPress={() => setForm((current) => ({ ...current, condition: condition.value }))}
-            >
-              <Text style={[styles.segmentText, form.condition === condition.value ? styles.segmentTextActive : undefined]}>{condition.label}</Text>
-            </Pressable>
-          ))}
-        </View>
+
+        {!editingId ? (
+          <View style={styles.fieldGroup}>
+            <SegmentRow
+              items={[{ key: "basic", label: "Basic" }, { key: "advanced", label: "Advanced" }]}
+              value={advanced ? "advanced" : "basic"}
+              onSelect={(mode) => {
+                if (mode === "advanced" && premiumLocked) {
+                  setError("");
+                  setNotice(PREMIUM_ALERT_NOTICE);
+                  return;
+                }
+                setError("");
+                setForm((current) => ({
+                  ...current,
+                  mode: mode === "advanced" ? "advanced" : "basic",
+                  // The first clause is not seeded from the basic condition:
+                  // the two vocabularies do not line up, and guessing a metric
+                  // the member never chose is worse than an empty row.
+                  clauses: mode === "advanced" && !(current.clauses || []).length ? [{ ...emptyClause }] : current.clauses
+                }));
+              }}
+            />
+            {premiumLocked ? (
+              <Text style={styles.muted}>Advanced alerts — several conditions in one rule, whole-watchlist rules, and time windows — are part of PulseSoc Premium.</Text>
+            ) : null}
+          </View>
+        ) : null}
+
+        {!editingId && watchlistOptions.length ? (
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>What this alert watches</Text>
+            <SegmentRow
+              items={[{ key: "asset", label: "One asset" }, { key: "list", label: "A watchlist" }]}
+              value={form.watchlistId ? "list" : "asset"}
+              onSelect={(target) => {
+                setError("");
+                if (target === "asset") {
+                  setForm((current) => ({ ...current, watchlistId: null }));
+                  return;
+                }
+                const first = watchlistOptions.find((watchlist) => watchlist.eligible) || watchlistOptions[0];
+                setForm((current) => ({ ...current, watchlistId: first?.id || null }));
+              }}
+            />
+          </View>
+        ) : null}
+
+        {form.watchlistId ? (
+          <View style={styles.fieldGroup}>
+            {watchlistOptions.map((watchlist) => (
+              <Pressable
+                accessibilityRole="button"
+                key={watchlist.id}
+                disabled={!watchlist.eligible}
+                style={[
+                  styles.watchlistRow,
+                  form.watchlistId === watchlist.id ? styles.watchlistRowActive : undefined,
+                  watchlist.eligible ? undefined : styles.disabled
+                ]}
+                onPress={() => setForm((current) => ({ ...current, watchlistId: watchlist.id }))}
+              >
+                <View style={styles.rowHead}>
+                  <Text style={styles.rowTitle}>{watchlist.name || `Watchlist ${watchlist.id}`}</Text>
+                  <Text style={[styles.pill, watchlist.eligible ? styles.readyPill : styles.warnPill]}>
+                    {watchlist.eligible ? `${watchlist.symbols.length} assets` : "Unavailable"}
+                  </Text>
+                </View>
+                {/* The reason comes from the same check creation runs, so a list
+                    shown as usable here is one creation accepts. */}
+                {watchlist.eligible ? null : <Text style={styles.rowMeta}>{watchlist.message}</Text>}
+              </Pressable>
+            ))}
+          </View>
+        ) : (
+          <TextInput
+            accessibilityLabel="Alert symbol"
+            autoCapitalize="characters"
+            placeholder="Symbol"
+            placeholderTextColor={colors.muted}
+            style={styles.input}
+            value={form.assetSymbol}
+            onChangeText={(assetSymbol) => setForm((current) => ({ ...current, assetSymbol }))}
+          />
+        )}
+
+        {advanced && !editingId ? (
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>Conditions</Text>
+            <SegmentRow
+              items={logicItems}
+              value={form.logic || "and"}
+              onSelect={(logic) => setForm((current) => ({ ...current, logic }))}
+            />
+            <Text style={styles.rowMeta}>
+              {form.logic === "or"
+                ? "The alert fires when any one of these is true."
+                : "The alert fires only while all of these are true at once."}
+            </Text>
+            {clauses.map((clause, index) => (
+              <ClauseEditor
+                key={index}
+                clause={clause}
+                index={index}
+                metrics={options?.advanced.metrics || []}
+                comparators={options?.advanced.comparators || []}
+                windowComparators={options?.advanced.window_comparators || []}
+                windows={offeredWindows}
+                windowMessage={options?.window_message || ""}
+                canRemove={clauses.length > 1}
+                onChange={(patch) => setClause(index, patch)}
+                onRemove={() => setForm((current) => ({
+                  ...current,
+                  clauses: (current.clauses || []).filter((_, position) => position !== index)
+                }))}
+              />
+            ))}
+            {clauses.length < maxClauses ? (
+              <ActionButton
+                label="Add condition"
+                variant="secondary"
+                onPress={() => setForm((current) => ({ ...current, clauses: [...(current.clauses || []), { ...emptyClause }] }))}
+              />
+            ) : (
+              <Text style={styles.rowMeta}>One alert can hold up to {maxClauses} conditions.</Text>
+            )}
+          </View>
+        ) : (
+          <>
+            <TextInput
+              accessibilityLabel="Alert target value"
+              keyboardType="numeric"
+              placeholder="Target value"
+              placeholderTextColor={colors.muted}
+              style={styles.input}
+              value={form.targetValue}
+              onChangeText={(targetValue) => setForm((current) => ({ ...current, targetValue }))}
+            />
+            {/* Ordered by the server rather than by this file, so the buttons
+                cannot offer a condition creation has stopped accepting. */}
+            <SegmentRow
+              items={basicConditionItems}
+              value={form.condition}
+              onSelect={(condition) => setForm((current) => ({ ...current, condition }))}
+            />
+          </>
+        )}
+
         <View style={styles.channelGrid}>
           <ChannelToggle label="In-app" value={form.notifyInApp} onPress={() => setForm((current) => ({ ...current, notifyInApp: !current.notifyInApp }))} />
           <ChannelToggle label="Email" value={form.notifyEmail} onPress={() => setForm((current) => ({ ...current, notifyEmail: !current.notifyEmail }))} />
@@ -368,7 +620,7 @@ export function AlertManagementScreen({ route, navigation }: Props) {
       {selectedAlert ? (
         <Panel>
           <Text style={styles.sectionTitle}>Alert detail</Text>
-          <Text style={styles.detailTitle}>{selectedAlert.asset_symbol || selectedAlert.symbol} {alertConditionLabel(selectedAlert)}</Text>
+          <Text style={styles.detailTitle}>{alertSubjectLabel(selectedAlert)} {alertConditionLabel(selectedAlert)}</Text>
           <Text style={styles.muted}>Status: {alertStatusLabel(selectedAlert.status)}. Source: {selectedAlert.source || "server"}. Trigger count: {selectedAlert.trigger_count || 0}.</Text>
           <Text style={styles.muted}>Channels: {alertEnabledChannels(selectedAlert).join(", ") || "server delivery"}</Text>
           <Text style={styles.muted}>Last checked: {selectedAlert.last_checked_at || "not recorded"}</Text>
@@ -436,7 +688,9 @@ function AlertCard({
     <View style={[styles.alertCard, selected ? styles.alertCardSelected : undefined]}>
       <Pressable accessibilityRole="button" onPress={onSelect}>
         <View style={styles.rowHead}>
-          <Text style={styles.rowTitle}>{alert.asset_symbol || alert.symbol} alert</Text>
+          {/* A watchlist rule has no symbol of its own, so naming it by one would
+              render every such rule as the same anonymous " alert". */}
+          <Text style={styles.rowTitle}>{alertSubjectLabel(alert)} alert</Text>
           <Text style={[styles.pill, active ? styles.readyPill : styles.warnPill]}>{alertStatusLabel(alert.status)}</Text>
         </View>
         <Text style={styles.muted}>{alertConditionLabel(alert)}</Text>
@@ -463,20 +717,227 @@ function AlertCard({
   );
 }
 
-function validateAlertForm(form: AlertFormPayload) {
-  const symbol = form.assetSymbol.trim().toUpperCase();
-  const rawTarget = form.targetValue.trim();
-  const target = Number(rawTarget);
+/**
+ * The last check before the request goes out, phrased in the member's terms.
+ *
+ * It is deliberately not the authority: the server validates every one of these
+ * again and refuses anything it disagrees with. What this buys is a sentence the
+ * member can act on instead of a 400, and — for the window rules especially — a
+ * refusal to send a rule that would be accepted but could never be decided.
+ *
+ * `options` is nullable on purpose. When the options call failed there is no
+ * advanced vocabulary on screen either, so the basic path validates exactly as
+ * it always did rather than blocking on an answer that never arrived.
+ */
+function validateAlertForm(form: AlertFormPayload, options: AlertOptions | null) {
   const hasChannel = form.notifyInApp || form.notifyEmail || form.notifyPush || form.notifySMS || form.notifyTelegram;
-  if (!symbol) return "Add an asset symbol before saving the alert.";
-  if (!/^[A-Z0-9.$:-]{2,24}$/.test(symbol)) return "Use a valid asset symbol such as BTC, ETH, or SOL.";
-  if (!rawTarget) return "Add a target value before saving the alert.";
-  if (!Number.isFinite(target)) return "Use a numeric target value.";
-  if (target <= 0) return "Target value must be greater than zero.";
-  if (target > 1_000_000_000_000) return "Target value is too large for a safe alert threshold.";
-  if (!ALERT_CONDITIONS.some((condition) => condition.value === form.condition)) return "Choose a supported alert condition.";
+  const advanced = form.mode === "advanced";
+
+  if (form.watchlistId) {
+    // A list rule is about no single asset, so the symbol is not checked at all.
+    // Eligibility is the server's own preflight answer, carried in the options
+    // payload — re-deriving it here is how the form and the gate start to differ.
+    const watchlist = (options?.watchlists || []).find((entry) => entry.id === form.watchlistId);
+    if (!watchlist) return "Choose a watchlist for this alert to watch.";
+    if (!watchlist.eligible) return watchlist.message || "That watchlist cannot be used for an alert right now.";
+  } else {
+    const symbol = form.assetSymbol.trim().toUpperCase();
+    if (!symbol) return "Add an asset symbol before saving the alert.";
+    if (!/^[A-Z0-9.$:-]{2,24}$/.test(symbol)) return "Use a valid asset symbol such as BTC, ETH, or SOL.";
+  }
+
+  if (advanced) {
+    if (options?.advanced.locked) return "Multi-condition alerts are part of PulseSoc Premium.";
+    const clauses = form.clauses || [];
+    if (!clauses.length) return "Add at least one condition before saving the alert.";
+    const maxClauses = options?.advanced.max_clauses || clauses.length;
+    if (clauses.length > maxClauses) return `One alert can hold up to ${maxClauses} conditions.`;
+    const offered = new Set((options?.windows || []).map((window) => window.minutes));
+    const windowComparators = new Set(options?.advanced.window_comparators || []);
+    for (let index = 0; index < clauses.length; index += 1) {
+      const clause = clauses[index];
+      const position = `Condition ${index + 1}`;
+      const metric = (options?.advanced.metrics || []).find((entry) => entry.key === clause.metric);
+      if (!metric) return `${position}: choose what to measure.`;
+      if (!(options?.advanced.comparators || []).some((entry) => entry.key === clause.comparator)) {
+        return `${position}: choose a supported comparison.`;
+      }
+      const raw = String(clause.value || "").trim();
+      if (!raw) return `${position}: add a value.`;
+      const value = Number(raw);
+      if (!Number.isFinite(value)) return `${position}: use a numeric value.`;
+      // A percentage change is genuinely negative half the time; a price, a
+      // volume or a market cap never is, and a negative one would arm forever.
+      if (!metric.percent && value <= 0) return `${position}: ${metric.label} must be greater than zero.`;
+      if (Math.abs(value) > 1_000_000_000_000) return `${position}: that value is too large for a safe threshold.`;
+      if (!clause.windowMinutes) continue;
+      if (!metric.windowable) return `${position}: ${metric.label} cannot be measured over a time window.`;
+      // The offered set comes from what has actually been sampled. Sending a
+      // window outside it would create the one failure mode this whole options
+      // endpoint exists to prevent: a rule that looks healthy and never decides.
+      if (!offered.has(clause.windowMinutes)) {
+        return options?.window_message || `${position}: that time window cannot be measured for this asset yet.`;
+      }
+      // A window's baseline moves with every sample, so a crossing over one
+      // would fire on the baseline shifting rather than on the market moving.
+      if (windowComparators.size && !windowComparators.has(clause.comparator)) {
+        return `${position}: ${comparatorLabel(clause.comparator).toLowerCase()} cannot be used with a time window.`;
+      }
+    }
+  } else {
+    const rawTarget = form.targetValue.trim();
+    const target = Number(rawTarget);
+    const conditions = options?.basic.conditions.length
+      ? options.basic.conditions
+      : ALERT_CONDITIONS.map((condition) => condition.value);
+    if (!rawTarget) return "Add a target value before saving the alert.";
+    if (!Number.isFinite(target)) return "Use a numeric target value.";
+    if (target <= 0) return "Target value must be greater than zero.";
+    if (target > 1_000_000_000_000) return "Target value is too large for a safe alert threshold.";
+    if (!conditions.includes(form.condition)) return "Choose a supported alert condition.";
+  }
+
   if (!hasChannel) return "Choose at least one delivery channel.";
   return "";
+}
+
+/** A row of mutually exclusive choices. The selected key is owned by the caller. */
+function SegmentRow({
+  items,
+  value,
+  disabled,
+  onSelect
+}: {
+  items: { key: string; label: string }[];
+  value: string;
+  disabled?: boolean;
+  onSelect: (key: string) => void;
+}) {
+  return (
+    <View style={styles.segmentWrap}>
+      {items.map((item) => {
+        const active = item.key === value;
+        return (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ selected: active, disabled: Boolean(disabled) }}
+            disabled={disabled}
+            key={item.key}
+            style={[styles.segment, active ? styles.segmentActive : undefined, disabled ? styles.disabled : undefined]}
+            onPress={() => onSelect(item.key)}
+          >
+            <Text style={[styles.segmentText, active ? styles.segmentTextActive : undefined]}>{item.label}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+/**
+ * One clause of a compound rule: what to measure, how to compare it, against
+ * what, and optionally over how long.
+ *
+ * Every vocabulary it renders is passed in from the options payload rather than
+ * held here, because two of them are not constants — which windows are
+ * answerable depends on how long this asset has been sampled, and which
+ * comparators a window allows is a server rule this file must not restate.
+ */
+function ClauseEditor({
+  clause,
+  index,
+  metrics,
+  comparators,
+  windowComparators,
+  windows,
+  windowMessage,
+  canRemove,
+  onChange,
+  onRemove
+}: {
+  clause: AlertClause;
+  index: number;
+  metrics: AlertOptions["advanced"]["metrics"];
+  comparators: AlertOptions["advanced"]["comparators"];
+  windowComparators: string[];
+  windows: AlertWindowOption[];
+  windowMessage: string;
+  canRemove: boolean;
+  onChange: (patch: Partial<AlertClause>) => void;
+  onRemove: () => void;
+}) {
+  const metric = metrics.find((entry) => entry.key === clause.metric) || null;
+  const windowed = Boolean(clause.windowMinutes);
+  // With a window on, only the level comparators are offered — the server
+  // refuses the crossings, and offering one it would refuse is worse than not
+  // offering it at all.
+  const offeredComparators = (windowed && windowComparators.length
+    ? comparators.filter((entry) => windowComparators.includes(entry.key))
+    : comparators
+  ).map((entry) => ({ key: entry.key, label: comparatorLabel(entry.key) }));
+
+  return (
+    <View style={styles.clauseCard}>
+      <View style={styles.rowHead}>
+        <Text style={styles.rowTitle}>Condition {index + 1}</Text>
+        {canRemove ? <ActionButton label="Remove" variant="secondary" onPress={onRemove} /> : null}
+      </View>
+
+      <SegmentRow
+        items={metrics.map((entry) => ({ key: entry.key, label: entry.label }))}
+        value={clause.metric}
+        onSelect={(next) => {
+          const chosen = metrics.find((entry) => entry.key === next);
+          // A window makes no sense on a metric that cannot carry one, and a
+          // window left behind from the previous metric would be sent anyway.
+          onChange({ metric: next, ...(chosen?.windowable ? {} : { windowMinutes: 0 }) });
+        }}
+      />
+
+      <SegmentRow
+        items={offeredComparators}
+        value={clause.comparator}
+        onSelect={(comparator) => onChange({ comparator })}
+      />
+
+      <TextInput
+        accessibilityLabel={`Condition ${index + 1} value`}
+        keyboardType="numbers-and-punctuation"
+        placeholder={metric?.percent ? "Percent, for example -5" : "Value"}
+        placeholderTextColor={colors.muted}
+        style={styles.input}
+        value={clause.value}
+        onChangeText={(value) => onChange({ value })}
+      />
+
+      {metric?.windowable ? (
+        windows.length ? (
+          <>
+            <Text style={styles.rowMeta}>Measured over</Text>
+            <SegmentRow
+              items={[{ key: "0", label: "No window" }, ...windows.map((window) => ({ key: String(window.minutes), label: window.label }))]}
+              value={String(clause.windowMinutes || 0)}
+              onSelect={(next) => {
+                const windowMinutes = Number(next) || 0;
+                // Turning a window on can invalidate the chosen comparator. Moving
+                // it to the first allowed one keeps the clause coherent instead of
+                // leaving a selection that no longer appears among the buttons.
+                const allowed = windowComparators.length ? windowComparators : comparators.map((entry) => entry.key);
+                const comparator = windowMinutes && !allowed.includes(clause.comparator)
+                  ? allowed[0] || clause.comparator
+                  : clause.comparator;
+                onChange({ windowMinutes, comparator });
+              }}
+            />
+          </>
+        ) : (
+          // Not an error and not a missing feature: the series simply has not
+          // observed this asset for long enough to answer any window yet.
+          <Text style={styles.rowMeta}>{windowMessage || "No time window can be measured for this asset yet."}</Text>
+        )
+      ) : null}
+    </View>
+  );
 }
 
 function ChannelToggle({ label, value, onPress }: { label: string; value: boolean; onPress: () => void }) {
@@ -561,6 +1022,14 @@ const styles = createThemedStyles(() => ({
     color: colors.muted,
     marginTop: 10
   },
+  clauseCard: {
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 8,
+    padding: 10
+  },
   confirmBox: {
     backgroundColor: "rgba(255, 107, 107, 0.08)",
     borderColor: "rgba(255, 107, 107, 0.34)",
@@ -629,6 +1098,14 @@ const styles = createThemedStyles(() => ({
     fontSize: 12,
     fontWeight: "900",
     textTransform: "uppercase"
+  },
+  fieldGroup: {
+    gap: 8
+  },
+  fieldLabel: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "900"
   },
   header: {
     gap: 5
@@ -780,5 +1257,16 @@ const styles = createThemedStyles(() => ({
   warnPill: {
     borderColor: colors.warning,
     color: colors.warning
+  },
+  watchlistRow: {
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 4,
+    padding: 10
+  },
+  watchlistRowActive: {
+    backgroundColor: "rgba(37, 208, 167, 0.10)",
+    borderColor: colors.accent
   }
 }));
