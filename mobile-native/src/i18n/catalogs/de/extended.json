@@ -2211,7 +2211,16 @@
       "expires": "Endet am",
       "cancelPending": "Dieses Abo endet und wird nicht verlängert.",
       "none": "Für diese Mitgliedschaft liegen keine Abrechnungsdaten vor.",
-      "founderNone": "Gründer-Mitgliedschaft – keine Abrechnung, nichts zu verlängern."
+      "founderNone": "Gründer-Mitgliedschaft – keine Abrechnung, nichts zu verlängern.",
+      "planValue": "PulseSoc Premium — {{period}}",
+      "planValueUnknown": "PulseSoc Premium",
+      "price": "Preis",
+      "renewsOn": "Verlängert sich am",
+      "expiresOn": "Endet am",
+      "since": "Abonnement seit",
+      "loadingValue": "Wird geladen",
+      "graceNote": "Apple versucht erneut, deine Zahlung einzuziehen. Dein Zugang bleibt in der Zwischenzeit aktiv.",
+      "retryNote": "Deine letzte Zahlung war nicht erfolgreich. Aktualisiere deine Zahlungsmethode im App Store, um fortzufahren."
     },
     "period": {
       "monthly": "Monatlich",
@@ -2221,9 +2230,10 @@
       "unknown": "—"
     },
     "provider": {
-      "apple_iap": "Apple",
+      "apple_iap": "Apple App Store",
       "stripe": "Karte",
-      "unknown": "—"
+      "unknown": "—",
+      "apple_app_store": "Apple App Store"
     },
     "subStatus": {
       "active": "Aktiv",
@@ -2345,6 +2355,17 @@
     "free": {
       "heading": "Immer kostenlos",
       "body": "Feed, Beiträge, Reels, Status, Nachrichten, Anrufe, Live-Video, Profil, Sicherheit und Kontowiederherstellung bleiben kostenlos. Premium ergänzt PulseSoc; es nimmt nie etwas weg."
+    },
+    "subState": {
+      "active": "Aktiv",
+      "trialing": "Testphase",
+      "grace": "Im Kulanzzeitraum",
+      "billing_retry": "Zahlungswiederholung",
+      "canceled": "Gekündigt — keine Verlängerung",
+      "expired": "Abgelaufen",
+      "revoked": "Widerrufen",
+      "paused": "Pausiert",
+      "unknown": "Nicht verfügbar"
     }
   }
 }

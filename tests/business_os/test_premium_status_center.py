@@ -318,8 +318,29 @@ def test_subscription_summary_returns_only_safe_columns():
     assert set(summary) == {
         "provider", "plan_key", "billing_period", "status",
         "current_period_end", "cancel_at_period_end",
+        # The member-facing subscription card needs more than the provider's own
+        # bookkeeping. Every one of these is derived from the row, and none of
+        # them is a secret — see the leak tests immediately below.
+        "state", "auto_renew", "renews_at", "expires_at",
+        "product_id", "original_purchase_at",
     }
     assert summary["billing_period"] == "annual"
+
+
+def test_subscription_summary_never_publishes_a_column_by_accident():
+    """The allowlist is the point.
+
+    The summary is assembled by naming fields, never by copying the row, so
+    adding a column to ``business_os_ent_provider_subs`` cannot quietly publish
+    it. This asserts that boundary directly rather than trusting the set literal
+    above to be kept honest by whoever edits it next.
+    """
+    _mkuser(9138)
+    _mksub(9138)
+    summary = papi.subscription_summary(9138)
+    for forbidden in ("raw_json", "provider_subscription_id", "id",
+                      "subject_id", "subject_type", "created_at", "updated_at"):
+        assert forbidden not in summary
 
 
 def test_subscription_summary_never_leaks_the_provider_token_or_receipt():
@@ -331,6 +352,105 @@ def test_subscription_summary_never_leaks_the_provider_token_or_receipt():
     assert "1000000999888777" not in blob
     assert "LEAK" not in blob
     assert "receipt" not in blob.lower()
+
+
+# PREM-032..039 -- the facts the member's subscription card is built from ------
+#
+# Each of these corresponds to one row on the Premium screen. The rule they
+# share: a fact we do not have is reported as absent, never as a default that
+# happens to read well.
+
+def test_auto_renewing_subscription_reports_a_renewal_date_not_an_end_date():
+    _mkuser(9140)
+    _mksub(9140, cancel_at_period_end=0, current_period_end="2027-01-01T00:00:00Z")
+    summary = papi.subscription_summary(9140)
+    assert summary["auto_renew"] is True
+    assert summary["renews_at"] == "2027-01-01T00:00:00Z"
+    # Both dates are the same instant; only one of them is the truth about what
+    # happens when it arrives, and the screen must not be able to show both.
+    assert summary["expires_at"] is None
+
+
+def test_cancelled_subscription_reports_an_end_date_not_a_renewal_date():
+    """Auto-renew off is the case the old screen got wrong.
+
+    A member who cancels keeps access until the period ends. Telling them it
+    "renews" on that date is the opposite of what will happen.
+    """
+    _mkuser(9141)
+    _mksub(9141, cancel_at_period_end=1, status="canceled",
+           current_period_end="2027-01-01T00:00:00Z")
+    summary = papi.subscription_summary(9141)
+    assert summary["auto_renew"] is False
+    assert summary["renews_at"] is None
+    assert summary["expires_at"] == "2027-01-01T00:00:00Z"
+    assert summary["state"] == "canceled"
+
+
+def test_a_lapsed_row_still_marked_active_reports_expired():
+    """The clock outranks a stale status string.
+
+    A dropped or delayed ``EXPIRED`` notification would otherwise leave this row
+    reading ``active`` forever, showing a lapsed member a live subscription.
+    """
+    _mkuser(9142)
+    _mksub(9142, status="active", current_period_end="2020-01-01T00:00:00Z")
+    summary = papi.subscription_summary(9142)
+    assert summary["state"] == "expired"
+    assert summary["renews_at"] is None
+    assert summary["expires_at"] == "2020-01-01T00:00:00Z"
+
+
+def test_an_unrecognised_provider_status_becomes_unknown_not_itself():
+    """Raw provider jargon must never reach a member's screen.
+
+    Rows written before the Apple adapter had a fixed status vocabulary hold
+    strings like ``did_change_renewal_status``. ``state`` is what the screen
+    switches on, and it is closed over a known set.
+    """
+    _mkuser(9143)
+    _mksub(9143, status="did_change_renewal_status")
+    summary = papi.subscription_summary(9143)
+    assert summary["state"] == "unknown"
+
+
+def test_original_purchase_date_is_read_from_a_signed_transaction():
+    _mkuser(9144)
+    _mksub(9144, raw_json='{"productId": "com.pulsesoc.premium.annual",'
+                          ' "originalPurchaseDate": 1735689600000}')
+    summary = papi.subscription_summary(9144)
+    assert (summary["original_purchase_at"] or "").startswith("2025-01-01")
+
+
+def test_original_purchase_date_is_read_from_a_notification_payload():
+    """Two shapes land in ``raw_json`` and both have to work.
+
+    A purchase stores the bare transaction; an App Store notification stores the
+    whole envelope. A member whose row was last written by a renewal
+    notification must still see when they first subscribed.
+    """
+    _mkuser(9145)
+    _mksub(9145, raw_json='{"notificationType": "DID_RENEW", "data":'
+                          ' {"transactionInfo": {"originalPurchaseDate": 1735689600000}}}')
+    summary = papi.subscription_summary(9145)
+    assert (summary["original_purchase_at"] or "").startswith("2025-01-01")
+
+
+def test_a_missing_original_purchase_date_is_absent_not_invented():
+    _mkuser(9146)
+    _mksub(9146, raw_json='{"productId": "com.pulsesoc.premium.annual"}')
+    assert papi.subscription_summary(9146)["original_purchase_at"] is None
+
+
+def test_product_id_round_trips_from_the_verified_plan_key():
+    """The app needs the identifier to ask StoreKit for the member's own price.
+
+    It is derived from ``plan_key``, which was itself set from a verified
+    ``productId``, so this is still reporting what Apple signed.
+    """
+    _mkuser(9147)
+    _mksub(9147, plan_key="pulse_premium_annual")
+    assert papi.subscription_summary(9147)["product_id"] == "com.pulsesoc.premium.annual"
 
 
 def test_status_center_carries_the_same_safe_subscription():

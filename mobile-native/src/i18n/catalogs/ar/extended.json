@@ -2295,7 +2295,16 @@
       "expires": "ينتهي في",
       "cancelPending": "هذا الاشتراك مضبوط على الانتهاء ولن يتجدّد.",
       "none": "لا تتوفّر لدينا بيانات فوترة لهذه العضوية.",
-      "founderNone": "عضوية مؤسِّس — لا فوترة ولا تجديد."
+      "founderNone": "عضوية مؤسِّس — لا فوترة ولا تجديد.",
+      "planValue": "PulseSoc Premium — {{period}}",
+      "planValueUnknown": "PulseSoc Premium",
+      "price": "السعر",
+      "renewsOn": "يتجدد في",
+      "expiresOn": "ينتهي في",
+      "since": "مشترك منذ",
+      "loadingValue": "جارٍ التحميل",
+      "graceNote": "تحاول Apple إعادة تحصيل دفعتك. يظل وصولك فعّالاً في هذه الأثناء.",
+      "retryNote": "لم تتم عملية الدفع الأخيرة. حدّث طريقة الدفع في App Store للمتابعة."
     },
     "period": {
       "monthly": "شهري",
@@ -2305,9 +2314,10 @@
       "unknown": "—"
     },
     "provider": {
-      "apple_iap": "Apple",
+      "apple_iap": "App Store من Apple",
       "stripe": "بطاقة",
-      "unknown": "—"
+      "unknown": "—",
+      "apple_app_store": "App Store من Apple"
     },
     "subStatus": {
       "active": "نشط",
@@ -2429,6 +2439,17 @@
     "free": {
       "heading": "مجاني دائمًا",
       "body": "يبقى مجانيًا كلٌّ من موجزك ومنشوراتك والريلز والحالة والرسائل والمكالمات والبث المباشر والملف الشخصي والأمان واستعادة الحساب. بريميوم يضيف إلى PulseSoc ولا يسلب منه شيئًا."
+    },
+    "subState": {
+      "active": "نشط",
+      "trialing": "تجريبي",
+      "grace": "في فترة السماح",
+      "billing_retry": "إعادة محاولة الدفع",
+      "canceled": "ملغى — التجديد التلقائي متوقف",
+      "expired": "منتهٍ",
+      "revoked": "مسحوب",
+      "paused": "موقوف مؤقتاً",
+      "unknown": "غير متاح"
     }
   }
 }

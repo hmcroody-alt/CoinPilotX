@@ -99,13 +99,80 @@ describe("normalizePremiumCenter", () => {
       }
     } as never);
     expect(Object.keys(payload.subscription || {}).sort()).toEqual([
+      "auto_renew",
       "billing_period",
       "cancel_at_period_end",
       "current_period_end",
+      "expires_at",
+      "original_purchase_at",
       "plan_key",
+      "product_id",
       "provider",
+      "renews_at",
+      "state",
       "status"
     ]);
+  });
+
+  it("treats an unrecognised subscription state as unknown, never as active", () => {
+    // A payload this build does not understand must produce a cautious card. The
+    // failure that costs a member nothing is a screen that says "unavailable";
+    // the failure that costs the company money is one that asserts a membership.
+    const payload = normalizePremiumCenter({
+      subscription: { provider: "apple_app_store", state: "something_new" }
+    } as never);
+    expect(payload.subscription?.state).toBe("unknown");
+  });
+
+  it("derives auto-renew from the cancel flag when an older server omits it", () => {
+    const payload = normalizePremiumCenter({
+      subscription: { provider: "apple_app_store", state: "canceled", cancel_at_period_end: true }
+    } as never);
+    expect(payload.subscription?.auto_renew).toBe(false);
+  });
+
+  it("never sets both a renewal date and an end date", () => {
+    // The same instant means "you will be charged" or "your access stops". A
+    // payload asserting both would let the card render the wrong verb next to
+    // the right date, which is the most damaging thing it could say.
+    const renewing = normalizePremiumCenter({
+      subscription: {
+        provider: "apple_app_store", state: "active", cancel_at_period_end: false,
+        current_period_end: "2099-01-01T00:00:00Z",
+        renews_at: "2099-01-01T00:00:00Z", expires_at: "2099-01-01T00:00:00Z"
+      }
+    } as never);
+    expect(renewing.subscription?.renews_at).toBe("2099-01-01T00:00:00Z");
+    expect(renewing.subscription?.expires_at).toBeNull();
+
+    const ending = normalizePremiumCenter({
+      subscription: {
+        provider: "apple_app_store", state: "canceled", cancel_at_period_end: true,
+        current_period_end: "2099-01-01T00:00:00Z",
+        renews_at: "2099-01-01T00:00:00Z", expires_at: "2099-01-01T00:00:00Z"
+      }
+    } as never);
+    expect(ending.subscription?.renews_at).toBeNull();
+    expect(ending.subscription?.expires_at).toBe("2099-01-01T00:00:00Z");
+  });
+
+  it("reports an expired subscription as ending, never as renewing", () => {
+    const payload = normalizePremiumCenter({
+      subscription: {
+        provider: "apple_app_store", state: "expired", cancel_at_period_end: false,
+        current_period_end: "2020-01-01T00:00:00Z"
+      }
+    } as never);
+    expect(payload.subscription?.renews_at).toBeNull();
+    expect(payload.subscription?.expires_at).toBe("2020-01-01T00:00:00Z");
+  });
+
+  it("keeps a missing original purchase date absent rather than inventing one", () => {
+    const payload = normalizePremiumCenter({
+      subscription: { provider: "apple_app_store", state: "active" }
+    } as never);
+    expect(payload.subscription?.original_purchase_at).toBeNull();
+    expect(payload.subscription?.product_id).toBeNull();
   });
 });
 

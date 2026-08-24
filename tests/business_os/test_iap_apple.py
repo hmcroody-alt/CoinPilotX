@@ -140,12 +140,136 @@ def test_renew_and_grace():
                            app_account_token=uid, original_transaction_id=otx),
         verifier=_verifier(chain))
     assert res["projected"] is True and res["intent"] == "grant", res
+    # Apple signals grace as DID_FAIL_TO_RENEW + subtype GRACE_PERIOD. This test
+    # used to build a bare "GRACE_PERIOD" notificationType, which Apple has never
+    # sent — so it passed while grace was in fact never once detected in
+    # production. The real payload shape is asserted here.
     grace = apple.apply_apple_notification(
-        build_notification(chain, notification_type="GRACE_PERIOD",
+        build_notification(chain, notification_type="DID_FAIL_TO_RENEW",
+                           subtype="GRACE_PERIOD",
                            app_account_token=uid, original_transaction_id=otx),
         verifier=_verifier(chain))
     assert grace["intent"] == "grace" and grace["projected"] is True, grace
     assert ent_svc.has_entitlement(uid, "premium.profile.customization") is True
+    assert _sub_row(uid)["status"] == "grace_period"
+
+
+def _sub_row(uid):
+    """The stored provider subscription row for a user, as a plain dict."""
+    conn = db.connect()
+    try:
+        row = conn.execute(
+            "SELECT status, cancel_at_period_end FROM business_os_ent_provider_subs "
+            "WHERE provider='apple_app_store' AND subject_id=? LIMIT 1", (uid,)).fetchone()
+        assert row is not None, f"no subscription row for {uid}"
+        return {"status": row[0], "cancel_at_period_end": row[1]}
+    finally:
+        conn.close()
+
+
+# --- (h2) billing retry without a grace period ------------------------------
+def test_billing_retry_is_distinguished_from_grace():
+    """DID_FAIL_TO_RENEW with no subtype means Apple is retrying the card.
+
+    Access has already lapsed at the expiry date, so this must not extend the
+    grant — but it also must not read as a plain expiry, because the member can
+    fix it by updating their payment method.
+    """
+    chain = Chain()
+    uid, otx = "610", "1000000000000610"
+    apple.apply_apple_notification(
+        build_notification(chain, notification_type="SUBSCRIBED",
+                           app_account_token=uid, original_transaction_id=otx),
+        verifier=_verifier(chain))
+    res = apple.apply_apple_notification(
+        build_notification(chain, notification_type="DID_FAIL_TO_RENEW",
+                           app_account_token=uid, original_transaction_id=otx),
+        verifier=_verifier(chain))
+    assert res["intent"] == "record", res
+    assert _sub_row(uid)["status"] == "billing_retry"
+
+
+# --- (h3) auto-renew is read from renewalInfo, in both directions -----------
+def test_turning_auto_renew_off_then_on_tracks_both_directions():
+    """DID_CHANGE_RENEWAL_STATUS fires for both directions.
+
+    The old adapter matched on the notification type alone and set
+    ``cancel_at_period_end`` unconditionally, so a member who turned auto-renew
+    back ON was recorded as cancelling and was then told their subscription was
+    ending while Apple was about to charge them again.
+    """
+    chain = Chain()
+    uid, otx = "611", "1000000000000611"
+    apple.apply_apple_notification(
+        build_notification(chain, notification_type="SUBSCRIBED",
+                           app_account_token=uid, original_transaction_id=otx),
+        verifier=_verifier(chain))
+    assert _sub_row(uid)["cancel_at_period_end"] in (0, False)
+
+    apple.apply_apple_notification(
+        build_notification(chain, notification_type="DID_CHANGE_RENEWAL_STATUS",
+                           subtype="AUTO_RENEW_DISABLED", auto_renew_status=0,
+                           app_account_token=uid, original_transaction_id=otx),
+        verifier=_verifier(chain))
+    off = _sub_row(uid)
+    assert off["cancel_at_period_end"] in (1, True)
+    assert off["status"] == "canceled"
+
+    apple.apply_apple_notification(
+        build_notification(chain, notification_type="DID_CHANGE_RENEWAL_STATUS",
+                           subtype="AUTO_RENEW_ENABLED", auto_renew_status=1,
+                           app_account_token=uid, original_transaction_id=otx),
+        verifier=_verifier(chain))
+    back_on = _sub_row(uid)
+    assert back_on["cancel_at_period_end"] in (0, False)
+    assert back_on["status"] == "active"
+
+
+# --- (h4) an informational notification asserts nothing ---------------------
+def test_an_informational_notification_does_not_overwrite_known_facts():
+    """Silence is not data.
+
+    A PRICE_INCREASE carries no renewal info and no lifecycle meaning. The old
+    adapter lowercased the notification type into the status column, so this
+    member's status would have become the string "price_increase" — shown to
+    them verbatim as their subscription status.
+    """
+    chain = Chain()
+    uid, otx = "612", "1000000000000612"
+    apple.apply_apple_notification(
+        build_notification(chain, notification_type="DID_CHANGE_RENEWAL_STATUS",
+                           subtype="AUTO_RENEW_DISABLED", auto_renew_status=0,
+                           app_account_token=uid, original_transaction_id=otx),
+        verifier=_verifier(chain))
+    apple.apply_apple_notification(
+        build_notification(chain, notification_type="PRICE_INCREASE",
+                           app_account_token=uid, original_transaction_id=otx,
+                           include_renewal_info=False),
+        verifier=_verifier(chain))
+    after = _sub_row(uid)
+    assert after["status"] == "canceled", after
+    assert after["cancel_at_period_end"] in (1, True), after
+
+
+# --- (h5) the original purchase date survives into storage ------------------
+def test_original_purchase_date_is_persisted_for_the_subscription_since_row():
+    chain = Chain()
+    uid, otx = "613", "1000000000000613"
+    first = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    apple.apply_apple_notification(
+        build_notification(chain, notification_type="SUBSCRIBED",
+                           app_account_token=uid, original_transaction_id=otx,
+                           original_purchase_dt=first),
+        verifier=_verifier(chain))
+    from services.business_os.entitlements import premium_api as papi
+    conn = db.connect()
+    try:
+        raw = conn.execute(
+            "SELECT raw_json FROM business_os_ent_provider_subs "
+            "WHERE provider_subscription_id=?", (otx,)).fetchone()[0]
+    finally:
+        conn.close()
+    assert (papi._original_purchase_at(raw) or "").startswith("2025-01-01")
 
 
 # --- (i) REFUND revokes access immediately ----------------------------------
@@ -238,6 +362,10 @@ def _run_standalone():
         test_bad_alg_rejected,
         test_subscribed_grants_entitlements,
         test_renew_and_grace,
+        test_billing_retry_is_distinguished_from_grace,
+        test_turning_auto_renew_off_then_on_tracks_both_directions,
+        test_an_informational_notification_does_not_overwrite_known_facts,
+        test_original_purchase_date_is_persisted_for_the_subscription_since_row,
         test_refund_revokes,
         test_idempotent_replay,
         test_unmapped_product_no_grant,
