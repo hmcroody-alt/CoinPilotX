@@ -171,7 +171,15 @@ _REGISTRY: tuple[Feature, ...] = (
             "tax lots or trade history; unrealized value against an average "
             "basis is the whole of it. And the iOS native app cannot reach the "
             "portfolio write routes at all (api_pro_required returns the "
-            "paid-digital 403), so no iOS surface may advertise this yet."
+            "paid-digital 403), so no iOS surface may advertise this yet. "
+            "One thing to know before building further here: a SECOND portfolio "
+            "backend already exists. services/business_os/crypto keeps an "
+            "append-only business_os_crypto_transactions log with FIFO/average "
+            "lots — the real cost basis this key does not have — but it is dark "
+            "behind BUSINESS_OS_CRYPTO (off by default, its routes 404). "
+            "Realized P/L becomes sellable by lighting that up and reconciling "
+            "the two stores, never by deriving it from portfolio_items, and "
+            "never by starting a third."
         ),
     ),
     Feature(
