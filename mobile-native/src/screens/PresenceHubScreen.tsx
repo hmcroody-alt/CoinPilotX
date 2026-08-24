@@ -12,6 +12,7 @@ import {
 import { listMyPages, pageTypeLabel, PulsePage } from "../api/pages";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
+import { presenceAccent } from "../theme/presenceAccent";
 import { presenceTheme } from "../theme/presenceTheme";
 import { createThemedStyles } from "../theme/themedStyles";
 
@@ -191,14 +192,38 @@ export function PresenceHubScreen({ navigation }: Props) {
       ) : (
         pages.map((page) => {
           const pending = pendingModules(page);
+          /*
+            The card is drawn in the presence's own colour, from its type.
+            This list is the one place a member holds their presences side by
+            side, and the spine down the left is what tells the restaurant from
+            the artist page before either name is read. The badges below are
+            left out of it deliberately: Public and Verified are claims about
+            state and trust, and they have to mean the same thing on every card.
+          */
+          const tone = presenceAccent(page.page_type);
           return (
-            <View key={page.id} style={styles.presenceCard}>
+            <View
+              key={page.id}
+              testID={`presence-card-${page.id}`}
+              style={[styles.presenceCard, { borderLeftColor: tone.base }]}
+            >
               <View style={styles.presenceIdentity}>
                 {page.avatar_url ? (
-                  <Image source={{ uri: page.avatar_url }} style={styles.presenceAvatar} />
+                  <Image
+                    source={{ uri: page.avatar_url }}
+                    style={[styles.presenceAvatar, { borderColor: tone.border }]}
+                  />
                 ) : (
-                  <View style={[styles.presenceAvatar, styles.presenceAvatarFallback]}>
-                    <Text style={styles.presenceAvatarInitial}>{page.name.slice(0, 1).toUpperCase()}</Text>
+                  <View
+                    style={[
+                      styles.presenceAvatar,
+                      styles.presenceAvatarFallback,
+                      { backgroundColor: tone.fill, borderColor: tone.border }
+                    ]}
+                  >
+                    <Text style={[styles.presenceAvatarInitial, { color: tone.base }]}>
+                      {page.name.slice(0, 1).toUpperCase()}
+                    </Text>
                   </View>
                 )}
                 <View style={styles.presenceMetaBlock}>
@@ -409,6 +434,7 @@ const styles = createThemedStyles(() => ({
   },
   presenceAvatar: {
     borderRadius: 20,
+    borderWidth: 1,
     height: 40,
     width: 40
   },
@@ -427,6 +453,9 @@ const styles = createThemedStyles(() => ({
     borderColor: colors.border,
     borderRadius: 12,
     borderWidth: 1,
+    // The spine. Wide enough to read down a scrolling list at a glance, and
+    // the one place on this card the accent is at full strength.
+    borderLeftWidth: 3,
     marginTop: 10,
     padding: 14
   },

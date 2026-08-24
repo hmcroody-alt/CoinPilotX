@@ -53,6 +53,7 @@ jest.mock("../../api/pages", () => ({
 }));
 
 import { PagesHubScreen } from "../PagesHubScreen";
+import { presenceAccent } from "../../theme/presenceAccent";
 
 function invite(overrides: Record<string, unknown> = {}) {
   return {
@@ -203,10 +204,31 @@ describe("PagesHubScreen invite inbox", () => {
   it("drops the card once the server says the invite is gone", async () => {
     mockListMyPageInvites.mockResolvedValueOnce([invite()]).mockResolvedValue([]);
     mockListMyPages.mockResolvedValue([page()]);
-    const { getByLabelText, queryByText } = renderScreen();
+    const { getByLabelText, queryAllByText } = renderScreen();
     await waitFor(() => expect(getByLabelText("Accept invite to Night Signal")).toBeTruthy());
     fireEvent.press(getByLabelText("Accept invite to Night Signal"));
-    await waitFor(() => expect(queryByText(/invited you to/)).toBeNull());
+    /*
+      Counted rather than asserted null, and the count is taken *before* it
+      reaches `expect`. Both halves matter, and neither is style.
+
+      `waitFor` retries until the assertion stops throwing, so every poll
+      before the last one is a *failure* — and a failing `expect(element)`
+      makes Jest build a message by pretty-formatting what it received. What it
+      received here is a host element, which carries `_fiber`, which is the
+      React tree: serialising it costs about half a second, during which the
+      event loop is blocked and `waitFor` cannot poll again. Three polls at
+      ~500ms each is 1.03s against a 1s default budget, so this test passed at
+      1087ms alone and failed the moment the machine had anything else to do —
+      exactly the "green alone, red under load" flake `jest.setup.js` was
+      written to stamp out. `.length` hands `expect` a number, and formatting a
+      number is free.
+
+      `queryAllByText` rather than `queryByText` for a second reason: the
+      singular query *throws* on multiple matches, so if accepting one invite
+      ever left two on screen this would have errored instead of failing, and
+      said nothing about the count. Zero is the claim; count it.
+    */
+    await waitFor(() => expect(queryAllByText(/invited you to/).length).toBe(0));
   });
 
   it("confirms in words what the acceptance actually granted", async () => {
@@ -674,5 +696,72 @@ describe("PagesHubScreen overview", () => {
     // And emphatically not rebuilt from `analytics`, which is still present.
     expect(queryByTestId("metric-followers")).toBeNull();
     expect(queryByText(/ACTIVE/)).toBeNull();
+  });
+});
+
+describe("the selected presence is named by colour as well as by highlight", () => {
+  // A member with an artist page and a restaurant is one mis-tap away from
+  // editing the wrong one. A single teal highlight says "selected"; the type's
+  // own colour says which.
+  function flatten(style: unknown): Record<string, unknown> {
+    return Object.assign({}, ...[style].flat(Infinity).filter(Boolean)) as Record<string, unknown>;
+  }
+
+  beforeEach(() => {
+    mockListMyPageInvites.mockResolvedValue([]);
+    mockListMyPages.mockResolvedValue([
+      page({ id: 41, page_type: "ARTIST", name: "Night Signal" }),
+      page({ id: 42, page_type: "RESTAURANT", name: "Ash", handle: "ash" })
+    ]);
+  });
+
+  it("draws the selected chip in that presence's colour", async () => {
+    const { getByText } = renderScreen();
+    await waitFor(() => expect(getByText("Ash")).toBeTruthy());
+
+    // The first presence is selected by default.
+    expect(flatten(getByText("Night Signal").props.style).color).toBe(
+      presenceAccent("ARTIST").base
+    );
+
+    fireEvent.press(getByText("Ash"));
+    await waitFor(() =>
+      expect(flatten(getByText("Ash").props.style).color).toBe(presenceAccent("RESTAURANT").base)
+    );
+  });
+
+  it("tints the chip itself and not only the word on it", async () => {
+    // A coloured word sitting inside a chip highlighted in the app accent is
+    // two colours arguing about which presence is selected. The chip is the
+    // bigger target and the one read at arm's length, so it carries the answer
+    // — and it needs an assertion of its own, because dropping the accent from
+    // the chip's own style left the name test above passing regardless.
+    const { getByText, getByTestId } = renderScreen();
+    await waitFor(() => expect(getByText("Ash")).toBeTruthy());
+
+    const artist = flatten(getByTestId("page-chip-41").props.style);
+    expect(artist.backgroundColor).toBe(presenceAccent("ARTIST").fillStrong);
+    expect(artist.borderColor).toBe(presenceAccent("ARTIST").base);
+
+    fireEvent.press(getByText("Ash"));
+    await waitFor(() =>
+      expect(flatten(getByTestId("page-chip-42").props.style).backgroundColor).toBe(
+        presenceAccent("RESTAURANT").fillStrong
+      )
+    );
+    // And the chip that just lost the selection gives the colour back.
+    expect(flatten(getByTestId("page-chip-41").props.style).backgroundColor).toBeUndefined();
+  });
+
+  it("leaves the chip that is not selected neutral", async () => {
+    // Sixteen colours across a scrolling row is decoration, and it takes the
+    // selection down with it — the accent here is carrying "which one", so it
+    // has to appear on exactly one chip.
+    const { getByText } = renderScreen();
+    await waitFor(() => expect(getByText("Ash")).toBeTruthy());
+
+    const unselected = flatten(getByText("Ash").props.style).color;
+    expect(unselected).not.toBe(presenceAccent("RESTAURANT").base);
+    expect(unselected).not.toBe(presenceAccent("ARTIST").base);
   });
 });

@@ -19,6 +19,7 @@ import {
 } from "../api/pages";
 import { PulseApiError } from "../api/pulseApi";
 import { colors } from "../theme/colors";
+import { presenceAccent } from "../theme/presenceAccent";
 import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = NativeStackScreenProps<any, any>;
@@ -238,19 +239,42 @@ export function PageCreateScreen({ navigation, route }: Props) {
                     </Text>
                   </Pressable>
                 ))
-              : PAGE_TYPES.map((type) => (
-                  <Pressable
-                    key={type}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: pageType === type }}
-                    style={[styles.typeChip, pageType === type && styles.typeChipActive]}
-                    onPress={() => setPageType(type)}
-                  >
-                    <Text style={[styles.typeChipText, pageType === type && styles.typeChipTextActive]}>
-                      {pageTypeLabel(type)}
-                    </Text>
-                  </Pressable>
-                ))}
+              : PAGE_TYPES.map((type) => {
+                  /*
+                    The chosen type fills in the colour that type is drawn in,
+                    so the first thing the wizard shows about a choice is the
+                    thing the finished page will show about it. The unchosen
+                    chips stay neutral: sixteen filled chips would be a palette
+                    to pick from rather than a question to answer, and the
+                    selection would be lost in it.
+                  */
+                  const tone = presenceAccent(type);
+                  const selected = pageType === type;
+                  return (
+                    <Pressable
+                      key={type}
+                      testID={`page-type-${type}`}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected }}
+                      style={[
+                        styles.typeChip,
+                        // Not layered over `typeChipActive`: that style sets a
+                        // background and a border and nothing else, so both of
+                        // its values are overwritten here and it contributes
+                        // only the impression that it still decides something.
+                        // It stays in the sheet for the flavour-category branch
+                        // above, where the chip's word is a category rather
+                        // than a type and there is no accent to draw it in.
+                        selected && { backgroundColor: tone.base, borderColor: tone.base }
+                      ]}
+                      onPress={() => setPageType(type)}
+                    >
+                      <Text style={[styles.typeChipText, selected && { color: tone.ink }]}>
+                        {pageTypeLabel(type)}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
           </View>
 
           <Text style={styles.sectionTitle}>{flavor === "artist" ? "Artist / stage name" : "Name"}</Text>

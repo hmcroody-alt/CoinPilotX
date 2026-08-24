@@ -177,6 +177,46 @@ and white on teal is about 1.6:1 — so filled actions caption in the dark
 background colour, and the only gradient in the system is a cover wash that
 carries no text.
 
+### Where it is drawn, and the rule that decides
+
+Four surfaces, and they are the four where the question "which presence is this?"
+is actually live:
+
+| Surface | What carries the accent |
+| --- | --- |
+| `PageScreen` | Cover wash, avatar ring, handle line, active tab, link cards, the Follow fill and its caption |
+| `PresenceHubScreen` | A spine down the left edge of each card, plus the avatar ring and initial |
+| `PagesHubScreen` | The selected presence's chip — fill, border and name |
+| `PageCreateScreen` | The chosen page type's chip, filled in `base` and captioned in `ink` |
+
+The rule underneath is that **the accent means "which one", so on any surface
+that offers a choice it appears on exactly one thing at a time.** The unselected
+chips in both hubs and in the wizard stay neutral. Sixteen coloured chips in a
+scrolling row is decoration, and worse, it takes the selection down with it —
+if everything is coloured, colour has stopped answering the question. On
+`PageScreen` there is no choice being offered, so the accent is free to run
+through the whole page.
+
+Two consequences worth stating, because both were mutation survivors before they
+were rules:
+
+- **The container carries it, not just the text.** A coloured word inside a chip
+  highlighted in the app accent is two colours disagreeing about what is
+  selected. Each surface's test asserts the fill or the border separately from
+  the caption, because asserting only the caption let the fill silently revert.
+- **It comes from `page_type`, per item.** Every one of these surfaces renders a
+  list, so `presenceAccent(<one fixed type>)` passes any test that looks at a
+  single card. Each suite renders an artist next to a restaurant and asserts the
+  two differ.
+
+`PageCreateScreen`'s flavour-category chips ("Music Artist", "Other Artist") are
+deliberately left neutral: the word on those is a category, and the page type
+behind it is not what the chip is naming. They keep the shared
+`typeChipActive`/`typeChipTextActive` styles, which is why those styles still
+exist — the page-type branch no longer layers over them, because both of their
+values were being overwritten and their presence only suggested they still
+decided something.
+
 ## The joins are tested, not just the calls
 
 `tests/pages/test_page_os.py` tests one call at a time. The two defects this

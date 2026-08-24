@@ -28,6 +28,8 @@ jest.mock("../../api/pages", () => ({
 }));
 
 import { PresenceHubScreen } from "../PresenceHubScreen";
+import { presenceAccent } from "../../theme/presenceAccent";
+import { presenceTheme } from "../../theme/presenceTheme";
 
 function nav() {
   return { navigate: jest.fn(), addListener: jest.fn(() => jest.fn()) };
@@ -213,5 +215,65 @@ describe("the creation pitch names only things that exist", () => {
     // Both cards carry the caveat, so this counts them rather than expecting
     // one — `queryByText` treats two matches as an error.
     expect(view.queryAllByText(/depends on the type you pick next/)).toHaveLength(2);
+  });
+});
+
+describe("the cards are told apart by more than their names", () => {
+  // This list is the one screen where a member sees all their presences at
+  // once, so it is the one screen where the type accent has a job beyond
+  // decoration: telling a restaurant from an artist page at a glance.
+  function flatten(style: unknown): Record<string, unknown> {
+    return Object.assign({}, ...[style].flat(Infinity).filter(Boolean)) as Record<string, unknown>;
+  }
+
+  it("draws each card in its own type's colour", async () => {
+    mockListMyPages.mockResolvedValue([
+      presence({ id: 1, page_type: "ARTIST", name: "Night Signal" }),
+      presence({ id: 2, page_type: "RESTAURANT", name: "Ash", handle: "ash" })
+    ]);
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Ash")).toBeTruthy());
+
+    // The avatar initial is the accent's only text on this card, so it is what
+    // the assertion can reach. Both are present, and they differ.
+    const artist = flatten(view.getAllByText("N")[0].props.style).color;
+    const restaurant = flatten(view.getByText("A").props.style).color;
+    expect(artist).toBe(presenceAccent("ARTIST").base);
+    expect(restaurant).toBe(presenceAccent("RESTAURANT").base);
+    expect(artist).not.toBe(restaurant);
+  });
+
+  it("runs the colour down the card, not only through the avatar", async () => {
+    // The initial is two characters wide and only shows on a presence with no
+    // avatar uploaded — which is the minority of them, and never the ones a
+    // member has actually finished setting up. The spine is what survives an
+    // avatar, so it is the part that has to be asserted separately: without
+    // this, dropping `borderLeftColor` left every card edged in neutral grey
+    // and the test above went on passing.
+    mockListMyPages.mockResolvedValue([
+      presence({ id: 1, page_type: "ARTIST", name: "Night Signal", avatar_url: "https://x/a.png" }),
+      presence({ id: 2, page_type: "RESTAURANT", name: "Ash", handle: "ash", avatar_url: "https://x/b.png" })
+    ]);
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Ash")).toBeTruthy());
+
+    expect(flatten(view.getByTestId("presence-card-1").props.style).borderLeftColor).toBe(
+      presenceAccent("ARTIST").base
+    );
+    expect(flatten(view.getByTestId("presence-card-2").props.style).borderLeftColor).toBe(
+      presenceAccent("RESTAURANT").base
+    );
+  });
+
+  it("leaves the state badges alone", async () => {
+    // Public and Verified are claims about state and trust. A trust marker
+    // that is a different colour on every card is one people stop reading, so
+    // these stay brand teal on a violet card on purpose.
+    mockListMyPages.mockResolvedValue([presence({ verified: true })]);
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Public")).toBeTruthy());
+
+    expect(flatten(view.getByText("Public").props.style).color).toBe(presenceTheme.teal);
+    expect(flatten(view.getByText("✓ Verified").props.style).color).toBe(presenceTheme.teal);
   });
 });

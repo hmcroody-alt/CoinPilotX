@@ -31,6 +31,7 @@ import { PulseApiError } from "../api/pulseApi";
 import { FeedComposer } from "../components/FeedComposer";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
+import { presenceAccent } from "../theme/presenceAccent";
 import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = NativeStackScreenProps<RootStackParamList, "PagesHub">;
@@ -396,19 +397,36 @@ export function PagesHubScreen({ route, navigation }: Props) {
       ) : null}
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pageRow}>
-        {pages.map((page) => (
+        {pages.map((page) => {
+          /*
+            The selected chip is drawn in that presence's own colour.
+
+            The row is the one control on this screen that says *which* presence
+            everything below it is about, and a member with an artist page and a
+            restaurant is one mis-tap away from editing the wrong one. A single
+            teal highlight says "selected"; the type's own colour says which.
+            Unselected chips stay neutral — sixteen colours across a scrolling
+            row would be decoration, and would take the selection with it.
+          */
+          const tone = presenceAccent(page.page_type);
+          const selected = page.id === selectedId;
+          return (
           <Pressable
             key={page.id}
+            testID={`page-chip-${page.id}`}
             accessibilityRole="button"
-            accessibilityState={{ selected: page.id === selectedId }}
-            style={[styles.pageChip, page.id === selectedId && styles.pageChipActive]}
+            accessibilityState={{ selected }}
+            style={[
+              styles.pageChip,
+              selected && [styles.pageChipActive, { backgroundColor: tone.fillStrong, borderColor: tone.base }]
+            ]}
             onPress={() => setSelectedId(page.id)}
           >
             {page.avatar_url ? (
               <Image source={{ uri: page.avatar_url }} style={styles.pageChipAvatar} />
             ) : null}
             <View>
-              <Text style={[styles.pageChipName, page.id === selectedId && styles.pageChipNameActive]}>
+              <Text style={[styles.pageChipName, selected && { color: tone.base }]}>
                 {page.name}
               </Text>
               <Text style={styles.pageChipMeta}>
@@ -416,7 +434,8 @@ export function PagesHubScreen({ route, navigation }: Props) {
               </Text>
             </View>
           </Pressable>
-        ))}
+          );
+        })}
       </ScrollView>
 
       {selected ? (

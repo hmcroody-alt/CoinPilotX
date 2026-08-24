@@ -25,6 +25,8 @@ jest.mock("../../api/pages", () => ({
 jest.mock("expo-image-picker", () => ({}), { virtual: true });
 
 import { PageCreateScreen } from "../PageCreateScreen";
+import { colors } from "../../theme/colors";
+import { presenceAccent } from "../../theme/presenceAccent";
 
 /** The server's own shape: it echoes the candidate it answered about. */
 function verdict(candidate: string, available: boolean, reason?: string) {
@@ -401,5 +403,64 @@ describe("the flavour presets the wizard without forking the backend", () => {
     expect(mockCreatePage).toHaveBeenCalledWith(
       expect.objectContaining({ page_type: "CREATOR", category: "Other Artist" })
     );
+  });
+});
+
+describe("the wizard shows the colour the choice will be drawn in", () => {
+  // The flavourless entry point is the only place the sixteen page types are
+  // offered as themselves. A flavour ("artist", "business") offers categories
+  // instead — a label with a type hidden behind it — and those are deliberately
+  // left neutral, because the chip's word is not the thing being coloured.
+  function flatten(style: unknown): Record<string, unknown> {
+    return Object.assign({}, ...[style].flat(Infinity).filter(Boolean)) as Record<string, unknown>;
+  }
+
+  it("fills the chosen type in that type's own colour, caption included", () => {
+    const { view } = show();
+    fireEvent.press(view.getByText("Artist"));
+
+    const tone = presenceAccent("ARTIST");
+    // The fill and the caption are asserted separately on purpose: a chip that
+    // is the right colour with an unreadable word on it is the failure this
+    // system's `ink` token exists to prevent, and only the caption assertion
+    // catches it.
+    //
+    // Worth being honest about what the second assertion can and cannot do.
+    // All four hues are bright, so `ink` is the dark background for every one
+    // of them, and today that is the same string the sheet's generic active
+    // caption uses — swapping one for the other is invisible to any test that
+    // could be written. What this pins is the *contract*: the caption comes
+    // from the accent, so the day a hue arrives dark enough to need pale ink,
+    // this fails instead of shipping a chip nobody can read. The redundant
+    // layering that made the swap easy to perform by accident is gone from the
+    // screen; this is what would notice if it came back with real consequences.
+    expect(flatten(view.getByTestId("page-type-ARTIST").props.style).backgroundColor).toBe(tone.base);
+    expect(flatten(view.getByText("Artist").props.style).color).toBe(tone.ink);
+  });
+
+  it("does not paint every chosen type the same", () => {
+    // Without this, the whole chooser could fill in one colour — the app accent
+    // by another name — and the test above would still pass.
+    const { view } = show();
+    fireEvent.press(view.getByText("Artist"));
+    const artist = flatten(view.getByTestId("page-type-ARTIST").props.style).backgroundColor;
+    fireEvent.press(view.getByText("Restaurant"));
+    const restaurant = flatten(view.getByTestId("page-type-RESTAURANT").props.style).backgroundColor;
+
+    expect(artist).toBe(presenceAccent("ARTIST").base);
+    expect(restaurant).toBe(presenceAccent("RESTAURANT").base);
+    expect(artist).not.toBe(restaurant);
+  });
+
+  it("leaves the types that were not chosen alone", () => {
+    // Sixteen filled chips would be a palette to pick from rather than a
+    // question to answer. The colour marks *which* one, so it has to be on
+    // exactly one of them.
+    const { view } = show();
+    fireEvent.press(view.getByText("Artist"));
+
+    const unchosen = flatten(view.getByTestId("page-type-RESTAURANT").props.style);
+    expect(unchosen.backgroundColor).toBeUndefined();
+    expect(flatten(view.getByText("Restaurant").props.style).color).toBe(colors.text);
   });
 });
