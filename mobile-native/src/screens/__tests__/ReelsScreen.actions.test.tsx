@@ -463,9 +463,9 @@ describe("ReelsScreen report", () => {
 describe("ReelsScreen not interested", () => {
   it("removes the reel once the server has recorded the signal", async () => {
     mockNotInterested.mockResolvedValue({ ok: true });
-    const { queryByTestId } = await renderScreen();
+    const { queryAllByTestId } = await renderScreen();
     await tap(() => card().onNotInterested(reel()));
-    await waitFor(() => expect(queryByTestId("reels-action-message")).toBeNull());
+    await waitFor(() => expect(queryAllByTestId("reels-action-message").length).toBe(0));
     expect(mockNotInterested).toHaveBeenCalledWith(REEL_ID);
   });
 
