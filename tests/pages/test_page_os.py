@@ -33,7 +33,7 @@ from unittest import mock
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, REPO_ROOT)
 
-from services import pulsesoc_pages  # noqa: E402
+from services import pulsesoc_pages, schema_guard  # noqa: E402
 from services.pulsesoc_pages import PageError  # noqa: E402
 
 OWNER = 11
@@ -122,6 +122,13 @@ STRANGER_BUSINESS_ID = "biz_stranger01"
 
 
 def make_conn():
+    # Each call is a brand-new empty database, so it needs its own DDL pass.
+    # `ensure_tables` is `@run_once_per_process`, and conftest resets the guards
+    # once per test — enough for a single connection, but a test that builds a
+    # second one would silently get an empty database. Resetting here means the
+    # guarantee belongs to the helper that creates the database rather than to
+    # remembering how many times a test happens to call it.
+    schema_guard.reset_all()
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     conn.executescript(USERS_SCHEMA)
@@ -870,6 +877,233 @@ class LinkOwnershipTests(unittest.TestCase):
                 self.conn, STRANGER, self.page_id, "store", str(STRANGER_SELLER_ID))
 
 
+class OneLinkPerKindTests(unittest.TestCase):
+    """A presence points at one shop, one ad account, one business.
+
+    Every reader already assumed that — `public_view` publishes
+    `shop_seller_id` from the first `store` row it finds, `page_events` reads
+    the first `business_os` row — but the write appended. The UNIQUE index is on
+    `(page_id, link_type, ref_id)`, so a *second* seller id was a perfectly
+    legal row, and `list_links` had no ORDER BY to say which one counted.
+
+    That is a live path to hijacking a presence's storefront: a
+    MARKETPLACE_MANAGER may legitimately connect their own seller account (an
+    agency running a client's shop), so appending one to a presence that already
+    has a shop is a permitted write whose visible effect depends on row order.
+    """
+
+    def setUp(self):
+        self.conn = make_conn()
+        self.page_id = create(self.conn)["id"]
+
+    def _rows(self, link_type="store"):
+        return [row["ref_id"] for row in
+                pulsesoc_pages.list_links(self.conn, self.page_id, link_type)]
+
+    def _manager(self):
+        invite = pulsesoc_pages.invite_member(
+            self.conn, OWNER, self.page_id, {"user_id": STRANGER, "role": "MARKETPLACE_MANAGER"})
+        pulsesoc_pages.accept_invite(self.conn, STRANGER, invite["invite_token"])
+
+    def test_connecting_a_second_shop_replaces_the_first(self):
+        pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, "store", str(OWNER_SELLER_ID))
+        self._manager()
+        pulsesoc_pages.set_link(self.conn, STRANGER, self.page_id, "store", str(STRANGER_SELLER_ID))
+        self.assertEqual(self._rows(), [str(STRANGER_SELLER_ID)],
+                         "the old shop stayed behind, and which one is live is row order")
+
+    def test_the_public_view_names_the_shop_that_was_actually_connected_last(self):
+        # The consequence the row count only hints at: `shop_seller_id` is what
+        # the merch tab deep-links into Marketplace with.
+        self._manager()
+        pulsesoc_pages.set_link(self.conn, STRANGER, self.page_id, "store", str(STRANGER_SELLER_ID))
+        pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, "store", str(OWNER_SELLER_ID))
+        view = pulsesoc_pages.public_view(
+            self.conn, pulsesoc_pages._load_page(self.conn, self.page_id))
+        self.assertEqual(view["shop_seller_id"], OWNER_SELLER_ID)
+
+    def test_reconnecting_the_same_shop_is_not_a_second_row(self):
+        for _ in range(3):
+            pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, "store", str(OWNER_SELLER_ID))
+        self.assertEqual(self._rows(), [str(OWNER_SELLER_ID)])
+
+    def test_replacing_one_kind_leaves_the_others_alone(self):
+        pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, "store", str(OWNER_SELLER_ID))
+        pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, "music_artist", OWNER_ARTIST)
+        pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, "store", str(OWNER_SELLER_ID))
+        self.assertEqual(self._rows("music_artist"), [OWNER_ARTIST])
+
+    def test_the_audit_says_what_the_link_was_before(self):
+        # Replacing destroys the previous pointer, so the row that records the
+        # change is the only place the old one survives.
+        self._manager()
+        pulsesoc_pages.set_link(self.conn, STRANGER, self.page_id, "store", str(STRANGER_SELLER_ID))
+        pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, "store", str(OWNER_SELLER_ID))
+        before = json.loads(self.conn.execute(
+            "SELECT before_json FROM pulse_page_audit WHERE page_id=? AND action='link_set' "
+            "ORDER BY id DESC LIMIT 1", (self.page_id,)).fetchone()["before_json"])
+        self.assertEqual(before["ref_id"], str(STRANGER_SELLER_ID))
+
+    def test_a_connection_can_be_taken_back(self):
+        pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, "store", str(OWNER_SELLER_ID))
+        pulsesoc_pages.clear_link(self.conn, OWNER, self.page_id, "store")
+        self.assertEqual(self._rows(), [])
+        view = pulsesoc_pages.public_view(
+            self.conn, pulsesoc_pages._load_page(self.conn, self.page_id))
+        self.assertFalse(view.get("shop_seller_id"))
+        self.assertFalse(view["modules"].get("merch"),
+                         "the tab has to go with the shop it was standing on")
+
+    def test_disconnecting_needs_the_same_permission_as_connecting(self):
+        pulsesoc_pages.set_link(self.conn, OWNER, self.page_id, "store", str(OWNER_SELLER_ID))
+        invite = pulsesoc_pages.invite_member(
+            self.conn, OWNER, self.page_id, {"user_id": FRIEND, "role": "ADVERTISING_MANAGER"})
+        pulsesoc_pages.accept_invite(self.conn, FRIEND, invite["invite_token"])
+        with self.assertRaises(PageError) as ctx:
+            pulsesoc_pages.clear_link(self.conn, FRIEND, self.page_id, "store")
+        self.assertEqual(ctx.exception.status_code, 403)
+        self.assertEqual(self._rows(), [str(OWNER_SELLER_ID)])
+
+    def test_disconnecting_nothing_says_so_rather_than_reporting_success(self):
+        with self.assertRaises(PageError) as ctx:
+            pulsesoc_pages.clear_link(self.conn, OWNER, self.page_id, "store")
+        self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_a_made_up_link_kind_is_refused_as_made_up(self):
+        # Both refusals are 4xx, so "it raised" proves nothing: an unvalidated
+        # kind falls through to "nothing connected" and 404s for the wrong
+        # reason, telling the caller their typo was an empty slot.
+        with self.assertRaises(PageError) as ctx:
+            pulsesoc_pages.clear_link(self.conn, OWNER, self.page_id, "payroll")
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("valid link type", str(ctx.exception))
+
+    def test_the_newest_link_wins_when_more_than_one_survives(self):
+        # `set_link` should make this unreachable. It is pinned anyway because
+        # the readers take `[0]`, and rows written before this change — or by
+        # any future path that inserts directly — must still resolve the same
+        # way on SQLite and on Postgres rather than however the engine sorts.
+        #
+        # The newest row is deliberately the one with the *larger* ref id and
+        # the later rowid, so index order, insertion order and recency do not
+        # all point the same way. With the older row winning either of the other
+        # two races, a missing ORDER BY would still look right here.
+        self.conn.execute(
+            "INSERT INTO pulse_page_links (page_id, link_type, ref_id, created_by, created_at) "
+            "VALUES (?, 'store', ?, ?, '2026-01-01T00:00:00')",
+            (self.page_id, str(STRANGER_SELLER_ID), OWNER))
+        self.conn.execute(
+            "INSERT INTO pulse_page_links (page_id, link_type, ref_id, created_by, created_at) "
+            "VALUES (?, 'store', ?, ?, '2020-01-01T00:00:00')",
+            (self.page_id, str(OWNER_SELLER_ID), OWNER))
+        self.conn.commit()
+        self.assertEqual(self._rows(), [str(STRANGER_SELLER_ID), str(OWNER_SELLER_ID)])
+        # The unfiltered read is a separate query and drifted separately.
+        stores = [row["ref_id"] for row in
+                  pulsesoc_pages.list_links(self.conn, self.page_id)
+                  if row["link_type"] == "store"]
+        self.assertEqual(stores, [str(STRANGER_SELLER_ID), str(OWNER_SELLER_ID)])
+
+
+class InviteWithdrawalTests(unittest.TestCase):
+    """An invite is a live grant, so it has to be revocable while it is live.
+
+    `remove_member` resolved the target through `role_for`, which is active-only
+    — correct for authorization, wrong here — so a pending invite matched
+    nothing and the call answered "That member is not on this page." The team
+    screen offered the Remove control anyway, because its flags were derived
+    from the permission rather than from whether the call would work.
+
+    The effect: an invite sent to the wrong user id could not be taken back by
+    anyone, including the owner, and stayed claimable until its TTL expired.
+    """
+
+    def setUp(self):
+        self.conn = make_conn()
+        self.page_id = create(self.conn)["id"]
+        self.invite = pulsesoc_pages.invite_member(
+            self.conn, OWNER, self.page_id, {"user_id": FRIEND, "role": "ADMIN"})
+
+    def _seats(self, user_id=FRIEND):
+        return [dict(r) for r in self.conn.execute(
+            "SELECT role, status FROM pulse_page_members WHERE page_id=? AND user_id=?",
+            (self.page_id, user_id)).fetchall()]
+
+    def test_a_pending_invite_can_be_withdrawn(self):
+        out = pulsesoc_pages.remove_member(self.conn, OWNER, self.page_id, FRIEND)
+        self.assertTrue(out["was_invited"])
+        self.assertEqual([s["status"] for s in self._seats()], ["removed"])
+
+    def test_a_withdrawn_invite_can_no_longer_be_accepted(self):
+        # The token was already sent. Revoking has to reach it, or withdrawal
+        # is only a change of mind the other person can overrule.
+        pulsesoc_pages.remove_member(self.conn, OWNER, self.page_id, FRIEND)
+        with self.assertRaises(PageError) as ctx:
+            pulsesoc_pages.accept_invite(self.conn, FRIEND, self.invite["invite_token"])
+        self.assertEqual(ctx.exception.status_code, 404)
+        self.assertIsNone(pulsesoc_pages.role_for(self.conn, FRIEND, self.page_id))
+
+    def test_the_pending_role_can_be_corrected_before_it_is_claimed(self):
+        pulsesoc_pages.change_role(self.conn, OWNER, self.page_id, FRIEND, "ANALYST")
+        pulsesoc_pages.accept_invite(self.conn, FRIEND, self.invite["invite_token"])
+        self.assertEqual(pulsesoc_pages.role_for(self.conn, FRIEND, self.page_id), "ANALYST")
+
+    def test_the_team_screen_only_offers_controls_that_work(self):
+        # The defect was the pair, not either half: the flag said yes and the
+        # call said 404. Both are read here so they cannot drift apart again.
+        team = pulsesoc_pages.team_view(self.conn, OWNER, self.page_id)
+        invited = next(m for m in team["members"] if m["user_id"] == FRIEND)
+        self.assertEqual(invited["status"], "invited")
+        self.assertTrue(invited["can_remove"])
+        self.assertTrue(pulsesoc_pages.remove_member(
+            self.conn, OWNER, self.page_id, FRIEND)["was_invited"])
+
+    def test_withdrawing_is_still_owner_and_admin_only(self):
+        invite = pulsesoc_pages.invite_member(
+            self.conn, OWNER, self.page_id, {"user_id": STRANGER, "role": "ANALYST"})
+        pulsesoc_pages.accept_invite(self.conn, STRANGER, invite["invite_token"])
+        with self.assertRaises(PageError) as ctx:
+            pulsesoc_pages.remove_member(self.conn, STRANGER, self.page_id, FRIEND)
+        self.assertEqual(ctx.exception.status_code, 403)
+        self.assertEqual([s["status"] for s in self._seats()], ["invited"])
+
+    def test_removing_an_active_member_still_reads_as_a_removal(self):
+        # `was_invited` distinguishes two different things that share a verb;
+        # a removal that reported itself as an invite withdrawal would put the
+        # wrong sentence in the audit log.
+        pulsesoc_pages.accept_invite(self.conn, FRIEND, self.invite["invite_token"])
+        out = pulsesoc_pages.remove_member(self.conn, OWNER, self.page_id, FRIEND)
+        self.assertFalse(out["was_invited"])
+        actions = [r["action"] for r in self.conn.execute(
+            "SELECT action FROM pulse_page_audit WHERE page_id=?", (self.page_id,)).fetchall()]
+        self.assertIn("member_removed", actions)
+        self.assertNotIn("invite_revoked", actions)
+
+    def test_a_withdrawal_is_audited_as_one(self):
+        pulsesoc_pages.remove_member(self.conn, OWNER, self.page_id, FRIEND)
+        actions = [r["action"] for r in self.conn.execute(
+            "SELECT action FROM pulse_page_audit WHERE page_id=?", (self.page_id,)).fetchall()]
+        self.assertIn("invite_revoked", actions)
+
+    def test_someone_never_invited_at_all_is_still_a_404(self):
+        with self.assertRaises(PageError) as ctx:
+            pulsesoc_pages.remove_member(self.conn, OWNER, self.page_id, STRANGER)
+        self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_an_already_withdrawn_invite_cannot_be_withdrawn_twice(self):
+        pulsesoc_pages.remove_member(self.conn, OWNER, self.page_id, FRIEND)
+        with self.assertRaises(PageError) as ctx:
+            pulsesoc_pages.remove_member(self.conn, OWNER, self.page_id, FRIEND)
+        self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_an_invitee_holds_no_permissions_while_the_invite_is_pending(self):
+        # The counterweight to widening the seat lookup: `_seat` must not have
+        # become a second, more generous answer to "may this caller act".
+        self.assertIsNone(pulsesoc_pages.role_for(self.conn, FRIEND, self.page_id))
+        with self.assertRaises(PageError):
+            pulsesoc_pages.update_page(self.conn, FRIEND, self.page_id, {"name": "Theirs"})
+
+
 class _RecordingCursor:
     def __init__(self, inner, log):
         self._inner = inner
@@ -1489,6 +1723,57 @@ class ManageOverviewTests(unittest.TestCase):
         self.assertNotIn("completeness", public)
 
 
+# What each management section actually opens. The section's `permission` field
+# is a *claim* about the function named here, and the two live in different
+# parts of the file — which is how they drifted apart for verification.
+#
+# Every ref below is one the page owner holds, so `set_link`'s entitlement check
+# (which asks whether the actor or the page owner owns the thing being pointed
+# at) passes for any caller. What remains is the permission check, which is the
+# only thing these probes are measuring.
+SECTION_ENTRY_POINTS = {
+    "overview": lambda conn, uid, pid: pulsesoc_pages.manage_view(conn, uid, pid),
+    "identity": lambda conn, uid, pid: pulsesoc_pages.update_page(conn, uid, pid, {"name": "Renamed"}),
+    "content": lambda conn, uid, pid: pulsesoc_pages.create_page_post(
+        conn, uid, pid, {"body": "A post."}),
+    "videos": lambda conn, uid, pid: pulsesoc_pages.create_page_post(
+        conn, uid, pid, {"body": "A video.", "post_type": "video"}),
+    "music": lambda conn, uid, pid: pulsesoc_pages.set_link(conn, uid, pid, "music_artist", OWNER_ARTIST),
+    "store": lambda conn, uid, pid: pulsesoc_pages.set_link(conn, uid, pid, "store", str(OWNER_SELLER_ID)),
+    "events": lambda conn, uid, pid: pulsesoc_pages.set_link(conn, uid, pid, "business_os", OWNER_BUSINESS_ID),
+    "business_os": lambda conn, uid, pid: pulsesoc_pages.set_link(conn, uid, pid, "business_os", OWNER_BUSINESS_ID),
+    "advertising": lambda conn, uid, pid: pulsesoc_pages.set_link(
+        conn, uid, pid, "ad_account", str(OWNER_ADVERTISER_ID)),
+    "team": lambda conn, uid, pid: pulsesoc_pages.team_view(conn, uid, pid),
+    "verification": lambda conn, uid, pid: pulsesoc_pages.request_verification(conn, uid, pid, {}),
+    "settings": lambda conn, uid, pid: pulsesoc_pages.set_status(conn, uid, pid, "PAUSED"),
+}
+
+# Sections whose door is in another subsystem, which enforces its own access.
+# The page permission here decides only whether the door is *shown*; naming them
+# is what keeps "we have not written the probe yet" from hiding in the gap.
+SECTIONS_OWNED_ELSEWHERE = {
+    "payments": "opens BusinessOsPayments — payouts are the payments domain's to guard",
+}
+
+
+def _permits(conn, probe, user_id, page_id):
+    """Whether `probe` admitted this caller, as opposed to refusing them.
+
+    Only a permission refusal counts as a denial. Anything else — a validation
+    error, a missing fixture, a status rule — is re-raised, because a probe that
+    failed for an unrelated reason would otherwise read as a successful
+    permission check and pin nothing at all.
+    """
+    try:
+        probe(conn, user_id, page_id)
+    except PageError as exc:
+        if exc.status_code == 403 and "permission" in str(exc):
+            return False
+        raise
+    return True
+
+
 class ManageSectionTests(unittest.TestCase):
     """What the management screen is allowed to offer, and why.
 
@@ -1508,6 +1793,15 @@ class ManageSectionTests(unittest.TestCase):
 
     def setUp(self):
         self.conn = make_conn()
+        # The content probes below go through the canonical feed engine, which
+        # owns its own connection. Publishing for real is another suite's
+        # subject; here the only question is who was let through the door.
+        from services import pulse_feed_engine
+        patcher = mock.patch.object(
+            pulse_feed_engine, "create_post",
+            side_effect=lambda user_id, **_kw: {"ok": True, "post_id": 901})
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def sections(self, user_id=OWNER, **overrides):
         page = create(self.conn, **overrides)
@@ -1589,6 +1883,94 @@ class ManageSectionTests(unittest.TestCase):
         self.assertTrue(sections["store"]["permitted"])
         self.assertFalse(sections["advertising"]["permitted"])
         self.assertFalse(sections["settings"]["permitted"])
+
+    def test_the_advertised_permission_is_the_one_the_route_enforces(self):
+        """The section's `permission` is a claim about a *different* function.
+
+        `test_every_offered_section_names_a_real_permission` only checked that
+        the string exists in the matrix, which is satisfied by naming any
+        permission at all. Verification advertised `manage_status` — so a
+        MANAGER was shown no Verification section — while `request_verification`
+        enforced `edit_page`, and a MANAGER could still submit an identity claim
+        in the page's name straight through the API. Both halves were internally
+        consistent and the pair was wrong, which is what the old test could not
+        see.
+
+        Every offered section is exercised here against every role, so the claim
+        and the enforcement have to agree for all seven. `SECTION_ENTRY_POINTS`
+        is exhaustive by assertion, not by hope: a section added without an
+        entry fails `test_every_offered_section_has_a_named_entry_point`, which
+        makes naming what a new section opens part of adding it.
+        """
+        for page_type, handle in (("ARTIST", "gate-artist"), ("BUSINESS", "gate-business")):
+            for role in pulsesoc_pages.ROLES:
+                conn = make_conn()
+                page = create(conn, page_type=page_type, handle=handle, name=f"Gate {role}")
+                if role == "OWNER":
+                    actor = OWNER
+                else:
+                    actor = FRIEND
+                    invite = pulsesoc_pages.invite_member(
+                        conn, OWNER, page["id"], {"user_id": FRIEND, "role": role})
+                    pulsesoc_pages.accept_invite(conn, FRIEND, invite["invite_token"])
+                sections = {s["key"]: s for s in
+                            pulsesoc_pages.manage_view(conn, OWNER, page["id"])["sections"]}
+                for key, section in sections.items():
+                    probe = SECTION_ENTRY_POINTS.get(key)
+                    if probe is None:
+                        continue  # covered by the exhaustiveness test below
+                    allowed = pulsesoc_pages.has_permission(role, section["permission"])
+                    with self.subTest(page_type=page_type, role=role, section=key):
+                        self.assertEqual(
+                            _permits(conn, probe, actor, page["id"]), allowed,
+                            f"{key} advertises {section['permission']} but the entry point "
+                            f"it opens {'refuses' if allowed else 'admits'} a {role}")
+                conn.close()
+
+    def test_every_offered_section_has_a_named_entry_point(self):
+        """A section with nothing behind it is the defect this screen exists to
+        remove, so the table above may not quietly skip one."""
+        offered = set()
+        for page_type in sorted(pulsesoc_pages.PAGE_TYPES):
+            conn = make_conn()
+            page = create(conn, page_type=page_type, handle=f"e-{page_type.lower()}",
+                          name=f"Entry {page_type}")
+            offered |= {s["key"] for s in
+                        pulsesoc_pages.manage_view(conn, OWNER, page["id"])["sections"]}
+            conn.close()
+        unnamed = offered - set(SECTION_ENTRY_POINTS) - set(SECTIONS_OWNED_ELSEWHERE)
+        self.assertFalse(
+            unnamed,
+            f"{sorted(unnamed)} are offered by the management screen but no test names what "
+            "they open — add a probe to SECTION_ENTRY_POINTS, or say in SECTIONS_OWNED_ELSEWHERE "
+            "which subsystem enforces them")
+
+    def test_the_probe_can_tell_a_permission_refusal_from_any_other_refusal(self):
+        """`_permits` reads "was this caller allowed", and every probe must fail
+        for exactly that reason when it fails. If a probe started failing for an
+        unrelated reason — a validation error, a missing fixture — the table
+        test above would read it as a denial and pass while enforcing nothing."""
+        conn = make_conn()
+        page = create(conn, handle="probe-check", name="Probe")
+
+        # First that `_permits` can tell the difference at all. Without this the
+        # guarantee rests on no probe ever failing for another reason, which is
+        # a property of today's fixtures rather than of the helper.
+        def refuses_for_another_reason(_conn, _uid, _pid):
+            raise PageError("Only active pages can publish.", 403)
+
+        with self.assertRaises(PageError):
+            _permits(conn, refuses_for_another_reason, OWNER, page["id"])
+
+        for key, probe in SECTION_ENTRY_POINTS.items():
+            with self.subTest(section=key):
+                # The owner holds every permission, so no probe may refuse here.
+                self.assertTrue(_permits(conn, probe, OWNER, page["id"]),
+                                f"the {key} probe fails for a reason other than permission")
+                # A stranger holds no role at all, so every probe must refuse.
+                self.assertFalse(_permits(conn, probe, STRANGER, page["id"]),
+                                 f"the {key} probe admits a caller with no role")
+        conn.close()
 
     def test_an_unconnected_section_stays_visible_and_says_what_is_missing(self):
         # Hiding it from the team means they can never connect it. The visitor
@@ -1965,6 +2347,132 @@ class EventsModuleTests(unittest.TestCase):
         with self.assertRaises(PageError) as ctx:
             pulsesoc_pages.page_music(self.conn, page_id)
         self.assertEqual(ctx.exception.status_code, 404)
+
+
+class HiddenPresenceTests(unittest.TestCase):
+    """A presence that is not published is not readable, by any door.
+
+    The lifecycle rule started life inline in each route that served a public
+    read, which made it a rule that held wherever somebody had remembered it.
+    `/music` had been forgotten, and after that was fixed `/posts` still had
+    not: an anonymous caller could `GET /api/pages/<id>/posts?kind=videos` on an
+    unpublished presence and receive its whole catalogue.
+
+    So the check is tested as a family rather than one door at a time. Every
+    public read of a presence is listed here and every one of them is asked the
+    same three questions, which means the next module to be added is either in
+    this list or visibly missing from it.
+    """
+
+    #: Every read a caller outside the team can reach, as
+    #: `(name, call(conn, page_id, viewer_user_id))`.
+    PUBLIC_READS = (
+        ("posts", lambda conn, pid, viewer: pulsesoc_pages.list_page_posts(
+            conn, pid, viewer_user_id=viewer)),
+        ("videos", lambda conn, pid, viewer: pulsesoc_pages.list_page_posts(
+            conn, pid, viewer_user_id=viewer, post_types=pulsesoc_pages.VIDEO_POST_TYPES)),
+        ("music", lambda conn, pid, viewer: pulsesoc_pages.page_music(
+            conn, pid, viewer_user_id=viewer)),
+        ("events", lambda conn, pid, viewer: pulsesoc_pages.page_events(
+            conn, pid, viewer_user_id=viewer)),
+        # Not a read, but it answers "does this page exist" to anyone who asks,
+        # which is the thing the lifecycle rule is keeping quiet.
+        ("follow", lambda conn, pid, viewer: pulsesoc_pages.toggle_follow(conn, viewer, pid)),
+    )
+
+    def setUp(self):
+        self.conn = make_conn()
+        self.page_id = create(self.conn)["id"]
+        for post_type, body in (("text", "Tour dates soon."), ("video", "Live set.")):
+            self.conn.execute(
+                "INSERT INTO pulse_posts (user_id, post_type, body, visibility, "
+                "moderation_status, page_id, created_at) "
+                "VALUES (?, ?, ?, 'public', 'approved', ?, '2026-01-01')",
+                (OWNER, post_type, body, self.page_id))
+        # Serialization belongs to the feed engine and is not what is being
+        # measured here; what matters is whether these rows are reachable at all.
+        from services import pulse_feed_engine
+        patcher = mock.patch.object(
+            pulse_feed_engine, "get_post",
+            side_effect=lambda post_id, **_kw: {"id": post_id})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _hide(self, status):
+        pulsesoc_pages.set_status(self.conn, OWNER, self.page_id, status)
+
+    def test_a_visible_presence_serves_every_public_read(self):
+        # The control: without this, a read that raised 404 for *everyone*
+        # would pass the tests below while serving nobody.
+        for name, read in self.PUBLIC_READS:
+            with self.subTest(read=name):
+                self.assertIsNotNone(read(self.conn, self.page_id, STRANGER))
+
+    def test_no_public_read_survives_being_unpublished(self):
+        self._hide("UNPUBLISHED")
+        for name, read in self.PUBLIC_READS:
+            for viewer in (None, STRANGER):
+                if viewer is None and name == "follow":
+                    continue  # following requires a login before it gets here
+                with self.subTest(read=name, viewer=viewer):
+                    with self.assertRaises(PageError) as ctx:
+                        read(self.conn, self.page_id, viewer)
+                    self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_no_public_read_survives_being_deactivated(self):
+        self._hide("DEACTIVATED")
+        for name, read in self.PUBLIC_READS:
+            with self.subTest(read=name):
+                with self.assertRaises(PageError) as ctx:
+                    read(self.conn, self.page_id, STRANGER)
+                self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_the_team_still_reads_its_own_hidden_presence(self):
+        # Hiding it from its own owner would leave nobody able to publish it.
+        self._hide("UNPUBLISHED")
+        for name, read in self.PUBLIC_READS:
+            if name == "follow":
+                continue  # covered below: the team gets a different refusal
+            with self.subTest(read=name):
+                self.assertIsNotNone(read(self.conn, self.page_id, OWNER))
+
+    def test_the_team_is_told_why_its_own_hidden_presence_refuses_a_follow(self):
+        # The 404 is for people who should not know the page is there. Someone
+        # who already knows gets the reason, because for them it is a fact about
+        # the page's state and not a leak.
+        self._hide("UNPUBLISHED")
+        with self.assertRaises(PageError) as ctx:
+            pulsesoc_pages.toggle_follow(self.conn, OWNER, self.page_id)
+        self.assertEqual(ctx.exception.status_code, 403)
+        self.assertIn("accepting followers", str(ctx.exception))
+
+    def test_a_hidden_presence_does_not_confirm_it_exists_by_refusing_a_follow(self):
+        # `toggle_follow` answered 403 "isn't accepting followers right now",
+        # which is a different sentence for "this page is here but hidden" and
+        # tells a stranger walking ids exactly what they were looking for.
+        self._hide("UNPUBLISHED")
+        with self.assertRaises(PageError) as ctx:
+            pulsesoc_pages.toggle_follow(self.conn, STRANGER, self.page_id)
+        self.assertEqual(ctx.exception.status_code, 404)
+        self.assertEqual(str(ctx.exception), "Page not found.")
+
+    def test_a_paused_presence_is_still_public_and_still_refuses_follows(self):
+        # PAUSED is not a hidden state — the distinction the 404 above must not
+        # swallow. The page reads normally, and only the follow is refused, in
+        # the words that describe what actually happened.
+        self._hide("PAUSED")
+        self.assertTrue(pulsesoc_pages.list_page_posts(
+            self.conn, self.page_id, viewer_user_id=STRANGER)["posts"])
+        follow = pulsesoc_pages.toggle_follow(self.conn, STRANGER, self.page_id)
+        self.assertTrue(follow["following"])
+
+    def test_hiding_a_presence_hides_its_videos_too(self):
+        # The leak was reachable as `?kind=videos`, which takes a different
+        # branch through the same function.
+        self._hide("UNPUBLISHED")
+        with self.assertRaises(PageError):
+            pulsesoc_pages.list_page_posts(
+                self.conn, self.page_id, post_types=pulsesoc_pages.VIDEO_POST_TYPES)
 
 
 class AdminInspectionTests(unittest.TestCase):

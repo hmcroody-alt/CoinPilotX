@@ -1,7 +1,7 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
-import { getPageLinkOptions, PageLinkSlot, setPageLink } from "../api/pages";
+import { clearPageLink, getPageLinkOptions, PageLinkSlot, setPageLink } from "../api/pages";
 import { PulseApiError } from "../api/pulseApi";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
@@ -95,6 +95,26 @@ export function PageConnectionsScreen({ route }: Props) {
     }
   }
 
+  async function disconnect(slot: PageLinkSlot, label: string) {
+    if (busy) return;
+    setBusy(`clear:${slot.link_type}`);
+    setError("");
+    setMessage("");
+    try {
+      await clearPageLink(pageId, slot.link_type);
+      setMessage(`${label} is no longer connected.`);
+      await load();
+    } catch (clearError) {
+      setError(
+        clearError instanceof PulseApiError
+          ? clearError.message
+          : `${label} could not be disconnected.`
+      );
+    } finally {
+      setBusy("");
+    }
+  }
+
   if (loading) {
     return (
       <View style={[styles.root, styles.center]}>
@@ -158,6 +178,27 @@ export function PageConnectionsScreen({ route }: Props) {
                 );
               })
             )}
+
+            {/* Sits on the slot, not on an option row. The thing that is
+                connected is often not among the options — a shop attached by a
+                marketplace manager who has since left the team is exactly the
+                case this exists for, and their seller id was never in the
+                owner's list. Hanging Disconnect off a matching option would
+                leave precisely those connections unremovable. */}
+            {slot.can_manage && slot.connected_ref_id ? (
+              <Pressable
+                accessibilityRole="button"
+                disabled={Boolean(busy)}
+                style={styles.danger}
+                onPress={() => disconnect(slot, slot.label)}
+              >
+                <Text style={styles.dangerText}>
+                  {busy === `clear:${slot.link_type}`
+                    ? "Disconnecting…"
+                    : `Disconnect ${slot.label.toLowerCase()}`}
+                </Text>
+              </Pressable>
+            ) : null}
           </View>
         );
       })}
@@ -203,6 +244,21 @@ const styles = createThemedStyles(() => ({
   content: {
     padding: 16,
     paddingBottom: 48
+  },
+  danger: {
+    alignItems: "center",
+    borderColor: colors.danger,
+    borderRadius: 10,
+    borderWidth: 1,
+    justifyContent: "center",
+    marginTop: 10,
+    minHeight: 48,
+    paddingHorizontal: 14
+  },
+  dangerText: {
+    color: colors.danger,
+    fontSize: 13,
+    fontWeight: "800"
   },
   error: {
     color: colors.danger,

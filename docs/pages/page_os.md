@@ -33,6 +33,31 @@ The type controls presentation (tab set, labels) — never a different backend.
 `page_audit_log`. Nothing is deleted; history stays auditable. UNPUBLISHED and
 DEACTIVATED pages 404 for non-members on public endpoints.
 
+### The rule has one implementation: `_load_visible_page`
+
+`_load_page(conn, ident)` loads a row. `_load_visible_page(conn, ident, viewer_user_id)`
+loads it *and* enforces the lifecycle rule. **Every public read goes through the
+second one.** The distinction is not stylistic: the rule was originally written inline
+at each route, so it was several copies that had to stay in agreement, and they did
+not. `list_page_posts` called `_load_page` and did not take a viewer at all, so an
+unpublished presence's posts and videos were readable by anyone who knew the id — the
+page 404'd and its content did not.
+
+`toggle_follow` is in the family for a subtler reason. It could plausibly have refused
+a hidden page with 403 ("isn't accepting followers"), but that answer *confirms the
+page exists* to anyone guessing ids, and the follow endpoint becomes the existence
+oracle the lifecycle rule exists to close. A stranger gets 404; a team member, who is
+already allowed to know it exists, passes the visibility check and receives the honest
+403.
+
+PAUSED stays public. It means "not accepting new activity", not "hidden" — collapsing
+the two is how a presence taking a break disappears from the people already following
+it.
+
+Pinned in `tests/pages/test_page_os.py::HiddenPresenceTests`, which drives a
+`PUBLIC_READS` table rather than one route, so a *new* public read that forgets the
+rule fails a test instead of becoming another copy nobody compared.
+
 ## Backend surface
 
 - `services/pulsesoc_pages.py` — all business logic. Lazy `ensure_tables()` (additive,

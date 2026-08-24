@@ -248,14 +248,24 @@ export function PageTeamScreen({ route }: Props) {
                       act(
                         `remove:${member.user_id}`,
                         () => removePageMember(pageId, member.user_id),
-                        `${memberName(member)} no longer has access.`
+                        member.status === "invited"
+                          ? `The invite to ${memberName(member)} has been withdrawn.`
+                          : `${memberName(member)} no longer has access.`
                       )
                     }
                   >
+                    {/* Two different acts behind one call: taking access away
+                        from someone who has it, and taking back an offer nobody
+                        has accepted. "Remove from the team" is wrong for the
+                        second — the person was never on it. */}
                     <Text style={styles.dangerText}>
                       {busy === `remove:${member.user_id}`
-                        ? "Removing…"
-                        : `Remove ${memberName(member)} from the team`}
+                        ? member.status === "invited"
+                          ? "Withdrawing…"
+                          : "Removing…"
+                        : member.status === "invited"
+                          ? `Withdraw the invite to ${memberName(member)}`
+                          : `Remove ${memberName(member)} from the team`}
                     </Text>
                   </Pressable>
                 ) : null}

@@ -255,6 +255,114 @@ describe("PageTeamScreen", () => {
     await waitFor(() => expect(mockRemovePageMember).toHaveBeenCalledWith(41, 22));
   });
 
+  /**
+   * `remove_member` refused an invitee outright — it asked `role_for`, which is
+   * the authorization question and answers only for accepted seats — so an
+   * invite sent to the wrong handle could not be taken back and simply sat
+   * there until its TTL ran out. The server now acts on the seat rather than
+   * the role, and one call covers both acts.
+   *
+   * Which makes the copy load-bearing rather than decorative: the same button
+   * either takes access away from someone who has it, or takes back an offer
+   * nobody accepted. Telling an owner they are about to "remove someone from
+   * the team" who was never on it is how they leave a mistaken invite standing.
+   */
+  describe("withdrawing an invite", () => {
+    function invitee(overrides: Record<string, unknown> = {}) {
+      return member({ status: "invited", can_change_role: true, can_remove: true, ...overrides });
+    }
+
+    it("says a seat is still an offer", async () => {
+      mockGetPageTeam.mockResolvedValue(team({ members: [owner(), invitee()] }));
+      const { getByText } = renderScreen();
+      await waitFor(() => expect(getByText(/invite pending/)).toBeTruthy());
+    });
+
+    it("offers to withdraw the invite rather than to remove a member", async () => {
+      mockGetPageTeam.mockResolvedValue(team({ members: [owner(), invitee()] }));
+      const { getByText, queryByText } = renderScreen();
+      await waitFor(() => expect(getByText("Manage")).toBeTruthy());
+      fireEvent.press(getByText("Manage"));
+
+      expect(getByText("Withdraw the invite to Friend")).toBeTruthy();
+      expect(queryByText("Remove Friend from the team")).toBeNull();
+    });
+
+    it("still offers to remove someone who has accepted", async () => {
+      const { getByText, queryByText } = renderScreen();
+      await waitFor(() => expect(getByText("Manage")).toBeTruthy());
+      fireEvent.press(getByText("Manage"));
+
+      expect(getByText("Remove Friend from the team")).toBeTruthy();
+      expect(queryByText("Withdraw the invite to Friend")).toBeNull();
+    });
+
+    it("makes the same call either way — the difference is what it is called", async () => {
+      mockGetPageTeam.mockResolvedValue(team({ members: [owner(), invitee()] }));
+      const { getByText } = renderScreen();
+      await waitFor(() => expect(getByText("Manage")).toBeTruthy());
+      fireEvent.press(getByText("Manage"));
+
+      fireEvent.press(getByText("Withdraw the invite to Friend"));
+
+      await waitFor(() => expect(mockRemovePageMember).toHaveBeenCalledWith(41, 22));
+    });
+
+    it("reports the withdrawal as a withdrawal, not as a loss of access", async () => {
+      mockGetPageTeam.mockResolvedValue(team({ members: [owner(), invitee()] }));
+      const { getByText, queryByText } = renderScreen();
+      await waitFor(() => expect(getByText("Manage")).toBeTruthy());
+      fireEvent.press(getByText("Manage"));
+
+      fireEvent.press(getByText("Withdraw the invite to Friend"));
+
+      await waitFor(() =>
+        expect(getByText("The invite to Friend has been withdrawn.")).toBeTruthy()
+      );
+      // Someone who never accepted had no access to lose.
+      expect(queryByText("Friend no longer has access.")).toBeNull();
+    });
+
+    it("reports a removal as a loss of access", async () => {
+      const { getByText, queryByText } = renderScreen();
+      await waitFor(() => expect(getByText("Manage")).toBeTruthy());
+      fireEvent.press(getByText("Manage"));
+
+      fireEvent.press(getByText("Remove Friend from the team"));
+
+      await waitFor(() => expect(getByText("Friend no longer has access.")).toBeTruthy());
+      expect(queryByText("The invite to Friend has been withdrawn.")).toBeNull();
+    });
+
+    it("surfaces the server's refusal rather than reporting the invite gone", async () => {
+      const { PulseApiError } = jest.requireActual("../../api/pulseApi");
+      mockRemovePageMember.mockRejectedValue(
+        new PulseApiError("That member is not on this page.", 404)
+      );
+      mockGetPageTeam.mockResolvedValue(team({ members: [owner(), invitee()] }));
+      const { getByText, queryByText } = renderScreen();
+      await waitFor(() => expect(getByText("Manage")).toBeTruthy());
+      fireEvent.press(getByText("Manage"));
+
+      fireEvent.press(getByText("Withdraw the invite to Friend"));
+
+      await waitFor(() => expect(getByText("That member is not on this page.")).toBeTruthy());
+      expect(queryByText("The invite to Friend has been withdrawn.")).toBeNull();
+    });
+
+    it("does not offer it for an invitee the server says may not be removed", async () => {
+      mockGetPageTeam.mockResolvedValue(
+        team({ members: [owner(), invitee({ can_remove: false })] })
+      );
+      const { getByText, queryByText } = renderScreen();
+      await waitFor(() => expect(getByText("Manage")).toBeTruthy());
+      fireEvent.press(getByText("Manage"));
+
+      expect(queryByText("Withdraw the invite to Friend")).toBeNull();
+      expect(queryByText("Remove Friend from the team")).toBeNull();
+    });
+  });
+
   describe("inviting", () => {
     it("invites by handle and role", async () => {
       const { getByText, getByLabelText } = renderScreen();

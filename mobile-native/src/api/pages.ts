@@ -716,6 +716,26 @@ export async function setPageLink(pageId: number, linkType: string, refId: strin
   });
 }
 
+/**
+ * Point this presence at nothing of this kind.
+ *
+ * One URL serves three acts here — read, connect, disconnect — separated only
+ * by the verb, so the subject of the write goes in the same place for all
+ * three. A query string for this one verb would be a second convention on a
+ * route that already has to be read carefully.
+ *
+ * The server also accepts `?type=` on DELETE, because a DELETE body has no
+ * defined semantics in HTTP and an intermediary is within its rights to drop
+ * it. That is a fallback for something going wrong in transit, not a second
+ * interface — this client always sends the body.
+ */
+export async function clearPageLink(pageId: number, linkType: string) {
+  return pulseApi<{ ok: boolean; link: PageLink }>(`/api/pages/${pageId}/links`, {
+    method: "DELETE",
+    body: JSON.stringify({ link_type: linkType })
+  });
+}
+
 /** Human-readable label for a page type, used across page surfaces. */
 export function pageTypeLabel(pageType?: string) {
   const text = String(pageType || "OTHER").replace(/_/g, " ").toLowerCase();

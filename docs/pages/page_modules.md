@@ -149,3 +149,54 @@ module exists to avoid.
 
 Adding a module means adding a link type and its `TAB_LINK_SOURCE` entry — not a new
 tab renderer that fabricates content.
+
+## What a link is, exactly
+
+A link is a **pointer, singular per kind**. `set_link` is `set`, not `add`: it deletes
+the rows for that `(page_id, link_type)` and writes one. It has to, because every
+reader in the codebase already takes `[0]` — `public_view`'s `shop_seller_id`,
+`page_music`, `page_events`, `module_availability`.
+
+Before that, `INSERT OR IGNORE` against a UNIQUE on `(page_id, link_type, ref_id)` let
+a *second* ref for the same kind be a perfectly legal row, and `list_links` had no
+`ORDER BY`. Connecting a shop appended rather than replaced, and which of the two the
+public page deep-linked to was engine order. A MARKETPLACE_MANAGER connecting their
+own seller id is a permitted write, so storefront hijacking was a matter of row
+ordering rather than of permission.
+
+`list_links` now orders `created_at DESC, id DESC` on **both** branches — filtered and
+unfiltered. Newest wins, deterministically. (SQLite will happily satisfy the filtered
+query from the UNIQUE index and hand back rows in `ref_id` order, which looks correct
+whenever the newest row also has the smallest ref; the ordering test is built so index
+order, insertion order and recency all disagree.)
+
+### Disconnecting
+
+`clear_link(conn, actor, page_id, link_type)` — `DELETE /api/pages/:id/links` with
+`link_type` in the **body**, not the query string. There was no way to do this at all.
+A shop connected by a marketplace manager who has since left the team stayed in the
+public view forever, and the only remedy on offer was to connect a different one —
+which, before `set_link` replaced rather than appended, did not even remove the old
+row.
+
+- Gated on the same permission as connecting (`_link_permission(link_type)`): whoever
+  may choose what the presence points at may also decide it points at nothing.
+- Refuses an unknown `link_type` with 400 *before* the permission check, and refuses
+  "nothing was connected" with 404. Both are 4xx, so a test asserting only "it raised"
+  proves nothing about which.
+- Audited as `link_cleared` with the previous `ref_id` in `before`.
+
+Native surface: `clearPageLink` in `src/api/pages.ts`, and the Disconnect control in
+`PageConnectionsScreen`. That control hangs off the **slot**, not off a matching
+option row — the connected ref is very often *not* among the options (the departed
+manager's seller id is not in the owner's inventory), and that is precisely the case
+disconnect exists for. Hanging it off an option would leave exactly the unremovable
+connections unremovable.
+
+The DELETE carries its target in the **body**, where the GET's filter and the POST's
+payload also live: one URL serves three acts separated only by the verb, and a query
+string for one of them would be a second convention on a route that already has to be
+read carefully. The route also accepts `?type=` on DELETE, because a DELETE body has
+no defined semantics in HTTP and an intermediary may drop it — a transit fallback, not
+a second interface. The native client always sends the body, and
+`pagesLinks.test.ts` pins that it does.

@@ -399,6 +399,25 @@ def role_for(conn: Any, user_id: int, page_id: int) -> str | None:
     return row.get("role") if row else None
 
 
+def _seat(conn: Any, user_id: int, page_id: int) -> dict:
+    """A member's seat, taken or merely offered.
+
+    Deliberately not `role_for`, which is the authorization question and is
+    active-only: an invitee holds no permissions until they accept, and must
+    never be answered as though they did. This is the *administration*
+    question — is there a row here for somebody to act on — and the answer has
+    to include a pending invite, because otherwise an invite sent by mistake
+    can never be withdrawn and simply waits out its TTL.
+    """
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT role, status FROM pulse_page_members WHERE page_id=? AND user_id=? "
+        "AND status IN ('active','invited') LIMIT 1",
+        (int(page_id), int(user_id)),
+    )
+    return _row(cur.fetchone())
+
+
 def has_permission(role: str | None, permission: str) -> bool:
     if not role or permission not in PERMISSIONS:
         return False
@@ -725,10 +744,18 @@ def set_status(conn: Any, user_id: int, page_id: int, status: Any) -> dict:
 
 def request_verification(conn: Any, user_id: int, page_id: int, payload: dict | None = None) -> dict:
     """Distinct from personal verification and never auto-granted: this only
-    moves unverified → pending. Granting stays an admin/trust operation."""
+    moves unverified → pending. Granting stays an admin/trust operation.
+
+    Owner-only, like payments and settings. Asking the trust team to certify
+    that this presence is who it claims to be is a statement about identity,
+    not a content task — the same reason pointing a presence at a business is
+    owner-only. It enforced `edit_page` while the management screen advertised
+    `manage_status`, so a MANAGER was shown no Verification section and could
+    still submit a claim in the page's name through the API.
+    """
     ensure_tables(conn)
     page = _load_page(conn, page_id)
-    require_permission(conn, user_id, page["id"], "edit_page")
+    require_permission(conn, user_id, page["id"], "manage_status")
     current = page.get("verification_status") or "unverified"
     if current == "verified":
         raise PageError("This page is already verified.")
@@ -1067,13 +1094,15 @@ def change_role(conn: Any, actor_user_id: int, page_id: int, member_user_id: int
     new_role = _text(new_role, 40).upper()
     if new_role not in ASSIGNABLE_ROLES:
         raise PageError("Ownership moves only through an explicit transfer.")
-    current = role_for(conn, member_user_id, page["id"])
+    seat = _seat(conn, member_user_id, page["id"])
+    current = seat.get("role")
     if not current:
         raise PageError("That member is not on this page.", 404)
     if current == "OWNER":
         raise PageError("The owner's role can't be changed here. Use ownership transfer.", 403)
     cur = conn.cursor()
-    cur.execute("UPDATE pulse_page_members SET role=?, updated_at=? WHERE page_id=? AND user_id=?",
+    cur.execute("UPDATE pulse_page_members SET role=?, updated_at=? WHERE page_id=? AND user_id=? "
+                "AND status IN ('active','invited')",
                 (new_role, _now(), int(page["id"]), int(member_user_id)))
     _audit(conn, page["id"], actor_user_id, "member_role_changed",
            before={"user_id": int(member_user_id), "role": current},
@@ -1085,23 +1114,44 @@ def change_role(conn: Any, actor_user_id: int, page_id: int, member_user_id: int
 
 
 def remove_member(conn: Any, actor_user_id: int, page_id: int, member_user_id: int) -> dict:
+    """Take back a seat, whether it was taken or only offered.
+
+    This resolved through `role_for`, which ignores invited rows, so an invite
+    could not be withdrawn by anybody: the team screen offered a Remove control
+    and the call behind it answered 404 until the invite's TTL ran out. Wrong
+    invites are ordinary — a mistyped id, a change of mind — and the row is a
+    live grant waiting to be claimed, so it has to be revocable now rather than
+    eventually.
+
+    Revoking sets the same `removed` status, which `accept_invite` already
+    refuses (it matches on `status='invited'`), so a token that has been handed
+    out stops working the moment the invite is withdrawn.
+    """
     ensure_tables(conn)
     page = _load_page(conn, page_id)
     require_permission(conn, actor_user_id, page["id"], "manage_members")
-    current = role_for(conn, member_user_id, page["id"])
+    seat = _seat(conn, member_user_id, page["id"])
+    current = seat.get("role")
     if not current:
         raise PageError("That member is not on this page.", 404)
     if current == "OWNER":
         raise PageError("The owner can't be removed. Transfer ownership first.", 403)
+    was_invited = seat.get("status") == "invited"
     cur = conn.cursor()
-    cur.execute("UPDATE pulse_page_members SET status='removed', updated_at=? WHERE page_id=? AND user_id=?",
+    cur.execute("UPDATE pulse_page_members SET status='removed', invite_token=NULL, "
+                "invite_expires_at=NULL, updated_at=? WHERE page_id=? AND user_id=? "
+                "AND status IN ('active','invited')",
                 (_now(), int(page["id"]), int(member_user_id)))
-    _audit(conn, page["id"], actor_user_id, "member_removed",
-           before={"user_id": int(member_user_id), "role": current})
+    _audit(conn, page["id"], actor_user_id,
+           "invite_revoked" if was_invited else "member_removed",
+           before={"user_id": int(member_user_id), "role": current,
+                   "status": seat.get("status")})
     conn.commit()
-    _sentinel_event("page.member_removed", actor_user_id, page["id"],
+    _sentinel_event("page.invite_revoked" if was_invited else "page.member_removed",
+                    actor_user_id, page["id"],
                     payload={"target_user_id": int(member_user_id)})
-    return {"user_id": int(member_user_id), "status": "removed"}
+    return {"user_id": int(member_user_id), "status": "removed",
+            "was_invited": was_invited}
 
 
 def transfer_ownership(conn: Any, actor_user_id: int, page_id: int,
@@ -1144,7 +1194,11 @@ def transfer_ownership(conn: Any, actor_user_id: int, page_id: int,
 
 def toggle_follow(conn: Any, user_id: int, page_id: int) -> dict:
     ensure_tables(conn)
-    page = _load_page(conn, page_id)
+    # A hidden page answers "not found" here too. Refusing the follow with 403
+    # would confirm the page exists to anyone who guessed its id — the follow
+    # endpoint would become the existence oracle the lifecycle rule exists to
+    # close. A member gets past this and sees the honest 403 below.
+    page = _load_visible_page(conn, page_id, user_id)
     if page.get("status") not in ("ACTIVE", "PAUSED"):
         raise PageError("This page isn't accepting followers right now.", 403)
     cur = conn.cursor()
@@ -1368,6 +1422,24 @@ def link_options(conn: Any, actor_user_id: int, page_id: int) -> dict:
 
 
 def set_link(conn: Any, actor_user_id: int, page_id: int, link_type: Any, ref_id: Any) -> dict:
+    """Point this presence at one thing of this kind. `set`, not `add`.
+
+    Every link type is singular — a presence has *a* shop, *an* ad account,
+    *the* business that runs its dates — and every reader treats it that way,
+    taking the first row it happens to find. The write did not: `INSERT OR
+    IGNORE` against a UNIQUE on `(page_id, link_type, ref_id)` appends a second
+    row for a *different* ref, and `list_links` has no ORDER BY, so which of
+    them a reader saw was whatever the engine returned first.
+
+    That is a correctness bug in both directions. Reconnecting a shop left the
+    old one behind with no way to tell which was live, and a MARKETPLACE_MANAGER
+    could append their own seller id to a presence they help run and have it
+    surface as `shop_seller_id` in the public view — pointing the page's buyers
+    at their storefront without ever touching the one already connected.
+
+    Replacing is also what makes disconnect-and-reconnect mean something: the
+    row that is there is the answer, and there is only ever one.
+    """
     ensure_tables(conn)
     page = _load_page(conn, page_id)
     link_type = _text(link_type, 40).lower()
@@ -1388,12 +1460,17 @@ def set_link(conn: Any, actor_user_id: int, page_id: int, link_type: Any, ref_id
     if not entitled & {_int(actor_user_id, 0), _int(page.get("owner_user_id"), 0)}:
         raise PageError("You can only connect something you own.", 403)
     cur = conn.cursor()
+    previous = [row.get("ref_id") for row in list_links(conn, page["id"], link_type)]
+    cur.execute("DELETE FROM pulse_page_links WHERE page_id=? AND link_type=?",
+                (int(page["id"]), link_type))
     cur.execute(
-        "INSERT OR IGNORE INTO pulse_page_links (page_id, link_type, ref_id, created_by, created_at) "
+        "INSERT INTO pulse_page_links (page_id, link_type, ref_id, created_by, created_at) "
         "VALUES (?, ?, ?, ?, ?)",
         (int(page["id"]), link_type, ref, int(actor_user_id), _now()),
     )
-    _audit(conn, page["id"], actor_user_id, "link_set", after={"link_type": link_type, "ref_id": ref})
+    _audit(conn, page["id"], actor_user_id, "link_set",
+           before={"link_type": link_type, "ref_id": previous[0] if previous else ""},
+           after={"link_type": link_type, "ref_id": ref})
     conn.commit()
     if link_type == "store":
         _sentinel_edge("page", int(page["id"]), "owns_account", "seller", ref)
@@ -1401,14 +1478,52 @@ def set_link(conn: Any, actor_user_id: int, page_id: int, link_type: Any, ref_id
 
 
 def list_links(conn: Any, page_id: int, link_type: str | None = None) -> list[dict]:
+    """Every callers' first stop, and several of them read `[0]`.
+
+    `set_link` keeps one row per type, so the order should not matter — but
+    "should not" is how the shop tab came to deep-link wherever the engine felt
+    like. The newest row wins explicitly, which is the same answer on SQLite and
+    on Postgres and stays right if a row ever survives the replace.
+    """
     ensure_tables(conn)
     cur = conn.cursor()
     if link_type:
-        cur.execute("SELECT link_type, ref_id, created_at FROM pulse_page_links WHERE page_id=? AND link_type=?",
+        cur.execute("SELECT link_type, ref_id, created_at FROM pulse_page_links "
+                    "WHERE page_id=? AND link_type=? ORDER BY created_at DESC, id DESC",
                     (int(page_id), link_type))
     else:
-        cur.execute("SELECT link_type, ref_id, created_at FROM pulse_page_links WHERE page_id=?", (int(page_id),))
+        cur.execute("SELECT link_type, ref_id, created_at FROM pulse_page_links "
+                    "WHERE page_id=? ORDER BY created_at DESC, id DESC", (int(page_id),))
     return [_row(r) for r in cur.fetchall()]
+
+
+def clear_link(conn: Any, actor_user_id: int, page_id: int, link_type: Any) -> dict:
+    """Disconnect what this presence was pointed at.
+
+    There was no way to do this. A shop connected by a marketplace manager who
+    has since left the team stayed in the public view forever, and the only
+    remedy on offer was to connect a different one — which, before `set_link`
+    replaced rather than appended, did not even remove the old row.
+
+    Gated on the same permission as connecting: whoever may choose what the
+    presence points at may also decide it points at nothing.
+    """
+    ensure_tables(conn)
+    page = _load_page(conn, page_id)
+    link_type = _text(link_type, 40).lower()
+    if link_type not in LINK_TYPES:
+        raise PageError("Choose a valid link type.")
+    require_permission(conn, actor_user_id, page["id"], _link_permission(link_type))
+    previous = [row.get("ref_id") for row in list_links(conn, page["id"], link_type)]
+    if not previous:
+        raise PageError("There is nothing connected to disconnect.", 404)
+    cur = conn.cursor()
+    cur.execute("DELETE FROM pulse_page_links WHERE page_id=? AND link_type=?",
+                (int(page["id"]), link_type))
+    _audit(conn, page["id"], actor_user_id, "link_cleared",
+           before={"link_type": link_type, "ref_id": previous[0]})
+    conn.commit()
+    return {"page_id": int(page["id"]), "link_type": link_type, "ref_id": ""}
 
 
 # ---------------------------------------------------------------------------
@@ -1445,7 +1560,7 @@ def create_page_post(conn: Any, user_id: int, page_id: int, payload: dict) -> di
 def list_page_posts(conn: Any, page_id: int, viewer_user_id: int | None = None,
                     limit: int = 20, offset: int = 0,
                     post_types: tuple[str, ...] | None = None) -> dict:
-    page = _load_page(conn, page_id)
+    page = _load_visible_page(conn, page_id, viewer_user_id)
     limit = max(1, min(_int(limit, 20), 40))
     offset = max(0, _int(offset, 0))
     type_sql = ""

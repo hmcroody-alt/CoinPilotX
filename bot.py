@@ -18046,11 +18046,7 @@ def api_pulsesoc_page_by_handle(handle):
     conn = pulse_pages_conn()
     try:
         pulsesoc_pages.ensure_tables(conn)
-        page = pulsesoc_pages._load_page(conn, handle)
-        if page.get("status") in ("UNPUBLISHED", "DEACTIVATED"):
-            viewer_role = pulsesoc_pages.role_for(conn, user["user_id"], page["id"]) if user else None
-            if not viewer_role:
-                return api_error("Page not found.", 404)
+        page = pulsesoc_pages._load_visible_page(conn, handle, user["user_id"] if user else None)
         return jsonify({"ok": True, "page": pulsesoc_pages.public_view(conn, page, viewer_user_id=user["user_id"] if user else None)})
     except Exception as exc:
         return pulse_pages_error_response(exc)
@@ -18069,11 +18065,7 @@ def api_pulsesoc_page_detail(page_id):
             if not user:
                 return api_error("Login required.", 401)
             return jsonify({"ok": True, "page": pulsesoc_pages.update_page(conn, user["user_id"], page_id, request.get_json(silent=True) or {})})
-        page = pulsesoc_pages._load_page(conn, page_id)
-        if page.get("status") in ("UNPUBLISHED", "DEACTIVATED"):
-            viewer_role = pulsesoc_pages.role_for(conn, user["user_id"], page["id"]) if user else None
-            if not viewer_role:
-                return api_error("Page not found.", 404)
+        page = pulsesoc_pages._load_visible_page(conn, page_id, user["user_id"] if user else None)
         return jsonify({"ok": True, "page": pulsesoc_pages.public_view(conn, page, viewer_user_id=user["user_id"] if user else None)})
     except Exception as exc:
         return pulse_pages_error_response(exc)
@@ -18227,7 +18219,7 @@ def api_pulsesoc_page_posts(page_id):
         conn.close()
 
 
-@webhook_app.route("/api/pages/<int:page_id>/links", methods=["GET", "POST"])
+@webhook_app.route("/api/pages/<int:page_id>/links", methods=["GET", "POST", "DELETE"])
 def api_pulsesoc_page_links(page_id):
     init_db()
     user = api_account_user()
@@ -18235,6 +18227,15 @@ def api_pulsesoc_page_links(page_id):
         return api_error("Login required.", 401)
     conn = pulse_pages_conn()
     try:
+        if request.method == "DELETE":
+            # Body first, matching where GET and POST name their subject on this
+            # same URL. `?type=` is a transit fallback rather than a second
+            # interface: a DELETE body has no defined semantics in HTTP, so an
+            # intermediary is within its rights to drop it. Same spelling as the
+            # GET's filter, so the route has one name for this, not two.
+            payload = request.get_json(silent=True) or {}
+            link_type = payload.get("link_type") or request.args.get("type")
+            return jsonify({"ok": True, "link": pulsesoc_pages.clear_link(conn, user["user_id"], page_id, link_type)})
         if request.method == "POST":
             payload = request.get_json(silent=True) or {}
             return jsonify({"ok": True, "link": pulsesoc_pages.set_link(conn, user["user_id"], page_id, payload.get("link_type"), payload.get("ref_id"))})

@@ -21,10 +21,12 @@ import { fireEvent, render, waitFor } from "@testing-library/react-native";
 
 const mockGetPageLinkOptions = jest.fn();
 const mockSetPageLink = jest.fn();
+const mockClearPageLink = jest.fn();
 jest.mock("../../api/pages", () => ({
   ...jest.requireActual("../../api/pages"),
   getPageLinkOptions: (...args: unknown[]) => mockGetPageLinkOptions(...args),
-  setPageLink: (...args: unknown[]) => mockSetPageLink(...args)
+  setPageLink: (...args: unknown[]) => mockSetPageLink(...args),
+  clearPageLink: (...args: unknown[]) => mockClearPageLink(...args)
 }));
 
 import { PageConnectionsScreen } from "../PageConnectionsScreen";
@@ -60,6 +62,98 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockGetPageLinkOptions.mockResolvedValue(options());
   mockSetPageLink.mockResolvedValue({ ok: true, link: { link_type: "store", ref_id: "42" } });
+  mockClearPageLink.mockResolvedValue({ ok: true, link: { link_type: "store", ref_id: "" } });
+});
+
+/**
+ * Connecting was a one-way door. There was no unlink route on the server and no
+ * caller for one here, so a shop attached to a presence stayed attached — and
+ * because `set_link` appended rather than replaced, connecting a different one
+ * did not even take the first away.
+ *
+ * The case that matters most is the one where the connected thing is not in the
+ * options list: a marketplace manager may connect their own storefront, and if
+ * they later leave the team their seller id is no longer among anything the
+ * owner is offered. The owner is then the only person who can act and the only
+ * person with no control to act with.
+ */
+describe("taking a connection back", () => {
+  it("offers to disconnect what is connected", async () => {
+    mockGetPageLinkOptions.mockResolvedValue(options([slot({ connected_ref_id: "42" })]));
+    const { getByText } = renderScreen();
+    await waitFor(() => expect(getByText("Disconnect shop")).toBeTruthy());
+
+    fireEvent.press(getByText("Disconnect shop"));
+    await waitFor(() => expect(mockClearPageLink).toHaveBeenCalledWith(41, "store"));
+  });
+
+  it("offers nothing to disconnect when nothing is connected", async () => {
+    const { getByText, queryByText } = renderScreen();
+    await waitFor(() => expect(getByText("Night Signal Merch")).toBeTruthy());
+    expect(queryByText("Disconnect shop")).toBeNull();
+  });
+
+  it("can disconnect something that is no longer among the options", async () => {
+    // The manager who attached this shop has left, so the owner is offered
+    // nothing that matches it. Hanging the control off a matching option would
+    // make exactly this connection permanent.
+    mockGetPageLinkOptions.mockResolvedValue(
+      options([slot({ connected_ref_id: "77", options: [] })])
+    );
+    const { getByText } = renderScreen();
+    await waitFor(() => expect(getByText("Connected: 77")).toBeTruthy());
+
+    fireEvent.press(getByText("Disconnect shop"));
+    await waitFor(() => expect(mockClearPageLink).toHaveBeenCalledWith(41, "store"));
+  });
+
+  it("does not offer it to a role that may not change the connection", async () => {
+    mockGetPageLinkOptions.mockResolvedValue(
+      options([slot({ can_manage: false, connected_ref_id: "42", options: [] })])
+    );
+    const { getByText, queryByText } = renderScreen();
+    await waitFor(() => expect(getByText("Connected: 42")).toBeTruthy());
+    expect(queryByText("Disconnect shop")).toBeNull();
+  });
+
+  it("re-reads from the server rather than assuming the tab is gone", async () => {
+    mockGetPageLinkOptions.mockResolvedValue(options([slot({ connected_ref_id: "42" })]));
+    const { getByText } = renderScreen();
+    await waitFor(() => expect(getByText("Disconnect shop")).toBeTruthy());
+    expect(mockGetPageLinkOptions).toHaveBeenCalledTimes(1);
+
+    mockGetPageLinkOptions.mockResolvedValue(options());
+    fireEvent.press(getByText("Disconnect shop"));
+
+    await waitFor(() => expect(mockGetPageLinkOptions).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(getByText("Not connected yet.")).toBeTruthy());
+  });
+
+  it("surfaces the server's refusal rather than reporting success", async () => {
+    const { PulseApiError } = jest.requireActual("../../api/pulseApi");
+    mockClearPageLink.mockRejectedValue(
+      new PulseApiError("You don't have permission to do that on this page.", 403)
+    );
+    mockGetPageLinkOptions.mockResolvedValue(options([slot({ connected_ref_id: "42" })]));
+    const { getByText, queryByText } = renderScreen();
+    await waitFor(() => expect(getByText("Disconnect shop")).toBeTruthy());
+
+    fireEvent.press(getByText("Disconnect shop"));
+
+    await waitFor(() =>
+      expect(getByText("You don't have permission to do that on this page.")).toBeTruthy()
+    );
+    expect(queryByText("Shop is no longer connected.")).toBeNull();
+  });
+
+  it("says which connection it took down", async () => {
+    mockGetPageLinkOptions.mockResolvedValue(options([slot({ connected_ref_id: "42" })]));
+    const { getByText } = renderScreen();
+    await waitFor(() => expect(getByText("Disconnect shop")).toBeTruthy());
+
+    fireEvent.press(getByText("Disconnect shop"));
+    await waitFor(() => expect(getByText("Shop is no longer connected.")).toBeTruthy());
+  });
 });
 
 describe("PageConnectionsScreen", () => {
