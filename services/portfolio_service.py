@@ -14,24 +14,31 @@ SAFETY = "Portfolio tracker is educational only. CoinPlotXAI Inc. does not hold 
 #: restriction, and it is what gives ``premium.crypto.portfolio`` a gate that
 #: reads it instead of a grant that changes nothing.
 #:
-#: There is deliberately no alert ceiling here any more. The one this dict used
-#: to advertise applied to ``user_alerts``, the legacy table behind
-#: :func:`create_price_alert`, which no live route reaches. Alerts now run
-#: through ``services.alert_engine`` and are gated on *capability* — compound and
+#: Two of the three ceilings this dict used to advertise are gone, because
+#: neither described anything the product does.
+#:
+#: The alert ceiling applied to ``user_alerts``, the legacy table behind
+#: :func:`create_price_alert`, which no live route reaches. Alerts run through
+#: ``services.alert_engine`` and are gated on *capability* — compound and
 #: watchlist rules are Premium, single-threshold rules are free and unlimited —
-#: so a count would have described no shipping behaviour.
-FREE_LIMITS = {"holdings": 3, "watchlist": 5}
+#: so a count described no shipping behaviour.
+#:
+#: The watchlist ceiling counted ``watchlist_items``, and PulseSoc has a second,
+#: newer watchlist system at ``/api/crypto/watchlists`` which is the one the
+#: native app uses, the one alert watchlist rules read, and entirely unlimited.
+#: Capping the older table would have told one member two different numbers for
+#: "your watchlist" depending on which screen they were looking at. Whether free
+#: watchlists should have a size at all is a product question, and the answer
+#: has to be given once, to both systems, not smuggled in against the one that
+#: happened to have a limit constant lying around.
+FREE_LIMITS = {"holdings": 3}
 
 #: Which table each ceiling counts. Values are module constants, never input.
-_LIMIT_TABLES = {"holdings": "portfolio_items", "watchlist": "watchlist_items"}
+_LIMIT_TABLES = {"holdings": "portfolio_items"}
 
 LIMIT_MESSAGES = {
     "holdings": (
         f"A free portfolio tracks up to {FREE_LIMITS['holdings']} holdings. "
-        "PulseSoc Premium removes the limit."
-    ),
-    "watchlist": (
-        f"A free watchlist holds up to {FREE_LIMITS['watchlist']} coins. "
         "PulseSoc Premium removes the limit."
     ),
 }

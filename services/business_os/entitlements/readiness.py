@@ -146,14 +146,17 @@ _REGISTRY: tuple[Feature, ...] = (
         ),
     ),
     Feature(
-        "premium.crypto.portfolio", "Unlimited portfolio and watchlist", BETA,
+        "premium.crypto.portfolio", "Unlimited portfolio holdings", BETA,
         enforced_by="services.portfolio_service._limit_check",
         note=(
             "What this key buys is precisely one thing: the removal of the free "
-            "ceilings of 3 holdings and 5 watchlist coins. It does not buy a "
-            "different portfolio — free and Premium accounts get the same "
-            "valuation, the same history and the same insight text — so it must "
-            "be advertised as 'unlimited', never as 'premium analytics'. "
+            "ceiling of 3 portfolio holdings. It does not buy a different "
+            "portfolio — free and Premium accounts get the same valuation, the "
+            "same history and the same insight text — so it must be advertised "
+            "as 'unlimited holdings', never as 'premium analytics'. It buys no "
+            "watchlist size either: PulseSoc has two watchlist systems and the "
+            "one the native app uses (/api/crypto/watchlists) is unlimited for "
+            "everyone, so no watchlist number may be attached to this key. "
             "Correcting the record: this entry previously said the portfolio was "
             "'gated by the legacy api_pro_required check'. It was not. That "
             "function (bot.py) checks login and blocks iOS native requests, and "

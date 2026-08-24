@@ -281,13 +281,16 @@ def test_premium_has_no_ceiling():
         assert ps.add_portfolio_item(uid, f"E{index}", amount=1)["ok"] is True
 
 
-def test_the_watchlist_has_its_own_ceiling():
+def test_the_legacy_watchlist_is_not_capped():
+    """PulseSoc has two watchlist systems. The one the native app uses and the
+    one alert watchlist rules read is /api/crypto/watchlists, which has no size
+    limit for anyone. Capping ``watchlist_items`` — the older table behind the
+    web portfolio page — would tell one member two different numbers for "your
+    watchlist" depending on which screen they opened."""
     uid = _new_user()
-    for index in range(ps.FREE_LIMITS["watchlist"]):
+    for index in range(12):
         assert ps.add_watchlist_item(uid, f"W{index}")["ok"] is True
-    refused = ps.add_watchlist_item(uid, "WMORE")
-    assert refused["ok"] is False
-    assert refused["message"] == ps.LIMIT_MESSAGES["watchlist"]
+    assert ps._limit_check(uid, "watchlist") == (True, "")
 
 
 def test_an_account_already_over_the_ceiling_keeps_everything_it_has():
