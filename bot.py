@@ -7398,8 +7398,11 @@ def api_crypto_alert_options():
     # matches the static segment first regardless, and "options" is not an int.
     symbol = (request.args.get("symbol") or "").strip()
     watchlist_id = (request.args.get("watchlistId") or request.args.get("watchlist_id") or "").strip()
+    portfolio_scope = (request.args.get("portfolioScope") or request.args.get("portfolio_scope")
+                       or "").strip().lower() in {"1", "true", "yes", "on"}
     return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.alert_options(
-        conn, user["user_id"], symbol=symbol, watchlist_id=watchlist_id or None))
+        conn, user["user_id"], symbol=symbol, watchlist_id=watchlist_id or None,
+        portfolio_scope=portfolio_scope))
 
 
 @webhook_app.route("/api/crypto/alerts/<int:alert_id>", methods=["PATCH", "DELETE"])

@@ -214,6 +214,12 @@ def _ensure_alert_schema_impl(conn=None):
             # copied here, so adding an asset to the watchlist extends the rule
             # and removing one stops it — which is what "watch this list" means.
             ("watchlist_id", "INTEGER"),
+            # Set when the rule watches everything the member currently holds.
+            # A flag rather than an id because a member has exactly one
+            # portfolio; membership is read fresh each cycle for the same reason
+            # as ``watchlist_id``, so buying an asset extends the rule and
+            # selling out of one stops it.
+            ("portfolio_scope", "INTEGER DEFAULT 0"),
         ],
     )
     cur.execute(
@@ -799,7 +805,9 @@ def _public_rule(row):
     rule["last_observations"] = observations if isinstance(observations, dict) else {}
     rule["watchlist_id"] = int(rule["watchlist_id"]) if rule.get("watchlist_id") else None
     rule["is_watchlist_rule"] = bool(rule["watchlist_id"])
-    if rule["is_watchlist_rule"] and not rule.get("_state_scope"):
+    rule["portfolio_scope"] = 1 if rule.get("portfolio_scope") else 0
+    rule["is_portfolio_rule"] = bool(rule["portfolio_scope"])
+    if (rule["is_watchlist_rule"] or rule["is_portfolio_rule"]) and not rule.get("_state_scope"):
         # ``_normalize_symbol`` above filled this with its BTC default. A rule
         # that watches a list is about no single asset, and saying "BTC" would be
         # read as one. A *member* of that list is about exactly one asset, which
@@ -983,6 +991,97 @@ def watchlist_rule_preflight(user_id, watchlist_id, connection=None):
     return _validate_watchlist_rule(user_id, watchlist_id, connection=connection)
 
 
+#: How many holdings one portfolio rule will evaluate per cycle.
+#:
+#: Same ceiling and same reasoning as ``WATCHLIST_RULE_MAX_SYMBOLS``, with its
+#: own environment variable because the two scopes are sized by different
+#: things: a watchlist is as long as somebody chose to make it, a portfolio is
+#: as long as their holdings happen to be.
+PORTFOLIO_RULE_MAX_SYMBOLS = int(os.getenv("ALERT_PORTFOLIO_MAX_SYMBOLS", "25"))
+
+
+def _portfolio_symbols(user_id, limit=None, connection=None):
+    """The assets this member currently holds, newest position first.
+
+    Read from ``portfolio_items`` — the table :mod:`services.portfolio_service`
+    writes and the one behind ``/api/portfolio``. The Business OS crypto ledger
+    is deliberately not consulted: it is dark behind ``BUSINESS_OS_CRYPTO``, and
+    a rule that watched a different set of assets than the portfolio screen
+    shows would be impossible for the member to reconcile.
+
+    Only the symbol is taken. Amount, cost basis and anything derived from them
+    stay out of this function on purpose — the scope decides *which* assets a
+    rule watches, and the conditions it watches them with are the ordinary
+    market ones. Nothing here computes a gain.
+
+    Deduplicated because ``portfolio_items`` has no uniqueness constraint on
+    ``(user_id, symbol)``: two lots of the same asset are two rows, and
+    evaluating BTC twice in one cycle would race its own latch.
+
+    Reuses the caller's connection for the same reason ``_watchlist_symbols``
+    does — creation runs inside an open transaction.
+    """
+    limit = int(limit or PORTFOLIO_RULE_MAX_SYMBOLS)
+    owns_connection = connection is None
+    conn = connection or user_context.connect()
+    try:
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "SELECT symbol FROM portfolio_items WHERE user_id=? ORDER BY created_at DESC, id DESC",
+                (int(user_id),),
+            )
+            rows = cur.fetchall() or []
+        except Exception:
+            logging.warning("Portfolio holdings unavailable for user %s", user_id, exc_info=True)
+            return [], False
+    finally:
+        if owns_connection:
+            conn.close()
+    symbols = []
+    for row in rows:
+        symbol = _normalize_symbol(row[0] if not isinstance(row, dict) else row.get("symbol"))
+        if symbol and symbol not in symbols:
+            symbols.append(symbol)
+    # Sliced after deduplication, not by SQL LIMIT: two lots of the same asset
+    # would otherwise consume two of the member's allowance and truncate a
+    # portfolio that is comfortably inside it.
+    return symbols[:limit], len(symbols) > limit
+
+
+def _validate_portfolio_rule(user_id, connection=None):
+    """Can this member point a rule at their holdings, today?
+
+    Refuses an oversized portfolio rather than trimming it, for the reason
+    ``_validate_watchlist_rule`` records. The exposure is worse here: a
+    watchlist only grows when the member edits it, while a portfolio grows the
+    moment they add a holding on an entirely different screen. That is why the
+    truncation is also reported at evaluation time rather than only at creation.
+    """
+    if not premium_crypto_access.allowed_for_user_id(user_id, premium_crypto_access.ADVANCED_ALERTS):
+        return {"ok": False, "code": "premium_required",
+                "capability": premium_crypto_access.ADVANCED_ALERTS,
+                "message": "Watching your whole portfolio with one alert is part of PulseSoc Premium."}
+    symbols, truncated = _portfolio_symbols(user_id, connection=connection)
+    if not symbols:
+        return {"ok": False, "code": "portfolio_empty",
+                "message": "Add at least one holding to your portfolio first."}
+    if truncated:
+        return {"ok": False, "code": "portfolio_too_large",
+                "message": (f"One alert can watch up to {PORTFOLIO_RULE_MAX_SYMBOLS} holdings. "
+                            "Create the alert on a watchlist instead.")}
+    return {"ok": True, "portfolio_scope": 1, "symbols": symbols}
+
+
+def portfolio_rule_preflight(user_id, connection=None):
+    """Would rule creation accept this member's portfolio right now, and if not, why?
+
+    The same function the gate runs, for the reason
+    :func:`watchlist_rule_preflight` gives.
+    """
+    return _validate_portfolio_rule(user_id, connection=connection)
+
+
 def create_alert_rule(
     user_id,
     alert_type="coin_price",
@@ -999,11 +1098,19 @@ def create_alert_rule(
     schema_ready=False,
     condition_spec=None,
     watchlist_id=None,
+    portfolio_scope=False,
 ):
     if not schema_ready:
         ensure_alert_schema(connection)
     alert_type = _normalize_alert_type(alert_type)
     condition = _normalize_condition(condition)
+    portfolio_scope = bool(portfolio_scope)
+    if watchlist_id and portfolio_scope:
+        # Refused rather than resolved by precedence. Both are a complete answer
+        # to "which assets", and silently honouring one would give the member a
+        # rule watching a set they did not ask for.
+        return {"ok": False, "code": "conflicting_scope",
+                "message": "An alert watches one watchlist or your portfolio, not both."}
     if watchlist_id:
         gate = _validate_watchlist_rule(user_id, watchlist_id, connection)
         if not gate["ok"]:
@@ -1011,6 +1118,12 @@ def create_alert_rule(
         watchlist_id = gate["watchlist_id"]
         # Left empty on purpose. ``_normalize_symbol`` defaults to BTC, and a rule
         # that watches a whole list must not carry a ticker that says otherwise.
+        symbol = ""
+    elif portfolio_scope:
+        gate = _validate_portfolio_rule(user_id, connection)
+        if not gate["ok"]:
+            return gate
+        watchlist_id = None
         symbol = ""
     else:
         watchlist_id = None
@@ -1052,8 +1165,8 @@ def create_alert_rule(
             INSERT INTO alert_rules
             (user_id, alert_type, symbol, target, condition, threshold_value, target_value, channels_json, channels,
              status, active, cooldown_seconds, trigger_count, source, source_ref, metadata, condition_spec,
-             watchlist_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 1, ?, 0, ?, ?, ?, ?, ?, ?, ?)
+             watchlist_id, portfolio_scope, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 1, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 user_id,
@@ -1071,6 +1184,7 @@ def create_alert_rule(
                 json.dumps(metadata or {})[:4000],
                 json.dumps(spec) if spec else None,
                 watchlist_id,
+                1 if portfolio_scope else 0,
                 now,
                 now,
             ),
@@ -1825,8 +1939,11 @@ def evaluate_alert_rule(rule):
     rule = _public_rule(rule)
     if (rule.get("status") or "active") != "active":
         return {"ok": True, "triggered": False, "message": "Alert is not active."}
-    if rule.get("watchlist_id") and not rule.get("_state_scope"):
-        return _evaluate_watchlist_rule(rule)
+    if not rule.get("_state_scope"):
+        if rule.get("watchlist_id"):
+            return _evaluate_watchlist_rule(rule)
+        if rule.get("portfolio_scope"):
+            return _evaluate_portfolio_rule(rule)
     scope = rule.get("_state_scope")
     observed = evaluate_rule_condition(rule)
     # Deliberately in-memory only. A window reading describes the two moments
@@ -1992,11 +2109,6 @@ def evaluate_alert_rule(rule):
 def _evaluate_watchlist_rule(rule):
     """Run one watchlist rule once per asset currently on the list.
 
-    Each asset is evaluated as an ordinary single-symbol rule with its own latch,
-    so everything the engine already guarantees — arm on first observation, one
-    notification per crossing, restart-safe dedup — holds per asset rather than
-    once for the whole list.
-
     Membership is read here, every cycle, rather than frozen at creation. An
     asset added to the watchlist starts with no recorded state and therefore
     arms before it can fire; an asset removed simply stops being evaluated, and
@@ -2004,10 +2116,59 @@ def _evaluate_watchlist_rule(rule):
     it has been sitting at for days as a fresh crossing.
     """
     symbols, truncated = _watchlist_symbols(rule.get("user_id"), rule["watchlist_id"])
+    return _evaluate_scoped_rule(
+        rule, symbols, truncated,
+        cap=WATCHLIST_RULE_MAX_SYMBOLS,
+        empty_status="Watchlist is empty.",
+        empty_message="This alert watches a list that has no assets on it yet.",
+        checked_noun="assets on this watchlist",
+        truncated_message=(f"Only the first {WATCHLIST_RULE_MAX_SYMBOLS} are watched; "
+                           "the list has grown past that."),
+    )
+
+
+def _evaluate_portfolio_rule(rule):
+    """Run one portfolio rule once per asset the member currently holds.
+
+    Holdings are read every cycle for the same reason watchlist membership is:
+    an asset bought today starts with no recorded state and so arms before it
+    can fire, and one sold out of simply stops being evaluated. Freezing the set
+    at creation would leave a member's newest position unwatched by an alert
+    that says it watches their portfolio.
+
+    Nothing here reads amounts or cost basis. The scope answers "which assets",
+    and each one is then evaluated by the ordinary market conditions — so this
+    can say "BTC crossed $61,000 and you hold BTC" without claiming anything
+    about what the position is worth or what it has earned.
+    """
+    symbols, truncated = _portfolio_symbols(rule.get("user_id"))
+    return _evaluate_scoped_rule(
+        rule, symbols, truncated,
+        cap=PORTFOLIO_RULE_MAX_SYMBOLS,
+        empty_status="Portfolio is empty.",
+        empty_message="This alert watches your portfolio, which has no holdings in it yet.",
+        checked_noun="holdings in your portfolio",
+        truncated_message=(f"Only the first {PORTFOLIO_RULE_MAX_SYMBOLS} are watched; "
+                           "your portfolio has grown past that."),
+    )
+
+
+def _evaluate_scoped_rule(rule, symbols, truncated, cap, empty_status, empty_message,
+                          checked_noun, truncated_message):
+    """Fan one multi-asset rule out over its current members.
+
+    Each asset is evaluated as an ordinary single-symbol rule with its own latch,
+    so everything the engine already guarantees — arm on first observation, one
+    notification per crossing, restart-safe dedup — holds per asset rather than
+    once for the whole set.
+
+    Shared by both scopes rather than copied: a second fan-out would be a second
+    place for "did this asset already fire" to be decided, and the two would
+    drift the first time either was fixed.
+    """
     if not symbols:
-        _mark_checked(rule["id"], status_message="Watchlist is empty.")
-        return {"ok": True, "triggered": False, "symbols": [],
-                "message": "This alert watches a list that has no assets on it yet."}
+        _mark_checked(rule["id"], status_message=empty_status)
+        return {"ok": True, "triggered": False, "symbols": [], "message": empty_message}
     results = []
     triggered = 0
     errors = 0
@@ -2016,11 +2177,11 @@ def _evaluate_watchlist_rule(rule):
         try:
             result = evaluate_alert_rule(_member_rule(rule, symbol))
         except Exception as exc:
-            # One asset's failure is not the list's failure: the remaining assets
+            # One asset's failure is not the set's failure: the remaining assets
             # are independently decidable and stopping here would silence them.
             errors += 1
             last_error = str(exc)
-            logging.exception("Watchlist alert member failed rule_id=%s symbol=%s", rule["id"], symbol)
+            logging.exception("Scoped alert member failed rule_id=%s symbol=%s", rule["id"], symbol)
             continue
         results.append({"symbol": symbol, **result})
         if result.get("triggered"):
@@ -2028,13 +2189,12 @@ def _evaluate_watchlist_rule(rule):
         if not result.get("ok"):
             errors += 1
             last_error = result.get("message") or last_error
-    message = f"Checked {len(results)} of {len(symbols)} assets on this watchlist."
+    message = f"Checked {len(results)} of {len(symbols)} {checked_noun}."
     if truncated:
-        message += (f" Only the first {WATCHLIST_RULE_MAX_SYMBOLS} are watched; "
-                    "the list has grown past that.")
+        message += f" {truncated_message}"
     return {"ok": errors == 0, "triggered": triggered > 0, "triggered_count": triggered,
             "symbols": symbols, "truncated": truncated, "results": results,
-            "message": last_error or message}
+            "message": last_error or message, "cap": cap}
 
 
 def _mark_checked(rule_id, status_message=""):

@@ -471,6 +471,12 @@ def list_alerts(conn: Any, user_id: int) -> list[dict[str, Any]]:
         # blank. Without the list's name every such rule reads as the same
         # anonymous card and the member cannot tell which of them is which.
         alert["watchlist_name"] = names.get(_safe_int(alert.get("watchlist_id"), 0), "")
+        # A portfolio rule's symbol is blank for the same reason, and it has no
+        # name to borrow — there is only ever one portfolio. The scope label is
+        # what stops it rendering as a nameless watchlist rule.
+        alert["scope_label"] = (
+            "Your portfolio" if alert.get("portfolio_scope") else alert["watchlist_name"]
+        )
     return alerts
 
 
@@ -526,9 +532,13 @@ class PremiumRequired(ValueError):
 def create_alert(conn: Any, user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
     ensure_tables(conn)
     watchlist_id = payload.get("watchlistId") or payload.get("watchlist_id") or None
-    # A rule is about one asset or about one list, never both. Accepting a symbol
-    # alongside a list would leave the client deciding which one the rule meant.
-    symbol = "" if watchlist_id else _normalize_symbol(payload.get("assetSymbol") or payload.get("asset_symbol"))
+    portfolio_scope = bool(payload.get("portfolioScope") or payload.get("portfolio_scope"))
+    # A rule is about one asset, one list, or the portfolio — never two of them.
+    # Accepting a symbol alongside a scope would leave the client deciding which
+    # one the rule meant. `alert_engine.create_alert_rule` refuses the
+    # list+portfolio pairing outright rather than picking one.
+    symbol = "" if (watchlist_id or portfolio_scope) else _normalize_symbol(
+        payload.get("assetSymbol") or payload.get("asset_symbol"))
     raw_clauses = payload.get("conditions") or payload.get("clauses")
     spec = None
     condition = ""
@@ -584,6 +594,7 @@ def create_alert(conn: Any, user_id: int, payload: dict[str, Any]) -> dict[str, 
         schema_ready=True,
         condition_spec=spec,
         watchlist_id=watchlist_id,
+        portfolio_scope=portfolio_scope,
     )
     if not result.get("ok"):
         if result.get("code") == "premium_required":
@@ -592,13 +603,19 @@ def create_alert(conn: Any, user_id: int, payload: dict[str, Any]) -> dict[str, 
         raise ValueError(result.get("message") or "Alert could not be created.")
     alert_id = int(result.get("alert_id") or 0)
     _audit(conn, user_id, "create_alert", "crypto_alert", alert_id,
-           {"asset": symbol, "watchlist_id": watchlist_id,
+           {"asset": symbol, "watchlist_id": watchlist_id, "portfolio_scope": portfolio_scope,
             "condition": condition or (spec or {}).get("logic") or "advanced",
             "advanced": bool(spec)})
     conn.commit()
-    message = "Watchlist alert created." if watchlist_id else f"{symbol} alert created."
+    if watchlist_id:
+        message = "Watchlist alert created."
+    elif portfolio_scope:
+        message = "Portfolio alert created."
+    else:
+        message = f"{symbol} alert created."
     return {"ok": True, "alert_id": alert_id, "message": message,
-            "advanced": bool(spec), "watchlist_id": watchlist_id}
+            "advanced": bool(spec), "watchlist_id": watchlist_id,
+            "portfolio_scope": portfolio_scope}
 
 
 def update_alert(conn: Any, user_id: int, alert_id: int, payload: dict[str, Any]) -> dict[str, Any]:
@@ -770,8 +787,36 @@ def _alert_options_watchlists(conn: Any, user_id: int, entitled: bool) -> list[d
     return options
 
 
+def _alert_options_portfolio(conn: Any, user_id: int, entitled: bool) -> dict[str, Any]:
+    """Whether this member can point an alert at their holdings, and why not.
+
+    Same shape and same source as :func:`_alert_options_watchlists` — the answer
+    comes from ``alert_engine.portfolio_rule_preflight``, the function creation
+    itself runs, so the form never offers a scope creation would refuse.
+
+    Reports ``symbols`` because the member's own holdings are not a secret from
+    them, and because the window coverage below is answered for exactly this
+    set: showing which assets a portfolio alert would cover is the only way to
+    tell a full portfolio from a truncated one before the alert exists.
+    """
+    entry: dict[str, Any] = {"symbols": [], "eligible": False, "reason": "", "message": "",
+                             "max_symbols": alert_engine.PORTFOLIO_RULE_MAX_SYMBOLS}
+    if not entitled:
+        entry["reason"] = "premium_required"
+        entry["message"] = "Watching your whole portfolio with one alert is part of PulseSoc Premium."
+        return entry
+    gate = alert_engine.portfolio_rule_preflight(int(user_id), connection=conn)
+    if gate.get("ok"):
+        entry["eligible"] = True
+        entry["symbols"] = list(gate.get("symbols") or ())
+    else:
+        entry["reason"] = str(gate.get("code") or "")
+        entry["message"] = str(gate.get("message") or "")
+    return entry
+
+
 def alert_options(conn: Any, user_id: int, symbol: Any = "",
-                  watchlist_id: Any = None) -> dict[str, Any]:
+                  watchlist_id: Any = None, portfolio_scope: bool = False) -> dict[str, Any]:
     """Everything the alert creation form is allowed to offer this member, now.
 
     The form renders from this rather than from a hardcoded vocabulary, because
@@ -789,9 +834,11 @@ def alert_options(conn: Any, user_id: int, symbol: Any = "",
     user_row = premium_crypto_access.load_user_row(int(user_id))
     entitled = premium_crypto_access.allowed(user_row, premium_crypto_access.ADVANCED_ALERTS)
     watchlists = _alert_options_watchlists(conn, int(user_id), entitled)
+    portfolio = _alert_options_portfolio(conn, int(user_id), entitled)
 
     # Which assets the windows are being asked about. A named list answers for its
-    # members; otherwise it is the single symbol, if one was named at all.
+    # members, the portfolio for its holdings; otherwise it is the single symbol,
+    # if one was named at all.
     selected_watchlist = None
     window_symbols: list[str] = []
     if watchlist_id:
@@ -799,6 +846,9 @@ def alert_options(conn: Any, user_id: int, symbol: Any = "",
         selected_watchlist = next((w for w in watchlists if w["id"] == target_id), None)
         if selected_watchlist and selected_watchlist["eligible"]:
             window_symbols = list(selected_watchlist["symbols"])
+    elif portfolio_scope:
+        if portfolio["eligible"]:
+            window_symbols = list(portfolio["symbols"])
     else:
         clean = _normalize_symbol(symbol) if symbol else ""
         if clean:
@@ -812,13 +862,21 @@ def alert_options(conn: Any, user_id: int, symbol: Any = "",
                    "reason": (selected_watchlist or {}).get("reason") or "watchlist_not_found",
                    "message": (selected_watchlist or {}).get("message")
                               or "That watchlist could not be found."}
+    elif portfolio_scope and not window_symbols:
+        # Same distinction: an unusable portfolio scope is why there are no
+        # windows, and reporting it as thin sampling coverage would send the
+        # member to wait for a series that was never the problem.
+        windows = {"windows": [], "coverage": [], "limited_by": "",
+                   "reason": portfolio["reason"] or "portfolio_empty",
+                   "message": portfolio["message"] or "Add at least one holding to your portfolio first."}
 
     return {
         "ok": True,
         "premium": bool(entitled),
         "capability": premium_crypto_access.ADVANCED_ALERTS,
-        "symbol": window_symbols[0] if window_symbols and not watchlist_id else "",
+        "symbol": window_symbols[0] if window_symbols and not watchlist_id and not portfolio_scope else "",
         "watchlist_id": _safe_int(watchlist_id, 0) or None,
+        "portfolio_scope": bool(portfolio_scope),
         "basic": {
             "conditions": list(BASIC_ALERT_CONDITIONS),
             "locked": False,
@@ -831,6 +889,7 @@ def alert_options(conn: Any, user_id: int, symbol: Any = "",
             "logic_modes": list(crypto_alert_conditions.LOGIC_MODES),
             "max_clauses": crypto_alert_conditions.MAX_CLAUSES,
             "max_watchlist_symbols": alert_engine.WATCHLIST_RULE_MAX_SYMBOLS,
+            "max_portfolio_symbols": alert_engine.PORTFOLIO_RULE_MAX_SYMBOLS,
             "metrics": [
                 {
                     "key": key,
@@ -859,6 +918,7 @@ def alert_options(conn: Any, user_id: int, symbol: Any = "",
         "window_limited_by": windows["limited_by"],
         "window_message": windows["message"],
         "watchlists": watchlists,
+        "portfolio": portfolio,
     }
 
 
