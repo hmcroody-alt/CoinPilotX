@@ -197,6 +197,9 @@
       "assetDetail": "자산",
       "page": "페이지",
       "createPage": "프레즌스 만들기",
+      "editPage": "페이지 편집",
+      "pageConnections": "연결",
+      "pageTeam": "팀 및 권한",
       "yourPages": "내 페이지",
       "presence": "프레즌스"
     },
@@ -209,7 +212,14 @@
       "trustIdentity": "신뢰 및 신원 레이어",
       "nativeRoute": "PulseSoc 네이티브 화면",
       "membership": "멤버십 및 결제",
-      "business": "스토어, 판매글, 광고"
+      "business": "스토어, 판매글, 광고",
+      "presenceHome": "내 아티스트 및 비즈니스 페이지",
+      "presenceManage": "내가 소유하거나 운영을 돕는 페이지",
+      "presenceCreate": "아티스트, 비즈니스 또는 단체",
+      "presenceEdit": "이름, 핸들, 이미지 및 연락처",
+      "presenceConnections": "이 프레즌스가 연결된 대상",
+      "presenceTeam": "이 프레즌스로 활동할 수 있는 사람",
+      "presencePublic": "프레즌스 페이지"
     },
     "identity": {
       "member": "PulseSoc 멤버"

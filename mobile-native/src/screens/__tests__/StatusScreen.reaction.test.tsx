@@ -151,14 +151,14 @@ describe("StatusScreen reaction state machine", () => {
 
   it("rolls back the optimistic reaction and count when the server call fails", async () => {
     mockReactToStatus.mockRejectedValue(new Error("network down"));
-    const { findByTestId, getByTestId, queryByLabelText } = renderStatusScreen();
+    const { findByTestId, getByTestId, queryAllByLabelText } = renderStatusScreen();
     const reactButton = await findByTestId("status-action-react");
 
     await act(async () => {
       fireEvent.press(reactButton);
     });
 
-    await waitFor(() => expect(queryByLabelText("1 reaction")).toBeNull());
+    await waitFor(() => expect(queryAllByLabelText("1 reaction").length).toBe(0));
     expect(getByTestId("status-action-react").props.accessibilityState?.selected).toBeFalsy();
   });
 

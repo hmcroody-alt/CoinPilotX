@@ -293,7 +293,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
         <View style={styles.hero}>
           <Text style={styles.kicker}>Marketplace Command</Text>
           <Text style={styles.heroTitle}>Storefront readiness</Text>
-          <Text style={styles.heroCopy}>PulseSoc reviews and decides seller approval, product listings, payments, payouts, trust, and fulfillment.</Text>
+          <Text style={styles.heroCopy}>Seller approval, product review, payments, payouts, and fulfillment are all decided by PulseSoc.</Text>
         </View>
         <View style={styles.metricGrid}>
           <Metric label="Listings loaded" value={String(listings.length)} />
@@ -438,7 +438,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
                 <Text style={styles.dangerText}>{busy === `delete:${editingListing.id}` ? "Removing..." : "Remove"}</Text>
               </Pressable>
             </View>
-            <Text style={styles.meta}>Your changes are saved to PulseSoc, and editing the content sends the listing back for marketplace review. Checkout, payouts, fulfillment, disputes, and payment partner actions are handled on the PulseSoc website, not here.</Text>
+            <Text style={styles.meta}>Your edits are saved to your PulseSoc store, and the listing goes back through marketplace review whenever its content changes. Checkout, payouts, fulfillment, and disputes are handled on pulsesoc.com.</Text>
           </View>
         ) : null}
       </Panel>
@@ -447,7 +447,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
       {shows("media") ? (
       <Panel>
         <Text style={styles.sectionTitle}>Product media gallery</Text>
-        <Text style={styles.copy}>This gallery shows your marketplace photos and video in the shared media viewer. If a file cannot be shown, the viewer offers a way to open it from its source.</Text>
+        <Text style={styles.copy}>Tap any item to open it full screen. Anything the viewer cannot play falls back to a still preview.</Text>
         <View style={styles.mediaGrid}>
           {mediaItems.slice(0, 8).map((item, index) => (
             <Pressable

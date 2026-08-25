@@ -12,6 +12,20 @@ type Props = {
   visible: boolean;
   onClose: () => void;
   onCreated: (post?: PulsePost) => void;
+  /**
+   * Open already speaking as this page.
+   *
+   * Set when the composer is opened from a presence's own management screen,
+   * where "post" unambiguously means post *as this presence*. Without it the
+   * composer defaults to personal, and the one tap between the two is the
+   * difference between a band announcing a show and a person doing so.
+   *
+   * Not a permission: the identity list is server-filtered to pages whose role
+   * allows content, and the publish call re-checks. If the page is absent from
+   * that list the composer says so rather than quietly falling back to
+   * personal — silently reattributing a post is worse than refusing it.
+   */
+  presetPageId?: number;
 };
 
 const visibilityOptions = [
@@ -20,7 +34,7 @@ const visibilityOptions = [
   { label: "Private", value: "private" }
 ] as const;
 
-export function FeedComposer({ visible, onClose, onCreated }: Props) {
+export function FeedComposer({ visible, onClose, onCreated, presetPageId }: Props) {
   const uploadOptions = useMemo(() => ({ contextType: "pulse", contextId: "draft" }), []);
   const mediaUpload = useNativeMediaUpload(uploadOptions);
   const [body, setBody] = useState("");
@@ -40,14 +54,24 @@ export function FeedComposer({ visible, onClose, onCreated }: Props) {
     listPageIdentities()
       .then((result) => {
         setIdentities([result.personal, ...result.pages]);
-        setPostingAs((current) => current || result.personal);
+        if (!presetPageId) {
+          setPostingAs((current) => current || result.personal);
+          return;
+        }
+        // Opened from a presence. The caller asked for that voice specifically,
+        // so it overrides whatever the last session left selected.
+        const preset = result.pages.find((identity) => identity.id === presetPageId);
+        setPostingAs(preset || result.personal);
+        if (!preset) {
+          setError("Your role on this presence can't publish, so this would post from your personal account.");
+        }
       })
       .catch(() => {
         // Pages unavailable → personal-only composer, unchanged behavior.
         setIdentities([]);
         setPostingAs(null);
       });
-  }, [visible]);
+  }, [visible, presetPageId]);
 
   async function publish() {
     if (!canPublish || publishing) {

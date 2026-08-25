@@ -79,6 +79,9 @@ import { PulseQueueScreen } from "../screens/PulseQueueScreen";
 import { PostDetailScreen } from "../screens/PostDetailScreen";
 import { ProfilePostViewerScreen } from "../screens/ProfilePostViewerScreen";
 import { PageCreateScreen } from "../screens/PageCreateScreen";
+import { PageConnectionsScreen } from "../screens/PageConnectionsScreen";
+import { PageTeamScreen } from "../screens/PageTeamScreen";
+import { PageEditScreen } from "../screens/PageEditScreen";
 import { PageScreen } from "../screens/PageScreen";
 import { PagesHubScreen } from "../screens/PagesHubScreen";
 import { PresenceHubScreen } from "../screens/PresenceHubScreen";
@@ -514,6 +517,29 @@ export function AppNavigator() {
       <Stack.Screen name="ProfileDetail" component={ProfileScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.profile") })} />
       <Stack.Screen name="Page" component={PageScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.page") })} />
       <Stack.Screen name="PageCreate" component={PageCreateScreen} options={{ title: t("common:screens.createPage") }} />
+      {/*
+        These three name the presence they are about to change, the same way
+        `Page` and `ProfileDetail` above do.
+
+        Every caller already passes it — `PageScreen` and `PagesHubScreen` both
+        send `title: page.name`, and the route types have declared it since they
+        were written — and all three screens dropped it on the floor. What was
+        left was a header reading "Team & access" over the subtitle "Who can act
+        for this presence", on a screen that can change somebody's role, with
+        nothing anywhere saying which presence. The subtitles are written with a
+        demonstrative — "this presence", "this presence is connected to" — and
+        the antecedent was never on screen; the value that supplies it was
+        arriving and being discarded.
+
+        So the name takes the title and the existing subtitle keeps the
+        function: "Night Signal" over "Who can act for this presence" says both
+        things, where the previous pair said one of them twice. The generic
+        title stays as the fallback, for a deep link that arrives with an id and
+        no name.
+      */}
+      <Stack.Screen name="PageConnections" component={PageConnectionsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.pageConnections") })} />
+      <Stack.Screen name="PageTeam" component={PageTeamScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.pageTeam") })} />
+      <Stack.Screen name="PageEdit" component={PageEditScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.editPage") })} />
       <Stack.Screen name="PagesHub" component={PagesHubScreen} options={{ title: t("common:screens.yourPages") }} />
       <Stack.Screen name="Presence" component={PresenceHubScreen} options={{ title: t("common:screens.presence") }} />
       <Stack.Screen name="PulseIdentity" component={PulseIdentityScreen} options={{ title: t("common:screens.pulseIdentity") }} />
@@ -660,11 +686,34 @@ const SETTINGS_ROUTE_NAMES = new Set([
   "DeveloperSettings"
 ]);
 
+/**
+ * The four Presence routes, each with its own subtitle rather than one shared
+ * "Presence layer" line. Their titles are "Presence", "Your Pages", "Create
+ * Presence" and — for `Page` — the page's own name, which between them leave
+ * four different questions open, so one answer would only fit one of them.
+ *
+ * Keyed on exact names instead of a substring test on "Page", because "Page" is
+ * a short enough word to turn up inside an unrelated route later.
+ */
+const PRESENCE_ROUTE_SUBTITLES: Record<string, string> = {
+  Presence: "common:navSubtitles.presenceHome",
+  PagesHub: "common:navSubtitles.presenceManage",
+  PageCreate: "common:navSubtitles.presenceCreate",
+  PageEdit: "common:navSubtitles.presenceEdit",
+  PageConnections: "common:navSubtitles.presenceConnections",
+  PageTeam: "common:navSubtitles.presenceTeam",
+  Page: "common:navSubtitles.presencePublic"
+};
+
 function subtitleForStack(t: Translate, name: string) {
   // Checked before the substring tests below, which would otherwise mislabel
   // these: "PrivacySettings" contains neither "Account" nor "Safety", so it
   // would fall through to the generic "Native PulseSoc route".
   if (SETTINGS_ROUTE_NAMES.has(name)) return t("common:tabs.settings");
+  // All four Presence routes were reaching the generic placeholder, including
+  // the public page a visitor lands on from a share link.
+  const presence = PRESENCE_ROUTE_SUBTITLES[name];
+  if (presence) return t(presence);
   // Business OS and its sub-routes, checked before the substring tests below so
   // that "BusinessOsMarketplace" reads as part of the business suite rather than
   // as the consumer Marketplace. The hub itself is an App Store screenshot, so

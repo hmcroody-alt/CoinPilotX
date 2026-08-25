@@ -223,11 +223,32 @@ function isRenderedText(value: string) {
 const STRING_PATTERNS = [/"([^"\\]*(?:\\.[^"\\]*)*)"/g, /'([^'\\]*(?:\\.[^'\\]*)*)'/g, /`([^`\\]*(?:\\.[^`\\]*)*)`/g];
 
 /**
- * Text between a closing `>` and the next `<`. Interpolations are removed
- * first, so `Opening {targetRoute}.` is read as the words around the value
- * rather than being split at the brace and lost.
+ * Bare JSX text children — `<Text style={styles.muted}>Some sentence.</Text>`.
+ *
+ * The string patterns above only see quoted literals, so for a year this gate
+ * read right past the most direct way there is to render a sentence. Forty-one
+ * shipped violations were sitting in that gap, on the same screens the gate was
+ * written to protect.
+ *
+ * The match runs from an opening tag's `>` to a closing tag's `</`, and both
+ * halves of that are load-bearing. Requiring `</` is what keeps TypeScript
+ * generics out: `postUndxAction<T>(path: string, payload: Record<string,
+ * unknown>)` puts a `>` and a `<` around the words "path" and "payload", and
+ * reads as a finding for the word `payload` if you stop at the bare `<`. A type
+ * argument is never followed by a closing tag, so the `/` is the discriminator
+ * — structural, like every other exemption here, rather than a note that says
+ * to forgive `undxActions.ts`.
+ *
+ * Interpolated children are skipped rather than stitched, because `{` and `}`
+ * are outside the character class. `<Text>Case #{ticket.id}</Text>` is not
+ * inspected. That is the same bias the rest of the file takes: the detector
+ * would rather look at less than guess at what a fragment says.
+ *
+ * Matched against the whole file, not line by line, because a long sentence is
+ * usually the thing that got wrapped onto its own line — two of the findings
+ * were written that way.
  */
-const JSX_TEXT = />([^<>]+)</g;
+const JSX_TEXT_CHILD = />([^<>{}]+)<\//g;
 
 type Finding = { file: string; line: number; term: string; text: string };
 
@@ -262,6 +283,15 @@ function scan(): Finding[] {
         if (hit) findings.push({ file: rel, line: index + 1, term: hit[0], text });
       }
     });
+    for (const match of source.matchAll(JSX_TEXT_CHILD)) {
+      const text = match[1].replace(/\s+/g, " ").trim();
+      if (!isProse(text)) continue;
+      const line = source.slice(0, match.index).split("\n").length;
+      // A `<Text>` written out inside a comment is documentation, not copy.
+      if (/^\s*(\/\/|\*|\/\*)/.test(lines[line - 1] || "")) continue;
+      const hit = BANNED.find(([, expression]) => expression.test(text.replace(/\$\{[^}]*\}/g, " ")));
+      if (hit) findings.push({ file: rel, line, term: hit[0], text });
+    }
   }
   return findings;
 }
@@ -273,6 +303,9 @@ describe("user-facing copy", () => {
   it("is reading the source it is guarding", () => {
     expect(sourceFiles(SRC).length).toBeGreaterThan(200);
     expect(scan.toString()).toContain("BANNED");
+    // Both passes have to stay wired in. Dropping either one is silent.
+    expect(scan.toString()).toContain("STRING_PATTERNS");
+    expect(scan.toString()).toContain("JSX_TEXT_CHILD");
   });
 
   it("never says server, endpoint, payload or who owns a record", () => {
@@ -367,6 +400,30 @@ describe("user-facing copy", () => {
     expect(BANNED.some(([, re]) => re.test(line.replace(/\$\{[^}]*\}/g, " ")))).toBe(false);
     // The same word written out really is a finding.
     expect(BANNED.some(([, re]) => re.test("We normalized the response before showing it."))).toBe(true);
+  });
+
+  /**
+   * The gap this pass was added to close. A sentence written straight into a
+   * `<Text>` is not quoted, so the string patterns never saw it — which is how
+   * forty-one of these shipped. The last two cases are the reason the pattern
+   * insists on a closing tag rather than any `<`.
+   */
+  it("reads a bare JSX text child, and does not read a type argument", () => {
+    const child = '<Text style={styles.muted}>Reports, tickets, scans, and moderation stay server-authoritative.</Text>';
+    const [caught] = [...child.matchAll(JSX_TEXT_CHILD)].map((match) => match[1]);
+    expect(caught).toBe("Reports, tickets, scans, and moderation stay server-authoritative.");
+    expect(isProse(caught)).toBe(true);
+    expect(BANNED.filter(([, re]) => re.test(caught)).map(([name]) => name)).toContain("server-authoritative");
+
+    // Wrapped onto its own line, which is how the longer sentences were written.
+    const wrapped = "<Text style={styles.bodyText}>\n  Loading server-authoritative dashboard state.\n</Text>";
+    const [wrappedText] = [...wrapped.matchAll(JSX_TEXT_CHILD)].map((match) => match[1].replace(/\s+/g, " ").trim());
+    expect(BANNED.some(([, re]) => re.test(wrappedText))).toBe(true);
+
+    // A generic puts `>` and `<` either side of the word "payload". It is a
+    // type annotation, not a rendered sentence, and no closing tag follows it.
+    const generic = "function postUndxAction<T>(path: string, payload: Record<string, unknown>) {";
+    expect([...generic.matchAll(JSX_TEXT_CHILD)]).toEqual([]);
   });
 
   it("still recognises the copy it was built to catch", () => {

@@ -824,14 +824,14 @@ export function LiveScreen({ route, navigation }: Props) {
       ListEmptyComponent={
         <View style={styles.empty}>
           <Text style={styles.emptyTitle}>No one is live right now</Text>
-          <Text style={styles.emptyText}>Native discovery uses the existing PulseSoc Live backend. Tap Go Live to start a native broadcast.</Text>
+          <Text style={styles.emptyText}>Check back shortly, or tap Go Live to start a broadcast of your own.</Text>
         </View>
       }
       ListFooterComponent={
         <View style={styles.footer}>
           <Text style={styles.sectionTitle}>Scheduled</Text>
           {scheduled.length ? scheduled.map((item) => <LiveCard key={`scheduled-${item.id}`} item={item} onOpen={openLive} onHostPress={() => navigateToHostProfile(item)} />) : (
-            <Text style={styles.footerNote}>Scheduled Live/events will appear here when the existing API returns them to native.</Text>
+            <Text style={styles.footerNote}>Upcoming broadcasts appear here once someone schedules one.</Text>
           )}
         </View>
       }

@@ -244,9 +244,9 @@ export function SafetyHubScreen({ navigation, route }: Props) {
       ) : null}
 
       <Panel>
-        <Text style={styles.panelTitle}>What this screen can change</Text>
+        <Text style={styles.panelTitle}>What is handled where</Text>
         <Text style={styles.muted}>
-          Supported block and report actions call existing PulseSoc APIs. Full blocked-user lists, unblock, user mute, report review status, moderator notes, and admin outcomes stay on protected backend flows until user-safe JSON endpoints exist.
+          You can block someone and file a report from here. Your full blocked list, unblocking, muting a person, review outcomes, and moderator decisions live with the PulseSoc safety team — open the protected safety controls below to reach them.
         </Text>
         <View style={styles.buttonGrid}>
           <ActionButton label="Protected safety controls" variant="secondary" onPress={() => openSafetyWebFallback("/dashboard/network/network-security")} />
@@ -306,15 +306,15 @@ function BlocksPanel({
     <>
       <Panel>
         <Text style={styles.panelTitle}>Block user</Text>
-        <Text style={styles.muted}>Blocking someone tells PulseSoc to keep them out of your feeds, and the block is taken into account when reports are reviewed.</Text>
+        <Text style={styles.muted}>Blocking someone removes them from your feeds across PulseSoc and stops them reaching you.</Text>
         <TextInput accessibilityLabel="Block target" autoCapitalize="none" placeholder="@public_id or numeric user ID" placeholderTextColor={colors.muted} style={styles.input} value={blockHandle} onChangeText={onBlockHandle} />
         <TextInput accessibilityLabel="Block reason" placeholder="Reason" placeholderTextColor={colors.muted} style={styles.input} value={blockReason} onChangeText={onBlockReason} />
         <ActionButton label={busy === "block" ? "Blocking..." : "Block user"} disabled={Boolean(busy)} onPress={onSubmitBlock} />
       </Panel>
       <Panel>
         <Text style={styles.panelTitle}>Blocked list visibility</Text>
-        <Text style={styles.muted}>PulseSoc shows how many people you have blocked in total. The history below only lists the blocks you made from this device.</Text>
-        {blocks.length ? blocks.map((item) => <ActionRow key={item.id} action={item} actionLabel="Review unblock" busy={busy === `unblock-${item.targetLabel}`} onAction={() => onSubmitUnblock(item.targetLabel)} />) : <Text style={styles.muted}>You have not blocked anyone from this device.</Text>}
+        <Text style={styles.muted}>PulseSoc keeps your complete blocked list, and shows you a total. The history below covers only the blocks you made from this app on this device.</Text>
+        {blocks.length ? blocks.map((item) => <ActionRow key={item.id} action={item} actionLabel="Review unblock" busy={busy === `unblock-${item.targetLabel}`} onAction={() => onSubmitUnblock(item.targetLabel)} />) : <Text style={styles.muted}>No native block actions recorded on this device.</Text>}
       </Panel>
     </>
   );
@@ -345,7 +345,7 @@ function MutesPanel({
     <>
       <Panel>
         <Text style={styles.panelTitle}>Mute management</Text>
-        <Text style={styles.muted}>You can mute a conversation on PulseSoc, but muting a person is not available in the app yet. Noting it here keeps a reminder on this device — to actually mute someone, use the PulseSoc website.</Text>
+        <Text style={styles.muted}>You can mute a conversation on PulseSoc. Muting a person outright is not available in the app yet, so this records your request and takes you to the full mute controls.</Text>
         <TextInput accessibilityLabel="Mute target" autoCapitalize="none" placeholder="@public_id, conversation, or username" placeholderTextColor={colors.muted} style={styles.input} value={muteTarget} onChangeText={onMuteTarget} />
         <ChoiceRow options={muteDurations} value={muteDuration} onChange={onMuteDuration} />
         <TextInput accessibilityLabel="Mute reason" placeholder="Reason" placeholderTextColor={colors.muted} style={styles.input} value={muteReason} onChangeText={onMuteReason} />
@@ -394,8 +394,8 @@ function ReportsPanel({
       </Panel>
       <Panel>
         <Text style={styles.panelTitle}>Report history</Text>
-        <Text style={styles.muted}>PulseSoc does not show review decisions in the app yet. Below are the reports you sent from this app, followed by your linked support cases.</Text>
-        {reports.length ? reports.map((item) => <ActionRow key={item.id} action={item} />) : <Text style={styles.muted}>You have not sent any reports from this device.</Text>}
+        <Text style={styles.muted}>The PulseSoc safety team reviews every report, though the outcome is not shown in the app yet. Below are the reports you sent from this app, plus your support cases.</Text>
+        {reports.length ? reports.map((item) => <ActionRow key={item.id} action={item} />) : <Text style={styles.muted}>No native report actions recorded on this device.</Text>}
         {cases.slice(0, 4).map((ticket) => (
           <View key={ticket.id} style={styles.row}>
             <View style={styles.rowCopy}>

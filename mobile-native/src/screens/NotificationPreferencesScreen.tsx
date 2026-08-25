@@ -94,7 +94,7 @@ export function NotificationPreferencesScreen() {
       </View>
       <View style={styles.panel}>
         <Text style={styles.panelTitle}>Push device</Text>
-        <Text style={styles.muted}>Allowing notifications registers this device with PulseSoc so it can send you push notifications.</Text>
+        <Text style={styles.muted}>Turn on push to get PulseSoc notifications on this device.</Text>
         <Text style={styles.status}>{pushStatus}</Text>
         <Pressable style={styles.button} onPress={enablePush}>
           <Text style={styles.buttonText}>Enable push</Text>

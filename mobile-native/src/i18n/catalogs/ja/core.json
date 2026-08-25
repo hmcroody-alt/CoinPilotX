@@ -197,6 +197,9 @@
       "assetDetail": "銘柄",
       "page": "ページ",
       "createPage": "プレゼンスを作成",
+      "editPage": "ページを編集",
+      "pageConnections": "連携",
+      "pageTeam": "チームと権限",
       "yourPages": "あなたのページ",
       "presence": "プレゼンス"
     },
@@ -209,7 +212,14 @@
       "trustIdentity": "信頼と本人確認のレイヤー",
       "nativeRoute": "PulseSocのネイティブ画面",
       "membership": "メンバーシップと請求",
-      "business": "ストア・出品・広告"
+      "business": "ストア・出品・広告",
+      "presenceHome": "あなたのアーティスト／ビジネスページ",
+      "presenceManage": "あなたが所有または運営を手伝うページ",
+      "presenceCreate": "アーティスト・ビジネス・団体",
+      "presenceEdit": "名前・ハンドル・画像・連絡先",
+      "presenceConnections": "このプレゼンスの連携先",
+      "presenceTeam": "このプレゼンスとして操作できる人",
+      "presencePublic": "プレゼンスページ"
     },
     "identity": {
       "member": "PulseSocメンバー"

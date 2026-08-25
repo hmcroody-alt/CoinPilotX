@@ -182,7 +182,7 @@ export function IntelligenceCenterScreen({ route, navigation }: Props) {
             selected={alert.id === alertId}
             onOpen={() => navigation.navigate("AlertManagement", { alertId: alert.id, title: "Alert Detail" })}
           />
-        )) : <Text style={styles.muted}>You have no crypto or market alerts yet.</Text>}
+        )) : <Text style={styles.muted}>You have no crypto or market alerts yet. Set one up from Manage Alerts below.</Text>}
         <Action label="Manage Alerts" onPress={() => navigation.navigate("AlertManagement", { title: "Alerts" })} />
       </Panel>
 

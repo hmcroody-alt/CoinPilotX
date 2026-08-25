@@ -153,7 +153,7 @@ export function ContentPlannerScreen({ route, navigation }: Props) {
           <Metric label="Reels" value={metrics.reels_total} />
           <Metric label="Statuses" value={metrics.statuses_total} />
         </View>
-        <Text style={styles.muted}>The full list of your planner items is not shown in the app yet. Drafts and schedules you save here go straight to your PulseSoc planner.</Text>
+        <Text style={styles.muted}>You can write and schedule items here. Your full planner, with every saved row, is on pulsesoc.com.</Text>
       </Panel>
 
       <Panel>
@@ -186,12 +186,12 @@ export function ContentPlannerScreen({ route, navigation }: Props) {
 
       <Panel>
         <Text style={styles.sectionTitle}>Publish safety</Text>
-        <Text style={styles.muted}>Publish now, recurring schedules, bulk scheduling, smart rescheduling, and version history are not available in the app yet.</Text>
+        <Text style={styles.muted}>Publish now, recurring and bulk scheduling, smart rescheduling, and version history are available on pulsesoc.com.</Text>
       </Panel>
 
       <Panel>
         <Text style={styles.sectionTitle}>Recommended next actions</Text>
-        {recommendations.length ? recommendations.map((item) => <Text key={item} style={styles.recommendation}>{item}</Text>) : <Text style={styles.muted}>Planner recommendations appear once PulseSoc has seen enough of your creator activity.</Text>}
+        {recommendations.length ? recommendations.map((item) => <Text key={item} style={styles.recommendation}>{item}</Text>) : <Text style={styles.muted}>Planner recommendations appear once you have posted and scheduled a little more.</Text>}
       </Panel>
 
       <Panel>

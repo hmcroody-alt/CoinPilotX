@@ -301,7 +301,7 @@ function EmptyState({ category }: { category: ActivityCategory }) {
     <View style={styles.emptyState}>
       <View style={styles.emptyOrb} />
       <Text style={styles.emptyTitle}>No {activityCategoryLabel(category).toLowerCase()} activity</Text>
-      <Text style={styles.emptyBody}>New activity of this kind will appear here, delivered the same way as your notifications.</Text>
+      <Text style={styles.emptyBody}>New activity in this category will appear here, alongside the matching notification.</Text>
     </View>
   );
 }

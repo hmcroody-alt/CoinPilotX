@@ -197,6 +197,9 @@
       "assetDetail": "Aktif",
       "page": "Paj",
       "createPage": "Kreye yon prezans",
+      "editPage": "Modifye paj la",
+      "pageConnections": "Koneksyon",
+      "pageTeam": "Ekip ak aksè",
       "yourPages": "Paj ou yo",
       "presence": "Prezans"
     },
@@ -209,7 +212,14 @@
       "trustIdentity": "Kouch konfyans ak idantite",
       "nativeRoute": "Wout natif PulseSoc",
       "membership": "Manm ak faktirasyon",
-      "business": "Magazen, lis ak piblisite"
+      "business": "Magazen, lis ak piblisite",
+      "presenceHome": "Paj atis ak biznis ou yo",
+      "presenceManage": "Paj ou posede oswa ou ede jere",
+      "presenceCreate": "Atis, biznis oswa òganizasyon",
+      "presenceEdit": "Non, non itilizatè, imaj ak kontak",
+      "presenceConnections": "Ak kisa prezans sa a konekte",
+      "presenceTeam": "Kiyès ki ka aji pou prezans sa a",
+      "presencePublic": "Paj prezans"
     },
     "identity": {
       "member": "Manm PulseSoc"

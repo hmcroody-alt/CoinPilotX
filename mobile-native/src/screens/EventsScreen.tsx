@@ -168,8 +168,8 @@ export function EventsScreen({ route, navigation }: Props) {
             </Pressable>
           </View>
           <View style={styles.notice}>
-            <Text style={styles.noticeTitle}>What happens on the web</Text>
-            <Text style={styles.noticeText}>Reminders, tickets, event payment, hosting, co-hosting, and studio setup happen on the PulseSoc website. They are not available in the app yet.</Text>
+            <Text style={styles.noticeTitle}>Managed on pulsesoc.com</Text>
+            <Text style={styles.noticeText}>Reminders, ticketing, checkout, hosting, co-hosting, and studio setup are handled on pulsesoc.com.</Text>
           </View>
         </View>
       </ScrollView>
@@ -207,7 +207,7 @@ export function EventsScreen({ route, navigation }: Props) {
       ListEmptyComponent={
         <View style={styles.empty}>
           <Text style={styles.emptyTitle}>No scheduled events yet</Text>
-          <Text style={styles.emptyText}>Nothing is scheduled to go Live right now. Events people schedule will appear here.</Text>
+          <Text style={styles.emptyText}>Scheduled Live events will appear here as soon as anyone you follow schedules one.</Text>
         </View>
       }
       ListFooterComponent={

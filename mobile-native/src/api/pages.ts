@@ -72,6 +72,13 @@ export type PulsePage = {
   /** Which optional modules have real backing data. The server hides unbacked
    * tabs from the public and keeps them for the team as setup prompts. */
   modules?: Record<string, boolean>;
+  /**
+   * Whether this presence's operations continue into Business OS, decided by
+   * the server from `BUSINESS_PAGE_TYPES`. Optional because an older server
+   * does not send it, and a missing field must read as "no" — offering a door
+   * onto nothing is worse than a shorter card.
+   */
+  business_os_capable?: boolean;
   created_at?: string;
   viewer?: { role: PageRole | null; following: boolean };
   /** Present only on "my pages" rows. */
@@ -92,22 +99,89 @@ export type PageIdentity = {
 
 export type PageIdentities = { personal: PageIdentity; pages: PageIdentity[] };
 
+/**
+ * One person on a presence's team, as the server actually sends them.
+ *
+ * These field names are not cosmetic. This type previously declared
+ * `username`/`display_name`; the server has always sent `name`/`handle`. Both
+ * were optional, so TypeScript was satisfied, the render fell through to its
+ * `Member ${user_id}` fallback, and every team member in the app displayed as
+ * a number. Nothing errored — which is why it survived. Renaming a field here
+ * without renaming it in `list_members` reproduces exactly that.
+ *
+ * The `can_*` flags are decided server-side from the same permission table the
+ * mutating calls check. The client must not re-derive them from `role`: an
+ * offer the server refuses is worse than no offer.
+ */
 export type PageMember = {
   user_id: number;
+  name: string;
+  handle: string;
+  avatar_url: string;
   role: PageRole;
   status: string;
-  username?: string;
-  display_name?: string;
-  avatar_url?: string;
-  invite_expires_at?: string;
+  invited_by?: number | null;
+  invite_expires_at?: string | null;
+  since?: string | null;
+  is_owner?: boolean;
+  is_you?: boolean;
+  can_change_role?: boolean;
+  can_remove?: boolean;
+  can_receive_ownership?: boolean;
+};
+
+export type PageTeam = {
+  page_id: number;
+  role: PageRole;
+  owner_user_id: number;
+  can_manage_members: boolean;
+  can_transfer_ownership: boolean;
+  /** Server-supplied: OWNER is deliberately absent. Never hardcode this list. */
+  assignable_roles: PageRole[];
+  /** Server-supplied literal the owner must type to confirm a transfer. */
+  transfer_confirm_phrase: string;
+  members: PageMember[];
 };
 
 export type PageLink = { link_type: string; ref_id: string; created_at?: string };
 
 /**
+ * One thing a presence could be connected to — a shop, ad account, community
+ * or music catalogue the member (or the page's owner) actually holds.
+ *
+ * `label` is what the member recognises it by. `ref_id` is carried so the
+ * connect call can name it, and is never something a member has to know or
+ * type: a raw id in a text box is both unusable and the shape that made
+ * connecting *other people's* resources so easy before the server started
+ * checking.
+ */
+export type PageLinkOption = { ref_id: string; label: string };
+
+export type PageLinkSlot = {
+  link_type: string;
+  label: string;
+  /** The page permission the server requires to change this connection. */
+  permission: string;
+  /** Whether this caller's role may change it. Decided server-side. */
+  can_manage: boolean;
+  /** "" when nothing is connected. */
+  connected_ref_id: string;
+  /** Empty when `can_manage` is false — withheld, not merely disabled. */
+  options: PageLinkOption[];
+};
+
+export type PageLinkOptions = { page_id: number; role: PageRole; links: PageLinkSlot[] };
+
+/**
  * Growth windows are measured server-side from real follow/post timestamps —
  * never estimated. Completeness is derived from actual profile fields and is
  * management-only: it never appears in a public payload.
+ *
+ * These are the raw counts. Nothing renders them directly: the hub draws
+ * `PageOverview`, which the server builds from exactly this data and which
+ * decides — once, server-side — which numbers are presentable, what a window
+ * is called, and when a delta exists at all. Formatting these here instead
+ * would put that judgement in a second place, and the two would drift.
  */
 export type PageAnalytics = {
   followers: number;
@@ -122,6 +196,83 @@ export type PageAnalytics = {
 export type PageCompletenessItem = { key: string; label: string; done: boolean };
 export type PageCompleteness = { percent: number; items: PageCompletenessItem[] };
 
+/**
+ * One area of the management surface, as the server decided it.
+ *
+ * Three separate facts, which the client must not collapse into one:
+ *
+ *  - **absence** — a section this page type does not have is not in the array
+ *    at all. There is no disabled shop on a media page; there is no shop. The
+ *    page type never reaches the client as a decision, so nothing here should
+ *    ever be greyed out on the strength of it.
+ *  - **`permitted`** — whether *this caller's role* may act here, read from the
+ *    same permission table the mutating endpoints check. Re-deriving this from
+ *    `capabilities` client-side is how a screen drifts into offering buttons
+ *    that 403.
+ *  - **`ready`** — whether anything is behind it yet. A section that is not
+ *    ready is still shown, with `setup` naming the single missing thing, so the
+ *    team can see what to fill in. Empty is a state; hidden is a dead end.
+ *
+ * `count` is present only where a real number was measured. A section without
+ * one has no number — not zero, and never an estimate.
+ */
+export type PageSection = {
+  key: string;
+  label: string;
+  hint: string;
+  permission: string;
+  permitted: boolean;
+  ready: boolean;
+  /** Empty when `ready`. The one missing thing, in words, when not. */
+  setup: string;
+  count?: number;
+};
+
+/**
+ * One number on the Overview, and the proof that it was counted.
+ *
+ * `value` is a total measured from rows. Zero is a result: a presence with no
+ * followers has none, and suppressing the metric until it flatters would make
+ * it mean "at least one".
+ *
+ * `delta` and `window` travel together and are present only where the server
+ * measured a window. `delta` is the count of things that happened *inside*
+ * `window`, not a rate and not a projection — which is why `window` must be
+ * rendered next to it. A `delta` of 0 is a measurement, so test for the key,
+ * never for truthiness.
+ */
+export type PageOverviewMetric = {
+  key: string;
+  label: string;
+  value: number;
+  delta?: number;
+  window?: string;
+};
+
+/**
+ * The Overview section's contents, decided server-side.
+ *
+ * Nothing here is modelled, projected or estimated. Reach and engagement have
+ * no source wired, so they are absent and `note` says so rather than a
+ * plausible number standing in for them.
+ *
+ * `status` and `verification` arrive as words. They used to be rendered as the
+ * raw column values — "Status: ACTIVE · unverified" — which is a database row
+ * read aloud.
+ *
+ * `pending` is the labels of sections this caller may act on that have nothing
+ * behind them yet. It comes from the same `sections` array the tiles do, so it
+ * cannot name work that is not offered or hide work that is.
+ */
+export type PageOverview = {
+  status: string;
+  verification: string;
+  metrics: PageOverviewMetric[];
+  pending: string[];
+  completeness_percent: number;
+  note: string;
+};
+
 export type PageManageView = {
   page: PulsePage;
   role: PageRole;
@@ -132,6 +283,19 @@ export type PageManageView = {
   members?: PageMember[];
   analytics?: PageAnalytics;
   completeness?: PageCompleteness;
+  /**
+   * Optional because an older server does not send it. The hub then shows no
+   * sections rather than falling back to a guessed set — a management surface
+   * assembled client-side is precisely what this replaced.
+   */
+  sections?: PageSection[];
+  /**
+   * Optional for the same reason, and handled the same way: an older server
+   * means no Overview block, not an Overview assembled from whatever the client
+   * happens to hold. Summing things locally is how a screen starts reporting a
+   * number nobody measured.
+   */
+  overview?: PageOverview;
 };
 
 export type HandleCheck = { candidate: string; handle: string; available: boolean; reason: string };
@@ -171,9 +335,17 @@ export async function listPageIdentities(): Promise<PageIdentities> {
   return { personal: data.personal, pages: data.pages || [] };
 }
 
-export async function checkPageHandle(handle: string): Promise<HandleCheck> {
+/**
+ * `pageId` excludes that page from the uniqueness check. Without it, a page
+ * being edited collides with itself and its own handle reports as "taken by
+ * another page" — so an owner cannot save any change to a form that also
+ * carries the handle they already have. The server gates the exclusion on
+ * `edit_page`, so it cannot be used to probe another page's handle.
+ */
+export async function checkPageHandle(handle: string, pageId?: number): Promise<HandleCheck> {
+  const scope = pageId ? `&page_id=${pageId}` : "";
   const data = await pulseApi<{ ok: boolean } & HandleCheck>(
-    `/api/pages/handle-check?handle=${encodeURIComponent(handle)}`
+    `/api/pages/handle-check?handle=${encodeURIComponent(handle)}${scope}`
   );
   return data;
 }
@@ -207,9 +379,69 @@ export async function updatePage(pageId: number, patch: Partial<CreatePagePayloa
   return data.page;
 }
 
-export async function getPageManageView(pageId: number) {
-  const data = await pulseApi<{ ok: boolean } & PageManageView>(`/api/pages/${pageId}/manage`);
-  return data;
+/**
+ * The wire shape of `/api/pages/:id/manage`. The server builds it as
+ * `public_view(...)` and then merges the management fields into that same
+ * dict, so `role`, `capabilities`, `links`, `members`, `analytics`,
+ * `completeness`, `sections` and `overview` arrive nested inside `page` — NOT
+ * beside it.
+ */
+type PageManageWire = PulsePage & Omit<PageManageView, "page">;
+
+/**
+ * Reading those fields off the top level of the response returns `undefined`
+ * for every one of them, which is how the whole management surface came to be
+ * invisible to the people who own the page: `capabilities` was always `[]` and
+ * `role === "OWNER"` was always false, so the owner status controls,
+ * verification request, analytics, completeness meter, team list, Advertising,
+ * Marketplace and Payments never rendered for anybody.
+ *
+ * Both of those read fail-closed, which is why nothing looked broken — it just
+ * looked empty. The normalization below keeps that property and adds no
+ * defaults that would grant anything: an absent `capabilities` stays an empty
+ * list rather than becoming a guess at what the caller may do.
+ *
+ * A field the server sends and this function does not name is not a type error
+ * — it survives into the rest element, lands on `page`, and reads as
+ * `undefined` at the name the screens use. `sections` was added server-side and
+ * missed here, and the hub, which renders one tile per section, drew none. So
+ * every management field the server sends is destructured explicitly, and
+ * `pagesManageView.test.ts` asserts each one arrives; a fixture built from a
+ * real response is what turns an omission back into a failing test.
+ */
+export async function getPageManageView(pageId: number): Promise<PageManageView> {
+  const data = await pulseApi<{ ok: boolean; page: PageManageWire }>(`/api/pages/${pageId}/manage`);
+  const {
+    role,
+    capabilities,
+    owner_user_id,
+    phone,
+    links,
+    members,
+    analytics,
+    completeness,
+    sections,
+    overview,
+    ...page
+  } = data.page || ({} as PageManageWire);
+  return {
+    page,
+    role,
+    capabilities: capabilities || [],
+    owner_user_id: Number(owner_user_id || 0),
+    phone: phone || "",
+    links: links || [],
+    members,
+    analytics,
+    completeness,
+    // Passed through as sent, `undefined` included. An older server means the
+    // hub renders no sections and no Overview, which is the honest outcome;
+    // defaulting to `[]` here would be indistinguishable from a server that
+    // genuinely offers none, and defaulting the Overview to a zeroed object
+    // would put unmeasured numbers on screen.
+    sections,
+    overview
+  };
 }
 
 export async function setPageStatus(pageId: number, status: PageStatus) {
@@ -232,6 +464,26 @@ export async function listPageMembers(pageId: number) {
   return data.members || [];
 }
 
+/**
+ * The roster plus what this caller may do to it, in one read.
+ *
+ * Same endpoint as `listPageMembers` — the server answers both questions at
+ * once so a screen never has to infer permission from a role name.
+ */
+export async function getPageTeam(pageId: number): Promise<PageTeam> {
+  const data = await pulseApi<{ ok: boolean } & PageTeam>(`/api/pages/${pageId}/members`);
+  return {
+    page_id: Number(data.page_id || pageId),
+    role: data.role,
+    owner_user_id: Number(data.owner_user_id || 0),
+    can_manage_members: Boolean(data.can_manage_members),
+    can_transfer_ownership: Boolean(data.can_transfer_ownership),
+    assignable_roles: data.assignable_roles || [],
+    transfer_confirm_phrase: data.transfer_confirm_phrase || "",
+    members: data.members || []
+  };
+}
+
 export async function invitePageMember(
   pageId: number,
   target: { user_id?: number; handle?: string },
@@ -243,9 +495,49 @@ export async function invitePageMember(
   );
 }
 
+export type PageInvite = {
+  /** The credential. Only ever returned to the person it was issued to. */
+  token: string;
+  role: PageRole;
+  expires_at: string;
+  expired: boolean;
+  invited_at: string;
+  page_id: number;
+  page_name: string;
+  page_handle: string;
+  page_avatar_url: string;
+  page_type: PageType;
+  invited_by_name: string;
+};
+
+/**
+ * The invites waiting on you.
+ *
+ * `invitePageMember` returns the token to the *inviter*, and nothing is pushed
+ * or mailed to the invitee — so without this read, joining a team meant someone
+ * pasting a secret to you by hand. Scoped server-side to the caller; there is
+ * no page id to pass, deliberately.
+ */
+export async function listMyPageInvites(): Promise<PageInvite[]> {
+  const data = await pulseApi<{ ok: boolean; invites: PageInvite[] }>("/api/pages/invites");
+  return data.invites || [];
+}
+
 export async function acceptPageInvite(token: string) {
   return pulseApi<{ ok: boolean; membership: { page_id: number; role: PageRole } }>(
     "/api/pages/invites/accept",
+    { method: "POST", body: JSON.stringify({ token }) }
+  );
+}
+
+/**
+ * Refuse an invite. Removal is gated on `manage_members`, which an invitee does
+ * not have — so without this the only way out of an unwanted invite is to
+ * accept it and ask to be removed.
+ */
+export async function declinePageInvite(token: string) {
+  return pulseApi<{ ok: boolean; page_id: number; status: string }>(
+    "/api/pages/invites/decline",
     { method: "POST", body: JSON.stringify({ token }) }
   );
 }
@@ -331,6 +623,60 @@ export async function listPageMusic(pageId: number, limit = 24) {
 }
 
 /**
+ * One upcoming date, in the shape a visitor is allowed to see it.
+ *
+ * Deliberately narrower than the record Business OS stores. There is no
+ * organiser id, no owning business id, no attendee list and no sales figure —
+ * a tier reports `sold_out` rather than how many are left, because "how well
+ * is this selling" is the organiser's business and not the audience's. The
+ * server builds this from an allowlist, so a column added to the events table
+ * later stays invisible here until somebody decides it is public.
+ */
+export type PageEventTier = {
+  ticket_type_id: string;
+  name: string;
+  price_cents: number;
+  sold_out: boolean;
+};
+
+export type PageEvent = {
+  event_id: string;
+  title: string;
+  description?: string;
+  venue?: string;
+  starts_at?: string;
+  ends_at?: string;
+  status?: string;
+  currency?: string;
+  ticket_types?: PageEventTier[];
+};
+
+/**
+ * Upcoming dates for a presence, read lazily when the Events tab opens.
+ *
+ * `enabled` and `linked` come back separately and mean different things.
+ * `enabled: false` is the events domain being switched off for this
+ * environment — nobody can fix that from the app, so the empty state must not
+ * ask them to. `linked: false` is this presence not having been pointed at the
+ * business that runs its dates, which the owner *can* fix and should be
+ * offered. Collapsing them into one "no events" would send half the owners who
+ * see it to do work that would not help.
+ */
+export async function listPageEvents(pageId: number, limit = 12) {
+  const data = await pulseApi<{
+    ok: boolean;
+    enabled?: boolean;
+    linked?: boolean;
+    events?: PageEvent[];
+  }>(`/api/pages/${pageId}/events?limit=${limit}`);
+  return {
+    enabled: Boolean(data.enabled),
+    linked: Boolean(data.linked),
+    events: data.events || []
+  };
+}
+
+/**
  * Publish a post AS the page. Goes through `/api/pages/:id/posts`, which runs
  * the role check server-side and then hands off to the ONE canonical content
  * system (`pulse_feed_engine.create_post` with `page_id`) — page posts land in
@@ -359,10 +705,41 @@ export async function listPageLinks(pageId: number, type?: string) {
   return data.links || [];
 }
 
+/**
+ * The connectable inventory for this presence. Options are a convenience, not
+ * an authorization: the server re-derives entitlement when the connection is
+ * actually made, so a stale option fails at `setPageLink` rather than
+ * succeeding on the strength of having been offered.
+ */
+export async function getPageLinkOptions(pageId: number): Promise<PageLinkOptions> {
+  const data = await pulseApi<{ ok: boolean } & PageLinkOptions>(`/api/pages/${pageId}/link-options`);
+  return { page_id: Number(data.page_id || pageId), role: data.role, links: data.links || [] };
+}
+
 export async function setPageLink(pageId: number, linkType: string, refId: string) {
   return pulseApi<{ ok: boolean; link: PageLink }>(`/api/pages/${pageId}/links`, {
     method: "POST",
     body: JSON.stringify({ link_type: linkType, ref_id: refId })
+  });
+}
+
+/**
+ * Point this presence at nothing of this kind.
+ *
+ * One URL serves three acts here — read, connect, disconnect — separated only
+ * by the verb, so the subject of the write goes in the same place for all
+ * three. A query string for this one verb would be a second convention on a
+ * route that already has to be read carefully.
+ *
+ * The server also accepts `?type=` on DELETE, because a DELETE body has no
+ * defined semantics in HTTP and an intermediary is within its rights to drop
+ * it. That is a fallback for something going wrong in transit, not a second
+ * interface — this client always sends the body.
+ */
+export async function clearPageLink(pageId: number, linkType: string) {
+  return pulseApi<{ ok: boolean; link: PageLink }>(`/api/pages/${pageId}/links`, {
+    method: "DELETE",
+    body: JSON.stringify({ link_type: linkType })
   });
 }
 
@@ -371,3 +748,29 @@ export function pageTypeLabel(pageType?: string) {
   const text = String(pageType || "OTHER").replace(/_/g, " ").toLowerCase();
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
+
+/**
+ * A role name is a wire constant; this is how it reads to a person.
+ *
+ * Sentence case, not title case: "Content manager" is a description of a job,
+ * "Content Manager" reads like a product feature. Derived rather than mapped so
+ * a role the server adds still renders as words instead of ADVERTISING_MANAGER.
+ *
+ * Lives here rather than in a screen because the team screen and the invite
+ * inbox both name roles, and a second copy is a second thing to get wrong.
+ */
+export function pageRoleLabel(role?: string) {
+  const words = String(role || "").split("_").join(" ").toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** What a role can actually do, in the terms of the thing being handed over. */
+export const PAGE_ROLE_SUMMARY: Record<string, string> = {
+  OWNER: "Full control, including ownership and deletion.",
+  ADMIN: "Everything except transferring ownership.",
+  MANAGER: "Edit the page, post, and manage connections.",
+  CONTENT_MANAGER: "Post and manage content. No settings or team changes.",
+  ADVERTISING_MANAGER: "Run campaigns from the connected ad account.",
+  MARKETPLACE_MANAGER: "Manage the connected shop and its listings.",
+  ANALYST: "Read-only. Sees insights, changes nothing."
+};

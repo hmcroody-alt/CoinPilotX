@@ -57,6 +57,34 @@ const EMPTY_ANALYTICS = {
   campaigns: []
 };
 
+/**
+ * A request that does not answer while the test is running.
+ *
+ * `new Promise(() => undefined)` says the same thing and is what these tests
+ * used to pass, but the screen wraps every canonical request in a 12-second
+ * deadline (`withBusinessOsDeadline`) and clears that timer only when the
+ * request settles. A promise that never settles never clears it, so the timer
+ * outlives the test. That was invisible while these suites took longer than the
+ * deadline to run; the moment they got fast, Jest started force-exiting the
+ * worker and warning about a leak — a warning nobody can act on, sitting on top
+ * of the output where the next real failure will appear.
+ *
+ * Settling them in `afterEach` — after the render is already torn down, so no
+ * assertion can observe an answer — lets the deadline be cleared without
+ * changing what any test is about.
+ */
+const unanswered: Array<() => void> = [];
+
+function neverAnswers<T>(): Promise<T> {
+  return new Promise<T>((resolve) => {
+    unanswered.push(() => resolve(undefined as T));
+  });
+}
+
+afterEach(() => {
+  unanswered.splice(0).forEach((settle) => settle());
+});
+
 function navigationSpy() {
   return { navigate: jest.fn() };
 }
@@ -82,7 +110,7 @@ async function renderHub(navigation = navigationSpy()) {
   // hub no longer has a blocking "Loading your business…" panel to wait on —
   // the shell and At a glance are on screen from the first frame, which is the
   // property `BusinessOsScreen.perf.test.tsx` pins.
-  await waitFor(() => expect(view.queryByLabelText("Refreshing your business summary")).toBeNull());
+  await waitFor(() => expect(view.queryAllByLabelText("Refreshing your business summary").length).toBe(0));
   return { ...view, navigation };
 }
 
@@ -164,9 +192,9 @@ describe("Business OS hub", () => {
 
   it("shows cached data immediately and does not wait out the deadline to paint it", async () => {
     jest.useFakeTimers();
-    mockListAdAccounts.mockReturnValue(new Promise(() => undefined));
-    mockGetAdAnalytics.mockReturnValue(new Promise(() => undefined));
-    mockSellerSnapshot.mockReturnValue(new Promise(() => undefined));
+    mockListAdAccounts.mockReturnValue(neverAnswers());
+    mockGetAdAnalytics.mockReturnValue(neverAnswers());
+    mockSellerSnapshot.mockReturnValue(neverAnswers());
     mockCachedAccounts.mockResolvedValue([{ id: 4, status: "active", verified: true }]);
     mockCachedAnalytics.mockResolvedValue({
       ...EMPTY_ANALYTICS,
@@ -208,7 +236,7 @@ describe("Business OS hub", () => {
     await act(async () => {
       fireEvent.press(view.getByLabelText("Retry loading Business OS"));
     });
-    await waitFor(() => expect(view.queryByText("Showing saved data")).toBeNull());
+    await waitFor(() => expect(view.queryAllByText("Showing saved data").length).toBe(0));
   });
 
   it("does not show the offline notice when only the seller snapshot is empty", async () => {

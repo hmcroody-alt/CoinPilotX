@@ -41,25 +41,45 @@ PAGE_TYPES = (
 PAGE_STATUSES = ("ACTIVE", "PAUSED", "UNPUBLISHED", "DEACTIVATED")
 
 # Which page types get which optional tab modules on the client. Only tabs
-# with real backing data render; this is the ceiling, not a promise.
+# with real backing data render for a visitor; this is the ceiling, not a
+# promise.
+#
+# Every value here must be in RENDERABLE_TABS. A tab this list names and no
+# client screen draws is a button that opens onto nothing — which is worse than
+# the missing feature it stands in for, because it looks like a bug rather than
+# an absence. `services` used to be exactly that for BUSINESS,
+# PROFESSIONAL_SERVICE and LOCAL_BUSINESS: no link source, no rows, no renderer.
+# Those types get `shop` instead — Marketplace already carries `service` and
+# `booking` listing types, so the catalogue exists and a second one would be a
+# second commerce backend to keep in sync.
 TYPE_TABS = {
-    "ARTIST": ["posts", "music", "videos", "events", "merch", "about"],
-    "CREATOR": ["posts", "videos", "events", "merch", "about"],
-    "PUBLIC_FIGURE": ["posts", "videos", "events", "about"],
-    "BUSINESS": ["home", "services", "shop", "about"],
+    "ARTIST": ["posts", "music", "events", "videos", "merch", "about"],
+    "CREATOR": ["posts", "videos", "merch", "about"],
+    "PUBLIC_FIGURE": ["posts", "videos", "about"],
+    "BUSINESS": ["home", "shop", "about"],
     "BRAND": ["home", "shop", "about"],
     "STORE": ["home", "shop", "about"],
     "RESTAURANT": ["home", "menu", "about"],
-    "PROFESSIONAL_SERVICE": ["home", "services", "about"],
-    "LOCAL_BUSINESS": ["home", "services", "shop", "about"],
+    "PROFESSIONAL_SERVICE": ["home", "shop", "about"],
+    "LOCAL_BUSINESS": ["home", "shop", "about"],
     "NONPROFIT": ["home", "events", "about"],
     "ORGANIZATION": ["home", "events", "about"],
     "MEDIA": ["posts", "videos", "about"],
     "SPORTS_TEAM": ["posts", "events", "shop", "about"],
     "VENUE": ["home", "events", "about"],
-    "EDUCATION": ["home", "events", "about"],
+    "EDUCATION": ["home", "about"],
     "OTHER": ["posts", "about"],
 }
+
+# Page types that are an organisation rather than a person or an act. They are
+# the ones whose operations continue into Business OS, and the ones whose setup
+# checklist asks for a category, hours and a location. Both questions have the
+# same answer, so there is one list: a second copy is a second thing to forget
+# when a page type is added.
+BUSINESS_PAGE_TYPES = frozenset({
+    "BUSINESS", "BRAND", "STORE", "RESTAURANT", "PROFESSIONAL_SERVICE",
+    "LOCAL_BUSINESS", "NONPROFIT", "ORGANIZATION", "MEDIA", "VENUE", "EDUCATION",
+})
 
 ROLES = (
     "OWNER", "ADMIN", "MANAGER", "CONTENT_MANAGER",
@@ -82,11 +102,30 @@ PERMISSIONS = {
     "transfer_ownership": {"OWNER"},
 }
 
-LINK_TYPES = ("store", "ad_account", "community", "event", "music_artist", "business_os")
+# What a presence can be pointed at. Every entry here is a system that already
+# exists and already owns its data; a link stores a pointer and nothing else.
+#
+# `event` used to sit in this list and was never resolvable. It is gone: a
+# single event is not something a presence *is* connected to, it is something
+# the business behind the presence has scheduled. Connecting the business is
+# the claim that can be checked, and it is the one that keeps answering as new
+# events are added — a per-event link would need re-doing every tour date.
+LINK_TYPES = ("store", "ad_account", "community", "music_artist", "business_os")
 
 # Tabs that always render: they are backed by the page row itself, so they can
 # never be empty in a way the viewer would read as broken.
 ALWAYS_TABS = {"home", "posts", "about"}
+
+# Every tab PageScreen has a branch for. This is a contract with the client,
+# restated here because the server is what decides which tabs a page offers and
+# it therefore needs to know which ones mean anything.
+#
+# The point of naming it is `module_availability`: with this set closed, every
+# tab has an availability rule, so "a tab nobody can render" stops being a thing
+# that can be typed into TYPE_TABS and quietly shipped. Adding a tab to the
+# ceiling and teaching a screen to draw it become the same change.
+RENDERABLE_TABS = frozenset(
+    ALWAYS_TABS | {"music", "videos", "shop", "merch", "menu", "events"})
 
 # Optional tab -> the link_type that gives it real content. A tab with no link
 # and no rows is hidden from the public and kept (as a setup prompt) for the
@@ -96,12 +135,24 @@ TAB_LINK_SOURCE = {
     "shop": "store",
     "merch": "store",
     "menu": "store",
+    "events": "business_os",
 }
-# `events` is deliberately absent. The `event` link type exists and can be set,
-# but the canonical events backend (services/business_os/events) lists only for
-# a caller holding a manager role on the business — there is no public read. A
-# tab that 403s for every visitor is worse than no tab, so events stays hidden
-# until a public listing exists.
+# `events` is here now. It used to be absent with a note saying the canonical
+# events backend listed only for a caller holding a manager role, so a public
+# tab would 403 for every visitor and the honest thing was no tab at all. That
+# was true of the backend as it stood, not of events as a feature: what was
+# missing was a *read for strangers*. `events.service.list_public_events`
+# is that read — published, not-yet-ended events under a field allowlist that
+# withholds manager identity, the business id and per-tier sales counts.
+#
+# So the tab points at `business_os`, the link that names which business runs
+# this presence. Not at a per-event link: the pointer has to keep answering as
+# the calendar changes.
+#
+# One condition is not expressible here and is checked in `module_availability`
+# instead: Business OS events are flag-gated (`BUSINESS_OS_EVENTS`), and with
+# the flag off every read raises. A link to a business is not, on its own,
+# enough to promise a visitor a tab.
 
 # Post types the videos module counts as a video. Same set pulse_feed_engine
 # uses for its video surfaces; the tab reads the page's own posts, so it needs
@@ -348,6 +399,25 @@ def role_for(conn: Any, user_id: int, page_id: int) -> str | None:
     return row.get("role") if row else None
 
 
+def _seat(conn: Any, user_id: int, page_id: int) -> dict:
+    """A member's seat, taken or merely offered.
+
+    Deliberately not `role_for`, which is the authorization question and is
+    active-only: an invitee holds no permissions until they accept, and must
+    never be answered as though they did. This is the *administration*
+    question — is there a row here for somebody to act on — and the answer has
+    to include a pending invite, because otherwise an invite sent by mistake
+    can never be withdrawn and simply waits out its TTL.
+    """
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT role, status FROM pulse_page_members WHERE page_id=? AND user_id=? "
+        "AND status IN ('active','invited') LIMIT 1",
+        (int(page_id), int(user_id)),
+    )
+    return _row(cur.fetchone())
+
+
 def has_permission(role: str | None, permission: str) -> bool:
     if not role or permission not in PERMISSIONS:
         return False
@@ -419,6 +489,39 @@ def _counts(conn: Any, page_id: int) -> dict:
     return {"followers": followers, "posts": posts, "videos": videos}
 
 
+def events_enabled() -> bool:
+    """Whether the canonical events domain is switched on in this environment.
+
+    Asked rather than assumed, and asked of the events module itself rather
+    than of the environment variable directly — one place decides what the flag
+    means, and this reads the answer. An import failure counts as off: a
+    deployment that does not ship the events package cannot serve events, and
+    the page should hide the tab rather than raise on every view.
+    """
+    try:
+        from services.business_os.events import service as events_service
+        return bool(events_service.is_enabled())
+    except Exception:
+        return False
+
+
+def _load_visible_page(conn: Any, ident: Any, viewer_user_id: int | None) -> dict:
+    """A page as a public read may see it, or 404.
+
+    The lifecycle invariant — UNPUBLISHED and DEACTIVATED pages 404 for
+    non-members — was enforced in each route that served a public read, which
+    meant it was enforced in the routes somebody remembered. `/music` did not
+    have it, so an unpublished artist presence still served its catalogue.
+    Module reads go through here so the check arrives with the page rather than
+    beside it.
+    """
+    page = _load_page(conn, ident)
+    if page.get("status") in ("UNPUBLISHED", "DEACTIVATED"):
+        if not (viewer_user_id and role_for(conn, viewer_user_id, page["id"])):
+            raise PageError("Page not found.", 404)
+    return page
+
+
 def module_availability(conn: Any, page: dict, counts: dict | None = None,
                         links: list[dict] | None = None) -> dict:
     """Which optional modules actually have something behind them.
@@ -433,12 +536,28 @@ def module_availability(conn: Any, page: dict, counts: dict | None = None,
     for tab in TYPE_TABS.get(page.get("page_type") or "OTHER", TYPE_TABS["OTHER"]):
         if tab in ALWAYS_TABS:
             available[tab] = True
+        elif tab == "events":
+            # Two conditions, and the second is not about this page at all:
+            # with `BUSINESS_OS_EVENTS` off the whole events domain raises 503,
+            # so a linked business would otherwise raise a tab that cannot
+            # load. The flag is checked first because it is the cheaper
+            # question and it has the same answer for every page.
+            available[tab] = events_enabled() and TAB_LINK_SOURCE[tab] in linked
         elif tab in TAB_LINK_SOURCE:
             available[tab] = TAB_LINK_SOURCE[tab] in linked
         elif tab == "videos":
             available[tab] = counts.get("videos", 0) > 0
         else:
-            available[tab] = False
+            # Unreachable while RENDERABLE_TABS and the branches above agree,
+            # and that is the whole design: the previous version of this line
+            # was `available[tab] = False`, which turned "nobody taught the
+            # server what backs this tab" into a tab that is merely hidden from
+            # visitors — and still shown to the team, who then tapped it and got
+            # a blank screen. `services` lived there for months. Failing here
+            # means a new tab cannot reach production without a rule.
+            raise PageError(
+                f"tab '{tab}' has no availability rule; add one before offering it",
+                500)
     if "posts" in available:
         available["posts"] = True
     return available
@@ -494,6 +613,20 @@ def public_view(conn: Any, page: dict, viewer_user_id: int | None = None) -> dic
         "videos_count": counts["videos"],
         "tabs": _visible_tabs(page, availability, bool(viewer_role)),
         "modules": availability,
+        # Whether this presence's operations continue into Business OS.
+        #
+        # Derived from `BUSINESS_PAGE_TYPES` and sent rather than left to the
+        # client, because the client had grown its own copy of the list — two
+        # frozensets in `PresenceHubScreen` — and the copy had already drifted:
+        # it defaulted anything it did not recognise to "business", so an OTHER
+        # presence was offered a Business OS door the server does not think it
+        # has. That is the exact failure the comment on `BUSINESS_PAGE_TYPES`
+        # warns about, in a language where nothing could see it happen.
+        #
+        # Nothing private travels with it: `page_type` is already public and
+        # the mapping is a constant, so this is a fact a caller could work out
+        # anyway — the point is that only one place works it out.
+        "business_os_capable": (page.get("page_type") or "") in BUSINESS_PAGE_TYPES,
         "shop_seller_id": shop_seller_id,
         "created_at": page.get("created_at"),
         "viewer": {"role": viewer_role, "following": following},
@@ -625,10 +758,18 @@ def set_status(conn: Any, user_id: int, page_id: int, status: Any) -> dict:
 
 def request_verification(conn: Any, user_id: int, page_id: int, payload: dict | None = None) -> dict:
     """Distinct from personal verification and never auto-granted: this only
-    moves unverified → pending. Granting stays an admin/trust operation."""
+    moves unverified → pending. Granting stays an admin/trust operation.
+
+    Owner-only, like payments and settings. Asking the trust team to certify
+    that this presence is who it claims to be is a statement about identity,
+    not a content task — the same reason pointing a presence at a business is
+    owner-only. It enforced `edit_page` while the management screen advertised
+    `manage_status`, so a MANAGER was shown no Verification section and could
+    still submit a claim in the page's name through the API.
+    """
     ensure_tables(conn)
     page = _load_page(conn, page_id)
-    require_permission(conn, user_id, page["id"], "edit_page")
+    require_permission(conn, user_id, page["id"], "manage_status")
     current = page.get("verification_status") or "unverified"
     if current == "verified":
         raise PageError("This page is already verified.")
@@ -737,6 +878,53 @@ def list_members(conn: Any, user_id: int, page_id: int) -> list[dict]:
     return out
 
 
+def team_view(conn: Any, user_id: int, page_id: int) -> dict:
+    """The roster plus what *this* caller may do to it.
+
+    `list_members` answers "who is on the team". It does not answer "may I
+    change any of this", and a client that infers the answer from the role
+    name re-implements the permission matrix in a second place, where it
+    drifts. Every flag below is derived from the same `PERMISSIONS` table the
+    mutating calls check, so a control the client renders is a call the server
+    will accept — and one it withholds is one that would have 403'd.
+
+    The per-member flags mirror `change_role` and `remove_member` exactly: the
+    owner's seat is untouchable here and moves only through
+    `transfer_ownership`. `assignable_roles` and `transfer_confirm_phrase` are
+    sent rather than hardcoded client-side for the same reason: they are
+    server facts, and a stale copy of either is a control that always fails.
+    """
+    page = _load_page(conn, page_id)
+    role = require_permission(conn, user_id, page["id"], "view_analytics")
+    can_manage = has_permission(role, "manage_members")
+    can_transfer = has_permission(role, "transfer_ownership")
+    members = []
+    for member in list_members(conn, user_id, page["id"]):
+        is_owner = member.get("role") == "OWNER"
+        is_you = _int(member.get("user_id"), 0) == _int(user_id, 0)
+        is_active = member.get("status") == "active"
+        members.append({
+            **member,
+            "is_owner": is_owner,
+            "is_you": is_you,
+            "can_change_role": bool(can_manage and not is_owner),
+            "can_remove": bool(can_manage and not is_owner),
+            # transfer_ownership refuses a target who is not already an active
+            # member, so an invited member is not yet a candidate.
+            "can_receive_ownership": bool(can_transfer and not is_owner and is_active),
+        })
+    return {
+        "page_id": int(page["id"]),
+        "role": role,
+        "owner_user_id": _int(page.get("owner_user_id"), 0),
+        "can_manage_members": can_manage,
+        "can_transfer_ownership": can_transfer,
+        "assignable_roles": list(ASSIGNABLE_ROLES),
+        "transfer_confirm_phrase": TRANSFER_CONFIRM_PHRASE,
+        "members": members,
+    }
+
+
 def invite_member(conn: Any, actor_user_id: int, page_id: int, payload: dict) -> dict:
     ensure_tables(conn)
     page = _load_page(conn, page_id)
@@ -786,6 +974,102 @@ def invite_member(conn: Any, actor_user_id: int, page_id: int, payload: dict) ->
     return {"user_id": target_id, "role": role, "status": "invited", "invite_token": token, "expires_at": expires}
 
 
+def list_my_invites(conn: Any, user_id: int) -> list[dict]:
+    """The invites waiting on *you*, with the token needed to act on them.
+
+    `invite_member` returns the token to the inviter and to nobody else, and
+    nothing is sent to the invitee — so before this existed the only way onto a
+    team was for the inviter to copy the token out of an API response and hand
+    it over by hand. That is precisely the shared-credential habit the role
+    system replaces, reintroduced one layer up.
+
+    Returning a user their own token grants nothing new: `accept_invite` and
+    `decline_invite` both match on `invite_token AND user_id`, so a token is
+    only usable by the person it was already issued to.
+
+    Expired invites are listed with `expired: true` rather than filtered out.
+    Hiding them makes the screen read as though the invite was never sent, and
+    the invitee is then left with nothing to say to the person who sent it;
+    shown, they can ask for a fresh one.
+    """
+    ensure_tables(conn)
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT m.invite_token, m.role, m.invite_expires_at, m.created_at,
+               p.id AS page_id, p.name AS page_name, p.handle AS page_handle,
+               p.avatar_url AS page_avatar_url, p.page_type, p.status AS page_status,
+               u.username AS inviter_username, u.display_name AS inviter_display_name,
+               u.full_name AS inviter_full_name
+        FROM pulse_page_members m
+        JOIN pulse_pages p ON p.id = m.page_id
+        LEFT JOIN users u ON u.user_id = m.invited_by
+        WHERE m.user_id=? AND m.status='invited' AND m.invite_token IS NOT NULL
+        ORDER BY m.created_at DESC
+        """,
+        (int(user_id),),
+    )
+    now = _now()
+    out = []
+    for raw in cur.fetchall():
+        invite = _row(raw)
+        # A deactivated page has no team to join; accepting would hand someone a
+        # role on something they cannot see.
+        if str(invite.get("page_status") or "").upper() == "DEACTIVATED":
+            continue
+        expires = str(invite.get("invite_expires_at") or "")
+        out.append({
+            "token": invite.get("invite_token") or "",
+            "role": invite.get("role"),
+            "expires_at": expires,
+            "expired": bool(expires and expires < now),
+            "invited_at": invite.get("created_at"),
+            "page_id": int(invite.get("page_id") or 0),
+            "page_name": invite.get("page_name") or "",
+            "page_handle": invite.get("page_handle") or "",
+            "page_avatar_url": invite.get("page_avatar_url") or "",
+            "page_type": invite.get("page_type") or "",
+            "invited_by_name": (invite.get("inviter_display_name")
+                                or invite.get("inviter_full_name")
+                                or invite.get("inviter_username")
+                                or ""),
+        })
+    return out
+
+
+def decline_invite(conn: Any, user_id: int, token: Any) -> dict:
+    """Refuse an invite. Scoped exactly like `accept_invite`.
+
+    Without this the invitee's only exit is to accept and hope someone with
+    `manage_members` removes them later — clearing the invite is itself a
+    management action they do not have. Declining is the one thing about an
+    invite that is unambiguously the invitee's call, so it is gated on holding
+    the token, not on a page permission.
+    """
+    ensure_tables(conn)
+    token = _text(token, 120)
+    if not token:
+        raise PageError("Invite token required.")
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT * FROM pulse_page_members WHERE invite_token=? AND user_id=? AND status='invited' LIMIT 1",
+        (token, int(user_id)),
+    )
+    invite = _row(cur.fetchone())
+    if not invite:
+        raise PageError("Invite not found or already handled.", 404)
+    cur.execute(
+        "UPDATE pulse_page_members SET status='declined', invite_token=NULL, invite_expires_at=NULL, "
+        "updated_at=? WHERE id=?",
+        (_now(), int(invite["id"])),
+    )
+    _audit(conn, int(invite["page_id"]), user_id, "invite_declined", after={"role": invite.get("role")})
+    conn.commit()
+    _sentinel_event("page.invite_declined", user_id, int(invite["page_id"]),
+                    payload={"role": invite.get("role")})
+    return {"page_id": int(invite["page_id"]), "status": "declined"}
+
+
 def accept_invite(conn: Any, user_id: int, token: Any) -> dict:
     ensure_tables(conn)
     token = _text(token, 120)
@@ -824,13 +1108,15 @@ def change_role(conn: Any, actor_user_id: int, page_id: int, member_user_id: int
     new_role = _text(new_role, 40).upper()
     if new_role not in ASSIGNABLE_ROLES:
         raise PageError("Ownership moves only through an explicit transfer.")
-    current = role_for(conn, member_user_id, page["id"])
+    seat = _seat(conn, member_user_id, page["id"])
+    current = seat.get("role")
     if not current:
         raise PageError("That member is not on this page.", 404)
     if current == "OWNER":
         raise PageError("The owner's role can't be changed here. Use ownership transfer.", 403)
     cur = conn.cursor()
-    cur.execute("UPDATE pulse_page_members SET role=?, updated_at=? WHERE page_id=? AND user_id=?",
+    cur.execute("UPDATE pulse_page_members SET role=?, updated_at=? WHERE page_id=? AND user_id=? "
+                "AND status IN ('active','invited')",
                 (new_role, _now(), int(page["id"]), int(member_user_id)))
     _audit(conn, page["id"], actor_user_id, "member_role_changed",
            before={"user_id": int(member_user_id), "role": current},
@@ -842,23 +1128,44 @@ def change_role(conn: Any, actor_user_id: int, page_id: int, member_user_id: int
 
 
 def remove_member(conn: Any, actor_user_id: int, page_id: int, member_user_id: int) -> dict:
+    """Take back a seat, whether it was taken or only offered.
+
+    This resolved through `role_for`, which ignores invited rows, so an invite
+    could not be withdrawn by anybody: the team screen offered a Remove control
+    and the call behind it answered 404 until the invite's TTL ran out. Wrong
+    invites are ordinary — a mistyped id, a change of mind — and the row is a
+    live grant waiting to be claimed, so it has to be revocable now rather than
+    eventually.
+
+    Revoking sets the same `removed` status, which `accept_invite` already
+    refuses (it matches on `status='invited'`), so a token that has been handed
+    out stops working the moment the invite is withdrawn.
+    """
     ensure_tables(conn)
     page = _load_page(conn, page_id)
     require_permission(conn, actor_user_id, page["id"], "manage_members")
-    current = role_for(conn, member_user_id, page["id"])
+    seat = _seat(conn, member_user_id, page["id"])
+    current = seat.get("role")
     if not current:
         raise PageError("That member is not on this page.", 404)
     if current == "OWNER":
         raise PageError("The owner can't be removed. Transfer ownership first.", 403)
+    was_invited = seat.get("status") == "invited"
     cur = conn.cursor()
-    cur.execute("UPDATE pulse_page_members SET status='removed', updated_at=? WHERE page_id=? AND user_id=?",
+    cur.execute("UPDATE pulse_page_members SET status='removed', invite_token=NULL, "
+                "invite_expires_at=NULL, updated_at=? WHERE page_id=? AND user_id=? "
+                "AND status IN ('active','invited')",
                 (_now(), int(page["id"]), int(member_user_id)))
-    _audit(conn, page["id"], actor_user_id, "member_removed",
-           before={"user_id": int(member_user_id), "role": current})
+    _audit(conn, page["id"], actor_user_id,
+           "invite_revoked" if was_invited else "member_removed",
+           before={"user_id": int(member_user_id), "role": current,
+                   "status": seat.get("status")})
     conn.commit()
-    _sentinel_event("page.member_removed", actor_user_id, page["id"],
+    _sentinel_event("page.invite_revoked" if was_invited else "page.member_removed",
+                    actor_user_id, page["id"],
                     payload={"target_user_id": int(member_user_id)})
-    return {"user_id": int(member_user_id), "status": "removed"}
+    return {"user_id": int(member_user_id), "status": "removed",
+            "was_invited": was_invited}
 
 
 def transfer_ownership(conn: Any, actor_user_id: int, page_id: int,
@@ -901,7 +1208,11 @@ def transfer_ownership(conn: Any, actor_user_id: int, page_id: int,
 
 def toggle_follow(conn: Any, user_id: int, page_id: int) -> dict:
     ensure_tables(conn)
-    page = _load_page(conn, page_id)
+    # A hidden page answers "not found" here too. Refusing the follow with 403
+    # would confirm the page exists to anyone who guessed its id — the follow
+    # endpoint would become the existence oracle the lifecycle rule exists to
+    # close. A member gets past this and sees the honest 403 below.
+    page = _load_visible_page(conn, page_id, user_id)
     if page.get("status") not in ("ACTIVE", "PAUSED"):
         raise PageError("This page isn't accepting followers right now.", 403)
     cur = conn.cursor()
@@ -924,24 +1235,256 @@ def toggle_follow(conn: Any, user_id: int, page_id: int) -> dict:
 # Links to canonical systems (store / ads / community / event)
 # ---------------------------------------------------------------------------
 
+# How to find out who a referenced resource belongs to, per link type. A link
+# points the page at something owned elsewhere, so permission on the PAGE is
+# only half the question — the other half is whether the actor is entitled to
+# that resource at all.
+#
+# Each entry is (table, id column, owner column, key kind, extra WHERE).
+#
+# `key kind` is what the stored id *is*, because `ref_id` always arrives as
+# text and the comparison has to be made in the column's own type:
+#
+#   "id"   — an integer primary key. A ref that is not one is refused rather
+#            than coerced, so "not-an-id" cannot collapse to 0 and match a row
+#            whose owner column happens to be empty.
+#   "fold" — matched case-insensitively against a `LOWER(...)` column.
+#   "text" — a text primary key, compared as given. `business_os_business.
+#            business_id` is a `biz_...` string; before this existed the int
+#            reader turned every one of them into the -1 sentinel, so a
+#            business could never be connected and the failure looked like a
+#            permission problem.
+#
+# `music_artist` is keyed on the artist name rather than a row id, because that
+# is what the music catalogue is searched by; the entitlement is then "you
+# publish approved tracks under this name", which is the only checkable form
+# the claim has.
+_LINK_OWNER_SOURCES = {
+    "store": ("marketplace_sellers", "id", "user_id", "id", ""),
+    "ad_account": ("advertisers", "id", "owner_user_id", "id", ""),
+    "community": ("pulse_groups", "id", "owner_user_id", "id", ""),
+    "music_artist": (
+        "pulse_audio_tracks", "LOWER(artist)", "uploader_user_id", "fold",
+        " AND COALESCE(approved_by_admin,0)=1 AND COALESCE(active,1)=1",
+    ),
+    # Only the business's own owner, deliberately — not its staff. Pointing a
+    # presence at a business is an identity claim ("this page is that
+    # business"), not an operational task, and a shop manager hired to run
+    # orders is not the person who gets to make it.
+    "business_os": (
+        "business_os_business", "business_id", "owner_user_id", "text", ""),
+}
+
+
+def _link_ref_owners(conn: Any, link_type: str, ref: str) -> set[int] | None:
+    """User ids entitled to attach `ref` as `link_type`.
+
+    Returns an empty set when the resource exists but belongs to nobody
+    reachable, and None when the lookup itself could not be performed. Both are
+    treated as "refuse" by the caller — a link that cannot be verified is never
+    granted, because the failure mode of guessing here is another member's
+    storefront rendering under someone else's page.
+    """
+    source = _LINK_OWNER_SOURCES.get(link_type)
+    if not source:
+        return None
+    table, id_column, owner_column, key_kind, extra = source
+    if key_kind == "fold":
+        key: Any = ref.casefold()
+    elif key_kind == "text":
+        key = ref
+    else:
+        key = _int(ref, -1)
+        if key == -1:
+            return set()
+    if not key:
+        return set()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"SELECT DISTINCT {owner_column} FROM {table} WHERE {id_column}=?{extra}",  # noqa: S608 - fixed table map
+            (key,),
+        )
+        return {_int(row[0], 0) for row in cur.fetchall() if _int(row[0], 0)}
+    except Exception as exc:
+        # Fail closed: a missing table or a failed query is "cannot verify",
+        # never "allowed".
+        logging.warning("PAGE_LINK_OWNER_LOOKUP_FAILED type=%s error=%s", link_type, exc)
+        return None
+
+
+# The same tables read the other way round: not "who owns this ref" but "what
+# does this person hold that could be connected". The label column is whatever
+# a member would recognise the thing by — never an internal id, which is what
+# the client would otherwise have to ask them to type.
+#
+# Entries are (table, ref column, owner column, label column, owner kind, extra
+# WHERE). `owner kind` says how to bind the user ids: Business OS stores
+# `owner_user_id` as TEXT, and while SQLite quietly coerces an integer
+# parameter to match a TEXT column, PostgreSQL refuses `text = integer`
+# outright — so the same query would have found the business in dev and raised
+# in production.
+_LINK_CANDIDATE_SOURCES = {
+    "store": ("marketplace_sellers", "id", "user_id", "display_name", "int", ""),
+    "ad_account": ("advertisers", "id", "owner_user_id", "advertiser_name", "int", ""),
+    "community": ("pulse_groups", "id", "owner_user_id", "name", "int", ""),
+    "music_artist": (
+        "pulse_audio_tracks", "artist", "uploader_user_id", "artist", "int",
+        " AND COALESCE(approved_by_admin,0)=1 AND COALESCE(active,1)=1",
+    ),
+    "business_os": (
+        "business_os_business", "business_id", "owner_user_id", "display_name",
+        "text", ""),
+}
+
+LINK_LABELS = {
+    "store": "Shop",
+    "ad_account": "Ad account",
+    "community": "Community",
+    "music_artist": "Music catalogue",
+    # Not "Business OS". The member connecting it is telling us which business
+    # this presence belongs to; the name of the subsystem that stores it is
+    # ours, not theirs.
+    "business_os": "Business",
+}
+
+# One map, read by both the check and the offer. Kept out of `set_link` so the
+# permission a member is told they need cannot drift from the one enforced.
+_LINK_PERMISSION = {"store": "manage_marketplace", "ad_account": "manage_ads"}
+
+
+def _link_permission(link_type: str) -> str:
+    return _LINK_PERMISSION.get(link_type, "manage_links")
+
+
+def _link_candidates(conn: Any, link_type: str, holder_user_ids: set[int]) -> list[dict]:
+    """Refs of `link_type` held by any of `holder_user_ids`, with labels.
+
+    A lookup failure yields an empty list, not an error: being unable to offer
+    a choice is a smaller problem than a management screen that will not open,
+    and nothing here grants anything — `set_link` re-derives entitlement.
+    """
+    source = _LINK_CANDIDATE_SOURCES.get(link_type)
+    holders = sorted({_int(uid, 0) for uid in holder_user_ids if _int(uid, 0)})
+    if not source or not holders:
+        return []
+    table, ref_column, owner_column, label_column, owner_kind, extra = source
+    bound = [str(uid) for uid in holders] if owner_kind == "text" else holders
+    placeholders = ",".join("?" * len(bound))
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"SELECT DISTINCT {ref_column} AS ref, {label_column} AS label "  # noqa: S608 - fixed table map
+            f"FROM {table} WHERE {owner_column} IN ({placeholders}){extra}",
+            bound,
+        )
+        rows = cur.fetchall()
+    except Exception as exc:
+        logging.warning("PAGE_LINK_CANDIDATES_FAILED type=%s error=%s", link_type, exc)
+        return []
+    out = []
+    for row in rows:
+        record = _row(row)
+        ref = _text(record.get("ref"), 80)
+        if not ref:
+            continue
+        out.append({"ref_id": ref, "label": _text(record.get("label"), 120) or ref})
+    return sorted(out, key=lambda item: item["label"].casefold())
+
+
+def link_options(conn: Any, actor_user_id: int, page_id: int) -> dict:
+    """What this presence is connected to, and what it could be connected to.
+
+    Without this the only way to attach a shop is to know its internal id and
+    type it in, which is both unusable and the shape that made the missing
+    ownership check so easy to exploit. Offering only real, held resources
+    means the ordinary path never involves a member handling an id at all.
+
+    Convenience, not authority: every ref returned here is re-checked by
+    `set_link`, so a stale or hand-crafted option buys nothing.
+    """
+    ensure_tables(conn)
+    page = _load_page(conn, page_id)
+    role = require_permission(conn, actor_user_id, page["id"], "view_analytics")
+    connected = {}
+    for row in list_links(conn, page["id"]):
+        connected.setdefault(_text(row.get("link_type"), 40), _text(row.get("ref_id"), 80))
+    # Actor-or-owner, matching `set_link` exactly. Offering the owner's
+    # resources to a delegated manager is what lets that manager finish the job
+    # they were given the seat for.
+    holders = {_int(actor_user_id, 0), _int(page.get("owner_user_id"), 0)}
+    links = []
+    for link_type in LINK_TYPES:
+        # A type with no resolver cannot be offered, for the same reason it
+        # cannot be set: nothing can say whose it is.
+        if link_type not in _LINK_CANDIDATE_SOURCES:
+            continue
+        permission = _link_permission(link_type)
+        can_manage = has_permission(role, permission)
+        links.append({
+            "link_type": link_type,
+            "label": LINK_LABELS.get(link_type, link_type),
+            "permission": permission,
+            "can_manage": can_manage,
+            "connected_ref_id": connected.get(link_type, ""),
+            # Withheld rather than filtered client-side: a role that cannot
+            # connect anything has no reason to receive a list of what the
+            # owner holds.
+            "options": _link_candidates(conn, link_type, holders) if can_manage else [],
+        })
+    return {"page_id": int(page["id"]), "role": role, "links": links}
+
+
 def set_link(conn: Any, actor_user_id: int, page_id: int, link_type: Any, ref_id: Any) -> dict:
+    """Point this presence at one thing of this kind. `set`, not `add`.
+
+    Every link type is singular — a presence has *a* shop, *an* ad account,
+    *the* business that runs its dates — and every reader treats it that way,
+    taking the first row it happens to find. The write did not: `INSERT OR
+    IGNORE` against a UNIQUE on `(page_id, link_type, ref_id)` appends a second
+    row for a *different* ref, and `list_links` has no ORDER BY, so which of
+    them a reader saw was whatever the engine returned first.
+
+    That is a correctness bug in both directions. Reconnecting a shop left the
+    old one behind with no way to tell which was live, and a MARKETPLACE_MANAGER
+    could append their own seller id to a presence they help run and have it
+    surface as `shop_seller_id` in the public view — pointing the page's buyers
+    at their storefront without ever touching the one already connected.
+
+    Replacing is also what makes disconnect-and-reconnect mean something: the
+    row that is there is the answer, and there is only ever one.
+    """
     ensure_tables(conn)
     page = _load_page(conn, page_id)
     link_type = _text(link_type, 40).lower()
     if link_type not in LINK_TYPES:
         raise PageError("Choose a valid link type.")
-    perm = {"store": "manage_marketplace", "ad_account": "manage_ads"}.get(link_type, "manage_links")
+    perm = _link_permission(link_type)
     require_permission(conn, actor_user_id, page["id"], perm)
     ref = _text(ref_id, 80)
     if not ref:
         raise PageError("A reference id is required.")
+    # Permission on the page is not permission over what the page is pointed
+    # at. Without this, anyone able to edit any page could hang another
+    # member's storefront, ad account or community under their own presence —
+    # and for `store` the id lands in the PUBLIC view and raises a shop tab.
+    entitled = _link_ref_owners(conn, link_type, ref)
+    if entitled is None:
+        raise PageError("That kind of link can't be connected here yet.", 400)
+    if not entitled & {_int(actor_user_id, 0), _int(page.get("owner_user_id"), 0)}:
+        raise PageError("You can only connect something you own.", 403)
     cur = conn.cursor()
+    previous = [row.get("ref_id") for row in list_links(conn, page["id"], link_type)]
+    cur.execute("DELETE FROM pulse_page_links WHERE page_id=? AND link_type=?",
+                (int(page["id"]), link_type))
     cur.execute(
-        "INSERT OR IGNORE INTO pulse_page_links (page_id, link_type, ref_id, created_by, created_at) "
+        "INSERT INTO pulse_page_links (page_id, link_type, ref_id, created_by, created_at) "
         "VALUES (?, ?, ?, ?, ?)",
         (int(page["id"]), link_type, ref, int(actor_user_id), _now()),
     )
-    _audit(conn, page["id"], actor_user_id, "link_set", after={"link_type": link_type, "ref_id": ref})
+    _audit(conn, page["id"], actor_user_id, "link_set",
+           before={"link_type": link_type, "ref_id": previous[0] if previous else ""},
+           after={"link_type": link_type, "ref_id": ref})
     conn.commit()
     if link_type == "store":
         _sentinel_edge("page", int(page["id"]), "owns_account", "seller", ref)
@@ -949,14 +1492,52 @@ def set_link(conn: Any, actor_user_id: int, page_id: int, link_type: Any, ref_id
 
 
 def list_links(conn: Any, page_id: int, link_type: str | None = None) -> list[dict]:
+    """Every callers' first stop, and several of them read `[0]`.
+
+    `set_link` keeps one row per type, so the order should not matter — but
+    "should not" is how the shop tab came to deep-link wherever the engine felt
+    like. The newest row wins explicitly, which is the same answer on SQLite and
+    on Postgres and stays right if a row ever survives the replace.
+    """
     ensure_tables(conn)
     cur = conn.cursor()
     if link_type:
-        cur.execute("SELECT link_type, ref_id, created_at FROM pulse_page_links WHERE page_id=? AND link_type=?",
+        cur.execute("SELECT link_type, ref_id, created_at FROM pulse_page_links "
+                    "WHERE page_id=? AND link_type=? ORDER BY created_at DESC, id DESC",
                     (int(page_id), link_type))
     else:
-        cur.execute("SELECT link_type, ref_id, created_at FROM pulse_page_links WHERE page_id=?", (int(page_id),))
+        cur.execute("SELECT link_type, ref_id, created_at FROM pulse_page_links "
+                    "WHERE page_id=? ORDER BY created_at DESC, id DESC", (int(page_id),))
     return [_row(r) for r in cur.fetchall()]
+
+
+def clear_link(conn: Any, actor_user_id: int, page_id: int, link_type: Any) -> dict:
+    """Disconnect what this presence was pointed at.
+
+    There was no way to do this. A shop connected by a marketplace manager who
+    has since left the team stayed in the public view forever, and the only
+    remedy on offer was to connect a different one — which, before `set_link`
+    replaced rather than appended, did not even remove the old row.
+
+    Gated on the same permission as connecting: whoever may choose what the
+    presence points at may also decide it points at nothing.
+    """
+    ensure_tables(conn)
+    page = _load_page(conn, page_id)
+    link_type = _text(link_type, 40).lower()
+    if link_type not in LINK_TYPES:
+        raise PageError("Choose a valid link type.")
+    require_permission(conn, actor_user_id, page["id"], _link_permission(link_type))
+    previous = [row.get("ref_id") for row in list_links(conn, page["id"], link_type)]
+    if not previous:
+        raise PageError("There is nothing connected to disconnect.", 404)
+    cur = conn.cursor()
+    cur.execute("DELETE FROM pulse_page_links WHERE page_id=? AND link_type=?",
+                (int(page["id"]), link_type))
+    _audit(conn, page["id"], actor_user_id, "link_cleared",
+           before={"link_type": link_type, "ref_id": previous[0]})
+    conn.commit()
+    return {"page_id": int(page["id"]), "link_type": link_type, "ref_id": ""}
 
 
 # ---------------------------------------------------------------------------
@@ -993,7 +1574,7 @@ def create_page_post(conn: Any, user_id: int, page_id: int, payload: dict) -> di
 def list_page_posts(conn: Any, page_id: int, viewer_user_id: int | None = None,
                     limit: int = 20, offset: int = 0,
                     post_types: tuple[str, ...] | None = None) -> dict:
-    page = _load_page(conn, page_id)
+    page = _load_visible_page(conn, page_id, viewer_user_id)
     limit = max(1, min(_int(limit, 20), 40))
     offset = max(0, _int(offset, 0))
     type_sql = ""
@@ -1031,7 +1612,8 @@ def list_page_posts(conn: Any, page_id: int, viewer_user_id: int | None = None,
 # Lazy modules: resolved from the canonical systems, never mirrored here
 # ---------------------------------------------------------------------------
 
-def page_music(conn: Any, page_id: int, limit: int = 24) -> dict:
+def page_music(conn: Any, page_id: int, limit: int = 24,
+               viewer_user_id: int | None = None) -> dict:
     """Tracks for an artist presence, straight from the canonical catalogue.
 
     The presence stores only a pointer (the `music_artist` link); the records
@@ -1039,7 +1621,7 @@ def page_music(conn: Any, page_id: int, limit: int = 24) -> dict:
     so the module is empty rather than guessing from the page name.
     """
     ensure_tables(conn)
-    page = _load_page(conn, page_id)
+    page = _load_visible_page(conn, page_id, viewer_user_id)
     links = [row.get("ref_id") for row in list_links(conn, page["id"], "music_artist")]
     artist = _text(links[0], 120) if links else ""
     if not artist:
@@ -1056,6 +1638,48 @@ def page_music(conn: Any, page_id: int, limit: int = 24) -> dict:
         logging.warning("PAGE_MUSIC_FAILED page_id=%s error=%s", page_id, exc)
         raise PageError("We couldn't load this section.", 503)
     return {"page_id": int(page["id"]), "artist": artist, "tracks": tracks, "linked": True}
+
+
+def page_events(conn: Any, page_id: int, limit: int = 12,
+                viewer_user_id: int | None = None) -> dict:
+    """Upcoming dates for a presence, from the canonical events domain.
+
+    The same shape as `page_music`: the presence stores a pointer (the
+    `business_os` link), the records stay where they are managed, and with no
+    link there is nothing to read rather than something to guess.
+
+    What this deliberately does not return is the `business_id` it looked the
+    events up by. The `store` link's id reaches the public view because the
+    shop tab needs it to deep-link into Marketplace; events need no such
+    handle, so the internal key stops here. A caller who never receives it
+    cannot walk it into the management endpoints to see which ones answer
+    differently.
+
+    `enabled` and `linked` are reported separately because they are different
+    problems with different owners: one is an environment that does not serve
+    events, the other is a presence nobody has pointed at a business yet. A
+    single `available: false` would leave the owner's empty state guessing.
+    """
+    ensure_tables(conn)
+    page = _load_visible_page(conn, page_id, viewer_user_id)
+    enabled = events_enabled()
+    refs = [row.get("ref_id") for row in list_links(conn, page["id"], "business_os")]
+    business = _text(refs[0], 80) if refs else ""
+    base = {"page_id": int(page["id"]), "enabled": enabled,
+            "linked": bool(business), "events": []}
+    if not enabled or not business:
+        return base
+    try:
+        from services.business_os.events import service as events_service
+        events = events_service.list_public_events(
+            business, limit=max(1, min(_int(limit, 12), 50)))
+    except Exception as exc:
+        # The events domain going down is not this page being broken, and it is
+        # certainly not this page having no events. 503 says "come back", which
+        # is the true answer; an empty list would say "there are none".
+        logging.warning("PAGE_EVENTS_FAILED page_id=%s error=%s", page_id, exc)
+        raise PageError("We couldn't load this section.", 503)
+    return {**base, "events": events}
 
 
 def admin_overview(conn: Any, page_id: int) -> dict:
@@ -1161,10 +1785,7 @@ def page_analytics(conn: Any, user_id: int, page_id: int) -> dict:
 # Completion guidance is management-only: the checklist derives strictly from
 # fields that actually exist on the page row plus the real post count. It is
 # never included in public_view — visitors never see setup warnings.
-_BUSINESS_COMPLETENESS_TYPES = {
-    "BUSINESS", "BRAND", "STORE", "RESTAURANT", "PROFESSIONAL_SERVICE",
-    "LOCAL_BUSINESS", "NONPROFIT", "ORGANIZATION", "MEDIA", "VENUE", "EDUCATION",
-}
+_BUSINESS_COMPLETENESS_TYPES = BUSINESS_PAGE_TYPES
 _ARTIST_COMPLETENESS_TYPES = {"ARTIST", "CREATOR", "PUBLIC_FIGURE", "SPORTS_TEAM"}
 
 
@@ -1194,18 +1815,230 @@ def page_completeness(conn: Any, page: dict) -> dict:
     return {"percent": int(round(100 * done / len(items))) if items else 0, "items": items}
 
 
+# Tabs that mean "this page type sells something", and what that section is
+# called for each. A restaurant manages a menu, an artist manages merch, a
+# store manages a shop — one section, three honest names, all of them the same
+# `store` link into the existing Marketplace.
+_STORE_TAB_LABELS = {"menu": "Menu", "merch": "Merch", "shop": "Shop"}
+
+
+def manage_sections(page: dict, role: str | None, links: list[dict],
+                    counts: dict, analytics: dict) -> list[dict]:
+    """The management surface, as sections rather than a wall of buttons.
+
+    Three separate questions, answered separately, because collapsing them is
+    how a management screen starts lying:
+
+      * **supported** — does this page *type* have this at all? A media page has
+        no merch section, not a disabled one. `TYPE_TABS` already answers what a
+        type has, so it answers this too rather than a second list drifting
+        beside it. An unsupported section is absent from this list entirely.
+      * **permitted** — may *this caller* act here? Straight out of the same
+        `PERMISSIONS` table the mutating calls read, so a section that is
+        offered is one the server will accept.
+      * **ready** — is anything behind it yet? A section with nothing behind it
+        stays visible with `setup` naming the one thing missing, because a team
+        that cannot see the empty section cannot fill it. That is the difference
+        between a section that is intentionally empty and a dead button.
+
+    Pure: every input is already loaded by `manage_view`, so this adds no
+    queries. Counts are the measured ones — nothing here is estimated, and a
+    section with no number simply has none.
+
+    One absence is deliberate: **Audience**. Followers are counted but not
+    listable, so the count lives in Overview, where it is honest, rather than
+    behind a heading that promises a list nobody can fetch.
+    """
+    page_type = page.get("page_type") or "OTHER"
+    tabs = set(TYPE_TABS.get(page_type, TYPE_TABS["OTHER"]))
+    linked = {row.get("link_type") for row in (links or [])}
+    sections: list[dict] = []
+
+    def add(key: str, label: str, hint: str, permission: str,
+            ready: bool = True, setup: str = "", count: int | None = None) -> None:
+        section = {
+            "key": key,
+            "label": label,
+            "hint": hint,
+            "permission": permission,
+            "permitted": has_permission(role, permission),
+            "ready": bool(ready),
+            "setup": "" if ready else setup,
+        }
+        if count is not None:
+            section["count"] = int(count)
+        sections.append(section)
+
+    # The one measured block. There used to be an "Insights" section beside
+    # this one carrying the same followers/posts/team numbers, so the hub drew
+    # two headings over one set of counts — and, because the two were rendered
+    # from different objects, two that could disagree. Overview's own hint
+    # already covers what Insights claimed; the numbers live in
+    # `manage_overview` and are read from there once.
+    add("overview", "Overview", "How this presence is doing right now.", "view_analytics")
+    add("identity", "Identity", "Name, handle, description and contact details.", "edit_page")
+
+    posts = _int(counts.get("posts"), 0)
+    add("content", "Posts", "What this presence publishes.", "create_content",
+        ready=posts > 0, setup="Nothing published yet. Write the first post as this presence.",
+        count=posts)
+
+    if "music" in tabs:
+        add("music", "Music", "Tracks released under this name.", "manage_links",
+            ready="music_artist" in linked,
+            setup="Connect the artist profile these tracks were uploaded under.")
+
+    if "videos" in tabs:
+        videos = _int(counts.get("videos"), 0)
+        add("videos", "Videos", "Video posts from this presence.", "create_content",
+            ready=videos > 0, setup="Publish a video post and it appears here.", count=videos)
+
+    store_tab = next((tab for tab in ("menu", "merch", "shop") if tab in tabs), "")
+    if store_tab:
+        add("store", _STORE_TAB_LABELS[store_tab], "What this presence sells.", "manage_marketplace",
+            ready="store" in linked,
+            setup="Connect a shop you already run. Selling stays in Marketplace — this points at it.")
+
+    if "events" in tabs:
+        # `ready` answers "is there anything behind this", and for events that
+        # is two questions: a business to read events from, and an environment
+        # that serves them at all. The setup line names whichever is actually
+        # missing — telling an owner to connect a business they have already
+        # connected is how a management screen loses their trust.
+        enabled = events_enabled()
+        add("events", "Events", "Dates this presence is putting on.", "manage_links",
+            ready=enabled and "business_os" in linked,
+            setup=("Connect the business that runs these dates — events are"
+                   " scheduled and ticketed there, and this points at them."
+                   if enabled else
+                   "Events are not switched on for this environment yet."))
+
+    add("advertising", "Advertising", "Campaigns run for this presence.", "manage_ads",
+        ready="ad_account" in linked,
+        setup="Connect an ad account you already own to run campaigns as this presence.")
+
+    if page_type in BUSINESS_PAGE_TYPES:
+        # Was `ready=True` unconditionally, with no link and nothing to open —
+        # a section that reported itself finished before anyone had told it
+        # which business it meant. It reads the same `business_os` link the
+        # events tab does, so connecting once answers both.
+        add("business_os", "Operations",
+            "Orders, bookings and the day-to-day for this business.", "manage_links",
+            ready="business_os" in linked,
+            setup="Connect the business you already run so this presence points at it.")
+
+    add("team", "Team & access", "Who can act for this presence.", "view_analytics",
+        count=_int(analytics.get("team_members"), 0))
+
+    verified = (page.get("verification_status") or "unverified")
+    add("verification", "Verification", "Proving this presence is who it says it is.", "manage_status",
+        ready=verified == "verified",
+        setup={
+            "pending": "Your request is with the review team.",
+            "rejected": "The last request was declined. You can send a new one.",
+        }.get(verified, "Not verified yet. Requests are reviewed, never granted automatically."))
+
+    add("payments", "Payments", "Where money for this presence arrives.", "manage_status")
+    add("settings", "Settings", "Whether this presence is live, paused or unpublished.", "manage_status")
+    return sections
+
+
+# The two enums a manager sees, in words. The hub rendered them raw for its
+# whole life — "Status: ACTIVE · unverified" — which is a database row read
+# aloud, and reads as a bug to anyone who does not know the schema.
+_STATUS_WORDS = {
+    "ACTIVE": "Live",
+    "PAUSED": "Paused",
+    "UNPUBLISHED": "Not published",
+    "DEACTIVATED": "Deactivated",
+}
+_VERIFICATION_WORDS = {
+    "unverified": "Not verified",
+    "pending": "Verification under review",
+    "verified": "Verified",
+    "rejected": "Verification declined",
+}
+
+
+def manage_overview(page: dict, analytics: dict, completeness: dict,
+                    sections: list[dict]) -> dict:
+    """One screen's worth of "how is this presence actually doing".
+
+    Every number here was counted from a row. There is no modelled reach, no
+    projected growth and no chart history: `page_analytics` measures follows
+    and posts inside a window by timestamp, and anything it cannot measure is
+    absent from this payload rather than defaulted to something plausible.
+
+    Zero is a real answer and is rendered as zero. A presence with no followers
+    has no followers — hiding the metric until it is flattering would make the
+    number mean "at least one", and then a manager could not tell an empty page
+    from a broken one.
+
+    A `delta` is only attached where the server actually counted the window. It
+    is the count of follows or posts *inside* the window, which for a page
+    younger than the window equals its whole total — true either way, and
+    labelled with the window so it cannot be read as a rate.
+
+    `pending` counts sections this role can act on that have nothing behind
+    them yet. It is derived from `sections`, so it can never name work that is
+    not offered, or hide work that is.
+    """
+    status = (page.get("status") or "").upper()
+    verification = (page.get("verification_status") or "unverified")
+    metrics: list[dict] = []
+
+    def metric(key: str, label: str, value: Any, delta: Any = None, window: str = "") -> None:
+        row = {"key": key, "label": label, "value": _int(value, 0)}
+        # `is not None` rather than truthiness: a real, measured zero is a
+        # result. Dropping it would silently turn "no new followers this month"
+        # into "we did not look".
+        if delta is not None:
+            row["delta"] = _int(delta, 0)
+            row["window"] = window
+        metrics.append(row)
+
+    metric("followers", "Followers", analytics.get("followers"),
+           analytics.get("followers_30d"), "30 days")
+    metric("posts", "Posts", analytics.get("posts"),
+           analytics.get("posts_30d"), "30 days")
+    # No window: nothing records when a member joined, so a "+2 this month"
+    # here would be invented. The total is measured and the delta is absent.
+    metric("team", "Team", analytics.get("team_members"))
+
+    pending = [s["label"] for s in sections
+               if s.get("permitted") and not s.get("ready")]
+    return {
+        "status": _STATUS_WORDS.get(status, "Unknown"),
+        "verification": _VERIFICATION_WORDS.get(verification, "Not verified"),
+        "metrics": metrics,
+        "pending": pending,
+        "completeness_percent": _int((completeness or {}).get("percent"), 0),
+        "note": analytics.get("note") or "",
+    }
+
+
 def manage_view(conn: Any, user_id: int, page_id: int) -> dict:
     page = _load_page(conn, page_id)
     role = require_permission(conn, user_id, page["id"], "view_analytics")
     view = public_view(conn, page, viewer_user_id=user_id)
+    links = list_links(conn, page["id"])
+    analytics = page_analytics(conn, user_id, page["id"])
+    completeness = page_completeness(conn, page)
+    # Which management sections this page has, may be acted on, and has
+    # anything behind — decided here so the client never re-derives it.
+    sections = manage_sections(page, role, links, _counts(conn, page["id"]), analytics)
     view.update({
         "role": role,
         "capabilities": sorted(p for p, roles in PERMISSIONS.items() if role in roles),
         "owner_user_id": int(page.get("owner_user_id") or 0),
         "phone": page.get("phone") or "",
-        "links": list_links(conn, page["id"]),
+        "links": links,
         "members": list_members(conn, user_id, page["id"]) if has_permission(role, "manage_members") else [],
-        "analytics": page_analytics(conn, user_id, page["id"]),
-        "completeness": page_completeness(conn, page),
+        "analytics": analytics,
+        "completeness": completeness,
+        "sections": sections,
+        # The `overview` section's contents. Built from what is already loaded
+        # above rather than from fresh queries, and from measured values only.
+        "overview": manage_overview(page, analytics, completeness, sections),
     })
     return view

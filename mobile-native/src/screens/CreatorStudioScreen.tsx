@@ -201,7 +201,7 @@ export function CreatorStudioScreen({ navigation }: Props) {
 
       <Panel>
         <Text style={styles.sectionTitle}>Content planner</Text>
-        <Text style={styles.muted}>Drafts, scheduling, and your content checklist are kept in your PulseSoc Content Planner.</Text>
+        <Text style={styles.muted}>Drafts, scheduling, and checklist rules are shared with your Content Planner.</Text>
         <TextInput
           style={styles.input}
           value={aiText}
@@ -222,12 +222,12 @@ export function CreatorStudioScreen({ navigation }: Props) {
             <Action key={tool.key} label={busyTool === tool.key ? "Running..." : tool.label} onPress={() => runAi(tool.key)} />
           ))}
         </View>
-        {aiOutput ? <Text style={styles.aiOutput}>{aiOutput}</Text> : <Text style={styles.muted}>Suggestions are written by PulseSoc creator AI and appear here.</Text>}
+        {aiOutput ? <Text style={styles.aiOutput}>{aiOutput}</Text> : <Text style={styles.muted}>Pick a tool above and the PulseSoc creator assistant will write a suggestion here.</Text>}
       </Panel>
 
       <Panel>
         <Text style={styles.sectionTitle}>Recommended next actions</Text>
-        {recommendations.length ? recommendations.map((item) => <Text key={item} style={styles.recommendation}>{item}</Text>) : <Text style={styles.muted}>Recommendations appear once PulseSoc has seen enough of your creator activity.</Text>}
+        {recommendations.length ? recommendations.map((item) => <Text key={item} style={styles.recommendation}>{item}</Text>) : <Text style={styles.muted}>Recommendations appear once you have posted and scheduled a little more.</Text>}
       </Panel>
 
       <Panel>

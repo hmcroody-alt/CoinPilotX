@@ -197,6 +197,9 @@
       "assetDetail": "Activo",
       "page": "Página",
       "createPage": "Crear presencia",
+      "editPage": "Editar página",
+      "pageConnections": "Conexiones",
+      "pageTeam": "Equipo y acceso",
       "yourPages": "Tus páginas",
       "presence": "Presencia"
     },
@@ -209,7 +212,14 @@
       "trustIdentity": "Capa de confianza e identidad",
       "nativeRoute": "Ruta nativa de PulseSoc",
       "membership": "Membresía y facturación",
-      "business": "Tienda, artículos y publicidad"
+      "business": "Tienda, artículos y publicidad",
+      "presenceHome": "Tus páginas de artista y negocio",
+      "presenceManage": "Páginas que tienes o ayudas a gestionar",
+      "presenceCreate": "Artista, negocio u organización",
+      "presenceEdit": "Nombre, usuario, imágenes y contacto",
+      "presenceConnections": "Con qué está conectada esta presencia",
+      "presenceTeam": "Quién puede actuar por esta presencia",
+      "presencePublic": "Página de presencia"
     },
     "identity": {
       "member": "Miembro de PulseSoc"

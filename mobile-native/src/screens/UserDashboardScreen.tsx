@@ -284,7 +284,7 @@ export function UserDashboardScreen() {
         ) : (
           <View style={styles.emptyTimeline}>
             <Text style={styles.emptyTitle}>No recent activity yet</Text>
-            <Text style={styles.emptyText}>Messages, calls, orders, trust updates, alerts, and marketplace updates will appear here as they happen.</Text>
+            <Text style={styles.emptyText}>Messages, calls, orders, trust updates, alerts, and marketplace activity will appear here as they happen.</Text>
           </View>
         )}
       </Section>

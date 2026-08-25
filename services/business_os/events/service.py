@@ -15,9 +15,13 @@ Money reuse — there is NO second payment system:
   * a refund reverses the capture (escrow → intake) on the same ledger.
 
 Who may manage a business's events is resolved against S1 canonical RBAC
-(``business.service._effective_role``) — never re-modeled here. Reads of a published event
-are public; management reads/writes require membership. A stranger managing sees 404
-(existence not leaked).
+(``business.service._effective_role``) — never re-modeled here. Management reads/writes
+require membership. A stranger managing sees 404 (existence not leaked).
+
+A published event is *visible* to anyone, but not in the same shape: a manager gets the
+stored row (:func:`_event_manage`), everyone else gets a field allowlist
+(:func:`_event_visitor`) with manager identity, the owning business id and per-tier sales
+counts removed. Those two functions are the only ways an event leaves this module.
 """
 
 from __future__ import annotations
@@ -179,13 +183,75 @@ def _audit(conn, action: str, *, event_id=None, ticket_id=None, actor=None,
          action, json.dumps(detail) if detail else None, _now()))
 
 
-def _event_public(conn, event: dict, *, with_types: bool = True) -> dict:
+def _event_manage(conn, event: dict, *, with_types: bool = True) -> dict:
+    """The whole row, for someone entitled to manage this event.
+
+    Was called ``_event_public``, which was not true of it and was the reason
+    the leak below went unnoticed for so long: it is ``dict(event)``, so it
+    carries ``created_by_user_id`` and every ticket type's ``quantity_sold``.
+    A name that claims a projection has been applied invites callers to hand
+    the result to whoever asked.
+    """
     out = dict(event)
     if with_types:
         out["ticket_types"] = _rows(conn.execute(
             "SELECT * FROM business_os_event_ticket_types WHERE event_id = ? "
             "ORDER BY price_cents ASC, created_at ASC", (event["event_id"],)).fetchall())
     return out
+
+
+# What a stranger may see of an event. An allowlist, not a blocklist: a column
+# added to `business_os_events` later is invisible here until somebody decides
+# it is public, which is the safe direction for that mistake to fail in.
+_EVENT_VISITOR_FIELDS = ("event_id", "title", "description", "venue",
+                         "starts_at", "ends_at", "status", "currency")
+
+
+def _event_visitor(conn, event: dict, *, with_types: bool = True) -> dict:
+    """An event as a visitor may see it.
+
+    Withheld, deliberately:
+
+      * ``created_by_user_id`` — who runs this business is manager metadata,
+        and it is a real name attached to a real account.
+      * ``business_id`` — the caller reached this event through a page or an
+        event id; handing back the internal key invites walking it into the
+        management endpoints to see what answers differently.
+      * ``quantity_total`` / ``quantity_sold`` — sales figures. "47 of 50 sold"
+        is a revenue statement about somebody else's business.
+      * every ticket, and therefore every attendee.
+
+    ``sold_out`` is derived from those withheld numbers instead of exposing
+    them, because it is the one thing a visitor genuinely needs from them: a
+    ticket tier they cannot buy has to say so, and saying it does not require
+    telling them how many were sold.
+    """
+    out = {key: event.get(key) for key in _EVENT_VISITOR_FIELDS}
+    if with_types:
+        rows = _rows(conn.execute(
+            "SELECT ticket_type_id, name, price_cents, quantity_total, quantity_sold "
+            "FROM business_os_event_ticket_types "
+            "WHERE event_id = ? AND COALESCE(status,'active') = 'active' "
+            "ORDER BY price_cents ASC, created_at ASC",
+            (event["event_id"],)).fetchall())
+        out["ticket_types"] = [{
+            "ticket_type_id": r.get("ticket_type_id"),
+            "name": r.get("name"),
+            "price_cents": _num(r.get("price_cents")),
+            # NULL `quantity_total` means unlimited supply, which can never be
+            # sold out. Reading it as 0 would mark every unlimited tier sold
+            # out and silently take the whole event off sale.
+            "sold_out": (r.get("quantity_total") is not None
+                         and _num(r.get("quantity_sold")) >= _num(r.get("quantity_total"))),
+        } for r in rows]
+    return out
+
+
+def _num(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 # ---------------------------------------------------------------------------
@@ -217,7 +283,7 @@ def create_event(business_id: Any, actor_user_id: Any, payload: dict, *,
         _audit(conn, "event_created", event_id=eid, actor=actor_user_id,
                detail={"title": title})
         conn.commit()
-        return _event_public(conn, _get_event(conn, eid))
+        return _event_manage(conn, _get_event(conn, eid))
     finally:
         conn.close()
 
@@ -266,7 +332,7 @@ def publish_event(event_id: Any, actor_user_id: Any, *,
             raise EventError("Not found.", 404, "not_found")
         _require_manager(conn, event["business_id"], actor_user_id)
         if event["status"] == "published":
-            return _event_public(conn, event)
+            return _event_manage(conn, event)
         if event["status"] != "draft":
             raise EventError("Only a draft event can be published.", 409, "invalid_state")
         types = conn.execute(
@@ -280,7 +346,7 @@ def publish_event(event_id: Any, actor_user_id: Any, *,
             "WHERE event_id = ?", (_now(), str(event_id)))
         _audit(conn, "event_published", event_id=str(event_id), actor=actor_user_id)
         conn.commit()
-        return _event_public(conn, _get_event(conn, event_id))
+        return _event_manage(conn, _get_event(conn, event_id))
     finally:
         conn.close()
 
@@ -303,7 +369,7 @@ def cancel_event(event_id: Any, actor_user_id: Any, *,
             "WHERE event_id = ?", (_now(), str(event_id)))
         _audit(conn, "event_cancelled", event_id=str(event_id), actor=actor_user_id)
         conn.commit()
-        return _event_public(conn, _get_event(conn, event_id))
+        return _event_manage(conn, _get_event(conn, event_id))
     finally:
         conn.close()
 
@@ -312,20 +378,122 @@ def cancel_event(event_id: Any, actor_user_id: Any, *,
 # Reads
 # ---------------------------------------------------------------------------
 def get_event(event_id: Any, requester_user_id: Any = None) -> Optional[dict]:
-    """Published events are publicly readable; draft/cancelled only by a manager."""
+    """Published events are publicly readable; draft/cancelled only by a manager.
+
+    The manager check runs first now, for every status rather than only the
+    non-public ones. It used to run second and only as a fallback, which read
+    as "published is public, so nobody needs checking" — and that was true of
+    who may *see* the event but not of *what they see*. A published event went
+    back as the whole row to anyone who asked, manager-identity and
+    per-tier sales counts included. Deciding the audience once, at the top,
+    is what makes the two projections below mutually exhaustive: a caller is
+    either a manager and gets the row, or is not and gets the allowlist.
+    """
     _require_enabled()
     conn = db.connect()
     try:
         event = _get_event(conn, event_id)
         if not event:
             return None
-        if event["status"] == "published" or event["status"] == "completed":
-            return _event_public(conn, event)
-        # Non-public state: only a manager may see it.
-        if requester_user_id is not None and _can_manage(
-                conn, event["business_id"], requester_user_id):
-            return _event_public(conn, event)
+        is_manager = requester_user_id is not None and _can_manage(
+            conn, event["business_id"], requester_user_id)
+        if is_manager:
+            return _event_manage(conn, event)
+        if event["status"] in ("published", "completed"):
+            return _event_visitor(conn, event)
+        # Draft or cancelled, and the caller cannot manage it: as far as they
+        # are concerned it does not exist. Not a 403 — that would confirm the
+        # id names something real.
         return None
+    finally:
+        conn.close()
+
+
+# How many rows `list_public_events` will look at before giving up. The
+# "has it already happened" test cannot be pushed into SQL — see `_parse_when`
+# — so the filter runs in Python over a bounded window. A business whose most
+# recent 500 events are all in the past shows none upcoming, which is very
+# probably the truth about that business.
+PUBLIC_EVENT_SCAN_CAP = 500
+
+
+def _parse_when(value: Any) -> Optional[datetime]:
+    """A stored date, or ``None`` when it is not one.
+
+    `starts_at` / `ends_at` are `_clean_text` columns: free text, capped at 40
+    characters, never format-checked on the way in. So there is no SQL
+    comparison that can be trusted here — `'2026-08-23' < '2026-08-23T09:00Z'`
+    is true as text and false as a date, and an offset like `+02:00` sorts
+    against a `Z` timestamp by its punctuation. Anything that does not parse
+    returns ``None`` and is treated as "no date given" rather than guessed at.
+    """
+    if not isinstance(value, str):
+        return None
+    raw = value.strip()
+    if not raw:
+        return None
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _has_ended(event: dict, now: datetime) -> bool:
+    """Whether this event is over.
+
+    `ends_at` decides when it is given, because a festival that started on
+    Friday is still on on Saturday. Falling back to `starts_at` treats a
+    single-moment event as over once it has begun.
+
+    An event with no usable date has *not* ended. "Date to be announced" is a
+    real state for an event page, and dropping those rows would hide a real
+    upcoming event because somebody typed the date in a format we don't read.
+    """
+    when = _parse_when(event.get("ends_at")) or _parse_when(event.get("starts_at"))
+    if when is None:
+        return False
+    return when < now
+
+
+def list_public_events(business_id: Any, *, limit: int = 20,
+                       now: Optional[datetime] = None) -> list:
+    """Upcoming published events for a business, as a visitor may see them.
+
+    No actor argument, deliberately: there is nothing here that changes with
+    who is asking, so there is no requester to get wrong. Draft and cancelled
+    events are excluded in SQL rather than filtered afterwards — an unpublished
+    event must never be *loaded* into a response this function builds.
+
+    `completed` is excluded too. It is a status a manager sets after the fact,
+    and an event still listed as upcoming when the organiser has marked it done
+    is a worse answer than one row fewer.
+    """
+    _require_enabled()
+    try:
+        capped = max(0, min(int(limit), 100))
+    except (TypeError, ValueError):
+        capped = 20
+    if not business_id or capped == 0:
+        return []
+    moment = now or datetime.now(timezone.utc)
+    conn = db.connect()
+    try:
+        rows = _rows(conn.execute(
+            "SELECT * FROM business_os_events "
+            "WHERE business_id = ? AND status = 'published' "
+            # Undated events sort last rather than first. NULLs sort first in
+            # SQLite and last in Postgres, so the sort key is made non-NULL here
+            # instead of relying on the engine's default.
+            "ORDER BY COALESCE(NULLIF(starts_at, ''), '9999') ASC, created_at ASC "
+            "LIMIT ?",
+            (str(business_id), PUBLIC_EVENT_SCAN_CAP)).fetchall())
+        upcoming = [e for e in rows if not _has_ended(e, moment)][:capped]
+        return [_event_visitor(conn, e) for e in upcoming]
     finally:
         conn.close()
 

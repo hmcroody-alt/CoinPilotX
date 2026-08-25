@@ -197,6 +197,9 @@
       "assetDetail": "एसेट",
       "page": "पेज",
       "createPage": "उपस्थिति बनाएँ",
+      "editPage": "पेज संपादित करें",
+      "pageConnections": "कनेक्शन",
+      "pageTeam": "टीम और एक्सेस",
       "yourPages": "आपके पेज",
       "presence": "उपस्थिति"
     },
@@ -209,7 +212,14 @@
       "trustIdentity": "भरोसा और पहचान की लेयर",
       "nativeRoute": "नेटिव PulseSoc रूट",
       "membership": "सदस्यता और बिलिंग",
-      "business": "स्टोर, लिस्टिंग और विज्ञापन"
+      "business": "स्टोर, लिस्टिंग और विज्ञापन",
+      "presenceHome": "आपके आर्टिस्ट और बिज़नेस पेज",
+      "presenceManage": "वे पेज जो आपके हैं या जिन्हें आप चलाने में मदद करते हैं",
+      "presenceCreate": "आर्टिस्ट, बिज़नेस या संगठन",
+      "presenceEdit": "नाम, हैंडल, तस्वीरें और संपर्क",
+      "presenceConnections": "यह प्रेज़ेंस किससे जुड़ी है",
+      "presenceTeam": "इस प्रेज़ेंस की ओर से कौन काम कर सकता है",
+      "presencePublic": "उपस्थिति पेज"
     },
     "identity": {
       "member": "PulseSoc मेंबर"

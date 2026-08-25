@@ -197,6 +197,9 @@
       "assetDetail": "资产",
       "page": "页面",
       "createPage": "创建公众形象",
+      "editPage": "编辑主页",
+      "pageConnections": "关联",
+      "pageTeam": "团队与权限",
       "yourPages": "你的页面",
       "presence": "公众形象"
     },
@@ -209,7 +212,14 @@
       "trustIdentity": "信任与身份层",
       "nativeRoute": "PulseSoc 原生页面",
       "membership": "会员与账单",
-      "business": "店铺、商品与广告"
+      "business": "店铺、商品与广告",
+      "presenceHome": "你的艺人和商家主页",
+      "presenceManage": "你拥有或协助管理的主页",
+      "presenceCreate": "艺人、商家或组织",
+      "presenceEdit": "名称、账号、图片和联系方式",
+      "presenceConnections": "此主页已关联的内容",
+      "presenceTeam": "谁可以代表此主页操作",
+      "presencePublic": "公众形象页面"
     },
     "identity": {
       "member": "PulseSoc 会员"

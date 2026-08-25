@@ -18011,7 +18011,56 @@ def api_pulsesoc_page_handle_check():
     conn = pulse_pages_conn()
     try:
         pulsesoc_pages.ensure_tables(conn)
-        return jsonify({"ok": True, **pulsesoc_pages.check_handle(conn, request.args.get("handle"))})
+        # Editing a page re-checks the handle it already holds, which would come
+        # back "taken by another page" — by itself. `page_id` excludes it, and
+        # is gated on edit_page so the exclusion can only be asked for by
+        # someone who could rename the page anyway.
+        # A malformed page_id falls back to no exclusion, which is the stricter
+        # answer, rather than to a 500.
+        try:
+            exclude_page_id = int(request.args.get("page_id") or 0) or None
+        except (TypeError, ValueError):
+            exclude_page_id = None
+        if exclude_page_id:
+            pulsesoc_pages.require_permission(conn, user["user_id"], exclude_page_id, "edit_page")
+        return jsonify({
+            "ok": True,
+            **pulsesoc_pages.check_handle(conn, request.args.get("handle"), exclude_page_id=exclude_page_id),
+        })
+    except Exception as exc:
+        return pulse_pages_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pages/invites", methods=["GET"])
+def api_pulsesoc_page_invites():
+    # The invite token used to exist only in the inviter's API response, so
+    # joining a team meant someone pasting it to you. This is how the person it
+    # was issued to finds it. Scoped to the caller by user_id, never by page.
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = pulse_pages_conn()
+    try:
+        return jsonify({"ok": True, "invites": pulsesoc_pages.list_my_invites(conn, user["user_id"])})
+    except Exception as exc:
+        return pulse_pages_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pages/invites/decline", methods=["POST"])
+def api_pulsesoc_page_invite_decline():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = pulse_pages_conn()
+    try:
+        payload = request.get_json(silent=True) or {}
+        return jsonify({"ok": True, **pulsesoc_pages.decline_invite(conn, user["user_id"], payload.get("token"))})
     except Exception as exc:
         return pulse_pages_error_response(exc)
     finally:
@@ -18041,11 +18090,7 @@ def api_pulsesoc_page_by_handle(handle):
     conn = pulse_pages_conn()
     try:
         pulsesoc_pages.ensure_tables(conn)
-        page = pulsesoc_pages._load_page(conn, handle)
-        if page.get("status") in ("UNPUBLISHED", "DEACTIVATED"):
-            viewer_role = pulsesoc_pages.role_for(conn, user["user_id"], page["id"]) if user else None
-            if not viewer_role:
-                return api_error("Page not found.", 404)
+        page = pulsesoc_pages._load_visible_page(conn, handle, user["user_id"] if user else None)
         return jsonify({"ok": True, "page": pulsesoc_pages.public_view(conn, page, viewer_user_id=user["user_id"] if user else None)})
     except Exception as exc:
         return pulse_pages_error_response(exc)
@@ -18064,11 +18109,7 @@ def api_pulsesoc_page_detail(page_id):
             if not user:
                 return api_error("Login required.", 401)
             return jsonify({"ok": True, "page": pulsesoc_pages.update_page(conn, user["user_id"], page_id, request.get_json(silent=True) or {})})
-        page = pulsesoc_pages._load_page(conn, page_id)
-        if page.get("status") in ("UNPUBLISHED", "DEACTIVATED"):
-            viewer_role = pulsesoc_pages.role_for(conn, user["user_id"], page["id"]) if user else None
-            if not viewer_role:
-                return api_error("Page not found.", 404)
+        page = pulsesoc_pages._load_visible_page(conn, page_id, user["user_id"] if user else None)
         return jsonify({"ok": True, "page": pulsesoc_pages.public_view(conn, page, viewer_user_id=user["user_id"] if user else None)})
     except Exception as exc:
         return pulse_pages_error_response(exc)
@@ -18134,7 +18175,9 @@ def api_pulsesoc_page_members(page_id):
         if request.method == "POST":
             invite = pulsesoc_pages.invite_member(conn, user["user_id"], page_id, request.get_json(silent=True) or {})
             return jsonify({"ok": True, "invite": invite, "message": "Invite sent."})
-        return jsonify({"ok": True, "members": pulsesoc_pages.list_members(conn, user["user_id"], page_id)})
+        # `members` stays at the top level for existing callers; the rest of
+        # team_view tells the client what this caller may actually change.
+        return jsonify({"ok": True, **pulsesoc_pages.team_view(conn, user["user_id"], page_id)})
     except Exception as exc:
         return pulse_pages_error_response(exc)
     finally:
@@ -18220,7 +18263,7 @@ def api_pulsesoc_page_posts(page_id):
         conn.close()
 
 
-@webhook_app.route("/api/pages/<int:page_id>/links", methods=["GET", "POST"])
+@webhook_app.route("/api/pages/<int:page_id>/links", methods=["GET", "POST", "DELETE"])
 def api_pulsesoc_page_links(page_id):
     init_db()
     user = api_account_user()
@@ -18228,11 +18271,42 @@ def api_pulsesoc_page_links(page_id):
         return api_error("Login required.", 401)
     conn = pulse_pages_conn()
     try:
+        if request.method == "DELETE":
+            # Body first, matching where GET and POST name their subject on this
+            # same URL. `?type=` is a transit fallback rather than a second
+            # interface: a DELETE body has no defined semantics in HTTP, so an
+            # intermediary is within its rights to drop it. Same spelling as the
+            # GET's filter, so the route has one name for this, not two.
+            payload = request.get_json(silent=True) or {}
+            link_type = payload.get("link_type") or request.args.get("type")
+            return jsonify({"ok": True, "link": pulsesoc_pages.clear_link(conn, user["user_id"], page_id, link_type)})
         if request.method == "POST":
             payload = request.get_json(silent=True) or {}
             return jsonify({"ok": True, "link": pulsesoc_pages.set_link(conn, user["user_id"], page_id, payload.get("link_type"), payload.get("ref_id"))})
         pulsesoc_pages.require_permission(conn, user["user_id"], page_id, "view_analytics")
         return jsonify({"ok": True, "links": pulsesoc_pages.list_links(conn, page_id, request.args.get("type"))})
+    except Exception as exc:
+        return pulse_pages_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pages/<int:page_id>/link-options", methods=["GET"])
+def api_pulsesoc_page_link_options(page_id):
+    """What this presence is connected to, and what it could be connected to.
+
+    Separate from `/links` because that returns rows as stored; this answers a
+    question the management surface actually asks — which of the caller's own
+    shops, ad accounts, communities and catalogues are attachable here. Without
+    it the only way to connect anything is to know an internal id and type it.
+    """
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = pulse_pages_conn()
+    try:
+        return jsonify({"ok": True, **pulsesoc_pages.link_options(conn, user["user_id"], page_id)})
     except Exception as exc:
         return pulse_pages_error_response(exc)
     finally:
@@ -18277,9 +18351,34 @@ def api_admin_page_detail(page_id):
 @webhook_app.route("/api/pages/<int:page_id>/music", methods=["GET"])
 def api_pulsesoc_page_music(page_id):
     init_db()
+    user = api_account_user()
     conn = pulse_pages_conn()
     try:
-        return jsonify({"ok": True, **pulsesoc_pages.page_music(conn, page_id, request.args.get("limit") or 24)})
+        return jsonify({"ok": True, **pulsesoc_pages.page_music(
+            conn, page_id, request.args.get("limit") or 24,
+            viewer_user_id=user["user_id"] if user else None)})
+    except Exception as exc:
+        return pulse_pages_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pages/<int:page_id>/events", methods=["GET"])
+def api_pulsesoc_page_events(page_id):
+    """Upcoming dates for a presence. Public, and no login required.
+
+    Login is read but not demanded: a signed-in team member may see the page
+    while it is unpublished, and everyone else gets the same visitor
+    projection. Nothing here varies by who is asking beyond that — the events
+    themselves are the published ones either way.
+    """
+    init_db()
+    user = api_account_user()
+    conn = pulse_pages_conn()
+    try:
+        return jsonify({"ok": True, **pulsesoc_pages.page_events(
+            conn, page_id, request.args.get("limit") or 12,
+            viewer_user_id=user["user_id"] if user else None)})
     except Exception as exc:
         return pulse_pages_error_response(exc)
     finally:

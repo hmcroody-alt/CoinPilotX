@@ -11,8 +11,10 @@ any metric threshold.
 
 ## Flow
 
-1. A page member with `edit_page` submits `POST /api/pages/:id/verification` with
-   supporting details. State moves to `pending` and the request is audited.
+1. The **OWNER** submits `POST /api/pages/:id/verification` with supporting details
+   (`manage_status`, alongside payments and settings). State moves to `pending` and
+   the request is audited. Asking the trust team to certify that this presence is who
+   it claims to be is a statement about identity, not a content task.
 2. Review is a human/admin decision outside Page OS write paths. Page OS exposes the
    state; it never flips itself to `verified`.
 3. `rejected` pages may re-apply; `verified` is reflected in `public_view` and in

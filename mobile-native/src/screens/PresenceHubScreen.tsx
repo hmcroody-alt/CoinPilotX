@@ -12,23 +12,50 @@ import {
 import { listMyPages, pageTypeLabel, PulsePage } from "../api/pages";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
+import { presenceAccent } from "../theme/presenceAccent";
 import { presenceTheme } from "../theme/presenceTheme";
 import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Presence">;
 
-/** Page types whose management naturally continues into Business OS. */
-const BUSINESS_TYPES = new Set([
-  "BUSINESS", "BRAND", "STORE", "RESTAURANT", "PROFESSIONAL_SERVICE",
-  "LOCAL_BUSINESS", "NONPROFIT", "ORGANIZATION", "MEDIA", "VENUE", "EDUCATION"
-]);
+/**
+ * Whether this presence has a Business OS to go to, as decided by the server.
+ *
+ * This used to be two frozensets in this file — a third copy of the server's
+ * `BUSINESS_PAGE_TYPES`, whose own comment says a second copy is a second
+ * thing to forget when a page type is added. It had already drifted: anything
+ * the two sets did not name fell through to "business", so an OTHER presence
+ * was offered a Business OS door the server does not think it has. Nothing
+ * could catch that, because the divergence was between a Python constant and a
+ * TypeScript literal.
+ *
+ * `business_os_capable` is now sent with the page. An older server that omits
+ * it withholds the button, which is the safe way round: a missing door is a
+ * shorter card, a door onto nothing is the thing this whole mission is about.
+ */
+function hasBusinessOs(page: PulsePage): boolean {
+  return page.business_os_capable === true;
+}
 
-const ARTIST_TYPES = new Set(["ARTIST", "CREATOR", "PUBLIC_FIGURE", "SPORTS_TEAM"]);
-
-function presenceKind(page: PulsePage): "artist" | "business" {
-  if (ARTIST_TYPES.has(page.page_type)) return "artist";
-  if (BUSINESS_TYPES.has(page.page_type)) return "business";
-  return "business";
+/**
+ * The modules this presence could have and does not yet, named.
+ *
+ * Read straight off the server's `modules` map rather than re-derived here.
+ * That map is `module_availability()` — the same answer that decides which
+ * tabs a visitor sees — so this line cannot drift from what the presence
+ * actually shows. A module that is always backed (`posts`, `about`, `home`) is
+ * never `false`, so it never appears; only work that is genuinely outstanding
+ * does.
+ *
+ * An older server that omits `modules` yields nothing at all. A silent card is
+ * a better wrong answer than one that tells the owner their music is missing
+ * because a field did not arrive.
+ */
+function pendingModules(page: PulsePage): string[] {
+  const modules = page.modules || {};
+  return Object.keys(modules)
+    .filter((tab) => !modules[tab])
+    .map((tab) => tab.charAt(0).toUpperCase() + tab.slice(1));
 }
 
 /**
@@ -110,7 +137,21 @@ export function PresenceHubScreen({ navigation }: Props) {
       <View style={styles.offerCard}>
         <Text style={styles.offerTitle}>Artist Presence</Text>
         <Text style={styles.offerLead}>Build your official artist home.</Text>
-        <Text style={styles.offerList}>Music · Releases · Videos · Events · Fans · Store · Insights</Text>
+        {/*
+          Was "Music · Releases · Videos · Events · Fans · Store · Insights".
+          Three of those were not modules at all — there is no Releases, no
+          Fans, and the management view calls its analytics Overview, not
+          Insights — and the tab is Merch rather than Store. A pitch that names
+          things the product does not have is where a hollow surface starts.
+          The set also genuinely varies by page type (a public figure gets
+          videos but not music), so it says so instead of promising a fixed
+          list it cannot keep.
+        */}
+        <Text style={styles.offerList}>
+          Posts, music, videos, events and merch — each one pointed at the system that
+          already holds it, never a second copy. Which of them your page shows depends on
+          the type you pick next.
+        </Text>
         <Pressable
           accessibilityRole="button"
           style={styles.offerButton}
@@ -123,7 +164,18 @@ export function PresenceHubScreen({ navigation }: Props) {
       <View style={styles.offerCard}>
         <Text style={styles.offerTitle}>Business Presence</Text>
         <Text style={styles.offerLead}>Build your official business home.</Text>
-        <Text style={styles.offerList}>Products · Services · Store · Marketplace · Events · Customers · Insights</Text>
+        {/*
+          Was "Products · Services · Store · Marketplace · Events · Customers ·
+          Insights". Services was removed as a module on purpose — Marketplace
+          already carries service and booking listings, so a separate one would
+          be a second commerce backend — and there is no Customers module and
+          no section called Insights.
+        */}
+        <Text style={styles.offerList}>
+          Your shop from Marketplace, your dates from Business OS, your campaigns from
+          Ads — connected to what you already run rather than rebuilt here. Which of them
+          your page shows depends on the type you pick next.
+        </Text>
         <Pressable
           accessibilityRole="button"
           style={styles.offerButton}
@@ -139,21 +191,47 @@ export function PresenceHubScreen({ navigation }: Props) {
         <Text style={styles.empty}>You haven't created a Presence yet.</Text>
       ) : (
         pages.map((page) => {
-          const kind = presenceKind(page);
+          const pending = pendingModules(page);
+          /*
+            The card is drawn in the presence's own colour, from its type.
+            This list is the one place a member holds their presences side by
+            side, and the spine down the left is what tells the restaurant from
+            the artist page before either name is read. The badges below are
+            left out of it deliberately: Public and Verified are claims about
+            state and trust, and they have to mean the same thing on every card.
+          */
+          const tone = presenceAccent(page.page_type);
           return (
-            <View key={page.id} style={styles.presenceCard}>
+            <View
+              key={page.id}
+              testID={`presence-card-${page.id}`}
+              style={[styles.presenceCard, { borderLeftColor: tone.base }]}
+            >
               <View style={styles.presenceIdentity}>
                 {page.avatar_url ? (
-                  <Image source={{ uri: page.avatar_url }} style={styles.presenceAvatar} />
+                  <Image
+                    source={{ uri: page.avatar_url }}
+                    style={[styles.presenceAvatar, { borderColor: tone.border }]}
+                  />
                 ) : (
-                  <View style={[styles.presenceAvatar, styles.presenceAvatarFallback]}>
-                    <Text style={styles.presenceAvatarInitial}>{page.name.slice(0, 1).toUpperCase()}</Text>
+                  <View
+                    style={[
+                      styles.presenceAvatar,
+                      styles.presenceAvatarFallback,
+                      { backgroundColor: tone.fill, borderColor: tone.border }
+                    ]}
+                  >
+                    <Text style={[styles.presenceAvatarInitial, { color: tone.base }]}>
+                      {page.name.slice(0, 1).toUpperCase()}
+                    </Text>
                   </View>
                 )}
                 <View style={styles.presenceMetaBlock}>
                   <Text style={styles.presenceName}>{page.name}</Text>
                   <Text style={styles.presenceMeta}>
                     {pageTypeLabel(page.page_type)} · {page.followers_count === 1 ? "1 follower" : `${page.followers_count} followers`}
+                    {" · "}
+                    {page.posts_count === 1 ? "1 post" : `${page.posts_count} posts`}
                   </Text>
                   {/* Badges reflect real server state only: status straight from the
                       row, Verified only when the server granted it. No inferred flags. */}
@@ -165,6 +243,16 @@ export function PresenceHubScreen({ navigation }: Props) {
                   </View>
                 </View>
               </View>
+              {/*
+                What is left to set up, measured rather than guessed. This is
+                the server's own availability map, so the card and the page
+                cannot disagree about whether the shop is connected. Nothing is
+                said when there is nothing outstanding — a card that always
+                carries a line trains people to stop reading it.
+              */}
+              {pending.length ? (
+                <Text style={styles.presencePending}>Not set up yet: {pending.join(", ")}</Text>
+              ) : null}
               <View style={styles.presenceActions}>
                 <Pressable
                   accessibilityRole="button"
@@ -180,7 +268,20 @@ export function PresenceHubScreen({ navigation }: Props) {
                 >
                   <Text style={styles.presenceActionText}>Manage</Text>
                 </Pressable>
-                {kind === "business" ? (
+                {/*
+                  Business presences get a third action because there is a
+                  third place to go. Artist presences used to get one labelled
+                  "Insights" that navigated to `PagesHub` with the same
+                  `focusPageId` as Manage — the identical destination under a
+                  different word, and a word naming a section that does not
+                  exist (the management view calls it Overview). Two buttons
+                  doing one job is how a surface starts feeling hollow, so the
+                  duplicate is gone rather than relabelled. There is no separate
+                  artist subsystem to point at, and inventing a door to make
+                  the two cards look symmetrical would be the same mistake in a
+                  new place.
+                */}
+                {hasBusinessOs(page) ? (
                   <Pressable
                     accessibilityRole="button"
                     style={styles.presenceAction}
@@ -188,15 +289,7 @@ export function PresenceHubScreen({ navigation }: Props) {
                   >
                     <Text style={styles.presenceActionText}>Business OS</Text>
                   </Pressable>
-                ) : (
-                  <Pressable
-                    accessibilityRole="button"
-                    style={styles.presenceAction}
-                    onPress={() => navigation.navigate("PagesHub", { focusPageId: page.id })}
-                  >
-                    <Text style={styles.presenceActionText}>Insights</Text>
-                  </Pressable>
-                )}
+                ) : null}
               </View>
             </View>
           );
@@ -341,6 +434,7 @@ const styles = createThemedStyles(() => ({
   },
   presenceAvatar: {
     borderRadius: 20,
+    borderWidth: 1,
     height: 40,
     width: 40
   },
@@ -359,6 +453,9 @@ const styles = createThemedStyles(() => ({
     borderColor: colors.border,
     borderRadius: 12,
     borderWidth: 1,
+    // The spine. Wide enough to read down a scrolling list at a glance, and
+    // the one place on this card the accent is at full strength.
+    borderLeftWidth: 3,
     marginTop: 10,
     padding: 14
   },
@@ -378,6 +475,12 @@ const styles = createThemedStyles(() => ({
     color: colors.text,
     fontSize: 15,
     fontWeight: "900"
+  },
+  presencePending: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 10
   },
   retryButton: {
     borderColor: presenceTheme.tealBorder,
