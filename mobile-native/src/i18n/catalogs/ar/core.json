@@ -212,14 +212,23 @@
       "trustIdentity": "طبقة الثقة والهوية",
       "nativeRoute": "مسار PulseSoc الأصلي",
       "membership": "العضوية والفوترة",
-      "business": "المتجر والقوائم والإعلانات",
+      "business": "مساحة عمل الأعمال",
       "presenceHome": "صفحات الفنان والنشاط التجاري الخاصة بك",
       "presenceManage": "صفحات تملكها أو تساعد في إدارتها",
       "presenceCreate": "فنان أو نشاط تجاري أو مؤسسة",
       "presenceEdit": "الاسم والمعرّف والصور وجهة الاتصال",
       "presenceConnections": "بماذا يرتبط هذا الحضور",
       "presenceTeam": "من يمكنه التصرف باسم هذا الحضور",
-      "presencePublic": "صفحة حضور"
+      "presencePublic": "صفحة حضور",
+      "feed": "المنشورات والمجتمعات",
+      "profiles": "الملفات الشخصية والحضور",
+      "discovery": "البحث والاستكشاف",
+      "creatorTools": "أدوات صناع المحتوى والنشر",
+      "liveEvents": "البث المباشر والفعاليات",
+      "learning": "الدورات والتعلم",
+      "growth": "النمو والتقدم",
+      "markets": "الأسواق والتنبيهات",
+      "audio": "الموسيقى والتشغيل"
     },
     "identity": {
       "member": "عضو في PulseSoc"

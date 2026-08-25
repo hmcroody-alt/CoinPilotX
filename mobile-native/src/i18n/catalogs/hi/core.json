@@ -212,14 +212,23 @@
       "trustIdentity": "भरोसा और पहचान की लेयर",
       "nativeRoute": "नेटिव PulseSoc रूट",
       "membership": "सदस्यता और बिलिंग",
-      "business": "स्टोर, लिस्टिंग और विज्ञापन",
+      "business": "बिज़नेस वर्कस्पेस",
       "presenceHome": "आपके आर्टिस्ट और बिज़नेस पेज",
       "presenceManage": "वे पेज जो आपके हैं या जिन्हें आप चलाने में मदद करते हैं",
       "presenceCreate": "आर्टिस्ट, बिज़नेस या संगठन",
       "presenceEdit": "नाम, हैंडल, तस्वीरें और संपर्क",
       "presenceConnections": "यह प्रेज़ेंस किससे जुड़ी है",
       "presenceTeam": "इस प्रेज़ेंस की ओर से कौन काम कर सकता है",
-      "presencePublic": "उपस्थिति पेज"
+      "presencePublic": "उपस्थिति पेज",
+      "feed": "पोस्ट और कम्युनिटी",
+      "profiles": "प्रोफ़ाइल और प्रेज़ेंस",
+      "discovery": "खोज और डिस्कवरी",
+      "creatorTools": "क्रिएटर टूल और पब्लिशिंग",
+      "liveEvents": "लाइव और इवेंट",
+      "learning": "कोर्स और लर्निंग",
+      "growth": "ग्रोथ और प्रोग्रेस",
+      "markets": "मार्केट और अलर्ट",
+      "audio": "म्यूज़िक और प्लेबैक"
     },
     "identity": {
       "member": "PulseSoc मेंबर"

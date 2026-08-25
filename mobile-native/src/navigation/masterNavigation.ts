@@ -31,7 +31,7 @@ export const masterNavigationSections: MasterNavigationSection[] = [
     description: "Messaging, identity, network, and communities.",
     actions: [
       { label: "Messages", route: "/pulse/messages", status: "native", description: "Native Messenger inbox." },
-      { label: "Calls", route: "/pulse/calls/qa-call-1", status: "shell", description: "Calls and the call room." },
+      { label: "Calls", route: "/pulse/activity?category=calls", status: "native", description: "Active calls, missed calls, and call invites." },
       { label: "Profile", route: "/pulse/profile", status: "native", description: "Digital identity hub." },
       { label: "Profile Edit", route: "/pulse/profile/edit", status: "native", description: "Edit public identity and profile state." },
       { label: "Groups", route: "/pulse/groups", status: "native", description: "Communities and rooms." },

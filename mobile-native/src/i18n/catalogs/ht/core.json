@@ -212,14 +212,23 @@
       "trustIdentity": "Kouch konfyans ak idantite",
       "nativeRoute": "Wout natif PulseSoc",
       "membership": "Manm ak faktirasyon",
-      "business": "Magazen, lis ak piblisite",
+      "business": "Espas travay biznis",
       "presenceHome": "Paj atis ak biznis ou yo",
       "presenceManage": "Paj ou posede oswa ou ede jere",
       "presenceCreate": "Atis, biznis oswa òganizasyon",
       "presenceEdit": "Non, non itilizatè, imaj ak kontak",
       "presenceConnections": "Ak kisa prezans sa a konekte",
       "presenceTeam": "Kiyès ki ka aji pou prezans sa a",
-      "presencePublic": "Paj prezans"
+      "presencePublic": "Paj prezans",
+      "feed": "Piblikasyon ak kominote",
+      "profiles": "Pwofil ak prezans",
+      "discovery": "Rechèch ak dekouvèt",
+      "creatorTools": "Zouti kreyatè ak piblikasyon",
+      "liveEvents": "Dirèk ak evènman",
+      "learning": "Kou ak aprantisaj",
+      "growth": "Kwasans ak pwogrè",
+      "markets": "Mache ak alèt",
+      "audio": "Mizik ak lekti"
     },
     "identity": {
       "member": "Manm PulseSoc"

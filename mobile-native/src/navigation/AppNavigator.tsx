@@ -683,7 +683,10 @@ const SETTINGS_ROUTE_NAMES = new Set([
   "HelpSettings",
   "AboutSettings",
   "LegalSettings",
-  "DeveloperSettings"
+  "DeveloperSettings",
+  // Not named "*Settings", but it is the language/region/time preference screen
+  // and sits next to LanguageSettings in the settings registry.
+  "RegionTime"
 ]);
 
 /**
@@ -743,6 +746,46 @@ function subtitleForStack(t: Translate, name: string) {
   // a screenshot. "Native PulseSoc route" is a developer placeholder, not a
   // description, so it must not be what sits under the title there.
   if (name.includes("Premium")) return t("common:navSubtitles.membership");
+  if (name.includes("Merchant")) return t("common:navSubtitles.commerce");
+  if (name.includes("Business")) return t("common:navSubtitles.business");
+  if (name.includes("Trust") || name.includes("Security") || name.includes("Scam"))
+    return t("common:navSubtitles.trustIdentity");
+  if (name.includes("Activity") || name.includes("Notification"))
+    return t("common:navSubtitles.activity");
+  if (name.includes("Undx") || name.includes("Intelligence"))
+    return t("common:navSubtitles.intelligence");
+  if (name.includes("Live") || name.includes("Event")) return t("common:navSubtitles.liveEvents");
+  // Before the "Post" and "Profile" tests below, which would otherwise claim
+  // PostScheduler and CreatorStudio for the feed and profile groups.
+  if (
+    name.includes("CreatorStudio") ||
+    name.includes("ContentPlanner") ||
+    name.includes("PostScheduler") ||
+    name.includes("DraftStudio")
+  )
+    return t("common:navSubtitles.creatorTools");
+  if (name.includes("Course") || name.includes("Learning") || name.includes("Teacher"))
+    return t("common:navSubtitles.learning");
+  if (name.includes("Growth") || name.includes("Progress")) return t("common:navSubtitles.growth");
+  if (name.includes("Watchlist") || name.includes("Asset") || name.includes("Alert"))
+    return t("common:navSubtitles.markets");
+  if (name.includes("Music") || name.includes("Queue")) return t("common:navSubtitles.audio");
+  if (
+    name.includes("Profile") ||
+    name.includes("Page") ||
+    name.includes("Presence") ||
+    name.includes("PulseIdentity")
+  )
+    return t("common:navSubtitles.profiles");
+  if (name.includes("Search")) return t("common:navSubtitles.discovery");
+  if (
+    name.includes("Post") ||
+    name.includes("Status") ||
+    name.includes("Group") ||
+    name.includes("Saved") ||
+    name.includes("Share")
+  )
+    return t("common:navSubtitles.feed");
   return t("common:navSubtitles.nativeRoute");
 }
 

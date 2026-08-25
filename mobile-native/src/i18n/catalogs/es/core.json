@@ -212,14 +212,23 @@
       "trustIdentity": "Capa de confianza e identidad",
       "nativeRoute": "Ruta nativa de PulseSoc",
       "membership": "Membresía y facturación",
-      "business": "Tienda, artículos y publicidad",
+      "business": "Espacio de trabajo de negocio",
       "presenceHome": "Tus páginas de artista y negocio",
       "presenceManage": "Páginas que tienes o ayudas a gestionar",
       "presenceCreate": "Artista, negocio u organización",
       "presenceEdit": "Nombre, usuario, imágenes y contacto",
       "presenceConnections": "Con qué está conectada esta presencia",
       "presenceTeam": "Quién puede actuar por esta presencia",
-      "presencePublic": "Página de presencia"
+      "presencePublic": "Página de presencia",
+      "feed": "Publicaciones y comunidades",
+      "profiles": "Perfiles y presencia",
+      "discovery": "Búsqueda y descubrimiento",
+      "creatorTools": "Herramientas de creador y publicación",
+      "liveEvents": "En vivo y eventos",
+      "learning": "Cursos y aprendizaje",
+      "growth": "Crecimiento y progreso",
+      "markets": "Mercados y alertas",
+      "audio": "Música y reproducción"
     },
     "identity": {
       "member": "Miembro de PulseSoc"

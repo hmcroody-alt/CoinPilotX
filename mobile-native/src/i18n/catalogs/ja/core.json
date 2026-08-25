@@ -212,14 +212,23 @@
       "trustIdentity": "信頼と本人確認のレイヤー",
       "nativeRoute": "PulseSocのネイティブ画面",
       "membership": "メンバーシップと請求",
-      "business": "ストア・出品・広告",
+      "business": "ビジネスワークスペース",
       "presenceHome": "あなたのアーティスト／ビジネスページ",
       "presenceManage": "あなたが所有または運営を手伝うページ",
       "presenceCreate": "アーティスト・ビジネス・団体",
       "presenceEdit": "名前・ハンドル・画像・連絡先",
       "presenceConnections": "このプレゼンスの連携先",
       "presenceTeam": "このプレゼンスとして操作できる人",
-      "presencePublic": "プレゼンスページ"
+      "presencePublic": "プレゼンスページ",
+      "feed": "投稿とコミュニティ",
+      "profiles": "プロフィールとプレゼンス",
+      "discovery": "検索と発見",
+      "creatorTools": "クリエイターツールと公開",
+      "liveEvents": "ライブとイベント",
+      "learning": "コースと学習",
+      "growth": "成長と進捗",
+      "markets": "マーケットとアラート",
+      "audio": "音楽と再生"
     },
     "identity": {
       "member": "PulseSocメンバー"
