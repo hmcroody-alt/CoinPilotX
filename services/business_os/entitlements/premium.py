@@ -75,11 +75,20 @@ PREMIUM_CAPABILITIES = (
     # decides on the evidence. Membership buys the application, never the
     # outcome — see NOT_VERIFICATION in premium_api.
     "premium.verification.blue_check.apply",
-    # The crypto branch's spelling of the portfolio capability. Registered
-    # alongside the two keys above rather than renamed into them: seven call
-    # sites ask for this name, and a capability that is presented but not
-    # registered is denied under the default ``off`` mode.
-    "premium.crypto.portfolio_intelligence",
+    # NOTE: premium.crypto.portfolio_intelligence is deliberately NOT listed
+    # here. It is the crypto branch's single-key spelling of what
+    # premium.crypto.portfolio and premium.crypto.intelligence split in two, and
+    # it exists only so the call sites using that name resolve. It is registered
+    # where registration actually matters — facade._LEGACY_READERS, so the
+    # default ``off`` mode has an opinion and does not deny it, and schema.py's
+    # per-plan rows, so a purchase grants it. Neither reads this tuple.
+    #
+    # This tuple is the *presentation* list: everything in it becomes
+    # premium_api._PRESENTED and is advertised as a benefit on the Premium
+    # screen. An alias listed here would sell one capability to one member twice
+    # under two names. That is what test_every_advertised_benefit_has_native_copy
+    # catches by demanding a translated label for it; the honest response is not
+    # to write the label but to stop advertising the alias.
 )
 
 #: Plans that confer Premium membership, in the catalog's vocabulary.

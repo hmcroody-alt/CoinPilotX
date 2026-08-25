@@ -93,6 +93,7 @@ _SEED_CATALOG = [
     ("pulse_premium_trial", "premium.crypto.advanced_alerts", None, None),
     ("pulse_premium_trial", "premium.crypto.portfolio", None, None),
     ("pulse_premium_trial", "premium.crypto.intelligence", None, None),
+    ("pulse_premium_trial", "premium.crypto.portfolio_intelligence", None, None),
     # A trial confers the application right too: the review is what decides the
     # badge, so a trialist submitting evidence costs nothing but reviewer time,
     # and gating it would make "Premium unlocks the application" untrue.
@@ -112,6 +113,7 @@ _SEED_CATALOG = [
     ("pulse_business_monthly", "premium.crypto.advanced_alerts", None, None),
     ("pulse_business_monthly", "premium.crypto.portfolio", None, None),
     ("pulse_business_monthly", "premium.crypto.intelligence", None, None),
+    ("pulse_business_monthly", "premium.crypto.portfolio_intelligence", None, None),
     ("pulse_business_monthly", "premium.verification.blue_check.apply", None, None),
     ("pulse_business_monthly", "business.team_members", 10, None),
     ("pulse_business_monthly", "business.analytics.advanced", None, None),

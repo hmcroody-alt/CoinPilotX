@@ -412,9 +412,20 @@ _register(CapabilitySpec(
     capability_id="crypto.portfolio.summary",
     description="Current valuation of the authenticated user's crypto portfolio "
                 "(premium; locked accounts get an upgrade notice, never invented numbers)",
-    intents=("my portfolio", "portfolio summary", "portfolio value",
+    # Every phrasing names the operation — "what is it worth", "summarize it",
+    # "break it down". None of them is a bare noun phrase like "my portfolio",
+    # and that omission is deliberate: "my portfolio" is a substring of most
+    # sentences a member will ever write about their portfolio, including
+    # "why is my portfolio down this week". That question is *causal and
+    # historical*, and this capability cannot answer it — holdings are not
+    # versioned and the observation series samples symbols rather than
+    # portfolios, so there is no record of what was held when the week opened.
+    # Claiming the turn anyway does not produce a wrong answer, it produces an
+    # empty one: the agent handles it, the model never sees it, and the member
+    # gets silence. Analytical questions must fall through to the provider.
+    intents=("portfolio summary", "portfolio value",
              "what is my portfolio worth", "how is my portfolio doing",
-             "portfolio breakdown", "my holdings", "my crypto holdings"),
+             "portfolio breakdown", "my crypto holdings"),
     risk=RiskLevel.READ_ONLY,
     confirmation=ConfirmationPolicy.NEVER,
     tool_name="pulsesoc.crypto_portfolio.summary",
@@ -422,7 +433,13 @@ _register(CapabilitySpec(
     fields=(),
     executor="crypto_portfolio_summary",
     verifier="",
-    native_route="/pulse/intelligence/:subsystem?",
+    # /pulse/portfolio, not /pulse/intelligence/:subsystem? — the latter is not
+    # a route this app serves. The duplicate spec removed below carried the
+    # right destination and the wrong tool name; this one was the reverse, so
+    # each half is taken from whichever side was checkable. undx_knowledge_map
+    # is what catches this: it declares Portfolio -> /pulse/portfolio and
+    # refuses to build a capability whose native_route disagrees.
+    native_route="/pulse/portfolio",
     result_card=CardType.CONTENT_RESULT,
     audit_category="crypto_portfolio_read",
 ))
