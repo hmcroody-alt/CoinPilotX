@@ -46,6 +46,7 @@ from services.business_os.advertising import events as evts  # noqa: E402
 from services.business_os.advertising import delivery_common as _c  # noqa: E402
 from services.business_os.advertising.service import AdvertisingError  # noqa: E402
 from services.business_os.ledger import ledger  # noqa: E402
+from services.business_os import schema_bootstrap  # noqa: E402
 
 ADMIN = 8
 ACTIVE = {"account_status": "active", "access_enabled": 1}
@@ -55,8 +56,14 @@ _DEST_USER = 555
 
 
 def setup_module(module=None):
-    ad.ensure_schema()
-    ledger.ensure_schema()
+    # The canonical bootstrap production runs, rather than a hand-picked pair of
+    # ensure_schema calls. Eligibility consults advertising.guardrails, whose table
+    # lives behind its own ensure_schema; naming only the advertising + ledger ones
+    # left the guardrail read failing, and it deliberately fails CLOSED, so every
+    # advertiser here was refused with account_halt_state_unreadable. That only
+    # stayed hidden because test_ad_account_guardrails.py sorts earlier and created
+    # the table for the whole session.
+    schema_bootstrap.ensure_all()
     conn = db.connect()
     try:
         conn.execute(
