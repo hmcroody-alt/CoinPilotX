@@ -41435,6 +41435,20 @@ def api_pulse_music_upload():
     return jsonify({"ok": True, "message": "Song uploaded for admin review.", "track_id": track_id, "status": "pending_review", "media": media, "cover_art_url": cover_url})
 
 
+@webhook_app.route("/api/pulse/music/<int:track_id>", methods=["GET"])
+def api_pulse_music_track(track_id):
+    """Addressable lookup for one track. Search returns a ranked slice of the catalog,
+    which is not a reliable way to reach a link that names a specific song."""
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    track = music_service.public_track(str(track_id))
+    if not track:
+        return api_error("Song not found.", 404)
+    return jsonify({"ok": True, "item": track, "trace_id": secrets.token_hex(6)})
+
+
 @webhook_app.route("/api/pulse/music/<int:track_id>/event", methods=["POST"])
 def api_pulse_music_event(track_id):
     init_db()
