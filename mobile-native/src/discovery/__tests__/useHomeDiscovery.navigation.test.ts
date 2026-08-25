@@ -38,8 +38,17 @@ function renderDiscovery() {
   );
 }
 
-/** A reel exactly as `listReels` returns it, which is what gets staged. */
-const rawReel = { id: 42, reel_id: 42, title: "Exact" } as unknown as PulseReel;
+/**
+ * A reel exactly as `listReels` returns it, which is what gets staged.
+ *
+ * The two ids differ deliberately. `normalizeReel` collapses them to a single
+ * value, so a fixture with `id === reel_id` cannot tell whether the navigation
+ * param and the transfer key were resolved by the same rule — it passes even if
+ * one of them reads `id` and the other reads `reel_id`. With them split, these
+ * assertions pin the whole handoff to `reel_id`, which is the one both sides and
+ * `normalizeReel` agree on.
+ */
+const rawReel = { id: 900, reel_id: 42, title: "Exact" } as unknown as PulseReel;
 
 const suggestion: ReelSuggestion = {
   reelId: 42,
