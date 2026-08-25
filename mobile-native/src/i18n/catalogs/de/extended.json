@@ -1481,6 +1481,10 @@
           "label": "Portfolio",
           "hint": "Bestände, Allokation, Performance, Konzentration sowie unrealisierte Gewinne und Verluste."
         },
+        "watchlists": {
+          "label": "Watchlists",
+          "hint": "Verfolge die Assets, die dich interessieren, mit Live-Kursen und richte einen Alarm auf eine ganze Liste."
+        },
         "undx": {
           "label": "UNDX-Krypto-Intelligenz",
           "hint": "Verstehe, warum Alarme ausgelöst wurden und was dein Portfolio bewegt."

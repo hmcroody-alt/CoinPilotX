@@ -1481,6 +1481,10 @@
           "label": "Portfólio",
           "hint": "Posições, alocação, desempenho, concentração e lucros e perdas não realizados."
         },
+        "watchlists": {
+          "label": "Listas de acompanhamento",
+          "hint": "Acompanhe os ativos que lhe interessam com preços em tempo real e aponte um alerta para uma lista inteira."
+        },
         "undx": {
           "label": "Inteligência cripto UNDX",
           "hint": "Entenda por que os alertas dispararam e o que está movendo seu portfólio."

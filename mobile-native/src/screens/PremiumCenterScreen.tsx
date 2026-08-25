@@ -997,15 +997,16 @@ function NotYetSection({ items }: { items: Array<{ key: string; label: string; s
  * screens it describes — deliberately not under `premium:`, whose copy rules
  * exist for billing claims this section never makes.
  *
- * Alerts and Portfolio are pressable because their destinations already ship
- * (`CryptoAlertCenter`, `CryptoPortfolio`); those screens carry their own
- * premium gates, so a free member who taps through sees the honest upsell
- * rather than a wall here. UNDX crypto intelligence surfaces inside those
- * flows and has no standalone route, so its row stays inert — same rule as
- * the Command Center: nothing looks tappable unless a real screen answers.
+ * Alerts, Portfolio and Watchlists are pressable because their destinations
+ * already ship (`CryptoAlertCenter`, `CryptoPortfolio`, `Watchlists`); those
+ * screens carry their own premium gates, so a free member who taps through sees
+ * the honest upsell rather than a wall here. UNDX crypto intelligence surfaces
+ * inside those flows and has no standalone route, so its row stays inert — same
+ * rule as the Command Center: nothing looks tappable unless a real screen
+ * answers.
  */
 type CryptoIntelligenceFeature = {
-  key: "alerts" | "portfolio" | "undx";
+  key: "alerts" | "portfolio" | "watchlists" | "undx";
   icon: keyof typeof Ionicons.glyphMap;
   go?: (navigation: Props["navigation"]) => void;
 };
@@ -1013,10 +1014,15 @@ type CryptoIntelligenceFeature = {
 const CRYPTO_INTELLIGENCE_FEATURES: readonly CryptoIntelligenceFeature[] = [
   { key: "alerts", icon: "pulse-outline", go: (nav) => nav.navigate("CryptoAlertCenter") },
   { key: "portfolio", icon: "pie-chart-outline", go: (nav) => nav.navigate("CryptoPortfolio") },
+  // Watchlists ships as `WatchlistsScreen` and is the thing alerts point at, so
+  // leaving it off this list made the section describe a workflow it could not
+  // start: a member could reach alerts and portfolio from here, but had to know
+  // to go elsewhere for the lists those alerts watch.
+  { key: "watchlists", icon: "list-outline", go: (nav) => nav.navigate("Watchlists") },
   { key: "undx", icon: "sparkles-outline" }
 ];
 
-function CryptoIntelligenceSection({ navigation }: { navigation: Props["navigation"] }) {
+export function CryptoIntelligenceSection({ navigation }: { navigation: Props["navigation"] }) {
   const { t } = useTranslation();
   return (
     <View style={styles.section}>

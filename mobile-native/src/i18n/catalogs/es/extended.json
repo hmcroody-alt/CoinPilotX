@@ -1481,6 +1481,10 @@
           "label": "Portafolio",
           "hint": "Posiciones, distribución, rendimiento, concentración y ganancias y pérdidas no realizadas."
         },
+        "watchlists": {
+          "label": "Listas de seguimiento",
+          "hint": "Sigue los activos que te importan con precios en vivo y apunta una alerta a toda una lista."
+        },
         "undx": {
           "label": "Inteligencia cripto UNDX",
           "hint": "Entiende por qué se activaron las alertas y qué mueve tu portafolio."

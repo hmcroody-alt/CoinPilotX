@@ -1481,6 +1481,10 @@
           "label": "Portefeuille",
           "hint": "Positions, répartition, performance, concentration et plus ou moins-values latentes."
         },
+        "watchlists": {
+          "label": "Listes de suivi",
+          "hint": "Suivez les actifs qui comptent pour vous avec les cours en direct et ciblez une liste entière avec une alerte."
+        },
         "undx": {
           "label": "Intelligence crypto UNDX",
           "hint": "Comprenez pourquoi les alertes se sont déclenchées et ce qui fait bouger votre portefeuille."
