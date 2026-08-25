@@ -1346,3 +1346,60 @@ it. No audible verification is claimed here. Section 7 of
 `reports/realtime_audio_verified_baseline.md` remains an open release gate for
 this range, and the low regression risk argued above is an argument from the
 diff, not a substitute for hearing it work.
+
+## Branch-consolidation addendum (2026-08-24, second sweep)
+
+This addendum declares the protected-path hits in the merge of the outstanding
+agent branches into `main` (`sweep/consolidate-main`, base `ebf4ba31`).
+
+### Why the change is required
+
+None of it is an audio change. The sweep consolidates finished work that was
+sitting uncommitted or unmerged across sixteen worktrees. Three protected paths
+are touched incidentally:
+
+| File | Category | Change |
+|---|---|---|
+| `mobile-native/src/screens/LiveScreen.tsx` | `livestream_audio_adapter` | Two user-facing empty-state sentences, replacing developer vocabulary ("Native discovery uses the existing PulseSoc Live backend", "when the existing API returns them to native") with member-readable copy. Both are `<Text>` children of the list's empty/footer components. |
+| `mobile-native/package.json` | `dependency_watch` | Adds `@react-native-community/datetimepicker@8.4.4`, used by the marketplace checkout's delivery-schedule control. |
+| `mobile-native/package-lock.json` | `dependency_watch` | The lock entry for the above. |
+
+### Which feature required it
+
+The copy edits come from the user-facing-copy gate being taught to read JSX text
+children (`8c623405`), which surfaced these two strings as shipped violations.
+The dependency comes from the marketplace checkout work.
+
+### Expected behavior change
+
+None to audio. The LiveScreen diff contains zero audio lines: no
+`AVAudioSession`, no `Audio.setAudioModeAsync`, no track creation, no
+publication path, no engine or lease call. It changes what two labels say when
+the list is empty. `datetimepicker` renders a date wheel and touches no audio
+API.
+
+### Regression risk
+
+Low, and structural rather than argued: the gate fires on the *file*, and the
+diff in that file is two string literals. The one real risk in the range is that
+`datetimepicker` is a NATIVE module, so it changes the pod graph — `pod install`
+is required before any iOS build, and a build that skips it will fail to link
+rather than fail silently.
+
+### Tests run for this declaration (2026-08-24, local, `sweep/consolidate-main`)
+
+- `npm run test:realtime-audio-critical` — 11 suites / 191 tests passed.
+- `npm run test:realtime-audio` — 18 suites / 310 tests passed.
+- `npm run test:realtime-audio-architecture` — 22 tests passed.
+- `python3 -m unittest tests.protection.test_realtime_audio_architecture` — 19 tests, OK.
+- `pytest tests/protection/test_agora_token_generation.py
+  tests/protection/test_agora_rtc_provider_contract.py` — 13 passed.
+- `npx tsc --noEmit` — exit 0.
+- Full native suite — 293 suites / 4861 tests passed.
+- `npm run i18n:validate` — 11 locales at 100%, catalog 1.0.0.
+
+### Physical validation NOT performed
+
+No call was placed and no livestream was started or listened to on a device for
+this range. No audible verification is claimed. Section 7 of
+`reports/realtime_audio_verified_baseline.md` remains open for this range.

@@ -91,7 +91,7 @@ describe("navigator header titles", () => {
     // screens take their title from `route.params.title`, and a few set none.
     // Adding a screen with a title moves this by one; that is expected upkeep,
     // and the number is the point of the check.
-    expect(TITLE_OPTIONS.length).toBe(129);
+    expect(TITLE_OPTIONS.length).toBe(130);
   });
 
   it("has no hardcoded string literal titles", () => {
