@@ -53,7 +53,8 @@ import {
   marketplaceListingFulfillment as listingFulfillment,
   marketplaceListingPriceMinor
 } from "../api/marketplaceBuyerPresentation";
-import { resolveFulfillmentKind, ticketOptions } from "../api/marketplaceFulfillment";
+import { fulfillmentTypeLabel, resolveFulfillmentKind, ticketOptions } from "../api/marketplaceFulfillment";
+import { marketplaceListingThumbnail } from "../api/marketplaceScreen";
 import { buyerErrorCopy } from "../api/marketplaceErrors";
 import { sellerStoreInitial, sellerStoreName } from "../api/sellerIdentity";
 import { conversationSplitEnabled } from "../api/conversationDomain";
@@ -243,6 +244,8 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
     // The unit price is multiplied out here: passing the bare label would have
     // let the checkout CTA read "$5.00" on an order for two.
     const unitMinor = marketplaceListingPriceMinor(listing);
+    const kind = resolveFulfillmentKind(listing);
+    const thumbnail = marketplaceListingThumbnail(listing);
     navigation.navigate("MarketplaceCheckout", {
       mode: "buy_now",
       listingId,
@@ -253,8 +256,13 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
       ...(unitMinor != null ? { subtotalMinor: unitMinor * qty, currency: listing.currency || "USD" } : {}),
       quantity: qty,
       fulfillment: listingFulfillment(listing),
-      fulfillmentKind: resolveFulfillmentKind(listing),
-      ticketOptions: ticketOptions(listing)
+      fulfillmentKind: kind,
+      ticketOptions: ticketOptions(listing),
+      // The summary card's picture and pill. Carried rather than re-fetched: this
+      // screen already holds the listing, and the checkout should not have to
+      // load a row to draw a thumbnail.
+      ...(thumbnail ? { imageUrl: thumbnail } : {}),
+      listingTypeLabel: fulfillmentTypeLabel(kind)
     });
   }
 

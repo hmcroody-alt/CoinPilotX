@@ -367,6 +367,23 @@ def _serialize_lines(bot, cur, user_id: int) -> list[dict]:
 # Routes
 # --------------------------------------------------------------------------
 
+@cart_blueprint.route(f"{API_PREFIX}/checkout-options", methods=["GET"])
+def cart_checkout_options():
+    """What the checkout form may offer, as the server defines it.
+
+    Only the delivery-country allowlist today. It exists because the country
+    field is a picker rather than free text, and a picker built from a list the
+    client invented would show the buyer countries that
+    :func:`marketplace_fulfillment.validate_details` then refuses — a rejection
+    after the form is filled, for a choice the form itself offered.
+
+    Read-only, no user state, and deliberately the same source Stripe's
+    ``allowed_countries`` reads, so the picker cannot drift from the payment
+    step. Unauthenticated on purpose: it is configuration, not anyone's data.
+    """
+    return _json({"ok": True, "shipping_countries": list(marketplace_fulfillment.shipping_countries())})
+
+
 @cart_blueprint.route(API_PREFIX, methods=["GET"])
 def cart_list():
     bot = _bot()

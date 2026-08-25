@@ -1,12 +1,16 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AppState, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { AppState, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { openMarketplaceCheckout } from "../api/marketplace";
 import {
   firstMissingFulfillmentField,
   fulfillmentDestinationSummary,
   fulfillmentFields,
   fulfillmentNeedsAddress,
+  fulfillmentTypeLabel,
+  isAutoFilledField,
   resolveFulfillmentChoice,
   UNDECIDED_KINDS,
   type FulfillmentField,
@@ -19,14 +23,40 @@ import {
   validateCart
 } from "../api/marketplaceCommerce";
 import { buyerErrorCopy } from "../api/marketplaceErrors";
+import { fetchShippingCountries, type CheckoutCountry } from "../api/checkoutCountries";
+import {
+  deviceTimezone,
+  formatDateLabel,
+  formatTimeLabel,
+  fromIsoDate,
+  fromWireTime,
+  timezoneDisplayLabel
+} from "../api/checkoutSchedule";
 import {
   isPaymentSheetAvailable,
   presentPaymentSheet,
   type PaymentSheetBootstrap
 } from "../api/stripePaymentSheet";
 import { RootStackParamList } from "../navigation/types";
-import { MARKETPLACE_CART_CTA, storeLight } from "../theme/marketplaceLight";
+import { checkoutDark, STORE_CTA } from "../theme/marketplaceCheckoutDark";
 import { PaymentController } from "../payments/PaymentController";
+import {
+  CheckoutStepper,
+  DateField,
+  InfoNote,
+  PrimaryButton,
+  ProductSummaryCard,
+  RadioRow,
+  SecondaryButton,
+  Section,
+  SelectField,
+  SummaryRow,
+  TextField,
+  TimeField,
+  TimezoneNote,
+  type CheckoutStepIndex,
+  type SelectOption
+} from "./marketplace/CheckoutControls";
 
 type Props = NativeStackScreenProps<RootStackParamList, "MarketplaceCheckout">;
 type Stage = "details" | "review" | "opening" | "processing" | "confirmed" | "failed";
@@ -69,12 +99,14 @@ function lanesFor(kind: MarketplaceFulfillmentKind) {
   return kind === "service_choice" ? ["remote", "in_person"] : ["pickup", "shipping"];
 }
 
-function placeholderFor(field: FulfillmentField) {
-  if (field.type === "date") return "YYYY-MM-DD";
-  if (field.type === "time") return "HH:MM";
-  if (field.type === "country") return "US";
-  if (field.type === "timezone") return "America/New_York";
-  return "";
+/** The step the progress bar should light. `opening` is still Payment — the
+ * sheet is being built — and `failed` returns the buyer to Review, which is
+ * where the retry lives. */
+function stepIndexFor(stage: Stage): CheckoutStepIndex {
+  if (stage === "details") return 0;
+  if (stage === "review" || stage === "failed") return 1;
+  if (stage === "confirmed") return 3;
+  return 2;
 }
 
 function formatMinor(minor = 0, currency = "USD") {
@@ -89,6 +121,19 @@ function makeIntentKey(mode: "cart" | "buy_now", subject: number) {
   return `${mode}-${subject}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/** Keyboard and capitalisation per field type, so a postcode does not open a
+ * prose keyboard and a name is not lowercased. */
+function inputTraitsFor(field: FulfillmentField) {
+  if (field.type === "phone") return { keyboardType: "phone-pad" as const, autoCapitalize: "none" as const, textContentType: "telephoneNumber" as const };
+  if (field.type === "name") return { keyboardType: "default" as const, autoCapitalize: "words" as const, textContentType: "name" as const };
+  if (field.key === "address_line1") return { keyboardType: "default" as const, autoCapitalize: "words" as const, textContentType: "streetAddressLine1" as const };
+  if (field.key === "address_line2") return { keyboardType: "default" as const, autoCapitalize: "words" as const, textContentType: "streetAddressLine2" as const };
+  if (field.key === "address_city") return { keyboardType: "default" as const, autoCapitalize: "words" as const, textContentType: "addressCity" as const };
+  if (field.key === "address_region") return { keyboardType: "default" as const, autoCapitalize: "words" as const, textContentType: "addressState" as const };
+  if (field.key === "address_postal_code") return { keyboardType: "default" as const, autoCapitalize: "characters" as const, textContentType: "postalCode" as const };
+  return { keyboardType: "default" as const, autoCapitalize: "sentences" as const, textContentType: undefined };
+}
+
 /**
  * Native review and authoritative post-payment state for Marketplace.
  *
@@ -96,9 +141,18 @@ function makeIntentKey(mode: "cart" | "buy_now", subject: number) {
  * from Stripe only starts polling; this screen shows success exclusively when
  * PulseSoc's authenticated order endpoint reports the webhook-confirmed paid
  * state. That keeps receipts, inventory capture and seller proceeds aligned.
+ *
+ * What the buyer is *asked* is decided by the order's fulfilment kind, which is
+ * resolved server-side from the stored listing row — see
+ * `services/marketplace_fulfillment.py`. This screen renders that decision; it
+ * does not make it. Every control below is chosen so it cannot emit a value the
+ * server would reject: the calendar produces the ISO date, the clock produces
+ * 24-hour time, the country list is the one the server said it accepts, and the
+ * timezone is read from the device rather than typed.
  */
 export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
   const params = route.params;
+  const insets = useSafeAreaInsets();
   const subject = Number(params.sellerUserId || params.listingId || 0);
   const intentKey = useRef(makeIntentKey(params.mode, subject));
   // What this order type actually needs, decided before anything is asked. A
@@ -117,7 +171,13 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
     () => (mustChooseLane && !lane ? [] : fulfillmentFields(kind, tickets)),
     [kind, lane, mustChooseLane, tickets]
   );
-  const [details, setDetails] = useState<Record<string, string>>({});
+
+  // The device's timezone, seeded once. It is a required field for every
+  // scheduled kind and the buyer is never shown an input for it — see
+  // `AUTO_FILLED_FIELD_KEYS`. Seeding at mount rather than at submit means the
+  // review step can state the zone it is actually sending.
+  const timezone = useMemo(() => deviceTimezone(), []);
+  const [details, setDetails] = useState<Record<string, string>>({ timezone });
   const needsDetailsStep = mustChooseLane || fulfillmentFields(declaredKind, tickets).length > 0;
   const [stage, setStage] = useState<Stage>(needsDetailsStep ? "details" : "review");
   const [transactionIds, setTransactionIds] = useState<number[]>([]);
@@ -126,7 +186,29 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
   // retry re-presents the same PaymentIntent rather than minting a second one.
   const [sheet, setSheet] = useState<PaymentSheetBootstrap | null>(null);
   const [message, setMessage] = useState("");
+  const [countries, setCountries] = useState<CheckoutCountry[]>([]);
   const checking = useRef(false);
+
+  const needsAddress = fulfillmentNeedsAddress(kind);
+
+  // Only fetched when an address is actually going to be asked for. A digital
+  // download has no country field, so the request would be pure overhead on the
+  // step that most needs to feel instant.
+  useEffect(() => {
+    if (!needsAddress || countries.length) return;
+    let alive = true;
+    void fetchShippingCountries().then((list) => { if (alive) setCountries(list); });
+    return () => { alive = false; };
+  }, [countries.length, needsAddress]);
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerStyle: { backgroundColor: checkoutDark.bg.page },
+      headerTintColor: checkoutDark.text.primary,
+      headerTitleStyle: { color: checkoutDark.text.primary },
+      headerShadowVisible: false
+    });
+  }, [navigation]);
 
   // Whether this screen knows the exact amount PulseSoc will charge. It does
   // whenever it was handed a minor-unit subtotal: the Stripe session is built
@@ -139,6 +221,13 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
       : params.priceLabel || "Shown at checkout",
     [params.currency, params.priceLabel, params.subtotalMinor]
   );
+  const typeLabel = params.listingTypeLabel || fulfillmentTypeLabel(kind);
+  const timezoneLabel = useMemo(() => timezoneDisplayLabel(timezone), [timezone]);
+
+  const setField = useCallback((key: string, next: string) => {
+    setDetails((current) => ({ ...current, [key]: next }));
+    setMessage("");
+  }, []);
 
   const checkStatus = useCallback(async () => {
     if (!transactionIds.length || checking.current) return;
@@ -295,37 +384,56 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
     }
   }, [checkoutUrl, details, kind, lane, mustChooseLane, params.listingId, params.mode, params.sellerUserId, sheet, stage, subject, tickets, transactionIds]);
 
+  const summary = (
+    <ProductSummaryCard
+      title={params.itemTitle || "Marketplace items"}
+      seller={params.sellerName || ""}
+      typeLabel={typeLabel}
+      price={amount}
+      quantity={params.quantity}
+      imageUrl={params.imageUrl}
+    />
+  );
+
   if (stage === "confirmed") {
     const primaryId = transactionIds[0];
     return (
-      <View style={styles.center}>
-        <View style={styles.check}><Text style={styles.checkText}>✓</Text></View>
+      <ScrollView style={styles.root} contentContainerStyle={[styles.centerContent, { paddingBottom: insets.bottom + 32 }]}>
+        <CheckoutStepper current={3} />
+        <View style={styles.check}><Ionicons name="checkmark" size={40} color={STORE_CTA.text} /></View>
         <Text style={styles.confirmedTitle}>Order confirmed</Text>
-        <Text style={styles.centerCopy}>Your payment went through and your receipt is ready.</Text>
-        <SummaryRow label="Order" value={`#${primaryId}`} />
-        <SummaryRow label="Seller" value={params.sellerName || "PulseSoc seller"} />
-        <SummaryRow label="Amount" value={amount} />
-        <Pressable accessibilityRole="button" style={styles.primary} onPress={() => navigation.replace("BuyerOrderDetail", { orderId: primaryId, source: "seller_transactions", title: "Order confirmed" })}>
-          <Text style={styles.primaryText}>View order and receipt</Text>
-        </Pressable>
-        <Pressable accessibilityRole="button" style={styles.secondary} onPress={() => navigation.navigate("MarketplaceDetail", { title: "Marketplace" })}>
-          <Text style={styles.secondaryText}>Continue shopping</Text>
-        </Pressable>
-      </View>
+        <Text style={styles.centerCopy}>{confirmationCopy(kind)}</Text>
+        <Section>
+          <SummaryRow label="Order" value={`#${primaryId}`} />
+          <SummaryRow label="Seller" value={params.sellerName || "PulseSoc seller"} />
+          <SummaryRow label={params.itemTitle || "Item"} value={params.quantity && params.quantity > 1 ? `×${params.quantity}` : ""} />
+          <SummaryRow label={destinationTitle(kind)} value={fulfillmentDestinationSummary(kind, details)} />
+          {isScheduled(kind) && details.scheduled_date ? (
+            <SummaryRow label="When" value={scheduleSentence(details, timezoneLabel)} />
+          ) : null}
+          <View style={styles.rule} />
+          <SummaryRow label="Amount paid" value={amount} strong />
+        </Section>
+        <PrimaryButton
+          label="View order and receipt"
+          icon="receipt-outline"
+          onPress={() => navigation.replace("BuyerOrderDetail", { orderId: primaryId, source: "seller_transactions", title: "Order confirmed" })}
+        />
+        <SecondaryButton label="Continue shopping" onPress={() => navigation.navigate("MarketplaceDetail", { title: "Marketplace" })} />
+      </ScrollView>
     );
   }
 
   if (stage === "processing") {
     return (
-      <View style={styles.center}>
-        <View style={styles.processingMark}><Text style={styles.processingIcon}>⌛</Text></View>
+      <ScrollView style={styles.root} contentContainerStyle={[styles.centerContent, { paddingBottom: insets.bottom + 32 }]}>
+        <CheckoutStepper current={2} />
+        <View style={styles.processingMark}><Ionicons name="hourglass-outline" size={32} color={checkoutDark.text.accent} /></View>
         <Text style={styles.confirmedTitle}>Processing your payment</Text>
         <Text style={styles.centerCopy}>Please do not close this screen or start another checkout. We'll confirm as soon as your payment clears.</Text>
         {message ? <Text style={styles.note}>{message}</Text> : null}
-        <Pressable accessibilityRole="button" style={styles.primary} onPress={() => void checkStatus()}>
-          <Text style={styles.primaryText}>Check payment status</Text>
-        </Pressable>
-      </View>
+        <PrimaryButton label="Check payment status" icon="refresh" onPress={() => void checkStatus()} />
+      </ScrollView>
     );
   }
 
@@ -335,69 +443,54 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
   if (stage === "details") {
     const blocked = (mustChooseLane && !lane) || !!firstMissingFulfillmentField(kind, tickets, details);
     return (
-      <ScrollView style={styles.root} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <Text style={styles.kicker}>PULSESOC MARKETPLACE</Text>
-        <Text style={styles.title}>Order details</Text>
-        <Text style={styles.subtitle}>{detailsSubtitle(declaredKind)}</Text>
+      <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 28 }]} keyboardShouldPersistTaps="handled">
+          <CheckoutStepper current={0} />
+          {summary}
+          <Text style={styles.subtitle}>{detailsSubtitle(declaredKind)}</Text>
 
-        {mustChooseLane ? (
-          <Section title="How do you want it?">
-            <Text style={styles.muted}>This seller offers more than one option. Pick one — it decides what else you need to give.</Text>
-            {lanesFor(declaredKind).map((option) => (
-              <LaneOption
-                key={option}
-                selected={lane === option}
-                title={LANE_COPY[option].title}
-                detail={LANE_COPY[option].detail}
-                onPress={() => { setLane(option); setMessage(""); }}
-              />
-            ))}
-          </Section>
-        ) : null}
+          {mustChooseLane ? (
+            <Section title="How do you want it?">
+              <Text style={styles.muted}>This seller offers more than one option. Pick one — it decides what else you need to give.</Text>
+              {lanesFor(declaredKind).map((option) => (
+                <RadioRow
+                  key={option}
+                  selected={lane === option}
+                  title={LANE_COPY[option].title}
+                  detail={LANE_COPY[option].detail}
+                  onPress={() => { setLane(option); setMessage(""); }}
+                />
+              ))}
+            </Section>
+          ) : null}
 
-        {fields.length ? (
-          <Section title={fieldsSectionTitle(kind)}>
-            {fields.map((field) => (
-              <FulfillmentInput
-                key={field.key}
-                field={field}
-                value={details[field.key] || ""}
-                onChange={(next) => {
-                  setDetails((current) => ({ ...current, [field.key]: next }));
-                  setMessage("");
-                }}
-              />
-            ))}
-          </Section>
-        ) : null}
+          {kind === "digital" ? (
+            <Section title="Digital delivery">
+              <InfoNote>
+                You'll receive access and download information in your PulseSoc account as soon as your payment is confirmed. Nothing is shipped.
+              </InfoNote>
+            </Section>
+          ) : null}
 
-        {message ? <Text style={styles.error}>{message}</Text> : null}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityState={{ disabled: blocked }}
-          disabled={blocked}
-          style={[styles.primary, blocked && styles.disabled]}
-          onPress={() => { setMessage(""); setStage("review"); }}
-        >
-          <Text style={styles.primaryText}>Continue to review</Text>
-        </Pressable>
-        <Text style={styles.footnote}>Nothing is charged yet. You'll see the full total on the next step.</Text>
-      </ScrollView>
+          {fields.length ? renderFieldGroups({ kind, fields, details, setField, countries, timezoneLabel }) : null}
+
+          {message ? <Text style={styles.error}>{message}</Text> : null}
+          <PrimaryButton label="Continue to Review" disabled={blocked} onPress={() => { setMessage(""); setStage("review"); }} />
+          <Text style={styles.footnote}>No payment will be taken yet.</Text>
+        </ScrollView>
+      </KeyboardAvoidingView>
     );
   }
 
   return (
-    <ScrollView style={styles.root} contentContainerStyle={styles.content}>
-      <Text style={styles.kicker}>PULSESOC MARKETPLACE</Text>
-      <Text style={styles.title}>Review your order</Text>
-      <Text style={styles.subtitle}>Check the details below, then pay securely.</Text>
+    <ScrollView style={styles.root} contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 28 }]}>
+      <CheckoutStepper current={stepIndexFor(stage)} />
+      {summary}
 
       <Section title={destinationTitle(kind)}>
         <Text style={styles.body}>{fulfillmentDestinationSummary(kind, details)}</Text>
-        {details.scheduled_date ? (
-          <Text style={styles.muted}>
-            {[details.scheduled_date, details.scheduled_time, details.timezone].filter(Boolean).join(" · ")}
-          </Text>
+        {isScheduled(kind) && details.scheduled_date ? (
+          <Text style={styles.muted}>{scheduleSentence(details, timezoneLabel)}</Text>
         ) : null}
         {details.contact_name || details.attendee_name ? (
           <Text style={styles.muted}>
@@ -439,42 +532,192 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
       </Section>
 
       {message ? <Text style={styles.error}>{message}</Text> : null}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityState={{ disabled: stage === "opening" }}
-        disabled={stage === "opening"}
-        style={[styles.primary, stage === "opening" && styles.disabled]}
+      {/* The CTA states an amount only when this screen knows the exact charge.
+          Otherwise it promises nothing it cannot keep. */}
+      <PrimaryButton
+        label={stage === "opening"
+          ? "Opening secure payment…"
+          : knowsFinalAmount
+            ? `Pay securely · ${amount}`
+            : "Continue to Payment"}
+        icon={stage === "opening" ? null : "lock-closed"}
+        busy={stage === "opening"}
         onPress={() => void beginCheckout()}
-      >
-        {/* The CTA states an amount only when this screen knows the exact charge.
-            Otherwise it promises nothing it cannot keep. */}
-        <Text style={styles.primaryText}>
-          {stage === "opening"
-            ? "Opening secure payment…"
-            : knowsFinalAmount
-              ? `Pay securely · ${amount}`
-              : "Continue to secure payment"}
-        </Text>
-      </Pressable>
+      />
       <Text style={styles.footnote}>Your order isn't confirmed until your payment clears.</Text>
     </ScrollView>
   );
 }
 
+/* ------------------------------------------------------------------ *
+ * Field rendering
+ * ------------------------------------------------------------------ */
+
+const ADDRESS_KEYS = new Set([
+  "address_line1", "address_line2", "address_city", "address_region", "address_postal_code", "address_country"
+]);
+const SCHEDULE_KEYS = new Set(["scheduled_date", "scheduled_time", "timezone"]);
+const NOTE_KEYS = new Set(["notes", "delivery_notes"]);
+
+/**
+ * The server's flat field list, grouped the way a buyer reads a form.
+ *
+ * `fulfillmentFields` returns one ordered sequence because that is what the
+ * validation contract is. A form is not one sequence though — contact, then
+ * where, then when, then anything optional — so the grouping happens here,
+ * against the same keys, without the server's list changing shape.
+ *
+ * Auto-filled keys are dropped from rendering entirely; `timezone` is the only
+ * one, and it is still in `details` and still submitted.
+ */
+function renderFieldGroups({
+  kind,
+  fields,
+  details,
+  setField,
+  countries,
+  timezoneLabel
+}: {
+  kind: MarketplaceFulfillmentKind;
+  fields: FulfillmentField[];
+  details: Record<string, string>;
+  setField: (key: string, next: string) => void;
+  countries: CheckoutCountry[];
+  timezoneLabel: string;
+}) {
+  const visible = fields.filter((field) => !isAutoFilledField(field.key));
+  const contact = visible.filter((f) => !ADDRESS_KEYS.has(f.key) && !SCHEDULE_KEYS.has(f.key) && !NOTE_KEYS.has(f.key));
+  const address = visible.filter((f) => ADDRESS_KEYS.has(f.key));
+  const schedule = visible.filter((f) => SCHEDULE_KEYS.has(f.key));
+  const notes = visible.filter((f) => NOTE_KEYS.has(f.key));
+
+  const countryOptions: SelectOption[] = countries.map((c) => ({ value: c.code, label: c.name, hint: c.code }));
+
+  return (
+    <>
+      {contact.length ? (
+        <Section title={kind.startsWith("event_") ? "Attendee information" : "Contact information"}>
+          {contact.map((field) => renderField(field, details, setField, countryOptions))}
+        </Section>
+      ) : null}
+
+      {schedule.length ? (
+        <Section title={kind.startsWith("event_") ? "When" : "Appointment"}>
+          {schedule.map((field) => renderField(field, details, setField, countryOptions))}
+          <TimezoneNote label={timezoneLabel} />
+        </Section>
+      ) : null}
+
+      {address.length ? (
+        <Section title={kind === "shipping" ? "Shipping address" : "Service location"}>
+          {address.map((field) => renderField(field, details, setField, countryOptions))}
+        </Section>
+      ) : null}
+
+      {notes.length ? (
+        <Section title={kind === "shipping" ? "Delivery note" : "Notes for the seller"}>
+          {notes.map((field) => renderField(field, details, setField, countryOptions))}
+        </Section>
+      ) : null}
+    </>
+  );
+}
+
+function renderField(
+  field: FulfillmentField,
+  details: Record<string, string>,
+  setField: (key: string, next: string) => void,
+  countryOptions: SelectOption[]
+) {
+  const value = details[field.key] || "";
+  const onChange = (next: string) => setField(field.key, next);
+
+  if (field.type === "date") {
+    return <DateField key={field.key} label={field.label} value={value} onChange={onChange} />;
+  }
+  if (field.type === "time") {
+    return <TimeField key={field.key} label={field.label} value={value} onChange={onChange} />;
+  }
+  if (field.type === "country") {
+    return (
+      <SelectField
+        key={field.key}
+        label={field.label}
+        value={value}
+        options={countryOptions}
+        onChange={onChange}
+        placeholder={countryOptions.length ? "Select a country" : "Loading…"}
+        sheetTitle="Country or region"
+      />
+    );
+  }
+  if (field.type === "choice") {
+    return (
+      <SelectField
+        key={field.key}
+        label={field.label}
+        value={value}
+        options={(field.options || []).map((option) => ({ value: option, label: option }))}
+        onChange={onChange}
+        placeholder="Select"
+      />
+    );
+  }
+  const traits = inputTraitsFor(field);
+  return (
+    <TextField
+      key={field.key}
+      label={field.label}
+      value={value}
+      onChange={onChange}
+      optional={!field.required}
+      multiline={field.type === "multiline"}
+      keyboardType={traits.keyboardType}
+      autoCapitalize={traits.autoCapitalize}
+      textContentType={traits.textContentType}
+      placeholder={field.type === "multiline" ? "Add a note for the seller…" : undefined}
+    />
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Copy
+ * ------------------------------------------------------------------ */
+
+function isScheduled(kind: MarketplaceFulfillmentKind) {
+  return kind.startsWith("service_") || kind.startsWith("booking_");
+}
+
+/** `Tue, Aug 25 · 10:30 AM · Eastern Time` — the mockup's three scheduling
+ * lines, read back as one sentence. Falls back to the stored strings if either
+ * fails to parse, so a legacy order still renders something true. */
+function scheduleSentence(details: Record<string, string>, timezoneLabel: string) {
+  const date = fromIsoDate(details.scheduled_date || "");
+  const time = fromWireTime(details.scheduled_time || "");
+  return [
+    date ? formatDateLabel(date) : details.scheduled_date,
+    time ? formatTimeLabel(time) : details.scheduled_time,
+    timezoneLabel
+  ].filter(Boolean).join(" · ");
+}
+
+function confirmationCopy(kind: MarketplaceFulfillmentKind) {
+  if (kind === "digital") return "Your download and access information is now available in your PulseSoc account.";
+  if (kind === "pickup") return "Your seller will be in touch to arrange collection.";
+  if (kind === "shipping") return "Your seller will prepare this item for shipment.";
+  if (kind.startsWith("event_")) return "Your ticket is available in PulseSoc.";
+  if (isScheduled(kind)) return "Your appointment is confirmed. The seller has your contact details.";
+  return "Your payment went through and your receipt is ready.";
+}
+
 function detailsSubtitle(kind: MarketplaceFulfillmentKind) {
-  if (kind === "shipping_or_pickup") return "Tell us how you want this order, then who it's for.";
+  if (kind === "shipping_or_pickup") return "We only ask for what's needed to fulfill your order.";
   if (kind === "service_choice") return "Tell us how this should happen, then when.";
   if (kind.startsWith("event_")) return "Tell us who's attending.";
   if (kind.startsWith("service_") || kind.startsWith("booking_")) return "Tell us when this should happen and how to reach you.";
   if (kind === "pickup") return "Tell us who's collecting, so the seller knows who to expect.";
-  return "Tell us where this order is going.";
-}
-
-function fieldsSectionTitle(kind: MarketplaceFulfillmentKind) {
-  if (kind.startsWith("event_")) return "Attendee";
-  if (kind === "pickup") return "Pickup contact";
-  if (fulfillmentNeedsAddress(kind)) return kind === "shipping" ? "Delivery address" : "Contact and address";
-  return "Your details";
+  if (kind === "digital") return "Nothing ships — we only need where to send your access.";
+  return "We only ask for information needed to fulfill your order.";
 }
 
 function destinationTitle(kind: MarketplaceFulfillmentKind) {
@@ -485,136 +728,38 @@ function destinationTitle(kind: MarketplaceFulfillmentKind) {
   return "When and where";
 }
 
-function FulfillmentInput({
-  field,
-  value,
-  onChange
-}: {
-  field: FulfillmentField;
-  value: string;
-  onChange: (next: string) => void;
-}) {
-  if (field.type === "choice") {
-    return (
-      <View style={styles.field}>
-        <Text style={styles.fieldLabel}>{field.label}</Text>
-        {(field.options || []).map((option) => (
-          <Pressable
-            key={option}
-            accessibilityRole="radio"
-            accessibilityState={{ selected: value === option }}
-            accessibilityLabel={option}
-            onPress={() => onChange(option)}
-            style={[styles.choice, value === option && styles.choiceSelected]}
-          >
-            <Text style={styles.body}>{option}</Text>
-          </Pressable>
-        ))}
-      </View>
-    );
-  }
-  return (
-    <View style={styles.field}>
-      <Text style={styles.fieldLabel}>
-        {field.label}
-        {field.required ? "" : " (optional)"}
-      </Text>
-      <TextInput
-        accessibilityLabel={field.label}
-        style={[styles.input, field.type === "multiline" && styles.inputMultiline]}
-        value={value}
-        onChangeText={onChange}
-        placeholder={placeholderFor(field)}
-        placeholderTextColor={storeLight.text.muted}
-        multiline={field.type === "multiline"}
-        autoCapitalize={field.type === "country" ? "characters" : field.type === "name" ? "words" : "sentences"}
-        keyboardType={field.type === "phone" ? "phone-pad" : "default"}
-      />
-    </View>
-  );
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return <View style={styles.section}><Text style={styles.sectionTitle}>{title}</Text>{children}</View>;
-}
-
-function LaneOption({
-  selected,
-  title,
-  detail,
-  onPress
-}: {
-  selected: boolean;
-  title: string;
-  detail: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="radio"
-      accessibilityState={{ selected }}
-      accessibilityLabel={title}
-      accessibilityHint={detail}
-      onPress={onPress}
-      style={[styles.lane, selected && styles.laneSelected]}
-    >
-      <View style={[styles.laneMark, selected && styles.laneMarkSelected]}>
-        {selected ? <Text style={styles.laneTick}>✓</Text> : null}
-      </View>
-      <View style={styles.laneCopy}>
-        <Text style={styles.laneTitle}>{title}</Text>
-        <Text style={styles.muted}>{detail}</Text>
-      </View>
-    </Pressable>
-  );
-}
-
-function SummaryRow({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
-  return <View style={styles.row}><Text style={[styles.rowLabel, strong && styles.strong]}>{label}</Text><Text style={[styles.rowValue, strong && styles.strong]}>{value}</Text></View>;
-}
-
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: storeLight.bg.page },
-  content: { padding: 18, paddingBottom: 44, gap: 14 },
-  kicker: { color: storeLight.text.link, fontSize: 12, fontWeight: "900", letterSpacing: 1 },
-  title: { color: storeLight.text.primary, fontSize: 28, fontWeight: "900" },
-  subtitle: { color: storeLight.text.muted, fontSize: 15, lineHeight: 21 },
-  section: { backgroundColor: storeLight.bg.card, borderWidth: 1, borderColor: storeLight.border.hairline, borderRadius: 16, padding: 16, gap: 9 },
-  sectionTitle: { color: storeLight.text.primary, fontSize: 17, fontWeight: "800" },
-  body: { color: storeLight.text.primary, fontSize: 15, lineHeight: 21 },
-  muted: { color: storeLight.text.muted, fontSize: 13, lineHeight: 18 },
-  row: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 14, minHeight: 24 },
-  rowLabel: { color: storeLight.text.muted, fontSize: 14, flex: 1 },
-  rowValue: { color: storeLight.text.primary, fontSize: 14, textAlign: "right", flexShrink: 1 },
-  strong: { color: storeLight.text.primary, fontWeight: "900", fontSize: 15 },
-  rule: { height: StyleSheet.hairlineWidth, backgroundColor: storeLight.border.hairline, marginVertical: 3 },
-  lane: { flexDirection: "row", alignItems: "flex-start", gap: 12, borderWidth: 1, borderColor: storeLight.border.hairline, borderRadius: 14, padding: 14, minHeight: 64 },
-  laneSelected: { borderColor: MARKETPLACE_CART_CTA.to, borderWidth: 2 },
-  laneMark: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: storeLight.border.secondaryButton, alignItems: "center", justifyContent: "center", marginTop: 1 },
-  laneMarkSelected: { backgroundColor: MARKETPLACE_CART_CTA.to, borderColor: MARKETPLACE_CART_CTA.to },
-  laneTick: { color: "#fff", fontSize: 13, fontWeight: "900" },
-  laneCopy: { flex: 1, gap: 4 },
-  laneTitle: { color: storeLight.text.primary, fontSize: 15, fontWeight: "800" },
-  primary: { minHeight: 52, borderRadius: 14, backgroundColor: MARKETPLACE_CART_CTA.to, alignItems: "center", justifyContent: "center", paddingHorizontal: 18 },
-  primaryText: { color: "#fff", fontSize: 16, fontWeight: "900", textAlign: "center" },
-  secondary: { minHeight: 50, borderRadius: 14, borderWidth: 1, borderColor: storeLight.border.secondaryButton, alignItems: "center", justifyContent: "center", paddingHorizontal: 18, width: "100%" },
-  secondaryText: { color: storeLight.text.link, fontSize: 15, fontWeight: "800", textAlign: "center" },
-  disabled: { opacity: 0.55 },
-  field: { gap: 6 },
-  fieldLabel: { color: storeLight.text.muted, fontSize: 13, fontWeight: "700" },
-  input: { minHeight: 48, borderWidth: 1, borderColor: storeLight.border.hairline, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: storeLight.text.primary, fontSize: 15 },
-  inputMultiline: { minHeight: 84, textAlignVertical: "top" },
-  choice: { minHeight: 48, borderWidth: 1, borderColor: storeLight.border.hairline, borderRadius: 12, paddingHorizontal: 14, justifyContent: "center" },
-  choiceSelected: { borderColor: MARKETPLACE_CART_CTA.to, borderWidth: 2 },
-  editLink: { color: storeLight.text.link, fontSize: 14, fontWeight: "800", paddingVertical: 6 },
-  error: { color: storeLight.status.error, fontSize: 14, lineHeight: 20, textAlign: "center" },
-  footnote: { color: storeLight.text.muted, fontSize: 12, lineHeight: 17, textAlign: "center" },
-  center: { flex: 1, backgroundColor: storeLight.bg.page, alignItems: "center", justifyContent: "center", padding: 24, gap: 16 },
-  check: { width: 76, height: 76, borderRadius: 38, backgroundColor: MARKETPLACE_CART_CTA.to, alignItems: "center", justifyContent: "center" },
-  checkText: { color: "#fff", fontSize: 42, fontWeight: "900" },
-  processingMark: { width: 76, height: 76, borderRadius: 38, backgroundColor: storeLight.bg.card, borderWidth: 2, borderColor: storeLight.border.secondaryButton, alignItems: "center", justifyContent: "center" },
-  processingIcon: { fontSize: 32 },
-  confirmedTitle: { color: storeLight.text.primary, fontSize: 26, fontWeight: "900", textAlign: "center" },
-  centerCopy: { color: storeLight.text.muted, fontSize: 15, lineHeight: 21, textAlign: "center", maxWidth: 360 },
-  note: { color: storeLight.text.muted, fontSize: 13, lineHeight: 18, textAlign: "center" }
+  root: { flex: 1, backgroundColor: checkoutDark.bg.page },
+  content: { padding: checkoutDark.space.gutter, gap: checkoutDark.space.section },
+  centerContent: { padding: checkoutDark.space.gutter, gap: checkoutDark.space.section, alignItems: "stretch" },
+  subtitle: { color: checkoutDark.text.muted, fontSize: 14, lineHeight: 20 },
+  body: { color: checkoutDark.text.primary, fontSize: 15, lineHeight: 21 },
+  muted: { color: checkoutDark.text.muted, fontSize: 13, lineHeight: 18 },
+  rule: { height: StyleSheet.hairlineWidth, backgroundColor: checkoutDark.border.hairline, marginVertical: 4 },
+  editLink: { color: checkoutDark.text.accent, fontSize: 14, fontWeight: "800", paddingVertical: 6 },
+  error: { color: checkoutDark.status.error, fontSize: 14, lineHeight: 20, textAlign: "center" },
+  footnote: { color: checkoutDark.text.faint, fontSize: 12, lineHeight: 17, textAlign: "center" },
+  check: {
+    alignSelf: "center",
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: STORE_CTA.from,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  processingMark: {
+    alignSelf: "center",
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: checkoutDark.bg.card,
+    borderWidth: 2,
+    borderColor: checkoutDark.border.strong,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  confirmedTitle: { color: checkoutDark.text.primary, fontSize: 24, fontWeight: "900", textAlign: "center" },
+  centerCopy: { color: checkoutDark.text.muted, fontSize: 15, lineHeight: 21, textAlign: "center" },
+  note: { color: checkoutDark.text.muted, fontSize: 13, lineHeight: 18, textAlign: "center" }
 });

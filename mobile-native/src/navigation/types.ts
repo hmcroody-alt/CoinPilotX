@@ -207,6 +207,13 @@ export type RootStackParamList = {
     fulfillmentKind?: MarketplaceFulfillmentKind;
     // Ticket tiers the seller published, for the one field a buyer picks from.
     ticketOptions?: string[];
+    // Presentation only, both of them. The checkout's summary card shows the
+    // buyer what they are about to pay for; the caller already loaded the
+    // listing, so it passes the thumbnail and the type label along rather than
+    // making the checkout re-fetch a row it does not otherwise need. Absent
+    // values degrade to a placeholder tile and a label derived from the kind.
+    imageUrl?: string;
+    listingTypeLabel?: string;
   };
   /**
    * One route, several screens. Default is the rebuilt two-sided ads manager;

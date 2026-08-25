@@ -56,7 +56,11 @@ import {
   type CartLine,
   type CartSnapshot
 } from "../api/marketplaceCommerce";
-import { groupFulfillmentKind, type MarketplaceFulfillmentKind } from "../api/marketplaceFulfillment";
+import {
+  fulfillmentTypeLabel,
+  groupFulfillmentKind,
+  type MarketplaceFulfillmentKind
+} from "../api/marketplaceFulfillment";
 import { registerSyncInvalidation } from "../core/eventSync";
 import { useScreenPerf } from "../core/useScreenPerf";
 import { RootStackParamList } from "../navigation/types";
@@ -197,8 +201,15 @@ export function MarketplaceCartScreen({ navigation }: Props) {
     const soleTickets = groupLines.length === 1
       ? (groupLines[0]?.listing_metadata?.tickets as { name?: string }[] | undefined)
       : undefined;
+    const groupKind = groupFulfillmentKind(kinds);
+    // Only a one-line group has an image that means anything. A picture of the
+    // first of four items would misdescribe what is being paid for, so a mixed
+    // group gets the summary card's neutral tile instead.
+    const soleImage = groupLines.length === 1 ? String(groupLines[0]?.cover_image_url || "").trim() : "";
     navigation.navigate("MarketplaceCheckout", {
-      fulfillmentKind: groupFulfillmentKind(kinds) || undefined,
+      fulfillmentKind: groupKind || undefined,
+      ...(soleImage ? { imageUrl: soleImage } : {}),
+      ...(groupKind ? { listingTypeLabel: fulfillmentTypeLabel(groupKind) } : {}),
       ...(Array.isArray(soleTickets)
         ? { ticketOptions: soleTickets.map((t) => String(t?.name || "").trim()).filter(Boolean) }
         : {}),
