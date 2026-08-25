@@ -115,13 +115,46 @@ export function openDashboardRoute(navigation: DashboardNavigation, route: strin
     navigation.navigate("BuyerOrders", { title: "Purchase History" });
     return;
   }
-  // Above the `/premium` rule deliberately. The server serves the portfolio at
-  // `/pulse/premium/portfolio` as well as `/pulse/portfolio` and `/portfolio`,
-  // and `includes("/premium")` matches the longest of those — so under the old
-  // order a link to a member's own holdings opened the upgrade screen instead.
-  // Ordering is the whole fix; both rules are otherwise unchanged.
+  // The four crypto rules sit above `/premium` deliberately. The server serves
+  // each of them under a premium-scoped spelling as well as a bare one —
+  // `/pulse/premium/portfolio` alongside `/pulse/portfolio` and `/portfolio` —
+  // and `includes("/premium")` matches the longest of those. Under the old
+  // order a link to a member's own holdings opened the upgrade screen: the app
+  // offering to sell someone something they already pay for.
+  //
+  // Portfolio was moved first, on report. The other three had the identical
+  // shape and were still below `/premium`, so they are moved as a family
+  // rather than one at a time. Ordering is the whole fix — the rules
+  // themselves are unchanged apart from the alerts spelling noted below.
+  //
+  // Portfolio stays first of the four: `/pulse/premium/intelligence/portfolio`
+  // is a real route and matches both it and the intelligence rule, and the
+  // holdings view is the right destination for it.
   if (path.includes("/portfolio")) {
     navigation.navigate("Portfolio");
+    return;
+  }
+  // Both spellings are matched because the dashboard links to
+  // `/dashboard/crypto/watchlists` while older entries use a bare `/watchlists`.
+  if (path.includes("/crypto/watchlists") || path.includes("/watchlists")) {
+    navigation.navigate("Watchlists", { title: "Watchlists" });
+    return;
+  }
+  // `/alerts` rather than `/crypto/alerts`. The bare spelling is a real route
+  // and matching only the crypto one let it fall through to the
+  // `DashboardLegacyModule` catch-all below, which opens the unmatched path in
+  // a webview — and that webview is what renders "The requested PulseSoc
+  // service was not found." Its three siblings all accepted their bare
+  // spelling; alerts was the one that did not.
+  //
+  // `/dashboard/crypto/whale-alerts` is not swept up: the separator there is a
+  // hyphen, not a slash, so it still reaches its own module.
+  if (path.includes("/alerts")) {
+    navigation.navigate("AlertManagement", { title: "Alerts" });
+    return;
+  }
+  if (path.includes("/intelligence") || path.includes("/signals") || path.includes("/briefing") || path.includes("/forecasts")) {
+    navigation.navigate("IntelligenceCenter", { title: "Intelligence" });
     return;
   }
   if (path.includes("/subscriptions") || path.includes("/premium")) {
@@ -170,21 +203,6 @@ export function openDashboardRoute(navigation: DashboardNavigation, route: strin
   }
   if (path.includes("/growth") || path.includes("/ads")) {
     navigation.navigate("GrowthCenter", { title: "Growth Center" });
-    return;
-  }
-  // Before the alerts rule only for readability — the two paths are disjoint.
-  // Both spellings are matched because the dashboard links to
-  // `/dashboard/crypto/watchlists` while older entries use a bare `/watchlists`.
-  if (path.includes("/crypto/watchlists") || path.includes("/watchlists")) {
-    navigation.navigate("Watchlists", { title: "Watchlists" });
-    return;
-  }
-  if (path.includes("/crypto/alerts")) {
-    navigation.navigate("AlertManagement", { title: "Alerts" });
-    return;
-  }
-  if (path.includes("/intelligence") || path.includes("/signals") || path.includes("/briefing") || path.includes("/forecasts")) {
-    navigation.navigate("IntelligenceCenter", { title: "Intelligence" });
     return;
   }
   if (path.includes("/saved")) {
