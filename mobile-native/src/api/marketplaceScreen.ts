@@ -300,7 +300,13 @@ export function listingAgeMs(listing: MarketplaceListing, now: number): number |
   return Math.max(0, now - parsed);
 }
 
-function thumbnailOf(listing: MarketplaceListing): string | null {
+/**
+ * The one image that stands for a listing, in the order a seller is most likely
+ * to have filled in. Exported because the checkout summary card shows the same
+ * picture the buyer tapped to get there — resolving it a second, slightly
+ * different way is how a card ends up blank on the screen that takes the money.
+ */
+export function marketplaceListingThumbnail(listing: MarketplaceListing): string | null {
   const url =
     listing.thumbnail_url ||
     listing.cover_image_url ||
@@ -456,7 +462,7 @@ export function deriveBuyingItems(
       title: String(listing.title || "Untitled listing"),
       priceLabel: String(listing.price_label || ""),
       currency: String(listing.currency || "USD"),
-      imageUrl: thumbnailOf(listing),
+      imageUrl: marketplaceListingThumbnail(listing),
       badge: listingBadge(listing, options.now),
       saved: Boolean(listing.saved),
       sellerName: sellerStoreName(listing),
@@ -612,7 +618,7 @@ export function deriveSellingItems(
     return {
       id,
       title: String(listing.title || "Untitled listing"),
-      thumbnailUrl: thumbnailOf(listing),
+      thumbnailUrl: marketplaceListingThumbnail(listing),
       priceLabel: String(listing.price_label || ""),
       currency: String(listing.currency || "USD"),
       health,

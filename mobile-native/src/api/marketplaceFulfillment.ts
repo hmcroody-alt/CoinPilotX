@@ -161,6 +161,38 @@ const FIELDS: Record<MarketplaceFulfillmentKind, Triple[]> = {
   booking_in_person: [...CONTACT_WITH_PHONE, ...WHEN, ...ADDRESS, ...NOTES],
 };
 
+/**
+ * Fields the client answers from the device instead of asking the buyer.
+ *
+ * Only `timezone`. It is still required, still sent, and still validated
+ * server-side — nothing about the contract changes. What changes is who
+ * supplies it: `Intl` reports the device zone in the exact IANA form the server
+ * accepts, so asking the buyer to type `America/New_York` could only ever make
+ * the answer worse. The checkout renders it as context under the chosen time
+ * rather than as an input.
+ *
+ * Kept as a list rather than a boolean on the field because the *reason* is
+ * per-field. A key belongs here only when the device's answer is strictly
+ * better than a typed one, which is a much narrower claim than "we could guess
+ * this" — a shipping address could be guessed too, and must not be.
+ */
+export const AUTO_FILLED_FIELD_KEYS: readonly string[] = ["timezone"];
+
+export function isAutoFilledField(key: string) {
+  return AUTO_FILLED_FIELD_KEYS.includes(key);
+}
+
+/** The listing-type pill on the checkout's product summary — what the buyer is
+ * buying, which is also why the form below asks what it asks. */
+export function fulfillmentTypeLabel(kind: MarketplaceFulfillmentKind): string {
+  if (kind === "digital") return "Digital product";
+  if (kind.startsWith("event_")) return "Event";
+  if (kind.startsWith("booking_")) return "Appointment";
+  if (kind.startsWith("service_")) return "Service";
+  if (kind === "pickup") return "Local pickup";
+  return "Physical item";
+}
+
 export function ticketOptions(listing: MarketplaceListing): string[] {
   const metadata = (listing.listing_metadata || {}) as Record<string, unknown>;
   const tickets = metadata.tickets;
