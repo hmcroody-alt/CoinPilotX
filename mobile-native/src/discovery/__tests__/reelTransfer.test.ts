@@ -51,6 +51,18 @@ describe("staging", () => {
     expect(stageReelTransfer({ reel_id: 7 } as PulseReel)).toEqual(expect.stringContaining("7"));
     expect(peekReelTransfer(7)).toEqual({ reel_id: 7 });
   });
+
+  it("keys on reel_id when the two disagree, because that is what the caller asks for", () => {
+    // `buildReels` resolves `reel_id` first and the player is handed that value,
+    // so keying the slot on `id` would park the reel under a number nobody looks
+    // up. The failure is silent: no seed, no error, and the player opens on
+    // whatever the feed ranked first instead.
+    const asymmetric = { id: 900, reel_id: 42, title: "raw" } as PulseReel;
+
+    expect(stageReelTransfer(asymmetric)).toEqual(expect.stringContaining("42"));
+    expect(peekReelTransfer(900)).toBeNull();
+    expect(takeReelTransfer(42)).toBe(asymmetric);
+  });
 });
 
 describe("taking", () => {
