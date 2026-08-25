@@ -461,6 +461,9 @@ export type RootStackParamList = {
   CryptoAlertManagement:
     | { alertId?: number; alert_id?: number; id?: number; presetSymbol?: string; title?: string }
     | undefined;
+  CryptoAlertCenter: { presetSymbol?: string; title?: string } | undefined;
+  CryptoAlertHistory: { alertId?: number; title?: string } | undefined;
+  CryptoPortfolio: { title?: string } | undefined;
   Watchlists: { title?: string } | undefined;
   Portfolio: { title?: string } | undefined;
   AssetDetail: { symbol: string; name?: string; title?: string };

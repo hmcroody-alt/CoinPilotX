@@ -75,6 +75,11 @@ PREMIUM_CAPABILITIES = (
     # decides on the evidence. Membership buys the application, never the
     # outcome — see NOT_VERIFICATION in premium_api.
     "premium.verification.blue_check.apply",
+    # The crypto branch's spelling of the portfolio capability. Registered
+    # alongside the two keys above rather than renamed into them: seven call
+    # sites ask for this name, and a capability that is presented but not
+    # registered is denied under the default ``off`` mode.
+    "premium.crypto.portfolio_intelligence",
 )
 
 #: Plans that confer Premium membership, in the catalog's vocabulary.

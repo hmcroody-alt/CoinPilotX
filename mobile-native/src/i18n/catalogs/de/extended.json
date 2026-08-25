@@ -1458,6 +1458,175 @@
         "ai": "KI-Kommandozentrale",
         "system": "System-Kommandozentrale"
       }
+    },
+    "crypto": {
+      "intelligence": {
+        "heading": "Krypto-Intelligenz",
+        "subhead": "Premium-Krypto-Werkzeuge, in jedem Plan enthalten.",
+        "alerts": {
+          "label": "Erweiterte Krypto-Alarme",
+          "hint": "Erweiterte Bedingungen, wiederkehrende Überwachung, kombinierte Regeln und mehr Kontrolle über deine Alarme."
+        },
+        "portfolio": {
+          "label": "Portfolio",
+          "hint": "Bestände, Allokation, Performance, Konzentration sowie unrealisierte Gewinne und Verluste."
+        },
+        "undx": {
+          "label": "UNDX-Krypto-Intelligenz",
+          "hint": "Verstehe, warum Alarme ausgelöst wurden und was dein Portfolio bewegt."
+        }
+      },
+      "entry": {
+        "title": "Premium-Krypto-Intelligenz",
+        "body": "Erweiterte Alarmregeln mit mehreren Bedingungen und Portfolio-Analysen findest du im neuen Krypto-Kommandozentrum.",
+        "alertsCta": "Alarmzentrale öffnen",
+        "portfolioCta": "Portfolio öffnen"
+      },
+      "upsell": {
+        "title": "Premium-Funktion",
+        "cta": "Premium-Tarife ansehen",
+        "alertsBody": "Erweiterte Alarme – Kreuzungen, Zeitfenster, Volumen, Marktkapitalisierung und Portfolio-Bedingungen – sind Teil von PulseSoc Premium. Einfache Über/Unter-Preisalarme bleiben kostenlos.",
+        "portfolioBody": "Portfolio-Bewertung, Wertverlauf und Konzentrations-Einblicke sind Teil von PulseSoc Premium."
+      },
+      "common": {
+        "loading": "Wird geladen…",
+        "never": "Nie"
+      },
+      "alerts": {
+        "title": "Krypto-Alarmzentrale",
+        "subtitle": "Einfache und erweiterte Alarmregeln, serverseitig ausgewertet und an dieses Gerät zugestellt.",
+        "listTitle": "Deine Regeln",
+        "empty": "Noch keine Alarmregeln. Erstelle oben eine.",
+        "loadError": "Alarme konnten nicht geladen werden.",
+        "create": "Neue Regel",
+        "edit": "Bearbeiten",
+        "delete": "Löschen",
+        "deleteWarning": "Diese Regel löschen? Der Auslöseverlauf bleibt lesbar, aber die Regel wird sofort nicht mehr ausgewertet.",
+        "confirmDelete": "Löschen bestätigen",
+        "deleted": "Regel gelöscht.",
+        "deleteFailed": "Die Regel konnte nicht gelöscht werden.",
+        "enable": "Aktivieren",
+        "disable": "Pausieren",
+        "toggleFailed": "Die Regel konnte nicht aktualisiert werden.",
+        "save": "Regel speichern",
+        "saving": "Wird gespeichert…",
+        "saved": "Regel gespeichert.",
+        "saveFailed": "Die Regel konnte nicht gespeichert werden.",
+        "cancel": "Abbrechen",
+        "cancelEdit": "Bearbeitung beenden",
+        "formTitleCreate": "Regel erstellen",
+        "formTitleEdit": "Regel bearbeiten",
+        "symbolLabel": "Asset-Symbol",
+        "thresholdLabel": "Schwellenwert",
+        "windowLabel": "Zeitfenster (Minuten)",
+        "windowHint": "Zwischen {{min}} und {{max}} Minuten.",
+        "cooldownLabel": "Abklingzeit (Sekunden)",
+        "frequencyLabel": "Häufigkeit",
+        "matchLabel": "Auslösen wenn",
+        "addCondition": "Bedingung hinzufügen",
+        "removeCondition": "Entfernen",
+        "conditionTitle": "Bedingung {{number}}",
+        "conditionCount": "Bedingungen: {{count}}",
+        "lastTriggered": "Zuletzt ausgelöst {{time}}",
+        "limits": "Kostenlose Konten: {{free}} einfache Regeln. Premium: {{premium}} Regeln mit bis zu {{conditions}} Bedingungen.",
+        "advancedLocked": "Diese Regel nutzt erweiterte Bedingungen. Mit Premium kannst du sie speichern – oder du behältst eine einzelne Über/Unter-Preisbedingung, die kostenlos bleibt.",
+        "historyCta": "Verlauf",
+        "historyAllCta": "Auslöseverlauf ansehen",
+        "ruleType": {
+          "basic": "Einfach",
+          "advanced": "Erweitert"
+        },
+        "status": {
+          "active": "Aktiv",
+          "paused": "Pausiert",
+          "triggered": "Ausgelöst",
+          "error": "Fehler"
+        },
+        "match": {
+          "all": "Alle Bedingungen treffen zu",
+          "any": "Eine Bedingung trifft zu"
+        },
+        "frequency": {
+          "once": "Einmal",
+          "everyCrossing": "Bei jeder Kreuzung",
+          "recurring": "Wiederkehrend"
+        },
+        "groups": {
+          "price": "Preis",
+          "volume": "Volumen",
+          "marketCap": "Marktkapitalisierung",
+          "portfolio": "Portfolio"
+        },
+        "conditionTypes": {
+          "priceAbove": "Preis über",
+          "priceBelow": "Preis unter",
+          "priceCrossesAbove": "Preis kreuzt nach oben",
+          "priceCrossesBelow": "Preis kreuzt nach unten",
+          "priceMovePct": "Preisbewegung %",
+          "priceMoveAbs": "Preisbewegung (absolut)",
+          "volumeAbove": "Volumen über",
+          "volumeBelow": "Volumen unter",
+          "volumeMovePct": "Volumenbewegung %",
+          "marketCapAbove": "Marktkapitalisierung über",
+          "marketCapBelow": "Marktkapitalisierung unter",
+          "marketCapMovePct": "Marktkapitalisierung Bewegung %",
+          "portfolioValueAbove": "Portfoliowert über",
+          "portfolioValueBelow": "Portfoliowert unter",
+          "portfolioMovePct": "Portfoliobewegung %",
+          "allocationAbove": "Allokation über %"
+        },
+        "errors": {
+          "symbolRequired": "Gib ein Asset-Symbol an.",
+          "symbolInvalid": "Verwende ein gültiges Asset-Symbol wie BTC oder ETH.",
+          "noConditions": "Füge mindestens eine Bedingung hinzu.",
+          "tooManyConditions": "Eine Regel darf höchstens {{max}} Bedingungen haben.",
+          "conditionTypeInvalid": "Wähle einen unterstützten Bedingungstyp.",
+          "thresholdRequired": "Gib einen Schwellenwert an.",
+          "thresholdInvalid": "Verwende einen numerischen Schwellenwert.",
+          "windowRequired": "Gib ein Zeitfenster in Minuten an.",
+          "windowOutOfRange": "Das Zeitfenster muss eine ganze Zahl zwischen {{min}} und {{max}} Minuten sein.",
+          "cooldownInvalid": "Verwende eine Abklingzeit zwischen 0 Sekunden und 7 Tagen.",
+          "premiumRequired": "Erweiterte Regeln erfordern PulseSoc Premium."
+        }
+      },
+      "history": {
+        "title": "Auslöseverlauf",
+        "subtitle": "Jedes Auslösen einer Regel, Neueste zuerst.",
+        "empty": "Noch keine Auslösungen.",
+        "loadError": "Der Verlauf konnte nicht geladen werden.",
+        "loadMore": "Mehr laden",
+        "filtered": "Nur eine Regel wird angezeigt.",
+        "showAll": "Alle anzeigen",
+        "observed": "Beobachtet: {{value}}",
+        "delivery": "Zustellung: {{result}}"
+      },
+      "portfolio": {
+        "title": "Krypto-Portfolio",
+        "subtitle": "Bewertung, Wertverlauf und Konzentration deiner Bestände.",
+        "totalValue": "Gesamtwert",
+        "change24h": "24-h-Änderung",
+        "unrealizedPl": "Unrealisierter G/V",
+        "holdingsTitle": "Bestände",
+        "historyTitle": "Wertverlauf",
+        "empty": "Noch keine Bestände.",
+        "loadError": "Das Portfolio konnte nicht geladen werden.",
+        "allocation": "Allokation: {{pct}} %",
+        "avgBuy": "Ø Kauf {{price}}",
+        "calculatedAt": "Berechnet {{time}}",
+        "marketDataAt": "Marktdaten {{time}}",
+        "concentrationTitle": "Konzentration",
+        "concentrationBody": "{{symbol}} macht {{pct}} % deines Portfoliowerts aus.",
+        "noCoverage": "Für diesen Zeitraum ist kein Verlauf verfügbar.",
+        "partialCoverage": "Der Verlauf deckt diesen Zeitraum nur teilweise ab.",
+        "periods": {
+          "h24": "24 h",
+          "d7": "7 T",
+          "d30": "30 T",
+          "d90": "90 T",
+          "y1": "1 J",
+          "all": "Alle"
+        }
+      }
     }
   },
   "settings": {

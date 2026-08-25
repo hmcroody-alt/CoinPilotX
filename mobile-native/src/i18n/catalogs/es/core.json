@@ -201,7 +201,10 @@
       "pageConnections": "Conexiones",
       "pageTeam": "Equipo y acceso",
       "yourPages": "Tus páginas",
-      "presence": "Presencia"
+      "presence": "Presencia",
+      "cryptoAlertCenter": "Alertas cripto",
+      "cryptoAlertHistory": "Historial de alertas",
+      "cryptoPortfolio": "Portafolio cripto"
     },
     "navSubtitles": {
       "missionControl": "Centro de mando",

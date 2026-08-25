@@ -227,6 +227,17 @@ _REGISTRY: tuple[Feature, ...] = (
             "trading, price prediction, or performance history."
         ),
     ),
+    Feature(
+        "premium.crypto.portfolio_intelligence", "Crypto portfolio intelligence", BETA,
+        enforced_by="services.crypto_premium_gate.has_crypto_capability",
+        note=(
+            "The crypto branch's single-key spelling of what the two entries "
+            "above split into premium.crypto.portfolio (the holdings ceiling) "
+            "and premium.crypto.intelligence (the derived read). Registered so "
+            "the call sites using this name resolve; it grants nothing the other "
+            "two do not, and must not be advertised as a separate purchase."
+        ),
+    ),
 
     # --- legacy entitlement keys that are GRANTED BUT NEVER READ -------------
     # Each of these is written to the entitlement tables on purchase and then

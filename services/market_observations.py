@@ -98,6 +98,15 @@ MAX_LATEST_AGE_SECONDS = 8 * SAMPLE_INTERVAL_SECONDS
 #: boundary still has a baseline after a prune.
 RETENTION_HOURS = 72
 
+#: How far from a window's start instant a sample may sit and still be accepted
+#: as that window's baseline, as a fraction of the window length. Scales with
+#: the window because a 20-minute miss means something different on a 24h window
+#: than on a 1h one. Used only by :func:`window_start_observation`, the mobile
+#: engine's baseline reader; :func:`window_reading` uses the absolute
+#: :data:`MAX_BASELINE_DRIFT_SECONDS` instead, which is the stricter rule for
+#: the short windows the web surface offers.
+WINDOW_TOLERANCE_FRACTION = 0.20
+
 #: Columns sampled per symbol. The two provider-supplied 24h deltas are recorded
 #: for context but are not windowable — a percent change of a percent change is
 #: not a quantity anybody means to ask about.
@@ -109,6 +118,19 @@ _SCHEMA_LOCK = threading.Lock()
 _PRUNE_LOCK = threading.Lock()
 _LAST_PRUNE_AT: list = [None]
 PRUNE_INTERVAL_SECONDS = 3600
+
+
+def _connect():
+    """Every connection this module opens, through one seam.
+
+    A thin wrapper rather than calling ``user_context.connect`` directly at each
+    site so a test can redirect the whole module at a temp database per test.
+    The alternative in use elsewhere here — setting ``DATABASE_URL`` before
+    importing — binds at import time, which makes the choice of database a
+    property of module import order and means two test files that each want
+    their own database cannot share a process.
+    """
+    return user_context.connect()
 
 
 def _utcnow() -> datetime:
@@ -164,7 +186,7 @@ def ensure_schema() -> dict:
 
 
 def _ensure_schema_impl() -> dict:
-    conn = user_context.connect()
+    conn = _connect()
     try:
         cur = conn.cursor()
         cur.execute(
@@ -237,7 +259,7 @@ def record_board(board: Optional[dict], now: Optional[datetime] = None) -> dict:
     observed_at = _iso(now or _utcnow())
     recorded = 0
     skipped = 0
-    conn = user_context.connect()
+    conn = _connect()
     try:
         cur = conn.cursor()
         for item in markets:
@@ -286,7 +308,7 @@ def prune_if_due(now: Optional[datetime] = None) -> dict:
             return {"ok": True, "pruned": 0, "skipped": True}
         _LAST_PRUNE_AT[0] = moment
     cutoff = _iso(moment - timedelta(hours=RETENTION_HOURS))
-    conn = user_context.connect()
+    conn = _connect()
     try:
         cur = conn.cursor()
         cur.execute("DELETE FROM market_observations WHERE observed_at < ?", (cutoff,))
@@ -363,7 +385,7 @@ def window_reading(symbol: Any, metric: Any, minutes: Any,
     moment = now or _utcnow()
     boundary = moment - timedelta(minutes=minutes)
     ensure_schema()
-    conn = user_context.connect()
+    conn = _connect()
     try:
         cur = conn.cursor()
         latest = _latest_row(cur, symbol)
@@ -431,7 +453,7 @@ def coverage(symbol: Any, now: Optional[datetime] = None) -> dict:
     symbol = _normalize_symbol(symbol)
     moment = now or _utcnow()
     ensure_schema()
-    conn = user_context.connect()
+    conn = _connect()
     try:
         cur = conn.cursor()
         cur.execute(
@@ -458,3 +480,255 @@ def coverage(symbol: Any, now: Optional[datetime] = None) -> dict:
         "stale": stale,
         "available_windows": [] if stale else [w for w in WINDOW_CHOICES if w <= span_minutes],
     }
+
+
+# ---------------------------------------------------------------------------
+# Compatibility surface for the mobile crypto alert engine
+# ---------------------------------------------------------------------------
+# The premium-crypto lineage grew its own observation module against the same
+# table name with a different column set (``asset_id``/``created_at`` instead of
+# ``symbol``/``provider_updated_at``) and its own reader names. Both were real:
+# ``alert_worker`` writes this series through :func:`record_board`, and
+# ``alert_engine`` reads it through the names below.
+#
+# Keeping both files was never an option — ``CREATE TABLE IF NOT EXISTS`` means
+# whichever schema is created first wins and the other side's queries fail with
+# "no such column" at runtime. Worse, every one of the engine's calls into this
+# module is wrapped in ``except: pass``, so the failure would not surface as an
+# error; the windowed-move conditions would simply never match, and a premium
+# alert that silently never fires is indistinguishable from a quiet market.
+#
+# So there is one table and one writer, and the other lineage's API is expressed
+# over it. ``asset_id`` and ``symbol`` are the same thing under two names.
+#
+# The one place the two designs genuinely disagreed is worth keeping written
+# down, because the merge resolved it in this file's favour on evidence rather
+# than seniority. The other implementation stored the *provider's* timestamp as
+# the sample clock. That stamp is not one clock: ``live_market_service`` builds
+# it from ``datetime.utcnow()`` on its uncached paths, but the cached path
+# passes through ``market_data.live_market_board``'s ``time.strftime(...)``,
+# which is local time with no offset attached. A series mixing the two shifts
+# every window by the deployment's UTC offset — zero on the container, hours on
+# a developer's machine, which is exactly the kind of bug that reproduces
+# nowhere and misfires in production. Here ``observed_at`` stays our own UTC
+# clock and the provider stamp is kept beside it for identity only.
+
+
+def ensure_observation_schema(conn=None) -> dict:
+    """Alias of :func:`ensure_schema`.
+
+    ``conn`` is accepted and ignored. The original signature took a caller's
+    connection, which is the DDL-on-a-borrowed-connection hang described on
+    :func:`ensure_schema`; callers that pass one get the safe behaviour rather
+    than an unexpected ``TypeError``.
+    """
+    return ensure_schema()
+
+
+def record_observation(asset_id: Any, price: Any = None, volume_24h: Any = None,
+                       market_cap: Any = None, source: str = "",
+                       observed_at: Any = None) -> dict:
+    """Record one real sample. Deduped, never raises, never fabricates.
+
+    ``price`` is mandatory: a row without one is not an observation.
+
+    An explicit ``observed_at`` is trusted as the sample clock — it is how a
+    test or a backfill states when the reading was taken. :func:`record_quote`
+    deliberately does not use it that way; see the note above.
+    """
+    symbol = _normalize_symbol(asset_id)
+    value = _number(price)
+    if not symbol or value is None:
+        return {"ok": False, "recorded": False,
+                "message": "asset_id and price are required."}
+    moment = _parse(observed_at) or _utcnow()
+    stamp = _iso(moment)
+    try:
+        ensure_schema()
+        conn = _connect()
+        try:
+            cur = conn.cursor()
+            # The unique index is (symbol, provider_updated_at), so the identity
+            # of a sample is the moment the market moved on — not the moment we
+            # asked. Re-recording one reading is a no-op, which is what keeps
+            # the sample count meaningful.
+            cur.execute(
+                """
+                INSERT OR IGNORE INTO market_observations
+                (symbol, observed_at, provider_updated_at, price,
+                 change_24h, volume_24h, market_cap, source)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (symbol, stamp, stamp, value, None,
+                 _number(volume_24h), _number(market_cap), str(source or "")[:80]),
+            )
+            recorded = int(getattr(cur, "rowcount", 0) or 0) > 0
+            conn.commit()
+        finally:
+            conn.close()
+        return {"ok": True, "recorded": recorded, "asset_id": symbol,
+                "symbol": symbol, "observed_at": stamp}
+    except Exception as exc:
+        logging.info("Market observation not recorded for %s: %s", symbol, exc)
+        return {"ok": False, "recorded": False, "message": str(exc)}
+
+
+def record_quote(quote: Any) -> dict:
+    """Record a ``live_market_service.get_crypto_quote`` payload, if it carries
+    a real price.
+
+    The provider's ``updated_at`` is passed as the sample's identity and *not*
+    as its clock, for the reason given above. Because that stamp is what the
+    unique index dedupes on, this call is a no-op whenever the quote came from
+    the same cached board the worker already sampled — so reading a quote
+    during rule evaluation cannot inflate the series' density, and the cadence
+    stays governed by genuine provider reads rather than by user traffic.
+    """
+    if not isinstance(quote, dict) or not quote.get("ok"):
+        return {"ok": False, "recorded": False, "message": "No live quote to record."}
+    asset = quote.get("asset") or {}
+    symbol = _normalize_symbol(asset.get("symbol") or asset.get("id"))
+    value = _number(asset.get("price"))
+    if not symbol or value is None:
+        return {"ok": False, "recorded": False,
+                "message": "Quote carries no usable price."}
+    try:
+        ensure_schema()
+        conn = _connect()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT OR IGNORE INTO market_observations
+                (symbol, observed_at, provider_updated_at, price,
+                 change_24h, volume_24h, market_cap, source)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (symbol, _iso(_utcnow()),
+                 str(quote.get("updated_at") or "") or _iso(_utcnow()), value,
+                 _number(asset.get("change_24h")), _number(asset.get("volume_24h")),
+                 _number(asset.get("market_cap")),
+                 str(quote.get("source") or "live_market")[:80]),
+            )
+            recorded = int(getattr(cur, "rowcount", 0) or 0) > 0
+            conn.commit()
+        finally:
+            conn.close()
+        return {"ok": True, "recorded": recorded, "asset_id": symbol, "symbol": symbol}
+    except Exception as exc:
+        logging.info("Market observation not recorded for %s: %s", symbol, exc)
+        return {"ok": False, "recorded": False, "message": str(exc)}
+
+
+def get_observations(asset_id: Any, start: Any = None, end: Any = None,
+                     limit: Any = None) -> list:
+    """Real samples for one asset, oldest first. ``[]`` on any failure.
+
+    ``start``/``end`` bound ``observed_at`` inclusively. ``limit`` keeps the
+    most *recent* samples of the range, so a capped read is a window ending at
+    the range end rather than an arbitrary slice of it.
+    """
+    symbol = _normalize_symbol(asset_id)
+    if not symbol:
+        return []
+    try:
+        ensure_schema()
+        clauses, params = ["symbol=?"], [symbol]
+        first, last = _parse(start), _parse(end)
+        if first:
+            clauses.append("observed_at>=?")
+            params.append(_iso(first))
+        if last:
+            clauses.append("observed_at<=?")
+            params.append(_iso(last))
+        sql = ("SELECT * FROM market_observations WHERE "
+               + " AND ".join(clauses) + " ORDER BY observed_at DESC")
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(max(1, min(int(limit), 5000)))
+        conn = _connect()
+        try:
+            cur = conn.cursor()
+            cur.execute(sql, tuple(params))
+            rows = [user_context.row_to_dict(row) or {} for row in cur.fetchall()]
+        finally:
+            conn.close()
+        rows.reverse()
+        for row in rows:
+            row["asset_id"] = row.get("symbol")
+        return rows
+    except Exception as exc:
+        logging.info("Market observation read failed for %s: %s", symbol, exc)
+        return []
+
+
+def window_start_observation(asset_id: Any, window_minutes: Any,
+                             now: Any = None) -> Optional[dict]:
+    """The real sample nearest ``now - window_minutes``, or ``None``.
+
+    Valid only within +/-20% of the window length from the target instant.
+    ``None`` means the caller must record ``insufficient_data`` and skip; it
+    must never substitute the oldest row it happens to have, which would answer
+    a shorter window than the member asked about without saying so.
+    """
+    try:
+        window = float(window_minutes)
+    except (TypeError, ValueError):
+        return None
+    if window <= 0:
+        return None
+    reference = _parse(now) or _utcnow()
+    target = reference - timedelta(minutes=window)
+    tolerance = timedelta(minutes=window * WINDOW_TOLERANCE_FRACTION)
+    best, best_offset = None, None
+    for row in get_observations(asset_id, start=target - tolerance,
+                                end=target + tolerance):
+        moment = _parse(row.get("observed_at"))
+        if moment is None or row.get("price") is None:
+            continue
+        offset = abs((moment - target).total_seconds())
+        if best_offset is None or offset < best_offset:
+            best, best_offset = row, offset
+    if best is None or best_offset > tolerance.total_seconds():
+        return None
+    return best
+
+
+def prune_observations(max_age_days: Any = None, now: Any = None) -> dict:
+    """Delete samples older than ``max_age_days``. Cheap and idempotent.
+
+    Defaults to :data:`RETENTION_HOURS` rather than the seven days the other
+    lineage used: retention only has to outlast the longest offered window, and
+    this file's value is already sized against ``WINDOW_CHOICES``.
+    """
+    moment = _parse(now) or _utcnow()
+    if max_age_days is None:
+        cutoff = _iso(moment - timedelta(hours=RETENTION_HOURS))
+    else:
+        cutoff = _iso(moment - timedelta(days=max(1, int(max_age_days))))
+    try:
+        ensure_schema()
+        conn = _connect()
+        try:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM market_observations WHERE observed_at < ?", (cutoff,))
+            deleted = max(0, int(getattr(cur, "rowcount", 0) or 0))
+            conn.commit()
+        finally:
+            conn.close()
+        return {"ok": True, "deleted": deleted, "pruned": deleted, "cutoff": cutoff}
+    except Exception as exc:
+        logging.info("Market observation prune failed: %s", exc)
+        return {"ok": False, "deleted": 0, "pruned": 0, "message": str(exc)}
+
+
+def maybe_prune_observations(now: Any = None) -> dict:
+    """Throttled prune, called from the alert worker's evaluation cycle.
+
+    Delegates to :func:`prune_if_due` so both lineages' entry points share one
+    throttle; two independent timers over one table would each think they were
+    the only pruner and double the delete traffic.
+    """
+    result = prune_if_due(_parse(now) or None)
+    result.setdefault("deleted", result.get("pruned", 0))
+    return result

@@ -1448,6 +1448,175 @@
         "ai": "AIコマンドセンター",
         "system": "システム・コマンドセンター"
       }
+    },
+    "crypto": {
+      "intelligence": {
+        "heading": "暗号資産インテリジェンス",
+        "subhead": "すべてのプランに含まれるプレミアム暗号資産ツール。",
+        "alerts": {
+          "label": "高度な暗号資産アラート",
+          "hint": "高度な条件、繰り返しの監視、複合ルール、より充実したアラート管理。"
+        },
+        "portfolio": {
+          "label": "ポートフォリオ",
+          "hint": "保有資産、配分、パフォーマンス、集中度、評価損益。"
+        },
+        "undx": {
+          "label": "UNDX暗号資産インテリジェンス",
+          "hint": "アラートが作動した理由と、ポートフォリオを動かしている要因を理解できます。"
+        }
+      },
+      "entry": {
+        "title": "プレミアム暗号資産インテリジェンス",
+        "body": "複数条件の高度なアラートルールとポートフォリオ分析は、新しい暗号資産コマンドセンターにあります。",
+        "alertsCta": "アラートセンターを開く",
+        "portfolioCta": "ポートフォリオを開く"
+      },
+      "upsell": {
+        "title": "プレミアム機能",
+        "cta": "プレミアムプランを見る",
+        "alertsBody": "高度なアラート（クロス、時間ウィンドウ、出来高、時価総額、ポートフォリオ条件）はPulseSocプレミアムの機能です。基本の価格上抜け/下抜けアラートは引き続き無料です。",
+        "portfolioBody": "ポートフォリオ評価、価値履歴、集中度分析はPulseSocプレミアムの機能です。"
+      },
+      "common": {
+        "loading": "読み込み中…",
+        "never": "なし"
+      },
+      "alerts": {
+        "title": "暗号資産アラートセンター",
+        "subtitle": "基本および高度なアラートルール。サーバー側で評価され、この端末に配信されます。",
+        "listTitle": "あなたのルール",
+        "empty": "アラートルールはまだありません。上で作成してください。",
+        "loadError": "アラートを読み込めませんでした。",
+        "create": "新しいルール",
+        "edit": "編集",
+        "delete": "削除",
+        "deleteWarning": "このルールを削除しますか？発動履歴は引き続き閲覧できますが、ルールの評価は直ちに停止します。",
+        "confirmDelete": "削除を確認",
+        "deleted": "ルールを削除しました。",
+        "deleteFailed": "ルールを削除できませんでした。",
+        "enable": "有効化",
+        "disable": "一時停止",
+        "toggleFailed": "ルールを更新できませんでした。",
+        "save": "ルールを保存",
+        "saving": "保存中…",
+        "saved": "ルールを保存しました。",
+        "saveFailed": "ルールを保存できませんでした。",
+        "cancel": "キャンセル",
+        "cancelEdit": "編集をやめる",
+        "formTitleCreate": "ルールを作成",
+        "formTitleEdit": "ルールを編集",
+        "symbolLabel": "資産シンボル",
+        "thresholdLabel": "しきい値",
+        "windowLabel": "ウィンドウ（分）",
+        "windowHint": "{{min}}分から{{max}}分の間で指定してください。",
+        "cooldownLabel": "クールダウン（秒）",
+        "frequencyLabel": "頻度",
+        "matchLabel": "発動条件",
+        "addCondition": "条件を追加",
+        "removeCondition": "削除",
+        "conditionTitle": "条件 {{number}}",
+        "conditionCount": "条件数: {{count}}",
+        "lastTriggered": "最終発動 {{time}}",
+        "limits": "無料アカウント: 基本ルール{{free}}件。プレミアム: {{premium}}件、各ルール最大{{conditions}}条件。",
+        "advancedLocked": "このルールは高度な条件を使用しています。保存するにはプレミアムにアップグレードするか、無料のまま使える単一の価格上/下条件にしてください。",
+        "historyCta": "履歴",
+        "historyAllCta": "発動履歴を見る",
+        "ruleType": {
+          "basic": "基本",
+          "advanced": "高度"
+        },
+        "status": {
+          "active": "有効",
+          "paused": "一時停止",
+          "triggered": "発動済み",
+          "error": "エラー"
+        },
+        "match": {
+          "all": "すべての条件を満たしたとき",
+          "any": "いずれかの条件を満たしたとき"
+        },
+        "frequency": {
+          "once": "一度だけ",
+          "everyCrossing": "クロスのたび",
+          "recurring": "繰り返し"
+        },
+        "groups": {
+          "price": "価格",
+          "volume": "出来高",
+          "marketCap": "時価総額",
+          "portfolio": "ポートフォリオ"
+        },
+        "conditionTypes": {
+          "priceAbove": "価格が上回る",
+          "priceBelow": "価格が下回る",
+          "priceCrossesAbove": "価格が上抜けする",
+          "priceCrossesBelow": "価格が下抜けする",
+          "priceMovePct": "価格変動 %",
+          "priceMoveAbs": "価格変動（絶対値）",
+          "volumeAbove": "出来高が上回る",
+          "volumeBelow": "出来高が下回る",
+          "volumeMovePct": "出来高変動 %",
+          "marketCapAbove": "時価総額が上回る",
+          "marketCapBelow": "時価総額が下回る",
+          "marketCapMovePct": "時価総額変動 %",
+          "portfolioValueAbove": "ポートフォリオ価値が上回る",
+          "portfolioValueBelow": "ポートフォリオ価値が下回る",
+          "portfolioMovePct": "ポートフォリオ変動 %",
+          "allocationAbove": "配分が%を上回る"
+        },
+        "errors": {
+          "symbolRequired": "資産シンボルを入力してください。",
+          "symbolInvalid": "BTCやETHのような有効な資産シンボルを使用してください。",
+          "noConditions": "少なくとも1つの条件を追加してください。",
+          "tooManyConditions": "1つのルールに設定できる条件は最大{{max}}件です。",
+          "conditionTypeInvalid": "サポートされている条件タイプを選択してください。",
+          "thresholdRequired": "しきい値を入力してください。",
+          "thresholdInvalid": "数値のしきい値を使用してください。",
+          "windowRequired": "ウィンドウを分単位で入力してください。",
+          "windowOutOfRange": "ウィンドウは{{min}}分から{{max}}分の間の整数にしてください。",
+          "cooldownInvalid": "クールダウンは0秒から7日の間で指定してください。",
+          "premiumRequired": "高度なルールにはPulseSocプレミアムが必要です。"
+        }
+      },
+      "history": {
+        "title": "発動履歴",
+        "subtitle": "ルールが発動するたびに記録。新しい順に表示します。",
+        "empty": "まだ発動はありません。",
+        "loadError": "履歴を読み込めませんでした。",
+        "loadMore": "さらに読み込む",
+        "filtered": "1つのルールのみ表示中。",
+        "showAll": "すべて表示",
+        "observed": "観測値: {{value}}",
+        "delivery": "配信: {{result}}"
+      },
+      "portfolio": {
+        "title": "暗号資産ポートフォリオ",
+        "subtitle": "保有資産の評価、価値履歴、集中度。",
+        "totalValue": "合計価値",
+        "change24h": "24時間の変動",
+        "unrealizedPl": "評価損益",
+        "holdingsTitle": "保有資産",
+        "historyTitle": "価値履歴",
+        "empty": "保有資産はまだありません。",
+        "loadError": "ポートフォリオを読み込めませんでした。",
+        "allocation": "配分: {{pct}}%",
+        "avgBuy": "平均取得 {{price}}",
+        "calculatedAt": "計算 {{time}}",
+        "marketDataAt": "市場データ {{time}}",
+        "concentrationTitle": "集中度",
+        "concentrationBody": "{{symbol}}がポートフォリオ価値の{{pct}}%を占めています。",
+        "noCoverage": "この期間の履歴はありません。",
+        "partialCoverage": "履歴はこの期間の一部のみをカバーしています。",
+        "periods": {
+          "h24": "24時間",
+          "d7": "7日",
+          "d30": "30日",
+          "d90": "90日",
+          "y1": "1年",
+          "all": "全期間"
+        }
+      }
     }
   },
   "settings": {

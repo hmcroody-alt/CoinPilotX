@@ -201,7 +201,10 @@
       "pageConnections": "الاتصالات",
       "pageTeam": "الفريق والصلاحيات",
       "yourPages": "صفحاتك",
-      "presence": "الحضور"
+      "presence": "الحضور",
+      "cryptoAlertCenter": "تنبيهات الكريبتو",
+      "cryptoAlertHistory": "سجل التنبيهات",
+      "cryptoPortfolio": "محفظة الكريبتو"
     },
     "navSubtitles": {
       "missionControl": "مركز القيادة",

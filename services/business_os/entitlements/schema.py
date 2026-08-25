@@ -73,6 +73,7 @@ _SEED_CATALOG = [
     ("pulse_premium_monthly", "premium.crypto.portfolio", None, None),
     ("pulse_premium_monthly", "premium.crypto.intelligence", None, None),
     ("pulse_premium_monthly", "premium.verification.blue_check.apply", None, None),
+    ("pulse_premium_monthly", "premium.crypto.portfolio_intelligence", None, None),
     ("pulse_premium_annual", "premium.access", None, None),
     ("pulse_premium_annual", "premium.profile.customization", None, None),
     ("pulse_premium_annual", "premium.media.higher_quality", None, None),
@@ -81,6 +82,7 @@ _SEED_CATALOG = [
     ("pulse_premium_annual", "premium.crypto.portfolio", None, None),
     ("pulse_premium_annual", "premium.crypto.intelligence", None, None),
     ("pulse_premium_annual", "premium.verification.blue_check.apply", None, None),
+    ("pulse_premium_annual", "premium.crypto.portfolio_intelligence", None, None),
     ("pulse_premium_trial", "premium.access", None, None),
     ("pulse_premium_trial", "premium.profile.customization", None, None),
     # Crypto intelligence follows MEMBERSHIP, so it is seeded on every plan that
@@ -103,6 +105,7 @@ _SEED_CATALOG = [
     ("pulse_premium_grandfathered", "premium.crypto.portfolio", None, None),
     ("pulse_premium_grandfathered", "premium.crypto.intelligence", None, None),
     ("pulse_premium_grandfathered", "premium.verification.blue_check.apply", None, None),
+    ("pulse_premium_grandfathered", "premium.crypto.portfolio_intelligence", None, None),
     # Business — a Business subscription confers Premium membership too.
     ("pulse_business_monthly", "premium.access", None, None),
     ("pulse_business_monthly", "premium.profile.customization", None, None),

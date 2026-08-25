@@ -201,7 +201,10 @@
       "pageConnections": "連携",
       "pageTeam": "チームと権限",
       "yourPages": "あなたのページ",
-      "presence": "プレゼンス"
+      "presence": "プレゼンス",
+      "cryptoAlertCenter": "暗号資産アラート",
+      "cryptoAlertHistory": "アラート履歴",
+      "cryptoPortfolio": "暗号資産ポートフォリオ"
     },
     "navSubtitles": {
       "missionControl": "管制センター",

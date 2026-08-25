@@ -91,7 +91,13 @@ describe("navigator header titles", () => {
     // screens take their title from `route.params.title`, and a few set none.
     // Adding a screen with a title moves this by one; that is expected upkeep,
     // and the number is the point of the check.
-    expect(TITLE_OPTIONS.length).toBe(130);
+    //
+    // 130 + 3: the premium crypto trio (alert center, alert history, portfolio)
+    // arrived on a branch that had pinned 129 against its own smaller navigator.
+    // Both lineages added titled routes, so the merged count is the sum, and
+    // that it lands exactly on 133 is the evidence the union dropped neither
+    // side's screens rather than silently keeping one.
+    expect(TITLE_OPTIONS.length).toBe(133);
   });
 
   it("has no hardcoded string literal titles", () => {

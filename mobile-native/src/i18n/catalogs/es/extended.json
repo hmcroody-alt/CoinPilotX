@@ -1458,6 +1458,175 @@
         "ai": "Centro de mando de IA",
         "system": "Centro de mando del sistema"
       }
+    },
+    "crypto": {
+      "intelligence": {
+        "heading": "Inteligencia cripto",
+        "subhead": "Herramientas cripto Premium, incluidas en todos los planes.",
+        "alerts": {
+          "label": "Alertas cripto avanzadas",
+          "hint": "Condiciones avanzadas, monitoreo recurrente, reglas compuestas y más control sobre las alertas."
+        },
+        "portfolio": {
+          "label": "Portafolio",
+          "hint": "Posiciones, distribución, rendimiento, concentración y ganancias y pérdidas no realizadas."
+        },
+        "undx": {
+          "label": "Inteligencia cripto UNDX",
+          "hint": "Entiende por qué se activaron las alertas y qué mueve tu portafolio."
+        }
+      },
+      "entry": {
+        "title": "Inteligencia cripto Premium",
+        "body": "Las reglas de alerta avanzadas con varias condiciones y el análisis del portafolio viven en el nuevo centro de mando cripto.",
+        "alertsCta": "Abrir centro de alertas",
+        "portfolioCta": "Abrir portafolio"
+      },
+      "upsell": {
+        "title": "Función Premium",
+        "cta": "Ver planes Premium",
+        "alertsBody": "Las alertas avanzadas — cruces, ventanas de tiempo, volumen, capitalización de mercado y condiciones de portafolio — forman parte de PulseSoc Premium. Las alertas básicas de precio por encima/por debajo siguen siendo gratuitas.",
+        "portfolioBody": "La valoración del portafolio, el historial de valor y el análisis de concentración forman parte de PulseSoc Premium."
+      },
+      "common": {
+        "loading": "Cargando…",
+        "never": "Nunca"
+      },
+      "alerts": {
+        "title": "Centro de alertas cripto",
+        "subtitle": "Reglas de alerta básicas y avanzadas, evaluadas en el servidor y entregadas a este dispositivo.",
+        "listTitle": "Tus reglas",
+        "empty": "Aún no hay reglas de alerta. Crea una arriba.",
+        "loadError": "No se pudieron cargar las alertas.",
+        "create": "Nueva regla",
+        "edit": "Editar",
+        "delete": "Eliminar",
+        "deleteWarning": "¿Eliminar esta regla? Su historial de activaciones seguirá siendo legible, pero la regla dejará de evaluarse de inmediato.",
+        "confirmDelete": "Confirmar eliminación",
+        "deleted": "Regla eliminada.",
+        "deleteFailed": "No se pudo eliminar la regla.",
+        "enable": "Activar",
+        "disable": "Pausar",
+        "toggleFailed": "No se pudo actualizar la regla.",
+        "save": "Guardar regla",
+        "saving": "Guardando…",
+        "saved": "Regla guardada.",
+        "saveFailed": "No se pudo guardar la regla.",
+        "cancel": "Cancelar",
+        "cancelEdit": "Dejar de editar",
+        "formTitleCreate": "Crear regla",
+        "formTitleEdit": "Editar regla",
+        "symbolLabel": "Símbolo del activo",
+        "thresholdLabel": "Umbral",
+        "windowLabel": "Ventana (minutos)",
+        "windowHint": "Entre {{min}} y {{max}} minutos.",
+        "cooldownLabel": "Enfriamiento (segundos)",
+        "frequencyLabel": "Frecuencia",
+        "matchLabel": "Activar cuando",
+        "addCondition": "Añadir condición",
+        "removeCondition": "Quitar",
+        "conditionTitle": "Condición {{number}}",
+        "conditionCount": "Condiciones: {{count}}",
+        "lastTriggered": "Última activación {{time}}",
+        "limits": "Cuentas gratuitas: {{free}} reglas básicas. Premium: {{premium}} reglas, con hasta {{conditions}} condiciones cada una.",
+        "advancedLocked": "Esta regla usa condiciones avanzadas. Pásate a Premium para guardarla — o mantén una sola condición de precio por encima/por debajo, que sigue siendo gratuita.",
+        "historyCta": "Historial",
+        "historyAllCta": "Ver historial de activaciones",
+        "ruleType": {
+          "basic": "Básica",
+          "advanced": "Avanzada"
+        },
+        "status": {
+          "active": "Activa",
+          "paused": "Pausada",
+          "triggered": "Activada",
+          "error": "Error"
+        },
+        "match": {
+          "all": "Todas las condiciones se cumplen",
+          "any": "Cualquier condición se cumple"
+        },
+        "frequency": {
+          "once": "Una vez",
+          "everyCrossing": "En cada cruce",
+          "recurring": "Recurrente"
+        },
+        "groups": {
+          "price": "Precio",
+          "volume": "Volumen",
+          "marketCap": "Capitalización",
+          "portfolio": "Portafolio"
+        },
+        "conditionTypes": {
+          "priceAbove": "Precio por encima",
+          "priceBelow": "Precio por debajo",
+          "priceCrossesAbove": "Precio cruza hacia arriba",
+          "priceCrossesBelow": "Precio cruza hacia abajo",
+          "priceMovePct": "Variación de precio %",
+          "priceMoveAbs": "Variación de precio (absoluta)",
+          "volumeAbove": "Volumen por encima",
+          "volumeBelow": "Volumen por debajo",
+          "volumeMovePct": "Variación de volumen %",
+          "marketCapAbove": "Capitalización por encima",
+          "marketCapBelow": "Capitalización por debajo",
+          "marketCapMovePct": "Variación de capitalización %",
+          "portfolioValueAbove": "Valor del portafolio por encima",
+          "portfolioValueBelow": "Valor del portafolio por debajo",
+          "portfolioMovePct": "Variación del portafolio %",
+          "allocationAbove": "Asignación por encima de %"
+        },
+        "errors": {
+          "symbolRequired": "Añade el símbolo de un activo.",
+          "symbolInvalid": "Usa un símbolo de activo válido como BTC o ETH.",
+          "noConditions": "Añade al menos una condición.",
+          "tooManyConditions": "Una regla puede tener como máximo {{max}} condiciones.",
+          "conditionTypeInvalid": "Elige un tipo de condición compatible.",
+          "thresholdRequired": "Añade un valor de umbral.",
+          "thresholdInvalid": "Usa un umbral numérico.",
+          "windowRequired": "Añade una ventana en minutos.",
+          "windowOutOfRange": "La ventana debe ser un número entero entre {{min}} y {{max}} minutos.",
+          "cooldownInvalid": "Usa un enfriamiento entre 0 segundos y 7 días.",
+          "premiumRequired": "Las reglas avanzadas requieren PulseSoc Premium."
+        }
+      },
+      "history": {
+        "title": "Historial de activaciones",
+        "subtitle": "Cada vez que una regla se activó, lo más reciente primero.",
+        "empty": "Aún no hay activaciones.",
+        "loadError": "No se pudo cargar el historial.",
+        "loadMore": "Cargar más",
+        "filtered": "Mostrando solo una regla.",
+        "showAll": "Mostrar todas",
+        "observed": "Observado: {{value}}",
+        "delivery": "Entrega: {{result}}"
+      },
+      "portfolio": {
+        "title": "Portafolio cripto",
+        "subtitle": "Valoración, historial de valor y concentración de tus posiciones.",
+        "totalValue": "Valor total",
+        "change24h": "Cambio 24 h",
+        "unrealizedPl": "G/P no realizadas",
+        "holdingsTitle": "Posiciones",
+        "historyTitle": "Historial de valor",
+        "empty": "Aún no hay posiciones.",
+        "loadError": "No se pudo cargar el portafolio.",
+        "allocation": "Asignación: {{pct}}%",
+        "avgBuy": "Compra media {{price}}",
+        "calculatedAt": "Calculado {{time}}",
+        "marketDataAt": "Datos de mercado {{time}}",
+        "concentrationTitle": "Concentración",
+        "concentrationBody": "{{symbol}} representa el {{pct}}% del valor de tu portafolio.",
+        "noCoverage": "No hay historial disponible para este período.",
+        "partialCoverage": "El historial solo cubre parcialmente este período.",
+        "periods": {
+          "h24": "24 h",
+          "d7": "7 d",
+          "d30": "30 d",
+          "d90": "90 d",
+          "y1": "1 a",
+          "all": "Todo"
+        }
+      }
     }
   },
   "settings": {

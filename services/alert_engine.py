@@ -220,6 +220,28 @@ def _ensure_alert_schema_impl(conn=None):
             # as ``watchlist_id``, so buying an asset extends the rule and
             # selling out of one stops it.
             ("portfolio_scope", "INTEGER DEFAULT 0"),
+            # The mobile crypto API's own spelling of "advanced". Both column
+            # sets are added rather than one folded into the other because they
+            # are written by two different surfaces against two different
+            # payload shapes, and `evaluate_alert_rule` dispatches on which one
+            # is non-NULL. Dropping either set does not merge the features — it
+            # makes one surface write to a column that does not exist.
+            #
+            # Reconciling the two onto a single representation is worth doing,
+            # but it is a migration of live rows, not a merge resolution: the
+            # two evaluators differ in their crossing semantics and in where
+            # they persist prior readings, so a rule translated carelessly
+            # between them changes when it fires.
+            # Premium advanced alerts. `advanced_conditions` holds the JSON
+            # payload {"operator":"AND"|"OR","conditions":[...]} (NULL for
+            # every basic rule, which keeps the free path untouched),
+            # `match_mode` mirrors the operator as "all"/"any", and
+            # `advanced_state` persists per-condition last-observed values for
+            # crossing semantics plus the last evaluation status — restart-safe
+            # because it lives in the database, not in the worker process.
+            ("advanced_conditions", "TEXT"),
+            ("match_mode", "TEXT"),
+            ("advanced_state", "TEXT"),
         ],
     )
     cur.execute(
@@ -1569,6 +1591,7 @@ def current_observed_value(rule):
     if alert_type not in PRICE_ALERT_TYPES and alert_type not in CHANGE_ALERT_TYPES:
         return {"ok": False, "status": "skipped", "message": f"{alert_type.replace('_', ' ').title()} alerts are scaffolded and not monitored by the live price worker yet."}
     quote = live_market_service.get_crypto_quote(symbol)
+    _record_observation_from_quote(quote)
     asset = quote.get("asset") or {}
     if not quote.get("ok") and alert_type in PRICE_ALERT_TYPES:
         return {"ok": False, "status": "error", "message": quote.get("message") or f"{symbol} quote unavailable."}
@@ -1921,6 +1944,597 @@ def _set_condition_state(rule_id, state, observed_value, scope=None):
         conn.close()
 
 
+# ---------------------------------------------------------------------------
+# Premium advanced conditions (Premium Crypto Intelligence)
+#
+# Advanced rules live in the SAME alert_rules table and run through the SAME
+# evaluator entry point (`evaluate_alert_rule`) and worker as basic rules —
+# there is deliberately no second engine. A rule is "advanced" when its
+# `advanced_conditions` column carries {"operator":"AND"|"OR","conditions":[..]}.
+# Basic above/below rules keep the exact code path they had.
+# ---------------------------------------------------------------------------
+
+ADVANCED_MAX_CONDITIONS = 5
+ADVANCED_WINDOW_MIN_MINUTES = 15
+ADVANCED_WINDOW_MAX_MINUTES = 1440
+
+ADVANCED_MARKET_CONDITION_TYPES = {
+    "price_above",
+    "price_below",
+    "price_crosses_above",
+    "price_crosses_below",
+    "price_move_pct",
+    "price_move_abs",
+    "volume_above",
+    "volume_below",
+    "volume_move_pct",
+    "market_cap_above",
+    "market_cap_below",
+    "market_cap_move_pct",
+}
+ADVANCED_PORTFOLIO_CONDITION_TYPES = {
+    "portfolio_value_above",
+    "portfolio_value_below",
+    "portfolio_move_pct",
+    "allocation_above",
+}
+ADVANCED_CONDITION_TYPES = ADVANCED_MARKET_CONDITION_TYPES | ADVANCED_PORTFOLIO_CONDITION_TYPES
+#: Windowed (move) types: they evaluate against a real market_observations
+#: sample near the window start, or record insufficient_data — never a guess.
+ADVANCED_WINDOWED_TYPES = {
+    "price_move_pct",
+    "price_move_abs",
+    "volume_move_pct",
+    "market_cap_move_pct",
+    "portfolio_move_pct",
+}
+ADVANCED_CROSSING_TYPES = {"price_crosses_above", "price_crosses_below"}
+ADVANCED_DIRECTIONS = {"up", "down", "any"}
+ADVANCED_FREQUENCIES = {"once", "every_crossing", "recurring"}
+DEFAULT_ADVANCED_FREQUENCY = "every_crossing"
+
+
+def validate_advanced_conditions(payload):
+    """Strictly validate the advanced-conditions payload. NO eval(), unknown
+    condition types rejected, at most :data:`ADVANCED_MAX_CONDITIONS` entries.
+
+    Accepts ``{"operator": "AND"|"OR", "conditions": [...]}`` (a flat list) and
+    returns ``{"ok": True, "operator": ..., "match": "all"|"any",
+    "conditions": [normalized...]}`` or ``{"ok": False, "message": ...}``.
+    """
+    if not isinstance(payload, dict):
+        return {"ok": False, "message": "Advanced conditions must be an object."}
+    operator = str(payload.get("operator") or "AND").strip().upper()
+    if operator not in {"AND", "OR"}:
+        return {"ok": False, "message": "Operator must be AND or OR."}
+    raw_conditions = payload.get("conditions")
+    if not isinstance(raw_conditions, list) or not raw_conditions:
+        return {"ok": False, "message": "At least one condition is required."}
+    if len(raw_conditions) > ADVANCED_MAX_CONDITIONS:
+        return {"ok": False, "message": f"At most {ADVANCED_MAX_CONDITIONS} conditions per alert."}
+    normalized = []
+    for entry in raw_conditions:
+        if not isinstance(entry, dict):
+            return {"ok": False, "message": "Each condition must be an object."}
+        condition_type = str(entry.get("type") or "").strip().lower()
+        if condition_type not in ADVANCED_CONDITION_TYPES:
+            return {"ok": False, "message": f"Unknown condition type: {condition_type or '(missing)'}."}
+        try:
+            threshold = float(entry.get("threshold"))
+        except (TypeError, ValueError):
+            return {"ok": False, "message": f"Condition {condition_type} needs a numeric threshold."}
+        if threshold != threshold or threshold in (float("inf"), float("-inf")):
+            return {"ok": False, "message": f"Condition {condition_type} needs a finite threshold."}
+        item = {"type": condition_type, "threshold": threshold}
+        if condition_type in ADVANCED_WINDOWED_TYPES:
+            try:
+                window_minutes = int(entry.get("window_minutes"))
+            except (TypeError, ValueError):
+                return {"ok": False, "message": f"Condition {condition_type} needs window_minutes."}
+            if not ADVANCED_WINDOW_MIN_MINUTES <= window_minutes <= ADVANCED_WINDOW_MAX_MINUTES:
+                return {
+                    "ok": False,
+                    "message": (
+                        f"window_minutes must be between {ADVANCED_WINDOW_MIN_MINUTES} "
+                        f"and {ADVANCED_WINDOW_MAX_MINUTES}."
+                    ),
+                }
+            item["window_minutes"] = window_minutes
+            direction = str(entry.get("direction") or "any").strip().lower()
+            if direction not in ADVANCED_DIRECTIONS:
+                return {"ok": False, "message": f"direction must be one of {sorted(ADVANCED_DIRECTIONS)}."}
+            item["direction"] = direction
+        elif entry.get("window_minutes") not in (None, ""):
+            return {"ok": False, "message": f"Condition {condition_type} does not take window_minutes."}
+        normalized.append(item)
+    return {
+        "ok": True,
+        "operator": operator,
+        "match": "all" if operator == "AND" else "any",
+        "conditions": normalized,
+    }
+
+
+def _is_advanced_rule(rule):
+    return bool(_json_loads((rule or {}).get("advanced_conditions"), None))
+
+
+def _advanced_payload(rule):
+    """The validated advanced payload for a stored rule, or None."""
+    stored = _json_loads(rule.get("advanced_conditions"), None)
+    if not stored:
+        return None
+    validated = validate_advanced_conditions(stored)
+    return validated if validated.get("ok") else None
+
+
+def _rule_metadata(rule):
+    return _json_loads((rule or {}).get("metadata"), None) or {}
+
+
+def _advanced_frequency(rule):
+    frequency = str(_rule_metadata(rule).get("frequency") or "").strip().lower()
+    return frequency if frequency in ADVANCED_FREQUENCIES else DEFAULT_ADVANCED_FREQUENCY
+
+
+def _load_advanced_state(rule):
+    state = _json_loads((rule or {}).get("advanced_state"), None)
+    if not isinstance(state, dict):
+        state = {}
+    if not isinstance(state.get("last_values"), dict):
+        state["last_values"] = {}
+    return state
+
+
+def _save_advanced_state(rule_id, state):
+    ensure_alert_schema()
+    conn = user_context.connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE alert_rules SET advanced_state=?, updated_at=? WHERE id=?",
+            (json.dumps(state)[:4000], _now(), rule_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _note_advanced_status(rule, status, state=None):
+    """Record the last evaluation status on the rule (restart-safe, no event
+    spam): skipped rules are recorded, never deleted."""
+    state = state if state is not None else _load_advanced_state(rule)
+    state["last_status"] = status
+    state["last_status_at"] = _now()
+    _save_advanced_state(rule.get("id"), state)
+    return state
+
+
+def _observations_module():
+    try:
+        from . import market_observations
+
+        return market_observations
+    except ImportError:
+        return None
+
+
+def _record_observation_from_quote(quote):
+    """Append a market observation from the worker's existing price fetch.
+
+    Best-effort by design: observation recording must never break alert
+    evaluation, and it fabricates nothing (record_quote refuses quotes without
+    a real price).
+    """
+    module = _observations_module()
+    if module is None:
+        return
+    try:
+        module.record_quote(quote)
+    except Exception:
+        logging.debug("Market observation recording skipped.", exc_info=True)
+
+
+def _advanced_alerts_capability(user_id):
+    """Premium gate for advanced alerts. ImportError => no capability."""
+    try:
+        from . import crypto_premium_gate
+    except ImportError:
+        return False
+    try:
+        return bool(
+            crypto_premium_gate.has_crypto_capability(
+                user_id, crypto_premium_gate.CAP_CRYPTO_ADVANCED_ALERTS
+            )
+        )
+    except Exception:
+        return False
+
+
+def _portfolio_valuation_for_alerts(user_id):
+    """Current portfolio valuation via the sibling service, or None.
+
+    ImportError / ok:False / any failure => None, and the caller records
+    insufficient_data and skips.
+    """
+    try:
+        from . import portfolio_intelligence
+    except ImportError:
+        return None
+    try:
+        result = portfolio_intelligence.compute_portfolio_valuation(user_id)
+    except Exception:
+        logging.info("Portfolio valuation unavailable for alert evaluation.", exc_info=True)
+        return None
+    if not isinstance(result, dict) or not result.get("ok"):
+        return None
+    return result
+
+
+def _window_baseline(symbol, window_minutes, field):
+    """The ``field`` value of the real observation nearest the window start
+    (within the +/-20% tolerance), or None."""
+    module = _observations_module()
+    if module is None:
+        return None
+    try:
+        observation = module.window_start_observation(symbol, window_minutes)
+    except Exception:
+        return None
+    if not observation:
+        return None
+    value = observation.get(field)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _move_matches(current, baseline, threshold, direction, as_percent):
+    """Shared windowed-move comparison. Returns True/False, or None when the
+    percentage cannot be computed honestly (zero baseline)."""
+    delta = current - baseline
+    if as_percent:
+        scale = abs(baseline)
+        if scale <= 0:
+            return None
+        delta = (delta / scale) * 100.0
+    magnitude = abs(float(threshold))
+    if direction == "up":
+        return delta >= magnitude
+    if direction == "down":
+        return delta <= -magnitude
+    return abs(delta) >= magnitude
+
+
+def _condition_summary(condition, matched, observed):
+    label = condition["type"].replace("_", " ")
+    threshold = condition.get("threshold")
+    parts = f"{label} {threshold}"
+    if condition.get("window_minutes"):
+        parts += f" over {condition['window_minutes']}m"
+    if observed is not None:
+        try:
+            parts += f" (observed {round(float(observed), 6)})"
+        except (TypeError, ValueError):
+            pass
+    return parts
+
+
+def _evaluate_advanced_condition(rule, index, condition, context, state):
+    """Evaluate one advanced condition.
+
+    Returns ``(matched, observed_value)`` where ``matched`` is True/False or
+    None for insufficient data — an unknown never counts as a match and never
+    counts as a miss.
+    """
+    condition_type = condition["type"]
+    threshold = float(condition["threshold"])
+    symbol = context["symbol"]
+    asset = context.get("asset") or {}
+
+    def _metric(name):
+        value = asset.get(name)
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    if condition_type in ADVANCED_MARKET_CONDITION_TYPES:
+        if not context.get("quote_ok"):
+            return None, None
+        if condition_type.startswith("price"):
+            current = _metric("price")
+        elif condition_type.startswith("volume"):
+            current = _metric("volume_24h")
+        else:
+            current = _metric("market_cap")
+        if current is None:
+            return None, None
+        if condition_type in {"price_above", "volume_above", "market_cap_above"}:
+            return current >= threshold, current
+        if condition_type in {"price_below", "volume_below", "market_cap_below"}:
+            return current <= threshold, current
+        if condition_type in ADVANCED_CROSSING_TYPES:
+            key = str(index)
+            previous = state["last_values"].get(key)
+            state["last_values"][key] = current
+            context["state_dirty"] = True
+            try:
+                previous = float(previous)
+            except (TypeError, ValueError):
+                # First observation of this condition: arm it, never fire.
+                return False, current
+            if condition_type == "price_crosses_above":
+                return previous <= threshold and current > threshold, current
+            return previous >= threshold and current < threshold, current
+        # Windowed market move types.
+        field = {
+            "price_move_pct": "price",
+            "price_move_abs": "price",
+            "volume_move_pct": "volume_24h",
+            "market_cap_move_pct": "market_cap",
+        }[condition_type]
+        baseline = _window_baseline(symbol, condition.get("window_minutes"), field)
+        if baseline is None:
+            return None, current
+        matched = _move_matches(
+            current,
+            baseline,
+            threshold,
+            condition.get("direction") or "any",
+            as_percent=condition_type != "price_move_abs",
+        )
+        return matched, current
+
+    # Portfolio-backed conditions.
+    portfolio = context.get("portfolio")
+    if portfolio is None:
+        return None, None
+    try:
+        total_value = float(portfolio.get("total_value"))
+    except (TypeError, ValueError):
+        return None, None
+    if condition_type == "portfolio_value_above":
+        return total_value >= threshold, total_value
+    if condition_type == "portfolio_value_below":
+        return total_value <= threshold, total_value
+    if condition_type == "allocation_above":
+        allocation = 0.0
+        for holding in portfolio.get("holdings") or []:
+            if _normalize_symbol(holding.get("symbol")) == symbol:
+                try:
+                    allocation = float(holding.get("allocation_pct") or 0.0)
+                except (TypeError, ValueError):
+                    allocation = 0.0
+                break
+        return allocation >= threshold, allocation
+    # portfolio_move_pct: reconstruct the window-start portfolio value from
+    # real per-asset observations — every priced holding must have one, else
+    # the answer is honestly unknown.
+    holdings = portfolio.get("holdings") or []
+    if not holdings:
+        return None, total_value
+    baseline_total = 0.0
+    for holding in holdings:
+        holding_symbol = _normalize_symbol(holding.get("symbol"))
+        try:
+            amount = float(holding.get("amount"))
+        except (TypeError, ValueError):
+            return None, total_value
+        if not holding_symbol:
+            return None, total_value
+        baseline_price = _window_baseline(holding_symbol, condition.get("window_minutes"), "price")
+        if baseline_price is None:
+            return None, total_value
+        baseline_total += amount * baseline_price
+    matched = _move_matches(
+        total_value,
+        baseline_total,
+        threshold,
+        condition.get("direction") or "any",
+        as_percent=True,
+    )
+    return matched, total_value
+
+
+def _combine_advanced_matches(match_mode, outcomes):
+    """AND/OR combination where None (insufficient data) stays honest:
+    - all: any False => False; else any None => None; else True.
+    - any: any True => True; else any None => None; else False.
+    """
+    if match_mode == "any":
+        if any(outcome is True for outcome in outcomes):
+            return True
+        if any(outcome is None for outcome in outcomes):
+            return None
+        return False
+    if any(outcome is False for outcome in outcomes):
+        return False
+    if any(outcome is None for outcome in outcomes):
+        return None
+    return True
+
+
+def _complete_once_rule(rule_id, user_id):
+    """A frequency="once" advanced rule that has fired is completed — kept
+    (never deleted) but no longer evaluated."""
+    ensure_alert_schema()
+    conn = user_context.connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE alert_rules SET status='completed', active=0, updated_at=? WHERE id=? AND user_id=?",
+            (_now(), rule_id, user_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _evaluate_advanced_rule(rule):
+    """Advanced-rule evaluation inside the one canonical evaluator.
+
+    Reuses the basic rules' armed/latched edge-trigger state machine, cooldown
+    and trigger-key dedup; only the condition matching differs.
+    """
+    user_id = rule.get("user_id")
+    rule_id = rule.get("id")
+    if not _advanced_alerts_capability(user_id):
+        _mark_checked(rule_id)
+        _note_advanced_status(rule, "premium_required")
+        return {
+            "ok": True,
+            "triggered": False,
+            "skipped": True,
+            "status": "premium_required",
+            "message": "Advanced alert skipped: this account no longer has PulseSoc Premium. The rule is kept and will resume when Premium returns.",
+        }
+    payload = _advanced_payload(rule)
+    if payload is None:
+        _mark_checked(rule_id)
+        _note_advanced_status(rule, "invalid_conditions")
+        return {
+            "ok": False,
+            "triggered": False,
+            "status": "invalid_conditions",
+            "message": "Advanced alert conditions failed validation and were skipped.",
+        }
+    conditions = payload["conditions"]
+    match_mode = str(rule.get("match_mode") or payload.get("match") or "all").strip().lower()
+    if match_mode not in {"all", "any"}:
+        match_mode = payload.get("match") or "all"
+    symbol = _normalize_symbol(rule.get("symbol") or rule.get("target"))
+    state = _load_advanced_state(rule)
+    context = {"symbol": symbol, "asset": None, "quote_ok": False, "portfolio": None, "state_dirty": False}
+    if any(condition["type"] in ADVANCED_MARKET_CONDITION_TYPES for condition in conditions):
+        quote = live_market_service.get_crypto_quote(symbol)
+        _record_observation_from_quote(quote)
+        context["quote_ok"] = bool(quote.get("ok"))
+        context["asset"] = quote.get("asset") or {}
+    if any(condition["type"] in ADVANCED_PORTFOLIO_CONDITION_TYPES for condition in conditions):
+        context["portfolio"] = _portfolio_valuation_for_alerts(user_id)
+
+    outcomes = []
+    observed_primary = None
+    summaries = []
+    for index, condition in enumerate(conditions):
+        matched, observed = _evaluate_advanced_condition(rule, index, condition, context, state)
+        outcomes.append(matched)
+        if observed is not None and observed_primary is None:
+            observed_primary = observed
+        if matched:
+            summaries.append(_condition_summary(condition, matched, observed))
+    matched = _combine_advanced_matches(match_mode, outcomes)
+    _mark_checked(rule_id)
+
+    if matched is None:
+        # Insufficient data: record and skip. Never guess a windowed baseline,
+        # never treat an unavailable portfolio or quote as zero.
+        state = _note_advanced_status(rule, "insufficient_data", state=state)
+        return {
+            "ok": True,
+            "triggered": False,
+            "skipped": True,
+            "status": "insufficient_data",
+            "observed_value": observed_primary,
+            "message": "Advanced alert skipped: not enough real observed data to evaluate the window/conditions.",
+        }
+
+    state["last_status"] = "evaluated"
+    state["last_status_at"] = _now()
+    _save_advanced_state(rule_id, state)
+
+    previous_state = str(rule.get("condition_state") or "").strip().lower()
+    if not matched:
+        if previous_state != STATE_ARMED:
+            _set_condition_state(rule_id, STATE_ARMED, observed_primary)
+        return {
+            "ok": True,
+            "triggered": False,
+            "observed_value": observed_primary,
+            "state": STATE_ARMED,
+            "rearmed": previous_state == STATE_LATCHED,
+            "message": "Advanced conditions not met." if previous_state != STATE_LATCHED else "Advanced conditions cleared; alert re-armed.",
+        }
+
+    frequency = _advanced_frequency(rule)
+    message = f"{symbol} advanced alert: " + "; ".join(summaries or ["conditions met"])
+
+    if previous_state == STATE_LATCHED:
+        if frequency != "recurring":
+            return {
+                "ok": True,
+                "triggered": False,
+                "latched": True,
+                "observed_value": observed_primary,
+                "state": STATE_LATCHED,
+                "message": "Advanced conditions still met from the already-notified crossing.",
+            }
+        last_triggered = _parse_dt(rule.get("last_triggered_at"))
+        cooldown = int(rule.get("cooldown_seconds") or DEFAULT_COOLDOWN_SECONDS)
+        if last_triggered and _utcnow() - last_triggered < timedelta(seconds=cooldown):
+            return {
+                "ok": True,
+                "triggered": False,
+                "latched": True,
+                "cooldown": True,
+                "observed_value": observed_primary,
+                "state": STATE_LATCHED,
+                "message": f"Advanced conditions still met; recurring alert cooling down for {cooldown} seconds.",
+            }
+        repeat_seq = _claim_repeat(rule_id, observed_primary, rule.get("trigger_seq"))
+        if repeat_seq is None:
+            return {
+                "ok": True,
+                "triggered": False,
+                "latched": True,
+                "observed_value": observed_primary,
+                "state": STATE_LATCHED,
+                "message": "Recurring notification already claimed by a concurrent evaluation.",
+            }
+        return trigger_alert(rule, observed_primary, trigger_seq=repeat_seq, repeat=True, message=message)
+
+    if previous_state != STATE_ARMED:
+        # First observation: arm, never fire on creation.
+        _set_condition_state(rule_id, STATE_ARMED, observed_primary)
+        return {
+            "ok": True,
+            "triggered": False,
+            "armed": True,
+            "observed_value": observed_primary,
+            "state": STATE_ARMED,
+            "message": "Advanced alert armed on first observation; it will notify on the next genuine crossing.",
+        }
+
+    last_triggered = _parse_dt(rule.get("last_triggered_at"))
+    cooldown = int(rule.get("cooldown_seconds") or DEFAULT_COOLDOWN_SECONDS)
+    if last_triggered and _utcnow() - last_triggered < timedelta(seconds=cooldown):
+        return {
+            "ok": True,
+            "triggered": False,
+            "cooldown": True,
+            "observed_value": observed_primary,
+            "state": previous_state,
+            "message": f"Advanced conditions met, skipped during the {cooldown} second cooldown.",
+        }
+    trigger_seq = _claim_crossing(rule_id, observed_primary)
+    if trigger_seq is None:
+        return {
+            "ok": True,
+            "triggered": False,
+            "latched": True,
+            "observed_value": observed_primary,
+            "state": STATE_LATCHED,
+            "message": "Crossing already claimed by a concurrent evaluation; no duplicate notification sent.",
+        }
+    result = trigger_alert(rule, observed_primary, trigger_seq=trigger_seq, message=message)
+    if result.get("triggered") and frequency == "once":
+        _complete_once_rule(rule_id, user_id)
+        result["completed"] = True
+    return result
+
+
 def evaluate_alert_rule(rule):
     """Evaluate one rule, firing at most once per genuine threshold crossing.
 
@@ -1954,6 +2568,21 @@ def evaluate_alert_rule(rule):
     rule = _public_rule(rule)
     if (rule.get("status") or "active") != "active":
         return {"ok": True, "triggered": False, "message": "Alert is not active."}
+    if _is_advanced_rule(rule):
+        # Two surfaces, one table. The mobile crypto API stores its rules as
+        # `advanced_conditions` JSON; the web/dashboard path stores its own as
+        # `condition_spec` with optional watchlist/portfolio scope. The two
+        # column sets are disjoint and each is written by exactly one surface,
+        # so these dispatches are mutually exclusive and the order between them
+        # is not load-bearing — a mobile rule has no watchlist_id or
+        # portfolio_scope, and a web rule has no advanced_conditions.
+        #
+        # It matters that the mobile check comes first anyway: if it did not,
+        # a mobile advanced rule would fall through to the basic path with a
+        # NULL condition_spec and be evaluated as a single-threshold rule
+        # against whatever `threshold` its first condition happened to seed —
+        # which fires, quietly, on the wrong condition.
+        return _evaluate_advanced_rule(rule)
     if not rule.get("_state_scope"):
         if rule.get("watchlist_id"):
             return _evaluate_watchlist_rule(rule)
@@ -2292,7 +2921,7 @@ def _create_event(rule, observed_value, status, message, trigger_seq=None):
     return event
 
 
-def trigger_alert(rule, observed_value, trigger_seq=None, repeat=False):
+def trigger_alert(rule, observed_value, trigger_seq=None, repeat=False, message=None):
     symbol = _normalize_symbol(rule.get("symbol"))
     condition = _normalize_condition(rule.get("condition"))
     threshold = rule.get("threshold_value")
@@ -2303,7 +2932,15 @@ def trigger_alert(rule, observed_value, trigger_seq=None, repeat=False):
     # so it is labelled as a continuing move rather than a fresh crossing.
     moment = "Still moving" if repeat else "Value at crossing"
     spec = rule.get("condition_spec")
-    if spec:
+    if message:
+        # The mobile advanced evaluator composes its own multi-condition
+        # summary and passes it down; the only callers that supply `message`
+        # are inside `_evaluate_advanced_rule`, and those rules carry no
+        # `condition_spec`, so this arm and the next never contend for the
+        # same rule. Checked first regardless, because a caller that went to
+        # the trouble of writing the sentence should not have it overwritten.
+        message = str(message)[:2000]
+    elif spec:
         # A compound rule must restate every condition it fired on. Naming only
         # the threshold that happens to sit in ``threshold_value`` would describe
         # a different, simpler alert than the one the member created.
@@ -2696,6 +3333,15 @@ def dispatch_alert_event(event, rule=None):
 def evaluate_all_active_alerts(limit=500, worker_name="alert_worker"):
     ensure_alert_schema()
     reconcile_legacy_alerts()
+    module = _observations_module()
+    if module is not None:
+        try:
+            # Retention for the observation samples recorded by this very
+            # cycle's price fetches — cheap, throttled inside the module, and
+            # requiring no second worker.
+            module.maybe_prune_observations()
+        except Exception:
+            logging.debug("Market observation prune skipped.", exc_info=True)
     start = time.time()
     conn = user_context.connect()
     cur = conn.cursor()
@@ -2904,3 +3550,487 @@ def admin_summary():
         "worker": worker_health(),
         "providers": provider_status(),
     }
+
+
+# ---------------------------------------------------------------------------
+# Mobile Premium Crypto Intelligence API layer (/api/mobile/crypto/alerts)
+#
+# Maps the mobile Alert JSON contract onto the EXISTING alert_rules storage —
+# basic above/below rules round-trip through this API too, so there is one
+# store and one engine behind both surfaces. The flask routes in bot.py are
+# thin wrappers over these functions; keeping the logic here keeps it
+# unit-testable with stdlib only.
+# ---------------------------------------------------------------------------
+
+MOBILE_FREE_BASIC_RULE_LIMIT = 5
+MOBILE_PREMIUM_TOTAL_RULE_LIMIT = 100
+#: Symbols that mean "every asset on my watchlist" — premium only.
+WATCHLIST_WIDE_SYMBOLS = {"*", "ALL", "WATCHLIST"}
+#: The only condition types a free basic rule may use.
+MOBILE_BASIC_CONDITION_TYPES = {"price_above", "price_below"}
+_MOBILE_DEFAULT_CHANNELS = {"in_app": True, "push": True}
+
+
+def _mobile_premium_required(capability_name="advanced_alerts"):
+    try:
+        from . import crypto_premium_gate
+
+        return crypto_premium_gate.premium_required_response(
+            crypto_premium_gate.CAP_CRYPTO_ADVANCED_ALERTS
+        )
+    except ImportError:
+        return {
+            "ok": False,
+            "code": "premium_required",
+            "capability": capability_name,
+            "message": "Advanced crypto alerts are a PulseSoc Premium feature.",
+        }
+
+
+def _mobile_basic_conditions(rule):
+    """The mobile conditions[] rendering of one legacy/basic rule."""
+    condition = _normalize_condition(rule.get("condition"))
+    threshold = rule.get("threshold_value")
+    try:
+        threshold = float(threshold)
+    except (TypeError, ValueError):
+        threshold = 0.0
+    if condition == "above":
+        return [{"type": "price_above", "threshold": threshold}]
+    if condition == "below":
+        return [{"type": "price_below", "threshold": threshold}]
+    if condition == "moves_up_percent":
+        return [{"type": "price_move_pct", "threshold": threshold, "direction": "up", "window_minutes": 1440}]
+    if condition == "moves_down_percent":
+        return [{"type": "price_move_pct", "threshold": threshold, "direction": "down", "window_minutes": 1440}]
+    if condition == "volatility_above":
+        return [{"type": "price_move_pct", "threshold": threshold, "direction": "any", "window_minutes": 1440}]
+    return [{"type": "price_above", "threshold": threshold}]
+
+
+def mobile_alert_json(rule):
+    """One rule in the exact mobile Alert JSON contract shape."""
+    rule = _public_rule(rule)
+    metadata = _rule_metadata(rule)
+    advanced = _is_advanced_rule(rule)
+    symbol = _normalize_symbol(rule.get("symbol"))
+    if advanced:
+        payload = _advanced_payload(rule) or {"conditions": [], "match": "all"}
+        conditions = payload.get("conditions") or []
+        match = str(rule.get("match_mode") or payload.get("match") or "all").lower()
+        frequency = _advanced_frequency(rule)
+    else:
+        conditions = _mobile_basic_conditions(rule)
+        match = "all"
+        repeat_mode = str(rule.get("repeat_mode") or DEFAULT_REPEAT_MODE).strip().lower()
+        frequency = str(metadata.get("frequency") or "").strip().lower()
+        if frequency not in ADVANCED_FREQUENCIES:
+            frequency = "every_crossing" if repeat_mode == REPEAT_MODE_ONCE else "recurring"
+    status = str(rule.get("status") or "active")
+    return {
+        "id": int(rule.get("id") or 0),
+        "asset_id": metadata.get("asset_id") if metadata.get("asset_id") not in (None, "") else symbol.lower(),
+        "symbol": symbol,
+        "name": str(metadata.get("name") or symbol),
+        "rule_type": "advanced" if advanced else "basic",
+        "conditions": conditions,
+        "match": match if match in {"all", "any"} else "all",
+        "frequency": frequency,
+        "cooldown_seconds": int(rule.get("cooldown_seconds") or DEFAULT_COOLDOWN_SECONDS),
+        "enabled": status == "active",
+        "status": status,
+        "last_evaluated_at": rule.get("last_checked_at") or None,
+        "last_triggered_at": rule.get("last_triggered_at") or None,
+        "premium": advanced,
+    }
+
+
+def _mobile_rule_counts(user_id):
+    """(basic_count, total_count) of the caller's non-deleted rules."""
+    ensure_alert_schema()
+    conn = user_context.connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT COUNT(*) AS total,
+                   SUM(CASE WHEN advanced_conditions IS NULL OR advanced_conditions='' THEN 1 ELSE 0 END) AS basic_total
+            FROM alert_rules
+            WHERE user_id=? AND COALESCE(status, 'active')!='deleted' AND deleted_at IS NULL
+            """,
+            (user_id,),
+        )
+        row = _row_to_dict(cur.fetchone()) or {}
+    finally:
+        conn.close()
+    return int(row.get("basic_total") or 0), int(row.get("total") or 0)
+
+
+def list_mobile_crypto_alerts(user_id, limit=200):
+    """{ok, items:[Alert]} — capabilities are attached by the route."""
+    ensure_alert_schema()
+    conn = user_context.connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT * FROM alert_rules
+            WHERE user_id=? AND COALESCE(status, 'active')!='deleted' AND deleted_at IS NULL
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (user_id, int(limit)),
+        )
+        rows = [_row_to_dict(row) for row in cur.fetchall()]
+    finally:
+        conn.close()
+    return {"ok": True, "items": [mobile_alert_json(row) for row in rows]}
+
+
+def _mobile_normalize_frequency(value, default=DEFAULT_ADVANCED_FREQUENCY):
+    frequency = str(value or "").strip().lower()
+    return frequency if frequency in ADVANCED_FREQUENCIES else default
+
+
+def _mobile_symbol(payload):
+    raw = str((payload or {}).get("symbol") or "").strip()
+    return raw
+
+
+def _is_watchlist_wide(symbol_raw):
+    return symbol_raw.strip().upper() in WATCHLIST_WIDE_SYMBOLS if symbol_raw else False
+
+
+def _store_advanced_columns(rule_id, user_id, validated, metadata):
+    """Persist the advanced JSON + match_mode + metadata on an existing row."""
+    ensure_alert_schema()
+    conn = user_context.connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE alert_rules
+            SET advanced_conditions=?, match_mode=?, metadata=?,
+                condition_state=NULL, advanced_state=NULL, updated_at=?
+            WHERE id=? AND user_id=?
+            """,
+            (
+                json.dumps({"operator": validated["operator"], "conditions": validated["conditions"]})[:4000],
+                validated["match"],
+                json.dumps(metadata)[:4000],
+                _now(),
+                rule_id,
+                user_id,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _apply_repeat_mode(rule_id, user_id, frequency):
+    """Map the mobile frequency onto the existing repeat-mode state machine:
+    once/every_crossing => one notification per crossing; recurring => keep
+    speaking while the move progresses."""
+    repeat_mode = REPEAT_MODE_PROGRESS if frequency == "recurring" else REPEAT_MODE_ONCE
+    conn = user_context.connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE alert_rules SET repeat_mode=?, updated_at=? WHERE id=? AND user_id=?",
+            (repeat_mode, _now(), rule_id, user_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def create_mobile_crypto_alert(user_id, payload, has_premium):
+    """POST /api/mobile/crypto/alerts.
+
+    Free users: up to MOBILE_FREE_BASIC_RULE_LIMIT basic (single price_above/
+    price_below) rules. Premium: advanced rules, watchlist-wide rules, and up
+    to MOBILE_PREMIUM_TOTAL_RULE_LIMIT rules total. Premium denials return the
+    canonical premium_required payload (served with HTTP 200 by the route).
+    """
+    payload = payload or {}
+    symbol_raw = _mobile_symbol(payload)
+    if not symbol_raw:
+        return {"ok": False, "code": "invalid_symbol", "message": "A symbol is required."}
+    watchlist_wide = _is_watchlist_wide(symbol_raw)
+    conditions_raw = payload.get("conditions")
+    if not isinstance(conditions_raw, list) or not conditions_raw:
+        return {"ok": False, "code": "invalid_conditions", "message": "At least one condition is required."}
+    match = str(payload.get("match") or "all").strip().lower()
+    validated = validate_advanced_conditions(
+        {"operator": "OR" if match == "any" else "AND", "conditions": conditions_raw}
+    )
+    if not validated.get("ok"):
+        return {"ok": False, "code": "invalid_conditions", "message": validated.get("message")}
+    conditions = validated["conditions"]
+    requested_type = str(payload.get("rule_type") or "").strip().lower()
+    is_basic = (
+        requested_type != "advanced"
+        and not watchlist_wide
+        and len(conditions) == 1
+        and conditions[0]["type"] in MOBILE_BASIC_CONDITION_TYPES
+        and match != "any"
+    )
+    if not is_basic and not has_premium:
+        return _mobile_premium_required()
+    if watchlist_wide and not has_premium:
+        return _mobile_premium_required()
+    basic_count, total_count = _mobile_rule_counts(user_id)
+    if has_premium:
+        if total_count >= MOBILE_PREMIUM_TOTAL_RULE_LIMIT:
+            return {
+                "ok": False,
+                "code": "limit_reached",
+                "message": f"You can keep at most {MOBILE_PREMIUM_TOTAL_RULE_LIMIT} alert rules.",
+            }
+    elif basic_count >= MOBILE_FREE_BASIC_RULE_LIMIT:
+        return {
+            "ok": False,
+            "code": "limit_reached",
+            "message": (
+                f"Free accounts can keep {MOBILE_FREE_BASIC_RULE_LIMIT} basic alerts. "
+                "Upgrade to Premium for more."
+            ),
+        }
+    frequency = _mobile_normalize_frequency(payload.get("frequency"))
+    raw_cooldown = payload.get("cooldown_seconds")
+    if raw_cooldown in (None, ""):
+        raw_cooldown = DEFAULT_COOLDOWN_SECONDS
+    try:
+        cooldown = max(0, min(int(raw_cooldown), 86400 * 7))
+    except (TypeError, ValueError):
+        cooldown = DEFAULT_COOLDOWN_SECONDS
+    symbol = _normalize_symbol(symbol_raw) if not watchlist_wide else "WATCHLIST"
+    metadata = {
+        "created_via": "mobile_crypto_api",
+        "rule_type": "advanced" if not is_basic else "basic",
+        "frequency": frequency,
+        "name": str(payload.get("name") or "")[:120],
+        "asset_id": str(payload.get("asset_id") or "")[:60],
+        "watchlist_wide": watchlist_wide,
+    }
+    if is_basic:
+        condition = "above" if conditions[0]["type"] == "price_above" else "below"
+        created = create_alert_rule(
+            user_id,
+            alert_type="coin_price",
+            symbol=symbol,
+            condition=condition,
+            threshold=conditions[0]["threshold"],
+            channels=dict(_MOBILE_DEFAULT_CHANNELS),
+            cooldown_seconds=cooldown,
+            source="mobile_crypto_api",
+            metadata=metadata,
+        )
+        if not created.get("ok"):
+            return created
+        alert_id = created["alert_id"]
+        _apply_repeat_mode(alert_id, user_id, frequency)
+    else:
+        created = create_alert_rule(
+            user_id,
+            alert_type="coin_price",
+            symbol=symbol,
+            condition="advanced",
+            threshold=conditions[0]["threshold"],
+            channels=dict(_MOBILE_DEFAULT_CHANNELS),
+            cooldown_seconds=cooldown,
+            source="mobile_crypto_api",
+            metadata=metadata,
+        )
+        if not created.get("ok"):
+            return created
+        alert_id = created["alert_id"]
+        _store_advanced_columns(alert_id, user_id, validated, metadata)
+        _apply_repeat_mode(alert_id, user_id, frequency)
+    rule = get_alert_rule(alert_id, user_id)
+    return {"ok": True, "item": mobile_alert_json(rule), "message": "Alert created."}
+
+
+def update_mobile_crypto_alert(user_id, alert_id, payload, has_premium):
+    """PATCH /api/mobile/crypto/alerts/<id> — any subset of the create payload
+    plus `enabled` for pause/resume."""
+    payload = payload or {}
+    rule = get_alert_rule(alert_id, user_id)
+    if not rule or (rule.get("status") or "active") == "deleted":
+        return {"ok": False, "code": "not_found", "message": "Alert not found."}
+    is_advanced = _is_advanced_rule(rule)
+    structural_keys = {"conditions", "match", "symbol", "rule_type"}
+    wants_structural = any(key in payload for key in structural_keys)
+    if (is_advanced and (wants_structural or "frequency" in payload)) and not has_premium:
+        return _mobile_premium_required()
+    if "enabled" in payload:
+        if payload.get("enabled"):
+            resume_alert(alert_id, user_id)
+        else:
+            pause_alert(alert_id, user_id)
+    if wants_structural or "frequency" in payload or "cooldown_seconds" in payload or "name" in payload:
+        current = mobile_alert_json(rule)
+        merged = {
+            "symbol": payload.get("symbol", current["symbol"]),
+            "asset_id": payload.get("asset_id", current["asset_id"]),
+            "name": payload.get("name", current["name"]),
+            "rule_type": payload.get("rule_type", current["rule_type"]),
+            "conditions": payload.get("conditions", current["conditions"]),
+            "match": payload.get("match", current["match"]),
+            "frequency": payload.get("frequency", current["frequency"]),
+            "cooldown_seconds": payload.get("cooldown_seconds", current["cooldown_seconds"]),
+        }
+        symbol_raw = _mobile_symbol(merged)
+        watchlist_wide = _is_watchlist_wide(symbol_raw)
+        match = str(merged.get("match") or "all").strip().lower()
+        validated = validate_advanced_conditions(
+            {"operator": "OR" if match == "any" else "AND", "conditions": merged.get("conditions")}
+        )
+        if not validated.get("ok"):
+            return {"ok": False, "code": "invalid_conditions", "message": validated.get("message")}
+        conditions = validated["conditions"]
+        is_basic = (
+            str(merged.get("rule_type") or "").strip().lower() != "advanced"
+            and not watchlist_wide
+            and len(conditions) == 1
+            and conditions[0]["type"] in MOBILE_BASIC_CONDITION_TYPES
+            and match != "any"
+        )
+        if (not is_basic or watchlist_wide) and not has_premium:
+            return _mobile_premium_required()
+        frequency = _mobile_normalize_frequency(merged.get("frequency"))
+        raw_cooldown = merged.get("cooldown_seconds")
+        if raw_cooldown in (None, ""):
+            raw_cooldown = DEFAULT_COOLDOWN_SECONDS
+        try:
+            cooldown = max(0, min(int(raw_cooldown), 86400 * 7))
+        except (TypeError, ValueError):
+            cooldown = DEFAULT_COOLDOWN_SECONDS
+        symbol = _normalize_symbol(symbol_raw) if not watchlist_wide else "WATCHLIST"
+        metadata = _rule_metadata(rule)
+        metadata.update(
+            {
+                "rule_type": "advanced" if not is_basic else "basic",
+                "frequency": frequency,
+                "name": str(merged.get("name") or "")[:120],
+                "asset_id": str(merged.get("asset_id") or "")[:60],
+                "watchlist_wide": watchlist_wide,
+            }
+        )
+        ensure_alert_schema()
+        conn = user_context.connect()
+        try:
+            cur = conn.cursor()
+            if is_basic:
+                condition = "above" if conditions[0]["type"] == "price_above" else "below"
+                cur.execute(
+                    """
+                    UPDATE alert_rules
+                    SET symbol=?, target=?, condition=?, threshold_value=?, target_value=?,
+                        cooldown_seconds=?, metadata=?, advanced_conditions=NULL, match_mode=NULL,
+                        advanced_state=NULL, condition_state=NULL, updated_at=?
+                    WHERE id=? AND user_id=? AND COALESCE(status, 'active')!='deleted'
+                    """,
+                    (
+                        symbol,
+                        symbol,
+                        condition,
+                        conditions[0]["threshold"],
+                        conditions[0]["threshold"],
+                        cooldown,
+                        json.dumps(metadata)[:4000],
+                        _now(),
+                        alert_id,
+                        user_id,
+                    ),
+                )
+            else:
+                cur.execute(
+                    """
+                    UPDATE alert_rules
+                    SET symbol=?, target=?, condition='advanced', threshold_value=?, target_value=?,
+                        cooldown_seconds=?, metadata=?, advanced_conditions=?, match_mode=?,
+                        advanced_state=NULL, condition_state=NULL, updated_at=?
+                    WHERE id=? AND user_id=? AND COALESCE(status, 'active')!='deleted'
+                    """,
+                    (
+                        symbol,
+                        symbol,
+                        conditions[0]["threshold"],
+                        conditions[0]["threshold"],
+                        cooldown,
+                        json.dumps(metadata)[:4000],
+                        json.dumps({"operator": validated["operator"], "conditions": conditions})[:4000],
+                        validated["match"],
+                        _now(),
+                        alert_id,
+                        user_id,
+                    ),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+        _apply_repeat_mode(alert_id, user_id, frequency)
+    updated = get_alert_rule(alert_id, user_id)
+    if not updated:
+        return {"ok": False, "code": "not_found", "message": "Alert not found."}
+    return {"ok": True, "item": mobile_alert_json(updated), "message": "Alert updated."}
+
+
+def delete_mobile_crypto_alert(user_id, alert_id):
+    """DELETE /api/mobile/crypto/alerts/<id> — soft delete, same as the web."""
+    result = delete_alert(alert_id, user_id)
+    if not result.get("ok"):
+        return {"ok": False, "code": "not_found", "message": "Alert not found."}
+    return {"ok": True, "message": "Alert deleted."}
+
+
+def list_mobile_alert_history(user_id, limit=30, offset=0, alert_id=None):
+    """GET /api/mobile/crypto/alerts/history — triggered events, newest first,
+    with a real has_more computed by over-fetching one row."""
+    ensure_alert_schema()
+    try:
+        limit = max(1, min(int(limit), 200))
+    except (TypeError, ValueError):
+        limit = 30
+    try:
+        offset = max(0, int(offset))
+    except (TypeError, ValueError):
+        offset = 0
+    clauses = ["user_id=?", "status='triggered'"]
+    params = [user_id]
+    if alert_id:
+        clauses.append("alert_rule_id=?")
+        params.append(int(alert_id))
+    conn = user_context.connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"""
+            SELECT id, alert_rule_id, symbol, condition, threshold_value, observed_value,
+                   message, delivery_status, created_at
+            FROM alert_events
+            WHERE {' AND '.join(clauses)}
+            ORDER BY id DESC
+            LIMIT ? OFFSET ?
+            """,
+            (*params, limit + 1, offset),
+        )
+        rows = [_row_to_dict(row) for row in cur.fetchall()]
+    finally:
+        conn.close()
+    has_more = len(rows) > limit
+    items = []
+    for row in rows[:limit]:
+        items.append(
+            {
+                "alert_id": int(row.get("alert_rule_id") or 0),
+                "symbol": _normalize_symbol(row.get("symbol")),
+                "condition_summary": str(row.get("message") or row.get("condition") or "")[:500],
+                "observed_value": row.get("observed_value"),
+                "triggered_at": row.get("created_at") or "",
+                "notification_result": str(row.get("delivery_status") or "")[:80],
+            }
+        )
+    return {"ok": True, "items": items, "has_more": has_more}

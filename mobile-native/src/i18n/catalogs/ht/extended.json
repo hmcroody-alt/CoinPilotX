@@ -1456,6 +1456,175 @@
         "ai": "Sant kòmandman AI",
         "system": "Sant kòmandman sistèm"
       }
+    },
+    "crypto": {
+      "intelligence": {
+        "heading": "Entèlijans kripto",
+        "subhead": "Zouti kripto Premium, enkli nan chak plan.",
+        "alerts": {
+          "label": "Alèt kripto avanse",
+          "hint": "Kondisyon avanse, siveyans rekiran, règ konpoze ak plis kontwòl sou alèt yo."
+        },
+        "portfolio": {
+          "label": "Pòtfèy",
+          "hint": "Pozisyon yo, repatisyon, pèfòmans, konsantrasyon ak pwofi/pèt ki poko reyalize."
+        },
+        "undx": {
+          "label": "Entèlijans kripto UNDX",
+          "hint": "Konprann poukisa alèt yo te deklanche ak sa k ap fè pòtfèy ou bouje."
+        }
+      },
+      "entry": {
+        "title": "Entèlijans kripto Premium",
+        "body": "Règ alèt avanse ak plizyè kondisyon epi analiz pòtfèy la nan nouvo sant kòmand kripto a.",
+        "alertsCta": "Ouvri sant alèt la",
+        "portfolioCta": "Ouvri pòtfèy la"
+      },
+      "upsell": {
+        "title": "Fonksyon Premium",
+        "cta": "Gade plan Premium yo",
+        "alertsBody": "Alèt avanse yo — kwazman, fenèt tan, volim, kapitalizasyon mache, ak kondisyon pòtfèy — fè pati PulseSoc Premium. Alèt debaz pri anwo/anba yo rete gratis.",
+        "portfolioBody": "Valorizasyon pòtfèy, istwa valè, ak analiz konsantrasyon fè pati PulseSoc Premium."
+      },
+      "common": {
+        "loading": "Ap chaje…",
+        "never": "Janm"
+      },
+      "alerts": {
+        "title": "Sant alèt kripto",
+        "subtitle": "Règ alèt debaz ak avanse, evalye sou sèvè a epi livre sou aparèy sa a.",
+        "listTitle": "Règ ou yo",
+        "empty": "Poko gen okenn règ alèt. Kreye youn anwo a.",
+        "loadError": "Alèt yo pa t ka chaje.",
+        "create": "Nouvo règ",
+        "edit": "Modifye",
+        "delete": "Efase",
+        "deleteWarning": "Efase règ sa a? Istwa deklanchman li yo ap rete lizib, men règ la ap sispann evalye imedyatman.",
+        "confirmDelete": "Konfime efase",
+        "deleted": "Règ la efase.",
+        "deleteFailed": "Règ la pa t ka efase.",
+        "enable": "Aktive",
+        "disable": "Poze",
+        "toggleFailed": "Règ la pa t ka mete ajou.",
+        "save": "Sove règ la",
+        "saving": "Ap sove…",
+        "saved": "Règ la sove.",
+        "saveFailed": "Règ la pa t ka sove.",
+        "cancel": "Anile",
+        "cancelEdit": "Sispann modifye",
+        "formTitleCreate": "Kreye yon règ",
+        "formTitleEdit": "Modifye règ la",
+        "symbolLabel": "Senbòl aktif la",
+        "thresholdLabel": "Sèy",
+        "windowLabel": "Fenèt (minit)",
+        "windowHint": "Ant {{min}} ak {{max}} minit.",
+        "cooldownLabel": "Tan poz (segonn)",
+        "frequencyLabel": "Frekans",
+        "matchLabel": "Deklanche lè",
+        "addCondition": "Ajoute yon kondisyon",
+        "removeCondition": "Retire",
+        "conditionTitle": "Kondisyon {{number}}",
+        "conditionCount": "Kondisyon: {{count}}",
+        "lastTriggered": "Dènye deklanchman {{time}}",
+        "limits": "Kont gratis: {{free}} règ debaz. Premium: {{premium}} règ, ak jiska {{conditions}} kondisyon chak.",
+        "advancedLocked": "Règ sa a itilize kondisyon avanse. Pase nan Premium pou sove li — oswa kenbe yon sèl kondisyon pri anwo/anba, ki rete gratis.",
+        "historyCta": "Istwa",
+        "historyAllCta": "Gade istwa deklanchman yo",
+        "ruleType": {
+          "basic": "Debaz",
+          "advanced": "Avanse"
+        },
+        "status": {
+          "active": "Aktif",
+          "paused": "An poz",
+          "triggered": "Deklanche",
+          "error": "Erè"
+        },
+        "match": {
+          "all": "Tout kondisyon yo satisfè",
+          "any": "Nenpòt kondisyon satisfè"
+        },
+        "frequency": {
+          "once": "Yon fwa",
+          "everyCrossing": "Chak kwazman",
+          "recurring": "Rekiran"
+        },
+        "groups": {
+          "price": "Pri",
+          "volume": "Volim",
+          "marketCap": "Kapitalizasyon mache",
+          "portfolio": "Pòtfèy"
+        },
+        "conditionTypes": {
+          "priceAbove": "Pri anwo",
+          "priceBelow": "Pri anba",
+          "priceCrossesAbove": "Pri kwaze monte",
+          "priceCrossesBelow": "Pri kwaze desann",
+          "priceMovePct": "Mouvman pri %",
+          "priceMoveAbs": "Mouvman pri (absoli)",
+          "volumeAbove": "Volim anwo",
+          "volumeBelow": "Volim anba",
+          "volumeMovePct": "Mouvman volim %",
+          "marketCapAbove": "Kapitalizasyon anwo",
+          "marketCapBelow": "Kapitalizasyon anba",
+          "marketCapMovePct": "Mouvman kapitalizasyon %",
+          "portfolioValueAbove": "Valè pòtfèy anwo",
+          "portfolioValueBelow": "Valè pòtfèy anba",
+          "portfolioMovePct": "Mouvman pòtfèy %",
+          "allocationAbove": "Alokasyon pi wo pase %"
+        },
+        "errors": {
+          "symbolRequired": "Ajoute senbòl yon aktif.",
+          "symbolInvalid": "Itilize yon senbòl aktif ki valab tankou BTC oswa ETH.",
+          "noConditions": "Ajoute omwen yon kondisyon.",
+          "tooManyConditions": "Yon règ ka gen {{max}} kondisyon maksimòm.",
+          "conditionTypeInvalid": "Chwazi yon kalite kondisyon ki sipòte.",
+          "thresholdRequired": "Ajoute yon valè sèy.",
+          "thresholdInvalid": "Itilize yon sèy nimerik.",
+          "windowRequired": "Ajoute yon fenèt an minit.",
+          "windowOutOfRange": "Fenèt la dwe yon nonb antye ant {{min}} ak {{max}} minit.",
+          "cooldownInvalid": "Itilize yon tan poz ant 0 segonn ak 7 jou.",
+          "premiumRequired": "Règ avanse yo mande PulseSoc Premium."
+        }
+      },
+      "history": {
+        "title": "Istwa deklanchman",
+        "subtitle": "Chak fwa yon règ te deklanche, pi resan an anvan.",
+        "empty": "Poko gen deklanchman.",
+        "loadError": "Istwa a pa t ka chaje.",
+        "loadMore": "Chaje plis",
+        "filtered": "Ap montre yon sèl règ.",
+        "showAll": "Montre tout",
+        "observed": "Obsève: {{value}}",
+        "delivery": "Livrezon: {{result}}"
+      },
+      "portfolio": {
+        "title": "Pòtfèy kripto",
+        "subtitle": "Valorizasyon, istwa valè, ak konsantrasyon pozisyon ou yo.",
+        "totalValue": "Valè total",
+        "change24h": "Chanjman 24 è",
+        "unrealizedPl": "Pwofi/Pèt ki poko reyalize",
+        "holdingsTitle": "Pozisyon yo",
+        "historyTitle": "Istwa valè",
+        "empty": "Poko gen pozisyon.",
+        "loadError": "Pòtfèy la pa t ka chaje.",
+        "allocation": "Alokasyon: {{pct}}%",
+        "avgBuy": "Acha mwayèn {{price}}",
+        "calculatedAt": "Kalkile {{time}}",
+        "marketDataAt": "Done mache {{time}}",
+        "concentrationTitle": "Konsantrasyon",
+        "concentrationBody": "{{symbol}} reprezante {{pct}}% valè pòtfèy ou a.",
+        "noCoverage": "Pa gen istwa disponib pou peryòd sa a.",
+        "partialCoverage": "Istwa a kouvri peryòd sa a sèlman an pati.",
+        "periods": {
+          "h24": "24 è",
+          "d7": "7 j",
+          "d30": "30 j",
+          "d90": "90 j",
+          "y1": "1 an",
+          "all": "Tout"
+        }
+      }
     }
   },
   "settings": {

@@ -36428,6 +36428,57 @@ def portfolio_api():
     return jsonify(result), _portfolio_status(result)
 
 
+def _mobile_crypto_portfolio_gate(user_id):
+    """None when the user may use portfolio intelligence, else a premium-required
+    payload (returned with HTTP 200 so mobile clients can render the upsell)."""
+    capability = "crypto_portfolio"
+    try:
+        from services import crypto_premium_gate
+    except ImportError:
+        return {
+            "ok": False,
+            "code": "premium_required",
+            "capability": capability,
+            "message": "PulseSoc Premium is required for portfolio intelligence.",
+        }
+    capability = getattr(crypto_premium_gate, "CAP_CRYPTO_PORTFOLIO", capability)
+    if crypto_premium_gate.has_crypto_capability(user_id, capability):
+        return None
+    return crypto_premium_gate.premium_required_response(capability)
+
+
+@webhook_app.route("/api/mobile/crypto/portfolio", methods=["GET"])
+@webhook_app.route("/api/pulse/mobile/crypto/portfolio", methods=["GET"])
+def api_mobile_crypto_portfolio():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    user_id = int(user["user_id"])
+    gated = _mobile_crypto_portfolio_gate(user_id)
+    if gated is not None:
+        return jsonify(gated)
+    from services import portfolio_intelligence
+
+    return jsonify(portfolio_intelligence.compute_portfolio_valuation(user_id))
+
+
+@webhook_app.route("/api/mobile/crypto/portfolio/history", methods=["GET"])
+@webhook_app.route("/api/pulse/mobile/crypto/portfolio/history", methods=["GET"])
+def api_mobile_crypto_portfolio_history():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    user_id = int(user["user_id"])
+    gated = _mobile_crypto_portfolio_gate(user_id)
+    if gated is not None:
+        return jsonify(gated)
+    from services import portfolio_intelligence
+
+    return jsonify(portfolio_intelligence.get_portfolio_history(user_id, request.args.get("period", "7d")))
+
+
 @webhook_app.route("/portfolio", methods=["GET"])
 def portfolio_page():
     user = require_account()
@@ -36632,6 +36683,85 @@ def alert_events_api():
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     result = alert_engine_service.list_alert_events(user["user_id"], limit=int(request.args.get("limit") or 50))
+    response = jsonify(result)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
+def _mobile_crypto_alerts_capability(user_id):
+    """True when the caller holds the advanced-alerts capability. ImportError
+    or any resolution failure means no capability (the gate fails closed)."""
+    try:
+        from services import crypto_premium_gate
+    except ImportError:
+        return False
+    try:
+        return bool(
+            crypto_premium_gate.has_crypto_capability(
+                user_id, crypto_premium_gate.CAP_CRYPTO_ADVANCED_ALERTS
+            )
+        )
+    except Exception:
+        return False
+
+
+@webhook_app.route("/api/mobile/crypto/alerts", methods=["GET", "POST"])
+@webhook_app.route("/api/pulse/mobile/crypto/alerts", methods=["GET", "POST"])
+def api_mobile_crypto_alerts():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    user_id = int(user["user_id"])
+    has_premium = _mobile_crypto_alerts_capability(user_id)
+    if request.method == "GET":
+        result = alert_engine_service.list_mobile_crypto_alerts(user_id)
+        result["capabilities"] = {"advanced_alerts": has_premium}
+        response = jsonify(result)
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response
+    payload = request.get_json(silent=True) or {}
+    # Premium denials come back as HTTP 200 with the canonical
+    # premium_required payload so mobile clients render the upsell.
+    result = alert_engine_service.create_mobile_crypto_alert(user_id, payload, has_premium)
+    response = jsonify(result)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
+@webhook_app.route("/api/mobile/crypto/alerts/history", methods=["GET"])
+@webhook_app.route("/api/pulse/mobile/crypto/alerts/history", methods=["GET"])
+def api_mobile_crypto_alerts_history():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    user_id = int(user["user_id"])
+    result = alert_engine_service.list_mobile_alert_history(
+        user_id,
+        limit=request.args.get("limit") or 30,
+        offset=request.args.get("offset") or 0,
+        alert_id=request.args.get("alert_id"),
+    )
+    response = jsonify(result)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
+@webhook_app.route("/api/mobile/crypto/alerts/<int:alert_id>", methods=["PATCH", "DELETE"])
+@webhook_app.route("/api/pulse/mobile/crypto/alerts/<int:alert_id>", methods=["PATCH", "DELETE"])
+def api_mobile_crypto_alert_item(alert_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    user_id = int(user["user_id"])
+    if request.method == "DELETE":
+        result = alert_engine_service.delete_mobile_crypto_alert(user_id, alert_id)
+        return jsonify(result)
+    has_premium = _mobile_crypto_alerts_capability(user_id)
+    payload = request.get_json(silent=True) or {}
+    result = alert_engine_service.update_mobile_crypto_alert(user_id, alert_id, payload, has_premium)
     response = jsonify(result)
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response

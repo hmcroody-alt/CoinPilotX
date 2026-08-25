@@ -312,6 +312,336 @@ def crypto_alerts_update(user_id: int, arguments: dict[str, Any]) -> ToolResult:
 
 
 # ---------------------------------------------------------------------------
+# Crypto intelligence — backed by services.portfolio_intelligence,
+# services.market_observations and services.alert_engine, premium-gated by
+# services.crypto_premium_gate
+# ---------------------------------------------------------------------------
+
+#: Whitelisted fields for a single portfolio holding. Anything the valuation
+#: service adds beyond these names is dropped, never forwarded.
+_HOLDING_FIELDS = ("asset_id", "symbol", "name", "quantity", "amount", "balance",
+                   "price", "price_usd", "value", "value_usd", "allocation",
+                   "allocation_pct", "weight", "change_24h", "change_24h_pct")
+
+#: Whitelisted fields for one point of the portfolio-history series.
+_HISTORY_POINT_FIELDS = ("captured_at", "observed_at", "timestamp", "period_start",
+                         "total_value", "value", "change", "change_pct")
+
+#: Whitelisted fields for an alert trigger event (services.alert_engine
+#: ``alert_events`` rows). ``message`` is deliberately absent: it can embed
+#: user-authored strings.
+_ALERT_EVENT_FIELDS = ("id", "alert_rule_id", "symbol", "condition", "threshold_value",
+                       "observed_value", "status", "delivery_status", "created_at")
+
+#: Whitelisted fields for one sampled market observation.
+_OBSERVATION_FIELDS = ("asset_id", "symbol", "observed_at", "price", "volume_24h",
+                       "market_cap")
+
+#: services.market_observations is being built concurrently and its reader name
+#: is not part of the contract. Try the plausible names in order; if none exist
+#: the tool reports an honest "unavailable" rather than inventing data.
+_OBSERVATION_READERS = ("get_observation_series", "list_observations", "get_observations",
+                        "recent_observations", "observation_series")
+
+
+def _project(source: Any, fields: tuple[str, ...], *, str_limit: int = 80) -> dict[str, Any]:
+    """Project one untrusted service row onto a declared, bounded shape."""
+    if not isinstance(source, dict) or not source:
+        return {}
+    record: dict[str, Any] = {}
+    for key in fields:
+        if key not in source:
+            continue
+        value = source.get(key)
+        if isinstance(value, bool):
+            record[key] = value
+        elif isinstance(value, (int, float)):
+            record[key] = value
+        elif value is None:
+            record[key] = None
+        else:
+            record[key] = clean(value, str_limit)
+    return record
+
+
+def _scalars(source: Any, *, max_keys: int = 12, str_limit: int = 80) -> dict[str, Any]:
+    """Bound an open-shaped dict (concentration stats, premium payloads) to
+    scalar values only. Nested structures are dropped, not serialised."""
+    if not isinstance(source, dict):
+        return {}
+    bounded: dict[str, Any] = {}
+    for key, value in source.items():
+        if len(bounded) >= max_keys:
+            break
+        name = clean(key, 60)
+        if not name:
+            continue
+        if isinstance(value, bool) or isinstance(value, (int, float)):
+            bounded[name] = value
+        elif value is None:
+            bounded[name] = None
+        elif isinstance(value, str):
+            bounded[name] = clean(value, str_limit)
+    return bounded
+
+
+def _premium_payload(gate: Any, cap: Any) -> dict[str, Any]:
+    """The upsell payload shown when a premium capability is locked, projected
+    so the gate service cannot smuggle arbitrary structure to the model."""
+    try:
+        raw = gate.premium_required_response(cap)
+    except Exception:
+        raw = {}
+    payload = _scalars(raw, max_keys=12, str_limit=200)
+    payload["premium_required"] = True
+    payload.setdefault("capability", clean(cap, 80))
+    return payload
+
+
+def _premium_denial(user_id: int, cap_attr: str, *, tool: str, capability: str,
+                    started: float) -> ToolResult | None:
+    """Return a denial ToolResult if the caller lacks the premium capability,
+    or ``None`` when access is allowed.
+
+    Fail closed on every uncertainty: if the gate module is missing or errors,
+    the feature is treated as locked and the result says so honestly rather
+    than guessing in either direction.
+    """
+    try:
+        from services import crypto_premium_gate as gate
+    except ImportError:
+        return _fail(tool, capability, "premium_gate_unavailable",
+                     "UNDX could not verify premium access for that feature, "
+                     "so it is treating it as locked.",
+                     started=started)
+    cap = getattr(gate, cap_attr, cap_attr)
+    try:
+        if gate.has_crypto_capability(int(user_id), cap):
+            return None
+    except Exception:
+        return _fail(tool, capability, "premium_gate_error",
+                     "UNDX could not verify premium access for that feature, "
+                     "so it is treating it as locked.",
+                     started=started)
+    payload = _premium_payload(gate, cap)
+    return ToolResult(
+        ok=False,
+        tool_name=tool,
+        capability_id=capability,
+        error_code="premium_required",
+        error_message=clean(
+            payload.get("message") or "That feature needs a PulseSoc premium crypto plan.",
+            200,
+        ),
+        data=payload,
+        latency_ms=_timed(started),
+    )
+
+
+def crypto_portfolio_summary(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    """Current portfolio valuation for the caller. Premium (CAP_CRYPTO_PORTFOLIO)."""
+    started = time.perf_counter()
+    tool, capability = "pulsesoc.crypto_portfolio.summary", "crypto.portfolio.summary"
+    denial = _premium_denial(user_id, "CAP_CRYPTO_PORTFOLIO",
+                             tool=tool, capability=capability, started=started)
+    if denial is not None:
+        return denial
+    try:
+        from services import portfolio_intelligence
+    except ImportError:
+        return _fail(tool, capability, "portfolio_service_unavailable",
+                     "UNDX cannot read portfolio data right now: the portfolio "
+                     "service is not available.",
+                     started=started)
+    outcome = portfolio_intelligence.compute_portfolio_valuation(int(user_id)) or {}
+    if not isinstance(outcome, dict) or not outcome.get("ok"):
+        message = ""
+        if isinstance(outcome, dict):
+            message = outcome.get("error") or outcome.get("message") or ""
+        return _fail(tool, capability, "portfolio_read_failed",
+                     clean(message or "PulseSoc could not compute your portfolio right now.", 200),
+                     retryable=True, started=started)
+    holdings = [_project(row, _HOLDING_FIELDS)
+                for row in outcome.get("holdings") or [] if isinstance(row, dict)]
+    total_value = outcome.get("total_value")
+    data: dict[str, Any] = {
+        "total_value": float(total_value) if isinstance(total_value, (int, float))
+        and not isinstance(total_value, bool) else None,
+        "holding_count": len(holdings),
+        "concentration": _scalars(outcome.get("concentration")),
+    }
+    if outcome.get("currency"):
+        data["currency"] = clean(outcome.get("currency"), 12)
+    if outcome.get("as_of"):
+        data["as_of"] = clean(outcome.get("as_of"), 40)
+    return ToolResult(
+        ok=True,
+        tool_name=tool,
+        capability_id=capability,
+        canonical_resource_id=f"user:{int(user_id)}:portfolio",
+        records=holdings,
+        data=data,
+        latency_ms=_timed(started),
+    )
+
+
+def crypto_portfolio_history(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    """Portfolio value over a period. Premium (CAP_CRYPTO_PORTFOLIO)."""
+    started = time.perf_counter()
+    tool, capability = "pulsesoc.crypto_portfolio.history", "crypto.portfolio.history"
+    denial = _premium_denial(user_id, "CAP_CRYPTO_PORTFOLIO",
+                             tool=tool, capability=capability, started=started)
+    if denial is not None:
+        return denial
+    try:
+        from services import portfolio_intelligence
+    except ImportError:
+        return _fail(tool, capability, "portfolio_service_unavailable",
+                     "UNDX cannot read portfolio history right now: the portfolio "
+                     "service is not available.",
+                     started=started)
+    period = clean(arguments.get("period") or "30d", 8)
+    outcome = portfolio_intelligence.get_portfolio_history(int(user_id), period)
+    if isinstance(outcome, dict) and not outcome.get("ok", True):
+        message = outcome.get("error") or outcome.get("message") or ""
+        return _fail(tool, capability, "portfolio_read_failed",
+                     clean(message or "PulseSoc could not read your portfolio history.", 200),
+                     retryable=True, started=started)
+    if isinstance(outcome, dict):
+        series = (outcome.get("points") or outcome.get("history")
+                  or outcome.get("snapshots") or [])
+    elif isinstance(outcome, list):
+        series = outcome
+    else:
+        series = []
+    points = [_project(row, _HISTORY_POINT_FIELDS)
+              for row in series if isinstance(row, dict)]
+    return ToolResult(
+        ok=True,
+        tool_name=tool,
+        capability_id=capability,
+        canonical_resource_id=f"user:{int(user_id)}:portfolio-history",
+        records=points,
+        data={"period": period, "point_count": len(points)},
+        latency_ms=_timed(started),
+    )
+
+
+def crypto_alerts_activity(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    """The caller's alert rules plus recent trigger history.
+
+    The rule listing is free — it is the same read ``crypto.alerts.list``
+    already grants. The trigger-event detail is the premium half
+    (CAP_CRYPTO_ADVANCED_ALERTS): when the gate denies, the rules still come
+    back and ``trigger_history`` carries the honest premium payload instead of
+    the events, so the model can explain exactly what is locked and why.
+    """
+    started = time.perf_counter()
+    tool, capability = "pulsesoc.crypto_alerts.activity", "crypto.alerts.activity"
+    engine = _alert_engine()
+    limit = int(arguments.get("limit") or 20)
+    alert_id = int(arguments.get("alert_id") or 0)
+    outcome = engine.list_alert_rules(int(user_id), limit=limit + 1) or {}
+    if not outcome.get("ok"):
+        return _fail(tool, capability, "read_failed",
+                     "PulseSoc could not read your alerts right now.",
+                     retryable=True, started=started)
+    fetched = [_alert_record(rule) for rule in outcome.get("alerts") or []]
+    records = fetched[:limit]
+    denial = _premium_denial(user_id, "CAP_CRYPTO_ADVANCED_ALERTS",
+                             tool=tool, capability=capability, started=started)
+    if denial is None:
+        events_outcome = engine.list_alert_events(
+            int(user_id), limit=limit, alert_id=alert_id or None) or {}
+        if events_outcome.get("ok"):
+            events = [_project(event, _ALERT_EVENT_FIELDS)
+                      for event in events_outcome.get("events") or []
+                      if isinstance(event, dict)]
+            history: dict[str, Any] = {"available": True, "events": events,
+                                       "count": len(events)}
+        else:
+            history = {"available": False, "error_code": "read_failed"}
+    else:
+        history = {"available": False, "error_code": clean(denial.error_code, 80)}
+        if denial.error_code == "premium_required" and isinstance(denial.data, dict):
+            history.update(denial.data)
+    return ToolResult(
+        ok=True,
+        tool_name=tool,
+        capability_id=capability,
+        canonical_resource_id=f"user:{int(user_id)}:crypto-alert-activity",
+        records=records,
+        data={
+            "alert_count": len(records),
+            "truncated": len(fetched) > limit,
+            "trigger_history": history,
+        },
+        latency_ms=_timed(started),
+    )
+
+
+def crypto_market_observations(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    """Recent sampled market observations for one asset. Free tier."""
+    started = time.perf_counter()
+    tool, capability = "pulsesoc.crypto_market.observations", "crypto.market.observations"
+    try:
+        from services import market_observations
+    except ImportError:
+        return _fail(tool, capability, "market_observations_unavailable",
+                     "UNDX cannot read market observations right now: the "
+                     "observation service is not available.",
+                     started=started)
+    asset_id = clean(arguments.get("asset_id"), 60)
+    if not asset_id:
+        return _fail(tool, capability, "invalid_arguments",
+                     "An asset id is required.", started=started)
+    limit = int(arguments.get("limit") or 24)
+    reader = None
+    for name in _OBSERVATION_READERS:
+        candidate = getattr(market_observations, name, None)
+        if callable(candidate):
+            reader = candidate
+            break
+    if reader is None:
+        return _fail(tool, capability, "market_observations_unavailable",
+                     "UNDX cannot read market observations right now: the "
+                     "observation service exposes no series reader.",
+                     started=started)
+    try:
+        try:
+            outcome = reader(asset_id, limit=limit)
+        except TypeError:
+            outcome = reader(asset_id)
+    except Exception:
+        return _fail(tool, capability, "market_observation_read_failed",
+                     "PulseSoc could not read observations for that asset right now.",
+                     retryable=True, started=started)
+    if isinstance(outcome, dict):
+        if not outcome.get("ok", True):
+            message = outcome.get("error") or outcome.get("message") or ""
+            return _fail(tool, capability, "market_observation_read_failed",
+                         clean(message or "PulseSoc could not read observations for that asset.", 200),
+                         retryable=True, started=started)
+        series = (outcome.get("observations") or outcome.get("series")
+                  or outcome.get("points") or [])
+    elif isinstance(outcome, list):
+        series = outcome
+    else:
+        series = []
+    rows = [_project(item, _OBSERVATION_FIELDS)
+            for item in series if isinstance(item, dict)][:max(1, limit)]
+    return ToolResult(
+        ok=True,
+        tool_name=tool,
+        capability_id=capability,
+        canonical_resource_id=f"asset:{asset_id}",
+        records=rows,
+        data={"asset_id": asset_id, "observation_count": len(rows)},
+        latency_ms=_timed(started),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Notification preferences — backed by services.pulsesoc_notification_system
 # ---------------------------------------------------------------------------
 
@@ -958,7 +1288,12 @@ def verification_status(u, a): return _personal_read(u, a, "verification.status"
 def support_tickets_list(u, a): return _personal_read(u, a, "support.tickets.list", "support_tickets_list")
 def creator_analytics_summary(u, a): return _personal_read(u, a, "creator.analytics.summary", "creator_analytics_summary")
 def localization_preferences(u, a): return _personal_read(u, a, "localization.preferences", "localization_preferences")
-def crypto_portfolio_summary(u, a): return _personal_read(u, a, "crypto.portfolio.summary", "crypto_portfolio_summary")
+# No `crypto_portfolio_summary` delegate here. The real one is defined above and
+# opens with `_premium_denial(user_id, "CAP_CRYPTO_PORTFOLIO")`; a one-line
+# `_personal_read` delegate at this point in the file would rebind the name and
+# win, because both dispatch dicts below are built after this line. The result
+# is not a crash or a failing test — it is a paid capability answering for free,
+# which is the one failure mode this module cannot show you.
 def crypto_market_window(u, a): return _personal_read(u, a, "crypto.market.window", "crypto_market_window")
 
 
@@ -1008,6 +1343,10 @@ EXECUTORS: dict[str, Callable[[int, dict[str, Any]], ToolResult]] = {
     "crypto_alerts_create": crypto_alerts_create,
     "crypto_alerts_update": crypto_alerts_update,
     "crypto_alerts_delete": crypto_alerts_delete,
+    "crypto_portfolio_summary": crypto_portfolio_summary,
+    "crypto_portfolio_history": crypto_portfolio_history,
+    "crypto_alerts_activity": crypto_alerts_activity,
+    "crypto_market_observations": crypto_market_observations,
     "notification_preferences_read": notification_preferences_read,
     "notification_preferences_update": notification_preferences_update,
     "saved_items_list": saved_items_list,

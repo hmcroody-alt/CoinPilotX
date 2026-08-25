@@ -122,6 +122,14 @@ _LEGACY_READERS: dict[str, Callable[[Any], Optional[bool]]] = {
     # canonical grants in schema.py carry the key under `canonical`; this keeps
     # the answer identical in the other two modes.
     "premium.verification.blue_check.apply": _legacy_premium_customization,
+    # The crypto branch spells the portfolio capability as one key where the
+    # lines above split it into ``portfolio`` (the holdings ceiling) and
+    # ``intelligence`` (the derived read). Both spellings are registered rather
+    # than one renamed to the other: an unmapped key has no legacy opinion, and
+    # under the default ``off`` mode no opinion resolves to False, so dropping
+    # this name would deny the feature to every paying member on the seven call
+    # sites that ask for it. Same reader, so the three answer identically.
+    "premium.crypto.portfolio_intelligence": _legacy_premium_customization,
 }
 
 _legacy_module = None
