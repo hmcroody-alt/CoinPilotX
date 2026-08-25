@@ -26,6 +26,17 @@ export function isTemporaryQaUser(user: unknown) {
  * All three now read the shared set in `core/envFlag.ts`, including the
  * inverted one — "off" has to mean the same thing on a kill switch as it does
  * on an opt-in, or the switch fails open for whoever spells it `true`.
+ *
+ * These three keep `envFlagOn`'s computed lookup, which `babel-preset-expo`
+ * does not inline and which therefore reads undefined in a release bundle.
+ * That is correct here, and the loopback fence is what makes it correct: no
+ * distributed build reaches a loopback API base URL, so the first term shuts
+ * the gate in a release build whatever the other three answer.
+ *
+ * Convert all three together or none. Spelling only the two opt-ins literally
+ * would leave the kill switch as the one dead term in the chain — permanently
+ * un-engageable, `!undefined` forever — which is a fail-open on the one flag
+ * whose entire job is to fail closed.
  */
 export function canUseTemporaryQaAccount() {
   return (

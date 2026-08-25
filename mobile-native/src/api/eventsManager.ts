@@ -26,7 +26,7 @@
 
 import { formatMinor } from "./commerceInbox";
 import type { AdAnalyticsRow } from "./businessOs";
-import { envFlagOn } from "../core/envFlag";
+import { isFlagValueOn } from "../core/envFlag";
 
 const HOUR_MS = 60 * 60 * 1000;
 const MINUTE_MS = 60 * 1000;
@@ -35,17 +35,22 @@ const DAY_MS = 24 * HOUR_MS;
 /* ------------------------------------------------------------------ *
  * Feature flags (all OFF by default; read at call time)
  *
- * `envFlagOn` is the shared reader in `core/envFlag.ts`. The local parser it
+ * `isFlagValueOn` is the shared reader in `core/envFlag.ts`. The local parser it
  * replaced accepted the same four values, so nothing here changed except that
  * the rule is no longer this file's to decide.
+ *
+ * Each variable is spelled literally rather than handed to `envFlagOn` by name.
+ * `babel-preset-expo` substitutes `process.env.X` only when the key is a
+ * StringLiteral, so a computed lookup is never inlined and reads undefined in a
+ * release bundle — these would be off on device no matter what the build set.
  * ------------------------------------------------------------------ */
 
 /** Live commerce stats (watching / orders-in-10-min) on the live banner. */
-export const eventsLiveStatsEnabled = () => envFlagOn("EXPO_PUBLIC_EVENTS_LIVE_STATS");
+export const eventsLiveStatsEnabled = () => isFlagValueOn(process.env.EXPO_PUBLIC_EVENTS_LIVE_STATS);
 /** Attributed-sales figures on past-event results. Off — no attribution model. */
-export const eventAttributionEnabled = () => envFlagOn("EXPO_PUBLIC_EVENTS_ATTRIBUTION");
+export const eventAttributionEnabled = () => isFlagValueOn(process.env.EXPO_PUBLIC_EVENTS_ATTRIBUTION);
 /** Deterministic mock events for design review. Off — real events only. */
-export const eventsMockEnabled = () => envFlagOn("EXPO_PUBLIC_EVENTS_MOCK");
+export const eventsMockEnabled = () => isFlagValueOn(process.env.EXPO_PUBLIC_EVENTS_MOCK);
 
 /* ------------------------------------------------------------------ *
  * Model

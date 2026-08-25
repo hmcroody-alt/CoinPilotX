@@ -46,7 +46,7 @@ import {
   loadCachedAdCampaigns
 } from "./businessOs";
 import { AdCreative, AdsPortal, getAdsPortal } from "./adsPortal";
-import { envFlagOn } from "../core/envFlag";
+import { isFlagValueOn } from "../core/envFlag";
 
 /* ------------------------------------------------------------------ *
  * Modes
@@ -72,9 +72,16 @@ export const ADS_POST_MODE_FLAG = "EXPO_PUBLIC_ADS_POST_MODE";
  * it. When false, the ModeToggle still shows Post ads but the mode explains it
  * is coming rather than rendering invented promotions, and the spend chart
  * falls back to an honest unsourced state.
+ *
+ * The read spells the variable out rather than passing `ADS_POST_MODE_FLAG`,
+ * even though the constant holds the same string. `babel-preset-expo` inlines
+ * `process.env.X` only when the key is a StringLiteral, so reading through the
+ * constant produces a lookup that survives into the bundle and finds nothing —
+ * the flag would be unsettable on device. The constant stays because the
+ * settings copy and the completion report name it.
  */
 export function adsPostModeEnabled(): boolean {
-  return envFlagOn(ADS_POST_MODE_FLAG);
+  return isFlagValueOn(process.env.EXPO_PUBLIC_ADS_POST_MODE);
 }
 
 /* ------------------------------------------------------------------ *

@@ -44,13 +44,18 @@ import {
   listMarketplaceSellerOrders,
   loadCachedSellerStore
 } from "./marketplace";
-import { envFlagOn } from "../core/envFlag";
+import { isFlagValueOn } from "../core/envFlag";
 
 /* ------------------------------------------------------------------ *
  * Feature flags — read at call time so tests can toggle them.
  *
- * Both go through `envFlagOn` in `core/envFlag.ts`, which accepts exactly what
- * the inline parser here used to accept.
+ * Both go through `isFlagValueOn` in `core/envFlag.ts`, which accepts exactly
+ * what the inline parser here used to accept.
+ *
+ * Both spell their variable literally rather than handing the name to
+ * `envFlagOn`. `babel-preset-expo` substitutes `process.env.X` only when the key
+ * is a StringLiteral, so a computed lookup is never inlined and reads undefined
+ * in a release bundle — these gates would be off on device regardless.
  * ------------------------------------------------------------------ */
 
 /**
@@ -61,7 +66,7 @@ import { envFlagOn } from "../core/envFlag";
  * backend does not confirm. When on, every escrow figure is tagged Preview.
  */
 export function ordersEscrowIsLive(): boolean {
-  return envFlagOn("EXPO_PUBLIC_ORDERS_ESCROW");
+  return isFlagValueOn(process.env.EXPO_PUBLIC_ORDERS_ESCROW);
 }
 
 /**
@@ -72,7 +77,7 @@ export function ordersEscrowIsLive(): boolean {
  * actions render as a disabled Preview until the canonical order routes are live.
  */
 export function ordersFulfillmentIsLive(): boolean {
-  return envFlagOn("EXPO_PUBLIC_ORDERS_FULFILLMENT");
+  return isFlagValueOn(process.env.EXPO_PUBLIC_ORDERS_FULFILLMENT);
 }
 
 /* ------------------------------------------------------------------ *

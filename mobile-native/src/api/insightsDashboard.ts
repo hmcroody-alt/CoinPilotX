@@ -28,7 +28,7 @@
  */
 
 import { readJsonCache, writeJsonCache } from "../core/cache";
-import { envFlagOn } from "../core/envFlag";
+import { isFlagValueOn } from "../core/envFlag";
 import { pulseApi, PulseApiError } from "./pulseApi";
 // The shared state and failure vocabulary. Insights names a failure with the
 // same five causes and the same five sentences every other surface uses.
@@ -545,9 +545,14 @@ export function createInsightsRequestGate(): InsightsRequestGate {
 export const INSIGHTS_ERROR_CAUSES_FLAG = "EXPO_PUBLIC_INSIGHTS_ERROR_CAUSES";
 
 /** True when a build has opted into cause-specific insights errors. Off by default.
- *  Reads the shared truthy set — see `core/envFlag.ts`. */
+ *  Reads the shared truthy set — see `core/envFlag.ts`.
+ *
+ *  Spelled out rather than read through `INSIGHTS_ERROR_CAUSES_FLAG`, which holds
+ *  the same string: `babel-preset-expo` inlines `process.env.X` only for a
+ *  StringLiteral key, so the constant form was never substituted and read
+ *  undefined on device. The constant stays because the tests name it. */
 export function insightsErrorCausesEnabled(): boolean {
-  return envFlagOn(INSIGHTS_ERROR_CAUSES_FLAG);
+  return isFlagValueOn(process.env.EXPO_PUBLIC_INSIGHTS_ERROR_CAUSES);
 }
 
 export type InsightsFailure = FailureCopy & {
