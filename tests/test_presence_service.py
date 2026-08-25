@@ -49,6 +49,7 @@ class PresenceServiceTest(unittest.TestCase):
         self._real_now = ps.utc_now
         self.clock = _Clock(ps.datetime(2026, 7, 25, 12, 0, 0, tzinfo=ps.timezone.utc))
         ps.utc_now = self.clock
+        ps.reset_schema_cache()
         ps.ensure_schema(self.cur)
 
     def tearDown(self):
