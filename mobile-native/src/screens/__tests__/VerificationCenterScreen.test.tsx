@@ -52,7 +52,7 @@ const navigation = { setOptions: jest.fn(), navigate: jest.fn() } as never;
 async function renderAt(status: VerificationStatus, overrides?: { requestId?: number; verificationType?: VerificationTrackKey }) {
   mockLoad.mockResolvedValue(stateFor(status, overrides));
   const view = render(<VerificationCenterScreen navigation={navigation} route={{ params: {} } as never} />);
-  await waitFor(() => expect(view.queryByText("Loading Verification Center")).toBeNull());
+  await waitFor(() => expect(view.queryAllByText("Loading Verification Center").length).toBe(0));
   return view;
 }
 

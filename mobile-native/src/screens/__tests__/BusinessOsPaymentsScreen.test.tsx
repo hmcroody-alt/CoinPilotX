@@ -226,7 +226,7 @@ beforeEach(() => {
  */
 async function renderScreen(route?: { params?: { title?: string; accountId?: number } }) {
   const view = render(<BusinessOsPaymentsScreen route={route} />);
-  await waitFor(() => expect(view.queryByLabelText("Loading your balances")).toBeNull());
+  await waitFor(() => expect(view.queryAllByLabelText("Loading your balances").length).toBe(0));
   return view;
 }
 
@@ -310,7 +310,7 @@ describe("Payments money hub", () => {
 
       // The skeleton clears on the cache, not on the network — which is still
       // hanging and will never resolve in this test.
-      await waitFor(() => expect(view.queryByLabelText("Loading your balances")).toBeNull());
+      await waitFor(() => expect(view.queryAllByLabelText("Loading your balances").length).toBe(0));
       expect(view.getByLabelText(/Available for payout, \$42\.00/)).toBeTruthy();
       // And it is labelled as cached. An unlabelled cached figure is the one
       // outcome worse than a spinner.
@@ -330,7 +330,7 @@ describe("Payments money hub", () => {
       mockCachedActivity.mockResolvedValue({ page: page([entry()]), cachedAt: "2026-08-01T09:14:00Z" });
 
       const view = render(<BusinessOsPaymentsScreen />);
-      await waitFor(() => expect(view.queryByLabelText("Loading your balances")).toBeNull());
+      await waitFor(() => expect(view.queryAllByLabelText("Loading your balances").length).toBe(0));
 
       // The seller can read the balance. They cannot spend against it: a cached
       // figure is a display, never an authority to move money.
@@ -403,7 +403,7 @@ describe("Payments money hub", () => {
   it("opens the canonical Ads wallet layer with the resolved account", async () => {
     const navigation = { navigate: jest.fn(), goBack: jest.fn() };
     const view = render(<BusinessOsPaymentsScreen navigation={navigation} />);
-    await waitFor(() => expect(view.queryByLabelText("Loading your balances")).toBeNull());
+    await waitFor(() => expect(view.queryAllByLabelText("Loading your balances").length).toBe(0));
 
     fireEvent.press(view.getByText("Ad wallet"));
     expect(navigation.navigate).toHaveBeenCalledWith("BusinessOsAdvertising", {
