@@ -112,6 +112,42 @@ function optionsFor({
   });
 }
 
+/**
+ * A `getCryptoAlertOptions` whose answer this file releases by hand.
+ *
+ * The screen debounces the request by 400ms, so "asked but not yet answered" is
+ * a real state the form sits in, and the entitlement case below is about
+ * precisely that window. Waiting for the window to open and shut again means
+ * racing a real timer plus two renders against `waitFor`'s budget, which is
+ * what made that case fail on a loaded machine. Holding the promise makes both
+ * edges explicit instead: `asked()` settles once the debounced call has
+ * actually gone out, and `answer()` is the moment the reply lands.
+ */
+function heldOptions() {
+  const pending: Array<(options: AlertOptions) => void> = [];
+  let announce: (() => void) | null = null;
+  mockGetCryptoAlertOptions.mockImplementation(
+    () =>
+      new Promise<AlertOptions>((resolve) => {
+        pending.push(resolve);
+        announce?.();
+      })
+  );
+  return {
+    asked: () =>
+      new Promise<void>((resolve) => {
+        if (pending.length) {
+          resolve();
+          return;
+        }
+        announce = resolve;
+      }),
+    // Answers every outstanding request; the screen discards the replies to any
+    // it has already superseded.
+    answer: (options: AlertOptions) => pending.splice(0).forEach((resolve) => resolve(options))
+  };
+}
+
 function renderScreen(params: Record<string, unknown> | undefined = undefined) {
   const props = {
     route: { params, key: "advanced-alert-test", name: "AlertManagement" },
@@ -327,12 +363,26 @@ describe("A free account sees what Premium adds, and cannot use it", () => {
     // The request is debounced, so Advanced is pressable before the account is
     // known. Landing in a builder the server refuses every field of is worse
     // than a moment's delay, so the late answer has to take it back.
-    mockGetCryptoAlertOptions.mockResolvedValue(optionsFor({ locked: true }));
+    const options = heldOptions();
     renderScreen();
-    fireEvent.press(await screen.findByRole("button", { name: "Advanced" }));
+    await screen.findByRole("button", { name: "Advanced" });
+    // The tap has to land after the request goes out and before it is answered.
+    // That gap is the whole subject here, so it is arranged rather than hoped
+    // for: the builder opening below proves the entitlement was still unknown.
+    await act(async () => {
+      await options.asked();
+    });
+    fireEvent.press(screen.getByRole("button", { name: "Advanced" }));
     expect(screen.getByText("Condition 1")).toBeTruthy();
 
-    await waitFor(() => expect(screen.queryByText("Condition 1")).toBeNull());
+    // The late answer, delivered on this test's terms. Everything it sets off —
+    // the options state, the entitlement effect, the re-render that drops the
+    // builder — settles inside this act.
+    await act(async () => {
+      options.answer(optionsFor({ locked: true }));
+    });
+
+    expect(screen.queryByText("Condition 1")).toBeNull();
     expect(screen.getByText("Multi-condition alerts, watchlist alerts and time windows are part of PulseSoc Premium.")).toBeTruthy();
   });
 
