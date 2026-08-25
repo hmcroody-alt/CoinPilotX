@@ -2105,7 +2105,12 @@
       "founder_hub_access": "Zugang zum Founder Hub",
       "premium_upload_limits": "Höhere Upload-Limits",
       "priority_support": "Bevorzugter Support",
-      "early_access_features": "Früher Zugang zu Neuerungen"
+      "early_access_features": "Früher Zugang zu Neuerungen",
+      "verification": {
+        "blue_check": {
+          "apply": "Zugang zum Blue-Check-Antrag"
+        }
+      }
     },
     "notYet": {
       "heading": "Kommt mit deinem Tarif",

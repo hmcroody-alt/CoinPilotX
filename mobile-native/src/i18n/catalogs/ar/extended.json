@@ -2189,7 +2189,12 @@
       "founder_hub_access": "الوصول إلى Founder Hub",
       "premium_upload_limits": "حدود رفع أعلى",
       "priority_support": "دعم ذو أولوية",
-      "early_access_features": "وصول مبكر إلى الميزات الجديدة"
+      "early_access_features": "وصول مبكر إلى الميزات الجديدة",
+      "verification": {
+        "blue_check": {
+          "apply": "إمكانية التقدّم بطلب Blue Check"
+        }
+      }
     },
     "notYet": {
       "heading": "قادم ضمن خطتك",

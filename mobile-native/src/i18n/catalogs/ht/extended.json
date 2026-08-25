@@ -2100,7 +2100,12 @@
       "founder_hub_access": "Aksè nan Founder Hub",
       "premium_upload_limits": "Limit voye pi wo",
       "priority_support": "Sipò prioritè",
-      "early_access_features": "Aksè bonè ak nouvo bagay"
+      "early_access_features": "Aksè bonè ak nouvo bagay",
+      "verification": {
+        "blue_check": {
+          "apply": "Aksè pou aplike pou Blue Check"
+        }
+      }
     },
     "notYet": {
       "heading": "K ap vini nan plan ou",

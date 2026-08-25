@@ -2105,7 +2105,12 @@
       "founder_hub_access": "Founder Hub access",
       "premium_upload_limits": "Higher upload limits",
       "priority_support": "Priority support",
-      "early_access_features": "Early access to new features"
+      "early_access_features": "Early access to new features",
+      "verification": {
+        "blue_check": {
+          "apply": "Blue Check application access"
+        }
+      }
     },
     "notYet": {
       "heading": "Coming with your plan",

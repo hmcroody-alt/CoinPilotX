@@ -70,6 +70,11 @@ PREMIUM_CAPABILITIES = (
     "premium.crypto.advanced_alerts",
     "premium.crypto.portfolio",
     "premium.crypto.intelligence",
+    # Unlocks the ability to SUBMIT a Blue Check verification request. It does
+    # not grant the badge and carries no weight in the review: a reviewer still
+    # decides on the evidence. Membership buys the application, never the
+    # outcome — see NOT_VERIFICATION in premium_api.
+    "premium.verification.blue_check.apply",
 )
 
 #: Plans that confer Premium membership, in the catalog's vocabulary.

@@ -2092,7 +2092,12 @@
       "founder_hub_access": "Founder Hub へのアクセス",
       "premium_upload_limits": "アップロード上限の拡大",
       "priority_support": "優先サポート",
-      "early_access_features": "新機能への先行アクセス"
+      "early_access_features": "新機能への先行アクセス",
+      "verification": {
+        "blue_check": {
+          "apply": "Blue Check申請へのアクセス"
+        }
+      }
     },
     "notYet": {
       "heading": "プランに今後追加",

@@ -74,9 +74,17 @@ def _ensure_schema_once() -> None:
 
 #: Attached to every payload. Premium is a paid subscription; verification is
 #: identity evidence. Conflating them is what makes verification purchasable.
+#:
+#: The old second sentence ("does not affect verification eligibility") stopped
+#: being true when membership became what unlocks the Blue Check application
+#: form. The distinction the disclaimer actually needs to defend is narrower and
+#: more important: money buys the *form*, never the *decision*. State that
+#: plainly rather than deleting the disclaimer — a member who can suddenly apply
+#: will otherwise reasonably infer they bought an advantage in review.
 NOT_VERIFICATION = (
-    "PulseSoc Premium is a paid membership. It is not identity verification "
-    "and does not affect verification eligibility."
+    "PulseSoc Premium is a paid membership. It is not identity verification. "
+    "It unlocks the Blue Check application; a reviewer decides the outcome, and "
+    "paying does not make approval more likely."
 )
 
 #: Capability keys a Premium member holds, in the order we present them.

@@ -1,6 +1,7 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, AppState, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { PulseApiError } from "../api/pulseApi";
 import {
   loadCachedVerificationState,
   loadVerificationState,
@@ -36,6 +37,17 @@ export function VerificationCenterScreen({ navigation, route }: Props) {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
+  /** Whether the *selected* track is one this account may submit on. Only the
+   *  Premium-gated tracks can answer no, and only the server can say so — the
+   *  screen never infers it from the Premium badge, because holding a membership
+   *  and holding the capability are two different facts and the submit endpoint
+   *  gates on the second one. */
+  const canSubmitSelectedTrack = useMemo(() => {
+    const track = (state?.tracks || []).find((entry) => entry.key === selectedTrack);
+    if (!track?.premiumGated) return true;
+    return Boolean(state?.blueCheckApplyAllowed);
+  }, [state?.tracks, state?.blueCheckApplyAllowed, selectedTrack]);
+
   /**
    * Every control on this screen asks the same question — what is this person
    * allowed to do right now — so it is answered once, here, from the derivation
@@ -48,9 +60,10 @@ export function VerificationCenterScreen({ navigation, route }: Props) {
         status: state?.status || "not_started",
         requestId: state?.requestId,
         selectedTrack,
-        currentTrack: state?.verificationType
+        currentTrack: state?.verificationType,
+        canSubmitSelectedTrack
       }),
-    [state?.status, state?.requestId, state?.verificationType, selectedTrack]
+    [state?.status, state?.requestId, state?.verificationType, selectedTrack, canSubmitSelectedTrack]
   );
 
   const load = useCallback(async (mode: "initial" | "refresh" = "initial") => {
@@ -100,6 +113,11 @@ export function VerificationCenterScreen({ navigation, route }: Props) {
       await load("refresh");
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Verification request could not be submitted.");
+      // A premium_required refusal means the screen was showing a button this
+      // account cannot use — the membership lapsed, or a stale cache outlived
+      // it. Re-read the entitlement so the panel settles into the locked state
+      // instead of leaving the same button there to be pressed again.
+      if (requestError instanceof PulseApiError && requestError.code === "premium_required") await load("refresh").catch(() => undefined);
     } finally {
       setBusy("");
     }
@@ -239,11 +257,16 @@ export function VerificationCenterScreen({ navigation, route }: Props) {
             >
               <Text style={[styles.choiceTitle, selectedTrack === track.key && styles.choiceTitleActive]}>{track.label}</Text>
               <Text style={styles.choiceDetail}>{track.detail}</Text>
+              {/* The lock is named on the choice itself so the requirement is
+                  visible before it is selected, rather than appearing as a
+                  surprise once the button underneath has vanished. */}
+              {track.premiumGated && !state?.blueCheckApplyAllowed ? <Text style={styles.choiceLock}>Available with PulseSoc Premium</Text> : null}
             </Pressable>
           ))}
         </View>
-        {/* No action here means there is genuinely nothing to press, so the
-            panel says why rather than offering a button that would fail. */}
+        {/* Three outcomes, and they must not be confused with one another:
+            something to press, a membership that opens the form, or a request
+            already with a reviewer. */}
         {actions.path.length ? (
           actions.path.map((action) => (
             <ActionButton
@@ -254,6 +277,18 @@ export function VerificationCenterScreen({ navigation, route }: Props) {
               onPress={submitRequest}
             />
           ))
+        ) : actions.premiumLocked ? (
+          <View style={styles.lockPanel}>
+            <Text style={styles.lockTitle}>Available with PulseSoc Premium</Text>
+            {/* States the exchange exactly. Premium opens the form; it buys no
+                part of the decision, and this copy must never suggest that a
+                payment produces a checkmark. */}
+            <Text style={styles.muted}>
+              Premium members can apply for a Blue Check. Applying is not the same as getting one — a reviewer reads every application and decides on
+              what you send, and paying does not make approval more likely.
+            </Text>
+            <ActionButton label="View Premium" variant="primary" onPress={() => navigation.navigate("Premium")} />
+          </View>
         ) : (
           <Text style={styles.muted}>You cannot change or resend this while your request is with a reviewer.</Text>
         )}
@@ -472,6 +507,12 @@ const styles = createThemedStyles(() => ({
     fontSize: 12,
     lineHeight: 17
   },
+  choiceLock: {
+    color: colors.accentStrong,
+    fontSize: 11,
+    fontWeight: "800",
+    marginTop: 4
+  },
   choiceRow: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -543,6 +584,19 @@ const styles = createThemedStyles(() => ({
     minHeight: 44,
     paddingHorizontal: 12,
     paddingVertical: 10
+  },
+  lockPanel: {
+    backgroundColor: "rgba(79,140,255,0.08)",
+    borderColor: colors.accentStrong,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: 8,
+    padding: 12
+  },
+  lockTitle: {
+    color: colors.accentStrong,
+    fontSize: 14,
+    fontWeight: "900"
   },
   muted: {
     color: colors.muted,

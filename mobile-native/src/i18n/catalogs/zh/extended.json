@@ -2099,7 +2099,12 @@
       "founder_hub_access": "Founder Hub 权限",
       "premium_upload_limits": "更高上传额度",
       "priority_support": "优先支持",
-      "early_access_features": "抢先体验新功能"
+      "early_access_features": "抢先体验新功能",
+      "verification": {
+        "blue_check": {
+          "apply": "蓝色认证申请权限"
+        }
+      }
     },
     "notYet": {
       "heading": "方案内即将开放",

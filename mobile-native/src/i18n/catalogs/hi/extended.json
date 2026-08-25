@@ -2105,7 +2105,12 @@
       "founder_hub_access": "Founder Hub का एक्सेस",
       "premium_upload_limits": "ज़्यादा अपलोड सीमा",
       "priority_support": "प्राथमिकता वाला सपोर्ट",
-      "early_access_features": "नई सुविधाओं तक पहले पहुँच"
+      "early_access_features": "नई सुविधाओं तक पहले पहुँच",
+      "verification": {
+        "blue_check": {
+          "apply": "ब्लू चेक आवेदन तक पहुँच"
+        }
+      }
     },
     "notYet": {
       "heading": "आपके प्लान में आने वाला",

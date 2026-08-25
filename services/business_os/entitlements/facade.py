@@ -114,6 +114,14 @@ _LEGACY_READERS: dict[str, Callable[[Any], Optional[bool]]] = {
     "premium.crypto.advanced_alerts": _legacy_premium_customization,
     "premium.crypto.portfolio": _legacy_premium_customization,
     "premium.crypto.intelligence": _legacy_premium_customization,
+    # Blue Check application access. Mapped to legacy premium truthiness rather
+    # than left unmapped, because an unmapped key has NO legacy opinion, and
+    # under the default `off` mode "no opinion" resolves to False — which would
+    # deny the application to every paying member the moment an operator pulled
+    # the flag, and denies it in local/test runs where the flag is unset. The
+    # canonical grants in schema.py carry the key under `canonical`; this keeps
+    # the answer identical in the other two modes.
+    "premium.verification.blue_check.apply": _legacy_premium_customization,
 }
 
 _legacy_module = None

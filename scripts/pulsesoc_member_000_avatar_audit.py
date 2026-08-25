@@ -13,7 +13,8 @@ sys.path.insert(0, str(ROOT))
 from services import pulse_feed_engine, user_context  # noqa: E402
 
 
-ASSET = ROOT / "static" / "brand" / "pulsesoc-member-000-avatar.png"
+ASSET = ROOT / pulse_feed_engine.MEMBER_000_AVATAR_PATH.lstrip("/")
+COVER = ROOT / pulse_feed_engine.MEMBER_000_COVER_PATH.lstrip("/")
 
 
 def require(condition: bool, message: str, detail: str = "") -> None:
@@ -32,6 +33,7 @@ def main() -> None:
     require(ASSET.exists(), "Member #000 avatar asset exists", str(ASSET))
     width, height = png_dimensions(ASSET)
     require((width, height) == (1024, 1024), "Member #000 avatar is 1024x1024", f"{width}x{height}")
+    require(COVER.exists(), "Member #000 cover asset exists", str(COVER))
 
     pulse_feed_engine._MEMBER_000_PROFILE_READY = False
     author = pulse_feed_engine._public_author({"user_id": 0})

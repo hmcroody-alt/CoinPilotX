@@ -9,6 +9,7 @@ audit records, and safe API payloads.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import secrets
 from datetime import datetime, timedelta
@@ -16,6 +17,8 @@ from typing import Any
 
 from services import db as db_service
 from services.schema_guard import run_once_per_process
+
+_log = logging.getLogger("services.dashboard_account_command_center")
 
 
 VERIFICATION_STATUSES = {
@@ -822,11 +825,115 @@ def update_settings(conn: Any, user_id: int, payload: dict[str, Any], actor_user
     return {"ok": True, "settings": updated, "changed": changed, "previous": existing}
 
 
+#: Verification tracks that require an active Premium membership to APPLY for.
+#: Membership buys the form, never the badge: the request still goes to a human
+#: reviewer, and nothing here touches how that decision is made.
+PREMIUM_GATED_VERIFICATION_TYPES = {"blue_check"}
+
+#: The canonical capability that unlocks a Blue Check application.
+BLUE_CHECK_APPLY_CAPABILITY = "premium.verification.blue_check.apply"
+
+#: Statuses that mean a request is still live with the review team. A second
+#: application while one of these is open would give reviewers two cases for one
+#: person, so it is refused rather than silently duplicated.
+OPEN_VERIFICATION_STATUSES = ("draft", "submitted", "in_review", "needs_more_info", "appealed")
+
+BLUE_CHECK_PREMIUM_REQUIRED = (
+    "Blue Check applications are included with PulseSoc Premium. "
+    "Premium unlocks the application — a reviewer still decides the outcome."
+)
+
+
+def blue_check_apply_allowed_for(user_id: int, account: dict[str, Any] | None = None) -> bool:
+    """Whether this account may SUBMIT a Blue Check request right now.
+
+    Resolved through the canonical entitlement facade so there is exactly one
+    answer to "is this a Premium member", and so an account hold suspends the
+    application right along with everything else the membership confers.
+
+    ``account`` supplies the hold context (``account_status``/``access_enabled``)
+    when the caller already holds a fresh users row, so a route that has just
+    loaded the account does not pay for a second read.
+
+    This is the ONE decision function. The submit gate and the status endpoint
+    that renders the lock both call it, because a UI that disagrees with the
+    authority is how a person ends up staring at an unlocked button that 403s.
+
+    Any failure resolves to False. Denying an application the person can retry
+    is recoverable; granting one on a broken entitlement read is precisely what
+    this gate exists to prevent.
+    """
+    try:
+        from services.business_os.entitlements import facade as _ent_facade
+    except Exception:  # noqa: BLE001
+        return False
+    account = account or {}
+    try:
+        context = {
+            "account_status": account.get("account_status"),
+            "access_enabled": account.get("access_enabled"),
+        }
+        return bool(_ent_facade.check(int(user_id), BLUE_CHECK_APPLY_CAPABILITY, context=context))
+    except Exception:  # noqa: BLE001
+        _log.exception("blue check entitlement check failed user=%s", user_id)
+        return False
+
+
+def blue_check_apply_allowed(conn: Any, user_id: int) -> bool:
+    """``blue_check_apply_allowed_for`` with the hold context read from the DB.
+
+    Used by the submit gate, which is handed a connection and must not trust a
+    caller-supplied account row for the hold decision.
+    """
+    account: dict[str, Any] = {}
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT account_status, access_enabled FROM users WHERE user_id=? LIMIT 1", (int(user_id),))
+        account = _row_dict(cur.fetchone()) or {}
+    except Exception:  # noqa: BLE001
+        _log.exception("blue check account context read failed user=%s", user_id)
+        return False
+    return blue_check_apply_allowed_for(user_id, account)
+
+
+def open_verification_request(conn: Any, user_id: int, verification_type: str) -> dict[str, Any] | None:
+    """The caller's still-open request on this track, if one exists."""
+    cur = conn.cursor()
+    placeholders = ",".join("?" for _ in OPEN_VERIFICATION_STATUSES)
+    cur.execute(
+        f"""
+        SELECT * FROM verification_requests
+        WHERE user_id=? AND verification_type=? AND status IN ({placeholders})
+        ORDER BY id DESC LIMIT 1
+        """,
+        (int(user_id), str(verification_type), *OPEN_VERIFICATION_STATUSES),
+    )
+    return _row_dict(cur.fetchone())
+
+
 def submit_verification_request(conn: Any, user_id: int, verification_type: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
     ensure_schema(conn)
     verification_type = str(verification_type or "identity").strip().lower()
     if verification_type not in VERIFICATION_TYPES:
         raise ValueError("Choose a valid verification type.")
+    # Premium gate. Deliberately inside the service rather than at the route:
+    # this is the authority, and a second caller must not be able to reach the
+    # INSERT around it. An already-submitted request is untouched by this check,
+    # so a membership lapsing mid-review never cancels a live application.
+    if verification_type in PREMIUM_GATED_VERIFICATION_TYPES and not blue_check_apply_allowed(conn, user_id):
+        raise PermissionError(BLUE_CHECK_PREMIUM_REQUIRED)
+    # One open case per track. Without this, a double-tap or an impatient
+    # re-submit hands reviewers two cases for one person.
+    existing = open_verification_request(conn, user_id, verification_type)
+    if existing:
+        return {
+            "ok": True,
+            "request_id": _safe_int(existing.get("id"), 0),
+            "status": str(existing.get("status") or "submitted"),
+            "verification_type": verification_type,
+            "duplicate": True,
+            "message": "You already have a request on this track with the review team.",
+        }
     payload = payload or {}
     now = _now()
     cur = conn.cursor()
