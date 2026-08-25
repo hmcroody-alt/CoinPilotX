@@ -1245,28 +1245,43 @@ def list_alert_rules(user_id, limit=100, include_deleted=False, symbol=None):
 
 
 def _attach_delivery_statuses(user_id, rules):
+    """Decorate each rule with its last delivery status per channel.
+
+    ``notification_delivery_logs`` is created in ``bot.init_db()`` alone, so a
+    worker-only process, a fresh install or a test harness can reach this with
+    no such table. The decoration is cosmetic and the alerts read fine without
+    it, so a failure here degrades to undecorated rules rather than 500ing the
+    whole list — same posture as ``_watchlist_symbols``.
+    """
     rule_ids = [int(rule.get("id") or 0) for rule in rules if rule.get("id")]
     if not rule_ids:
         return rules
     placeholders = ",".join(["?"] * len(rule_ids))
     conn = user_context.connect()
-    cur = conn.cursor()
-    cur.execute(
-        f"""
-        SELECT alert_rule_id, channel, status, error_message, created_at
-        FROM notification_delivery_logs
-        WHERE user_id=? AND alert_rule_id IN ({placeholders})
-        ORDER BY id DESC
-        """,
-        (user_id, *rule_ids),
-    )
+    try:
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                f"""
+                SELECT alert_rule_id, channel, status, error_message, created_at
+                FROM notification_delivery_logs
+                WHERE user_id=? AND alert_rule_id IN ({placeholders})
+                ORDER BY id DESC
+                """,
+                (user_id, *rule_ids),
+            )
+            rows = cur.fetchall() or []
+        except Exception:
+            logging.warning("Delivery statuses unavailable for user %s", user_id, exc_info=True)
+            return rules
+    finally:
+        conn.close()
     latest = {}
-    for row in cur.fetchall():
+    for row in rows:
         item = _row_to_dict(row)
         key = (item.get("alert_rule_id"), item.get("channel"))
         if key not in latest:
             latest[key] = item
-    conn.close()
     for rule in rules:
         rule["delivery_statuses"] = {
             channel: latest.get((rule.get("id"), channel), {})
