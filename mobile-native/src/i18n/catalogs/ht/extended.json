@@ -2157,6 +2157,28 @@
       },
       "note": "Espas ki make Pwochen poko limen, e okenn nan yo pa faktire apa. Chak ap parèt isit la lè li pare."
     },
+    "cryptoIntelligence": {
+      "heading": "Entèlijans kripto",
+      "subhead": "Zouti kripto Premium ki enkli nan plan ou an.",
+      "items": {
+        "alerts": {
+          "label": "Alèt kripto avanse",
+          "hint": "Kondisyon avanse, siveyans repetitif, règ konbine ak plis kontwòl sou alèt yo."
+        },
+        "portfolio": {
+          "label": "Pòtfolyo",
+          "hint": "Sa ou genyen, repatisyon, pèfòmans, konsantrasyon ak pwofi oswa pèt ki poko reyalize."
+        },
+        "watchlist": {
+          "label": "Lis siveyans",
+          "hint": "Swiv aktif kripto ou chwazi yo: pri, mouvman ak entèlijans lis siveyans lan."
+        },
+        "intelligence": {
+          "label": "Entèlijans kripto UNDX",
+          "hint": "Konprann alèt ou yo, mouvman pòtfolyo a ak aktivite lis siveyans yo."
+        }
+      }
+    },
     "free": {
       "heading": "Toujou gratis",
       "body": "Fil ou, piblikasyon, reels, estati, mesaj, apèl, videyo an dirèk, pwofil, sekirite ak rekiperasyon kont rete gratis. Premium ajoute sou PulseSoc; li pa janm retire anyen."

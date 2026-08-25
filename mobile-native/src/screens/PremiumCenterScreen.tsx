@@ -350,6 +350,12 @@ export function PremiumCenterScreen({ route, navigation }: Props) {
 
       <CommandCenterSection experience={experience} held={Boolean(center?.membership.is_premium)} navigation={navigation} />
 
+      <CryptoIntelligenceSection
+        experience={experience}
+        held={Boolean(center?.membership.is_premium)}
+        navigation={navigation}
+      />
+
       <FreeCoreSection />
 
       <Text style={styles.footnote}>
@@ -892,6 +898,41 @@ const COMMAND_SPACES: readonly CommandSpace[] = [
 ];
 
 /**
+ * The Premium crypto entry points.
+ *
+ * Every tile opens the SAME screen the rest of the app already uses. There is no
+ * Premium-only copy of the alert engine, the portfolio or the watchlist, and no
+ * Premium-only state: `AlertManagementScreen`, `PortfolioScreen`,
+ * `WatchlistsScreen` and `IntelligenceCenterScreen` are the canonical
+ * implementations and this section is navigation into them, nothing more. A
+ * second copy would drift from the first the moment either changed.
+ *
+ * No `title` param is passed, deliberately. Each route's header already falls
+ * back to its own translated `common:screens.*` string when none is given, so a
+ * French member gets a French header. Passing a hardcoded English title is the
+ * precise bug documented in `nativeRouteActions.ts`, and repeating it here would
+ * spread it to four more entry points.
+ *
+ * Crypto alerts route to `CryptoAlertManagement` rather than `AlertManagement`.
+ * Both names render the same component, but the crypto alias is the one the rest
+ * of the crypto surface uses, so alert deep links stay consistent.
+ */
+type CryptoSpaceKey = "alerts" | "portfolio" | "watchlist" | "intelligence";
+
+type CryptoSpace = {
+  key: CryptoSpaceKey;
+  icon: keyof typeof Ionicons.glyphMap;
+  go: (navigation: Props["navigation"]) => void;
+};
+
+const CRYPTO_SPACES: readonly CryptoSpace[] = [
+  { key: "alerts", icon: "notifications-outline", go: (nav) => nav.navigate("CryptoAlertManagement") },
+  { key: "portfolio", icon: "pie-chart-outline", go: (nav) => nav.navigate("Portfolio") },
+  { key: "watchlist", icon: "eye-outline", go: (nav) => nav.navigate("Watchlists") },
+  { key: "intelligence", icon: "sparkles-outline", go: (nav) => nav.navigate("IntelligenceCenter") }
+];
+
+/**
  * The member's Premium headquarters.
  *
  * Two kinds of thing live here. The `modules` block is a roadmap — planned
@@ -995,6 +1036,65 @@ function SpaceCard({ space, navigation }: { space: CommandSpace; navigation: Pro
     );
   }
   return <View style={styles.spaceCard}>{body}</View>;
+}
+
+/**
+ * Crypto Intelligence — the Premium crypto command area.
+ *
+ * Gated exactly like the command center above, on the same live membership the
+ * rest of this screen reads. It deliberately does not consult the cached centre:
+ * `PREMIUM_CACHE_CONTRACT` is "display-only", so the cache may decide what a
+ * tile says and never what a member may open.
+ *
+ * Every row is pressable, because every destination exists today. Nothing here
+ * carries a BETA or NEXT chip — all four screens ship in the app right now, and
+ * a chip claiming otherwise would be false.
+ */
+export function CryptoIntelligenceSection({
+  experience,
+  held,
+  navigation
+}: {
+  experience: PremiumExperience;
+  held: boolean;
+  navigation: Props["navigation"];
+}) {
+  const { t } = useTranslation();
+  if (!held && experience !== "founder") return null;
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>{t("premium:cryptoIntelligence.heading")}</Text>
+      <Text style={styles.note}>{t("premium:cryptoIntelligence.subhead")}</Text>
+      <View style={styles.cryptoList}>
+        {CRYPTO_SPACES.map((space) => (
+          <CryptoSpaceRow key={space.key} space={space} navigation={navigation} />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+/** One crypto entry point: icon, title, short description, chevron. */
+function CryptoSpaceRow({ space, navigation }: { space: CryptoSpace; navigation: Props["navigation"] }) {
+  const { t } = useTranslation();
+  const label = t(`premium:cryptoIntelligence.items.${space.key}.label`);
+  const hint = t(`premium:cryptoIntelligence.items.${space.key}.hint`);
+  const go = space.go;
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.cryptoRow, pressed && styles.pressed]}
+      onPress={() => go(navigation)}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      <Ionicons name={space.icon} size={18} color={premiumTheme.gold} />
+      <View style={styles.cryptoBody}>
+        <Text style={styles.cryptoTitle} numberOfLines={1}>{label}</Text>
+        <Text style={styles.note} numberOfLines={2}>{hint}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={16} color={colors.muted} />
+    </Pressable>
+  );
 }
 
 /**
@@ -1157,6 +1257,19 @@ const styles = createThemedStyles(() => ({
     padding: 12
   },
   spaceCardOpen: { backgroundColor: premiumTheme.goldSoft, borderColor: premiumTheme.goldBorder },
+  cryptoList: { gap: 8, marginTop: 4 },
+  cryptoRow: {
+    alignItems: "center",
+    backgroundColor: premiumTheme.goldSoft,
+    borderColor: premiumTheme.goldBorder,
+    borderRadius: premiumTheme.radius.tile,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row",
+    gap: 10,
+    padding: 12
+  },
+  cryptoBody: { flex: 1, gap: 2 },
+  cryptoTitle: { color: colors.text, fontSize: 13, fontWeight: "700" },
   spaceCardHead: { alignItems: "center", flexDirection: "row", gap: 8 },
   spaceCardTitle: { color: colors.text, flex: 1, fontSize: 13, fontWeight: "700" },
   activeChip: {
