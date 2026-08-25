@@ -1471,6 +1471,10 @@
           "label": "Portfolio",
           "hint": "Holdings, allocation, performance, concentration, and unrealized gains and losses."
         },
+        "watchlists": {
+          "label": "Watchlists",
+          "hint": "Track the assets you care about with live prices, and point an alert at a whole list."
+        },
         "undx": {
           "label": "UNDX crypto intelligence",
           "hint": "Understand why alerts triggered and what is moving your portfolio."

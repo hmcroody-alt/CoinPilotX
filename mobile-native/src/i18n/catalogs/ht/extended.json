@@ -1469,6 +1469,10 @@
           "label": "Pòtfèy",
           "hint": "Pozisyon yo, repatisyon, pèfòmans, konsantrasyon ak pwofi/pèt ki poko reyalize."
         },
+        "watchlists": {
+          "label": "Lis siveyans",
+          "hint": "Swiv aktif ki enterese ou yo ak pri an dirèk, epi vize yon alèt sou yon lis konplè."
+        },
         "undx": {
           "label": "Entèlijans kripto UNDX",
           "hint": "Konprann poukisa alèt yo te deklanche ak sa k ap fè pòtfèy ou bouje."
