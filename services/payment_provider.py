@@ -301,14 +301,22 @@ def create_refund(provider_payment_id: str, amount_cents: int | None = None, met
 
 
 def verify_webhook_signature(payload: bytes, signature_header: str | None) -> dict[str, Any]:
-    secret = (os.getenv("STRIPE_WEBHOOK_SECRET") or "").strip()
-    if not secret:
+    # Delegates to the single shared verifier so this path and bot.py's webhook
+    # handler can never disagree about which signing secrets are acceptable.
+    # Previously this read STRIPE_WEBHOOK_SECRET alone, which meant only one of
+    # the account's several event destinations could ever verify here.
+    from services import stripe_webhook_verification
+
+    result = stripe_webhook_verification.verify(payload, signature_header)
+    if result.get("ok"):
+        return {"ok": True, "event": result["event"]}
+    if result.get("reason") == stripe_webhook_verification.SECRET_MISSING:
         return setup_required("Stripe webhook secret is missing.")
-    try:
-        event = stripe.Webhook.construct_event(payload, signature_header, secret)
-        return {"ok": True, "event": event}
-    except Exception as exc:
-        return {"ok": False, "message": str(exc), "status": "invalid_signature"}
+    return {
+        "ok": False,
+        "message": result.get("message") or "Invalid Stripe signature.",
+        "status": "invalid_signature",
+    }
 
 
 def parse_webhook_event(payload: bytes, signature_header: str | None = None) -> dict[str, Any]:

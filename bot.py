@@ -268,6 +268,7 @@ from services import (
     predictive_ai_engine,
     premium_capability_engine,
     payment_provider,
+    stripe_webhook_verification,
     premium_entitlement_service,
     premium_identity_engine,
     premium_visibility_engine,
@@ -99339,11 +99340,12 @@ def sync_founder_invoice_from_stripe(invoice, event_id, event_type):
 @webhook_app.route("/webhook/stripe", methods=["GET"])
 @webhook_app.route("/webhooks/stripe", methods=["GET"])
 def stripe_webhook_health():
-    return jsonify({
-        "ok": True,
-        "route": "stripe-webhook",
-        "webhook_secret_configured": bool(STRIPE_WEBHOOK_SECRET),
-    })
+    # This route is public, so it reports a count and never any secret material
+    # -- enough to answer "is this deployment able to verify anything, and how
+    # many destinations can it serve?" without helping anyone forge a signature.
+    payload = {"ok": True, "route": "stripe-webhook"}
+    payload.update(stripe_webhook_verification.describe_configuration())
+    return jsonify(payload)
 
 
 @webhook_app.route("/stripe-webhook", methods=["POST"])
@@ -99357,21 +99359,43 @@ def stripe_webhook():
     sig_header = request.headers.get("Stripe-Signature")
     logging.info("STRIPE_WEBHOOK_RECEIVED path=%s payload_bytes=%s signature_present=%s", request.path, len(payload or b""), bool(sig_header))
 
-    try:
-        if STRIPE_WEBHOOK_SECRET:
-            stripe.Webhook.construct_event(
-                payload,
-                sig_header,
-                STRIPE_WEBHOOK_SECRET
+    # Verify against every configured signing secret. Stripe issues one secret
+    # per event destination, and this single handler answers on five URL
+    # aliases, so a lone secret can only ever verify one destination -- which is
+    # exactly how pulsesoc-ads-billing-live accumulated nine days of 400s and
+    # got disabled. This still rejects anything unsigned or signed with a key we
+    # do not hold; it just allows more than one legitimate key.
+    verification = stripe_webhook_verification.verify(payload, sig_header)
+    if not verification.get("ok"):
+        reason = verification.get("reason")
+        if reason == stripe_webhook_verification.SECRET_MISSING:
+            logging.error(
+                "STRIPE_WEBHOOK_SECRET missing. Refusing unsigned live Stripe webhook; "
+                "configure Railway STRIPE_WEBHOOK_SECRET."
             )
-            event = json.loads(payload.decode("utf-8"))
-            logging.info("STRIPE_SIGNATURE_VERIFIED signature_present=%s", bool(sig_header))
-        else:
-            logging.error("STRIPE_WEBHOOK_SECRET missing. Refusing unsigned live Stripe webhook; configure Railway STRIPE_WEBHOOK_SECRET.")
             return "Webhook secret missing", 503
+        # A distinct body per reason so the next person reading Stripe's
+        # delivery log learns the failure mode from the response itself instead
+        # of having to correlate against server logs that may have aged out.
+        logging.error(
+            "STRIPE_SIGNATURE_REJECTED path=%s reason=%s secrets_tried=%s detail=%s",
+            request.path, reason, verification.get("secrets_tried"),
+            verification.get("last_error") or verification.get("message"),
+        )
+        if reason == stripe_webhook_verification.SIGNATURE_MISSING:
+            return "Invalid signature: missing Stripe-Signature header", 400
+        return "Invalid signature: no configured signing secret matches this destination", 400
+
+    try:
+        event = json.loads(payload.decode("utf-8"))
     except Exception as e:
-        logging.exception("Stripe webhook error details: %s", e)
-        return "Invalid", 400
+        logging.exception("Stripe webhook payload not decodable after valid signature: %s", e)
+        return "Invalid payload", 400
+
+    logging.info(
+        "STRIPE_SIGNATURE_VERIFIED path=%s secret_index=%s",
+        request.path, verification.get("secret_index"),
+    )
 
     event_type = event.get("type")
     if not event_type or not isinstance(event.get("data"), dict):
@@ -99396,7 +99420,10 @@ def stripe_webhook():
                 provider_event_id=event_id,
                 payload=event,
                 event_type=event_type,
-                signature_verified=bool(STRIPE_WEBHOOK_SECRET),
+                # Reaching this line means construct_event accepted the payload,
+                # so the signature really was verified -- not merely that a
+                # secret happened to be configured.
+                signature_verified=True,
             )
         except Exception:
             logging.exception("BUSINESS_OS webhook inbox enqueue failed (non-fatal) event_id=%s", event_id)
