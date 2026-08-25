@@ -1272,3 +1272,77 @@ ranges resolve inside 15.0.x; no other dependency line changed; the lockfile
 remains not-yet-updated because the sandbox registry block persists (verified
 again 2026-08-15: `403 blocked-by-allowlist`). Everything else in the addendum
 above stands unchanged.
+
+## Merge-to-main addendum (2026-08-24)
+
+This addendum declares the protected-path hits in the range
+`e1af64c9f4bd27b5955bbbe95ae65bb66aac5acb..4e207e6e` (41 commits, branch
+`claude/recursing-antonelli-a52df6` fast-forwarding `main`). It exists because
+the change gate diffs the whole push range on a push to `main`, so it reports
+protected paths touched by commits made earlier in the range rather than by any
+single feature.
+
+### Why the change is required
+
+None of the 41 commits set out to change real-time audio. The range is Premium
+crypto intelligence, a Stripe webhook signature-verification repair, App Store
+build-17 release prep, and earlier call/live fixes. Two protected-path hits fall
+inside it, and both are declared below rather than waved through.
+
+### Which protected files changed, and what actually changed in them
+
+| File | Category | Change |
+|---|---|---|
+| `mobile-native/app.json` | `dependency_watch` | `ios.buildNumber` `"16"` → `"17"` (commit `985c9b1e`, App Store build-17 prep). One line. No permission string, plugin, entitlement, background mode, or dependency changed. |
+| `bot.py` | `backend_token_and_room_policy` (`AGORA_`) | Two `logging.warning` calls removed from `api_pulse_live_end` (commit `00d742ca`). They match the `AGORA_` pattern only because the log *message text* contains it: `PULSE_LIVE_AGORA_MUX_BRIDGE_STOP_FAILED` and `PULSE_LIVE_AGORA_RECORDING_STOP_FAILED`. |
+
+The `bot.py` hit is worth stating precisely, because "backend token and room
+policy changed" is a much more alarming description than what happened. Commit
+`00d742ca` moved Agora mux-bridge and cloud-recording teardown out of the
+`api_pulse_live_end` request handler and into `media_worker.py` so ending a
+stream no longer blocks on replay finalization. The two log lines travelled with
+the code that moved. Grepping the full `bot.py` diff for the things this
+category exists to protect -- `AGORA_APP_ID`, `AGORA_CERTIFICATE`,
+`RtcTokenBuilder`, token construction, publish grants, `can_publish`, room
+policy -- returns nothing. No token is minted differently and no participant's
+publish rights changed.
+
+### Expected behavior change
+
+None for audio. Ending a livestream returns without waiting for mux-bridge and
+recording teardown, which now happens in `media_worker`. Capture, routing,
+AVAudioSession category, publication paths, and ownership arbitration are
+untouched across the entire range.
+
+### Regression risk
+
+Low. The build-number bump cannot affect runtime. The `bot.py` change is a
+latency move that shipped with its own coverage in the same commit:
+`tests/protection/test_agora_replay_mux_contract.py` (+27),
+`tests/test_agora_private_mux_input.py` (+50), `tests/test_live_replay_worker.py`
+(+85). The residual risk is teardown being missed if the worker never runs it --
+which those suites cover, and which is a replay/recording concern, not an audio
+one.
+
+### Tests run for this declaration (2026-08-24, local)
+
+- `npm run test:realtime-audio-critical` — 11 suites / 191 tests passed.
+- `npm run test:realtime-audio` — 18 suites / 310 tests passed.
+- `npm run test:realtime-audio-architecture` — 22 tests passed.
+- `python3 tests/protection/test_realtime_audio_architecture.py` — 19 tests, OK.
+- `pytest tests/protection/test_agora_token_generation.py
+  tests/protection/test_agora_rtc_provider_contract.py
+  tests/protection/test_agora_replay_mux_contract.py` — 19 passed.
+- `npm run typecheck` — passed.
+- `scripts/protection/run_protection_suite.py` — 218 checks across 20 suites.
+- Native build verification: a full iOS build of this range was produced and
+  installed on the iPhone 17 Pro Max simulator and on the physical device
+  P3r7or, which exercises the prebuild path the CI `native-build` job checks.
+
+### Physical validation NOT performed
+
+I did not place a call or start a livestream on a physical device and listen to
+it. No audible verification is claimed here. Section 7 of
+`reports/realtime_audio_verified_baseline.md` remains an open release gate for
+this range, and the low regression risk argued above is an argument from the
+diff, not a substitute for hearing it work.
