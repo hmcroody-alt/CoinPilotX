@@ -2,6 +2,7 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
   Image,
   Pressable,
   RefreshControl,
@@ -10,6 +11,11 @@ import {
   View
 } from "react-native";
 import { listMyPages, pageTypeLabel, PulsePage } from "../api/pages";
+import { ComingSoonSheet } from "../launch/ComingSoonSheet";
+import { presenceModuleId, readinessOf } from "../launch/readiness";
+import { useLaunchCopy, useLaunchGate, useLaunchMotionEnabled } from "../launch/useLaunchGate";
+import { useLockedMotion } from "../launch/lockedMotion";
+import { useIsFocusedIfNavigated } from "../navigation/useIsFocusedIfNavigated";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { presenceAccent } from "../theme/presenceAccent";
@@ -74,6 +80,10 @@ export function PresenceHubScreen({ navigation }: Props) {
   const [pages, setPages] = useState<PulsePage[]>([]);
   const [state, setState] = useState<"loading" | "loaded" | "error">("loading");
   const [refreshing, setRefreshing] = useState(false);
+  // Above the loading/error returns: these are hooks and the returns are not.
+  const gate = useLaunchGate();
+  const motionEnabled = useLaunchMotionEnabled();
+  const screenActive = useIsFocusedIfNavigated();
 
   const load = useCallback(async () => {
     try {
@@ -113,197 +123,266 @@ export function PresenceHubScreen({ navigation }: Props) {
   }
 
   return (
-    <ScrollView
-      style={styles.root}
-      contentContainerStyle={styles.content}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={() => {
-            setRefreshing(true);
-            load();
-          }}
-          tintColor={presenceTheme.teal}
-        />
-      }
-    >
-      <Text style={styles.header}>PRESENCE</Text>
-      <Text style={styles.subtitle}>Your public identities on PulseSoc.</Text>
-      <Text style={styles.supporting}>
-        Create and manage identities for your art, brand, organization, or business.
-        Your personal account stays exactly as it is.
-      </Text>
-
-      <View style={styles.offerCard}>
-        <Text style={styles.offerTitle}>Artist Presence</Text>
-        <Text style={styles.offerLead}>Build your official artist home.</Text>
-        {/*
-          Was "Music · Releases · Videos · Events · Fans · Store · Insights".
-          Three of those were not modules at all — there is no Releases, no
-          Fans, and the management view calls its analytics Overview, not
-          Insights — and the tab is Merch rather than Store. A pitch that names
-          things the product does not have is where a hollow surface starts.
-          The set also genuinely varies by page type (a public figure gets
-          videos but not music), so it says so instead of promising a fixed
-          list it cannot keep.
-        */}
-        <Text style={styles.offerList}>
-          Posts, music, videos, events and merch — each one pointed at the system that
-          already holds it, never a second copy. Which of them your page shows depends on
-          the type you pick next.
+    <>
+      <ScrollView
+        style={styles.root}
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              load();
+            }}
+            tintColor={presenceTheme.teal}
+          />
+        }
+      >
+        <Text style={styles.header}>PRESENCE</Text>
+        <Text style={styles.subtitle}>Your public identities on PulseSoc.</Text>
+        <Text style={styles.supporting}>
+          Create and manage identities for your art, brand, organization, or business.
+          Your personal account stays exactly as it is.
         </Text>
-        <Pressable
-          accessibilityRole="button"
-          style={styles.offerButton}
-          onPress={() => navigation.navigate("PageCreate", { flavor: "artist" })}
-        >
-          <Text style={styles.offerButtonText}>Create Artist Presence</Text>
-        </Pressable>
-      </View>
 
-      <View style={styles.offerCard}>
-        <Text style={styles.offerTitle}>Business Presence</Text>
-        <Text style={styles.offerLead}>Build your official business home.</Text>
-        {/*
-          Was "Products · Services · Store · Marketplace · Events · Customers ·
-          Insights". Services was removed as a module on purpose — Marketplace
-          already carries service and booking listings, so a separate one would
-          be a second commerce backend — and there is no Customers module and
-          no section called Insights.
-        */}
-        <Text style={styles.offerList}>
-          Your shop from Marketplace, your dates from Business OS, your campaigns from
-          Ads — connected to what you already run rather than rebuilt here. Which of them
-          your page shows depends on the type you pick next.
-        </Text>
-        <Pressable
-          accessibilityRole="button"
-          style={styles.offerButton}
-          onPress={() => navigation.navigate("PageCreate", { flavor: "business" })}
-        >
-          <Text style={styles.offerButtonText}>Create Business Presence</Text>
-        </Pressable>
-      </View>
+        <View style={styles.offerCard}>
+          <Text style={styles.offerTitle}>Artist Presence</Text>
+          <Text style={styles.offerLead}>Build your official artist home.</Text>
+          {/*
+            Was "Music · Releases · Videos · Events · Fans · Store · Insights".
+            Three of those were not modules at all — there is no Releases, no
+            Fans, and the management view calls its analytics Overview, not
+            Insights — and the tab is Merch rather than Store. A pitch that names
+            things the product does not have is where a hollow surface starts.
+            The set also genuinely varies by page type (a public figure gets
+            videos but not music), so it says so instead of promising a fixed
+            list it cannot keep.
+          */}
+          <Text style={styles.offerList}>
+            Posts, music, videos, events and merch — each one pointed at the system that
+            already holds it, never a second copy. Which of them your page shows depends on
+            the type you pick next.
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            style={styles.offerButton}
+            onPress={() => navigation.navigate("PageCreate", { flavor: "artist" })}
+          >
+            <Text style={styles.offerButtonText}>Create Artist Presence</Text>
+          </Pressable>
+        </View>
 
-      <Text style={styles.sectionTitle}>YOUR PRESENCES</Text>
+        <View style={styles.offerCard}>
+          <Text style={styles.offerTitle}>Business Presence</Text>
+          <Text style={styles.offerLead}>Build your official business home.</Text>
+          {/*
+            Was "Products · Services · Store · Marketplace · Events · Customers ·
+            Insights". Services was removed as a module on purpose — Marketplace
+            already carries service and booking listings, so a separate one would
+            be a second commerce backend — and there is no Customers module and
+            no section called Insights.
+          */}
+          <Text style={styles.offerList}>
+            Your shop from Marketplace, your dates from Business OS, your campaigns from
+            Ads — connected to what you already run rather than rebuilt here. Which of them
+            your page shows depends on the type you pick next.
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            style={styles.offerButton}
+            onPress={() => navigation.navigate("PageCreate", { flavor: "business" })}
+          >
+            <Text style={styles.offerButtonText}>Create Business Presence</Text>
+          </Pressable>
+        </View>
 
-      {!pages.length ? (
-        <Text style={styles.empty}>You haven't created a Presence yet.</Text>
-      ) : (
-        pages.map((page) => {
-          const pending = pendingModules(page);
-          /*
-            The card is drawn in the presence's own colour, from its type.
-            This list is the one place a member holds their presences side by
-            side, and the spine down the left is what tells the restaurant from
-            the artist page before either name is read. The badges below are
-            left out of it deliberately: Public and Verified are claims about
-            state and trust, and they have to mean the same thing on every card.
-          */
-          const tone = presenceAccent(page.page_type);
-          return (
-            <View
-              key={page.id}
-              testID={`presence-card-${page.id}`}
-              style={[styles.presenceCard, { borderLeftColor: tone.base }]}
-            >
-              <View style={styles.presenceIdentity}>
-                {page.avatar_url ? (
-                  <Image
-                    source={{ uri: page.avatar_url }}
-                    style={[styles.presenceAvatar, { borderColor: tone.border }]}
-                  />
-                ) : (
-                  <View
-                    style={[
-                      styles.presenceAvatar,
-                      styles.presenceAvatarFallback,
-                      { backgroundColor: tone.fill, borderColor: tone.border }
-                    ]}
-                  >
-                    <Text style={[styles.presenceAvatarInitial, { color: tone.base }]}>
-                      {page.name.slice(0, 1).toUpperCase()}
+        <Text style={styles.sectionTitle}>YOUR PRESENCES</Text>
+
+        {!pages.length ? (
+          <Text style={styles.empty}>You haven't created a Presence yet.</Text>
+        ) : (
+          pages.map((page) => {
+            const pending = pendingModules(page);
+            /*
+              The card is drawn in the presence's own colour, from its type.
+              This list is the one place a member holds their presences side by
+              side, and the spine down the left is what tells the restaurant from
+              the artist page before either name is read. The badges below are
+              left out of it deliberately: Public and Verified are claims about
+              state and trust, and they have to mean the same thing on every card.
+            */
+            const tone = presenceAccent(page.page_type);
+            return (
+              <View
+                key={page.id}
+                testID={`presence-card-${page.id}`}
+                style={[styles.presenceCard, { borderLeftColor: tone.base }]}
+              >
+                <View style={styles.presenceIdentity}>
+                  {page.avatar_url ? (
+                    <Image
+                      source={{ uri: page.avatar_url }}
+                      style={[styles.presenceAvatar, { borderColor: tone.border }]}
+                    />
+                  ) : (
+                    <View
+                      style={[
+                        styles.presenceAvatar,
+                        styles.presenceAvatarFallback,
+                        { backgroundColor: tone.fill, borderColor: tone.border }
+                      ]}
+                    >
+                      <Text style={[styles.presenceAvatarInitial, { color: tone.base }]}>
+                        {page.name.slice(0, 1).toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
+                  <View style={styles.presenceMetaBlock}>
+                    <Text style={styles.presenceName}>{page.name}</Text>
+                    <Text style={styles.presenceMeta}>
+                      {pageTypeLabel(page.page_type)} · {page.followers_count === 1 ? "1 follower" : `${page.followers_count} followers`}
+                      {" · "}
+                      {page.posts_count === 1 ? "1 post" : `${page.posts_count} posts`}
                     </Text>
-                  </View>
-                )}
-                <View style={styles.presenceMetaBlock}>
-                  <Text style={styles.presenceName}>{page.name}</Text>
-                  <Text style={styles.presenceMeta}>
-                    {pageTypeLabel(page.page_type)} · {page.followers_count === 1 ? "1 follower" : `${page.followers_count} followers`}
-                    {" · "}
-                    {page.posts_count === 1 ? "1 post" : `${page.posts_count} posts`}
-                  </Text>
-                  {/* Badges reflect real server state only: status straight from the
-                      row, Verified only when the server granted it. No inferred flags. */}
-                  <View style={styles.badgeRow}>
-                    <Text style={[styles.badge, page.status === "ACTIVE" ? styles.badgePublic : styles.badgeDraft]}>
-                      {page.status === "ACTIVE" ? "Public" : page.status.charAt(0) + page.status.slice(1).toLowerCase()}
-                    </Text>
-                    {page.verified ? <Text style={[styles.badge, styles.badgeVerified]}>✓ Verified</Text> : null}
+                    {/* Badges reflect real server state only: status straight from the
+                        row, Verified only when the server granted it. No inferred flags. */}
+                    <View style={styles.badgeRow}>
+                      <Text style={[styles.badge, page.status === "ACTIVE" ? styles.badgePublic : styles.badgeDraft]}>
+                        {page.status === "ACTIVE" ? "Public" : page.status.charAt(0) + page.status.slice(1).toLowerCase()}
+                      </Text>
+                      {page.verified ? <Text style={[styles.badge, styles.badgeVerified]}>✓ Verified</Text> : null}
+                    </View>
                   </View>
                 </View>
-              </View>
-              {/*
-                What is left to set up, measured rather than guessed. This is
-                the server's own availability map, so the card and the page
-                cannot disagree about whether the shop is connected. Nothing is
-                said when there is nothing outstanding — a card that always
-                carries a line trains people to stop reading it.
-              */}
-              {pending.length ? (
-                <Text style={styles.presencePending}>Not set up yet: {pending.join(", ")}</Text>
-              ) : null}
-              <View style={styles.presenceActions}>
-                <Pressable
-                  accessibilityRole="button"
-                  style={styles.presenceAction}
-                  onPress={() => navigation.navigate("Page", { pageId: page.id, handle: page.handle, title: page.name })}
-                >
-                  <Text style={styles.presenceActionText}>View</Text>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  style={styles.presenceAction}
-                  onPress={() => navigation.navigate("PagesHub", { focusPageId: page.id })}
-                >
-                  <Text style={styles.presenceActionText}>Manage</Text>
-                </Pressable>
                 {/*
-                  Business presences get a third action because there is a
-                  third place to go. Artist presences used to get one labelled
-                  "Insights" that navigated to `PagesHub` with the same
-                  `focusPageId` as Manage — the identical destination under a
-                  different word, and a word naming a section that does not
-                  exist (the management view calls it Overview). Two buttons
-                  doing one job is how a surface starts feeling hollow, so the
-                  duplicate is gone rather than relabelled. There is no separate
-                  artist subsystem to point at, and inventing a door to make
-                  the two cards look symmetrical would be the same mistake in a
-                  new place.
+                  What is left to set up, measured rather than guessed. This is
+                  the server's own availability map, so the card and the page
+                  cannot disagree about whether the shop is connected. Nothing is
+                  said when there is nothing outstanding — a card that always
+                  carries a line trains people to stop reading it.
                 */}
-                {hasBusinessOs(page) ? (
+                {pending.length ? (
+                  <Text style={styles.presencePending}>Not set up yet: {pending.join(", ")}</Text>
+                ) : null}
+                <View style={styles.presenceActions}>
                   <Pressable
                     accessibilityRole="button"
                     style={styles.presenceAction}
-                    onPress={() => navigation.navigate("BusinessOs", { title: page.name })}
+                    onPress={() => navigation.navigate("Page", { pageId: page.id, handle: page.handle, title: page.name })}
                   >
-                    <Text style={styles.presenceActionText}>Business OS</Text>
+                    <Text style={styles.presenceActionText}>View</Text>
                   </Pressable>
-                ) : null}
+                  <Pressable
+                    accessibilityRole="button"
+                    style={styles.presenceAction}
+                    onPress={() => navigation.navigate("PagesHub", { focusPageId: page.id })}
+                  >
+                    <Text style={styles.presenceActionText}>Manage</Text>
+                  </Pressable>
+                  {/*
+                    Business presences get a third action because there is a
+                    third place to go. Artist presences used to get one labelled
+                    "Insights" that navigated to `PagesHub` with the same
+                    `focusPageId` as Manage — the identical destination under a
+                    different word, and a word naming a section that does not
+                    exist (the management view calls it Overview). Two buttons
+                    doing one job is how a surface starts feeling hollow, so the
+                    duplicate is gone rather than relabelled. There is no separate
+                    artist subsystem to point at, and inventing a door to make
+                    the two cards look symmetrical would be the same mistake in a
+                    new place.
+                  */}
+                  {/*
+                    Gated. The navigation below carries no page identifier, so
+                    `BusinessOsScreen` resolves the subject as the signed-in
+                    viewer and paints THEIR listings, orders and ad spend under
+                    THIS presence's name. That is a wrong answer wearing a real
+                    one's clothes, which is worse than a door that says it is not
+                    open yet. See `presence:businessOs` in `launch/readiness.ts`.
+                  */}
+                  {hasBusinessOs(page) ? (
+                    <PresenceAction
+                      id={presenceModuleId("businessOs")}
+                      label="Business OS"
+                      index={0}
+                      motionEnabled={motionEnabled}
+                      screenActive={screenActive}
+                      onPress={() =>
+                        gate.open(presenceModuleId("businessOs"), "Business OS", () =>
+                          navigation.navigate("BusinessOs", { title: page.name })
+                        )
+                      }
+                    />
+                  ) : null}
+                </View>
               </View>
-            </View>
-          );
-        })
-      )}
+            );
+          })
+        )}
 
+        <Pressable
+          accessibilityRole="button"
+          style={styles.createNew}
+          onPress={() => navigation.navigate("PageCreate", undefined)}
+        >
+          <Text style={styles.createNewText}>+ Create New</Text>
+        </Pressable>
+      </ScrollView>
+      <ComingSoonSheet target={gate.target} onDismiss={gate.dismiss} />
+    </>
+  );
+}
+
+/**
+ * A presence card action that knows its own readiness.
+ *
+ * Same idea as `launch/LaunchTile`, in the shape this card uses: a pill rather
+ * than a grid tile. It is local to this screen rather than shared because the
+ * two shapes have nothing in common but the rules, and the rules already live in
+ * one place (`readiness.ts`, `useLaunchCopy`, `useLockedMotion`) — which is the
+ * part that must not be duplicated.
+ *
+ * A locked pill keeps its size and its position among the other actions. It
+ * gains the teal edge, the drift, and a "Coming Soon" / "Building" word after
+ * the label so the state is legible without colour.
+ */
+function PresenceAction({
+  id,
+  label,
+  index,
+  motionEnabled,
+  screenActive,
+  onPress
+}: {
+  id: string;
+  label: string;
+  index: number;
+  motionEnabled: boolean;
+  screenActive: boolean;
+  onPress: () => void;
+}) {
+  const state = readinessOf(id);
+  const locked = state !== "READY";
+  const { badge, accessibility } = useLaunchCopy();
+  const motion = useLockedMotion({ index, active: screenActive, enabled: motionEnabled && locked });
+  const a11y = accessibility(id, label);
+
+  return (
+    <Animated.View style={locked ? motion.cardStyle : undefined}>
       <Pressable
         accessibilityRole="button"
-        style={styles.createNew}
-        onPress={() => navigation.navigate("PageCreate", undefined)}
+        accessibilityLabel={a11y.accessibilityLabel}
+        accessibilityHint={a11y.accessibilityHint}
+        testID={`presence-action-${id}`}
+        onPress={onPress}
+        onPressIn={locked ? motion.onPressIn : undefined}
+        onPressOut={locked ? motion.onPressOut : undefined}
+        style={[styles.presenceAction, locked ? styles.presenceActionLocked : null]}
       >
-        <Text style={styles.createNewText}>+ Create New</Text>
+        <Text style={styles.presenceActionText}>{label}</Text>
+        {locked ? <Text style={styles.presenceActionBadge}>{badge(state)}</Text> : null}
       </Pressable>
-    </ScrollView>
+    </Animated.View>
   );
 }
 
@@ -414,12 +493,31 @@ const styles = createThemedStyles(() => ({
     fontWeight: "900"
   },
   presenceAction: {
+    alignItems: "center",
     borderColor: colors.border,
     borderRadius: 8,
     borderWidth: 1,
+    flexDirection: "row",
+    gap: 6,
     minHeight: 36,
     justifyContent: "center",
     paddingHorizontal: 12
+  },
+  /**
+   * The state, in words. Colour alone cannot carry readiness — greyscale, colour
+   * blindness and a screen reader all have to get the same answer, and the
+   * accessibility label says "Coming soon" for the last of those.
+   */
+  presenceActionBadge: {
+    color: presenceTheme.teal,
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 0.6,
+    textTransform: "uppercase"
+  },
+  presenceActionLocked: {
+    backgroundColor: presenceTheme.tealSoft,
+    borderColor: presenceTheme.tealBorder
   },
   presenceActionText: {
     color: colors.text,

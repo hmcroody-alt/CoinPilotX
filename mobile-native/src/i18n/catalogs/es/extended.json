@@ -1368,6 +1368,16 @@
         "outcomeFailed": "No se pudo iniciar la configuración de pagos. Inténtalo de nuevo.",
         "openSeller": "Solicitar vender"
       }
+    },
+    "launch": {
+      "comingSoonTitle": "PRÓXIMAMENTE",
+      "comingSoonBody": "Estamos construyendo esta parte del universo PulseSoc. Esta función se está preparando para su lanzamiento.",
+      "comingSoonAction": "Entendido",
+      "statusComingSoon": "Próximamente",
+      "statusBuilding": "En construcción",
+      "statusPreparing": "Preparando el lanzamiento",
+      "lockedLabel": "{{module}}. Próximamente.",
+      "lockedHint": "Muestra cuándo estará disponible esta función."
     }
   },
   "discovery": {

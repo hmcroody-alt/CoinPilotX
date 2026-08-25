@@ -97,14 +97,30 @@ describe("every control on a presence card goes somewhere of its own", () => {
     });
   });
 
-  it("keeps Business OS on a business presence, where there is a third place to go", async () => {
+  /**
+   * The door stays; what is behind it is not ready yet.
+   *
+   * This entry navigates to `BusinessOs` with `{ title: page.name }` and no
+   * page identifier, so the screen resolves the viewer's OWN business and then
+   * renders it under the presence's name — the owner of Vault Coffee would be
+   * shown their personal listings, orders and ad spend as though they were the
+   * shop's. Wrong data under a real name is worse than a locked door, so the
+   * launch gate holds this one until the route can carry a page id.
+   *
+   * The card keeps the button because the brief's premise is that a user
+   * should be able to see the shape of the product; the assertion that matters
+   * is that the tap answers instead of navigating.
+   */
+  it("shows Coming Soon rather than opening a Business OS it cannot identify", async () => {
     mockListMyPages.mockResolvedValue([
       presence({ page_type: "BUSINESS", name: "Vault Coffee", business_os_capable: true })
     ]);
     const { view, navigation } = show();
     await waitFor(() => expect(view.queryByText("Vault Coffee")).toBeTruthy());
     fireEvent.press(view.getByText("Business OS"));
-    expect(navigation.navigate).toHaveBeenCalledWith("BusinessOs", { title: "Vault Coffee" });
+
+    expect(view.getByTestId("coming-soon-presence:businessOs")).toBeTruthy();
+    expect(navigation.navigate).not.toHaveBeenCalledWith("BusinessOs", { title: "Vault Coffee" });
   });
 
   it("does not invent a third door for an artist to keep the cards symmetrical", async () => {

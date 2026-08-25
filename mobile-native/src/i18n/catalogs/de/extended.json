@@ -1368,6 +1368,16 @@
         "outcomeFailed": "Die Einrichtung der Auszahlungen konnte nicht starten. Bitte versuche es erneut.",
         "openSeller": "Als Verkäufer bewerben"
       }
+    },
+    "launch": {
+      "comingSoonTitle": "DEMNÄCHST",
+      "comingSoonBody": "Wir bauen diesen Teil des PulseSoc-Universums. Diese Funktion wird für den Start vorbereitet.",
+      "comingSoonAction": "Verstanden",
+      "statusComingSoon": "Demnächst",
+      "statusBuilding": "In Arbeit",
+      "statusPreparing": "Startvorbereitung",
+      "lockedLabel": "{{module}}. Demnächst verfügbar.",
+      "lockedHint": "Zeigt an, wann diese Funktion verfügbar sein wird."
     }
   },
   "discovery": {

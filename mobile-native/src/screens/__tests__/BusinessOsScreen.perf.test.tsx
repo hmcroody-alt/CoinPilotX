@@ -68,8 +68,32 @@ jest.mock("../../api/marketplace", () => ({
   loadCachedSellerStore: (...args: unknown[]) => mockCachedSeller(...args)
 }));
 
-import { businessOsHubSections } from "../../api/businessOs";
+import { businessOsLaunchSections } from "../../api/businessOs";
+import { preloadNamespaces } from "../../i18n/engine";
+import { businessModuleId, isLaunchGated } from "../../launch/readiness";
 import { BusinessOsScreen, resetBusinessOsFreshness } from "../BusinessOsScreen";
+
+// Locked tiles read their label out of the lazily-loaded `commerce` catalog.
+// Without it every gated tile humanizes to the same "Locked Label", which is
+// both wrong copy and an ambiguous lookup. See the note in
+// `BusinessOsScreen.test.tsx`.
+beforeAll(async () => {
+  await preloadNamespaces("en", ["commerce"]);
+});
+
+/**
+ * The accessibility label a section's tile carries.
+ *
+ * A launch-gated tile reads "Events. Coming soon." rather than its blurb, so
+ * the expectation is derived from the gate instead of hardcoded. That keeps
+ * this suite about first-frame completeness — the property it exists to pin —
+ * rather than about which modules happen to be gated this week.
+ */
+function tileLabel(section: { key: string; label: string; blurb: string }) {
+  return isLaunchGated(businessModuleId(section.key))
+    ? `${section.label}. Coming soon.`
+    : `${section.label}. ${section.blurb}`;
+}
 
 const EMPTY_ANALYTICS = {
   totals: { impressions: 0, viewable_impressions: 0, clicks: 0, hides: 0, reports: 0, spend_cents: 0, ctr: 0 },
@@ -147,10 +171,10 @@ describe("Business OS hub — shell is never blocked", () => {
 
     // No `await`. This is the synchronous first render, which is the whole
     // claim: the launcher is usable before the network is consulted.
-    const sections = businessOsHubSections();
+    const sections = businessOsLaunchSections();
     expect(sections.length).toBeGreaterThan(0);
     sections.forEach((section) => {
-      expect(view.getByLabelText(`${section.label}. ${section.blurb}`)).toBeTruthy();
+      expect(view.getByLabelText(tileLabel(section))).toBeTruthy();
     });
     expect(view.getByText("At a glance")).toBeTruthy();
   });

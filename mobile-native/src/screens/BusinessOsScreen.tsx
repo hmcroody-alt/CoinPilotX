@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import {
   AdAccount,
   AdAnalytics,
   adAccountCanTransact,
   BusinessOsSection,
-  businessOsHubSections,
+  businessOsLaunchSections,
   businessOsNavigationArgs,
   formatCents,
   getAdAnalytics,
@@ -18,6 +17,11 @@ import { loadCachedSellerStore, loadSellerStoreSnapshot, SellerStoreSnapshot } f
 import { Panel } from "../components/Panel";
 import { Screen } from "../components/Screen";
 import { registerSyncInvalidation } from "../core/eventSync";
+import { ComingSoonSheet } from "../launch/ComingSoonSheet";
+import { LaunchTile } from "../launch/LaunchTile";
+import { businessModuleId } from "../launch/readiness";
+import { useLaunchGate, useLaunchMotionEnabled } from "../launch/useLaunchGate";
+import { useIsFocusedIfNavigated } from "../navigation/useIsFocusedIfNavigated";
 import type { RootStackParamList } from "../navigation/types";
 import { PRIVATE_CONTENT_MESSAGE, resolveRouteProfileContext } from "../profile/profileContext";
 import { useAuth } from "../session/auth";
@@ -115,6 +119,15 @@ export function BusinessOsScreen({ navigation, route }: Props) {
   const [stale, setStale] = useState(false);
   const [offline, setOffline] = useState(false);
   const [message, setMessage] = useState("");
+
+  // Launch gate. Declared with the other hooks so it runs before the
+  // wrong-subject early return below, which is after every hook by design.
+  const gate = useLaunchGate();
+  const motionEnabled = useLaunchMotionEnabled();
+  // Locked tiles drift. `screenActive` is what stops that loop once the user has
+  // pushed a section on top of this hub — an `Animated.loop` with no off switch
+  // keeps the UI thread working behind a screen nobody is looking at.
+  const screenActive = useIsFocusedIfNavigated();
 
   // Rule 1 of the performance constitution: a cached value may be painted, but
   // it must never overwrite a canonical response that has already landed. These
@@ -271,9 +284,21 @@ export function BusinessOsScreen({ navigation, route }: Props) {
     };
   }, [load, routeContext.isOwnProfile]);
 
+  /**
+   * Every tile tap goes through the launch gate rather than straight to
+   * `navigation.navigate`. For a READY section the gate calls through and
+   * nothing about the old behaviour changes; for a gated one it opens the
+   * Coming Soon sheet and no navigation happens.
+   *
+   * Routing all of them through one call is what makes the grid safe to grow:
+   * `businessOsLaunchSections` now returns routeless sections too, and this is
+   * the reason one of those can never reach `businessOsNavigationArgs` and throw.
+   */
   function openSection(section: BusinessOsSection) {
-    const [route, params] = businessOsNavigationArgs(section);
-    navigation.navigate(route, params);
+    gate.open(businessModuleId(section.key), section.label, () => {
+      const [route, params] = businessOsNavigationArgs(section);
+      navigation.navigate(route, params);
+    });
   }
 
   const listings = store?.listings?.length || 0;
@@ -364,23 +389,29 @@ export function BusinessOsScreen({ navigation, route }: Props) {
       <Panel>
         <Text style={styles.panelTitle}>Sections</Text>
         <View style={styles.grid}>
-          {businessOsHubSections().map((section) => (
-            <Pressable
+          {/*
+            Every section renders, including the ones that are not finished.
+            `LaunchTile` reads the gate and decides for itself whether it is a
+            plain tile or a locked one — the grid does not branch, so a card
+            cannot end up half-gated (locked look, live tap) by an edit here.
+          */}
+          {businessOsLaunchSections().map((section, index) => (
+            <LaunchTile
               key={section.key}
-              accessibilityRole="button"
-              accessibilityLabel={`${section.label}. ${section.blurb}`}
+              id={businessModuleId(section.key)}
+              label={section.label}
+              blurb={section.blurb}
+              icon={section.icon}
+              index={index}
+              motionEnabled={motionEnabled}
+              screenActive={screenActive}
               onPress={() => openSection(section)}
-              style={styles.tile}
-            >
-              <Ionicons name={section.icon as never} size={20} color={colors.accent} />
-              <Text style={styles.tileLabel}>{section.label}</Text>
-              <Text style={styles.tileBlurb} numberOfLines={2}>
-                {section.blurb}
-              </Text>
-            </Pressable>
+            />
           ))}
         </View>
       </Panel>
+
+      <ComingSoonSheet target={gate.target} onDismiss={gate.dismiss} />
     </Screen>
   );
 }
@@ -456,24 +487,9 @@ const styles = createThemedStyles(() => ({
     fontSize: 14,
     fontWeight: "600"
   },
-  tile: {
-    backgroundColor: colors.surfaceRaised,
-    borderColor: colors.border,
-    borderRadius: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    flexBasis: "47%",
-    flexGrow: 1,
-    gap: 6,
-    padding: 12
-  },
-  tileBlurb: {
-    color: colors.muted,
-    fontSize: 12,
-    lineHeight: 17
-  },
-  tileLabel: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: "700"
-  }
+  /*
+   * The tile's own styles moved to `launch/LaunchTile` along with the tile. They
+   * are not duplicated here: the locked and unlocked forms have to stay the same
+   * object at the same size, and two stylesheets is how that drifts apart.
+   */
 }));

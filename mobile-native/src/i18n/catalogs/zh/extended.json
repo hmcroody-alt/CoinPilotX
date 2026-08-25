@@ -1366,6 +1366,16 @@
         "outcomeFailed": "无法开始设置收款。请重试。",
         "openSeller": "申请成为卖家"
       }
+    },
+    "launch": {
+      "comingSoonTitle": "即将推出",
+      "comingSoonBody": "我们正在构建 PulseSoc 世界的这一部分。此功能正在准备上线。",
+      "comingSoonAction": "知道了",
+      "statusComingSoon": "即将推出",
+      "statusBuilding": "开发中",
+      "statusPreparing": "准备上线",
+      "lockedLabel": "{{module}}。即将推出。",
+      "lockedHint": "显示此功能何时可用。"
     }
   },
   "discovery": {

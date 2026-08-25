@@ -1366,6 +1366,16 @@
         "outcomeFailed": "Konfigirasyon peman an pa t ka kòmanse. Tanpri eseye ankò.",
         "openSeller": "Aplike pou vann"
       }
+    },
+    "launch": {
+      "comingSoonTitle": "K AP VINI BYENTÒ",
+      "comingSoonBody": "N ap konstwi pati sa a nan linivè PulseSoc la. Fonksyon sa a ap prepare pou lansman.",
+      "comingSoonAction": "Mwen konprann",
+      "statusComingSoon": "K ap vini byentò",
+      "statusBuilding": "N ap konstwi l",
+      "statusPreparing": "Prepare pou lansman",
+      "lockedLabel": "{{module}}. K ap vini byentò.",
+      "lockedHint": "Montre kilè fonksyon sa a ap disponib."
     }
   },
   "discovery": {

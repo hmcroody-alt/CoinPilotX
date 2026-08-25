@@ -1432,6 +1432,16 @@
         "outcomeFailed": "تعذر بدء إعداد المدفوعات. يرجى المحاولة مرة أخرى.",
         "openSeller": "التقديم للبيع"
       }
+    },
+    "launch": {
+      "comingSoonTitle": "قريباً",
+      "comingSoonBody": "نحن نبني هذا الجزء من عالم PulseSoc. هذه الميزة قيد التحضير للإطلاق.",
+      "comingSoonAction": "حسناً",
+      "statusComingSoon": "قريباً",
+      "statusBuilding": "قيد الإنشاء",
+      "statusPreparing": "قيد التحضير للإطلاق",
+      "lockedLabel": "{{module}}. قريباً.",
+      "lockedHint": "يعرض موعد توفر هذه الميزة."
     }
   },
   "discovery": {

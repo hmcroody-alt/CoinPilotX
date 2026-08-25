@@ -1358,6 +1358,16 @@
         "outcomeFailed": "支払い設定を開始できませんでした。もう一度お試しください。",
         "openSeller": "販売を申し込む"
       }
+    },
+    "launch": {
+      "comingSoonTitle": "近日公開",
+      "comingSoonBody": "PulseSocの世界のこの部分を構築中です。この機能はリリースに向けて準備しています。",
+      "comingSoonAction": "了解",
+      "statusComingSoon": "近日公開",
+      "statusBuilding": "構築中",
+      "statusPreparing": "リリース準備中",
+      "lockedLabel": "{{module}}。近日公開。",
+      "lockedHint": "この機能がいつ利用可能になるかを表示します。"
     }
   },
   "discovery": {

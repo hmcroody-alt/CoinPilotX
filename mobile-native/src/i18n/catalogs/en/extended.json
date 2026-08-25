@@ -1368,6 +1368,16 @@
         "outcomeFailed": "Payout setup couldn't start. Please try again.",
         "openSeller": "Apply to sell"
       }
+    },
+    "launch": {
+      "comingSoonTitle": "COMING SOON",
+      "comingSoonBody": "We're building this part of the PulseSoc universe. This feature is preparing for launch.",
+      "comingSoonAction": "Got it",
+      "statusComingSoon": "Coming Soon",
+      "statusBuilding": "Building",
+      "statusPreparing": "Preparing for Launch",
+      "lockedLabel": "{{module}}. Coming soon.",
+      "lockedHint": "Shows when this feature will be available."
     }
   },
   "discovery": {
