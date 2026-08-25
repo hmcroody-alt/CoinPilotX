@@ -52,6 +52,25 @@ function safeDecode(value: string): string {
   }
 }
 
+const ACTIVITY_ROUTE_CATEGORIES = [
+  "all",
+  "messages",
+  "calls",
+  "social",
+  "safety",
+  "verification",
+  "marketplace",
+  "creator_growth",
+  "intelligence_alerts"
+] as const;
+
+type ActivityRouteCategory = (typeof ACTIVITY_ROUTE_CATEGORIES)[number];
+
+function activityRouteCategory(value: string | null): ActivityRouteCategory | undefined {
+  const normalized = String(value || "").toLowerCase().replace(/-/g, "_");
+  return ACTIVITY_ROUTE_CATEGORIES.find((category) => category === normalized);
+}
+
 export type NativeObjectDestination = {
   screen: string;
   params?: Record<string, unknown>;
@@ -115,7 +134,7 @@ export function openNativeRoute(navigation: NativeRouteNavigation, routePath: st
   else if (path === "/pulse/dashboard") navigation.navigate("Tabs", { screen: "Dashboard" });
   else if (path === "/pulse/search") navigation.navigate("Tabs", { screen: "Search", params: { query: query.get("q") || query.get("query") || undefined } });
   else if (path === "/search") navigation.navigate("Search", { query: query.get("q") || query.get("query") || undefined, title: "Search" });
-  else if (path === "/pulse/activity") navigation.navigate("ActivityInbox", { title: "Activity Inbox" });
+  else if (path === "/pulse/activity") navigation.navigate("ActivityInbox", { title: "Activity Inbox", category: activityRouteCategory(query.get("category")) });
   else if (path === "/pulse/notifications") navigation.navigate("NotificationCenter");
   else if (path === "/pulse/messages/new") navigation.navigate("NewChat", { initialQuery: query.get("q") || undefined, targetUserId: positiveId(query.get("user") || undefined) || undefined });
   else if (path === "/pulse/messages") navigation.navigate("Tabs", { screen: "Messenger" });

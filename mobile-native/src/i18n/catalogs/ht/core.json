@@ -207,7 +207,17 @@
       "activity": "Siyal aktivite ak notifikasyon",
       "trustIdentity": "Kouch konfyans ak idantite",
       "nativeRoute": "Wout natif PulseSoc",
-      "membership": "Manm ak faktirasyon"
+      "membership": "Manm ak faktirasyon",
+      "feed": "Piblikasyon ak kominote",
+      "profiles": "Pwofil ak prezans",
+      "discovery": "Rechèch ak dekouvèt",
+      "creatorTools": "Zouti kreyatè ak piblikasyon",
+      "liveEvents": "Dirèk ak evènman",
+      "learning": "Kou ak aprantisaj",
+      "growth": "Kwasans ak pwogrè",
+      "business": "Espas travay biznis",
+      "markets": "Mache ak alèt",
+      "audio": "Mizik ak lekti"
     },
     "identity": {
       "member": "Manm PulseSoc"

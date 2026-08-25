@@ -207,7 +207,17 @@
       "activity": "Aktivitäts- und Mitteilungssignale",
       "trustIdentity": "Ebene für Vertrauen und Identität",
       "nativeRoute": "Native PulseSoc-Route",
-      "membership": "Mitgliedschaft und Abrechnung"
+      "membership": "Mitgliedschaft und Abrechnung",
+      "feed": "Beiträge und Communitys",
+      "profiles": "Profile und Präsenz",
+      "discovery": "Suche und Entdeckung",
+      "creatorTools": "Creator-Tools und Veröffentlichung",
+      "liveEvents": "Live und Events",
+      "learning": "Kurse und Lernen",
+      "growth": "Wachstum und Fortschritt",
+      "business": "Business-Arbeitsbereich",
+      "markets": "Märkte und Alarme",
+      "audio": "Musik und Wiedergabe"
     },
     "identity": {
       "member": "PulseSoc-Mitglied"

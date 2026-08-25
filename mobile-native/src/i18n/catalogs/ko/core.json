@@ -207,7 +207,17 @@
       "activity": "활동 및 알림 신호",
       "trustIdentity": "신뢰 및 신원 레이어",
       "nativeRoute": "PulseSoc 네이티브 화면",
-      "membership": "멤버십 및 결제"
+      "membership": "멤버십 및 결제",
+      "feed": "게시물 및 커뮤니티",
+      "profiles": "프로필 및 프레즌스",
+      "discovery": "검색 및 탐색",
+      "creatorTools": "크리에이터 도구 및 게시",
+      "liveEvents": "라이브 및 이벤트",
+      "learning": "강의 및 학습",
+      "growth": "성장 및 진행 상황",
+      "business": "비즈니스 워크스페이스",
+      "markets": "마켓 및 시세 알림",
+      "audio": "음악 및 재생"
     },
     "identity": {
       "member": "PulseSoc 멤버"

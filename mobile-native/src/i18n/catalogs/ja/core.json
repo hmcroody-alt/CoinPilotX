@@ -207,7 +207,17 @@
       "activity": "アクティビティと通知のシグナル",
       "trustIdentity": "信頼と本人確認のレイヤー",
       "nativeRoute": "PulseSocのネイティブ画面",
-      "membership": "メンバーシップと請求"
+      "membership": "メンバーシップと請求",
+      "feed": "投稿とコミュニティ",
+      "profiles": "プロフィールとプレゼンス",
+      "discovery": "検索と発見",
+      "creatorTools": "クリエイターツールと公開",
+      "liveEvents": "ライブとイベント",
+      "learning": "コースと学習",
+      "growth": "成長と進捗",
+      "business": "ビジネスワークスペース",
+      "markets": "マーケットとアラート",
+      "audio": "音楽と再生"
     },
     "identity": {
       "member": "PulseSocメンバー"

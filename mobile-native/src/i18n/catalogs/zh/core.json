@@ -207,7 +207,17 @@
       "activity": "动态与通知信号",
       "trustIdentity": "信任与身份层",
       "nativeRoute": "PulseSoc 原生页面",
-      "membership": "会员与账单"
+      "membership": "会员与账单",
+      "feed": "帖子与社区",
+      "profiles": "个人资料与在线状态",
+      "discovery": "搜索与发现",
+      "creatorTools": "创作者工具与发布",
+      "liveEvents": "直播与活动",
+      "learning": "课程与学习",
+      "growth": "成长与进度",
+      "business": "商家工作台",
+      "markets": "行情与提醒",
+      "audio": "音乐与播放"
     },
     "identity": {
       "member": "PulseSoc 会员"
