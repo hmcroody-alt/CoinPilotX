@@ -794,7 +794,7 @@ export function BillingSection({
           <Fact
             icon="logo-apple"
             label={t("premium:billing.provider")}
-            value={t("premium:provider.apple_iap")}
+            value={t("premium:provider.apple_app_store")}
           />
           {apple.originalPurchaseAt ? (
             <Fact icon="time-outline" label={t("premium:billing.since")} value={fmt.date(apple.originalPurchaseAt)} />
@@ -802,16 +802,36 @@ export function BillingSection({
         </View>
       );
     }
-    return (
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{t("premium:billing.heading")}</Text>
-        {/* A Founder holds canonical Premium with no provider subscription
-            behind it. "No billing record" is the truthful answer, not an error. */}
-        <Text style={styles.body}>
-          {experience === "founder" ? t("premium:billing.founderNone") : t("premium:billing.none")}
-        </Text>
-      </View>
-    );
+    if (experience === "founder") {
+      return (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t("premium:billing.heading")}</Text>
+          <Text style={styles.body}>{t("premium:billing.founderNone")}</Text>
+        </View>
+      );
+    }
+
+    // The entitlement service can still verify usable Premium while an Apple
+    // provider row is delayed. In that narrow state, show the one fact the
+    // server did verify and omit every unavailable billing field. Never replace
+    // a valid active membership with a vague "no billing details" paragraph.
+    if (experience === "active" || experience === "grace" || experience === "hold") {
+      const state: PremiumSubscription["state"] =
+        experience === "grace" ? "grace" : experience === "hold" ? "paused" : "active";
+      return (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t("premium:billing.heading")}</Text>
+          <Fact
+            icon="ellipse"
+            tone={statusTone(state)}
+            label={t("premium:billing.status")}
+            value={t(`premium:subState.${state}`)}
+          />
+        </View>
+      );
+    }
+
+    return null;
   }
 
   const period = subscription.billing_period;
@@ -870,7 +890,9 @@ export function BillingSection({
       <Fact
         icon="logo-apple"
         label={t("premium:billing.provider")}
-        value={t(`premium:provider.${subscription.provider || "unknown"}`, {
+        value={t(`premium:provider.${
+          subscription.provider === "apple_iap" ? "apple_app_store" : (subscription.provider || "unknown")
+        }`, {
           defaultValue: subscription.provider || "—"
         })}
       />

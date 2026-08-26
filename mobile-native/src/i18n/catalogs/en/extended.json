@@ -1482,8 +1482,8 @@
           "hint": "Holdings, allocation, performance, concentration, and unrealized gains and losses."
         },
         "watchlists": {
-          "label": "Watchlists",
-          "hint": "Track the assets you care about with live prices, and point an alert at a whole list."
+          "label": "Watchlist",
+          "hint": "Track assets, movements, and market activity."
         },
         "undx": {
           "label": "UNDX crypto intelligence",

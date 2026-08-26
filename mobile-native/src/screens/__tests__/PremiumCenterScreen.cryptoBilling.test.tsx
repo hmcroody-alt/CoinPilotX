@@ -82,7 +82,7 @@ describe("Billing card Apple fallback", () => {
     expect(queryByText("premium:billing.none")).toBeNull();
     expect(getByText("premium:billing.planValue")).toBeTruthy();
     expect(getByText("€99,99")).toBeTruthy();
-    expect(getByText("premium:provider.apple_iap")).toBeTruthy();
+    expect(getByText("premium:provider.apple_app_store")).toBeTruthy();
     expect(getByText("premium:subState.active")).toBeTruthy();
     expect(getByText("premium:billing.renewsOn")).toBeTruthy();
     expect(getByText("date(2026-09-30T00:00:00.000Z)")).toBeTruthy();
@@ -109,11 +109,12 @@ describe("Billing card Apple fallback", () => {
     expect(getByText("premium:subState.expired")).toBeTruthy();
   });
 
-  it("keeps the honest none-state when Apple proves nothing either", () => {
-    const { getByText } = render(
+  it("shows only the server-verified active state when Apple omits billing facts", () => {
+    const { getByText, queryByText } = render(
       <BillingSection subscription={null} apple={null} experience="active" price={null} priceLoading={false} />
     );
-    expect(getByText("premium:billing.none")).toBeTruthy();
+    expect(getByText("premium:subState.active")).toBeTruthy();
+    expect(queryByText("premium:billing.none")).toBeNull();
   });
 
   it("never replaces the Founder copy with a billing card", () => {

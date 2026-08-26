@@ -212,8 +212,17 @@ describe("Your subscription — no provider row at all", () => {
     expect(queryByText("premium:billing.none")).toBeNull();
   });
 
-  it("uses the plain no-billing sentence for everyone else with no row", () => {
-    const { getByText } = render(<BillingSection {...base} experience="none" subscription={null} />);
-    expect(getByText("premium:billing.none")).toBeTruthy();
+  it("shows only the verified entitlement status while provider details are delayed", () => {
+    const { getByLabelText, queryByText, queryByLabelText } = render(
+      <BillingSection {...base} experience="active" subscription={null} />
+    );
+    expect(getByLabelText("premium:billing.status: premium:subState.active")).toBeTruthy();
+    expect(queryByText("premium:billing.none")).toBeNull();
+    expect(queryByLabelText(/premium:billing\.(plan|price|provider|renewsOn|expiresOn|since)/)).toBeNull();
+  });
+
+  it("renders no subscription card when neither entitlement nor provider facts exist", () => {
+    const { toJSON } = render(<BillingSection {...base} experience="none" subscription={null} />);
+    expect(toJSON()).toBeNull();
   });
 });
