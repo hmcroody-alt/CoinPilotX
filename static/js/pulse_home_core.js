@@ -860,7 +860,7 @@
   // Last-resort fallback only: the server supplies this account's avatar on
   // every author payload, so this fires solely when that payload is missing.
   // Kept in step with services/pulse_feed_engine.MEMBER_000_AVATAR_PATH.
-  const PULSESOC_MEMBER_000_AVATAR = "/static/brand/pulsesoc-insight-avatar-20260823.png";
+  const PULSESOC_MEMBER_000_AVATAR = "/static/brand/pulsesoc-insight-avatar-20260825.png";
 
   function ensureFeedUiStylesheet() {
     if (document.querySelector("[data-pulse-feed-ui-css='post-comment-dock-20260702a']")) return;

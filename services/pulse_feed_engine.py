@@ -77,9 +77,20 @@ MEMBER_000_SYSTEM_LABEL = "Official PulseSoc System Account"
 #: Superseded files are left in place on purpose: a client still holding a
 #: cached payload that names the old asset keeps rendering *something* until it
 #: refreshes, rather than falling to the empty circle.
-MEMBER_000_AVATAR_PATH = "/static/brand/pulsesoc-insight-avatar-20260823.png"
-MEMBER_000_COVER_PATH = "/static/brand/pulsesoc-insight-cover-20260823.png"
-MEMBER_000_LEGACY_AVATAR_PATHS = ("/static/brand/pulsesoc-member-000-avatar.png",)
+MEMBER_000_AVATAR_PATH = "/static/brand/pulsesoc-insight-avatar-20260825.png"
+MEMBER_000_COVER_PATH = "/static/brand/pulsesoc-insight-cover-20260825.png"
+#: Every avatar path this module has ever minted, newest-superseded first.
+#:
+#: Retiring a version means *adding* its path here, never replacing the entry.
+#: ``is_member_000_brand_avatar`` consults this list to decide whether a stored
+#: ``arena_profiles.avatar_url`` is ours and may be upgraded; a path that falls
+#: off the list stops being recognised as ours, and the row holding it is then
+#: treated as an operator's deliberate override and kept forever. The account
+#: would keep serving retired artwork with nothing in the logs to say why.
+MEMBER_000_LEGACY_AVATAR_PATHS = (
+    "/static/brand/pulsesoc-insight-avatar-20260823.png",
+    "/static/brand/pulsesoc-member-000-avatar.png",
+)
 
 
 def _brand_media_url(path: str) -> str:
