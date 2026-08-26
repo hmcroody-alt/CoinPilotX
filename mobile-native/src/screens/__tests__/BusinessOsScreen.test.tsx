@@ -87,7 +87,7 @@ async function renderHub(navigation = navigationSpy()) {
 }
 
 describe("Business OS hub", () => {
-  it("renders a tile for every routable section and nothing that is not routable", async () => {
+  it("renders a tile for every routable section and no live tile for anything unroutable", async () => {
     const view = await renderHub();
     const sections = businessOsHubSections();
     expect(sections.length).toBeGreaterThan(0);
@@ -97,9 +97,11 @@ describe("Business OS hub", () => {
     sections.forEach((section) => {
       expect(view.getByLabelText(`${section.label}. ${section.blurb}`)).toBeTruthy();
     });
-    // Customers and Team have no backing contract yet. A tile for either would
-    // be a control that cannot do anything, which is exactly what constraint 6
-    // forbids — so they must not reach the screen at all.
+    // Customers and Team have no backing contract yet, so they must never be
+    // presented as live, navigable tiles. They ARE on screen — as launch-gated
+    // Coming Soon cards that show a message instead of navigating, which
+    // `BusinessOsScreen.comingSoon.test.tsx` pins — but the routable registry
+    // this test walks must not contain them.
     const labels = sections.map((section) => section.label);
     expect(labels).not.toContain("Customers");
     expect(labels).not.toContain("Team");

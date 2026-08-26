@@ -1368,6 +1368,14 @@
         "outcomeFailed": "La configuration des paiements n'a pas pu démarrer. Réessayez.",
         "openSeller": "Demander à vendre"
       }
+    },
+    "launch": {
+      "comingSoon": {
+        "title": "Bientôt disponible",
+        "body": "Nous construisons cette partie de l'univers PulseSoc. Cette fonctionnalité se prépare pour son lancement.",
+        "gotIt": "Compris",
+        "hint": "En préparation pour le lancement."
+      }
     }
   },
   "discovery": {

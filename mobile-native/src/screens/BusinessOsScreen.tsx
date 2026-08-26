@@ -6,7 +6,7 @@ import {
   AdAnalytics,
   adAccountCanTransact,
   BusinessOsSection,
-  businessOsHubSections,
+  businessOsHubPresentation,
   businessOsNavigationArgs,
   formatCents,
   getAdAnalytics,
@@ -15,6 +15,7 @@ import {
   loadCachedAdAnalytics
 } from "../api/businessOs";
 import { loadCachedSellerStore, loadSellerStoreSnapshot, SellerStoreSnapshot } from "../api/marketplace";
+import { ComingSoonCard } from "../components/launch/ComingSoonCard";
 import { Panel } from "../components/Panel";
 import { Screen } from "../components/Screen";
 import { registerSyncInvalidation } from "../core/eventSync";
@@ -364,21 +365,39 @@ export function BusinessOsScreen({ navigation, route }: Props) {
       <Panel>
         <Text style={styles.panelTitle}>Sections</Text>
         <View style={styles.grid}>
-          {businessOsHubSections().map((section) => (
-            <Pressable
-              key={section.key}
-              accessibilityRole="button"
-              accessibilityLabel={`${section.label}. ${section.blurb}`}
-              onPress={() => openSection(section)}
-              style={styles.tile}
-            >
-              <Ionicons name={section.icon as never} size={20} color={colors.accent} />
-              <Text style={styles.tileLabel}>{section.label}</Text>
-              <Text style={styles.tileBlurb} numberOfLines={2}>
-                {section.blurb}
-              </Text>
-            </Pressable>
-          ))}
+          {/*
+            Canonical order, live and locked together. Live sections keep the
+            exact tile they always had; sections the launch registry has not
+            opened yet stay visible in their slot as premium Coming Soon cards
+            that never navigate. Readiness is decided only by
+            `core/launchReadiness.ts` — this screen just renders the verdict.
+          */}
+          {businessOsHubPresentation().map(({ section, ready }, index) =>
+            ready ? (
+              <Pressable
+                key={section.key}
+                accessibilityRole="button"
+                accessibilityLabel={`${section.label}. ${section.blurb}`}
+                onPress={() => openSection(section)}
+                style={styles.tile}
+              >
+                <Ionicons name={section.icon as never} size={20} color={colors.accent} />
+                <Text style={styles.tileLabel}>{section.label}</Text>
+                <Text style={styles.tileBlurb} numberOfLines={2}>
+                  {section.blurb}
+                </Text>
+              </Pressable>
+            ) : (
+              <ComingSoonCard
+                key={section.key}
+                icon={section.icon}
+                label={section.label}
+                blurb={section.blurb}
+                index={index}
+                testID={`business-os-coming-soon-${section.key}`}
+              />
+            )
+          )}
         </View>
       </Panel>
     </Screen>

@@ -1368,6 +1368,14 @@
         "outcomeFailed": "No se pudo iniciar la configuración de pagos. Inténtalo de nuevo.",
         "openSeller": "Solicitar vender"
       }
+    },
+    "launch": {
+      "comingSoon": {
+        "title": "Muy pronto",
+        "body": "Estamos construyendo esta parte del universo PulseSoc. Esta función se está preparando para su lanzamiento.",
+        "gotIt": "Entendido",
+        "hint": "Preparándose para el lanzamiento."
+      }
     }
   },
   "discovery": {

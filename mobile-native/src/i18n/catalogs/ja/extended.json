@@ -1358,6 +1358,14 @@
         "outcomeFailed": "支払い設定を開始できませんでした。もう一度お試しください。",
         "openSeller": "販売を申し込む"
       }
+    },
+    "launch": {
+      "comingSoon": {
+        "title": "近日公開",
+        "body": "PulseSocユニバースのこの部分を構築中です。この機能はリリースに向けて準備中です。",
+        "gotIt": "了解",
+        "hint": "リリース準備中。"
+      }
     }
   },
   "discovery": {

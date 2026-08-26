@@ -1366,6 +1366,14 @@
         "outcomeFailed": "Konfigirasyon peman an pa t ka kòmanse. Tanpri eseye ankò.",
         "openSeller": "Aplike pou vann"
       }
+    },
+    "launch": {
+      "comingSoon": {
+        "title": "Byento",
+        "body": "N ap bati pati sa a nan linivè PulseSoc la. Fonksyon sa a ap prepare pou lansman li.",
+        "gotIt": "Oke",
+        "hint": "Ap prepare pou lansman."
+      }
     }
   },
   "discovery": {

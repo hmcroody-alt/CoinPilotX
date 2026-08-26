@@ -1366,6 +1366,14 @@
         "outcomeFailed": "정산 설정을 시작하지 못했습니다. 다시 시도해 주세요.",
         "openSeller": "판매 신청"
       }
+    },
+    "launch": {
+      "comingSoon": {
+        "title": "곧 출시",
+        "body": "PulseSoc 유니버스의 이 부분을 만들고 있습니다. 이 기능은 출시를 준비하고 있습니다.",
+        "gotIt": "확인",
+        "hint": "출시 준비 중."
+      }
     }
   },
   "discovery": {

@@ -21,6 +21,7 @@
  * real.
  */
 import { readJsonCache, writeJsonCache } from "../core/cache";
+import { isBusinessModuleReady } from "../core/launchReadiness";
 import { PULSE_API_BASE_URL } from "./config";
 import { pulseApi } from "./pulseApi";
 
@@ -270,6 +271,22 @@ export function activeBusinessOsSections() {
 /** Sections shown on the Business OS hub — everything except the hub itself. */
 export function businessOsHubSections() {
   return activeBusinessOsSections().filter((section) => section.key !== "dashboard");
+}
+
+/**
+ * The full hub presentation in canonical order: every section except the hub
+ * itself, each marked live or locked. A section is presented as live only when
+ * the centralized launch registry (`core/launchReadiness.ts`) says `READY`
+ * *and* a backed route actually exists — the readiness test suite pins those
+ * two to be the same set, and the conjunction here means a drift between them
+ * can only ever lock a card, never open an unfinished surface. Locked sections
+ * stay visible as Coming Soon cards; nothing is hidden and nothing is dead.
+ */
+export function businessOsHubPresentation(): Array<{ section: BusinessOsSection; ready: boolean }> {
+  return BUSINESS_OS_SECTIONS.filter((section) => section.key !== "dashboard").map((section) => ({
+    section,
+    ready: isBusinessModuleReady(section.key) && section.backed && Boolean(section.route)
+  }));
 }
 
 /**
