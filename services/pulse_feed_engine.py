@@ -68,9 +68,78 @@ POST_TYPES = {"text", "image", "video", "gif", "poll", "replay", "scam_report", 
 MEMBER_000_PUBLIC_PLAYER_ID = "pulsesoc_insight"
 MEMBER_000_LEGACY_PUBLIC_PLAYER_ID = "pulsesoc-member-000"
 MEMBER_000_DISPLAY_NAME = "PulseSoc Insight"
-MEMBER_000_AVATAR_URL = "/static/brand/pulsesoc-member-000-avatar.png"
 MEMBER_000_SYSTEM_LABEL = "Official PulseSoc System Account"
+
+#: Repo-relative location of the account's brand media. The dated filename *is*
+#: the cache-busting mechanism used by every other asset in ``static/brand`` --
+#: a new version ships under a new name, so no browser, CDN edge or on-device
+#: image cache can serve the previous artwork for a URL that no longer exists.
+#: Superseded files are left in place on purpose: a client still holding a
+#: cached payload that names the old asset keeps rendering *something* until it
+#: refreshes, rather than falling to the empty circle.
+MEMBER_000_AVATAR_PATH = "/static/brand/pulsesoc-insight-avatar-20260825.png"
+MEMBER_000_COVER_PATH = "/static/brand/pulsesoc-insight-cover-20260825.png"
+#: Every avatar path this module has ever minted, newest-superseded first.
+#:
+#: Retiring a version means *adding* its path here, never replacing the entry.
+#: ``is_member_000_brand_avatar`` consults this list to decide whether a stored
+#: ``arena_profiles.avatar_url`` is ours and may be upgraded; a path that falls
+#: off the list stops being recognised as ours, and the row holding it is then
+#: treated as an operator's deliberate override and kept forever. The account
+#: would keep serving retired artwork with nothing in the logs to say why.
+MEMBER_000_LEGACY_AVATAR_PATHS = (
+    "/static/brand/pulsesoc-insight-avatar-20260823.png",
+    "/static/brand/pulsesoc-member-000-avatar.png",
+)
+
+
+def _brand_media_url(path: str) -> str:
+    """Absolute URL for a first-party brand asset.
+
+    Every *uploaded* avatar reaches a client as an absolute CDN URL, because it
+    is minted from ``R2_PUBLIC_BASE_URL``. This account's avatar was the lone
+    exception: it shipped as the site-relative ``/static/brand/...``. A browser
+    resolves that against the current origin and looks fine, which is why the
+    defect stayed invisible on web -- but React Native's ``Image`` has no origin
+    to resolve against, so ``{ uri: "/static/..." }`` simply fails to load and
+    the native app drew an empty circle where PulseSoc Insight should be.
+
+    Absolutising here fixes every native surface at once, and does it by making
+    the system account's media reference look exactly like every other avatar in
+    the product instead of adding a special case to each client normalizer.
+    """
+    base = (
+        os.getenv("PULSE_APP_URL")
+        or os.getenv("APP_BASE_URL")
+        or os.getenv("BASE_URL")
+        or os.getenv("DOMAIN")
+        or "https://pulsesoc.com"
+    ).strip().rstrip("/")
+    if not path:
+        return ""
+    if path.startswith(("http://", "https://")):
+        return path
+    return f"{base}/{path.lstrip('/')}"
+
+
+MEMBER_000_AVATAR_URL = _brand_media_url(MEMBER_000_AVATAR_PATH)
+MEMBER_000_COVER_URL = _brand_media_url(MEMBER_000_COVER_PATH)
 _MEMBER_000_PROFILE_READY = False
+
+
+def is_member_000_brand_avatar(url: str) -> bool:
+    """True when ``url`` is a PulseSoc-owned avatar for the system account.
+
+    Used to decide whether a stored value may be replaced. The account is
+    automated and has no human to upload a picture, but the check stays narrow
+    anyway: only paths this module has ever minted are treated as ours, so an
+    operator who deliberately points the profile somewhere else keeps it.
+    """
+    value = str(url or "").strip()
+    if not value:
+        return True
+    known = (MEMBER_000_AVATAR_PATH, *MEMBER_000_LEGACY_AVATAR_PATHS)
+    return any(value == path or value.endswith(path) for path in known)
 
 
 def _now():
@@ -269,7 +338,12 @@ def _ensure_member_000_profile():
         )
         row = _row(cur.fetchone())
         if row:
-            avatar_url = row.get("avatar_url") or MEMBER_000_AVATAR_URL
+            # Adopt the current brand avatar when the stored one is empty or is
+            # a version this module minted earlier. Without this the profile row
+            # written before the artwork changed would outrank the constant
+            # forever, because ``_public_author`` reads the row.
+            stored_avatar = row.get("avatar_url") or ""
+            avatar_url = MEMBER_000_AVATAR_URL if is_member_000_brand_avatar(stored_avatar) else stored_avatar
             cur.execute(
                 """
                 UPDATE arena_profiles
@@ -393,7 +467,13 @@ def _public_author(row):
         or f"PulseSoc Member #{str(public_player_id or item.get('user_id') or '000').lstrip('-')[-4:].lstrip('-')}"
     )
     avatar_url = item.get("user_avatar_url") or item.get("avatar_url") or item.get("arena_avatar_url") or ""
-    if is_member_000 and not avatar_url:
+    if is_member_000 and is_member_000_brand_avatar(avatar_url):
+        # Previously this only filled in a *blank* avatar, so a profile row
+        # holding a superseded brand path kept winning and the account rendered
+        # last season's artwork -- or, when the row held the site-relative path,
+        # nothing at all on native. The constant is the canonical identity for
+        # an account nobody can upload a picture for; anything else an operator
+        # set deliberately still passes through untouched.
         avatar_url = MEMBER_000_AVATAR_URL
     badges = ["Member"]
     badge_keys = []
