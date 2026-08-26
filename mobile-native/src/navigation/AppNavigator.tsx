@@ -36,6 +36,7 @@ import { BusinessBuyerPreviewScreen } from "../screens/BusinessBuyerPreviewScree
 import { BusinessHubRoute } from "../screens/BusinessHubRoute";
 import { BusinessOsInsightsScreen } from "../screens/BusinessOsInsightsScreen";
 import { BusinessOsPaymentsScreen } from "../screens/BusinessOsPaymentsScreen";
+import { BusinessOsSectionScreen } from "../screens/BusinessOsSectionScreen";
 import { RewardsScreen } from "../screens/RewardsScreen";
 import { BusinessProfileScreen } from "../screens/BusinessProfileScreen";
 import { EventsRoute } from "../screens/EventsRoute";
@@ -427,6 +428,14 @@ export function AppNavigator() {
         name="BusinessOsEvents"
         component={EventsRoute}
         options={{ headerShown: false }}
+      />
+      {/* Landing page for a Business OS section that has no finished screen of
+          its own (Customers, Team, Events). Keeps the stack header so back is
+          the system control rather than a hand-rolled one. */}
+      <Stack.Screen
+        name="BusinessOsSection"
+        component={BusinessOsSectionScreen}
+        options={({ route }) => ({ title: route.params?.title || t("common:screens.businessOs") })}
       />
       {/* `ActivityRoute` renders the unified Activity feed reached from every
           seller header's bell. It draws its own navy header (back / Activity /

@@ -1377,7 +1377,13 @@
       "statusBuilding": "निर्माणाधीन",
       "statusPreparing": "लॉन्च की तैयारी",
       "lockedLabel": "{{module}}. जल्द आ रहा है।",
-      "lockedHint": "दिखाता है कि यह सुविधा कब उपलब्ध होगी।"
+      "lockedHint": "दिखाता है कि यह सुविधा कब उपलब्ध होगी।",
+      "availableTitle": "अभी उपलब्ध",
+      "availableBody": "वे सुविधाएँ जिन्हें आप आज इस्तेमाल कर सकते हैं।",
+      "upcomingTitle": "आने वाला",
+      "upcomingBody": "बनाया जा रहा है। तैयार होते ही ये यहाँ दिखेंगी।",
+      "sectionFallbackTitle": "Business OS",
+      "sectionFallbackBody": "Business OS के इस हिस्से का पेज अभी नहीं है। दूसरा सेक्शन चुनने के लिए Business OS पर लौटें।"
     }
   },
   "discovery": {

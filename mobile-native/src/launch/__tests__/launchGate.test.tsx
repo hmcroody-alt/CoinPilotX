@@ -33,7 +33,12 @@ jest.mock("../../screens/EventsManagerScreen", () => ({
   EventsManagerScreen: () => null
 }));
 
-import { BUSINESS_OS_SECTIONS, businessOsHubSections, businessOsLaunchSections } from "../../api/businessOs";
+import {
+  BUSINESS_OS_SECTIONS,
+  businessOsHubSections,
+  businessOsLaunchSections,
+  businessOsSectionModules
+} from "../../api/businessOs";
 import { preloadNamespaces, translate } from "../../i18n/engine";
 import { EventsRoute } from "../../screens/EventsRoute";
 import { ComingSoonSheet } from "../ComingSoonSheet";
@@ -86,7 +91,18 @@ describe("launch readiness table", () => {
     // compile time and take the runtime check with it.
     const sectionKeys = new Set<string>(BUSINESS_OS_SECTIONS.map((section) => section.key));
     GATED_IDS.filter((id) => id.startsWith("business:")).forEach((id) => {
-      expect(sectionKeys.has(id.slice("business:".length))).toBe(true);
+      const suffix = id.slice("business:".length);
+      // Second-layer ids are `<section>.<module>`. Both halves have to name
+      // something real: a typo in either one gates nothing, because unknown ids
+      // are READY, and neither half fails loudly on its own.
+      if (suffix.includes(".")) {
+        const [sectionKey, moduleKey] = suffix.split(".");
+        expect(sectionKeys.has(sectionKey)).toBe(true);
+        const moduleKeys = businessOsSectionModules(sectionKey).map((module) => module.key);
+        expect(moduleKeys).toContain(moduleKey);
+        return;
+      }
+      expect(sectionKeys.has(suffix)).toBe(true);
     });
     // Presence has one gated action and it is the one the audit found: the
     // per-presence Business OS entry that navigates without a page id.

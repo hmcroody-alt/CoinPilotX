@@ -1377,7 +1377,13 @@
       "statusBuilding": "En construction",
       "statusPreparing": "Préparation du lancement",
       "lockedLabel": "{{module}}. Bientôt disponible.",
-      "lockedHint": "Indique quand cette fonctionnalité sera disponible."
+      "lockedHint": "Indique quand cette fonctionnalité sera disponible.",
+      "availableTitle": "Disponible maintenant",
+      "availableBody": "Les fonctionnalités que vous pouvez déjà utiliser.",
+      "upcomingTitle": "À venir",
+      "upcomingBody": "En cours de création. Elles apparaîtront ici dès leur ouverture.",
+      "sectionFallbackTitle": "Business OS",
+      "sectionFallbackBody": "Cette partie de Business OS n'a pas encore de page. Retournez à Business OS pour choisir une autre section."
     }
   },
   "discovery": {

@@ -1367,7 +1367,13 @@
       "statusBuilding": "構築中",
       "statusPreparing": "リリース準備中",
       "lockedLabel": "{{module}}。近日公開。",
-      "lockedHint": "この機能がいつ利用可能になるかを表示します。"
+      "lockedHint": "この機能がいつ利用可能になるかを表示します。",
+      "availableTitle": "利用可能",
+      "availableBody": "今すぐ使える機能です。",
+      "upcomingTitle": "近日公開",
+      "upcomingBody": "準備中です。公開されるとここに表示されます。",
+      "sectionFallbackTitle": "Business OS",
+      "sectionFallbackBody": "Business OS のこの部分にはまだページがありません。Business OS に戻って別のセクションを選んでください。"
     }
   },
   "discovery": {

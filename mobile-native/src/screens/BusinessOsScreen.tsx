@@ -7,6 +7,7 @@ import {
   BusinessOsSection,
   businessOsLaunchSections,
   businessOsNavigationArgs,
+  businessOsSectionHasLanding,
   formatCents,
   getAdAnalytics,
   listAdAccounts,
@@ -285,16 +286,26 @@ export function BusinessOsScreen({ navigation, route }: Props) {
   }, [load, routeContext.isOwnProfile]);
 
   /**
-   * Every tile tap goes through the launch gate rather than straight to
-   * `navigation.navigate`. For a READY section the gate calls through and
-   * nothing about the old behaviour changes; for a gated one it opens the
-   * Coming Soon sheet and no navigation happens.
+   * Every tile tap opens something. There are three cases and no fourth:
    *
-   * Routing all of them through one call is what makes the grid safe to grow:
-   * `businessOsLaunchSections` now returns routeless sections too, and this is
-   * the reason one of those can never reach `businessOsNavigationArgs` and throw.
+   *   1. The section has a landing page (`BUSINESS_OS_SECTION_MODULES`) — open
+   *      it. This is the progressive-unlock case: the section is enterable, and
+   *      the unfinished modules inside it are what stay locked. Customers, Team
+   *      and Events take this path.
+   *   2. The section is READY — navigate exactly as before. Untouched.
+   *   3. The section is gated with no landing page — the Coming Soon sheet, the
+   *      old behaviour, kept as the backstop for any section registered in
+   *      `readiness.ts` before its landing page exists.
+   *
+   * Case 1 is checked before the gate on purpose. Asking the gate first would
+   * make a gated section open the sheet and never reach its own landing page,
+   * which is the exact dead end this layer removes.
    */
   function openSection(section: BusinessOsSection) {
+    if (businessOsSectionHasLanding(section.key)) {
+      navigation.navigate("BusinessOsSection", { section: section.key, title: section.label });
+      return;
+    }
     gate.open(businessModuleId(section.key), section.label, () => {
       const [route, params] = businessOsNavigationArgs(section);
       navigation.navigate(route, params);

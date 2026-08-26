@@ -1375,7 +1375,13 @@
       "statusBuilding": "N ap konstwi l",
       "statusPreparing": "Prepare pou lansman",
       "lockedLabel": "{{module}}. K ap vini byentò.",
-      "lockedHint": "Montre kilè fonksyon sa a ap disponib."
+      "lockedHint": "Montre kilè fonksyon sa a ap disponib.",
+      "availableTitle": "Disponib kounye a",
+      "availableBody": "Sa ou ka itilize jodi a.",
+      "upcomingTitle": "K ap vini",
+      "upcomingBody": "N ap bati yo. Ou pral wè yo isit la lè yo louvri.",
+      "sectionFallbackTitle": "Business OS",
+      "sectionFallbackBody": "Pati sa a nan Business OS poko gen yon paj. Tounen nan Business OS pou chwazi yon lòt seksyon."
     }
   },
   "discovery": {

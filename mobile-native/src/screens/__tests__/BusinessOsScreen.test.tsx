@@ -49,7 +49,12 @@ jest.mock("../../api/marketplace", () => ({
   loadCachedSellerStore: (...args: unknown[]) => mockCachedSeller(...args)
 }));
 
-import { businessOsHubSections, businessOsLaunchSections, businessOsNavigationArgs } from "../../api/businessOs";
+import {
+  businessOsHubSections,
+  businessOsLaunchSections,
+  businessOsNavigationArgs,
+  businessOsSectionHasLanding
+} from "../../api/businessOs";
 import { preloadNamespaces } from "../../i18n/engine";
 import { businessModuleId, isLaunchGated } from "../../launch/readiness";
 import { BUSINESS_OS_LOAD_TIMEOUT_MS, BusinessOsScreen, resetBusinessOsFreshness } from "../BusinessOsScreen";
@@ -184,27 +189,46 @@ describe("Business OS hub", () => {
   });
 
   /**
-   * The half of the gate that actually protects anything.
+   * The progressive-unlock rule, asserted at the tile.
    *
-   * A locked tile that still navigated would be worse than no gate at all: the
-   * badge would promise the module is not ready while the tap dropped the user
-   * into it anyway. So the assertion is not "something happened" but the
-   * conjunction — the sheet opened AND `navigate` was never called.
+   * A gated section used to answer a tap with the Coming Soon sheet and nothing
+   * else — a closed door. It now opens its landing page instead, and the lock
+   * moves down a layer to the modules inside. The assertion is the conjunction:
+   * the landing page was navigated to AND the dead-end sheet did not appear,
+   * because "opens the sheet as well" would be the half-migrated state.
    */
-  it("opens Coming Soon instead of navigating when a gated tile is tapped", async () => {
-    const gated = businessOsLaunchSections().filter((section) => isLaunchGated(businessModuleId(section.key)));
-    expect(gated.length).toBeGreaterThan(0);
+  it("opens the section landing page when a gated tile with one is tapped", async () => {
+    const landing = businessOsLaunchSections().filter((section) => businessOsSectionHasLanding(section.key));
+    expect(landing.length).toBeGreaterThan(0);
 
-    for (const section of gated) {
+    for (const section of landing) {
       const view = await renderHub();
       fireEvent.press(view.getByLabelText(tileLabel(section)));
-      expect(view.getByTestId(`coming-soon-${businessModuleId(section.key)}`)).toBeTruthy();
-      expect(view.navigation.navigate).not.toHaveBeenCalled();
+      expect(view.navigation.navigate).toHaveBeenCalledWith("BusinessOsSection", {
+        section: section.key,
+        title: section.label
+      });
+      expect(view.queryByTestId(`coming-soon-${businessModuleId(section.key)}`)).toBeNull();
+      view.unmount();
+    }
+  });
 
-      // Dismissing returns the user to the hub rather than stranding them in a
-      // modal whose only other exit is force-quitting the app.
-      fireEvent.press(view.getByTestId("coming-soon-dismiss"));
-      await waitFor(() => expect(view.queryByTestId(`coming-soon-${businessModuleId(section.key)}`)).toBeNull());
+  /**
+   * No tile is a dead end. Whatever a section's state, a tap has to produce
+   * either a navigation or the Coming Soon message — never silence.
+   *
+   * This is deliberately the weakest assertion in the file and deliberately the
+   * broadest: the two tests above pin exactly where each kind of tile goes, and
+   * this one catches the case they cannot, which is a *new* section added later
+   * that matches neither shape.
+   */
+  it("leaves no tile that answers a tap with nothing", async () => {
+    for (const section of businessOsLaunchSections()) {
+      const view = await renderHub();
+      fireEvent.press(view.getByLabelText(tileLabel(section)));
+      const navigated = view.navigation.navigate.mock.calls.length > 0;
+      const explained = Boolean(view.queryByTestId(`coming-soon-${businessModuleId(section.key)}`));
+      expect(navigated || explained).toBe(true);
       view.unmount();
     }
   });

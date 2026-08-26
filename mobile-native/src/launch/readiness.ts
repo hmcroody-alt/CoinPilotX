@@ -93,7 +93,45 @@ export const LAUNCH_READINESS: Readonly<Record<LaunchModuleId, ReadinessState>> 
    * means. Wrong data under a real name is worse than a locked door, so the
    * door is locked until the route can carry a page id.
    */
-  "presence:businessOs": "BUILDING"
+  "presence:businessOs": "BUILDING",
+
+  /* ---------------------------------------------------------------- *
+   * Second layer — modules INSIDE a Business OS section.
+   *
+   * The rows above gate a whole section tile. These gate the modules a
+   * section lists once it is open, which is what lets a section be
+   * enterable while the unfinished depth behind it stays shut. Same table,
+   * same three states, same `readinessOf` — a second layer of gating, not a
+   * second gating system.
+   *
+   * Id shape is `business:<section>.<module>`, so a module id can never
+   * collide with the section id that owns it.
+   * ---------------------------------------------------------------- */
+
+  /*
+   * Customers. The section has no backend at all, so both of its modules are
+   * shut. `records` has nothing behind it; `segments` is the one being cut
+   * first, which is the whole reason the two states are kept apart.
+   */
+  "business:customers.records": "COMING_SOON",
+  "business:customers.segments": "BUILDING",
+
+  /*
+   * Team. Page-level roles exist under `/api/pages/*`, but that is the
+   * Presence team — a different subject with a different owner model. Nothing
+   * backs a *business* team yet, so both modules are shut.
+   */
+  "business:team.members": "COMING_SOON",
+  "business:team.roles": "COMING_SOON",
+
+  /*
+   * Events. The hosted-events manager is the module that cannot hold a row
+   * (see `business:events` above) — it is the module that is unfinished, not
+   * the section. Live discovery is a real, shipping screen and is deliberately
+   * absent from this table, so the Events section opens with one working
+   * capability and one locked one.
+   */
+  "business:events.manager": "BUILDING"
 });
 
 /**
@@ -107,6 +145,11 @@ export function businessModuleId(sectionKey: string): LaunchModuleId {
 
 export function presenceModuleId(actionKey: string): LaunchModuleId {
   return `presence:${actionKey}`;
+}
+
+/** A module *inside* a Business OS section — `business:<section>.<module>`. */
+export function businessSubmoduleId(sectionKey: string, moduleKey: string): LaunchModuleId {
+  return `business:${sectionKey}.${moduleKey}`;
 }
 
 /** The gate's verdict for a module. Unknown ids are READY — see the header. */
