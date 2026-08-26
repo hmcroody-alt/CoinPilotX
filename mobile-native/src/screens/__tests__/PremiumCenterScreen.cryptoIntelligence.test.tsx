@@ -74,3 +74,18 @@ describe("Premium reuses the dashboard system", () => {
     expect(premium.navigate).toHaveBeenCalledTimes(1);
   });
 });
+
+// Saved navigation state and older callers must not resurrect separate clients.
+describe("Legacy crypto entry points cannot fork the dashboard implementation", () => {
+  it("exports the exact dashboard alert component", () => {
+    const { CryptoAlertCenterScreen } = require("../CryptoAlertCenterScreen");
+    const { AlertManagementScreen } = require("../AlertManagementScreen");
+    expect(CryptoAlertCenterScreen).toBe(AlertManagementScreen);
+  });
+
+  it("exports the exact dashboard portfolio component", () => {
+    const { CryptoPortfolioScreen } = require("../CryptoPortfolioScreen");
+    const { PortfolioScreen } = require("../PortfolioScreen");
+    expect(CryptoPortfolioScreen).toBe(PortfolioScreen);
+  });
+});

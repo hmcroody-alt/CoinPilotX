@@ -70,7 +70,9 @@ import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { createThemedStyles } from "../theme/themedStyles";
 
-type Props = NativeStackScreenProps<RootStackParamList, "Portfolio">;
+type Props =
+  | NativeStackScreenProps<RootStackParamList, "Portfolio">
+  | NativeStackScreenProps<RootStackParamList, "CryptoPortfolio">;
 
 /** Green up, red down, and neutral when we do not know — never green by default. */
 function moveColor(value: number | null): string {

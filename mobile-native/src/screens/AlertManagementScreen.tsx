@@ -39,7 +39,8 @@ import { createThemedStyles } from "../theme/themedStyles";
 
 type Props =
   | NativeStackScreenProps<RootStackParamList, "AlertManagement">
-  | NativeStackScreenProps<RootStackParamList, "CryptoAlertManagement">;
+  | NativeStackScreenProps<RootStackParamList, "CryptoAlertManagement">
+  | NativeStackScreenProps<RootStackParamList, "CryptoAlertCenter">;
 
 const emptyForm: AlertFormPayload = {
   assetSymbol: "BTC",
