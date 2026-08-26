@@ -496,23 +496,6 @@ export function AlertManagementScreen({ route, navigation }: Props) {
       </Panel>
 
       <Panel>
-        <Text style={styles.sectionTitle}>{t("discovery:crypto.entry.title")}</Text>
-        <Text style={styles.muted}>{t("discovery:crypto.entry.body")}</Text>
-        <View style={styles.topActions}>
-          <ActionButton
-            label={t("discovery:crypto.entry.alertsCta")}
-            variant="secondary"
-            onPress={() => navigation.navigate("CryptoAlertCenter", presetSymbol ? { presetSymbol } : undefined)}
-          />
-          <ActionButton
-            label={t("discovery:crypto.entry.portfolioCta")}
-            variant="secondary"
-            onPress={() => navigation.navigate("CryptoPortfolio")}
-          />
-        </View>
-      </Panel>
-
-      <Panel>
         <View style={styles.panelHeader}>
           <Text style={styles.sectionTitle}>{t("premium:crypto.alerts.readiness.title")}</Text>
           <ActionButton

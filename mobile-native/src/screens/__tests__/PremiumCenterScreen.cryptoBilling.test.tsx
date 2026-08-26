@@ -29,11 +29,11 @@ function nav() {
 }
 
 describe("Premium Crypto Intelligence rows", () => {
-  const EXPECTED: Array<[string, string]> = [
-    ["alerts", "CryptoAlertCenter"],
-    ["portfolio", "CryptoPortfolio"],
-    ["watchlists", "Watchlists"],
-    ["undx", "UndxCapabilities"]
+  const EXPECTED: Array<[string, string, { title: string } | undefined]> = [
+    ["alerts", "AlertManagement", { title: "Alerts" }],
+    ["portfolio", "Portfolio", undefined],
+    ["watchlists", "Watchlists", { title: "Watchlists" }],
+    ["undx", "UndxCapabilities", undefined]
   ];
 
   it("renders exactly the four required entries", () => {
@@ -44,13 +44,13 @@ describe("Premium Crypto Intelligence rows", () => {
     }
   });
 
-  it.each(EXPECTED)("%s opens the canonical %s screen — no dead rows, no duplicates", (key, routeName) => {
+  it.each(EXPECTED)("%s opens the canonical %s screen — no dead rows, no duplicates", (key, routeName, params) => {
     const navigation = nav();
     const { getByLabelText } = render(<CryptoIntelligenceSection navigation={navigation} />);
     fireEvent.press(getByLabelText(`discovery:crypto.intelligence.${key}.label`));
     const navigate = (navigation as { navigate: jest.Mock }).navigate;
     expect(navigate).toHaveBeenCalledTimes(1);
-    expect(navigate).toHaveBeenCalledWith(routeName);
+    expect(navigate.mock.calls).toEqual([params ? [routeName, params] : [routeName]]);
   });
 
   it("routes the four rows to four distinct destinations", () => {

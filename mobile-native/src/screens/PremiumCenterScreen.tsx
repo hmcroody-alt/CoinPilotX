@@ -54,6 +54,7 @@ import {
 } from "../api/premiumCenter";
 import { useFormatters, useTranslation } from "../i18n";
 import { RootStackParamList } from "../navigation/types";
+import { openDashboardRoute } from "../navigation/dashboardRouting";
 import {
   annualSavings,
   getAppleSubscriptionSnapshot,
@@ -1093,14 +1094,9 @@ function NotYetSection({ items }: { items: Array<{ key: string; label: string; s
  * screens it describes — deliberately not under `premium:`, whose copy rules
  * exist for billing claims this section never makes.
  *
- * Every row is pressable because every destination already ships
- * (`CryptoAlertCenter`, `CryptoPortfolio`, `Watchlists`, `UndxCapabilities`) —
- * the same canonical screens deep links and the Command Center use, so Premium
- * keeps no copy of any crypto system and there is no second state to drift.
- * Those screens carry their own premium gates, so a free member who taps
- * through sees the honest upsell rather than a wall here. `go` stays optional:
- * the rule is still that nothing looks tappable unless a real screen answers,
- * and a row without a destination renders inert and without a chevron.
+ * Crypto rows use the dashboard's route resolver and existing screens:
+ * AlertManagement, Portfolio and Watchlists. Their clients, account state and
+ * entitlement checks are shared unchanged; Premium owns no crypto data logic.
  */
 type CryptoIntelligenceFeature = {
   key: "alerts" | "portfolio" | "watchlists" | "undx";
@@ -1109,13 +1105,13 @@ type CryptoIntelligenceFeature = {
 };
 
 const CRYPTO_INTELLIGENCE_FEATURES: readonly CryptoIntelligenceFeature[] = [
-  { key: "alerts", icon: "pulse-outline", go: (nav) => nav.navigate("CryptoAlertCenter") },
-  { key: "portfolio", icon: "pie-chart-outline", go: (nav) => nav.navigate("CryptoPortfolio") },
+  { key: "alerts", icon: "pulse-outline", go: (nav) => openDashboardRoute(nav, "/dashboard/crypto/alerts") },
+  { key: "portfolio", icon: "pie-chart-outline", go: (nav) => openDashboardRoute(nav, "/pulse/portfolio") },
   // Watchlists ships as `WatchlistsScreen` and is the thing alerts point at, so
   // leaving it off this list made the section describe a workflow it could not
   // start: a member could reach alerts and portfolio from here, but had to know
   // to go elsewhere for the lists those alerts watch.
-  { key: "watchlists", icon: "list-outline", go: (nav) => nav.navigate("Watchlists") },
+  { key: "watchlists", icon: "list-outline", go: (nav) => openDashboardRoute(nav, "/dashboard/crypto/watchlists") },
   // `UndxCapabilities` renders the server-authoritative capability registry, and
   // the crypto domain is registered in it — so this row advertises only what
   // UNDX can actually do right now, and can never claim a capability the server
