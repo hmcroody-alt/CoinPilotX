@@ -206,6 +206,8 @@ export function ProfileHeader({
   const tierLabel = premium ? String(profile.premium_status || "premium").replace(/_/g, " ") : "";
   const online = String(profile.account_status || "active").toLowerCase() === "active";
   const automated = profile.automated === true || profile.account_type === "PULSESOC_AUTOMATED";
+  const galacticAccountCover = profile.public_player_id === "pulsesoc_insight"
+    && Boolean(profile.cover_url?.includes("pulsesoc-insight-cover-20260825.png"));
 
   const pulse = useRef(new Animated.Value(0)).current;
   const float1 = useRef(new Animated.Value(0)).current;
@@ -270,7 +272,7 @@ export function ProfileHeader({
       {/* Immersive energy field */}
       <View style={[styles.hero, { height: PROFILE_HERO_HEIGHT }]} pointerEvents="none">
         <Animated.View style={[StyleSheet.absoluteFill, { opacity: fieldOpacity, transform: [{ translateY: bgTranslateY }, { scale: bgScale }] }]}>
-          {profile.cover_url ? <Image source={{ uri: profile.cover_url }} style={styles.coverImage} resizeMode="cover" /> : null}
+          {profile.cover_url && !galacticAccountCover ? <Image source={{ uri: profile.cover_url }} style={styles.coverImage} resizeMode="cover" /> : null}
           <LinearGradient colors={[`${accent}33`, "#050910f2", colors.background]} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} style={StyleSheet.absoluteFill} />
           <Animated.View style={[styles.nebula, { backgroundColor: `${accent}2e`, transform: [{ translateX: float1X }, { translateY: float1Y }] }]} />
           <Animated.View style={[styles.nebulaTwo, { backgroundColor: `${profileNeon.violet}22`, transform: [{ translateY: float2Y }] }]} />
@@ -294,6 +296,10 @@ export function ProfileHeader({
           <View style={styles.grain} />
         </Animated.View>
         <LinearGradient colors={["transparent", "transparent", colors.background]} style={StyleSheet.absoluteFill} pointerEvents="none" />
+        {galacticAccountCover ? (
+          <Image testID="automated-account-brand-cover" source={{ uri: profile.cover_url }}
+            style={styles.automatedBrandCover} resizeMode="contain" />
+        ) : null}
       </View>
 
       {/* Identity */}
@@ -569,6 +575,7 @@ const styles = createThemedStyles(() => ({
   root: { backgroundColor: colors.background },
   hero: { overflow: "hidden", width: "100%" },
   coverImage: { ...StyleSheet.absoluteFillObject, height: undefined, width: undefined },
+  automatedBrandCover: { position: "absolute", top: 0, width: "100%", aspectRatio: 1600 / 640 },
   nebula: { borderRadius: 220, height: 300, position: "absolute", right: -90, top: -70, width: 300 },
   nebulaTwo: { borderRadius: 160, height: 220, left: -70, position: "absolute", top: 40, width: 220 },
   pulseWave: { borderRadius: 200, borderWidth: 1.5, height: 320, left: "50%", marginLeft: -160, marginTop: -160, position: "absolute", top: "50%", width: 320 },

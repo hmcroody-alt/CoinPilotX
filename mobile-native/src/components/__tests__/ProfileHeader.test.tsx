@@ -1,4 +1,5 @@
 import React from "react";
+import { StyleSheet } from "react-native";
 import { fireEvent, render } from "@testing-library/react-native";
 
 jest.mock("@react-native-async-storage/async-storage", () => ({
@@ -139,5 +140,23 @@ describe("ProfileHeader (Profile V6)", () => {
     expect(queryByText("Call")).toBeNull();
     expect(queryByText("Followers")).toBeNull();
     expect(queryByText("Following")).toBeNull();
+  });
+});
+
+
+describe("approved automated account cover", () => {
+  const cover = "https://pulsesoc.com/static/brand/pulsesoc-insight-cover-20260825.png";
+  it("shows the entire banner at its original aspect ratio", () => {
+    const { getByTestId } = render(<ProfileHeader profile={baseProfile({
+      user_id: 0, public_player_id: "pulsesoc_insight", automated: true, cover_url: cover
+    })} />);
+    const image = getByTestId("automated-account-brand-cover");
+    expect(image.props.source).toEqual({ uri: cover });
+    expect(image.props.resizeMode).toBe("contain");
+    expect(StyleSheet.flatten(image.props.style)).toMatchObject({ width: "100%", aspectRatio: 2.5, top: 0 });
+  });
+  it("does not change another account's cover rendering", () => {
+    const { queryByTestId } = render(<ProfileHeader profile={baseProfile({ cover_url: cover })} />);
+    expect(queryByTestId("automated-account-brand-cover")).toBeNull();
   });
 });
