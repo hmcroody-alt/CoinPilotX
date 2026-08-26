@@ -97,7 +97,11 @@ describe("navigator header titles", () => {
     // Both lineages added titled routes, so the merged count is the sum, and
     // that it lands exactly on 133 is the evidence the union dropped neither
     // side's screens rather than silently keeping one.
-    expect(TITLE_OPTIONS.length).toBe(133);
+    //
+    // 133 + 1: `BusinessOsSection`, the Business OS section landing page. Its
+    // title is `route.params.title || t("common:screens.businessOs")` — a
+    // titled route, so it counts.
+    expect(TITLE_OPTIONS.length).toBe(134);
   });
 
   it("has no hardcoded string literal titles", () => {

@@ -1375,7 +1375,13 @@
       "statusBuilding": "开发中",
       "statusPreparing": "准备上线",
       "lockedLabel": "{{module}}。即将推出。",
-      "lockedHint": "显示此功能何时可用。"
+      "lockedHint": "显示此功能何时可用。",
+      "availableTitle": "现已可用",
+      "availableBody": "你现在就能使用的功能。",
+      "upcomingTitle": "即将推出",
+      "upcomingBody": "正在开发中。开放后会显示在这里。",
+      "sectionFallbackTitle": "Business OS",
+      "sectionFallbackBody": "Business OS 的这一部分还没有页面。返回 Business OS 选择其他板块。"
     }
   },
   "discovery": {

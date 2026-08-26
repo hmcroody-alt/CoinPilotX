@@ -1377,7 +1377,13 @@
       "statusBuilding": "Building",
       "statusPreparing": "Preparing for Launch",
       "lockedLabel": "{{module}}. Coming soon.",
-      "lockedHint": "Shows when this feature will be available."
+      "lockedHint": "Shows when this feature will be available.",
+      "availableTitle": "Available now",
+      "availableBody": "Capabilities you can use today.",
+      "upcomingTitle": "Upcoming",
+      "upcomingBody": "Being built. You'll see them here as they open.",
+      "sectionFallbackTitle": "Business OS",
+      "sectionFallbackBody": "This part of Business OS doesn't have a landing page yet. Head back to Business OS to pick another section."
     }
   },
   "discovery": {

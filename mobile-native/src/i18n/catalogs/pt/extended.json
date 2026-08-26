@@ -1377,7 +1377,13 @@
       "statusBuilding": "Em construção",
       "statusPreparing": "Preparando o lançamento",
       "lockedLabel": "{{module}}. Em breve.",
-      "lockedHint": "Mostra quando este recurso estará disponível."
+      "lockedHint": "Mostra quando este recurso estará disponível.",
+      "availableTitle": "Disponível agora",
+      "availableBody": "Recursos que você já pode usar.",
+      "upcomingTitle": "Em breve",
+      "upcomingBody": "Em construção. Eles aparecerão aqui quando forem liberados.",
+      "sectionFallbackTitle": "Business OS",
+      "sectionFallbackBody": "Esta parte do Business OS ainda não tem página. Volte ao Business OS para escolher outra seção."
     }
   },
   "discovery": {

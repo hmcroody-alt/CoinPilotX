@@ -316,6 +316,108 @@ export function businessOsSection(key: BusinessOsSectionKey) {
 }
 
 /* ------------------------------------------------------------------ *
+ * Section modules — the second layer
+ * ------------------------------------------------------------------ */
+
+/**
+ * A module listed inside a section's landing page.
+ *
+ * `route` is what separates the two kinds: a module with one is a real
+ * destination, a module without one has nothing to open yet. Readiness is NOT
+ * stored here — `launch/readiness.ts` remains the only place that decides what
+ * is open, so a module cannot be locked in one file and READY in another.
+ */
+export type BusinessOsModule = {
+  key: string;
+  label: string;
+  blurb: string;
+  icon: string;
+  route?: string;
+  params?: Record<string, string | number | boolean>;
+};
+
+/**
+ * What each section offers once it is open.
+ *
+ * Only sections that need a landing page appear here. A section whose tile
+ * already opens a real, working screen is not listed: that screen *is* its
+ * first layer, and giving it a second one would put a menu in front of a
+ * working feature for no reason.
+ *
+ * Every entry is a real capability or a real gap — nothing here is invented to
+ * pad the roadmap. A module with a `route` points at a screen that exists and
+ * works today; a module without one is registered in `readiness.ts` and opens
+ * the Coming Soon message instead.
+ */
+export const BUSINESS_OS_SECTION_MODULES: Readonly<Record<string, readonly BusinessOsModule[]>> = Object.freeze({
+  customers: [
+    {
+      // Real and shipping. Conversations with buyers are the customer-facing
+      // surface that exists today, so the Customers landing is not a dead end
+      // while the records tooling is built.
+      key: "conversations",
+      label: "Buyer Conversations",
+      blurb: "Talk to the people buying from you.",
+      icon: "chatbubbles-outline",
+      route: "BusinessOsMessages"
+    },
+    {
+      key: "records",
+      label: "Customer Records",
+      blurb: "A profile for every buyer, with their order history.",
+      icon: "person-outline"
+    },
+    {
+      key: "segments",
+      label: "Segments",
+      blurb: "Group buyers by what they buy and how often.",
+      icon: "filter-outline"
+    }
+  ],
+  team: [
+    {
+      key: "members",
+      label: "Team Members",
+      blurb: "Invite people to help run the business.",
+      icon: "person-add-outline"
+    },
+    {
+      key: "roles",
+      label: "Roles & Permissions",
+      blurb: "Decide who can sell, reply and spend.",
+      icon: "key-outline"
+    }
+  ],
+  events: [
+    {
+      // The live discovery feed — untouched, working, and deliberately not in
+      // the readiness table.
+      key: "discovery",
+      label: "Live Events",
+      blurb: "Events happening across PulseSoc right now.",
+      icon: "radio-outline",
+      route: "Events"
+    },
+    {
+      key: "manager",
+      label: "Hosted Events",
+      blurb: "Schedule and promote events you host.",
+      icon: "calendar-outline"
+    }
+  ]
+});
+
+/** The modules a section lists once open. Empty when it has no landing page. */
+export function businessOsSectionModules(key: string): readonly BusinessOsModule[] {
+  return BUSINESS_OS_SECTION_MODULES[key] ?? [];
+}
+
+/** True when the section opens a landing page rather than a destination screen. */
+export function businessOsSectionHasLanding(key: string): boolean {
+  return businessOsSectionModules(key).length > 0;
+}
+
+/* ------------------------------------------------------------------ *
  * Advertising — accounts
  * ------------------------------------------------------------------ */
 

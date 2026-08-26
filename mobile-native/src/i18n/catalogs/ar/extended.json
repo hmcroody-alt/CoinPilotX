@@ -1441,7 +1441,13 @@
       "statusBuilding": "قيد الإنشاء",
       "statusPreparing": "قيد التحضير للإطلاق",
       "lockedLabel": "{{module}}. قريباً.",
-      "lockedHint": "يعرض موعد توفر هذه الميزة."
+      "lockedHint": "يعرض موعد توفر هذه الميزة.",
+      "availableTitle": "متاح الآن",
+      "availableBody": "إمكانيات يمكنك استخدامها اليوم.",
+      "upcomingTitle": "قريباً",
+      "upcomingBody": "قيد الإنشاء. ستظهر هنا فور توفرها.",
+      "sectionFallbackTitle": "Business OS",
+      "sectionFallbackBody": "هذا الجزء من Business OS ليس له صفحة بعد. عد إلى Business OS لاختيار قسم آخر."
     }
   },
   "discovery": {

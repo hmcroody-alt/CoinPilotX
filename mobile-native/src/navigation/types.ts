@@ -340,6 +340,13 @@ export type RootStackParamList = {
    */
   BusinessOsEvents: { title?: string } | undefined;
   /**
+   * Landing page for a Business OS section that has no finished screen of its
+   * own. `section` is a `BusinessOsSectionKey`. The screen renders a plain
+   * explanation for any key it has no module list for, so a stale deep link
+   * produces a sentence rather than a blank shell.
+   */
+  BusinessOsSection: { section?: string; title?: string } | undefined;
+  /**
    * The unified Activity feed (the bell in every seller header). Aggregates
    * social / marketplace / orders / ads / payments / system notifications; its
    * unread total is the same number the header bells show.
