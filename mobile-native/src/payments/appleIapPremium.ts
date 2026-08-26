@@ -365,6 +365,148 @@ export function annualSavings(plans: PremiumPlanOffer[]): number | null {
 }
 
 /* ------------------------------------------------------------------ *
+ * Subscription snapshot — Apple's own facts about an existing subscription
+ * ------------------------------------------------------------------ */
+
+/**
+ * What Apple can prove about this member's Premium subscription, for display
+ * when the server has no billing record of its own (e.g. entitlement projected
+ * before the subscription row landed, or a fresh reinstall).
+ *
+ * Every field is read from StoreKit — the signed transaction payload and the
+ * localized product metadata. Nothing is computed from a hardcoded price, date
+ * or currency; a field Apple did not supply is `null` and the screen omits it
+ * rather than inventing it.
+ */
+export type AppleSubscriptionSnapshot = {
+  productId: string;
+  /** Derived from the server-owned sku suffix; `null` when it matches neither plan. */
+  plan: PremiumPlan | null;
+  /** Apple's formatted price in the member's own storefront currency, or `null`. */
+  displayPrice: string | null;
+  /** Only what a verified expiry date can prove. Never grace/billing-issue guesses. */
+  status: "active" | "expired";
+  /** ISO timestamp of the verified expiry (renewal boundary), from the signed transaction. */
+  expiresAt: string;
+  /** ISO timestamp of the original purchase, or `null` when Apple omitted it. */
+  originalPurchaseAt: string | null;
+};
+
+/** Base64url alphabet → 6-bit value. Hermes has no reliable global `atob`. */
+const B64URL = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+/**
+ * Decode the payload segment of a StoreKit 2 signed transaction.
+ *
+ * Display-only. Authorization still belongs to the server, which verifies the
+ * certificate chain; this decode merely reads the dates Apple signed so the
+ * billing card can show them. A malformed segment returns `null`, never throws.
+ */
+export function decodeSignedTransactionPayload(jws: string): Record<string, unknown> | null {
+  const segment = jws.split(".")[1];
+  if (!segment) return null;
+  try {
+    const bytes: number[] = [];
+    let buffer = 0;
+    let bits = 0;
+    for (const char of segment) {
+      const value = B64URL.indexOf(char);
+      if (value < 0) return null;
+      buffer = (buffer << 6) | value;
+      bits += 6;
+      if (bits >= 8) {
+        bits -= 8;
+        bytes.push((buffer >> bits) & 0xff);
+      }
+    }
+    // UTF-8 decode via the percent-encoding trick — no TextDecoder dependency.
+    const text = decodeURIComponent(bytes.map((b) => `%${b.toString(16).padStart(2, "0")}`).join(""));
+    const payload = JSON.parse(text);
+    return payload && typeof payload === "object" ? (payload as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+function transactionMillis(value: unknown): number | null {
+  const millis = Number(value);
+  return Number.isFinite(millis) && millis > 0 ? millis : null;
+}
+
+/** `com.pulsesoc.premium.monthly` → `monthly`. Anything unrecognized stays `null`. */
+export function planFromProductId(productId: string): PremiumPlan | null {
+  if (/\.monthly$/.test(productId)) return "monthly";
+  if (/\.(annual|yearly)$/.test(productId)) return "annual";
+  return null;
+}
+
+/**
+ * Read the member's Premium subscription facts straight from StoreKit.
+ *
+ * Used only as a display fallback when `/api/premium/status-center` returns no
+ * `subscription` row for a member who canonically holds Premium — the case that
+ * used to render "we don't have billing details" at a paying member. Returns
+ * `null` whenever Apple cannot prove a subscription with a verified expiry
+ * date: no adapter, no premium transactions, or no signed payload. The caller
+ * falls back to the honest "no billing record" copy — this function never
+ * fabricates a card.
+ */
+export async function getAppleSubscriptionSnapshot(
+  deps: { adapter?: StoreKitAdapter | null; now?: () => number } = {}
+): Promise<AppleSubscriptionSnapshot | null> {
+  const adapter = deps.adapter !== undefined ? deps.adapter : loadStoreKitAdapter();
+  if (!adapter) return null;
+  const now = deps.now ?? Date.now;
+
+  let purchases;
+  try {
+    await adapter.initConnection();
+    purchases = await adapter.getAvailablePurchases();
+  } catch {
+    return null;
+  }
+
+  // Latest expiry wins: after an upgrade or crossgrade Apple can report several
+  // premium transactions, and the one still governing access is the one that
+  // ends last.
+  let best: { productId: string; expires: number; original: number | null } | null = null;
+  for (const purchase of purchases) {
+    const productId = purchaseProductId(purchase);
+    if (!productId.startsWith(PREMIUM_SKU_PREFIX)) continue;
+    const signed = extractSignedTransaction(purchase);
+    const payload = signed ? decodeSignedTransactionPayload(signed) : null;
+    const expires =
+      transactionMillis(payload?.expiresDate) ??
+      transactionMillis((purchase as { expirationDateIos?: unknown }).expirationDateIos);
+    if (expires === null) continue; // No verified expiry → nothing honest to display.
+    const original =
+      transactionMillis(payload?.originalPurchaseDate) ??
+      transactionMillis((purchase as { originalTransactionDateIOS?: unknown }).originalTransactionDateIOS);
+    if (!best || expires > best.expires) best = { productId, expires, original };
+  }
+  if (!best) return null;
+
+  // Localized price is a nicety, not a requirement: a StoreKit metadata failure
+  // must not take the whole card down with it.
+  let displayPrice: string | null = null;
+  try {
+    const products = adapter.getSubscriptions ? await adapter.getSubscriptions([best.productId]) : [];
+    displayPrice = products.find((product) => product.id === best!.productId)?.displayPrice || null;
+  } catch {
+    displayPrice = null;
+  }
+
+  return {
+    productId: best.productId,
+    plan: planFromProductId(best.productId),
+    displayPrice,
+    status: best.expires > now() ? "active" : "expired",
+    expiresAt: new Date(best.expires).toISOString(),
+    originalPurchaseAt: best.original !== null ? new Date(best.original).toISOString() : null
+  };
+}
+
+/* ------------------------------------------------------------------ *
  * Restore
  * ------------------------------------------------------------------ */
 

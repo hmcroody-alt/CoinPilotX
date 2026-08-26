@@ -7,7 +7,10 @@ import { createPaymentIntent, verifyApplePremiumPurchase } from "../../api/payme
 import {
   APPLE_MANAGE_SUBSCRIPTIONS_URL,
   annualSavings,
+  decodeSignedTransactionPayload,
+  getAppleSubscriptionSnapshot,
   getPremiumOffers,
+  planFromProductId,
   openManageSubscriptions,
   PREMIUM_STOREKIT_LOG_TAG,
   purchasePremium,
@@ -548,5 +551,113 @@ describe("Manage Subscription", () => {
   it("reports a failure to open rather than claiming success", async () => {
     const open = jest.fn(async () => { throw new Error("no handler"); });
     await expect(openManageSubscriptions({ open })).resolves.toBe(false);
+  });
+});
+
+/**
+ * The billing-card fallback: Apple's own facts about an existing subscription.
+ *
+ * Everything asserted here comes out of a signed-transaction payload or the
+ * localized product metadata. No test — and no code path — supplies a price,
+ * a date or a status the fake Apple did not.
+ */
+describe("Apple subscription snapshot", () => {
+  const NOW = Date.parse("2026-08-25T12:00:00Z");
+
+  function signedJws(payload: Record<string, unknown>): string {
+    const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
+    return `eyJhbGciOiJFUzI1NiJ9.${body}.c2lnbmF0dXJlLXNlZ21lbnQ`;
+  }
+
+  function snapshotAdapter(
+    purchases: Record<string, unknown>[],
+    products: { id: string; displayPrice: string }[] = []
+  ): StoreKitAdapter {
+    return {
+      initConnection: async () => undefined,
+      requestPurchase: async () => null,
+      finishTransaction: async () => undefined,
+      getAvailablePurchases: async () => purchases,
+      getSubscriptions: async () =>
+        products.map((p) => ({ ...p, price: 1, currency: "USD", title: p.id }))
+    };
+  }
+
+  it("decodes only what Apple signed", () => {
+    const payload = { productId: "com.pulsesoc.premium.annual", expiresDate: 123 };
+    expect(decodeSignedTransactionPayload(signedJws(payload))).toEqual(payload);
+    expect(decodeSignedTransactionPayload("not-a-jws")).toBeNull();
+    expect(decodeSignedTransactionPayload("a.!!!!.c")).toBeNull();
+  });
+
+  it("maps the server-owned sku suffix to a plan and nothing else", () => {
+    expect(planFromProductId("com.pulsesoc.premium.monthly")).toBe("monthly");
+    expect(planFromProductId("com.pulsesoc.premium.annual")).toBe("annual");
+    expect(planFromProductId("com.pulsesoc.premium.mystery")).toBeNull();
+  });
+
+  it("reports an active subscription from the verified expiry date", async () => {
+    const expires = NOW + 20 * 24 * 3600 * 1000;
+    const original = NOW - 200 * 24 * 3600 * 1000;
+    const adapter = snapshotAdapter(
+      [{
+        productId: "com.pulsesoc.premium.annual",
+        jwsRepresentationIos: signedJws({
+          productId: "com.pulsesoc.premium.annual",
+          expiresDate: expires,
+          originalPurchaseDate: original
+        })
+      }],
+      [{ id: "com.pulsesoc.premium.annual", displayPrice: "€99,99" }]
+    );
+    await expect(getAppleSubscriptionSnapshot({ adapter, now: () => NOW })).resolves.toEqual({
+      productId: "com.pulsesoc.premium.annual",
+      plan: "annual",
+      displayPrice: "€99,99",
+      status: "active",
+      expiresAt: new Date(expires).toISOString(),
+      originalPurchaseAt: new Date(original).toISOString()
+    });
+  });
+
+  it("reports expired — never active — when the verified date has passed", async () => {
+    const adapter = snapshotAdapter([{
+      productId: "com.pulsesoc.premium.monthly",
+      jwsRepresentationIos: signedJws({ expiresDate: NOW - 1000 })
+    }]);
+    const snapshot = await getAppleSubscriptionSnapshot({ adapter, now: () => NOW });
+    expect(snapshot?.status).toBe("expired");
+    expect(snapshot?.plan).toBe("monthly");
+  });
+
+  it("prefers the transaction that governs access after an upgrade", async () => {
+    const adapter = snapshotAdapter([
+      { productId: "com.pulsesoc.premium.monthly", jwsRepresentationIos: signedJws({ expiresDate: NOW + 1000 }) },
+      { productId: "com.pulsesoc.premium.annual", jwsRepresentationIos: signedJws({ expiresDate: NOW + 9000 }) }
+    ]);
+    const snapshot = await getAppleSubscriptionSnapshot({ adapter, now: () => NOW });
+    expect(snapshot?.productId).toBe("com.pulsesoc.premium.annual");
+  });
+
+  it("omits the price rather than inventing one when metadata fails", async () => {
+    const adapter = snapshotAdapter([{
+      productId: "com.pulsesoc.premium.annual",
+      jwsRepresentationIos: signedJws({ expiresDate: NOW + 1000 })
+    }]);
+    adapter.getSubscriptions = async () => { throw new Error("store down"); };
+    const snapshot = await getAppleSubscriptionSnapshot({ adapter, now: () => NOW });
+    expect(snapshot?.displayPrice).toBeNull();
+    expect(snapshot?.originalPurchaseAt).toBeNull();
+  });
+
+  it("returns null — no fabricated card — without a verified expiry", async () => {
+    // A premium transaction with no readable expiry proves nothing displayable.
+    const noExpiry = snapshotAdapter([{ productId: "com.pulsesoc.premium.annual", jwsRepresentationIos: signedJws({}) }]);
+    await expect(getAppleSubscriptionSnapshot({ adapter: noExpiry, now: () => NOW })).resolves.toBeNull();
+    // Other products are not premium's to display.
+    const otherSku = snapshotAdapter([{ productId: "com.pulsesoc.adcredits.small", jwsRepresentationIos: signedJws({ expiresDate: NOW + 1 }) }]);
+    await expect(getAppleSubscriptionSnapshot({ adapter: otherSku, now: () => NOW })).resolves.toBeNull();
+    // No StoreKit at all degrades to the honest none-state, not a crash.
+    await expect(getAppleSubscriptionSnapshot({ adapter: null })).resolves.toBeNull();
   });
 });

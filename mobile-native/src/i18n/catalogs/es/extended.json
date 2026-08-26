@@ -1455,6 +1455,10 @@
           "label": "Portafolio",
           "hint": "Posiciones, distribución, rendimiento, concentración y ganancias y pérdidas no realizadas."
         },
+        "watchlist": {
+          "label": "Lista de seguimiento",
+          "hint": "Sigue las monedas que te importan con precios en vivo y favoritos."
+        },
         "undx": {
           "label": "Inteligencia cripto UNDX",
           "hint": "Entiende por qué se activaron las alertas y qué mueve tu portafolio."
@@ -2209,6 +2213,9 @@
       "status": "Estado",
       "renews": "Se renueva",
       "expires": "Finaliza",
+      "price": "Precio",
+      "activeUntil": "Activa hasta",
+      "since": "Suscripción desde",
       "cancelPending": "Esta suscripción está programada para finalizar y no se renovará.",
       "none": "No tenemos datos de facturación para esta membresía.",
       "founderNone": "Membresía de fundador: sin facturación, nada que renovar."

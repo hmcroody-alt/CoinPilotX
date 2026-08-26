@@ -52,10 +52,12 @@ import { useFormatters, useTranslation } from "../i18n";
 import { RootStackParamList } from "../navigation/types";
 import {
   annualSavings,
+  getAppleSubscriptionSnapshot,
   getPremiumOffers,
   openManageSubscriptions,
   purchasePremium,
   restorePremiumPurchases,
+  type AppleSubscriptionSnapshot,
   type PremiumOffers,
   type PremiumPlan,
   type PremiumPlanOffer
@@ -142,6 +144,31 @@ export function PremiumCenterScreen({ route, navigation }: Props) {
   // Only surfaces that can actually sell need Apple's catalog. A Founder or an
   // active member is not shown prices, so their screen never touches StoreKit.
   const sells = Boolean(center) && (experience === "none" || experience === "expired");
+
+  /**
+   * StoreKit fallback for the billing card.
+   *
+   * Queried only in the one gap it exists to fill: a member the server says
+   * holds Premium through a subscription (not Founder) but for whom it returned
+   * no billing row. Everything shown from this snapshot is Apple's own signed
+   * data; when Apple can't prove a subscription either, the card keeps the
+   * honest "no billing record" copy.
+   */
+  const [appleBilling, setAppleBilling] = useState<AppleSubscriptionSnapshot | null>(null);
+  const needsAppleBilling =
+    Boolean(center) && !center?.subscription &&
+    (experience === "active" || experience === "grace" || experience === "hold");
+  useEffect(() => {
+    if (!needsAppleBilling) {
+      setAppleBilling(null);
+      return;
+    }
+    let cancelled = false;
+    getAppleSubscriptionSnapshot()
+      .then((snapshot) => { if (!cancelled) setAppleBilling(snapshot); })
+      .catch(() => { if (!cancelled) setAppleBilling(null); });
+    return () => { cancelled = true; };
+  }, [needsAppleBilling, center]);
 
   const loadOffers = useCallback(async () => {
     if (offerRequestActive.current) return;
@@ -328,7 +355,7 @@ export function PremiumCenterScreen({ route, navigation }: Props) {
           expired={experience === "expired"}
         />
       ) : (
-        <BillingSection subscription={center?.subscription ?? null} experience={experience} />
+        <BillingSection subscription={center?.subscription ?? null} apple={appleBilling} experience={experience} />
       )}
 
       {/*
@@ -630,13 +657,43 @@ function PlanCard({
  * transaction id, no receipt — the server does not send them, and this is the
  * screen that would have leaked them if it did.
  */
-function BillingSection({
-  subscription, experience
-}: { subscription: PremiumSubscription | null; experience: PremiumExperience }) {
+export function BillingSection({
+  subscription, apple, experience
+}: {
+  subscription: PremiumSubscription | null;
+  apple?: AppleSubscriptionSnapshot | null;
+  experience: PremiumExperience;
+}) {
   const { t } = useTranslation();
   const fmt = useFormatters();
 
   if (!subscription) {
+    // Server has no billing row, but Apple can prove one: show Apple's own
+    // facts (plan, localized price, verified dates) instead of telling a
+    // paying member their billing details don't exist. Fields Apple did not
+    // supply are omitted, never invented.
+    if (apple && experience !== "founder") {
+      return (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t("premium:billing.heading")}</Text>
+          {apple.plan ? (
+            <Fact label={t("premium:billing.plan")} value={t(`premium:period.${apple.plan}`)} />
+          ) : null}
+          {apple.displayPrice ? (
+            <Fact label={t("premium:billing.price")} value={apple.displayPrice} />
+          ) : null}
+          <Fact label={t("premium:billing.provider")} value={t("premium:provider.apple_iap")} />
+          <Fact label={t("premium:billing.status")} value={t(`premium:subStatus.${apple.status}`)} />
+          <Fact
+            label={apple.status === "active" ? t("premium:billing.activeUntil") : t("premium:billing.expires")}
+            value={fmt.date(apple.expiresAt)}
+          />
+          {apple.originalPurchaseAt ? (
+            <Fact label={t("premium:billing.since")} value={fmt.date(apple.originalPurchaseAt)} />
+          ) : null}
+        </View>
+      );
+    }
     return (
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>{t("premium:billing.heading")}</Text>
@@ -801,26 +858,30 @@ function NotYetSection({ items }: { items: Array<{ key: string; label: string; s
  * screens it describes — deliberately not under `premium:`, whose copy rules
  * exist for billing claims this section never makes.
  *
- * Alerts and Portfolio are pressable because their destinations already ship
- * (`CryptoAlertCenter`, `CryptoPortfolio`); those screens carry their own
- * premium gates, so a free member who taps through sees the honest upsell
- * rather than a wall here. UNDX crypto intelligence surfaces inside those
- * flows and has no standalone route, so its row stays inert — same rule as
- * the Command Center: nothing looks tappable unless a real screen answers.
+ * Every row is pressable and every destination is a screen that already ships:
+ * `CryptoAlertCenter`, `CryptoPortfolio`, `Watchlists` and `UndxCapabilities`.
+ * These are the same canonical screens the Crypto Command Center and deep links
+ * use — no Premium copy of any crypto system exists, so there is no second
+ * state to drift. The crypto screens carry their own premium gates, so a free
+ * member who taps through sees the honest upsell rather than a wall here.
+ * `UndxCapabilities` renders the server-authoritative capability registry
+ * (including the crypto domain), so the UNDX row can only ever advertise what
+ * UNDX can actually do right now.
  */
 type CryptoIntelligenceFeature = {
-  key: "alerts" | "portfolio" | "undx";
+  key: "alerts" | "portfolio" | "watchlist" | "undx";
   icon: keyof typeof Ionicons.glyphMap;
-  go?: (navigation: Props["navigation"]) => void;
+  go: (navigation: Props["navigation"]) => void;
 };
 
 const CRYPTO_INTELLIGENCE_FEATURES: readonly CryptoIntelligenceFeature[] = [
   { key: "alerts", icon: "pulse-outline", go: (nav) => nav.navigate("CryptoAlertCenter") },
   { key: "portfolio", icon: "pie-chart-outline", go: (nav) => nav.navigate("CryptoPortfolio") },
-  { key: "undx", icon: "sparkles-outline" }
+  { key: "watchlist", icon: "star-outline", go: (nav) => nav.navigate("Watchlists") },
+  { key: "undx", icon: "sparkles-outline", go: (nav) => nav.navigate("UndxCapabilities") }
 ];
 
-function CryptoIntelligenceSection({ navigation }: { navigation: Props["navigation"] }) {
+export function CryptoIntelligenceSection({ navigation }: { navigation: Props["navigation"] }) {
   const { t } = useTranslation();
   return (
     <View style={styles.section}>
@@ -840,34 +901,25 @@ function CryptoIntelligenceRow({
   const label = t(`discovery:crypto.intelligence.${feature.key}.label`);
   const hint = t(`discovery:crypto.intelligence.${feature.key}.hint`);
 
-  const body = (
-    <>
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityHint={hint}
+      testID={`premium-crypto-${feature.key}`}
+      style={({ pressed }) => [styles.benefitRow, pressed && styles.pressed]}
+      onPress={() => feature.go(navigation)}
+    >
       <Ionicons name={feature.icon} size={18} color={premiumTheme.gold} />
       <View style={styles.benefitBody}>
         <View style={styles.benefitHead}>
           <Text style={styles.benefitLabel} numberOfLines={2}>{label}</Text>
-          {feature.go ? <Ionicons name="chevron-forward" size={14} color={colors.muted} /> : null}
+          <Ionicons name="chevron-forward" size={14} color={colors.muted} />
         </View>
         <Text style={styles.note} numberOfLines={3}>{hint}</Text>
       </View>
-    </>
+    </Pressable>
   );
-
-  if (feature.go) {
-    const go = feature.go;
-    return (
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={label}
-        accessibilityHint={hint}
-        style={({ pressed }) => [styles.benefitRow, pressed && styles.pressed]}
-        onPress={() => go(navigation)}
-      >
-        {body}
-      </Pressable>
-    );
-  }
-  return <View style={styles.benefitRow}>{body}</View>;
 }
 
 /* -------------------------------------------------------------------------- *

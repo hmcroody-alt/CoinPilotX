@@ -1455,6 +1455,10 @@
           "label": "Portfolio",
           "hint": "Holdings, allocation, performance, concentration, and unrealized gains and losses."
         },
+        "watchlist": {
+          "label": "Watchlist",
+          "hint": "Track the coins you care about with live prices and favorites."
+        },
         "undx": {
           "label": "UNDX crypto intelligence",
           "hint": "Understand why alerts triggered and what is moving your portfolio."
@@ -2209,6 +2213,9 @@
       "status": "Status",
       "renews": "Renews",
       "expires": "Ends",
+      "price": "Price",
+      "activeUntil": "Active until",
+      "since": "Subscription since",
       "cancelPending": "This subscription is set to end and will not renew.",
       "none": "We don't have billing details for this membership.",
       "founderNone": "Founding membership — no billing, nothing to renew."

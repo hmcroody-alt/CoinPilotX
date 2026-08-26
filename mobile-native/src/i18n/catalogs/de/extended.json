@@ -1455,6 +1455,10 @@
           "label": "Portfolio",
           "hint": "Bestände, Allokation, Performance, Konzentration sowie unrealisierte Gewinne und Verluste."
         },
+        "watchlist": {
+          "label": "Watchlist",
+          "hint": "Behalte deine wichtigsten Coins mit Live-Kursen und Favoriten im Blick."
+        },
         "undx": {
           "label": "UNDX-Krypto-Intelligenz",
           "hint": "Verstehe, warum Alarme ausgelöst wurden und was dein Portfolio bewegt."
@@ -2209,6 +2213,9 @@
       "status": "Status",
       "renews": "Verlängert sich am",
       "expires": "Endet am",
+      "price": "Preis",
+      "activeUntil": "Aktiv bis",
+      "since": "Abonniert seit",
       "cancelPending": "Dieses Abo endet und wird nicht verlängert.",
       "none": "Für diese Mitgliedschaft liegen keine Abrechnungsdaten vor.",
       "founderNone": "Gründer-Mitgliedschaft – keine Abrechnung, nichts zu verlängern."

@@ -1455,6 +1455,10 @@
           "label": "Portefeuille",
           "hint": "Positions, répartition, performance, concentration et plus ou moins-values latentes."
         },
+        "watchlist": {
+          "label": "Liste de suivi",
+          "hint": "Suivez les cryptos qui comptent pour vous avec les prix en direct et vos favoris."
+        },
         "undx": {
           "label": "Intelligence crypto UNDX",
           "hint": "Comprenez pourquoi les alertes se sont déclenchées et ce qui fait bouger votre portefeuille."
@@ -2209,6 +2213,9 @@
       "status": "Statut",
       "renews": "Renouvellement",
       "expires": "Fin",
+      "price": "Prix",
+      "activeUntil": "Active jusqu'au",
+      "since": "Abonné depuis",
       "cancelPending": "Cet abonnement doit prendre fin et ne sera pas renouvelé.",
       "none": "Nous n'avons pas d'informations de facturation pour cette adhésion.",
       "founderNone": "Adhésion fondateur : aucune facturation, rien à renouveler."
