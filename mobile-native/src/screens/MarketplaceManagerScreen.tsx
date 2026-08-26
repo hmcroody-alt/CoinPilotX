@@ -143,6 +143,7 @@ import {
   useMarketplaceSoldWipe
 } from "../theme/marketplaceMotion";
 import { absentValueText, valueState } from "../api/stateLanguage";
+import { BusinessOsModules } from "../components/business/BusinessOsModules";
 
 /** Entrance slots per mode. Named so a section cannot animate out of order. */
 const SELLING_SLOT = {
@@ -1383,6 +1384,10 @@ function SellingPane({
           </Pressable>
         </Animated.View>
       </Animated.View>
+
+      {/* Roadmap for the Marketplace section. Below the "List an item" CTA so
+          the live action stays the last thing a seller reaches for. */}
+      <BusinessOsModules section="marketplace" />
     </ScrollView>
   );
 }

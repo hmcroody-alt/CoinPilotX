@@ -35,6 +35,8 @@ import { AdvertisingRoute } from "../screens/AdvertisingRoute";
 import { BusinessBuyerPreviewScreen } from "../screens/BusinessBuyerPreviewScreen";
 import { BusinessHubRoute } from "../screens/BusinessHubRoute";
 import { BusinessOsInsightsScreen } from "../screens/BusinessOsInsightsScreen";
+import { BusinessOsSectionScreen } from "../screens/BusinessOsSectionScreen";
+import { businessOsSection } from "../api/businessOs";
 import { BusinessOsPaymentsScreen } from "../screens/BusinessOsPaymentsScreen";
 import { RewardsScreen } from "../screens/RewardsScreen";
 import { BusinessProfileScreen } from "../screens/BusinessProfileScreen";
@@ -440,6 +442,19 @@ export function AppNavigator() {
           the period picker, all inside the gradient. A stack header above that
           would be a second title bar and a second back affordance. The title is
           still declared so the route keeps its name for deep links and history. */}
+      {/* The generated roadmap landing for Business OS sections with no working
+          screen yet (Customers, Team). It renders `Screen`, which draws an
+          in-content heading and no back affordance, so the stack header stays on
+          — same arrangement as the Business OS hub itself. The title comes from
+          the section registry rather than the route so it cannot drift from the
+          tile the member tapped. */}
+      <Stack.Screen
+        name="BusinessOsSection"
+        component={BusinessOsSectionScreen}
+        options={({ route }) => ({
+          title: businessOsSection(route.params?.section as never)?.label || "Business OS"
+        })}
+      />
       <Stack.Screen
         name="BusinessOsInsights"
         component={BusinessOsInsightsScreen}

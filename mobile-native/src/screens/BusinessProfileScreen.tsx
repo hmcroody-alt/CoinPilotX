@@ -104,6 +104,7 @@ import { registerSyncInvalidation } from "../core/eventSync";
 import { logiNexus } from "../theme/logiNexus";
 import { useBusinessLiveEntrance } from "../theme/businessLiveMotion";
 import { useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
+import { BusinessOsModules } from "../components/business/BusinessOsModules";
 
 const palette = logiNexus.colors.businessLive;
 
@@ -757,6 +758,12 @@ export function BusinessProfileScreen({ navigation }: Props) {
             onPress={() => navigation.navigate("VerificationCenter", { track: "business" })}
           />
         </Animated.View>
+
+        {/* The section's roadmap. Appended below the live content rather than
+            woven into it, so everything that works today keeps its order and
+            this panel reads as what it is — what is coming next, not another
+            control competing with the real ones. */}
+        <BusinessOsModules section="profile" />
       </ScrollView>
 
       <Animated.View

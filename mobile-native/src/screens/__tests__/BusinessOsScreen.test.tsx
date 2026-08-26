@@ -125,12 +125,19 @@ describe("Business OS hub", () => {
     sections.forEach((section) => {
       expect(view.getByLabelText(`${section.label}. ${section.blurb}`)).toBeTruthy();
     });
-    // Customers and Team have no backing contract yet. A tile for either would
-    // be a control that cannot do anything, which is exactly what constraint 6
-    // forbids — so they must not reach the screen at all.
+    /*
+      Customers and Team used to be asserted *absent* here: neither had a
+      backing contract, and a tile that cannot do anything is a dead control.
+      The progressive unlock layer gives them somewhere real to go — the roadmap
+      landing — so the reason for hiding them is gone, and the grid is now the
+      member's complete map of Business OS. They must be present, and present as
+      real controls, which the tap test below covers for every tile alike.
+    */
     const labels = sections.map((section) => section.label);
-    expect(labels).not.toContain("Customers");
-    expect(labels).not.toContain("Team");
+    expect(labels).toContain("Customers");
+    expect(labels).toContain("Team");
+    expect(view.getByLabelText("Customers. Customer records and segments.")).toBeTruthy();
+    expect(view.getByLabelText("Team. People who help run the business.")).toBeTruthy();
   });
 
   it("dispatches the navigation the registry describes when a tile is tapped", async () => {

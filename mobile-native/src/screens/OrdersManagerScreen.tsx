@@ -53,6 +53,7 @@ import { RootStackParamList } from "../navigation/types";
 import { ordersLight } from "../theme/ordersLight";
 import { useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
 import { useStoreEntrance } from "../theme/storeMotion";
+import { BusinessOsModules } from "../components/business/BusinessOsModules";
 
 const SLOT = { header: 0, offline: 1, rail: 2, list: 3 } as const;
 const SECTION_COUNT = Object.keys(SLOT).length;
@@ -246,6 +247,9 @@ export function OrdersManagerScreen({ route, navigation }: Props) {
           ))
         )}
       </Animated.View>
+
+      {/* Roadmap for the Orders section. */}
+      <BusinessOsModules section="orders" />
     </ScrollView>
   );
 

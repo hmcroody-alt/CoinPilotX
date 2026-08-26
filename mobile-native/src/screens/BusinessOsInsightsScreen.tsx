@@ -98,6 +98,7 @@ import { useInsightsPeriodFade } from "../theme/insightsMotion";
 import { useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
 import { STORE_STAGGER_MS, useStoreEntrance } from "../theme/storeMotion";
 import { absentValueText } from "../api/stateLanguage";
+import { BusinessOsModules } from "../components/business/BusinessOsModules";
 
 /** Dismissed tips, per rule and subject. Device-local: it is a view preference. */
 const DISMISSALS_KEY = "pulse.insights.tipDismissals.v1";
@@ -942,6 +943,9 @@ export function BusinessOsInsightsScreen({ route, navigation }: Props = {}) {
           reducedMotion={reducedMotion}
         />
         ) : null}
+
+        {/* Roadmap for the Insights section, below the live charts. */}
+        <BusinessOsModules section="insights" />
       </ScrollView>
     </View>
   );

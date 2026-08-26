@@ -284,9 +284,43 @@ describe("capability guards", () => {
     expect(businessOsNavigationArgs(messages)).toEqual(["BusinessOsMessages", undefined]);
   });
 
+  /**
+   * This used to reach for `customers` as its example of an unrouted section.
+   * Customers is routed now — it opens the roadmap landing — so the case is
+   * constructed instead. The guard itself still matters: it is what turns a
+   * registry entry nobody pointed anywhere into a loud failure rather than a
+   * tile that silently does nothing.
+   */
   it("refuses to produce navigation args for an unrouted section", () => {
-    const customers = businessOsSection("customers")!;
-    expect(() => businessOsNavigationArgs(customers)).toThrow(/no route/);
+    const unrouted = { ...businessOsSection("customers")!, route: undefined };
+    expect(() => businessOsNavigationArgs(unrouted)).toThrow(/no route/);
+  });
+
+  it("sends each preview section to the roadmap landing carrying its own key", () => {
+    expect(businessOsNavigationArgs(businessOsSection("customers")!)).toEqual([
+      "BusinessOsSection",
+      { section: "customers" }
+    ]);
+    expect(businessOsNavigationArgs(businessOsSection("team")!)).toEqual([
+      "BusinessOsSection",
+      { section: "team" }
+    ]);
+  });
+
+  /**
+   * `activeBusinessOsSections` means "sections with real data behind them" and
+   * several callers consume it as such. Preview sections leaking into it would
+   * put Customers and Team in front of code that expects a live contract.
+   * Showing them on the hub and treating them as backed are different claims.
+   */
+  it("keeps preview sections out of the active list while showing them on the hub", () => {
+    const active = activeBusinessOsSections().map((section) => section.key);
+    expect(active).not.toContain("customers");
+    expect(active).not.toContain("team");
+
+    const hub = businessOsHubSections().map((section) => section.key);
+    expect(hub).toContain("customers");
+    expect(hub).toContain("team");
   });
 
   it("keeps every mission section present in the registry", () => {

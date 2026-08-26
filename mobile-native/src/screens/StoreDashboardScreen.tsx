@@ -71,6 +71,7 @@ import { RootStackParamList } from "../navigation/types";
 import { storeLight } from "../theme/storeLight";
 import { useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
 import { useStoreAmbient, useStoreEntrance, STORE_AMBIENT, STORE_STAGGER_MS } from "../theme/storeMotion";
+import { BusinessOsModules } from "../components/business/BusinessOsModules";
 
 /** How many listings the section previews before "See all". */
 const PREVIEW_COUNT = 6;
@@ -648,6 +649,9 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
                 reducedMotion={reducedMotion}
               />
             </Animated.View>
+
+            {/* Roadmap for the Store section, below the footer CTAs. */}
+            <BusinessOsModules section="store" />
           </View>
         }
       />

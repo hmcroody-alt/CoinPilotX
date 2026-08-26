@@ -86,11 +86,25 @@ export type BusinessOsSection = {
   /** True when the destination is a bottom tab rather than a root-stack screen. */
   tab?: boolean;
   /**
-   * True when a live backend contract exists for this section today. Sections
-   * without one are not rendered as controls, so the shell never shows a button
-   * that cannot do anything.
+   * True when a live backend contract exists for this section today.
+   *
+   * This used to double as "render this section at all", so an unbacked section
+   * was invisible on the hub. It no longer does: `preview` carries that decision
+   * now, and `backed` means only what it says. Anything reading this flag to
+   * decide whether real data can be fetched is still correct.
    */
   backed: boolean;
+  /**
+   * True when the section is rendered as a control but opens the generated
+   * roadmap landing (`BusinessOsSectionScreen`) rather than a working screen.
+   *
+   * The invariant that replaced "unbacked sections have no route": an unbacked
+   * section may point at `BusinessOsSection` and nowhere else. That keeps the
+   * original guarantee — no tap lands in a half-built workflow — while letting
+   * the member see the section exists. Enforced in
+   * `navigation/__tests__/businessOsRoutes.test.ts`.
+   */
+  preview?: boolean;
 };
 
 /**
@@ -197,6 +211,11 @@ export const BUSINESS_OS_SECTIONS: BusinessOsSection[] = [
     label: "Customers",
     blurb: "Customer records and segments.",
     icon: "people-outline",
+    // No live contract of its own, so it opens the generated section landing
+    // rather than a workflow screen. See `preview` on the type below.
+    route: "BusinessOsSection",
+    params: { section: "customers" },
+    preview: true,
     backed: false
   },
   {
@@ -240,6 +259,9 @@ export const BUSINESS_OS_SECTIONS: BusinessOsSection[] = [
     label: "Team",
     blurb: "People who help run the business.",
     icon: "person-add-outline",
+    route: "BusinessOsSection",
+    params: { section: "team" },
+    preview: true,
     backed: false
   },
   {
@@ -262,14 +284,30 @@ export const BUSINESS_OS_SECTIONS: BusinessOsSection[] = [
   }
 ];
 
-/** Sections that have a live contract and can be presented as working controls. */
+/**
+ * Sections that have a live contract and can be presented as working controls.
+ *
+ * Unchanged, and deliberately so: several callers use this to mean "sections I
+ * can fetch real data for". Preview sections are not that, and must not leak
+ * into those callers. Use `businessOsHubSections()` for "what the grid shows".
+ */
 export function activeBusinessOsSections() {
   return BUSINESS_OS_SECTIONS.filter((section) => section.backed && Boolean(section.route));
 }
 
-/** Sections shown on the Business OS hub — everything except the hub itself. */
+/**
+ * Sections shown on the Business OS hub — everything routable except the hub
+ * itself, including preview sections.
+ *
+ * Preview sections are included on purpose. The grid is the member's map of what
+ * Business OS is; omitting the unbuilt parts made the map quietly wrong. Their
+ * destination is the roadmap landing, so including them adds no dead taps.
+ */
 export function businessOsHubSections() {
-  return activeBusinessOsSections().filter((section) => section.key !== "dashboard");
+  return BUSINESS_OS_SECTIONS.filter(
+    (section) =>
+      section.key !== "dashboard" && Boolean(section.route) && (section.backed || section.preview)
+  );
 }
 
 /**

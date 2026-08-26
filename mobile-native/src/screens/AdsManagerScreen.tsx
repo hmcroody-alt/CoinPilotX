@@ -108,6 +108,7 @@ import { adsLight } from "../theme/adsLight";
 import { useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
 import { useStoreEntrance, STORE_STAGGER_MS } from "../theme/storeMotion";
 import { absentValueText, type SurfaceState } from "../api/stateLanguage";
+import { BusinessOsModules } from "../components/business/BusinessOsModules";
 
 const MODE_CACHE_KEY = "ads.lastMode.v1";
 
@@ -1124,6 +1125,9 @@ export function AdsManagerScreen({ route, navigation }: Props) {
           </Text>
         </Animated.View>
       ) : null}
+
+      {/* Roadmap for the Advertising section. */}
+      <BusinessOsModules section="advertising" />
     </ScrollView>
   );
 

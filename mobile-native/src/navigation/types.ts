@@ -1,5 +1,6 @@
 import { NavigatorScreenParams } from "@react-navigation/native";
 
+import type { BusinessOsSectionKey } from "../api/businessOs";
 import type { MarketplaceListing } from "../api/marketplace";
 import type { MarketplaceFulfillmentKind } from "../api/marketplaceFulfillment";
 
@@ -278,6 +279,12 @@ export type RootStackParamList = {
       }
     | undefined;
   BusinessOsInsights: { title?: string } | undefined;
+  /**
+   * The generated roadmap landing for a Business OS section that has no working
+   * screen yet. `section` selects which one; without it the screen says so
+   * rather than rendering blank.
+   */
+  BusinessOsSection: { section?: BusinessOsSectionKey; title?: string } | undefined;
   BusinessOsPayments: { title?: string; accountId?: number } | undefined;
   /**
    * The money layers under the Payments hub — the screens a seller opens to

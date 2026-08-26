@@ -47,9 +47,40 @@ describe("Business OS section routes", () => {
     expect(missing).toEqual([]);
   });
 
-  it("gives unbacked sections no route at all", () => {
-    BUSINESS_OS_SECTIONS.filter((section) => !section.backed).forEach((section) => {
-      expect(section.route).toBeUndefined();
+  /**
+   * This replaces "gives unbacked sections no route at all".
+   *
+   * That rule enforced the original policy: a section without a live contract
+   * was given no route, so the hub filtered it out and the member never saw it.
+   * The progressive unlock layer reverses the visibility half of that decision —
+   * Customers and Team are rendered now — but keeps the half that mattered: a
+   * section with nothing behind it must not open a workflow screen.
+   *
+   * So the guarantee is now a whitelist of one. An unbacked section may point at
+   * `BusinessOsSection`, the generated roadmap landing, and at nothing else.
+   * Repointing Customers at a half-built customer screen still fails here.
+   */
+  it("sends every unbacked section to the roadmap landing and nowhere else", () => {
+    const unbacked = BUSINESS_OS_SECTIONS.filter((section) => !section.backed);
+    // Guards the guard: if the registry ever had no unbacked sections, this test
+    // would otherwise pass by iterating nothing.
+    expect(unbacked.length).toBeGreaterThan(0);
+    unbacked.forEach((section) => {
+      expect(section.route).toBe("BusinessOsSection");
+      expect(section.preview).toBe(true);
+      expect(section.tab).toBeFalsy();
+    });
+  });
+
+  it("registers the roadmap landing it sends them to", () => {
+    expect(registeredStackRoutes().has("BusinessOsSection")).toBe(true);
+  });
+
+  it("marks nothing as a preview that already has a real screen", () => {
+    // `preview` means "opens the roadmap instead of a working screen". A backed
+    // section carrying it would be hiding a finished screen behind a stub.
+    BUSINESS_OS_SECTIONS.filter((section) => section.preview).forEach((section) => {
+      expect(section.backed).toBe(false);
     });
   });
 

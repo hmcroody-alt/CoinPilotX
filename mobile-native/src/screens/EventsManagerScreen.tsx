@@ -47,6 +47,7 @@ import { BOTTOM_NAV_CONTENT_CLEARANCE } from "../navigation/BottomNavVisibility"
 import { RootStackParamList } from "../navigation/types";
 import { eventsLight } from "../theme/eventsLight";
 import { useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
+import { BusinessOsModules } from "../components/business/BusinessOsModules";
 
 const TAB_KEY = "pulsesoc.native.events.tab";
 const VALID_TABS: EventTab[] = ["upcoming", "past", "drafts"];
@@ -244,6 +245,10 @@ export function EventsManagerScreen({ route, navigation }: Props) {
             })
           )}
         </View>
+
+        {/* Roadmap for the Events section, inside the scroll so it sits above
+            the fixed "Create event" footer rather than fighting it. */}
+        <BusinessOsModules section="events" />
       </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
