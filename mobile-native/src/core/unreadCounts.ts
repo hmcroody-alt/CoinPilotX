@@ -46,7 +46,7 @@ import {
   totalUnreadCount
 } from "../api/notifications";
 import { registerSyncInvalidation } from "./eventSync";
-import { envFlagOn } from "./envFlag";
+import { isFlagValueOn } from "./envFlag";
 
 export type UnreadSnapshot = {
   /** The bell number: notification unreads (messages excluded — see header doc). */
@@ -223,9 +223,14 @@ export function useBellCount(): number {
 export const SCOPED_BADGES_FLAG = "EXPO_PUBLIC_SCOPED_BADGES";
 
 /** True when a build has opted into scope-stating badges. Off by default.
- *  Reads the shared truthy set — see `./envFlag`. */
+ *  Reads the shared truthy set — see `./envFlag`.
+ *
+ *  Spelled out rather than read through `SCOPED_BADGES_FLAG`, which holds the
+ *  same string: `babel-preset-expo` inlines `process.env.X` only for a
+ *  StringLiteral key, so the constant form was never substituted and read
+ *  undefined on device. The constant stays because the tests name it. */
 export function scopedBadgesEnabled(): boolean {
-  return envFlagOn(SCOPED_BADGES_FLAG);
+  return isFlagValueOn(process.env.EXPO_PUBLIC_SCOPED_BADGES);
 }
 
 /**

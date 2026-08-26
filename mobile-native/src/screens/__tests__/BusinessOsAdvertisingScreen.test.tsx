@@ -113,7 +113,7 @@ async function renderScreen() {
   // is for CPU contention under a full parallel run. It has to stay below Jest's
   // 5s per-test budget — a longer wait here cannot make a test pass, it only
   // converts a legible "still loading" failure into a bare timeout.
-  await waitFor(() => expect(view.queryByText("Loading advertising…")).toBeNull(), { timeout: 4000 });
+  await waitFor(() => expect(view.queryAllByText("Loading advertising…").length).toBe(0), { timeout: 4000 });
   return view;
 }
 

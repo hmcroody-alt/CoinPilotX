@@ -204,6 +204,10 @@ NATIVE_ROUTES: dict[str, str] = {
     "UndxActionCenter": "/pulse/undx/actions",
     "AlertManagement": "/pulse/alerts/:alertId?",
     "CryptoAlertManagement": "/pulse/crypto/alerts",
+    # AppNavigator.tsx:549 registers this screen; nativeRouteActions.ts:168 is the
+    # path that reaches it. Declared here so a crypto record can land the member on
+    # their holdings rather than on the nearest screen that happened to exist.
+    "Portfolio": "/pulse/portfolio",
     "AccountCenter": "/pulse/settings/:section",
     "AccountDevices": "/pulse/settings/devices",
     "AccountHealth": "/pulse/account-health",
@@ -2331,6 +2335,25 @@ for _capability_id, _area, _resource, _screen, _operation in (
     # actually shows the setting.
     ("localization.preferences", "Localization", "localization_preference", "AccountCenter", "localization_preferences"),
     ("presence.privacy.status", "Presence", "presence_preference", "AccountCenter", "presence_privacy_status"),
+    # Crypto intelligence. Premium, and the entitlement is checked inside each
+    # read model rather than declared here -- the registry describes what a
+    # capability is and where it lands, and a member who is not entitled still
+    # gets a grounded answer naming Premium as the reason.
+    #
+    # Holdings are their own product area because they are their own screen and
+    # their own object. The first draft filed both of these under "Crypto", which
+    # looked tidy and was a mistake: the attention layer spends its capability
+    # budget round-robin across activated areas, so an area named as a prefix of
+    # "Crypto alerts" and matching the same vocabulary took half the budget from
+    # it and pushed ``crypto.alerts.list`` out of focus entirely. The module's own
+    # notes warn about exactly this shape ("Privacy" beside "Privacy settings").
+    ("crypto.portfolio.summary", "Crypto portfolio", "crypto_holding", "Portfolio", "crypto_portfolio_summary"),
+    # Filed under alerts rather than under a market area of its own. The sampled
+    # series exists to make window-based alert conditions decidable, the alerts
+    # screen is where a member acts on a reading, and there is no separate native
+    # screen for the series itself -- inventing one here would send them to a
+    # route the client cannot resolve.
+    ("crypto.market.window", "Crypto alerts", "market_window", "CryptoAlertManagement", "crypto_market_window"),
 ):
     _live(
         _capability_id,

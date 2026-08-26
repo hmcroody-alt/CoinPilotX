@@ -14,11 +14,32 @@ import os
 import signal
 import time
 
-from services import alert_engine, auto_signals_service
+from services import alert_engine, auto_signals_service, live_market_service, market_observations
 from services.sentinel import runtime as sentinel_runtime
 
 
 RUNNING = True
+
+#: Matches the board size ``live_market_service.get_crypto_quote`` asks for, so
+#: sampling shares that call's 45s cache entry instead of adding a second
+#: provider request per cycle.
+SAMPLE_BOARD_LIMIT = 80
+
+
+def _sample_market():
+    """Record one observation per symbol. This is the series' only writer.
+
+    Runs before the alert sweep so a window evaluated this cycle includes the
+    reading this cycle took. Failures are logged and swallowed: every rule that
+    does not use a window works perfectly well without the series, and a
+    provider blip must not stop the sweep.
+    """
+    try:
+        board = live_market_service.get_crypto_market(limit=SAMPLE_BOARD_LIMIT)
+        return market_observations.record_board(board)
+    except Exception as exc:
+        logging.exception("Market observation sampling failed: %s", exc)
+        return {"ok": False, "recorded": 0, "reason": str(exc)}
 
 
 def _handle_stop(_signum, _frame):
@@ -43,12 +64,14 @@ def main():
     while RUNNING:
         try:
             auto_result = auto_signals_service.process_enabled_users(limit=200)
+            sample = _sample_market()
             result = alert_engine.evaluate_all_active_alerts(limit=limit, worker_name="alert_worker")
             sentinel_results = sentinel_runtime.run_scheduled_ingestion()
             logging.info(
-                "Alert worker cycle auto_users=%s auto_rules=%s checked=%s triggered=%s errors=%s latency_ms=%s sentinel_runs=%s",
+                "Alert worker cycle auto_users=%s auto_rules=%s sampled=%s checked=%s triggered=%s errors=%s latency_ms=%s sentinel_runs=%s",
                 auto_result.get("checked_users"),
                 auto_result.get("maintained_rules"),
+                sample.get("recorded"),
                 result.get("checked_count"),
                 result.get("triggered_count"),
                 result.get("error_count"),

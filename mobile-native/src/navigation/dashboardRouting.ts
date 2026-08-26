@@ -115,6 +115,48 @@ export function openDashboardRoute(navigation: DashboardNavigation, route: strin
     navigation.navigate("BuyerOrders", { title: "Purchase History" });
     return;
   }
+  // The four crypto rules sit above `/premium` deliberately. The server serves
+  // each of them under a premium-scoped spelling as well as a bare one —
+  // `/pulse/premium/portfolio` alongside `/pulse/portfolio` and `/portfolio` —
+  // and `includes("/premium")` matches the longest of those. Under the old
+  // order a link to a member's own holdings opened the upgrade screen: the app
+  // offering to sell someone something they already pay for.
+  //
+  // Portfolio was moved first, on report. The other three had the identical
+  // shape and were still below `/premium`, so they are moved as a family
+  // rather than one at a time. Ordering is the whole fix — the rules
+  // themselves are unchanged apart from the alerts spelling noted below.
+  //
+  // Portfolio stays first of the four: `/pulse/premium/intelligence/portfolio`
+  // is a real route and matches both it and the intelligence rule, and the
+  // holdings view is the right destination for it.
+  if (path.includes("/portfolio")) {
+    navigation.navigate("Portfolio");
+    return;
+  }
+  // Both spellings are matched because the dashboard links to
+  // `/dashboard/crypto/watchlists` while older entries use a bare `/watchlists`.
+  if (path.includes("/crypto/watchlists") || path.includes("/watchlists")) {
+    navigation.navigate("Watchlists", { title: "Watchlists" });
+    return;
+  }
+  // `/alerts` rather than `/crypto/alerts`. The bare spelling is a real route
+  // and matching only the crypto one let it fall through to the
+  // `DashboardLegacyModule` catch-all below, which opens the unmatched path in
+  // a webview — and that webview is what renders "The requested PulseSoc
+  // service was not found." Its three siblings all accepted their bare
+  // spelling; alerts was the one that did not.
+  //
+  // `/dashboard/crypto/whale-alerts` is not swept up: the separator there is a
+  // hyphen, not a slash, so it still reaches its own module.
+  if (path.includes("/alerts")) {
+    navigation.navigate("AlertManagement", { title: "Alerts" });
+    return;
+  }
+  if (path.includes("/intelligence") || path.includes("/signals") || path.includes("/briefing") || path.includes("/forecasts")) {
+    navigation.navigate("IntelligenceCenter", { title: "Intelligence" });
+    return;
+  }
   if (path.includes("/subscriptions") || path.includes("/premium")) {
     navigation.navigate("Premium");
     return;
@@ -161,21 +203,6 @@ export function openDashboardRoute(navigation: DashboardNavigation, route: strin
   }
   if (path.includes("/growth") || path.includes("/ads")) {
     navigation.navigate("GrowthCenter", { title: "Growth Center" });
-    return;
-  }
-  // Before the alerts rule only for readability — the two paths are disjoint.
-  // Both spellings are matched because the dashboard links to
-  // `/dashboard/crypto/watchlists` while older entries use a bare `/watchlists`.
-  if (path.includes("/crypto/watchlists") || path.includes("/watchlists")) {
-    navigation.navigate("Watchlists", { title: "Watchlists" });
-    return;
-  }
-  if (path.includes("/crypto/alerts")) {
-    navigation.navigate("AlertManagement", { title: "Alerts" });
-    return;
-  }
-  if (path.includes("/intelligence") || path.includes("/signals") || path.includes("/briefing") || path.includes("/forecasts")) {
-    navigation.navigate("IntelligenceCenter", { title: "Intelligence" });
     return;
   }
   if (path.includes("/saved")) {
@@ -238,7 +265,7 @@ export function classifyDashboardActionRoute(route: string): DashboardActionRout
     return {
       kind: "native_shell_route",
       label: "Native shell",
-      detail: "Opens the native dashboard module shell backed by the production module map.",
+      detail: "Opens this dashboard module in the app.",
       route: raw
     };
   }
@@ -254,7 +281,7 @@ export function classifyDashboardActionRoute(route: string): DashboardActionRout
     return {
       kind: "native_route",
       label: "Native",
-      detail: "Opens an existing native PulseSoc surface.",
+      detail: "Opens an existing PulseSoc screen in the app.",
       route: raw
     };
   }
@@ -262,14 +289,14 @@ export function classifyDashboardActionRoute(route: string): DashboardActionRout
     return {
       kind: "native_provider_boundary",
       label: "Native boundary",
-      detail: "Legacy dashboard URL is represented by the native module boundary.",
+      detail: "This older dashboard page opens as its in-app equivalent.",
       route: raw
     };
   }
   return {
     kind: "missing_invalid_route",
     label: "Invalid",
-    detail: "No native, shell, or provider-boundary destination is registered for this action.",
+    detail: "This action does not have a destination yet.",
     route: raw
   };
 }
@@ -283,7 +310,7 @@ export function openDashboardWebFallback(route: string) {
     ok: false,
     route: normalizeDashboardPath(route),
     status: "native_provider_boundary",
-    message: "This dashboard action is held inside the native app until its protected provider operation is available."
+    message: "This action stays in the app until its protected workflow is ready."
   };
 }
 

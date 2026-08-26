@@ -163,7 +163,7 @@ beforeEach(() => {
 describe("Advertising tile — a refresh is additive, never subtractive", () => {
   it("keeps the campaign list mounted while the post-mutation reload runs", async () => {
     const view = render(<BusinessOsAdvertisingScreen />);
-    await waitFor(() => expect(view.queryByText("Loading advertising…")).toBeNull(), { timeout: 4000 });
+    await waitFor(() => expect(view.queryAllByText("Loading advertising…").length).toBe(0), { timeout: 4000 });
     expect(view.getByText("Launch")).toBeTruthy();
 
     // Pausing a campaign ends with `await load()`. The render gates used to read
@@ -207,7 +207,7 @@ describe("Store tile — one request's failure cannot void another's success", (
     });
 
     const view = render(<SellerStoreScreen navigation={{ navigate: jest.fn() }} />);
-    await waitFor(() => expect(view.queryByText("Loading seller controls")).toBeNull());
+    await waitFor(() => expect(view.queryAllByText("Loading seller controls").length).toBe(0));
 
     // Three canonical listings, not the seven stale cached ones.
     expect(view.getByText("Listings loaded")).toBeTruthy();
@@ -230,7 +230,7 @@ describe("Store tile — one request's failure cannot void another's success", (
 
   it("collapses concurrent sync invalidations onto a single reload", async () => {
     const view = render(<SellerStoreScreen navigation={{ navigate: jest.fn() }} />);
-    await waitFor(() => expect(view.queryByText("Loading seller controls")).toBeNull());
+    await waitFor(() => expect(view.queryAllByText("Loading seller controls").length).toBe(0));
     const baseline = mockSellerSnapshot.mock.calls.length;
 
     // One marketplace write invalidates inventory, marketplace and orders. All
@@ -252,7 +252,7 @@ describe("Store tile — one request's failure cannot void another's success", (
 
   it("registers each invalidation channel exactly once", async () => {
     const view = render(<SellerStoreScreen navigation={{ navigate: jest.fn() }} />);
-    await waitFor(() => expect(view.queryByText("Loading seller controls")).toBeNull());
+    await waitFor(() => expect(view.queryAllByText("Loading seller controls").length).toBe(0));
     // A `load` whose identity churns drags these subscriptions with it, so a
     // duplicate here is the visible symptom of an unstable callback.
     expect(syncHandlers.seller_inventory).toHaveLength(1);

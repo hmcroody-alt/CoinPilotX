@@ -1434,12 +1434,14 @@
       }
     },
     "launch": {
-      "comingSoon": {
-        "title": "قريباً",
-        "body": "نحن نبني هذا الجزء من عالم PulseSoc. هذه الميزة تستعد للإطلاق.",
-        "gotIt": "حسناً",
-        "hint": "تستعد للإطلاق."
-      }
+      "comingSoonTitle": "قريباً",
+      "comingSoonBody": "نحن نبني هذا الجزء من عالم PulseSoc. هذه الميزة قيد التحضير للإطلاق.",
+      "comingSoonAction": "حسناً",
+      "statusComingSoon": "قريباً",
+      "statusBuilding": "قيد الإنشاء",
+      "statusPreparing": "قيد التحضير للإطلاق",
+      "lockedLabel": "{{module}}. قريباً.",
+      "lockedHint": "يعرض موعد توفر هذه الميزة."
     }
   },
   "discovery": {
@@ -1519,6 +1521,22 @@
       "collectionName": "اسم المجموعة",
       "saveToCollection": "الحفظ في مجموعة"
     },
+    "dashboardMap": {
+      "openSection": "فتح {{section}}",
+      "sections": {
+        "account": "مركز قيادة الحساب",
+        "network": "مركز قيادة الشبكة",
+        "creator": "مركز قيادة المبدعين",
+        "intelligence": "مركز قيادة الذكاء",
+        "economy": "مركز قيادة الاقتصاد",
+        "media": "مركز قيادة الوسائط",
+        "crypto": "مركز قيادة العملات الرقمية",
+        "safety": "مركز قيادة السلامة",
+        "ads": "مركز قيادة الإعلانات",
+        "ai": "مركز قيادة الذكاء الاصطناعي",
+        "system": "مركز قيادة النظام"
+      }
+    },
     "crypto": {
       "intelligence": {
         "heading": "ذكاء الكريبتو",
@@ -1531,9 +1549,9 @@
           "label": "المحفظة",
           "hint": "الممتلكات، والتوزيع، والأداء، والتركيز، والأرباح والخسائر غير المحققة."
         },
-        "watchlist": {
-          "label": "قائمة المتابعة",
-          "hint": "تابع العملات التي تهمك مع الأسعار المباشرة والمفضلة."
+        "watchlists": {
+          "label": "قوائم المتابعة",
+          "hint": "تابع الأصول التي تهمك بأسعار مباشرة، ووجّه تنبيهًا إلى قائمة كاملة."
         },
         "undx": {
           "label": "ذكاء الكريبتو من UNDX",
@@ -1690,22 +1708,6 @@
           "y1": "سنة",
           "all": "الكل"
         }
-      }
-    },
-    "dashboardMap": {
-      "openSection": "فتح {{section}}",
-      "sections": {
-        "account": "مركز قيادة الحساب",
-        "network": "مركز قيادة الشبكة",
-        "creator": "مركز قيادة المبدعين",
-        "intelligence": "مركز قيادة الذكاء",
-        "economy": "مركز قيادة الاقتصاد",
-        "media": "مركز قيادة الوسائط",
-        "crypto": "مركز قيادة العملات الرقمية",
-        "safety": "مركز قيادة السلامة",
-        "ads": "مركز قيادة الإعلانات",
-        "ai": "مركز قيادة الذكاء الاصطناعي",
-        "system": "مركز قيادة النظام"
       }
     }
   },
@@ -2305,12 +2307,18 @@
       "status": "الحالة",
       "renews": "يتجدّد في",
       "expires": "ينتهي في",
-      "price": "السعر",
-      "activeUntil": "نشط حتى",
-      "since": "مشترك منذ",
       "cancelPending": "هذا الاشتراك مضبوط على الانتهاء ولن يتجدّد.",
       "none": "لا تتوفّر لدينا بيانات فوترة لهذه العضوية.",
-      "founderNone": "عضوية مؤسِّس — لا فوترة ولا تجديد."
+      "founderNone": "عضوية مؤسِّس — لا فوترة ولا تجديد.",
+      "planValue": "PulseSoc Premium — {{period}}",
+      "planValueUnknown": "PulseSoc Premium",
+      "price": "السعر",
+      "renewsOn": "يتجدد في",
+      "expiresOn": "ينتهي في",
+      "since": "مشترك منذ",
+      "loadingValue": "جارٍ التحميل",
+      "graceNote": "تحاول Apple إعادة تحصيل دفعتك. يظل وصولك فعّالاً في هذه الأثناء.",
+      "retryNote": "لم تتم عملية الدفع الأخيرة. حدّث طريقة الدفع في App Store للمتابعة."
     },
     "period": {
       "monthly": "شهري",
@@ -2322,7 +2330,8 @@
     "provider": {
       "apple_iap": "Apple",
       "stripe": "بطاقة",
-      "unknown": "—"
+      "unknown": "—",
+      "apple_app_store": "App Store من Apple"
     },
     "subStatus": {
       "active": "نشط",
@@ -2354,11 +2363,21 @@
       "undx": {
         "advanced": "UNDX المتقدم"
       },
+      "crypto": {
+        "advanced_alerts": "تنبيهات العملات الرقمية المتقدمة",
+        "portfolio": "حيازات محفظة غير محدودة",
+        "intelligence": "ذكاء UNDX للعملات الرقمية"
+      },
       "creator_studio_pro": "Creator Studio Pro",
       "founder_hub_access": "الوصول إلى Founder Hub",
       "premium_upload_limits": "حدود رفع أعلى",
       "priority_support": "دعم ذو أولوية",
-      "early_access_features": "وصول مبكر إلى الميزات الجديدة"
+      "early_access_features": "وصول مبكر إلى الميزات الجديدة",
+      "verification": {
+        "blue_check": {
+          "apply": "إمكانية التقدّم بطلب Blue Check"
+        }
+      }
     },
     "notYet": {
       "heading": "قادم ضمن خطتك",
@@ -2444,6 +2463,375 @@
     "free": {
       "heading": "مجاني دائمًا",
       "body": "يبقى مجانيًا كلٌّ من موجزك ومنشوراتك والريلز والحالة والرسائل والمكالمات والبث المباشر والملف الشخصي والأمان واستعادة الحساب. بريميوم يضيف إلى PulseSoc ولا يسلب منه شيئًا."
+    },
+    "crypto": {
+      "portfolio": {
+        "title": "المحفظة",
+        "subtitle": "ممتلكاتك مُقيَّمة بالأسعار المباشرة.",
+        "loadError": "تعذّر تحميل محفظتك.",
+        "footnote": "القيم غير محقّقة: ممتلكاتك بسعر اليوم مقابل متوسط سعر الشراء الذي أدخلته. لا يتتبّع PulseSoc الصفقات الفردية.",
+        "total": {
+          "label": "القيمة الإجمالية",
+          "partialLabel": "القيمة الإجمالية لـ {{priced}} من {{holdings}}",
+          "incomplete": "الأسعار المباشرة غير متاحة لبعض الممتلكات. الإجمالي يشمل بقية ممتلكاتك فقط.",
+          "basisNote_zero": "لا توجد ممتلكات بلا سعر شراء.",
+          "basisNote_one": "ممتلَك واحد بلا سعر شراء، لذا لا ربح له ولا خسارة.",
+          "basisNote_two": "ممتلكان بلا سعر شراء، لذا لا ربح لهما ولا خسارة.",
+          "basisNote_few": "{{count}} ممتلكات بلا سعر شراء، لذا لا ربح لها ولا خسارة.",
+          "basisNote_many": "{{count}} ممتلكًا بلا سعر شراء، لذا لا ربح لها ولا خسارة.",
+          "basisNote_other": "{{count}} ممتلك بلا سعر شراء، لذا لا ربح له ولا خسارة."
+        },
+        "row": {
+          "units": "{{amount}} وحدة",
+          "avg": "متوسط {{price}}",
+          "noBasis": "بلا سعر شراء",
+          "price": "السعر {{price}}",
+          "priceUnavailable": "السعر غير متاح"
+        },
+        "form": {
+          "title": "إضافة ممتلَك",
+          "symbolLabel": "رمز العملة",
+          "symbolPlaceholder": "مثل BTC",
+          "amountLabel": "الكمية",
+          "amountPlaceholder": "الكمية التي تملكها",
+          "basisLabel": "متوسط سعر الشراء",
+          "basisPlaceholder": "ما دفعته لكل عملة",
+          "basisHint": "اترك سعر الشراء فارغًا إن كنت لا تعرفه. سنقيّم الممتلَك على أي حال، ولن نعرض له ربحًا أو خسارة فحسب.",
+          "symbolRequired": "أدخل رمزًا مثل BTC أو ETH أو SOL.",
+          "amountRequired": "أدخل الكمية التي تملكها.",
+          "submit": "إضافة الممتلَك",
+          "adding": "جارٍ الإضافة…",
+          "added": "تمت إضافة الممتلَك.",
+          "addFailed": "تعذّرت إضافة هذا الممتلَك."
+        },
+        "holdings": {
+          "title": "الممتلكات",
+          "empty": "لا توجد ممتلكات بعد. أضف أولها بالأعلى."
+        },
+        "movers": {
+          "title": "أكبر التحركات",
+          "excluded_zero": "كل الممتلكات مُصنَّفة.",
+          "excluded_one": "ممتلَك واحد غير مُصنَّف: بلا سعر مباشر أو بلا سعر شراء.",
+          "excluded_two": "ممتلكان غير مُصنَّفين: بلا سعر مباشر أو بلا سعر شراء.",
+          "excluded_few": "{{count}} ممتلكات غير مُصنَّفة: بلا سعر مباشر أو بلا سعر شراء.",
+          "excluded_many": "{{count}} ممتلكًا غير مُصنَّف: بلا سعر مباشر أو بلا سعر شراء.",
+          "excluded_other": "{{count}} ممتلك غير مُصنَّف: بلا سعر مباشر أو بلا سعر شراء."
+        },
+        "remove": {
+          "title": "إزالة الممتلَك",
+          "body": "إزالة {{symbol}} من محفظتك؟ لن يؤثر ذلك على قوائم المتابعة أو التنبيهات.",
+          "a11y": "إزالة {{symbol}}",
+          "done": "تمت إزالة الممتلَك.",
+          "failed": "تعذّرت إزالة هذا الممتلَك."
+        },
+        "upgrade": {
+          "title": "بلغت الحد المجاني",
+          "body": "يزيل Premium الحد الأقصى لعدد الممتلكات التي يمكنك متابعتها. والأسعار والقيم والسجل هي نفسها في الحالتين.",
+          "action": "عرض Premium"
+        }
+      },
+      "alerts": {
+        "title": "إدارة التنبيهات",
+        "loading": "جارٍ تحميل تنبيهاتك…",
+        "loadError": "تعذّر تحميل تنبيهاتك.",
+        "subtitle": "تنبيهاتك للعملات الرقمية والسوق، كما هي مضبوطة لدى PulseSoc.",
+        "subtitleOffline": "نعرض التنبيهات المحفوظة على هذا الجهاز.",
+        "refresh": "تحديث",
+        "refreshing": "جارٍ التحديث",
+        "hero": {
+          "eyebrow": "تنبيهاتك",
+          "body": "أنشئ تنبيهاتك وعدّلها وأوقفها مؤقتًا واستأنفها وكرّرها واختبرها، وراجع ما فعله كل واحد منها."
+        },
+        "worker": {
+          "linked": "الفحوصات تعمل",
+          "stale": "الفحوصات متأخرة"
+        },
+        "readiness": {
+          "title": "جاهزية التسليم",
+          "check": "فحص",
+          "checking": "جارٍ الفحص",
+          "test": "اختبار",
+          "testing": "جارٍ الاختبار",
+          "unknown": "يحدّد PulseSoc متى تصبح هذه جاهزة.",
+          "needsSetup": "يحتاج إلى إعداد",
+          "refreshed": "تم تحديث جاهزية التسليم.",
+          "refreshFailed": "تعذّر تحديث جاهزية التسليم.",
+          "tested": "اكتمل اختبار {{channel}}.",
+          "testFailed": "فشل اختبار التسليم هذا."
+        },
+        "channels": {
+          "in_app": "داخل التطبيق",
+          "email": "البريد الإلكتروني",
+          "push": "الإشعارات الفورية",
+          "sms": "الرسائل النصية",
+          "telegram": "Telegram",
+          "toggle": "{{channel}}: {{state}}",
+          "on": "مُفعَّل",
+          "off": "مُعطَّل",
+          "default": "يحدّد PulseSoc"
+        },
+        "form": {
+          "createTitle": "إنشاء تنبيه",
+          "editTitle": "تعديل التنبيه",
+          "basic": "أساسي",
+          "advanced": "متقدم",
+          "watchTitle": "ما يراقبه هذا التنبيه",
+          "watchAsset": "أصل واحد",
+          "watchList": "قائمة متابعة",
+          "symbolLabel": "رمز التنبيه",
+          "symbolPlaceholder": "الرمز",
+          "targetLabel": "القيمة المستهدفة للتنبيه",
+          "targetPlaceholder": "القيمة المستهدفة",
+          "noteLabel": "ملاحظة التنبيه",
+          "notePlaceholder": "ملاحظة اختيارية",
+          "save": "حفظ التغييرات",
+          "saving": "جارٍ الحفظ",
+          "create": "إنشاء تنبيه",
+          "cancelEdit": "إلغاء التعديل",
+          "created": "تم إنشاء التنبيه.",
+          "updated": "تم تحديث التنبيه.",
+          "saveFailed": "تعذّر حفظ التنبيه."
+        },
+        "premium": {
+          "notice": "التنبيهات متعددة الشروط وتنبيهات قوائم المتابعة والنوافذ الزمنية جزء من PulseSoc Premium.",
+          "lockedBody": "التنبيهات المتقدمة — عدة شروط في قاعدة واحدة، وقواعد تشمل قائمة متابعة كاملة، ونوافذ زمنية — جزء من PulseSoc Premium."
+        },
+        "watchlist": {
+          "fallbackName": "قائمة المتابعة {{id}}",
+          "unavailable": "غير متاحة",
+          "assets_zero": "لا توجد أصول",
+          "assets_one": "أصل واحد",
+          "assets_two": "أصلان",
+          "assets_few": "{{count}} أصول",
+          "assets_many": "{{count}} أصلًا",
+          "assets_other": "{{count}} أصل"
+        },
+        "conditions": {
+          "above": "فوق",
+          "below": "تحت",
+          "moves_up_percent": "ارتفاع %",
+          "moves_down_percent": "انخفاض %",
+          "volatility_above": "تقلّب فوق %"
+        },
+        "comparators": {
+          "above": "فوق",
+          "below": "تحت",
+          "crosses_above": "يتجاوز صعودًا",
+          "crosses_below": "يتجاوز هبوطًا"
+        },
+        "logic": {
+          "and": "كل هذه",
+          "or": "أي من هذه",
+          "andHint": "لا يُطلق التنبيه إلا بينما تتحقق كل هذه معًا في الوقت نفسه.",
+          "orHint": "يُطلق التنبيه عندما يتحقق أي واحد من هذه."
+        },
+        "clause": {
+          "title": "الشروط",
+          "heading": "الشرط {{position}}",
+          "valueLabel": "قيمة الشرط {{position}}",
+          "percentPlaceholder": "نسبة مئوية، مثل {{example}}",
+          "valuePlaceholder": "القيمة",
+          "add": "إضافة شرط",
+          "remove": "إزالة",
+          "windowLabel": "نافذة زمنية",
+          "noWindow": "بلا نافذة",
+          "noWindows": "لا يمكن قياس أي نافذة زمنية لهذا الأصل بعد.",
+          "windowCleared": "هذه النافذة الزمنية غير قابلة للقياس لهذا الأصل بعد، لذا تم مسحها.",
+          "max_zero": "لا يسع التنبيه الواحد أي شرط.",
+          "max_one": "يسع التنبيه الواحد شرطًا واحدًا كحد أقصى.",
+          "max_two": "يسع التنبيه الواحد شرطين كحد أقصى.",
+          "max_few": "يسع التنبيه الواحد {{count}} شروط كحد أقصى.",
+          "max_many": "يسع التنبيه الواحد {{count}} شرطًا كحد أقصى.",
+          "max_other": "يسع التنبيه الواحد {{count}} شرط كحد أقصى."
+        },
+        "list": {
+          "title": "تنبيهات العملات الرقمية والسوق",
+          "empty": "لا توجد لديك تنبيهات بعد. أنشئ أولها بالأعلى.",
+          "subject": "تنبيه {{subject}}",
+          "watchlistSubject": "قائمة المتابعة {{name}}",
+          "watchlistFallback": "قائمة متابعة",
+          "meta_zero": "لا أحداث في السجل · {{channels}}",
+          "meta_one": "حدث واحد في السجل · {{channels}}",
+          "meta_two": "حدثان في السجل · {{channels}}",
+          "meta_few": "{{count}} أحداث في السجل · {{channels}}",
+          "meta_many": "{{count}} حدثًا في السجل · {{channels}}",
+          "meta_other": "{{count}} حدث في السجل · {{channels}}",
+          "detail": "التفاصيل",
+          "edit": "تعديل",
+          "pause": "إيقاف مؤقت",
+          "resume": "استئناف",
+          "test": "اختبار",
+          "duplicate": "تكرار",
+          "delete": "حذف"
+        },
+        "status": {
+          "active": "نشط",
+          "paused": "موقوف مؤقتًا",
+          "triggered": "أُطلق",
+          "disabled": "معطّل",
+          "expired": "منتهٍ"
+        },
+        "actions": {
+          "paused": "تم إيقاف التنبيه مؤقتًا.",
+          "resumed": "تم استئناف التنبيه.",
+          "deleted": "تم حذف التنبيه.",
+          "duplicated": "تم تكرار التنبيه.",
+          "tested": "تم إرسال تنبيه اختباري.",
+          "failed": "فشل هذا الإجراء على التنبيه.",
+          "editUnavailable": "تعديل تنبيه متعدد الشروط أو تنبيه قائمة متابعة غير متاح في التطبيق بعد. احذفه وأنشئه من جديد لتغييره."
+        },
+        "delete": {
+          "prompt": "أكّد حذف {{subject}} {{condition}}.",
+          "body": "حذف هذا التنبيه؟ سيُزال من حسابك في PulseSoc ولا يمكن التراجع عن ذلك.",
+          "cancel": "إلغاء",
+          "canceled": "تم إلغاء الحذف.",
+          "confirm": "تأكيد الحذف",
+          "deleting": "جارٍ الحذف"
+        },
+        "detail": {
+          "title": "تفاصيل التنبيه",
+          "summary_zero": "الحالة: {{status}}. المصدر: {{source}}. لم يُطلق بعد.",
+          "summary_one": "الحالة: {{status}}. المصدر: {{source}}. أُطلق مرة واحدة.",
+          "summary_two": "الحالة: {{status}}. المصدر: {{source}}. أُطلق مرتين.",
+          "summary_few": "الحالة: {{status}}. المصدر: {{source}}. أُطلق {{count}} مرات.",
+          "summary_many": "الحالة: {{status}}. المصدر: {{source}}. أُطلق {{count}} مرةً.",
+          "summary_other": "الحالة: {{status}}. المصدر: {{source}}. أُطلق {{count}} مرة.",
+          "sourcePulseSoc": "PulseSoc",
+          "channels": "القنوات: {{channels}}",
+          "lastChecked": "آخر فحص: {{value}}",
+          "lastTriggered": "آخر إطلاق: {{value}}",
+          "notRecorded": "غير مسجّل",
+          "notTriggered": "لم يُطلق"
+        },
+        "history": {
+          "title": "سجل التنبيهات",
+          "empty": "لا يوجد سجل تنبيهات بعد. تظهر الأحداث هنا بعد إطلاق تنبيه أو إرسالك اختبارًا.",
+          "truncated": "نعرض أحدث {{shown}} من أصل {{total}} من أحداث سجل التنبيهات.",
+          "market": "السوق",
+          "recorded": "مسجّل",
+          "fallback": "{{condition}} عند {{observed}} مقابل {{target}}",
+          "unknownCondition": "تنبيه",
+          "unknownValue": "غير معروف",
+          "unknownTarget": "الهدف",
+          "noTimestamp": "بلا وقت"
+        },
+        "managed": {
+          "title": "تُدار من PulseSoc",
+          "body": "إدارة الحساب، والتعديل المتقدم في Intelligence، وإدارة مصادر البيانات، وأنواع التنبيهات الأخرى تُنفَّذ على موقع PulseSoc. وهي غير متاحة في التطبيق بعد.",
+          "notifications": "الإشعارات"
+        },
+        "validation": {
+          "watchlistRequired": "اختر قائمة متابعة ليراقبها هذا التنبيه.",
+          "watchlistUnavailable": "لا يمكن استخدام قائمة المتابعة هذه لتنبيه في الوقت الحالي.",
+          "symbolRequired": "أضف رمز أصل قبل حفظ التنبيه.",
+          "symbolInvalid": "استخدم رمز أصل صالحًا مثل BTC أو ETH أو SOL.",
+          "premiumLocked": "التنبيهات متعددة الشروط جزء من PulseSoc Premium.",
+          "clauseRequired": "أضف شرطًا واحدًا على الأقل قبل حفظ التنبيه.",
+          "clauseMetric": "{{position}}: اختر ما تريد قياسه.",
+          "clauseComparator": "{{position}}: اختر مقارنة مدعومة.",
+          "clauseValue": "{{position}}: أضف قيمة.",
+          "clauseNumeric": "{{position}}: استخدم قيمة رقمية.",
+          "clausePositive": "{{position}}: يجب أن تكون {{metric}} أكبر من صفر.",
+          "clauseTooLarge": "{{position}}: هذه القيمة أكبر من أن تكون حدًّا آمنًا.",
+          "clauseNotWindowable": "{{position}}: لا يمكن قياس {{metric}} على مدى نافذة زمنية.",
+          "clauseWindowUnavailable": "{{position}}: لا يمكن قياس هذه النافذة الزمنية لهذا الأصل بعد.",
+          "clauseComparatorWindow": "{{position}}: لا يمكن استخدام {{comparator}} مع نافذة زمنية.",
+          "targetRequired": "أضف قيمة مستهدفة قبل حفظ التنبيه.",
+          "targetNumeric": "استخدم قيمة مستهدفة رقمية.",
+          "targetPositive": "يجب أن تكون القيمة المستهدفة أكبر من صفر.",
+          "targetTooLarge": "القيمة المستهدفة أكبر من أن تكون حدًّا آمنًا للتنبيه.",
+          "conditionUnsupported": "اختر شرط تنبيه مدعومًا.",
+          "channelRequired": "اختر قناة تسليم واحدة على الأقل."
+        }
+      },
+      "watchlists": {
+        "title": "قوائم المتابعة",
+        "subtitle": "تابع الأصول التي تهمك ببيانات السوق المباشرة.",
+        "loadError": "تعذّر تحميل قوائم المتابعة.",
+        "actionFailed": "لم ينجح ذلك.",
+        "offline": "غير متصل — نعرض آخر الأسعار التي وصلتنا.",
+        "pricesUnavailable": "الأسعار المباشرة غير متاحة مؤقتًا.",
+        "asOf": "الأسعار حتى {{timestamp}}",
+        "tabs": {
+          "lists": "قوائم متابعتي",
+          "favorites": "المفضلة"
+        },
+        "create": {
+          "title": "إنشاء قائمة متابعة",
+          "placeholder": "مثل: عملاتي الرقمية",
+          "label": "اسم قائمة المتابعة الجديدة",
+          "submit": "إنشاء قائمة المتابعة",
+          "creating": "جارٍ الإنشاء…",
+          "nameRequired": "سمِّ قائمة متابعتك أولًا.",
+          "created": "تم إنشاء قائمة المتابعة."
+        },
+        "rename": {
+          "action": "إعادة تسمية",
+          "save": "حفظ",
+          "cancel": "إلغاء",
+          "placeholder": "اسم قائمة المتابعة",
+          "label": "اسم قائمة المتابعة",
+          "nameRequired": "تحتاج قائمة المتابعة إلى اسم.",
+          "renamed": "تمت إعادة تسمية قائمة المتابعة."
+        },
+        "delete": {
+          "action": "حذف",
+          "title": "حذف قائمة المتابعة",
+          "body": "حذف «{{name}}»؟ ستُزال أصولها من هذه القائمة. وتبقى تنبيهاتك ومفضلتك كما هي.",
+          "cancel": "إلغاء",
+          "confirm": "حذف",
+          "deleted": "تم حذف قائمة المتابعة."
+        },
+        "assets": {
+          "add": "إضافة أصل",
+          "done": "تم",
+          "searchPlaceholder": "ابحث في الأصول، مثل BTC",
+          "searchLabel": "البحث في الأصول",
+          "noMatches": "لا يطابق ذلك أي أصل متابَع.",
+          "empty": "لا توجد أصول بعد. استخدم «إضافة أصل» لمتابعة شيء ما.",
+          "added": "تمت إضافة {{symbol}}.",
+          "removed": "تمت إزالة {{symbol}}.",
+          "remove": "إزالة",
+          "removeLabel": "إزالة {{symbol}}",
+          "favorite": "إضافة {{symbol}} إلى المفضلة",
+          "unfavorite": "إزالة {{symbol}} من المفضلة",
+          "favoritesUpdated": "تم تحديث المفضلة.",
+          "cap": "القيمة السوقية {{value}}",
+          "a11y": "{{name}}، {{price}}",
+          "average": "متوسط {{percent}}",
+          "alerts_zero": "لا تنبيهات",
+          "alerts_one": "تنبيه واحد",
+          "alerts_two": "تنبيهان",
+          "alerts_few": "{{count}} تنبيهات",
+          "alerts_many": "{{count}} تنبيهًا",
+          "alerts_other": "{{count}} تنبيه",
+          "count_zero": "لا توجد أصول",
+          "count_one": "أصل واحد",
+          "count_two": "أصلان",
+          "count_few": "{{count}} أصول",
+          "count_many": "{{count}} أصلًا",
+          "count_other": "{{count}} أصل"
+        },
+        "empty": {
+          "title": "لا توجد قوائم متابعة بعد",
+          "body": "أنشئ واحدة بالأعلى لتبدأ متابعة الأسعار وتحركات السوق والتنبيهات للأصول التي تتابعها."
+        },
+        "favorites": {
+          "title": "المفضلة",
+          "empty": "ضع نجمة على أصل ليبقى هنا. المفضلة مرتبطة بحسابك."
+        }
+      }
+    },
+    "subState": {
+      "active": "نشط",
+      "trialing": "تجريبي",
+      "grace": "في فترة السماح",
+      "billing_retry": "إعادة محاولة الدفع",
+      "canceled": "ملغى — التجديد التلقائي متوقف",
+      "expired": "منتهٍ",
+      "revoked": "مسحوب",
+      "paused": "موقوف مؤقتاً",
+      "unknown": "غير متاح"
     }
   }
 }

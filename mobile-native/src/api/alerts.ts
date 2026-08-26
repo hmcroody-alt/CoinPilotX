@@ -32,6 +32,15 @@ export type AlertRule = {
   created_at?: string;
   updated_at?: string;
   deleted_at?: string;
+  /** True when the rule is a compound one. Its condition/threshold fields still
+   *  hold the first clause's values, so they describe part of the rule, not it. */
+  is_advanced?: boolean;
+  /** The whole rule in words, rendered server-side so the engine, the app and
+   *  the notification copy cannot describe one rule three different ways. */
+  condition_summary?: string;
+  watchlist_id?: number | null;
+  is_watchlist_rule?: boolean;
+  watchlist_name?: string;
 };
 
 export type AlertEvent = {
@@ -91,6 +100,15 @@ export type AlertMutationResponse = {
   channel_readiness?: Record<AlertChannel, ChannelReadiness>;
 };
 
+export type AlertClause = {
+  metric: string;
+  comparator: string;
+  /** Held as typed text, not a number, so a half-entered "1." is not read as 1. */
+  value: string;
+  /** 0 means "no window" — a plain level test on the latest reading. */
+  windowMinutes: number;
+};
+
 export type AlertFormPayload = {
   assetSymbol: string;
   targetValue: string;
@@ -101,6 +119,59 @@ export type AlertFormPayload = {
   notifySMS: boolean;
   notifyTelegram: boolean;
   note?: string;
+  /**
+   * Which rule the form is describing. "basic" sends the single free
+   * condition/targetValue pair exactly as it always did; "advanced" sends
+   * clauses instead and the server derives the summary from them, so there is
+   * one definition of the rule rather than a client summary that can disagree.
+   */
+  mode?: "basic" | "advanced";
+  logic?: string;
+  clauses?: AlertClause[];
+  /** Set when the rule watches a whole list. A rule is about one asset or one
+   *  list, never both — the server ignores the symbol when this is present. */
+  watchlistId?: number | null;
+};
+
+export type AlertWindowOption = { minutes: number; label: string };
+
+export type AlertWatchlistOption = {
+  id: number;
+  name: string;
+  symbols: string[];
+  eligible: boolean;
+  reason: string;
+  message: string;
+};
+
+export type AlertOptions = {
+  ok?: boolean;
+  premium: boolean;
+  capability: string;
+  symbol: string;
+  watchlist_id?: number | null;
+  basic: { conditions: string[]; locked: boolean };
+  advanced: {
+    locked: boolean;
+    logic_modes: string[];
+    max_clauses: number;
+    max_watchlist_symbols: number;
+    metrics: { key: string; label: string; percent: boolean; windowable: boolean }[];
+    comparators: { key: string; kind: string }[];
+    window_comparators: string[];
+  };
+  /**
+   * The windows the sampled series can actually answer for this asset, right
+   * now. Never a constant: this is why the form asks the server instead of
+   * rendering a fixed list that would sell a 24h window to an asset with forty
+   * minutes of history.
+   */
+  windows: AlertWindowOption[];
+  window_coverage: { symbol: string; sample_count: number; span_minutes: number; stale: boolean; newest_at: string }[];
+  window_reason: string;
+  window_limited_by: string;
+  window_message: string;
+  watchlists: AlertWatchlistOption[];
 };
 
 export const ALERT_CHANNELS: AlertChannel[] = ["in_app", "email", "push", "sms", "telegram"];
@@ -133,6 +204,80 @@ export async function loadCachedAlertManagementState() {
 
 export async function cacheAlertManagementState(state: AlertManagementState) {
   await writeJsonCache(ALERT_MANAGEMENT_CACHE_KEY, normalizeAlertManagementState(state));
+}
+
+/**
+ * What the creation form may offer this member for this asset, right now.
+ *
+ * Deliberately not cached and not merged into the management state: the answer
+ * changes with the chosen asset and with how long the series has been sampling
+ * it, so a stale copy would put a window on screen that the rule it creates can
+ * never decide. Call it again whenever the symbol or the watchlist changes.
+ */
+export async function getCryptoAlertOptions(symbol?: string, watchlistId?: number | null) {
+  const params = new URLSearchParams();
+  if (watchlistId) params.set("watchlistId", String(watchlistId));
+  else if (symbol) params.set("symbol", symbol.trim().toUpperCase());
+  const query = params.toString();
+  return normalizeAlertOptions(
+    await pulseApi<Partial<AlertOptions>>(`/api/crypto/alerts/options${query ? `?${query}` : ""}`)
+  );
+}
+
+export function normalizeAlertOptions(input: Partial<AlertOptions> = {}): AlertOptions {
+  const advanced = input.advanced || ({} as AlertOptions["advanced"]);
+  return {
+    ...input,
+    // Everything defaults to locked and empty. An options response that failed to
+    // parse must not read as "Premium, all windows available" — the form would
+    // then offer exactly what this endpoint exists to stop it offering.
+    premium: Boolean(input.premium),
+    capability: String(input.capability || ""),
+    symbol: String(input.symbol || ""),
+    watchlist_id: input.watchlist_id || null,
+    basic: {
+      conditions: (input.basic?.conditions || []).map(String),
+      locked: Boolean(input.basic?.locked)
+    },
+    advanced: {
+      locked: advanced.locked !== false,
+      logic_modes: (advanced.logic_modes || []).map(String),
+      max_clauses: Number(advanced.max_clauses || 0),
+      max_watchlist_symbols: Number(advanced.max_watchlist_symbols || 0),
+      metrics: (advanced.metrics || []).map((metric) => ({
+        key: String(metric.key || ""),
+        label: String(metric.label || metric.key || ""),
+        percent: Boolean(metric.percent),
+        windowable: Boolean(metric.windowable)
+      })),
+      comparators: (advanced.comparators || []).map((comparator) => ({
+        key: String(comparator.key || ""),
+        kind: String(comparator.kind || "level")
+      })),
+      window_comparators: (advanced.window_comparators || []).map(String)
+    },
+    windows: (input.windows || [])
+      .map((window) => ({ minutes: Number(window.minutes || 0), label: String(window.label || "") }))
+      .filter((window) => window.minutes > 0),
+    window_coverage: (input.window_coverage || []).map((entry) => ({
+      symbol: String(entry.symbol || ""),
+      sample_count: Number(entry.sample_count || 0),
+      span_minutes: Number(entry.span_minutes || 0),
+      stale: Boolean(entry.stale),
+      newest_at: String(entry.newest_at || "")
+    })),
+    window_reason: String(input.window_reason || ""),
+    window_limited_by: String(input.window_limited_by || ""),
+    window_message: String(input.window_message || ""),
+    watchlists: (input.watchlists || []).map((watchlist) => ({
+      id: Number(watchlist.id || 0),
+      name: String(watchlist.name || ""),
+      symbols: (watchlist.symbols || []).map(String),
+      eligible: Boolean(watchlist.eligible),
+      reason: String(watchlist.reason || ""),
+      message: String(watchlist.message || "")
+    }))
+  };
 }
 
 export async function createCryptoAlert(payload: AlertFormPayload) {
@@ -277,9 +422,22 @@ export function normalizeChannelReadiness(input: Record<string, ChannelReadiness
 }
 
 export function alertConditionLabel(alert: AlertRule) {
+  // A compound rule keeps its first clause in condition/threshold so older
+  // readers still see something true. Describing it by those fields alone would
+  // name one of its conditions as though it were the whole rule, so the
+  // server-rendered summary wins wherever there is one.
+  if (alert.condition_summary) return alert.condition_summary;
   const condition = ALERT_CONDITIONS.find((item) => item.value === alert.condition)?.label || String(alert.condition || "Alert").replace(/_/g, " ");
   const threshold = alert.threshold ?? "";
   return threshold ? `${condition} ${threshold}` : condition;
+}
+
+/** What this rule watches: one asset, or one named list. */
+export function alertSubjectLabel(alert: AlertRule) {
+  if (alert.is_watchlist_rule || alert.watchlist_id) {
+    return alert.watchlist_name ? `${alert.watchlist_name} watchlist` : "Watchlist";
+  }
+  return alert.asset_symbol || alert.symbol || "";
 }
 
 export function alertStatusLabel(status?: string) {
@@ -302,10 +460,21 @@ function normalizeFormPayload(payload: AlertFormPayload) {
     sms: Boolean(payload.notifySMS),
     telegram: Boolean(payload.notifyTelegram)
   };
+  const advanced = payload.mode === "advanced" && (payload.clauses || []).length > 0;
+  const symbol = String(payload.assetSymbol || "").trim().toUpperCase();
   return {
-    assetSymbol: String(payload.assetSymbol || "").trim().toUpperCase(),
-    asset_symbol: String(payload.assetSymbol || "").trim().toUpperCase(),
-    symbol: String(payload.assetSymbol || "").trim().toUpperCase(),
+    // A list rule carries no ticker. Sending one anyway would leave the server
+    // holding two answers to "what is this alert about" — it discards the symbol
+    // when a list is named, and this keeps the request saying only one thing.
+    assetSymbol: payload.watchlistId ? "" : symbol,
+    asset_symbol: payload.watchlistId ? "" : symbol,
+    symbol: payload.watchlistId ? "" : symbol,
+    watchlistId: payload.watchlistId || undefined,
+    // Only sent for an advanced rule. When these are present the server derives
+    // the condition and threshold from the first clause, so the legacy fields
+    // below are ignored rather than being a second, disagreeing definition.
+    conditions: advanced ? serializeClauses(payload.clauses || []) : undefined,
+    logic: advanced ? String(payload.logic || "and") : undefined,
     targetValue: String(payload.targetValue || "").trim(),
     target_value: String(payload.targetValue || "").trim(),
     threshold: String(payload.targetValue || "").trim(),
@@ -320,6 +489,18 @@ function normalizeFormPayload(payload: AlertFormPayload) {
     push_permission: currentPushPermission(),
     note: String(payload.note || "").slice(0, 240)
   };
+}
+
+function serializeClauses(clauses: AlertClause[]) {
+  return clauses.map((clause) => ({
+    metric: String(clause.metric || "price"),
+    comparator: String(clause.comparator || "above"),
+    value: Number(String(clause.value || "").trim()),
+    // Omitted rather than sent as 0 when there is no window. The server treats a
+    // window as part of a clause's identity, so an explicit zero and an absent
+    // key must not be two different-looking ways to say the same thing.
+    ...(clause.windowMinutes ? { window_minutes: Number(clause.windowMinutes) } : {})
+  }));
 }
 
 function normalizeMutation(input: AlertMutationResponse): AlertMutationResponse {

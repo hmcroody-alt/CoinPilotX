@@ -75,7 +75,7 @@ export async function openGrowthWebFallback(path = "/pulse/growth") {
     ok: false,
     target,
     status: "native_provider_boundary",
-    message: "Growth operation remains inside native Growth Center until the protected contract is available."
+    message: "This action stays in Growth Center in the app until it is ready to use."
   };
 }
 

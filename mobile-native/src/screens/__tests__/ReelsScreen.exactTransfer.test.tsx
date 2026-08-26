@@ -347,6 +347,47 @@ describe("a second tap, on a tab that never unmounted", () => {
   });
 });
 
+describe("a carried reel whose id and reel_id disagree", () => {
+  /**
+   * The carried copy is raw and the fetched one is normalized.
+   *
+   * `normalizeReel` collapses `reel_id` and `id` onto a single value, so a reel
+   * that has been through it can never disagree with itself and none of the
+   * other tests in this file can catch a precedence mistake. The seed is the one
+   * reel on screen that has *not* necessarily been normalized — it is carried
+   * from whatever the tap site was holding. So this is the shape that decides
+   * whether the modules agree, and every id resolver in the chain has to read
+   * `reel_id` first to survive it.
+   */
+  const RAW_SEED = reel(42, { id: 900 });
+  const NORMALIZED_COPY = reel(42);
+
+  it("renders once, not twice, when the feed returns the normalized copy", async () => {
+    mockList.mockResolvedValue({
+      ok: true,
+      reels: [reel(1), NORMALIZED_COPY, reel(2)],
+      has_more: false,
+      next_offset: 3
+    });
+    const nonce = stageReelTransfer(RAW_SEED);
+    // The id the real navigation carries: `buildReels` resolves `reel_id` first,
+    // so this is 42 and not 900 even though the carried object leads with 900.
+    expect(nonce).toEqual(expect.stringContaining("42"));
+
+    const utils = renderPlayer({ reelId: 42, reelTransferNonce: nonce });
+    await waitFor(() => expect(mockList).toHaveBeenCalled());
+    await act(async () => undefined);
+
+    const list = utils.UNSAFE_getByType(FlatList) as any;
+    // Resolve `id` the other way round and the seed dedupes against 900, finds
+    // nothing, and leaves the fetched copy in place behind itself — the same
+    // reel at index 0 and again further down, as [42, 42, 1, 2].
+    expect(list.props.data.map((item: PulseReel) => item.reel_id)).toEqual([42, 1, 2]);
+    // And the survivor is the server's copy, not the carried one.
+    expect(list.props.data[0].id).toBe(42);
+  });
+});
+
 describe("without a handoff", () => {
   it("behaves exactly as it did before: cache first, then the feed", async () => {
     // The rollback path. A deep link, a notification, or the tab opened by hand

@@ -29,7 +29,7 @@ export function DashboardLegacyModuleScreen({ navigation, route }: Props) {
       <View style={styles.center}>
         <Text style={styles.kicker}>Dashboard route mapped</Text>
         <Text style={styles.title}>{moduleParams.title || "Dashboard Module"}</Text>
-        <Text style={styles.body}>Opening the native module shell for {legacyPath}.</Text>
+        <Text style={styles.body}>Opening {legacyPath}.</Text>
       </View>
     );
   }

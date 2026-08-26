@@ -105,12 +105,30 @@ _LEGACY_READERS: dict[str, Callable[[Any], Optional[bool]]] = {
     "premium.identity.effects": _legacy_premium_customization,
     "premium.media.higher_quality": _legacy_has_entitlement("premium.media.higher_quality"),
     "premium.undx.advanced": _legacy_has_entitlement("premium.undx.advanced"),
-    # Crypto intelligence capabilities — same rationale as premium.identity.effects:
-    # these are conferred by the Premium plans themselves, and no per-key legacy
-    # rows exist, so legacy premium truthiness (which includes the canonical
-    # provider bridge for Apple/Google purchases) is the legacy analogue. While
-    # the flag is ``off`` an eligible Premium member still qualifies.
+    # Crypto intelligence maps to legacy premium truthiness rather than to
+    # ``_legacy_has_entitlement``. The latter reads legacy entitlement ROWS, and
+    # no row has ever been written for a key introduced today — it would answer
+    # False for every existing member and make the capability look like a
+    # separate purchase. Premium membership is the thing that confers it, which
+    # is exactly what ``_legacy_premium_customization`` reports.
     "premium.crypto.advanced_alerts": _legacy_premium_customization,
+    "premium.crypto.portfolio": _legacy_premium_customization,
+    "premium.crypto.intelligence": _legacy_premium_customization,
+    # Blue Check application access. Mapped to legacy premium truthiness rather
+    # than left unmapped, because an unmapped key has NO legacy opinion, and
+    # under the default `off` mode "no opinion" resolves to False — which would
+    # deny the application to every paying member the moment an operator pulled
+    # the flag, and denies it in local/test runs where the flag is unset. The
+    # canonical grants in schema.py carry the key under `canonical`; this keeps
+    # the answer identical in the other two modes.
+    "premium.verification.blue_check.apply": _legacy_premium_customization,
+    # The crypto branch spells the portfolio capability as one key where the
+    # lines above split it into ``portfolio`` (the holdings ceiling) and
+    # ``intelligence`` (the derived read). Both spellings are registered rather
+    # than one renamed to the other: an unmapped key has no legacy opinion, and
+    # under the default ``off`` mode no opinion resolves to False, so dropping
+    # this name would deny the feature to every paying member on the seven call
+    # sites that ask for it. Same reader, so the three answer identically.
     "premium.crypto.portfolio_intelligence": _legacy_premium_customization,
 }
 

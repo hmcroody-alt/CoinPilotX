@@ -51,6 +51,40 @@ describe("staging", () => {
     expect(stageReelTransfer({ reel_id: 7 } as PulseReel)).toEqual(expect.stringContaining("7"));
     expect(peekReelTransfer(7)).toEqual({ reel_id: 7 });
   });
+
+  it("keys on reel_id when the two disagree, because that is what the caller asks for", () => {
+    // `buildReels` resolves `reel_id` first and the player is handed that value,
+    // so keying the slot on `id` would park the reel under a number nobody looks
+    // up. The failure is silent: no seed, no error, and the player opens on
+    // whatever the feed ranked first instead.
+    const asymmetric = { id: 900, reel_id: 42, title: "raw" } as PulseReel;
+
+    expect(stageReelTransfer(asymmetric)).toEqual(expect.stringContaining("42"));
+    expect(peekReelTransfer(900)).toBeNull();
+    expect(takeReelTransfer(42)).toBe(asymmetric);
+  });
+  it("keys on reel_id when the two ids differ, so one key stages and takes", () => {
+    // The precedence here has to match `normalizeReel` (`reel_id || id`, written
+    // back to both fields) and `buildReels`, which navigates with the same rule.
+    // Keying on `id` instead parks the payload under 900 while the player asks
+    // for 42 — `takeReelTransfer` returns null and the player silently drops to
+    // searching the lane, showing an unrelated video until it lands.
+    const asymmetric = { id: 900, reel_id: 42, title: "asymmetric" } as PulseReel;
+
+    const nonce = stageReelTransfer(asymmetric);
+
+    expect(nonce).toEqual(expect.stringContaining("reel-transfer:42"));
+    expect(takeReelTransfer(42)).toBe(asymmetric);
+  });
+
+  it("does not answer to the losing id", () => {
+    // The other half of the same guarantee: exactly one key works, so a reversal
+    // cannot pass by making both ids resolve.
+    stageReelTransfer({ id: 900, reel_id: 42 } as PulseReel);
+
+    expect(peekReelTransfer(900)).toBeNull();
+    expect(peekReelTransfer(42)).toEqual({ id: 900, reel_id: 42 });
+  });
 });
 
 describe("taking", () => {

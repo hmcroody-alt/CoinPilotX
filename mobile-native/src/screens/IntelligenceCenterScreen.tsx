@@ -129,7 +129,7 @@ export function IntelligenceCenterScreen({ route, navigation }: Props) {
           <View style={styles.heroCopy}>
             <Text style={styles.eyebrow}>Guidance score</Text>
             <Text style={styles.score}>{hub.overall_intelligence_score || 0}%</Text>
-            <Text style={styles.muted}>Premium: {premiumStateLabel(premium)}. Alert evaluation, forecasts, provider routing, and delivery remain backend-controlled.</Text>
+            <Text style={styles.muted}>Premium: {premiumStateLabel(premium)}. PulseSoc runs alert checks and forecasts, and decides how alerts reach you.</Text>
           </View>
           <View style={styles.statusPill}>
             <Text style={styles.statusPillText}>{unreadCount(badges || undefined)} unread</Text>
@@ -156,7 +156,7 @@ export function IntelligenceCenterScreen({ route, navigation }: Props) {
       {subsystem ? (
         <Panel>
           <Text style={styles.sectionTitle}>Requested subsystem</Text>
-          <Text style={styles.muted}>{subsystem.replace(/[_-]/g, " ")} is managed by PulseSoc Intelligence and will surface here natively once a dedicated payload is available.</Text>
+          <Text style={styles.muted}>{subsystem.replace(/[_-]/g, " ")} is managed by PulseSoc Intelligence. It does not have its own screen in the app yet.</Text>
         </Panel>
       ) : null}
 
@@ -182,7 +182,7 @@ export function IntelligenceCenterScreen({ route, navigation }: Props) {
             selected={alert.id === alertId}
             onOpen={() => navigation.navigate("AlertManagement", { alertId: alert.id, title: "Alert Detail" })}
           />
-        )) : <Text style={styles.muted}>No crypto or market alerts returned by the backend.</Text>}
+        )) : <Text style={styles.muted}>You have no crypto or market alerts yet. Set one up from Manage Alerts below.</Text>}
         <Action label="Manage Alerts" onPress={() => navigation.navigate("AlertManagement", { title: "Alerts" })} />
       </Panel>
 
@@ -202,7 +202,7 @@ export function IntelligenceCenterScreen({ route, navigation }: Props) {
 
       <Panel>
         <Text style={styles.sectionTitle}>Advanced tools</Text>
-        <Text style={styles.muted}>Advanced editing, provider administration, collector management, intelligence sources, and unsupported alert operations stay server-managed by PulseSoc.</Text>
+        <Text style={styles.muted}>Advanced editing, account administration, data source management, intelligence sources, and other alert actions are handled on the PulseSoc website.</Text>
         <View style={styles.actionGrid}>
           <Action label="Manage Alerts" onPress={() => navigation.navigate("AlertManagement", { title: "Alerts" })} />
           <Action label="Create Alert" onPress={() => navigation.navigate("AlertManagement", { title: "Alerts" })} />

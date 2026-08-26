@@ -201,7 +201,7 @@ function buildDashboardCards(state: DashboardLoadedState): DashboardCard[] {
       key: "calls",
       title: "Calls",
       value: `${activeCalls} active`,
-      detail: "Incoming and active call state routes into the native call layer.",
+      detail: "Incoming and active calls open in the call screen.",
       state: activeCalls ? "attention" : "ready"
     },
     {
@@ -229,7 +229,7 @@ function buildDashboardCards(state: DashboardLoadedState): DashboardCard[] {
       key: "orders",
       title: "Buyer Orders",
       value: `${state.buyerOrders.length} orders`,
-      detail: unpaidOrders ? `${unpaidOrders} need attention.` : "Purchase history and receipts are native-readable.",
+      detail: unpaidOrders ? `${unpaidOrders} need attention.` : "Purchase history and receipts are available here.",
       state: unpaidOrders ? "attention" : "ready"
     },
     {
@@ -264,7 +264,7 @@ function buildDashboardCards(state: DashboardLoadedState): DashboardCard[] {
       key: "creator",
       title: "Creator",
       value: `${creatorMetric || 0}%`,
-      detail: creatorRecommendations(state.creator)[0] || "Creator Studio, planner, drafts, and AI tools are native-linked.",
+      detail: creatorRecommendations(state.creator)[0] || "Creator Studio, planner, drafts, and AI tools are all linked here.",
       state: creatorMetric ? "ready" : "fallback"
     },
     {
@@ -285,7 +285,7 @@ function buildDashboardCards(state: DashboardLoadedState): DashboardCard[] {
       key: "camera",
       title: "Camera Studio",
       value: "Ready",
-      detail: "Native camera entry, media upload handoff, and creation destinations are connected.",
+      detail: "Camera, media uploads, and the places you can post to are all connected.",
       state: "ready"
     }
   ];

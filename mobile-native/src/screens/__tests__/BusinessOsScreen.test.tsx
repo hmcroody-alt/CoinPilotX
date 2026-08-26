@@ -49,13 +49,73 @@ jest.mock("../../api/marketplace", () => ({
   loadCachedSellerStore: (...args: unknown[]) => mockCachedSeller(...args)
 }));
 
-import { businessOsHubSections, businessOsNavigationArgs } from "../../api/businessOs";
+import { businessOsHubSections, businessOsLaunchSections, businessOsNavigationArgs } from "../../api/businessOs";
+import { preloadNamespaces } from "../../i18n/engine";
+import { businessModuleId, isLaunchGated } from "../../launch/readiness";
 import { BUSINESS_OS_LOAD_TIMEOUT_MS, BusinessOsScreen, resetBusinessOsFreshness } from "../BusinessOsScreen";
+
+/**
+ * The accessibility label a section's tile carries.
+ *
+ * A locked tile does not read "Events. Events you host and promote." — it reads
+ * "Events. Coming soon.", because the state has to be in the label rather than
+ * only in a hint (iOS hints are off by default) and only in the teal border
+ * (colour cannot be the only channel). Deriving the expectation from the gate
+ * rather than hardcoding it means these tests keep passing, and keep meaning the
+ * same thing, on the day a module's row is deleted from `readiness.ts`.
+ */
+/**
+ * Catalogs are lazy, so an unloaded key degrades to its humanized leaf:
+ * `commerce:launch.lockedLabel` renders as "Locked Label" for every gated tile
+ * at once. That is not merely wrong copy — it is the *same* copy on three
+ * tiles, so a lookup by label becomes ambiguous and the suite would be
+ * asserting against a shape the product never ships. Loading the one namespace
+ * this screen's launch copy lives in makes these assertions about the real
+ * strings a user reads. The rest of this screen is hardcoded English, so
+ * nothing else in the suite changes.
+ */
+beforeAll(async () => {
+  await preloadNamespaces("en", ["commerce"]);
+});
+
+function tileLabel(section: { key: string; label: string; blurb: string }) {
+  return isLaunchGated(businessModuleId(section.key))
+    ? `${section.label}. Coming soon.`
+    : `${section.label}. ${section.blurb}`;
+}
 
 const EMPTY_ANALYTICS = {
   totals: { impressions: 0, viewable_impressions: 0, clicks: 0, hides: 0, reports: 0, spend_cents: 0, ctr: 0 },
   campaigns: []
 };
+
+/**
+ * A request that does not answer while the test is running.
+ *
+ * `new Promise(() => undefined)` says the same thing and is what these tests
+ * used to pass, but the screen wraps every canonical request in a 12-second
+ * deadline (`withBusinessOsDeadline`) and clears that timer only when the
+ * request settles. A promise that never settles never clears it, so the timer
+ * outlives the test. That was invisible while these suites took longer than the
+ * deadline to run; the moment they got fast, Jest started force-exiting the
+ * worker and warning about a leak — a warning nobody can act on, sitting on top
+ * of the output where the next real failure will appear.
+ *
+ * Settling them in `afterEach` — after the render is already torn down, so no
+ * assertion can observe an answer — lets the deadline be cleared without
+ * changing what any test is about.
+ */
+const unanswered: Array<() => void> = [];
+
+function neverAnswers<T>(): Promise<T> {
+  return new Promise<T>((resolve) => {
+    unanswered.push(() => resolve(undefined as T));
+  });
+}
+
+afterEach(() => {
+  unanswered.splice(0).forEach((settle) => settle());
+});
 
 function navigationSpy() {
   return { navigate: jest.fn() };
@@ -82,38 +142,70 @@ async function renderHub(navigation = navigationSpy()) {
   // hub no longer has a blocking "Loading your business…" panel to wait on —
   // the shell and At a glance are on screen from the first frame, which is the
   // property `BusinessOsScreen.perf.test.tsx` pins.
-  await waitFor(() => expect(view.queryByLabelText("Refreshing your business summary")).toBeNull());
+  await waitFor(() => expect(view.queryAllByLabelText("Refreshing your business summary").length).toBe(0));
   return { ...view, navigation };
 }
 
 describe("Business OS hub", () => {
-  it("renders a tile for every routable section and no live tile for anything unroutable", async () => {
+  it("renders a tile for every section the landing presents, routable or gated", async () => {
     const view = await renderHub();
-    const sections = businessOsHubSections();
+    const sections = businessOsLaunchSections();
     expect(sections.length).toBeGreaterThan(0);
     // Tiles are matched on their accessibility label rather than their text:
     // "Orders" is both a tile and an at-a-glance metric, so a text lookup is
     // ambiguous in a way that says nothing about the product.
     sections.forEach((section) => {
-      expect(view.getByLabelText(`${section.label}. ${section.blurb}`)).toBeTruthy();
+      expect(view.getByLabelText(tileLabel(section))).toBeTruthy();
     });
-    // Customers and Team have no backing contract yet, so they must never be
-    // presented as live, navigable tiles. They ARE on screen — as launch-gated
-    // Coming Soon cards that show a message instead of navigating, which
-    // `BusinessOsScreen.comingSoon.test.tsx` pins — but the routable registry
-    // this test walks must not contain them.
-    const labels = sections.map((section) => section.label);
-    expect(labels).not.toContain("Customers");
-    expect(labels).not.toContain("Team");
+    // Every routable section is still on screen. Gating is additive — it must
+    // never be the reason a working module disappeared.
+    businessOsHubSections().forEach((section) => {
+      expect(view.getByLabelText(tileLabel(section))).toBeTruthy();
+    });
+    // A section with no route and no gate holding it would be a tile that
+    // throws from `businessOsNavigationArgs` the moment it is tapped. The
+    // resolver is supposed to make that unrepresentable; this is the assertion
+    // that says so out loud.
+    sections.forEach((section) => {
+      expect(Boolean(section.route) || isLaunchGated(businessModuleId(section.key))).toBe(true);
+    });
   });
 
-  it("dispatches the navigation the registry describes when a tile is tapped", async () => {
+  it("dispatches the navigation the registry describes when a ready tile is tapped", async () => {
     const view = await renderHub();
-    for (const section of businessOsHubSections()) {
+    const ready = businessOsLaunchSections().filter((section) => !isLaunchGated(businessModuleId(section.key)));
+    expect(ready.length).toBeGreaterThan(0);
+    for (const section of ready) {
       view.navigation.navigate.mockClear();
-      fireEvent.press(view.getByLabelText(`${section.label}. ${section.blurb}`));
+      fireEvent.press(view.getByLabelText(tileLabel(section)));
       const [route, params] = businessOsNavigationArgs(section);
       expect(view.navigation.navigate).toHaveBeenCalledWith(route, params);
+    }
+  });
+
+  /**
+   * The half of the gate that actually protects anything.
+   *
+   * A locked tile that still navigated would be worse than no gate at all: the
+   * badge would promise the module is not ready while the tap dropped the user
+   * into it anyway. So the assertion is not "something happened" but the
+   * conjunction — the sheet opened AND `navigate` was never called.
+   */
+  it("opens Coming Soon instead of navigating when a gated tile is tapped", async () => {
+    const gated = businessOsLaunchSections().filter((section) => isLaunchGated(businessModuleId(section.key)));
+    expect(gated.length).toBeGreaterThan(0);
+
+    for (const section of gated) {
+      const view = await renderHub();
+      fireEvent.press(view.getByLabelText(tileLabel(section)));
+      expect(view.getByTestId(`coming-soon-${businessModuleId(section.key)}`)).toBeTruthy();
+      expect(view.navigation.navigate).not.toHaveBeenCalled();
+
+      // Dismissing returns the user to the hub rather than stranding them in a
+      // modal whose only other exit is force-quitting the app.
+      fireEvent.press(view.getByTestId("coming-soon-dismiss"));
+      await waitFor(() => expect(view.queryByTestId(`coming-soon-${businessModuleId(section.key)}`)).toBeNull());
+      view.unmount();
     }
   });
 
@@ -166,9 +258,9 @@ describe("Business OS hub", () => {
 
   it("shows cached data immediately and does not wait out the deadline to paint it", async () => {
     jest.useFakeTimers();
-    mockListAdAccounts.mockReturnValue(new Promise(() => undefined));
-    mockGetAdAnalytics.mockReturnValue(new Promise(() => undefined));
-    mockSellerSnapshot.mockReturnValue(new Promise(() => undefined));
+    mockListAdAccounts.mockReturnValue(neverAnswers());
+    mockGetAdAnalytics.mockReturnValue(neverAnswers());
+    mockSellerSnapshot.mockReturnValue(neverAnswers());
     mockCachedAccounts.mockResolvedValue([{ id: 4, status: "active", verified: true }]);
     mockCachedAnalytics.mockResolvedValue({
       ...EMPTY_ANALYTICS,
@@ -210,7 +302,7 @@ describe("Business OS hub", () => {
     await act(async () => {
       fireEvent.press(view.getByLabelText("Retry loading Business OS"));
     });
-    await waitFor(() => expect(view.queryByText("Showing saved data")).toBeNull());
+    await waitFor(() => expect(view.queryAllByText("Showing saved data").length).toBe(0));
   });
 
   it("does not show the offline notice when only the seller snapshot is empty", async () => {

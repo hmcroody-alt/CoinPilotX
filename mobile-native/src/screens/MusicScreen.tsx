@@ -18,6 +18,7 @@ import {
   View
 } from "react-native";
 import {
+  getPulseMusicTrack,
   loadCachedPulseMusicSnapshot,
   PulseMusicLane,
   PulseMusicTrack,
@@ -107,14 +108,30 @@ export function MusicScreen({ route, navigation }: Props) {
   const [uploading, setUploading] = useState(false);
   const [draft, setDraft] = useState<UploadDraft>(emptyDraft);
   const [radio, setRadio] = useState<PulseRadioState>(getPulseRadioState());
+  const [deepLinkedTrack, setDeepLinkedTrack] = useState<PulseMusicTrack | null>(null);
+  const [deepLinkFailure, setDeepLinkFailure] = useState<"" | "missing" | "unreachable">("");
   const previewSound = useRef<Audio.Sound | null>(null);
+  const deepLinkAttemptedFor = useRef("");
 
   const focusedTracks = useMemo(() => {
     if (!initialTrackId) return tracks;
     const focusIndex = tracks.findIndex((track) => track.id === initialTrackId);
-    if (focusIndex <= 0) return tracks;
+    // Absent from the ranked pool: show the track that was actually tapped,
+    // fetched by id, rather than an unrelated browse list under its name.
+    if (focusIndex < 0) return deepLinkedTrack ? [deepLinkedTrack, ...tracks] : tracks;
+    if (focusIndex === 0) return tracks;
     return [tracks[focusIndex], ...tracks.slice(0, focusIndex), ...tracks.slice(focusIndex + 1)];
-  }, [initialTrackId, tracks]);
+  }, [deepLinkedTrack, initialTrackId, tracks]);
+
+  // Derived, not stored: a late lookup result can never leave "we couldn't find
+  // it" on screen next to the track it is talking about.
+  const deepLinkNotice = useMemo(() => {
+    if (!initialTrackId || !deepLinkFailure) return "";
+    if (focusedTracks.some((track) => track.id === initialTrackId)) return "";
+    return deepLinkFailure === "missing"
+      ? "That song is no longer available in PulseSoc Music."
+      : "That song could not be loaded. Browse the library below.";
+  }, [deepLinkFailure, focusedTracks, initialTrackId]);
 
   const uploaderName = profile?.display_name || profile?.username || "";
   const uploadReadyHint = Boolean(
@@ -171,6 +188,31 @@ export function MusicScreen({ route, navigation }: Props) {
     const timer = setTimeout(() => load("search").catch(() => undefined), 360);
     return () => clearTimeout(timer);
   }, [query, genre, language, mood, lane]);
+
+  // A deep link names one song; the search pool is a ranked slice that may not
+  // contain it. Resolve it by id so the tap always lands on what was tapped,
+  // and say so plainly when the catalog no longer has it.
+  useEffect(() => {
+    if (!initialTrackId || loading) return;
+    if (tracks.some((track) => track.id === initialTrackId)) return;
+    if (deepLinkAttemptedFor.current === initialTrackId) return;
+    deepLinkAttemptedFor.current = initialTrackId;
+    let cancelled = false;
+    getPulseMusicTrack(initialTrackId)
+      .then((track) => {
+        if (cancelled) return;
+        setDeepLinkedTrack(track);
+        setDeepLinkFailure(track ? "" : "missing");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        deepLinkAttemptedFor.current = "";
+        setDeepLinkFailure("unreachable");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [initialTrackId, loading, tracks]);
 
   useEffect(() => {
     return () => {
@@ -382,7 +424,7 @@ export function MusicScreen({ route, navigation }: Props) {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={radio.status === "playing" ? "Pause PulseSoc Radio" : radio.userWantsPlayback && radio.interruptedBy ? "Keep PulseSoc Radio paused" : "Play PulseSoc Radio"}
-                accessibilityHint={radio.userWantsPlayback && radio.interruptedBy ? "Prevents PulseSoc Radio from resuming after active audio ends." : "PulseSoc Radio continues across native screens after playback starts."}
+                accessibilityHint={radio.userWantsPlayback && radio.interruptedBy ? "Prevents PulseSoc Radio from resuming after active audio ends." : "PulseSoc Radio keeps playing as you move around the app."}
                 style={styles.radioCard}
                 onPress={() => togglePulseRadio().catch((error) => setMessage(error instanceof Error ? error.message : "Pulse Radio could not start."))}
               >
@@ -525,6 +567,7 @@ export function MusicScreen({ route, navigation }: Props) {
                   </Pressable>
                 ))}
               </View>
+              {deepLinkNotice ? <Text accessibilityLiveRegion="polite" style={[styles.message, styles.warningMessage]}>{deepLinkNotice}</Text> : null}
               {message ? <Text accessibilityLiveRegion="polite" style={[styles.message, offline && styles.warningMessage]}>{message}</Text> : null}
             </View>
           </View>

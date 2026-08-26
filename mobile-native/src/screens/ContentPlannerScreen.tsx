@@ -153,7 +153,7 @@ export function ContentPlannerScreen({ route, navigation }: Props) {
           <Metric label="Reels" value={metrics.reels_total} />
           <Metric label="Statuses" value={metrics.statuses_total} />
         </View>
-        <Text style={styles.muted}>Detailed owned planner rows remain backend-owned until a native list contract is exposed. Draft and schedule writes use the existing planner API.</Text>
+        <Text style={styles.muted}>You can write and schedule items here. Your full planner, with every saved row, is on pulsesoc.com.</Text>
       </Panel>
 
       <Panel>
@@ -186,12 +186,12 @@ export function ContentPlannerScreen({ route, navigation }: Props) {
 
       <Panel>
         <Text style={styles.sectionTitle}>Publish safety</Text>
-        <Text style={styles.muted}>Publish now, recurring schedules, bulk scheduling, smart rescheduling, and version history stay inside native provider boundaries until backend contracts expose native authority.</Text>
+        <Text style={styles.muted}>Publish now, recurring and bulk scheduling, smart rescheduling, and version history are available on pulsesoc.com.</Text>
       </Panel>
 
       <Panel>
         <Text style={styles.sectionTitle}>Recommended next actions</Text>
-        {recommendations.length ? recommendations.map((item) => <Text key={item} style={styles.recommendation}>{item}</Text>) : <Text style={styles.muted}>Planner recommendations appear after the backend has enough creator activity.</Text>}
+        {recommendations.length ? recommendations.map((item) => <Text key={item} style={styles.recommendation}>{item}</Text>) : <Text style={styles.muted}>Planner recommendations appear once you have posted and scheduled a little more.</Text>}
       </Panel>
 
       <Panel>

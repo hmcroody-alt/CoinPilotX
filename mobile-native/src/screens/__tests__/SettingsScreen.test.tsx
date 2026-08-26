@@ -151,10 +151,10 @@ describe("SettingsScreen", () => {
     });
 
     it("hides the session actions while searching", async () => {
-      const { getByPlaceholderText, getByTestId, queryByTestId } = render(<SettingsScreen />);
+      const { getByPlaceholderText, getByTestId, queryAllByTestId } = render(<SettingsScreen />);
       expect(getByTestId("settings-sign-out")).toBeTruthy();
       fireEvent.changeText(getByPlaceholderText("Search settings"), "dark");
-      await waitFor(() => expect(queryByTestId("settings-sign-out")).toBeNull());
+      await waitFor(() => expect(queryAllByTestId("settings-sign-out").length).toBe(0));
     });
   });
 

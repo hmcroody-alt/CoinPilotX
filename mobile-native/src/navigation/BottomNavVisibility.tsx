@@ -1,8 +1,8 @@
-import { NavigationContext } from "@react-navigation/native";
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Keyboard, NativeScrollEvent, NativeSyntheticEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BOTTOM_NAV_ACTIVE_PLAYER_CLEARANCE, BOTTOM_NAV_CONTENT_CLEARANCE, BOTTOM_NAV_UNDOCKED_PADDING } from "./bottomNavMetrics";
+import { useIsFocusedIfNavigated } from "./useIsFocusedIfNavigated";
 
 type BottomNavVisibilityContextValue = {
   /**
@@ -120,51 +120,14 @@ export function useBottomNavVisibility() {
   return context;
 }
 
-/**
- * Stand-in for `NavigationContext` when the real one is unavailable.
- *
- * Only ever read, never provided. It exists so the `useContext` call below is
- * unconditional even if `@react-navigation/native` is module-mocked without
- * `NavigationContext` — a shape several existing screen tests use.
+/*
+ * `useIsFocusedIfNavigated` used to live here, private to the dock. It moved to
+ * `./useIsFocusedIfNavigated` when the launch gate needed the same tolerant
+ * focus detection to stop a locked card's animation while its screen is covered:
+ * importing it from this module would have made every screen with a locked card
+ * depend on the dock module, which a dozen screen tests module-mock. Same
+ * implementation, one file, neither caller inheriting the other's mock surface.
  */
-const AbsentNavigationContext = createContext<undefined>(undefined);
-
-/**
- * `useIsFocused`, but tolerant of there being no navigator overhead.
- *
- * The library's own hook throws "Couldn't find a navigation object" outside a
- * `NavigationContainer`. That was survivable while four screens used the dock
- * hooks; now that eleven do, it means any of them rendered in isolation — a
- * screen test, a preview, a component pulled into a modal — crashes on a
- * concern that has nothing to do with what is being rendered. The sibling
- * `useBottomNavVisibility` already degrades to inert defaults when its provider
- * is missing; this brings focus detection in line with it.
- *
- * The subscription logic is the library's, minus the throw: a screen with no
- * navigator is never blurred, so it reads as focused.
- */
-function useIsFocusedIfNavigated() {
-  const navigation = useContext((NavigationContext || AbsentNavigationContext) as typeof AbsentNavigationContext) as
-    | { isFocused: () => boolean; addListener: (event: string, callback: () => void) => () => void }
-    | undefined;
-  const [focused, setFocused] = useState(() => (navigation ? navigation.isFocused() : true));
-
-  useEffect(() => {
-    if (!navigation) {
-      setFocused(true);
-      return;
-    }
-    setFocused(navigation.isFocused());
-    const unsubscribeFocus = navigation.addListener("focus", () => setFocused(true));
-    const unsubscribeBlur = navigation.addListener("blur", () => setFocused(false));
-    return () => {
-      unsubscribeFocus();
-      unsubscribeBlur();
-    };
-  }, [navigation]);
-
-  return focused;
-}
 
 export function useBottomNavScrollVisibility({
   enabled = true,

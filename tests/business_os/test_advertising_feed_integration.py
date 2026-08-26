@@ -67,6 +67,18 @@ def _extract_helper():
 _attach = _extract_helper()
 
 
+def setup_module(module=None):
+    """Build the canonical schema this suite's builders write into.
+
+    Importing s7 only binds the temp DATABASE_URL; it does not create tables, and
+    pytest runs an imported module's ``setup_module`` for that module alone — never
+    for this one. Without this hook the s7 builders hit an empty database. Both
+    ``ensure_schema`` and the stub CREATEs are idempotent, so this is a no-op when
+    s7's own setup already ran in the same session.
+    """
+    s7.setup_module()
+
+
 def _assert(cond, msg):
     if not cond:
         raise AssertionError(msg)
@@ -144,7 +156,7 @@ def test_non_dict_result_unchanged():
 
 
 def _run_standalone():
-    s7.setup_module()
+    setup_module()
     tests = [
         test_flag_off_leaves_feed_unchanged,
         test_eligible_injects_client_safe_sponsored,

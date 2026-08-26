@@ -35,7 +35,7 @@
 
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Linking, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
+import { AppState, Linking, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { connectMarketplacePayout } from "../api/marketplace";
 import { PulseApiError } from "../api/pulseApi";
 import {
@@ -77,6 +77,7 @@ import {
   maskedPayoutReference,
   payoutOnboardingFailure,
   payoutOnboardingOutcome,
+  payoutOnboardingPrefersServerMessage,
   payoutReadiness,
   processingExplainer,
   type ActivityFilterId,
@@ -579,6 +580,32 @@ function PayoutOnboardingBody({ connect, onRetryStatus, navigation, t }: BodyPro
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<PayoutOnboardingOutcome | null>(null);
 
+  /**
+   * Armed only once the seller has actually been sent to Stripe.
+   *
+   * Stripe onboarding finishes in a browser, outside the app, so the status this
+   * screen is showing goes stale the moment the seller leaves — and the return
+   * from Stripe is a foreground event, not a navigation this screen can observe.
+   * Refreshing on every foreground would re-read the money endpoints each time
+   * the seller checks a notification, so the listener stays inert until the
+   * hand-off has happened and disarms itself after one refresh.
+   */
+  const awaitingStripeReturn = useRef(false);
+
+  // Held in a ref because the parent passes a fresh arrow every render; as an
+  // effect dependency it would tear down and re-add the listener each time.
+  const retryStatusRef = useRef(onRetryStatus);
+  retryStatusRef.current = onRetryStatus;
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state !== "active" || !awaitingStripeReturn.current) return;
+      awaitingStripeReturn.current = false;
+      retryStatusRef.current();
+    });
+    return () => subscription.remove();
+  }, []);
+
   const startOnboarding = useCallback(async () => {
     if (busy) return;
     setBusy(true);
@@ -594,7 +621,11 @@ function PayoutOnboardingBody({ connect, onRetryStatus, navigation, t }: BodyPro
       const next = payoutOnboardingOutcome(result);
       setOutcome(next);
       if (next.kind === "ready") {
-        await Linking.openURL(next.url).catch(() => undefined);
+        const opened = await Linking.openURL(next.url).then(
+          () => true,
+          () => false
+        );
+        awaitingStripeReturn.current = opened;
       }
     } catch (error) {
       const status = error instanceof PulseApiError ? error.status : 0;
@@ -639,10 +670,12 @@ function PayoutOnboardingBody({ connect, onRetryStatus, navigation, t }: BodyPro
 
       {outcome ? (
         <MoneyCard accent={outcome.kind === "ready" ? "green" : "plain"}>
-          <MoneyNote>{t(`${NS}.onboarding.${outcome.messageKey}`)}</MoneyNote>
-          {/* The server's own sentence, when it sent one. Shown under ours
-              rather than instead of it: ours explains, theirs is specific. */}
-          {outcome.serverMessage ? <MoneyNote>{outcome.serverMessage}</MoneyNote> : null}
+          {/* One sentence, not two — see `payoutOnboardingPrefersServerMessage`. */}
+          <MoneyNote>
+            {payoutOnboardingPrefersServerMessage(outcome)
+              ? outcome.serverMessage
+              : t(`${NS}.onboarding.${outcome.messageKey}`)}
+          </MoneyNote>
           {outcome.kind === "needs_seller_approval" ? (
             <MoneyAction
               label={t(`${NS}.onboarding.openSeller`)}

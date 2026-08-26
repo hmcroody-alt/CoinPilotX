@@ -1354,7 +1354,7 @@ function HomeWebSideRail({
       </Pressable>
       <LogiNexusPanel style={styles.sidePanel} tone="default">
         <Text style={styles.sidePanelTitle}>Realtime layer ready</Text>
-        <Text style={styles.sidePanelBody}>{statuses.length || posts.length ? "New posts, reactions, status, and replies hydrate through the native sync layer." : "Home is waiting for authenticated feed and status events."}</Text>
+        <Text style={styles.sidePanelBody}>{statuses.length || posts.length ? "New posts, reactions, status, and replies update here as they arrive." : "Home is waiting for authenticated feed and status events."}</Text>
       </LogiNexusPanel>
     </View>
   );

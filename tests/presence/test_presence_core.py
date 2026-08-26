@@ -14,6 +14,7 @@ from services import presence_service as ps
 
 cur = cursor()
 harness.bootstrap_users(cur, 12)
+ps.reset_schema_cache()
 ps.ensure_schema(cur, conn())
 
 VIEWER = 99

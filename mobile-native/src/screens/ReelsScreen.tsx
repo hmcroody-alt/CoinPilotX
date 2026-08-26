@@ -1266,8 +1266,14 @@ function initialReelLane(): ReelLane {
   return QA_REELS_STATE === "live" ? "live" : QA_REELS_STATE === "music" ? "music" : "for_you";
 }
 
+/**
+ * `reel_id` before `id`, matching `normalizeReel` — the resolver that decides
+ * which of the two a normalized reel actually carries. Every module that
+ * resolves a reel's identity has to agree on the order, because the moment one
+ * of them disagrees the invariant depends on normalization having already run.
+ */
 function reelIdOf(reel: PulseReel | null | undefined): number {
-  return Number(reel?.id || reel?.reel_id || 0);
+  return Number(reel?.reel_id || reel?.id || 0);
 }
 
 /**
@@ -1289,7 +1295,7 @@ function seedFirst(reels: PulseReel[], seed: PulseReel | null) {
 
 function focusInitialReel(reels: PulseReel[], reelId: number) {
   if (!reelId) return reels;
-  const index = reels.findIndex((item) => item.id === reelId);
+  const index = reels.findIndex((item) => reelIdOf(item) === reelId);
   if (index <= 0) return reels;
   return [reels[index], ...reels.slice(0, index), ...reels.slice(index + 1)];
 }

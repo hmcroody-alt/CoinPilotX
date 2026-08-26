@@ -1370,12 +1370,14 @@
       }
     },
     "launch": {
-      "comingSoon": {
-        "title": "Bald verfügbar",
-        "body": "Wir bauen diesen Teil des PulseSoc-Universums. Diese Funktion bereitet sich auf den Start vor.",
-        "gotIt": "Verstanden",
-        "hint": "Bereitet sich auf den Start vor."
-      }
+      "comingSoonTitle": "DEMNÄCHST",
+      "comingSoonBody": "Wir bauen diesen Teil des PulseSoc-Universums. Diese Funktion wird für den Start vorbereitet.",
+      "comingSoonAction": "Verstanden",
+      "statusComingSoon": "Demnächst",
+      "statusBuilding": "In Arbeit",
+      "statusPreparing": "Startvorbereitung",
+      "lockedLabel": "{{module}}. Demnächst verfügbar.",
+      "lockedHint": "Zeigt an, wann diese Funktion verfügbar sein wird."
     }
   },
   "discovery": {
@@ -1451,6 +1453,22 @@
       "collectionName": "Name der Sammlung",
       "saveToCollection": "In Sammlung speichern"
     },
+    "dashboardMap": {
+      "openSection": "{{section}} öffnen",
+      "sections": {
+        "account": "Konto-Kommandozentrale",
+        "network": "Netzwerk-Kommandozentrale",
+        "creator": "Creator-Kommandozentrale",
+        "intelligence": "Intelligenz-Kommandozentrale",
+        "economy": "Wirtschafts-Kommandozentrale",
+        "media": "Medien-Kommandozentrale",
+        "crypto": "Krypto-Kommandozentrale",
+        "safety": "Sicherheits-Kommandozentrale",
+        "ads": "Anzeigen-Kommandozentrale",
+        "ai": "KI-Kommandozentrale",
+        "system": "System-Kommandozentrale"
+      }
+    },
     "crypto": {
       "intelligence": {
         "heading": "Krypto-Intelligenz",
@@ -1463,9 +1481,9 @@
           "label": "Portfolio",
           "hint": "Bestände, Allokation, Performance, Konzentration sowie unrealisierte Gewinne und Verluste."
         },
-        "watchlist": {
-          "label": "Watchlist",
-          "hint": "Behalte deine wichtigsten Coins mit Live-Kursen und Favoriten im Blick."
+        "watchlists": {
+          "label": "Watchlists",
+          "hint": "Verfolge die Assets, die dich interessieren, mit Live-Kursen und richte einen Alarm auf eine ganze Liste."
         },
         "undx": {
           "label": "UNDX-Krypto-Intelligenz",
@@ -1622,22 +1640,6 @@
           "y1": "1 J",
           "all": "Alle"
         }
-      }
-    },
-    "dashboardMap": {
-      "openSection": "{{section}} öffnen",
-      "sections": {
-        "account": "Konto-Kommandozentrale",
-        "network": "Netzwerk-Kommandozentrale",
-        "creator": "Creator-Kommandozentrale",
-        "intelligence": "Intelligenz-Kommandozentrale",
-        "economy": "Wirtschafts-Kommandozentrale",
-        "media": "Medien-Kommandozentrale",
-        "crypto": "Krypto-Kommandozentrale",
-        "safety": "Sicherheits-Kommandozentrale",
-        "ads": "Anzeigen-Kommandozentrale",
-        "ai": "KI-Kommandozentrale",
-        "system": "System-Kommandozentrale"
       }
     }
   },
@@ -2221,12 +2223,18 @@
       "status": "Status",
       "renews": "Verlängert sich am",
       "expires": "Endet am",
-      "price": "Preis",
-      "activeUntil": "Aktiv bis",
-      "since": "Abonniert seit",
       "cancelPending": "Dieses Abo endet und wird nicht verlängert.",
       "none": "Für diese Mitgliedschaft liegen keine Abrechnungsdaten vor.",
-      "founderNone": "Gründer-Mitgliedschaft – keine Abrechnung, nichts zu verlängern."
+      "founderNone": "Gründer-Mitgliedschaft – keine Abrechnung, nichts zu verlängern.",
+      "planValue": "PulseSoc Premium — {{period}}",
+      "planValueUnknown": "PulseSoc Premium",
+      "price": "Preis",
+      "renewsOn": "Verlängert sich am",
+      "expiresOn": "Endet am",
+      "since": "Abonnement seit",
+      "loadingValue": "Wird geladen",
+      "graceNote": "Apple versucht erneut, deine Zahlung einzuziehen. Dein Zugang bleibt in der Zwischenzeit aktiv.",
+      "retryNote": "Deine letzte Zahlung war nicht erfolgreich. Aktualisiere deine Zahlungsmethode im App Store, um fortzufahren."
     },
     "period": {
       "monthly": "Monatlich",
@@ -2238,7 +2246,8 @@
     "provider": {
       "apple_iap": "Apple",
       "stripe": "Karte",
-      "unknown": "—"
+      "unknown": "—",
+      "apple_app_store": "Apple App Store"
     },
     "subStatus": {
       "active": "Aktiv",
@@ -2270,11 +2279,21 @@
       "undx": {
         "advanced": "UNDX erweitert"
       },
+      "crypto": {
+        "advanced_alerts": "Erweiterte Krypto-Alerts",
+        "portfolio": "Unbegrenzte Portfolio-Positionen",
+        "intelligence": "UNDX Krypto-Intelligenz"
+      },
       "creator_studio_pro": "Creator Studio Pro",
       "founder_hub_access": "Zugang zum Founder Hub",
       "premium_upload_limits": "Höhere Upload-Limits",
       "priority_support": "Bevorzugter Support",
-      "early_access_features": "Früher Zugang zu Neuerungen"
+      "early_access_features": "Früher Zugang zu Neuerungen",
+      "verification": {
+        "blue_check": {
+          "apply": "Zugang zum Blue-Check-Antrag"
+        }
+      }
     },
     "notYet": {
       "heading": "Kommt mit deinem Tarif",
@@ -2360,6 +2379,343 @@
     "free": {
       "heading": "Immer kostenlos",
       "body": "Feed, Beiträge, Reels, Status, Nachrichten, Anrufe, Live-Video, Profil, Sicherheit und Kontowiederherstellung bleiben kostenlos. Premium ergänzt PulseSoc; es nimmt nie etwas weg."
+    },
+    "crypto": {
+      "portfolio": {
+        "title": "Portfolio",
+        "subtitle": "Deine Bestände, bewertet zu Live-Kursen.",
+        "loadError": "Dein Portfolio konnte nicht geladen werden.",
+        "footnote": "Die Werte sind nicht realisiert: deine Bestände zum heutigen Kurs, gegen den von dir eingetragenen durchschnittlichen Kaufpreis. PulseSoc erfasst keine einzelnen Trades.",
+        "total": {
+          "label": "Gesamtwert",
+          "partialLabel": "Gesamtwert von {{priced}} von {{holdings}} Beständen",
+          "incomplete": "Für einige Bestände sind keine Live-Kurse verfügbar. Die Summe umfasst nur deine übrigen Bestände.",
+          "basisNote_one": "{{count}} Bestand hat keinen Kaufpreis und damit weder Gewinn noch Verlust.",
+          "basisNote_other": "{{count}} Bestände haben keinen Kaufpreis und damit weder Gewinn noch Verlust."
+        },
+        "row": {
+          "units": "{{amount}} Einheiten",
+          "avg": "Ø {{price}}",
+          "noBasis": "kein Kaufpreis",
+          "price": "Kurs {{price}}",
+          "priceUnavailable": "Kurs nicht verfügbar"
+        },
+        "form": {
+          "title": "Bestand hinzufügen",
+          "symbolLabel": "Coin-Symbol",
+          "symbolPlaceholder": "z. B. BTC",
+          "amountLabel": "Menge",
+          "amountPlaceholder": "Wie viel du hältst",
+          "basisLabel": "Durchschnittlicher Kaufpreis",
+          "basisPlaceholder": "Was du pro Coin gezahlt hast",
+          "basisHint": "Lass den Kaufpreis leer, wenn du ihn nicht kennst. Wir bewerten den Bestand trotzdem und zeigen dafür einfach keinen Gewinn oder Verlust an.",
+          "symbolRequired": "Gib ein Symbol wie BTC, ETH oder SOL ein.",
+          "amountRequired": "Gib ein, wie viel du hältst.",
+          "submit": "Bestand hinzufügen",
+          "adding": "Wird hinzugefügt…",
+          "added": "Bestand hinzugefügt.",
+          "addFailed": "Dieser Bestand konnte nicht hinzugefügt werden."
+        },
+        "holdings": {
+          "title": "Bestände",
+          "empty": "Noch keine Bestände. Füge oben deinen ersten hinzu."
+        },
+        "movers": {
+          "title": "Größte Bewegungen",
+          "excluded_one": "{{count}} Bestand wird nicht gewertet: kein Live-Kurs oder kein Kaufpreis.",
+          "excluded_other": "{{count}} Bestände werden nicht gewertet: kein Live-Kurs oder kein Kaufpreis."
+        },
+        "remove": {
+          "title": "Bestand entfernen",
+          "body": "{{symbol}} aus deinem Portfolio entfernen? Deine Watchlists und Alarme bleiben unberührt.",
+          "a11y": "{{symbol}} entfernen",
+          "done": "Bestand entfernt.",
+          "failed": "Dieser Bestand konnte nicht entfernt werden."
+        },
+        "upgrade": {
+          "title": "Du hast das kostenlose Limit erreicht",
+          "body": "Premium hebt die Obergrenze für die Anzahl deiner Bestände auf. Kurse, Werte und Verlauf sind in beiden Fällen dieselben.",
+          "action": "Premium ansehen"
+        }
+      },
+      "alerts": {
+        "title": "Alarme verwalten",
+        "loading": "Deine Alarme werden geladen…",
+        "loadError": "Deine Alarme konnten nicht geladen werden.",
+        "subtitle": "Deine Krypto- und Marktalarme, so wie PulseSoc sie hinterlegt hat.",
+        "subtitleOffline": "Es werden die Alarme angezeigt, die auf diesem Gerät gespeichert sind.",
+        "refresh": "Aktualisieren",
+        "refreshing": "Wird aktualisiert",
+        "hero": {
+          "eyebrow": "Deine Alarme",
+          "body": "Erstelle, bearbeite, pausiere, setze fort, dupliziere und teste deine Alarme und sieh dir den Verlauf jedes einzelnen an."
+        },
+        "worker": {
+          "linked": "Prüfungen laufen",
+          "stale": "Prüfungen verzögert"
+        },
+        "readiness": {
+          "title": "Zustellbereitschaft",
+          "check": "Prüfen",
+          "checking": "Wird geprüft",
+          "test": "Testen",
+          "testing": "Wird getestet",
+          "unknown": "PulseSoc entscheidet, wann das bereit ist.",
+          "needsSetup": "Einrichtung nötig",
+          "refreshed": "Zustellbereitschaft aktualisiert.",
+          "refreshFailed": "Die Zustellbereitschaft konnte nicht aktualisiert werden.",
+          "tested": "Test für {{channel}} abgeschlossen.",
+          "testFailed": "Dieser Zustelltest ist fehlgeschlagen."
+        },
+        "channels": {
+          "in_app": "In der App",
+          "email": "E-Mail",
+          "push": "Push",
+          "sms": "SMS",
+          "telegram": "Telegram",
+          "toggle": "{{channel}}: {{state}}",
+          "on": "An",
+          "off": "Aus",
+          "default": "PulseSoc entscheidet"
+        },
+        "form": {
+          "createTitle": "Alarm erstellen",
+          "editTitle": "Alarm bearbeiten",
+          "basic": "Einfach",
+          "advanced": "Erweitert",
+          "watchTitle": "Was dieser Alarm beobachtet",
+          "watchAsset": "Ein Asset",
+          "watchList": "Eine Watchlist",
+          "symbolLabel": "Symbol des Alarms",
+          "symbolPlaceholder": "Symbol",
+          "targetLabel": "Zielwert des Alarms",
+          "targetPlaceholder": "Zielwert",
+          "noteLabel": "Notiz zum Alarm",
+          "notePlaceholder": "Notiz (optional)",
+          "save": "Änderungen speichern",
+          "saving": "Wird gespeichert",
+          "create": "Alarm erstellen",
+          "cancelEdit": "Bearbeitung abbrechen",
+          "created": "Alarm erstellt.",
+          "updated": "Alarm aktualisiert.",
+          "saveFailed": "Der Alarm konnte nicht gespeichert werden."
+        },
+        "premium": {
+          "notice": "Alarme mit mehreren Bedingungen, Watchlist-Alarme und Zeitfenster gehören zu PulseSoc Premium.",
+          "lockedBody": "Erweiterte Alarme – mehrere Bedingungen in einer Regel, Regeln für eine ganze Watchlist und Zeitfenster – gehören zu PulseSoc Premium."
+        },
+        "watchlist": {
+          "fallbackName": "Watchlist {{id}}",
+          "unavailable": "Nicht verfügbar",
+          "assets_one": "{{count}} Asset",
+          "assets_other": "{{count}} Assets"
+        },
+        "conditions": {
+          "above": "Über",
+          "below": "Unter",
+          "moves_up_percent": "Steigt um %",
+          "moves_down_percent": "Fällt um %",
+          "volatility_above": "Volatilität über %"
+        },
+        "comparators": {
+          "above": "Über",
+          "below": "Unter",
+          "crosses_above": "Steigt über",
+          "crosses_below": "Fällt unter"
+        },
+        "logic": {
+          "and": "Alle davon",
+          "or": "Eine davon",
+          "andHint": "Der Alarm löst nur aus, solange alle davon gleichzeitig zutreffen.",
+          "orHint": "Der Alarm löst aus, sobald eine davon zutrifft."
+        },
+        "clause": {
+          "title": "Bedingungen",
+          "heading": "Bedingung {{position}}",
+          "valueLabel": "Wert von Bedingung {{position}}",
+          "percentPlaceholder": "Prozent, zum Beispiel {{example}}",
+          "valuePlaceholder": "Wert",
+          "add": "Bedingung hinzufügen",
+          "remove": "Entfernen",
+          "windowLabel": "Zeitfenster",
+          "noWindow": "Kein Zeitfenster",
+          "noWindows": "Für dieses Asset lässt sich noch kein Zeitfenster messen.",
+          "windowCleared": "Dieses Zeitfenster lässt sich für dieses Asset noch nicht messen und wurde deshalb entfernt.",
+          "max_one": "Ein Alarm kann höchstens {{count}} Bedingung enthalten.",
+          "max_other": "Ein Alarm kann höchstens {{count}} Bedingungen enthalten."
+        },
+        "list": {
+          "title": "Krypto- und Marktalarme",
+          "empty": "Du hast noch keine Alarme. Erstelle oben deinen ersten.",
+          "subject": "Alarm für {{subject}}",
+          "watchlistSubject": "Watchlist {{name}}",
+          "watchlistFallback": "Watchlist",
+          "meta_one": "{{count}} Verlaufseintrag · {{channels}}",
+          "meta_other": "{{count}} Verlaufseinträge · {{channels}}",
+          "detail": "Details",
+          "edit": "Bearbeiten",
+          "pause": "Pausieren",
+          "resume": "Fortsetzen",
+          "test": "Testen",
+          "duplicate": "Duplizieren",
+          "delete": "Löschen"
+        },
+        "status": {
+          "active": "Aktiv",
+          "paused": "Pausiert",
+          "triggered": "Ausgelöst",
+          "disabled": "Deaktiviert",
+          "expired": "Beendet"
+        },
+        "actions": {
+          "paused": "Alarm pausiert.",
+          "resumed": "Alarm fortgesetzt.",
+          "deleted": "Alarm gelöscht.",
+          "duplicated": "Alarm dupliziert.",
+          "tested": "Testalarm gesendet.",
+          "failed": "Diese Aktion für den Alarm ist fehlgeschlagen.",
+          "editUnavailable": "Alarme mit mehreren Bedingungen und Watchlist-Alarme lassen sich in der App noch nicht bearbeiten. Lösche den Alarm und erstelle ihn neu, um ihn zu ändern."
+        },
+        "delete": {
+          "prompt": "Löschen von {{subject}} {{condition}} bestätigen.",
+          "body": "Diesen Alarm löschen? Er wird aus deinem PulseSoc-Konto entfernt und das lässt sich nicht rückgängig machen.",
+          "cancel": "Abbrechen",
+          "canceled": "Löschen abgebrochen.",
+          "confirm": "Löschen bestätigen",
+          "deleting": "Wird gelöscht"
+        },
+        "detail": {
+          "title": "Alarmdetails",
+          "summary_one": "Status: {{status}}. Quelle: {{source}}. {{count}}-mal ausgelöst.",
+          "summary_other": "Status: {{status}}. Quelle: {{source}}. {{count}}-mal ausgelöst.",
+          "sourcePulseSoc": "PulseSoc",
+          "channels": "Kanäle: {{channels}}",
+          "lastChecked": "Zuletzt geprüft: {{value}}",
+          "lastTriggered": "Zuletzt ausgelöst: {{value}}",
+          "notRecorded": "nicht erfasst",
+          "notTriggered": "nicht ausgelöst"
+        },
+        "history": {
+          "title": "Alarmverlauf",
+          "empty": "Noch kein Alarmverlauf. Einträge erscheinen hier, sobald ein Alarm auslöst oder du einen Test sendest.",
+          "truncated": "Es werden die neuesten {{shown}} von {{total}} Einträgen im Alarmverlauf angezeigt.",
+          "market": "Markt",
+          "recorded": "erfasst",
+          "fallback": "{{condition}} bei {{observed}} gegenüber {{target}}",
+          "unknownCondition": "Alarm",
+          "unknownValue": "unbekannt",
+          "unknownTarget": "Zielwert",
+          "noTimestamp": "Kein Zeitstempel"
+        },
+        "managed": {
+          "title": "Von PulseSoc verwaltet",
+          "body": "Kontoverwaltung, die erweiterte Bearbeitung der Intelligenz, die Verwaltung von Datenquellen und weitere Alarmarten erledigst du auf der PulseSoc-Website. In der App sind sie noch nicht verfügbar.",
+          "notifications": "Benachrichtigungen"
+        },
+        "validation": {
+          "watchlistRequired": "Wähle eine Watchlist aus, die dieser Alarm beobachten soll.",
+          "watchlistUnavailable": "Diese Watchlist lässt sich derzeit nicht für einen Alarm verwenden.",
+          "symbolRequired": "Gib ein Asset-Symbol ein, bevor du den Alarm speicherst.",
+          "symbolInvalid": "Verwende ein gültiges Asset-Symbol wie BTC, ETH oder SOL.",
+          "premiumLocked": "Alarme mit mehreren Bedingungen gehören zu PulseSoc Premium.",
+          "clauseRequired": "Füge mindestens eine Bedingung hinzu, bevor du den Alarm speicherst.",
+          "clauseMetric": "{{position}}: Wähle aus, was gemessen werden soll.",
+          "clauseComparator": "{{position}}: Wähle einen unterstützten Vergleich.",
+          "clauseValue": "{{position}}: Gib einen Wert ein.",
+          "clauseNumeric": "{{position}}: Verwende einen numerischen Wert.",
+          "clausePositive": "{{position}}: {{metric}} muss größer als null sein.",
+          "clauseTooLarge": "{{position}}: Dieser Wert ist zu groß für einen sicheren Schwellenwert.",
+          "clauseNotWindowable": "{{position}}: {{metric}} lässt sich nicht über ein Zeitfenster messen.",
+          "clauseWindowUnavailable": "{{position}}: Dieses Zeitfenster lässt sich für dieses Asset noch nicht messen.",
+          "clauseComparatorWindow": "{{position}}: {{comparator}} lässt sich nicht mit einem Zeitfenster verwenden.",
+          "targetRequired": "Gib einen Zielwert ein, bevor du den Alarm speicherst.",
+          "targetNumeric": "Verwende einen numerischen Zielwert.",
+          "targetPositive": "Der Zielwert muss größer als null sein.",
+          "targetTooLarge": "Der Zielwert ist zu groß für einen sicheren Alarmschwellenwert.",
+          "conditionUnsupported": "Wähle eine unterstützte Alarmbedingung.",
+          "channelRequired": "Wähle mindestens einen Zustellkanal."
+        }
+      },
+      "watchlists": {
+        "title": "Watchlists",
+        "subtitle": "Verfolge die Assets, die dich interessieren, mit Live-Marktdaten.",
+        "loadError": "Die Watchlists konnten nicht geladen werden.",
+        "actionFailed": "Das hat nicht funktioniert.",
+        "offline": "Offline – es werden die zuletzt empfangenen Kurse angezeigt.",
+        "pricesUnavailable": "Live-Kurse sind vorübergehend nicht verfügbar.",
+        "asOf": "Kurse mit Stand {{timestamp}}",
+        "tabs": {
+          "lists": "Meine Watchlists",
+          "favorites": "Favoriten"
+        },
+        "create": {
+          "title": "Watchlist erstellen",
+          "placeholder": "z. B. Meine Kryptos",
+          "label": "Name der neuen Watchlist",
+          "submit": "Watchlist erstellen",
+          "creating": "Wird erstellt…",
+          "nameRequired": "Gib deiner Watchlist zuerst einen Namen.",
+          "created": "Watchlist erstellt."
+        },
+        "rename": {
+          "action": "Umbenennen",
+          "save": "Speichern",
+          "cancel": "Abbrechen",
+          "placeholder": "Name der Watchlist",
+          "label": "Name der Watchlist",
+          "nameRequired": "Eine Watchlist braucht einen Namen.",
+          "renamed": "Watchlist umbenannt."
+        },
+        "delete": {
+          "action": "Löschen",
+          "title": "Watchlist löschen",
+          "body": "„{{name}}“ löschen? Die Assets werden aus dieser Liste entfernt. Deine Alarme und Favoriten bleiben erhalten.",
+          "cancel": "Abbrechen",
+          "confirm": "Löschen",
+          "deleted": "Watchlist gelöscht."
+        },
+        "assets": {
+          "add": "Asset hinzufügen",
+          "done": "Fertig",
+          "searchPlaceholder": "Assets suchen, z. B. BTC",
+          "searchLabel": "Assets suchen",
+          "noMatches": "Kein verfolgtes Asset passt dazu.",
+          "empty": "Noch keine Assets. Nutze „Asset hinzufügen“, um etwas zu verfolgen.",
+          "added": "{{symbol}} hinzugefügt.",
+          "removed": "{{symbol}} entfernt.",
+          "remove": "Entfernen",
+          "removeLabel": "{{symbol}} entfernen",
+          "favorite": "{{symbol}} zu Favoriten hinzufügen",
+          "unfavorite": "{{symbol}} aus Favoriten entfernen",
+          "favoritesUpdated": "Favoriten aktualisiert.",
+          "cap": "Marktkap. {{value}}",
+          "a11y": "{{name}}, {{price}}",
+          "average": "Ø {{percent}}",
+          "alerts_one": "{{count}} Alarm",
+          "alerts_other": "{{count}} Alarme",
+          "count_one": "{{count}} Asset",
+          "count_other": "{{count}} Assets"
+        },
+        "empty": {
+          "title": "Noch keine Watchlists",
+          "body": "Erstelle oben eine, um Kurse, Marktbewegungen und Alarme für die Assets zu verfolgen, denen du folgst."
+        },
+        "favorites": {
+          "title": "Favoriten",
+          "empty": "Markiere ein Asset mit einem Stern, damit es hier erscheint. Favoriten sind an dein Konto gebunden."
+        }
+      }
+    },
+    "subState": {
+      "active": "Aktiv",
+      "trialing": "Testphase",
+      "grace": "Im Kulanzzeitraum",
+      "billing_retry": "Zahlungswiederholung",
+      "canceled": "Gekündigt — keine Verlängerung",
+      "expired": "Abgelaufen",
+      "revoked": "Widerrufen",
+      "paused": "Pausiert",
+      "unknown": "Nicht verfügbar"
     }
   }
 }

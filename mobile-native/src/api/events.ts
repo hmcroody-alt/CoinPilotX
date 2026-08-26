@@ -89,6 +89,6 @@ export async function openEventsWebFallback(mode: "events" | "schedule" | "creat
     ok: false,
     path,
     status: "native_provider_boundary",
-    message: "Event operation remains inside the native Events boundary until the protected contract is available."
+    message: "This part of Events is not available in the app yet. Continue on the PulseSoc website."
   };
 }

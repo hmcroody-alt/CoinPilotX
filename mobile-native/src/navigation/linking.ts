@@ -319,6 +319,12 @@ export const linking: LinkingOptions<RootStackParamList> = {
           id: Number
         }
       },
+      // The screen has existed in AppNavigator since the portfolio was made
+      // native, and nativeRouteActions.ts routes to it in-app, but it was never
+      // declared here — so it was reachable by tapping and not by link. UNDX
+      // grounds a holdings answer with this path as the place to see it, and a
+      // deep link that resolves to nothing is worse than no link at all.
+      Portfolio: "pulse/portfolio",
       AccountCenter: {
         path: "pulse/settings/:section",
         parse: {

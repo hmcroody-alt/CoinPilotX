@@ -94,7 +94,7 @@ export function UndxActionCenterScreen({ route }: Props) {
         <View style={styles.heroCopy}>
           <Text style={styles.eyebrow}>UNDX GOVERNANCE</Text>
           <Text style={styles.title}>Action Center</Text>
-          <Text style={styles.subtitle}>Server-authoritative decisions, approvals, receipts, and Marketplace workflow state.</Text>
+          <Text style={styles.subtitle}>Decisions, approvals, receipts, and Marketplace workflow, all recorded and confirmed by PulseSoc.</Text>
         </View>
         <View style={styles.signalBadge}>
           <Text style={styles.signalValue}>{pending.length}</Text>

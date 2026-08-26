@@ -15,7 +15,12 @@ Marketplace and gates management behind page roles.
 
 - `GET /api/pages/:id/links` — current links (member-only).
 - `POST /api/pages/:id/links` — set/replace a link; requires `manage_marketplace`
-  for `store` links. Audited.
+  for `store` links. Replaces rather than appends — one link per kind. Audited.
+- `DELETE /api/pages/:id/links` — disconnect; `link_type` in the body, same
+  permission as connecting. Audited as `link_cleared`.
+
+See `page_modules.md` § *What a link is, exactly* for why singularity and ordering
+are load-bearing rather than merely tidy.
 
 ## Native surface
 

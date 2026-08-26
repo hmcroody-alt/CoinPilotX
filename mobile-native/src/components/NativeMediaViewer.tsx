@@ -394,7 +394,7 @@ function UnsupportedState({ item, failed, onShare }: { item: NativeMediaViewerIt
   return (
     <View style={styles.statePanel}>
       <Text style={styles.stateTitle}>{failed ? "Media unavailable" : "Unsupported media"}</Text>
-      <Text style={styles.stateText}>Open this PulseSoc media from its source while native support catches up.</Text>
+      <Text style={styles.stateText}>The app cannot show this file yet. Open it from its source instead.</Text>
       <Pressable style={styles.stateButton} onPress={onShare}>
         <Text style={styles.stateButtonText}>Share link</Text>
       </Pressable>

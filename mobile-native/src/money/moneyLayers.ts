@@ -267,12 +267,33 @@ export type PayoutOnboardingOutcome = {
     | "outcomeSignedOut"
     | "outcomeFailed";
   /**
-   * The server's message, when it sent one worth showing. The layer prefers its
-   * own sentence and falls back to this, on the same reasoning the payout
-   * request flow uses: a specific server explanation beats a generic local one.
+   * The server's message, when it sent one. Only ever shown *instead of* the
+   * local sentence, never underneath it — see `payoutOnboardingPrefersServerMessage`.
    */
   serverMessage: string;
 };
+
+/**
+ * Which of the two available sentences to show — because only one may be shown.
+ *
+ * The screen used to render the localized sentence and then the server's
+ * underneath it. Both describe the same single event, so a seller who tapped
+ * "Set up payouts" once was told it failed twice, in two different wordings.
+ *
+ * The choice is per outcome rather than a blanket preference:
+ *
+ *   • `failed` — the server is the only party that knows *why*. It can say the
+ *     payment provider setup is unfinished, which no local string can know, and
+ *     which changes the advice from "try again" to "this won't help yet". So the
+ *     server's sentence wins when there is one.
+ *   • everything else — the outcome is already fully determined by the shape of
+ *     the response, so the local sentence wins: it is translated, and the
+ *     server's is English-only and written for an operator ("in this
+ *     environment").
+ */
+export function payoutOnboardingPrefersServerMessage(outcome: PayoutOnboardingOutcome): boolean {
+  return outcome.kind === "failed" && Boolean(outcome.serverMessage.trim());
+}
 
 export function payoutOnboardingOutcome(
   response: { ok?: boolean; message?: string; onboarding_url?: string } | null | undefined

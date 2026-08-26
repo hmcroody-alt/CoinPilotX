@@ -26,7 +26,7 @@
  */
 
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -59,6 +59,7 @@ import {
 } from "../api/watchlists";
 import { AssetSparkline } from "../components/crypto/AssetSparkline";
 import { Panel } from "../components/Panel";
+import { useTranslation } from "../i18n";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { createThemedStyles } from "../theme/themedStyles";
@@ -67,10 +68,7 @@ type Props = NativeStackScreenProps<RootStackParamList, "Watchlists">;
 
 type TabKey = "lists" | "favorites";
 
-const TABS: { key: TabKey; label: string }[] = [
-  { key: "lists", label: "My Watchlists" },
-  { key: "favorites", label: "Favorites" }
-];
+const TAB_KEYS: TabKey[] = ["lists", "favorites"];
 
 /** Green up, red down, neutral when we do not know — never green-by-default. */
 function changeColor(change: number | null): string {
@@ -81,6 +79,15 @@ function changeColor(change: number | null): string {
 }
 
 export function WatchlistsScreen({ navigation }: Props) {
+  const { t } = useTranslation();
+  /**
+   * The translator, reachable from `refresh` without being a dependency of it.
+   *
+   * `refresh` is the mount effect's only dependency, so anything it closes over
+   * decides how often the whole board is fetched.
+   */
+  const translate = useRef(t);
+  translate.current = t;
   const [view, setView] = useState<WatchlistMarketView | null>(null);
   const [tab, setTab] = useState<TabKey>("lists");
   const [loading, setLoading] = useState(true);
@@ -117,7 +124,9 @@ export function WatchlistsScreen({ navigation }: Props) {
         setView(cached);
         setOffline(true);
       }
-      setError(loadError instanceof Error ? loadError.message : "Watchlists could not load.");
+      setError(
+        loadError instanceof Error ? loadError.message : translate.current("premium:crypto.watchlists.loadError")
+      );
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -174,14 +183,14 @@ export function WatchlistsScreen({ navigation }: Props) {
     try {
       const result = await action();
       if (!result.ok) {
-        setError(result.message || "That did not work.");
+        setError(result.message || t("premium:crypto.watchlists.actionFailed"));
         return false;
       }
       setNotice(result.message || success);
       await refresh("refresh");
       return true;
     } catch (actionError) {
-      setError(actionError instanceof Error ? actionError.message : "That did not work.");
+      setError(actionError instanceof Error ? actionError.message : t("premium:crypto.watchlists.actionFailed"));
       return false;
     } finally {
       setBusy("");
@@ -191,20 +200,24 @@ export function WatchlistsScreen({ navigation }: Props) {
   async function onCreate() {
     const name = newListName.trim();
     if (!name) {
-      setError("Name your watchlist first.");
+      setError(t("premium:crypto.watchlists.create.nameRequired"));
       return;
     }
-    const ok = await run("create", () => createWatchlist(name), "Watchlist created.");
+    const ok = await run("create", () => createWatchlist(name), t("premium:crypto.watchlists.create.created"));
     if (ok) setNewListName("");
   }
 
   async function onRename(watchlistId: number) {
     const name = renameValue.trim();
     if (!name) {
-      setError("A watchlist needs a name.");
+      setError(t("premium:crypto.watchlists.rename.nameRequired"));
       return;
     }
-    const ok = await run(`rename-${watchlistId}`, () => renameWatchlist(watchlistId, name), "Watchlist renamed.");
+    const ok = await run(
+      `rename-${watchlistId}`,
+      () => renameWatchlist(watchlistId, name),
+      t("premium:crypto.watchlists.rename.renamed")
+    );
     if (ok) {
       setRenamingId(null);
       setRenameValue("");
@@ -213,19 +226,21 @@ export function WatchlistsScreen({ navigation }: Props) {
 
   function confirmDelete(watchlist: Watchlist) {
     Alert.alert(
-      "Delete watchlist",
+      t("premium:crypto.watchlists.delete.title"),
       // Says plainly what survives. Deleting a list the user built is worth one
       // tap of friction, and the alerts question is the one they will ask.
-      `Delete "${watchlist.name}"? Its assets are removed from this list. Your alerts and favorites are kept.`,
+      t("premium:crypto.watchlists.delete.body", { name: watchlist.name }),
       [
-        { text: "Cancel", style: "cancel" },
+        { text: t("premium:crypto.watchlists.delete.cancel"), style: "cancel" },
         {
-          text: "Delete",
+          text: t("premium:crypto.watchlists.delete.confirm"),
           style: "destructive",
           onPress: () => {
-            run(`delete-${watchlist.id}`, () => deleteWatchlist(watchlist.id), "Watchlist deleted.").catch(
-              () => undefined
-            );
+            run(
+              `delete-${watchlist.id}`,
+              () => deleteWatchlist(watchlist.id),
+              t("premium:crypto.watchlists.delete.deleted")
+            ).catch(() => undefined);
           }
         }
       ]
@@ -233,7 +248,11 @@ export function WatchlistsScreen({ navigation }: Props) {
   }
 
   async function onAddAsset(watchlistId: number, symbol: string) {
-    const ok = await run(`add-${watchlistId}`, () => addWatchlistAsset(watchlistId, symbol), `${symbol} added.`);
+    const ok = await run(
+      `add-${watchlistId}`,
+      () => addWatchlistAsset(watchlistId, symbol),
+      t("premium:crypto.watchlists.assets.added", { symbol })
+    );
     if (ok) {
       setAssetQuery("");
       setResults([]);
@@ -241,7 +260,11 @@ export function WatchlistsScreen({ navigation }: Props) {
   }
 
   async function onToggleFavorite(asset: WatchlistAsset) {
-    await run(`fav-${asset.symbol}`, () => setFavoriteAsset(asset.symbol, !asset.favorite), "Favorites updated.");
+    await run(
+      `fav-${asset.symbol}`,
+      () => setFavoriteAsset(asset.symbol, !asset.favorite),
+      t("premium:crypto.watchlists.assets.favoritesUpdated")
+    );
   }
 
   const asOf = useMemo(() => {
@@ -251,12 +274,13 @@ export function WatchlistsScreen({ navigation }: Props) {
 
   function renderAsset(asset: WatchlistAsset, watchlistId: number) {
     const tint = changeColor(asset.change_24h);
+    const alertCountLabel = t("premium:crypto.watchlists.assets.alerts", { count: asset.alert_count });
     return (
       <View key={`${watchlistId}-${asset.id}`} style={styles.assetRow}>
         <Pressable
           style={styles.assetMain}
           accessibilityRole="button"
-          accessibilityLabel={`${asset.name}, ${formatPrice(asset.price)}`}
+          accessibilityLabel={t("premium:crypto.watchlists.assets.a11y", { name: asset.name, price: formatPrice(asset.price) })}
           onPress={() => navigation.navigate("AssetDetail", { symbol: asset.symbol, name: asset.name })}
         >
           <View style={styles.assetIdentity}>
@@ -265,7 +289,9 @@ export function WatchlistsScreen({ navigation }: Props) {
               {asset.name}
             </Text>
             <Text style={styles.assetMeta}>
-              {asset.market_cap === null ? UNKNOWN_VALUE : `Cap ${formatCompact(asset.market_cap)}`}
+              {asset.market_cap === null
+                ? UNKNOWN_VALUE
+                : t("premium:crypto.watchlists.assets.cap", { value: formatCompact(asset.market_cap) })}
             </Text>
           </View>
           <AssetSparkline values={asset.sparkline} color={tint} />
@@ -276,13 +302,16 @@ export function WatchlistsScreen({ navigation }: Props) {
         </Pressable>
         <View style={styles.assetActions}>
           {asset.alert_count > 0 ? (
-            <Text style={styles.alertBadge} accessibilityLabel={`${asset.alert_count} alerts`}>
-              {asset.alert_count === 1 ? "1 alert" : `${asset.alert_count} alerts`}
+            <Text style={styles.alertBadge} accessibilityLabel={alertCountLabel}>
+              {alertCountLabel}
             </Text>
           ) : null}
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={asset.favorite ? `Unfavorite ${asset.symbol}` : `Favorite ${asset.symbol}`}
+            accessibilityLabel={t(
+              asset.favorite ? "premium:crypto.watchlists.assets.unfavorite" : "premium:crypto.watchlists.assets.favorite",
+              { symbol: asset.symbol }
+            )}
             onPress={() => onToggleFavorite(asset)}
           >
             <Text style={[styles.iconAction, asset.favorite ? styles.iconActionOn : null]}>
@@ -291,12 +320,16 @@ export function WatchlistsScreen({ navigation }: Props) {
           </Pressable>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={`Remove ${asset.symbol}`}
+            accessibilityLabel={t("premium:crypto.watchlists.assets.removeLabel", { symbol: asset.symbol })}
             onPress={() =>
-              run(`remove-${asset.id}`, () => removeWatchlistAsset(watchlistId, asset.id), `${asset.symbol} removed.`)
+              run(
+                `remove-${asset.id}`,
+                () => removeWatchlistAsset(watchlistId, asset.id),
+                t("premium:crypto.watchlists.assets.removed", { symbol: asset.symbol })
+              )
             }
           >
-            <Text style={styles.removeAction}>Remove</Text>
+            <Text style={styles.removeAction}>{t("premium:crypto.watchlists.assets.remove")}</Text>
           </Pressable>
         </View>
       </View>
@@ -319,18 +352,20 @@ export function WatchlistsScreen({ navigation }: Props) {
                 value={renameValue}
                 onChangeText={setRenameValue}
                 autoFocus
-                placeholder="Watchlist name"
+                placeholder={t("premium:crypto.watchlists.rename.placeholder")}
                 placeholderTextColor={colors.muted}
-                accessibilityLabel="Watchlist name"
+                accessibilityLabel={t("premium:crypto.watchlists.rename.label")}
               />
             ) : (
               <Text style={styles.cardTitle}>{watchlist.name}</Text>
             )}
             <Text style={styles.muted}>
-              {watchlist.asset_count === 1 ? "1 asset" : `${watchlist.asset_count} assets`}
+              {t("premium:crypto.watchlists.assets.count", { count: watchlist.asset_count })}
               {/* Only ever averaged over assets we have a real price for, so an
                   unpriced row cannot drag the summary toward zero. */}
-              {aggregate === null ? "" : ` · avg ${formatPercent(aggregate)}`}
+              {aggregate === null
+                ? ""
+                : ` · ${t("premium:crypto.watchlists.assets.average", { percent: formatPercent(aggregate) })}`}
             </Text>
           </View>
           <Text style={[styles.cardAggregate, { color: tint }]}>{formatPercent(aggregate)}</Text>
@@ -340,10 +375,10 @@ export function WatchlistsScreen({ navigation }: Props) {
           {isRenaming ? (
             <>
               <Pressable accessibilityRole="button" onPress={() => onRename(watchlist.id)}>
-                <Text style={styles.action}>Save</Text>
+                <Text style={styles.action}>{t("premium:crypto.watchlists.rename.save")}</Text>
               </Pressable>
               <Pressable accessibilityRole="button" onPress={() => setRenamingId(null)}>
-                <Text style={styles.actionMuted}>Cancel</Text>
+                <Text style={styles.actionMuted}>{t("premium:crypto.watchlists.rename.cancel")}</Text>
               </Pressable>
             </>
           ) : (
@@ -355,7 +390,7 @@ export function WatchlistsScreen({ navigation }: Props) {
                   setRenameValue(watchlist.name);
                 }}
               >
-                <Text style={styles.action}>Rename</Text>
+                <Text style={styles.action}>{t("premium:crypto.watchlists.rename.action")}</Text>
               </Pressable>
               <Pressable
                 accessibilityRole="button"
@@ -365,10 +400,12 @@ export function WatchlistsScreen({ navigation }: Props) {
                   setResults([]);
                 }}
               >
-                <Text style={styles.action}>{isAdding ? "Done" : "Add asset"}</Text>
+                <Text style={styles.action}>
+                  {t(isAdding ? "premium:crypto.watchlists.assets.done" : "premium:crypto.watchlists.assets.add")}
+                </Text>
               </Pressable>
               <Pressable accessibilityRole="button" onPress={() => confirmDelete(watchlist)}>
-                <Text style={styles.actionDanger}>Delete</Text>
+                <Text style={styles.actionDanger}>{t("premium:crypto.watchlists.delete.action")}</Text>
               </Pressable>
             </>
           )}
@@ -381,9 +418,9 @@ export function WatchlistsScreen({ navigation }: Props) {
               value={assetQuery}
               onChangeText={setAssetQuery}
               autoCapitalize="characters"
-              placeholder="Search assets, e.g. BTC"
+              placeholder={t("premium:crypto.watchlists.assets.searchPlaceholder")}
               placeholderTextColor={colors.muted}
-              accessibilityLabel="Search assets"
+              accessibilityLabel={t("premium:crypto.watchlists.assets.searchLabel")}
             />
             {/* Search only offers assets the price engine can actually quote, so
                 a user cannot add a row that would permanently read "--". */}
@@ -402,7 +439,7 @@ export function WatchlistsScreen({ navigation }: Props) {
               </Pressable>
             ))}
             {assetQuery.trim() && !results.length ? (
-              <Text style={styles.muted}>No tracked asset matches that.</Text>
+              <Text style={styles.muted}>{t("premium:crypto.watchlists.assets.noMatches")}</Text>
             ) : null}
           </View>
         ) : null}
@@ -410,7 +447,7 @@ export function WatchlistsScreen({ navigation }: Props) {
         {watchlist.assets.length ? (
           watchlist.assets.map((asset) => renderAsset(asset, watchlist.id))
         ) : (
-          <Text style={styles.muted}>No assets yet. Use “Add asset” to track something.</Text>
+          <Text style={styles.muted}>{t("premium:crypto.watchlists.assets.empty")}</Text>
         )}
       </Panel>
     );
@@ -433,30 +470,32 @@ export function WatchlistsScreen({ navigation }: Props) {
       }
     >
       <View style={styles.header}>
-        <Text style={styles.title}>Watchlists</Text>
-        <Text style={styles.subtitle}>Track the assets you care about with live market data.</Text>
+        <Text style={styles.title}>{t("premium:crypto.watchlists.title")}</Text>
+        <Text style={styles.subtitle}>{t("premium:crypto.watchlists.subtitle")}</Text>
       </View>
 
       {/* Honest provenance line. When the provider is degraded this is the only
           thing distinguishing old real numbers from current ones. */}
       {market && !market.ready ? (
-        <Text style={styles.warning}>{market.warning || "Live prices are temporarily unavailable."}</Text>
+        <Text style={styles.warning}>{market.warning || t("premium:crypto.watchlists.pricesUnavailable")}</Text>
       ) : null}
-      {offline ? <Text style={styles.warning}>Offline — showing the last prices we received.</Text> : null}
-      {asOf ? <Text style={styles.muted}>Prices as of {asOf}</Text> : null}
+      {offline ? <Text style={styles.warning}>{t("premium:crypto.watchlists.offline")}</Text> : null}
+      {asOf ? <Text style={styles.muted}>{t("premium:crypto.watchlists.asOf", { timestamp: asOf })}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {notice ? <Text style={styles.notice}>{notice}</Text> : null}
 
       <View style={styles.tabs}>
-        {TABS.map((item) => (
+        {TAB_KEYS.map((key) => (
           <Pressable
-            key={item.key}
+            key={key}
             accessibilityRole="tab"
-            accessibilityState={{ selected: tab === item.key }}
-            style={[styles.tab, tab === item.key ? styles.tabActive : null]}
-            onPress={() => setTab(item.key)}
+            accessibilityState={{ selected: tab === key }}
+            style={[styles.tab, tab === key ? styles.tabActive : null]}
+            onPress={() => setTab(key)}
           >
-            <Text style={[styles.tabLabel, tab === item.key ? styles.tabLabelActive : null]}>{item.label}</Text>
+            <Text style={[styles.tabLabel, tab === key ? styles.tabLabelActive : null]}>
+              {t(`premium:crypto.watchlists.tabs.${key}`)}
+            </Text>
           </Pressable>
         ))}
       </View>
@@ -464,14 +503,14 @@ export function WatchlistsScreen({ navigation }: Props) {
       {tab === "lists" ? (
         <>
           <Panel>
-            <Text style={styles.sectionTitle}>Create watchlist</Text>
+            <Text style={styles.sectionTitle}>{t("premium:crypto.watchlists.create.title")}</Text>
             <TextInput
               style={styles.input}
               value={newListName}
               onChangeText={setNewListName}
-              placeholder="e.g. My Crypto"
+              placeholder={t("premium:crypto.watchlists.create.placeholder")}
               placeholderTextColor={colors.muted}
-              accessibilityLabel="New watchlist name"
+              accessibilityLabel={t("premium:crypto.watchlists.create.label")}
             />
             <Pressable
               accessibilityRole="button"
@@ -479,7 +518,9 @@ export function WatchlistsScreen({ navigation }: Props) {
               disabled={busy === "create"}
               onPress={onCreate}
             >
-              <Text style={styles.primaryButtonLabel}>{busy === "create" ? "Creating…" : "Create Watchlist"}</Text>
+              <Text style={styles.primaryButtonLabel}>
+                {t(busy === "create" ? "premium:crypto.watchlists.create.creating" : "premium:crypto.watchlists.create.submit")}
+              </Text>
             </Pressable>
           </Panel>
 
@@ -487,20 +528,18 @@ export function WatchlistsScreen({ navigation }: Props) {
             watchlists.map(renderWatchlist)
           ) : (
             <Panel>
-              <Text style={styles.sectionTitle}>No watchlists yet</Text>
-              <Text style={styles.muted}>
-                Create one above to start tracking prices, 24h moves and alerts for the assets you follow.
-              </Text>
+              <Text style={styles.sectionTitle}>{t("premium:crypto.watchlists.empty.title")}</Text>
+              <Text style={styles.muted}>{t("premium:crypto.watchlists.empty.body")}</Text>
             </Panel>
           )}
         </>
       ) : (
         <Panel>
-          <Text style={styles.sectionTitle}>Favorites</Text>
+          <Text style={styles.sectionTitle}>{t("premium:crypto.watchlists.favorites.title")}</Text>
           {favorites.length ? (
             favorites.map((asset) => renderAsset(asset, asset.watchlist_id))
           ) : (
-            <Text style={styles.muted}>Star an asset to keep it here. Favorites follow your account.</Text>
+            <Text style={styles.muted}>{t("premium:crypto.watchlists.favorites.empty")}</Text>
           )}
         </Panel>
       )}

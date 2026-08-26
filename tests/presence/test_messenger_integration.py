@@ -18,6 +18,7 @@ import pulse_communications_v2.service as svc
 
 cur = cursor()
 harness.bootstrap_users(cur, 8)
+ps.reset_schema_cache()
 ps.ensure_schema(cur, conn())
 
 ALICE, BOB, CARL = 1, 2, 3

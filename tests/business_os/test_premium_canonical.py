@@ -285,6 +285,59 @@ def test_granted_but_unenforced_keys_are_declared():
             "declared as not-yet-a-benefit")
 
 
+# PREM-016 -------------------------------------------------------------------
+def test_every_advertised_benefit_has_native_copy():
+    """A benefit the server advertises must be translatable by the app.
+
+    The Premium screen renders the server's benefit list and only that list, so
+    a capability becomes visible to members the moment ``readiness`` calls it
+    sellable — no client change required. That is the right coupling, and it has
+    one failure mode: the screen falls back to ``defaultValue: benefit.label``,
+    which is the server's English string. A key with no catalog entry therefore
+    does not crash, does not render its own name, and does not fail CI. It just
+    quietly shows English to every member in all eleven languages, and looks
+    correct to anyone testing in English.
+
+    ``premium.crypto.portfolio`` did exactly this: it was sellable, presented,
+    and had no catalog entry. The i18n suite could not see it, because that
+    suite compares the locales against *English*, and English was missing the
+    key too. Nothing on either side of the boundary was in a position to notice
+    — which is why the check has to live here, where the server's list is.
+
+    The locales are not re-checked here. ``i18n:validate`` already fails on any
+    key present in English and absent elsewhere, so English is the only edge
+    this test needs to hold.
+    """
+    import json
+    import pathlib
+    from services.business_os.entitlements import readiness as rd
+    from services.business_os.entitlements import premium as prem
+
+    presented = (prem.PREMIUM_ACCESS,) + tuple(prem.PREMIUM_CAPABILITIES)
+    advertised = [f["key"] for f in rd.all_features()
+                  if f["sellable"] and f["key"] in presented]
+    assert advertised, "no advertised benefits at all — the registry lost its list"
+
+    catalog = pathlib.Path(__file__).resolve().parents[2] / (
+        "mobile-native/src/i18n/catalogs/en/extended.json")
+    benefits = json.loads(catalog.read_text(encoding="utf-8"))["premium"]["benefits"]
+
+    for key in advertised:
+        # PremiumCenterScreen.benefitCatalogKey: the "premium." prefix is
+        # dropped and the remainder walked as a path under ``benefits``.
+        path = key[len("premium."):].split(".") if key.startswith("premium.") else [key]
+        node = benefits
+        for part in path:
+            assert isinstance(node, dict) and part in node, (
+                f"{key} is advertised on the Premium screen but "
+                f"premium.benefits.{'.'.join(path)} is missing from the English "
+                "catalog; it would silently render the server's English label to "
+                "every member in every language")
+            node = node[part]
+        assert isinstance(node, str) and node.strip(), (
+            f"premium.benefits.{'.'.join(path)} must be a non-empty label")
+
+
 def _run_standalone():
     setup_module()
     for name, fn in sorted(globals().items()):

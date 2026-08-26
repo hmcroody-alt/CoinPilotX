@@ -21,7 +21,7 @@
  * real.
  */
 import { readJsonCache, writeJsonCache } from "../core/cache";
-import { isBusinessModuleReady } from "../core/launchReadiness";
+import { businessModuleId, isLaunchGated } from "../launch/readiness";
 import { PULSE_API_BASE_URL } from "./config";
 import { pulseApi } from "./pulseApi";
 
@@ -274,19 +274,31 @@ export function businessOsHubSections() {
 }
 
 /**
- * The full hub presentation in canonical order: every section except the hub
- * itself, each marked live or locked. A section is presented as live only when
- * the centralized launch registry (`core/launchReadiness.ts`) says `READY`
- * *and* a backed route actually exists — the readiness test suite pins those
- * two to be the same set, and the conjunction here means a drift between them
- * can only ever lock a card, never open an unfinished surface. Locked sections
- * stay visible as Coming Soon cards; nothing is hidden and nothing is dead.
+ * Sections the Business landing PRESENTS, including the ones the launch gate
+ * locks.
+ *
+ * The difference from `businessOsHubSections` is `customers` and `team`: they
+ * have no route and no backend, so the old rule dropped them from the grid
+ * entirely. Hiding them means a user cannot see that PulseSoc is building them —
+ * which is what the launch gate exists to fix. They are returned here so the
+ * landing can render them as locked cards, and `readiness.ts` is what guarantees
+ * a tap on one opens the Coming Soon message rather than a navigation.
+ *
+ * The `isLaunchGated` half of the condition is load-bearing: a routeless section
+ * is only ever included if the gate is holding it. If somebody adds a routeless
+ * section and forgets to register it, it stays hidden exactly as before rather
+ * than becoming a card that throws from `businessOsNavigationArgs` on tap.
+ *
+ * `businessOsHubSections` is left alone on purpose. It is what the dormant light
+ * hub and the route-coverage tests consume, and both of them mean "sections that
+ * can be navigated to" — a meaning this function deliberately does not share.
  */
-export function businessOsHubPresentation(): Array<{ section: BusinessOsSection; ready: boolean }> {
-  return BUSINESS_OS_SECTIONS.filter((section) => section.key !== "dashboard").map((section) => ({
-    section,
-    ready: isBusinessModuleReady(section.key) && section.backed && Boolean(section.route)
-  }));
+export function businessOsLaunchSections() {
+  return BUSINESS_OS_SECTIONS.filter(
+    (section) =>
+      section.key !== "dashboard" &&
+      (Boolean(section.route) || isLaunchGated(businessModuleId(section.key)))
+  );
 }
 
 /**

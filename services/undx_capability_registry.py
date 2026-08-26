@@ -412,9 +412,20 @@ _register(CapabilitySpec(
     capability_id="crypto.portfolio.summary",
     description="Current valuation of the authenticated user's crypto portfolio "
                 "(premium; locked accounts get an upgrade notice, never invented numbers)",
-    intents=("my portfolio", "portfolio summary", "portfolio value",
+    # Every phrasing names the operation — "what is it worth", "summarize it",
+    # "break it down". None of them is a bare noun phrase like "my portfolio",
+    # and that omission is deliberate: "my portfolio" is a substring of most
+    # sentences a member will ever write about their portfolio, including
+    # "why is my portfolio down this week". That question is *causal and
+    # historical*, and this capability cannot answer it — holdings are not
+    # versioned and the observation series samples symbols rather than
+    # portfolios, so there is no record of what was held when the week opened.
+    # Claiming the turn anyway does not produce a wrong answer, it produces an
+    # empty one: the agent handles it, the model never sees it, and the member
+    # gets silence. Analytical questions must fall through to the provider.
+    intents=("portfolio summary", "portfolio value",
              "what is my portfolio worth", "how is my portfolio doing",
-             "portfolio breakdown", "my holdings", "my crypto holdings"),
+             "portfolio breakdown", "my crypto holdings"),
     risk=RiskLevel.READ_ONLY,
     confirmation=ConfirmationPolicy.NEVER,
     tool_name="pulsesoc.crypto_portfolio.summary",
@@ -422,7 +433,13 @@ _register(CapabilitySpec(
     fields=(),
     executor="crypto_portfolio_summary",
     verifier="",
-    native_route="/pulse/intelligence/:subsystem?",
+    # /pulse/portfolio, not /pulse/intelligence/:subsystem? — the latter is not
+    # a route this app serves. The duplicate spec removed below carried the
+    # right destination and the wrong tool name; this one was the reverse, so
+    # each half is taken from whichever side was checkable. undx_knowledge_map
+    # is what catches this: it declares Portfolio -> /pulse/portfolio and
+    # refuses to build a capability whose native_route disagrees.
+    native_route="/pulse/portfolio",
     result_card=CardType.CONTENT_RESULT,
     audit_category="crypto_portfolio_read",
 ))
@@ -1012,6 +1029,17 @@ _ORDER_ID = FieldSpec("order_id", "int", required=True, minimum=1)
 _LIVE_ID = FieldSpec("live_id", "int", required=True, minimum=1)
 _DAYS = FieldSpec("days", "int", required=False, minimum=1, maximum=90, default=7)
 
+# Imported rather than restated so the windows UNDX may ask for are exactly the
+# windows the observation series can answer. A hardcoded copy here would drift the
+# first time either list changed, and the failure would be silent: the registry
+# would keep offering a window the series refuses, and the refusal reads like a
+# statement about the market rather than about our own sampling.
+# ``crypto_alert_conditions`` imports nothing from services, so this cannot cycle.
+from services.crypto_alert_conditions import (  # noqa: E402
+    WINDOW_CHOICES as _WINDOW_CHOICES,
+    WINDOWABLE_METRICS as _WINDOWABLE_METRICS,
+)
+
 for _spec in (
     CapabilitySpec("activity.daily_summary", "Summarize authorized PulseSoc activity with provenance",
                    ("what happened today", "what changed since yesterday", "daily activity summary"),
@@ -1198,6 +1226,44 @@ for _spec in (
                    RiskLevel.READ_ONLY, ConfirmationPolicy.NEVER, "pulsesoc.presence.privacy.status",
                    PermissionScope.SELF_ACCOUNT_ONLY, (), "presence_privacy_status", "",
                    "/pulse/settings/privacy", CardType.CONTENT_RESULT, "presence_read"),
+    # Crypto intelligence (Premium). Read-only and never confirmed, like every
+    # other personal read: the entitlement is enforced inside the read model, and
+    # an unentitled member gets a grounded "this is part of Premium" answer rather
+    # than a refusal, so there is nothing here for a confirmation step to guard.
+    # `crypto.portfolio.summary` is NOT registered here. It is registered once,
+    # above, under the tool name `pulsesoc.crypto_portfolio.summary` — the
+    # spelling `undx_policy` routes and the executor at
+    # `undx_agent_tools.crypto_portfolio_summary` announces. The second spec
+    # that used to sit here named the tool `pulsesoc.crypto.portfolio.summary`,
+    # which nothing else in the tree referenced, so it could only ever have
+    # resolved to a tool that does not exist. `_register` rejecting the
+    # duplicate outright is what surfaced it.
+    CapabilitySpec("crypto.market.window",
+                   "Report how one asset moved over a measured window, or why that window cannot be measured",
+                   # No ticker appears in a phrasing. A coin name is the *subject* of
+                   # almost every crypto sentence, including the ones about pausing a
+                   # rule, so "how has bitcoin moved" makes this capability score on
+                   # "bitcoin" alone and crowd the alert capabilities out of a bounded
+                   # focus. The phrasings name the operation -- movement over a stated
+                   # window -- and the asset arrives in ``symbol``, where it belongs.
+                   ("how much has it moved", "price change over the last",
+                    "how has it performed in the last", "movement in the last"),
+                   RiskLevel.READ_ONLY, ConfirmationPolicy.NEVER, "pulsesoc.crypto.market.window",
+                   PermissionScope.SELF_ACCOUNT_ONLY,
+                   (
+                       FieldSpec("symbol", "identifier", required=True, max_length=24),
+                       # Constrained to the metrics the worker actually samples and
+                       # the windows the series can answer. A free-form window would
+                       # let the model ask for "the last week" against 72 hours of
+                       # retention and read the refusal as a market fact.
+                       FieldSpec("metric", "enum", required=False,
+                                 choices=tuple(sorted(_WINDOWABLE_METRICS)), default="price"),
+                       FieldSpec("minutes", "enum", required=False,
+                                 choices=tuple(str(w) for w in _WINDOW_CHOICES), default="60"),
+                   ),
+                   "crypto_market_window", "",
+                   "/pulse/crypto/alerts", CardType.CONTENT_RESULT, "crypto_read",
+                   target_field="symbol"),
 ):
     _register(_spec)
 

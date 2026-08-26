@@ -30,23 +30,24 @@ function nav() {
 
 describe("Premium Crypto Intelligence rows", () => {
   const EXPECTED: Array<[string, string]> = [
-    ["premium-crypto-alerts", "CryptoAlertCenter"],
-    ["premium-crypto-portfolio", "CryptoPortfolio"],
-    ["premium-crypto-watchlist", "Watchlists"],
-    ["premium-crypto-undx", "UndxCapabilities"]
+    ["alerts", "CryptoAlertCenter"],
+    ["portfolio", "CryptoPortfolio"],
+    ["watchlists", "Watchlists"],
+    ["undx", "UndxCapabilities"]
   ];
 
   it("renders exactly the four required entries", () => {
-    const { getByTestId, getByText } = render(<CryptoIntelligenceSection navigation={nav()} />);
-    for (const [testID] of EXPECTED) expect(getByTestId(testID)).toBeTruthy();
-    expect(getByText("discovery:crypto.intelligence.watchlist.label")).toBeTruthy();
-    expect(getByText("discovery:crypto.intelligence.watchlist.hint")).toBeTruthy();
+    const { getByText } = render(<CryptoIntelligenceSection navigation={nav()} />);
+    for (const [key] of EXPECTED) {
+      expect(getByText(`discovery:crypto.intelligence.${key}.label`)).toBeTruthy();
+      expect(getByText(`discovery:crypto.intelligence.${key}.hint`)).toBeTruthy();
+    }
   });
 
-  it.each(EXPECTED)("%s opens the canonical %s screen — no dead rows, no duplicates", (testID, routeName) => {
+  it.each(EXPECTED)("%s opens the canonical %s screen — no dead rows, no duplicates", (key, routeName) => {
     const navigation = nav();
-    const { getByTestId } = render(<CryptoIntelligenceSection navigation={navigation} />);
-    fireEvent.press(getByTestId(testID));
+    const { getByLabelText } = render(<CryptoIntelligenceSection navigation={navigation} />);
+    fireEvent.press(getByLabelText(`discovery:crypto.intelligence.${key}.label`));
     const navigate = (navigation as { navigate: jest.Mock }).navigate;
     expect(navigate).toHaveBeenCalledTimes(1);
     expect(navigate).toHaveBeenCalledWith(routeName);
@@ -54,8 +55,10 @@ describe("Premium Crypto Intelligence rows", () => {
 
   it("routes the four rows to four distinct destinations", () => {
     const navigation = nav();
-    const { getByTestId } = render(<CryptoIntelligenceSection navigation={navigation} />);
-    for (const [testID] of EXPECTED) fireEvent.press(getByTestId(testID));
+    const { getByLabelText } = render(<CryptoIntelligenceSection navigation={navigation} />);
+    for (const [key] of EXPECTED) {
+      fireEvent.press(getByLabelText(`discovery:crypto.intelligence.${key}.label`));
+    }
     const navigate = (navigation as { navigate: jest.Mock }).navigate;
     const destinations = navigate.mock.calls.map((call) => call[0]);
     expect(new Set(destinations).size).toBe(4);
@@ -74,14 +77,14 @@ describe("Billing card Apple fallback", () => {
 
   it("shows Apple's verified facts instead of 'no billing details'", () => {
     const { getByText, queryByText } = render(
-      <BillingSection subscription={null} apple={apple} experience="active" />
+      <BillingSection subscription={null} apple={apple} experience="active" price={null} priceLoading={false} />
     );
     expect(queryByText("premium:billing.none")).toBeNull();
-    expect(getByText("premium:period.annual")).toBeTruthy();
+    expect(getByText("premium:billing.planValue")).toBeTruthy();
     expect(getByText("€99,99")).toBeTruthy();
     expect(getByText("premium:provider.apple_iap")).toBeTruthy();
-    expect(getByText("premium:subStatus.active")).toBeTruthy();
-    expect(getByText("premium:billing.activeUntil")).toBeTruthy();
+    expect(getByText("premium:subState.active")).toBeTruthy();
+    expect(getByText("premium:billing.renewsOn")).toBeTruthy();
     expect(getByText("date(2026-09-30T00:00:00.000Z)")).toBeTruthy();
     expect(getByText("premium:billing.since")).toBeTruthy();
   });
@@ -92,25 +95,30 @@ describe("Billing card Apple fallback", () => {
         subscription={null}
         apple={{ ...apple, plan: null, displayPrice: null, originalPurchaseAt: null, status: "expired" }}
         experience="active"
+        price={null}
+        priceLoading={false}
       />
     );
-    expect(queryByText("premium:billing.plan")).toBeNull();
     expect(queryByText("premium:billing.price")).toBeNull();
     expect(queryByText("premium:billing.since")).toBeNull();
-    // An expired date is labelled as an end, never as an active period.
-    expect(queryByText("premium:billing.activeUntil")).toBeNull();
-    expect(getByText("premium:billing.expires")).toBeTruthy();
-    expect(getByText("premium:subStatus.expired")).toBeTruthy();
+    // A plan Apple could not name says so, rather than guessing a period.
+    expect(getByText("premium:billing.planValueUnknown")).toBeTruthy();
+    // An expired date is labelled as an end, never as a renewal.
+    expect(queryByText("premium:billing.renewsOn")).toBeNull();
+    expect(getByText("premium:billing.expiresOn")).toBeTruthy();
+    expect(getByText("premium:subState.expired")).toBeTruthy();
   });
 
   it("keeps the honest none-state when Apple proves nothing either", () => {
-    const { getByText } = render(<BillingSection subscription={null} apple={null} experience="active" />);
+    const { getByText } = render(
+      <BillingSection subscription={null} apple={null} experience="active" price={null} priceLoading={false} />
+    );
     expect(getByText("premium:billing.none")).toBeTruthy();
   });
 
   it("never replaces the Founder copy with a billing card", () => {
     const { getByText, queryByText } = render(
-      <BillingSection subscription={null} apple={apple} experience="founder" />
+      <BillingSection subscription={null} apple={apple} experience="founder" price={null} priceLoading={false} />
     );
     expect(getByText("premium:billing.founderNone")).toBeTruthy();
     expect(queryByText("€99,99")).toBeNull();
@@ -121,13 +129,18 @@ describe("Billing card Apple fallback", () => {
       <BillingSection
         subscription={{
           provider: "apple_iap", plan_key: "premium_annual", billing_period: "annual",
-          status: "active", current_period_end: "2026-10-01", cancel_at_period_end: false
+          status: "active", current_period_end: "2026-10-01", cancel_at_period_end: false,
+          state: "active", auto_renew: true, renews_at: "2026-10-01", expires_at: null,
+          product_id: "com.pulsesoc.premium.annual", original_purchase_at: null
         }}
         apple={apple}
         experience="active"
+        price={null}
+        priceLoading={false}
       />
     );
-    expect(getByText("premium:billing.renews")).toBeTruthy();
-    expect(queryByText("premium:billing.activeUntil")).toBeNull();
+    expect(getByText("date(2026-10-01)")).toBeTruthy();
+    // StoreKit's own figures must not leak into a card the server already owns.
+    expect(queryByText("€99,99")).toBeNull();
   });
 });

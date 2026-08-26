@@ -62,9 +62,20 @@ let nonceCounter = 0;
  *
  * Returns null for a reel with no usable id: the caller should not navigate at
  * all in that case, because "open this exact reel" has no meaning without one.
+ *
+ * `reel_id` wins over `id`, matching `normalizeReel` — which resolves the same
+ * way and then writes that one value into *both* fields — and matching the
+ * `reelId` the discovery row navigates with. The two only diverge for a reel
+ * that has not been normalised and carries different values, and the cost is
+ * silent: the payload is parked under a key the player never asks for,
+ * `takeReelTransfer` returns null, and the seed is lost to a lane search.
  */
 export function stageReelTransfer(reel: PulseReel, now: number = Date.now()): string | null {
-  const reelId = Number(reel?.id || reel?.reel_id || 0);
+  // `reel_id` first, matching `normalizeReel` and `buildReels`. The caller
+  // navigates with `buildReels`' id, so keying the slot the other way round
+  // parks the reel under an id the player will never ask for and the handoff
+  // degrades to "some other reel" without an error.
+  const reelId = Number(reel?.reel_id || reel?.id || 0);
   if (!Number.isFinite(reelId) || reelId <= 0) return null;
   slot = { reelId, reel, stagedAt: now };
   nonceCounter += 1;

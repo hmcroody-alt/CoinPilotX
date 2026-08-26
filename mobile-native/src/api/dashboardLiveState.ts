@@ -45,7 +45,7 @@ export function buildDashboardModuleLiveState(state: UserDashboardState, group: 
     loadedFromCache: Boolean(state.loadedFromCache),
     metrics: metricsForGroup(state, group.key, module.key, alertCount),
     signals: signalsForGroup(state, group.key, module.key),
-    warnings: fallbackOnly ? ["This module is represented by the dashboard foundation shell until its dedicated native contract is built.", ...commonWarnings] : commonWarnings,
+    warnings: fallbackOnly ? ["This module uses the shared dashboard view until its own detailed view is ready.", ...commonWarnings] : commonWarnings,
     fallbackOnly
   };
   return {
@@ -89,7 +89,7 @@ function networkMetrics(state: UserDashboardState, moduleKey: string): Dashboard
   return [
     metric("Unread activity", String(unread), "Unread messages, calls, social, commerce, and trust signals from Activity Inbox.", unread ? "attention" : "ready"),
     metric("Conversations", String(messages), "Summaries only. What people wrote is never shown here.", "ready"),
-    metric("Active calls", String(calls), "Incoming and active call state routes through the native calls layer.", calls ? "attention" : "ready"),
+    metric("Active calls", String(calls), "Incoming and active calls are handled by the calls screen in the app.", calls ? "attention" : "ready"),
     metric("Category signal", networkCategoryValue(state, moduleKey), "Category-specific signal derived from Activity Inbox and dashboard aggregation.", "ready")
   ];
 }
@@ -168,7 +168,7 @@ function adsMetrics(state: UserDashboardState, moduleKey: string): DashboardLive
     metric("Growth score", `${growth?.growth_score || 0}%`, "How ready your account is to promote and grow.", growth?.growth_score ? "ready" : "fallback"),
     metric("Campaign cards", String(portal?.cards?.length || 0), "Campaign, audience, and analytics cards exposed by the growth portal.", portal?.cards?.length ? "ready" : "fallback"),
     metric("Wallet credits", growthMoney(growth?.wallet?.credits_cents || 0, growth?.wallet?.currency || "usd"), "Your budget and wallet, as PulseSoc last recorded them.", growth?.wallet?.credits_cents ? "attention" : "ready"),
-    metric("Ad module", moduleKey.replace(/_/g, " "), "Campaign launch, billing, and provider-owned tools remain fallback-safe.", "fallback")
+    metric("Ad module", moduleKey.replace(/_/g, " "), "Launching campaigns, billing, and partner tools still open on the PulseSoc website.", "fallback")
   ];
 }
 
@@ -185,7 +185,7 @@ function aiMetrics(state: UserDashboardState, moduleKey: string): DashboardLiveM
 
 function systemMetrics(state: UserDashboardState, moduleKey: string): DashboardLiveMetric[] {
   return [
-    metric("Last refresh", formatTime(state.loadedAt), "Timestamp from the native dashboard aggregation load.", "ready"),
+    metric("Last refresh", formatTime(state.loadedAt), "When the app last loaded your dashboard.", "ready"),
     metric("Sync mode", state.loadedFromCache ? "Cached" : "Live", state.loadedFromCache ? "Offline/cache fallback is active." : "Server state refreshed successfully.", state.loadedFromCache ? "offline" : "ready"),
     metric("Warnings", String(state.warnings.length), "Subsystem load warnings captured during dashboard aggregation.", state.warnings.length ? "attention" : "ready"),
     metric("System module", moduleKey.replace(/_/g, " "), `${state.activity?.unreadTotal || 0} unread activity items · ${state.marketplaceListings.length} marketplace listings.`, "ready")
@@ -212,7 +212,7 @@ function signalsForGroup(state: UserDashboardState, groupKey: string, moduleKey:
     return [
       `${state.activity?.unreadTotal || 0} unread activity items are feeding the inbox.`,
       `${state.conversations.length} conversation summaries are available without exposing private bodies.`,
-      `${state.calls.length} call records are visible to the native calls layer.`
+      `${state.calls.length} call records are visible in the app.`
     ];
   }
   if (groupKey === "creator-studio") {

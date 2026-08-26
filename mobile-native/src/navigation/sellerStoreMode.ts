@@ -39,7 +39,7 @@ const PANELS_BY_MODE: Record<SellerStoreMode, SellerStorePanel[]> = {
 const TITLES: Record<SellerStoreMode, { title: string; subtitle: string }> = {
   overview: {
     title: "Seller / Store",
-    subtitle: "Native marketplace control layer using PulseSoc approval, media, payout, and checkout systems."
+    subtitle: "Run your store with PulseSoc approval, media, payouts and checkout."
   },
   dashboard: {
     title: "Store",

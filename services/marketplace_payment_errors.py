@@ -151,6 +151,37 @@ def stripe_response_value(response: Any, name: str, default: Any = "") -> Any:
     return default if value is None else value
 
 
+def _plain(value: Any) -> Any:
+    """Recursively strip Stripe resource objects down to ordinary Python data."""
+    if value is None or isinstance(value, (str, bytes, int, float, bool)):
+        return value
+    if isinstance(value, Mapping):
+        return {str(key): _plain(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_plain(item) for item in value]
+    to_dict = getattr(value, "to_dict", None)
+    if callable(to_dict):
+        try:
+            return {str(key): _plain(item) for key, item in to_dict().items()}
+        except Exception:
+            return {}
+    return value
+
+
+def stripe_response_dict(response: Any) -> dict[str, Any]:
+    """Whole-object companion to :func:`stripe_response_value`.
+
+    ``dict(account)`` on a Stripe 15 resource raises ``KeyError: 0`` — the
+    object is not a ``dict`` subclass, so ``dict()`` falls back to iterating it
+    as a sequence of pairs and asks for index 0. Nested fields such as
+    ``requirements`` stay resource objects even after ``to_dict()``, which then
+    fail to serialise. Both are flattened here so callers can store the result
+    and hand it to ``jsonify`` without knowing which SDK produced it.
+    """
+    plain = _plain(response)
+    return plain if isinstance(plain, dict) else {}
+
+
 def _safe_attr(exc: Any, name: str) -> str | None:
     """Read an attribute and coerce to a short string, or ``None``.
 

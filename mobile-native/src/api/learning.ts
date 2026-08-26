@@ -106,7 +106,7 @@ export async function openLearningWebFallback(path = "/pulse/courses") {
     ok: false,
     target,
     status: "native_provider_boundary",
-    message: "Learning operation remains inside the native Courses boundary until the protected contract is available."
+    message: "This part of Courses is not available in the app yet. Continue on the PulseSoc website."
   };
 }
 

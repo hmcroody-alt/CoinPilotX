@@ -378,6 +378,25 @@ export type RootStackParamList = {
    * without it the generic 16-type grid is offered.
    */
   PageCreate: { flavor?: "artist" | "business" } | undefined;
+  /**
+   * Identity editing for one page. `pageId` is required — the screen reads the
+   * manage view to learn whether the caller may edit at all, so there is no
+   * meaningful "the current page" default to fall back to.
+   */
+  PageEdit: { pageId: number; title?: string };
+  /**
+   * What this presence is wired to — shop, ad account, community, music
+   * catalogue. `pageId` is required for the same reason as PageEdit: the
+   * screen asks the server what this caller may connect here, so there is no
+   * "current page" to infer.
+   */
+  PageConnections: { pageId: number; title?: string };
+  /**
+   * Who can act for this presence. `pageId` is required because the screen
+   * asks the server what this caller may change about the team; the answer is
+   * per-page and per-role, so there is nothing to infer from a "current page".
+   */
+  PageTeam: { pageId: number; title?: string };
   /** My pages + role-gated management, linking into existing canonical systems. */
   PagesHub: { focusPageId?: number } | undefined;
   /**
@@ -446,6 +465,7 @@ export type RootStackParamList = {
   CryptoAlertHistory: { alertId?: number; title?: string } | undefined;
   CryptoPortfolio: { title?: string } | undefined;
   Watchlists: { title?: string } | undefined;
+  Portfolio: { title?: string } | undefined;
   AssetDetail: { symbol: string; name?: string; title?: string };
   AccountCenter: { section?: "account" | "security" | "privacy" | "devices"; title?: string } | undefined;
   AccountSettings: { title?: string } | undefined;

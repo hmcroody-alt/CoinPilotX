@@ -268,6 +268,7 @@ from services import (
     predictive_ai_engine,
     premium_capability_engine,
     payment_provider,
+    stripe_webhook_verification,
     premium_entitlement_service,
     premium_identity_engine,
     premium_visibility_engine,
@@ -7337,6 +7338,18 @@ def _crypto_api_result(callback):
     except ValueError as exc:
         if conn is not None:
             conn.rollback()
+        # A denial the client must be able to act on differently from a typo:
+        # "you need Premium" opens the upgrade sheet, a bad threshold highlights
+        # a field. Plain ValueErrors keep the original 400 exactly as before.
+        code = getattr(exc, "code", "")
+        if code:
+            return jsonify({
+                "ok": False,
+                "error": code,
+                "code": code,
+                "capability": getattr(exc, "capability", ""),
+                "message": str(exc),
+            }), getattr(exc, "http_status", 400)
         return api_error(str(exc), 400)
     except Exception as exc:
         if conn is not None:
@@ -7378,6 +7391,19 @@ def api_crypto_alerts():
         payload = _crypto_api_payload()
         return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.create_alert(conn, user["user_id"], payload))
     return _crypto_api_result(lambda conn, user: {"ok": True, "alerts": dashboard_crypto_command_center.list_alerts(conn, user["user_id"])})
+
+
+@webhook_app.route("/api/crypto/alerts/options", methods=["GET"])
+def api_crypto_alert_options():
+    # Registered before the <int:alert_id> rules below only for readability; Flask
+    # matches the static segment first regardless, and "options" is not an int.
+    symbol = (request.args.get("symbol") or "").strip()
+    watchlist_id = (request.args.get("watchlistId") or request.args.get("watchlist_id") or "").strip()
+    portfolio_scope = (request.args.get("portfolioScope") or request.args.get("portfolio_scope")
+                       or "").strip().lower() in {"1", "true", "yes", "on"}
+    return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.alert_options(
+        conn, user["user_id"], symbol=symbol, watchlist_id=watchlist_id or None,
+        portfolio_scope=portfolio_scope))
 
 
 @webhook_app.route("/api/crypto/alerts/<int:alert_id>", methods=["PATCH", "DELETE"])
@@ -10401,6 +10427,18 @@ def api_dashboard_account_verification_request():
     try:
         result = dashboard_account_command_center.submit_verification_request(conn, int(user["user_id"]), payload.get("verification_type") or "identity", payload)
         return jsonify({"ok": True, "message": "Verification request submitted.", **result})
+    except PermissionError as exc:
+        # The Premium gate. 403 carrying a machine-readable code so the client
+        # can offer the membership instead of rendering a bare failure. The copy
+        # is the server's, so one place decides what a Blue Check application
+        # actually costs and what it does not promise.
+        conn.rollback()
+        # `error_code`, not `code`: the native client reads `error_code` (falling
+        # back to `error`) when it builds a PulseApiError, so a `code` key would
+        # arrive as an untyped failure and the app would show a dead end instead
+        # of the membership panel.
+        return api_error(str(exc), 403, error_code="premium_required",
+                         capability=dashboard_account_command_center.BLUE_CHECK_APPLY_CAPABILITY)
     except ValueError as exc:
         conn.rollback()
         return api_error(str(exc), 400)
@@ -11813,6 +11851,12 @@ def api_premium_status():
         "current_period_end": provider_row.get("current_period_end") or fresh_user.get("subscription_expires_at") or fresh_user.get("pro_expires_at") or "",
         "cancel_at_period_end": bool(int(provider_row.get("cancel_at_period_end") or 0)) if provider_row else False,
         "billing_portal_available": bool(status_payload.get("billing_portal_available")),
+        # Whether this member may SUBMIT a Blue Check application. Answered by
+        # the same function the submit gate enforces, so the Verification Center
+        # can never show an unlocked control that the server then refuses. It
+        # says nothing about whether the badge would be granted — that is a
+        # reviewer's call, not a subscription's.
+        "blue_check_apply": dashboard_account_command_center.blue_check_apply_allowed_for(uid, fresh_user),
         "billing_url": "/billing/portal",
         "premium_url": "/pulse/premium",
         "profile_url": "/pulse/profile",
@@ -17967,7 +18011,56 @@ def api_pulsesoc_page_handle_check():
     conn = pulse_pages_conn()
     try:
         pulsesoc_pages.ensure_tables(conn)
-        return jsonify({"ok": True, **pulsesoc_pages.check_handle(conn, request.args.get("handle"))})
+        # Editing a page re-checks the handle it already holds, which would come
+        # back "taken by another page" — by itself. `page_id` excludes it, and
+        # is gated on edit_page so the exclusion can only be asked for by
+        # someone who could rename the page anyway.
+        # A malformed page_id falls back to no exclusion, which is the stricter
+        # answer, rather than to a 500.
+        try:
+            exclude_page_id = int(request.args.get("page_id") or 0) or None
+        except (TypeError, ValueError):
+            exclude_page_id = None
+        if exclude_page_id:
+            pulsesoc_pages.require_permission(conn, user["user_id"], exclude_page_id, "edit_page")
+        return jsonify({
+            "ok": True,
+            **pulsesoc_pages.check_handle(conn, request.args.get("handle"), exclude_page_id=exclude_page_id),
+        })
+    except Exception as exc:
+        return pulse_pages_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pages/invites", methods=["GET"])
+def api_pulsesoc_page_invites():
+    # The invite token used to exist only in the inviter's API response, so
+    # joining a team meant someone pasting it to you. This is how the person it
+    # was issued to finds it. Scoped to the caller by user_id, never by page.
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = pulse_pages_conn()
+    try:
+        return jsonify({"ok": True, "invites": pulsesoc_pages.list_my_invites(conn, user["user_id"])})
+    except Exception as exc:
+        return pulse_pages_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pages/invites/decline", methods=["POST"])
+def api_pulsesoc_page_invite_decline():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = pulse_pages_conn()
+    try:
+        payload = request.get_json(silent=True) or {}
+        return jsonify({"ok": True, **pulsesoc_pages.decline_invite(conn, user["user_id"], payload.get("token"))})
     except Exception as exc:
         return pulse_pages_error_response(exc)
     finally:
@@ -17997,11 +18090,7 @@ def api_pulsesoc_page_by_handle(handle):
     conn = pulse_pages_conn()
     try:
         pulsesoc_pages.ensure_tables(conn)
-        page = pulsesoc_pages._load_page(conn, handle)
-        if page.get("status") in ("UNPUBLISHED", "DEACTIVATED"):
-            viewer_role = pulsesoc_pages.role_for(conn, user["user_id"], page["id"]) if user else None
-            if not viewer_role:
-                return api_error("Page not found.", 404)
+        page = pulsesoc_pages._load_visible_page(conn, handle, user["user_id"] if user else None)
         return jsonify({"ok": True, "page": pulsesoc_pages.public_view(conn, page, viewer_user_id=user["user_id"] if user else None)})
     except Exception as exc:
         return pulse_pages_error_response(exc)
@@ -18020,11 +18109,7 @@ def api_pulsesoc_page_detail(page_id):
             if not user:
                 return api_error("Login required.", 401)
             return jsonify({"ok": True, "page": pulsesoc_pages.update_page(conn, user["user_id"], page_id, request.get_json(silent=True) or {})})
-        page = pulsesoc_pages._load_page(conn, page_id)
-        if page.get("status") in ("UNPUBLISHED", "DEACTIVATED"):
-            viewer_role = pulsesoc_pages.role_for(conn, user["user_id"], page["id"]) if user else None
-            if not viewer_role:
-                return api_error("Page not found.", 404)
+        page = pulsesoc_pages._load_visible_page(conn, page_id, user["user_id"] if user else None)
         return jsonify({"ok": True, "page": pulsesoc_pages.public_view(conn, page, viewer_user_id=user["user_id"] if user else None)})
     except Exception as exc:
         return pulse_pages_error_response(exc)
@@ -18090,7 +18175,9 @@ def api_pulsesoc_page_members(page_id):
         if request.method == "POST":
             invite = pulsesoc_pages.invite_member(conn, user["user_id"], page_id, request.get_json(silent=True) or {})
             return jsonify({"ok": True, "invite": invite, "message": "Invite sent."})
-        return jsonify({"ok": True, "members": pulsesoc_pages.list_members(conn, user["user_id"], page_id)})
+        # `members` stays at the top level for existing callers; the rest of
+        # team_view tells the client what this caller may actually change.
+        return jsonify({"ok": True, **pulsesoc_pages.team_view(conn, user["user_id"], page_id)})
     except Exception as exc:
         return pulse_pages_error_response(exc)
     finally:
@@ -18176,7 +18263,7 @@ def api_pulsesoc_page_posts(page_id):
         conn.close()
 
 
-@webhook_app.route("/api/pages/<int:page_id>/links", methods=["GET", "POST"])
+@webhook_app.route("/api/pages/<int:page_id>/links", methods=["GET", "POST", "DELETE"])
 def api_pulsesoc_page_links(page_id):
     init_db()
     user = api_account_user()
@@ -18184,11 +18271,42 @@ def api_pulsesoc_page_links(page_id):
         return api_error("Login required.", 401)
     conn = pulse_pages_conn()
     try:
+        if request.method == "DELETE":
+            # Body first, matching where GET and POST name their subject on this
+            # same URL. `?type=` is a transit fallback rather than a second
+            # interface: a DELETE body has no defined semantics in HTTP, so an
+            # intermediary is within its rights to drop it. Same spelling as the
+            # GET's filter, so the route has one name for this, not two.
+            payload = request.get_json(silent=True) or {}
+            link_type = payload.get("link_type") or request.args.get("type")
+            return jsonify({"ok": True, "link": pulsesoc_pages.clear_link(conn, user["user_id"], page_id, link_type)})
         if request.method == "POST":
             payload = request.get_json(silent=True) or {}
             return jsonify({"ok": True, "link": pulsesoc_pages.set_link(conn, user["user_id"], page_id, payload.get("link_type"), payload.get("ref_id"))})
         pulsesoc_pages.require_permission(conn, user["user_id"], page_id, "view_analytics")
         return jsonify({"ok": True, "links": pulsesoc_pages.list_links(conn, page_id, request.args.get("type"))})
+    except Exception as exc:
+        return pulse_pages_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pages/<int:page_id>/link-options", methods=["GET"])
+def api_pulsesoc_page_link_options(page_id):
+    """What this presence is connected to, and what it could be connected to.
+
+    Separate from `/links` because that returns rows as stored; this answers a
+    question the management surface actually asks — which of the caller's own
+    shops, ad accounts, communities and catalogues are attachable here. Without
+    it the only way to connect anything is to know an internal id and type it.
+    """
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = pulse_pages_conn()
+    try:
+        return jsonify({"ok": True, **pulsesoc_pages.link_options(conn, user["user_id"], page_id)})
     except Exception as exc:
         return pulse_pages_error_response(exc)
     finally:
@@ -18233,9 +18351,34 @@ def api_admin_page_detail(page_id):
 @webhook_app.route("/api/pages/<int:page_id>/music", methods=["GET"])
 def api_pulsesoc_page_music(page_id):
     init_db()
+    user = api_account_user()
     conn = pulse_pages_conn()
     try:
-        return jsonify({"ok": True, **pulsesoc_pages.page_music(conn, page_id, request.args.get("limit") or 24)})
+        return jsonify({"ok": True, **pulsesoc_pages.page_music(
+            conn, page_id, request.args.get("limit") or 24,
+            viewer_user_id=user["user_id"] if user else None)})
+    except Exception as exc:
+        return pulse_pages_error_response(exc)
+    finally:
+        conn.close()
+
+
+@webhook_app.route("/api/pages/<int:page_id>/events", methods=["GET"])
+def api_pulsesoc_page_events(page_id):
+    """Upcoming dates for a presence. Public, and no login required.
+
+    Login is read but not demanded: a signed-in team member may see the page
+    while it is unpublished, and everyone else gets the same visitor
+    projection. Nothing here varies by who is asking beyond that — the events
+    themselves are the published ones either way.
+    """
+    init_db()
+    user = api_account_user()
+    conn = pulse_pages_conn()
+    try:
+        return jsonify({"ok": True, **pulsesoc_pages.page_events(
+            conn, page_id, request.args.get("limit") or 12,
+            viewer_user_id=user["user_id"] if user else None)})
     except Exception as exc:
         return pulse_pages_error_response(exc)
     finally:
@@ -20038,7 +20181,7 @@ def api_pulse_rewards_claim(reward_id):
                 if not connected_account_id:
                     created = _provider.create_connected_account(user, "merchant")
                     if not created.get("ok"):
-                        return jsonify(created), 503
+                        return jsonify(created), int(created.get("http_status") or 503)
                     connected_account_id = str(created.get("provider_account_id") or "")
                     try:
                         status = _provider.get_account_status(connected_account_id)
@@ -20054,7 +20197,7 @@ def api_pulse_rewards_claim(reward_id):
                     return_url=f"{base}/pulse/rewards",
                 )
                 if not link.get("ok"):
-                    return jsonify(link), 503
+                    return jsonify(link), int(link.get("http_status") or 503)
                 response = jsonify({
                     "ok": True,
                     "needs_onboarding": True,
@@ -36229,17 +36372,49 @@ def account_status_api():
     return response
 
 
+def _portfolio_status(result, failure=400):
+    """The status code for a portfolio service result.
+
+    A ceiling refusal is not a malformed request. The member sent a perfectly
+    valid holding and the account simply is not entitled to a fourth one, so it
+    answers 403 — the same distinction the crypto alert routes draw for a
+    capability denial. Returning 400 would tell the client it had sent something
+    wrong, which is the exact class of untruth this whole area is being cleaned
+    of, and it would leave "fix your input" as the only sensible thing for a
+    client to do about a state only a subscription can change.
+    """
+    if result.get("ok"):
+        return 200
+    return 403 if result.get("code") == portfolio_service.PREMIUM_REQUIRED else failure
+
+
 @webhook_app.route("/api/portfolio", methods=["GET", "POST"])
 def portfolio_api():
+    """Read and add holdings.
+
+    These writes used to run through ``api_pro_required``, which — despite the
+    name — performs no entitlement check at all: it 401s an anonymous caller and
+    otherwise returns the paid-digital 403 to iOS native and ``None`` to everyone
+    else. Its only effect here was to make the whole portfolio unreachable from
+    the iOS app, including a free member adding their *first* holding, which
+    came back as ``iap_required`` — a statement about a purchase that was not
+    being asked for.
+
+    That block was a leftover from one old helper rather than a policy.
+    ``/api/crypto/alerts`` creates advanced compound and watchlist alerts, which
+    are explicitly paid Premium capabilities, and it has never blocked iOS
+    native; the native alert screen writes them today. The entitlement itself is
+    now enforced where it belongs, in
+    ``portfolio_service._limit_check``, for every caller and every platform
+    alike, and a refusal comes back as a typed ``premium_required`` rather than
+    as an unreachable route. The login check above is untouched.
+    """
     init_db()
     user = api_account_user()
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     if request.method == "GET":
         return jsonify({"ok": True, "portfolio": portfolio_service.calculate_user_portfolio(user["user_id"])})
-    gated = api_pro_required(user, "Portfolio Tracker")
-    if gated:
-        return gated
     payload = request.get_json(silent=True) or {}
     result = portfolio_service.add_portfolio_item(
         user["user_id"],
@@ -36250,7 +36425,7 @@ def portfolio_api():
         clean_html(payload.get("notes", "")),
     )
     log_product_event(user["user_id"], "portfolio_item_added", {"symbol": payload.get("symbol", ""), "ok": result.get("ok")})
-    return jsonify(result), (200 if result.get("ok") else 400)
+    return jsonify(result), _portfolio_status(result)
 
 
 def _mobile_crypto_portfolio_gate(user_id):
@@ -36332,7 +36507,7 @@ def pulse_premium_portfolio_page():
     """
     script = """
     const holdings=document.getElementById('portfolioHoldings'),notice=document.getElementById('portfolioNotice'),money=value=>new Intl.NumberFormat(undefined,{style:'currency',currency:'USD',maximumFractionDigits:2}).format(Number(value||0)),esc=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
-    async function loadPortfolio(){try{const d=await pulseApi('/api/portfolio');const p=d.portfolio||{};document.getElementById('portfolioTotal').textContent=money(p.total_value);document.getElementById('portfolioPnl').textContent=`P/L ${money(p.pnl_value)} (${Number(p.pnl_percent||0).toFixed(2)}%)`;const rows=p.holdings||[];holdings.innerHTML=rows.length?rows.map(h=>`<article class="holding-row"><div><strong>${esc(h.symbol)}</strong><div class="legacy-holding">${h.legacy?'Original portfolio holding':'Portfolio holding'}</div></div><span>${Number(h.amount||0).toLocaleString()} units</span><span>${h.price==null?'Price unavailable':money(h.price)}</span><span>${money(h.value)}</span>${h.id?`<button type="button" data-delete-holding="${Number(h.id)}">Remove</button>`:'<span class="legacy-holding">Preserved</span>'}</article>`).join(''):'<p class="muted">No holdings yet. Add your first asset.</p>';if(p.warning)notice.textContent=p.warning}catch(err){holdings.innerHTML=`<p class="muted">${esc(err.message)}</p>`}}
+    async function loadPortfolio(){try{const d=await pulseApi('/api/portfolio');const p=d.portfolio||{};document.getElementById('portfolioTotal').textContent=money(p.total_value);document.getElementById('portfolioPnl').textContent=`P/L ${money(p.pnl_value)} (${Number(p.pnl_percent||0).toFixed(2)}%)`;const rows=p.holdings||[];holdings.innerHTML=rows.length?rows.map(h=>`<article class="holding-row"><div><strong>${esc(h.symbol)}</strong><div class="legacy-holding">${h.legacy?'Original portfolio holding':'Portfolio holding'}</div></div><span>${Number(h.amount||0).toLocaleString()} units</span><span>${h.price==null?'Price unavailable':money(h.price)}</span><span>${h.value==null?'—':money(h.value)}</span>${h.id?`<button type="button" data-delete-holding="${Number(h.id)}">Remove</button>`:'<span class="legacy-holding">Preserved</span>'}</article>`).join(''):'<p class="muted">No holdings yet. Add your first asset.</p>';if(p.warning)notice.textContent=p.warning}catch(err){holdings.innerHTML=`<p class="muted">${esc(err.message)}</p>`}}
     document.getElementById('portfolioAddForm').addEventListener('submit',async e=>{e.preventDefault();notice.textContent='Adding holding...';try{const d=await pulseApi('/api/portfolio',{method:'POST',body:JSON.stringify({symbol:document.getElementById('portfolioSymbol').value,amount:document.getElementById('portfolioAmount').value,average_buy_price:document.getElementById('portfolioAverage').value})});notice.textContent=d.message||'Holding added.';e.target.reset();await loadPortfolio()}catch(err){notice.textContent=err.message}});
     holdings.addEventListener('click',async e=>{const btn=e.target.closest('[data-delete-holding]');if(!btn)return;if(!confirm('Remove this holding from your portfolio?'))return;try{const d=await pulseApi('/api/portfolio/'+btn.dataset.deleteHolding,{method:'DELETE'});notice.textContent=d.message||'Holding removed.';await loadPortfolio()}catch(err){notice.textContent=err.message}});loadPortfolio();
     """
@@ -36345,9 +36520,6 @@ def portfolio_item_api(item_id):
     user = api_account_user()
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
-    gated = api_pro_required(user, "Portfolio Tracker")
-    if gated:
-        return gated
     if request.method == "DELETE":
         result = portfolio_service.delete_portfolio_item(user["user_id"], item_id)
         log_product_event(user["user_id"], "portfolio_item_deleted", {"item_id": item_id, "ok": result.get("ok")})
@@ -36367,13 +36539,10 @@ def watchlist_api():
         return jsonify({"ok": False, "message": "Login required."}), 401
     if request.method == "GET":
         return jsonify({"ok": True, "watchlist": portfolio_service.get_watchlist(user["user_id"])})
-    gated = api_pro_required(user, "Watchlist")
-    if gated:
-        return gated
     payload = request.get_json(silent=True) or {}
     result = portfolio_service.add_watchlist_item(user["user_id"], clean_html(payload.get("symbol", "")), clean_html(payload.get("coin_name", "")))
     log_product_event(user["user_id"], "watchlist_item_added", {"symbol": payload.get("symbol", ""), "ok": result.get("ok")})
-    return jsonify(result), (200 if result.get("ok") else 400)
+    return jsonify(result), _portfolio_status(result)
 
 
 @webhook_app.route("/api/watchlist/<int:item_id>", methods=["DELETE"])
@@ -36382,9 +36551,6 @@ def watchlist_item_api(item_id):
     user = api_account_user()
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
-    gated = api_pro_required(user, "Watchlist")
-    if gated:
-        return gated
     result = portfolio_service.delete_watchlist_item(user["user_id"], item_id)
     return jsonify(result), (200 if result.get("ok") else 404)
 
@@ -41496,6 +41662,20 @@ def api_pulse_music_upload():
     conn.commit()
     conn.close()
     return jsonify({"ok": True, "message": "Song uploaded for admin review.", "track_id": track_id, "status": "pending_review", "media": media, "cover_art_url": cover_url})
+
+
+@webhook_app.route("/api/pulse/music/<int:track_id>", methods=["GET"])
+def api_pulse_music_track(track_id):
+    """Addressable lookup for one track. Search returns a ranked slice of the catalog,
+    which is not a reliable way to reach a link that names a specific song."""
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    track = music_service.public_track(str(track_id))
+    if not track:
+        return api_error("Song not found.", 404)
+    return jsonify({"ok": True, "item": track, "trace_id": secrets.token_hex(6)})
 
 
 @webhook_app.route("/api/pulse/music/<int:track_id>/event", methods=["POST"])
@@ -87197,13 +87377,21 @@ def api_pulse_payouts_connect():
         return api_error(f"Approved {seller_type} status is required before payout onboarding.", 403)
     account = seller_payout_account(cur, user["user_id"], seller_type)
     connected_account_id = account.get("connected_account_id") or ""
+    trace_id = secrets.token_hex(6)
     try:
         if STRIPE_SECRET_KEY:
             if not connected_account_id:
                 stripe_account = payment_provider.create_connected_account(user, seller_type)
                 if not stripe_account.get("ok"):
                     conn.close()
-                    return jsonify(stripe_account), 503
+                    return api_error(
+                        stripe_account.get("message") or "Payout setup could not start.",
+                        int(stripe_account.get("http_status") or 503),
+                        trace_id,
+                        code=stripe_account.get("code") or "",
+                        provider_error=stripe_account.get("provider_error") or {},
+                        retryable=bool(stripe_account.get("retryable")),
+                    )
                 connected_account_id = stripe_account.get("provider_account_id") or ""
             cur.execute(
                 """
@@ -87220,7 +87408,14 @@ def api_pulse_payouts_connect():
             link = payment_provider.create_onboarding_link(connected_account_id, refresh_url=f"{base}/pulse/{seller_type}/payouts", return_url=f"{base}/pulse/{seller_type}/payouts")
             if not link.get("ok"):
                 conn.close()
-                return jsonify(link), 503
+                return api_error(
+                    link.get("message") or "Payout setup could not start.",
+                    int(link.get("http_status") or 503),
+                    trace_id,
+                    code=link.get("code") or "",
+                    provider_error=link.get("provider_error") or {},
+                    retryable=bool(link.get("retryable")),
+                )
             conn.close()
             return jsonify({"ok": True, "message": "Stripe onboarding ready.", "onboarding_url": link.get("url"), "connected_account_id": connected_account_id})
         cur.execute(
@@ -87236,10 +87431,28 @@ def api_pulse_payouts_connect():
         conn.commit(); conn.close()
         return jsonify({"ok": True, "message": "Payout profile saved. Stripe Connect is not configured yet, so bank onboarding cannot open in this environment."})
     except Exception as exc:
-        trace_id = secrets.token_hex(6)
+        # `logging.exception` alone does not reach the deployed log stream — this
+        # route failed in production for a seller and left no line behind, which
+        # is why the cause had to be reproduced by hand. `print(..., flush=True)`
+        # is what `services/db.py` already uses and what actually lands there.
+        print(
+            f"SELLER_PAYOUT_CONNECT_FAILED trace_id={trace_id} user_id={user['user_id']} "
+            f"seller_type={seller_type} exc={type(exc).__name__}: {str(exc)[:400]}",
+            flush=True,
+        )
         logging.exception("SELLER_PAYOUT_CONNECT_FAILED trace_id=%s user_id=%s seller_type=%s", trace_id, user["user_id"], seller_type)
         conn.rollback(); conn.close()
-        return api_error("Payout onboarding failed. Please try again.", 500, trace_id, error=str(exc))
+        # The raw exception text used to be returned as `error`. It is the one
+        # thing here that can carry provider or internal detail, and no client
+        # reads it; the trace id above is what ties a report to the log line.
+        return api_error(
+            "Payout setup couldn't be completed. This is a problem on PulseSoc's side, "
+            "not with your account.",
+            500,
+            trace_id,
+            code="PAYOUT_ONBOARDING_ERROR",
+            retryable=True,
+        )
 
 
 @webhook_app.route("/api/pulse/payments/checkout", methods=["POST"])
@@ -98134,6 +98347,14 @@ def pulse_native_profile_payload(cur, target_user_id, viewer_user_id):
             "username": pulse_feed_engine.MEMBER_000_PUBLIC_PLAYER_ID,
             "public_player_id": pulse_feed_engine.MEMBER_000_PUBLIC_PLAYER_ID,
             "avatar_url": pulse_feed_engine.MEMBER_000_AVATAR_URL,
+            # The native profile normalizer reads ``avatar_thumbnail_url`` first
+            # and falls back to ``avatar_url``; naming both keeps the small and
+            # large renders on one asset rather than letting the fallback decide.
+            "avatar_thumbnail_url": pulse_feed_engine.MEMBER_000_AVATAR_URL,
+            # ``cover_url``/``banner_url`` are aliases everywhere else in this
+            # payload, so the system account supplies both for the same reason.
+            "cover_url": pulse_feed_engine.MEMBER_000_COVER_URL,
+            "banner_url": pulse_feed_engine.MEMBER_000_COVER_URL,
             "bio": "Official automated insights and safety education from PulseSoc.",
             "account_type": "PULSESOC_AUTOMATED",
             "automated": True,
@@ -99388,11 +99609,12 @@ def sync_founder_invoice_from_stripe(invoice, event_id, event_type):
 @webhook_app.route("/webhook/stripe", methods=["GET"])
 @webhook_app.route("/webhooks/stripe", methods=["GET"])
 def stripe_webhook_health():
-    return jsonify({
-        "ok": True,
-        "route": "stripe-webhook",
-        "webhook_secret_configured": bool(STRIPE_WEBHOOK_SECRET),
-    })
+    # This route is public, so it reports a count and never any secret material
+    # -- enough to answer "is this deployment able to verify anything, and how
+    # many destinations can it serve?" without helping anyone forge a signature.
+    payload = {"ok": True, "route": "stripe-webhook"}
+    payload.update(stripe_webhook_verification.describe_configuration())
+    return jsonify(payload)
 
 
 @webhook_app.route("/stripe-webhook", methods=["POST"])
@@ -99406,21 +99628,43 @@ def stripe_webhook():
     sig_header = request.headers.get("Stripe-Signature")
     logging.info("STRIPE_WEBHOOK_RECEIVED path=%s payload_bytes=%s signature_present=%s", request.path, len(payload or b""), bool(sig_header))
 
-    try:
-        if STRIPE_WEBHOOK_SECRET:
-            stripe.Webhook.construct_event(
-                payload,
-                sig_header,
-                STRIPE_WEBHOOK_SECRET
+    # Verify against every configured signing secret. Stripe issues one secret
+    # per event destination, and this single handler answers on five URL
+    # aliases, so a lone secret can only ever verify one destination -- which is
+    # exactly how pulsesoc-ads-billing-live accumulated nine days of 400s and
+    # got disabled. This still rejects anything unsigned or signed with a key we
+    # do not hold; it just allows more than one legitimate key.
+    verification = stripe_webhook_verification.verify(payload, sig_header)
+    if not verification.get("ok"):
+        reason = verification.get("reason")
+        if reason == stripe_webhook_verification.SECRET_MISSING:
+            logging.error(
+                "STRIPE_WEBHOOK_SECRET missing. Refusing unsigned live Stripe webhook; "
+                "configure Railway STRIPE_WEBHOOK_SECRET."
             )
-            event = json.loads(payload.decode("utf-8"))
-            logging.info("STRIPE_SIGNATURE_VERIFIED signature_present=%s", bool(sig_header))
-        else:
-            logging.error("STRIPE_WEBHOOK_SECRET missing. Refusing unsigned live Stripe webhook; configure Railway STRIPE_WEBHOOK_SECRET.")
             return "Webhook secret missing", 503
+        # A distinct body per reason so the next person reading Stripe's
+        # delivery log learns the failure mode from the response itself instead
+        # of having to correlate against server logs that may have aged out.
+        logging.error(
+            "STRIPE_SIGNATURE_REJECTED path=%s reason=%s secrets_tried=%s detail=%s",
+            request.path, reason, verification.get("secrets_tried"),
+            verification.get("last_error") or verification.get("message"),
+        )
+        if reason == stripe_webhook_verification.SIGNATURE_MISSING:
+            return "Invalid signature: missing Stripe-Signature header", 400
+        return "Invalid signature: no configured signing secret matches this destination", 400
+
+    try:
+        event = json.loads(payload.decode("utf-8"))
     except Exception as e:
-        logging.exception("Stripe webhook error details: %s", e)
-        return "Invalid", 400
+        logging.exception("Stripe webhook payload not decodable after valid signature: %s", e)
+        return "Invalid payload", 400
+
+    logging.info(
+        "STRIPE_SIGNATURE_VERIFIED path=%s secret_index=%s",
+        request.path, verification.get("secret_index"),
+    )
 
     event_type = event.get("type")
     if not event_type or not isinstance(event.get("data"), dict):
@@ -99445,7 +99689,10 @@ def stripe_webhook():
                 provider_event_id=event_id,
                 payload=event,
                 event_type=event_type,
-                signature_verified=bool(STRIPE_WEBHOOK_SECRET),
+                # Reaching this line means construct_event accepted the payload,
+                # so the signature really was verified -- not merely that a
+                # secret happened to be configured.
+                signature_verified=True,
             )
         except Exception:
             logging.exception("BUSINESS_OS webhook inbox enqueue failed (non-fatal) event_id=%s", event_id)
@@ -115837,12 +116084,22 @@ async def website_portfolio_command(update: Update, context: ContextTypes.DEFAUL
     if holdings:
         lines.append("\nTop holdings:")
         for item in holdings[:6]:
+            # `value` and `pnl_percent` are None whenever the price or the cost
+            # basis is missing, so each is rendered only once it exists. The key
+            # read here used to be `current_value`, which the portfolio service
+            # has never produced — this loop raised KeyError for anyone with a
+            # holding, so the command has never printed one.
+            value = item.get("value")
+            pnl_percent = item.get("pnl_percent")
+            value_text = "price unavailable" if value is None else f"≈ ${value:,.2f}"
+            pnl_text = "" if pnl_percent is None else f" ({pnl_percent:+.2f}% P/L)"
             lines.append(
-                f"• {item['symbol']}: {item['amount']:.6g} ≈ ${item['current_value']:,.2f} "
-                f"({item['pnl_percent']:+.2f}% P/L)"
+                f"• {item.get('symbol')}: {float(item.get('amount') or 0):.6g} {value_text}{pnl_text}"
             )
     else:
         lines.append("\nNo website holdings saved yet. Add holdings from your dashboard.")
+    if data.get("warning"):
+        lines.append(f"\n{data['warning']}")
     lines.append("\nDashboard: https://pulsesoc.com/dashboard")
     lines.append("Educational information only. Not financial, betting, investment, or legal advice.")
     await update.message.reply_text("\n".join(lines), reply_markup=account_reply_markup(update.effective_user.id))

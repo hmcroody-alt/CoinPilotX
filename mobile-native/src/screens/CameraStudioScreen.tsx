@@ -678,7 +678,7 @@ export function CameraStudioScreen({ route, navigation }: Props) {
         <View style={styles.policyBox}>
           <Text style={styles.policyTitle}>Capture & upload policy</Text>
           <Text style={styles.policyText}>{policy.key} · {captureMode === "video" ? `${policy.videoQuality} capture target` : `${Math.round(policy.imageQuality * 100)}% image capture quality`}</Text>
-          <Text style={styles.policyText}>Server validation, moderation, storage, and processing remain authoritative.</Text>
+          <Text style={styles.policyText}>PulseSoc checks, stores, and processes every upload, and decides what is allowed.</Text>
         </View>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}

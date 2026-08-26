@@ -45,3 +45,46 @@ global.fetch = (input) =>
         "Mock the API module this call goes through rather than letting it reach the wire."
     )
   );
+
+/**
+ * A second source of "green alone, red under load", with no wall available —
+ * only a habit. Written down here because the fix is invisible and the broken
+ * shape is the one everybody reaches for first.
+ *
+ *   await waitFor(() => expect(queryByText(/gone/)).toBeNull());   // slow
+ *   await waitFor(() => expect(queryAllByText(/gone/).length).toBe(0)); // fast
+ *
+ * `waitFor` retries until the callback stops throwing, so every poll but the
+ * last is a deliberate failure — and a failing `expect(element)` sends Jest to
+ * `pretty-format` to build a message nobody will ever read. A React Native host
+ * element carries `_fiber`, so that message is a serialisation of the render
+ * tree: roughly half a second each time, spent with the event loop blocked, so
+ * `waitFor` cannot even poll again until it finishes. Three polls exceeds the
+ * 1000ms default budget on their own.
+ *
+ * `PagesHubScreen`'s "drops the card once the server says the invite is gone"
+ * was the worked example: 1087ms alone, red the moment the machine had anything
+ * else to do, 109ms once the assertion was handed a number instead of a node.
+ * Nothing about what it asserts changed.
+ *
+ * The rule: inside `waitFor`, assert on a primitive — a count, a string, a
+ * boolean. Outside `waitFor` a passing `expect(element).toBeNull()` costs
+ * nothing, because pretty-format only runs when the assertion fails, so those
+ * are fine as they are.
+ *
+ * The rest of the suite has since been swept: sixteen more of these, across
+ * Business OS, Reels, Settings, Status, Seller and Verification. Four Business
+ * OS suites were already failing the moment anything else ran alongside them,
+ * which is what the sweep was chasing; the whole run went from 58s to 14s.
+ * There are none left, so a new one is a new one.
+ *
+ * One aftershock is worth knowing about, because it will happen again the next
+ * time a suite gets faster. Business OS mocked three requests with promises
+ * that never settle, and the screen arms a twelve-second load deadline it
+ * clears only when a request settles. While those suites were slow the timer
+ * had always fired by the end; once they finished in five seconds it had not,
+ * and Jest force-exited the worker every run with a leak warning that named
+ * nothing. Speeding a suite up does not create leaks, it stops hiding them —
+ * so read that warning as a real handle, not as fallout from the change that
+ * revealed it.
+ */

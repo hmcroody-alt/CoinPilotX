@@ -135,8 +135,18 @@ export function LogiNexusGlobalHeader({
               <View style={styles.homeBrandSignalSecondary} />
             </View>
           ) : null}
+          {/* The guard is what the testID is for. Dropping it renders an empty
+              subtitle line under every route that passes none — invisible in a
+              screenshot, a gap in the bar on a device, and undetectable by any
+              text query, because React draws `undefined` children as nothing.
+              Asserting the element's presence rather than its words is the only
+              way that regression is catchable. */}
           {subtitle ? (
-            <Text style={[styles.headerSubtitle, homeMode && styles.headerSubtitleHome]} numberOfLines={1}>
+            <Text
+              testID="global-header-subtitle"
+              style={[styles.headerSubtitle, homeMode && styles.headerSubtitleHome]}
+              numberOfLines={1}
+            >
               {subtitle}
             </Text>
           ) : null}

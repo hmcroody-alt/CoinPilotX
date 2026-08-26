@@ -473,7 +473,7 @@ export function ProfileScreen({ route, navigation }: Props) {
         <LogiNexusStatePanel state="error" title={state.title} body={state.body}>
         {state.retryable ? (
           <Pressable style={styles.retryButton} onPress={() => load("refresh").catch(() => undefined)}>
-            <Text style={styles.retryButtonText}>Retry native profile</Text>
+            <Text style={styles.retryButtonText}>Try again</Text>
           </Pressable>
         ) : null}
         </LogiNexusStatePanel>

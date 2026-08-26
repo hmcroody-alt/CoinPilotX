@@ -61,12 +61,34 @@ PREMIUM_CAPABILITIES = (
     "premium.profile.customization",
     "premium.media.higher_quality",
     "premium.undx.advanced",
-    # Crypto intelligence capabilities. Conferred by the existing Premium plans
-    # (monthly/annual/grandfathered) so Apple purchases of
-    # com.pulsesoc.premium.monthly / .annual inherit them with no new SKU.
-    # Gated through services.crypto_premium_gate.has_crypto_capability.
+    # Crypto intelligence. These are capabilities of the EXISTING Premium
+    # membership, not a separate crypto product: no new plan, no new SKU. A
+    # capability added here is presented by the Status Center automatically
+    # (``premium_api._PRESENTED``), so it must also be registered in
+    # ``facade._LEGACY_READERS`` — otherwise the default ``off`` mode has no
+    # legacy opinion for the key and denies it to every paying member.
     "premium.crypto.advanced_alerts",
-    "premium.crypto.portfolio_intelligence",
+    "premium.crypto.portfolio",
+    "premium.crypto.intelligence",
+    # Unlocks the ability to SUBMIT a Blue Check verification request. It does
+    # not grant the badge and carries no weight in the review: a reviewer still
+    # decides on the evidence. Membership buys the application, never the
+    # outcome — see NOT_VERIFICATION in premium_api.
+    "premium.verification.blue_check.apply",
+    # NOTE: premium.crypto.portfolio_intelligence is deliberately NOT listed
+    # here. It is the crypto branch's single-key spelling of what
+    # premium.crypto.portfolio and premium.crypto.intelligence split in two, and
+    # it exists only so the call sites using that name resolve. It is registered
+    # where registration actually matters — facade._LEGACY_READERS, so the
+    # default ``off`` mode has an opinion and does not deny it, and schema.py's
+    # per-plan rows, so a purchase grants it. Neither reads this tuple.
+    #
+    # This tuple is the *presentation* list: everything in it becomes
+    # premium_api._PRESENTED and is advertised as a benefit on the Premium
+    # screen. An alias listed here would sell one capability to one member twice
+    # under two names. That is what test_every_advertised_benefit_has_native_copy
+    # catches by demanding a translated label for it; the honest response is not
+    # to write the label but to stop advertising the alias.
 )
 
 #: Plans that confer Premium membership, in the catalog's vocabulary.

@@ -173,7 +173,7 @@ export async function unregisterPushDevice(options: { preservePreferences?: bool
     if (!endpoints.length) {
       await clearCachedPushRegistration();
       await Notifications.setBadgeCountAsync(0).catch(() => undefined);
-      return { ok: true, message: "No native push registration was cached for this device." };
+      return { ok: true, message: "This device was not set up for push notifications." };
     }
     let result: PushRegistrationResult = { ok: true };
     for (const endpoint of endpoints) {

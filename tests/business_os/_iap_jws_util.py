@@ -95,8 +95,17 @@ def build_notification(chain: Chain, *, notification_type="SUBSCRIBED",
                        subtype=None, product_id="com.pulsesoc.premium.monthly",
                        app_account_token="42",
                        original_transaction_id="1000000123456789",
-                       expires_dt=None) -> str:
-    """Build a full App Store Server Notification v2 signedPayload (nested JWS)."""
+                       expires_dt=None, auto_renew_status=1,
+                       original_purchase_dt=None,
+                       include_renewal_info=True) -> str:
+    """Build a full App Store Server Notification v2 signedPayload (nested JWS).
+
+    ``auto_renew_status`` and ``include_renewal_info`` are deliberately separate
+    knobs. Apple omits ``signedRenewalInfo`` from some notifications entirely, so
+    "auto-renew is off" and "this notification is silent about auto-renew" have
+    to stay distinguishable here — the adapter treats them very differently, and
+    conflating them is how a paying member gets told their plan is ending.
+    """
     expires_dt = expires_dt or (datetime.now(timezone.utc) + timedelta(days=30))
     txn = {
         "transactionId": original_transaction_id,
@@ -106,13 +115,14 @@ def build_notification(chain: Chain, *, notification_type="SUBSCRIBED",
         "expiresDate": ms(expires_dt),
         "type": "Auto-Renewable Subscription",
     }
+    if original_purchase_dt is not None:
+        txn["originalPurchaseDate"] = ms(original_purchase_dt)
     renewal = {
         "autoRenewProductId": product_id,
-        "autoRenewStatus": 1,
+        "autoRenewStatus": auto_renew_status,
         "originalTransactionId": original_transaction_id,
     }
     signed_txn = chain.sign_jws(txn)
-    signed_renewal = chain.sign_jws(renewal)
     payload = {
         "notificationType": notification_type,
         "notificationUUID": "uuid-" + original_transaction_id,
@@ -123,9 +133,10 @@ def build_notification(chain: Chain, *, notification_type="SUBSCRIBED",
             "environment": "Sandbox",
             "appAppleId": 111,
             "signedTransactionInfo": signed_txn,
-            "signedRenewalInfo": signed_renewal,
         },
     }
+    if include_renewal_info:
+        payload["data"]["signedRenewalInfo"] = chain.sign_jws(renewal)
     if subtype is not None:
         payload["subtype"] = subtype
     return chain.sign_jws(payload)

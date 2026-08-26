@@ -913,6 +913,272 @@ def presence_privacy_status(user_id: int) -> dict[str, Any]:
     return state
 
 
+# ---------------------------------------------------------------------------
+# Crypto intelligence (read-only, Premium)
+#
+# These two reads are what UNDX is allowed to know about a member's crypto
+# holdings and about market movement. They compose the systems that already own
+# the data -- the portfolio service and the sampled observation series -- and add
+# no storage and no arithmetic of their own beyond the labelling below.
+#
+# Alert *rules* are deliberately not read here. ``crypto.alerts.list`` already
+# owns that read, and a second projection of the same rows is how one question
+# ends up with two answers that disagree about what a rule watches. The first
+# draft of this section had exactly that, and the fix was to teach the existing
+# reader the compound and scoped shapes it had never been told about (see
+# ``undx_agent_tools._ALERT_FIELDS``) rather than to keep a rival beside it.
+#
+# What UNDX may say, and what it may not, is decided here rather than in the
+# prompt, because a prompt is a request and a return value is a fact. Three
+# claims are structurally unavailable as a result:
+#
+# * **Realized profit or loss.** ``portfolio_items`` stores an amount and an
+#   average buy price. It has no transaction ledger, so there is no record of
+#   what was sold or at what price, and a "realized" figure could only be
+#   invented. The append-only ledger in ``services/business_os/crypto/`` could
+#   answer it, but it is dark behind ``BUSINESS_OS_CRYPTO`` and describes a
+#   different set of holdings than the portfolio screen shows.
+# * **Portfolio performance over a time window.** The observation series samples
+#   *symbols*, not portfolios, and holdings are not versioned -- there is no
+#   record of what was held at the start of the window. Weighting today's
+#   holdings by past prices would produce a number for a portfolio nobody owned.
+#   Per-symbol windows are decidable and are offered instead.
+# * **A movement that was never measured.** ``window_reading`` returns ``ok``
+#   False for a series that is too short, stale or gapped, and that is passed
+#   through untouched. "Not measurable" and "did not move" are different answers.
+# ---------------------------------------------------------------------------
+
+#: Capability every read in this section requires. Named once so the two reads
+#: cannot drift apart on which door they check.
+CRYPTO_INTELLIGENCE_ROUTE = "/pulse/premium"
+
+
+def _crypto_entitled(user_id: int) -> bool:
+    """Server-side Premium check, resolved through the one module that owns it.
+
+    ``premium_crypto_access`` is deliberately the only authority: the alert
+    engine, the portfolio service, the HTTP routes and this layer must reach the
+    same answer for the same account, and a second opinion here would be a
+    fourth place for "is this member Premium" to be decided.
+    """
+    from services import premium_crypto_access
+
+    return bool(
+        premium_crypto_access.allowed_for_user_id(
+            int(user_id), premium_crypto_access.INTELLIGENCE
+        )
+    )
+
+
+def _crypto_locked(section: str) -> dict[str, Any]:
+    """The answer for a member who is not entitled to crypto intelligence.
+
+    Deliberately not an empty result and deliberately not an error. An empty
+    list would be narrated as "you hold nothing" -- a confident false
+    statement about the member's account -- and a failure would be narrated as
+    "something went wrong", sending them to support over a working paywall.
+    Both are worse than the truth, which is that the account is fine, the data
+    exists, and this capability is part of Premium.
+
+    ``items`` is present and empty so a caller that iterates facts does not have
+    to special-case the shape, and ``entitled`` is what tells it not to.
+    """
+    from services import premium_crypto_access
+
+    return {
+        "entitled": False,
+        "reason": "premium_required",
+        "capability": premium_crypto_access.INTELLIGENCE,
+        "section": section,
+        "message": (
+            "UNDX crypto intelligence is part of PulseSoc Premium. "
+            "The data exists on this account; this capability is what is locked."
+        ),
+        "items": [],
+        "source": "premium_crypto_access",
+        "timestamp": _now(),
+        "authorization_scope": SELF_SCOPE,
+        "confidence": 1.0,
+        "native_route": CRYPTO_INTELLIGENCE_ROUTE,
+    }
+
+
+def crypto_portfolio_summary(user_id: int) -> dict[str, Any]:
+    """What the member holds, valued the way the portfolio screen values it.
+
+    Grounded in ``portfolio_service.calculate_user_portfolio``, which already
+    keeps "unknown" distinct from "zero" at every step: an unpriced asset has
+    ``value`` ``None`` rather than 0, and a holding with no recorded buy price
+    has ``pnl_value`` ``None`` rather than break-even. Those ``None``s are passed
+    through untouched, because the whole point of them is that the number was
+    never known.
+
+    ``pnl_basis`` states what the profit figure is measured against. The number
+    is unrealized -- today's market price against a stored average buy price --
+    and there is no ledger of sales from which a realized figure could be
+    derived, so the field says so rather than leaving a narrator to guess which
+    kind of profit it is looking at.
+    """
+    if not _crypto_entitled(user_id):
+        return _crypto_locked("portfolio")
+
+    from services import portfolio_service
+
+    degraded = _DEGRADED.get()
+    try:
+        portfolio = portfolio_service.calculate_user_portfolio(int(user_id)) or {}
+    except Exception:
+        if degraded is not None:
+            degraded.add("portfolio_service.calculate_user_portfolio")
+        logger.warning("undx_crypto_portfolio_read_failed user=%s", user_id, exc_info=True)
+        portfolio = {}
+
+    holdings = list(portfolio.get("holdings") or [])
+    facts = []
+    for holding in holdings:
+        symbol = str(holding.get("symbol") or "").upper()
+        facts.append(_fact(
+            "portfolio_items", holding.get("id"), holding.get("updated_at") or holding.get("created_at"),
+            "/pulse/portfolio", kind="crypto_holding",
+            title=symbol or "Holding",
+            detail=str(holding.get("coin_name") or ""),
+            data={
+                "symbol": symbol,
+                "amount": holding.get("amount"),
+                "price": holding.get("price"),
+                "value": holding.get("value"),
+                "cost": holding.get("cost"),
+                "pnl_value": holding.get("pnl_value"),
+                "pnl_percent": holding.get("pnl_percent"),
+                # States which of the two independent absences applies, so a
+                # caller never has to infer "no price" from a null value.
+                "priced": bool(holding.get("priced")),
+            },
+        ))
+    # What the totals actually cover: how many holdings could be priced, and how
+    # many had a cost basis to measure profit against.
+    valuation = dict(portfolio.get("valuation") or {})
+    priced = int(valuation.get("priced") or 0)
+    basis_known = int(valuation.get("basis_known") or 0)
+
+    # ``calculate_user_portfolio`` accumulates from 0.0 and so returns 0.0 when
+    # nothing could be priced. On the portfolio screen that zero is read next to
+    # the valuation block that explains it. Here the number travels alone into a
+    # sentence, where "your portfolio is worth $0" is a confident falsehood about
+    # an account that may hold a great deal. So a total with nothing behind it is
+    # reported as unknown -- the same rule ``_value_holding`` already applies to
+    # each individual holding, applied to the sum.
+    return {
+        "entitled": True,
+        "items": facts,
+        "count": len(facts),
+        "total_value": portfolio.get("total_value") if priced else None,
+        "total_cost": portfolio.get("total_cost") if basis_known else None,
+        "unrealized_pnl_value": portfolio.get("pnl_value") if basis_known else None,
+        "unrealized_pnl_percent": portfolio.get("pnl_percent") if basis_known else None,
+        "pnl_basis": (
+            "Unrealized: current market price against the stored average buy price. "
+            "There is no transaction ledger on this portfolio, so realized profit "
+            "and loss is not computable and must not be stated."
+        ),
+        "valuation": valuation,
+        # Carried through verbatim rather than re-derived. It names the assets the
+        # totals leave out, which is the sentence that makes an incomplete total
+        # readable instead of merely wrong.
+        "valuation_warning": portfolio.get("warning") or "",
+        "source": "portfolio_service.calculate_user_portfolio",
+        "timestamp": _now(),
+        "authorization_scope": SELF_SCOPE,
+        "confidence": 1.0,
+        "native_route": "/pulse/portfolio",
+    }
+
+
+def crypto_market_window(user_id: int, symbol: str = "", *, metric: str = "price",
+                         minutes: Any = 60) -> dict[str, Any]:
+    """How one asset has moved over a window, or why that cannot be said.
+
+    Grounded in ``market_observations``, which is a real series of readings the
+    alert worker sampled -- not a provider's own "24h change" field relabelled
+    with a window the system never measured.
+
+    An undecidable window is returned as ``ok`` False with the reason the series
+    gave: too short, stale, or gapped around the boundary. That is passed
+    through rather than converted to a zero or a shrug, because "BTC has not been
+    watched for a full 60 minutes yet" and "BTC did not move" are opposite
+    statements and only one of them is true.
+
+    ``coverage`` travels alongside so a refusal can be acted on -- it names the
+    windows that *are* answerable for this symbol, which turns "no" into "ask me
+    for 15 minutes instead".
+    """
+    if not _crypto_entitled(user_id):
+        return _crypto_locked("market_window")
+
+    from services import market_observations
+
+    ticker = str(symbol or "").strip().upper()
+    if not ticker:
+        return {
+            "entitled": True, "ok": False, "reason": "no_symbol",
+            "message": "Name the asset to measure.",
+            "items": [], "source": "market_observations",
+            "timestamp": _now(), "authorization_scope": SELF_SCOPE,
+            "confidence": 1.0, "native_route": "/pulse/crypto/alerts",
+        }
+
+    degraded = _DEGRADED.get()
+    try:
+        reading = market_observations.window_reading(ticker, metric, minutes)
+        span = market_observations.coverage(ticker)
+    except Exception:
+        if degraded is not None:
+            degraded.add("market_observations.window_reading")
+        logger.warning("undx_crypto_window_read_failed symbol=%s", ticker, exc_info=True)
+        return {
+            "entitled": True, "ok": False, "reason": "series_unavailable",
+            "message": f"The reading series for {ticker} could not be consulted.",
+            "items": [], "source": "market_observations",
+            "timestamp": _now(), "authorization_scope": SELF_SCOPE,
+            "confidence": 1.0, "native_route": "/pulse/crypto/alerts",
+        }
+
+    facts = []
+    if reading.get("ok"):
+        facts.append(_fact(
+            "market_observations", ticker, reading.get("latest_at"),
+            "/pulse/crypto/alerts", kind="market_window",
+            title=f"{ticker} {reading.get('metric')}",
+            detail=f"{reading.get('change_percent'):+.2f}% over {reading.get('window_minutes')} minutes",
+            data=dict(reading),
+        ))
+    return {
+        "entitled": True,
+        "ok": bool(reading.get("ok")),
+        "symbol": ticker,
+        "metric": reading.get("metric"),
+        "window_minutes": reading.get("window_minutes"),
+        "change_percent": reading.get("change_percent"),
+        "latest": reading.get("latest"),
+        "baseline": reading.get("baseline"),
+        # The window actually measured, which is what copy should quote. The
+        # member asked for ``minutes``; the series compared against a reading
+        # this many seconds old, and the two are not always the same.
+        "baseline_age_seconds": reading.get("baseline_age_seconds"),
+        "sample_count": reading.get("sample_count"),
+        "reason": reading.get("reason") or "",
+        "message": reading.get("message") or "",
+        "available_windows": span.get("available_windows") or [],
+        "series_stale": bool(span.get("stale")),
+        "items": facts,
+        "source": "market_observations.window_reading",
+        "timestamp": _now(),
+        "authorization_scope": SELF_SCOPE,
+        "confidence": 1.0,
+        "native_route": "/pulse/crypto/alerts",
+    }
+
+
 __all__ = [
     "activity_daily_summary", "notifications_inbox", "notification_explain",
     "notification_group_summary", "search_global", "search_people", "search_content",
@@ -926,4 +1192,5 @@ __all__ = [
     "account_health_summary", "verification_status", "support_tickets_list",
     "creator_analytics_summary", "localization_preferences",
     "presence_privacy_status",
+    "crypto_portfolio_summary", "crypto_market_window",
 ]

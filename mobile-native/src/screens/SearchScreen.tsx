@@ -228,13 +228,13 @@ export function SearchScreen({ route, navigation }: Props) {
                 <Text style={styles.loadingText}>Searching PulseSoc</Text>
               </View>
             ) : (
-              <Text style={styles.resultCount}>{unsupportedTab ? "Native destination coming soon" : `${totalResults} results`}</Text>
+              <Text style={styles.resultCount}>{unsupportedTab ? "Coming soon" : `${totalResults} results`}</Text>
             )
           }
           ListEmptyComponent={
             loading ? null : (
               <View style={styles.empty}>
-                <Text style={styles.emptyTitle}>{unsupportedTab ? "Discovery tab is not native yet" : "No PulseSoc results found"}</Text>
+                <Text style={styles.emptyTitle}>{unsupportedTab ? "This tab is not searchable yet" : "No PulseSoc results found"}</Text>
                 <Text style={styles.emptyText}>
                   {unsupportedTab
                     ? "There is nothing to open here yet."
@@ -255,9 +255,9 @@ export function SearchScreen({ route, navigation }: Props) {
 function EventsGatewayShortcut({ onPress }: { onPress: () => void }) {
   return (
     <Pressable style={styles.eventsGateway} onPress={onPress}>
-      <Text style={styles.eventsGatewayKicker}>Native gateway</Text>
+      <Text style={styles.eventsGatewayKicker}>Shortcut</Text>
       <Text style={styles.eventsGatewayTitle}>Events and scheduled Live</Text>
-      <Text style={styles.eventsGatewayText}>Open scheduled broadcasts from the existing PulseSoc Live backend. Creation and ticketing stay inside provider-owned boundaries.</Text>
+      <Text style={styles.eventsGatewayText}>Browse broadcasts people have scheduled. Creating events and selling tickets are handled on pulsesoc.com.</Text>
     </Pressable>
   );
 }
@@ -265,9 +265,9 @@ function EventsGatewayShortcut({ onPress }: { onPress: () => void }) {
 function LearningGatewayShortcut({ onPress }: { onPress: () => void }) {
   return (
     <Pressable style={styles.eventsGateway} onPress={onPress}>
-      <Text style={styles.eventsGatewayKicker}>Native gateway</Text>
+      <Text style={styles.eventsGatewayKicker}>Shortcut</Text>
       <Text style={styles.eventsGatewayTitle}>Courses and learning</Text>
-      <Text style={styles.eventsGatewayText}>Open native lesson discovery. Course creation, payments, teacher tools, and unsupported lesson media stay inside provider-owned boundaries.</Text>
+      <Text style={styles.eventsGatewayText}>Browse lessons here. Course creation, payments, teacher tools, and some lesson media are on the PulseSoc website.</Text>
     </Pressable>
   );
 }

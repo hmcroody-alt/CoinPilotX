@@ -1272,3 +1272,189 @@ ranges resolve inside 15.0.x; no other dependency line changed; the lockfile
 remains not-yet-updated because the sandbox registry block persists (verified
 again 2026-08-15: `403 blocked-by-allowlist`). Everything else in the addendum
 above stands unchanged.
+
+## Merge-to-main addendum (2026-08-24)
+
+This addendum declares the protected-path hits in the range
+`e1af64c9f4bd27b5955bbbe95ae65bb66aac5acb..4e207e6e` (41 commits, branch
+`claude/recursing-antonelli-a52df6` fast-forwarding `main`). It exists because
+the change gate diffs the whole push range on a push to `main`, so it reports
+protected paths touched by commits made earlier in the range rather than by any
+single feature.
+
+### Why the change is required
+
+None of the 41 commits set out to change real-time audio. The range is Premium
+crypto intelligence, a Stripe webhook signature-verification repair, App Store
+build-17 release prep, and earlier call/live fixes. Two protected-path hits fall
+inside it, and both are declared below rather than waved through.
+
+### Which protected files changed, and what actually changed in them
+
+| File | Category | Change |
+|---|---|---|
+| `mobile-native/app.json` | `dependency_watch` | `ios.buildNumber` `"16"` → `"17"` (commit `985c9b1e`, App Store build-17 prep). One line. No permission string, plugin, entitlement, background mode, or dependency changed. |
+| `bot.py` | `backend_token_and_room_policy` (`AGORA_`) | Two `logging.warning` calls removed from `api_pulse_live_end` (commit `00d742ca`). They match the `AGORA_` pattern only because the log *message text* contains it: `PULSE_LIVE_AGORA_MUX_BRIDGE_STOP_FAILED` and `PULSE_LIVE_AGORA_RECORDING_STOP_FAILED`. |
+
+The `bot.py` hit is worth stating precisely, because "backend token and room
+policy changed" is a much more alarming description than what happened. Commit
+`00d742ca` moved Agora mux-bridge and cloud-recording teardown out of the
+`api_pulse_live_end` request handler and into `media_worker.py` so ending a
+stream no longer blocks on replay finalization. The two log lines travelled with
+the code that moved. Grepping the full `bot.py` diff for the things this
+category exists to protect -- `AGORA_APP_ID`, `AGORA_CERTIFICATE`,
+`RtcTokenBuilder`, token construction, publish grants, `can_publish`, room
+policy -- returns nothing. No token is minted differently and no participant's
+publish rights changed.
+
+### Expected behavior change
+
+None for audio. Ending a livestream returns without waiting for mux-bridge and
+recording teardown, which now happens in `media_worker`. Capture, routing,
+AVAudioSession category, publication paths, and ownership arbitration are
+untouched across the entire range.
+
+### Regression risk
+
+Low. The build-number bump cannot affect runtime. The `bot.py` change is a
+latency move that shipped with its own coverage in the same commit:
+`tests/protection/test_agora_replay_mux_contract.py` (+27),
+`tests/test_agora_private_mux_input.py` (+50), `tests/test_live_replay_worker.py`
+(+85). The residual risk is teardown being missed if the worker never runs it --
+which those suites cover, and which is a replay/recording concern, not an audio
+one.
+
+### Tests run for this declaration (2026-08-24, local)
+
+- `npm run test:realtime-audio-critical` — 11 suites / 191 tests passed.
+- `npm run test:realtime-audio` — 18 suites / 310 tests passed.
+- `npm run test:realtime-audio-architecture` — 22 tests passed.
+- `python3 tests/protection/test_realtime_audio_architecture.py` — 19 tests, OK.
+- `pytest tests/protection/test_agora_token_generation.py
+  tests/protection/test_agora_rtc_provider_contract.py
+  tests/protection/test_agora_replay_mux_contract.py` — 19 passed.
+- `npm run typecheck` — passed.
+- `scripts/protection/run_protection_suite.py` — 218 checks across 20 suites.
+- Native build verification: a full iOS build of this range was produced and
+  installed on the iPhone 17 Pro Max simulator and on the physical device
+  P3r7or, which exercises the prebuild path the CI `native-build` job checks.
+
+### Physical validation NOT performed
+
+I did not place a call or start a livestream on a physical device and listen to
+it. No audible verification is claimed here. Section 7 of
+`reports/realtime_audio_verified_baseline.md` remains an open release gate for
+this range, and the low regression risk argued above is an argument from the
+diff, not a substitute for hearing it work.
+
+## Branch-consolidation addendum (2026-08-24, second sweep)
+
+This addendum declares the protected-path hits in the merge of the outstanding
+agent branches into `main` (`sweep/consolidate-main`, base `ebf4ba31`).
+
+### Why the change is required
+
+None of it is an audio change. The sweep consolidates finished work that was
+sitting uncommitted or unmerged across sixteen worktrees. Three protected paths
+are touched incidentally:
+
+| File | Category | Change |
+|---|---|---|
+| `mobile-native/src/screens/LiveScreen.tsx` | `livestream_audio_adapter` | Two user-facing empty-state sentences, replacing developer vocabulary ("Native discovery uses the existing PulseSoc Live backend", "when the existing API returns them to native") with member-readable copy. Both are `<Text>` children of the list's empty/footer components. |
+| `mobile-native/package.json` | `dependency_watch` | Adds `@react-native-community/datetimepicker@8.4.4`, used by the marketplace checkout's delivery-schedule control. |
+| `mobile-native/package-lock.json` | `dependency_watch` | The lock entry for the above. |
+
+### Which feature required it
+
+The copy edits come from the user-facing-copy gate being taught to read JSX text
+children (`8c623405`), which surfaced these two strings as shipped violations.
+The dependency comes from the marketplace checkout work.
+
+### Expected behavior change
+
+None to audio. The LiveScreen diff contains zero audio lines: no
+`AVAudioSession`, no `Audio.setAudioModeAsync`, no track creation, no
+publication path, no engine or lease call. It changes what two labels say when
+the list is empty. `datetimepicker` renders a date wheel and touches no audio
+API.
+
+### Regression risk
+
+Low, and structural rather than argued: the gate fires on the *file*, and the
+diff in that file is two string literals. The one real risk in the range is that
+`datetimepicker` is a NATIVE module, so it changes the pod graph — `pod install`
+is required before any iOS build, and a build that skips it will fail to link
+rather than fail silently.
+
+### Tests run for this declaration (2026-08-24, local, `sweep/consolidate-main`)
+
+- `npm run test:realtime-audio-critical` — 11 suites / 191 tests passed.
+- `npm run test:realtime-audio` — 18 suites / 310 tests passed.
+- `npm run test:realtime-audio-architecture` — 22 tests passed.
+- `python3 -m unittest tests.protection.test_realtime_audio_architecture` — 19 tests, OK.
+- `pytest tests/protection/test_agora_token_generation.py
+  tests/protection/test_agora_rtc_provider_contract.py` — 13 passed.
+- `npx tsc --noEmit` — exit 0.
+- Full native suite — 293 suites / 4861 tests passed.
+- `npm run i18n:validate` — 11 locales at 100%, catalog 1.0.0.
+
+### Physical validation NOT performed
+
+No call was placed and no livestream was started or listened to on a device for
+this range. No audible verification is claimed. Section 7 of
+`reports/realtime_audio_verified_baseline.md` remains open for this range.
+
+## Podfile.lock addendum (2026-08-24, pod install for RNDateTimePicker)
+
+### Protected path touched
+
+| File | Category | Change |
+|---|---|---|
+| `mobile-native/ios/Podfile.lock` | `dependency_watch` | Four entries adding `RNDateTimePicker (8.4.4)`, generated by `pod install`. |
+
+### Which feature required it
+
+The addendum above declared `@react-native-community/datetimepicker` arriving in
+`package.json` for the marketplace checkout's delivery-schedule control, and
+noted that because it is a *native* module the pod graph had to be regenerated
+before any iOS build. This is that regeneration — the follow-through on a risk
+that entry named, not a new decision.
+
+### Expected behavior change
+
+None to audio. The diff is mechanical and its shape is the argument: four added
+lines (the PODS spec, the DEPENDENCIES entry, the EXTERNAL SOURCES path, the
+SPEC CHECKSUMS hash), all of them `RNDateTimePicker`. No existing pod's version
+string or checksum moves, so no audio pod — Agora, the WebRTC layer, or any
+React-Core dependency they pull — is rebuilt against different sources. A date
+wheel links no audio API.
+
+### Regression risk
+
+Low. The failure mode this *removes* is the more serious one: with
+`datetimepicker` in `node_modules` but absent from the lock, an iOS build fails
+to link. That is a loud failure rather than a silent one, but it blocks the
+build entirely, which is why this had to land before the device installs.
+
+### Tests run for this declaration (2026-08-24, local, `sweep/consolidate-main`, post-`pod install`)
+
+- `npm run test:realtime-audio-critical` — 11 suites / 191 tests passed.
+- `npm run test:realtime-audio` — 18 suites / 310 tests passed.
+- `npm run test:realtime-audio-architecture` — 22 tests passed.
+- `python3 -m unittest tests.protection.test_realtime_audio_architecture` — 19 tests, OK.
+- `pytest tests/protection/test_agora_token_generation.py
+  tests/protection/test_agora_rtc_provider_contract.py` — 13 passed.
+- `npx tsc --noEmit` — exit 0.
+- `scripts/protection/run_protection_suite.py` — 218 checks across 20 suites passed.
+
+### Native build verification
+
+Satisfied by the real thing rather than by `expo prebuild`: this range is built
+with `xcodebuild` for both the iPhone 17 Pro Max simulator and the physical
+device (P3r7or), which is what the lock change exists to enable.
+
+### Physical validation NOT performed
+
+The app is installed on a device in this range, but no call was placed and no
+livestream was started or listened to. No audible verification is claimed.
+Section 7 of `reports/realtime_audio_verified_baseline.md` remains open.

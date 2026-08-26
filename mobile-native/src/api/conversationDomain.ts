@@ -59,7 +59,7 @@
  * derived and still correct, but every list reads the way it read before.
  */
 
-import { envFlagOn } from "../core/envFlag";
+import { isFlagValueOn } from "../core/envFlag";
 
 export const CONVERSATION_DOMAINS = [
   "SOCIAL",
@@ -92,9 +92,14 @@ export const COMMERCE_DOMAINS: readonly ConversationDomain[] = [
 /**
  * Tier 0.4's split. Off by default — see the header for why a wrong derivation
  * is a lost conversation and therefore has to ship dark first.
+ *
+ * The variable is spelled literally because `babel-preset-expo` inlines
+ * `process.env.X` only for a StringLiteral key; a name routed through
+ * `envFlagOn` is never substituted and reads undefined in a release bundle,
+ * which would make the split unturnable-on rather than merely off by default.
  */
 export function conversationSplitEnabled(): boolean {
-  return envFlagOn("EXPO_PUBLIC_MESSAGES_COMMERCE_SPLIT");
+  return isFlagValueOn(process.env.EXPO_PUBLIC_MESSAGES_COMMERCE_SPLIT);
 }
 
 export function isCommerceDomain(domain: ConversationDomain): boolean {

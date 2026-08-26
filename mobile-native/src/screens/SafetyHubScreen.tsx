@@ -93,7 +93,7 @@ export function SafetyHubScreen({ navigation, route }: Props) {
       const { response } = await createSafetyBlock({
         blockedUserId: isNumeric ? blockHandle.trim() : undefined,
         publicPlayerId: isNumeric ? undefined : blockHandle.trim().replace(/^@/, ""),
-        reason: blockReason.trim() || "Blocked from native Safety Hub"
+        reason: blockReason.trim() || "Blocked from Safety Hub in the PulseSoc app"
       });
       setBlockHandle("");
       setNotice(response.message || "User blocked and sent to moderation.");
@@ -139,7 +139,7 @@ export function SafetyHubScreen({ navigation, route }: Props) {
       setNotice("");
       return;
     }
-    await recordMuteHandoff({ target: muteTarget.trim(), duration: muteDuration, reason: muteReason.trim() || "Native mute handoff" });
+    await recordMuteHandoff({ target: muteTarget.trim(), duration: muteDuration, reason: muteReason.trim() || "Mute requested in the PulseSoc app" });
     setNotice("Saved on this device only. Mute them on the PulseSoc website to make it apply everywhere.");
     setMuteTarget("");
     await load("refresh");
@@ -151,8 +151,8 @@ export function SafetyHubScreen({ navigation, route }: Props) {
     setError("");
     setNotice("");
     try {
-      await recordUnblockHandoff({ target, reason: "Review unblock request from native Safety Hub" });
-      setNotice("Unblock request recorded locally. Open protected safety controls to change server state.");
+      await recordUnblockHandoff({ target, reason: "Review unblock request from Safety Hub in the PulseSoc app" });
+      setNotice("Noted on this device. To actually unblock someone, use the safety controls on the PulseSoc website.");
       await load("refresh");
     } finally {
       setBusy("");
@@ -244,9 +244,9 @@ export function SafetyHubScreen({ navigation, route }: Props) {
       ) : null}
 
       <Panel>
-        <Text style={styles.panelTitle}>Authority boundary</Text>
+        <Text style={styles.panelTitle}>What is handled where</Text>
         <Text style={styles.muted}>
-          Supported block and report actions call existing PulseSoc APIs. Full blocked-user lists, unblock, user mute, report review status, moderator notes, and admin outcomes stay on protected backend flows until user-safe JSON endpoints exist.
+          You can block someone and file a report from here. Your full blocked list, unblocking, muting a person, review outcomes, and moderator decisions live with the PulseSoc safety team — open the protected safety controls below to reach them.
         </Text>
         <View style={styles.buttonGrid}>
           <ActionButton label="Protected safety controls" variant="secondary" onPress={() => openSafetyWebFallback("/dashboard/network/network-security")} />
@@ -306,14 +306,14 @@ function BlocksPanel({
     <>
       <Panel>
         <Text style={styles.panelTitle}>Block user</Text>
-        <Text style={styles.muted}>Blocks call `/api/pulse/block` and let the backend remove blocked users from supported feeds and moderation paths.</Text>
+        <Text style={styles.muted}>Blocking someone removes them from your feeds across PulseSoc and stops them reaching you.</Text>
         <TextInput accessibilityLabel="Block target" autoCapitalize="none" placeholder="@public_id or numeric user ID" placeholderTextColor={colors.muted} style={styles.input} value={blockHandle} onChangeText={onBlockHandle} />
         <TextInput accessibilityLabel="Block reason" placeholder="Reason" placeholderTextColor={colors.muted} style={styles.input} value={blockReason} onChangeText={onBlockReason} />
         <ActionButton label={busy === "block" ? "Blocking..." : "Block user"} disabled={Boolean(busy)} onPress={onSubmitBlock} />
       </Panel>
       <Panel>
         <Text style={styles.panelTitle}>Blocked list visibility</Text>
-        <Text style={styles.muted}>The backend returns aggregate blocked counts today. Native action history below only shows block actions performed from this app on this device.</Text>
+        <Text style={styles.muted}>PulseSoc keeps your complete blocked list, and shows you a total. The history below covers only the blocks you made from this app on this device.</Text>
         {blocks.length ? blocks.map((item) => <ActionRow key={item.id} action={item} actionLabel="Review unblock" busy={busy === `unblock-${item.targetLabel}`} onAction={() => onSubmitUnblock(item.targetLabel)} />) : <Text style={styles.muted}>No native block actions recorded on this device.</Text>}
       </Panel>
     </>
@@ -345,16 +345,16 @@ function MutesPanel({
     <>
       <Panel>
         <Text style={styles.panelTitle}>Mute management</Text>
-        <Text style={styles.muted}>PulseSoc currently exposes server-owned conversation mute state, but not a user-safe native mute-user API. This control records intent and routes to protected network controls.</Text>
+        <Text style={styles.muted}>You can mute a conversation on PulseSoc. Muting a person outright is not available in the app yet, so this records your request and takes you to the full mute controls.</Text>
         <TextInput accessibilityLabel="Mute target" autoCapitalize="none" placeholder="@public_id, conversation, or username" placeholderTextColor={colors.muted} style={styles.input} value={muteTarget} onChangeText={onMuteTarget} />
         <ChoiceRow options={muteDurations} value={muteDuration} onChange={onMuteDuration} />
         <TextInput accessibilityLabel="Mute reason" placeholder="Reason" placeholderTextColor={colors.muted} style={styles.input} value={muteReason} onChangeText={onMuteReason} />
-        <ActionButton label={busy === "mute" ? "Recording..." : "Record mute handoff"} disabled={Boolean(busy)} onPress={onSubmitMute} />
-        <ActionButton label="Open server mute controls" variant="secondary" disabled={Boolean(busy)} onPress={() => openSafetyWebFallback("/dashboard/network/messages")} />
+        <ActionButton label={busy === "mute" ? "Saving..." : "Note this on my device"} disabled={Boolean(busy)} onPress={onSubmitMute} />
+        <ActionButton label="Open mute controls on the web" variant="secondary" disabled={Boolean(busy)} onPress={() => openSafetyWebFallback("/dashboard/network/messages")} />
       </Panel>
       <Panel>
-        <Text style={styles.panelTitle}>Mute handoffs</Text>
-        {mutes.length ? mutes.map((item) => <ActionRow key={item.id} action={item} />) : <Text style={styles.muted}>No native mute handoffs recorded on this device.</Text>}
+        <Text style={styles.panelTitle}>Mutes noted on this device</Text>
+        {mutes.length ? mutes.map((item) => <ActionRow key={item.id} action={item} />) : <Text style={styles.muted}>You have not saved any mute requests on this device.</Text>}
       </Panel>
     </>
   );
@@ -394,7 +394,7 @@ function ReportsPanel({
       </Panel>
       <Panel>
         <Text style={styles.panelTitle}>Report history</Text>
-        <Text style={styles.muted}>Server review status is not exposed through a user-safe report-history API yet. Native history shows reports submitted from this app and support cases returned by existing support APIs.</Text>
+        <Text style={styles.muted}>The PulseSoc safety team reviews every report, though the outcome is not shown in the app yet. Below are the reports you sent from this app, plus your support cases.</Text>
         {reports.length ? reports.map((item) => <ActionRow key={item.id} action={item} />) : <Text style={styles.muted}>No native report actions recorded on this device.</Text>}
         {cases.slice(0, 4).map((ticket) => (
           <View key={ticket.id} style={styles.row}>

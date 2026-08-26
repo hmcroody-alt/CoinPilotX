@@ -68,8 +68,32 @@ jest.mock("../../api/marketplace", () => ({
   loadCachedSellerStore: (...args: unknown[]) => mockCachedSeller(...args)
 }));
 
-import { businessOsHubSections } from "../../api/businessOs";
+import { businessOsLaunchSections } from "../../api/businessOs";
+import { preloadNamespaces } from "../../i18n/engine";
+import { businessModuleId, isLaunchGated } from "../../launch/readiness";
 import { BusinessOsScreen, resetBusinessOsFreshness } from "../BusinessOsScreen";
+
+// Locked tiles read their label out of the lazily-loaded `commerce` catalog.
+// Without it every gated tile humanizes to the same "Locked Label", which is
+// both wrong copy and an ambiguous lookup. See the note in
+// `BusinessOsScreen.test.tsx`.
+beforeAll(async () => {
+  await preloadNamespaces("en", ["commerce"]);
+});
+
+/**
+ * The accessibility label a section's tile carries.
+ *
+ * A launch-gated tile reads "Events. Coming soon." rather than its blurb, so
+ * the expectation is derived from the gate instead of hardcoded. That keeps
+ * this suite about first-frame completeness — the property it exists to pin —
+ * rather than about which modules happen to be gated this week.
+ */
+function tileLabel(section: { key: string; label: string; blurb: string }) {
+  return isLaunchGated(businessModuleId(section.key))
+    ? `${section.label}. Coming soon.`
+    : `${section.label}. ${section.blurb}`;
+}
 
 const EMPTY_ANALYTICS = {
   totals: { impressions: 0, viewable_impressions: 0, clicks: 0, hides: 0, reports: 0, spend_cents: 0, ctr: 0 },
@@ -86,6 +110,34 @@ function deferred<T>() {
   });
   return { promise, resolve, reject };
 }
+
+/**
+ * A request that does not answer while the test is running.
+ *
+ * `new Promise(() => undefined)` says the same thing and is what these tests
+ * used to pass, but the screen wraps every canonical request in a 12-second
+ * deadline (`withBusinessOsDeadline`) and clears that timer only when the
+ * request settles. A promise that never settles never clears it, so the timer
+ * outlives the test. That was invisible while these suites took longer than the
+ * deadline to run; the moment they got fast, Jest started force-exiting the
+ * worker and warning about a leak — a warning nobody can act on, sitting on top
+ * of the output where the next real failure will appear.
+ *
+ * Settling them in `afterEach` — after the render is already torn down, so no
+ * assertion can observe an answer — lets the deadline be cleared without
+ * changing what any test is about.
+ */
+const unanswered: Array<() => void> = [];
+
+function neverAnswers<T>(): Promise<T> {
+  return new Promise<T>((resolve) => {
+    unanswered.push(() => resolve(undefined as T));
+  });
+}
+
+afterEach(() => {
+  unanswered.splice(0).forEach((settle) => settle());
+});
 
 function navigationSpy() {
   return { navigate: jest.fn() };
@@ -111,18 +163,18 @@ beforeEach(() => {
 describe("Business OS hub — shell is never blocked", () => {
   it("renders every tile on the first frame, before any request settles", () => {
     // None of the three ever resolve during this test.
-    mockListAdAccounts.mockReturnValue(new Promise(() => undefined));
-    mockGetAdAnalytics.mockReturnValue(new Promise(() => undefined));
-    mockSellerSnapshot.mockReturnValue(new Promise(() => undefined));
+    mockListAdAccounts.mockReturnValue(neverAnswers());
+    mockGetAdAnalytics.mockReturnValue(neverAnswers());
+    mockSellerSnapshot.mockReturnValue(neverAnswers());
 
     const view = render(<BusinessOsScreen navigation={navigationSpy()} />);
 
     // No `await`. This is the synchronous first render, which is the whole
     // claim: the launcher is usable before the network is consulted.
-    const sections = businessOsHubSections();
+    const sections = businessOsLaunchSections();
     expect(sections.length).toBeGreaterThan(0);
     sections.forEach((section) => {
-      expect(view.getByLabelText(`${section.label}. ${section.blurb}`)).toBeTruthy();
+      expect(view.getByLabelText(tileLabel(section))).toBeTruthy();
     });
     expect(view.getByText("At a glance")).toBeTruthy();
   });
@@ -152,8 +204,8 @@ describe("Business OS hub — cache is painted, never authoritative", () => {
   it("paints cached values while the canonical requests are still in flight", async () => {
     const accounts = deferred<{ accounts: unknown[] }>();
     mockListAdAccounts.mockReturnValue(accounts.promise);
-    mockGetAdAnalytics.mockReturnValue(new Promise(() => undefined));
-    mockSellerSnapshot.mockReturnValue(new Promise(() => undefined));
+    mockGetAdAnalytics.mockReturnValue(neverAnswers());
+    mockSellerSnapshot.mockReturnValue(neverAnswers());
     mockCachedAnalytics.mockResolvedValue({
       ...EMPTY_ANALYTICS,
       totals: { ...EMPTY_ANALYTICS.totals, spend_cents: 1234 }
@@ -202,7 +254,7 @@ describe("Business OS hub — request count", () => {
 
   it("issues no requests at all when the hub is re-entered inside the freshness window", async () => {
     const first = render(<BusinessOsScreen navigation={navigationSpy()} />);
-    await waitFor(() => expect(first.queryByLabelText("Refreshing your business summary")).toBeNull());
+    await waitFor(() => expect(first.queryAllByLabelText("Refreshing your business summary").length).toBe(0));
     const afterFirst = requestCount();
     expect(afterFirst).toBe(3);
     first.unmount();
@@ -219,7 +271,7 @@ describe("Business OS hub — request count", () => {
 
   it("collapses concurrent sync invalidations onto a single reload", async () => {
     const view = render(<BusinessOsScreen navigation={navigationSpy()} />);
-    await waitFor(() => expect(view.queryByLabelText("Refreshing your business summary")).toBeNull());
+    await waitFor(() => expect(view.queryAllByLabelText("Refreshing your business summary").length).toBe(0));
     const baseline = requestCount();
 
     // One marketplace write invalidates inventory, marketplace and orders. Three
@@ -242,7 +294,7 @@ describe("Business OS hub — request count", () => {
 
   it("forces past the freshness window when a real mutation invalidates", async () => {
     const view = render(<BusinessOsScreen navigation={navigationSpy()} />);
-    await waitFor(() => expect(view.queryByLabelText("Refreshing your business summary")).toBeNull());
+    await waitFor(() => expect(view.queryAllByLabelText("Refreshing your business summary").length).toBe(0));
     const baseline = requestCount();
 
     await act(async () => {

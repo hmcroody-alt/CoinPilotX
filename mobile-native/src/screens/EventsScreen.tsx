@@ -55,7 +55,7 @@ export function EventsScreen({ route, navigation }: Props) {
     }
     return {
       title: "Events",
-      subtitle: offline ? "Showing saved scheduled Live events" : "Scheduled broadcasts, creator events, and Live gateways from the existing PulseSoc platform."
+      subtitle: offline ? "Showing saved scheduled Live events" : "Scheduled broadcasts and creator events from across PulseSoc."
     };
   }, [offline, routeMode]);
 
@@ -146,7 +146,7 @@ export function EventsScreen({ route, navigation }: Props) {
           <View style={styles.detailHero}>
             {selected.thumbnail_url || selected.preview_url ? <Image source={{ uri: selected.thumbnail_url || selected.preview_url }} style={styles.detailImage} /> : <View style={styles.detailImageFallback} />}
             <View style={styles.detailOverlay}>
-              <Text style={styles.kicker}>Scheduled Live Gateway</Text>
+              <Text style={styles.kicker}>Scheduled Live</Text>
               <Text style={styles.detailTitle}>{selected.title || "PulseSoc Event"}</Text>
               <Pressable accessibilityRole="button" onPress={() => hostProfile(selected)}>
                 <Text style={styles.detailMeta}>{selected.creator_name || "PulseSoc Creator"} · {selected.category || "Live"}</Text>
@@ -168,8 +168,8 @@ export function EventsScreen({ route, navigation }: Props) {
             </Pressable>
           </View>
           <View style={styles.notice}>
-            <Text style={styles.noticeTitle}>Backend authority preserved</Text>
-            <Text style={styles.noticeText}>Reminders, ticketing, event checkout, hosting, co-hosting, and studio setup stay on the existing PulseSoc backend until dedicated native contracts exist.</Text>
+            <Text style={styles.noticeTitle}>Managed on pulsesoc.com</Text>
+            <Text style={styles.noticeText}>Reminders, ticketing, checkout, hosting, co-hosting, and studio setup are handled on pulsesoc.com.</Text>
           </View>
         </View>
       </ScrollView>
@@ -189,8 +189,8 @@ export function EventsScreen({ route, navigation }: Props) {
           <Text style={styles.subtitle}>{heroCopy.subtitle}</Text>
           <View style={styles.gatewayPanel}>
             <View>
-              <Text style={styles.gatewayTitle}>Scheduled Live gateway</Text>
-              <Text style={styles.gatewayText}>Native discovery uses existing Live scheduled data. Creation and payments stay inside provider-owned boundaries.</Text>
+              <Text style={styles.gatewayTitle}>Scheduled Live events</Text>
+              <Text style={styles.gatewayText}>Browse everything that is scheduled to go Live. Creating an event and paying for one happen on the PulseSoc website.</Text>
             </View>
             <View style={styles.headerActions}>
               <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => load("refresh").catch(() => undefined)}>
@@ -207,14 +207,14 @@ export function EventsScreen({ route, navigation }: Props) {
       ListEmptyComponent={
         <View style={styles.empty}>
           <Text style={styles.emptyTitle}>No scheduled events yet</Text>
-          <Text style={styles.emptyText}>PulseSoc will show scheduled Live events here when `/api/pulse/live-now` returns scheduled data.</Text>
+          <Text style={styles.emptyText}>Scheduled Live events will appear here as soon as anyone you follow schedules one.</Text>
         </View>
       }
       ListFooterComponent={
         <View style={styles.footer}>
           <Text style={styles.sectionTitle}>Go live</Text>
           <GatewayRow title="Create Live Event" body="Opens in Live Studio. The usual eligibility rules apply." onPress={() => navigation?.navigate("LiveStudio", { title: "Live Studio" })} />
-          <GatewayRow title="Live Studio" body="Set up your device, camera, and network, then broadcast natively in-app." onPress={() => navigation?.navigate("LiveStudio", { title: "Live Studio" })} />
+          <GatewayRow title="Live Studio" body="Set up your device, camera, and network, then broadcast from the app." onPress={() => navigation?.navigate("LiveStudio", { title: "Live Studio" })} />
         </View>
       }
     />

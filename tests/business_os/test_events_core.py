@@ -18,6 +18,7 @@ Proves the canonical events / ticketing domain end-to-end against the ONE canoni
 
 import os
 import tempfile
+from datetime import datetime, timezone
 
 _TMP_DB = os.path.join(tempfile.mkdtemp(prefix="busos_events_core_"), "test.db")
 os.environ["DATABASE_URL"] = "sqlite:///" + _TMP_DB
@@ -261,6 +262,176 @@ def test_summary_counts_and_escrow():
         assert e.http_status == 404 and e.code == "not_found", (e.http_status, e.code)
 
 
+def test_visitor_read_withholds_manager_identity_and_sales_figures():
+    """A published event is readable by anyone. It is not the same object.
+
+    Before the split there was one `_event_public` — `dict(event)` plus
+    `SELECT *` on the ticket types — and `get_event` handed it to whoever
+    asked. So any logged-in stranger could read who created the event and how
+    many of each tier had sold.
+    """
+    bid = _business()
+    ev_ = ev.create_event(bid, OWNER, {"title": "Open", "venue": "The Hall",
+                                       "capacity": 50}, context=_ctx())
+    eid = ev_["event_id"]
+    tt = ev.add_ticket_type(eid, OWNER, {"name": "GA", "price_cents": 1500,
+                                         "quantity_total": 10}, context=_ctx())
+    ev.publish_event(eid, OWNER, context=_ctx())
+    ev.purchase_ticket(eid, tt["ticket_type_id"], BUYER, client_ref="v1", context=_ctx())
+
+    seen = ev.get_event(eid, STRANGER)
+    assert seen["event_id"] == eid and seen["title"] == "Open"
+    assert seen["venue"] == "The Hall"          # what a visitor came for
+    for withheld in ("created_by_user_id", "business_id", "capacity"):
+        assert withheld not in seen, withheld
+    tier = seen["ticket_types"][0]
+    assert tier["name"] == "GA" and tier["price_cents"] == 1500
+    for withheld in ("quantity_sold", "quantity_total", "event_id"):
+        assert withheld not in tier, withheld
+    assert tier["sold_out"] is False
+
+    # The manager still sees the stored row — the projection is about the
+    # audience, not about hiding the data from its owner.
+    mine = ev.get_event(eid, OWNER)
+    assert mine["created_by_user_id"] and mine["business_id"] == bid
+    assert int(mine["ticket_types"][0]["quantity_sold"]) == 1
+
+
+def test_visitor_sold_out_is_derived_not_disclosed():
+    bid = _business()
+    ev_ = ev.create_event(bid, OWNER, {"title": "Two tiers"}, context=_ctx())
+    eid = ev_["event_id"]
+    limited = ev.add_ticket_type(eid, OWNER, {"name": "Front", "price_cents": 100,
+                                              "quantity_total": 1}, context=_ctx())
+    ev.add_ticket_type(eid, OWNER, {"name": "Back", "price_cents": 200}, context=_ctx())
+    ev.publish_event(eid, OWNER, context=_ctx())
+    ev.purchase_ticket(eid, limited["ticket_type_id"], BUYER, client_ref="d1",
+                       context=_ctx())
+
+    tiers = {t["name"]: t for t in ev.get_event(eid, STRANGER)["ticket_types"]}
+    assert tiers["Front"]["sold_out"] is True
+    # Unlimited supply: `quantity_total` is NULL, which is not zero. Reading it
+    # as zero would mark every open tier sold out.
+    assert tiers["Back"]["sold_out"] is False
+
+
+def test_visitor_is_not_offered_a_withdrawn_ticket_tier():
+    """`business_os_event_ticket_types.status` is written at insert and there is
+    no service call that flips it yet, so this reaches past the API to set it.
+    The column is real and `publish_event` already counts only active tiers; a
+    visitor being offered a tier the business has withdrawn is the failure this
+    pins, and it should not wait for the withdraw endpoint to be written."""
+    from services import db as _db
+    bid = _business()
+    ev_ = ev.create_event(bid, OWNER, {"title": "Trimmed"}, context=_ctx())
+    eid = ev_["event_id"]
+    keep = ev.add_ticket_type(eid, OWNER, {"name": "Keep", "price_cents": 100},
+                              context=_ctx())
+    drop = ev.add_ticket_type(eid, OWNER, {"name": "Withdrawn", "price_cents": 200},
+                              context=_ctx())
+    ev.publish_event(eid, OWNER, context=_ctx())
+    conn = _db.connect()
+    try:
+        conn.execute("UPDATE business_os_event_ticket_types SET status = 'inactive' "
+                     "WHERE ticket_type_id = ?", (drop["ticket_type_id"],))
+        conn.commit()
+    finally:
+        conn.close()
+
+    names = [t["name"] for t in ev.get_event(eid, STRANGER)["ticket_types"]]
+    assert names == ["Keep"], names
+    # The manager still sees it — they are the one who withdrew it.
+    manager_ids = [t["ticket_type_id"]
+                   for t in ev.get_event(eid, OWNER)["ticket_types"]]
+    assert drop["ticket_type_id"] in manager_ids
+    assert keep["ticket_type_id"] in manager_ids
+
+
+def _published(bid, title, **fields):
+    e = ev.create_event(bid, OWNER, dict(title=title, **fields), context=_ctx())
+    ev.add_ticket_type(e["event_id"], OWNER, {"name": "GA"}, context=_ctx())
+    ev.publish_event(e["event_id"], OWNER, context=_ctx())
+    return e["event_id"]
+
+
+def test_public_list_offers_only_published_upcoming_events():
+    bid = _business()
+    soon = _published(bid, "Soon", starts_at="2030-06-01T20:00:00Z")
+    later = _published(bid, "Later", starts_at="2030-09-01T20:00:00Z")
+    _published(bid, "Gone", starts_at="2020-01-01T20:00:00Z")
+    cancelled = _published(bid, "Called off", starts_at="2030-07-01T20:00:00Z")
+    ev.cancel_event(cancelled, OWNER, context=_ctx())
+    draft = ev.create_event(bid, OWNER, {"title": "Not announced",
+                                         "starts_at": "2030-05-01T20:00:00Z"},
+                            context=_ctx())
+
+    listed = ev.list_public_events(bid)
+    ids = [e["event_id"] for e in listed]
+    assert ids == [soon, later], [e["title"] for e in listed]
+    assert draft["event_id"] not in ids and cancelled not in ids
+    # And it is the visitor projection, not the row.
+    assert all("business_id" not in e and "created_by_user_id" not in e for e in listed)
+
+
+def test_public_list_uses_the_end_and_keeps_the_undated():
+    """A festival mid-run is still on; a date we cannot read is not a past date."""
+    bid = _business()
+    running = _published(bid, "Festival", starts_at="2030-06-01T10:00:00Z",
+                         ends_at="2030-06-04T23:00:00Z")
+    undated = _published(bid, "Date TBA")
+    unreadable = _published(bid, "Sometime", starts_at="next spring")
+    _published(bid, "Finished", starts_at="2030-05-01T10:00:00Z",
+               ends_at="2030-05-02T10:00:00Z")
+
+    midway = datetime(2030, 6, 2, 12, 0, tzinfo=timezone.utc)
+    ids = [e["event_id"] for e in ev.list_public_events(bid, now=midway)]
+    assert ids[0] == running, ids
+    # Dateless events sort last rather than first — one should not head the
+    # list — but they are still offered.
+    assert set(ids[1:]) == {undated, unreadable}
+    assert len(ids) == 3
+
+
+def test_public_list_reads_a_zoneless_date_as_utc_and_honours_the_limit():
+    """`starts_at` is free text, so plenty of it arrives without a zone.
+
+    A zoneless date must be *assumed* UTC rather than compared as-is: mixing a
+    naive and an aware datetime raises, and an exception here would empty a
+    page's whole events tab because one row was typed without a `Z`.
+    """
+    bid = _business()
+    zoneless = _published(bid, "No zone", starts_at="2030-06-03T10:00:00")
+    _published(bid, "Much later", starts_at="2031-01-01T10:00:00Z")
+
+    midway = datetime(2030, 6, 2, 12, 0, tzinfo=timezone.utc)
+    ids = [e["event_id"] for e in ev.list_public_events(bid, now=midway)]
+    assert ids[0] == zoneless and len(ids) == 2, ids
+    assert [e["event_id"]
+            for e in ev.list_public_events(bid, limit=1, now=midway)] == [zoneless]
+    assert ev.list_public_events(bid, limit=0, now=midway) == []
+
+
+def test_public_list_needs_no_actor_and_leaks_nothing_for_an_unknown_business():
+    assert ev.list_public_events("biz_does_not_exist") == []
+    assert ev.list_public_events(None) == []
+
+
+def test_public_list_is_dark_when_events_are_disabled():
+    bid = _business()
+    prev = os.environ.get("BUSINESS_OS_EVENTS")
+    os.environ["BUSINESS_OS_EVENTS"] = "off"
+    try:
+        ev.list_public_events(bid)
+        assert False, "expected disabled"
+    except ev.EventError as e:
+        assert e.http_status == 503 and e.code == "disabled", (e.http_status, e.code)
+    finally:
+        if prev is None:
+            os.environ.pop("BUSINESS_OS_EVENTS", None)
+        else:
+            os.environ["BUSINESS_OS_EVENTS"] = prev
+
+
 def _run_standalone():
     setup_module()
     tests = [
@@ -276,6 +447,14 @@ def _run_standalone():
         test_draft_not_publicly_readable_but_manager_sees,
         test_my_tickets_lists_holder_tickets,
         test_summary_counts_and_escrow,
+        test_visitor_read_withholds_manager_identity_and_sales_figures,
+        test_visitor_sold_out_is_derived_not_disclosed,
+        test_visitor_is_not_offered_a_withdrawn_ticket_tier,
+        test_public_list_offers_only_published_upcoming_events,
+        test_public_list_uses_the_end_and_keeps_the_undated,
+        test_public_list_reads_a_zoneless_date_as_utc_and_honours_the_limit,
+        test_public_list_needs_no_actor_and_leaks_nothing_for_an_unknown_business,
+        test_public_list_is_dark_when_events_are_disabled,
     ]
     passed = 0
     for t in tests:

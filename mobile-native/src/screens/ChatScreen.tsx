@@ -378,7 +378,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const openUndxResult = useCallback((deepLink?: string) => {
     const nativePath = nativePathFromDeepLink(deepLink);
     if (!nativePath) {
-      setStatusMessage("This result is not available as a native route yet.");
+      setStatusMessage("This result cannot be opened in the app yet.");
       return;
     }
     try {
@@ -392,7 +392,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       }
       openNativeRoute(navigation, nativePath);
     } catch {
-      setStatusMessage("This result could not be opened in native PulseSoc.");
+      setStatusMessage("This result could not be opened. Try again from the PulseSoc website.");
     }
   }, [navigation]);
 
@@ -641,7 +641,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   }) => {
     if (assistantConversation) {
       if ((payload.message_type || "text") !== "text" || payload.media_url || payload.attachment_ids?.length || payload.media_ids?.length) {
-        setStatusMessage("UNDX supports text conversation in native chat right now.");
+        setStatusMessage("UNDX can chat by text right now.");
         return "failed" as const;
       }
       const body = (payload.body || "").trim();
@@ -833,7 +833,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       return;
     }
     try {
-      const result = await reportMessage(message.id, "Reported from native Pulse Command");
+      const result = await reportMessage(message.id, "Reported from the PulseSoc app");
       setStatusMessage(result.message || "Message report sent to Trust & Safety.");
     } catch (reportError) {
       setStatusMessage(reportError instanceof Error ? reportError.message : "Report failed.");
@@ -1766,7 +1766,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
             onSend={() => toggleVoiceRecording().catch(() => undefined)}
           />
         ) : <View style={styles.inputRow}>
-          <SignalIconButton accessibilityLabel={assistantConversation ? "UNDX attachment support unavailable" : uploading ? "Uploading attachment" : "Add attachment"} icon={uploading ? "cloud-upload-outline" : "add"} disabled={uploading || assistantConversation} size={46} onPress={() => assistantConversation ? setStatusMessage("UNDX supports text conversation in native chat right now.") : setAttachmentSheetOpen(true)} />
+          <SignalIconButton accessibilityLabel={assistantConversation ? "UNDX attachment support unavailable" : uploading ? "Uploading attachment" : "Add attachment"} icon={uploading ? "cloud-upload-outline" : "add"} disabled={uploading || assistantConversation} size={46} onPress={() => assistantConversation ? setStatusMessage("UNDX can chat by text right now.") : setAttachmentSheetOpen(true)} />
           <TextInput
             multiline
             autoFocus={qaChatState === "keyboard" || qaChatState === "reply-keyboard"}
@@ -1778,7 +1778,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
             accessibilityLabel={assistantConversation ? "Message UNDX composer" : "Message composer"}
           />
           <SignalIconButton accessibilityLabel="Add smiling emoji" icon="happy-outline" size={42} onPress={() => setDraft((current) => `${current}😊`)} />
-          <SignalIconButton accessibilityLabel={assistantConversation ? "UNDX voice messages unavailable" : "Record voice message"} icon="mic-outline" disabled={uploading || assistantConversation} size={42} onPress={() => assistantConversation ? setStatusMessage("UNDX voice messages are not enabled in native chat yet.") : toggleVoiceRecording().catch(() => undefined)} />
+          <SignalIconButton accessibilityLabel={assistantConversation ? "UNDX voice messages unavailable" : "Record voice message"} icon="mic-outline" disabled={uploading || assistantConversation} size={42} onPress={() => assistantConversation ? setStatusMessage("UNDX cannot receive voice messages yet.") : toggleVoiceRecording().catch(() => undefined)} />
           <Pressable accessibilityRole="button" accessibilityLabel="Send message" disabled={!draft.trim()} style={({ pressed }) => [styles.sendButton, !draft.trim() && styles.sendDisabled, pressed && styles.pressed]} onPress={submitText}>
             <Text style={styles.sendText}>➤</Text>
           </Pressable>

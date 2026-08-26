@@ -176,7 +176,7 @@ export function AccountHealthAppealsScreen({ navigation }: Props) {
             <Text style={[styles.statusPill, appeal.supported && styles.statusPillActive]}>{appeal.status}</Text>
           </Pressable>
         ))}
-        {!state?.appeals.length ? <Text style={styles.muted}>No appeal paths returned by the backend.</Text> : null}
+        {!state?.appeals.length ? <Text style={styles.muted}>You have nothing to appeal right now. If a restriction is applied to your account, the ways to appeal it appear here.</Text> : null}
         <TextInput
           accessibilityLabel="Account health appeal note"
           multiline
@@ -201,7 +201,7 @@ export function AccountHealthAppealsScreen({ navigation }: Props) {
             <Text style={styles.statusPill}>{item.status}</Text>
           </View>
         ))}
-        {!state?.cases.length ? <Text style={styles.muted}>No linked support cases returned by the backend.</Text> : null}
+        {!state?.cases.length ? <Text style={styles.muted}>You have no linked support cases yet. Reports and support requests tied to this account show up here.</Text> : null}
         <View style={styles.buttonGrid}>
           <ActionButton label="Trust & Safety" variant="secondary" onPress={() => navigation.navigate("TrustSafety", { title: "Trust & Safety", mode: "support" })} />
           <ActionButton label="Safety Hub" variant="secondary" onPress={() => navigation.navigate("SafetyHub", { title: "Safety Hub" })} />
@@ -219,7 +219,7 @@ export function AccountHealthAppealsScreen({ navigation }: Props) {
             </View>
           </View>
         ))}
-        {!state?.securityEvents.length ? <Text style={styles.muted}>No recent security events returned by the backend.</Text> : null}
+        {!state?.securityEvents.length ? <Text style={styles.muted}>You have no recent security signals on this account.</Text> : null}
       </Panel>
 
       <Panel>

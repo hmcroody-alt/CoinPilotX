@@ -82,12 +82,12 @@ export function DashboardModuleDetailScreen() {
           <Text style={styles.infoValue}>{module.route}</Text>
         </View>
         <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Native state</Text>
+          <Text style={styles.infoLabel}>Where it opens</Text>
           <Text style={styles.infoValue}>{routeClass.label}: {routeClass.detail}</Text>
         </View>
         <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Server authority</Text>
-          <Text style={styles.infoValue}>Permissions, locks, provider state, and business rules stay backend-owned.</Text>
+          <Text style={styles.infoLabel}>Managed by</Text>
+          <Text style={styles.infoValue}>Permissions, access locks, and account rules for this module are decided by PulseSoc, not by this app.</Text>
         </View>
       </View>
 
@@ -98,14 +98,14 @@ export function DashboardModuleDetailScreen() {
         <View style={styles.actionGrid}>
           <ActionButton
             label={module.access === "locked" ? "Review Access" : nativeRoute ? routeClass.label === "Native shell" ? "Open Native Shell" : "Open Native Surface" : "Open Native Boundary"}
-            body={module.access === "locked" ? "Open the entitlement or owner area tied to this card." : nativeRoute ? routeClass.detail : "Keep the protected production workflow inside this native dashboard boundary."}
+            body={module.access === "locked" ? "Open the entitlement or owner area tied to this card." : nativeRoute ? routeClass.detail : "Stay in the app for this protected workflow."}
             onPress={() => (module.access === "locked" ? openDashboardAccessRoute(navigation, module) : openDashboardRoute(navigation, module.route))}
           />
         </View>
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Related native surfaces</Text>
+        <Text style={styles.sectionTitle}>Related places in the app</Text>
         <View style={styles.relatedGrid}>
           {related.map((item) => (
             <Pressable key={`${item.label}-${item.route}`} style={styles.relatedCard} onPress={() => openDashboardRoute(navigation, item.route)}>
@@ -117,9 +117,9 @@ export function DashboardModuleDetailScreen() {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Foundation status</Text>
+        <Text style={styles.sectionTitle}>What you can do here</Text>
         <Text style={styles.bodyText}>
-          This shell completes native dashboard navigation parity for the module card. Advanced workflows remain inside native provider boundaries until their dedicated screens are built and verified.
+          You can reach this module and see its current state from the app. Its more advanced workflows are available on pulsesoc.com.
         </Text>
       </View>
     </ScrollView>
@@ -134,7 +134,7 @@ function LiveStateSection({ panel, loading, error }: { panel: DashboardLiveState
           <Text style={styles.sectionTitle}>Live state</Text>
           <ActivityIndicator color={colors.accent} />
         </View>
-        <Text style={styles.bodyText}>Loading server-authoritative dashboard state.</Text>
+        <Text style={styles.bodyText}>Loading the latest state for this module.</Text>
       </View>
     );
   }
@@ -208,7 +208,7 @@ function relatedNativeRoutes(group: DashboardModuleGroup, module: DashboardModul
   if (groupKey === "creator-studio") {
     return [
       { label: "Creator Studio", route: "/pulse/creator-studio", body: "Open dashboard summary, planner links, and creator entry points." },
-      { label: "Content Planner", route: "/dashboard/creator/content-planner", body: "Plan posts, drafts, and scheduled content where native support exists." },
+      { label: "Content Planner", route: "/dashboard/creator/content-planner", body: "Plan posts, drafts, and scheduled content the app supports." },
       { label: "Camera Studio", route: "/pulse/camera/photo?target=feed", body: "Create media for feed, status, reels, and profile handoffs." }
     ];
   }
@@ -216,14 +216,14 @@ function relatedNativeRoutes(group: DashboardModuleGroup, module: DashboardModul
     return [
       { label: "Intelligence Center", route: "/dashboard/intelligence", body: "Review streams, forecasts, alerts, sources, and recent events." },
       { label: "Alert Management", route: "/dashboard/crypto/alerts", body: "Create, edit, duplicate, pause, and test crypto/market alerts." },
-      { label: "UNDX", route: "/pulse/ai", body: "Use the native Digital Intelligence Companion surface." }
+      { label: "UNDX", route: "/pulse/ai", body: "Open the Digital Intelligence Companion." }
     ];
   }
   if (groupKey === "pulse-radio-media") {
     return [
-      { label: "Saved Media", route: "/pulse/saved", body: "Open native saved content and collections." },
-      { label: "Reels", route: "/pulse/reels", body: "Review native short-form media playback." },
-      { label: "Status", route: "/pulse/status", body: "Open native status viewer and creator entry." }
+      { label: "Saved Media", route: "/pulse/saved", body: "Open your saved content and collections." },
+      { label: "Reels", route: "/pulse/reels", body: "Watch short-form videos." },
+      { label: "Status", route: "/pulse/status", body: "Open the status viewer and status creator." }
     ];
   }
   if (groupKey === "crypto-command-center") {
@@ -256,7 +256,7 @@ function relatedNativeRoutes(group: DashboardModuleGroup, module: DashboardModul
   }
   return [
     { label: group.label, route: module.route, body: "Open the production route mapped to this dashboard card." },
-    { label: "Dashboard", route: "/pulse/dashboard", body: "Return to the native User Dashboard foundation." }
+    { label: "Dashboard", route: "/pulse/dashboard", body: "Return to your User Dashboard." }
   ];
 }
 

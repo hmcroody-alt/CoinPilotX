@@ -37,9 +37,13 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
+import { useIsFocused } from "@react-navigation/native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator, AppState, type AppStateStatus, Platform, Pressable,
+  RefreshControl, ScrollView, StyleSheet, Text, View
+} from "react-native";
 import {
   getPremiumCenter,
   premiumExperience,
@@ -140,23 +144,73 @@ export function PremiumCenterScreen({ route, navigation }: Props) {
     load("initial");
   }, [load, routeContext.isOwnProfile]);
 
+  /**
+   * Re-read entitlements when the member comes back to this screen.
+   *
+   * Cancelling and resubscribing both happen in Apple's UI, not ours, and Apple
+   * tells us by webhook rather than by returning a result. Without this, a member
+   * who taps Manage Subscription, cancels, and swipes back is looking at a screen
+   * that still says their subscription renews — and the only way to correct it is
+   * a pull-to-refresh they have no reason to perform.
+   *
+   * `isFocused` covers the return from Apple's sheet and any in-app navigation.
+   * The AppState listener covers backgrounding out to the Settings app and back.
+   * Both are re-entry signals, so neither shows the full-screen loading state.
+   */
+  const isFocused = useIsFocused();
+  const hasLoadedOnce = useRef(false);
+  useEffect(() => {
+    if (!routeContext.isOwnProfile) return;
+    if (!isFocused) return;
+    if (!hasLoadedOnce.current) {
+      hasLoadedOnce.current = true;
+      return; // the mount effect above is already fetching
+    }
+    void load("refresh");
+  }, [isFocused, load, routeContext.isOwnProfile]);
+
+  useEffect(() => {
+    if (!routeContext.isOwnProfile) return;
+    // Read through a ref rather than module scope: `AppState.currentState` is
+    // seeded during app launch and reads "inactive" forever at module level.
+    const previous = { current: AppState.currentState };
+    const subscription = AppState.addEventListener("change", (next: AppStateStatus) => {
+      const returning = previous.current.match(/inactive|background/) && next === "active";
+      previous.current = next;
+      if (returning) void load("refresh");
+    });
+    return () => subscription.remove();
+  }, [load, routeContext.isOwnProfile]);
+
   const experience: PremiumExperience = premiumExperience(center);
   // Only surfaces that can actually sell need Apple's catalog. A Founder or an
   // active member is not shown prices, so their screen never touches StoreKit.
   const sells = Boolean(center) && (experience === "none" || experience === "expired");
+  /**
+   * A member who already pays still needs Apple's catalog — for their own price.
+   *
+   * Only the App Store knows what this Apple ID was actually charged, in their
+   * currency, after any regional pricing. Storing a price server-side would mean
+   * showing a US dollar figure to someone billed in yen. So the subscription card
+   * asks StoreKit for the product the server says they hold, and shows nothing at
+   * all if StoreKit does not answer.
+   */
+  const subscription = center?.subscription ?? null;
+  const needsSubscriptionPrice = Boolean(subscription?.product_id);
 
   /**
-   * StoreKit fallback for the billing card.
+   * Apple's own answer, for the one gap the server leaves.
    *
-   * Queried only in the one gap it exists to fill: a member the server says
-   * holds Premium through a subscription (not Founder) but for whom it returned
-   * no billing row. Everything shown from this snapshot is Apple's own signed
-   * data; when Apple can't prove a subscription either, the card keeps the
-   * honest "no billing record" copy.
+   * Queried only when the server says this member pays but returned no billing
+   * row — an entitlement projected before the subscription landed, or a fresh
+   * reinstall. Telling a paying member their billing details do not exist is
+   * the failure this closes. Founders are excluded: they hold Premium with no
+   * provider subscription, so "no billing record" is the truthful answer there
+   * and StoreKit is never consulted.
    */
   const [appleBilling, setAppleBilling] = useState<AppleSubscriptionSnapshot | null>(null);
   const needsAppleBilling =
-    Boolean(center) && !center?.subscription &&
+    Boolean(center) && !subscription &&
     (experience === "active" || experience === "grace" || experience === "hold");
   useEffect(() => {
     if (!needsAppleBilling) {
@@ -168,7 +222,7 @@ export function PremiumCenterScreen({ route, navigation }: Props) {
       .then((snapshot) => { if (!cancelled) setAppleBilling(snapshot); })
       .catch(() => { if (!cancelled) setAppleBilling(null); });
     return () => { cancelled = true; };
-  }, [needsAppleBilling, center]);
+  }, [needsAppleBilling]);
 
   const loadOffers = useCallback(async () => {
     if (offerRequestActive.current) return;
@@ -233,8 +287,24 @@ export function PremiumCenterScreen({ route, navigation }: Props) {
   }, []);
 
   useEffect(() => {
-    if (sells && !offers) void loadOffers();
-  }, [sells, offers, loadOffers]);
+    if ((sells || needsSubscriptionPrice) && !offers) void loadOffers();
+  }, [sells, needsSubscriptionPrice, offers, loadOffers]);
+
+  /**
+   * The member's own localized price, or `null`.
+   *
+   * Matched on the verified product identifier rather than on the plan period,
+   * so a member grandfathered onto a retired product is never shown the price of
+   * the product we sell today. `null` means the row is omitted — a subscription
+   * card missing one row is honest, a card showing someone else's price is not.
+   */
+  const subscriptionPrice =
+    offers?.plans.find((offer) => offer.productId === subscription?.product_id)?.displayPrice ?? null;
+  /** Only a subscription that is still being billed gets to show a price. */
+  const showSubscriptionPrice =
+    needsSubscriptionPrice &&
+    subscription?.state !== "expired" &&
+    subscription?.state !== "revoked";
 
   const choosePlan = useCallback((next: PremiumPlan) => {
     setPlan(next);
@@ -342,6 +412,26 @@ export function PremiumCenterScreen({ route, navigation }: Props) {
 
       <NoticesSection center={center} />
 
+      {/*
+        A lapsed member sees both, in this order: what they had, then what they
+        can buy. Showing only the plans would greet someone who paid for a year
+        exactly as it greets someone who has never subscribed, and it would hide
+        the one fact they came here for — the date access actually stopped.
+        Someone who never subscribed has no row, so they see the plans alone.
+      */}
+      {subscription || !sells ? (
+        <BillingSection
+          subscription={subscription}
+          apple={appleBilling}
+          experience={experience}
+          // A lapsed subscription's price belongs to a charge that is no longer
+          // happening. Sitting above live plan prices it would read as a current
+          // bill, so the row is dropped rather than shown as history.
+          price={showSubscriptionPrice ? subscriptionPrice : null}
+          priceLoading={showSubscriptionPrice && offersLoading}
+        />
+      ) : null}
+
       {sells ? (
         <PlansSection
           offers={offers}
@@ -354,9 +444,7 @@ export function PremiumCenterScreen({ route, navigation }: Props) {
           onRetry={loadOffers}
           expired={experience === "expired"}
         />
-      ) : (
-        <BillingSection subscription={center?.subscription ?? null} apple={appleBilling} experience={experience} />
-      )}
+      ) : null}
 
       {/*
         Directly under the plans, not at the foot of the screen. Restore is the
@@ -658,38 +746,58 @@ function PlanCard({
  * screen that would have leaked them if it did.
  */
 export function BillingSection({
-  subscription, apple, experience
+  subscription, apple, experience, price, priceLoading
 }: {
   subscription: PremiumSubscription | null;
   apple?: AppleSubscriptionSnapshot | null;
   experience: PremiumExperience;
+  price: string | null;
+  priceLoading: boolean;
 }) {
   const { t } = useTranslation();
   const fmt = useFormatters();
 
   if (!subscription) {
-    // Server has no billing row, but Apple can prove one: show Apple's own
-    // facts (plan, localized price, verified dates) instead of telling a
-    // paying member their billing details don't exist. Fields Apple did not
-    // supply are omitted, never invented.
+    // The server has no billing row but Apple can prove one. Show Apple's own
+    // signed facts rather than telling a paying member their details do not
+    // exist. A field Apple did not supply is omitted, never invented — and if
+    // Apple cannot prove a subscription either, the honest copy below stands.
+    // Founders are excluded here as well as at the call site: this component is
+    // exported and rendered directly by tests and by any future caller, and a
+    // Founder must never be shown a billing card for a subscription they do not
+    // have.
     if (apple && experience !== "founder") {
       return (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t("premium:billing.heading")}</Text>
-          {apple.plan ? (
-            <Fact label={t("premium:billing.plan")} value={t(`premium:period.${apple.plan}`)} />
-          ) : null}
-          {apple.displayPrice ? (
-            <Fact label={t("premium:billing.price")} value={apple.displayPrice} />
-          ) : null}
-          <Fact label={t("premium:billing.provider")} value={t("premium:provider.apple_iap")} />
-          <Fact label={t("premium:billing.status")} value={t(`premium:subStatus.${apple.status}`)} />
           <Fact
-            label={apple.status === "active" ? t("premium:billing.activeUntil") : t("premium:billing.expires")}
+            icon="star-outline"
+            label={t("premium:billing.plan")}
+            value={apple.plan
+              ? t("premium:billing.planValue", { period: t(`premium:period.${apple.plan}`) })
+              : t("premium:billing.planValueUnknown")}
+          />
+          {apple.displayPrice ? (
+            <Fact icon="pricetag-outline" label={t("premium:billing.price")} value={apple.displayPrice} />
+          ) : null}
+          <Fact
+            icon="ellipse"
+            tone={statusTone(apple.status)}
+            label={t("premium:billing.status")}
+            value={t(`premium:subState.${apple.status}`)}
+          />
+          <Fact
+            icon={apple.status === "active" ? "refresh-outline" : "calendar-outline"}
+            label={apple.status === "active" ? t("premium:billing.renewsOn") : t("premium:billing.expiresOn")}
             value={fmt.date(apple.expiresAt)}
           />
+          <Fact
+            icon="logo-apple"
+            label={t("premium:billing.provider")}
+            value={t("premium:provider.apple_iap")}
+          />
           {apple.originalPurchaseAt ? (
-            <Fact label={t("premium:billing.since")} value={fmt.date(apple.originalPurchaseAt)} />
+            <Fact icon="time-outline" label={t("premium:billing.since")} value={fmt.date(apple.originalPurchaseAt)} />
           ) : null}
         </View>
       );
@@ -706,43 +814,148 @@ export function BillingSection({
     );
   }
 
-  const endDate = subscription.current_period_end ? fmt.date(subscription.current_period_end) : "";
-  const endLabel = subscription.cancel_at_period_end ? t("premium:billing.expires") : t("premium:billing.renews");
+  const period = subscription.billing_period;
+  // "PulseSoc Premium — Monthly". The product name is ours and the period comes
+  // from the plan key the server derived from a verified Apple product id, so
+  // neither half is inferred from a price.
+  const planValue = period
+    ? t("premium:billing.planValue", {
+        period: t(`premium:period.${period}`, { defaultValue: period })
+      })
+    : t("premium:billing.planValueUnknown");
+
+  const renewsAt = subscription.renews_at ? fmt.date(subscription.renews_at) : "";
+  // Enforced here rather than assumed. `normalizeSubscription` already
+  // guarantees the two are mutually exclusive, but a component that renders
+  // whatever it is handed will one day be handed both — and the failure mode is
+  // a member reading "Renews on" and "Expires on" above the same date.
+  const expiresAt = !renewsAt && subscription.expires_at ? fmt.date(subscription.expires_at) : "";
+  const since = subscription.original_purchase_at ? fmt.date(subscription.original_purchase_at) : "";
 
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>{t("premium:billing.heading")}</Text>
+
+      <Fact icon="star-outline" label={t("premium:billing.plan")} value={planValue} />
+
+      {/* Apple's own formatted string, in the member's currency. While StoreKit
+          is still answering the row is a skeleton rather than a stale or
+          invented figure, and if StoreKit never answers the row is dropped. */}
+      {price ? (
+        <Fact icon="pricetag-outline" label={t("premium:billing.price")} value={price} />
+      ) : priceLoading ? (
+        <FactSkeleton label={t("premium:billing.price")} />
+      ) : null}
+
       <Fact
-        label={t("premium:billing.plan")}
-        value={t(`premium:period.${subscription.billing_period || "unknown"}`, {
-          defaultValue: subscription.billing_period || "—"
-        })}
+        icon="ellipse"
+        tone={statusTone(subscription.state)}
+        label={t("premium:billing.status")}
+        value={t(`premium:subState.${subscription.state}`)}
       />
+
+      {/* Exactly one of these can be set — the server decides which, so the verb
+          and the date can never disagree. Being told a cancelled subscription
+          "renews" is the single most damaging thing this card could say. */}
+      {renewsAt ? (
+        <Fact icon="refresh-outline" label={t("premium:billing.renewsOn")} value={renewsAt} />
+      ) : null}
+      {expiresAt ? (
+        <Fact icon="calendar-outline" label={t("premium:billing.expiresOn")} value={expiresAt} />
+      ) : null}
+
+      {/* Always Apple here. This card is only reachable for an App Store
+          subscription, and naming the wrong biller would send a member hunting
+          for a card statement that does not exist. */}
       <Fact
+        icon="logo-apple"
         label={t("premium:billing.provider")}
         value={t(`premium:provider.${subscription.provider || "unknown"}`, {
           defaultValue: subscription.provider || "—"
         })}
       />
-      <Fact
-        label={t("premium:billing.status")}
-        value={t(`premium:subStatus.${subscription.status || "unknown"}`, {
-          defaultValue: subscription.status || "—"
-        })}
-      />
-      {endDate ? <Fact label={endLabel} value={endDate} /> : null}
-      {subscription.cancel_at_period_end ? (
+
+      {/* Omitted rather than guessed. We only know this for subscriptions whose
+          stored Apple payload carried a signed original purchase date. */}
+      {since ? (
+        <Fact icon="time-outline" label={t("premium:billing.since")} value={since} />
+      ) : null}
+
+      {subscription.state === "canceled" ? (
         <Text style={styles.note}>{t("premium:billing.cancelPending")}</Text>
+      ) : null}
+      {subscription.state === "grace" ? (
+        <Text style={styles.note}>{t("premium:billing.graceNote")}</Text>
+      ) : null}
+      {subscription.state === "billing_retry" ? (
+        <Text style={styles.note}>{t("premium:billing.retryNote")}</Text>
       ) : null}
     </View>
   );
 }
 
-function Fact({ label, value }: { label: string; value: string }) {
+/**
+ * The accent colour for a status dot.
+ *
+ * Colour is decoration only — every state also renders its own word beside the
+ * dot, so nothing here is the sole carrier of meaning for a member who cannot
+ * distinguish these hues.
+ */
+function statusTone(state: PremiumSubscription["state"]): string {
+  // Mint for a healthy membership, amber for something the member can still
+  // fix, muted for something already over. Amber rather than red for grace and
+  // billing retry on purpose — access is still live, and colouring a recoverable
+  // billing hiccup as an error tells them they lost something they still have.
+  if (state === "active" || state === "trialing") return colors.accent;
+  if (state === "grace" || state === "billing_retry" || state === "canceled") return colors.warning;
+  return colors.muted;
+}
+
+function Fact({
+  label, value, icon, tone
+}: {
+  label: string;
+  value: string;
+  icon?: keyof typeof Ionicons.glyphMap;
+  tone?: string;
+}) {
   return (
-    <View style={styles.factRow} accessibilityLabel={`${label}: ${value}`}>
-      <Text style={styles.factLabel}>{label}</Text>
+    <View style={styles.factRow} accessibilityLabel={`${label}: ${value}`} accessible>
+      <View style={styles.factLabelGroup}>
+        {icon ? (
+          <Ionicons
+            name={icon}
+            size={icon === "ellipse" ? 10 : 15}
+            color={tone || colors.muted}
+            // The label already says what this is; a second announcement of the
+            // icon would only make the row longer to listen to.
+            accessibilityElementsHidden
+            importantForAccessibility="no"
+          />
+        ) : null}
+        <Text style={styles.factLabel}>{label}</Text>
+      </View>
       <Text style={styles.factValue}>{value}</Text>
+    </View>
+  );
+}
+
+/** A row whose value is still loading. Never a dash, which reads as "none". */
+function FactSkeleton({ label }: { label: string }) {
+  const { t } = useTranslation();
+  return (
+    <View style={styles.factRow} accessibilityLabel={`${label}: ${t("premium:billing.loadingValue")}`} accessible>
+      <View style={styles.factLabelGroup}>
+        <Ionicons
+          name="pricetag-outline"
+          size={15}
+          color={colors.muted}
+          accessibilityElementsHidden
+          importantForAccessibility="no"
+        />
+        <Text style={styles.factLabel}>{label}</Text>
+      </View>
+      <View style={styles.factSkeleton} />
     </View>
   );
 }
@@ -858,26 +1071,33 @@ function NotYetSection({ items }: { items: Array<{ key: string; label: string; s
  * screens it describes — deliberately not under `premium:`, whose copy rules
  * exist for billing claims this section never makes.
  *
- * Every row is pressable and every destination is a screen that already ships:
- * `CryptoAlertCenter`, `CryptoPortfolio`, `Watchlists` and `UndxCapabilities`.
- * These are the same canonical screens the Crypto Command Center and deep links
- * use — no Premium copy of any crypto system exists, so there is no second
- * state to drift. The crypto screens carry their own premium gates, so a free
- * member who taps through sees the honest upsell rather than a wall here.
- * `UndxCapabilities` renders the server-authoritative capability registry
- * (including the crypto domain), so the UNDX row can only ever advertise what
- * UNDX can actually do right now.
+ * Every row is pressable because every destination already ships
+ * (`CryptoAlertCenter`, `CryptoPortfolio`, `Watchlists`, `UndxCapabilities`) —
+ * the same canonical screens deep links and the Command Center use, so Premium
+ * keeps no copy of any crypto system and there is no second state to drift.
+ * Those screens carry their own premium gates, so a free member who taps
+ * through sees the honest upsell rather than a wall here. `go` stays optional:
+ * the rule is still that nothing looks tappable unless a real screen answers,
+ * and a row without a destination renders inert and without a chevron.
  */
 type CryptoIntelligenceFeature = {
-  key: "alerts" | "portfolio" | "watchlist" | "undx";
+  key: "alerts" | "portfolio" | "watchlists" | "undx";
   icon: keyof typeof Ionicons.glyphMap;
-  go: (navigation: Props["navigation"]) => void;
+  go?: (navigation: Props["navigation"]) => void;
 };
 
 const CRYPTO_INTELLIGENCE_FEATURES: readonly CryptoIntelligenceFeature[] = [
   { key: "alerts", icon: "pulse-outline", go: (nav) => nav.navigate("CryptoAlertCenter") },
   { key: "portfolio", icon: "pie-chart-outline", go: (nav) => nav.navigate("CryptoPortfolio") },
-  { key: "watchlist", icon: "star-outline", go: (nav) => nav.navigate("Watchlists") },
+  // Watchlists ships as `WatchlistsScreen` and is the thing alerts point at, so
+  // leaving it off this list made the section describe a workflow it could not
+  // start: a member could reach alerts and portfolio from here, but had to know
+  // to go elsewhere for the lists those alerts watch.
+  { key: "watchlists", icon: "list-outline", go: (nav) => nav.navigate("Watchlists") },
+  // `UndxCapabilities` renders the server-authoritative capability registry, and
+  // the crypto domain is registered in it — so this row advertises only what
+  // UNDX can actually do right now, and can never claim a capability the server
+  // has not published. The Command Center below opens the same destination.
   { key: "undx", icon: "sparkles-outline", go: (nav) => nav.navigate("UndxCapabilities") }
 ];
 
@@ -901,25 +1121,34 @@ function CryptoIntelligenceRow({
   const label = t(`discovery:crypto.intelligence.${feature.key}.label`);
   const hint = t(`discovery:crypto.intelligence.${feature.key}.hint`);
 
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityHint={hint}
-      testID={`premium-crypto-${feature.key}`}
-      style={({ pressed }) => [styles.benefitRow, pressed && styles.pressed]}
-      onPress={() => feature.go(navigation)}
-    >
+  const body = (
+    <>
       <Ionicons name={feature.icon} size={18} color={premiumTheme.gold} />
       <View style={styles.benefitBody}>
         <View style={styles.benefitHead}>
           <Text style={styles.benefitLabel} numberOfLines={2}>{label}</Text>
-          <Ionicons name="chevron-forward" size={14} color={colors.muted} />
+          {feature.go ? <Ionicons name="chevron-forward" size={14} color={colors.muted} /> : null}
         </View>
         <Text style={styles.note} numberOfLines={3}>{hint}</Text>
       </View>
-    </Pressable>
+    </>
   );
+
+  if (feature.go) {
+    const go = feature.go;
+    return (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityHint={hint}
+        style={({ pressed }) => [styles.benefitRow, pressed && styles.pressed]}
+        onPress={() => go(navigation)}
+      >
+        {body}
+      </Pressable>
+    );
+  }
+  return <View style={styles.benefitRow}>{body}</View>;
 }
 
 /* -------------------------------------------------------------------------- *
@@ -1255,8 +1484,15 @@ const styles = createThemedStyles(() => ({
   planSaveText: { color: premiumTheme.gold, fontSize: 11, fontWeight: "700" },
 
   factRow: { alignItems: "center", flexDirection: "row", gap: 10, justifyContent: "space-between" },
-  factLabel: { color: colors.muted, fontSize: 13 },
+  // No fixed width or height anywhere in this row: at the largest Dynamic Type
+  // sizes the label and value need to be free to grow and wrap rather than clip.
+  factLabelGroup: { alignItems: "center", flexDirection: "row", flexShrink: 1, gap: 7 },
+  factLabel: { color: colors.muted, fontSize: 13, flexShrink: 1 },
   factValue: { color: colors.text, flex: 1, fontSize: 13, fontWeight: "600", textAlign: "right" },
+  /** Placeholder while StoreKit answers. Sized in ems so it tracks type size. */
+  factSkeleton: {
+    backgroundColor: colors.border, borderRadius: 4, height: 12, opacity: 0.5, width: 62
+  },
 
   benefitRow: { alignItems: "flex-start", flexDirection: "row", gap: 10, paddingVertical: 4 },
   benefitBody: { flex: 1, gap: 6 },

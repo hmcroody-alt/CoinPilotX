@@ -17,7 +17,14 @@ def test_system_actor_has_explicit_non_human_identity(monkeypatch):
     assert author["official_system_account"] is True
     assert author["primary_label"] == "Official PulseSoc System Account"
     assert not author["premium_verified"]
-    avatar = Path(__file__).resolve().parents[1] / author["avatar_url"].lstrip("/")
+    # The payload now carries an absolute URL -- see MEMBER_000_AVATAR_URL for
+    # why -- so the on-disk check goes through the repo-relative path constant
+    # rather than slicing a leading slash off whatever the payload happened to
+    # contain. Both are asserted: the client gets a loadable URL, and that URL
+    # resolves to an asset that is actually committed.
+    assert author["avatar_url"] == pulse_feed_engine.MEMBER_000_AVATAR_URL
+    assert author["avatar_url"].endswith(pulse_feed_engine.MEMBER_000_AVATAR_PATH)
+    avatar = Path(__file__).resolve().parents[1] / pulse_feed_engine.MEMBER_000_AVATAR_PATH.lstrip("/")
     assert avatar.is_file()
 
 

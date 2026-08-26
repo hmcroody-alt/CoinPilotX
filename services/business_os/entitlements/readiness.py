@@ -122,14 +122,121 @@ _REGISTRY: tuple[Feature, ...] = (
         ),
     ),
     Feature(
-        "premium.crypto.advanced_alerts", "Advanced crypto alerts", BETA,
-        enforced_by="services.crypto_premium_gate.has_crypto_capability",
-        note="Conferred by the existing Premium plans; mapped in the facade's legacy readers.",
+        "premium.verification.blue_check.apply", "Blue Check application access",
+        PRODUCTION,
+        enforced_by="services.dashboard_account_command_center.submit_verification_request",
+        note=(
+            "Grants the right to SUBMIT a Blue Check request — never the badge "
+            "and never a thumb on the scale. A reviewer decides on the evidence, "
+            "and an approved badge outlives the membership that unlocked the "
+            "form. The label must not imply an outcome."
+        ),
+    ),
+
+    Feature(
+        "premium.crypto.advanced_alerts", "Advanced crypto alerts", PRODUCTION,
+        enforced_by="services.alert_engine.create_alert_rule",
+        note=(
+            "Multi-metric compound conditions (price, 24h change, 24h volume, "
+            "market cap) joined by and/or, plus crossing comparators. Gated in "
+            "create_alert_rule rather than in the HTTP route, because the worker, "
+            "UNDX and the admin tools all create rules through that function. "
+            "Basic single-threshold alerts stay free and take the original "
+            "evaluation path. Time-window conditions now evaluate against a real "
+            "sampled series (services.market_observations, written only by "
+            "alert_worker) and a window the series cannot answer is undecidable "
+            "rather than zero. The condition this note used to carry is now met: "
+            "the creation form renders from /api/crypto/alerts/options, which "
+            "derives its window list solely from market_observations.coverage() "
+            "for the chosen asset (the intersection, for a watchlist rule), so "
+            "the form cannot offer a window the rule it creates could not "
+            "decide. Advertise time windows only as a capability, never with a "
+            "specific duration: which durations exist for an asset depends on "
+            "how long it has been sampled, so '24h price windows' is a claim no "
+            "benefits string can keep."
+        ),
+    ),
+    Feature(
+        "premium.crypto.portfolio", "Unlimited portfolio holdings", BETA,
+        enforced_by="services.portfolio_service._limit_check",
+        note=(
+            "What this key buys is precisely one thing: the removal of the free "
+            "ceiling of 3 portfolio holdings. It does not buy a different "
+            "portfolio — free and Premium accounts get the same valuation, the "
+            "same history and the same insight text — so it must be advertised "
+            "as 'unlimited holdings', never as 'premium analytics'. It buys no "
+            "watchlist size either: PulseSoc has two watchlist systems and the "
+            "one the native app uses (/api/crypto/watchlists) is unlimited for "
+            "everyone, so no watchlist number may be attached to this key. "
+            "Correcting the record: this entry previously said the portfolio was "
+            "'gated by the legacy api_pro_required check'. It was not. That "
+            "function (bot.py) checks login and blocks iOS native requests, and "
+            "otherwise returns None; it performs no entitlement check at all "
+            "despite the name, and GET /api/portfolio was ungated entirely. The "
+            "ceilings were published in the dashboard's limits block the whole "
+            "time while _limit_check returned 'allowed' unconditionally. "
+            "Enforced on creation only: an account already over a ceiling keeps "
+            "and sees every holding it has. Two claims stay out of bounds. There "
+            "is no transaction ledger behind portfolio_items — only amount and "
+            "average buy price — so nothing here may be sold as realized P/L, "
+            "tax lots or trade history; unrealized value against an average "
+            "basis is the whole of it. On iOS: the portfolio and watchlist write "
+            "routes used to be unreachable from the native app, because they ran "
+            "through api_pro_required, which returns the paid-digital 403 to iOS "
+            "regardless of entitlement — so a free member adding their first, "
+            "free holding was told a purchase was required, which was not true. "
+            "That call is gone from those four routes. The ceiling is enforced in "
+            "_limit_check for every platform alike, and iOS now behaves exactly "
+            "as the advanced crypto alert routes already did — those create an "
+            "explicitly paid capability and have never blocked native. So an iOS "
+            "surface may show and edit the portfolio; what it still may not do is "
+            "show a price or a purchase path for Premium itself. "
+            "One thing to know before building further here: a SECOND portfolio "
+            "backend already exists. services/business_os/crypto keeps an "
+            "append-only business_os_crypto_transactions log with FIFO/average "
+            "lots — the real cost basis this key does not have — but it is dark "
+            "behind BUSINESS_OS_CRYPTO (off by default, its routes 404). "
+            "Realized P/L becomes sellable by lighting that up and reconciling "
+            "the two stores, never by deriving it from portfolio_items, and "
+            "never by starting a third."
+        ),
+    ),
+    Feature(
+        "premium.crypto.intelligence", "UNDX crypto intelligence", BETA,
+        enforced_by="services.undx_personal_intelligence_service._crypto_entitled",
+        note=(
+            "The condition this entry used to carry is met: grounded reads now "
+            "exist (undx_personal_intelligence_service.crypto_portfolio_summary "
+            "and .crypto_market_window) and both check this key through "
+            "premium_crypto_access, which is the single authority the alert "
+            "engine, the portfolio service and the HTTP routes also use. "
+            "BETA rather than PRODUCTION, and the gap is worth naming because it "
+            "bounds what may be advertised. What UNDX can answer is: what you "
+            "hold and what it is worth, and how ONE asset moved over a window "
+            "the observation series actually covers. What it cannot answer, and "
+            "what no copy may imply, is portfolio performance over time -- the "
+            "series samples symbols, not portfolios, and holdings are not "
+            "versioned, so there is no record of what was held when a window "
+            "opened; weighting today's holdings by past prices would produce a "
+            "number for a portfolio nobody owned. Realized profit and loss is "
+            "equally unavailable: portfolio_items stores an amount and an "
+            "average buy price with no transaction ledger behind it, so only "
+            "unrealized P/L against that average is computable and it is "
+            "labelled as such in the payload. Advertise as reading the member's "
+            "own holdings and measured market movement. Never advertise "
+            "trading, price prediction, or performance history."
+        ),
     ),
     Feature(
         "premium.crypto.portfolio_intelligence", "Crypto portfolio intelligence", BETA,
         enforced_by="services.crypto_premium_gate.has_crypto_capability",
-        note="Conferred by the existing Premium plans; mapped in the facade's legacy readers.",
+        note=(
+            "The crypto branch's single-key spelling of what the two entries "
+            "above split into premium.crypto.portfolio (the holdings ceiling) "
+            "and premium.crypto.intelligence (the derived read). Registered so "
+            "the call sites using this name resolve; it grants nothing the other "
+            "two do not, and must not be advertised as a separate purchase."
+        ),
     ),
 
     # --- legacy entitlement keys that are GRANTED BUT NEVER READ -------------

@@ -417,12 +417,12 @@ describe("session and permission failures", () => {
   });
 
   it("never leaves the start button stuck in its busy state after a failure", async () => {
-    const { getByText, queryByText } = await renderScreen(application({ application_id: 0 }));
+    const { getByText, queryAllByText } = await renderScreen(application({ application_id: 0 }));
     mockSaveDraft.mockRejectedValue(new Error("The requested PulseSoc service was not found."));
     await act(async () => {
       fireEvent.press(getByText("Start application"));
     });
-    await waitFor(() => expect(queryByText("Starting…")).toBeNull());
+    await waitFor(() => expect(queryAllByText("Starting…").length).toBe(0));
     expect(getByText("Start application")).toBeTruthy();
   });
 });

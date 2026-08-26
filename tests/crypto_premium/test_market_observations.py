@@ -22,7 +22,11 @@ class MarketObservationsTestCase(unittest.TestCase):
         self._orig_prune_at = mo._LAST_PRUNE_AT
         mo._connect = self._connect
         mo._SCHEMA_READY = False
-        mo._LAST_PRUNE_AT = 0.0
+        # A one-element list holding the last prune *instant* (or None), which
+        # is the merged module's representation — the throttle compares
+        # datetimes against the caller's `now` rather than wall-clock seconds,
+        # so a test can drive it deterministically.
+        mo._LAST_PRUNE_AT = [None]
         self.addCleanup(self._restore)
 
     def _restore(self):
@@ -140,7 +144,13 @@ class MarketObservationsTestCase(unittest.TestCase):
         mo.record_observation("BTC", price=1.0, observed_at=NOW - timedelta(days=8))
         mo.record_observation("BTC", price=2.0, observed_at=NOW - timedelta(days=6))
         mo.record_observation("BTC", price=3.0, observed_at=NOW)
-        result = mo.prune_observations(now=NOW)
+        # The retention is stated rather than defaulted. What this test is about
+        # is the boundary — older goes, newer stays — and pinning it to whatever
+        # the module's default happens to be turns a prune test into an assertion
+        # about a constant. That default is now RETENTION_HOURS (72h), sized
+        # against the longest window either surface offers (1440 minutes), not
+        # the 7 days this file was originally written against.
+        result = mo.prune_observations(max_age_days=7, now=NOW)
         self.assertTrue(result["ok"])
         self.assertEqual(result["deleted"], 1)
         self.assertEqual(self._count(), 2)

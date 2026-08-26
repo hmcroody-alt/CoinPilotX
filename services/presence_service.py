@@ -34,6 +34,7 @@ from __future__ import annotations
 import logging
 import os
 import secrets
+import threading
 from datetime import datetime, timedelta, timezone
 
 LOGGER = logging.getLogger(__name__)
@@ -158,10 +159,66 @@ def _text(value, limit: int) -> str:
 # --------------------------------------------------------------------------
 
 _SCHEMA_READY = False
+# gunicorn runs `--threads 4`, so four threads can reach first use together.
+# Without this they would each issue the same DDL concurrently — the very
+# contention the guard exists to remove.
+_SCHEMA_READY_LOCK = threading.Lock()
 
 
 def ensure_schema(cur, conn=None) -> bool:
-    """Create the presence tables. Safe to call on every request."""
+    """Create the presence tables. Runs once per worker process, not per request.
+
+    The per-request version of this deadlocked production. Every heartbeat ran
+    `CREATE INDEX IF NOT EXISTS` against `presence_sessions`, and on PostgreSQL
+    that takes a ShareLock on the table — which conflicts with the
+    RowExclusiveLock the very next statement takes to UPDATE the heartbeat row.
+    Two workers interleaving (UPDATE, DDL) against (DDL, UPDATE) form a lock
+    cycle, which Postgres reported as:
+
+        DeadlockDetected: UPDATE presence_sessions SET last_heartbeat_at=...
+        Process A waits for RowExclusiveLock on relation 219680; blocked by B.
+        Process B waits for RowExclusiveLock on relation 219680; blocked by A.
+
+    Postgres kills one side, but the losing thread leaves its pooled connection
+    in a failed transaction. With gunicorn's gthread worker the `--timeout 120`
+    arbiter only watches the worker's heartbeat, never an individual request, so
+    a wedged thread is never recycled — the worker simply stops answering. At
+    `--workers 2` that is half of production hanging, which is precisely how it
+    presented from outside: probes alternating cleanly between a fast 401 and a
+    connection that never returned.
+
+    `_SCHEMA_READY` already existed and was already assigned below, but nothing
+    ever read it, so the guard it was written for was never actually in place.
+    Reading it is the fix: the DDL now runs once per process at first use.
+
+    On failure the flag stays False so the next caller retries — a transient
+    error must not leave a worker permanently convinced the tables exist.
+    """
+    global _SCHEMA_READY
+    if _SCHEMA_READY:
+        return True
+    _SCHEMA_READY_LOCK.acquire()
+    try:
+        if _SCHEMA_READY:
+            return True
+        return _create_schema(cur)
+    finally:
+        _SCHEMA_READY_LOCK.release()
+
+
+def reset_schema_cache() -> None:
+    """Forget that the schema was created.
+
+    Production never calls this: one process, one database, one DDL pass. Tests
+    do, because each builds a *fresh* in-memory SQLite database while the module
+    flag persists across the whole test session — without this, the second test
+    to run would skip creation and find no tables.
+    """
+    global _SCHEMA_READY
+    _SCHEMA_READY = False
+
+
+def _create_schema(cur) -> bool:
     global _SCHEMA_READY
     try:
         cur.execute(

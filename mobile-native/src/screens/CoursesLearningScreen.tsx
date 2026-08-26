@@ -186,7 +186,7 @@ export function CoursesLearningScreen({ route, navigation }: Props) {
           <Text style={styles.backText}>Back to Learning</Text>
         </Pressable>
         <View style={styles.hero}>
-          <Text style={styles.kicker}>Learning Gateway</Text>
+          <Text style={styles.kicker}>Lesson</Text>
           <Text style={styles.title}>{selectedLesson.title}</Text>
           <Text style={styles.subtitle}>{selectedLesson.summary || "A structured PulseSoc lesson."}</Text>
           <View style={styles.metaRow}>
@@ -212,7 +212,7 @@ export function CoursesLearningScreen({ route, navigation }: Props) {
               <Text style={styles.lessonHeading}>{section.heading || `Step ${index + 1}`}</Text>
               <Text style={styles.bodyText}>{section.body || ""}</Text>
             </View>
-          )) : <Text style={styles.muted}>Knowledge map details stay on the existing lesson page until available in the native payload.</Text>}
+          )) : <Text style={styles.muted}>This lesson has no knowledge map in the app yet. Open the full lesson on pulsesoc.com to see it.</Text>}
         </Panel>
         <Panel>
           <Text style={styles.sectionTitle}>Quiz preview</Text>
@@ -230,7 +230,7 @@ export function CoursesLearningScreen({ route, navigation }: Props) {
           <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={askTutor}>
             <Text style={styles.secondaryText}>Ask Tutor</Text>
           </Pressable>
-          {tutorAnswer ? <Text style={styles.answer}>{tutorAnswer}</Text> : <Text style={styles.muted}>Tutor answers use the existing education AI endpoint and safety rules.</Text>}
+          {tutorAnswer ? <Text style={styles.answer}>{tutorAnswer}</Text> : <Text style={styles.muted}>Ask a question about this lesson and the PulseSoc tutor will answer, following the same safety rules as the rest of PulseSoc.</Text>}
         </Panel>
         {DIGITAL_COMMERCE_ENABLED ? (
           <Panel>
@@ -247,12 +247,12 @@ export function CoursesLearningScreen({ route, navigation }: Props) {
     return (
       <ScrollView style={styles.root} contentContainerStyle={styles.content}>
         <View style={styles.hero}>
-          <Text style={styles.kicker}>Learning Gateway</Text>
+          <Text style={styles.kicker}>Courses and learning</Text>
           <Text style={styles.title}>{gatewayTitle(gatewayMode)}</Text>
-          <Text style={styles.subtitle}>This native gateway preserves the existing PulseSoc teacher, course, payment, and review rules. Advanced operations stay inside provider-owned boundaries.</Text>
+          <Text style={styles.subtitle}>The same PulseSoc teacher, course, payment, and review rules apply here. Creating and paying for courses happens on the PulseSoc website.</Text>
         </View>
         <Panel>
-          <Text style={styles.sectionTitle}>Backend authority preserved</Text>
+          <Text style={styles.sectionTitle}>What happens on the web</Text>
           <Text style={styles.muted}>Course creation, paid enrollment, lesson editing, teacher approval, checkout, and advanced player behavior are managed by PulseSoc.</Text>
         </Panel>
         {DIGITAL_COMMERCE_ENABLED ? (
@@ -277,7 +277,7 @@ export function CoursesLearningScreen({ route, navigation }: Props) {
         <View>
           <View style={styles.hero}>
             <Text style={styles.kicker}>Courses + Learning</Text>
-            <Text style={styles.title}>Learning Gateway</Text>
+            <Text style={styles.title}>Learn on PulseSoc</Text>
             <Text style={styles.subtitle}>{offline ? "Showing saved lessons" : "Find lessons here. Paying for courses and teacher tools are on the PulseSoc website."}</Text>
           </View>
           {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -294,7 +294,7 @@ export function CoursesLearningScreen({ route, navigation }: Props) {
           </ScrollView>
           {DIGITAL_COMMERCE_ENABLED ? (
             <Panel>
-              <Text style={styles.sectionTitle}>Course gateway</Text>
+              <Text style={styles.sectionTitle}>On the PulseSoc website</Text>
               <Gateway label="PulseSoc Courses" body="Production catalog, paid-course readiness, enrollment, and checkout fallback." onPress={() => openLearningWebFallback(learningWebRoute("courses")).catch(() => undefined)} />
               <Gateway label="Teacher Dashboard" body="Teacher applications, lesson editing, payouts, and review status." onPress={() => openLearningWebFallback(learningWebRoute("teacher-dashboard")).catch(() => undefined)} />
               <Gateway label="Create Course" body="Course creation stays on existing server validation and review workflows." onPress={() => openLearningWebFallback(learningWebRoute("create")).catch(() => undefined)} />
@@ -313,7 +313,7 @@ export function CoursesLearningScreen({ route, navigation }: Props) {
       ListEmptyComponent={
         <View style={styles.empty}>
           <Text style={styles.emptyTitle}>No lessons found</Text>
-          <Text style={styles.emptyText}>Native learning will show lessons when `/api/education/lessons` returns available rows for this category.</Text>
+          <Text style={styles.emptyText}>Lessons in this category will appear here as soon as they are published. Try another category in the meantime.</Text>
         </View>
       }
     />
@@ -327,7 +327,7 @@ function LessonCard({ lesson, onPress }: { lesson: LearningLessonSummary; onPres
       <View style={styles.cardBody}>
         <Text style={styles.kicker}>{lesson.category_slug || "Lesson"}</Text>
         <Text style={styles.cardTitle}>{lesson.title}</Text>
-        <Text style={styles.cardText}>{lesson.summary || "Open this native lesson overview."}</Text>
+        <Text style={styles.cardText}>{lesson.summary || "Open this lesson to read the overview."}</Text>
         <View style={styles.metaRow}>
           <Text style={styles.pill}>{lesson.difficulty || "Guided"}</Text>
           <Text style={styles.pill}>{lesson.estimated_time || "Self paced"}</Text>
