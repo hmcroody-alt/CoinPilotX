@@ -84,12 +84,14 @@ describe("every control on a presence card goes somewhere of its own", () => {
     expect(view.queryByText("Insights")).toBeNull();
   });
 
-  it("sends Manage and View to different places", async () => {
+  it("still opens the presence's own public page from View", async () => {
+    // View is left open on purpose while the rest of the hub is gated. The page
+    // it opens is already reachable from search and from any post the presence
+    // made, so locking it here would stop nothing and would take an owner's
+    // live page away from the one person who cannot get to it another way.
     const { view, navigation } = show();
     await waitFor(() => expect(view.queryByText("Night Signal")).toBeTruthy());
-    fireEvent.press(view.getByText("Manage"));
     fireEvent.press(view.getByText("View"));
-    expect(navigation.navigate).toHaveBeenCalledWith("PagesHub", { focusPageId: 7 });
     expect(navigation.navigate).toHaveBeenCalledWith("Page", {
       pageId: 7,
       handle: "nightsignal",
@@ -215,6 +217,142 @@ describe("the creation pitch names only things that exist", () => {
     // Both cards carry the caveat, so this counts them rather than expecting
     // one — `queryByText` treats two matches as an error.
     expect(view.queryAllByText(/depends on the type you pick next/)).toHaveLength(2);
+  });
+});
+
+describe("the landing page is the stopping point", () => {
+  /**
+   * The layers under Presence are not finished. The rule this suite pins is
+   * narrow and worth stating exactly: the landing page keeps working, and
+   * nothing on it navigates into an unfinished workflow.
+   *
+   * The assertions are about `navigation.navigate` rather than about the badge
+   * text, because the badge is the part a redesign is allowed to change and the
+   * navigation is the part that must not come back. A locked control that
+   * quietly regains its `onPress` would still render "COMING SOON".
+   */
+  it("still shows everything the landing page is for", async () => {
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Night Signal")).toBeTruthy());
+    expect(view.queryByText("PRESENCE")).toBeTruthy();
+    expect(view.queryByText("Artist Presence")).toBeTruthy();
+    expect(view.queryByText("Business Presence")).toBeTruthy();
+    expect(view.queryByText("YOUR PRESENCES")).toBeTruthy();
+    // The controls are still here. Locked is not the same as removed — the page
+    // has to keep answering "what is this section going to be".
+    expect(view.queryByText("Create Artist Presence")).toBeTruthy();
+    expect(view.queryByText("Create Business Presence")).toBeTruthy();
+    expect(view.queryByText("+ Create New")).toBeTruthy();
+  });
+
+  it.each([
+    ["Create Artist Presence"],
+    ["Create Business Presence"],
+    ["+ Create New"],
+    ["Manage"]
+  ])("does not navigate anywhere when %s is tapped", async (label) => {
+    const { view, navigation } = show();
+    await waitFor(() => expect(view.queryByText("Night Signal")).toBeTruthy());
+    fireEvent.press(view.getByText(label));
+    expect(navigation.navigate).not.toHaveBeenCalled();
+  });
+
+  it("says which state each locked layer is in", async () => {
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Night Signal")).toBeTruthy());
+    // Creation has not started; management is underway. Two words rather than
+    // one, because "coming soon" on something being actively built reads as
+    // vague and "building" on something nobody has started reads as a promise.
+    expect(view.queryAllByText("COMING SOON")).toHaveLength(3);
+    expect(view.queryAllByText("BUILDING")).toHaveLength(1);
+  });
+
+  it("shows the layers behind the door instead of opening it", async () => {
+    const { view, navigation } = show();
+    await waitFor(() => expect(view.queryByText("Night Signal")).toBeTruthy());
+
+    // Nothing is on screen before the tap — the landing page stays as clean as
+    // the screenshot it is built from.
+    expect(view.queryByText("Monetization")).toBeNull();
+
+    fireEvent.press(view.getByText("Create Artist Presence"));
+
+    for (const layer of ["Profile Setup", "Content Management", "Analytics", "Monetization"]) {
+      expect(view.queryByText(layer)).toBeTruthy();
+    }
+    expect(navigation.navigate).not.toHaveBeenCalled();
+  });
+
+  it("shows the business layers under the business card", async () => {
+    const { view, navigation } = show();
+    await waitFor(() => expect(view.queryByText("Night Signal")).toBeTruthy());
+    fireEvent.press(view.getByText("Create Business Presence"));
+    for (const layer of ["Business Dashboard", "Customer Tools", "Advanced Management"]) {
+      expect(view.queryByText(layer)).toBeTruthy();
+    }
+    expect(navigation.navigate).not.toHaveBeenCalled();
+  });
+
+  it("closes again on a second tap", async () => {
+    // The panel is the only acknowledgement the tap gets, so it has to behave
+    // like a control and not like a one-way reveal.
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Night Signal")).toBeTruthy());
+    fireEvent.press(view.getByText("Create Artist Presence"));
+    expect(view.queryByText("Monetization")).toBeTruthy();
+    fireEvent.press(view.getByText("Create Artist Presence"));
+    expect(view.queryByText("Monetization")).toBeNull();
+  });
+
+  it("never tells the member something went wrong", async () => {
+    // A locked door is not an error. No route names, no "not implemented", no
+    // developer vocabulary — the member tapped a button and did nothing wrong.
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Night Signal")).toBeTruthy());
+    fireEvent.press(view.getByText("Create Artist Presence"));
+    fireEvent.press(view.getByText("Manage"));
+    for (const wrong of [/error/i, /failed/i, /unavailable/i, /not implemented/i, /PageCreate/, /PagesHub/]) {
+      expect(view.queryByText(wrong)).toBeNull();
+    }
+  });
+
+  it("does not mark a control that responds as disabled", async () => {
+    // A screen reader must not be told a control is inert when tapping it opens
+    // the panel. The lock lives in the label, the badge and the hint.
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Night Signal")).toBeTruthy());
+    // Reached by its label rather than by walking up from the text, because
+    // `.parent` lands on a wrapper whose `accessibilityState` is undefined —
+    // which made an earlier version of this test pass without asserting
+    // anything at all.
+    const button = view.getByLabelText("Create Artist Presence — coming soon");
+    expect(button.props.accessibilityState?.expanded).toBe(false);
+    expect(button.props.accessibilityState?.disabled).toBeFalsy();
+    expect(button.props.accessibilityHint).toBeTruthy();
+
+    fireEvent.press(button);
+    expect(view.getByLabelText("Create Artist Presence — coming soon").props.accessibilityState?.expanded).toBe(true);
+  });
+
+  it("carries the locked state in the label a screen reader reads", async () => {
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Night Signal")).toBeTruthy());
+    // Without this the reader announces the icon name, then the words, then the
+    // badge, as three fragments — and the one thing that matters is buried last.
+    expect(view.queryByLabelText("Create Business Presence — coming soon")).toBeTruthy();
+    expect(view.queryByLabelText("Manage — building")).toBeTruthy();
+  });
+
+  it("leaves Business OS alone", async () => {
+    // Business OS is a shipped subsystem with its own surface. This hub is one
+    // of its entrances, not its author, and the Presence gate does not reach it.
+    mockListMyPages.mockResolvedValue([
+      presence({ page_type: "BUSINESS", name: "Vault Coffee", business_os_capable: true })
+    ]);
+    const { view, navigation } = show();
+    await waitFor(() => expect(view.queryByText("Vault Coffee")).toBeTruthy());
+    fireEvent.press(view.getByText("Business OS"));
+    expect(navigation.navigate).toHaveBeenCalledWith("BusinessOs", { title: "Vault Coffee" });
   });
 });
 

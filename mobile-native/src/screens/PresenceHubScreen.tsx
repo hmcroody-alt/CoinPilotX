@@ -10,6 +10,8 @@ import {
   View
 } from "react-native";
 import { listMyPages, pageTypeLabel, PulsePage } from "../api/pages";
+import { LockedLayer } from "../components/presence/LockedLayer";
+import { isPresenceSurfaceReady } from "../core/launchReadiness";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { presenceAccent } from "../theme/presenceAccent";
@@ -69,6 +71,21 @@ function pendingModules(page: PulsePage): string[] {
  * The list is deliberately lightweight: `listMyPages()` returns summary rows
  * (name, handle, type, role, status) — no analytics, no manage views. Deeper
  * data loads only when a Presence's management is opened.
+ *
+ * ## The launch boundary
+ *
+ * This screen is where the public build stops. Creation and management are not
+ * finished, so `core/launchReadiness` marks them locked and the controls that
+ * led there render as {@link LockedLayer}: same position, same words, greyed,
+ * badged with their state, and they expand instead of navigating. The page
+ * itself stays fully live — it loads, refreshes, and lists real presences.
+ *
+ * Two doors are deliberately left open, because neither leads anywhere
+ * unfinished. **View** opens the presence's own public page, which is already
+ * reachable from search and from any post — locking it here would stop nothing
+ * and would take an owner's live page away from the owner alone. **Business OS**
+ * is a shipped subsystem with its own surface; this hub is one of its entrances,
+ * not its author.
  */
 export function PresenceHubScreen({ navigation }: Props) {
   const [pages, setPages] = useState<PulsePage[]>([]);
@@ -152,13 +169,21 @@ export function PresenceHubScreen({ navigation }: Props) {
           already holds it, never a second copy. Which of them your page shows depends on
           the type you pick next.
         </Text>
-        <Pressable
-          accessibilityRole="button"
-          style={styles.offerButton}
-          onPress={() => navigation.navigate("PageCreate", { flavor: "artist" })}
-        >
-          <Text style={styles.offerButtonText}>Create Artist Presence</Text>
-        </Pressable>
+        {isPresenceSurfaceReady("artistPresenceCreate") ? (
+          <Pressable
+            accessibilityRole="button"
+            style={styles.offerButton}
+            onPress={() => navigation.navigate("PageCreate", { flavor: "artist" })}
+          >
+            <Text style={styles.offerButtonText}>Create Artist Presence</Text>
+          </Pressable>
+        ) : (
+          <LockedLayer
+            label="Create Artist Presence"
+            surface="artistPresenceCreate"
+            testID="locked-artist-create"
+          />
+        )}
       </View>
 
       <View style={styles.offerCard}>
@@ -176,13 +201,21 @@ export function PresenceHubScreen({ navigation }: Props) {
           Ads — connected to what you already run rather than rebuilt here. Which of them
           your page shows depends on the type you pick next.
         </Text>
-        <Pressable
-          accessibilityRole="button"
-          style={styles.offerButton}
-          onPress={() => navigation.navigate("PageCreate", { flavor: "business" })}
-        >
-          <Text style={styles.offerButtonText}>Create Business Presence</Text>
-        </Pressable>
+        {isPresenceSurfaceReady("businessPresenceCreate") ? (
+          <Pressable
+            accessibilityRole="button"
+            style={styles.offerButton}
+            onPress={() => navigation.navigate("PageCreate", { flavor: "business" })}
+          >
+            <Text style={styles.offerButtonText}>Create Business Presence</Text>
+          </Pressable>
+        ) : (
+          <LockedLayer
+            label="Create Business Presence"
+            surface="businessPresenceCreate"
+            testID="locked-business-create"
+          />
+        )}
       </View>
 
       <Text style={styles.sectionTitle}>YOUR PRESENCES</Text>
@@ -261,13 +294,22 @@ export function PresenceHubScreen({ navigation }: Props) {
                 >
                   <Text style={styles.presenceActionText}>View</Text>
                 </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  style={styles.presenceAction}
-                  onPress={() => navigation.navigate("PagesHub", { focusPageId: page.id })}
-                >
-                  <Text style={styles.presenceActionText}>Manage</Text>
-                </Pressable>
+                {isPresenceSurfaceReady("presenceManage") ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    style={styles.presenceAction}
+                    onPress={() => navigation.navigate("PagesHub", { focusPageId: page.id })}
+                  >
+                    <Text style={styles.presenceActionText}>Manage</Text>
+                  </Pressable>
+                ) : (
+                  <LockedLayer
+                    label="Manage"
+                    surface="presenceManage"
+                    variant="compact"
+                    testID={`locked-manage-${page.id}`}
+                  />
+                )}
                 {/*
                   Business presences get a third action because there is a
                   third place to go. Artist presences used to get one labelled
@@ -296,13 +338,17 @@ export function PresenceHubScreen({ navigation }: Props) {
         })
       )}
 
-      <Pressable
-        accessibilityRole="button"
-        style={styles.createNew}
-        onPress={() => navigation.navigate("PageCreate", undefined)}
-      >
-        <Text style={styles.createNewText}>+ Create New</Text>
-      </Pressable>
+      {isPresenceSurfaceReady("presenceCreate") ? (
+        <Pressable
+          accessibilityRole="button"
+          style={styles.createNew}
+          onPress={() => navigation.navigate("PageCreate", undefined)}
+        >
+          <Text style={styles.createNewText}>+ Create New</Text>
+        </Pressable>
+      ) : (
+        <LockedLayer label="+ Create New" surface="presenceCreate" testID="locked-create-new" />
+      )}
     </ScrollView>
   );
 }

@@ -765,3 +765,29 @@ describe("the selected presence is named by colour as well as by highlight", () 
     expect(unselected).not.toBe(presenceAccent("ARTIST").base);
   });
 });
+
+describe("the other door onto creation is shut too", () => {
+  /**
+   * The Presence hub gates its three creation controls. This screen holds the
+   * fourth, and gating the hub alone would have left it open: a member who
+   * reaches their own presence from search can tap Manage and land here, so
+   * creation would have moved one tap further away rather than closed.
+   *
+   * The assertion is about `navigate`, not about the badge — the badge is what
+   * a redesign may change, and the navigation is what must not come back.
+   */
+  it("does not open the creation flow from here either", async () => {
+    const { getByText, navigation } = renderScreen();
+    await waitFor(() => expect(getByText(/Create a Presence/)).toBeTruthy());
+    fireEvent.press(getByText(/Create a Presence/));
+    expect(navigation.navigate).not.toHaveBeenCalledWith("PageCreate");
+    expect(navigation.navigate).not.toHaveBeenCalledWith("PageCreate", expect.anything());
+  });
+
+  it("keeps the control visible and says why it is shut", async () => {
+    // Removed, the screen stops explaining that presences are a thing you make.
+    const { getByText, queryByText } = renderScreen();
+    await waitFor(() => expect(getByText(/Create a Presence/)).toBeTruthy());
+    expect(queryByText("COMING SOON")).toBeTruthy();
+  });
+});

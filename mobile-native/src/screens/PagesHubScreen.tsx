@@ -28,6 +28,8 @@ import {
   setPageStatus
 } from "../api/pages";
 import { PulseApiError } from "../api/pulseApi";
+import { LockedLayer } from "../components/presence/LockedLayer";
+import { isPresenceSurfaceReady } from "../core/launchReadiness";
 import { FeedComposer } from "../components/FeedComposer";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
@@ -381,13 +383,29 @@ export function PagesHubScreen({ route, navigation }: Props) {
         </View>
       ))}
 
-      <Pressable
-        accessibilityRole="button"
-        style={styles.createButton}
-        onPress={() => navigation.navigate("PageCreate")}
-      >
-        <Text style={styles.createButtonText}>+ Create a Presence</Text>
-      </Pressable>
+      {/*
+        The other door onto `PageCreate`. The Presence hub gates its three, and
+        gating them alone would have left this one open — a member who reaches
+        their own presence from search can still tap Manage and land here, so
+        creation would have been one extra tap away rather than shut. A boundary
+        with a way round it is not a boundary, and the way round is exactly the
+        path somebody finds by accident.
+      */}
+      {isPresenceSurfaceReady("presenceCreate") ? (
+        <Pressable
+          accessibilityRole="button"
+          style={styles.createButton}
+          onPress={() => navigation.navigate("PageCreate")}
+        >
+          <Text style={styles.createButtonText}>+ Create a Presence</Text>
+        </Pressable>
+      ) : (
+        <LockedLayer
+          label="+ Create a Presence"
+          surface="presenceCreate"
+          testID="locked-pages-hub-create"
+        />
+      )}
 
       {!pages.length ? (
         <Text style={styles.empty}>
