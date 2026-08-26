@@ -31,6 +31,10 @@ Run directly (no pytest required):
 from __future__ import annotations
 
 import functools
+import json
+import subprocess
+import threading
+from concurrent.futures import ThreadPoolExecutor
 import os
 import sys
 import tempfile
@@ -478,22 +482,27 @@ def test_state_survives_worker_restart():
 def test_concurrent_same_observation_notifies_once():
     """Several workers evaluating one rule on the same tick send one push.
 
-    Each holds the same pre-repeat snapshot, so without the compare-and-set on
-    `trigger_seq` every one of them would see a qualifying move and dispatch.
+    Two threads start together with the same pre-repeat snapshot, so without
+    the persisted compare-and-set both would see a qualifying move and dispatch.
     """
     rule_id = new_rule()
     set_price(100010.0)
     observe(rule_id)
     check(len(DISPATCHED) == 1, "baseline: one notification")
 
-    set_price(100020.0)
+    set_price(100031.0)
     snapshot = _load_rule(rule_id)  # taken before any worker claims the repeat
-    results = [alert_engine.evaluate_alert_rule(dict(snapshot)) for _ in range(5)]
+    barrier = threading.Barrier(2)
+    def evaluate():
+        barrier.wait(timeout=10)
+        return alert_engine.evaluate_alert_rule(dict(snapshot))
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: evaluate(), range(2)))
 
     fired = [r for r in results if r.get("triggered")]
-    check(len(fired) == 1, f"exactly one of five concurrent workers fired (got {len(fired)})")
-    check(len(DISPATCHED) == 2, "one extra notification, not five")
-    check(triggered_event_count(rule_id) == 2, "one extra event, not five")
+    check(len(fired) == 1, f"exactly one of two concurrent workers fired (got {len(fired)})")
+    check(len(DISPATCHED) == 2, "one extra notification, not two")
+    check(triggered_event_count(rule_id) == 2, "one extra event, not two")
 
 
 # --------------------------------------------------------------------------
@@ -532,13 +541,87 @@ def test_full_acceptance_sequence():
     check(observe(rule_id)["triggered"], "resumed + 100,026 -> ALERT #5")
     check(len(DISPATCHED) == 5, "five notifications")
 
+    # A fresh interpreter has no inherited engine/cache state, as after deployment.
+    script = """
+import json, sys
+from services import alert_engine as ae
+ae.current_observed_value = lambda rule: {"ok": True, "value": float(sys.argv[2]), "status": "ok"}
+ae.dispatch_alert_event = lambda event, rule=None: {"ok": True, "channels": {"push": "sent"}}
+rule = ae.get_alert_rule(int(sys.argv[1]))
+print(json.dumps(ae.evaluate_alert_rule(rule)))
+"""
+    def restarted_observe(price):
+        result = subprocess.run([sys.executable, "-c", script, str(rule_id), str(price)],
+                                env=dict(os.environ), capture_output=True, text=True, check=True, timeout=30)
+        return json.loads(result.stdout.strip().splitlines()[-1])
+    check(not restarted_observe(100026)["triggered"], "restart does not replay #5")
+    check(restarted_observe(100027)["triggered"], "restart + 100,027 -> ALERT #6")
+    check(triggered_event_count(rule_id) == 6, "six durable trigger-history rows")
+    persisted = _load_rule(rule_id)
+    check(persisted["last_notified_value"] == 100027, "restart advances persisted notified value")
+    check(persisted["trigger_count"] == 6, "restart advances persisted trigger count")
+    check(rule_status(rule_id) == "active", "still active after process restart")
+
     alert_engine.delete_alert(rule_id, TEST_USER_ID)
-    set_price(100030.0)
-    check(not observe(rule_id)["triggered"], "deleted + 100,030 -> NO ALERT")
-    check(len(DISPATCHED) == 5, "five notifications, final")
+    check(not restarted_observe(100030)["triggered"], "deleted + 100,030 -> NO ALERT after restart")
+    check(triggered_event_count(rule_id) == 6, "six notifications, final")
+
+
+
+@own_db
+def test_stale_evaluation_cannot_fire_after_user_stops_rule():
+    for stop in (alert_engine.pause_alert, alert_engine.delete_alert):
+        for latched in (False, True):
+            rule_id = new_rule()
+            if latched:
+                set_price(100010)
+                observe(rule_id)
+            snapshot = _load_rule(rule_id)
+            before = len(DISPATCHED)
+            stop(rule_id, TEST_USER_ID)
+            set_price(100011)
+            result = alert_engine.evaluate_alert_rule(snapshot)
+            check(not result["triggered"], "stale crossing/repeat cannot fire after pause/delete")
+            check(len(DISPATCHED) == before, "no notification escaped the persisted stop")
+
+
+@own_db
+def test_deleted_rule_cannot_be_resumed():
+    rule_id = new_rule()
+    alert_engine.delete_alert(rule_id, TEST_USER_ID)
+    check(not alert_engine.resume_alert(rule_id, TEST_USER_ID)["ok"], "delete cannot be reversed by resume")
+    check(rule_status(rule_id) == "deleted", "deleted remains permanent")
+
+
+@own_db
+def test_explicit_disabled_flag_suppresses_stale_evaluation():
+    rule_id = new_rule()
+    set_price(100010)
+    observe(rule_id)
+    snapshot = _load_rule(rule_id)
+    conn = user_context.connect()
+    conn.execute("UPDATE alert_rules SET active=0 WHERE id=?", (rule_id,))
+    conn.commit()
+    conn.close()
+    set_price(100011)
+    check(not alert_engine.evaluate_alert_rule(snapshot)["triggered"], "disabled flag stops stale repeat")
+    check(len(DISPATCHED) == 1, "disabled rule stays silent")
+
+
+@own_db
+def test_repeat_defaults_remain_progress_without_suppression():
+    rule_id = new_rule()
+    row = _load_rule(rule_id)
+    check((row.get("repeat_mode") or alert_engine.DEFAULT_REPEAT_MODE) == "progress", "recurring by default")
+    check(alert_engine.DEFAULT_REPEAT_STEP_PERCENT == 0, "no implicit 0.25 percent floor")
+    check(alert_engine.DEFAULT_REPEAT_MIN_SECONDS == 0, "no implicit long repeat cooldown")
 
 
 TESTS = [
+    test_stale_evaluation_cannot_fire_after_user_stops_rule,
+    test_deleted_rule_cannot_be_resumed,
+    test_explicit_disabled_flag_suppresses_stale_evaluation,
+    test_repeat_defaults_remain_progress_without_suppression,
     test_alert_can_be_created,
     test_first_qualifying_change_fires,
     test_alert_remains_active_after_firing,

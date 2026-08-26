@@ -1,0 +1,55 @@
+name: Crypto alert persistence lock
+
+on:
+  pull_request:
+    paths:
+      - 'services/alert_engine.py'
+      - 'services/crypto_alert_conditions.py'
+      - 'services/pulsesoc_notification_system.py'
+      - 'alert_worker.py'
+      - 'tests/test_crypto_alert*'
+      - 'tests/crypto_premium/test_advanced_alert_engine.py'
+      - '.github/workflows/crypto-alert-persistence.yml'
+  push:
+    paths:
+      - 'services/alert_engine.py'
+      - 'services/crypto_alert_conditions.py'
+      - 'services/pulsesoc_notification_system.py'
+      - 'alert_worker.py'
+      - 'tests/test_crypto_alert*'
+      - 'tests/crypto_premium/test_advanced_alert_engine.py'
+      - '.github/workflows/crypto-alert-persistence.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  persistent-delivery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: python -m pip install -r requirements.txt pytest
+      # Existing suites install module-global SQLite/provider fixtures. Each
+      # suite gets a fresh interpreter so fixtures cannot leak into its peers.
+      - name: Lock persistence, controls, concurrency and safe delivery retries
+        shell: bash
+        run: |
+          set -euo pipefail
+          for suite in \
+            tests/test_crypto_alert_persistence.py \
+            tests/test_crypto_alert_edge_trigger.py \
+            tests/test_crypto_alert_advanced_rules.py \
+            tests/test_crypto_alert_watchlist_rules.py \
+            tests/test_crypto_alert_portfolio_rules.py \
+            tests/test_crypto_alert_conditions.py \
+            tests/test_crypto_alert_options.py \
+            tests/test_crypto_alert_native_push.py \
+            tests/crypto_premium/test_advanced_alert_engine.py \
+            tests/test_notification_job_atomic_claim.py; do
+            python -m pytest "$suite" -q
+          done
