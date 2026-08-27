@@ -1343,7 +1343,8 @@ def _set_rule_status(rule_id, user_id, status, active, message):
     cur = conn.cursor()
     deleted_at = _now() if status == "deleted" else None
     cur.execute(
-        "UPDATE alert_rules SET status=?, active=?, deleted_at=?, updated_at=? WHERE id=? AND user_id=?",
+        "UPDATE alert_rules SET status=?, active=?, deleted_at=?, updated_at=? "
+        "WHERE id=? AND user_id=? AND COALESCE(status, 'active')!='deleted'",
         (status, active, deleted_at, _now(), rule_id, user_id),
     )
     changed = cur.rowcount
@@ -1796,6 +1797,16 @@ def alert_repeat_progressed(condition, value, last_notified, step_percent):
     return (magnitude / scale) * 100.0 >= step_percent
 
 
+def _active_claim_guard(scope):
+    # Unscoped claims test the UPDATE's own row, so PostgreSQL rechecks the
+    # current flags after waiting for a concurrent pause/delete row lock.
+    flags = "COALESCE(status, 'active')='active' AND COALESCE(active, 1)=1 AND COALESCE(deleted_at, '')=''"
+    if not scope:
+        return flags
+    return ("EXISTS (SELECT 1 FROM alert_rules WHERE "
+            "alert_rules.id=alert_rule_symbol_state.rule_id AND " + flags + ")")
+
+
 def _claim_repeat(rule_id, observed_value, expected_seq, scope=None):
     """Atomically claim a repeat notification for an already-latched rule.
 
@@ -1804,6 +1815,10 @@ def _claim_repeat(rule_id, observed_value, expected_seq, scope=None):
     guard here is optimistic concurrency on ``trigger_seq`` — the caller passes
     the sequence it read, and only the evaluator whose compare-and-set lands
     first advances it and owns the notification.
+
+    The same UPDATE checks the persisted parent rule's active/deleted flags:
+    a worker snapshot taken before pause, disable or delete cannot send after
+    that control change commits. Scoped asset claims obey the parent too.
 
     ``trigger_seq`` is used rather than a NULL-safe compare on
     ``last_notified_value`` deliberately: it is a plain integer, so the
@@ -1825,9 +1840,11 @@ def _claim_repeat(rule_id, observed_value, expected_seq, scope=None):
                 state_changed_at=?,
                 updated_at=?
             WHERE {where} AND COALESCE(trigger_seq, 0)=?
+              AND condition_state=?
+              AND {_active_claim_guard(scope)}
             """,
             (observed_value, observed_value, _now(), _now(),
-             *_state_key(rule_id, scope), int(expected_seq or 0)),
+             *_state_key(rule_id, scope), int(expected_seq or 0), STATE_LATCHED),
         )
         claimed = int(getattr(cur, "rowcount", 0) or 0) > 0
         conn.commit()
@@ -1866,16 +1883,20 @@ def _claim_crossing(rule_id, observed_value, scope=None):
                 state_changed_at=?,
                 updated_at=?
             WHERE {where} AND COALESCE(condition_state, '')<>?
+              AND {_active_claim_guard(scope)}
             """,
             (STATE_LATCHED, observed_value, observed_value, _now(), _now(),
              *_state_key(rule_id, scope), STATE_LATCHED),
         )
         claimed = int(getattr(cur, "rowcount", 0) or 0) > 0
-        conn.commit()
         if not claimed:
+            conn.commit()
             return None
+        # Read our sequence while the claim still holds the row lock. Reading
+        # after commit could pick up a concurrent repeat's sequence instead.
         cur.execute(f"SELECT trigger_seq FROM {table} WHERE {where} LIMIT 1", _state_key(rule_id, scope))
         row = cur.fetchone()
+        conn.commit()
         return int((row[0] if row else 0) or 0)
     finally:
         conn.close()

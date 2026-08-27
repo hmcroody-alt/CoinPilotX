@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+from unittest.mock import patch
 
 _TMP_DB = os.path.join(tempfile.mkdtemp(prefix="pulsesoc_native_alert_push_"), "test.db")
 os.environ["DATABASE_URL"] = "sqlite:///" + _TMP_DB
@@ -119,8 +120,74 @@ def test_expo_token_is_not_sent_to_apns_or_duplicated():
         notifications._send_apns_token = originals["apns_send"]
 
 
+
+def test_recurring_crypto_delivery_retries_keep_rule_active():
+    """Real evaluator -> event -> central jobs; only provider sends are stubbed."""
+    user_id, _ = _setup_expo_registration(user_id=79)
+    alert_engine._ALERT_SCHEMA_READY = False
+    conn = db.connect()
+    conn.execute("""CREATE TABLE IF NOT EXISTS notification_delivery_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, notification_id INTEGER,
+        alert_rule_id INTEGER, alert_event_id INTEGER, channel TEXT, status TEXT,
+        provider TEXT, provider_response TEXT, error_message TEXT,
+        retry_count INTEGER DEFAULT 0, created_at TEXT, sent_at TEXT)""")
+    conn.commit()
+    conn.close()
+    price = {"value": 99000.0}
+    attempts = []
+    failing = {"value": True}
+
+    def dispatch(cur, job, notification, prefs):
+        attempts.append((job["id"], job["channel"]))
+        return {"ok": not failing["value"],
+                "status": "temporary_failure" if failing["value"] else "sent",
+                "provider": "test_provider"}
+
+    with patch.object(alert_engine, "current_observed_value", lambda rule: {
+        "ok": True, "status": "ok", "value": price["value"]
+    }), patch.object(notifications, "_dispatch_job", dispatch):
+        created = alert_engine.create_alert_rule(user_id, symbol="BTC", condition="above",
+            threshold=100000, channels={"in_app": True, "push": True, "email": True})
+        assert created["ok"], created
+        rule_id = created["alert_id"]
+        def observe(value):
+            price["value"] = value
+            return alert_engine.evaluate_alert_rule(alert_engine.get_alert_rule(rule_id))
+        assert not observe(99000)["triggered"]
+        assert observe(100010)["triggered"]
+        assert not observe(100010)["triggered"]
+        assert observe(100011)["triggered"]
+        first = notifications.process_delivery_jobs(channels=["push", "email"])
+        assert first["counts"].get("retry") == 4, first
+        assert alert_engine.get_alert_rule(rule_id)["status"] == "active"
+        before = len(attempts)
+        assert notifications.process_delivery_jobs(channels=["push", "email"])["processed"] == 0
+        assert len(attempts) == before  # existing backoff, no immediate storm
+
+        conn = db.connect()
+        # Advance only these fixture jobs past their retry delay, without sleeping.
+        conn.execute("UPDATE notification_delivery_jobs SET next_retry_at='' WHERE recipient_user_id=? AND status='retry'", (user_id,))
+        conn.commit()
+        conn.close()
+        failing["value"] = False
+        recovered = notifications.process_delivery_jobs(channels=["push", "email"])
+        assert recovered["counts"].get("sent") == 4, recovered
+        assert notifications.process_delivery_jobs(channels=["push", "email"])["processed"] == 0
+        assert observe(100012)["triggered"]
+        assert notifications.process_delivery_jobs(channels=["push", "email"])["counts"].get("sent") == 2
+        rule = alert_engine.get_alert_rule(rule_id)
+        assert rule["status"] == "active" and rule["trigger_count"] == 3
+        assert rule["last_notified_value"] == 100012
+        conn = db.connect()
+        rows = conn.execute("SELECT trigger_key,notification_id FROM alert_events WHERE alert_rule_id=? ORDER BY id", (rule_id,)).fetchall()
+        conn.close()
+        assert len(rows) == 3
+        assert len({row["trigger_key"] for row in rows}) == 3
+        assert len({row["notification_id"] for row in rows}) == 3
+
+
 def _run():
-    tests = [test_expo_is_ready_without_vapid, test_expo_token_is_not_sent_to_apns_or_duplicated]
+    tests = [test_expo_is_ready_without_vapid, test_expo_token_is_not_sent_to_apns_or_duplicated, test_recurring_crypto_delivery_retries_keep_rule_active]
     for test in tests:
         test()
         print(f"PASS  {test.__name__}")
