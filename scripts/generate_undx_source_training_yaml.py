@@ -37,6 +37,11 @@ INCLUDE_ROOTS = [
     "scripts",
     "PULSESOC_SYSTEM_SPEED_REPORT.md",
     "BUSINESS_OS_FINAL_REPORT.md",
+    # The verified recon set and the knowledge corpus generated from it. Added so
+    # that UNDX retrieves its own verified product knowledge rather than inferring
+    # product facts from the source files that implement them.
+    "UNDX_RECON",
+    "UNDX_TRAINING",
 ]
 
 EXCLUDE_PARTS = {
@@ -262,6 +267,10 @@ def classify(path: Path) -> str:
         return "messenger_communications"
     if r.startswith("migrations"):
         return "database_migration"
+    if r.startswith("UNDX_TRAINING"):
+        return "undx_knowledge"
+    if r.startswith("UNDX_RECON"):
+        return "recon_evidence"
     if r.startswith("docs") or r.endswith(".md"):
         return "documentation"
     if r.startswith("tests"):
@@ -309,6 +318,170 @@ def collect_files() -> list[Path]:
                 if child.is_file() and is_included(child):
                     files.append(child)
     return sorted(set(files), key=lambda item: rel(item))
+
+
+# ---------------------------------------------------------------------------
+# UNDX_TRAINING knowledge corpus -> source_records
+# ---------------------------------------------------------------------------
+# The twelve files under UNDX_TRAINING/ are generated from the verified UNDX_RECON
+# findings by scripts/build_undx_training_corpus.py. Indexing them as twelve plain
+# files would be close to useless for retrieval: excerpt() would summarise each one
+# from its two generated header comments, and a query like "how do I manage my
+# Premium subscription" would have to match a 138 KB capability file as a whole.
+#
+# So each *record* inside those files becomes its own corpus record, addressed by
+# fragment: ``UNDX_TRAINING/03_CAPABILITIES.yaml#reels.save``. services/undx_brain/
+# corpus.py understands the ``#fragment`` form (it checks the containing file for
+# existence and skips the size comparison), and it scores retrieval largely against
+# ``summary`` — so the summary here is assembled from the fields a user would
+# actually ask about rather than truncated from the raw YAML.
+#
+# 12_MASTER_KNOWLEDGE_CORPUS.yaml is deliberately skipped: it is an index of the
+# other eleven files, so emitting it would duplicate all 308 records as digests.
+
+KNOWLEDGE_DIR = ROOT / "UNDX_TRAINING"
+
+#: Keys under which the generated corpus files carry their record lists.
+KNOWLEDGE_RECORD_KEYS = (
+    "records", "capabilities", "features", "journeys", "examples", "surfaces",
+    "registries", "endpoints", "entities", "issues", "concepts",
+)
+
+KNOWLEDGE_INDEX_FILE = "12_MASTER_KNOWLEDGE_CORPUS.yaml"
+
+#: Ordered (field, label) pairs folded into a record summary. Order matters: the
+#: retrieval haystack is truncated by callers, so the identifying and user-facing
+#: text has to come before the provenance boilerplate.
+KNOWLEDGE_SUMMARY_FIELDS = (
+    ("description", ""),
+    ("user_facing_explanation", "User-facing"),
+    ("why", "Why"),
+    ("role", "Role"),
+    ("authority", "Authority"),
+    ("enforcement", "Enforcement"),
+    ("write_scope", "Write scope"),
+    ("evidence", "Evidence"),
+    ("status_evidence", "Evidence"),
+    ("security_notes", "Security"),
+    ("failure_behavior", "On failure"),
+)
+
+
+def _knowledge_summary(record: dict[str, Any], file_name: str) -> str:
+    """Build the retrievable text for one corpus record."""
+    name = str(record.get("name") or record.get("id") or "")
+    parts: list[str] = []
+    if name:
+        parts.append(name + ".")
+    status = record.get("status")
+    if status:
+        parts.append(f"Status: {status}.")
+    if record.get("kind") and record.get("user"):
+        # A conversation example. The user turn is the highest-value retrieval
+        # signal here, because the questions UNDX will be asked look like it.
+        parts.append(f"Example ({record['kind']}). User asks: {record['user']}")
+        good = record.get("good_response")
+        if good:
+            parts.append(f"Correct answer: {good}")
+    for field, label in KNOWLEDGE_SUMMARY_FIELDS:
+        value = record.get(field)
+        if not value or not isinstance(value, str):
+            continue
+        parts.append(f"{label}: {value}" if label else value)
+    for field, label in (("allowed_actions", "Allowed"), ("forbidden_actions", "Forbidden")):
+        value = record.get(field)
+        if isinstance(value, list) and value:
+            parts.append(f"{label}: " + "; ".join(str(v) for v in value))
+    if record.get("confirmation_required"):
+        parts.append(f"Confirmation: {record['confirmation_required']}.")
+    if record.get("ownership_required"):
+        parts.append("Acts only on the authenticated user's own account.")
+    if record.get("surface"):
+        parts.append(f"Execution surface: {record['surface']}.")
+    if record.get("code_exists") is not None:
+        parts.append(
+            f"Code exists: {record['code_exists']}; production verified: "
+            f"{record.get('production_verified')}."
+        )
+    text = " ".join(part.strip() for part in parts if part)
+    return " ".join(text.split())
+
+
+def _knowledge_tags(record: dict[str, Any], text: str) -> list[str]:
+    """Domain tags for a corpus record, reusing the repo-wide tag vocabulary."""
+    tags = ["undx_knowledge"]
+    haystack = (str(record.get("id", "")) + " " + str(record.get("domain", "")) + " " + text).lower()
+    mapping = {
+        "auth": ["auth", "login", "session", "token", "password", "2fa"],
+        "messenger": ["message", "conversation", "chat"],
+        "calls": ["call", "livekit"],
+        "live": ["live", "stream", "broadcast"],
+        "feed": ["feed", "post", "reel", "status"],
+        "media": ["media", "upload", "attachment", "camera", "video", "audio"],
+        "business_os": ["business_os", "business os", "marketplace", "order", "ads", "advert",
+                        "payment", "store", "customer"],
+        "undx": ["undx", "pulse_ai", "assistant", "agent", "capability"],
+        "notifications": ["notification", "push", "alert"],
+        "safety": ["moderation", "report", "block", "mute", "safety"],
+        "settings": ["settings", "privacy", "preference", "premium"],
+        "search": ["search", "discovery"],
+        "crypto": ["crypto", "portfolio", "watchlist", "coin", "wallet"],
+    }
+    for tag, needles in mapping.items():
+        if any(n in haystack for n in needles):
+            tags.append(tag)
+    return tags[:8]
+
+
+def knowledge_records() -> list[dict[str, Any]]:
+    """One corpus record per record in the UNDX_TRAINING knowledge corpus."""
+    if not KNOWLEDGE_DIR.is_dir():
+        return []
+    try:
+        import yaml  # noqa: PLC0415 - optional; the corpus is skipped without it
+    except ImportError:
+        print("  warning: PyYAML unavailable, UNDX_TRAINING records not indexed")
+        return []
+    out: list[dict[str, Any]] = []
+    for path in sorted(KNOWLEDGE_DIR.glob("*.yaml")):
+        if path.name == KNOWLEDGE_INDEX_FILE:
+            continue
+        try:
+            doc = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except Exception as exc:  # a malformed corpus file must not kill the build
+            print(f"  warning: could not parse {path.name}: {exc}")
+            continue
+        for key in KNOWLEDGE_RECORD_KEYS:
+            items = doc.get(key)
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                if not isinstance(item, dict) or not item.get("id"):
+                    continue
+                summary = _knowledge_summary(item, path.name)
+                if not summary:
+                    continue
+                record: dict[str, Any] = {
+                    "path": f"UNDX_TRAINING/{path.name}#{item['id']}",
+                    "category": "undx_knowledge",
+                    "domain_tags": _knowledge_tags(item, summary),
+                    "sha256_16": sha256_short(summary),
+                    "bytes": len(summary.encode("utf-8")),
+                    "summary": summary,
+                }
+                # The record's own name, carried separately so retrieval can score it
+                # at the filename tier. The containing file name ("03_CAPABILITIES")
+                # describes 87 records and therefore identifies none of them.
+                title = str(item.get("name") or item.get("id") or "")
+                if title:
+                    record["title"] = title
+                route = item.get("native_route") or item.get("route")
+                if isinstance(route, str) and route.startswith("/"):
+                    record["endpoint_mentions"] = [route]
+                if item.get("tool_name"):
+                    record["symbols"] = {"functions": [str(item["tool_name"])]}
+                out.append(record)
+    return out
 
 
 def build_corpus() -> dict[str, Any]:
@@ -361,6 +534,15 @@ def build_corpus() -> dict[str, Any]:
             record["migration"] = migrations
         records.append(record)
 
+    # Per-record knowledge from UNDX_TRAINING/, appended to the same list so it
+    # flows through the existing loader untouched. Deliberately after the file
+    # walk: these are fragments of files already indexed above, not new files.
+    knowledge = knowledge_records()
+    for item in knowledge:
+        class_counts[item["category"]] += 1
+        tag_counts.update(item["domain_tags"])
+    records.extend(knowledge)
+
     unique_endpoints = sorted({e["path"] for e in all_endpoints})
     route_paths = sorted({f"{','.join(item['methods'])} {item['path']}" for item in all_routes})
 
@@ -397,6 +579,7 @@ def build_corpus() -> dict[str, Any]:
         },
         "repository_inventory": {
             "source_files_indexed": len(records),
+            "undx_knowledge_records": len(knowledge),
             "extensions": dict(sorted(ext_counts.items())),
             "categories": dict(sorted(class_counts.items())),
             "domain_tag_counts": dict(sorted(tag_counts.items())),

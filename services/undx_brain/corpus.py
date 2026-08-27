@@ -145,9 +145,15 @@ INJECTION_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
 #: somebody asserted. It does **not** mean the test passes in this tree — that is a
 #: separate, more expensive question, and :func:`ingest` does not run the suite. The gap
 #: is recorded in the hedge for TESTED rather than papered over.
+#: ``undx_knowledge`` is the verified-recon training corpus under ``UNDX_TRAINING/``. It
+#: maps to DOCUMENTED rather than to a level of its own because that is exactly what it
+#: is: prose and structured facts a human verified and cited, not an executed test and
+#: not a runtime observation. It carries no authority — the capability registry does —
+#: and a trust level above DOCUMENTED would invite a reader to treat it as if it did.
 _CATEGORY_TRUST: dict[str, TrustLevel] = {
     "documentation": TrustLevel.DOCUMENTED,
     "test_evidence": TrustLevel.TESTED,
+    "undx_knowledge": TrustLevel.DOCUMENTED,
 }
 
 
@@ -182,6 +188,13 @@ class KnowledgeRecord:
     #: never returned by retrieval and never reach a prompt.
     quarantined: bool = False
     quarantine_reason: str = ""
+    #: Human-written name for the record, when the generator supplied one. Empty for a
+    #: plain source file, where the filename already serves this purpose. It exists for
+    #: fragment-addressed records — ``UNDX_TRAINING/03_CAPABILITIES.yaml#reels.save`` —
+    #: whose containing filename describes a hundred unrelated records and so says
+    #: nothing about any one of them. Retrieval scores a title at the filename tier;
+    #: see :func:`services.undx_brain.knowledge._score`.
+    title: str = ""
     #: Lowercased haystack, built once at ingest. Retrieval scores against this.
     search_text: str = field(default="", repr=False, compare=False)
 
@@ -344,11 +357,20 @@ def _staleness(path: str, declared_bytes: int) -> tuple[bool, str]:
     microseconds. Size catches the common drift (a file edited, a file deleted) and
     misses same-length edits, which :func:`staleness_report` catches by hashing — that
     one is for the audit, where a second is free.
+
+    A path may carry a ``#fragment`` suffix, which the UNDX training corpus uses to
+    address one record inside a generated knowledge file (``UNDX_TRAINING/03_
+    CAPABILITIES.yaml#reels.save``). For those, existence is still checked against the
+    containing file, but the size comparison is skipped: ``bytes`` describes the
+    fragment, not the file, so comparing the two would mark every fragment stale.
     """
+    file_part, _, fragment = path.partition("#")
     try:
-        stat = (ROOT / path).stat()
+        stat = (ROOT / file_part).stat()
     except OSError:
         return True, "source file no longer exists"
+    if fragment:
+        return False, ""
     if declared_bytes and stat.st_size != declared_bytes:
         return True, f"size changed: corpus says {declared_bytes}, file is {stat.st_size}"
     return False, ""
@@ -593,6 +615,7 @@ def _ingest_cached(
             str(tag) for tag in (entry.get("domain_tags") or []) if isinstance(tag, str)
         )
         summary = " ".join(str(entry.get("summary") or "").split())
+        title = " ".join(str(entry.get("title") or "").split())
         injection = _injection_shaped(blob)
         if injection:
             quarantined += 1
@@ -610,6 +633,7 @@ def _ingest_cached(
         )
         haystack = " ".join((
             record_path.lower().replace("/", " ").replace("_", " ").replace(".", " "),
+            title.lower(),
             str(entry.get("category") or "").lower().replace("_", " "),
             " ".join(tag.lower() for tag in domain_tags),
             summary.lower(),
@@ -633,6 +657,7 @@ def _ingest_cached(
             stale_reason=stale_reason,
             quarantined=bool(injection),
             quarantine_reason=injection,
+            title=title,
             search_text=haystack,
         ))
 

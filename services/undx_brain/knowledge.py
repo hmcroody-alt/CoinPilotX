@@ -51,7 +51,7 @@ MAX_CONTEXT_CHARS = 6000
 #: Terms carried by nearly every question about this product, which therefore separate
 #: nothing. Dropping them is what stops "what does PulseSoc do about alerts?" from
 #: scoring every file that says "PulseSoc" in its header comment.
-STOP_WORDS = frozenset({
+_FUNCTION_WORDS = frozenset({
     "about", "after", "also", "and", "any", "are", "back", "been", "before", "both",
     "但", "can", "could", "did", "does", "doing", "done", "each", "for", "from", "get",
     "gets", "getting", "had", "has", "have", "help", "her", "here", "him", "his", "how",
@@ -60,9 +60,19 @@ STOP_WORDS = frozenset({
     "own", "please", "pulse", "pulsesoc", "same", "see", "she", "should", "show", "some",
     "such", "sure", "take", "tell", "than", "that", "the", "their", "them", "then",
     "there", "these", "they", "thing", "things", "this", "those", "through", "too",
-    "undx", "use", "used", "using", "very", "want", "was", "way", "were", "what", "when",
+    "use", "used", "using", "very", "want", "was", "way", "were", "what", "when",
     "where", "which", "while", "who", "why", "will", "with", "would", "you", "your",
 })
+
+#: Dropped from a query for the same reason as the words above — they appear in nearly
+#: every record and so separate nothing — but for a different underlying cause. These
+#: are the product's own nouns, not grammatical filler, and the distinction matters when
+#: a query contains nothing else. "What is the" has no subject and should return
+#: nothing; "What is PulseSoc?" has a subject, and the knowledge corpus contains a
+#: record titled for it. See the fallback in :func:`_terms`.
+UBIQUITOUS_TERMS = frozenset({"pulse", "pulsesoc", "undx"})
+
+STOP_WORDS = _FUNCTION_WORDS | UBIQUITOUS_TERMS
 
 #: Maximum distinct terms drawn from one query. A pasted stack trace should not become a
 #: 400-term scoring pass over 1,682 records on the request path.
@@ -78,6 +88,16 @@ _TERM = re.compile(r"[a-z0-9_./-]{3,}")
 #: ``undx_tool_gateway`` whole was a real bug: a user asking about "the tool gateway"
 #: matched nothing in the path and the correct file lost to incidental prose hits.
 _PATH_SEGMENT = re.compile(r"[a-z0-9]+")
+
+#: Categories carrying human-verified, product-level answers rather than source code.
+#: ``undx_knowledge`` is the corpus generated from UNDX_RECON into ``UNDX_TRAINING/``.
+#: Membership here affects *ordering only* — see the reservation in :func:`retrieve`.
+CURATED_CATEGORIES: frozenset[str] = frozenset({"undx_knowledge"})
+
+#: How many of the returned slots are reserved for :data:`CURATED_CATEGORIES` when any
+#: curated record cleared the relevance floor. Deliberately small relative to the
+#: default limit of six.
+_RESERVED_KNOWLEDGE_SLOTS = 2
 
 #: A match scoring below this fraction of the best match is dropped. Without it, one
 #: incidental word hit shared by 889 files survives to the sort, and the alphabetical
@@ -238,9 +258,17 @@ def _terms(query: str) -> tuple[list[str], frozenset[str]]:
     """
     seen: dict[str, None] = {}
     route_like: set[str] = set()
+    # Product nouns are dropped for discrimination, not because they are meaningless.
+    # Kept aside so a query whose only subject is one of them still has something to
+    # score. Grammatical stop words are not kept: "what is the" has no subject at all.
+    stopped: dict[str, None] = {}
     for raw in _TERM.findall(str(query or "").lower()):
         term = raw.strip("./-")
-        if len(term) < 3 or term in STOP_WORDS:
+        if len(term) < 3:
+            continue
+        if term in STOP_WORDS:
+            if term in UBIQUITOUS_TERMS:
+                stopped.setdefault(term, None)
             continue
         is_path = "/" in term or "." in term or "_" in term
         seen.setdefault(term, None)
@@ -255,6 +283,15 @@ def _terms(query: str) -> tuple[list[str], frozenset[str]]:
                     route_like.add(part)
         if len(seen) >= MAX_TERMS:
             break
+    if not seen and stopped:
+        # "What is PulseSoc?" otherwise reduces to nothing, and the caller returns an
+        # empty result for the most basic question the product can be asked. The stop
+        # list was calibrated against a corpus of source files, where "pulsesoc" appears
+        # in almost every header and separates nothing — but the knowledge corpus now
+        # contains a record *titled* PulseSoc, and a term that discriminates poorly
+        # still discriminates better than no term at all. Reached only when the query
+        # has no other subject, so it cannot dilute a query that does.
+        return list(stopped)[:MAX_TERMS], frozenset()
     return list(seen)[:MAX_TERMS], frozenset(route_like)
 
 
@@ -264,10 +301,24 @@ def _score(
     route_terms: frozenset[str] = frozenset(),
 ) -> float:
     path = record.path.lower()
-    stem = path.rsplit("/", 1)[-1]
+    # A record may be addressed by fragment — ``UNDX_TRAINING/03_CAPABILITIES.yaml
+    # #reels.save`` — in which case the fragment, not the filename, is its name. The
+    # fragment has to be split off before the extension split, because ``rsplit(".", 1)``
+    # on the whole path lands inside the fragment and throws it away: every one of the
+    # 87 records in the capabilities file then scored identically, and product questions
+    # lost to implementation source that merely had the right word in its filename.
+    file_part, _, fragment = path.partition("#")
+    stem = file_part.rsplit("/", 1)[-1]
     stem_bare = stem.rsplit(".", 1)[0]
     stem_tokens = set(_PATH_SEGMENT.findall(stem_bare))
-    segments = set(_PATH_SEGMENT.findall(path)) - stem_tokens
+    # The fragment and the curated title are scored at the filename tier for the same
+    # reason filenames outrank directories: both are chosen to describe this record and
+    # nothing else. A wordy title dilutes itself through _W_STEM_FOCUS, which is the
+    # right behaviour — a precise name is stronger evidence than a discursive one.
+    stem_tokens.update(_PATH_SEGMENT.findall(fragment))
+    if record.title:
+        stem_tokens.update(_PATH_SEGMENT.findall(record.title.lower()))
+    segments = set(_PATH_SEGMENT.findall(file_part)) - stem_tokens
     tags = {tag.lower() for tag in record.domain_tags}
     # Tokenised, not substring-matched. Joining the endpoints into one string and asking
     # ``term in endpoints`` awards the full endpoint weight for accidental substrings:
@@ -435,6 +486,27 @@ def retrieve(
             continue
         kept.append(record)
         used += cost
+
+    # Guarantee the curated answer layer a place on the page — at the *tail*, never at
+    # the head.
+    #
+    # The problem: "how does Marketplace work?" scored a dozen
+    # ``services/marketplace_*.py`` files above the one record written to answer exactly
+    # that question, because a filename match outweighs a prose match and there are
+    # three thousand source files against three hundred knowledge records. The record
+    # cleared the relevance floor and then lost every slot.
+    #
+    # Why the tail and not a score boost: an exact query for
+    # ``services/undx_tool_gateway.py`` must return that file first, and a query about a
+    # concept must return the module that implements it first. Boosting the curated
+    # category would have moved those too. Substituting only into the lowest-ranked
+    # slots leaves every head position decided by score alone, and costs at most two
+    # weak matches that were about to be dropped by the limit anyway.
+    if len(kept) >= applied_limit and not any(r.category in CURATED_CATEGORIES for r in kept):
+        curated = [row[2] for row in scored if row[2].category in CURATED_CATEGORIES]
+        if curated:
+            keep_head = applied_limit - min(_RESERVED_KNOWLEDGE_SLOTS, len(curated))
+            kept = kept[:keep_head] + curated[:applied_limit - keep_head]
 
     withheld: list[str] = []
     if withheld_quarantine:

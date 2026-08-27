@@ -199,9 +199,20 @@ creator, merchant and teacher categories, alongside a **500 bps** (5%) marketpla
 rate. The ledger that would record creator earnings, `creator_ledger_entries`, holds
 **4 rows, all audit entries** — no creator has ever earned.
 
-Money-out is entirely unbuilt: `seller_payout_accounts=0`, `seller_payouts=0`, and
-`payout_queue=2` (fixtures). Stripe Connect is the intended rail; no account has been
-onboarded.
+Money-out is **built but unexercised**: `seller_payout_accounts=0`, `seller_payouts=0`,
+and `payout_queue=2` (fixtures). Stripe Connect is the intended rail; no account has
+been onboarded.
+
+> **⚠ CORRECTED — this paragraph previously read "Money-out is entirely unbuilt."**
+> That conflated *no rows* with *no code*. The payout path exists end-to-end and is
+> live: `sellerPayouts.ts` → `POST /api/pulse/payments/seller/payouts`
+> (`bot.py:19955`) → `services.business_os.payments.seller_payouts` →
+> `pulse_submit_seller_payout` → Stripe webhook. The client flag that used to gate it,
+> `EXPO_PUBLIC_PAYMENTS_PAYOUT_INITIATION`, has been **retired** —
+> `paymentsHub.ts:198` is `payoutInitiationIsLive() { return true; }`.
+> The zero row counts mean **no seller has onboarded yet**, not that the feature is
+> missing. This distinction matters for a training corpus: UNDX must not tell a user
+> that payouts do not exist.
 
 The creator surfaces that would generate the earnings are themselves incomplete —
 brand deals (`brand_deals=0`), sponsorships (`sponsorships=0`, `sponsor_slots=0`),
@@ -300,7 +311,8 @@ store surface is not shown to sellers by default.
 
 Order lifecycle beyond purchase is unbuilt: escrow and fulfilment flags default off,
 returns has no state machine, and payouts have no onboarded accounts. A seller can be
-created and can list, but cannot be paid.
+created and can list, but has not yet been paid — the payout path itself is live and
+ungated (see the correction above); what is missing is Stripe Connect onboarding, not code.
 
 Marketplace boost — the natural seller upsell — is `MARKETPLACE_BOOST_ENABLED = false`,
 and nothing in the codebase prices or sells a boost.
@@ -315,7 +327,7 @@ and nothing in the codebase prices or sells a boost.
 | Ad delivery billing (CPC/CPM) | Advertiser portal | No | Three gates: env flag + hard-coded `live_charging: False` at `pulse_advertiser_portal.py:737` and `:1216` |
 | Marketplace take rate | 500 bps | No | `fee_policy_active()` needs 3 unset owner gates; `marketplace_checkout` internal-only @ 0% |
 | Creator / merchant / teacher fees | `platform_fee_rules` 1000 / 1500 bps | No | `creator_ledger_entries=4`, audit rows only |
-| Seller payouts (money **out**) | Stripe Connect | No | `seller_payout_accounts=0`, `seller_payouts=0` |
+| Seller payouts (money **out**) | Stripe Connect | **Path is live; never used** | Not gated — `PAYOUT_INITIATION` flag retired, `paymentsHub.ts:198` returns `true`. Blocker is onboarding: `seller_payout_accounts=0`, `seller_payouts=0` |
 | Business tier | 4999¢ | No | Priced in `business_os_ent_plans`; no purchase path exists |
 | Creator Pro | 1999¢ | No | Same — priced, not purchasable |
 | Crypto Pro | 1499¢ | No | Same — priced, not purchasable |
