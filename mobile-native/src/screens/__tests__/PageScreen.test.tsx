@@ -11,7 +11,7 @@
  *      music", which is a different and false statement.
  */
 import React from "react";
-import { processColor } from "react-native";
+import { processColor, View } from "react-native";
 import { fireEvent, render, waitFor } from "@testing-library/react-native";
 
 const mockGetPage = jest.fn();
@@ -37,6 +37,34 @@ jest.mock("../../api/marketplace", () => ({
 import { PageScreen } from "../PageScreen";
 import { colors } from "../../theme/colors";
 import { presenceAccent } from "../../theme/presenceAccent";
+
+/**
+ * Two one-time costs, paid here rather than by whichever test runs first.
+ *
+ * Nothing below is slow: every test in this file does its own work in well
+ * under 200ms. But the first `render` in a worker pays for
+ * `detectHostComponentNames`, which mounts a probe tree of View, Text,
+ * TextInput, Image, Switch, ScrollView and Modal to learn what RNTL's queries
+ * should match — about a second of cold React Native, unrelated to anything
+ * being asserted. The first *failing* assertion pays a few hundred more for
+ * Jest's message machinery, and inside `waitFor` every poll but the last is a
+ * deliberate failure. Together that was ~1.9s of the first test's 5s budget on
+ * a loaded machine, which is why it — and only ever it — timed out about one
+ * full-suite run in eight while passing alone every time.
+ *
+ * File scope is the fix rather than `beforeAll` because hooks are bounded by
+ * the same `testTimeout` the tests are, so warming there would relocate the
+ * failure instead of removing it. Module load is the one place with no budget
+ * to exceed. With both paid up front the first test lands in the same few
+ * hundred milliseconds as its forty-eight siblings under the contention that
+ * used to time it out.
+ */
+render(<View />).unmount();
+try {
+  expect(null).toBeTruthy();
+} catch {
+  // The throw is the point; the message is discarded.
+}
 
 const nav = () => ({ navigate: jest.fn(), setOptions: jest.fn() });
 
