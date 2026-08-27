@@ -4,7 +4,11 @@ jest.mock("@react-native-async-storage/async-storage", () =>
 
 import {
   computeOverallReadiness,
+  deriveLiveStudioStatus,
   emptyLiveStudioDraft,
+  isLiveHostPlaybackId,
+  LIVE_STUDIO_UPCOMING,
+  mapAccountToReadiness,
   mapBatteryToReadiness,
   mapDeviceToReadiness,
   mapLatencyToNetwork,
@@ -13,6 +17,7 @@ import {
   readinessSummary,
   ReadinessCheck
 } from "../liveStudioReadiness";
+import { livePlaybackOwnerId } from "../livePlaybackOwnership";
 
 describe("mapPermissionToReadiness", () => {
   it("marks granted permissions ready with no action", () => {
@@ -73,6 +78,89 @@ describe("mapDeviceToReadiness", () => {
   it("recommends but does not block on a simulator", () => {
     expect(mapDeviceToReadiness(true).level).toBe("ready");
     expect(mapDeviceToReadiness(false).level).toBe("recommend");
+  });
+});
+
+describe("mapAccountToReadiness", () => {
+  it("blocks a signed-out creator and offers a way back in", () => {
+    const check = mapAccountToReadiness("signedOut");
+    expect(check.level).toBe("blocked");
+    expect(check.action).toBe("sign-in");
+  });
+
+  /**
+   * Bootstrap resolves in well under a second. Treating it as blocked would
+   * flash BLOCKED across the top of the dashboard on every cold open — a
+   * warning that is wrong by the time anyone has read it.
+   */
+  it("does not block while the session is still bootstrapping", () => {
+    expect(mapAccountToReadiness("loading").level).not.toBe("blocked");
+  });
+
+  it("blocks an account the server has suspended, and says which state it is in", () => {
+    const check = mapAccountToReadiness("signedIn", "suspended");
+    expect(check.level).toBe("blocked");
+    expect(check.detail).toContain("suspended");
+    // Nothing the app can fix, so no action button that would do nothing.
+    expect(check.action).toBeUndefined();
+  });
+
+  it("treats a signed-in active account as ready, including a missing status", () => {
+    expect(mapAccountToReadiness("signedIn", "active").level).toBe("ready");
+    expect(mapAccountToReadiness("signedIn", "ACTIVE").level).toBe("ready");
+    expect(mapAccountToReadiness("signedIn", "").level).toBe("ready");
+    expect(mapAccountToReadiness("signedIn", null).level).toBe("ready");
+  });
+});
+
+describe("deriveLiveStudioStatus", () => {
+  it("reports LIVE over everything else once a broadcast is running", () => {
+    // On air with a flat battery is still on air. The dashboard must not lead
+    // with a recommendation when the creator is being watched right now.
+    expect(deriveLiveStudioStatus("recommend", true)).toBe("LIVE");
+    expect(deriveLiveStudioStatus("blocked", true)).toBe("LIVE");
+  });
+
+  it("collapses recommendations into READY and keeps blocked distinct", () => {
+    expect(deriveLiveStudioStatus("ready", false)).toBe("READY");
+    expect(deriveLiveStudioStatus("recommend", false)).toBe("READY");
+    expect(deriveLiveStudioStatus("blocked", false)).toBe("BLOCKED");
+  });
+});
+
+describe("isLiveHostPlaybackId", () => {
+  /**
+   * The pin that stops the prefix drifting. `livePlaybackOwnership.ts` is a
+   * protected real-time path, so the studio reads its ids rather than editing
+   * it — which only works while both agree on the spelling.
+   */
+  it("matches the id the ownership module actually mints for a host", () => {
+    expect(isLiveHostPlaybackId(livePlaybackOwnerId("host", 7))).toBe(true);
+  });
+
+  it("does not mistake watching a Live for hosting one", () => {
+    // Both claim the coordinator with kind "live"; only the scope separates
+    // "you are on air" from "you are in the audience".
+    expect(isLiveHostPlaybackId(livePlaybackOwnerId("viewer", 7))).toBe(false);
+    expect(isLiveHostPlaybackId(livePlaybackOwnerId("feed", 7))).toBe(false);
+    expect(isLiveHostPlaybackId(null)).toBe(false);
+    expect(isLiveHostPlaybackId(undefined)).toBe(false);
+    expect(isLiveHostPlaybackId("reel:9")).toBe(false);
+  });
+});
+
+describe("LIVE_STUDIO_UPCOMING", () => {
+  it("covers the six tools the dashboard promises, with unique keys", () => {
+    const keys = LIVE_STUDIO_UPCOMING.map((item) => item.key);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(keys).toEqual(["schedule", "settings", "audience", "moderation", "analytics", "replay"]);
+  });
+
+  it("gives every row a blurb, so no row is just a word and a badge", () => {
+    LIVE_STUDIO_UPCOMING.forEach((item) => {
+      expect(item.label.length).toBeGreaterThan(0);
+      expect(item.blurb.length).toBeGreaterThan(20);
+    });
   });
 });
 

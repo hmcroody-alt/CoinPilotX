@@ -4,15 +4,75 @@ const DRAFT_CACHE_KEY = "pulsesoc.native.live.studio.draft";
 
 export type ReadinessLevel = "ready" | "recommend" | "blocked";
 export type NetworkQuality = "excellent" | "good" | "degraded" | "weak" | "offline";
-export type ReadinessAction = "request-camera" | "request-mic" | "open-settings" | "retry-network";
+export type ReadinessAction = "request-camera" | "request-mic" | "open-settings" | "retry-network" | "sign-in";
 
 export type ReadinessCheck = {
-  key: "camera" | "microphone" | "network" | "battery" | "device";
+  key: "camera" | "microphone" | "network" | "battery" | "device" | "account";
   label: string;
   level: ReadinessLevel;
   detail: string;
   action?: ReadinessAction;
 };
+
+/**
+ * The one word the Live Studio dashboard leads with.
+ *
+ * Deliberately three states and not five: the readiness *levels* are an
+ * engineering vocabulary (`recommend` means "you can broadcast, but read this"),
+ * and a creator glancing at the top of the screen only ever needs to know
+ * whether they can press the button. `recommend` therefore collapses into
+ * `READY` — the recommendations are still spelled out in the readiness card
+ * below, where there is room to say what they are.
+ */
+export type LiveStudioStatus = "READY" | "BLOCKED" | "LIVE";
+
+/**
+ * A broadcast already running outranks everything else. If the creator is on
+ * air, the dashboard must not tell them their battery is a bit low — it must
+ * tell them they are live.
+ */
+export function deriveLiveStudioStatus(level: ReadinessLevel, hostingLive: boolean): LiveStudioStatus {
+  if (hostingLive) return "LIVE";
+  return level === "blocked" ? "BLOCKED" : "READY";
+}
+
+/**
+ * Whether a media-playback owner id belongs to *this* user hosting, as opposed
+ * to watching someone else's broadcast. Both claim the coordinator with kind
+ * "live", so the kind alone cannot tell the dashboard "you are on air" from
+ * "you are in the audience".
+ *
+ * The prefix is owned by `live/livePlaybackOwnership.ts`; that file is a
+ * protected real-time path, so rather than edit it this reads its output. The
+ * test pins this against `livePlaybackOwnerId("host", …)` so the two cannot
+ * drift apart silently.
+ */
+export function isLiveHostPlaybackId(id: string | null | undefined): boolean {
+  return typeof id === "string" && id.startsWith("live-host:");
+}
+
+/**
+ * Creator tools that are named on the dashboard but not built yet.
+ *
+ * They are listed rather than hidden because a control center that shows only
+ * what exists reads as finished, and a creator then goes looking elsewhere for
+ * scheduling or analytics that are simply not written. Each blurb says what the
+ * tool will do, so a row is never just a word with "Soon" next to it.
+ *
+ * Note the wording on the three that sound like the setup form below: the form
+ * already sets audience, comments and replay *for the broadcast you are about
+ * to start*. These rows are the durable, cross-broadcast versions — defaults,
+ * moderation during a stream, replay retention. Nothing that already works is
+ * labelled "Coming soon".
+ */
+export const LIVE_STUDIO_UPCOMING: ReadonlyArray<{ key: string; label: string; blurb: string }> = Object.freeze([
+  { key: "schedule", label: "Schedule Live", blurb: "Announce a broadcast ahead of time and let followers set a reminder." },
+  { key: "settings", label: "Live settings", blurb: "Save default title, type and quality so every broadcast starts the same way." },
+  { key: "audience", label: "Audience controls", blurb: "Ban, mute and restrict individual viewers while you are on air." },
+  { key: "moderation", label: "Moderation tools", blurb: "Word filters, trusted moderators and a queue for reported comments." },
+  { key: "analytics", label: "Analytics", blurb: "Peak viewers, watch time and retention for each broadcast you finish." },
+  { key: "replay", label: "Replay settings", blurb: "Choose how long replays are kept and who can watch them afterwards." }
+]);
 
 export type LiveTypeKey =
   | "solo"
@@ -180,12 +240,60 @@ export function mapDeviceToReadiness(isRealDevice: boolean): ReadinessCheck {
   if (isRealDevice) {
     return { key: "device", label: "Device", level: "ready", detail: "Running on a physical device." };
   }
+  /*
+   * `recommend`, never `blocked`. A simulator genuinely cannot capture video,
+   * but saying so as a blocker turns the whole studio into an error page for
+   * every developer and reviewer who opens it — everything else on this screen
+   * (setup, drafts, the other checks) works perfectly well here.
+   */
   return {
     key: "device",
     label: "Device",
     level: "recommend",
-    detail: "Simulator detected. Camera capture and broadcasting need a physical device."
+    detail: "Camera capture requires a physical device. Everything else in the studio works here."
   };
+}
+
+/**
+ * Account eligibility.
+ *
+ * `signedOut` is the only thing this can honestly assert as a hard blocker
+ * today: there is no `can_go_live` flag on the session, and inventing a
+ * client-side eligibility rule would either lie to eligible creators or let
+ * ineligible ones through to a server rejection. `account_status` is the one
+ * real signal the session already carries, so a suspended account is surfaced
+ * with the status the backend gave rather than a guess.
+ *
+ * `loading` is deliberately not a blocker. Bootstrap resolves in well under a
+ * second, and treating it as blocked would flash BLOCKED across the top of the
+ * dashboard on every cold open.
+ */
+export function mapAccountToReadiness(
+  status: "loading" | "signedIn" | "signedOut",
+  accountStatus?: string | null
+): ReadinessCheck {
+  if (status === "loading") {
+    return { key: "account", label: "Account", level: "recommend", detail: "Checking your account…" };
+  }
+  if (status === "signedOut") {
+    return {
+      key: "account",
+      label: "Account",
+      level: "blocked",
+      detail: "Sign in to PulseSoc to broadcast.",
+      action: "sign-in"
+    };
+  }
+  const normalized = String(accountStatus || "active").trim().toLowerCase();
+  if (normalized && normalized !== "active") {
+    return {
+      key: "account",
+      label: "Account",
+      level: "blocked",
+      detail: `Your account is ${normalized} and cannot broadcast. Contact support to restore it.`
+    };
+  }
+  return { key: "account", label: "Account", level: "ready", detail: "Your account can broadcast." };
 }
 
 export function computeOverallReadiness(checks: ReadinessCheck[]): ReadinessLevel {
