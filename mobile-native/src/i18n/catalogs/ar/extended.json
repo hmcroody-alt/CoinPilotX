@@ -2016,75 +2016,69 @@
   },
   "progress": {
     "title": "التقدّم",
-    "subtitle": "تحدّي العضو المؤسّس",
+    "subtitle": "مسار التأسيس",
     "privateNote": "أنت وحدك من يرى هذا.",
     "notVerification": "هذا البرنامج ليس تحققًا من الهوية.",
     "loading": "جارٍ تحميل تقدّمك…",
     "loadError": "تعذّر تحميل تقدّمك.",
     "retry": "حاول مرة أخرى",
     "tile": {
-      "start": "ابدأ تحدّيك",
-      "active": "{{current}} من {{target}} مؤهلة",
+      "start": "ابدأ مسار التأسيس",
+      "active": "{{current}} من {{target}} معتمدة",
       "review": "نراجع إحدى الدعوات",
       "complete": "عضو مؤسّس"
     },
     "overview": {
-      "heading": "تحدّيك",
-      "qualified_zero": "لا توجد إحالات مؤهلة بعد",
-      "qualified_one": "إحالة مؤهلة واحدة",
-      "qualified_two": "إحالتان مؤهلتان",
-      "qualified_few": "{{count}} إحالات مؤهلة",
-      "qualified_many": "{{count}} إحالة مؤهلة",
-      "qualified_other": "{{count}} إحالة مؤهلة",
-      "remaining": "بقي {{count}}",
-      "complete": "اكتمل التحدّي",
-      "nextMilestone": "التالي: {{label}}",
-      "nextReward": "{{count}} أخرى للحصول على {{amount}} التالية",
+      "heading": "مسار التأسيس الخاص بك",
+      "complete": "اكتمل مسار التأسيس",
       "foundingMember": "أنت عضو مؤسّس",
-      "keepGoing": "كل {{target}} إحالة مؤهلة تمنحك {{amount}} إضافية."
+      "certified_zero": "لا توجد دعوات معتمدة بعد",
+      "certified_one": "دعوة معتمدة واحدة",
+      "certified_two": "دعوتان معتمدتان",
+      "certified_few": "{{count}} دعوات معتمدة",
+      "certified_many": "{{count}} دعوة معتمدة",
+      "certified_other": "{{count}} دعوة معتمدة",
+      "nextUnlock": "الفتح التالي: {{label}}",
+      "unlockCounter": "{{current}} من {{target}}",
+      "unlockRemaining_zero": "لم يتبقَّ شيء",
+      "unlockRemaining_one": "بقيت دعوة واحدة",
+      "unlockRemaining_two": "بقيت دعوتان",
+      "unlockRemaining_few": "بقيت {{count}} دعوات",
+      "unlockRemaining_many": "بقيت {{count}} دعوة",
+      "unlockRemaining_other": "بقيت {{count}} دعوة",
+      "pathCounter": "{{current}} من {{target}} في مسار التأسيس"
     },
     "breakdown": {
       "invited": "مدعوّون",
       "inProgress": "قيد التقدّم",
-      "qualified": "مؤهلون",
       "inReview": "قيد المراجعة",
-      "closed": "منتهية"
+      "certified": "معتمدة"
     },
     "sections": {
-      "milestones": "المراحل",
       "referrals": "إحالاتك",
       "invite": "دعوة الأصدقاء",
-      "rewards": "المكافآت والأرباح",
       "missions": "المهام",
-      "badge": "شارة العضو المؤسّس",
       "insights": "رؤى",
       "activity": "النشاط",
       "howItWorks": "كيف يعمل",
-      "faq": "الأسئلة الشائعة"
-    },
-    "milestones": {
-      "heading": "سلّم المكافآت",
-      "locked": "مقفلة",
-      "inProgress": "قيد التقدّم",
-      "completed": "تم الحصول عليها",
-      "earnedOn": "تم الحصول عليها في {{date}}",
-      "threshold": "عند {{count}} إحالة",
-      "oneTime": "مرة واحدة فقط",
-      "repeatable": "تتكرر كل {{count}}"
+      "faq": "الأسئلة الشائعة",
+      "unlocks": "ما فتحته",
+      "founding": "عضو مؤسّس",
+      "legacy": "إرثك التأسيسي"
     },
     "referrals": {
       "heading": "إحالاتك",
       "tabAll": "الكل",
-      "tabQualified": "مؤهلة",
       "tabPending": "قيد التقدّم",
       "tabReview": "قيد المراجعة",
       "empty": "لا توجد إحالات بعد",
       "emptyBody": "شارك رابطك للبدء.",
-      "counts": "تُحتسب ضمن تحدّيك",
-      "doesNotCountYet": "لا تُحتسب بعد",
+      "counts": "تُحتسب ضمن مسار التأسيس",
       "anonymous": "عضو جديد",
-      "detailHeading": "قائمة شروط التأهّل",
-      "openDetail": "اطّلع على ما تبقّى"
+      "detailHeading": "قائمة شروط الاعتماد",
+      "openDetail": "اطّلع على ما تبقّى",
+      "tabCertified": "معتمدة",
+      "notCertifiedYet": "لم تُعتمد بعد"
     },
     "checklist": {
       "signedUp": "سجّل عبر رابطك",
@@ -2100,35 +2094,13 @@
     },
     "invite": {
       "heading": "دعوة الأصدقاء",
-      "body": "شارك رابطك. عندما ينضم صديق وينشر في يومين منفصلين، يُحتسب.",
+      "body": "شارك رابطك. عندما ينضم صديق وينشر في يومين منفصلين، تصبح دعوته معتمدة.",
       "yourLink": "رابط الدعوة الخاص بك",
       "copy": "نسخ الرابط",
       "copied": "تم النسخ",
       "share": "مشاركة",
       "unavailable": "رابط الدعوة الخاص بك ليس جاهزًا بعد.",
       "fairness": "ادعُ أشخاصًا تعرفهم فعلًا. الجودة أهم من العدد."
-    },
-    "rewards": {
-      "heading": "المكافآت والأرباح",
-      "earned": "المكتسبة",
-      "pending": "قيد الانتظار",
-      "available": "متاحة",
-      "pendingNote": "الانتظار أمر طبيعي. تُراجع المكافآت قبل إتاحتها.",
-      "cycles_zero": "لم تكتمل أي دورة بعد",
-      "cycles_one": "اكتملت دورة واحدة",
-      "cycles_two": "اكتملت دورتان",
-      "cycles_few": "اكتملت {{count}} دورات",
-      "cycles_many": "اكتملت {{count}} دورة",
-      "cycles_other": "اكتملت {{count}} دورة",
-      "cycleLabel": "الدورة {{count}}",
-      "historyEmpty": "لا توجد مكافآت بعد",
-      "historyEmptyBody": "أول {{amount}} تصلك عند {{target}} إحالة مؤهلة.",
-      "howYouEarn": "تحصل على {{amount}} مقابل كل {{count}} إحالة مؤهلة.",
-      "statusPending": "قيد الانتظار",
-      "statusApproved": "معتمدة",
-      "statusDisbursed": "متاحة",
-      "statusOnHold": "معلّقة",
-      "statusDenied": "غير ممنوحة"
     },
     "missions": {
       "heading": "المهام",
@@ -2151,28 +2123,21 @@
       "followFive": "تابع خمسة أشخاص",
       "startOwnChallenge": "ابدأ تحدّيك الخاص"
     },
-    "badge": {
-      "heading": "عضو مؤسّس",
-      "lockedBody": "اوصل إلى {{target}} إحالة مؤهلة لتحصل على شارة العضو المؤسّس الدائمة.",
-      "earnedBody": "هذه الشارة دائمة. شكرًا لمساعدتك في بناء PulseSoc.",
-      "liveUnlocked": "تم فتح صانع البث المباشر",
-      "liveLocked": "يُفتح صانع البث المباشر عند {{target}}"
-    },
     "insights": {
       "heading": "رؤى",
-      "conversion": "الدعوات التي تأهّلت",
       "stillGoing": "لا يزالون في الطريق",
       "empty": "النشاط غير كافٍ بعد",
-      "emptyBody": "تظهر الرؤى بعد انضمام بضعة أصدقاء."
+      "emptyBody": "تظهر الرؤى بعد انضمام بضعة أصدقاء.",
+      "certified": "الدعوات المعتمدة",
+      "inReview": "قيد المراجعة"
     },
     "activity": {
       "heading": "النشاط",
       "empty": "لا يوجد شيء هنا بعد",
       "referralSignedUp": "انضم {{name}} عبر رابطك",
-      "referralQualified": "{{name}} يُحتسب الآن ضمن تحدّيك",
-      "milestoneEarned": "وصلت إلى مرحلة جديدة",
-      "rewardEarned": "حصلت على مكافأة",
-      "genericEvent": "تحديث التقدّم"
+      "genericEvent": "تحديث التقدّم",
+      "referralCertified": "{{name}} أصبح الآن دعوة معتمدة",
+      "unlockEarned": "وصلت إلى فتح جديد"
     },
     "howItWorks": {
       "heading": "كيف يعمل",
@@ -2180,36 +2145,66 @@
       "join": "ينضم صديق عبره",
       "profile": "يكمل ملفه الشخصي",
       "postTwoDays": "ينشر في {{count}} من الأيام المنفصلة",
-      "qualified": "يُحتسب ضمن تحدّيك",
       "fairness": "لا مشكلة إطلاقًا في مشاركة المنزل أو المكتب أو المدرسة أو الشبكة مع شخص دعوته. نحن نبحث عن الحسابات الآلية والمكررة، لا عن العائلات والأصدقاء.",
-      "serverNote": "يُحسب عددك لدى PulseSoc، وليس على هاتفك."
+      "serverNote": "يُحسب عددك لدى PulseSoc، وليس على هاتفك.",
+      "certified": "تصبح دعوته معتمدة"
     },
     "faq": {
       "heading": "الأسئلة الشائعة",
-      "howReferralsWork": "شارك رابط الدعوة الخاص بك. كل من ينضم عبره يصبح واحدًا من إحالاتك.",
-      "whatCounts": "تُحتسب الإحالة بعد أن يكمل الشخص ملفه الشخصي وينشر في يومين منفصلين ويكون وضعه جيدًا.",
-      "whyNotCountedYet": "في الغالب لم ينشر في يوم ثانٍ بعد. افتح الإحالة لترى بالضبط ما تبقّى.",
-      "whenDoIEarn": "تحصل على {{amount}} عند {{target}} إحالة مؤهلة، ثم مرة أخرى مع كل {{target}} بعد ذلك.",
-      "canIEarnAgain": "نعم. مكافأة {{amount}} تتكرر. أما الشارة والوصول إلى البث المباشر وشارة الداعم المبكر فهي لمرة واحدة فقط.",
-      "howToUnlockLive": "تُفتح أهلية صانع البث المباشر مع الإحالة المؤهلة رقم {{target}}.",
+      "whatCounts": "تُعتمد الدعوة عندما يكمل الشخص ملفه الشخصي وينشر في يومين منفصلين ويكون بحالة جيدة.",
+      "howToUnlockLive": "يُفتح صانع البث المباشر عند {{live}} دعوة معتمدة.",
       "canFamilyParticipate": "نعم. يمكن للعائلة وزملاء السكن وزملاء الدراسة وزملاء العمل المشاركة جميعًا، حتى على الشبكة نفسها.",
       "underReview": "المراجعة تعني أننا نتحقق من شيء تلقائيًا. تُحل عادة من تلقاء نفسها ولا يلزمك فعل أي شيء.",
-      "howRewardsBecomeAvailable": "تُكتسب المكافآت فورًا وتُراجع قبل إتاحتها.",
-      "isThereALimit": "لا يوجد حد أقصى للإحالات المؤهلة ولا للمكافآت المتكررة.",
-      "whenDoesItEnd": "ينتهي التحدي عند {{target}}، لكن رحلتك لا تنتهي. تُفتح مهام جديدة بعد ذلك.",
+      "isThereALimit": "لا يوجد حد أقصى للدعوات المعتمدة.",
+      "whenDoesItEnd": "ينتهي مسار التأسيس عند {{target}}، لكن رحلتك لا تنتهي. تُفتح مهام جديدة بعد ذلك.",
       "questions": {
-        "howReferralsWork": "كيف تعمل الإحالات؟",
-        "whatCounts": "متى تُحتسب الإحالة؟",
-        "whyNotCountedYet": "لماذا لم تُحتسب إحالتي بعد؟",
-        "whenDoIEarn": "متى أحصل على مكافأة؟",
-        "canIEarnAgain": "هل يمكنني الربح أكثر من مرة؟",
-        "howToUnlockLive": "كيف أفتح أهلية صانع البث المباشر؟",
+        "whatCounts": "ما الذي يجعل الدعوة معتمدة؟",
+        "howToUnlockLive": "كيف أفتح صانع البث المباشر؟",
         "canFamilyParticipate": "هل يمكن لعائلتي وأصدقائي المشاركة؟",
         "underReview": "ماذا تعني «قيد المراجعة»؟",
-        "howRewardsBecomeAvailable": "متى تصبح المكافآت متاحة؟",
-        "isThereALimit": "هل هناك حد أقصى؟",
-        "whenDoesItEnd": "ماذا يحدث بعد التحدي؟"
-      }
+        "isThereALimit": "هل هناك حد؟",
+        "whenDoesItEnd": "ماذا بعد مسار التأسيس؟",
+        "howInvitesWork": "كيف تعمل الدعوات؟",
+        "whyNotCertifiedYet": "لماذا لم تُعتمد دعوتي بعد؟",
+        "whatDoIUnlock": "ماذا أفتح؟",
+        "isFoundingMemberPermanent": "هل مكانة العضو المؤسّس دائمة؟"
+      },
+      "howInvitesWork": "شارك رابط الدعوة الخاص بك. كل من ينضم عبره يصبح إحدى دعواتك.",
+      "whyNotCertifiedYet": "في الغالب لم ينشر بعد في يوم ثانٍ. افتح الدعوة لترى ما تبقّى بالضبط.",
+      "whatDoIUnlock": "كل درجة في مسار التأسيس تفتح تقديرًا أو ميزة صانع محتوى في حسابك. لا شيء في هذا المسار مقابل مادي.",
+      "isFoundingMemberPermanent": "نعم. مكانة العضو المؤسّس دائمة وتبقى في ملفك الشخصي."
+    },
+    "unlocks": {
+      "locked": "مقفل",
+      "inProgress": "قيد التقدّم",
+      "unlocked": "مفتوح",
+      "unlockedOn": "فُتح في {{date}}",
+      "threshold": "عند {{count}} دعوة معتمدة",
+      "note": "تمنح PulseSoc عمليات الفتح وتظهر في حسابك تلقائيًا."
+    },
+    "liveCreator": {
+      "eyebrow": "صانع بث مباشر",
+      "heading": "تم فتح صانع البث المباشر",
+      "body": "ساعدت في نمو شبكة PulseSoc. يمكنك الآن البث مباشرة.",
+      "start": "ابدأ أول بث مباشر",
+      "explore": "استكشف البث المباشر"
+    },
+    "founding": {
+      "heading": "عضو مؤسّس",
+      "generation": "جيل التأسيس",
+      "number": "رقم {{number}}",
+      "memberSince": "عضو منذ {{date}}",
+      "lockedBody": "اوصل إلى {{target}} دعوة معتمدة لتحصل على مكانة العضو المؤسّس الدائمة.",
+      "earnedBody": "هذه المكانة دائمة. شكرًا لمساعدتك في بناء PulseSoc."
+    },
+    "legacy": {
+      "certified": "الدعوات المعتمدة",
+      "firstInvite": "أول دعوة",
+      "latestCertified": "آخر اعتماد",
+      "noDate": "—",
+      "note": "أشخاص حقيقيون أحضرتهم إلى PulseSoc.",
+      "empty": "إرثك يبدأ من هنا",
+      "emptyBody": "شارك رابطك لتُحضر أول عضو."
     }
   },
   "premium": {

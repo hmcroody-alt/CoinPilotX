@@ -1942,70 +1942,59 @@
   },
   "progress": {
     "title": "Pwogrè",
-    "subtitle": "Defi Manm Fondatè",
+    "subtitle": "Chemen Fondatè",
     "privateNote": "Se ou menm sèlman ki wè sa.",
     "notVerification": "Pwogram sa a se pa yon verifikasyon idantite.",
     "loading": "N ap chaje pwogrè ou…",
     "loadError": "Nou pa t ka chaje pwogrè ou.",
     "retry": "Eseye ankò",
     "tile": {
-      "start": "Kòmanse defi ou",
-      "active": "{{current}} sou {{target}} kalifye",
+      "start": "Kòmanse Chemen Fondatè ou",
+      "active": "{{current}} sou {{target}} sètifye",
       "review": "N ap gade yon envitasyon",
       "complete": "Manm Fondatè"
     },
     "overview": {
-      "heading": "Defi ou",
-      "qualified_other": "{{count}} referans kalifye",
-      "remaining": "Ou rete {{count}}",
-      "complete": "Defi a fini",
-      "nextMilestone": "Pwochen: {{label}}",
-      "nextReward": "{{count}} ankò pou pwochen {{amount}} ou",
+      "heading": "Chemen Fondatè ou",
+      "complete": "Chemen Fondatè a fini",
       "foundingMember": "Ou se yon Manm Fondatè",
-      "keepGoing": "Chak {{target}} referans kalifye ba ou yon lòt {{amount}}."
+      "certified_other": "{{count}} envitasyon sètifye",
+      "nextUnlock": "Pwochen debloke: {{label}}",
+      "unlockCounter": "{{current}} sou {{target}}",
+      "unlockRemaining_other": "Rete {{count}} ankò",
+      "pathCounter": "{{current}} sou {{target}} nan Chemen Fondatè a"
     },
     "breakdown": {
       "invited": "Envite",
       "inProgress": "Sou wout",
-      "qualified": "Kalifye",
       "inReview": "Anba revizyon",
-      "closed": "Fèmen"
+      "certified": "Sètifye"
     },
     "sections": {
-      "milestones": "Etap",
       "referrals": "Referans ou yo",
       "invite": "Envite zanmi",
-      "rewards": "Rekonpans ak lajan",
       "missions": "Misyon",
-      "badge": "Badj Manm Fondatè",
       "insights": "Estatistik",
       "activity": "Aktivite",
       "howItWorks": "Kijan sa mache",
-      "faq": "Kesyon moun poze"
-    },
-    "milestones": {
-      "heading": "Nechèl rekonpans",
-      "locked": "Fèmen",
-      "inProgress": "Sou wout",
-      "completed": "Genyen",
-      "earnedOn": "Genyen {{date}}",
-      "threshold": "Nan {{count}} referans",
-      "oneTime": "Yon sèl fwa",
-      "repeatable": "Repete chak {{count}}"
+      "faq": "Kesyon moun poze",
+      "unlocks": "Debloke ou yo",
+      "founding": "Manm Fondatè",
+      "legacy": "Eritaj fondatè ou"
     },
     "referrals": {
       "heading": "Referans ou yo",
       "tabAll": "Tout",
-      "tabQualified": "Kalifye",
       "tabPending": "Sou wout",
       "tabReview": "Anba revizyon",
       "empty": "Poko gen referans",
       "emptyBody": "Pataje lyen ou pou ou kòmanse.",
-      "counts": "Li konte nan defi ou",
-      "doesNotCountYet": "Li poko konte",
+      "counts": "Li konte nan Chemen Fondatè ou",
       "anonymous": "Yon nouvo manm",
-      "detailHeading": "Lis kalifikasyon",
-      "openDetail": "Gade sa ki rete"
+      "detailHeading": "Lis sètifikasyon",
+      "openDetail": "Gade sa ki rete",
+      "tabCertified": "Sètifye",
+      "notCertifiedYet": "Poko sètifye"
     },
     "checklist": {
       "signedUp": "Li enskri ak lyen ou",
@@ -2021,30 +2010,13 @@
     },
     "invite": {
       "heading": "Envite zanmi",
-      "body": "Pataje lyen ou. Lè yon zanmi enskri epi li poste de jou diferan, li konte.",
+      "body": "Pataje lyen ou. Lè yon zanmi antre epi li poste de jou diferan, li vin yon envitasyon sètifye.",
       "yourLink": "Lyen envitasyon ou",
       "copy": "Kopye lyen",
       "copied": "Kopye",
       "share": "Pataje",
       "unavailable": "Lyen envitasyon ou poko pare.",
       "fairness": "Envite moun ou konnen vre. Kalite konte plis pase kantite."
-    },
-    "rewards": {
-      "heading": "Rekonpans ak lajan",
-      "earned": "Genyen",
-      "pending": "An atant",
-      "available": "Disponib",
-      "pendingNote": "Se nòmal pou li an atant. Nou tcheke rekonpans yo anvan nou lage yo.",
-      "cycles_other": "{{count}} sik fini",
-      "cycleLabel": "Sik {{count}}",
-      "historyEmpty": "Poko gen rekonpans",
-      "historyEmptyBody": "Premye {{amount}} ou a rive lè ou gen {{target}} referans kalifye.",
-      "howYouEarn": "Ou genyen {{amount}} pou chak {{count}} referans kalifye.",
-      "statusPending": "An atant",
-      "statusApproved": "Apwouve",
-      "statusDisbursed": "Disponib",
-      "statusOnHold": "Kanpe yon ti moman",
-      "statusDenied": "Pa bay"
     },
     "missions": {
       "heading": "Misyon",
@@ -2067,28 +2039,21 @@
       "followFive": "Swiv senk moun",
       "startOwnChallenge": "Kòmanse pwòp defi pa ou"
     },
-    "badge": {
-      "heading": "Manm Fondatè",
-      "lockedBody": "Rive nan {{target}} referans kalifye pou ou genyen badj Manm Fondatè a pou tout tan.",
-      "earnedBody": "Badj sa a se pou tout tan. Mèsi paske w ap ede bati PulseSoc.",
-      "liveUnlocked": "Kreyatè Live debloke",
-      "liveLocked": "Kreyatè Live debloke nan {{target}}"
-    },
     "insights": {
       "heading": "Estatistik",
-      "conversion": "Envitasyon ki kalifye",
       "stillGoing": "Toujou sou wout",
       "empty": "Poko gen ase aktivite",
-      "emptyBody": "Estatistik yo parèt lè kèk zanmi fin enskri."
+      "emptyBody": "Estatistik yo parèt lè kèk zanmi fin enskri.",
+      "certified": "Envitasyon sètifye",
+      "inReview": "Anba revizyon"
     },
     "activity": {
       "heading": "Aktivite",
       "empty": "Poko gen anyen isit la",
       "referralSignedUp": "{{name}} enskri ak lyen ou",
-      "referralQualified": "{{name}} konte nan defi ou kounye a",
-      "milestoneEarned": "Ou rive nan yon etap",
-      "rewardEarned": "Ou genyen yon rekonpans",
-      "genericEvent": "Mizajou pwogrè"
+      "genericEvent": "Mizajou pwogrè",
+      "referralCertified": "{{name}} se yon envitasyon sètifye kounye a",
+      "unlockEarned": "Ou rive nan yon nouvo debloke"
     },
     "howItWorks": {
       "heading": "Kijan sa mache",
@@ -2096,36 +2061,66 @@
       "join": "Yon zanmi enskri avè l",
       "profile": "Li konplete pwofil li",
       "postTwoDays": "Li poste {{count}} jou diferan",
-      "qualified": "Li konte nan defi ou",
       "fairness": "Pa gen pwoblèm si ou pataje menm kay, menm biwo, menm lekòl oswa menm rezo ak yon moun ou envite. N ap chèche kont otomatik ak kont doub, se pa fanmi ak zanmi.",
-      "serverNote": "Se PulseSoc ki kalkile kantite ou, se pa telefòn ou."
+      "serverNote": "Se PulseSoc ki kalkile kantite ou, se pa telefòn ou.",
+      "certified": "Li vin yon envitasyon sètifye"
     },
     "faq": {
       "heading": "Kesyon moun poze",
-      "howReferralsWork": "Pataje lyen envitasyon ou. Tout moun ki enskri avè l vin youn nan referans ou yo.",
-      "whatCounts": "Yon referans konte lè moun nan fin konplete pwofil li, poste de jou diferan epi kont li an règ.",
-      "whyNotCountedYet": "Pifò tan se paske li poko poste yon dezyèm jou. Louvri referans lan pou wè egzakteman sa ki rete.",
-      "whenDoIEarn": "Ou genyen {{amount}} lè ou rive nan {{target}} referans kalifye, epi ankò pou chak {{target}} apre sa.",
-      "canIEarnAgain": "Wi. Rekonpans {{amount}} lan repete. Badj la, aksè Kreyatè Live la ak Sipòtè Bonè a se yon sèl fwa.",
-      "howToUnlockLive": "Aksè Kreyatè Live debloke ak {{target}}yèm referans kalifye a.",
+      "whatCounts": "Yon envitasyon vin sètifye lè moun nan fin ranpli pwofil li, poste de jou diferan epi li an règ.",
+      "howToUnlockLive": "Kreyatè Live debloke nan {{live}} envitasyon sètifye.",
       "canFamilyParticipate": "Wi. Fanmi, moun k ap viv nan menm kay, kamarad lekòl ak kòlèg travay tout kapab patisipe, menm sou menm rezo a.",
       "underReview": "Yon revizyon vle di n ap tcheke yon bagay otomatikman. Anjeneral li regle poukont li epi ou pa bezwen fè anyen.",
-      "howRewardsBecomeAvailable": "Ou genyen rekonpans yo touswit epi nou tcheke yo anvan nou lage yo.",
-      "isThereALimit": "Pa gen limit sou referans kalifye ni sou rekonpans ki repete.",
-      "whenDoesItEnd": "Defi a fini nan {{target}}, men wout ou pa fini. Gen nouvo misyon ki louvri apre sa.",
+      "isThereALimit": "Pa gen limit sou envitasyon sètifye.",
+      "whenDoesItEnd": "Chemen Fondatè a fini nan {{target}}, men vwayaj ou pa fini. Nouvo misyon ouvri apre sa.",
       "questions": {
-        "howReferralsWork": "Kijan referans yo mache?",
-        "whatCounts": "Kisa ki fè yon referans konte?",
-        "whyNotCountedYet": "Poukisa referans mwen an poko konte?",
-        "whenDoIEarn": "Kilè m ap genyen yon rekonpans?",
-        "canIEarnAgain": "Èske m ka genyen plis pase yon fwa?",
+        "whatCounts": "Kisa ki fè yon envitasyon sètifye?",
         "howToUnlockLive": "Kijan pou m debloke Kreyatè Live?",
         "canFamilyParticipate": "Èske fanmi m ak zanmi m ka patisipe?",
         "underReview": "Kisa “an revizyon” vle di?",
-        "howRewardsBecomeAvailable": "Kilè rekonpans yo vin disponib?",
         "isThereALimit": "Èske gen yon limit?",
-        "whenDoesItEnd": "Kisa k ap pase apre defi a?"
-      }
+        "whenDoesItEnd": "Kisa k ap pase apre Chemen Fondatè a?",
+        "howInvitesWork": "Kijan envitasyon yo mache?",
+        "whyNotCertifiedYet": "Poukisa envitasyon m nan poko sètifye?",
+        "whatDoIUnlock": "Kisa m debloke?",
+        "isFoundingMemberPermanent": "Èske Manm Fondatè pèmanan?"
+      },
+      "howInvitesWork": "Pataje lyen envitasyon ou. Nenpòt moun ki antre avè l vin youn nan envitasyon ou yo.",
+      "whyNotCertifiedYet": "Pifò tan se paske li poko poste yon dezyèm jou. Louvri envitasyon an pou w wè sa ki rete.",
+      "whatDoIUnlock": "Chak etap Chemen Fondatè a debloke yon rekonesans oswa yon fonksyon kreyatè sou kont ou. Anyen sou chemen sa a se pa yon peman.",
+      "isFoundingMemberPermanent": "Wi. Manm Fondatè se yon estati pèmanan e li rete sou pwofil ou."
+    },
+    "unlocks": {
+      "locked": "Bloke",
+      "inProgress": "Ap fèt",
+      "unlocked": "Debloke",
+      "unlockedOn": "Debloke {{date}}",
+      "threshold": "Nan {{count}} envitasyon sètifye",
+      "note": "Se PulseSoc ki bay debloke yo, epi yo parèt sou kont ou otomatikman."
+    },
+    "liveCreator": {
+      "eyebrow": "Kreyatè Live",
+      "heading": "Kreyatè Live debloke",
+      "body": "Ou ede rezo PulseSoc la grandi. Kounye a ou ka fè LIVE.",
+      "start": "Kòmanse premye live ou",
+      "explore": "Eksplore Live"
+    },
+    "founding": {
+      "heading": "Manm Fondatè",
+      "generation": "Jenerasyon Fondatè",
+      "number": "No. {{number}}",
+      "memberSince": "Manm depi {{date}}",
+      "lockedBody": "Rive nan {{target}} envitasyon sètifye pou w jwenn estati pèmanan Manm Fondatè.",
+      "earnedBody": "Estati sa a pèmanan. Mèsi paske w ede bati PulseSoc."
+    },
+    "legacy": {
+      "certified": "Envitasyon sètifye",
+      "firstInvite": "Premye envitasyon",
+      "latestCertified": "Dènye sètifye",
+      "noDate": "—",
+      "note": "Moun reyèl ou mennen sou PulseSoc.",
+      "empty": "Eritaj ou kòmanse la a",
+      "emptyBody": "Pataje lyen ou pou mennen premye manm ou."
     }
   },
   "premium": {

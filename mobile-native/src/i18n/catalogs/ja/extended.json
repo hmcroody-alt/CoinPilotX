@@ -1934,70 +1934,59 @@
   },
   "progress": {
     "title": "進捗",
-    "subtitle": "ファウンディングメンバー チャレンジ",
+    "subtitle": "ファウンディング・パス",
     "privateNote": "これはあなただけに表示されます。",
     "notVerification": "このプログラムは本人確認ではありません。",
     "loading": "進捗を読み込んでいます…",
     "loadError": "進捗を読み込めませんでした。",
     "retry": "もう一度試す",
     "tile": {
-      "start": "チャレンジを始める",
-      "active": "{{target}}人中{{current}}人が条件達成",
+      "start": "ファウンディング・パスを始める",
+      "active": "{{target}}件中{{current}}件が認定済み",
       "review": "招待を確認しています",
       "complete": "ファウンディングメンバー"
     },
     "overview": {
-      "heading": "あなたのチャレンジ",
-      "qualified_other": "条件を満たした紹介{{count}}人",
-      "remaining": "あと{{count}}人",
-      "complete": "チャレンジ達成",
-      "nextMilestone": "次: {{label}}",
-      "nextReward": "次の{{amount}}まであと{{count}}人",
+      "heading": "あなたのファウンディング・パス",
+      "complete": "ファウンディング・パス達成",
       "foundingMember": "あなたはファウンディングメンバーです",
-      "keepGoing": "条件を満たした紹介が{{target}}人増えるごとに、さらに{{amount}}を獲得できます。"
+      "certified_other": "認定された招待{{count}}件",
+      "nextUnlock": "次のアンロック: {{label}}",
+      "unlockCounter": "{{target}}件中{{current}}件",
+      "unlockRemaining_other": "あと{{count}}件",
+      "pathCounter": "ファウンディング・パス {{target}}件中{{current}}件"
     },
     "breakdown": {
       "invited": "招待済み",
       "inProgress": "進行中",
-      "qualified": "条件達成",
       "inReview": "確認中",
-      "closed": "終了"
+      "certified": "認定済み"
     },
     "sections": {
-      "milestones": "マイルストーン",
       "referrals": "紹介した人",
       "invite": "友だちを招待",
-      "rewards": "報酬と獲得額",
       "missions": "ミッション",
-      "badge": "ファウンディングメンバーバッジ",
       "insights": "インサイト",
       "activity": "アクティビティ",
       "howItWorks": "仕組み",
-      "faq": "よくある質問"
-    },
-    "milestones": {
-      "heading": "報酬のステップ",
-      "locked": "未達成",
-      "inProgress": "進行中",
-      "completed": "獲得済み",
-      "earnedOn": "{{date}}に獲得",
-      "threshold": "紹介{{count}}人で達成",
-      "oneTime": "1回限り",
-      "repeatable": "{{count}}人ごとに繰り返し"
+      "faq": "よくある質問",
+      "unlocks": "アンロック",
+      "founding": "ファウンディングメンバー",
+      "legacy": "あなたの功績"
     },
     "referrals": {
       "heading": "紹介した人",
       "tabAll": "すべて",
-      "tabQualified": "条件達成",
       "tabPending": "進行中",
       "tabReview": "確認中",
       "empty": "まだ紹介はありません",
       "emptyBody": "リンクをシェアして始めましょう。",
-      "counts": "チャレンジにカウントされます",
-      "doesNotCountYet": "まだカウントされていません",
+      "counts": "ファウンディング・パスにカウントされます",
       "anonymous": "新しいメンバー",
-      "detailHeading": "達成条件のチェックリスト",
-      "openDetail": "残りの条件を見る"
+      "detailHeading": "認定チェックリスト",
+      "openDetail": "残りの条件を見る",
+      "tabCertified": "認定済み",
+      "notCertifiedYet": "まだ認定されていません"
     },
     "checklist": {
       "signedUp": "あなたのリンクから登録",
@@ -2013,30 +2002,13 @@
     },
     "invite": {
       "heading": "友だちを招待",
-      "body": "リンクをシェアしましょう。友だちが参加して別々の2日に投稿すると、カウントされます。",
+      "body": "リンクをシェアしましょう。友だちが参加して別々の2日に投稿すると、認定された招待になります。",
       "yourLink": "あなたの招待リンク",
       "copy": "リンクをコピー",
       "copied": "コピーしました",
       "share": "シェア",
       "unavailable": "招待リンクはまだ準備中です。",
       "fairness": "実際に知っている人を招待しましょう。数より質が大切です。"
-    },
-    "rewards": {
-      "heading": "報酬と獲得額",
-      "earned": "獲得済み",
-      "pending": "保留中",
-      "available": "受け取り可能",
-      "pendingNote": "保留中は通常の状態です。報酬はお渡しする前に確認しています。",
-      "cycles_other": "{{count}}サイクル達成",
-      "cycleLabel": "サイクル{{count}}",
-      "historyEmpty": "まだ報酬はありません",
-      "historyEmptyBody": "条件を満たした紹介が{{target}}人になると、最初の{{amount}}が届きます。",
-      "howYouEarn": "条件を満たした紹介{{count}}人ごとに{{amount}}を獲得できます。",
-      "statusPending": "保留中",
-      "statusApproved": "承認済み",
-      "statusDisbursed": "受け取り可能",
-      "statusOnHold": "一時保留",
-      "statusDenied": "対象外"
     },
     "missions": {
       "heading": "ミッション",
@@ -2059,28 +2031,21 @@
       "followFive": "5人をフォローする",
       "startOwnChallenge": "自分のチャレンジを始める"
     },
-    "badge": {
-      "heading": "ファウンディングメンバー",
-      "lockedBody": "条件を満たした紹介{{target}}人を達成すると、永久のファウンディングメンバーバッジを獲得できます。",
-      "earnedBody": "このバッジは永久のものです。PulseSocを一緒に育ててくれてありがとうございます。",
-      "liveUnlocked": "ライブクリエイターが解放されました",
-      "liveLocked": "ライブクリエイターは{{target}}人で解放されます"
-    },
     "insights": {
       "heading": "インサイト",
-      "conversion": "条件を満たした招待",
       "stillGoing": "現在進行中",
       "empty": "まだデータが足りません",
-      "emptyBody": "友だちが何人か参加するとインサイトが表示されます。"
+      "emptyBody": "友だちが何人か参加するとインサイトが表示されます。",
+      "certified": "認定された招待",
+      "inReview": "確認中"
     },
     "activity": {
       "heading": "アクティビティ",
       "empty": "まだ何もありません",
       "referralSignedUp": "{{name}}さんがあなたのリンクから参加しました",
-      "referralQualified": "{{name}}さんがチャレンジにカウントされました",
-      "milestoneEarned": "マイルストーンを達成しました",
-      "rewardEarned": "報酬を獲得しました",
-      "genericEvent": "進捗の更新"
+      "genericEvent": "進捗の更新",
+      "referralCertified": "{{name}}さんが認定された招待になりました",
+      "unlockEarned": "新しいアンロックに到達しました"
     },
     "howItWorks": {
       "heading": "仕組み",
@@ -2088,36 +2053,66 @@
       "join": "友だちがそこから参加する",
       "profile": "友だちがプロフィールを完成させる",
       "postTwoDays": "友だちが別々の{{count}}日に投稿する",
-      "qualified": "その友だちがチャレンジにカウントされる",
       "fairness": "招待した相手と自宅・職場・学校・ネットワークが同じでも、まったく問題ありません。確認しているのは自動化されたアカウントや重複アカウントであり、家族や友人ではありません。",
-      "serverNote": "カウントはあなたの端末ではなく、PulseSocのサーバーで計算されます。"
+      "serverNote": "カウントはあなたの端末ではなく、PulseSocのサーバーで計算されます。",
+      "certified": "その友だちが認定された招待になる"
     },
     "faq": {
       "heading": "よくある質問",
-      "howReferralsWork": "招待リンクをシェアします。そのリンクから参加した人が、あなたの紹介になります。",
-      "whatCounts": "プロフィールを完成させ、別々の2日に投稿し、利用状況が良好であれば、その紹介はカウントされます。",
-      "whyNotCountedYet": "多くの場合、まだ2日目の投稿がされていません。紹介を開くと、残りの条件を確認できます。",
-      "whenDoIEarn": "条件を満たした紹介が{{target}}人で{{amount}}を獲得し、その後も{{target}}人ごとに獲得できます。",
-      "canIEarnAgain": "はい。{{amount}}の報酬は繰り返し獲得できます。バッジ、ライブクリエイター、アーリーサポーターは1回限りです。",
-      "howToUnlockLive": "ライブクリエイターの資格は、{{target}}人目の条件達成でアンロックされます。",
+      "whatCounts": "招待は、その人がプロフィールを完成させ、別々の2日に投稿し、良好な状態であれば認定されます。",
+      "howToUnlockLive": "ライブクリエイターは認定された招待{{live}}件で解放されます。",
       "canFamilyParticipate": "はい。家族、ルームメイト、同級生、同僚も参加できます。同じネットワークからでも大丈夫です。",
       "underReview": "確認中とは、自動的なチェックを行っている状態です。ほとんどは自然に解消され、あなたが行うことは何もありません。",
-      "howRewardsBecomeAvailable": "報酬はすぐに獲得され、お渡しする前に確認を行います。",
-      "isThereALimit": "条件を満たした紹介にも、繰り返しの報酬にも上限はありません。",
-      "whenDoesItEnd": "チャレンジは{{target}}人で終わりますが、あなたの歩みは続きます。その後は新しいミッションが開きます。",
+      "isThereALimit": "認定された招待に上限はありません。",
+      "whenDoesItEnd": "ファウンディング・パスは{{target}}件で終わりますが、あなたの歩みは続きます。その後は新しいミッションが開きます。",
       "questions": {
-        "howReferralsWork": "紹介はどのように機能しますか？",
-        "whatCounts": "紹介はどうすればカウントされますか？",
-        "whyNotCountedYet": "紹介がまだカウントされないのはなぜですか？",
-        "whenDoIEarn": "報酬はいつ獲得できますか？",
-        "canIEarnAgain": "報酬は何度も獲得できますか？",
-        "howToUnlockLive": "ライブクリエイターはどうすればアンロックされますか？",
+        "whatCounts": "招待が認定される条件は？",
+        "howToUnlockLive": "ライブクリエイターはどう解放しますか？",
         "canFamilyParticipate": "家族や友だちも参加できますか？",
         "underReview": "「確認中」とはどういう意味ですか？",
-        "howRewardsBecomeAvailable": "報酬はいつ受け取れますか？",
         "isThereALimit": "上限はありますか？",
-        "whenDoesItEnd": "チャレンジのあとはどうなりますか？"
-      }
+        "whenDoesItEnd": "ファウンディング・パスの後はどうなりますか？",
+        "howInvitesWork": "招待はどう機能しますか？",
+        "whyNotCertifiedYet": "招待がまだ認定されないのはなぜ？",
+        "whatDoIUnlock": "何がアンロックされますか？",
+        "isFoundingMemberPermanent": "ファウンディングメンバーは永久ですか？"
+      },
+      "howInvitesWork": "招待リンクをシェアしましょう。そこから参加した人があなたの招待になります。",
+      "whyNotCertifiedYet": "多くの場合、まだ2日目の投稿がありません。招待を開くと残りの条件を確認できます。",
+      "whatDoIUnlock": "ファウンディング・パスの各段階では、称号やクリエイター機能がアカウントで解放されます。このパスに金銭の支払いはありません。",
+      "isFoundingMemberPermanent": "はい。ファウンディングメンバーは永久の称号で、プロフィールに残り続けます。"
+    },
+    "unlocks": {
+      "locked": "ロック中",
+      "inProgress": "進行中",
+      "unlocked": "アンロック済み",
+      "unlockedOn": "{{date}}にアンロック",
+      "threshold": "認定された招待{{count}}件で",
+      "note": "アンロックはPulseSocが付与し、アカウントに自動で反映されます。"
+    },
+    "liveCreator": {
+      "eyebrow": "ライブクリエイター",
+      "heading": "ライブクリエイターが解放されました",
+      "body": "あなたはPulseSocのネットワークを広げました。これからLIVE配信ができます。",
+      "start": "初めてのライブを始める",
+      "explore": "ライブを見る"
+    },
+    "founding": {
+      "heading": "ファウンディングメンバー",
+      "generation": "ファウンディング世代",
+      "number": "No. {{number}}",
+      "memberSince": "{{date}}から参加",
+      "lockedBody": "認定された招待{{target}}件に到達すると、永久のファウンディングメンバーの称号を獲得できます。",
+      "earnedBody": "この称号は永久のものです。PulseSocを一緒に育ててくれてありがとうございます。"
+    },
+    "legacy": {
+      "certified": "認定された招待",
+      "firstInvite": "最初の招待",
+      "latestCertified": "最新の認定",
+      "noDate": "—",
+      "note": "あなたがPulseSocに招いた実在の人たちです。",
+      "empty": "ここから功績が始まります",
+      "emptyBody": "リンクをシェアして、最初のメンバーを迎えましょう。"
     }
   },
   "premium": {

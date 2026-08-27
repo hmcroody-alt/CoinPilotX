@@ -1,5 +1,5 @@
 /**
- * Progress OS client — the Founding Member Challenge and the retention journey.
+ * Progress OS client — the PulseSoc Founding Path and the retention journey.
  *
  * Two rules shape every type in this file, and both are deliberate omissions
  * rather than oversights:
@@ -10,10 +10,10 @@
  *    me someone else's referral progress". Privacy here is a property of the
  *    call signatures, not of a check a future caller has to remember.
  *
- * 2. **Nothing is computed locally.** The qualified count, the reward amount,
+ * 2. **Nothing is computed locally.** The certified count, every unlock state,
  *    Live eligibility and badge eligibility all arrive decided. This client
  *    formats what it is given and nothing more. A client that could add up
- *    referrals would eventually disagree with the server, and the member would
+ *    invites would eventually disagree with the server, and the member would
  *    believe the number that is wrong — the one on their own screen.
  *
  * A referral is identified by `ref`, an opaque server token bound to the
@@ -36,51 +36,74 @@ export type ProgressCampaign = {
   target: number;
 };
 
-export type ProgressChallenge = {
-  qualified: number;
+export type ProgressPath = {
+  certified: number;
   target: number;
   remaining: number;
   percent: number;
   complete: boolean;
 };
 
-/** Counts by stage. Momentum, not a taxonomy — see `progress_api._TABS`. */
-export type ProgressBreakdown = {
+/** The three headline counts: everyone invited, everyone still on the way, everyone certified. */
+export type ProgressInviteCounts = {
   invited?: number;
   in_progress?: number;
-  qualified?: number;
-  in_review?: number;
-  closed?: number;
+  certified?: number;
 };
 
-export type ProgressNextMilestone = {
-  key: string;
-  label: string;
-  threshold: number;
-  remaining: number;
+/** Counts by stage. Momentum, not a taxonomy — see `progress_api._TABS`. */
+export type ProgressBreakdown = {
+  qualified?: number;
+  needs_another_day?: number;
+  hasnt_posted?: number;
+  getting_started?: number;
+  in_review?: number;
+  not_counted?: number;
 };
 
 /**
- * Progress toward the *next* $30, not toward the first one. After 30 qualified
- * referrals `current` resets to 0 against the same `target` — the ladder ends
- * but the cycle does not, which is the whole point of the repeatable reward.
+ * The next rung, with `percent` measured across the gap between the previous
+ * rung and this one — not from zero. A member at 4 certified is most of the way
+ * to Early Supporter, and the bar should say so.
  */
-export type ProgressNextReward = {
-  current?: number;
-  target?: number;
-  remaining?: number;
+export type ProgressNextUnlock = {
+  key: string;
+  label: string;
+  kind: string;
+  description?: string;
+  threshold: number;
+  current: number;
+  remaining: number;
+  percent: number;
+};
+
+/** Present only once the Founding Member rung has an award row behind it. */
+export type ProgressFounding = {
+  generation: string;
+  member_since?: string | null;
+  founding_number?: number | null;
+};
+
+export type ProgressLegacy = {
+  certified?: number;
+  first_invite_at?: string | null;
+  latest_certified_at?: string | null;
 };
 
 export type ProgressOverview = {
   ok?: boolean;
   campaign?: ProgressCampaign;
-  challenge?: ProgressChallenge;
+  path?: ProgressPath;
+  invites?: ProgressInviteCounts;
   breakdown?: ProgressBreakdown;
-  next_milestone?: ProgressNextMilestone | null;
+  next_unlock?: ProgressNextUnlock | null;
   milestones_earned?: string[];
+  /** Server-decided. The app never infers Live access from a count. */
+  live_creator?: boolean;
   founding_member?: boolean;
+  founding?: ProgressFounding | null;
+  legacy?: ProgressLegacy;
   track?: string;
-  next_reward?: ProgressNextReward;
   /**
    * The server's standing reminder that this program is not identity
    * verification. Rendered verbatim so the disclaimer cannot drift between
@@ -97,9 +120,9 @@ export type ProgressOverview = {
  * `IN_PROGRESS` covers two different situations on purpose: the next rung the
  * member is working toward, and a rung whose threshold is met but whose award
  * row has not been written yet. Both are honestly "on the way"; only
- * `COMPLETED` means the award exists, and only `COMPLETED` may be shown in gold.
+ * `UNLOCKED` means the award exists, and only `UNLOCKED` may be shown in gold.
  */
-export type ProgressMilestoneState = "COMPLETED" | "IN_PROGRESS" | "LOCKED";
+export type ProgressMilestoneState = "UNLOCKED" | "IN_PROGRESS" | "LOCKED";
 
 export type ProgressMilestone = {
   key: string;
@@ -114,7 +137,7 @@ export type ProgressMilestone = {
 
 export type ProgressMilestones = {
   ok?: boolean;
-  qualified?: number;
+  certified?: number;
   milestones?: ProgressMilestone[];
 };
 
@@ -131,7 +154,7 @@ export type ProgressReferral = {
   name: string;
   state: string;
   summary: string;
-  /** Whether this referral currently counts toward the 30. */
+  /** Whether this invite currently counts toward the certified total. */
   counts: boolean;
 };
 
@@ -158,37 +181,6 @@ export type ProgressReferralDetail = {
   summary?: string;
   name?: string;
   ref?: string;
-};
-
-/* -------------------------------------------------------------------------- *
- * Rewards
- * -------------------------------------------------------------------------- */
-
-/**
- * Status comes from the rewards engine, not from Progress OS. `pending` is the
- * normal resting state for cash — it is not an error and must not be styled as
- * one.
- */
-export type ProgressRewardCycle = {
-  cycle: number;
-  amount_cents: number;
-  currency: string;
-  status: string;
-  earned_at?: string | null;
-  qualified_count_snapshot?: number;
-};
-
-export type ProgressRewards = {
-  ok?: boolean;
-  currency?: string;
-  earned_cents?: number;
-  pending_cents?: number;
-  available_cents?: number;
-  cycles_completed?: number;
-  next_cycle?: ProgressNextReward;
-  reward_amount_cents?: number;
-  history?: ProgressRewardCycle[];
-  how_you_earn?: { interval: number; amount_cents: number; currency: string };
 };
 
 /* -------------------------------------------------------------------------- *
@@ -241,9 +233,7 @@ export type ProgressHowItWorks = {
   steps?: Array<{ key: string; order: number }>;
   required_posting_days?: number;
   target?: number;
-  reward_amount_cents?: number;
-  reward_currency?: string;
-  reward_interval?: number;
+  live_threshold?: number;
   fairness_note_key?: string;
   not_verification?: string;
 };
@@ -259,9 +249,11 @@ export type ProgressTileState = "START" | "ACTIVE" | "REVIEW" | "COMPLETE";
 export type ProgressTile = {
   ok?: boolean;
   state?: ProgressTileState;
-  qualified?: number;
+  certified?: number;
   target?: number;
   percent?: number;
+  next_unlock_label?: string;
+  live_creator?: boolean;
   founding_member?: boolean;
 };
 
@@ -290,10 +282,6 @@ export async function getProgressReferralDetail(ref: string) {
   return pulseApi<ProgressReferralDetail>(`/api/progress/referrals/${encodeURIComponent(ref)}`);
 }
 
-export async function getProgressRewards() {
-  return pulseApi<ProgressRewards>("/api/progress/rewards");
-}
-
 export async function getProgressMissions() {
   return pulseApi<ProgressMissions>("/api/progress/missions");
 }
@@ -317,22 +305,6 @@ export async function getProgressFaq() {
 /* -------------------------------------------------------------------------- *
  * Formatting helpers
  * -------------------------------------------------------------------------- */
-
-/**
- * Cents to major units, for handing to the i18n currency formatter.
- *
- * Deliberately *not* a string formatter. Money has to be rendered through
- * `useFormatters().currency`, which knows each locale's symbol placement,
- * separators and spacing; a helper here that produced "$30" would ship a dollar
- * sign to all eleven languages.
- *
- * The divide is the only arithmetic the app does on money, and this must not
- * grow into somewhere totals get summed — every total the UI shows already
- * arrived decided from the server.
- */
-export function rewardMajorUnits(cents: number | undefined): number {
-  return Math.max(0, Math.round(Number(cents) || 0)) / 100;
-}
 
 /**
  * Clamp a server percent into a bar width.

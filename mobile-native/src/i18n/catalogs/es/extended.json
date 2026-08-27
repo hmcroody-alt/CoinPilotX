@@ -1944,71 +1944,61 @@
   },
   "progress": {
     "title": "Progreso",
-    "subtitle": "Reto de Miembro Fundador",
+    "subtitle": "Camino Fundador",
     "privateNote": "Solo tú puedes ver esto.",
     "notVerification": "Este programa no es una verificación de identidad.",
     "loading": "Cargando tu progreso…",
     "loadError": "No pudimos cargar tu progreso.",
     "retry": "Reintentar",
     "tile": {
-      "start": "Empieza tu reto",
-      "active": "{{current}} de {{target}} calificados",
+      "start": "Comienza tu Camino Fundador",
+      "active": "{{current}} de {{target}} certificadas",
       "review": "Estamos revisando una invitación",
       "complete": "Miembro Fundador"
     },
     "overview": {
-      "heading": "Tu reto",
-      "qualified_one": "{{count}} referido calificado",
-      "qualified_other": "{{count}} referidos calificados",
-      "remaining": "Te faltan {{count}}",
-      "complete": "Reto completado",
-      "nextMilestone": "Siguiente: {{label}}",
-      "nextReward": "{{count}} más para tus próximos {{amount}}",
+      "heading": "Tu Camino Fundador",
+      "complete": "Camino Fundador completado",
       "foundingMember": "Eres Miembro Fundador",
-      "keepGoing": "Cada {{target}} referidos calificados ganas otros {{amount}}."
+      "certified_one": "{{count}} invitación certificada",
+      "certified_other": "{{count}} invitaciones certificadas",
+      "nextUnlock": "Siguiente desbloqueo: {{label}}",
+      "unlockCounter": "{{current}} de {{target}}",
+      "unlockRemaining_one": "Falta {{count}}",
+      "unlockRemaining_other": "Faltan {{count}}",
+      "pathCounter": "{{current}} de {{target}} en el Camino Fundador"
     },
     "breakdown": {
       "invited": "Invitados",
       "inProgress": "En curso",
-      "qualified": "Calificados",
       "inReview": "En revisión",
-      "closed": "Cerrados"
+      "certified": "Certificadas"
     },
     "sections": {
-      "milestones": "Logros",
       "referrals": "Tus referidos",
       "invite": "Invitar amigos",
-      "rewards": "Recompensas y ganancias",
       "missions": "Misiones",
-      "badge": "Insignia de Miembro Fundador",
       "insights": "Estadísticas",
       "activity": "Actividad",
       "howItWorks": "Cómo funciona",
-      "faq": "Preguntas frecuentes"
-    },
-    "milestones": {
-      "heading": "Escalera de recompensas",
-      "locked": "Bloqueado",
-      "inProgress": "En curso",
-      "completed": "Conseguido",
-      "earnedOn": "Conseguido el {{date}}",
-      "threshold": "Con {{count}} referidos",
-      "oneTime": "Solo una vez",
-      "repeatable": "Se repite cada {{count}}"
+      "faq": "Preguntas frecuentes",
+      "unlocks": "Tus desbloqueos",
+      "founding": "Miembro Fundador",
+      "legacy": "Tu legado fundador"
     },
     "referrals": {
       "heading": "Tus referidos",
       "tabAll": "Todos",
-      "tabQualified": "Calificados",
       "tabPending": "En curso",
       "tabReview": "En revisión",
       "empty": "Aún no tienes referidos",
       "emptyBody": "Comparte tu enlace para empezar.",
-      "counts": "Cuenta para tu reto",
-      "doesNotCountYet": "Todavía no cuenta",
+      "counts": "Cuenta para tu Camino Fundador",
       "anonymous": "Un nuevo miembro",
-      "detailHeading": "Lista de requisitos",
-      "openDetail": "Ver lo que falta"
+      "detailHeading": "Lista de certificación",
+      "openDetail": "Ver lo que falta",
+      "tabCertified": "Certificadas",
+      "notCertifiedYet": "Aún no certificada"
     },
     "checklist": {
       "signedUp": "Se registró con tu enlace",
@@ -2024,31 +2014,13 @@
     },
     "invite": {
       "heading": "Invitar amigos",
-      "body": "Comparte tu enlace. Cuando un amigo se une y publica en dos días distintos, cuenta.",
+      "body": "Comparte tu enlace. Cuando alguien se una y publique en dos días distintos, se convierte en una invitación certificada.",
       "yourLink": "Tu enlace de invitación",
       "copy": "Copiar enlace",
       "copied": "Copiado",
       "share": "Compartir",
       "unavailable": "Tu enlace de invitación aún no está listo.",
       "fairness": "Invita a personas que conoces de verdad. La calidad importa más que la cantidad."
-    },
-    "rewards": {
-      "heading": "Recompensas y ganancias",
-      "earned": "Ganado",
-      "pending": "Pendiente",
-      "available": "Disponible",
-      "pendingNote": "Es normal que esté pendiente. Revisamos las recompensas antes de liberarlas.",
-      "cycles_one": "{{count}} ciclo completado",
-      "cycles_other": "{{count}} ciclos completados",
-      "cycleLabel": "Ciclo {{count}}",
-      "historyEmpty": "Aún no hay recompensas",
-      "historyEmptyBody": "Tus primeros {{amount}} llegan con {{target}} referidos calificados.",
-      "howYouEarn": "Ganas {{amount}} por cada {{count}} referidos calificados.",
-      "statusPending": "Pendiente",
-      "statusApproved": "Aprobada",
-      "statusDisbursed": "Disponible",
-      "statusOnHold": "En espera",
-      "statusDenied": "No concedida"
     },
     "missions": {
       "heading": "Misiones",
@@ -2071,28 +2043,21 @@
       "followFive": "Sigue a cinco personas",
       "startOwnChallenge": "Empieza tu propio reto"
     },
-    "badge": {
-      "heading": "Miembro Fundador",
-      "lockedBody": "Consigue {{target}} referidos calificados para ganar la insignia permanente de Miembro Fundador.",
-      "earnedBody": "Esta insignia es permanente. Gracias por ayudar a construir PulseSoc.",
-      "liveUnlocked": "Creador en Directo desbloqueado",
-      "liveLocked": "Creador en Directo se desbloquea con {{target}}"
-    },
     "insights": {
       "heading": "Estadísticas",
-      "conversion": "Invitaciones que calificaron",
       "stillGoing": "Todavía en camino",
       "empty": "Aún no hay suficiente actividad",
-      "emptyBody": "Las estadísticas aparecen cuando se unan algunos amigos."
+      "emptyBody": "Las estadísticas aparecen cuando se unan algunos amigos.",
+      "certified": "Invitaciones certificadas",
+      "inReview": "En revisión"
     },
     "activity": {
       "heading": "Actividad",
       "empty": "Aquí no hay nada todavía",
       "referralSignedUp": "{{name}} se unió con tu enlace",
-      "referralQualified": "{{name}} ya cuenta para tu reto",
-      "milestoneEarned": "Alcanzaste un logro",
-      "rewardEarned": "Ganaste una recompensa",
-      "genericEvent": "Actualización de progreso"
+      "genericEvent": "Actualización de progreso",
+      "referralCertified": "{{name}} ya es una invitación certificada",
+      "unlockEarned": "Alcanzaste un nuevo desbloqueo"
     },
     "howItWorks": {
       "heading": "Cómo funciona",
@@ -2100,36 +2065,66 @@
       "join": "Un amigo se une con él",
       "profile": "Completa su perfil",
       "postTwoDays": "Publica en {{count}} días distintos",
-      "qualified": "Cuenta para tu reto",
       "fairness": "Compartir casa, oficina, escuela o red con alguien a quien invitaste está totalmente bien. Buscamos cuentas automatizadas y duplicadas, no familias ni amigos.",
-      "serverNote": "Tu recuento lo calcula PulseSoc, no tu teléfono."
+      "serverNote": "Tu recuento lo calcula PulseSoc, no tu teléfono.",
+      "certified": "Se convierte en una invitación certificada"
     },
     "faq": {
       "heading": "Preguntas frecuentes",
-      "howReferralsWork": "Comparte tu enlace de invitación. Quien se una con él pasa a ser uno de tus referidos.",
-      "whatCounts": "Un referido cuenta cuando ha completado su perfil, ha publicado en dos días distintos y su cuenta está en regla.",
-      "whyNotCountedYet": "Casi siempre es porque aún no ha publicado un segundo día. Abre el referido para ver exactamente qué falta.",
-      "whenDoIEarn": "Ganas {{amount}} con {{target}} referidos calificados, y otra vez por cada {{target}} después de eso.",
-      "canIEarnAgain": "Sí. La recompensa de {{amount}} se repite. La insignia, el acceso a Creador en Directo y Seguidor Inicial son solo una vez.",
-      "howToUnlockLive": "La elegibilidad para Creador en Directo se desbloquea con el referido calificado número {{target}}.",
+      "whatCounts": "Una invitación se certifica cuando la persona completa su perfil, publica en dos días distintos y está en regla.",
+      "howToUnlockLive": "Creador en Vivo se desbloquea con {{live}} invitaciones certificadas.",
       "canFamilyParticipate": "Sí. Familiares, compañeros de piso, de clase y de trabajo pueden participar, incluso desde la misma red.",
       "underReview": "Una revisión significa que estamos comprobando algo de forma automática. Suele resolverse sola y no tienes que hacer nada.",
-      "howRewardsBecomeAvailable": "Las recompensas se ganan al instante y se revisan antes de liberarlas.",
-      "isThereALimit": "No hay límite de referidos calificados ni de recompensas repetidas.",
-      "whenDoesItEnd": "El reto termina en {{target}}, pero tu camino no. Después se abren nuevas misiones.",
+      "isThereALimit": "No hay límite de invitaciones certificadas.",
+      "whenDoesItEnd": "El Camino Fundador termina en {{target}}, pero tu recorrido no. Después se abren nuevas misiones.",
       "questions": {
-        "howReferralsWork": "¿Cómo funcionan los referidos?",
-        "whatCounts": "¿Qué hace que un referido cuente?",
-        "whyNotCountedYet": "¿Por qué mi referido aún no cuenta?",
-        "whenDoIEarn": "¿Cuándo gano una recompensa?",
-        "canIEarnAgain": "¿Puedo ganar más de una vez?",
-        "howToUnlockLive": "¿Cómo desbloqueo Creador en Directo?",
+        "whatCounts": "¿Qué certifica una invitación?",
+        "howToUnlockLive": "¿Cómo desbloqueo Creador en Vivo?",
         "canFamilyParticipate": "¿Pueden participar mi familia y mis amigos?",
         "underReview": "¿Qué significa «en revisión»?",
-        "howRewardsBecomeAvailable": "¿Cuándo se liberan las recompensas?",
         "isThereALimit": "¿Hay algún límite?",
-        "whenDoesItEnd": "¿Qué pasa después del reto?"
-      }
+        "whenDoesItEnd": "¿Qué pasa después del Camino Fundador?",
+        "howInvitesWork": "¿Cómo funcionan las invitaciones?",
+        "whyNotCertifiedYet": "¿Por qué mi invitación aún no está certificada?",
+        "whatDoIUnlock": "¿Qué desbloqueo?",
+        "isFoundingMemberPermanent": "¿Miembro Fundador es permanente?"
+      },
+      "howInvitesWork": "Comparte tu enlace de invitación. Cualquiera que se una con él se convierte en una de tus invitaciones.",
+      "whyNotCertifiedYet": "Casi siempre es porque todavía no ha publicado un segundo día. Abre la invitación para ver exactamente qué falta.",
+      "whatDoIUnlock": "Cada peldaño del Camino Fundador desbloquea un reconocimiento o una función de creador en tu cuenta. Nada de este camino es un pago.",
+      "isFoundingMemberPermanent": "Sí. Miembro Fundador es un rango permanente y se queda en tu perfil."
+    },
+    "unlocks": {
+      "locked": "Bloqueado",
+      "inProgress": "En curso",
+      "unlocked": "Desbloqueado",
+      "unlockedOn": "Desbloqueado el {{date}}",
+      "threshold": "Con {{count}} invitaciones certificadas",
+      "note": "PulseSoc concede los desbloqueos y aparecen en tu cuenta automáticamente."
+    },
+    "liveCreator": {
+      "eyebrow": "Creador en Vivo",
+      "heading": "Creador en Vivo desbloqueado",
+      "body": "Ayudaste a hacer crecer la red de PulseSoc. Ya puedes transmitir EN VIVO.",
+      "start": "Empieza tu primer directo",
+      "explore": "Explorar En Vivo"
+    },
+    "founding": {
+      "heading": "Miembro Fundador",
+      "generation": "Generación Fundadora",
+      "number": "N.º {{number}}",
+      "memberSince": "Miembro desde {{date}}",
+      "lockedBody": "Llega a {{target}} invitaciones certificadas para obtener el rango permanente de Miembro Fundador.",
+      "earnedBody": "Este rango es permanente. Gracias por ayudar a construir PulseSoc."
+    },
+    "legacy": {
+      "certified": "Invitaciones certificadas",
+      "firstInvite": "Primera invitación",
+      "latestCertified": "Última certificada",
+      "noDate": "—",
+      "note": "Personas reales que trajiste a PulseSoc.",
+      "empty": "Tu legado empieza aquí",
+      "emptyBody": "Comparte tu enlace para traer a tu primer miembro."
     }
   },
   "premium": {

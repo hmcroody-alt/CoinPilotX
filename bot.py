@@ -21898,16 +21898,6 @@ def api_progress_referral_detail(ref):
     return _progress_reply(_prog.referral_detail(uid, ref))
 
 
-@webhook_app.route("/api/progress/rewards", methods=["GET"])
-def api_progress_rewards():
-    init_db()
-    uid = _progress_viewer()
-    if not uid:
-        return jsonify({"ok": False, "error": "Login required."}), 401
-    from services.business_os.progress import progress_api as _prog
-    return _progress_reply(_prog.rewards(uid))
-
-
 @webhook_app.route("/api/progress/missions", methods=["GET"])
 def api_progress_missions():
     init_db()

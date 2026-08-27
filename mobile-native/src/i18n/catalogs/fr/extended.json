@@ -1944,71 +1944,61 @@
   },
   "progress": {
     "title": "Progression",
-    "subtitle": "Défi Membre Fondateur",
+    "subtitle": "Parcours Fondateur",
     "privateNote": "Vous seul pouvez voir ceci.",
     "notVerification": "Ce programme n'est pas une vérification d'identité.",
     "loading": "Chargement de votre progression…",
     "loadError": "Impossible de charger votre progression.",
     "retry": "Réessayer",
     "tile": {
-      "start": "Lancez votre défi",
-      "active": "{{current}} sur {{target}} validés",
+      "start": "Commencez votre Parcours Fondateur",
+      "active": "{{current}} sur {{target}} certifiées",
       "review": "Nous examinons une invitation",
       "complete": "Membre Fondateur"
     },
     "overview": {
-      "heading": "Votre défi",
-      "qualified_one": "{{count}} filleul validé",
-      "qualified_other": "{{count}} filleuls validés",
-      "remaining": "Encore {{count}}",
-      "complete": "Défi terminé",
-      "nextMilestone": "Ensuite : {{label}}",
-      "nextReward": "{{count}} de plus pour vos prochains {{amount}}",
+      "heading": "Votre Parcours Fondateur",
+      "complete": "Parcours Fondateur terminé",
       "foundingMember": "Vous êtes Membre Fondateur",
-      "keepGoing": "Chaque {{target}} filleuls validés vous rapporte {{amount}} de plus."
+      "certified_one": "{{count}} invitation certifiée",
+      "certified_other": "{{count}} invitations certifiées",
+      "nextUnlock": "Prochain déblocage : {{label}}",
+      "unlockCounter": "{{current}} sur {{target}}",
+      "unlockRemaining_one": "Encore {{count}}",
+      "unlockRemaining_other": "Encore {{count}}",
+      "pathCounter": "{{current}} sur {{target}} du Parcours Fondateur"
     },
     "breakdown": {
       "invited": "Invités",
       "inProgress": "En cours",
-      "qualified": "Validés",
       "inReview": "En cours d'examen",
-      "closed": "Clôturés"
+      "certified": "Certifiées"
     },
     "sections": {
-      "milestones": "Paliers",
       "referrals": "Vos filleuls",
       "invite": "Inviter des amis",
-      "rewards": "Récompenses et gains",
       "missions": "Missions",
-      "badge": "Badge Membre Fondateur",
       "insights": "Statistiques",
       "activity": "Activité",
       "howItWorks": "Comment ça marche",
-      "faq": "FAQ"
-    },
-    "milestones": {
-      "heading": "Échelle des récompenses",
-      "locked": "Verrouillé",
-      "inProgress": "En cours",
-      "completed": "Obtenu",
-      "earnedOn": "Obtenu le {{date}}",
-      "threshold": "À {{count}} filleuls",
-      "oneTime": "Une seule fois",
-      "repeatable": "Se répète tous les {{count}}"
+      "faq": "FAQ",
+      "unlocks": "Vos déblocages",
+      "founding": "Membre Fondateur",
+      "legacy": "Votre héritage de fondateur"
     },
     "referrals": {
       "heading": "Vos filleuls",
       "tabAll": "Tous",
-      "tabQualified": "Validés",
       "tabPending": "En cours",
       "tabReview": "En cours d'examen",
       "empty": "Aucun filleul pour l'instant",
       "emptyBody": "Partagez votre lien pour commencer.",
-      "counts": "Compte pour votre défi",
-      "doesNotCountYet": "Ne compte pas encore",
+      "counts": "Compte pour votre Parcours Fondateur",
       "anonymous": "Un nouveau membre",
-      "detailHeading": "Liste des conditions",
-      "openDetail": "Voir ce qu'il reste"
+      "detailHeading": "Liste de certification",
+      "openDetail": "Voir ce qu'il reste",
+      "tabCertified": "Certifiées",
+      "notCertifiedYet": "Pas encore certifiée"
     },
     "checklist": {
       "signedUp": "Inscrit via votre lien",
@@ -2024,31 +2014,13 @@
     },
     "invite": {
       "heading": "Inviter des amis",
-      "body": "Partagez votre lien. Quand un ami rejoint et publie deux jours différents, il compte.",
+      "body": "Partagez votre lien. Quand un ami s'inscrit et publie deux jours différents, il devient une invitation certifiée.",
       "yourLink": "Votre lien d'invitation",
       "copy": "Copier le lien",
       "copied": "Copié",
       "share": "Partager",
       "unavailable": "Votre lien d'invitation n'est pas encore prêt.",
       "fairness": "Invitez des personnes que vous connaissez vraiment. La qualité compte plus que le nombre."
-    },
-    "rewards": {
-      "heading": "Récompenses et gains",
-      "earned": "Gagné",
-      "pending": "En attente",
-      "available": "Disponible",
-      "pendingNote": "L'attente est normale. Les récompenses sont vérifiées avant d'être versées.",
-      "cycles_one": "{{count}} cycle terminé",
-      "cycles_other": "{{count}} cycles terminés",
-      "cycleLabel": "Cycle {{count}}",
-      "historyEmpty": "Aucune récompense pour l'instant",
-      "historyEmptyBody": "Vos premiers {{amount}} arrivent à {{target}} filleuls validés.",
-      "howYouEarn": "Vous gagnez {{amount}} tous les {{count}} filleuls validés.",
-      "statusPending": "En attente",
-      "statusApproved": "Approuvée",
-      "statusDisbursed": "Disponible",
-      "statusOnHold": "Suspendue",
-      "statusDenied": "Non accordée"
     },
     "missions": {
       "heading": "Missions",
@@ -2071,28 +2043,21 @@
       "followFive": "Abonnez-vous à cinq personnes",
       "startOwnChallenge": "Lancez votre propre défi"
     },
-    "badge": {
-      "heading": "Membre Fondateur",
-      "lockedBody": "Atteignez {{target}} filleuls validés pour obtenir le badge permanent Membre Fondateur.",
-      "earnedBody": "Ce badge est permanent. Merci d'aider à construire PulseSoc.",
-      "liveUnlocked": "Créateur Live débloqué",
-      "liveLocked": "Créateur Live se débloque à {{target}}"
-    },
     "insights": {
       "heading": "Statistiques",
-      "conversion": "Invitations validées",
       "stillGoing": "Encore en chemin",
       "empty": "Pas encore assez d'activité",
-      "emptyBody": "Les statistiques apparaissent dès que quelques amis vous ont rejoint."
+      "emptyBody": "Les statistiques apparaissent dès que quelques amis vous ont rejoint.",
+      "certified": "Invitations certifiées",
+      "inReview": "En cours d'examen"
     },
     "activity": {
       "heading": "Activité",
       "empty": "Rien ici pour l'instant",
       "referralSignedUp": "{{name}} a rejoint via votre lien",
-      "referralQualified": "{{name}} compte maintenant pour votre défi",
-      "milestoneEarned": "Vous avez atteint un palier",
-      "rewardEarned": "Vous avez gagné une récompense",
-      "genericEvent": "Mise à jour de la progression"
+      "genericEvent": "Mise à jour de la progression",
+      "referralCertified": "{{name}} est maintenant une invitation certifiée",
+      "unlockEarned": "Vous avez atteint un nouveau déblocage"
     },
     "howItWorks": {
       "heading": "Comment ça marche",
@@ -2100,36 +2065,66 @@
       "join": "Un ami s'inscrit avec",
       "profile": "Il complète son profil",
       "postTwoDays": "Il publie {{count}} jours différents",
-      "qualified": "Il compte pour votre défi",
       "fairness": "Partager un logement, un bureau, une école ou un réseau avec une personne que vous avez invitée ne pose aucun problème. Nous recherchons les comptes automatisés et dupliqués, pas les familles et les amis.",
-      "serverNote": "Votre total est calculé par PulseSoc, pas sur votre téléphone."
+      "serverNote": "Votre total est calculé par PulseSoc, pas sur votre téléphone.",
+      "certified": "Il devient une invitation certifiée"
     },
     "faq": {
       "heading": "FAQ",
-      "howReferralsWork": "Partagez votre lien d'invitation. Toute personne qui s'inscrit avec devient l'un de vos filleuls.",
-      "whatCounts": "Un filleul compte une fois qu'il a complété son profil, publié deux jours différents et que son compte est en règle.",
-      "whyNotCountedYet": "La plupart du temps, il n'a pas encore publié un deuxième jour. Ouvrez le filleul pour voir exactement ce qu'il reste.",
-      "whenDoIEarn": "Vous gagnez {{amount}} à {{target}} filleuls validés, puis à nouveau tous les {{target}} suivants.",
-      "canIEarnAgain": "Oui. La récompense de {{amount}} se répète. Le badge, l'accès Créateur Live et Soutien de la Première Heure sont uniques.",
-      "howToUnlockLive": "L'accès Créateur Live se débloque avec le {{target}}e filleul validé.",
+      "whatCounts": "Une invitation est certifiée dès que la personne a complété son profil, publié deux jours différents et reste en règle.",
+      "howToUnlockLive": "Créateur Live se débloque à {{live}} invitations certifiées.",
       "canFamilyParticipate": "Oui. La famille, les colocataires, les camarades de classe et les collègues peuvent tous participer, y compris depuis le même réseau.",
       "underReview": "Un examen signifie que nous vérifions quelque chose automatiquement. Cela se règle en général tout seul et vous n'avez rien à faire.",
-      "howRewardsBecomeAvailable": "Les récompenses sont acquises immédiatement et vérifiées avant d'être versées.",
-      "isThereALimit": "Il n'y a aucune limite de filleuls validés ni de récompenses répétées.",
-      "whenDoesItEnd": "Le défi se termine à {{target}}, mais pas votre parcours. De nouvelles missions s'ouvrent ensuite.",
+      "isThereALimit": "Il n'y a aucune limite d'invitations certifiées.",
+      "whenDoesItEnd": "Le Parcours Fondateur s'arrête à {{target}}, mais pas votre aventure. De nouvelles missions s'ouvrent ensuite.",
       "questions": {
-        "howReferralsWork": "Comment fonctionnent les filleuls ?",
-        "whatCounts": "Qu'est-ce qui rend un filleul valide ?",
-        "whyNotCountedYet": "Pourquoi mon filleul n'est-il pas encore compté ?",
-        "whenDoIEarn": "Quand est-ce que je gagne une récompense ?",
-        "canIEarnAgain": "Puis-je gagner plusieurs fois ?",
-        "howToUnlockLive": "Comment débloquer l'accès Créateur Live ?",
+        "whatCounts": "Qu'est-ce qui certifie une invitation ?",
+        "howToUnlockLive": "Comment débloquer Créateur Live ?",
         "canFamilyParticipate": "Ma famille et mes amis peuvent-ils participer ?",
         "underReview": "Que veut dire « en cours d'examen » ?",
-        "howRewardsBecomeAvailable": "Quand les récompenses sont-elles versées ?",
         "isThereALimit": "Y a-t-il une limite ?",
-        "whenDoesItEnd": "Que se passe-t-il après le défi ?"
-      }
+        "whenDoesItEnd": "Que se passe-t-il après le Parcours Fondateur ?",
+        "howInvitesWork": "Comment fonctionnent les invitations ?",
+        "whyNotCertifiedYet": "Pourquoi mon invitation n'est-elle pas encore certifiée ?",
+        "whatDoIUnlock": "Qu'est-ce que je débloque ?",
+        "isFoundingMemberPermanent": "Membre Fondateur, c'est permanent ?"
+      },
+      "howInvitesWork": "Partagez votre lien d'invitation. Toute personne qui s'inscrit via ce lien devient l'une de vos invitations.",
+      "whyNotCertifiedYet": "La plupart du temps, elle n'a pas encore publié un deuxième jour. Ouvrez l'invitation pour voir ce qu'il reste.",
+      "whatDoIUnlock": "Chaque palier du Parcours Fondateur débloque une reconnaissance ou une fonctionnalité de créateur sur votre compte. Rien sur ce parcours n'est un paiement.",
+      "isFoundingMemberPermanent": "Oui. Membre Fondateur est un statut permanent qui reste sur votre profil."
+    },
+    "unlocks": {
+      "locked": "Verrouillé",
+      "inProgress": "En cours",
+      "unlocked": "Débloqué",
+      "unlockedOn": "Débloqué le {{date}}",
+      "threshold": "À {{count}} invitations certifiées",
+      "note": "Les déblocages sont accordés par PulseSoc et apparaissent automatiquement sur votre compte."
+    },
+    "liveCreator": {
+      "eyebrow": "Créateur Live",
+      "heading": "Créateur Live débloqué",
+      "body": "Vous avez aidé le réseau PulseSoc à grandir. Vous pouvez maintenant diffuser en LIVE.",
+      "start": "Lancer votre premier live",
+      "explore": "Découvrir le Live"
+    },
+    "founding": {
+      "heading": "Membre Fondateur",
+      "generation": "Génération Fondatrice",
+      "number": "N° {{number}}",
+      "memberSince": "Membre depuis {{date}}",
+      "lockedBody": "Atteignez {{target}} invitations certifiées pour obtenir le statut permanent de Membre Fondateur.",
+      "earnedBody": "Ce statut est permanent. Merci d'aider à construire PulseSoc."
+    },
+    "legacy": {
+      "certified": "Invitations certifiées",
+      "firstInvite": "Première invitation",
+      "latestCertified": "Dernière certifiée",
+      "noDate": "—",
+      "note": "De vraies personnes que vous avez amenées sur PulseSoc.",
+      "empty": "Votre héritage commence ici",
+      "emptyBody": "Partagez votre lien pour amener votre premier membre."
     }
   },
   "premium": {

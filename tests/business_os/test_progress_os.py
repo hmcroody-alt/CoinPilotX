@@ -1,21 +1,22 @@
 """Progress OS adversarial suite (PROG-001..).
 
 These tests are written from the attacker's chair, not the happy path. The
-Founding Member Challenge pays real money for referrals, which makes it a
-standing invitation to fraud, and it withholds real money from real people,
-which makes false positives just as expensive in a different currency. Both
-failure directions are asserted here:
+Founding Path grants real privileges — Live access among them — which makes it
+a standing invitation to fraud, and it withholds standing from real people,
+which makes false positives expensive in a different currency. Both failure
+directions are asserted here:
 
-* **Fraud must not pay.** Signup farms, same-day double posts, replayed
-  events, forged client claims, and duplicate attribution all have to earn
-  exactly zero.
+* **Fraud must not unlock anything.** Signup farms, same-day double posts,
+  replayed events, forged client claims, and duplicate attribution all have to
+  certify exactly zero invites.
 * **Normal life must not be punished.** Families, roommates, offices, schools
   and CGNAT share IPs and devices. A shared network is not evidence of
-  anything, and no test here lets it cost someone a reward.
+  anything, and no test here lets it cost someone an unlock.
 
-The money assertions are deliberately exact — 29 → $0, 30 → $30, replay →
-still $30, 59 → $30, 60 → $60 — because "roughly right" is not a property a
-payout system can have.
+The ladder assertions are deliberately exact — 1 → nothing, 2 → Live Creator,
+4 → still Live Creator, 5 → Early Supporter — because an unlock that appears a
+rung early is a privilege granted to someone who did not earn it, and one that
+appears a rung late is a promise the product broke.
 """
 
 import os
@@ -120,8 +121,7 @@ def test_prog_001_signup_alone_is_worth_nothing():
         qual.attribute(ref, u)
         qual.evaluate(u)
     assert qual.qualified_count(ref) == 0
-    assert ms.sync(ref)["cycles_created"] == []
-    assert ms.reward_summary(ref)["earned_cents"] == 0
+    assert ms.sync(ref)["milestones_awarded"] == []
 
 
 def test_prog_002_one_referred_user_belongs_to_one_referrer():
@@ -225,7 +225,7 @@ def test_prog_015_profile_is_required_before_posts_count():
 
 
 # =====================================================================
-# Money: the exact arithmetic
+# The Founding Path has no money in it
 # =====================================================================
 def _bring_to(referrer, base, n):
     for i, u in enumerate(uid_block(base, n)):
@@ -233,80 +233,55 @@ def _bring_to(referrer, base, n):
     return qual.qualified_count(referrer)
 
 
-def test_prog_020_twentynine_pays_nothing():
-    ref = mkuser(1000)
-    assert _bring_to(ref, 1100, 29) == 29
-    ms.sync(ref)
-    assert ms.reward_summary(ref)["earned_cents"] == 0
+def test_prog_020_the_campaign_carries_no_reward_of_any_size():
+    """The kill switch, asserted on the campaign itself.
+
+    ``reward_interval=0`` is what makes ``cycles_earned`` return zero at every
+    count. Assert the switch and the arithmetic together — a future edit that
+    restores the interval would otherwise quietly restore payouts.
+    """
+    assert CAMP.reward_interval == 0
+    assert CAMP.reward_amount_cents == 0
+    for count in (0, 1, 2, 5, 29, 30, 59, 60, 6000):
+        assert CAMP.cycles_earned(count) == 0, count
 
 
-def test_prog_021_thirty_pays_exactly_thirty_dollars_and_replay_does_not():
+def test_prog_021_no_count_creates_a_reward_cycle_or_a_reward_row():
+    """Thirty was the old payout boundary; sixty was the old second one."""
     ref = mkuser(2000)
     assert _bring_to(ref, 2100, 30) == 30
-    assert ms.sync(ref)["cycles_created"] == [1]
-    assert ms.reward_summary(ref)["earned_cents"] == 3000
-    for _ in range(5):
-        assert ms.sync(ref)["cycles_created"] == []
-    assert ms.reward_summary(ref)["earned_cents"] == 3000
-
-
-def test_prog_022_fiftynine_still_pays_thirty():
-    ref = mkuser(3000)
-    _bring_to(ref, 3100, 59)
     ms.sync(ref)
-    assert ms.reward_summary(ref)["earned_cents"] == 3000
-
-
-def test_prog_023_sixty_pays_sixty_and_replay_does_not():
-    ref = mkuser(4000)
-    _bring_to(ref, 4100, 60)
-    ms.sync(ref)
-    assert ms.reward_summary(ref)["earned_cents"] == 6000
+    _bring_to(ref, 2200, 30)
     for _ in range(5):
         ms.sync(ref)
-    assert ms.reward_summary(ref)["earned_cents"] == 6000
-    cycles = ms.reward_summary(ref)["history"]
-    assert [c["cycle"] for c in cycles] == [1, 2]
+    conn = db.connect()
+    cycles = dict(conn.execute(
+        "SELECT COUNT(*) AS t FROM progress_reward_cycles WHERE user_id=?",
+        (ref,)).fetchone())["t"]
+    conn.close()
+    assert cycles == 0
 
 
-def test_prog_024_jumping_straight_to_sixty_creates_two_cycles_not_two_of_one():
-    """A backfill that discovers 60 at once must pay cycle 1 and cycle 2."""
-    ref = mkuser(5000)
-    _bring_to(ref, 5100, 60)
-    result = ms.sync(ref)
-    assert result["cycles_created"] == [1, 2]
-    assert ms.reward_summary(ref)["earned_cents"] == 6000
-
-
-def test_prog_025_reward_event_keys_are_deterministic_and_distinct():
-    """The key is the second, independent lock on double payment."""
-    k1 = ms.reward_event_key(CAMP.campaign_id, 77, 1)
-    k2 = ms.reward_event_key(CAMP.campaign_id, 77, 2)
-    assert k1 == ms.reward_event_key(CAMP.campaign_id, 77, 1)
-    assert k1 != k2
-    assert k1 != ms.reward_event_key(CAMP.campaign_id, 78, 1)
-
-
-def test_prog_026_progress_os_never_moves_money():
-    """Every recorded cycle is unpaid until a separate, audited approval."""
+def test_prog_022_sync_reports_unlocks_and_nothing_financial():
     ref = mkuser(6000)
     _bring_to(ref, 6100, 30)
-    ms.sync(ref)
-    summary = ms.reward_summary(ref)
-    assert summary["available_cents"] == 0
-    assert summary["pending_cents"] == 3000
-    assert all(c["status"] != "disbursed" for c in summary["history"])
+    result = ms.sync(ref)
+    assert set(result) == {"ok", "qualified", "milestones_awarded"}
+    assert not hasattr(ms, "reward_summary")
+    assert not hasattr(ms, "sync_reward_cycles")
 
 
 # =====================================================================
-# Milestones
+# The unlock ladder
 # =====================================================================
 def test_prog_030_milestones_award_once_and_never_repeat_at_sixty():
     ref = mkuser(7000)
     _bring_to(ref, 7100, 30)
     first = ms.sync(ref)
     assert sorted(first["milestones_awarded"]) == [
-        "creator_perk", "early_supporter", "founding_member", "priority_creator"]
+        "creator_perk", "early_supporter", "founding_creator",
+        "founding_member", "live_creator", "network_builder",
+        "priority_creator"]
     _bring_to(ref, 7200, 30)
     second = ms.sync(ref)
     assert second["qualified"] == 60
@@ -315,17 +290,39 @@ def test_prog_030_milestones_award_once_and_never_repeat_at_sixty():
 
 def test_prog_031_milestone_thresholds_match_the_published_ladder():
     thresholds = {m.key: m.threshold for m in CAMP.milestones}
-    assert thresholds == {"early_supporter": 5, "creator_perk": 10,
-                          "priority_creator": 20, "founding_member": 30}
+    assert thresholds == {"live_creator": 2, "early_supporter": 5,
+                          "creator_perk": 10, "network_builder": 15,
+                          "priority_creator": 20, "founding_creator": 25,
+                          "founding_member": 30}
 
 
-def test_prog_032_partial_progress_awards_only_what_is_reached():
+def test_prog_032_each_rung_opens_at_its_own_threshold_and_not_before():
+    """Walk the whole ladder one certified invite at a time.
+
+    A rung that opens early is a privilege handed to someone who did not earn
+    it; a rung that opens late is a broken promise. Both are caught by walking
+    the boundary rather than sampling it.
+    """
     ref = mkuser(8000)
-    _bring_to(ref, 8100, 19)
-    awarded = sorted(ms.sync(ref)["milestones_awarded"])
-    assert awarded == ["creator_perk", "early_supporter"]
-    _bring_to(ref, 8200, 1)
-    assert ms.sync(ref)["milestones_awarded"] == ["priority_creator"]
+    expected = {2: "live_creator", 5: "early_supporter", 10: "creator_perk",
+                15: "network_builder", 20: "priority_creator",
+                25: "founding_creator", 30: "founding_member"}
+    for count, u in enumerate(uid_block(8100, 30), start=1):
+        qualify(ref, u)
+        awarded = ms.sync(ref)["milestones_awarded"]
+        assert awarded == ([expected[count]] if count in expected else []), count
+
+
+def test_prog_033_live_creator_is_the_second_rung_not_the_thirtieth():
+    """The gate the privilege engine reads is derived from this rung."""
+    assert CAMP.live_threshold() == 2
+    ref = mkuser(8500)
+    _bring_to(ref, 8600, 1)
+    ms.sync(ref)
+    assert not ms.has_milestone(ref, "live_creator")
+    _bring_to(ref, 8700, 1)
+    ms.sync(ref)
+    assert ms.has_milestone(ref, "live_creator")
 
 
 # =====================================================================
@@ -446,7 +443,7 @@ def test_prog_061_a_referral_token_does_not_resolve_for_another_referrer():
 def test_prog_062_no_member_handler_accepts_a_target_user():
     """There is no route shape that expresses 'show me someone else's progress'."""
     import inspect
-    for name in ("overview", "milestones", "referrals", "rewards", "missions",
+    for name in ("overview", "milestones", "referrals", "missions",
                  "activity", "invite", "tile"):
         params = list(inspect.signature(getattr(papi, name)).parameters)
         assert params[0] == "user_id", name
@@ -476,7 +473,7 @@ def test_prog_064_activity_feed_excludes_private_events():
 
 
 def test_prog_065_unauthenticated_reads_are_refused():
-    for name in ("overview", "milestones", "referrals", "rewards", "missions",
+    for name in ("overview", "milestones", "referrals", "missions",
                  "activity", "invite", "tile"):
         status, body = getattr(papi, name)(0)
         assert status == 401, name
@@ -579,15 +576,22 @@ def test_prog_075_revoked_milestone_stops_counting_but_keeps_its_evidence():
     assert "farm" in row["revoked_reason"]
 
 
-def test_prog_076_reward_hold_is_not_a_denial_and_release_is_not_an_approval():
+def test_prog_076_the_reward_hold_surface_has_nothing_left_to_hold():
+    """The legacy hold/release controls survive for pre-existing rows only.
+
+    They still exist because production may hold cycle rows written before the
+    Founding Path replaced the cash program, and an operator must be able to
+    freeze those. What they must never do is find something to act on for a
+    member who walked the new ladder: a completed path that produced a holdable
+    reward cycle would mean money leaked back in.
+    """
     ref = mkuser(11600)
     _bring_to(ref, 11700, 30)
     ms.sync(ref)
-    status, body = padmin.hold_reward(ref, 1, actor="admin:7", reason="investigating cluster")
-    assert status == 200 and body["status"] == padmin.REWARD_HOLD
-    status, body = padmin.release_reward(ref, 1, actor="admin:7", reason="cleared")
-    assert status == 200 and body["status"] == padmin.REWARD_PENDING
-    assert ms.reward_summary(ref)["available_cents"] == 0
+    assert padmin.hold_reward(ref, 1, actor="admin:7", reason="investigating cluster") \
+        == (404, {"ok": False, "error": "not_found"})
+    assert padmin.release_reward(ref, 1, actor="admin:7", reason="cleared") \
+        == (404, {"ok": False, "error": "not_found"})
 
 
 def test_prog_077_review_queue_is_oldest_first():
@@ -628,18 +632,24 @@ def test_prog_079_admin_inspection_carries_evidence_but_not_a_verdict():
 # =====================================================================
 def test_prog_080_campaign_rules_are_config_not_code():
     assert CAMP.qualification_target == 30
-    assert CAMP.reward_interval == 30
-    assert CAMP.reward_amount_cents == 3000
     assert CAMP.required_posting_days == 2
     assert CAMP.campaign_version >= 1
 
 
-def test_prog_081_cycle_arithmetic_at_the_boundaries():
-    for count, expected in ((0, 0), (1, 0), (29, 0), (30, 1), (31, 1),
-                            (59, 1), (60, 2), (89, 2), (90, 3)):
-        assert CAMP.cycles_earned(count) == expected, count
+def test_prog_081_the_partition_key_survived_the_redesign():
+    """Every Progress OS row is partitioned by ``campaign_id``.
+
+    Renaming it to match the new product name would have orphaned every
+    qualification, award, and event already on disk — members would open the
+    app to an empty path. The version number carries the redesign instead.
+    """
+    assert CAMP.campaign_id == "FOUNDING_MEMBER_CHALLENGE_V1"
+    assert CAMP.campaign_version >= 2
 
 
-def test_prog_082_negative_and_garbage_counts_earn_nothing():
-    assert CAMP.cycles_earned(-5) == 0
-    assert CAMP.cycles_earned(0) == 0
+def test_prog_082_the_ladder_is_ordered_and_ends_at_the_target():
+    thresholds = [m.threshold for m in CAMP.milestones]
+    assert thresholds == sorted(thresholds)
+    assert len(set(thresholds)) == len(thresholds)
+    assert thresholds[-1] == CAMP.qualification_target
+    assert CAMP.milestones[-1].key == "founding_member"

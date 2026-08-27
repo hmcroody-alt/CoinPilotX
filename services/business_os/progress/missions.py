@@ -269,7 +269,7 @@ def complete_mission(user_id, mission_id: str, *, campaign_id: str = "",
 def track_for(qualified: int, *, campaign_id: str = "") -> str:
     """Which journey a user is on.
 
-    Finishing the challenge switches the headline from "your challenge" to
+    Completing the Founding Path switches the headline from "your path" to
     "your next mission" — the transition the brief asked for, decided on the
     server so the client cannot get it wrong.
     """

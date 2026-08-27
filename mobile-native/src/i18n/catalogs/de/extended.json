@@ -1944,71 +1944,61 @@
   },
   "progress": {
     "title": "Fortschritt",
-    "subtitle": "Founding-Member-Challenge",
+    "subtitle": "Gründerpfad",
     "privateNote": "Nur du kannst das sehen.",
     "notVerification": "Dieses Programm ist keine Identitätsprüfung.",
     "loading": "Dein Fortschritt wird geladen…",
     "loadError": "Wir konnten deinen Fortschritt nicht laden.",
     "retry": "Erneut versuchen",
     "tile": {
-      "start": "Starte deine Challenge",
-      "active": "{{current}} von {{target}} qualifiziert",
+      "start": "Starte deinen Gründerpfad",
+      "active": "{{current}} von {{target}} bestätigt",
       "review": "Wir prüfen eine Einladung",
       "complete": "Founding Member"
     },
     "overview": {
-      "heading": "Deine Challenge",
-      "qualified_one": "{{count}} qualifizierte Empfehlung",
-      "qualified_other": "{{count}} qualifizierte Empfehlungen",
-      "remaining": "Noch {{count}}",
-      "complete": "Challenge abgeschlossen",
-      "nextMilestone": "Als Nächstes: {{label}}",
-      "nextReward": "Noch {{count}} bis zu deinen nächsten {{amount}}",
+      "heading": "Dein Gründerpfad",
+      "complete": "Gründerpfad abgeschlossen",
       "foundingMember": "Du bist Founding Member",
-      "keepGoing": "Alle {{target}} qualifizierten Empfehlungen bringen dir weitere {{amount}}."
+      "certified_one": "{{count}} bestätigte Einladung",
+      "certified_other": "{{count}} bestätigte Einladungen",
+      "nextUnlock": "Nächste Freischaltung: {{label}}",
+      "unlockCounter": "{{current}} von {{target}}",
+      "unlockRemaining_one": "Noch {{count}}",
+      "unlockRemaining_other": "Noch {{count}}",
+      "pathCounter": "{{current}} von {{target}} auf dem Gründerpfad"
     },
     "breakdown": {
       "invited": "Eingeladen",
       "inProgress": "In Arbeit",
-      "qualified": "Qualifiziert",
       "inReview": "In Prüfung",
-      "closed": "Beendet"
+      "certified": "Bestätigt"
     },
     "sections": {
-      "milestones": "Meilensteine",
       "referrals": "Deine Empfehlungen",
       "invite": "Freunde einladen",
-      "rewards": "Prämien & Verdienst",
       "missions": "Missionen",
-      "badge": "Founding-Member-Abzeichen",
       "insights": "Einblicke",
       "activity": "Aktivität",
       "howItWorks": "So funktioniert's",
-      "faq": "FAQ"
-    },
-    "milestones": {
-      "heading": "Prämienstufen",
-      "locked": "Gesperrt",
-      "inProgress": "In Arbeit",
-      "completed": "Erhalten",
-      "earnedOn": "Erhalten am {{date}}",
-      "threshold": "Bei {{count}} Empfehlungen",
-      "oneTime": "Nur einmalig",
-      "repeatable": "Wiederholt sich alle {{count}}"
+      "faq": "FAQ",
+      "unlocks": "Deine Freischaltungen",
+      "founding": "Gründungsmitglied",
+      "legacy": "Dein Gründervermächtnis"
     },
     "referrals": {
       "heading": "Deine Empfehlungen",
       "tabAll": "Alle",
-      "tabQualified": "Qualifiziert",
       "tabPending": "In Arbeit",
       "tabReview": "In Prüfung",
       "empty": "Noch keine Empfehlungen",
       "emptyBody": "Teile deinen Link, um loszulegen.",
-      "counts": "Zählt für deine Challenge",
-      "doesNotCountYet": "Zählt noch nicht",
+      "counts": "Zählt für deinen Gründerpfad",
       "anonymous": "Ein neues Mitglied",
-      "detailHeading": "Checkliste zur Qualifizierung",
-      "openDetail": "Sieh, was noch fehlt"
+      "detailHeading": "Checkliste zur Bestätigung",
+      "openDetail": "Sieh, was noch fehlt",
+      "tabCertified": "Bestätigt",
+      "notCertifiedYet": "Noch nicht bestätigt"
     },
     "checklist": {
       "signedUp": "Über deinen Link angemeldet",
@@ -2024,31 +2014,13 @@
     },
     "invite": {
       "heading": "Freunde einladen",
-      "body": "Teile deinen Link. Wenn ein Freund beitritt und an zwei separaten Tagen postet, zählt er.",
+      "body": "Teile deinen Link. Wenn jemand beitritt und an zwei verschiedenen Tagen postet, wird daraus eine bestätigte Einladung.",
       "yourLink": "Dein Einladungslink",
       "copy": "Link kopieren",
       "copied": "Kopiert",
       "share": "Teilen",
       "unavailable": "Dein Einladungslink ist noch nicht bereit.",
       "fairness": "Lade Menschen ein, die du wirklich kennst. Qualität zählt mehr als Menge."
-    },
-    "rewards": {
-      "heading": "Prämien & Verdienst",
-      "earned": "Verdient",
-      "pending": "Ausstehend",
-      "available": "Verfügbar",
-      "pendingNote": "Ausstehend ist normal. Prämien werden vor der Auszahlung geprüft.",
-      "cycles_one": "{{count}} Zyklus abgeschlossen",
-      "cycles_other": "{{count}} Zyklen abgeschlossen",
-      "cycleLabel": "Zyklus {{count}}",
-      "historyEmpty": "Noch keine Prämien",
-      "historyEmptyBody": "Deine ersten {{amount}} gibt es bei {{target}} qualifizierten Empfehlungen.",
-      "howYouEarn": "Du erhältst {{amount}} für je {{count}} qualifizierte Empfehlungen.",
-      "statusPending": "Ausstehend",
-      "statusApproved": "Genehmigt",
-      "statusDisbursed": "Verfügbar",
-      "statusOnHold": "Zurückgestellt",
-      "statusDenied": "Nicht gewährt"
     },
     "missions": {
       "heading": "Missionen",
@@ -2071,28 +2043,21 @@
       "followFive": "Folge fünf Personen",
       "startOwnChallenge": "Starte deine eigene Challenge"
     },
-    "badge": {
-      "heading": "Founding Member",
-      "lockedBody": "Erreiche {{target}} qualifizierte Empfehlungen und erhalte das dauerhafte Founding-Member-Abzeichen.",
-      "earnedBody": "Dieses Abzeichen bleibt für immer. Danke, dass du PulseSoc mit aufbaust.",
-      "liveUnlocked": "Live Creator freigeschaltet",
-      "liveLocked": "Live Creator wird bei {{target}} freigeschaltet"
-    },
     "insights": {
       "heading": "Einblicke",
-      "conversion": "Einladungen, die qualifiziert sind",
       "stillGoing": "Noch unterwegs",
       "empty": "Noch nicht genug Aktivität",
-      "emptyBody": "Einblicke erscheinen, sobald ein paar Freunde beigetreten sind."
+      "emptyBody": "Einblicke erscheinen, sobald ein paar Freunde beigetreten sind.",
+      "certified": "Bestätigte Einladungen",
+      "inReview": "In Prüfung"
     },
     "activity": {
       "heading": "Aktivität",
       "empty": "Hier ist noch nichts",
       "referralSignedUp": "{{name}} ist über deinen Link beigetreten",
-      "referralQualified": "{{name}} zählt jetzt für deine Challenge",
-      "milestoneEarned": "Du hast einen Meilenstein erreicht",
-      "rewardEarned": "Du hast eine Prämie erhalten",
-      "genericEvent": "Fortschritts-Update"
+      "genericEvent": "Fortschritts-Update",
+      "referralCertified": "{{name}} ist jetzt eine bestätigte Einladung",
+      "unlockEarned": "Du hast eine neue Freischaltung erreicht"
     },
     "howItWorks": {
       "heading": "So funktioniert's",
@@ -2100,36 +2065,66 @@
       "join": "Ein Freund tritt darüber bei",
       "profile": "Er vervollständigt sein Profil",
       "postTwoDays": "Er postet an {{count}} separaten Tagen",
-      "qualified": "Er zählt für deine Challenge",
       "fairness": "Ein gemeinsames Zuhause, Büro, eine Schule oder ein Netzwerk mit jemandem, den du eingeladen hast, ist völlig in Ordnung. Wir achten auf automatisierte und doppelte Konten, nicht auf Familien und Freunde.",
-      "serverNote": "Dein Zählerstand wird von PulseSoc berechnet, nicht auf deinem Handy."
+      "serverNote": "Dein Zählerstand wird von PulseSoc berechnet, nicht auf deinem Handy.",
+      "certified": "Daraus wird eine bestätigte Einladung"
     },
     "faq": {
       "heading": "FAQ",
-      "howReferralsWork": "Teile deinen Einladungslink. Wer darüber beitritt, wird zu einer deiner Empfehlungen.",
-      "whatCounts": "Eine Empfehlung zählt, sobald das Profil vervollständigt ist, an zwei separaten Tagen gepostet wurde und alles in Ordnung ist.",
-      "whyNotCountedYet": "Meistens fehlt noch der Beitrag an einem zweiten Tag. Öffne die Empfehlung, um genau zu sehen, was noch fehlt.",
-      "whenDoIEarn": "Du erhältst {{amount}} bei {{target}} qualifizierten Empfehlungen und danach für alle weiteren {{target}}.",
-      "canIEarnAgain": "Ja. Die Prämie von {{amount}} wiederholt sich. Abzeichen, Live-Creator-Zugang und Early Supporter gibt es nur einmal.",
-      "howToUnlockLive": "Die Live-Creator-Berechtigung wird mit der {{target}}. qualifizierten Empfehlung freigeschaltet.",
+      "whatCounts": "Eine Einladung gilt als bestätigt, sobald die Person ihr Profil vervollständigt, an zwei verschiedenen Tagen gepostet hat und in gutem Stand ist.",
+      "howToUnlockLive": "Live-Creator wird bei {{live}} bestätigten Einladungen freigeschaltet.",
       "canFamilyParticipate": "Ja. Familie, Mitbewohner, Mitschüler und Kollegen können alle mitmachen, auch im selben Netzwerk.",
       "underReview": "Eine Prüfung bedeutet, dass wir etwas automatisch kontrollieren. Das klärt sich meist von selbst und du musst nichts tun.",
-      "howRewardsBecomeAvailable": "Prämien werden sofort verdient und vor der Auszahlung geprüft.",
-      "isThereALimit": "Es gibt keine Obergrenze für qualifizierte Empfehlungen oder wiederholte Prämien.",
-      "whenDoesItEnd": "Die Challenge endet bei {{target}}, dein Weg aber nicht. Danach öffnen sich neue Missionen.",
+      "isThereALimit": "Es gibt keine Obergrenze für bestätigte Einladungen.",
+      "whenDoesItEnd": "Der Gründerpfad endet bei {{target}}, deine Reise aber nicht. Danach öffnen sich neue Missionen.",
       "questions": {
-        "howReferralsWork": "Wie funktionieren Empfehlungen?",
-        "whatCounts": "Wann zählt eine Empfehlung?",
-        "whyNotCountedYet": "Warum zählt meine Empfehlung noch nicht?",
-        "whenDoIEarn": "Wann erhalte ich eine Prämie?",
-        "canIEarnAgain": "Kann ich mehrmals verdienen?",
-        "howToUnlockLive": "Wie schalte ich den Live-Creator-Zugang frei?",
+        "whatCounts": "Wann gilt eine Einladung als bestätigt?",
+        "howToUnlockLive": "Wie schalte ich Live-Creator frei?",
         "canFamilyParticipate": "Können Familie und Freunde mitmachen?",
         "underReview": "Was bedeutet „in Prüfung“?",
-        "howRewardsBecomeAvailable": "Wann werden Prämien ausgezahlt?",
-        "isThereALimit": "Gibt es eine Obergrenze?",
-        "whenDoesItEnd": "Was passiert nach der Challenge?"
-      }
+        "isThereALimit": "Gibt es ein Limit?",
+        "whenDoesItEnd": "Was kommt nach dem Gründerpfad?",
+        "howInvitesWork": "Wie funktionieren Einladungen?",
+        "whyNotCertifiedYet": "Warum ist meine Einladung noch nicht bestätigt?",
+        "whatDoIUnlock": "Was schalte ich frei?",
+        "isFoundingMemberPermanent": "Ist Gründungsmitglied dauerhaft?"
+      },
+      "howInvitesWork": "Teile deinen Einladungslink. Wer darüber beitritt, wird zu einer deiner Einladungen.",
+      "whyNotCertifiedYet": "Meistens fehlt noch der zweite Posting-Tag. Öffne die Einladung, um genau zu sehen, was noch aussteht.",
+      "whatDoIUnlock": "Jede Stufe des Gründerpfads schaltet eine Auszeichnung oder eine Creator-Funktion in deinem Konto frei. Nichts auf diesem Pfad ist eine Zahlung.",
+      "isFoundingMemberPermanent": "Ja. Gründungsmitglied ist ein dauerhafter Status und bleibt in deinem Profil."
+    },
+    "unlocks": {
+      "locked": "Gesperrt",
+      "inProgress": "Läuft",
+      "unlocked": "Freigeschaltet",
+      "unlockedOn": "Freigeschaltet am {{date}}",
+      "threshold": "Bei {{count}} bestätigten Einladungen",
+      "note": "Freischaltungen werden von PulseSoc vergeben und erscheinen automatisch in deinem Konto."
+    },
+    "liveCreator": {
+      "eyebrow": "Live-Creator",
+      "heading": "Live-Creator freigeschaltet",
+      "body": "Du hast das PulseSoc-Netzwerk mit aufgebaut. Jetzt kannst du LIVE gehen.",
+      "start": "Erstes Live starten",
+      "explore": "Live entdecken"
+    },
+    "founding": {
+      "heading": "Gründungsmitglied",
+      "generation": "Gründergeneration",
+      "number": "Nr. {{number}}",
+      "memberSince": "Mitglied seit {{date}}",
+      "lockedBody": "Erreiche {{target}} bestätigte Einladungen für den dauerhaften Status als Gründungsmitglied.",
+      "earnedBody": "Dieser Status ist dauerhaft. Danke, dass du PulseSoc mit aufbaust."
+    },
+    "legacy": {
+      "certified": "Bestätigte Einladungen",
+      "firstInvite": "Erste Einladung",
+      "latestCertified": "Zuletzt bestätigt",
+      "noDate": "—",
+      "note": "Echte Menschen, die du zu PulseSoc gebracht hast.",
+      "empty": "Dein Vermächtnis beginnt hier",
+      "emptyBody": "Teile deinen Link und hol dein erstes Mitglied dazu."
     }
   },
   "premium": {

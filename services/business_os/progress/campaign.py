@@ -29,16 +29,15 @@ from __future__ import annotations
 from typing import Optional
 
 #: Milestones are awarded at most once per user per campaign, forever.
-#: The cash reward is the only repeatable element (see ``reward_interval``).
 ONE_TIME = "one_time"
 
-#: Milestone reward kinds. These name what the milestone *unlocks*; the
+#: Milestone unlock kinds. These name what the milestone *unlocks*; the
 #: engine maps them onto existing canonical grant paths and never invents a
 #: new benefit surface of its own.
-RECOGNITION = "recognition"        # a badge / status only
-CREATOR_PERK = "creator_perk"      # a profile or creator capability
-LIVE_PRIORITY = "live_priority"    # priority standing toward Live
-LIVE_ELIGIBILITY = "live_access"   # the actual Live Creator unlock
+RECOGNITION = "recognition"          # a badge / status only
+CREATOR_PERK = "creator_perk"        # a profile or creator capability
+LIVE_ELIGIBILITY = "live_access"     # the actual Live Creator unlock
+FOUNDING_STATUS = "founding_status"  # permanent historical standing
 
 
 class Milestone:
@@ -106,33 +105,28 @@ class Campaign:
         self.status = status
         self.milestones = tuple(sorted(milestones, key=lambda m: m.threshold))
 
-    # -- reward cycles -----------------------------------------------------
+    # -- legacy reward cycles ----------------------------------------------
+    # Retained only so campaigns recorded under an earlier, monetary version
+    # stay readable. A campaign with ``reward_interval=0`` — which is every
+    # campaign shipping today — earns no cycles at any count.
     def cycles_earned(self, qualified_count: int) -> int:
-        """How many full reward cycles ``qualified_count`` has completed.
-
-        This is integer division on purpose and it is the only place the
-        repeat rule is expressed: 29 → 0, 30 → 1, 59 → 1, 60 → 2. The engine
-        then pays cycles 1..n exactly once each, so the arithmetic here can
-        never by itself cause a double payment.
-        """
         n = int(qualified_count or 0)
         if n <= 0 or self.reward_interval <= 0:
             return 0
         return n // self.reward_interval
 
-    def next_cycle_progress(self, qualified_count: int) -> dict:
-        """Progress toward the *next* cash reward, for display."""
-        n = max(0, int(qualified_count or 0))
-        if self.reward_interval <= 0:
-            return {"current": 0, "target": 0, "remaining": 0}
-        current = n % self.reward_interval
-        return {
-            "current": current,
-            "target": self.reward_interval,
-            "remaining": self.reward_interval - current,
-        }
-
     # -- milestones --------------------------------------------------------
+    def live_threshold(self) -> int:
+        """The certified-invite count that unlocks Live Creator.
+
+        Derived from the ladder rather than hardcoded anywhere else, so the
+        server-side gate and the displayed rung can never disagree.
+        """
+        for m in self.milestones:
+            if m.kind == LIVE_ELIGIBILITY:
+                return m.threshold
+        return self.qualification_target
+
     def milestones_reached(self, qualified_count: int) -> list:
         n = int(qualified_count or 0)
         return [m for m in self.milestones if n >= m.threshold]
@@ -162,54 +156,77 @@ class Campaign:
 
 
 # --- the shipped campaign ---------------------------------------------------
-# NOTE ON THE 20 vs 30 LIVE SPLIT
-# The privilege engine models Live access as a single boolean, so there is no
-# honest way to grant "half of Live" at 20. Rather than invent a second live
-# tier the media stack knows nothing about, 20 is modelled as *priority
-# standing* (a recognition milestone that support and admin can act on) and 30
-# is the real unlock. Advertising 20 as partial Live access would be a promise
-# no gate could keep.
-FOUNDING_MEMBER_CHALLENGE_V1 = Campaign(
-    "FOUNDING_MEMBER_CHALLENGE_V1", 1, "Founding Member Challenge",
+# THE FOUNDING PATH IS NOT MONETARY.
+# ``reward_interval=0`` is the kill switch: ``cycles_earned`` returns 0 for
+# every count, so no new reward cycle is ever created and no reward hand-off
+# ever fires. The fields stay on the object because historical cycle rows
+# recorded under v1 must remain explainable, not because anything still earns.
+#
+# WHY THE ID DOES NOT CHANGE
+# ``campaign_id`` is the partition key on every Progress OS table. Minting a
+# new id would orphan every qualification, posting day and milestone award and
+# reset each member to zero certified invites. The rules moved, so the version
+# moves; the identity of the program does not.
+#
+# EVERY MILESTONE UNLOCKS SOMETHING THAT ALREADY EXISTS. Live Creator maps to
+# the existing livestream gate, the profile rung to an existing entitlement,
+# and the rest to badges the badge store already understands. Nothing here
+# promises reach, views, followers or ranking, because nothing here can.
+FOUNDING_PATH = Campaign(
+    "FOUNDING_MEMBER_CHALLENGE_V1", 2, "PulseSoc Founding Path",
     qualification_target=30,
-    reward_interval=30,
-    reward_amount_cents=3000,
-    reward_currency="usd",
+    reward_interval=0,
+    reward_amount_cents=0,
+    reward_currency="",
     required_posting_days=2,
     milestones=(
+        Milestone(
+            "live_creator", "Live Creator", 2, LIVE_ELIGIBILITY,
+            badge_key="live_creator",
+            description="You can broadcast LIVE on PulseSoc.",
+        ),
         Milestone(
             "early_supporter", "Early Supporter", 5, RECOGNITION,
             badge_key="early_supporter",
             description="Recognition for the first five people you brought in.",
         ),
+        # Key preserved from v1 so members who already earned this rung keep
+        # their award row and their entitlement; only the label moved.
         Milestone(
-            "creator_perk", "Creator Profile Perk", 10, CREATOR_PERK,
+            "creator_perk", "Rising Creator", 10, CREATOR_PERK,
             badge_key="creator_perk",
             entitlement_key="premium.profile.customization",
             description="Unlocks profile customization on your account.",
         ),
         Milestone(
-            "priority_creator", "Priority Creator Standing", 20, LIVE_PRIORITY,
-            badge_key="priority_creator",
-            description=(
-                "Priority standing toward Live Creator. Live itself unlocks at "
-                "30 qualified referrals."
-            ),
+            "network_builder", "Network Builder", 15, RECOGNITION,
+            badge_key="network_builder",
+            description="Recognition for building real reach into the network.",
         ),
         Milestone(
-            "founding_member", "Founding Member", 30, LIVE_ELIGIBILITY,
+            "priority_creator", "Priority Creator", 20, RECOGNITION,
+            badge_key="priority_creator",
+            description="Priority Creator standing on your profile.",
+        ),
+        Milestone(
+            "founding_creator", "Founding Creator", 25, RECOGNITION,
+            badge_key="founding_creator",
+            description="Founding Creator standing on your profile.",
+        ),
+        Milestone(
+            "founding_member", "Founding Member", 30, FOUNDING_STATUS,
             badge_key="founding_member",
             description=(
-                "Live Creator eligibility, the permanent Founding Member badge, "
-                "and your first $30 reward."
+                "The highest rung of the Founding Path. Permanent Founding "
+                "Generation status, kept on your profile for good."
             ),
         ),
     ),
 )
 
-_CAMPAIGNS = {FOUNDING_MEMBER_CHALLENGE_V1.campaign_id: FOUNDING_MEMBER_CHALLENGE_V1}
+_CAMPAIGNS = {FOUNDING_PATH.campaign_id: FOUNDING_PATH}
 
-DEFAULT_CAMPAIGN_ID = FOUNDING_MEMBER_CHALLENGE_V1.campaign_id
+DEFAULT_CAMPAIGN_ID = FOUNDING_PATH.campaign_id
 
 
 def get(campaign_id: str = "") -> Campaign:
@@ -218,8 +235,7 @@ def get(campaign_id: str = "") -> Campaign:
     Unknown ids fall back to the default rather than raising: a stale client
     asking about a retired campaign should see the current program, not a 500.
     """
-    return _CAMPAIGNS.get(campaign_id or DEFAULT_CAMPAIGN_ID,
-                          FOUNDING_MEMBER_CHALLENGE_V1)
+    return _CAMPAIGNS.get(campaign_id or DEFAULT_CAMPAIGN_ID, FOUNDING_PATH)
 
 
 def all_campaigns() -> list:

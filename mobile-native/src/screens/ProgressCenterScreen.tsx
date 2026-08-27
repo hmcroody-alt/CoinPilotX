@@ -1,27 +1,26 @@
 /**
- * Progress Center — the Founding Member Challenge and what comes after it.
+ * Progress Center — the PulseSoc Founding Path and what comes after it.
  *
- * Twelve layers on one scroll: overview, milestones, referrals, referral
- * detail, invite, rewards, missions, badge, insights, activity, how it works,
- * FAQ. They are sections rather than twelve routes because the whole point of
- * the surface is that a member can see the relationship between their invites,
- * their ladder position and their earnings without navigating between screens
- * to hold two numbers in their head.
+ * Twelve layers on one scroll: overview, Live Creator standing, unlocks,
+ * referrals, referral detail, invite, missions, Founding Member, legacy,
+ * insights, activity, how it works, FAQ. They are sections rather than twelve
+ * routes because the whole point of the surface is that a member can see the
+ * relationship between their invites, their ladder position and what they have
+ * unlocked without navigating between screens to hold two numbers in their head.
  *
  * Three rules this file follows without exception:
  *
- * 1. **Nothing is calculated here.** Qualified counts, percentages, reward
- *    amounts, milestone state, Live eligibility and badge eligibility all
- *    arrive decided by the server. The only arithmetic below is
- *    `progressBarPercent` clamping a width and `rewardMajorUnits` dividing by
- *    100 for the currency formatter. If this screen could compute a count it
- *    would eventually disagree with the server, and the member would trust the
- *    wrong one — the one on their own phone.
+ * 1. **Nothing is calculated here.** Certified counts, percentages, unlock
+ *    state, Live eligibility and badge eligibility all arrive decided by the
+ *    server. The only arithmetic below is `progressBarPercent` clamping a
+ *    width. If this screen could compute a count it would eventually disagree
+ *    with the server, and the member would trust the wrong one — the one on
+ *    their own phone.
  *
  * 2. **Gold means earned.** `progressTheme.gold` is applied only to state the
- *    server reports as `COMPLETED` / `COMPLETE` / `disbursed`. A milestone that
- *    is merely reached but not yet awarded renders violet, not gold, because
- *    gold on an unearned rung is the one lie this surface cannot afford.
+ *    server reports as `UNLOCKED` / `COMPLETE`. A rung that is merely reached
+ *    but not yet awarded renders violet, not gold, because gold on an unearned
+ *    rung is the one lie this surface cannot afford.
  *
  * 3. **This is the owner's screen.** It refuses on a visitor route rather than
  *    rendering the viewer's own referrals under someone else's name, matching
@@ -34,7 +33,7 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import {
   getProgressActivity,
@@ -46,9 +45,7 @@ import {
   getProgressOverview,
   getProgressReferralDetail,
   getProgressReferrals,
-  getProgressRewards,
   progressBarPercent,
-  rewardMajorUnits,
   type ProgressActivityItem,
   type ProgressChecklistItem,
   type ProgressFaq,
@@ -61,9 +58,7 @@ import {
   type ProgressOverview,
   type ProgressReferral,
   type ProgressReferralDetail,
-  type ProgressReferralTab,
-  type ProgressRewardCycle,
-  type ProgressRewards
+  type ProgressReferralTab
 } from "../api/progress";
 import { useFormatters, useTranslation } from "../i18n";
 import { RootStackParamList } from "../navigation/types";
@@ -87,15 +82,13 @@ function catalogKey(serverKey: string): string {
   return key.startsWith("progress.") ? `progress:${key.slice("progress.".length)}` : key;
 }
 
-export function ProgressCenterScreen({ route }: Props) {
+export function ProgressCenterScreen({ navigation, route }: Props) {
   const { authState } = useAuth();
   const { t } = useTranslation();
-  const fmt = useFormatters();
   const routeContext = resolveRouteProfileContext(route?.params, authState.user?.user_id);
 
   const [overview, setOverview] = useState<ProgressOverview | null>(null);
   const [milestones, setMilestones] = useState<ProgressMilestones | null>(null);
-  const [rewards, setRewards] = useState<ProgressRewards | null>(null);
   const [missions, setMissions] = useState<ProgressMissions | null>(null);
   const [activity, setActivity] = useState<ProgressActivityItem[]>([]);
   const [invite, setInvite] = useState<ProgressInvite | null>(null);
@@ -120,15 +113,13 @@ export function ProgressCenterScreen({ route }: Props) {
       // The static layers (how it works, FAQ) are allowed to fail without
       // taking the screen down — they are reference copy, not state. The live
       // layers are not: a member must never be shown a stale or partial count.
-      const [nextOverview, nextMilestones, nextRewards, nextMissions] = await Promise.all([
+      const [nextOverview, nextMilestones, nextMissions] = await Promise.all([
         getProgressOverview(),
         getProgressMilestones(),
-        getProgressRewards(),
         getProgressMissions()
       ]);
       setOverview(nextOverview);
       setMilestones(nextMilestones);
-      setRewards(nextRewards);
       setMissions(nextMissions);
 
       const [nextActivity, nextInvite, nextHow, nextFaq] = await Promise.all([
@@ -180,12 +171,8 @@ export function ProgressCenterScreen({ route }: Props) {
     return () => { cancelled = true; };
   }, [openRef]);
 
-  const campaignTarget = overview?.challenge?.target ?? overview?.campaign?.target ?? 0;
-  const currency = rewards?.currency || "usd";
-  const rewardAmount = useMemo(
-    () => fmt.currency(rewardMajorUnits(rewards?.reward_amount_cents ?? 3000), { currency }),
-    [fmt, rewards?.reward_amount_cents, currency]
-  );
+  const campaignTarget = overview?.path?.target ?? overview?.campaign?.target ?? 0;
+  const liveThreshold = howItWorks?.live_threshold ?? 0;
 
   const onCopy = useCallback(async () => {
     const link = invite?.referral_link;
@@ -200,6 +187,17 @@ export function ProgressCenterScreen({ route }: Props) {
     if (!link) return;
     await Share.share({ message: link }).catch(() => undefined);
   }, [invite?.referral_link]);
+
+  // Both routes already exist and are reachable from Creator Studio and the
+  // Live tab today. The card below is only ever rendered once the server has
+  // granted the unlock, so neither action can be a dead end.
+  const onStartLive = useCallback(() => {
+    navigation.navigate("LiveStudio", { title: "Live Studio" });
+  }, [navigation]);
+
+  const onExploreLive = useCallback(() => {
+    navigation.navigate("Tabs", { screen: "Live" });
+  }, [navigation]);
 
   // Visitor route with no visitor variant. All hooks above have already run.
   if (!routeContext.isOwnProfile) {
@@ -236,13 +234,16 @@ export function ProgressCenterScreen({ route }: Props) {
       contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load("refresh")} tintColor={progressTheme.violet} />}
     >
-      {/* 1 — Overview */}
-      <OverviewSection overview={overview} rewardAmount={rewardAmount} target={campaignTarget} />
+      {/* 1 — Founding Path overview */}
+      <OverviewSection overview={overview} />
 
-      {/* 2 — Milestones */}
-      <MilestonesSection milestones={milestones?.milestones || []} />
+      {/* 2 — Live Creator standing */}
+      <LiveCreatorSection overview={overview} onStartLive={onStartLive} onExploreLive={onExploreLive} />
 
-      {/* 3 — Referrals list, 4 — Referral detail */}
+      {/* 3 — Your unlocks */}
+      <UnlocksSection milestones={milestones?.milestones || []} />
+
+      {/* 4 — Referrals list, 5 — Referral detail */}
       <ReferralsSection
         referrals={referrals}
         tab={tab}
@@ -252,29 +253,29 @@ export function ProgressCenterScreen({ route }: Props) {
         onOpen={setOpenRef}
       />
 
-      {/* 5 — Invite Friends */}
+      {/* 6 — Invite Friends */}
       <InviteSection invite={invite} copied={copied} onCopy={onCopy} onShare={onShare} />
 
-      {/* 6 — Rewards & Earnings */}
-      <RewardsSection rewards={rewards} currency={currency} rewardAmount={rewardAmount} target={campaignTarget} />
-
-      {/* 7 — Post-30 Missions */}
+      {/* 7 — Missions */}
       <MissionsSection missions={missions} />
 
-      {/* 8 — Founding Member Badge */}
-      <BadgeSection overview={overview} target={campaignTarget} />
+      {/* 8 — Founding Member */}
+      <FoundingSection overview={overview} target={campaignTarget} />
 
-      {/* 9 — Insights */}
+      {/* 9 — Your founding legacy */}
+      <LegacySection overview={overview} />
+
+      {/* 10 — Insights */}
       <InsightsSection overview={overview} />
 
-      {/* 10 — Activity Feed */}
+      {/* 11 — Activity Feed */}
       <ActivitySection activity={activity} />
 
-      {/* 11 — How It Works */}
+      {/* 12 — How It Works */}
       <HowItWorksSection howItWorks={howItWorks} />
 
-      {/* 12 — FAQ */}
-      <FaqSection faq={faq} rewardAmount={rewardAmount} target={campaignTarget} />
+      {/* 13 — FAQ */}
+      <FaqSection faq={faq} target={campaignTarget} live={liveThreshold} />
 
       <Text style={styles.footnote}>{t("progress:privateNote")}</Text>
       {overview?.not_verification ? <Text style={styles.footnote}>{overview.not_verification}</Text> : null}
@@ -283,114 +284,158 @@ export function ProgressCenterScreen({ route }: Props) {
 }
 
 /* -------------------------------------------------------------------------- *
- * 1 — Overview
+ * 1 — Founding Path overview
  * -------------------------------------------------------------------------- */
 
-function OverviewSection({ overview, rewardAmount, target }: { overview: ProgressOverview | null; rewardAmount: string; target: number }) {
+function OverviewSection({ overview }: { overview: ProgressOverview | null }) {
   const { t } = useTranslation();
   const fmt = useFormatters();
-  const challenge = overview?.challenge;
-  const qualified = challenge?.qualified ?? 0;
-  const percent = progressBarPercent(challenge?.percent);
-  const complete = Boolean(challenge?.complete);
-  const nextReward = overview?.next_reward;
+  const path = overview?.path;
+  const certified = path?.certified ?? 0;
+  const invites = overview?.invites;
+  const nextUnlock = overview?.next_unlock;
+  // Founding Member is an award row, not a count. The hero only turns gold once
+  // the server says the rung was actually granted.
+  const founding = Boolean(overview?.founding_member);
 
   return (
-    <View style={[styles.hero, complete && styles.heroComplete]}>
+    <View style={[styles.hero, founding && styles.heroComplete]}>
       <Text style={styles.heroEyebrow}>{t("progress:subtitle")}</Text>
-      <Text style={styles.heroValue}>
-        {t("progress:overview.qualified", { count: qualified })}
-      </Text>
-      <ProgressBar percent={percent} tone={complete ? "gold" : "violet"} />
+      <Text style={styles.heroValue}>{t("progress:overview.certified", { count: certified })}</Text>
+
+      {nextUnlock ? (
+        <>
+          <Text style={styles.heroNext}>{t("progress:overview.nextUnlock", { label: nextUnlock.label })}</Text>
+          <ProgressBar percent={progressBarPercent(nextUnlock.percent)} tone="violet" />
+          <Text style={styles.heroCaption}>
+            {t("progress:overview.unlockCounter", { current: nextUnlock.current, target: nextUnlock.threshold })}
+            {" · "}
+            {t("progress:overview.unlockRemaining", { count: nextUnlock.remaining })}
+          </Text>
+        </>
+      ) : (
+        <>
+          <ProgressBar percent={progressBarPercent(path?.percent)} tone={founding ? "gold" : "violet"} />
+          <Text style={[styles.heroNext, founding && styles.gold]}>
+            {founding ? t("progress:overview.foundingMember") : t("progress:overview.complete")}
+          </Text>
+        </>
+      )}
+
       <Text style={styles.heroCaption}>
-        {complete
-          ? t("progress:overview.complete")
-          : t("progress:overview.remaining", { count: challenge?.remaining ?? 0 })}
+        {t("progress:overview.pathCounter", { current: certified, target: path?.target ?? 0 })}
       </Text>
-
-      {overview?.next_milestone && !complete ? (
-        <Text style={styles.heroNext}>
-          {t("progress:overview.nextMilestone", { label: overview.next_milestone.label })}
-        </Text>
-      ) : null}
-
-      {complete ? (
-        <Text style={[styles.heroNext, styles.gold]}>{t("progress:overview.foundingMember")}</Text>
-      ) : null}
-
-      {nextReward && (nextReward.remaining ?? 0) > 0 ? (
-        <Text style={styles.heroNext}>
-          {t("progress:overview.nextReward", { count: nextReward.remaining ?? 0, amount: rewardAmount })}
-        </Text>
-      ) : null}
-
-      {complete ? (
-        <Text style={styles.heroCaption}>
-          {t("progress:overview.keepGoing", { target, amount: rewardAmount })}
-        </Text>
-      ) : null}
 
       <View style={styles.breakdownRow}>
-        <Stat label={t("progress:breakdown.invited")} value={fmt.count(overview?.breakdown?.invited ?? 0)} />
-        <Stat label={t("progress:breakdown.inProgress")} value={fmt.count(overview?.breakdown?.in_progress ?? 0)} />
-        <Stat label={t("progress:breakdown.qualified")} value={fmt.count(qualified)} tone="gold" />
-        <Stat label={t("progress:breakdown.inReview")} value={fmt.count(overview?.breakdown?.in_review ?? 0)} tone="review" />
+        <Stat label={t("progress:breakdown.invited")} value={fmt.count(invites?.invited ?? 0)} />
+        <Stat label={t("progress:breakdown.inProgress")} value={fmt.count(invites?.in_progress ?? 0)} />
+        <Stat label={t("progress:breakdown.certified")} value={fmt.count(invites?.certified ?? certified)} tone="gold" />
       </View>
     </View>
   );
 }
 
 /* -------------------------------------------------------------------------- *
- * 2 — Milestones
+ * 2 — Live Creator standing
  * -------------------------------------------------------------------------- */
 
-function MilestonesSection({ milestones }: { milestones: ProgressMilestone[] }) {
+function LiveCreatorSection({
+  overview, onStartLive, onExploreLive
+}: { overview: ProgressOverview | null; onStartLive: () => void; onExploreLive: () => void }) {
+  const { t } = useTranslation();
+  // Server-decided, from an award row. The client never infers Live access from
+  // a count, so the buttons below cannot appear before the privilege is real.
+  if (!overview?.live_creator) return null;
+  return (
+    <View style={styles.liveCard}>
+      <View style={styles.liveIcon}>
+        <Ionicons name="radio" size={22} color={progressTheme.gold} />
+      </View>
+      <Text style={styles.liveEyebrow}>{t("progress:liveCreator.eyebrow")}</Text>
+      <Text style={[styles.liveTitle, styles.gold]}>{t("progress:liveCreator.heading")}</Text>
+      <Text style={styles.body}>{t("progress:liveCreator.body")}</Text>
+      <View style={styles.actions}>
+        <Pressable accessibilityRole="button" style={styles.primaryAction} onPress={onStartLive}>
+          <Ionicons name="videocam-outline" size={15} color={colors.background} />
+          <Text style={styles.primaryActionText}>{t("progress:liveCreator.start")}</Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" style={styles.secondaryAction} onPress={onExploreLive}>
+          <Ionicons name="compass-outline" size={15} color={progressTheme.violet} />
+          <Text style={styles.secondaryActionText}>{t("progress:liveCreator.explore")}</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+/* -------------------------------------------------------------------------- *
+ * 3 — Your unlocks
+ * -------------------------------------------------------------------------- */
+
+/** Icon per unlock kind. Falls back to the ladder icon for a kind this build
+ *  does not know yet, so a rung added server-side still renders. */
+const UNLOCK_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
+  live_access: "radio",
+  creator_perk: "color-palette",
+  recognition: "star",
+  founding_status: "ribbon",
+  one_time: "trophy"
+};
+
+function UnlocksSection({ milestones }: { milestones: ProgressMilestone[] }) {
   const { t } = useTranslation();
   const fmt = useFormatters();
   return (
-    <Section title={t("progress:sections.milestones")}>
+    <Section title={t("progress:sections.unlocks")}>
       {milestones.map((milestone) => {
-        // Gold only for COMPLETED. A threshold that is reached but whose award
+        // Gold only for UNLOCKED. A threshold that is reached but whose award
         // row has not been written yet is IN_PROGRESS and stays violet.
-        const earned = milestone.state === "COMPLETED";
+        const unlocked = milestone.state === "UNLOCKED";
+        const locked = milestone.state === "LOCKED";
         return (
-          <View key={milestone.key} style={styles.row}>
-            <View style={[styles.rowIcon, earned ? styles.rowIconGold : styles.rowIconViolet]}>
-              <Ionicons
-                name={earned ? "trophy" : milestone.state === "IN_PROGRESS" ? "ellipse-outline" : "lock-closed-outline"}
-                size={16}
-                color={earned ? progressTheme.gold : milestone.state === "LOCKED" ? colors.muted : progressTheme.violet}
-              />
-            </View>
-            <View style={styles.rowBody}>
-              <Text style={[styles.rowTitle, earned && styles.gold]}>{milestone.label}</Text>
-              <Text style={styles.rowMeta}>
-                {t("progress:milestones.threshold", { count: milestone.threshold })}
-                {earned && milestone.earned_at ? ` · ${t("progress:milestones.earnedOn", { date: fmt.date(milestone.earned_at) })}` : ""}
+          <View key={milestone.key} style={[styles.unlockCard, unlocked && styles.unlockCardEarned, locked && styles.unlockCardLocked]}>
+            <View style={styles.row}>
+              <View style={[styles.rowIcon, unlocked ? styles.rowIconGold : locked ? styles.rowIconLocked : styles.rowIconViolet]}>
+                <Ionicons
+                  name={UNLOCK_ICON[milestone.kind] || "trophy"}
+                  size={16}
+                  color={unlocked ? progressTheme.gold : locked ? colors.muted : progressTheme.violet}
+                />
+              </View>
+              <View style={styles.rowBody}>
+                <Text style={[styles.rowTitle, unlocked && styles.gold]}>{milestone.label}</Text>
+                <Text style={styles.rowMeta}>
+                  {t("progress:unlocks.threshold", { count: milestone.threshold })}
+                  {unlocked && milestone.earned_at
+                    ? ` · ${t("progress:unlocks.unlockedOn", { date: fmt.date(milestone.earned_at) })}`
+                    : ""}
+                </Text>
+              </View>
+              <Text style={[styles.rowState, unlocked && styles.gold]}>
+                {unlocked
+                  ? t("progress:unlocks.unlocked")
+                  : milestone.state === "IN_PROGRESS"
+                    ? t("progress:unlocks.inProgress")
+                    : t("progress:unlocks.locked")}
               </Text>
             </View>
-            <Text style={[styles.rowState, earned && styles.gold]}>
-              {earned
-                ? t("progress:milestones.completed")
-                : milestone.state === "IN_PROGRESS"
-                  ? t("progress:milestones.inProgress")
-                  : t("progress:milestones.locked")}
-            </Text>
+            {milestone.description ? <Text style={styles.rowMeta}>{milestone.description}</Text> : null}
           </View>
         );
       })}
+      <Text style={styles.note}>{t("progress:unlocks.note")}</Text>
     </Section>
   );
 }
 
 /* -------------------------------------------------------------------------- *
- * 3 & 4 — Referrals list and qualification checklist
+ * 4 & 5 — Referrals list and certification checklist
  * -------------------------------------------------------------------------- */
 
 const TABS: ProgressReferralTab[] = ["all", "qualified", "pending", "review"];
 const TAB_LABEL: Record<ProgressReferralTab, string> = {
   all: "progress:referrals.tabAll",
-  qualified: "progress:referrals.tabQualified",
+  qualified: "progress:referrals.tabCertified",
   pending: "progress:referrals.tabPending",
   review: "progress:referrals.tabReview"
 };
@@ -444,7 +489,7 @@ function ReferralsSection({
                 <Text style={styles.rowMeta}>{referral.summary}</Text>
               </View>
               <Text style={[styles.rowState, referral.counts && styles.gold]}>
-                {referral.counts ? t("progress:referrals.counts") : t("progress:referrals.doesNotCountYet")}
+                {referral.counts ? t("progress:referrals.counts") : t("progress:referrals.notCertifiedYet")}
               </Text>
             </Pressable>
 
@@ -509,7 +554,7 @@ function Checklist({ detail }: { detail: ProgressReferralDetail }) {
 }
 
 /* -------------------------------------------------------------------------- *
- * 5 — Invite Friends
+ * 6 — Invite Friends
  * -------------------------------------------------------------------------- */
 
 function InviteSection({
@@ -546,79 +591,7 @@ function InviteSection({
 }
 
 /* -------------------------------------------------------------------------- *
- * 6 — Rewards & Earnings
- * -------------------------------------------------------------------------- */
-
-const REWARD_STATUS: Record<string, string> = {
-  pending: "progress:rewards.statusPending",
-  approved: "progress:rewards.statusApproved",
-  disbursed: "progress:rewards.statusDisbursed",
-  on_hold: "progress:rewards.statusOnHold",
-  denied: "progress:rewards.statusDenied"
-};
-
-function RewardsSection({
-  rewards, currency, rewardAmount, target
-}: { rewards: ProgressRewards | null; currency: string; rewardAmount: string; target: number }) {
-  const { t } = useTranslation();
-  const fmt = useFormatters();
-  const history = rewards?.history || [];
-  const interval = rewards?.how_you_earn?.interval ?? target;
-
-  return (
-    <Section title={t("progress:sections.rewards")}>
-      <View style={styles.moneyRow}>
-        <Money label={t("progress:rewards.earned")} value={fmt.currency(rewardMajorUnits(rewards?.earned_cents), { currency })} />
-        <Money label={t("progress:rewards.pending")} value={fmt.currency(rewardMajorUnits(rewards?.pending_cents), { currency })} />
-        <Money label={t("progress:rewards.available")} value={fmt.currency(rewardMajorUnits(rewards?.available_cents), { currency })} tone="gold" />
-      </View>
-      {/*
-        Stated plainly because "pending" is the resting state for cash here, not
-        a fault. Left unexplained it reads as money withheld.
-      */}
-      <Text style={styles.note}>{t("progress:rewards.pendingNote")}</Text>
-      <Text style={styles.body}>{t("progress:rewards.howYouEarn", { amount: rewardAmount, count: interval })}</Text>
-
-      {history.length === 0 ? (
-        <Empty
-          title={t("progress:rewards.historyEmpty")}
-          body={t("progress:rewards.historyEmptyBody", { amount: rewardAmount, target })}
-        />
-      ) : (
-        history.map((cycle: ProgressRewardCycle) => {
-          const paid = cycle.status === "disbursed";
-          return (
-            <View key={cycle.cycle} style={styles.row}>
-              <View style={[styles.rowIcon, paid ? styles.rowIconGold : styles.rowIconViolet]}>
-                <Ionicons name="cash-outline" size={16} color={paid ? progressTheme.gold : progressTheme.violet} />
-              </View>
-              <View style={styles.rowBody}>
-                <Text style={styles.rowTitle}>{t("progress:rewards.cycleLabel", { count: cycle.cycle })}</Text>
-                <Text style={styles.rowMeta}>
-                  {cycle.earned_at ? fmt.date(cycle.earned_at) : ""}
-                </Text>
-              </View>
-              <View style={styles.rowTrailing}>
-                <Text style={[styles.rowTitle, paid && styles.gold]}>
-                  {fmt.currency(rewardMajorUnits(cycle.amount_cents), { currency: cycle.currency || currency })}
-                </Text>
-                <Text style={styles.rowMeta}>
-                  {t(REWARD_STATUS[cycle.status] || "progress:rewards.statusPending")}
-                </Text>
-              </View>
-            </View>
-          );
-        })
-      )}
-      <Text style={styles.note}>
-        {t("progress:rewards.cycles", { count: rewards?.cycles_completed ?? 0 })}
-      </Text>
-    </Section>
-  );
-}
-
-/* -------------------------------------------------------------------------- *
- * 7 — Post-30 Missions
+ * 7 — Missions
  * -------------------------------------------------------------------------- */
 
 function MissionsSection({ missions }: { missions: ProgressMissions | null }) {
@@ -663,24 +636,43 @@ function MissionsSection({ missions }: { missions: ProgressMissions | null }) {
 }
 
 /* -------------------------------------------------------------------------- *
- * 8 — Founding Member Badge
+ * 8 — Founding Member
  * -------------------------------------------------------------------------- */
 
-function BadgeSection({ overview, target }: { overview: ProgressOverview | null; target: number }) {
+function FoundingSection({ overview, target }: { overview: ProgressOverview | null; target: number }) {
   const { t } = useTranslation();
-  // Server-decided. The client never infers the badge from the count, because
-  // the count and the award are separate facts and only one of them is money.
+  const fmt = useFormatters();
+  // Server-decided. The client never infers the standing from the count,
+  // because the count and the award are separate facts.
   const earned = Boolean(overview?.founding_member);
+  const founding = overview?.founding;
   return (
-    <Section title={t("progress:sections.badge")}>
+    <Section title={t("progress:sections.founding")}>
       <View style={[styles.badge, earned && styles.badgeEarned]}>
         <Ionicons name={earned ? "ribbon" : "ribbon-outline"} size={26} color={earned ? progressTheme.gold : colors.muted} />
-        <Text style={[styles.badgeTitle, earned && styles.gold]}>{t("progress:badge.heading")}</Text>
+        <Text style={[styles.badgeTitle, earned && styles.gold]}>{t("progress:founding.heading")}</Text>
+        {earned && founding ? (
+          <>
+            <Text style={[styles.badgeGeneration, styles.gold]}>{t("progress:founding.generation")}</Text>
+            {/*
+              The number is the award row's position, not a minted counter, and
+              it is only rendered when the server sends one. Nothing here
+              invents a rank to fill the space.
+            */}
+            {founding.founding_number ? (
+              <Text style={styles.badgeNumber}>
+                {t("progress:founding.number", { number: fmt.count(founding.founding_number) })}
+              </Text>
+            ) : null}
+            {founding.member_since ? (
+              <Text style={styles.note}>
+                {t("progress:founding.memberSince", { date: fmt.date(founding.member_since) })}
+              </Text>
+            ) : null}
+          </>
+        ) : null}
         <Text style={styles.body}>
-          {earned ? t("progress:badge.earnedBody") : t("progress:badge.lockedBody", { target })}
-        </Text>
-        <Text style={[styles.note, earned && styles.gold]}>
-          {earned ? t("progress:badge.liveUnlocked") : t("progress:badge.liveLocked", { target })}
+          {earned ? t("progress:founding.earnedBody") : t("progress:founding.lockedBody", { target })}
         </Text>
       </View>
     </Section>
@@ -688,24 +680,63 @@ function BadgeSection({ overview, target }: { overview: ProgressOverview | null;
 }
 
 /* -------------------------------------------------------------------------- *
- * 9 — Insights
+ * 9 — Your founding legacy
+ * -------------------------------------------------------------------------- */
+
+function LegacySection({ overview }: { overview: ProgressOverview | null }) {
+  const { t } = useTranslation();
+  const fmt = useFormatters();
+  const legacy = overview?.legacy;
+  const certified = legacy?.certified ?? 0;
+  // Only real rows are reported. There is no referral graph behind this and
+  // none is inferred, so an empty legacy stays empty rather than filling with
+  // plausible-looking numbers.
+  const started = Boolean(legacy?.first_invite_at) || certified > 0;
+
+  return (
+    <Section title={t("progress:sections.legacy")}>
+      {started ? (
+        <>
+          <View style={styles.breakdownRow}>
+            <Stat label={t("progress:legacy.certified")} value={fmt.count(certified)} tone="gold" />
+            <Stat
+              label={t("progress:legacy.firstInvite")}
+              value={legacy?.first_invite_at ? fmt.date(legacy.first_invite_at) : t("progress:legacy.noDate")}
+            />
+            <Stat
+              label={t("progress:legacy.latestCertified")}
+              value={legacy?.latest_certified_at ? fmt.date(legacy.latest_certified_at) : t("progress:legacy.noDate")}
+            />
+          </View>
+          <Text style={styles.note}>{t("progress:legacy.note")}</Text>
+        </>
+      ) : (
+        <Empty title={t("progress:legacy.empty")} body={t("progress:legacy.emptyBody")} />
+      )}
+    </Section>
+  );
+}
+
+/* -------------------------------------------------------------------------- *
+ * 10 — Insights
  * -------------------------------------------------------------------------- */
 
 function InsightsSection({ overview }: { overview: ProgressOverview | null }) {
   const { t } = useTranslation();
   const fmt = useFormatters();
-  const breakdown = overview?.breakdown || {};
-  const qualified = breakdown.qualified ?? overview?.challenge?.qualified ?? 0;
-  const inProgress = breakdown.in_progress ?? 0;
-  const invited = breakdown.invited ?? 0;
-  const hasActivity = qualified + inProgress + invited > 0;
+  const invites = overview?.invites || {};
+  const certified = invites.certified ?? overview?.path?.certified ?? 0;
+  const inProgress = invites.in_progress ?? 0;
+  const invited = invites.invited ?? 0;
+  const hasActivity = certified + inProgress + invited > 0;
 
   return (
     <Section title={t("progress:sections.insights")}>
       {hasActivity ? (
         <View style={styles.breakdownRow}>
-          <Stat label={t("progress:insights.conversion")} value={fmt.count(qualified)} tone="gold" />
+          <Stat label={t("progress:insights.certified")} value={fmt.count(certified)} tone="gold" />
           <Stat label={t("progress:insights.stillGoing")} value={fmt.count(inProgress)} />
+          <Stat label={t("progress:insights.inReview")} value={fmt.count(overview?.breakdown?.in_review ?? 0)} tone="review" />
         </View>
       ) : (
         <Empty title={t("progress:insights.empty")} body={t("progress:insights.emptyBody")} />
@@ -715,14 +746,13 @@ function InsightsSection({ overview }: { overview: ProgressOverview | null }) {
 }
 
 /* -------------------------------------------------------------------------- *
- * 10 — Activity Feed
+ * 11 — Activity Feed
  * -------------------------------------------------------------------------- */
 
 const ACTIVITY_LABEL: Record<string, string> = {
   referral_signed_up: "progress:activity.referralSignedUp",
-  referral_qualified: "progress:activity.referralQualified",
-  milestone_earned: "progress:activity.milestoneEarned",
-  reward_earned: "progress:activity.rewardEarned"
+  referral_qualified: "progress:activity.referralCertified",
+  milestone_earned: "progress:activity.unlockEarned"
 };
 
 function ActivitySection({ activity }: { activity: ProgressActivityItem[] }) {
@@ -749,7 +779,7 @@ function ActivitySection({ activity }: { activity: ProgressActivityItem[] }) {
 }
 
 /* -------------------------------------------------------------------------- *
- * 11 — How It Works
+ * 12 — How It Works
  * -------------------------------------------------------------------------- */
 
 const STEP_LABEL: Record<string, string> = {
@@ -757,7 +787,7 @@ const STEP_LABEL: Record<string, string> = {
   join: "progress:howItWorks.join",
   profile: "progress:howItWorks.profile",
   post_two_days: "progress:howItWorks.postTwoDays",
-  qualified: "progress:howItWorks.qualified"
+  qualified: "progress:howItWorks.certified"
 };
 
 function HowItWorksSection({ howItWorks }: { howItWorks: ProgressHowItWorks | null }) {
@@ -772,7 +802,7 @@ function HowItWorksSection({ howItWorks }: { howItWorks: ProgressHowItWorks | nu
             <Text style={styles.stepIndexText}>{step.order}</Text>
           </View>
           <Text style={styles.body}>
-            {t(STEP_LABEL[step.key] || "progress:howItWorks.qualified", { count: days })}
+            {t(STEP_LABEL[step.key] || "progress:howItWorks.certified", { count: days })}
           </Text>
         </View>
       ))}
@@ -788,10 +818,10 @@ function HowItWorksSection({ howItWorks }: { howItWorks: ProgressHowItWorks | nu
 }
 
 /* -------------------------------------------------------------------------- *
- * 12 — FAQ
+ * 13 — FAQ
  * -------------------------------------------------------------------------- */
 
-function FaqSection({ faq, rewardAmount, target }: { faq: ProgressFaq | null; rewardAmount: string; target: number }) {
+function FaqSection({ faq, target, live }: { faq: ProgressFaq | null; target: number; live: number }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState<string>("");
   const items = faq?.faq || [];
@@ -814,12 +844,12 @@ function FaqSection({ faq, rewardAmount, target }: { faq: ProgressFaq | null; re
           >
             <View style={styles.faqHeader}>
               <Text style={styles.faqQuestion}>
-                {t(`progress:faq.questions.${leaf}`, { defaultValue: t(key, { amount: rewardAmount, target }) })}
+                {t(`progress:faq.questions.${leaf}`, { defaultValue: t(key, { target, live }) })}
               </Text>
               <Ionicons name={expanded ? "chevron-up" : "chevron-down"} size={15} color={colors.muted} />
             </View>
             {expanded ? (
-              <Text style={styles.body}>{t(key, { amount: rewardAmount, target })}</Text>
+              <Text style={styles.body}>{t(key, { target, live })}</Text>
             ) : null}
           </Pressable>
         );
@@ -864,19 +894,11 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: "go
           tone === "gold" && styles.gold,
           tone === "review" && { color: progressTheme.state.review }
         ]}
+        numberOfLines={1}
       >
         {value}
       </Text>
       <Text style={styles.statLabel} numberOfLines={2}>{label}</Text>
-    </View>
-  );
-}
-
-function Money({ label, value, tone }: { label: string; value: string; tone?: "gold" }) {
-  return (
-    <View style={styles.money}>
-      <Text style={[styles.moneyValue, tone === "gold" && styles.gold]}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
     </View>
   );
 }
@@ -919,6 +941,28 @@ const styles = createThemedStyles(() => ({
   heroCaption: { color: colors.muted, fontSize: 13 },
   heroNext: { color: colors.text, fontSize: 13, fontWeight: "600" },
 
+  liveCard: {
+    alignItems: "center",
+    backgroundColor: progressTheme.goldSoft,
+    borderColor: progressTheme.goldBorder,
+    borderRadius: progressTheme.radius.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: 8,
+    padding: 16
+  },
+  liveIcon: {
+    alignItems: "center",
+    backgroundColor: progressTheme.goldSoft,
+    borderColor: progressTheme.goldBorder,
+    borderRadius: progressTheme.radius.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    height: 44,
+    justifyContent: "center",
+    width: 44
+  },
+  liveEyebrow: { color: progressTheme.gold, fontSize: 11, fontWeight: "700", letterSpacing: 0.8, textTransform: "uppercase" },
+  liveTitle: { fontSize: 18, fontWeight: "700", textAlign: "center" },
+
   section: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
@@ -933,11 +977,22 @@ const styles = createThemedStyles(() => ({
   rowIcon: { alignItems: "center", borderRadius: progressTheme.radius.chip, borderWidth: StyleSheet.hairlineWidth, height: 30, justifyContent: "center", width: 30 },
   rowIconViolet: { backgroundColor: progressTheme.violetSoft, borderColor: progressTheme.violetBorder },
   rowIconGold: { backgroundColor: progressTheme.goldSoft, borderColor: progressTheme.goldBorder },
+  rowIconLocked: { backgroundColor: colors.surfaceRaised, borderColor: colors.border },
   rowBody: { flex: 1, gap: 3 },
   rowTitle: { color: colors.text, fontSize: 14, fontWeight: "600" },
   rowMeta: { color: colors.muted, fontSize: 12 },
   rowState: { color: colors.muted, fontSize: 11, maxWidth: 96, textAlign: "right" },
-  rowTrailing: { alignItems: "flex-end", gap: 3 },
+
+  unlockCard: {
+    borderColor: colors.border,
+    borderRadius: progressTheme.radius.tile,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 4
+  },
+  unlockCardEarned: { backgroundColor: progressTheme.goldSoft, borderColor: progressTheme.goldBorder },
+  unlockCardLocked: { opacity: 0.72 },
 
   gold: { color: progressTheme.gold },
 
@@ -1007,10 +1062,6 @@ const styles = createThemedStyles(() => ({
   },
   secondaryActionText: { color: progressTheme.violet, fontSize: 13, fontWeight: "700" },
 
-  moneyRow: { flexDirection: "row", gap: 10 },
-  money: { flex: 1, gap: 2 },
-  moneyValue: { color: colors.text, fontSize: 18, fontWeight: "700" },
-
   missionRow: { flexDirection: "row", gap: 10, paddingVertical: 6 },
 
   badge: {
@@ -1023,6 +1074,8 @@ const styles = createThemedStyles(() => ({
   },
   badgeEarned: { backgroundColor: progressTheme.goldSoft, borderColor: progressTheme.goldBorder },
   badgeTitle: { color: colors.text, fontSize: 16, fontWeight: "700" },
+  badgeGeneration: { fontSize: 12, fontWeight: "700", letterSpacing: 0.8, textTransform: "uppercase" },
+  badgeNumber: { color: colors.text, fontSize: 22, fontWeight: "700" },
 
   activityRow: { gap: 3, paddingVertical: 7 },
 

@@ -1941,70 +1941,59 @@
   },
   "progress": {
     "title": "진행 상황",
-    "subtitle": "파운딩 멤버 챌린지",
+    "subtitle": "파운딩 패스",
     "privateNote": "나만 볼 수 있어요.",
     "notVerification": "이 프로그램은 신원 확인이 아니에요.",
     "loading": "진행 상황을 불러오는 중…",
     "loadError": "진행 상황을 불러오지 못했어요.",
     "retry": "다시 시도",
     "tile": {
-      "start": "챌린지 시작하기",
-      "active": "{{target}}명 중 {{current}}명 인정",
+      "start": "파운딩 패스 시작하기",
+      "active": "{{target}}명 중 {{current}}명 인증",
       "review": "초대를 확인하고 있어요",
       "complete": "파운딩 멤버"
     },
     "overview": {
-      "heading": "나의 챌린지",
-      "qualified_other": "인정된 추천 {{count}}명",
-      "remaining": "{{count}}명 남음",
-      "complete": "챌린지 완료",
-      "nextMilestone": "다음: {{label}}",
-      "nextReward": "다음 {{amount}}까지 {{count}}명",
+      "heading": "나의 파운딩 패스",
+      "complete": "파운딩 패스 완료",
       "foundingMember": "파운딩 멤버가 되셨어요",
-      "keepGoing": "인정된 추천 {{target}}명마다 {{amount}}을 더 받아요."
+      "certified_other": "인증된 초대 {{count}}건",
+      "nextUnlock": "다음 해제: {{label}}",
+      "unlockCounter": "{{target}} 중 {{current}}",
+      "unlockRemaining_other": "{{count}}건 남음",
+      "pathCounter": "파운딩 패스 {{target}} 중 {{current}}"
     },
     "breakdown": {
       "invited": "초대함",
       "inProgress": "진행 중",
-      "qualified": "인정됨",
       "inReview": "확인 중",
-      "closed": "종료됨"
+      "certified": "인증됨"
     },
     "sections": {
-      "milestones": "마일스톤",
       "referrals": "내 추천",
       "invite": "친구 초대",
-      "rewards": "보상 및 수익",
       "missions": "미션",
-      "badge": "파운딩 멤버 배지",
       "insights": "인사이트",
       "activity": "활동",
       "howItWorks": "진행 방식",
-      "faq": "자주 묻는 질문"
-    },
-    "milestones": {
-      "heading": "보상 단계",
-      "locked": "잠김",
-      "inProgress": "진행 중",
-      "completed": "획득함",
-      "earnedOn": "{{date}}에 획득",
-      "threshold": "추천 {{count}}명에서",
-      "oneTime": "1회 한정",
-      "repeatable": "{{count}}명마다 반복"
+      "faq": "자주 묻는 질문",
+      "unlocks": "나의 해제 항목",
+      "founding": "파운딩 멤버",
+      "legacy": "나의 파운딩 발자취"
     },
     "referrals": {
       "heading": "내 추천",
       "tabAll": "전체",
-      "tabQualified": "인정됨",
       "tabPending": "진행 중",
       "tabReview": "확인 중",
       "empty": "아직 추천이 없어요",
       "emptyBody": "링크를 공유하고 시작해 보세요.",
-      "counts": "챌린지에 반영돼요",
-      "doesNotCountYet": "아직 반영되지 않았어요",
+      "counts": "파운딩 패스에 반영됩니다",
       "anonymous": "새로운 멤버",
-      "detailHeading": "인정 조건 체크리스트",
-      "openDetail": "남은 조건 보기"
+      "detailHeading": "인증 체크리스트",
+      "openDetail": "남은 조건 보기",
+      "tabCertified": "인증됨",
+      "notCertifiedYet": "아직 인증되지 않음"
     },
     "checklist": {
       "signedUp": "내 링크로 가입",
@@ -2020,30 +2009,13 @@
     },
     "invite": {
       "heading": "친구 초대",
-      "body": "링크를 공유하세요. 친구가 가입하고 서로 다른 이틀에 게시하면 반영돼요.",
+      "body": "링크를 공유하세요. 친구가 가입해 서로 다른 이틀에 게시하면 인증된 초대가 됩니다.",
       "yourLink": "내 초대 링크",
       "copy": "링크 복사",
       "copied": "복사됨",
       "share": "공유",
       "unavailable": "초대 링크가 아직 준비되지 않았어요.",
       "fairness": "실제로 아는 사람을 초대해 주세요. 수보다 질이 중요해요."
-    },
-    "rewards": {
-      "heading": "보상 및 수익",
-      "earned": "획득",
-      "pending": "대기 중",
-      "available": "사용 가능",
-      "pendingNote": "대기 중은 정상이에요. 보상은 지급 전에 한 번 확인을 거쳐요.",
-      "cycles_other": "{{count}}사이클 완료",
-      "cycleLabel": "{{count}}번째 사이클",
-      "historyEmpty": "아직 보상이 없어요",
-      "historyEmptyBody": "인정된 추천 {{target}}명이 되면 첫 {{amount}}이 도착해요.",
-      "howYouEarn": "인정된 추천 {{count}}명마다 {{amount}}을 받아요.",
-      "statusPending": "대기 중",
-      "statusApproved": "승인됨",
-      "statusDisbursed": "사용 가능",
-      "statusOnHold": "보류 중",
-      "statusDenied": "지급되지 않음"
     },
     "missions": {
       "heading": "미션",
@@ -2066,28 +2038,21 @@
       "followFive": "다섯 명 팔로우하기",
       "startOwnChallenge": "나만의 챌린지 시작하기"
     },
-    "badge": {
-      "heading": "파운딩 멤버",
-      "lockedBody": "인정된 추천 {{target}}명을 달성하면 영구 파운딩 멤버 배지를 받아요.",
-      "earnedBody": "이 배지는 영구적이에요. PulseSoc을 함께 만들어 주셔서 고마워요.",
-      "liveUnlocked": "라이브 크리에이터 잠금 해제",
-      "liveLocked": "라이브 크리에이터는 {{target}}명에서 열려요"
-    },
     "insights": {
       "heading": "인사이트",
-      "conversion": "인정된 초대",
       "stillGoing": "아직 진행 중",
       "empty": "아직 활동이 충분하지 않아요",
-      "emptyBody": "친구 몇 명이 가입하면 인사이트가 나타나요."
+      "emptyBody": "친구 몇 명이 가입하면 인사이트가 나타나요.",
+      "certified": "인증된 초대",
+      "inReview": "검토 중"
     },
     "activity": {
       "heading": "활동",
       "empty": "아직 아무것도 없어요",
       "referralSignedUp": "{{name}}님이 내 링크로 가입했어요",
-      "referralQualified": "{{name}}님이 챌린지에 반영됐어요",
-      "milestoneEarned": "마일스톤을 달성했어요",
-      "rewardEarned": "보상을 받았어요",
-      "genericEvent": "진행 상황 업데이트"
+      "genericEvent": "진행 상황 업데이트",
+      "referralCertified": "{{name}}님이 인증된 초대가 되었습니다",
+      "unlockEarned": "새로운 해제 항목에 도달했습니다"
     },
     "howItWorks": {
       "heading": "진행 방식",
@@ -2095,36 +2060,66 @@
       "join": "친구가 그 링크로 가입해요",
       "profile": "친구가 프로필을 완성해요",
       "postTwoDays": "친구가 서로 다른 {{count}}일에 게시해요",
-      "qualified": "그 친구가 챌린지에 반영돼요",
       "fairness": "초대한 사람과 집, 사무실, 학교, 네트워크를 함께 써도 전혀 문제없어요. 저희가 확인하는 건 자동화된 계정과 중복 계정이지, 가족이나 친구가 아니에요.",
-      "serverNote": "횟수는 휴대폰이 아니라 PulseSoc에서 계산해요."
+      "serverNote": "횟수는 휴대폰이 아니라 PulseSoc에서 계산해요.",
+      "certified": "인증된 초대가 됩니다"
     },
     "faq": {
       "heading": "자주 묻는 질문",
-      "howReferralsWork": "초대 링크를 공유하세요. 그 링크로 가입한 사람이 내 추천이 돼요.",
-      "whatCounts": "프로필을 완성하고 서로 다른 이틀에 게시하며 정상적으로 이용 중이면 추천으로 인정돼요.",
-      "whyNotCountedYet": "대부분은 아직 둘째 날 게시물이 없어서예요. 추천을 열어 남은 조건을 확인해 보세요.",
-      "whenDoIEarn": "인정된 추천 {{target}}명에서 {{amount}}을 받고, 그 이후에도 {{target}}명마다 다시 받아요.",
-      "canIEarnAgain": "네. {{amount}} 보상은 반복돼요. 배지와 라이브 크리에이터 권한, 얼리 서포터는 1회 한정이에요.",
-      "howToUnlockLive": "라이브 크리에이터 자격은 {{target}}번째 인정된 추천에서 열려요.",
+      "whatCounts": "초대는 상대방이 프로필을 완성하고 서로 다른 이틀에 게시하며 정상 상태일 때 인증됩니다.",
+      "howToUnlockLive": "라이브 크리에이터는 인증된 초대 {{live}}건에서 해제됩니다.",
       "canFamilyParticipate": "네. 가족, 룸메이트, 같은 반 친구, 동료 모두 참여할 수 있어요. 같은 네트워크를 써도 괜찮아요.",
       "underReview": "확인 중이라는 건 자동으로 점검하고 있다는 뜻이에요. 보통 저절로 해결되고, 따로 하실 일은 없어요.",
-      "howRewardsBecomeAvailable": "보상은 바로 적립되고, 지급 전에 한 번 확인을 거쳐요.",
-      "isThereALimit": "인정된 추천 수에도, 반복 보상에도 한도가 없어요.",
-      "whenDoesItEnd": "챌린지는 {{target}}명에서 끝나지만, 여정은 계속돼요. 그 뒤에는 새로운 미션이 열려요.",
+      "isThereALimit": "인증된 초대에는 제한이 없습니다.",
+      "whenDoesItEnd": "파운딩 패스는 {{target}}에서 끝나지만 여정은 계속됩니다. 이후 새로운 미션이 열립니다.",
       "questions": {
-        "howReferralsWork": "추천은 어떻게 작동하나요?",
-        "whatCounts": "추천은 언제 인정되나요?",
-        "whyNotCountedYet": "추천이 왜 아직 인정되지 않나요?",
-        "whenDoIEarn": "보상은 언제 받나요?",
-        "canIEarnAgain": "여러 번 받을 수 있나요?",
-        "howToUnlockLive": "라이브 크리에이터는 어떻게 열리나요?",
+        "whatCounts": "초대는 언제 인증되나요?",
+        "howToUnlockLive": "라이브 크리에이터는 어떻게 해제하나요?",
         "canFamilyParticipate": "가족이나 친구도 참여할 수 있나요?",
         "underReview": "‘확인 중’은 무슨 뜻인가요?",
-        "howRewardsBecomeAvailable": "보상은 언제 받을 수 있나요?",
-        "isThereALimit": "한도가 있나요?",
-        "whenDoesItEnd": "챌린지가 끝나면 어떻게 되나요?"
-      }
+        "isThereALimit": "제한이 있나요?",
+        "whenDoesItEnd": "파운딩 패스 이후에는 어떻게 되나요?",
+        "howInvitesWork": "초대는 어떻게 작동하나요?",
+        "whyNotCertifiedYet": "초대가 아직 인증되지 않은 이유는?",
+        "whatDoIUnlock": "무엇이 해제되나요?",
+        "isFoundingMemberPermanent": "파운딩 멤버는 영구적인가요?"
+      },
+      "howInvitesWork": "초대 링크를 공유하세요. 그 링크로 가입한 사람은 나의 초대가 됩니다.",
+      "whyNotCertifiedYet": "대부분 아직 둘째 날 게시를 하지 않았기 때문입니다. 초대를 열어 남은 조건을 확인하세요.",
+      "whatDoIUnlock": "파운딩 패스의 각 단계는 계정에 인정 표시나 크리에이터 기능을 해제합니다. 이 패스에 금전 지급은 없습니다.",
+      "isFoundingMemberPermanent": "네. 파운딩 멤버는 영구 자격이며 프로필에 계속 남습니다."
+    },
+    "unlocks": {
+      "locked": "잠김",
+      "inProgress": "진행 중",
+      "unlocked": "해제됨",
+      "unlockedOn": "{{date}}에 해제",
+      "threshold": "인증된 초대 {{count}}건에서",
+      "note": "해제 항목은 PulseSoc이 부여하며 계정에 자동으로 표시됩니다."
+    },
+    "liveCreator": {
+      "eyebrow": "라이브 크리에이터",
+      "heading": "라이브 크리에이터 해제",
+      "body": "PulseSoc 네트워크를 함께 키워 주셨습니다. 이제 LIVE 방송을 할 수 있어요.",
+      "start": "첫 라이브 시작하기",
+      "explore": "라이브 둘러보기"
+    },
+    "founding": {
+      "heading": "파운딩 멤버",
+      "generation": "파운딩 세대",
+      "number": "No. {{number}}",
+      "memberSince": "{{date}}부터 함께",
+      "lockedBody": "인증된 초대 {{target}}건에 도달하면 영구 파운딩 멤버 자격을 얻습니다.",
+      "earnedBody": "이 자격은 영구적입니다. PulseSoc을 함께 만들어 주셔서 감사합니다."
+    },
+    "legacy": {
+      "certified": "인증된 초대",
+      "firstInvite": "첫 초대",
+      "latestCertified": "최근 인증",
+      "noDate": "—",
+      "note": "당신이 PulseSoc으로 데려온 실제 사람들입니다.",
+      "empty": "발자취가 여기서 시작됩니다",
+      "emptyBody": "링크를 공유해 첫 멤버를 초대해 보세요."
     }
   },
   "premium": {

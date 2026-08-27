@@ -40,10 +40,10 @@ from . import missions as missions_mod
 from . import qualification as qual
 from .schema import ensure_schema
 
-#: Public-facing program disclaimer. The challenge is a growth program, not a
-#: verification or identity signal, and the surface says so in its own payload.
+#: Public-facing program disclaimer. The Founding Path is a growth program, not
+#: a verification or identity signal, and the surface says so in its own payload.
 NOT_VERIFICATION = (
-    "The Founding Member Challenge is a community growth program. It is not "
+    "The PulseSoc Founding Path is a community growth program. It is not "
     "identity verification and does not affect verification eligibility.")
 
 
@@ -86,8 +86,47 @@ def _public_name(row: dict) -> str:
 
 
 # --- user surface -----------------------------------------------------------
+def _invite_counts(breakdown: dict, certified: int) -> dict:
+    """Invited / In Progress / Certified, from states the engine already owns.
+
+    ``in_progress`` folds review standing in with everyone else still on their
+    way. Splitting it out would tell a referrer which of their invites tripped
+    a check, which is exactly the signal this surface must not carry.
+    """
+    invited = sum(int(breakdown.get(k) or 0) for k in
+                  ("qualified", "needs_another_day", "hasnt_posted",
+                   "getting_started", "in_review", "not_counted"))
+    counted_out = int(breakdown.get("not_counted") or 0)
+    return {
+        "invited": invited,
+        "in_progress": max(0, invited - certified - counted_out),
+        "certified": certified,
+    }
+
+
+def _next_unlock(camp, certified: int) -> Optional[dict]:
+    nxt = camp.next_milestone(certified)
+    if not nxt:
+        return None
+    previous = 0
+    for m in camp.milestones:
+        if m.threshold < nxt.threshold:
+            previous = m.threshold
+    span = max(1, nxt.threshold - previous)
+    return {
+        "key": nxt.key,
+        "label": nxt.label,
+        "kind": nxt.kind,
+        "description": nxt.description,
+        "threshold": nxt.threshold,
+        "current": certified,
+        "remaining": max(0, nxt.threshold - certified),
+        "percent": _percent(max(0, certified - previous), span),
+    }
+
+
 def overview(user_id, *, campaign_id: str = "") -> tuple:
-    """The Progress Center headline: challenge state, or the next mission."""
+    """The Progress Center headline: Founding Path state and the next unlock."""
     uid = int(user_id or 0)
     if uid <= 0:
         return 401, {"ok": False, "error": "login_required"}
@@ -95,13 +134,11 @@ def overview(user_id, *, campaign_id: str = "") -> tuple:
     conn = db.connect()
     try:
         ensure_schema(conn)
-        qualified = qual.qualified_count(uid, campaign_id=camp.campaign_id, conn=conn)
+        certified = qual.qualified_count(uid, campaign_id=camp.campaign_id, conn=conn)
         counts = qual.breakdown(uid, campaign_id=camp.campaign_id, conn=conn)
-        earned = {m.get("milestone_key") for m in
-                  ms.earned_milestones(uid, campaign_id=camp.campaign_id, conn=conn)}
-        nxt = camp.next_milestone(qualified)
-        challenge_complete = qualified >= camp.qualification_target
-        track = missions_mod.track_for(qualified, campaign_id=camp.campaign_id)
+        awards = ms.earned_milestones(uid, campaign_id=camp.campaign_id, conn=conn)
+        earned = {m.get("milestone_key") for m in awards}
+        track = missions_mod.track_for(certified, campaign_id=camp.campaign_id)
 
         body = {
             "ok": True,
@@ -112,27 +149,85 @@ def overview(user_id, *, campaign_id: str = "") -> tuple:
                 "status": camp.status,
                 "target": camp.qualification_target,
             },
-            "challenge": {
-                "qualified": qualified,
+            "path": {
+                "certified": certified,
                 "target": camp.qualification_target,
-                "remaining": max(0, camp.qualification_target - qualified),
-                "percent": _percent(qualified, camp.qualification_target),
-                "complete": challenge_complete,
+                "remaining": max(0, camp.qualification_target - certified),
+                "percent": _percent(certified, camp.qualification_target),
+                "complete": certified >= camp.qualification_target,
             },
+            "invites": _invite_counts(counts, certified),
             "breakdown": counts,
-            "next_milestone": (
-                {"key": nxt.key, "label": nxt.label, "threshold": nxt.threshold,
-                 "remaining": max(0, nxt.threshold - qualified)}
-                if nxt else None),
+            "next_unlock": _next_unlock(camp, certified),
             "milestones_earned": sorted(earned),
+            "live_creator": "live_creator" in earned,
             "founding_member": "founding_member" in earned,
+            "founding": _founding_status(conn, uid, camp, awards),
+            "legacy": _legacy(conn, uid, camp, certified),
             "track": track,
-            "next_reward": camp.next_cycle_progress(qualified),
             "not_verification": NOT_VERIFICATION,
         }
         return 200, body
     finally:
         conn.close()
+
+
+def _founding_status(conn, uid: int, camp, awards) -> Optional[dict]:
+    """Founding Generation standing, or ``None`` if the rung is not earned.
+
+    The founding number is the award row's position in the award table, not a
+    minted counter: ``progress_milestone_awards.id`` is monotonic and the row
+    is immutable once written, so the number a member sees today is the number
+    they will see in five years. Revoked awards still occupy their position on
+    purpose — renumbering the people behind them would make the number a lie.
+    """
+    award = next((a for a in awards
+                  if a.get("milestone_key") == "founding_member"), None)
+    if not award:
+        return None
+    number = 0
+    try:
+        row = _row_to_dict(conn.execute(
+            "SELECT COUNT(*) AS position FROM progress_milestone_awards "
+            "WHERE campaign_id=? AND milestone_key='founding_member' "
+            "AND id <= (SELECT id FROM progress_milestone_awards "
+            "           WHERE campaign_id=? AND user_id=? "
+            "           AND milestone_key='founding_member')",
+            (camp.campaign_id, camp.campaign_id, uid),
+        ).fetchone()) or {}
+        number = int(row.get("position") or 0)
+    except Exception:
+        number = 0
+    return {
+        "generation": "Founding Generation",
+        "member_since": award.get("earned_at"),
+        "founding_number": number or None,
+    }
+
+
+def _legacy(conn, uid: int, camp, certified: int) -> dict:
+    """Real network impact only: counts and dates the engine already recorded.
+
+    There is no referral graph here and none is inferred. Everything reported
+    is a row this user's own invites produced.
+    """
+    first_at, latest_certified_at = None, None
+    try:
+        row = _row_to_dict(conn.execute(
+            "SELECT MIN(created_at) AS first_at, MAX(qualified_at) AS latest "
+            "FROM progress_referral_qualifications "
+            "WHERE campaign_id=? AND referrer_user_id=?",
+            (camp.campaign_id, uid),
+        ).fetchone()) or {}
+        first_at = row.get("first_at")
+        latest_certified_at = row.get("latest")
+    except Exception:
+        pass
+    return {
+        "certified": certified,
+        "first_invite_at": first_at,
+        "latest_certified_at": latest_certified_at,
+    }
 
 
 def _percent(current: int, target: int) -> int:
@@ -142,7 +237,12 @@ def _percent(current: int, target: int) -> int:
 
 
 def milestones(user_id, *, campaign_id: str = "") -> tuple:
-    """The ladder, with server-decided state for every rung."""
+    """The Founding Path ladder — the "Your Unlocks" surface.
+
+    Every rung is LOCKED, IN_PROGRESS or UNLOCKED, and the decision is made
+    here. A rung reads UNLOCKED only when an award row exists for it, so the
+    app can never paint a privilege the server has not actually granted.
+    """
     uid = int(user_id or 0)
     if uid <= 0:
         return 401, {"ok": False, "error": "login_required"}
@@ -150,20 +250,18 @@ def milestones(user_id, *, campaign_id: str = "") -> tuple:
     conn = db.connect()
     try:
         ensure_schema(conn)
-        qualified = qual.qualified_count(uid, campaign_id=camp.campaign_id, conn=conn)
+        certified = qual.qualified_count(uid, campaign_id=camp.campaign_id, conn=conn)
         earned = {m.get("milestone_key"): m for m in
                   ms.earned_milestones(uid, campaign_id=camp.campaign_id, conn=conn)}
+        upcoming = camp.next_milestone(certified)
         out = []
         for m in camp.milestones:
             if m.key in earned:
-                state = "COMPLETED"
-            elif qualified >= m.threshold:
+                state = "UNLOCKED"
+            elif certified >= m.threshold or (upcoming and m.key == upcoming.key):
                 # Reached but not yet recorded — the sweep has not run. Report
                 # it as in progress rather than claiming an award that has no
                 # row behind it.
-                state = "IN_PROGRESS"
-            elif camp.next_milestone(qualified) is not None and \
-                    m.key == camp.next_milestone(qualified).key:
                 state = "IN_PROGRESS"
             else:
                 state = "LOCKED"
@@ -175,9 +273,9 @@ def milestones(user_id, *, campaign_id: str = "") -> tuple:
                 "description": m.description,
                 "state": state,
                 "earned_at": (earned.get(m.key) or {}).get("earned_at"),
-                "progress": min(qualified, m.threshold),
+                "progress": min(certified, m.threshold),
             })
-        return 200, {"ok": True, "qualified": qualified, "milestones": out}
+        return 200, {"ok": True, "certified": certified, "milestones": out}
     finally:
         conn.close()
 
@@ -287,21 +385,6 @@ def referral_detail(user_id, ref: str, *, campaign_id: str = "") -> tuple:
         conn.close()
 
 
-def rewards(user_id, *, campaign_id: str = "") -> tuple:
-    uid = int(user_id or 0)
-    if uid <= 0:
-        return 401, {"ok": False, "error": "login_required"}
-    camp = campaign_mod.get(campaign_id)
-    summary = ms.reward_summary(uid, campaign_id=camp.campaign_id)
-    summary["ok"] = True
-    summary["how_you_earn"] = {
-        "interval": camp.reward_interval,
-        "amount_cents": camp.reward_amount_cents,
-        "currency": camp.reward_currency,
-    }
-    return 200, summary
-
-
 def missions(user_id, *, campaign_id: str = "") -> tuple:
     uid = int(user_id or 0)
     if uid <= 0:
@@ -402,9 +485,7 @@ def how_it_works(*, campaign_id: str = "") -> tuple:
         ],
         "required_posting_days": camp.required_posting_days,
         "target": camp.qualification_target,
-        "reward_amount_cents": camp.reward_amount_cents,
-        "reward_currency": camp.reward_currency,
-        "reward_interval": camp.reward_interval,
+        "live_threshold": camp.live_threshold(),
         "fairness_note_key": "progress.howItWorks.fairness",
         "not_verification": NOT_VERIFICATION,
     }
@@ -413,10 +494,9 @@ def how_it_works(*, campaign_id: str = "") -> tuple:
 def faq(*, campaign_id: str = "") -> tuple:
     """FAQ as i18n keys; the server never ships display copy to the app."""
     keys = (
-        "howReferralsWork", "whatCounts", "whyNotCountedYet", "whenDoIEarn",
-        "canIEarnAgain", "howToUnlockLive", "canFamilyParticipate",
-        "underReview", "howRewardsBecomeAvailable", "isThereALimit",
-        "whenDoesItEnd",
+        "howInvitesWork", "whatCounts", "whyNotCertifiedYet", "whatDoIUnlock",
+        "howToUnlockLive", "canFamilyParticipate", "underReview",
+        "isFoundingMemberPermanent", "isThereALimit", "whenDoesItEnd",
     )
     return 200, {"ok": True,
                  "faq": [{"key": f"progress.faq.{k}", "order": i}
@@ -438,25 +518,28 @@ def tile(user_id, *, campaign_id: str = "") -> tuple:
     conn = db.connect()
     try:
         ensure_schema(conn)
-        qualified = qual.qualified_count(uid, campaign_id=camp.campaign_id, conn=conn)
+        certified = qual.qualified_count(uid, campaign_id=camp.campaign_id, conn=conn)
         earned = {m.get("milestone_key") for m in
                   ms.earned_milestones(uid, campaign_id=camp.campaign_id, conn=conn)}
         in_review = qual.breakdown(uid, campaign_id=camp.campaign_id,
                                    conn=conn).get("in_review", 0)
         if "founding_member" in earned:
             state = "COMPLETE"
-        elif qualified > 0:
+        elif certified > 0:
             state = "ACTIVE"
         elif in_review:
             state = "REVIEW"
         else:
             state = "START"
+        nxt = camp.next_milestone(certified)
         return 200, {
             "ok": True,
             "state": state,
-            "qualified": qualified,
+            "certified": certified,
             "target": camp.qualification_target,
-            "percent": _percent(qualified, camp.qualification_target),
+            "percent": _percent(certified, camp.qualification_target),
+            "next_unlock_label": nxt.label if nxt else "",
+            "live_creator": "live_creator" in earned,
             "founding_member": "founding_member" in earned,
         }
     finally:
