@@ -1,7 +1,12 @@
 import { readJsonCache, writeJsonCache } from "../core/cache";
 import { PULSE_API_BASE_URL } from "./config";
 import { PulseAuthor, PulseMedia, mediaDisplayUrl } from "./feed";
-import { readCheckoutHandoff, type CheckoutHandoff, type CheckoutResponse } from "./marketplaceCommerce";
+import {
+  readCheckoutHandoff,
+  type CheckoutHandoff,
+  type CheckoutResponse,
+  type MarketplacePaymentMode
+} from "./marketplaceCommerce";
 import { pulseApi } from "./pulseApi";
 import { sellerStoreName, sellerStoreNameOrEmpty } from "./sellerIdentity";
 
@@ -509,7 +514,7 @@ export async function openMarketplaceCheckout(
   // rather than a union: a service offered both remotely and in person is also
   // a choice, and it is not spelled "pickup" or "shipping".
   fulfillment = "",
-  paymentMode: "payment_sheet" | "" = "",
+  paymentMode: MarketplacePaymentMode = "",
   // What the buyer told PulseSoc on the details step. The server re-derives the
   // order type from the listing row and re-validates this against it, so this is
   // the buyer's submission, not the decision.

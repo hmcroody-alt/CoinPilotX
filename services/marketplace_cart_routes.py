@@ -51,6 +51,7 @@ from services.marketplace_payment_errors import (
 )
 from services import marketplace_quote_service
 from services import marketplace_goods_policy
+from services import marketplace_payment_pause
 
 LOGGER = logging.getLogger(__name__)
 
@@ -605,14 +606,22 @@ def cart_checkout():
     # It decides whether Stripe asks for a delivery address, so it has to arrive
     # with the checkout request rather than be inferred afterwards.
     fulfillment_choice = str(payload.get("fulfillment") or "").strip().lower()
-    # `payment_sheet` keeps the buyer inside the app: the same validated group is
-    # settled with a PaymentIntent the native Stripe sheet can present, instead
-    # of a hosted Session the phone has to open in Safari. Everything before the
-    # provider call — eligibility, price authority, inventory reservation — is
-    # deliberately shared, so the two surfaces cannot drift into two policies.
-    native_sheet = str(payload.get("payment_mode") or "").strip().lower() == "payment_sheet"
     if not seller_user_id:
         return _error("Choose a seller group to check out.", 400, code="INVALID_REQUEST")
+    payment_mode_raw = payload.get("payment_mode")
+    payment_mode = marketplace_payment_pause.normalize_marketplace_payment_mode(payment_mode_raw)
+    if payment_mode == "card" and marketplace_payment_pause.marketplace_card_payments_paused():
+        return _error(
+            marketplace_payment_pause.MARKETPLACE_CARD_UNAVAILABLE_MESSAGE,
+            503,
+            code=marketplace_payment_pause.MARKETPLACE_CARD_UNAVAILABLE_CODE,
+            **marketplace_payment_pause.card_unavailable_payload(),
+        )
+    cash_payment = payment_mode == "cash"
+    # Preserved for when Marketplace card collection is re-enabled. While the
+    # pause is active the guard above returns before any Stripe intent/session
+    # can be created.
+    native_sheet = payment_mode == "card" and str(payment_mode_raw or "").strip().lower() == "payment_sheet"
 
     def handler(cur, conn):
         buyer_id = int(user["user_id"])
@@ -623,7 +632,12 @@ def cart_checkout():
             )
             stored = dict(cur.fetchone() or {})
             if stored.get("response_json"):
-                return _json({**json.loads(stored["response_json"]), "replayed": True})
+                stored_payload = json.loads(stored["response_json"])
+                stored_mode = marketplace_payment_pause.normalize_marketplace_payment_mode(
+                    stored_payload.get("payment_method") or stored_payload.get("payment_mode")
+                )
+                if stored_mode == payment_mode:
+                    return _json({**stored_payload, "replayed": True})
 
         lines = [l for l in _serialize_lines(bot, cur, buyer_id) if l["seller_user_id"] == seller_user_id]
         if not lines:
@@ -710,7 +724,10 @@ def cart_checkout():
             # a platform charge below rather than blocking the buyer.
             return _error("This seller is not accepting orders right now.", 403, code="SELLER_UNAVAILABLE")
         payout = bot.seller_payout_account(cur, seller_user_id, "merchant")
-        fee_bps = bot.seller_fee_bps(cur, "merchant")
+        fee_bps = marketplace_payment_pause.platform_fee_bps_for_marketplace_payment(
+            bot.seller_fee_bps(cur, "merchant"),
+            payment_mode,
+        )
 
         now = _now()
         line_quotes = [marketplace_quote_service.create_quote(
@@ -725,13 +742,15 @@ def cart_checkout():
 
         # The cart settles as one charge, so it is the group total that has to
         # clear the per-currency floor — a 10c line is fine next to a $9 one.
-        below_minimum = below_minimum_charge_error(total_minor, currency)
+        below_minimum = None if cash_payment else below_minimum_charge_error(total_minor, currency)
         if below_minimum:
             return _error(below_minimum["message"], below_minimum["status"],
                           code=below_minimum["code"], total_cents=total_minor,
                           minimum_charge_cents=below_minimum["minimum_minor"])
 
         tx_ids = []
+        initial_status = "cash_pending" if cash_payment else "created"
+        payout_state = "cash_collect_in_person" if cash_payment else "pending_checkout"
         for l, commercial_quote in zip(lines, line_quotes):
             line_amount = commercial_quote["buyer_total_minor"]
             line_fee = commercial_quote["platform_fee_minor"]
@@ -740,23 +759,25 @@ def cart_checkout():
                 INSERT INTO seller_transactions
                 (buyer_user_id, seller_user_id, seller_type, item_type, item_id, amount_cents, currency,
                  platform_fee_cents, seller_net_cents, status, metadata_json, created_at, updated_at)
-                VALUES (?, ?, 'merchant', 'marketplace_product', ?, ?, ?, ?, ?, 'created', ?, ?, ?)
+                VALUES (?, ?, 'merchant', 'marketplace_product', ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (buyer_id, seller_user_id, l["listing_id"], line_amount, currency,
-                 line_fee, commercial_quote["seller_earnings_minor"],
+                 line_fee, commercial_quote["seller_earnings_minor"], initial_status,
                  marketplace_quote_service.transaction_metadata(
                      {"title": l["title"], "qty": l["qty"], "cart_line_id": l["line_id"],
+                      "payment_method": payment_mode,
                       **({"fulfillment": fulfillment_snapshot} if fulfillment_snapshot else {})},
-                     commercial_quote, payout_state="pending_checkout"),
+                     commercial_quote, payout_state=payout_state),
                  now, now),
             )
             tx_ids.append(int(cur.lastrowid))
 
-        if not bot.STRIPE_SECRET_KEY:
+        if not cash_payment and not bot.STRIPE_SECRET_KEY:
             for tx_id in tx_ids:
                 cur.execute("UPDATE seller_transactions SET status='blocked_stripe_not_configured', updated_at=? WHERE id=?", (now, tx_id))
             return _error("Stripe checkout is not configured yet. No card was charged.", 503,
                           code="PAYMENT_UNAVAILABLE", transaction_ids=tx_ids)
+
         # Reserve physical inventory before handing the buyer to Stripe. The
         # reservation is keyed to the transaction, so duplicate taps cannot
         # decrement twice; expiry/failure restores it.
@@ -783,6 +804,34 @@ def cart_checkout():
                 VALUES (?,?,?,?, 'held',?,?) ON CONFLICT(seller_transaction_id) DO NOTHING""",
                 (tx_id, buyer_id, line["listing_id"], line["qty"], now, now),
             )
+
+        if cash_payment:
+            line_ids = [int(l["line_id"]) for l in lines]
+            if line_ids:
+                marks = ",".join("?" for _ in line_ids)
+                cur.execute(
+                    f"DELETE FROM marketplace_cart_items WHERE user_id=? AND id IN ({marks})",
+                    [buyer_id, *line_ids],
+                )
+            response_payload = marketplace_payment_pause.cash_checkout_payload(
+                ok=True,
+                transaction_ids=tx_ids,
+                total_cents=total_minor,
+                amount_cents=total_minor,
+                currency=currency,
+                seller_net_cents=seller_net,
+                commercial_quotes=line_quotes,
+            )
+            if idempotency_key:
+                cur.execute(
+                    """
+                    INSERT INTO marketplace_cart_checkout_keys (user_id, idempotency_key, response_json, created_at)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(user_id, idempotency_key) DO NOTHING
+                    """,
+                    (buyer_id, idempotency_key, json.dumps(response_payload, default=str), now),
+                )
+            return _json(response_payload)
 
         try:
             base = (bot.APP_BASE_URL or request.url_root.rstrip("/")).rstrip("/")

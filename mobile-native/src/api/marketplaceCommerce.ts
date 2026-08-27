@@ -22,6 +22,8 @@ import type { MarketplaceFulfillmentKind } from "./marketplaceFulfillment";
 import { sellerStoreNameOrEmpty } from "./sellerIdentity";
 import type { PaymentSheetBootstrap } from "./stripePaymentSheet";
 
+export type MarketplacePaymentMode = "payment_sheet" | "cash" | "";
+
 /* ------------------------------------------------------------------ *
  * Cart
  * ------------------------------------------------------------------ */
@@ -156,7 +158,7 @@ export async function checkoutCartGroup(
   // hosted page the phone would have to open in Safari. Only set when this
   // binary actually contains the Stripe SDK, so a build without it never
   // creates an intent it has no way to collect on.
-  paymentMode: "payment_sheet" | "" = "",
+  paymentMode: MarketplacePaymentMode = "",
   // What the buyer told PulseSoc on the details step. The server re-validates it
   // against the listing rows before it will create a charge, so this is the
   // submission, not the decision.
@@ -185,6 +187,9 @@ export type CheckoutResponse = {
   checkout_url?: string;
   transaction_ids?: number[];
   transaction_id?: number;
+  payment_method?: "card" | "cash" | string;
+  payment_status?: "pending" | "cash_pending" | "unavailable" | string;
+  payment_badge?: string;
   payment_intent_client_secret?: string;
   payment_intent_id?: string;
   publishable_key?: string;

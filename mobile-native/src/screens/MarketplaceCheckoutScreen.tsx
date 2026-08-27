@@ -60,8 +60,11 @@ import {
 
 type Props = NativeStackScreenProps<RootStackParamList, "MarketplaceCheckout">;
 type Stage = "details" | "review" | "opening" | "processing" | "confirmed" | "failed";
+type MarketplaceCheckoutPaymentMethod = "cash" | "card";
 
 const POLL_INTERVAL_MS = 2500;
+const MARKETPLACE_CARD_PAYMENTS_PAUSED = true;
+const MARKETPLACE_CARD_PAUSE_BADGE = "Temporarily Unavailable";
 
 /** Older navigations carry only the four physical lanes. Read them as kinds so
  * a screen opened before this build shipped still lands somewhere coherent. */
@@ -180,6 +183,7 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
   const [details, setDetails] = useState<Record<string, string>>({ timezone });
   const needsDetailsStep = mustChooseLane || fulfillmentFields(declaredKind, tickets).length > 0;
   const [stage, setStage] = useState<Stage>(needsDetailsStep ? "details" : "review");
+  const [paymentMethod, setPaymentMethod] = useState<MarketplaceCheckoutPaymentMethod>("cash");
   const [transactionIds, setTransactionIds] = useState<number[]>([]);
   const [checkoutUrl, setCheckoutUrl] = useState("");
   // The native-sheet bootstrap for this intent, cached alongside the ids so a
@@ -284,6 +288,54 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
     setStage("opening");
     setMessage("");
     try {
+      if (paymentMethod === "card" && MARKETPLACE_CARD_PAYMENTS_PAUSED) {
+        setStage("review");
+        setMessage("Marketplace card payments are temporarily unavailable. Choose cash, local pickup, or in-person payment.");
+        return;
+      }
+      if (paymentMethod === "cash") {
+        const paymentMode = "cash";
+        let url = "";
+        let ids: number[] = [];
+        if (params.mode === "cart") {
+          const validation = await validateCart();
+          const sellerLines = validation.lines.filter(
+            (line) => line.seller_user_id === Number(params.sellerUserId || 0)
+          );
+          const sellerLineIds = new Set(sellerLines.map((line) => line.line_id));
+          const blocked = validation.blockingLineIds.some((id) => sellerLineIds.has(id));
+          const changed = validation.priceChangedLineIds.some((id) => sellerLineIds.has(id));
+          if (!sellerLines.length) throw new Error("These cart items are no longer available.");
+          if (blocked) throw new Error("An item is no longer available. Return to your cart to review it.");
+          if (changed) throw new Error("A price changed. Return to your cart and accept the new total.");
+          const result = await checkoutCartGroup(
+            Number(params.sellerUserId),
+            intentKey.current,
+            mustChooseLane ? lane : "",
+            paymentMode,
+            details
+          );
+          url = result.checkoutUrl;
+          ids = [...result.transactionIds];
+        } else {
+          const result = await openMarketplaceCheckout(
+            Number(params.listingId),
+            intentKey.current,
+            mustChooseLane ? lane : "",
+            paymentMode,
+            details
+          );
+          url = result.handoff.checkoutUrl;
+          ids = [...result.handoff.transactionIds];
+        }
+        if (!ids.length) throw new Error("Cash checkout could not be created. No card was charged.");
+        setCheckoutUrl(url);
+        setTransactionIds(ids);
+        setSheet(null);
+        setStage("confirmed");
+        setMessage("");
+        return;
+      }
       if (!isPaymentSheetAvailable()) {
         throw new Error("This build cannot open secure in-app checkout. Update PulseSoc and try again.");
       }
@@ -382,7 +434,7 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
       const local = error instanceof Error ? error.message : "";
       setMessage(buyerErrorCopy(error, local || "Checkout could not start. No card was charged."));
     }
-  }, [checkoutUrl, details, kind, lane, mustChooseLane, params.listingId, params.mode, params.sellerUserId, sheet, stage, subject, tickets, transactionIds]);
+  }, [checkoutUrl, details, kind, lane, mustChooseLane, params.listingId, params.mode, params.sellerUserId, paymentMethod, sheet, stage, subject, tickets, transactionIds]);
 
   const summary = (
     <ProductSummaryCard
@@ -402,7 +454,7 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
         <CheckoutStepper current={3} />
         <View style={styles.check}><Ionicons name="checkmark" size={40} color={STORE_CTA.text} /></View>
         <Text style={styles.confirmedTitle}>Order confirmed</Text>
-        <Text style={styles.centerCopy}>{confirmationCopy(kind)}</Text>
+        <Text style={styles.centerCopy}>{confirmationCopy(kind, paymentMethod)}</Text>
         <Section>
           <SummaryRow label="Order" value={`#${primaryId}`} />
           <SummaryRow label="Seller" value={params.sellerName || "PulseSoc seller"} />
@@ -412,10 +464,11 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
             <SummaryRow label="When" value={scheduleSentence(details, timezoneLabel)} />
           ) : null}
           <View style={styles.rule} />
-          <SummaryRow label="Amount paid" value={amount} strong />
+          <SummaryRow label={paymentMethod === "cash" ? "Amount due to seller" : "Amount paid"} value={amount} strong />
+          {paymentMethod === "cash" ? <SummaryRow label="PulseSoc platform fee" value="$0.00" /> : null}
         </Section>
         <PrimaryButton
-          label="View order and receipt"
+          label={paymentMethod === "cash" ? "View order" : "View order and receipt"}
           icon="receipt-outline"
           onPress={() => navigation.replace("BuyerOrderDetail", { orderId: primaryId, source: "seller_transactions", title: "Order confirmed" })}
         />
@@ -507,8 +560,24 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
       </Section>
 
       <Section title="Payment">
-        <Text style={styles.body}>Card or Apple Pay, handled by Stripe</Text>
-        <Text style={styles.muted}>Your card details go straight to Stripe — PulseSoc never sees them, and neither does the seller.</Text>
+        <RadioRow
+          selected={paymentMethod === "cash"}
+          title="Cash / in-person payment"
+          detail="Pay the seller directly at pickup or in person. PulseSoc adds $0.00 platform fee to this Marketplace cash checkout."
+          trailing="$0 fee"
+          onPress={() => { setPaymentMethod("cash"); setMessage(""); }}
+        />
+        <RadioRow
+          selected={false}
+          title="Card / Stripe"
+          detail="Card and Apple Pay infrastructure is preserved, but Marketplace card checkout is temporarily paused."
+          trailing={MARKETPLACE_CARD_PAUSE_BADGE}
+          disabled
+          onPress={() => {
+            setPaymentMethod("card");
+            setMessage("Marketplace card payments are temporarily unavailable. Choose cash, local pickup, or in-person payment.");
+          }}
+        />
       </Section>
 
       <Section title="Order summary">
@@ -521,11 +590,13 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
             the buyer brace for a charge that never comes — and would have hidden
             a real one if it ever did. */}
         <SummaryRow label="Delivery" value={kind === "pickup" ? "Free — you collect" : "No delivery charge"} />
-        <SummaryRow label="Taxes and fees" value="None added by PulseSoc" />
+        <SummaryRow label="PulseSoc platform fee" value={paymentMethod === "cash" ? "$0.00" : "Temporarily unavailable"} />
         <View style={styles.rule} />
-        <SummaryRow label={knowsFinalAmount ? "Total to pay" : "Total"} value={amount} strong />
-        {knowsFinalAmount ? (
-          <Text style={styles.muted}>This is the full amount you'll be charged. Nothing is added after this screen.</Text>
+        <SummaryRow label={knowsFinalAmount ? (paymentMethod === "cash" ? "Total due to seller" : "Total to pay") : "Total"} value={amount} strong />
+        {paymentMethod === "cash" ? (
+          <Text style={styles.muted}>No card or Stripe charge will start. Pay the seller directly when you pick up or meet in person.</Text>
+        ) : knowsFinalAmount ? (
+          <Text style={styles.muted}>Marketplace card payments are temporarily unavailable.</Text>
         ) : (
           <Text style={styles.muted}>The exact amount is confirmed on the secure payment page before you authorize anything.</Text>
         )}
@@ -536,15 +607,21 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
           Otherwise it promises nothing it cannot keep. */}
       <PrimaryButton
         label={stage === "opening"
-          ? "Opening secure payment…"
-          : knowsFinalAmount
-            ? `Pay securely · ${amount}`
-            : "Continue to Payment"}
-        icon={stage === "opening" ? null : "lock-closed"}
+          ? paymentMethod === "cash" ? "Confirming cash order…" : "Opening secure payment…"
+          : paymentMethod === "cash"
+            ? knowsFinalAmount ? `Confirm cash order · ${amount}` : "Confirm cash order"
+            : knowsFinalAmount
+              ? `Pay securely · ${amount}`
+              : "Continue to Payment"}
+        icon={stage === "opening" ? null : paymentMethod === "cash" ? "cash-outline" : "lock-closed"}
         busy={stage === "opening"}
         onPress={() => void beginCheckout()}
       />
-      <Text style={styles.footnote}>Your order isn't confirmed until your payment clears.</Text>
+      <Text style={styles.footnote}>
+        {paymentMethod === "cash"
+          ? "Marketplace card payments are paused. Cash, local pickup, and in-person orders remain active with a $0.00 PulseSoc platform fee."
+          : "Your order isn't confirmed until your payment clears."}
+      </Text>
     </ScrollView>
   );
 }
@@ -701,7 +778,8 @@ function scheduleSentence(details: Record<string, string>, timezoneLabel: string
   ].filter(Boolean).join(" · ");
 }
 
-function confirmationCopy(kind: MarketplaceFulfillmentKind) {
+function confirmationCopy(kind: MarketplaceFulfillmentKind, paymentMethod: MarketplaceCheckoutPaymentMethod) {
+  if (paymentMethod === "cash") return "Your order is recorded. Pay the seller directly at pickup or in person. PulseSoc added $0.00 platform fee.";
   if (kind === "digital") return "Your download and access information is now available in your PulseSoc account.";
   if (kind === "pickup") return "Your seller will be in touch to arrange collection.";
   if (kind === "shipping") return "Your seller will prepare this item for shipment.";

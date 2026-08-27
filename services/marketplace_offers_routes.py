@@ -53,6 +53,7 @@ from services.marketplace_payment_errors import (
 )
 from services import marketplace_quote_service
 from services import marketplace_goods_policy
+from services import marketplace_payment_pause
 
 LOGGER = logging.getLogger(__name__)
 
@@ -496,11 +497,21 @@ def offer_checkout(offer_id: int):
         seller_id = int(offer.get("seller_user_id") or 0)
         listing_id = int(offer.get("listing_id") or 0)
         payload = request.get_json(silent=True) or {}
-        # Same opt-in flag the cart lane uses: `payment_sheet` settles the offer
-        # with a PaymentIntent the native Stripe sheet can present, instead of a
-        # hosted Session the phone has to open in Safari. Everything before the
-        # provider call is shared, so the two surfaces cannot drift apart.
-        native_sheet = str(payload.get("payment_mode") or "").strip().lower() == "payment_sheet"
+        payment_mode_raw = payload.get("payment_mode")
+        payment_mode = marketplace_payment_pause.normalize_marketplace_payment_mode(payment_mode_raw)
+        if payment_mode == "card" and marketplace_payment_pause.marketplace_card_payments_paused():
+            return _error(
+                marketplace_payment_pause.MARKETPLACE_CARD_UNAVAILABLE_MESSAGE,
+                503,
+                error_code=marketplace_payment_pause.MARKETPLACE_CARD_UNAVAILABLE_CODE,
+                error=marketplace_payment_pause.MARKETPLACE_CARD_UNAVAILABLE_CODE,
+                **marketplace_payment_pause.card_unavailable_payload(),
+            )
+        cash_payment = payment_mode == "cash"
+        # Same opt-in flag the cart lane uses. While Marketplace card collection
+        # is paused, the guard above returns before this preserved Stripe path
+        # can create a PaymentIntent or hosted Session.
+        native_sheet = payment_mode == "card" and str(payment_mode_raw or "").strip().lower() == "payment_sheet"
         cur.execute(f"""SELECT l.*, COALESCE(ms.status,'missing') AS seller_status,
                    {seller_identity.store_name_select('ms')}
             FROM marketplace_listings l LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
@@ -518,7 +529,10 @@ def offer_checkout(offer_id: int):
         if not approved:
             return _error("Seller is not approved for payments.", 403)
         payout = bot.seller_payout_account(cur, seller_id, "merchant")
-        fee_bps = bot.seller_fee_bps(cur, "merchant")
+        fee_bps = marketplace_payment_pause.platform_fee_bps_for_marketplace_payment(
+            bot.seller_fee_bps(cur, "merchant"),
+            payment_mode,
+        )
         qty = max(1, int(offer.get("qty") or 1))
         currency = offer.get("currency") or "USD"
         # An offer is negotiated on a listing of some type, and that type asks the
@@ -547,7 +561,7 @@ def offer_checkout(offer_id: int):
         # An accepted offer can be haggled below the floor even when the listing
         # price was above it, so this lane needs the same pre-flight as the
         # other two — refused before the transaction row and the stock hold.
-        below_minimum = below_minimum_charge_error(amount, currency)
+        below_minimum = None if cash_payment else below_minimum_charge_error(amount, currency)
         if below_minimum:
             return _error(below_minimum["message"], below_minimum["status"],
                           code=below_minimum["code"], amount_cents=amount,
@@ -562,25 +576,28 @@ def offer_checkout(offer_id: int):
         fulfillment_snapshot = marketplace_fulfillment.snapshot(fulfillment_kind, details)
         stripe_shipping_object = marketplace_fulfillment.stripe_shipping(details)
         now = _now()
+        initial_status = "cash_pending" if cash_payment else "created"
+        payout_state = "cash_collect_in_person" if cash_payment else "pending_checkout"
         cur.execute(
             """
             INSERT INTO seller_transactions
             (buyer_user_id, seller_user_id, seller_type, item_type, item_id, amount_cents, currency,
              platform_fee_cents, seller_net_cents, status, metadata_json, created_at, updated_at)
-            VALUES (?, ?, 'merchant', 'marketplace_product', ?, ?, ?, ?, ?, 'created', ?, ?, ?)
+            VALUES (?, ?, 'merchant', 'marketplace_product', ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (buyer_id, seller_id, listing_id, amount, currency, platform_fee,
-             commercial_quote["seller_earnings_minor"],
+             commercial_quote["seller_earnings_minor"], initial_status,
              marketplace_quote_service.transaction_metadata(
                  {"title": listing.get("title") or "Marketplace item",
-                  "offer_id": offer_id, "qty": qty,
+                  "offer_id": offer_id, "qty": qty, "payment_method": payment_mode,
                   **({"fulfillment": fulfillment_snapshot} if fulfillment_snapshot else {})},
                  commercial_quote,
-                 payout_state="pending_checkout"),
+                 payout_state=payout_state),
              now, now),
         )
         tx_id = int(cur.lastrowid)
-        if not bot.STRIPE_SECRET_KEY:
+
+        if not cash_payment and not bot.STRIPE_SECRET_KEY:
             cur.execute("UPDATE seller_transactions SET status='blocked_stripe_not_configured', updated_at=? WHERE id=?", (now, tx_id))
             return _error("Stripe checkout is not configured yet. No card was charged.", 503,
                           code="PAYMENT_UNAVAILABLE", transaction_id=tx_id)
@@ -603,6 +620,16 @@ def offer_checkout(offer_id: int):
                 VALUES (?,?,?,?, 'held',?,?) ON CONFLICT(seller_transaction_id) DO NOTHING""",
                 (tx_id, buyer_id, listing_id, qty, now, now),
             )
+
+        if cash_payment:
+            return _json(marketplace_payment_pause.cash_checkout_payload(
+                ok=True,
+                transaction_id=tx_id,
+                amount_cents=amount,
+                currency=currency,
+                seller_net_cents=commercial_quote["seller_earnings_minor"],
+                commercial_quote=commercial_quote,
+            ))
 
         try:
             base = (bot.APP_BASE_URL or request.url_root.rstrip("/")).rstrip("/")

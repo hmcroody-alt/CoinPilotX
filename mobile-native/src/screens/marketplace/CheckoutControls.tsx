@@ -500,31 +500,34 @@ export function RadioRow({
   title,
   detail,
   trailing,
+  disabled = false,
   onPress
 }: {
   selected: boolean;
   title: string;
   detail?: string;
   trailing?: string;
+  disabled?: boolean;
   onPress: () => void;
 }) {
   return (
     <Pressable
       accessibilityRole="radio"
-      accessibilityState={{ selected }}
+      accessibilityState={{ selected, disabled }}
       accessibilityLabel={title}
       accessibilityHint={detail}
+      disabled={disabled}
       onPress={onPress}
-      style={[styles.radio, selected && styles.radioSelected]}
+      style={[styles.radio, selected && styles.radioSelected, disabled && styles.radioDisabled]}
     >
-      <View style={[styles.radioMark, selected && styles.radioMarkSelected]}>
-        {selected ? <View style={styles.radioPip} /> : null}
+      <View style={[styles.radioMark, selected && styles.radioMarkSelected, disabled && styles.radioMarkDisabled]}>
+        {selected ? <View style={[styles.radioPip, disabled && styles.radioPipDisabled]} /> : null}
       </View>
       <View style={styles.radioCopy}>
-        <Text style={styles.radioTitle}>{title}</Text>
-        {detail ? <Text style={styles.radioDetail}>{detail}</Text> : null}
+        <Text style={[styles.radioTitle, disabled && styles.radioTextDisabled]}>{title}</Text>
+        {detail ? <Text style={[styles.radioDetail, disabled && styles.radioTextDisabled]}>{detail}</Text> : null}
       </View>
-      {trailing ? <Text style={styles.radioTrailing}>{trailing}</Text> : null}
+      {trailing ? <Text style={[styles.radioTrailing, disabled && styles.radioTrailingDisabled]}>{trailing}</Text> : null}
     </Pressable>
   );
 }
@@ -736,6 +739,7 @@ const styles = StyleSheet.create({
     minHeight: 56
   },
   radioSelected: { borderColor: checkoutDark.border.selected, backgroundColor: checkoutDark.bg.selected },
+  radioDisabled: { opacity: 0.58, backgroundColor: "rgba(148, 163, 184, 0.08)" },
   radioMark: {
     width: 20,
     height: 20,
@@ -745,12 +749,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center"
   },
+  radioMarkDisabled: { borderColor: checkoutDark.text.faint },
   radioMarkSelected: { borderColor: checkoutDark.border.selected },
   radioPip: { width: 10, height: 10, borderRadius: 5, backgroundColor: checkoutDark.border.selected },
+  radioPipDisabled: { backgroundColor: checkoutDark.text.faint },
   radioCopy: { flex: 1, gap: 2 },
   radioTitle: { color: checkoutDark.text.primary, fontSize: 14, fontWeight: "700" },
   radioDetail: { color: checkoutDark.text.muted, fontSize: 12, lineHeight: 17 },
   radioTrailing: { color: checkoutDark.text.accent, fontSize: 14, fontWeight: "800" },
+  radioTrailingDisabled: { color: checkoutDark.text.faint },
+  radioTextDisabled: { color: checkoutDark.text.faint },
 
   qty: { flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "flex-start" },
   qtyButton: {

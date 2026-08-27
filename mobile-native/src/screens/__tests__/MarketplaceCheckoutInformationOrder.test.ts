@@ -20,8 +20,14 @@ describe("checkout asks before it charges", () => {
     expect(source).toContain("firstMissingFulfillmentField(kind, tickets, details)");
   });
 
-  it("sends what the buyer typed to both checkout lanes", () => {
-    expect(source.match(/mustChooseLane \? lane : "",\s*paymentMode,\s*details/g)).toHaveLength(2);
+  it("sends what the buyer typed to every checkout lane", () => {
+    // Cart and single-listing, once per payment method. Derived from the call
+    // sites rather than fixed at two, so adding a payment method cannot quietly
+    // ship a lane that drops the details the buyer just typed.
+    const lanes = source.match(/\b(?:checkoutCartGroup|openMarketplaceCheckout)\(/g) ?? [];
+    const forwarded = source.match(/mustChooseLane \? lane : "",\s*paymentMode,\s*details/g) ?? [];
+    expect(lanes.length).toBeGreaterThanOrEqual(2);
+    expect(forwarded).toHaveLength(lanes.length);
   });
 
   it("returns to the details step to edit rather than restarting checkout", () => {

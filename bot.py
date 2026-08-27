@@ -87473,10 +87473,28 @@ def api_pulse_payments_checkout():
     idempotency_key = str(payload.get("idempotency_key") or "").strip()[:120]
     if not item_type or not item_id:
         return api_error("Choose an item to buy.", 400)
+    marketplace_payment_mode = ""
+    marketplace_cash_payment = False
+    marketplace_payment_pause = None
+    if item_type == "marketplace_product":
+        from services import marketplace_payment_pause as marketplace_payment_pause
+        marketplace_payment_mode = marketplace_payment_pause.normalize_marketplace_payment_mode(payload.get("payment_mode"))
+        if marketplace_payment_mode == "card" and marketplace_payment_pause.marketplace_card_payments_paused():
+            return api_error(
+                marketplace_payment_pause.MARKETPLACE_CARD_UNAVAILABLE_MESSAGE,
+                503,
+                error_code=marketplace_payment_pause.MARKETPLACE_CARD_UNAVAILABLE_CODE,
+                error=marketplace_payment_pause.MARKETPLACE_CARD_UNAVAILABLE_CODE,
+                **marketplace_payment_pause.card_unavailable_payload(),
+            )
+        marketplace_cash_payment = marketplace_payment_mode == "cash"
     # Only physical marketplace goods may settle through the native Stripe sheet.
     # Courses and live classes stay on their existing surface, which is also what
-    # keeps the Apple digital-goods boundary where it already is.
+    # keeps the Apple digital-goods boundary where it already is. While the
+    # Marketplace card pause is active, the guard above returns before any
+    # PaymentIntent or hosted Session can be created.
     native_sheet = (item_type == "marketplace_product"
+                    and marketplace_payment_mode == "card"
                     and str(payload.get("payment_mode") or "").strip().lower() == "payment_sheet")
     now = datetime.utcnow().isoformat(timespec="seconds")
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
@@ -87490,8 +87508,15 @@ def api_pulse_payments_checkout():
             )
             replay = dict(cur.fetchone() or {})
             if replay.get("response_json"):
-                conn.close()
-                return jsonify({**json.loads(replay["response_json"]), "replayed": True})
+                replay_payload = json.loads(replay["response_json"])
+                replay_mode = marketplace_payment_pause.normalize_marketplace_payment_mode(
+                    replay_payload.get("payment_method") or replay_payload.get("payment_mode")
+                )
+                if replay_mode != marketplace_payment_mode:
+                    replay_payload = {}
+                else:
+                    conn.close()
+                    return jsonify({**replay_payload, "replayed": True})
     item = {}
     seller_type = "merchant"
     if item_type == "marketplace_product":
@@ -87557,6 +87582,11 @@ def api_pulse_payments_checkout():
         return api_error("Seller is not approved for payments.", 403)
     payout = seller_payout_account(cur, seller_user_id, seller_type)
     fee_bps = seller_fee_bps(cur, seller_type)
+    if item_type == "marketplace_product" and marketplace_payment_pause is not None:
+        fee_bps = marketplace_payment_pause.platform_fee_bps_for_marketplace_payment(
+            fee_bps,
+            marketplace_payment_mode,
+        )
     commercial_quote = None
     if item_type == "marketplace_product":
         from services import marketplace_quote_service
@@ -87575,7 +87605,7 @@ def api_pulse_payments_checkout():
     # what has to clear the per-currency floor. Refused here, before a
     # transaction row and before stock is held, so an unchargeable listing costs
     # the buyer a sentence rather than a reserved unit and an opaque 500.
-    below_minimum = below_minimum_charge_error(amount_cents, currency)
+    below_minimum = None if marketplace_cash_payment else below_minimum_charge_error(amount_cents, currency)
     if below_minimum:
         conn.close()
         return api_error(below_minimum["message"], below_minimum["status"],
@@ -87628,17 +87658,21 @@ def api_pulse_payments_checkout():
             shipping_checkout_params = marketplace_cart_service.stripe_shipping_checkout_params(["shipping"])
 
     transaction_details = {"title": title}
+    if item_type == "marketplace_product":
+        transaction_details["payment_method"] = marketplace_payment_mode
     if fulfillment_snapshot:
         transaction_details["fulfillment"] = fulfillment_snapshot
+    initial_status = "cash_pending" if marketplace_cash_payment else "created"
+    payout_state_for_metadata = "cash_collect_in_person" if marketplace_cash_payment else "pending_checkout"
     cur.execute(
         """
         INSERT INTO seller_transactions
         (buyer_user_id, seller_user_id, seller_type, item_type, item_id, amount_cents, currency,
          platform_fee_cents, seller_net_cents, status, metadata_json, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'created', ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (buyer["user_id"], seller_user_id, seller_type, item_type, item_id, amount_cents, currency, platform_fee, seller_net,
-         (marketplace_quote_service.transaction_metadata(transaction_details, commercial_quote, payout_state="pending_checkout")
+        (buyer["user_id"], seller_user_id, seller_type, item_type, item_id, amount_cents, currency, platform_fee, seller_net, initial_status,
+         (marketplace_quote_service.transaction_metadata(transaction_details, commercial_quote, payout_state=payout_state_for_metadata)
           if commercial_quote else json.dumps(transaction_details, default=str)), now, now),
     )
     tx_id = int(cur.lastrowid)
@@ -87651,10 +87685,10 @@ def api_pulse_payments_checkout():
         "item_id": item_id,
         "amount_cents": amount_cents,
         "currency": currency,
-        "status": "created",
+        "status": initial_status,
     }
-    pulse_emit_payment_checkout_event(cur, tx_event, "payment_pending", status="created", actor_user_id=buyer["user_id"])
-    if not STRIPE_SECRET_KEY:
+    pulse_emit_payment_checkout_event(cur, tx_event, "payment_pending", status=initial_status, actor_user_id=buyer["user_id"])
+    if not marketplace_cash_payment and not STRIPE_SECRET_KEY:
         cur.execute("UPDATE seller_transactions SET status='blocked_stripe_not_configured', updated_at=? WHERE id=?", (now, tx_id))
         pulse_emit_payment_checkout_event(
             cur,
@@ -87685,6 +87719,31 @@ def api_pulse_payments_checkout():
                 (tx_id, int(buyer["user_id"]), item_id, 1, now, now),
             )
             inventory_held = True
+    if marketplace_cash_payment and marketplace_payment_pause is not None:
+        response_payload = marketplace_payment_pause.cash_checkout_payload(
+            ok=True,
+            transaction_id=tx_id,
+            amount_cents=amount_cents,
+            currency=currency,
+            seller_net_cents=seller_net,
+            commercial_quote=commercial_quote,
+        )
+        pulse_emit_payment_checkout_event(
+            cur,
+            {**tx_event, "status": "cash_pending"},
+            "checkout_created",
+            status="cash_pending",
+            actor_user_id=buyer["user_id"],
+            extra={"payment_method": "cash"},
+        )
+        if item_type == "marketplace_product" and idempotency_key:
+            cur.execute(
+                """INSERT INTO marketplace_cart_checkout_keys (user_id,idempotency_key,response_json,created_at)
+                VALUES (?,?,?,?) ON CONFLICT(user_id,idempotency_key) DO NOTHING""",
+                (int(buyer["user_id"]), idempotency_key, json.dumps(response_payload, default=str), now),
+            )
+        conn.commit(); conn.close()
+        return jsonify(response_payload)
     try:
         base = (APP_BASE_URL or request.url_root.rstrip("/")).rstrip("/")
         checkout_metadata = {"seller_transaction_id": str(tx_id), "seller_type": seller_type,
