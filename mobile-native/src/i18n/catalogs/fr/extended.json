@@ -1372,6 +1372,7 @@
     "launch": {
       "comingSoonTitle": "BIENTÔT DISPONIBLE",
       "comingSoonBody": "Nous construisons cette partie de l'univers PulseSoc. Cette fonctionnalité se prépare pour son lancement.",
+      "comingSoonBodyPresence": "Nous construisons cette partie de l'univers PulseSoc. Restez connecté à mesure que de nouvelles fonctionnalités Presence deviennent disponibles.",
       "comingSoonAction": "J'ai compris",
       "statusComingSoon": "Bientôt disponible",
       "statusBuilding": "En construction",

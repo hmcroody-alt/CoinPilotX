@@ -1370,6 +1370,7 @@
     "launch": {
       "comingSoonTitle": "即将推出",
       "comingSoonBody": "我们正在构建 PulseSoc 世界的这一部分。此功能正在准备上线。",
+      "comingSoonBodyPresence": "我们正在构建 PulseSoc 世界的这一部分。请保持关注，新的 Presence 功能将陆续开放。",
       "comingSoonAction": "知道了",
       "statusComingSoon": "即将推出",
       "statusBuilding": "开发中",

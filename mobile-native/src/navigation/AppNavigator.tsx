@@ -82,7 +82,7 @@ import { RegionTimeScreen } from "../screens/RegionTimeScreen";
 import { PulseQueueScreen } from "../screens/PulseQueueScreen";
 import { PostDetailScreen } from "../screens/PostDetailScreen";
 import { ProfilePostViewerScreen } from "../screens/ProfilePostViewerScreen";
-import { PageCreateScreen } from "../screens/PageCreateScreen";
+import { PageCreateRoute } from "../screens/PageCreateRoute";
 import { PageConnectionsScreen } from "../screens/PageConnectionsScreen";
 import { PageTeamScreen } from "../screens/PageTeamScreen";
 import { PageEditScreen } from "../screens/PageEditScreen";
@@ -528,7 +528,7 @@ export function AppNavigator() {
       <Stack.Screen name="LiveEventCreateGateway" component={EventsScreen} options={{ title: t("common:screens.createLiveEvent") }} />
       <Stack.Screen name="ProfileDetail" component={ProfileScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.profile") })} />
       <Stack.Screen name="Page" component={PageScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.page") })} />
-      <Stack.Screen name="PageCreate" component={PageCreateScreen} options={{ title: t("common:screens.createPage") }} />
+      <Stack.Screen name="PageCreate" component={PageCreateRoute} options={{ title: t("common:screens.createPage") }} />
       {/*
         These three name the presence they are about to change, the same way
         `Page` and `ProfileDetail` above do.

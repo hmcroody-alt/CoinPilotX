@@ -23,6 +23,18 @@ export type ComingSoonTarget = {
   id: string;
   /** The module's own name, shown so the sheet answers "which one?". */
   label: string;
+  /**
+   * An alternative body key, for the rare module whose second sentence has to
+   * say something the generic one cannot.
+   *
+   * Deliberately a *key* rather than a string: the copy still lives in the
+   * catalogs and still has to exist in all eleven locales, so this cannot become
+   * the hole through which untranslated English reaches a user. It is also
+   * deliberately only the second half of the message — the title, the button and
+   * the first sentence stay shared, because the promise being made is the same
+   * one and only the subject differs.
+   */
+  bodyKey?: string;
 };
 
 export function ComingSoonSheet({
@@ -68,7 +80,7 @@ export function ComingSoonSheet({
           <View style={styles.halo} />
           <Text style={styles.eyebrow}>{t("commerce:launch.comingSoonTitle")}</Text>
           {target ? <Text style={styles.module}>{target.label}</Text> : null}
-          <Text style={styles.body}>{t("commerce:launch.comingSoonBody")}</Text>
+          <Text style={styles.body}>{t(target?.bodyKey || "commerce:launch.comingSoonBody")}</Text>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={t("commerce:launch.comingSoonAction")}

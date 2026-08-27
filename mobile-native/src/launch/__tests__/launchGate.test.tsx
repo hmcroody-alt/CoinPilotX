@@ -33,6 +33,11 @@ jest.mock("../../screens/EventsManagerScreen", () => ({
   EventsManagerScreen: () => null
 }));
 
+// Same treatment for the creation form the Presence gate stands in front of.
+jest.mock("../../screens/PageCreateScreen", () => ({
+  PageCreateScreen: () => null
+}));
+
 import {
   BUSINESS_OS_SECTIONS,
   businessOsHubSections,
@@ -41,6 +46,7 @@ import {
 } from "../../api/businessOs";
 import { preloadNamespaces, translate } from "../../i18n/engine";
 import { EventsRoute } from "../../screens/EventsRoute";
+import { PageCreateRoute } from "../../screens/PageCreateRoute";
 import { ComingSoonSheet } from "../ComingSoonSheet";
 import { LaunchTile } from "../LaunchTile";
 import { LOCKED_GLOW_MAX, LOCKED_GLOW_MIN, useLockedMotion } from "../lockedMotion";
@@ -104,9 +110,18 @@ describe("launch readiness table", () => {
       }
       expect(sectionKeys.has(suffix)).toBe(true);
     });
-    // Presence has one gated action and it is the one the audit found: the
-    // per-presence Business OS entry that navigates without a page id.
+    // Presence's gated entries, each one the audit found: the per-presence
+    // Business OS entry that navigates without a page id, and the three
+    // creation buttons that all open the same unfinished `PageCreate` form.
     expect(readinessOf(presenceModuleId("businessOs"))).toBe("BUILDING");
+    ["createArtist", "createBusiness", "createNew"].forEach((action) => {
+      expect(isLaunchGated(presenceModuleId(action))).toBe(true);
+    });
+    // The landing page is NOT gated, and that is the whole point of a
+    // progressive unlock: Presence Home lists real pages and its View and
+    // Manage actions work, so it opens. A row here for the hub itself would
+    // turn a partial lock into a wall.
+    expect(readinessOf("presence:hub")).toBe("READY");
   });
 
   it("registers only routes whose module is actually gated", () => {
@@ -249,6 +264,7 @@ describe("the Coming Soon message", () => {
     const keys = [
       "comingSoonTitle",
       "comingSoonBody",
+      "comingSoonBodyPresence",
       "comingSoonAction",
       "statusComingSoon",
       "statusBuilding",
@@ -273,6 +289,27 @@ describe("the deep-link boundary", () => {
     expect(view.getByText("COMING SOON")).toBeTruthy();
 
     // And there is a way out. A gate the user cannot back out of is a trap.
+    fireEvent.press(view.getByTestId("coming-soon-screen-dismiss"));
+    expect(goBack).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * Presence creation has three buttons and three OTHER ways in: a
+   * `navigate("PageCreate")` in `PagesHubScreen`, the `pulse/pages/create`
+   * deep link, and navigation state restored after a cold start. Gating only
+   * the buttons would leave the unfinished form reachable by all three.
+   */
+  it("refuses PageCreate however it was reached", () => {
+    const goBack = jest.fn();
+    const view = render(
+      <PageCreateRoute route={{ params: undefined }} navigation={{ navigate: jest.fn(), goBack }} />
+    );
+
+    expect(view.getByTestId("coming-soon-screen-presence:createNew")).toBeTruthy();
+    expect(view.getByText("COMING SOON")).toBeTruthy();
+    // The form itself never mounted — the step header is the tell.
+    expect(view.queryByText("Identity")).toBeNull();
+
     fireEvent.press(view.getByTestId("coming-soon-screen-dismiss"));
     expect(goBack).toHaveBeenCalledTimes(1);
   });

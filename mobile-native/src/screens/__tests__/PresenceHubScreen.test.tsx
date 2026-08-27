@@ -27,6 +27,7 @@ jest.mock("../../api/pages", () => ({
   listMyPages: (...args: unknown[]) => mockListMyPages(...args)
 }));
 
+import { preloadNamespaces } from "../../i18n/engine";
 import { PresenceHubScreen } from "../PresenceHubScreen";
 import { presenceAccent } from "../../theme/presenceAccent";
 import { presenceTheme } from "../../theme/presenceTheme";
@@ -291,5 +292,94 @@ describe("the cards are told apart by more than their names", () => {
 
     expect(flatten(view.getByText("Public").props.style).color).toBe(presenceTheme.teal);
     expect(flatten(view.getByText("✓ Verified").props.style).color).toBe(presenceTheme.teal);
+  });
+});
+
+/**
+ * The progressive unlock, restored.
+ *
+ * Presence Home itself is finished — it lists real pages from `listMyPages()`
+ * and its View and Manage actions open real screens — so the landing page is
+ * READY and stays READY. Creation is not: `PageCreateScreen` renders a
+ * three-step form whose workflow is still being built, and for a while every
+ * one of its three entrances was open. Tapping any of them dropped a member
+ * into an unfinished flow.
+ *
+ * These tests pin the shape of the fix rather than its wiring: the three
+ * buttons are still on screen and still say what they are, the tap answers
+ * instead of navigating, and the answer is the Presence wording. If a later
+ * change reintroduces a direct `navigate("PageCreate")` from this screen, the
+ * `navigation.navigate` assertions are what catch it.
+ */
+describe("creation is gated while the landing page stays open", () => {
+  // Catalogs are lazy. Without this the sheet's body degrades to a humanized
+  // key and the copy assertion below would be about "Coming Soon Body
+  // Presence" rather than about the sentence a member actually reads.
+  beforeAll(async () => {
+    await preloadNamespaces("en", ["commerce", "common"]);
+  });
+
+  const entrances = [
+    ["Create Artist Presence", "presence:createArtist", { flavor: "artist" }],
+    ["Create Business Presence", "presence:createBusiness", { flavor: "business" }],
+    ["+ Create New", "presence:createNew", undefined]
+  ] as const;
+
+  it.each(entrances)("keeps %s visible", async (label) => {
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Night Signal")).toBeTruthy());
+    // Locked does not mean hidden. The brief's premise is that a member can
+    // see the shape of what is coming, so the control keeps its label.
+    expect(view.getByText(label)).toBeTruthy();
+  });
+
+  it.each(entrances)("answers %s with Coming Soon instead of opening the form", async (label, id, params) => {
+    const { view, navigation } = show();
+    await waitFor(() => expect(view.queryByText("Night Signal")).toBeTruthy());
+
+    fireEvent.press(view.getByText(label));
+
+    expect(view.getByTestId(`coming-soon-${id}`)).toBeTruthy();
+    expect(navigation.navigate).not.toHaveBeenCalledWith("PageCreate", params);
+    // Nothing else either — a gate that navigated somewhere *else* would still
+    // be a broken door.
+    expect(navigation.navigate).not.toHaveBeenCalled();
+  });
+
+  it("says what is coming, not that a single feature is preparing for launch", async () => {
+    const { view } = show();
+    await waitFor(() => expect(view.queryByText("Night Signal")).toBeTruthy());
+    fireEvent.press(view.getByText("+ Create New"));
+
+    expect(view.queryByText(/Stay connected as new Presence capabilities become available/)).toBeTruthy();
+    expect(view.queryByText(/This feature is preparing for launch/)).toBeNull();
+  });
+
+  it("dismisses without going anywhere", async () => {
+    // The sheet must be a message, not a corridor: [Got it] returns the member
+    // to the hub, it does not quietly complete the navigation it interrupted.
+    const { view, navigation } = show();
+    await waitFor(() => expect(view.queryByText("Night Signal")).toBeTruthy());
+
+    fireEvent.press(view.getByText("Create Artist Presence"));
+    fireEvent.press(view.getByTestId("coming-soon-dismiss"));
+
+    expect(view.queryByTestId("coming-soon-presence:createArtist")).toBeNull();
+    expect(navigation.navigate).not.toHaveBeenCalled();
+  });
+
+  it("still opens the presences it already has", async () => {
+    // The regression this guards against is over-correction: gating creation
+    // must not gate the landing page. View and Manage are the proof that the
+    // rest of the hub is untouched.
+    const { view, navigation } = show();
+    await waitFor(() => expect(view.queryByText("Night Signal")).toBeTruthy());
+
+    fireEvent.press(view.getByText("View"));
+    expect(navigation.navigate).toHaveBeenCalledWith("Page", {
+      pageId: 7,
+      handle: "nightsignal",
+      title: "Night Signal"
+    });
   });
 });

@@ -25,6 +25,19 @@ import { createThemedStyles } from "../theme/themedStyles";
 type Props = NativeStackScreenProps<RootStackParamList, "Presence">;
 
 /**
+ * The Coming Soon body this screen asks for, in place of the shared one.
+ *
+ * The generic sentence ("This feature is preparing for launch") is written
+ * about a single module. Presence closes three doors at once onto the same
+ * unfinished workflow, so it says what is actually coming — more Presence
+ * capability — rather than repeating a per-feature promise three times.
+ *
+ * It is a catalog key, not a string: `ComingSoonSheet` translates it, and the
+ * parity gate holds it to all eleven locales like every other line of copy.
+ */
+const PRESENCE_COMING_SOON_BODY = "commerce:launch.comingSoonBodyPresence";
+
+/**
  * Whether this presence has a Business OS to go to, as decided by the server.
  *
  * This used to be two frozensets in this file — a third copy of the server's
@@ -163,13 +176,26 @@ export function PresenceHubScreen({ navigation }: Props) {
             already holds it, never a second copy. Which of them your page shows depends on
             the type you pick next.
           </Text>
-          <Pressable
-            accessibilityRole="button"
+          <PresenceCreateButton
+            id={presenceModuleId("createArtist")}
+            label="Create Artist Presence"
+            index={0}
+            motionEnabled={motionEnabled}
+            screenActive={screenActive}
             style={styles.offerButton}
-            onPress={() => navigation.navigate("PageCreate", { flavor: "artist" })}
-          >
-            <Text style={styles.offerButtonText}>Create Artist Presence</Text>
-          </Pressable>
+            lockedStyle={styles.offerButtonLocked}
+            textStyle={styles.offerButtonText}
+            lockedTextStyle={styles.offerButtonTextLocked}
+            badgeStyle={styles.createBadge}
+            onPress={() =>
+              gate.open(
+                presenceModuleId("createArtist"),
+                "Artist Presence",
+                () => navigation.navigate("PageCreate", { flavor: "artist" }),
+                PRESENCE_COMING_SOON_BODY
+              )
+            }
+          />
         </View>
 
         <View style={styles.offerCard}>
@@ -187,13 +213,26 @@ export function PresenceHubScreen({ navigation }: Props) {
             Ads — connected to what you already run rather than rebuilt here. Which of them
             your page shows depends on the type you pick next.
           </Text>
-          <Pressable
-            accessibilityRole="button"
+          <PresenceCreateButton
+            id={presenceModuleId("createBusiness")}
+            label="Create Business Presence"
+            index={1}
+            motionEnabled={motionEnabled}
+            screenActive={screenActive}
             style={styles.offerButton}
-            onPress={() => navigation.navigate("PageCreate", { flavor: "business" })}
-          >
-            <Text style={styles.offerButtonText}>Create Business Presence</Text>
-          </Pressable>
+            lockedStyle={styles.offerButtonLocked}
+            textStyle={styles.offerButtonText}
+            lockedTextStyle={styles.offerButtonTextLocked}
+            badgeStyle={styles.createBadge}
+            onPress={() =>
+              gate.open(
+                presenceModuleId("createBusiness"),
+                "Business Presence",
+                () => navigation.navigate("PageCreate", { flavor: "business" }),
+                PRESENCE_COMING_SOON_BODY
+              )
+            }
+          />
         </View>
 
         <Text style={styles.sectionTitle}>YOUR PRESENCES</Text>
@@ -320,13 +359,27 @@ export function PresenceHubScreen({ navigation }: Props) {
           })
         )}
 
-        <Pressable
-          accessibilityRole="button"
+        <PresenceCreateButton
+          id={presenceModuleId("createNew")}
+          label="+ Create New"
+          moduleName="New Presence"
+          index={2}
+          motionEnabled={motionEnabled}
+          screenActive={screenActive}
           style={styles.createNew}
-          onPress={() => navigation.navigate("PageCreate", undefined)}
-        >
-          <Text style={styles.createNewText}>+ Create New</Text>
-        </Pressable>
+          lockedStyle={styles.createNewLocked}
+          textStyle={styles.createNewText}
+          lockedTextStyle={styles.createNewTextLocked}
+          badgeStyle={styles.createBadge}
+          onPress={() =>
+            gate.open(
+              presenceModuleId("createNew"),
+              "New Presence",
+              () => navigation.navigate("PageCreate", undefined),
+              PRESENCE_COMING_SOON_BODY
+            )
+          }
+        />
       </ScrollView>
       <ComingSoonSheet target={gate.target} onDismiss={gate.dismiss} />
     </>
@@ -386,6 +439,81 @@ function PresenceAction({
   );
 }
 
+/**
+ * A Presence creation button that knows its own readiness.
+ *
+ * Same rules as `PresenceAction` above — `readinessOf`, `useLaunchCopy`,
+ * `useLockedMotion`, one shared gate — in the two shapes this screen's creation
+ * entries actually use: the filled offer button on the Artist and Business
+ * cards, and the dashed "+ Create New" strip at the bottom. It takes the style
+ * rather than owning one because those two shapes must keep looking like
+ * themselves; what is shared is the behaviour, and the behaviour is not
+ * duplicated.
+ *
+ * A locked button keeps its size, its position and its label. The brief is
+ * explicit that these stay VISIBLE: the point is that a member can see the
+ * shape of what is coming, so hiding them or greying them into illegibility
+ * would both be the wrong answer. It gains the state as a word, because colour
+ * alone cannot carry it.
+ */
+function PresenceCreateButton({
+  id,
+  label,
+  moduleName,
+  index,
+  motionEnabled,
+  screenActive,
+  style,
+  lockedStyle,
+  textStyle,
+  lockedTextStyle,
+  badgeStyle,
+  onPress
+}: {
+  id: string;
+  /** What the button says. Unchanged by the gate. */
+  label: string;
+  /**
+   * What the *sheet* and the screen reader call this door. Defaults to `label`.
+   * "+ Create New" is a fine thing for a button to say and a poor thing for
+   * VoiceOver to read as "+ Create New. Coming soon."
+   */
+  moduleName?: string;
+  index: number;
+  motionEnabled: boolean;
+  screenActive: boolean;
+  style: object;
+  lockedStyle: object;
+  textStyle: object;
+  lockedTextStyle: object;
+  badgeStyle: object;
+  onPress: () => void;
+}) {
+  const state = readinessOf(id);
+  const locked = state !== "READY";
+  const { badge, accessibility } = useLaunchCopy();
+  const motion = useLockedMotion({ index, active: screenActive, enabled: motionEnabled && locked });
+  const a11y = accessibility(id, moduleName || label);
+
+  return (
+    <Animated.View style={locked ? motion.cardStyle : undefined}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={a11y.accessibilityLabel}
+        accessibilityHint={a11y.accessibilityHint}
+        testID={`presence-create-${id}`}
+        onPress={onPress}
+        onPressIn={locked ? motion.onPressIn : undefined}
+        onPressOut={locked ? motion.onPressOut : undefined}
+        style={[style, locked ? lockedStyle : null]}
+      >
+        <Text style={[textStyle, locked ? lockedTextStyle : null]}>{label}</Text>
+        {locked ? <Text style={badgeStyle}>{badge(state)}</Text> : null}
+      </Pressable>
+    </Animated.View>
+  );
+}
+
 const styles = createThemedStyles(() => ({
   badge: {
     borderRadius: 6,
@@ -422,21 +550,39 @@ const styles = createThemedStyles(() => ({
     padding: 16,
     paddingBottom: 48
   },
+  /**
+   * The state, in words, on a creation button. Same reasoning as
+   * `presenceActionBadge`: colour alone cannot carry readiness, so the word is
+   * what survives greyscale, colour blindness and a screen reader.
+   */
+  createBadge: {
+    color: presenceTheme.teal,
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 0.6,
+    textTransform: "uppercase"
+  },
   createNew: {
     alignItems: "center",
     borderColor: presenceTheme.tealBorder,
     borderRadius: 10,
     borderStyle: "dashed",
     borderWidth: 1,
+    flexDirection: "row",
+    gap: 8,
     marginTop: 16,
     minHeight: 44,
     justifyContent: "center"
+  },
+  createNewLocked: {
+    backgroundColor: presenceTheme.tealSoft
   },
   createNewText: {
     color: presenceTheme.teal,
     fontSize: 14,
     fontWeight: "900"
   },
+  createNewTextLocked: {},
   empty: {
     color: colors.muted,
     fontSize: 14,
@@ -459,14 +605,31 @@ const styles = createThemedStyles(() => ({
     alignItems: "center",
     backgroundColor: presenceTheme.teal,
     borderRadius: 10,
+    flexDirection: "row",
+    gap: 8,
     marginTop: 12,
     minHeight: 44,
     justifyContent: "center"
+  },
+  /**
+   * Locked, this button drops the filled teal for the same soft wash every
+   * other locked surface in the app wears — so a member reads "not yet" from
+   * the card at a glance, before the badge word or the sheet. It keeps its
+   * size and its place: the brief is that these stay visible.
+   */
+  offerButtonLocked: {
+    backgroundColor: presenceTheme.tealSoft,
+    borderColor: presenceTheme.tealBorder,
+    borderWidth: 1
   },
   offerButtonText: {
     color: colors.background,
     fontSize: 14,
     fontWeight: "900"
+  },
+  /** The filled button's dark label is unreadable on the soft wash. */
+  offerButtonTextLocked: {
+    color: presenceTheme.teal
   },
   offerCard: {
     backgroundColor: colors.surface,

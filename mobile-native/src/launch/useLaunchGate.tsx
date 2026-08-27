@@ -25,12 +25,17 @@ import { isLaunchReady, readinessOf, type LaunchModuleId, type ReadinessState } 
 export function useLaunchGate() {
   const [target, setTarget] = useState<ComingSoonTarget | null>(null);
 
-  const open = useCallback((id: LaunchModuleId, label: string, run: () => void) => {
+  /**
+   * `bodyKey` overrides only the sheet's second sentence — see
+   * `ComingSoonTarget.bodyKey`. Omit it and every gated module gets the one
+   * shared wording, which is still the right answer for almost all of them.
+   */
+  const open = useCallback((id: LaunchModuleId, label: string, run: () => void, bodyKey?: string) => {
     if (isLaunchReady(id)) {
       run();
       return;
     }
-    setTarget({ id, label });
+    setTarget({ id, label, bodyKey });
     // Screen-reader users get the message spoken even if focus does not move to
     // the modal in time. `accessibilityRole="alert"` on the sheet covers most
     // cases; this covers the rest, and is a no-op when nothing is listening.

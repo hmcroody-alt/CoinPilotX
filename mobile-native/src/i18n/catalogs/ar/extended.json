@@ -1436,6 +1436,7 @@
     "launch": {
       "comingSoonTitle": "قريباً",
       "comingSoonBody": "نحن نبني هذا الجزء من عالم PulseSoc. هذه الميزة قيد التحضير للإطلاق.",
+      "comingSoonBodyPresence": "نحن نبني هذا الجزء من عالم PulseSoc. ابقَ على اتصال مع إتاحة إمكانات Presence الجديدة.",
       "comingSoonAction": "حسناً",
       "statusComingSoon": "قريباً",
       "statusBuilding": "قيد الإنشاء",

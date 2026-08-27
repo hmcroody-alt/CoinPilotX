@@ -1362,6 +1362,7 @@
     "launch": {
       "comingSoonTitle": "近日公開",
       "comingSoonBody": "PulseSocの世界のこの部分を構築中です。この機能はリリースに向けて準備しています。",
+      "comingSoonBodyPresence": "PulseSocの世界のこの部分を構築中です。新しいPresence機能が利用可能になりますので、ぜひご期待ください。",
       "comingSoonAction": "了解",
       "statusComingSoon": "近日公開",
       "statusBuilding": "構築中",

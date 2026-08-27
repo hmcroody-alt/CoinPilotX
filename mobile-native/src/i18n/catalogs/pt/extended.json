@@ -1372,6 +1372,7 @@
     "launch": {
       "comingSoonTitle": "EM BREVE",
       "comingSoonBody": "Estamos construindo esta parte do universo PulseSoc. Este recurso está se preparando para o lançamento.",
+      "comingSoonBodyPresence": "Estamos construindo esta parte do universo PulseSoc. Fique por perto à medida que novos recursos do Presence forem lançados.",
       "comingSoonAction": "Entendi",
       "statusComingSoon": "Em breve",
       "statusBuilding": "Em construção",
