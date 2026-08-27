@@ -6,6 +6,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider, initialWindowMetrics } from "react-native-safe-area-context";
 import { IncomingCallLayer } from "./src/calls/IncomingCallLayer";
 import { InAppNotificationBanner } from "./src/components/InAppNotificationBanner";
+import { RealtimeKeepAwake } from "./src/core/RealtimeKeepAwake";
 import { PulseBackground } from "./src/components/PulseBackground";
 import { TimeZoneProvider } from "./src/core/TimeZoneContext";
 import { I18nProvider, useI18n, useTranslation } from "./src/i18n";
@@ -334,6 +335,16 @@ function AppRoot() {
               />
               {authState.status === "signedIn" ? <InAppNotificationBanner /> : null}
               <IncomingCallLayer signedIn={authState.status === "signedIn"} currentUserId={authState.user?.user_id} />
+              {/*
+                Holds the display awake during a video call or a Live. Mounted
+                here, beside the other session-scoped layers, because a call
+                outlives the Call screen — anchoring this to a screen would drop
+                the idle timer the moment the user minimised the call. Renders
+                nothing and is unconditional: it observes session state rather
+                than auth state, and there is no session to observe when signed
+                out.
+              */}
+              <RealtimeKeepAwake />
               {PERF_OVERLAY_ENABLED ? <PerfOverlay /> : null}
             </SettingsProviders>
           </AuthContext.Provider>
