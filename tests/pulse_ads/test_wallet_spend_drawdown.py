@@ -29,8 +29,12 @@ class SpendDrawdownTests(unittest.TestCase):
         self.conn.executescript(SCHEMA)
         cur = self.conn.cursor()
         cur.execute("ALTER TABLE pulse_ad_campaigns ADD COLUMN spent_cents INTEGER DEFAULT 0")
+        # Verified on purpose: billing fails closed on account standing, so an
+        # unverified advertiser is skipped before any bucket is touched and
+        # every drawdown assertion below would be vacuous.
         cur.execute(
-            "INSERT INTO pulse_ad_accounts (owner_user_id, business_name, business_type, status) VALUES (?, ?, ?, 'active')",
+            "INSERT INTO pulse_ad_accounts (owner_user_id, business_name, business_type, status, verification_status) "
+            "VALUES (?, ?, ?, 'active', 'verified')",
             (OWNER_ID, "Spend Advertiser", "business"),
         )
         self.account_id = cur.lastrowid

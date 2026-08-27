@@ -28,6 +28,7 @@ CREATE TABLE pulse_ad_accounts (
     business_name TEXT,
     business_type TEXT,
     status TEXT DEFAULT 'active',
+    verification_status TEXT DEFAULT 'unverified',
     created_at TEXT,
     updated_at TEXT
 );

@@ -64,8 +64,11 @@ class WorkerBase(unittest.TestCase):
                 cur.execute(ddl)
             except Exception:
                 pass
+        # Verified on purpose: billing fails closed on account standing, so an
+        # unverified advertiser never reaches the spend path this loop exercises.
         cur.execute(
-            "INSERT INTO pulse_ad_accounts (owner_user_id, business_name, business_type, status) VALUES (?, ?, ?, 'active')",
+            "INSERT INTO pulse_ad_accounts (owner_user_id, business_name, business_type, status, verification_status) "
+            "VALUES (?, ?, ?, 'active', 'verified')",
             (OWNER_ID, "Worker Advertiser", "business"),
         )
         self.account_id = cur.lastrowid

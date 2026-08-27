@@ -61,11 +61,18 @@ class _EnvIsolatedCase(unittest.TestCase):
 
 class CapabilityConstantsMatchRegistry(unittest.TestCase):
     def test_constants_are_registered_premium_capabilities(self):
-        from services.business_os.entitlements import premium
+        from services.business_os.entitlements import facade, premium
         self.assertIn(gate.CAP_CRYPTO_ADVANCED_ALERTS, premium.PREMIUM_CAPABILITIES)
-        self.assertIn(gate.CAP_CRYPTO_PORTFOLIO, premium.PREMIUM_CAPABILITIES)
         self.assertEqual(gate.CAP_CRYPTO_ADVANCED_ALERTS, "premium.crypto.advanced_alerts")
         self.assertEqual(gate.CAP_CRYPTO_PORTFOLIO, "premium.crypto.portfolio_intelligence")
+        # PREMIUM_CAPABILITIES is the *presentation* list, and the portfolio key
+        # is an alias for the portfolio/intelligence pair already advertised
+        # there — listing it would sell one capability twice under two names.
+        # What the gate actually needs is a legacy reader, because without one
+        # the default ``off`` mode has no opinion and denies the key to every
+        # paying member.
+        self.assertNotIn(gate.CAP_CRYPTO_PORTFOLIO, premium.PREMIUM_CAPABILITIES)
+        self.assertIn(gate.CAP_CRYPTO_PORTFOLIO, facade._LEGACY_READERS)
 
     def test_existing_premium_plans_confer_both_capabilities(self):
         """The seed catalog must attach the new keys to the EXISTING plans the
