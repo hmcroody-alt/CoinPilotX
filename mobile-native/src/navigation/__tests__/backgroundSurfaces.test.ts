@@ -291,7 +291,11 @@ describe("immersive and fixed-palette surfaces keep their own opaque fill", () =
     "screens/CameraStudioScreen.tsx": 'backgroundColor: "#02050b"',
     "screens/ReelsScreen.tsx": 'backgroundColor: "#02050b"',
     "screens/LiveHostSessionScreen.tsx": 'backgroundColor: "#02040a"',
-    "screens/LiveStudioScreen.tsx": 'backgroundColor: "#02050b"',
+    // `LiveStudioScreen` used to be here, pinned to the `#02050b` behind its
+    // camera preview. The preview moved out to the host session screen when the
+    // studio became a management dashboard, so there is no longer an immersive
+    // surface on it to keep opaque — it is an ordinary themed screen now and
+    // belongs to the general rule, not to this exclusion list.
     "screens/LiveScreen.tsx": 'backgroundColor: "#02050b"',
     "screens/ReplayViewerScreen.tsx": 'backgroundColor: "#02040a"',
     "screens/CallScreen.tsx": 'backgroundColor: "#030812"',

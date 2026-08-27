@@ -1,25 +1,54 @@
-import { CameraType, CameraView, useCameraPermissions, useMicrophonePermissions } from "expo-camera";
+/**
+ * The Live Studio dashboard — the creator control center, and NOT a camera.
+ *
+ * WHY THERE IS NO CAMERA PREVIEW HERE ANY MORE
+ *
+ * This screen used to open a live `CameraView` above the setup form, which put
+ * two different mental models on one page: "I am framing a shot" and "I am
+ * filling in a form". The result was that creators could not tell whether they
+ * were already broadcasting, and the real capture UI — the full-screen host
+ * screen you land on after Start Live — looked like a *third* live screen
+ * rather than the obvious next step.
+ *
+ * So the split is now explicit:
+ *
+ *   Live Studio (this file)   management: status, readiness, setup, tools
+ *   Live host session         capture: full-screen camera, on-air controls
+ *
+ * Nothing about the broadcast itself changed. `startLive()` and the handoff to
+ * `NativeLiveHost` are byte-for-byte what they were; the transport, the audio
+ * path and the host screen are untouched.
+ */
+
 import * as Battery from "expo-battery";
 import * as Device from "expo-device";
+import { useCameraPermissions, useMicrophonePermissions } from "expo-camera";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Linking, Pressable, ScrollView, Switch, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { PULSE_API_BASE_URL } from "../api/config";
 import { startLive } from "../api/live";
 import { LogiNexusBadge, LogiNexusButton, LogiNexusPanel, LogiNexusSignalIndicator } from "../components/LogiNexus";
+import { getActiveMediaPlayback, subscribeMediaPlayback } from "../core/mediaPlaybackCoordinator";
 import { RootStackParamList } from "../navigation/types";
+import { useAuth } from "../session/auth";
 import { colors } from "../theme/colors";
 import { logiNexus, LogiNexusTone } from "../theme/logiNexus";
 import { createThemedStyles } from "../theme/themedStyles";
 import {
   AUDIENCE_OPTIONS,
   computeOverallReadiness,
+  deriveLiveStudioStatus,
   emptyLiveStudioDraft,
+  isLiveHostPlaybackId,
+  LIVE_STUDIO_UPCOMING,
   LIVE_TYPE_OPTIONS,
   LiveStudioDraft,
+  LiveStudioStatus,
   loadLiveStudioDraft,
+  mapAccountToReadiness,
   mapBatteryToReadiness,
   mapDeviceToReadiness,
   mapLatencyToNetwork,
@@ -53,9 +82,9 @@ async function probeNetworkLatency(): Promise<number | null> {
 export function LiveStudioScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { authState, requestReauthentication } = useAuth();
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [microphonePermission, requestMicrophonePermission] = useMicrophonePermissions();
-  const [cameraFacing, setCameraFacing] = useState<CameraType>("front");
   const [network, setNetwork] = useState<NetworkState>({ latencyMs: null, probing: true });
   const [battery, setBattery] = useState<BatteryState>({ level: null, lowPower: false });
   const [draft, setDraft] = useState<LiveStudioDraft>(emptyLiveStudioDraft());
@@ -64,6 +93,26 @@ export function LiveStudioScreen() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /*
+   * "Am I on air right now?" — read from the media-playback coordinator rather
+   * than from any state this screen owns, so the dashboard cannot disagree with
+   * the host session about whether a broadcast is running. Only the *host*
+   * scope counts: watching someone else's Live claims the coordinator with the
+   * same kind, and that must not read as "you are broadcasting".
+   */
+  const [hostingLive, setHostingLive] = useState(() => isLiveHostPlaybackId(getActiveMediaPlayback()?.id));
+
+  useEffect(() => {
+    // The coordinator emits the current owner synchronously on subscribe, so a
+    // broadcast already running when this screen mounts is picked up.
+    const unsubscribe = subscribeMediaPlayback((owner) => {
+      setHostingLive(isLiveHostPlaybackId(owner?.id));
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   const runNetworkProbe = useCallback(async () => {
     setNetwork((current) => ({ ...current, probing: true }));
@@ -105,22 +154,51 @@ export function LiveStudioScreen() {
 
   const network_ = useMemo(() => mapLatencyToNetwork(network.probing ? 0 : network.latencyMs), [network.latencyMs, network.probing]);
 
+  /*
+   * Order matters: this list is rendered top to bottom, and the four the brief
+   * calls out — camera, microphone, network, account — are the ones that can
+   * actually stop a broadcast, so they lead. Device and battery are advisory
+   * and sit underneath.
+   */
   const checks: ReadinessCheck[] = useMemo(() => {
     const cameraCheck = mapPermissionToReadiness("camera", Boolean(cameraPermission?.granted), cameraPermission?.canAskAgain !== false);
     const micCheck = mapPermissionToReadiness("microphone", Boolean(microphonePermission?.granted), microphonePermission?.canAskAgain !== false);
+    const accountCheck = mapAccountToReadiness(authState.status, authState.user?.account_status);
     const batteryCheck = mapBatteryToReadiness(battery.level, battery.lowPower);
     const deviceCheck = mapDeviceToReadiness(Device.isDevice);
     const networkCheck: ReadinessCheck = network.probing
       ? { key: "network", label: "Network", level: "recommend", detail: "Checking connection…", action: "retry-network" }
       : network_.check;
-    return [deviceCheck, cameraCheck, micCheck, networkCheck, batteryCheck];
-  }, [battery.level, battery.lowPower, cameraPermission, microphonePermission, network.probing, network_.check]);
+    return [cameraCheck, micCheck, networkCheck, accountCheck, deviceCheck, batteryCheck];
+  }, [
+    authState.status,
+    authState.user?.account_status,
+    battery.level,
+    battery.lowPower,
+    cameraPermission,
+    microphonePermission,
+    network.probing,
+    network_.check
+  ]);
 
   const overall: ReadinessLevel = useMemo(() => computeOverallReadiness(checks), [checks]);
   const summary = readinessSummary(overall);
-  const overallTone: LogiNexusTone = overall === "blocked" ? "danger" : overall === "recommend" ? "warning" : "safety";
+  const status: LiveStudioStatus = deriveLiveStudioStatus(overall, hostingLive);
+  const statusTone: LogiNexusTone = status === "BLOCKED" ? "danger" : status === "LIVE" ? "creator" : "safety";
+  const blockers = useMemo(() => checks.filter((check) => check.level === "blocked"), [checks]);
 
-  const cameraReady = Boolean(cameraPermission?.granted) && Device.isDevice;
+  /*
+   * The headline the creator reads first. It answers "can I press the button",
+   * which the readiness list below then explains in detail.
+   */
+  const headline =
+    status === "LIVE"
+      ? "You're on air right now"
+      : status === "BLOCKED"
+        ? "Complete setup before going live"
+        : summary.label === "Ready"
+          ? "Ready when you are"
+          : summary.label;
 
   async function handleAction(action: ReadinessAction) {
     setError("");
@@ -133,6 +211,8 @@ export function LiveStudioScreen() {
       await Linking.openSettings().catch(() => setError("Could not open Settings."));
     } else if (action === "retry-network") {
       await runNetworkProbe();
+    } else if (action === "sign-in") {
+      requestReauthentication();
     }
   }
 
@@ -140,7 +220,13 @@ export function LiveStudioScreen() {
     setDraft((current) => ({ ...current, ...patch }));
   }
 
-  async function goLive() {
+  /**
+   * The one handoff out of this screen: create the broadcast, then hand the
+   * creator straight to the full-screen camera experience. Unchanged from
+   * before the studio/camera split — the button that calls it moved and was
+   * renamed, but what it does did not.
+   */
+  async function startLiveBroadcast() {
     setError("");
     setMessage("");
     if (overall === "blocked") {
@@ -171,15 +257,26 @@ export function LiveStudioScreen() {
       contentContainerStyle={[styles.content, { paddingBottom: logiNexus.spacing.giant + insets.bottom }]}
       keyboardShouldPersistTaps="handled"
     >
-      <LogiNexusPanel tone={overallTone} style={styles.overviewPanel}>
+      <LogiNexusPanel tone={statusTone} style={styles.overviewPanel}>
         <View style={styles.overviewHeader}>
           <View style={styles.overviewHeadings}>
-            <Text style={styles.overline}>Live Studio · Pre-flight</Text>
-            <Text style={styles.overviewTitle}>{summary.label}</Text>
+            <Text style={styles.overline}>Live Studio</Text>
+            <Text style={styles.overviewTitle} testID="live-studio-headline">
+              {headline}
+            </Text>
           </View>
-          <LogiNexusBadge label={overall === "ready" ? "Go" : overall === "recommend" ? "Review" : "Hold"} tone={overallTone} />
         </View>
-        <Text style={styles.overviewDetail}>{summary.detail}</Text>
+        <Text style={styles.overviewDetail}>Your live broadcasts, setup, and creator tools.</Text>
+        <View
+          style={styles.statusRow}
+          accessible
+          accessibilityRole="text"
+          accessibilityLabel={`Current status: ${status}`}
+          testID="live-studio-status"
+        >
+          <Text style={styles.statusLabel}>Current status</Text>
+          <LogiNexusBadge label={status} tone={statusTone} />
+        </View>
         <View style={styles.overviewActions}>
           <LogiNexusButton
             label={network.probing ? "Checking…" : "Re-run checks"}
@@ -195,46 +292,25 @@ export function LiveStudioScreen() {
         </View>
       </LogiNexusPanel>
 
-      <View style={styles.previewCard}>
-        {cameraReady ? (
-          <CameraView style={styles.preview} facing={cameraFacing} mode="video" mute mirror={cameraFacing === "front"} />
-        ) : (
-          <View style={styles.previewFallback}>
-            <Text style={styles.previewFallbackTitle}>{Device.isDevice ? "Camera preview needs permission" : "Camera preview needs a device"}</Text>
-            <Text style={styles.previewFallbackBody}>
-              {Device.isDevice
-                ? "Allow camera access to check framing and lighting before you go live."
-                : "Run on a physical device to preview the camera. Setup below still works on the simulator."}
-            </Text>
-            {Device.isDevice && !cameraPermission?.granted ? (
-              <LogiNexusButton
-                label="Allow Camera"
-                onPress={() => requestCameraPermission().then(() => undefined)}
-                tone="creator"
-                accessibilityLabel="Allow camera access"
-              />
-            ) : null}
-          </View>
-        )}
-        <View style={styles.previewOverlay} pointerEvents="box-none">
-          <View style={styles.previewBadgeRow}>
-            <LogiNexusBadge label="Preview only" tone="intelligence" />
-          </View>
-          {cameraReady ? (
-            <Pressable
-              style={styles.flipButton}
-              onPress={() => setCameraFacing((current) => (current === "front" ? "back" : "front"))}
-              accessibilityRole="button"
-              accessibilityLabel="Flip camera"
-            >
-              <Text style={styles.flipText}>Flip</Text>
-            </Pressable>
-          ) : null}
-        </View>
-      </View>
-
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Readiness</Text>
+        <Text style={styles.sectionTitle}>Live readiness</Text>
+        {/*
+          Blocked is a line above the list, not a page instead of it. The old
+          behaviour hid the whole studio behind an error state; here the same
+          information sits one line above the rows that say what to fix, and
+          everything else on the screen stays usable.
+
+          The headline above already says "Complete setup before going live", so
+          this line does not repeat it — it names the specific checks, and the
+          rows underneath say how to fix each one.
+        */}
+        {blockers.length ? (
+          <Text style={styles.blockedNotice} testID="live-studio-blocked-notice">
+            Still needed: {blockers.map((check) => check.label).join(", ")}.
+          </Text>
+        ) : (
+          <Text style={styles.sectionCaption}>{summary.detail}</Text>
+        )}
         <View style={styles.checkList}>
           {checks.map((check) => (
             <View key={check.key} style={styles.checkRow}>
@@ -349,22 +425,53 @@ export function LiveStudioScreen() {
 
       {error ? <Text style={styles.error}>{error}</Text> : message ? <Text style={styles.message}>{message}</Text> : null}
 
+      {/*
+        The single door out of the dashboard and into the camera. It keeps the
+        `live-studio-go-live` testID it has always had: renaming the label is a
+        copy change, but renaming the hook other tests and QA scripts reach for
+        would be a breaking one for no benefit.
+      */}
       <LogiNexusButton
-        label={handingOff ? "Going live…" : "Go Live"}
-        onPress={goLive}
+        label={hostingLive ? "You're already live" : handingOff ? "Opening camera…" : "Start Live"}
+        onPress={startLiveBroadcast}
         tone="danger"
-        disabled={overall === "blocked" || handingOff}
-        accessibilityLabel="Go live"
+        disabled={overall === "blocked" || handingOff || hostingLive}
+        accessibilityLabel="Start live and open the camera"
         testID="live-studio-go-live"
       />
       {handingOff ? <ActivityIndicator style={styles.spinner} color={colors.accent} /> : null}
 
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Upcoming</Text>
+        <Text style={styles.sectionCaption}>Creator tools we're building next. None of these are available yet.</Text>
+        {/*
+          Not `Pressable`. These do nothing, and a row that responds to touch is
+          a promise of a destination — the exact "looks tappable, lands nowhere"
+          failure this restructure exists to remove.
+        */}
+        {LIVE_STUDIO_UPCOMING.map((item) => (
+          <View
+            key={item.key}
+            style={styles.upcomingRow}
+            accessible
+            accessibilityLabel={`${item.label}. Coming soon. ${item.blurb}`}
+            testID={`live-studio-upcoming-${item.key}`}
+          >
+            <View style={styles.upcomingBody}>
+              <Text style={styles.upcomingLabel}>{item.label}</Text>
+              <Text style={styles.upcomingBlurb}>{item.blurb}</Text>
+            </View>
+            <LogiNexusBadge label="Soon" tone="intelligence" />
+          </View>
+        ))}
+      </View>
+
       <LogiNexusPanel tone="intelligence" style={styles.notePanel}>
         <Text style={styles.noteTitle}>How broadcasting works</Text>
         <Text style={styles.noteBody}>
-          This native pre-flight checks your device and captures your setup. Tapping Go Live starts a real native
-          broadcast on this device — your camera and microphone publish through PulseSoc's Agora rooms, and you can
-          accept guest requests from the host screen. No web Studio and no browser handoff.
+          This screen manages your studio; it never opens the camera. Tapping Start Live creates the broadcast and hands
+          you to the full-screen camera, where your camera and microphone publish through PulseSoc's Agora rooms and you
+          can accept guest requests. No web Studio and no browser handoff.
         </Text>
       </LogiNexusPanel>
     </ScrollView>
@@ -381,10 +488,16 @@ function actionLabel(action: ReadinessAction): string {
   if (action === "request-camera") return "Allow";
   if (action === "request-mic") return "Allow";
   if (action === "open-settings") return "Settings";
+  if (action === "sign-in") return "Sign in";
   return "Retry";
 }
 
 const styles = createThemedStyles(() => ({
+  blockedNotice: {
+    ...logiNexus.typography.metadata,
+    color: colors.danger,
+    fontWeight: "800"
+  },
   chip: {
     borderColor: colors.border,
     borderRadius: logiNexus.radius.capsule,
@@ -458,19 +571,6 @@ const styles = createThemedStyles(() => ({
     marginTop: logiNexus.spacing.sm,
     textTransform: "uppercase"
   },
-  flipButton: {
-    alignSelf: "flex-end",
-    backgroundColor: "rgba(5, 9, 16, 0.7)",
-    borderColor: colors.border,
-    borderRadius: logiNexus.radius.small,
-    borderWidth: 1,
-    paddingHorizontal: logiNexus.spacing.md,
-    paddingVertical: logiNexus.spacing.sm
-  },
-  flipText: {
-    ...logiNexus.typography.label,
-    color: colors.text
-  },
   input: {
     ...logiNexus.typography.body,
     backgroundColor: colors.surface,
@@ -532,46 +632,6 @@ const styles = createThemedStyles(() => ({
     ...logiNexus.typography.title,
     color: colors.text
   },
-  preview: {
-    ...StyleSheet.absoluteFillObject
-  },
-  previewBadgeRow: {
-    flexDirection: "row"
-  },
-  previewCard: {
-    aspectRatio: 3 / 4,
-    backgroundColor: "#02050b",
-    borderColor: colors.border,
-    borderRadius: logiNexus.radius.panel,
-    borderWidth: 1,
-    maxHeight: 420,
-    overflow: "hidden"
-  },
-  previewFallback: {
-    alignItems: "center",
-    flex: 1,
-    gap: logiNexus.spacing.md,
-    justifyContent: "center",
-    padding: logiNexus.spacing.xl
-  },
-  previewFallbackBody: {
-    ...logiNexus.typography.body,
-    color: colors.muted,
-    textAlign: "center"
-  },
-  previewFallbackTitle: {
-    ...logiNexus.typography.sectionTitle,
-    color: colors.text,
-    textAlign: "center"
-  },
-  previewOverlay: {
-    bottom: logiNexus.spacing.md,
-    justifyContent: "space-between",
-    left: logiNexus.spacing.md,
-    position: "absolute",
-    right: logiNexus.spacing.md,
-    top: logiNexus.spacing.md
-  },
   root: {
     backgroundColor: colors.background,
     flex: 1
@@ -579,12 +639,27 @@ const styles = createThemedStyles(() => ({
   section: {
     gap: logiNexus.spacing.md
   },
+  sectionCaption: {
+    ...logiNexus.typography.metadata,
+    color: colors.muted
+  },
   sectionTitle: {
     ...logiNexus.typography.sectionTitle,
     color: colors.text
   },
   spinner: {
     marginTop: -logiNexus.spacing.sm
+  },
+  statusLabel: {
+    ...logiNexus.typography.label,
+    color: colors.muted,
+    textTransform: "uppercase"
+  },
+  statusRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: logiNexus.spacing.sm,
+    marginTop: logiNexus.spacing.sm
   },
   toggleBody: {
     flex: 1,
@@ -606,6 +681,36 @@ const styles = createThemedStyles(() => ({
     borderWidth: 1,
     flexDirection: "row",
     gap: logiNexus.spacing.md,
+    paddingHorizontal: logiNexus.spacing.md,
+    paddingVertical: logiNexus.spacing.md
+  },
+  upcomingBlurb: {
+    ...logiNexus.typography.metadata,
+    color: colors.muted,
+    lineHeight: 17
+  },
+  upcomingBody: {
+    flex: 1,
+    gap: 2
+  },
+  /**
+   * Dimmed relative to the working sections above it, and never by colour
+   * alone: the "Soon" badge spells the state out, so the row still reads
+   * correctly in greyscale and under a screen reader.
+   */
+  upcomingLabel: {
+    ...logiNexus.typography.body,
+    color: colors.muted,
+    fontWeight: "900"
+  },
+  upcomingRow: {
+    alignItems: "center",
+    borderColor: colors.border,
+    borderRadius: logiNexus.radius.medium,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: logiNexus.spacing.md,
+    opacity: 0.75,
     paddingHorizontal: logiNexus.spacing.md,
     paddingVertical: logiNexus.spacing.md
   }
