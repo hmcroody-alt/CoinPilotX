@@ -450,6 +450,24 @@ export async function listMarketplaceSellerOrders() {
   return pulseApi<MarketplaceSellerOrdersResponse>("/api/pulse/payments/seller/orders");
 }
 
+export type MarketplaceCashSettlementResponse = {
+  ok?: boolean;
+  already_settled?: boolean;
+  order_id?: number;
+  status?: string;
+  payment_status?: string;
+  payment_method?: string;
+  message?: string;
+};
+
+/** Seller-only. The server rejects any order that is not `cash_pending`. */
+export async function markMarketplaceOrderCashCollected(orderId: number) {
+  return pulseApi<MarketplaceCashSettlementResponse>(`/api/pulse/orders/${orderId}/cash-collected`, {
+    method: "POST",
+    body: JSON.stringify({})
+  });
+}
+
 export async function saveMarketplaceListing(listingId: number) {
   return pulseApi<MarketplaceActionResponse>("/api/pulse/marketplace/listings/save", {
     method: "POST",

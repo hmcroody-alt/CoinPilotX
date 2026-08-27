@@ -204,6 +204,49 @@ describe("seller fulfillment actions", () => {
   });
 });
 
+describe("cash settlement (money-critical)", () => {
+  const cashOrder = unifySellerOrder({
+    id: 77,
+    item_type: "listing",
+    amount_cents: 5000,
+    status: "cash_pending"
+  } as never);
+
+  it("keeps the cash flag even though normalizeStatus collapses the status to pending", () => {
+    // `cash_pending` is not one of normalizeStatus's known states, so it lands
+    // on "pending" alongside every card order awaiting Stripe. Without the
+    // separate flag the settle action would be unreachable.
+    expect(cashOrder.status).toBe("pending");
+    expect(cashOrder.awaitingCash).toBe(true);
+  });
+
+  it("offers a live settle action, not a flag-gated preview", () => {
+    // The fulfillment flag is off in this build and must not suppress this one:
+    // a cash order is unpaid forever until a seller taps it.
+    delete process.env.EXPO_PUBLIC_ORDERS_FULFILLMENT;
+    const settle = sellerActionsFor(cashOrder).find((a) => a.key === "collect_cash");
+    expect(settle?.enabled).toBe(true);
+    expect(settle?.preview).toBe(false);
+  });
+
+  it("does not offer pack or ship on an order that has not been paid for yet", () => {
+    const keys = sellerActionsFor(cashOrder).map((a) => a.key);
+    expect(keys).not.toContain("mark_packed");
+    expect(keys).not.toContain("mark_shipped");
+  });
+
+  it("withdraws the settle action once the order is paid", () => {
+    const paid = unifySellerOrder({ id: 77, item_type: "listing", amount_cents: 5000, status: "paid" } as never);
+    expect(paid.awaitingCash).toBe(false);
+    expect(sellerActionsFor(paid).map((a) => a.key)).not.toContain("collect_cash");
+  });
+
+  it("withdraws the settle action on a refunded or cancelled order", () => {
+    const cancelled: UnifiedOrder = { ...cashOrder, overlay: "cancelled" };
+    expect(sellerActionsFor(cancelled).map((a) => a.key)).not.toContain("collect_cash");
+  });
+});
+
 describe("loaders", () => {
   it("returns live orders and offline:false on success", async () => {
     mockListBuyer.mockResolvedValue({ orders: [{ id: 9, amount_cents: 100, status: "paid" }] });

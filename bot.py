@@ -51872,7 +51872,7 @@ def pulse_emit_payment_checkout_event(
         )
 
 
-def pulse_upsert_marketplace_order(cur, tx, provider_payment_id="", now=""):
+def pulse_upsert_marketplace_order(cur, tx, provider_payment_id="", now="", provider="stripe"):
     """Project one paid Marketplace transaction into exactly one order."""
     tx = dict(tx or {})
     if str(tx.get("item_type") or "") != "marketplace_product" or not int(tx.get("id") or 0):
@@ -51887,11 +51887,11 @@ def pulse_upsert_marketplace_order(cur, tx, provider_payment_id="", now=""):
     cur.execute("""INSERT INTO marketplace_orders
         (seller_transaction_id,buyer_user_id,seller_user_id,listing_id,quantity,unit_price_cents,
          amount_cents,currency,status,payment_provider,provider_payment_id,created_at,paid_at,updated_at)
-        VALUES (?,?,?,?,?,?,?,?, 'paid','stripe',?,?,?,?)
+        VALUES (?,?,?,?,?,?,?,?, 'paid',?,?,?,?,?)
         ON CONFLICT(seller_transaction_id) DO UPDATE SET status='paid',provider_payment_id=excluded.provider_payment_id,
             paid_at=COALESCE(marketplace_orders.paid_at,excluded.paid_at),updated_at=excluded.updated_at""",
         (int(tx["id"]), tx.get("buyer_user_id"), tx.get("seller_user_id"), tx.get("item_id"), quantity,
-         amount // quantity, amount, tx.get("currency") or "USD", provider_payment_id,
+         amount // quantity, amount, tx.get("currency") or "USD", str(provider or "stripe")[:40], provider_payment_id,
          tx.get("created_at") or timestamp, timestamp, timestamp))
 
 
@@ -88214,7 +88214,7 @@ def pulse_buyer_order_response(cur, order, source_table="seller_transactions",
         status_group = "delivered"
     elif "fail" in status or status.startswith("blocked"):
         status_group = "failed"
-    elif status in {"checkout_created", "created"}:
+    elif status in {"checkout_created", "created", "cash_pending"}:
         status_group = "pending"
     else:
         status_group = status or "pending"
@@ -88381,6 +88381,78 @@ def api_pulse_buyer_order_detail(transaction_id):
     payload = pulse_buyer_order_response(cur, order, source_table)
     conn.close()
     return jsonify({"ok": True, "order": payload, "payment_status": payload.get("payment_status"), "fulfilled": payload.get("status_group") == "paid"})
+
+
+@webhook_app.route("/api/pulse/orders/<int:transaction_id>/cash-collected", methods=["POST"])
+@webhook_app.route("/api/pulse/payments/seller/orders/<int:transaction_id>/cash-collected", methods=["POST"])
+def api_pulse_seller_mark_cash_collected(transaction_id):
+    """Settle a cash / local-pickup order once the seller has the money.
+
+    Seller-only on purpose: the buyer holds the cash right up until handover,
+    so a buyer-callable version of this would let them close an order they
+    never actually paid for.
+    """
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    seller_id = int(user["user_id"])
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    settled_payload = {
+        "ok": True,
+        "order_id": int(transaction_id),
+        "status": "paid",
+        "payment_status": "paid",
+        "payment_method": "cash",
+        "payout_state": "cash_collect_in_person",
+        "platform_fee_cents": 0,
+    }
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    try:
+        cur.execute("SELECT * FROM seller_transactions WHERE id=? AND seller_user_id=? LIMIT 1",
+                    (int(transaction_id), seller_id))
+        tx = dict(cur.fetchone() or {})
+        if not tx:
+            return api_error("Order not found.", 404)
+        status = str(tx.get("status") or "").lower()
+        if status == "paid":
+            return jsonify({**settled_payload, "already_settled": True})
+        if status != "cash_pending":
+            return api_error("Only cash or local-pickup orders can be settled by hand.", 409,
+                             error_code="NOT_A_CASH_ORDER", order_status=status)
+        from services import marketplace_cart_routes as marketplace_cart_service
+        marketplace_cart_service._ensure_schema(cur)
+        cur.execute("UPDATE seller_transactions SET status='paid', updated_at=? WHERE id=? AND status='cash_pending'",
+                    (now, int(tx["id"])))
+        if not cur.rowcount:
+            # Two devices at the same handover. Converge on the settled state
+            # instead of failing the second one.
+            conn.commit()
+            return jsonify({**settled_payload, "already_settled": True})
+        # Mirrors the Stripe paid path: checkout put a hold on the stock, and
+        # it has to be consumed here or a later release would hand quantity
+        # back for an item that physically left the seller's hands.
+        marketplace_cart_service.capture_inventory_reservation(cur, int(tx["id"]), now=now)
+        pulse_upsert_marketplace_order(cur, tx, "", now, provider="cash")
+        pulse_emit_payment_checkout_event(
+            cur,
+            {**tx, "status": "paid"},
+            "payment_succeeded",
+            status="paid",
+            actor_user_id=seller_id,
+            title="Cash payment collected",
+            body="The seller confirmed cash was collected in person for this order.",
+            extra={"payment_method": "cash", "payout_state": "cash_collect_in_person",
+                   "settled_by_user_id": seller_id, "platform_fee_cents": 0},
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    # Deliberately no `pulse_finalize_marketplace_settlement`: that routes a
+    # Stripe payout and collects a platform fee. Cash never entered Stripe and
+    # the fee is $0, so there is nothing to settle — the seller already holds
+    # the full amount.
+    return jsonify({**settled_payload, "already_settled": False})
 
 
 @webhook_app.route("/api/payments/seller/orders", methods=["GET"])

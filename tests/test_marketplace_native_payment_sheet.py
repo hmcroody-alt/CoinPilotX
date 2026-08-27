@@ -134,8 +134,14 @@ def test_a_replayed_success_event_cannot_resurrect_a_refunded_order():
     # delivery of the original event would walk a refund backwards.
     # Whitespace is collapsed because these statements wrap across lines, and a
     # per-line search would read the guard as missing.
+    #
+    # Two guards satisfy the invariant. The Stripe branches name the states they
+    # refuse; the cash settlement route instead requires the row to still be
+    # `cash_pending`, which is a strictly narrower predicate — it admits exactly
+    # one state, and that state is neither paid nor refunded.
     code = " ".join(_code(BOT).split())
     needle = "seller_transactions SET status='paid'"
+    guards = ("status NOT IN ('paid','refunded')", "status='cash_pending'")
     start = 0
     found = 0
     while True:
@@ -144,7 +150,7 @@ def test_a_replayed_success_event_cannot_resurrect_a_refunded_order():
             break
         found += 1
         statement = code[at:at + 260]
-        assert "status NOT IN ('paid','refunded')" in statement, statement
+        assert any(guard in statement for guard in guards), statement
         start = at + 1
     assert found >= 2
 

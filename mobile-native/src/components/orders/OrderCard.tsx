@@ -123,7 +123,7 @@ function SellerActionRow({
   return (
     <View style={styles.actionRow}>
       {actions.map((action) => {
-        const isPrimary = action.key === "view_payout";
+        const isPrimary = action.key === "view_payout" || action.key === "collect_cash";
         const busy = busyKey === action.key;
         const disabled = !action.enabled || Boolean(busyKey);
         return (

@@ -185,6 +185,13 @@ export type UnifiedOrder = {
    */
   escrowPresentable: boolean;
   /**
+   * The order was checked out with cash / local pickup and the seller has not
+   * confirmed the money changed hands yet. Kept as its own field because
+   * `normalizeStatus` collapses `cash_pending` into plain "pending" — the
+   * distinction is what makes the settle action reachable.
+   */
+  awaitingCash: boolean;
+  /**
    * The return-window close date, only if the backend surfaced one. Never a
    * hardcoded "+30 days" — absence renders nothing.
    */
@@ -249,6 +256,7 @@ export function unifyBuyerOrder(order: BuyerOrder): UnifiedOrder {
       url: order.tracking?.tracking_url || undefined
     },
     escrowPresentable: ordersEscrowIsLive() && variant === "pickup",
+    awaitingCash: isAwaitingCash(order.status),
     returnWindowClosesAt:
       (order as BuyerOrder & { return_window_closes_at?: string }).return_window_closes_at || undefined,
     raw: { buyer: order }
@@ -276,8 +284,13 @@ export function unifySellerOrder(order: MarketplaceSellerOrder): UnifiedOrder {
     createdAt: order.created_at,
     counterpartyName: "Buyer",
     escrowPresentable: ordersEscrowIsLive() && variant === "pickup",
+    awaitingCash: isAwaitingCash(order.status),
     raw: { seller: order }
   };
+}
+
+function isAwaitingCash(status?: string): boolean {
+  return String(status || "").toLowerCase() === "cash_pending";
 }
 
 /** Display-only formatting of server cents. Mirrors formatOrderMoney's contract. */
@@ -384,7 +397,12 @@ export function ordersInTransitForBuyer(orders: readonly UnifiedOrder[]): number
  * discipline: never offer an action the backend will reject or cannot perform.
  * ------------------------------------------------------------------ */
 
-export type SellerActionKey = "mark_packed" | "mark_shipped" | "confirm_handoff" | "view_payout";
+export type SellerActionKey =
+  | "collect_cash"
+  | "mark_packed"
+  | "mark_shipped"
+  | "confirm_handoff"
+  | "view_payout";
 
 export type SellerActionState = {
   key: SellerActionKey;
@@ -408,7 +426,13 @@ export function sellerActionsFor(order: UnifiedOrder): SellerActionState[] {
   const actions: SellerActionState[] = [];
   const overlayBlocks = order.overlay === "cancelled" || order.overlay === "refunded";
 
-  if (!overlayBlocks) {
+  if (!overlayBlocks && order.awaitingCash) {
+    // Not gated on `ordersFulfillmentIsLive`: this one settles through a live
+    // route, and a cash order stays unpaid forever until someone taps it.
+    actions.push({ key: "collect_cash", label: "Mark cash collected", enabled: true, preview: false });
+  }
+
+  if (!overlayBlocks && !order.awaitingCash) {
     if (order.variant === "pickup") {
       actions.push(previewOrDisabled("confirm_handoff", "Confirm handoff", live));
     } else {

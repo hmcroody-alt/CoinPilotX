@@ -39,6 +39,7 @@ import {
   ordersAwaitingSeller,
   ordersInTransitForBuyer
 } from "../api/ordersDashboard";
+import { markMarketplaceOrderCashCollected } from "../api/marketplace";
 import {
   BuyAgainRail,
   OrderCard,
@@ -142,9 +143,24 @@ export function OrdersManagerScreen({ route, navigation }: Props) {
   );
 
   const onSellerAction = useCallback(
-    async (key: SellerActionKey, _order: UnifiedOrder) => {
+    async (key: SellerActionKey, order: UnifiedOrder) => {
       if (key === "view_payout") {
         openPayout();
+        return;
+      }
+      if (key === "collect_cash") {
+        setMessage("Confirming cash...");
+        try {
+          const result = await markMarketplaceOrderCashCollected(order.id);
+          setMessage(
+            result.already_settled
+              ? "This order was already settled."
+              : "Cash collected. The order is marked paid and the buyer was notified."
+          );
+          await load("refresh");
+        } catch (error) {
+          setMessage(error instanceof Error ? error.message : "The order could not be settled.");
+        }
         return;
       }
       // Pack / ship / handoff reach here only when the fulfillment flag is on and
@@ -153,7 +169,7 @@ export function OrdersManagerScreen({ route, navigation }: Props) {
       // silently succeed.
       setMessage("Fulfillment actions run against the order service, which isn't enabled in this build.");
     },
-    [openPayout]
+    [load, openPayout]
   );
 
   /* -------------------------------------------------------------- *
