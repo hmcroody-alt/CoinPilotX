@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Animated, Image, Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { ActivityIndicator, Alert, Animated, Image, Modal, PanResponder, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { Audio, ResizeMode, Video } from "expo-av";
 import * as Haptics from "expo-haptics";
 import { Ionicons } from "@expo/vector-icons";
@@ -120,6 +120,18 @@ export function PostCard({
   const [commentNotice, setCommentNotice] = useState("");
   const [commentComposerOpen, setCommentComposerOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  // Swipe-to-dismiss lives on the grip alone. Claiming the responder across the
+  // whole sheet would swallow taps that are on their way to an action row.
+  const menuSwipe = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_event, gesture) => gesture.dy > 8,
+        onPanResponderRelease: (_event, gesture) => {
+          if (gesture.dy > 40) setMenuOpen(false);
+        }
+      }),
+    []
+  );
   const [reactionsOpen, setReactionsOpen] = useState(false);
   // Feed/Profile Live is a user-initiated authenticated surface, so receive
   // remote Agora audio by default. The viewer remains receive-only and can
@@ -520,117 +532,139 @@ export function PostCard({
         </View>
       ) : null}
 
-      {menuOpen ? (
-        <View style={styles.overflowMenu}>
-          {onPromote ? (
-            <Pressable
-              testID={`home-feed-promote-${post.id}`}
-              accessibilityRole="button"
-              accessibilityLabel={`Promote post ${post.id}`}
-              style={styles.menuAction}
-              disabled={busy}
-              onPress={(event) => {
-                event.stopPropagation();
-                setMenuOpen(false);
-                onPromote(post);
-              }}
+      <Modal
+        visible={menuOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setMenuOpen(false)}
+      >
+        <View style={styles.overflowBackdrop}>
+          <Pressable
+            testID={`home-feed-overflow-dismiss-${post.id}`}
+            style={styles.overflowBackdropFill}
+            accessibilityLabel="Close post options"
+            onPress={() => setMenuOpen(false)}
+          />
+          <View style={styles.overflowMenu}>
+            <View style={styles.overflowGrip} {...menuSwipe.panHandlers}>
+              <View style={styles.overflowHandle} />
+            </View>
+            <ScrollView
+              style={styles.overflowScroll}
+              contentContainerStyle={styles.overflowScrollBody}
+              showsVerticalScrollIndicator={false}
             >
-              <Text style={styles.menuActionText}>Promote</Text>
-            </Pressable>
-          ) : null}
-          {onReport ? (
-            <Pressable
-              testID={`home-feed-report-${post.id}`}
-              accessibilityRole="button"
-              accessibilityLabel={`Report post ${post.id}`}
-              style={styles.menuAction}
-              disabled={busy}
-              onPress={(event) => {
-                event.stopPropagation();
-                setMenuOpen(false);
-                onReport(post);
-              }}
-            >
-              <Text style={styles.menuActionText}>Report</Text>
-            </Pressable>
-          ) : null}
-          {onHide ? (
-            <Pressable
-              testID={`home-feed-hide-${post.id}`}
-              accessibilityRole="button"
-              accessibilityLabel={`Hide post ${post.id}`}
-              style={styles.menuAction}
-              disabled={busy}
-              onPress={(event) => {
-                event.stopPropagation();
-                setMenuOpen(false);
-                onHide(post);
-              }}
-            >
-              <Text style={styles.menuActionText}>Hide</Text>
-            </Pressable>
-          ) : null}
-          {onBlock ? (
-            <Pressable
-              testID={`home-feed-block-${post.id}`}
-              accessibilityRole="button"
-              accessibilityLabel={`Block ${displayName}`}
-              style={styles.menuAction}
-              disabled={busy}
-              onPress={(event) => {
-                event.stopPropagation();
-                setMenuOpen(false);
-                onBlock(post);
-              }}
-            >
-              <Text style={styles.menuActionText}>Block</Text>
-            </Pressable>
-          ) : null}
-          {onMute ? (
-            <Pressable
-              testID={`home-feed-mute-${post.id}`}
-              accessibilityRole="button"
-              accessibilityLabel={`Mute ${displayName}`}
-              style={styles.menuAction}
-              disabled={busy}
-              onPress={(event) => {
-                event.stopPropagation();
-                setMenuOpen(false);
-                onMute(post);
-              }}
-            >
-              <Text style={styles.menuActionText}>Mute</Text>
-            </Pressable>
-          ) : null}
-          {onDelete ? (
-            <Pressable
-              testID={`home-feed-delete-${post.id}`}
-              accessibilityRole="button"
-              accessibilityLabel={`Delete post ${post.id}`}
-              style={styles.menuAction}
-              disabled={busy}
-              onPress={(event) => {
-                event.stopPropagation();
-                setMenuOpen(false);
-                Alert.alert(
-                  "Delete post?",
-                  "This removes the post for everyone. This cannot be undone.",
-                  [
-                    { text: "Cancel", style: "cancel" },
-                    {
-                      text: "Delete",
-                      style: "destructive",
-                      onPress: () => onDelete(post)
-                    }
-                  ]
-                );
-              }}
-            >
-              <Text style={styles.menuActionDangerText}>Delete</Text>
-            </Pressable>
-          ) : null}
+              {onPromote ? (
+                <Pressable
+                  testID={`home-feed-promote-${post.id}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Promote post ${post.id}`}
+                  style={styles.menuAction}
+                  disabled={busy}
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    setMenuOpen(false);
+                    onPromote(post);
+                  }}
+                >
+                  <Text style={styles.menuActionText}>Promote</Text>
+                </Pressable>
+              ) : null}
+              {onReport ? (
+                <Pressable
+                  testID={`home-feed-report-${post.id}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Report post ${post.id}`}
+                  style={styles.menuAction}
+                  disabled={busy}
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    setMenuOpen(false);
+                    onReport(post);
+                  }}
+                >
+                  <Text style={styles.menuActionText}>Report</Text>
+                </Pressable>
+              ) : null}
+              {onHide ? (
+                <Pressable
+                  testID={`home-feed-hide-${post.id}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Hide post ${post.id}`}
+                  style={styles.menuAction}
+                  disabled={busy}
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    setMenuOpen(false);
+                    onHide(post);
+                  }}
+                >
+                  <Text style={styles.menuActionText}>Hide</Text>
+                </Pressable>
+              ) : null}
+              {onBlock ? (
+                <Pressable
+                  testID={`home-feed-block-${post.id}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Block ${displayName}`}
+                  style={styles.menuAction}
+                  disabled={busy}
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    setMenuOpen(false);
+                    onBlock(post);
+                  }}
+                >
+                  <Text style={styles.menuActionText}>Block</Text>
+                </Pressable>
+              ) : null}
+              {onMute ? (
+                <Pressable
+                  testID={`home-feed-mute-${post.id}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Mute ${displayName}`}
+                  style={styles.menuAction}
+                  disabled={busy}
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    setMenuOpen(false);
+                    onMute(post);
+                  }}
+                >
+                  <Text style={styles.menuActionText}>Mute</Text>
+                </Pressable>
+              ) : null}
+              {onDelete ? (
+                <Pressable
+                  testID={`home-feed-delete-${post.id}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Delete post ${post.id}`}
+                  style={styles.menuAction}
+                  disabled={busy}
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    setMenuOpen(false);
+                    Alert.alert(
+                      "Delete post?",
+                      "This removes the post for everyone. This cannot be undone.",
+                      [
+                        { text: "Cancel", style: "cancel" },
+                        {
+                          text: "Delete",
+                          style: "destructive",
+                          onPress: () => onDelete(post)
+                        }
+                      ]
+                    );
+                  }}
+                >
+                  <Text style={styles.menuActionDangerText}>Delete</Text>
+                </Pressable>
+              ) : null}
+            </ScrollView>
+          </View>
         </View>
-      ) : null}
+      </Modal>
 
       {!detail && post.preview_comments?.length ? (
         <View style={styles.previewComments}>
@@ -1474,24 +1508,25 @@ const styles = createThemedStyles(() => ({
     fontWeight: "800"
   },
   menuAction: {
-    alignItems: "center",
+    alignItems: "flex-start",
+    alignSelf: "stretch",
     borderColor: logiNexus.colors.home.borderSubtle,
     borderRadius: 12,
     borderWidth: 1,
-    flex: 1,
     justifyContent: "center",
-    minHeight: 36,
-    paddingHorizontal: 10
+    minHeight: 52,
+    paddingHorizontal: 16,
+    paddingVertical: 12
   },
   menuActionText: {
     color: colors.text,
-    fontSize: 12,
-    fontWeight: "900"
+    fontSize: 16,
+    fontWeight: "800"
   },
   menuActionDangerText: {
     color: colors.danger,
-    fontSize: 12,
-    fontWeight: "900"
+    fontSize: 16,
+    fontWeight: "800"
   },
   meta: {
     color: colors.muted,
@@ -1517,16 +1552,42 @@ const styles = createThemedStyles(() => ({
     justifyContent: "center",
     width: 36
   },
+  overflowBackdrop: {
+    backgroundColor: "rgba(0,0,0,0.55)",
+    flex: 1,
+    justifyContent: "flex-end"
+  },
+  overflowBackdropFill: {
+    ...StyleSheet.absoluteFillObject
+  },
+  overflowGrip: {
+    alignItems: "center",
+    paddingBottom: 8,
+    paddingTop: 10
+  },
+  overflowHandle: {
+    backgroundColor: logiNexus.colors.home.borderSubtle,
+    borderRadius: 3,
+    height: 5,
+    width: 42
+  },
   overflowMenu: {
-    backgroundColor: "rgba(5, 13, 26, 0.9)",
+    backgroundColor: "rgb(5, 13, 26)",
     borderColor: logiNexus.colors.home.borderSubtle,
-    borderRadius: 16,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
     borderWidth: 1,
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 7,
-    marginTop: 9,
-    padding: 8
+    // Capped rather than sized to content so a long menu on a short screen
+    // scrolls instead of running off the top of the sheet.
+    maxHeight: "70%",
+    paddingBottom: 28,
+    paddingHorizontal: 14
+  },
+  overflowScroll: {
+    flexGrow: 0
+  },
+  overflowScrollBody: {
+    gap: 8
   },
   overflowText: {
     color: colors.muted,

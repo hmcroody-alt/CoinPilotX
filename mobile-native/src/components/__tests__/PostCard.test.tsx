@@ -1,4 +1,5 @@
 import React from "react";
+import { Alert, StyleSheet } from "react-native";
 import { fireEvent, render } from "@testing-library/react-native";
 
 jest.mock("@react-native-async-storage/async-storage", () => ({
@@ -271,5 +272,81 @@ describe("PostCard automated identity", () => {
     expect(getByText("AUTOMATED")).toBeTruthy();
     expect(getByLabelText("Automated PulseSoc account")).toBeTruthy();
     expect(queryByTestId("home-feed-follow-42")).toBeNull();
+  });
+});
+
+describe("PostCard options menu", () => {
+  const handlers = {
+    onPromote: jest.fn(),
+    onReport: jest.fn(),
+    onHide: jest.fn(),
+    onBlock: jest.fn(),
+    onMute: jest.fn(),
+    onDelete: jest.fn()
+  };
+
+  function openMenu(props: Record<string, unknown> = handlers) {
+    const utils = render(<PostCard post={basePost()} {...props} />);
+    fireEvent.press(utils.getByTestId("home-feed-overflow-42"), { stopPropagation: jest.fn() });
+    return utils;
+  }
+
+  beforeEach(() => {
+    Object.values(handlers).forEach((fn) => fn.mockClear());
+  });
+
+  it("stacks every action vertically instead of wrapping them across the post", () => {
+    // The bug this replaces: the menu was a `flexDirection: "row"` +
+    // `flexWrap: "wrap"` strip, so six actions ran horizontally across the
+    // bottom of the post and clipped on narrow screens. Each row now stretches
+    // to the sheet width, which is what makes the list vertical.
+    const { getByTestId } = openMenu();
+    for (const key of ["promote", "report", "hide", "block", "mute", "delete"]) {
+      const style = StyleSheet.flatten(getByTestId(`home-feed-${key}-42`).props.style);
+      expect(style.alignSelf).toBe("stretch");
+      expect(style.flexDirection).not.toBe("row");
+    }
+  });
+
+  it("keeps every action reachable and still wired to its own handler", () => {
+    // One render per action: tapping any of them closes the sheet, which is
+    // the intended behaviour and also unmounts its siblings.
+    for (const [key, handler] of [
+      ["promote", handlers.onPromote],
+      ["report", handlers.onReport],
+      ["hide", handlers.onHide],
+      ["block", handlers.onBlock],
+      ["mute", handlers.onMute]
+    ] as const) {
+      const { getByTestId, queryByTestId, unmount } = openMenu();
+      fireEvent.press(getByTestId(`home-feed-${key}-42`), { stopPropagation: jest.fn() });
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(queryByTestId(`home-feed-${key}-42`)).toBeNull();
+      unmount();
+    }
+  });
+
+  it("still confirms before deleting rather than deleting on tap", () => {
+    const spy = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
+    const { getByTestId } = openMenu();
+    fireEvent.press(getByTestId("home-feed-delete-42"), { stopPropagation: jest.fn() });
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(handlers.onDelete).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("withholds Delete from a post the viewer does not own", () => {
+    // Ownership is decided by the screen, which passes `onDelete` only to the
+    // owner. The menu must not synthesize the row from anything else.
+    const { onDelete, ...withoutDelete } = handlers;
+    const { queryByTestId } = openMenu(withoutDelete);
+    expect(queryByTestId("home-feed-delete-42")).toBeNull();
+    expect(queryByTestId("home-feed-report-42")).toBeTruthy();
+  });
+
+  it("closes when the backdrop outside the sheet is tapped", () => {
+    const { getByTestId, queryByTestId } = openMenu();
+    fireEvent.press(getByTestId("home-feed-overflow-dismiss-42"));
+    expect(queryByTestId("home-feed-report-42")).toBeNull();
   });
 });
