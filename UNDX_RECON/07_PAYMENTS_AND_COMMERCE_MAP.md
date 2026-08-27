@@ -64,6 +64,25 @@ Note it is a hardcoded `return true`, not an env read — the flag
 why: retired *"because the Stripe payout rail is live (`api/sellerPayouts`)"*
 (`mobile-native/src/core/__tests__/envFlag.test.ts:87-91`).
 
+It is also genuinely wired, not a stranded helper:
+`payoutInitiationIsLive()` is called at
+`mobile-native/src/screens/BusinessOsPaymentsScreen.tsx:852`, `:857` and `:1007`,
+where it gates whether the withdraw module renders. And the route is a
+module-level decorator (`bot.py:19955`), **not** inside a `try/except` route
+pack, so it cannot silently 404 in production. Its only guards are auth and
+abuse control: `api_account_user()` → 401; POST additionally
+`pulse_ads_verify_write()` → 403 and
+`pulse_ads_rate_limited("seller_payout_request", 10, 3600)` → 429.
+**No feature flag anywhere in the path.**
+
+> **⚠ DOC DRIFT — two repo docs still assert the refuted claim.**
+> `docs/business_os/FLAG_REGISTRY.md:215` still lists `PAYOUT_INITIATION` as
+> `off` with the justification *"No endpoint initiates a payout anywhere in the
+> codebase"*, and `docs/business_os/PAYMENTS_SCREEN_REBUILD.md:55` repeats it.
+> Both are stale. **A corpus built by reading `docs/` rather than code would
+> teach UNDX to tell sellers that payouts do not exist.** These two files should
+> be corrected in the repo before any corpus pass ingests `docs/`.
+
 **The full chain, end to end, every hop verified:**
 
 ```

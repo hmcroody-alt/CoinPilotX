@@ -490,9 +490,22 @@ Exhaustive search of `bot.py` and `services/` for `user_recovery_codes` yields e
 
 ---
 
-### F3 — `undx_desktop_connector.py` grants repo write + `git push` with no authentication. **Blast radius: full source-code compromise of the deployed product.**
+### F3 — `undx_desktop_connector.py` grants repo write + `git push` behind a source-visible phrase, reachable by any local process. **Severity: HIGH (downgraded from CRITICAL — see correction).**
 
-- Binds `127.0.0.1` (`undx_desktop_connector.py:1167`) — the only real control.
+> **⚠ CORRECTED — this finding was originally rated CRITICAL and headlined
+> "no authentication." Two facts revised it downward:**
+> 1. The connector binds **`127.0.0.1` only** (`:1167`). It is not network-reachable;
+>    the attacker must already have local code execution on the developer's machine.
+> 2. The server-side proxy that fronts it, `bot.py:28893`, **is authenticated** —
+>    it requires `undx_kernel_user()` → `require_super_user_api()` and enforces a
+>    path allowlist. The connector is not exposed to the public internet through it.
+>
+> What remains true and still warrants HIGH: the approval phrases are committed
+> constants rather than secrets, so any *local* process (including a browser page
+> hitting localhost, given the CORS posture below) can drive repo write and
+> `git push` once it has read the repo. The remediation is unchanged.
+
+- Binds `127.0.0.1` (`undx_desktop_connector.py:1167`) — the primary real control.
 - The single `before_request` (`:182`) handles **CORS preflight only**; there is no auth hook.
 - Exposed routes include `/file/read` (`:1090`), `/patch/apply` (`:1107`), `/git/commit` (`:1127`),
   `/git/push` (`:1143`).
@@ -518,6 +531,15 @@ Aggravating: `undx_desktop_connector.py:177` sets `Access-Control-Allow-Private-
 
 Mitigating: `PROTECTED_PATTERNS` (`:53-62`) blocks paths containing `.env`, `.git/`, `credentials`,
 `secret`, `token`, `private_key`.
+
+**One aggravating detail the downgrade above does not cover.** The connector's own bind is a
+hardcoded literal (`host="127.0.0.1"` at `:1167`; only `PORT` is env-derived, `:34`), so that
+mitigation is solid. But the *server's outbound target* is not:
+`bot.py:28878` — `UNDX_DESKTOP_CONNECTOR_URL = os.getenv(..., "http://127.0.0.1:8765")`.
+Anyone with Railway environment access can repoint the proxy at an arbitrary internal host, and
+the 10-entry `UNDX_DESKTOP_CONNECTOR_PATHS` allowlist (`:28879`) then constrains only the
+**path**, not the **destination**. This requires both env control and super-user, so it does not
+restore CRITICAL — but HIGH is the floor for this finding, not a generous rating.
 
 **An agent must never be pointed at this connector.** If it must run, it needs a per-launch random
 bearer token, not a literal phrase.

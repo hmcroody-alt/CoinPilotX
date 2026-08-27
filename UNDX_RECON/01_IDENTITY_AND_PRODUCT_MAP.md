@@ -258,12 +258,47 @@ Distinct from the launch gate and much larger. `docs/business_os/FLAG_REGISTRY.m
 documents **24 `EXPO_PUBLIC_*` flags, all default off**, read through one helper,
 `envFlagOn` in `mobile-native/src/core/envFlag.ts` (accepts `1 true on yes`).
 
+> **⚠ CORRECTED — flag count and location.** Verified during Stage 7 and
+> re-verified in the Stage 12 pass: `mobile-native/src/launch/readiness.ts`
+> (150 lines) contains **zero** `EXPO_PUBLIC_*` references — it is a four-row
+> deny-list, not a flag table. The real flag count is **20**, pinned by
+> `mobile-native/src/core/__tests__/envFlag.test.ts:210`. The "24" above comes
+> from the doc, not from the code. Treat 20 as the verified number.
+
 These are the reason several areas in PART C are `PARTIALLY READY` rather than
 `PRODUCTION READY`. The consequential ones:
 
 - **Payments (6 flags off)** — `PAYOUT_INITIATION`, `INSTANT_PAYOUT`,
   `STATEMENTS`, `TAX_DOCUMENTS`, `ESCROW`, `AD_TOPUP`. The registry states:
   "No endpoint initiates a payout anywhere in the codebase."
+
+  > **⚠ CORRECTED — THE REGISTRY LINE ABOVE IS HISTORICAL AND NO LONGER TRUE.**
+  > A payout path exists end-to-end and was traced during Stage 7:
+  > `mobile-native/src/api/sellerPayouts.ts` (`requestSellerPayout`) →
+  > `POST /api/pulse/payments/seller/payouts` (`bot.py:19956`,
+  > `api_pulse_seller_payouts`) → `services.business_os.payments.seller_payouts`
+  > (`request_payout`, `get_payout`, `list_payouts`, `seller_balance_summary`) →
+  > `pulse_submit_seller_payout` → provider → Stripe webhook → settled.
+  > The codebase itself marks the "no payout" claim as historical at
+  > `mobile-native/src/api/paymentsHub.ts:186-200`.
+  > **⚠ SECOND-ORDER CORRECTION — the correction above also under-corrected.**
+  > It claimed the client affordance was "switched off by
+  > `EXPO_PUBLIC_PAYMENTS_PAYOUT_INITIATION`." **That flag no longer exists.**
+  > `mobile-native/src/api/paymentsHub.ts:198` is
+  > `payoutInitiationIsLive() { return true; }` — an unconditional `true`, not a
+  > flag read. `mobile-native/src/core/__tests__/envFlag.test.ts:207-209` records
+  > the flag's retirement explicitly.
+  > **What is actually true:** payouts are **LIVE end-to-end**. The server
+  > initiates them, the client exposes them, and nothing is gating either side.
+  > The "6 payments flags off" bullet above is therefore **five** env flags
+  > (`INSTANT_PAYOUT`, `STATEMENTS`, `TAX_DOCUMENTS`, `ESCROW`, `AD_TOPUP`)
+  > plus one hard-coded `true`. See `07_PAYMENTS_AND_COMMERCE_MAP.md` for the
+  > full trace. Everywhere else in this file that says payouts "do not exist"
+  > or "are flagged off" (§18, §17) is wrong; payouts ship.
+  >
+  > *Pattern worth noting: this is the second time a claim about payouts decayed
+  > in the same direction — an asserted absence, disproven, then re-asserted as
+  > a flag. Absence claims should be re-derived from code every time.*
 - **Orders (2 off)** — `ORDERS_ESCROW`, `ORDERS_FULFILLMENT`; fulfil/complete
   transitions 404 in production.
 - **Ads** — `ADS_POST_MODE` off.
@@ -742,8 +777,8 @@ USER ACTIONS: apply to sell, upload documents, respond to information requests, 
 BACKEND (service modules + route prefix): `services/seller_lifecycle.py`; tables `marketplace_merchant_applications`, `marketplace_sellers`; web door `/pulse/merchant/apply` plus the native multi-step flow.
 MOBILE SCREENS: `StoreDashboardScreen`, `SellerStoreRoute`, the seller application steps.
 STATUS: PARTIALLY READY
-KNOWN LIMITATIONS: `EXPO_PUBLIC_STORE_READINESS` is off. The lifecycle itself is solid — ten states (`draft, submitted, under_review, information_requested, resubmitted, approved, rejected, withdrawn, expired, suspended`), `LEGACY_STATUS_ALIASES` for old rows, `apply_transition` **refuses approval without an admin actor id**, and `applicant_view` is a whitelist with nothing sensitive logged. But payouts, the thing a seller ultimately needs, do not exist (§18). `docs/business_os/adr/0004-seller-eligibility-and-entitlements.md` is the governing policy: one entitlement source, five capabilities, four answers, and no money action on a cached entitlement. `STORE_SCREEN_REBUILD_REPORT.md` records 119 suites / 2,041 tests.
-Evidence: `STORE_READINESS` flag off + payouts absent.
+KNOWN LIMITATIONS: `EXPO_PUBLIC_STORE_READINESS` is off. The lifecycle itself is solid — ten states (`draft, submitted, under_review, information_requested, resubmitted, approved, rejected, withdrawn, expired, suspended`), `LEGACY_STATUS_ALIASES` for old rows, `apply_transition` **refuses approval without an admin actor id**, and `applicant_view` is a whitelist with nothing sensitive logged. But `EXPO_PUBLIC_STORE_READINESS` is off. (An earlier version of this line said "payouts, the thing a seller ultimately needs, do not exist" — **that was false**; payouts are live end-to-end, see the correction in §18.) `docs/business_os/adr/0004-seller-eligibility-and-entitlements.md` is the governing policy: one entitlement source, five capabilities, four answers, and no money action on a cached entitlement. `STORE_SCREEN_REBUILD_REPORT.md` records 119 suites / 2,041 tests.
+Evidence: `STORE_READINESS` flag off.
 
 ---
 
@@ -768,8 +803,25 @@ USER ACTIONS: pay for premium, pay for a listing; (intended) request a payout, v
 BACKEND (service modules + route prefix): Stripe integration; Apple StoreKit; unified payment router; `/api/payments/*`; `services/business_os/ledger/ledger.py`.
 MOBILE SCREENS: checkout / paywall screens; premium purchase; payments sections in Business OS.
 STATUS: PARTIALLY READY
-KNOWN LIMITATIONS: **Six payments flags are off** — `PAYOUT_INITIATION`, `INSTANT_PAYOUT`, `STATEMENTS`, `TAX_DOCUMENTS`, `ESCROW`, `AD_TOPUP` — and the registry's justification is categorical: **"No endpoint initiates a payout anywhere in the codebase."** Money can come in; it cannot go out. `EXPO_PUBLIC_DIGITAL_COMMERCE_ENABLED` is off for Apple guideline 3.1.1 (StoreKit is not implemented for those paths). `PULSESOC_STOREKIT_STRIPE_UNIFIED_PAYMENTS_FINAL_REPORT.md` is marked **PARTIAL** with owner-only App Store Connect items outstanding. The ledger overdraft guard is a no-op on Postgres (§14). ADR-0004: a client may not complete a money action on a cached entitlement. `CLAUDE.md`: checkout needs device QA.
-Evidence: six off flags + "no endpoint initiates a payout" + PARTIAL report verdict.
+KNOWN LIMITATIONS: **Five payments flags are off** — `INSTANT_PAYOUT`, `STATEMENTS`, `TAX_DOCUMENTS`, `ESCROW`, `AD_TOPUP`.
+
+> **⚠ CORRECTED — this entry previously read "six flags off" including
+> `PAYOUT_INITIATION`, and repeated the registry's categorical claim "No endpoint
+> initiates a payout anywhere in the codebase," concluding "money can come in; it
+> cannot go out." All of that is false.**
+> `EXPO_PUBLIC_PAYMENTS_PAYOUT_INITIATION` has been **retired** — it no longer
+> exists as a flag. `mobile-native/src/api/paymentsHub.ts:198` is
+> `payoutInitiationIsLive() { return true; }`, and
+> `mobile-native/src/core/__tests__/envFlag.test.ts:207-209` records the
+> retirement. The server path is real and traced:
+> `sellerPayouts.ts` → `POST /api/pulse/payments/seller/payouts`
+> (`bot.py:19955`, `api_pulse_seller_payouts`) →
+> `services.business_os.payments.seller_payouts` → `pulse_submit_seller_payout`
+> → Stripe webhook. **Payouts are live end-to-end and nothing gates them.**
+> See §0.2 of `07_PAYMENTS_AND_COMMERCE_MAP.md` for the full trace.
+
+`EXPO_PUBLIC_DIGITAL_COMMERCE_ENABLED` is off for Apple guideline 3.1.1 (StoreKit is not implemented for those paths). `PULSESOC_STOREKIT_STRIPE_UNIFIED_PAYMENTS_FINAL_REPORT.md` is marked **PARTIAL** with owner-only App Store Connect items outstanding. The ledger overdraft guard is a no-op on Postgres (§14). ADR-0004: a client may not complete a money action on a cached entitlement. `CLAUDE.md`: checkout needs device QA.
+Evidence: five off flags (`PAYOUT_INITIATION` retired, payouts live) + PARTIAL report verdict.
 
 ---
 

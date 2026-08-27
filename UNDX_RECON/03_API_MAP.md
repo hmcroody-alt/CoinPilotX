@@ -41,8 +41,27 @@ Blueprint `url_prefix` was applied where declared (only `services/sentinel/api.p
 | `undx_execution_kernel.py` | 1 |
 | **Total** | **2,007** |
 
+> **⚠ CORRECTED — the totals in this table and in §2 do not reconcile, and two rows are wrong.**
+> An adversarial verification pass found:
+> 1. **The source table sums to 2,006, not 2,007.** The stated total was never
+>    re-derived after the rows were edited. §2's area table does sum to 2,007,
+>    so the two tables disagree by one.
+> 2. **`services/business_os/commerce_gateway.ROUTES` has 37 entries, not 36.**
+>    The hand transcription dropped one.
+> 3. **`undx_execution_kernel.py` registers 0 routes, not 1.** The apparent
+>    registration at `undx_execution_kernel.py:617` is text inside a **string
+>    literal**, not a decorator. The extraction regex matched source text that
+>    is never executed as a route.
+>
+> Applying (2) and (3) to the corrected sum leaves the total at **2,006**.
+> The area table in §2 is therefore over by one somewhere; the discrepancy was
+> not chased down to a specific area row. **Treat every route count in this
+> document as ±1 and as a static ceiling, never as a production fact** — see
+> the `try/except` caveat immediately below, which matters far more than the
+> off-by-one.
+
 Note the difference between *decorators* and *distinct URLs*: many handlers carry several `.route()` decorators
-(e.g. `stripe_webhook` is mounted at five paths). 2,007 is the count of `(path, methods)` registrations.
+(e.g. `stripe_webhook` is mounted at five paths). The total is the count of `(path, methods)` registrations.
 
 **What this does NOT cover.**
 
