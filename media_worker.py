@@ -622,6 +622,23 @@ def _process_media_job(cur, job) -> None:
     _complete_job(cur, int(job.get("id") or 0), "done")
 
 
+def _reschedule(cur, job, *, seconds: int = 30) -> None:
+    """Put a polling job back on the queue without spending its error budget.
+
+    Waiting on Mux is not a failed attempt. Claiming a job increments
+    ``attempts``, so counting every poll would let a long asset exhaust
+    ``max_attempts`` on polls that all succeeded — and the first real error
+    after that would retire the job permanently instead of retrying it.
+    ``job`` still holds the pre-claim count, so writing it back undoes exactly
+    the one increment this pass made.
+    """
+    run_after = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=seconds)).isoformat(timespec="seconds")
+    cur.execute(
+        "UPDATE pulse_jobs SET status='pending', attempts=?, run_after=?, updated_at=? WHERE id=?",
+        (max(int(job.get("attempts") or 0), 0), run_after, _now(), int(job.get("id") or 0)),
+    )
+
+
 def _process_live_replay_job(cur, job) -> None:
     """Finalize one Agora recording without making the web request a video pipe."""
     live_id = int(job.get("target_id") or 0)
@@ -631,6 +648,23 @@ def _process_live_replay_job(cur, job) -> None:
         _complete_job(cur, int(job.get("id") or 0), "done")
         return
     asset_id = str(live.get("mux_recording_asset_id") or "")
+    live_stream_id = str(live.get("mux_live_stream_id") or "")
+    if not asset_id and live_stream_id and not live.get("agora_recording_sid"):
+        # Mux-native session. The recording asset only appears on the live stream
+        # once Mux has cut it, so resolve it here rather than falling through to
+        # the Agora branch below, which would try to stop a recording that was
+        # never started and fail the job permanently.
+        stream = mux_live_service.get_mux_live_stream(live_stream_id)
+        if not stream.get("ok"):
+            raise RuntimeError(stream.get("message") or "Mux live stream lookup failed")
+        asset_id = str(stream.get("mux_recording_asset_id") or "")
+        if not asset_id:
+            _reschedule(cur, job)
+            return
+        cur.execute(
+            "UPDATE pulse_live_sessions SET mux_recording_asset_id=?, updated_at=? WHERE id=? AND COALESCE(mux_recording_asset_id,'')=''",
+            (asset_id, _now(), live_id),
+        )
     if asset_id:
         mux_asset = mux_live_service.create_mux_asset_from_live_recording(recording_asset_id=asset_id)
         if not mux_asset.get("ok"):
@@ -652,8 +686,7 @@ def _process_live_replay_job(cur, job) -> None:
             REPLAYS_READY_TO_PUBLISH.add(live_id)
             _complete_job(cur, int(job.get("id") or 0), "done")
             return
-        run_after = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=30)).isoformat(timespec="seconds")
-        cur.execute("UPDATE pulse_jobs SET status='pending', run_after=?, updated_at=? WHERE id=?", (run_after, _now(), int(job.get("id") or 0)))
+        _reschedule(cur, job)
         return
 
     filename = str(live.get("agora_recording_filename") or "")
@@ -681,8 +714,7 @@ def _process_live_replay_job(cur, job) -> None:
         "UPDATE pulse_live_sessions SET mux_recording_asset_id=?, mux_recording_playback_id=COALESCE(NULLIF(?,''),mux_recording_playback_id), recording_status='processing_replay', recording_error='', updated_at=? WHERE id=? AND COALESCE(mux_recording_asset_id,'')=''",
         (created.get("mux_recording_asset_id") or "", created.get("mux_recording_playback_id") or "", _now(), live_id),
     )
-    run_after = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=30)).isoformat(timespec="seconds")
-    cur.execute("UPDATE pulse_jobs SET status='pending', run_after=?, updated_at=? WHERE id=?", (run_after, _now(), int(job.get("id") or 0)))
+    _reschedule(cur, job)
 
 
 def process_media_jobs(limit: int = BATCH_SIZE) -> dict:
@@ -759,7 +791,7 @@ def reconcile_live_replay_backlog(limit: int = 25) -> dict:
         SELECT id, recording_status
         FROM pulse_live_sessions
         WHERE status='ended'
-          AND COALESCE(agora_recording_sid,'')<>''
+          AND (COALESCE(agora_recording_sid,'')<>'' OR COALESCE(mux_live_stream_id,'')<>'')
           AND COALESCE(recording_status,'') NOT IN ('replay_ready','mux_asset_ready','replay_unavailable','replay_failed')
         ORDER BY id ASC LIMIT ?
         """,

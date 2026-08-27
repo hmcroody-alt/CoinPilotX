@@ -50941,8 +50941,24 @@ def api_pulse_live_end(live_id):
         return api_error("Only the host or an admin can end this stream.", 403)
     replay_url = clean_html((request.get_json(silent=True) or {}).get("replay_url") or live.get("replay_url") or "")[:700]
     replay_is_cdn = bool(replay_url and replay_url.startswith((os.getenv("R2_PUBLIC_BASE_URL", "").rstrip("/") or "https://cdn.coinpilotx.app") + "/"))
-    has_recording_source = bool(live.get("agora_recording_sid") or live.get("mux_recording_asset_id"))
-    recording_status = "replay_ready" if replay_is_cdn else "processing_replay" if has_recording_source else "replay_unavailable"
+    # A Mux-recorded session has no asset id yet at end time: Mux only populates
+    # recent_asset_ids once it has cut the recording, which is after this call.
+    # Treating the live stream id as a recording source is what keeps the session
+    # out of 'replay_unavailable' and gets a finalize job queued for it.
+    has_recording_source = bool(
+        live.get("agora_recording_sid")
+        or live.get("mux_recording_asset_id")
+        or live.get("mux_live_stream_id")
+    )
+    # The asset.ready webhook can land before the host taps end. When it has, the
+    # playback id is already stored and overwriting the status with
+    # 'processing_replay' would send a finished replay back through finalization.
+    recording_status = (
+        "replay_ready" if replay_is_cdn
+        else "mux_asset_ready" if live.get("mux_recording_playback_id")
+        else "processing_replay" if has_recording_source
+        else "replay_unavailable"
+    )
     recording_error = "" if replay_is_cdn or has_recording_source else "No durable live recording asset was produced for this session."
     viewer_count = int(live.get("viewer_count") or 0)
     cur.execute(
