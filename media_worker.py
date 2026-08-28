@@ -62,6 +62,7 @@ INTERVAL_SECONDS = max(5, int(os.getenv("MEDIA_WORKER_INTERVAL_SECONDS", "5")))
 BATCH_SIZE = max(1, min(int(os.getenv("MEDIA_WORKER_BATCH_SIZE", "25")), 100))
 MAX_ATTEMPTS = max(1, int(os.getenv("MEDIA_WORKER_MAX_ATTEMPTS", "3")))
 MEDIA_JOB_TYPES = {"generate_thumbnail", "process_video", "finalize_live_replay"}
+REPLAY_WAIT_MAX_AGE_HOURS = max(1, int(os.getenv("MEDIA_WORKER_REPLAY_WAIT_MAX_AGE_HOURS", "72")))
 RUNNING = True
 REPLAYS_READY_TO_PUBLISH: set[int] = set()
 
@@ -639,6 +640,31 @@ def _reschedule(cur, job, *, seconds: int = 30) -> None:
     )
 
 
+def _replay_wait_expired(live) -> bool:
+    """True once a session is too old for the recording we are polling for to still arrive.
+
+    ``_reschedule`` deliberately does not spend the error budget, so a session
+    whose Mux asset will never materialize would poll every 30 seconds forever.
+    Bounding the wait by how long ago the session ended turns that into a
+    handful of attempts and then a real failure, which ``_fail_or_retry_job``
+    already knows how to retire.
+
+    Only ``ended_at`` counts. ``updated_at`` moves for unrelated reasons and a
+    missing value must never be read as "old", so an unknown end time keeps the
+    previous unbounded-poll behaviour rather than discarding a live replay.
+    """
+    raw = str(live.get("ended_at") or "").strip()
+    if not raw:
+        return False
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except Exception:
+        return False
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - parsed) > timedelta(hours=REPLAY_WAIT_MAX_AGE_HOURS)
+
+
 def _process_live_replay_job(cur, job) -> None:
     """Finalize one Agora recording without making the web request a video pipe."""
     live_id = int(job.get("target_id") or 0)
@@ -659,6 +685,8 @@ def _process_live_replay_job(cur, job) -> None:
             raise RuntimeError(stream.get("message") or "Mux live stream lookup failed")
         asset_id = str(stream.get("mux_recording_asset_id") or "")
         if not asset_id:
+            if _replay_wait_expired(live):
+                raise RuntimeError("Mux never produced a recording asset for this live stream.")
             _reschedule(cur, job)
             return
         cur.execute(
@@ -686,6 +714,8 @@ def _process_live_replay_job(cur, job) -> None:
             REPLAYS_READY_TO_PUBLISH.add(live_id)
             _complete_job(cur, int(job.get("id") or 0), "done")
             return
+        if _replay_wait_expired(live):
+            raise RuntimeError(f"Mux asset {asset_id} never became ready.")
         _reschedule(cur, job)
         return
 
@@ -786,13 +816,19 @@ def reconcile_live_replay_backlog(limit: int = 25) -> dict:
         (now, now, stale),
     )
     recovered = int(cur.rowcount or 0)
+    # 'replay_unavailable' is not terminal here. api_pulse_live_end only assigns it
+    # when a session has no recording source at all, so a row that carries one was
+    # misclassified before mux_live_stream_id counted as a source, and its replay is
+    # still recoverable. The source predicate below is what makes that safe, and the
+    # drain is one-way: a session either resolves to mux_asset_ready or exhausts its
+    # attempts into 'replay_failed', which stays excluded.
     cur.execute(
         """
         SELECT id, recording_status
         FROM pulse_live_sessions
         WHERE status='ended'
           AND (COALESCE(agora_recording_sid,'')<>'' OR COALESCE(mux_live_stream_id,'')<>'')
-          AND COALESCE(recording_status,'') NOT IN ('replay_ready','mux_asset_ready','replay_unavailable','replay_failed')
+          AND COALESCE(recording_status,'') NOT IN ('replay_ready','mux_asset_ready','replay_failed')
         ORDER BY id ASC LIMIT ?
         """,
         (max(1, int(limit or 25)),),

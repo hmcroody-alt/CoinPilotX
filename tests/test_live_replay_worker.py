@@ -206,3 +206,122 @@ def test_waiting_on_mux_does_not_spend_the_jobs_retry_budget(tmp_path, monkeypat
     conn.close()
     assert status == "pending", "a job still waiting on Mux must stay queued"
     assert attempts == 0, f"polling burned {attempts} of the retry budget"
+
+
+def _backlog_database(tmp_path, rows, ended_at="2026-01-01T00:00:00"):
+    """Ended sessions parked in replay_unavailable, with and without a source."""
+    database = str(tmp_path / "replay-worker-backlog.sqlite3")
+    conn = _connect(database)
+    conn.executescript(
+        """
+        CREATE TABLE pulse_jobs (
+          id INTEGER PRIMARY KEY, job_type TEXT, target_type TEXT, target_id INTEGER,
+          status TEXT, attempts INTEGER, max_attempts INTEGER, error_message TEXT,
+          run_after TEXT, created_at TEXT, updated_at TEXT, completed_at TEXT
+        );
+        CREATE TABLE pulse_live_sessions (
+          id INTEGER PRIMARY KEY, status TEXT, agora_recording_sid TEXT,
+          agora_recording_filename TEXT, agora_recording_prefix TEXT,
+          agora_converter_id TEXT, webrtc_room_id TEXT, agora_recording_resource_id TEXT,
+          agora_recording_uid TEXT, mux_live_stream_id TEXT, mux_recording_asset_id TEXT,
+          mux_recording_playback_id TEXT, replay_url TEXT, recording_status TEXT,
+          recording_error TEXT, thumbnail_url TEXT, viewer_count INTEGER,
+          ended_at TEXT, updated_at TEXT
+        );
+        CREATE TABLE pulse_posts (
+          id INTEGER PRIMARY KEY, live_session_id INTEGER, live_status TEXT,
+          live_viewer_count INTEGER, replay_url TEXT, playback_url TEXT,
+          preview_url TEXT, body TEXT, title TEXT, status TEXT, deleted_at TEXT,
+          updated_at TEXT
+        );
+        """
+    )
+    for live_id, stream_id, asset_id, recording_status in rows:
+        conn.execute(
+            "INSERT INTO pulse_live_sessions (id,status,agora_recording_sid,"
+            "agora_recording_filename,agora_recording_prefix,mux_live_stream_id,"
+            "mux_recording_asset_id,mux_recording_playback_id,replay_url,recording_status,"
+            "recording_error,thumbnail_url,viewer_count,ended_at,updated_at) "
+            "VALUES (?,'ended','','','',?,?,'','',?,'','poster.jpg',5,?,?)",
+            (live_id, stream_id, asset_id, recording_status, ended_at, ended_at),
+        )
+    conn.commit()
+    conn.close()
+    return database
+
+
+def test_backlog_requeues_replay_unavailable_that_still_has_a_recording_source(tmp_path, monkeypatch):
+    """replay_unavailable is only terminal when there is nothing left to recover.
+
+    api_pulse_live_end assigns it when a session has no recording source, so a row
+    that carries one was misclassified before mux_live_stream_id counted as a
+    source. Excluding the whole status stranded those replays permanently even
+    though the finalize handler can still resolve them.
+    """
+    database = _backlog_database(tmp_path, [
+        (11, "ls-11", "", "replay_unavailable"),   # misclassified, still recoverable
+        (12, "", "", "replay_unavailable"),        # no source at all, genuinely terminal
+        (13, "ls-13", "", "replay_failed"),        # already retired, must stay retired
+        (14, "ls-14", "asset-14", "mux_asset_ready"),  # already done
+    ])
+    monkeypatch.setattr(media_worker.bot, "db", lambda: _connect(database))
+
+    result = media_worker.reconcile_live_replay_backlog(25)
+
+    conn = _connect(database)
+    queued = [r[0] for r in conn.execute(
+        "SELECT target_id FROM pulse_jobs WHERE job_type='finalize_live_replay' ORDER BY target_id").fetchall()]
+    conn.close()
+    assert queued == [11], f"expected only the recoverable session to be queued, got {queued}"
+    assert result["queued"] == 1
+
+
+def test_backlog_requeue_is_one_way_and_cannot_loop(tmp_path, monkeypatch):
+    """A re-queued session must reach a terminal state, not cycle forever.
+
+    The drain only stays bounded because an exhausted job lands in
+    'replay_failed', which the backlog query still excludes. If it retired to
+    'replay_unavailable' instead, every cycle would queue the same session again.
+    """
+    database = _backlog_database(tmp_path, [(11, "ls-11", "", "replay_unavailable")])
+    monkeypatch.setattr(media_worker.bot, "db", lambda: _connect(database))
+    monkeypatch.setattr(media_worker.mux_live_service, "get_mux_live_stream",
+                        lambda _id: {"ok": True, "mux_recording_asset_id": ""})
+
+    media_worker.reconcile_live_replay_backlog(25)
+    for _ in range(6):
+        _run_due_now(database)
+
+    conn = _connect(database)
+    status, attempts = conn.execute("SELECT status, attempts FROM pulse_jobs WHERE id=1").fetchone()
+    recording_status = conn.execute(
+        "SELECT recording_status FROM pulse_live_sessions WHERE id=11").fetchone()[0]
+    conn.close()
+    assert status == "failed", f"an aged session with no Mux asset must retire, got {status!r}"
+    assert attempts == 5
+    assert recording_status == "replay_failed"
+
+    # The second cycle must not pick it back up, or the worker loops forever.
+    again = media_worker.reconcile_live_replay_backlog(25)
+    assert again["queued"] == 0
+
+
+def test_a_fresh_session_still_waits_for_its_mux_asset(tmp_path, monkeypatch):
+    """The age bound must not cut short a live that only just ended."""
+    from datetime import datetime, timedelta, timezone
+
+    recent = (datetime.now(timezone.utc) - timedelta(minutes=5)).replace(tzinfo=None).isoformat(timespec="seconds")
+    database = _backlog_database(tmp_path, [(11, "ls-11", "", "processing_replay")], ended_at=recent)
+    monkeypatch.setattr(media_worker.bot, "db", lambda: _connect(database))
+    monkeypatch.setattr(media_worker.mux_live_service, "get_mux_live_stream",
+                        lambda _id: {"ok": True, "mux_recording_asset_id": ""})
+
+    media_worker.reconcile_live_replay_backlog(25)
+    for _ in range(6):
+        _run_due_now(database)
+
+    conn = _connect(database)
+    status, attempts = conn.execute("SELECT status, attempts FROM pulse_jobs WHERE id=1").fetchone()
+    conn.close()
+    assert status == "pending", "a recent session must keep polling for its asset"
+    assert attempts == 0, f"polling a fresh session burned {attempts} of the retry budget"
