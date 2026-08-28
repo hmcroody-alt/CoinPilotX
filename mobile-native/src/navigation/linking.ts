@@ -325,6 +325,13 @@ export const linking: LinkingOptions<RootStackParamList> = {
       // grounds a holdings answer with this path as the place to see it, and a
       // deep link that resolves to nothing is worse than no link at all.
       Portfolio: "pulse/portfolio",
+      // Same story as Portfolio, one screen over. WatchlistsScreen has been in
+      // AppNavigator since the watchlist was made native and is reachable in-app,
+      // but it had no path here. UNDX can now add and remove coins, and the receipt
+      // for "added BTC to your watchlist" has to be able to open the list it just
+      // changed — otherwise the one screen that would let a user check the claim is
+      // the one screen the receipt cannot link to.
+      Watchlists: "pulse/watchlists",
       AccountCenter: {
         path: "pulse/settings/:section",
         parse: {

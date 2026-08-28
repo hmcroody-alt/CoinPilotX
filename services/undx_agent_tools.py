@@ -1332,6 +1332,365 @@ def presence_privacy_status(u, a): return _personal_read(u, a, "presence.privacy
 
 
 # ---------------------------------------------------------------------------
+# Stage 6 agentic actions
+#
+# Every executor below reaches a service function that already scopes its own SQL
+# by the acting user id. None of them accepts a field naming whose data to touch —
+# the gateway refuses a ``self_account_only`` capability that declares one — so the
+# account acted on is the authenticated one and no argument can move it.
+# ---------------------------------------------------------------------------
+
+
+def _portfolio():
+    from services import portfolio_service
+
+    return portfolio_service
+
+
+def _symbol(arguments: dict[str, Any]) -> str:
+    return clean(arguments.get("symbol"), 16).upper()
+
+
+def crypto_watchlist_list(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    symbols = sorted(_portfolio().watchlist_symbols(int(user_id)))
+    return ToolResult(
+        ok=True, tool_name="pulsesoc.crypto.watchlist.list",
+        capability_id="crypto.watchlist.list",
+        canonical_resource_id=f"user:{int(user_id)}",
+        records=[{"symbol": symbol} for symbol in symbols],
+        data={"count": len(symbols), "symbols": symbols},
+        latency_ms=_timed(started),
+    )
+
+
+def crypto_watchlist_add(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    symbol = _symbol(arguments)
+    outcome = _portfolio().add_watchlist_item(int(user_id), symbol) or {}
+    if not outcome.get("ok"):
+        # A plan limit refusal arrives here. It is a real product rule, not a fault,
+        # so it is reported with the service's own sentence rather than a generic
+        # failure — "you are at your watchlist limit" is actionable and "that did not
+        # work" is not.
+        return _fail("pulsesoc.crypto.watchlist.add", "crypto.watchlist.add",
+                     clean(outcome.get("code") or "write_rejected", 60),
+                     clean(outcome.get("message") or "PulseSoc did not accept that change.", 200),
+                     started=started)
+    return ToolResult(
+        ok=True, tool_name="pulsesoc.crypto.watchlist.add",
+        capability_id="crypto.watchlist.add",
+        canonical_resource_id=f"watchlist:{symbol}",
+        data={"symbol": symbol}, latency_ms=_timed(started),
+    )
+
+
+def crypto_watchlist_remove(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    symbol = _symbol(arguments)
+    portfolio = _portfolio()
+    # Symbol to row id happens here, against this account, rather than the caller
+    # passing an id. A model that proposed ``item_id`` could name a row belonging to
+    # anyone; a model that proposes ``BTC`` can only ever name one of the caller's own.
+    item_id = portfolio.watchlist_item_id(int(user_id), symbol)
+    if not item_id:
+        if symbol in portfolio.watchlist_symbols(int(user_id)):
+            return _fail("pulsesoc.crypto.watchlist.remove", "crypto.watchlist.remove",
+                         "legacy_row_unremovable",
+                         "That coin is on an older watchlist record UNDX cannot remove. "
+                         "Remove it in PulseSoc instead.", started=started)
+        return _fail("pulsesoc.crypto.watchlist.remove", "crypto.watchlist.remove",
+                     "resource_not_found", "That coin is not on your watchlist.",
+                     started=started)
+    outcome = portfolio.delete_watchlist_item(int(user_id), item_id) or {}
+    if not outcome.get("ok"):
+        return _fail("pulsesoc.crypto.watchlist.remove", "crypto.watchlist.remove",
+                     "write_rejected",
+                     clean(outcome.get("message") or "PulseSoc did not accept that change.", 200),
+                     retryable=True, started=started)
+    return ToolResult(
+        ok=True, tool_name="pulsesoc.crypto.watchlist.remove",
+        capability_id="crypto.watchlist.remove",
+        canonical_resource_id=f"watchlist:{symbol}",
+        data={"symbol": symbol}, latency_ms=_timed(started),
+    )
+
+
+_HOLDING_FIELDS = ("symbol", "coin_name", "amount", "average_buy_price", "notes")
+
+
+def crypto_portfolio_holdings_list(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    rows = _portfolio().list_portfolio_items(int(user_id))
+    records = [_project(row, ("id",) + _HOLDING_FIELDS, str_limit=120) for row in rows]
+    return ToolResult(
+        ok=True, tool_name="pulsesoc.crypto.portfolio.holdings.list",
+        capability_id="crypto.portfolio.holdings.list",
+        canonical_resource_id=f"user:{int(user_id)}",
+        records=records, data={"count": len(records), "items": records},
+        latency_ms=_timed(started),
+    )
+
+
+def crypto_portfolio_holding_add(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    symbol = _symbol(arguments)
+    portfolio = _portfolio()
+    outcome = portfolio.add_portfolio_item(
+        int(user_id), symbol,
+        coin_name=symbol,
+        amount=float(arguments.get("amount") or 0),
+        average_buy_price=float(arguments.get("average_buy_price") or 0),
+    ) or {}
+    if not outcome.get("ok"):
+        return _fail("pulsesoc.crypto.portfolio.holding.add", "crypto.portfolio.holding.add",
+                     clean(outcome.get("code") or "write_rejected", 60),
+                     clean(outcome.get("message") or "PulseSoc did not accept that holding.", 200),
+                     started=started)
+    # The service does not return the row it created, so the id is read back here.
+    # Without it the receipt would carry no canonical resource id, and the Undo
+    # affordance would be offered with nothing to delete — which is worse than
+    # offering no Undo at all.
+    created = next((row for row in portfolio.list_portfolio_items(int(user_id))
+                    if str(row.get("symbol") or "").upper() == symbol), None)
+    return ToolResult(
+        ok=True, tool_name="pulsesoc.crypto.portfolio.holding.add",
+        capability_id="crypto.portfolio.holding.add",
+        canonical_resource_id=f"portfolio_item:{int((created or {}).get('id') or 0)}",
+        data={"symbol": symbol, "amount": float(arguments.get("amount") or 0),
+              "average_buy_price": float(arguments.get("average_buy_price") or 0)},
+        latency_ms=_timed(started),
+    )
+
+
+def crypto_portfolio_holding_update(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    item_id = int(arguments.get("item_id") or 0)
+    portfolio = _portfolio()
+    if portfolio.get_portfolio_item(int(user_id), item_id) is None:
+        # A holding owned by somebody else and a holding that does not exist give the
+        # same refusal, so the capability cannot be used to discover whose rows exist.
+        return _fail("pulsesoc.crypto.portfolio.holding.update",
+                     "crypto.portfolio.holding.update", "resource_not_found",
+                     "UNDX could not find that holding on your account.", started=started)
+    patch = {key: arguments[key] for key in ("amount", "average_buy_price") if key in arguments}
+    outcome = portfolio.update_portfolio_item(int(user_id), item_id, patch) or {}
+    if not outcome.get("ok"):
+        return _fail("pulsesoc.crypto.portfolio.holding.update",
+                     "crypto.portfolio.holding.update", "write_rejected",
+                     clean(outcome.get("message") or "PulseSoc did not accept that change.", 200),
+                     retryable=True, started=started)
+    return ToolResult(
+        ok=True, tool_name="pulsesoc.crypto.portfolio.holding.update",
+        capability_id="crypto.portfolio.holding.update",
+        canonical_resource_id=f"portfolio_item:{item_id}",
+        data={"item_id": item_id, **patch}, latency_ms=_timed(started),
+    )
+
+
+def crypto_portfolio_holding_delete(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    item_id = int(arguments.get("item_id") or 0)
+    portfolio = _portfolio()
+    if portfolio.get_portfolio_item(int(user_id), item_id) is None:
+        return _fail("pulsesoc.crypto.portfolio.holding.delete",
+                     "crypto.portfolio.holding.delete", "resource_not_found",
+                     "UNDX could not find that holding on your account.", started=started)
+    outcome = portfolio.delete_portfolio_item(int(user_id), item_id) or {}
+    if not outcome.get("ok"):
+        return _fail("pulsesoc.crypto.portfolio.holding.delete",
+                     "crypto.portfolio.holding.delete", "write_rejected",
+                     clean(outcome.get("message") or "PulseSoc did not accept that deletion.", 200),
+                     retryable=True, started=started)
+    return ToolResult(
+        ok=True, tool_name="pulsesoc.crypto.portfolio.holding.delete",
+        capability_id="crypto.portfolio.holding.delete",
+        canonical_resource_id=f"portfolio_item:{item_id}",
+        data={"item_id": item_id}, latency_ms=_timed(started),
+    )
+
+
+def notifications_mark_read(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    notifications = _notifications()
+    notification_id = int(arguments.get("notification_id") or 0)
+    if notifications.get_notification(int(user_id), notification_id) is None:
+        return _fail("pulsesoc.notifications.mark_read", "notifications.mark_read",
+                     "resource_not_found",
+                     "UNDX could not find that notification on your account.", started=started)
+    outcome = notifications.mark_read(int(user_id), notification_id) or {}
+    if not outcome.get("ok"):
+        return _fail("pulsesoc.notifications.mark_read", "notifications.mark_read",
+                     "write_rejected", "PulseSoc did not accept that change.",
+                     retryable=True, started=started)
+    return ToolResult(
+        ok=True, tool_name="pulsesoc.notifications.mark_read",
+        capability_id="notifications.mark_read",
+        canonical_resource_id=f"notification:{notification_id}",
+        data={"notification_id": notification_id,
+              "unread_count": int(outcome.get("unread_count") or 0)},
+        latency_ms=_timed(started),
+    )
+
+
+def notifications_mark_all_read(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    category = resolve_category(clean(arguments.get("category") or "global", 24))
+    # ``global`` is this registry's word for "everything"; the notification service
+    # spells the same idea ``all``. Translating here rather than widening the field's
+    # enum keeps one vocabulary in front of the user.
+    scope = "all" if category == "global" else category
+    outcome = _notifications().mark_all_read(int(user_id), scope) or {}
+    if not outcome.get("ok"):
+        return _fail("pulsesoc.notifications.mark_all_read", "notifications.mark_all_read",
+                     "write_rejected", "PulseSoc did not accept that change.",
+                     retryable=True, started=started)
+    return ToolResult(
+        ok=True, tool_name="pulsesoc.notifications.mark_all_read",
+        capability_id="notifications.mark_all_read",
+        canonical_resource_id=f"user:{int(user_id)}:{category}",
+        data={"category": category, "updated": int(outcome.get("updated") or 0),
+              "unread_count": int(outcome.get("unread_count") or 0)},
+        latency_ms=_timed(started),
+    )
+
+
+def presence_privacy_update(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    from services import db as db_service
+    from services import presence_service
+
+    setting = clean(arguments.get("setting"), 32)
+    enabled = bool(arguments.get("enabled"))
+    conn = db_service.connect()
+    try:
+        outcome = presence_service.set_privacy(
+            conn.cursor(), int(user_id),
+            **{setting: enabled}, conn=conn)
+        conn.commit()
+    except Exception as exc:  # pragma: no cover - defensive
+        conn.rollback()
+        return _fail("pulsesoc.presence.privacy.update", "presence.privacy.update",
+                     "write_rejected",
+                     f"PulseSoc did not accept that change ({exc.__class__.__name__}).",
+                     retryable=True, started=started)
+    finally:
+        conn.close()
+    return ToolResult(
+        ok=True, tool_name="pulsesoc.presence.privacy.update",
+        capability_id="presence.privacy.update",
+        canonical_resource_id=f"user:{int(user_id)}:{setting}",
+        data={"setting": setting, "enabled": bool(outcome.get(setting))},
+        latency_ms=_timed(started),
+    )
+
+
+def localization_region_update(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    from services.pulse_region_preferences import RegionPreferenceError, update_preferences
+
+    setting = clean(arguments.get("setting"), 32)
+    value = clean(arguments.get("value"), 64)
+    try:
+        update_preferences(int(user_id), {setting: value})
+    except RegionPreferenceError as exc:
+        return _fail("pulsesoc.localization.region.update", "localization.region.update",
+                     clean(getattr(exc, "code", "") or "write_rejected", 60),
+                     clean(str(exc) or "PulseSoc did not accept that region preference.", 200),
+                     started=started)
+    return ToolResult(
+        ok=True, tool_name="pulsesoc.localization.region.update",
+        capability_id="localization.region.update",
+        canonical_resource_id=f"user:{int(user_id)}:{setting}",
+        data={"setting": setting, "value": value}, latency_ms=_timed(started),
+    )
+
+
+def localization_translation_update(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    from services.content_translation import TranslationError, set_preference
+
+    target = clean(arguments.get("target_language"), 16)
+    policy = clean(arguments.get("policy"), 16)
+    try:
+        set_preference(int(user_id), "auto", target, policy)
+    except TranslationError as exc:
+        return _fail("pulsesoc.localization.translation.update",
+                     "localization.translation.update",
+                     clean(getattr(exc, "code", "") or "write_rejected", 60),
+                     clean(str(exc) or "PulseSoc did not accept that translation preference.", 200),
+                     started=started)
+    return ToolResult(
+        ok=True, tool_name="pulsesoc.localization.translation.update",
+        capability_id="localization.translation.update",
+        canonical_resource_id=f"user:{int(user_id)}:{target}",
+        data={"target_language": target, "policy": policy}, latency_ms=_timed(started),
+    )
+
+
+#: Preference groups an agent capability may write. ``security`` is absent by
+#: construction and must stay absent: two-factor, biometric unlock and the
+#: "require password for sensitive changes" switch all live there, and the mission
+#: brief puts credential and MFA changes outside what any agent may do. A capability
+#: that reached them would be a privilege escalation wearing a settings receipt.
+SETTINGS_WRITABLE_GROUPS: frozenset[str] = frozenset({"appearance", "privacy"})
+
+
+def _settings_patch(user_id: int, group: str, patch: dict[str, Any], *,
+                    capability: str, started: float) -> ToolResult:
+    """Merge one bounded patch into the stored preference document.
+
+    Runs the same three steps as the HTTP route — load, merge, save — through the
+    same functions, so the normalisation and side effects a person's own settings
+    write goes through are the ones an agent write goes through too. The group
+    allowlist is checked here as well as by the field enum, because the enum
+    protects the argument and this protects the call.
+    """
+    from services import db as db_service
+    from services.pulse_settings_routes import (
+        load_preferences, merge_preferences, save_preferences,
+    )
+
+    if group not in SETTINGS_WRITABLE_GROUPS:
+        return _fail(f"pulsesoc.{capability}", capability, "group_not_writable",
+                     "UNDX cannot change that group of settings.", started=started)
+    conn = db_service.connect()
+    try:
+        cur = conn.cursor()
+        stored, revision, _ = load_preferences(cur, int(user_id))
+        merged = merge_preferences(stored, {group: patch})
+        save_preferences(cur, int(user_id), merged, revision)
+        conn.commit()
+    except Exception as exc:  # pragma: no cover - defensive
+        conn.rollback()
+        return _fail(f"pulsesoc.{capability}", capability, "write_rejected",
+                     f"PulseSoc did not accept that change ({exc.__class__.__name__}).",
+                     retryable=True, started=started)
+    finally:
+        conn.close()
+    return ToolResult(
+        ok=True, tool_name=f"pulsesoc.{capability}", capability_id=capability,
+        canonical_resource_id=f"user:{int(user_id)}:{group}",
+        data={"group": group, **patch}, latency_ms=_timed(started),
+    )
+
+
+def settings_privacy_audience_update(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    setting = clean(arguments.get("setting"), 40)
+    audience = clean(arguments.get("audience"), 24)
+    return _settings_patch(int(user_id), "privacy", {setting: audience},
+                           capability="settings.privacy.audience.update", started=started)
+
+
+def settings_appearance_theme_update(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    theme = clean(arguments.get("theme"), 16)
+    return _settings_patch(int(user_id), "appearance", {"theme": theme},
+                           capability="settings.appearance.theme.update", started=started)
+
+
+# ---------------------------------------------------------------------------
 # Resolution
 # ---------------------------------------------------------------------------
 
@@ -1424,6 +1783,20 @@ EXECUTORS: dict[str, Callable[[int, dict[str, Any]], ToolResult]] = {
     "crypto_market_window": crypto_market_window,
     "translation_content_translate": translation_content_translate,
     "presence_privacy_status": presence_privacy_status,
+    "crypto_watchlist_list": crypto_watchlist_list,
+    "crypto_watchlist_add": crypto_watchlist_add,
+    "crypto_watchlist_remove": crypto_watchlist_remove,
+    "crypto_portfolio_holdings_list": crypto_portfolio_holdings_list,
+    "crypto_portfolio_holding_add": crypto_portfolio_holding_add,
+    "crypto_portfolio_holding_update": crypto_portfolio_holding_update,
+    "crypto_portfolio_holding_delete": crypto_portfolio_holding_delete,
+    "notifications_mark_read": notifications_mark_read,
+    "notifications_mark_all_read": notifications_mark_all_read,
+    "presence_privacy_update": presence_privacy_update,
+    "localization_region_update": localization_region_update,
+    "localization_translation_update": localization_translation_update,
+    "settings_privacy_audience_update": settings_privacy_audience_update,
+    "settings_appearance_theme_update": settings_appearance_theme_update,
 }
 
 
@@ -1442,4 +1815,4 @@ def resolve(name: str) -> Callable[[int, dict[str, Any]], ToolResult]:
     return executor
 
 
-__all__ = ["EXECUTORS", "resolve", "read_push_value"]
+__all__ = ["EXECUTORS", "resolve", "read_push_value", "SETTINGS_WRITABLE_GROUPS"]

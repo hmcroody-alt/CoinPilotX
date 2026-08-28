@@ -396,6 +396,417 @@ def profile_preference_value(user_id, arguments, result):
 
 
 # ---------------------------------------------------------------------------
+# Crypto watchlist and portfolio
+# ---------------------------------------------------------------------------
+
+
+def _portfolio():
+    from services import portfolio_service
+
+    return portfolio_service
+
+
+def crypto_watchlist_contains(user_id: int, arguments: dict[str, Any], result: ToolResult) -> VerificationResult:
+    """Confirm membership of one symbol, read from the watchlist tables directly.
+
+    Presence and absence are the same question asked with opposite expectations, so
+    add and remove share a verifier and derive the expectation from the capability
+    rather than from a flag in the arguments — an argument could disagree with the
+    capability that was actually run, and then a removal that silently did nothing
+    would verify.
+    """
+    symbol = clean(arguments.get("symbol"), 16).upper()
+    expected = result.capability_id == "crypto.watchlist.add"
+    try:
+        symbols = _portfolio().watchlist_symbols(int(user_id))
+    except Exception as exc:  # pragma: no cover - defensive
+        return _unreadable(f"Watchlist read-back failed: {exc.__class__.__name__}", expected)
+    observed = symbol in symbols
+    return VerificationResult(
+        state=VerificationState.VERIFIED if observed == expected else VerificationState.FAILED,
+        expected=expected,
+        observed=observed,
+        detail="" if observed == expected else (
+            "The coin is still on the watchlist." if expected is False
+            else "The coin is not on the watchlist."),
+        evidence={
+            "canonical_resource_id": f"watchlist:{symbol}",
+            "read_back": {"symbol": symbol, "present": observed, "watchlist_size": len(symbols)},
+            "subject": symbol,
+            "source": "portfolio_service.watchlist_symbols",
+        },
+    )
+
+
+def _holding_id(arguments: dict[str, Any], result: ToolResult) -> int:
+    """The row this verifier should read.
+
+    An update or a delete is addressed by ``item_id`` and the argument is the
+    authority. A create has no such argument, so the id comes from the result — the
+    same concession ``crypto_alert_exists`` makes, and it is narrow: the result is
+    trusted to say *which row to go and look at*, never whether the row is correct.
+    """
+    if "item_id" in arguments:
+        return int(arguments.get("item_id") or 0)
+    tail = str(result.canonical_resource_id or "").rsplit(":", 1)[-1]
+    return int(tail) if tail.isdigit() else 0
+
+
+def crypto_holding_exists(user_id: int, arguments: dict[str, Any], result: ToolResult) -> VerificationResult:
+    """Confirm a newly added holding exists on this account with the stated size."""
+    item_id = _holding_id(arguments, result)
+    symbol = clean(arguments.get("symbol"), 16).upper()
+    expected = {"symbol": symbol, "amount": float(arguments.get("amount") or 0)}
+    if not item_id:
+        return VerificationResult(
+            state=VerificationState.FAILED,
+            expected=expected,
+            observed=None,
+            detail="The new holding did not come back with a row id to read.",
+        )
+    try:
+        row = _portfolio().get_portfolio_item(int(user_id), item_id)
+    except Exception as exc:  # pragma: no cover - defensive
+        return _unreadable(f"Holding read-back failed: {exc.__class__.__name__}", expected)
+    if not row:
+        return VerificationResult(
+            state=VerificationState.FAILED,
+            expected=expected,
+            observed=None,
+            detail="The holding could not be read back on this account.",
+        )
+    observed = {"symbol": str(row.get("symbol") or "").upper(),
+                "amount": float(row.get("amount") or 0)}
+    matched = observed["symbol"] == expected["symbol"] and abs(
+        observed["amount"] - expected["amount"]) < 1e-9
+    return VerificationResult(
+        state=VerificationState.VERIFIED if matched else VerificationState.FAILED,
+        expected=expected,
+        observed=observed,
+        detail="" if matched else "The stored holding did not match what was requested.",
+        evidence={
+            "canonical_resource_id": f"portfolio_item:{item_id}",
+            "read_back": observed,
+            "subject": f"{observed['symbol']} holding",
+            "source": "portfolio_service.get_portfolio_item",
+        },
+    )
+
+
+def crypto_holding_values(user_id: int, arguments: dict[str, Any], result: ToolResult) -> VerificationResult:
+    """Confirm each numeric field the update was asked to change now holds its value.
+
+    Only the fields present in the request are compared. An update that supplied
+    ``amount`` alone must not fail because ``average_buy_price`` is whatever it
+    already was, and must not pass merely because *some* field moved.
+    """
+    item_id = _holding_id(arguments, result)
+    requested = {key: float(arguments[key] or 0)
+                 for key in ("amount", "average_buy_price") if key in arguments}
+    if not requested:
+        return VerificationResult(
+            state=VerificationState.IMPOSSIBLE,
+            detail="The update named no field whose value could be read back.",
+        )
+    try:
+        row = _portfolio().get_portfolio_item(int(user_id), item_id)
+    except Exception as exc:  # pragma: no cover - defensive
+        return _unreadable(f"Holding read-back failed: {exc.__class__.__name__}", requested)
+    if not row:
+        return VerificationResult(
+            state=VerificationState.FAILED,
+            expected=requested,
+            observed=None,
+            detail="The holding could not be read back on this account.",
+        )
+    observed = {key: float(row.get(key) or 0) for key in requested}
+    matched = all(abs(observed[key] - requested[key]) < 1e-9 for key in requested)
+    return VerificationResult(
+        state=VerificationState.VERIFIED if matched else VerificationState.FAILED,
+        expected=requested,
+        observed=observed,
+        detail="" if matched else "The stored holding did not match what was requested.",
+        evidence={
+            "canonical_resource_id": f"portfolio_item:{item_id}",
+            "read_back": observed,
+            "subject": f"{str(row.get('symbol') or '').upper()} holding",
+            "source": "portfolio_service.get_portfolio_item",
+        },
+    )
+
+
+def crypto_holding_deleted(user_id: int, arguments: dict[str, Any], result: ToolResult) -> VerificationResult:
+    """Confirm the holding is gone from this account.
+
+    ``get_portfolio_item`` scopes by ``user_id``, so ``None`` here means "not yours
+    or not there". After a delete this account owned and executed, those are the
+    same state, and the read is the strongest evidence available.
+    """
+    item_id = _holding_id(arguments, result)
+    try:
+        row = _portfolio().get_portfolio_item(int(user_id), item_id)
+    except Exception as exc:  # pragma: no cover - defensive
+        return _unreadable(f"Holding read-back failed: {exc.__class__.__name__}", True)
+    observed = row is None
+    return VerificationResult(
+        state=VerificationState.VERIFIED if observed else VerificationState.FAILED,
+        expected=True,
+        observed=observed,
+        detail="" if observed else "The holding was still on the account after the deletion.",
+        evidence={
+            "canonical_resource_id": f"portfolio_item:{item_id}",
+            "read_back": {"deleted": observed},
+            "source": "portfolio_service.get_portfolio_item",
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Notification inbox state
+# ---------------------------------------------------------------------------
+
+
+def notification_read_state(user_id: int, arguments: dict[str, Any], result: ToolResult) -> VerificationResult:
+    """Confirm one notification is now read on this account.
+
+    The stored row carries both a ``read_at`` timestamp and a ``status``; the
+    projection already reconciles them into ``read``, and that single derived field
+    is what gets compared so the verifier cannot pass on a half-written row that set
+    the status without the timestamp.
+    """
+    notification_id = int(arguments.get("notification_id") or 0)
+    try:
+        row = _notifications().get_notification(int(user_id), notification_id)
+    except Exception as exc:  # pragma: no cover - defensive
+        return _unreadable(f"Notification read-back failed: {exc.__class__.__name__}", True)
+    if not row:
+        return VerificationResult(
+            state=VerificationState.FAILED,
+            expected=True,
+            observed=None,
+            detail="The notification could not be read back on this account.",
+        )
+    observed = bool(row.get("read"))
+    return VerificationResult(
+        state=VerificationState.VERIFIED if observed else VerificationState.FAILED,
+        expected=True,
+        observed=observed,
+        detail="" if observed else "The notification was still unread after the request.",
+        evidence={
+            "canonical_resource_id": f"notification:{notification_id}",
+            "read_back": {"read": observed, "read_at": clean(row.get("read_at") or "", 40)},
+            "source": "pulsesoc_notification_system.get_notification",
+        },
+    )
+
+
+def notifications_unread_count(user_id: int, arguments: dict[str, Any], result: ToolResult) -> VerificationResult:
+    """Confirm no unread notification remains inside the category that was cleared.
+
+    Scoped by the same category the mutation used rather than by an account-wide
+    badge count: clearing Mentions must not be reported as failed because a Payments
+    notification arrived, and clearing Mentions must not be reported as verified
+    because the badge happened to be zero for other reasons.
+    """
+    from services.undx_agent_tools import resolve_category
+
+    category = resolve_category(clean(arguments.get("category") or "global", 24))
+    scope = "all" if category == "global" else category
+    try:
+        payload = _notifications().list_notifications(
+            int(user_id), limit=1, category=scope, unread_only=True) or {}
+    except Exception as exc:  # pragma: no cover - defensive
+        return _unreadable(f"Inbox read-back failed: {exc.__class__.__name__}", 0)
+    observed = int(payload.get("count") or 0)
+    return VerificationResult(
+        state=VerificationState.VERIFIED if observed == 0 else VerificationState.FAILED,
+        expected=0,
+        observed=observed,
+        detail="" if observed == 0 else "Unread notifications remain in that category.",
+        evidence={
+            "canonical_resource_id": f"user:{int(user_id)}:{category}",
+            "read_back": {"category": category, "scope": scope, "unread_remaining": observed},
+            "source": "pulsesoc_notification_system.list_notifications",
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Presence, localization and stored settings
+# ---------------------------------------------------------------------------
+
+
+def presence_privacy_value(user_id: int, arguments: dict[str, Any], result: ToolResult) -> VerificationResult:
+    """Confirm one presence privacy switch holds the requested value."""
+    from services import db as db_service
+    from services import presence_service
+
+    setting = clean(arguments.get("setting"), 32)
+    expected = bool(arguments.get("enabled"))
+    conn = None
+    try:
+        conn = db_service.connect()
+        stored = presence_service.get_privacy(conn.cursor(), int(user_id), conn=conn) or {}
+    except Exception as exc:  # pragma: no cover - defensive
+        return _unreadable(f"Presence read-back failed: {exc.__class__.__name__}", expected)
+    finally:
+        if conn is not None:
+            conn.close()
+    if setting not in stored:
+        return VerificationResult(
+            state=VerificationState.IMPOSSIBLE,
+            expected=expected,
+            detail="That presence setting has no read-back path.",
+        )
+    observed = bool(stored.get(setting))
+    return VerificationResult(
+        state=VerificationState.VERIFIED if observed == expected else VerificationState.FAILED,
+        expected=expected,
+        observed=observed,
+        detail="" if observed == expected else "The presence setting did not match the request.",
+        evidence={
+            "canonical_resource_id": f"user:{int(user_id)}:{setting}",
+            "read_back": {"setting": setting, "enabled": observed},
+            "source": "presence_service.get_privacy",
+        },
+    )
+
+
+#: The argument name the capability exposes, mapped to the key ``get_preferences``
+#: actually returns. ``update_preferences`` accepts ``currency`` but reads back as
+#: ``preferred_currency`` — the write and read vocabularies differ by design, and a
+#: verifier that keyed the payload by the argument name would miss every time and
+#: report ``impossible_to_verify`` for a preference that is perfectly readable.
+#: Degrading a verifiable write to "I could not check" is a quiet failure: nothing
+#: breaks, the receipt just stops carrying evidence.
+_REGION_READ_KEYS = {
+    "locale": "preferred_locale",
+    "time_zone": "preferred_timezone",
+    "currency": "preferred_currency",
+    "date_format": "preferred_date_format",
+}
+
+
+def region_preference_value(user_id: int, arguments: dict[str, Any], result: ToolResult) -> VerificationResult:
+    """Confirm one region preference holds the requested value after normalisation.
+
+    ``update_preferences`` canonicalises what it stores — a locale casing, a
+    recognised timezone name — so the comparison is case-insensitive on the string.
+    A value the service rewrote into a different preference entirely still fails.
+    """
+    from services.pulse_region_preferences import get_preferences
+
+    setting = clean(arguments.get("setting"), 32)
+    expected = clean(arguments.get("value"), 64)
+    try:
+        stored = get_preferences(int(user_id)) or {}
+    except Exception as exc:  # pragma: no cover - defensive
+        return _unreadable(f"Region read-back failed: {exc.__class__.__name__}", expected)
+    read_key = _REGION_READ_KEYS.get(setting, setting)
+    if read_key not in stored:
+        return VerificationResult(
+            state=VerificationState.IMPOSSIBLE,
+            expected=expected,
+            detail="That region preference has no read-back path.",
+        )
+    observed = clean(stored.get(read_key) or "", 64)
+    matched = observed.casefold() == expected.casefold()
+    return VerificationResult(
+        state=VerificationState.VERIFIED if matched else VerificationState.FAILED,
+        expected=expected,
+        observed=observed,
+        detail="" if matched else "The stored region preference did not match the request.",
+        evidence={
+            "canonical_resource_id": f"user:{int(user_id)}:{setting}",
+            "read_back": {"setting": setting, "value": observed},
+            "source": "pulse_region_preferences.get_preferences",
+        },
+    )
+
+
+def translation_preference_value(user_id: int, arguments: dict[str, Any], result: ToolResult) -> VerificationResult:
+    """Confirm the auto-translate policy stored for one target language."""
+    from services.content_translation import get_preference
+
+    target = clean(arguments.get("target_language"), 16)
+    expected = clean(arguments.get("policy"), 16)
+    try:
+        stored = get_preference(int(user_id), "auto", target) or {}
+    except Exception as exc:  # pragma: no cover - defensive
+        return _unreadable(f"Translation read-back failed: {exc.__class__.__name__}", expected)
+    observed = clean(stored.get("policy") or "", 16)
+    matched = observed.casefold() == expected.casefold()
+    return VerificationResult(
+        state=VerificationState.VERIFIED if matched else VerificationState.FAILED,
+        expected=expected,
+        observed=observed,
+        detail="" if matched else "The stored translation policy did not match the request.",
+        evidence={
+            "canonical_resource_id": f"user:{int(user_id)}:{target}",
+            "read_back": {"target_language": clean(stored.get("target_language") or target, 16),
+                          "policy": observed},
+            "source": "content_translation.get_preference",
+        },
+    )
+
+
+#: Which stored preference group each settings capability writes into. Read here
+#: rather than taken from an argument so a verifier cannot be pointed at a group the
+#: capability is not allowed to touch.
+_SETTINGS_GROUPS = {
+    "settings.privacy.audience.update": ("privacy", "audience"),
+    "settings.appearance.theme.update": ("appearance", "theme"),
+}
+
+
+def settings_preference_value(user_id: int, arguments: dict[str, Any], result: ToolResult) -> VerificationResult:
+    """Re-read the stored settings document and compare one key inside one group.
+
+    Loaded through ``load_preferences``, which is the same function the Settings
+    screen renders from, so a value that verifies here is a value the person will
+    see. Reading the raw row instead would verify against a document shape the
+    product does not use.
+    """
+    from services import db as db_service
+    from services.pulse_settings_routes import load_preferences
+
+    group_field = _SETTINGS_GROUPS.get(result.capability_id or "")
+    if not group_field:
+        return VerificationResult(
+            state=VerificationState.IMPOSSIBLE,
+            detail="No settings group is declared for this capability.",
+        )
+    group, value_key = group_field
+    # ``theme`` names its own key; the audience capability carries the key in an
+    # argument because one capability covers seven switches.
+    key = clean(arguments.get("setting") or value_key, 40)
+    expected = clean(arguments.get(value_key) or "", 40)
+    conn = None
+    try:
+        conn = db_service.connect()
+        stored, revision, _ = load_preferences(conn.cursor(), int(user_id))
+    except Exception as exc:  # pragma: no cover - defensive
+        return _unreadable(f"Settings read-back failed: {exc.__class__.__name__}", expected)
+    finally:
+        if conn is not None:
+            conn.close()
+    observed = clean((stored.get(group) or {}).get(key) or "", 40)
+    matched = observed == expected
+    return VerificationResult(
+        state=VerificationState.VERIFIED if matched else VerificationState.FAILED,
+        expected=expected,
+        observed=observed,
+        detail="" if matched else "The stored setting did not match the request.",
+        evidence={
+            "canonical_resource_id": f"user:{int(user_id)}:{group}",
+            "read_back": {"group": group, "setting": key, "value": observed,
+                          "revision": int(revision)},
+            "source": "pulse_settings_routes.load_preferences",
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
 # Resolution
 # ---------------------------------------------------------------------------
 
@@ -412,6 +823,16 @@ VERIFIERS: dict[str, Callable[[int, dict[str, Any], ToolResult], VerificationRes
     "reel_saved_value": reel_saved_value,
     "reel_liked_value": reel_liked_value,
     "profile_preference_value": profile_preference_value,
+    "crypto_watchlist_contains": crypto_watchlist_contains,
+    "crypto_holding_exists": crypto_holding_exists,
+    "crypto_holding_values": crypto_holding_values,
+    "crypto_holding_deleted": crypto_holding_deleted,
+    "notification_read_state": notification_read_state,
+    "notifications_unread_count": notifications_unread_count,
+    "presence_privacy_value": presence_privacy_value,
+    "region_preference_value": region_preference_value,
+    "translation_preference_value": translation_preference_value,
+    "settings_preference_value": settings_preference_value,
 }
 
 
