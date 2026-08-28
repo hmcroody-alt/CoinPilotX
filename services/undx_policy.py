@@ -181,6 +181,25 @@ PRODUCTION_TOOL_REGISTRY: dict[str, dict[str, Any]] = {
             ("crypto.market.window", "crypto_market_window", "user_id"),
         )
     },
+    # Stage 6 agentic actions. Same in-process convention as the pack above:
+    # ``method`` is None because none of these is reached over HTTP, ``route`` names
+    # the owning service function, and every write names the read-back function its
+    # verifier calls — a different function from the one that wrote, which is the
+    # whole point of having the column.
+    "pulsesoc.crypto.watchlist.list": {"method": None, "route": "services.portfolio_service.watchlist_symbols", "risk": "read_only", "confirmation": False, "canonical_key": "symbol"},
+    "pulsesoc.crypto.watchlist.add": {"method": None, "route": "services.portfolio_service.add_watchlist_item", "risk": "medium", "confirmation": False, "canonical_key": "symbol", "verification_route": "services.portfolio_service.watchlist_symbols"},
+    "pulsesoc.crypto.watchlist.remove": {"method": None, "route": "services.portfolio_service.delete_watchlist_item", "risk": "medium", "confirmation": False, "canonical_key": "symbol", "verification_route": "services.portfolio_service.watchlist_symbols"},
+    "pulsesoc.crypto.portfolio.holdings.list": {"method": None, "route": "services.portfolio_service.list_portfolio_items", "risk": "read_only", "confirmation": False, "canonical_key": "item_id"},
+    "pulsesoc.crypto.portfolio.holding.add": {"method": None, "route": "services.portfolio_service.add_portfolio_item", "risk": "medium", "confirmation": True, "canonical_key": "item_id", "verification_route": "services.portfolio_service.get_portfolio_item"},
+    "pulsesoc.crypto.portfolio.holding.update": {"method": None, "route": "services.portfolio_service.update_portfolio_item", "risk": "medium", "confirmation": True, "canonical_key": "item_id", "verification_route": "services.portfolio_service.get_portfolio_item"},
+    "pulsesoc.crypto.portfolio.holding.delete": {"method": None, "route": "services.portfolio_service.delete_portfolio_item", "risk": "high", "confirmation": True, "canonical_key": "item_id", "verification_route": "services.portfolio_service.get_portfolio_item"},
+    "pulsesoc.notifications.mark_read": {"method": None, "route": "services.pulsesoc_notification_system.mark_read", "risk": "medium", "confirmation": False, "canonical_key": "notification_id", "verification_route": "services.pulsesoc_notification_system.get_notification"},
+    "pulsesoc.notifications.mark_all_read": {"method": None, "route": "services.pulsesoc_notification_system.mark_all_read", "risk": "medium", "confirmation": True, "canonical_key": "user_id", "verification_route": "services.pulsesoc_notification_system.list_notifications"},
+    "pulsesoc.presence.privacy.update": {"method": None, "route": "services.presence_service.set_privacy", "risk": "medium", "confirmation": True, "canonical_key": "user_id", "verification_route": "services.presence_service.get_privacy"},
+    "pulsesoc.localization.region.update": {"method": None, "route": "services.pulse_region_preferences.update_preferences", "risk": "medium", "confirmation": False, "canonical_key": "user_id", "verification_route": "services.pulse_region_preferences.get_preferences"},
+    "pulsesoc.localization.translation.update": {"method": None, "route": "services.content_translation.set_preference", "risk": "medium", "confirmation": False, "canonical_key": "user_id", "verification_route": "services.content_translation.get_preference"},
+    "pulsesoc.settings.privacy.audience.update": {"method": None, "route": "services.pulse_settings_routes.save_preferences", "risk": "high", "confirmation": True, "canonical_key": "user_id", "verification_route": "services.pulse_settings_routes.load_preferences"},
+    "pulsesoc.settings.appearance.theme.update": {"method": None, "route": "services.pulse_settings_routes.save_preferences", "risk": "low", "confirmation": False, "canonical_key": "user_id", "verification_route": "services.pulse_settings_routes.load_preferences"},
     "web.search": {"method": None, "route": "services.pulse_ai_web_search.search", "risk": "medium", "confirmation": False},
     "calculator.execute": {"method": None, "route": "deterministic_server_calculator", "risk": "low", "confirmation": False},
 }

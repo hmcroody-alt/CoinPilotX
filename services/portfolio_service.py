@@ -447,6 +447,88 @@ def get_watchlist(user_id):
     return enriched
 
 
+def watchlist_symbols(user_id):
+    """The plain set of symbols on this account's watchlist.
+
+    Deliberately not :func:`get_watchlist`. That one enriches every row with a live
+    price, which means a read-back built on it would call a third-party market API
+    once per holding and report ``verification_pending`` — an unverified write — the
+    moment CoinGecko is slow. A verifier must depend on nothing but the store it is
+    checking, so this reads the two canonical tables and stops.
+    """
+    conn = user_context.connect()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT symbol FROM watchlist_items WHERE user_id=?", (int(user_id),))
+        symbols = {str(row["symbol"] or "").upper() for row in _rows(cur)}
+        try:
+            cur.execute("SELECT asset FROM watchlists WHERE user_id=?", (int(user_id),))
+            symbols |= {str(row["asset"] or "").upper() for row in _rows(cur)}
+        except Exception:
+            # The legacy table is optional. Its absence is not a failed read-back.
+            pass
+    finally:
+        conn.close()
+    return {symbol for symbol in symbols if symbol}
+
+
+def watchlist_item_id(user_id, symbol):
+    """This account's watchlist row id for one symbol, or ``0``.
+
+    Lets a caller address the watchlist by symbol — which is how a person refers to
+    it — while the delete still runs against a row id scoped to ``user_id``. The
+    resolution happens server-side precisely so a symbol supplied by a model can
+    never become an id belonging to somebody else.
+    """
+    conn = user_context.connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id FROM watchlist_items WHERE user_id=? AND symbol=? ORDER BY id LIMIT 1",
+            (int(user_id), str(symbol or "").upper().strip()[:16]),
+        )
+        row = cur.fetchone()
+    finally:
+        conn.close()
+    return int(row["id"]) if row else 0
+
+
+def list_portfolio_items(user_id):
+    """Stored holdings for one account, without market enrichment."""
+    conn = user_context.connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT id, symbol, coin_name, amount, average_buy_price, notes, updated_at
+               FROM portfolio_items WHERE user_id=? ORDER BY id DESC""",
+            (int(user_id),),
+        )
+        return _rows(cur)
+    finally:
+        conn.close()
+
+
+def get_portfolio_item(user_id, item_id):
+    """One holding owned by this account, or ``None``.
+
+    Scoped by ``user_id`` in the WHERE clause rather than filtered afterwards, so a
+    holding belonging to another account is indistinguishable from one that does not
+    exist and the read cannot be used to probe for other people's rows.
+    """
+    conn = user_context.connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT id, symbol, coin_name, amount, average_buy_price, notes, updated_at
+               FROM portfolio_items WHERE id=? AND user_id=? LIMIT 1""",
+            (int(item_id or 0), int(user_id)),
+        )
+        row = cur.fetchone()
+    finally:
+        conn.close()
+    return dict(row) if row else None
+
+
 def get_alerts(user_id):
     conn = user_context.connect()
     cur = conn.cursor()

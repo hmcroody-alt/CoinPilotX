@@ -1268,6 +1268,207 @@ for _spec in (
     _register(_spec)
 
 
+# --- Stage 6 agentic actions ----------------------------------------------
+#
+# The pack that makes UNDX able to *do* things rather than only describe them.
+# Three properties are common to all of it and none of them are incidental:
+#
+# Every capability is ``self_account_only`` and none declares a field naming whose
+# account to act on. That combination is what the gateway checks; a capability that
+# accepted a ``user_id`` would be refused at import rather than at request time.
+#
+# Every write names a verifier that re-reads the store it just wrote to, and lists
+# in ``verified_fields`` every field it can change. A field left off that list is a
+# field a user could change while being told the change was verified, so the
+# constructor refuses the capability outright.
+#
+# Where an inverse capability exists it is declared, with an argument map when the
+# inverse needs different arguments. Where none exists the field is left empty
+# rather than pointed at something approximate: an Undo button that restores the
+# wrong prior value is worse than no button.
+
+_WATCHLIST_SYMBOL = FieldSpec("symbol", "identifier", required=True, max_length=16)
+_HOLDING_ITEM_ID = FieldSpec("item_id", "int", required=True, minimum=1)
+_HOLDING_AMOUNT = FieldSpec("amount", "float", required=True, minimum=0.0, maximum=1_000_000_000.0)
+_HOLDING_PRICE = FieldSpec("average_buy_price", "float", required=False, minimum=0.0,
+                           maximum=1_000_000_000.0, default=0.0)
+_PRESENCE_SETTINGS = ("hide_last_seen", "invisible_mode")
+_REGION_SETTINGS = ("locale", "time_zone", "currency", "date_format")
+_TRANSLATION_POLICIES = ("ask", "always", "never")
+_AUDIENCE_SETTINGS = ("lastSeen", "storyAudience", "liveAudience", "allowTagging",
+                      "allowMentions", "allowDirectMessages")
+_AUDIENCE_CHOICES = ("everyone", "followers", "nobody")
+_THEME_CHOICES = ("system", "light", "dark")
+
+for _spec in (
+    CapabilitySpec("crypto.watchlist.list", "List the coins on the authenticated user's watchlist",
+                   ("my watchlist", "what's on my watchlist", "coins i'm watching",
+                    "show watchlist", "which coins am i tracking"),
+                   RiskLevel.READ_ONLY, ConfirmationPolicy.NEVER, "pulsesoc.crypto.watchlist.list",
+                   PermissionScope.SELF_ACCOUNT_ONLY, (),
+                   "crypto_watchlist_list", "", "/pulse/watchlists",
+                   CardType.CONTENT_RESULT, "crypto_read"),
+    CapabilitySpec("crypto.watchlist.add", "Add one coin to the authenticated user's watchlist",
+                   ("add to my watchlist", "watch this coin", "track this coin",
+                    "start watching", "put on my watchlist"),
+                   RiskLevel.REVERSIBLE_WRITE, ConfirmationPolicy.CONTEXTUAL,
+                   "pulsesoc.crypto.watchlist.add", PermissionScope.SELF_ACCOUNT_ONLY,
+                   (_WATCHLIST_SYMBOL,), "crypto_watchlist_add", "crypto_watchlist_contains",
+                   "/pulse/watchlists", CardType.SETTING_CHANGE_RECEIPT, "crypto_watchlist_write",
+                   target_field="symbol",
+                   # Add and remove take the same single argument, so replaying it
+                   # against the inverse capability is exactly the reversal. No map.
+                   undo_capability_id="crypto.watchlist.remove"),
+    CapabilitySpec("crypto.watchlist.remove", "Remove one coin from the authenticated user's watchlist",
+                   ("remove from my watchlist", "stop watching", "untrack this coin",
+                    "take off my watchlist", "drop from watchlist"),
+                   RiskLevel.REVERSIBLE_WRITE, ConfirmationPolicy.CONTEXTUAL,
+                   "pulsesoc.crypto.watchlist.remove", PermissionScope.SELF_ACCOUNT_ONLY,
+                   (_WATCHLIST_SYMBOL,), "crypto_watchlist_remove", "crypto_watchlist_contains",
+                   "/pulse/watchlists", CardType.SETTING_CHANGE_RECEIPT, "crypto_watchlist_write",
+                   target_field="symbol", undo_capability_id="crypto.watchlist.add"),
+    CapabilitySpec("crypto.portfolio.holdings.list", "List the authenticated user's stored portfolio holdings",
+                   ("my holdings", "what do i hold", "list my portfolio",
+                    "show my coins", "portfolio holdings"),
+                   RiskLevel.READ_ONLY, ConfirmationPolicy.NEVER,
+                   "pulsesoc.crypto.portfolio.holdings.list", PermissionScope.SELF_ACCOUNT_ONLY, (),
+                   "crypto_portfolio_holdings_list", "", "/pulse/portfolio",
+                   CardType.CONTENT_RESULT, "crypto_read"),
+    CapabilitySpec("crypto.portfolio.holding.add", "Record a new holding in the authenticated user's portfolio",
+                   ("add to my portfolio", "record a holding", "i bought",
+                    "log this position", "add this coin to my portfolio"),
+                   RiskLevel.REVERSIBLE_WRITE, ConfirmationPolicy.ALWAYS,
+                   "pulsesoc.crypto.portfolio.holding.add", PermissionScope.SELF_ACCOUNT_ONLY,
+                   (_WATCHLIST_SYMBOL, _HOLDING_AMOUNT, _HOLDING_PRICE),
+                   "crypto_portfolio_holding_add", "crypto_holding_exists",
+                   "/pulse/portfolio", CardType.ACTION_SUCCESS_RECEIPT, "crypto_portfolio_write",
+                   # Nothing here executes a trade — this records a position the user
+                   # already holds — but a wrong number silently distorts every
+                   # valuation the product shows afterwards, so it is confirmed
+                   # unconditionally and the amount is read back before "done".
+                   target_field="symbol", verified_fields=("amount", "average_buy_price"),
+                   undo_capability_id="crypto.portfolio.holding.delete",
+                   undo_argument_map=(("item_id", "@target"),),
+                   idempotent=False),
+    CapabilitySpec("crypto.portfolio.holding.update", "Change the size or cost basis of one stored holding",
+                   ("update my holding", "change my position", "correct my portfolio",
+                    "fix the amount i hold", "edit my holding"),
+                   RiskLevel.REVERSIBLE_WRITE, ConfirmationPolicy.ALWAYS,
+                   "pulsesoc.crypto.portfolio.holding.update", PermissionScope.SELF_ACCOUNT_ONLY,
+                   # Both fields are optional and *neither carries a default*, unlike
+                   # the `add` spec which reuses `_HOLDING_PRICE` with `default=0.0`.
+                   # On a create, "no cost basis given" genuinely means zero. On a
+                   # partial update it means "leave it alone" — and a default would
+                   # turn that into an explicit argument, which the executor would
+                   # then put in the patch, zeroing a cost basis the user never
+                   # mentioned. Worse, `verified_fields` lists the same column, so the
+                   # verifier would read back the 0.0 it had just written and stamp the
+                   # receipt "verified". Absent has to stay absent all the way down.
+                   (_HOLDING_ITEM_ID,
+                    FieldSpec("amount", "float", required=False, minimum=0.0, maximum=1_000_000_000.0),
+                    FieldSpec("average_buy_price", "float", required=False, minimum=0.0,
+                              maximum=1_000_000_000.0)),
+                   "crypto_portfolio_holding_update", "crypto_holding_values",
+                   "/pulse/portfolio", CardType.SETTING_CHANGE_RECEIPT, "crypto_portfolio_write",
+                   target_field="item_id", verified_fields=("amount", "average_buy_price")),
+    CapabilitySpec("crypto.portfolio.holding.delete", "Delete one holding from the authenticated user's portfolio",
+                   ("remove from my portfolio", "delete this holding", "i sold",
+                    "drop this position", "clear this holding"),
+                   # Consequential rather than reversible, and deliberately without an
+                   # undo: the row carries an amount and a cost basis that the delete
+                   # does not preserve anywhere, so a restore would have to invent them.
+                   RiskLevel.CONSEQUENTIAL_WRITE, ConfirmationPolicy.ALWAYS,
+                   "pulsesoc.crypto.portfolio.holding.delete", PermissionScope.SELF_ACCOUNT_ONLY,
+                   (_HOLDING_ITEM_ID,), "crypto_portfolio_holding_delete", "crypto_holding_deleted",
+                   "/pulse/portfolio", CardType.ACTION_SUCCESS_RECEIPT, "crypto_portfolio_write",
+                   target_field="item_id"),
+    CapabilitySpec("notifications.mark_read", "Mark one of the user's notifications as read",
+                   ("mark this notification read", "mark as read", "dismiss this notification",
+                    "clear this alert"),
+                   RiskLevel.REVERSIBLE_WRITE, ConfirmationPolicy.CONTEXTUAL,
+                   "pulsesoc.notifications.mark_read", PermissionScope.SELF_ACCOUNT_ONLY,
+                   (_NOTIFICATION_ID,), "notifications_mark_read", "notification_read_state",
+                   "/pulse/notifications", CardType.SETTING_CHANGE_RECEIPT, "notifications_write",
+                   # PulseSoc has no mark-unread anywhere — not in the web UI, not in the
+                   # native app, not in the service. Naming an undo capability that does
+                   # not exist would fail ``_validate_undo_graph``; naming an approximate
+                   # one would put a button on the receipt that lies. So: none.
+                   target_field="notification_id"),
+    CapabilitySpec("notifications.mark_all_read", "Mark every notification in one category as read",
+                   ("mark all read", "clear my notifications", "mark everything as read",
+                    "clear all alerts", "empty my notifications"),
+                   # Bulk and unreversible, so confirmed every time regardless of how
+                   # confident the request looked. The blast radius is the whole
+                   # category, and "clear my notifications" is one word away from
+                   # "clear my messages notifications".
+                   RiskLevel.REVERSIBLE_WRITE, ConfirmationPolicy.ALWAYS,
+                   "pulsesoc.notifications.mark_all_read", PermissionScope.SELF_ACCOUNT_ONLY,
+                   (_NOTIFICATION_CATEGORY,), "notifications_mark_all_read", "notifications_unread_count",
+                   "/pulse/notifications", CardType.ACTION_SUCCESS_RECEIPT, "notifications_write",
+                   target_field="category"),
+    CapabilitySpec("presence.privacy.update", "Change whether the user's presence and last-seen are visible",
+                   ("hide my last seen", "show my last seen", "go invisible",
+                    "appear offline", "stop appearing offline", "hide when i'm online"),
+                   RiskLevel.REVERSIBLE_WRITE, ConfirmationPolicy.ALWAYS,
+                   "pulsesoc.presence.privacy.update", PermissionScope.SELF_ACCOUNT_ONLY,
+                   (FieldSpec("setting", "enum", required=True, choices=_PRESENCE_SETTINGS),
+                    FieldSpec("enabled", "bool", required=True)),
+                   "presence_privacy_update", "presence_privacy_value",
+                   "/pulse/settings/privacy", CardType.SETTING_CHANGE_RECEIPT, "presence_write",
+                   target_field="setting", verified_fields=("enabled",),
+                   undo_capability_id="presence.privacy.update",
+                   undo_argument_map=(("setting", "setting"), ("enabled", "!enabled"))),
+    CapabilitySpec("localization.region.update", "Set the user's locale, timezone, currency, or date format",
+                   ("change my language", "set my timezone", "change my currency",
+                    "set my region", "change my date format"),
+                   RiskLevel.REVERSIBLE_WRITE, ConfirmationPolicy.CONTEXTUAL,
+                   "pulsesoc.localization.region.update", PermissionScope.SELF_ACCOUNT_ONLY,
+                   (FieldSpec("setting", "enum", required=True, choices=_REGION_SETTINGS),
+                    FieldSpec("value", "str", required=True, max_length=64)),
+                   "localization_region_update", "region_preference_value",
+                   "/pulse/settings/language-region", CardType.SETTING_CHANGE_RECEIPT, "localization_write",
+                   # Undoing needs the prior value, which the arguments do not carry and
+                   # the write does not preserve. The receipt names the new value and the
+                   # deep link opens the screen; that is the honest affordance.
+                   target_field="setting", verified_fields=("value",)),
+    CapabilitySpec("localization.translation.update", "Set the auto-translate policy for one target language",
+                   ("always translate", "stop translating", "ask before translating",
+                    "auto translate posts", "turn off auto translate"),
+                   RiskLevel.REVERSIBLE_WRITE, ConfirmationPolicy.CONTEXTUAL,
+                   "pulsesoc.localization.translation.update", PermissionScope.SELF_ACCOUNT_ONLY,
+                   (FieldSpec("target_language", "identifier", required=True, max_length=16),
+                    FieldSpec("policy", "enum", required=True, choices=_TRANSLATION_POLICIES)),
+                   "localization_translation_update", "translation_preference_value",
+                   "/pulse/settings/language-region", CardType.SETTING_CHANGE_RECEIPT, "localization_write",
+                   target_field="target_language", verified_fields=("policy",)),
+    CapabilitySpec("settings.privacy.audience.update", "Change who can see or reach the user on one privacy switch",
+                   ("who can message me", "who can tag me", "make my story followers only",
+                    "change my privacy", "restrict who can mention me", "who can see my lives"),
+                   # Widening an audience makes content visible to people who could not
+                   # see it a moment ago, and that is observable outside PulseSoc the
+                   # instant it happens. Consequential, therefore always confirmed.
+                   RiskLevel.CONSEQUENTIAL_WRITE, ConfirmationPolicy.ALWAYS,
+                   "pulsesoc.settings.privacy.audience.update", PermissionScope.SELF_ACCOUNT_ONLY,
+                   (FieldSpec("setting", "enum", required=True, choices=_AUDIENCE_SETTINGS),
+                    FieldSpec("audience", "enum", required=True, choices=_AUDIENCE_CHOICES)),
+                   "settings_privacy_audience_update", "settings_preference_value",
+                   "/pulse/settings/privacy", CardType.SETTING_CHANGE_RECEIPT, "settings_write",
+                   target_field="setting", verified_fields=("audience",)),
+    CapabilitySpec("settings.appearance.theme.update", "Switch the user's app theme",
+                   ("dark mode", "light mode", "switch to dark", "change my theme",
+                    "use the system theme"),
+                   RiskLevel.REVERSIBLE_WRITE, ConfirmationPolicy.CONTEXTUAL,
+                   "pulsesoc.settings.appearance.theme.update", PermissionScope.SELF_ACCOUNT_ONLY,
+                   (FieldSpec("theme", "enum", required=True, choices=_THEME_CHOICES),),
+                   "settings_appearance_theme_update", "settings_preference_value",
+                   "/pulse/settings/appearance", CardType.SETTING_CHANGE_RECEIPT, "settings_write",
+                   # ``theme`` is both the target and the value, so the mutable set is
+                   # empty and the verifier reads the one key the capability can write.
+                   target_field="theme"),
+):
+    _register(_spec)
+
+
 # ---------------------------------------------------------------------------
 # Cross-capability validation
 # ---------------------------------------------------------------------------
