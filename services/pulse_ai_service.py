@@ -1074,11 +1074,82 @@ def reset_conversation(user_id: int) -> dict:
         conn.close()
 
 
-def status() -> dict:
+#: Why the agent is not available to one caller, in the order the gates are actually
+#: consulted. Each entry is (probe, reason) and the first probe that fires wins, so
+#: the reported reason is the gate that is really closing — not merely *a* gate that
+#: happens to be shut. Order matters and mirrors
+#: :func:`services.undx_agent_policy.user_enabled` followed by
+#: :func:`services.undx_agent_policy.writes_available`; if that order ever changes,
+#: this list is wrong and the diagnosis it gives is worse than none.
+_AGENT_GATE_REASONS: tuple[tuple[str, str], ...] = (
+    ("emergency_kill_switch", "the emergency kill switch is set"),
+    ("agent_disabled", "the agent is switched off for this deployment"),
+    ("outside_cohort", "this account is not in the agent cohort"),
+)
+
+
+def _agent_availability(user_id: int | None) -> dict:
+    """Whether the agent will act for *this* caller, and if not, which gate closed.
+
+    ``/health/undx`` already reports the deployment-wide flag surface, and it is the
+    right place for that: it is unauthenticated on purpose, so it can be read when
+    sign-in itself is the broken thing. But precisely because it is unauthenticated it
+    cannot answer the question an operator actually has during a failed rollout —
+    *is the agent on for this person* — and reports only ``qa_cohort_configured``, a
+    boolean that is true whenever the list is non-empty regardless of who is in it.
+
+    The gap between those two facts is not academic. A deployment with the master flag
+    on and a populated cohort that happens to omit the tester reads as fully healthy on
+    every surface the server publishes, while every request that tester makes is
+    silently skipped: :func:`undx_agent_runtime.available` returns ``False`` before any
+    work happens, the turn falls through to ordinary conversation, and the person sees
+    a chatbot that declines to do things. Four distinct misconfigurations — master flag
+    off, cohort omission, cohort set under a retired variable name, emergency switch —
+    all produce that one indistinguishable symptom. This function is what tells them
+    apart, and it is authenticated because the answer is about one account.
+
+    Secret-safe by construction: booleans and a fixed reason string. The cohort itself
+    is never echoed, because a list of privileged account ids is exactly the kind of
+    thing an availability probe must not hand out.
+    """
+    try:
+        from services import undx_agent_policy as policy
+
+        flags = policy.flags()
+        available = policy.user_enabled(int(user_id or 0)) if user_id else False
+        probes = {
+            "emergency_kill_switch": flags["emergency_kill_switch"],
+            "agent_disabled": not flags["agent_enabled"],
+            "outside_cohort": not available,
+        }
+        reason = ""
+        if not available:
+            reason = next((text for key, text in _AGENT_GATE_REASONS if probes[key]), "")
+        return {
+            "available": available,
+            # Reported separately from ``available`` because they fail at different
+            # points and mean different things to whoever is reading: a caller can be
+            # inside the cohort and still be refused every write, which is a rollout
+            # state somebody chose, not a defect.
+            "writes_available": policy.writes_available(),
+            "reads_available": policy.reads_available(),
+            "reason": reason,
+        }
+    except Exception as exc:
+        # A diagnosis that raises is worse than no diagnosis, because it takes the
+        # status endpoint down with it and the status endpoint is what someone reaches
+        # for when other things are already failing.
+        LOGGER.warning("undx_agent_availability_failed error=%s", exc.__class__.__name__)
+        return {"available": False, "writes_available": False,
+                "reads_available": False, "reason": "unavailable"}
+
+
+def status(user_id: int | None = None) -> dict:
     provider_status = pulse_ai_provider_router.provider_status()
     web_status = pulse_ai_web_search.provider_status()
     return {
         "ok": True,
+        "agent": _agent_availability(user_id),
         "assistant": UNDX_DISPLAY_NAME,
         "agent_id": UNDX_AGENT_ID,
         "assistant_id": UNDX_ASSISTANT_ID,

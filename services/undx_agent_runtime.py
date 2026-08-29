@@ -379,6 +379,48 @@ def _read_permitted(user_id: int, capability_id: str) -> bool:
     return not policy.evaluate(int(user_id), spec, {}).denied
 
 
+def _capability_withdrawn(user_id: int, spec: CapabilitySpec) -> AgentError | None:
+    """The capability is switched off in this deployment — say so, and say it first.
+
+    A capability withdrawn by ``UNDX_AGENT_ENABLED_CAPABILITIES`` or
+    ``UNDX_AGENT_DISABLED_CAPABILITIES`` used to reach the person as *"Which post?
+    Tell me its number, or open it and ask again."* — because the supporting read
+    that resolves "my most recent post" runs through :func:`_read_permitted`, an
+    allowlist that omits ``feed.posts.like`` almost always omits ``feed.posts.list``
+    too, and a resolver that declines to read leaves a required field empty. Empty
+    required field means clarification, and clarification is a question about the
+    *sentence*.
+
+    That is the wrong category, and wrong in the direction that costs the most: it
+    tells someone their words were unclear when in fact the words were understood
+    perfectly and the product is turned off. They then supply a post id, which is
+    refused the same way, and the loop renews for as long as they keep trying. A
+    rollout state has to read as a rollout state.
+
+    So the withdrawal is checked before arguments are resolved at all — earlier than
+    the gateway, which already denies this correctly at
+    :func:`services.undx_agent_policy.evaluate` step 3 but is never reached, because
+    resolution answers first. The message is taken from that same decision rather
+    than written again here, so there is one sentence for this condition and it
+    cannot drift.
+
+    Returns ``None`` for every other verdict. This is not a second authorization
+    point: a capability that *is* enabled proceeds exactly as before and is still
+    authorized by the gateway alone. Only the ``capability_disabled`` reason is
+    acted on, so the ordering of every other check stays where it is.
+    """
+    try:
+        decision = policy.evaluate(int(user_id), spec, {})
+    except Exception:  # noqa: BLE001 - a diagnosis must never fail a turn
+        logger.debug("undx_capability_withdrawal_check_failed capability=%s",
+                     spec.capability_id)
+        return None
+    if not decision.denied or decision.reason != "capability_disabled":
+        return None
+    return AgentError(decision.reason, decision.message,
+                      outcome=decision.outcome or AgentOutcome.PERMISSION_DENIED)
+
+
 #: How many alerts reference resolution will compare before declining to. Matches the
 #: maximum ``crypto.alerts.list`` accepts, so this reads the largest window the
 #: capability permits rather than the executor's conversational default of 20.
@@ -3117,6 +3159,9 @@ def _act(cur, spec: CapabilitySpec, *, user_id: int, text: str,
     what makes falling through safe in the first place — but because falling
     through is not the same as answering. See :func:`_fault_response`.
     """
+    withdrawn = _capability_withdrawn(int(user_id), spec)
+    if withdrawn is not None:
+        return _error_response(spec, withdrawn, request_id, int(user_id), started)
     resolution = resolve_arguments(int(user_id), spec, text, arguments)
     if resolution.unresolved is not None:
         # The sentence named a resource the runtime could not pin down to exactly one,

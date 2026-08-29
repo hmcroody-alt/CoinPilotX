@@ -663,7 +663,11 @@ def pulse_ai_status():
     def run():
         from services import pulse_ai_service
 
-        return pulse_ai_service.status()
+        # The caller is passed so the payload can say whether the agent is available
+        # to *this* account. ``/health/undx`` reports the deployment-wide flags and is
+        # deliberately unauthenticated; cohort membership is per-account and so can
+        # only be answered here, behind the session that already identified them.
+        return pulse_ai_service.status(user["user_id"])
 
     return _timed_json("pulse_ai_status", run)
 
