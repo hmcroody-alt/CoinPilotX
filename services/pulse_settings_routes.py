@@ -51,6 +51,7 @@ from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, jsonify, request
 
+from services import pulse_social_graph_service
 from services.schema_guard import run_once_per_process
 
 LOGGER = logging.getLogger(__name__)
@@ -815,6 +816,14 @@ def list_muted():
 
 
 def _mutate_relationship(table: str, owner_column: str, target_column: str, add: bool, label: str):
+    """Generic owner-scoped relationship toggle. Muting only, now.
+
+    Blocking used to come through here too. It no longer does: a block has
+    cross-subsystem consequences (messaging, presence, safety history) that a
+    generic two-column insert cannot express, so it moved to
+    ``pulse_social_graph_service``. Muting has no such consequences — it is one
+    row read by the ranking path — so it stays.
+    """
     user, denied = _require_user()
     if denied:
         return denied
@@ -860,14 +869,51 @@ def _mutate_relationship(table: str, owner_column: str, target_column: str, add:
     return _json({"ok": True, "user_id": target_id, "state": outcome})
 
 
+def _blocked_route(add: bool):
+    """Transport only. The decision and the write live in the shared service.
+
+    This used to go through ``_mutate_relationship`` like muting does, which
+    meant Settings placed a block that wrote one table and told nobody, while
+    the feed and Messenger routes wrote more. ``pulse_social_graph_service`` is
+    now the single authority for what a block *is*; all this function does is
+    turn a request into two integers and a service exception into a status code.
+    """
+    user, denied = _require_user()
+    if denied:
+        return denied
+    target_id = _target_user_id(request.get_json(silent=True) or {})
+    verb = "block" if add else "unblock"
+    try:
+        if add:
+            result = pulse_social_graph_service.block_user(
+                int(user["user_id"]), target_id, surface="settings")
+        else:
+            result = pulse_social_graph_service.unblock_user(
+                int(user["user_id"]), target_id, surface="settings")
+    except pulse_social_graph_service.SocialGraphError as exc:
+        return _error(str(exc), exc.http_status)
+    except Exception as exc:
+        LOGGER.exception(
+            "SETTINGS_BLOCK_WRITE_FAILED verb=%s user_id=%s target=%s error=%s",
+            verb, user.get("user_id"), target_id, exc.__class__.__name__)
+        return _error("Could not update your block list.", 500)
+    # `state` is kept in the shape the web client already reads: added / exists
+    # for a block, removed for an unblock.
+    if add:
+        state = "added" if result.get("changed") else "exists"
+    else:
+        state = "removed"
+    return _json({"ok": True, "user_id": result["target_user_id"], "state": state})
+
+
 @settings_blueprint.post(f"{API_PREFIX}/blocked")
 def add_blocked():
-    return _mutate_relationship("blocked_users", "blocker_user_id", "blocked_user_id", True, "block")
+    return _blocked_route(True)
 
 
 @settings_blueprint.delete(f"{API_PREFIX}/blocked")
 def remove_blocked():
-    return _mutate_relationship("blocked_users", "blocker_user_id", "blocked_user_id", False, "block")
+    return _blocked_route(False)
 
 
 @settings_blueprint.post(f"{API_PREFIX}/muted")

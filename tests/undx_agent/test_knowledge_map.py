@@ -94,6 +94,23 @@ def _known_flags() -> set[str]:
     )
 
 
+def _flag_read_by(dotted_module: str, flag: str) -> bool:
+    """Whether the module a record blames actually reads the flag it names.
+
+    Not every gate is an UNDX gate. The Marketplace capabilities are governed by
+    ``BUSINESS_OS_MARKETPLACE``, which the marketplace service reads and refuses
+    on; that is a real gate, and one the policy module has never heard of. The
+    check stays strict by pinning the flag to the specific module the record
+    already names as its owner, so a record cannot invent a plausible-sounding
+    flag and have it accepted because some unrelated file mentions the string.
+    """
+    path = os.path.join(REPO_ROOT, *dotted_module.split(".")) + ".py"
+    if not os.path.exists(path):
+        return False
+    with open(path, encoding="utf-8") as handle:
+        return flag in handle.read()
+
+
 def _module_defines(dotted: str, operation: str) -> bool | None:
     """Whether ``dotted`` defines ``operation``, by parsing rather than importing.
 
@@ -436,10 +453,16 @@ class KnowledgeMapTests(unittest.TestCase):
         known = _known_flags()
         assert known, "no UNDX_* flags found in undx_agent_policy; the parser needs updating"
         for record in kmap.RECORDS:
-            if record.feature_flag:
-                assert record.feature_flag in known, (
-                    f"{record.capability_id}: feature_flag {record.feature_flag!r} is not read anywhere"
-                )
+            if not record.feature_flag:
+                continue
+            if record.feature_flag in known:
+                continue
+            assert record.domain_service and _flag_read_by(
+                record.domain_service, record.feature_flag
+            ), (
+                f"{record.capability_id}: feature_flag {record.feature_flag!r} is "
+                f"neither an UNDX policy flag nor read by {record.domain_service!r}"
+            )
 
 
     def test_every_live_capability_is_gated(self):
@@ -713,7 +736,11 @@ class KnowledgeMapTests(unittest.TestCase):
         confident invention.
         """
         view = {row["capability_id"]: row for row in kmap.agent_capability_view()}
-        assert view["social.block.set"]["executable"] is False
+        # Was social.block.set, which has been replaced by the registered
+        # profile.block and profile.unblock. Muting is the surviving example of the
+        # same shape: the product plainly offers it, the only implementation is a
+        # request handler, and the planner must be told it exists and cannot be done.
+        assert view["social.mute.set"]["executable"] is False
         assert view["social.unfollow"]["executable"] is True
         assert view["crypto.alerts.create"]["executable"] is True
         for cid, row in view.items():
@@ -748,13 +775,32 @@ class KnowledgeMapTests(unittest.TestCase):
         # A stage-target write may graduate only by becoming a registered, verified,
         # non-toggle capability. Keep the explicit allowlist small so a map edit
         # cannot silently soften another blocked write.
+        #
+        # messages.send is the fourth and it graduated last, on the action surface
+        # expansion. It was held as an AUTHORIZATION DEFECT because comm_v2's
+        # send_message passes join_public=True and would enrol the caller in a public
+        # room as a side effect of sending into it. The defect was not reclassified:
+        # undx_agent_tools.messages_send now pre-checks membership through
+        # get_conversation_read_state and refuses before send_message is entered, so
+        # the UNDX path can no longer reach the joining branch at all.
+        #
+        # profile.block and profile.unblock are the fifth and sixth. They graduated
+        # on the service API completion: what held them was that blocking existed
+        # only as a Flask handler reading flask.request, and a capability may not
+        # call a route. pulse_social_graph_service now owns the operation, writes
+        # both blocked_users and comm_v2_blocks in one transaction, and reads the
+        # result back through a directed block_state — the symmetric is_blocked that
+        # would have reported success for a block that never landed is no longer on
+        # the path. The defect was fixed, not reclassified.
         assert {row["capability_id"] for row in ready_writes} == {
-            "saved.post.set", "social.follow", "social.unfollow",
+            "saved.post.set", "social.follow", "social.unfollow", "messages.send",
+            "profile.block", "profile.unblock",
         }, (
             "unexpected write graduated in a stage target area: "
             f"{ready_writes}"
         )
-        for capability_id in ("saved.post.set", "social.follow", "social.unfollow"):
+        for capability_id in ("saved.post.set", "social.follow", "social.unfollow",
+                              "messages.send", "profile.block", "profile.unblock"):
             graduated = kmap.BY_ID[capability_id]
             assert graduated.registered and graduated.verifier and not graduated.toggle_semantics
 
@@ -854,9 +900,27 @@ class KnowledgeMapTests(unittest.TestCase):
         # independent read-back verifier.
         assert classify(kmap.BY_ID["saved.post.set"]) == kmap.ReadinessClass.READY_TO_WIRE
         assert classify(kmap.BY_ID["social.friend.decline"]) == kmap.ReadinessClass.AUTHORIZATION_DEFECT
-        assert classify(kmap.BY_ID["messages.send"]) == kmap.ReadinessClass.AUTHORIZATION_DEFECT
+        # The send's authorization defect was the join_public=True branch in
+        # comm_v2.send_message, which turns a send into a room join for a caller who
+        # is not a member. That branch is still there and conversations.get is still
+        # pinned on the same family of problem — what changed is that the UNDX
+        # executor no longer reaches it, having gained a membership pre-check that
+        # refuses before send_message is called. The record graduated because the
+        # agent path was fixed, not because the service was declared innocent.
+        assert classify(kmap.BY_ID["messages.send"]) == kmap.ReadinessClass.READY_TO_WIRE
         assert classify(kmap.BY_ID["conversations.get"]) == kmap.ReadinessClass.AUTHORIZATION_DEFECT
-        assert classify(kmap.BY_ID["social.block.set"]) == kmap.ReadinessClass.DOMAIN_SERVICE_REQUIRED
+        # Blocking used to be pinned here as DOMAIN SERVICE REQUIRED. It graduated by
+        # having the service written: pulse_social_graph_service.block_user takes
+        # (requester, target), writes both block tables, and has block_user/
+        # unblock_user as each other's undo. The record itself is gone — one record
+        # for "block or unblock" described two operations — so what is asserted now
+        # is that the replacements are ready and that the id nobody should still be
+        # reading has not quietly come back.
+        assert "social.block.set" not in kmap.BY_ID
+        assert classify(kmap.BY_ID["profile.block"]) == kmap.ReadinessClass.READY_TO_WIRE
+        assert classify(kmap.BY_ID["profile.unblock"]) == kmap.ReadinessClass.READY_TO_WIRE
+        # Muting inherits the shape blocking left behind: still handler-bound.
+        assert classify(kmap.BY_ID["social.mute.set"]) == kmap.ReadinessClass.DOMAIN_SERVICE_REQUIRED
         # Saved listing graduated in the first live-training slice: its Flask-bound
         # query now has an owner-scoped service and a registered read capability.
         assert classify(kmap.BY_ID["saved.items.list"]) == kmap.ReadinessClass.READY_TO_WIRE

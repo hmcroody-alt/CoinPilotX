@@ -10,7 +10,7 @@ import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from . import db, embed_service, media_service, premium_identity_engine, pulse_feed_ranking_engine, pulse_id_service, pulse_moderation_engine, pulsesoc_notification_system, user_context
+from . import db, embed_service, media_service, premium_identity_engine, pulse_feed_ranking_engine, pulse_id_service, pulse_moderation_engine, pulse_mutation_audit, pulsesoc_notification_system, user_context
 from .discovery_visibility import REQUIRED_USER_COLUMNS, discovery_visible_sql
 from .pulse_ai.content_policy import AUTOMATED_ACCOUNT_TYPE, sanitize_automated_text
 from .schema_guard import run_once_per_process
@@ -1659,6 +1659,30 @@ def hide_post(user_id, post_id, reason="Hidden from Home"):
     return {"ok": True, "hidden": True, "post_id": post_id, "message": "Post hidden from Home."}, 200
 
 
+def get_post_hidden(user_id, post_id):
+    """Return whether one post is hidden from this account's Home feed.
+
+    This is the canonical read-back used by UNDX verification for
+    ``feed.posts.hide``.  It deliberately reads ``pulse_post_hides`` directly
+    rather than trusting the return value of :func:`hide_post`, and it is
+    viewer-scoped: hiding is a per-account preference, never a global mutation.
+    """
+    user_id = int(user_id or 0)
+    post_id = int(post_id or 0)
+    if not user_id or not post_id:
+        return False
+    conn = user_context.connect()
+    try:
+        _ensure_home_safety_tables(conn)
+        row = conn.execute(
+            "SELECT 1 FROM pulse_post_hides WHERE user_id=? AND post_id=? LIMIT 1",
+            (user_id, post_id),
+        ).fetchone()
+        return bool(row)
+    finally:
+        conn.close()
+
+
 def get_owned_post_deletion_state(user_id, post_id):
     """Return the owner-scoped deletion state used by routes and UNDX verification."""
     user_id = int(user_id or 0)
@@ -1719,6 +1743,396 @@ def delete_owned_post(user_id, post_id):
         raise
     finally:
         conn.close()
+
+
+def get_owned_reel_deletion_state(user_id, reel_id):
+    """Owner-scoped Reel deletion state, for verification read-back.
+
+    Returns ``None`` for a Reel the caller does not own, matching
+    ``get_owned_post_deletion_state``. A verifier that could read back somebody
+    else's Reel would turn the verification step into the oracle the mutation
+    path was carefully built not to be.
+    """
+    user_id = int(user_id or 0)
+    reel_id = int(reel_id or 0)
+    if not user_id or not reel_id:
+        return None
+    conn = user_context.connect()
+    try:
+        record = _row(conn.execute(
+            "SELECT id, post_id, status FROM pulse_reels WHERE id=? AND user_id=? LIMIT 1",
+            (reel_id, user_id),
+        ).fetchone()) or {}
+        if not record:
+            return None
+        return {
+            "reel_id": reel_id,
+            "post_id": int(record.get("post_id") or 0),
+            "status": record.get("status"),
+            "deleted": str(record.get("status") or "").lower() == "deleted",
+        }
+    finally:
+        conn.close()
+
+
+def get_comment_state(user_id, comment_id):
+    """Comment state for verification read-back, including deleted comments.
+
+    ``get_comment`` hides deleted rows, which makes it useless for verifying a
+    deletion — the verifier would read ``None`` and could not tell "deleted" from
+    "never existed". This reads the raw row and reports the distinction.
+
+    Permissions are reported rather than enforced: ``can_edit`` and
+    ``can_delete`` mirror what :func:`update_comment` and :func:`delete_comment`
+    will actually allow, so the verifier and the mutation agree on who may do
+    what without the verifier re-deriving the rule.
+    """
+    user_id = int(user_id or 0)
+    comment_id = int(comment_id or 0)
+    if not user_id or not comment_id:
+        return None
+    conn = user_context.connect()
+    try:
+        record, owner_id = _comment_authority(conn.cursor(), comment_id)
+        if not record:
+            return {"comment_id": comment_id, "exists": False, "deleted": None}
+        author_id = int(record.get("user_id") or 0)
+        return {
+            "comment_id": comment_id,
+            "exists": True,
+            "post_id": int(record.get("post_id") or 0),
+            "author_user_id": author_id,
+            "deleted": bool(record.get("deleted_at")),
+            "body": record.get("body") or "",
+            "edited_at": record.get("edited_at"),
+            "can_edit": author_id == user_id,
+            "can_delete": author_id == user_id or owner_id == user_id,
+        }
+    finally:
+        conn.close()
+
+
+def get_report_state(user_id, content_type, content_id):
+    """Whether this reporter currently has an open report on this target.
+
+    Scoped to ``reporter_user_id``, not to the target. A read that answered "is
+    this content reported" would tell any caller whether strangers had
+    complained about a post — a moderation fact, and not the reporter's to know.
+
+    ``reason`` comes back because the UNDX verifier declares it verified, and a
+    field named in ``verified_fields`` that nothing actually reads back is
+    exactly the lie that invariant exists to prevent: the receipt would report
+    the reason as filed while the stored text could be anything at all.
+    """
+    user_id = int(user_id or 0)
+    content_id = int(content_id or 0)
+    content_type = str(content_type or "").strip().lower()
+    if not user_id or not content_id or content_type not in REPORT_TARGET_TYPES:
+        return None
+    conn = user_context.connect()
+    try:
+        record = _row(conn.execute(
+            "SELECT id, status, reason, created_at FROM pulse_reports "
+            "WHERE reporter_user_id=? AND target_type=? AND target_id=? AND status='open' "
+            "ORDER BY id DESC LIMIT 1",
+            (user_id, content_type, content_id),
+        ).fetchone()) or {}
+        return {
+            "target_type": content_type,
+            "target_id": content_id,
+            "reported": bool(record),
+            "report_id": int(record.get("id") or 0) or None,
+            "status": record.get("status") or "",
+            "reason": record.get("reason") or "",
+        }
+    finally:
+        conn.close()
+
+
+def delete_owned_reel(requester_user_id, reel_id, *, surface=""):
+    """Soft-delete one Reel owned by the caller, and the post underneath it.
+
+    A Reel is two rows: a ``pulse_reels`` row and the ``pulse_posts`` row it
+    renders from. Deleting only the first leaves the post in the Home feed —
+    the Reel disappears from Reels and reappears on the profile grid, which
+    reads as "delete didn't work" to the person who pressed it. Both rows move
+    in one transaction for that reason.
+
+    Ownership is enforced in the WHERE clause as well as in the pre-read. The
+    pre-read is what produces the error message; the WHERE clause is what makes
+    a race between the two harmless.
+
+    A Reel owned by another account returns ``not_found``, matching
+    ``delete_owned_post``: the mutation path must not confirm that a Reel id
+    exists to somebody who cannot manage it.
+    """
+    requester_id = int(requester_user_id or 0)
+    reel_id = int(reel_id or 0)
+    if not requester_id or not reel_id:
+        return {"ok": False, "error": "invalid_request", "message": "Valid user and Reel are required."}
+
+    conn = user_context.connect()
+    try:
+        cur = conn.cursor()
+        record = _row(cur.execute(
+            "SELECT id, post_id, user_id, status FROM pulse_reels WHERE id=? LIMIT 1",
+            (reel_id,),
+        ).fetchone()) or {}
+        if not record or int(record.get("user_id") or 0) != requester_id:
+            return {"ok": False, "error": "not_found", "message": "Reel not found."}
+
+        post_id = int(record.get("post_id") or 0)
+        before = {"status": record.get("status"), "post_id": post_id}
+
+        if str(record.get("status") or "").lower() == "deleted":
+            # Terminal state. Reported as success with `changed=False` so a
+            # retry — or a second agent acting on a stale view — is a no-op
+            # rather than an error the caller has to special-case.
+            correlation_id = pulse_mutation_audit.record(
+                cur,
+                actor_user_id=requester_id,
+                operation="reels.delete",
+                target_type="reel",
+                target_id=reel_id,
+                before=before,
+                after=before,
+                outcome="already_deleted",
+                actor_surface=surface,
+            )
+            conn.commit()
+            return {
+                "ok": True, "reel_id": reel_id, "post_id": post_id,
+                "deleted": True, "changed": False, "correlation_id": correlation_id,
+            }
+
+        now = _now()
+        cur.execute(
+            "UPDATE pulse_reels SET status='deleted', updated_at=? WHERE id=? AND user_id=?",
+            (now, reel_id, requester_id),
+        )
+        if post_id:
+            cur.execute(
+                "UPDATE pulse_posts SET status='deleted', deleted_at=?, updated_at=? WHERE id=? AND user_id=?",
+                (now, now, post_id, requester_id),
+            )
+        after = {"status": "deleted", "post_id": post_id, "deleted_at": now}
+        correlation_id = pulse_mutation_audit.record(
+            cur,
+            actor_user_id=requester_id,
+            operation="reels.delete",
+            target_type="reel",
+            target_id=reel_id,
+            before=before,
+            after=after,
+            outcome="applied",
+            actor_surface=surface,
+        )
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise
+    finally:
+        conn.close()
+
+    logging.info(
+        "PULSE_REEL_DELETED reel_id=%s post_id=%s user_id=%s surface=%s",
+        reel_id, post_id, requester_id, surface or "unspecified",
+    )
+    return {
+        "ok": True,
+        "reel_id": reel_id,
+        "post_id": post_id,
+        "deleted": True,
+        "changed": True,
+        "correlation_id": correlation_id,
+    }
+
+
+def _comment_authority(cur, comment_id):
+    """Read a comment plus the owner of the post it hangs from.
+
+    Deliberately does not filter on ``deleted_at``: ``get_comment`` does, which
+    makes an already-deleted comment indistinguishable from a nonexistent one,
+    and that distinction is exactly what idempotency needs.
+    """
+    row = _row(cur.execute(
+        "SELECT id, post_id, user_id, body, deleted_at, edited_at FROM pulse_comments WHERE id=? LIMIT 1",
+        (int(comment_id),),
+    ).fetchone()) or {}
+    if not row:
+        return {}, 0
+    post = _row(cur.execute(
+        "SELECT user_id FROM pulse_posts WHERE id=? LIMIT 1",
+        (int(row.get("post_id") or 0),),
+    ).fetchone()) or {}
+    return row, int(post.get("user_id") or 0)
+
+
+def update_comment(requester_user_id, comment_id, body, *, surface=""):
+    """Edit a comment. Author only.
+
+    The asymmetry with :func:`delete_comment` is intentional and pre-existing:
+    a Reel owner may remove a comment from their Reel, but may not rewrite what
+    somebody else said on it. Moderation is deletion, not authorship.
+    """
+    requester_id = int(requester_user_id or 0)
+    comment_id = int(comment_id or 0)
+    if not requester_id or not comment_id:
+        return {"ok": False, "error": "invalid_request", "message": "Valid user and comment are required."}
+
+    text = _clean_text(body, 2200)
+    if not text:
+        return {"ok": False, "error": "empty_body", "message": "Comment cannot be empty."}
+
+    conn = user_context.connect()
+    try:
+        cur = conn.cursor()
+        record, _owner_id = _comment_authority(cur, comment_id)
+        if not record or record.get("deleted_at"):
+            return {"ok": False, "error": "not_found", "message": "Comment not found."}
+        if int(record.get("user_id") or 0) != requester_id:
+            return {"ok": False, "error": "forbidden", "message": "Only the comment author can edit this comment."}
+
+        previous = record.get("body") or ""
+        changed = previous != text
+        correlation_id = ""
+        if changed:
+            now = _now()
+            cur.execute(
+                "UPDATE pulse_comments SET body=?, edited_at=?, updated_at=? WHERE id=? AND user_id=? AND deleted_at IS NULL",
+                (text, now, now, comment_id, requester_id),
+            )
+            # Lengths, not prose: the audit trail records that the comment
+            # changed and by how much, and `pulse_comments` still holds the text.
+            correlation_id = pulse_mutation_audit.record(
+                cur,
+                actor_user_id=requester_id,
+                operation="reels.comment.update",
+                target_type="comment",
+                target_id=comment_id,
+                before={"body_length": len(previous), "edited_at": record.get("edited_at")},
+                after={"body_length": len(text), "edited_at": now},
+                outcome="applied",
+                actor_surface=surface,
+            )
+            conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise
+    finally:
+        conn.close()
+
+    # Re-read after the connection is closed. `get_comment` opens its own
+    # connection, and calling it from inside the transaction above would nest
+    # one connection inside another — harmless on local SQLite, a pool starvation
+    # bug waiting to happen on Postgres.
+    return {
+        "ok": True,
+        "comment_id": comment_id,
+        "post_id": int(record.get("post_id") or 0),
+        "changed": changed,
+        "body": text,
+        "comment": get_comment(comment_id),
+        "correlation_id": correlation_id,
+    }
+
+
+def delete_comment(requester_user_id, comment_id, *, surface=""):
+    """Soft-delete a comment. The author, or the owner of the post it is on.
+
+    The second case is the Reel owner moderating their own comment section, and
+    it is recorded as ``moderated_by_owner`` so the trail distinguishes "someone
+    withdrew their own remark" from "a creator removed somebody else's" — two
+    acts a moderator reviewing the history has to be able to tell apart.
+
+    Note for the caller: ``list_comments`` advertises ``can_delete`` as
+    author-only, which is narrower than what this permits. The UI therefore
+    hides a control the server would honour. That mismatch is pre-existing and
+    is not silently resolved here — widening the flag is a product decision.
+    """
+    requester_id = int(requester_user_id or 0)
+    comment_id = int(comment_id or 0)
+    if not requester_id or not comment_id:
+        return {"ok": False, "error": "invalid_request", "message": "Valid user and comment are required."}
+
+    conn = user_context.connect()
+    try:
+        cur = conn.cursor()
+        record, owner_id = _comment_authority(cur, comment_id)
+        if not record:
+            return {"ok": False, "error": "not_found", "message": "Comment not found."}
+
+        author_id = int(record.get("user_id") or 0)
+        if author_id != requester_id and owner_id != requester_id:
+            return {"ok": False, "error": "forbidden", "message": "Only the comment author or Reel owner can delete this comment."}
+
+        post_id = int(record.get("post_id") or 0)
+        moderated_by_owner = bool(owner_id == requester_id and author_id != requester_id)
+
+        if record.get("deleted_at"):
+            correlation_id = pulse_mutation_audit.record(
+                cur,
+                actor_user_id=requester_id,
+                operation="reels.comment.delete",
+                target_type="comment",
+                target_id=comment_id,
+                before={"deleted_at": record.get("deleted_at"), "author_user_id": author_id, "post_id": post_id},
+                after={"deleted_at": record.get("deleted_at")},
+                outcome="already_deleted",
+                actor_surface=surface,
+            )
+            conn.commit()
+            return {
+                "ok": True,
+                "comment_id": comment_id,
+                "post_id": post_id,
+                "deleted": True,
+                "changed": False,
+                "moderated_by_owner": moderated_by_owner,
+                "correlation_id": correlation_id,
+            }
+
+        now = _now()
+        cur.execute(
+            "UPDATE pulse_comments SET deleted_at=?, updated_at=? WHERE id=? AND deleted_at IS NULL",
+            (now, now, comment_id),
+        )
+        correlation_id = pulse_mutation_audit.record(
+            cur,
+            actor_user_id=requester_id,
+            operation="reels.comment.delete",
+            target_type="comment",
+            target_id=comment_id,
+            before={"deleted_at": None, "author_user_id": author_id, "post_id": post_id},
+            after={"deleted_at": now, "moderated_by_owner": moderated_by_owner},
+            outcome="applied",
+            actor_surface=surface,
+        )
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise
+    finally:
+        conn.close()
+
+    return {
+        "ok": True,
+        "comment_id": comment_id,
+        "post_id": post_id,
+        "deleted": True,
+        "changed": True,
+        "moderated_by_owner": moderated_by_owner,
+        "correlation_id": correlation_id,
+    }
 
 
 def mute_user(user_id, muted_user_id, reason="Muted from Home", muted_until=""):
@@ -2317,19 +2731,168 @@ def follow(follower_user_id, followed_user_id=None, followed_public_player_id=""
     return {"ok": True, "message": "Creator followed."}, 200
 
 
-def report(user_id, target_type, target_id, reason):
-    target_type = target_type if target_type in {"post", "comment", "media", "user"} else "post"
+REPORT_TARGET_TYPES = {"post", "comment", "media", "user"}
+
+# Where each reportable type lives, for the existence check. `media` has no
+# single table it can be resolved against, so it is not checked — a media
+# report carries whatever id the client had, exactly as before.
+_REPORT_TARGET_TABLES = {
+    "post": ("pulse_posts", "id"),
+    "comment": ("pulse_comments", "id"),
+    "user": ("users", "user_id"),
+}
+
+
+def report_content(requester_user_id, content_type, content_id, reason, *, metadata=None, surface=""):
+    """File one moderation report. Idempotent per (reporter, target) while open.
+
+    Three things this fixes about the previous inline behaviour:
+
+    *Silent retype.* An unrecognised ``target_type`` used to be coerced to
+    ``"post"``, so a mistyped report against user 91 was filed as a report
+    against *post* 91 — a different, innocent piece of content. Unrecognised
+    types are now refused.
+
+    *Dangling targets.* Nothing checked that the reported thing existed, so a
+    stale client could fill the queue with references a moderator cannot open.
+    Existence is now verified for the types that have a table to verify against.
+    The check does leak "this id exists", which is information the reporter must
+    already have had in order to name the id at all.
+
+    *Duplicates.* There is no uniqueness constraint on ``pulse_reports`` and no
+    pre-check, so pressing Report twice — or an agent retrying a timed-out
+    call — filed two open cases about one grievance and inflated the queue. A
+    second report while the first is still open updates the existing row's
+    reason and returns ``changed=False``. Once a moderator closes a case, a new
+    report reopens the conversation with a new row, which is correct: that is a
+    fresh complaint about something that was already judged.
+    """
+    requester_id = int(requester_user_id or 0)
+    content_id = int(content_id or 0)
+    content_type = str(content_type or "").strip().lower()
+
+    if not requester_id:
+        return {"ok": False, "error": "unauthenticated", "message": "Login required."}
+    if content_type not in REPORT_TARGET_TYPES:
+        return {"ok": False, "error": "invalid_target_type", "message": "Choose a reportable content type."}
+    if not content_id:
+        return {"ok": False, "error": "invalid_request", "message": "A valid target is required."}
+    if content_type == "user" and content_id == requester_id:
+        return {"ok": False, "error": "self_target", "message": "You cannot report yourself."}
+
+    text = _clean_text(reason, 500) or "reported"
+
     conn = user_context.connect()
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO pulse_reports (reporter_user_id, target_type, target_id, reason, status, created_at) VALUES (?, ?, ?, ?, 'open', ?)",
-        (int(user_id), target_type, int(target_id), _clean_text(reason, 500), _now()),
+    try:
+        cur = conn.cursor()
+        table = _REPORT_TARGET_TABLES.get(content_type)
+        if table:
+            exists = cur.execute(
+                f"SELECT {table[1]} FROM {table[0]} WHERE {table[1]}=? LIMIT 1", (content_id,)
+            ).fetchone()
+            if not exists:
+                return {"ok": False, "error": "not_found", "message": "That content is no longer available."}
+
+        open_row = _row(cur.execute(
+            "SELECT id, reason FROM pulse_reports "
+            "WHERE reporter_user_id=? AND target_type=? AND target_id=? AND status='open' "
+            "ORDER BY id DESC LIMIT 1",
+            (requester_id, content_type, content_id),
+        ).fetchone()) or {}
+
+        now = _now()
+        if open_row:
+            report_id = int(open_row.get("id") or 0)
+            cur.execute(
+                "UPDATE pulse_reports SET reason=?, updated_at=? WHERE id=?",
+                (text, now, report_id),
+            )
+            correlation_id = pulse_mutation_audit.record(
+                cur,
+                actor_user_id=requester_id,
+                operation="feed.report",
+                target_type=content_type,
+                target_id=content_id,
+                before={"report_id": report_id, "status": "open"},
+                after={"report_id": report_id, "status": "open"},
+                outcome="already_reported",
+                actor_surface=surface,
+            )
+            conn.commit()
+            return {
+                "ok": True,
+                "report_id": report_id,
+                "target_type": content_type,
+                "target_id": content_id,
+                "status": "open",
+                "changed": False,
+                "correlation_id": correlation_id,
+                "message": "Report already sent to moderation.",
+            }
+
+        cur.execute(
+            "INSERT INTO pulse_reports (reporter_user_id, target_type, target_id, reason, status, created_at) "
+            "VALUES (?, ?, ?, ?, 'open', ?)",
+            (requester_id, content_type, content_id, text, now),
+        )
+        report_id = int(getattr(cur, "lastrowid", 0) or 0)
+        if content_type == "post":
+            # Only nudges an `approved` post into review. A post already held or
+            # already rejected keeps the stronger state — a report must never be
+            # able to soften a moderator's decision.
+            cur.execute(
+                "UPDATE pulse_posts SET moderation_status='needs_review' "
+                "WHERE id=? AND moderation_status='approved'",
+                (content_id,),
+            )
+        # The reason text is recorded because a moderator has to read it to act,
+        # and it already lives in `pulse_reports` regardless. No other free text
+        # from the report enters the trail.
+        correlation_id = pulse_mutation_audit.record(
+            cur,
+            actor_user_id=requester_id,
+            operation="feed.report",
+            target_type=content_type,
+            target_id=content_id,
+            before={"open_report": False},
+            after={"open_report": True, "report_id": report_id, "reason": text, "metadata": metadata or {}},
+            outcome="applied",
+            actor_surface=surface,
+        )
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise
+    finally:
+        conn.close()
+
+    logging.info(
+        "PULSE_REPORT_FILED report_id=%s target=%s:%s reporter=%s surface=%s",
+        report_id, content_type, content_id, requester_id, surface or "unspecified",
     )
-    if target_type == "post":
-        cur.execute("UPDATE pulse_posts SET moderation_status='needs_review' WHERE id=? AND moderation_status='approved'", (int(target_id),))
-    conn.commit()
-    conn.close()
-    return {"ok": True, "message": "Report sent to moderation."}
+    return {
+        "ok": True,
+        "report_id": report_id,
+        "target_type": content_type,
+        "target_id": content_id,
+        "status": "open",
+        "changed": True,
+        "correlation_id": correlation_id,
+        "message": "Report sent to moderation.",
+    }
+
+
+def report(user_id, target_type, target_id, reason):
+    """Backwards-compatible shim over :func:`report_content`.
+
+    Kept because the name is referenced from older call sites and tests. New
+    callers should use ``report_content``, which reports *why* it refused rather
+    than folding every refusal into a bare ``ok: False``.
+    """
+    return report_content(user_id, target_type, target_id, reason, surface="legacy")
 
 
 def record_view(post_id, user_id=None, visitor_id="", dwell_ms=None):

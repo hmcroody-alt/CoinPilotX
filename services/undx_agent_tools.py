@@ -1691,10 +1691,697 @@ def settings_appearance_theme_update(user_id: int, arguments: dict[str, Any]) ->
 
 
 # ---------------------------------------------------------------------------
+# Feed — viewer-scoped hide
+# ---------------------------------------------------------------------------
+
+
+def feed_post_hide(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    """Hide one other account's post from this account's Home feed.
+
+    Viewer-scoped by construction: ``hide_post`` writes ``pulse_post_hides`` keyed
+    on (viewer, post) and refuses the caller's own post with a 400. Nothing about
+    the post itself changes, and no other account's feed is touched — which is why
+    this is a reversible-class preference and not a moderation action.
+    """
+    started = time.perf_counter()
+    from services.pulse_feed_engine import hide_post
+
+    post_id = int(arguments.get("post_id") or 0)
+    payload, status = hide_post(int(user_id), post_id)
+    if int(status) != 200 or not payload.get("ok"):
+        code = {400: "write_rejected", 404: "not_found"}.get(int(status), "write_rejected")
+        return _fail(
+            "pulsesoc.feed.posts.hide", "feed.posts.hide", code,
+            clean(payload.get("message") or "UNDX could not hide that post.", 200),
+            started=started,
+        )
+    return ToolResult(
+        ok=True, tool_name="pulsesoc.feed.posts.hide", capability_id="feed.posts.hide",
+        canonical_resource_id=f"post:{post_id}",
+        data={"post_id": post_id, "hidden": True},
+        latency_ms=_timed(started),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Messaging — backed by pulse_communications_v2.service
+# ---------------------------------------------------------------------------
+
+
+def _comm_v2():
+    from pulse_communications_v2 import service as comm_service
+
+    return comm_service
+
+
+def _comm_failure(payload: dict[str, Any], tool: str, capability: str, *,
+                  fallback: str, started: float) -> ToolResult:
+    """Translate a comm_v2 error envelope without leaking who exists.
+
+    ``_conversation_access`` already collapses "no such conversation" and "not
+    yours" into the same 404 upstream; this keeps that property by carrying the
+    service's own code and message rather than inventing a more specific one.
+    """
+    status = int(payload.get("http_status") or 0)
+    code = clean(payload.get("status") or "", 60)
+    if payload.get("status") == "disabled":
+        code = "feature_disabled"
+    elif not code or code == "error":
+        code = {404: "not_found", 403: "forbidden"}.get(status, "write_rejected")
+    return _fail(tool, capability, code,
+                 clean(payload.get("message") or fallback, 200), started=started)
+
+
+def messages_mark_read(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    conversation_id = int(arguments.get("conversation_id") or 0)
+    outcome = _comm_v2().mark_read(int(user_id), conversation_id)
+    if not outcome.get("ok"):
+        return _comm_failure(outcome, "pulsesoc.messages.mark_read", "messages.mark_read",
+                             fallback="UNDX could not mark that conversation as read.",
+                             started=started)
+    return ToolResult(
+        ok=True, tool_name="pulsesoc.messages.mark_read", capability_id="messages.mark_read",
+        canonical_resource_id=f"conversation:{conversation_id}",
+        data={
+            "conversation_id": conversation_id,
+            "unread_count": 0,
+            "last_read_message_id": int(outcome.get("last_read_message_id") or 0),
+        },
+        latency_ms=_timed(started),
+    )
+
+
+def messages_send(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    """Send one message into a conversation the caller is already a member of.
+
+    Text only, and no attachment arguments are forwarded even if present: the
+    capability's field list does not declare them, and widening the payload here
+    would let an argument the policy never inspected reach the writer.
+
+    No ``client_message_id`` is supplied. Sending the same words twice is a thing
+    a person legitimately does, so there is no content-derived key that is safe to
+    deduplicate on; the boundary that stops one approval becoming two messages is
+    the single-use confirmation row, which is a SQL property of
+    ``pulse_ai_confirmations`` rather than anything this function can assert.
+
+    Membership is checked with a *read* first, and the first sentence of this
+    docstring is why. ``comm_v2.send_message`` calls ``_conversation_access`` with
+    ``join_public=True``, which for a public room the caller is not in does not
+    refuse — it calls ``_add_participant`` and joins them, then sends. So a send
+    aimed at a public conversation would quietly enrol the person in it: a
+    membership change nobody previewed, nobody confirmed, and nobody can tell
+    happened from a receipt that says only "message sent". The confirmation card
+    shows the words being sent; it does not show "and you will be joined to this
+    room", and an action must not do a second thing its approval never described.
+    ``get_conversation_read_state`` is membership-scoped in SQL, so a foreign,
+    departed, or non-existent conversation all read as ``None`` and all refuse
+    identically — which also keeps this from becoming an existence oracle for
+    conversations the caller cannot see.
+    """
+    from services.messenger_intelligence_service import get_conversation_read_state
+
+    started = time.perf_counter()
+    conversation_id = int(arguments.get("conversation_id") or 0)
+    body = clean(arguments.get("body"), 2000)
+    if not body:
+        return _fail("pulsesoc.messages.send", "messages.send", "empty_message",
+                     "UNDX will not send an empty message.", started=started)
+    if get_conversation_read_state(int(user_id), conversation_id) is None:
+        return _fail("pulsesoc.messages.send", "messages.send", "not_found",
+                     "UNDX could not find that conversation.", started=started)
+    payload: dict[str, Any] = {"body": body, "message_type": "text"}
+    outcome = _comm_v2().send_message(int(user_id), conversation_id, payload)
+    if not outcome.get("ok"):
+        return _comm_failure(outcome, "pulsesoc.messages.send", "messages.send",
+                             fallback="UNDX could not send that message.",
+                             started=started)
+    message_id = int(outcome.get("message_id") or 0)
+    return ToolResult(
+        ok=True, tool_name="pulsesoc.messages.send", capability_id="messages.send",
+        canonical_resource_id=f"message:{message_id}",
+        data={
+            "conversation_id": conversation_id,
+            "message_id": message_id,
+            "body": body,
+            "idempotent": bool(outcome.get("idempotent")),
+        },
+        latency_ms=_timed(started),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Business OS — advertising operations and seller profile
+# ---------------------------------------------------------------------------
+
+
+def _campaign_transition(user_id: int, arguments: dict[str, Any], *, capability: str,
+                         verb: str, started: float) -> ToolResult:
+    """Pause or resume one owned campaign.
+
+    Ownership is checked with a *read* first. ``pause_campaign`` reads
+    ``campaign.get("advertiser_user_id")`` without a ``None`` guard, so a campaign
+    the caller does not own raises ``AttributeError`` and surfaces as a 500 rather
+    than the 404 the module documents. Pre-checking through
+    ``get_operational_view(..., requester_user_id=...)`` — which enforces ownership
+    correctly — turns that into a clean refusal without changing the service.
+
+    This moves no money and buys no delivery: ``operational_status`` authorizes a
+    future delivery worker, and the funding and review states are untouched.
+    """
+    from services.business_os.advertising import operations as ops
+    from services.business_os.advertising.service import AdvertisingError
+
+    tool = f"pulsesoc.{capability}"
+    campaign_id = clean(arguments.get("campaign_id"), 120)
+    if not campaign_id:
+        return _fail(tool, capability, "invalid_request",
+                     "A campaign is required.", started=started)
+    try:
+        ops.get_operational_view(campaign_id, requester_user_id=int(user_id))
+    except AdvertisingError as exc:
+        return _fail(tool, capability, clean(getattr(exc, "code", "") or "not_found", 60),
+                     clean(str(exc) or "UNDX could not find that campaign on your account.", 200),
+                     started=started)
+    except Exception as exc:  # pragma: no cover - defensive
+        return _fail(tool, capability, "read_failed",
+                     f"UNDX could not read that campaign ({exc.__class__.__name__}).",
+                     retryable=True, started=started)
+    try:
+        view = getattr(ops, f"{verb}_campaign")(campaign_id, requester_user_id=int(user_id))
+    except AdvertisingError as exc:
+        return _fail(tool, capability, clean(getattr(exc, "code", "") or "write_rejected", 60),
+                     clean(str(exc) or "PulseSoc did not accept that campaign change.", 200),
+                     started=started)
+    except Exception as exc:  # pragma: no cover - defensive
+        return _fail(tool, capability, "write_rejected",
+                     f"PulseSoc did not accept that campaign change ({exc.__class__.__name__}).",
+                     retryable=True, started=started)
+    return ToolResult(
+        ok=True, tool_name=tool, capability_id=capability,
+        canonical_resource_id=f"campaign:{campaign_id}",
+        data={
+            "campaign_id": campaign_id,
+            "operational_status": clean(view.get("operational_status") or "", 40),
+        },
+        latency_ms=_timed(started),
+    )
+
+
+def business_campaign_pause(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    return _campaign_transition(int(user_id), arguments,
+                                capability="business.campaign.pause", verb="pause",
+                                started=time.perf_counter())
+
+
+def business_campaign_resume(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    return _campaign_transition(int(user_id), arguments,
+                                capability="business.campaign.resume", verb="resume",
+                                started=time.perf_counter())
+
+
+#: Seller-profile fields an agent may write. Every one is free text that the
+#: business itself authors and that appears flat in ``owner_profile``, so each has
+#: an exact read-back. Deliberately absent: ``business_category``, contact details
+#: and their visibility, ``preferred_contact``, ``languages``, ``accessibility``,
+#: ``hours_mode`` and the public location — those change how PulseSoc routes
+#: customers to a business or what it discloses about it, which is a decision for
+#: the owner rather than a description an assistant can redraft.
+BUSINESS_PROFILE_WRITABLE_FIELDS: tuple[str, ...] = (
+    "about", "what_you_sell", "service_area", "shipping_summary",
+    "return_summary", "response_expectations", "response_hours",
+)
+
+
+def business_profile_update(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    """Write one seller-profile text field.
+
+    ``update_profile`` is a partial save that returns 200 even when a field was
+    rejected or held for verification review, so the envelope is inspected rather
+    than the status: a rejected or queued field is a failure here, because an
+    agent that reported success for a change sitting in a review queue would be
+    claiming an outcome the account cannot see.
+
+    A field whose value already matches is skipped by the service and appears in
+    none of the three buckets. That is a success with ``changed`` false — the
+    requested state holds, and verification will confirm it independently.
+    """
+    started = time.perf_counter()
+    from services.business_os.profile import api as profile_api
+
+    field = clean(arguments.get("field"), 40)
+    value = clean(arguments.get("value"), 600)
+    if field not in BUSINESS_PROFILE_WRITABLE_FIELDS:
+        return _fail("pulsesoc.business.profile.update", "business.profile.update",
+                     "field_not_writable",
+                     "UNDX cannot change that part of your business profile.",
+                     started=started)
+    status, body = profile_api.update_profile(int(user_id), {field: value})
+    if int(status) != 200 or not body.get("ok"):
+        return _fail("pulsesoc.business.profile.update", "business.profile.update",
+                     clean(body.get("code") or "write_rejected", 60),
+                     clean(body.get("error") or "PulseSoc did not accept that profile change.", 200),
+                     started=started)
+    rejected = body.get("rejected") or {}
+    if field in rejected:
+        return _fail("pulsesoc.business.profile.update", "business.profile.update",
+                     "field_rejected",
+                     clean(str(rejected.get(field)) or "PulseSoc rejected that value.", 200),
+                     started=started)
+    if field in (body.get("queued_for_review") or []):
+        return _fail("pulsesoc.business.profile.update", "business.profile.update",
+                     "queued_for_review",
+                     "That change was sent for verification review and is not live yet.",
+                     started=started)
+    saved = body.get("saved") or {}
+    return ToolResult(
+        ok=True, tool_name="pulsesoc.business.profile.update",
+        capability_id="business.profile.update",
+        canonical_resource_id=f"user:{int(user_id)}:{field}",
+        data={"field": field, "value": value, "changed": field in saved},
+        latency_ms=_timed(started),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Consumer social graph, profile, reels and moderation
+# ---------------------------------------------------------------------------
+#
+# Every executor below is a thin adapter over a shared service that the HTTP
+# routes also call. None of them opens a connection, writes SQL, or decides who
+# may act on what: if the rule is not in the service, it does not exist, and a
+# rule enforced here would be a second authority by definition.
+
+
+def _service_error_result(exc, tool: str, capability: str, started: float) -> ToolResult:
+    """Translate a service's own refusal into a tool failure, preserving its code.
+
+    The service already decided *why* the write was refused and phrased it for a
+    person. Re-deriving either here would let the two drift, so both are carried
+    through unchanged. Only a 5xx is marked retryable — retrying a 403 just asks
+    the same forbidden question twice.
+    """
+    status = int(getattr(exc, "http_status", 400) or 400)
+    return _fail(
+        tool, capability,
+        clean(getattr(exc, "code", "") or "write_rejected", 80),
+        clean(str(exc), 240) or "PulseSoc did not accept that change.",
+        retryable=status >= 500,
+        started=started,
+    )
+
+
+def _social_graph():
+    from services import pulse_social_graph_service
+
+    return pulse_social_graph_service
+
+
+def _set_block(user_id: int, arguments: dict[str, Any], *, blocked: bool,
+               capability_id: str, tool_name: str) -> ToolResult:
+    started = time.perf_counter()
+    service = _social_graph()
+    target_user_id = int(arguments.get("target_user_id") or 0)
+    try:
+        if blocked:
+            outcome = service.block_user(int(user_id), target_user_id, surface="undx")
+        else:
+            outcome = service.unblock_user(int(user_id), target_user_id, surface="undx")
+    except service.SocialGraphError as exc:
+        return _service_error_result(exc, tool_name, capability_id, started)
+    except Exception as exc:  # pragma: no cover - defensive
+        return _fail(tool_name, capability_id, "write_rejected",
+                     f"PulseSoc did not accept that change ({exc.__class__.__name__}).",
+                     retryable=True, started=started)
+    return ToolResult(
+        ok=True, tool_name=tool_name, capability_id=capability_id,
+        canonical_resource_id=f"user:{target_user_id}",
+        data={
+            "target_user_id": target_user_id,
+            "blocked": bool(outcome.get("blocked")),
+            "changed": bool(outcome.get("changed")),
+            "correlation_id": outcome.get("correlation_id") or "",
+        },
+        latency_ms=_timed(started),
+    )
+
+
+def profile_block(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    return _set_block(user_id, arguments, blocked=True,
+                      capability_id="profile.block", tool_name="pulsesoc.profile.block")
+
+
+def profile_unblock(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    return _set_block(user_id, arguments, blocked=False,
+                      capability_id="profile.unblock", tool_name="pulsesoc.profile.unblock")
+
+
+def profile_bio_update(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    """Change only the bio.
+
+    ``update_profile_bio`` passes every other field as unset, so a bio edit
+    cannot carry a stale display name back over one the user changed elsewhere.
+    That is the whole reason the service takes partial input.
+    """
+    started = time.perf_counter()
+    from services import pulse_profile_service
+
+    bio = clean(arguments.get("bio"), pulse_profile_service.BIO_MAX)
+    try:
+        outcome = pulse_profile_service.update_profile_bio(int(user_id), bio, surface="undx")
+    except pulse_profile_service.ProfileError as exc:
+        return _service_error_result(exc, "pulsesoc.profile.bio.update", "profile.bio.update", started)
+    except Exception as exc:  # pragma: no cover - defensive
+        return _fail("pulsesoc.profile.bio.update", "profile.bio.update", "write_rejected",
+                     f"PulseSoc did not accept that change ({exc.__class__.__name__}).",
+                     retryable=True, started=started)
+    return ToolResult(
+        ok=True, tool_name="pulsesoc.profile.bio.update", capability_id="profile.bio.update",
+        canonical_resource_id=f"user:{int(user_id)}:bio",
+        data={
+            "bio": outcome.get("bio") or "",
+            "changed": bool(outcome.get("changed")),
+            "fields_changed": list(outcome.get("fields_changed") or ()),
+        },
+        latency_ms=_timed(started),
+    )
+
+
+def reels_delete(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    from services import pulse_feed_engine
+
+    reel_id = int(arguments.get("reel_id") or 0)
+    outcome = pulse_feed_engine.delete_owned_reel(int(user_id), reel_id, surface="undx")
+    if not outcome.get("ok"):
+        return _fail(
+            "pulsesoc.reels.delete", "reels.delete",
+            clean(outcome.get("error") or "write_rejected", 80),
+            clean(outcome.get("message") or "", 240)
+            or "UNDX could not delete a matching Reel owned by your account.",
+            started=started,
+        )
+    return ToolResult(
+        ok=True, tool_name="pulsesoc.reels.delete", capability_id="reels.delete",
+        canonical_resource_id=f"reel:{reel_id}",
+        data={
+            "reel_id": reel_id,
+            "post_id": int(outcome.get("post_id") or 0),
+            "deleted": True,
+            "changed": bool(outcome.get("changed")),
+            "correlation_id": outcome.get("correlation_id") or "",
+        },
+        latency_ms=_timed(started),
+    )
+
+
+def reels_comment_create(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    """Comment on a Reel.
+
+    The Reel is resolved to its post through the viewer-scoped reel read, not by
+    joining the tables here: that read is what enforces whether this account may
+    see the Reel at all, and a Reel the user cannot see is one they cannot
+    comment on. ``add_comment`` then applies moderation to the body.
+    """
+    started = time.perf_counter()
+    from services import content_graph_intelligence_service as graph
+    from services import pulse_feed_engine
+
+    reel_id = int(arguments.get("reel_id") or 0)
+    body = clean(arguments.get("body"), 2200)
+    record = graph.get_reel(int(user_id), reel_id)
+    if not record:
+        return _fail("pulsesoc.reels.comment.create", "reels.comment.create", "not_found",
+                     "UNDX could not find that Reel.", started=started)
+    post_id = int(record.get("post_id") or 0)
+    outcome, status = pulse_feed_engine.add_comment(int(user_id), post_id, body)
+    if not outcome.get("ok"):
+        return _fail(
+            "pulsesoc.reels.comment.create", "reels.comment.create",
+            "moderation_rejected" if int(status or 0) == 400 else "write_rejected",
+            clean(outcome.get("message") or "", 240) or "PulseSoc did not accept that comment.",
+            started=started,
+        )
+    comment_id = int(outcome.get("comment_id") or 0)
+    return ToolResult(
+        ok=True, tool_name="pulsesoc.reels.comment.create", capability_id="reels.comment.create",
+        canonical_resource_id=f"comment:{comment_id}",
+        data={"comment_id": comment_id, "reel_id": reel_id, "post_id": post_id, "body": body},
+        latency_ms=_timed(started),
+    )
+
+
+def reels_comment_update(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    from services import pulse_feed_engine
+
+    comment_id = int(arguments.get("comment_id") or 0)
+    body = clean(arguments.get("body"), 2200)
+    outcome = pulse_feed_engine.update_comment(int(user_id), comment_id, body, surface="undx")
+    if not outcome.get("ok"):
+        return _fail(
+            "pulsesoc.reels.comment.update", "reels.comment.update",
+            clean(outcome.get("error") or "write_rejected", 80),
+            clean(outcome.get("message") or "", 240) or "PulseSoc did not accept that edit.",
+            started=started,
+        )
+    return ToolResult(
+        ok=True, tool_name="pulsesoc.reels.comment.update", capability_id="reels.comment.update",
+        canonical_resource_id=f"comment:{comment_id}",
+        data={
+            "comment_id": comment_id,
+            "post_id": int(outcome.get("post_id") or 0),
+            "body": outcome.get("body") or "",
+            "changed": bool(outcome.get("changed")),
+        },
+        latency_ms=_timed(started),
+    )
+
+
+def reels_comment_delete(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    from services import pulse_feed_engine
+
+    comment_id = int(arguments.get("comment_id") or 0)
+    outcome = pulse_feed_engine.delete_comment(int(user_id), comment_id, surface="undx")
+    if not outcome.get("ok"):
+        return _fail(
+            "pulsesoc.reels.comment.delete", "reels.comment.delete",
+            clean(outcome.get("error") or "write_rejected", 80),
+            clean(outcome.get("message") or "", 240) or "PulseSoc did not accept that deletion.",
+            started=started,
+        )
+    return ToolResult(
+        ok=True, tool_name="pulsesoc.reels.comment.delete", capability_id="reels.comment.delete",
+        canonical_resource_id=f"comment:{comment_id}",
+        data={
+            "comment_id": comment_id,
+            "post_id": int(outcome.get("post_id") or 0),
+            "deleted": True,
+            "changed": bool(outcome.get("changed")),
+            # Surfaced so the receipt can say "removed from your Reel" rather
+            # than "deleted your comment" when those are different acts.
+            "moderated_by_owner": bool(outcome.get("moderated_by_owner")),
+        },
+        latency_ms=_timed(started),
+    )
+
+
+def feed_report(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    from services import pulse_feed_engine
+
+    content_type = clean(arguments.get("content_type"), 24).lower()
+    content_id = int(arguments.get("content_id") or 0)
+    reason = clean(arguments.get("reason"), 500)
+    outcome = pulse_feed_engine.report_content(
+        int(user_id), content_type, content_id, reason, surface="undx")
+    if not outcome.get("ok"):
+        return _fail(
+            "pulsesoc.feed.report", "feed.report",
+            clean(outcome.get("error") or "write_rejected", 80),
+            clean(outcome.get("message") or "", 240) or "PulseSoc did not accept that report.",
+            started=started,
+        )
+    return ToolResult(
+        ok=True, tool_name="pulsesoc.feed.report", capability_id="feed.report",
+        canonical_resource_id=f"{content_type}:{content_id}",
+        data={
+            "content_type": content_type,
+            "content_id": content_id,
+            "report_id": outcome.get("report_id"),
+            "reported": True,
+            "changed": bool(outcome.get("changed")),
+        },
+        latency_ms=_timed(started),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Marketplace listings — backed by services.business_os.marketplace.service
+# ---------------------------------------------------------------------------
+#
+# The marketplace service is reused exactly as it stands. It already enforces
+# the feature flag, the approved-seller requirement, the account hold, product
+# ownership and the legal status transitions, and it already writes its own
+# ``business_os_mkt_audit`` trail. Nothing in this section re-decides any of
+# that; these functions translate arguments in and results out.
+#
+# ``marketplace.listing.delete`` maps to the service's ``archive`` transition.
+# There is no hard delete in the product and this is not the place to invent
+# one: orders reference products, and a row that vanishes from under a buyer's
+# receipt is a support incident, not a feature.
+
+
+def _marketplace():
+    from services.business_os.marketplace import service as marketplace_service
+
+    return marketplace_service
+
+
+def marketplace_listing_create(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    service = _marketplace()
+    # 160, not a tighter round number: it is what `marketplace.service.TITLE_MAX`
+    # accepts and what the capability spec declares. Clipping shorter here would
+    # accept a 150-character title, silently store 140, and then fail the
+    # verifier that compares the two — a truncation the seller never asked for,
+    # reported back to them as their own listing being wrong.
+    title = clean(arguments.get("title"), 160)
+    price_cents = int(arguments.get("price_cents") or 0)
+    try:
+        product = service.create_product(
+            int(user_id),
+            title=title,
+            price_cents=price_cents,
+            description=clean(arguments.get("description"), 2000) or None,
+            fulfillment_type=clean(arguments.get("fulfillment_type"), 24) or "physical",
+        )
+    except service.MarketplaceError as exc:
+        return _service_error_result(exc, "pulsesoc.marketplace.listing.create",
+                                     "marketplace.listing.create", started)
+    except Exception as exc:  # pragma: no cover - defensive
+        return _fail("pulsesoc.marketplace.listing.create", "marketplace.listing.create",
+                     "write_rejected",
+                     f"PulseSoc did not accept that listing ({exc.__class__.__name__}).",
+                     retryable=True, started=started)
+    listing_id = clean(product.get("product_id"), 120)
+    return ToolResult(
+        ok=True, tool_name="pulsesoc.marketplace.listing.create",
+        capability_id="marketplace.listing.create",
+        canonical_resource_id=f"listing:{listing_id}",
+        data={
+            "listing_id": listing_id,
+            "title": product.get("title") or title,
+            "price_cents": int(product.get("price_cents") or price_cents),
+            # Created listings start as drafts. Saying so on the receipt is the
+            # difference between the seller knowing they still have to publish
+            # and wondering why nobody can buy it.
+            "status": product.get("status") or "draft",
+        },
+        latency_ms=_timed(started),
+    )
+
+
+def marketplace_listing_update(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    """Edit one mutable field on an owned listing.
+
+    One field per call, deliberately. The service accepts a dict, but a
+    capability that took several would need the confirmation card to describe
+    several simultaneous changes, and a person approving "update my listing"
+    should be told exactly which value moves.
+    """
+    started = time.perf_counter()
+    service = _marketplace()
+    listing_id = clean(arguments.get("listing_id"), 120)
+    field = clean(arguments.get("field"), 40)
+    raw = arguments.get("value")
+    value: Any = clean(raw, 2000)
+    if field in {"price_cents", "inventory_qty"}:
+        try:
+            value = int(float(raw))
+        except (TypeError, ValueError):
+            return _fail("pulsesoc.marketplace.listing.update", "marketplace.listing.update",
+                         "invalid_value", f"{field} must be a whole number.", started=started)
+    try:
+        product = service.update_product(int(user_id), listing_id, fields={field: value})
+    except service.MarketplaceError as exc:
+        return _service_error_result(exc, "pulsesoc.marketplace.listing.update",
+                                     "marketplace.listing.update", started)
+    except Exception as exc:  # pragma: no cover - defensive
+        return _fail("pulsesoc.marketplace.listing.update", "marketplace.listing.update",
+                     "write_rejected",
+                     f"PulseSoc did not accept that change ({exc.__class__.__name__}).",
+                     retryable=True, started=started)
+    return ToolResult(
+        ok=True, tool_name="pulsesoc.marketplace.listing.update",
+        capability_id="marketplace.listing.update",
+        canonical_resource_id=f"listing:{listing_id}",
+        data={"listing_id": listing_id, "field": field, "value": product.get(field),
+              "status": product.get("status") or ""},
+        latency_ms=_timed(started),
+    )
+
+
+def _marketplace_transition(user_id: int, arguments: dict[str, Any], *, action: str,
+                            capability_id: str, tool_name: str) -> ToolResult:
+    started = time.perf_counter()
+    service = _marketplace()
+    listing_id = clean(arguments.get("listing_id"), 120)
+    try:
+        product = service.transition_product(int(user_id), listing_id, action)
+    except service.MarketplaceError as exc:
+        return _service_error_result(exc, tool_name, capability_id, started)
+    except Exception as exc:  # pragma: no cover - defensive
+        return _fail(tool_name, capability_id, "write_rejected",
+                     f"PulseSoc did not accept that change ({exc.__class__.__name__}).",
+                     retryable=True, started=started)
+    return ToolResult(
+        ok=True, tool_name=tool_name, capability_id=capability_id,
+        canonical_resource_id=f"listing:{listing_id}",
+        data={"listing_id": listing_id, "status": product.get("status") or "",
+              "action": action},
+        latency_ms=_timed(started),
+    )
+
+
+def marketplace_listing_pause(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    return _marketplace_transition(user_id, arguments, action="pause",
+                                   capability_id="marketplace.listing.pause",
+                                   tool_name="pulsesoc.marketplace.listing.pause")
+
+
+def marketplace_listing_resume(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    return _marketplace_transition(user_id, arguments, action="resume",
+                                   capability_id="marketplace.listing.resume",
+                                   tool_name="pulsesoc.marketplace.listing.resume")
+
+
+def marketplace_listing_delete(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    """Retire a listing by archiving it. See the section note on why not a delete."""
+    return _marketplace_transition(user_id, arguments, action="archive",
+                                   capability_id="marketplace.listing.delete",
+                                   tool_name="pulsesoc.marketplace.listing.delete")
+
+
+# ---------------------------------------------------------------------------
 # Resolution
 # ---------------------------------------------------------------------------
 
 EXECUTORS: dict[str, Callable[[int, dict[str, Any]], ToolResult]] = {
+    "profile_block": profile_block,
+    "profile_unblock": profile_unblock,
+    "profile_bio_update": profile_bio_update,
+    "reels_delete": reels_delete,
+    "reels_comment_create": reels_comment_create,
+    "reels_comment_update": reels_comment_update,
+    "reels_comment_delete": reels_comment_delete,
+    "feed_report": feed_report,
+    "marketplace_listing_create": marketplace_listing_create,
+    "marketplace_listing_update": marketplace_listing_update,
+    "marketplace_listing_pause": marketplace_listing_pause,
+    "marketplace_listing_resume": marketplace_listing_resume,
+    "marketplace_listing_delete": marketplace_listing_delete,
     "crypto_alerts_list": crypto_alerts_list,
     "crypto_alerts_get": crypto_alerts_get,
     "crypto_alerts_pause": crypto_alerts_pause,
@@ -1727,6 +2414,12 @@ EXECUTORS: dict[str, Callable[[int, dict[str, Any]], ToolResult]] = {
     "feed_post_like": feed_post_like,
     "feed_post_unlike": feed_post_unlike,
     "feed_post_delete": feed_post_delete,
+    "feed_post_hide": feed_post_hide,
+    "messages_mark_read": messages_mark_read,
+    "messages_send": messages_send,
+    "business_campaign_pause": business_campaign_pause,
+    "business_campaign_resume": business_campaign_resume,
+    "business_profile_update": business_profile_update,
     "reels_search": reels_search,
     "reels_get": reels_get,
     "reels_performance": reels_performance,
@@ -1815,4 +2508,7 @@ def resolve(name: str) -> Callable[[int, dict[str, Any]], ToolResult]:
     return executor
 
 
-__all__ = ["EXECUTORS", "resolve", "read_push_value", "SETTINGS_WRITABLE_GROUPS"]
+__all__ = [
+    "EXECUTORS", "resolve", "read_push_value", "SETTINGS_WRITABLE_GROUPS",
+    "BUSINESS_PROFILE_WRITABLE_FIELDS",
+]

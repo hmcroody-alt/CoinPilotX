@@ -877,14 +877,41 @@ _mapped(
     risk_class=_WRITE, confirmation_policy=_CONTEXTUAL,
     native_screen="ProfileEdit",
     backend_route="POST /api/pulse/profile/edit",
-    domain_service="", domain_operation="",
+    domain_service="services.pulse_profile_service", domain_operation="update_profile",
     authorization_scope=_SELF, owner_field="user_id", target_field="user_id",
-    implementation_status=_NO_SERVICE,
-    evidence=("services/pulse_settings_routes.py profile edit handler",),
+    implementation_status=_UNVERIFIED,
+    evidence=("services/pulse_profile_service.py:update_profile",
+              "services/pulse_settings_routes.py profile edit handler"),
     known_limitations=(
-        "The update is written inside the request handler; there is no callable "
-        "operation taking (user_id, changes). A capability would have to reach "
-        "the database directly from the runtime, which is not permitted.",
+        "The callable operation now exists — update_profile(user_id, changes) — "
+        "and one field of it is registered as profile.bio.update. Display name, "
+        "links and the visibility setting are reachable through the same function "
+        "and are not registered, so this record describes what the service can do "
+        "rather than what the agent may do.",
+    ),
+)
+_live(
+    "profile.bio.update",
+    product_area="User profiles", resource_type="profile",
+    native_screen="Settings",
+    backend_route="POST /api/pulse/profile/edit",
+    domain_service="services.pulse_profile_service", domain_operation="update_profile_bio",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("user_id", "int"), ("bio", "str"), ("changed", "bool")),
+    feature_flag="UNDX_AGENT_WRITES_ENABLED",
+    evidence=("services/pulse_profile_service.py:update_profile_bio",
+              "services/undx_verification.py:profile_bio_value",
+              "tests/undx_agent/test_service_api_completion.py BioIsSelfOnly"),
+    known_limitations=(
+        "Self only, structurally: update_profile_bio takes no target parameter at "
+        "all, so there is no argument through which a caller could aim it at "
+        "another account.",
+        "Cannot clear a bio. The field is required and rejects whitespace, so "
+        "'delete my bio' is refused at the boundary rather than silently writing "
+        "an empty string. Emptying a bio needs a verb this capability does not "
+        "have.",
+        "Declares no undo: the previous text is in the profile audit trail but no "
+        "read-back the runtime can reach restores it.",
     ),
 )
 
@@ -1023,6 +1050,29 @@ _mapped(
     known_limitations=("Requires a capture pipeline the agent has no access to. Media "
                        "the agent did not see must not be published on its say-so.",),
 )
+_live(
+    "reels.delete",
+    product_area="Reels", resource_type="reel",
+    native_screen="ReelDetail",
+    backend_route="POST /api/pulse/reels/<reel_id>/delete",
+    domain_service="services.pulse_feed_engine", domain_operation="delete_owned_reel",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("reel_id", "int"), ("post_id", "int"), ("deleted", "bool"),
+                   ("changed", "bool")),
+    feature_flag="UNDX_AGENT_WRITES_ENABLED",
+    evidence=("services/pulse_feed_engine.py:delete_owned_reel",
+              "services/undx_verification.py:reel_deleted",
+              "tests/undx_agent/test_service_api_completion.py ReelDeletionIsOwnerOnly"),
+    known_limitations=(
+        "A soft delete: both rows move to status='deleted' rather than being "
+        "removed. Recoverable by an operator, not by the member, and not by this "
+        "capability — there is no restore verb, which is why it declares no undo.",
+        "A Reel owned by someone else and a Reel that does not exist both refuse "
+        "with not_found. That is deliberate — distinguishing them would let a "
+        "caller enumerate reel ids — but it means the receipt cannot tell a member "
+        "which of the two happened.",
+    ),
+)
 
 # ===========================================================================
 # 7. Statuses
@@ -1152,11 +1202,85 @@ _mapped(
     supported_intents=("delete my comment",),
     risk_class=_GRAVE, confirmation_policy=_ALWAYS,
     native_screen="PostDetail",
-    domain_service="", domain_operation="",
+    domain_service="services.pulse_feed_engine", domain_operation="delete_comment",
     authorization_scope=_SELF, owner_field="user_id", target_field="comment_id",
-    implementation_status=_NO_SERVICE,
-    evidence=("services/pulse_feed_engine.py — no comment deletion operation is defined",),
-    known_limitations=("No delete_comment exists in services/. Not reversible once written.",),
+    implementation_status=_UNVERIFIED,
+    evidence=("services/pulse_feed_engine.py:delete_comment",
+              "services/undx_capability_registry.py reels.comment.delete"),
+    known_limitations=(
+        "The service now exists and is keyed on comment_id alone, so it already "
+        "serves feed-post comments. What does not exist is a capability that says "
+        "so: the registered one is named reels.comment.delete, and a member asking "
+        "to delete a comment on a plain post is served by a capability whose name "
+        "describes a different surface. The authority check is identical either "
+        "way; the naming is the gap.",
+        "Not reversible: the row is soft-deleted and no restore verb exists.",
+    ),
+)
+# The three registered comment capabilities. Named for Reels because that is the
+# surface they were commissioned for, but ``update_comment`` and ``delete_comment``
+# are keyed on ``comment_id`` and reach any ``pulse_comments`` row — see the
+# limitation on ``comments.delete`` above.
+_live(
+    "reels.comment.create",
+    product_area="Comments", resource_type="comment",
+    native_screen="ReelDetail",
+    backend_route="POST /api/pulse/reels/<reel_id>/comments",
+    domain_service="services.pulse_feed_engine", domain_operation="add_comment",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("comment_id", "int"), ("reel_id", "int"), ("post_id", "int"),
+                   ("body", "str")),
+    feature_flag="UNDX_AGENT_WRITES_ENABLED",
+    evidence=("services/pulse_feed_engine.py:add_comment",
+              "services/undx_agent_tools.py:reels_comment_create",
+              "tests/undx_agent/test_service_api_completion.py ReelCommentAuthority"),
+    known_limitations=(
+        "Publishes model-authored text under the member's name, attached to "
+        "content they may not own. The confirmation shows the exact body, and the "
+        "capability is not idempotent — a retry writes a second comment.",
+        "Visibility is enforced by reading the Reel first: a private Reel the "
+        "caller cannot see refuses before add_comment is reached.",
+    ),
+)
+_live(
+    "reels.comment.update",
+    product_area="Comments", resource_type="comment",
+    native_screen="ReelDetail",
+    backend_route="POST /api/pulse/comments/<comment_id>/edit",
+    domain_service="services.pulse_feed_engine", domain_operation="update_comment",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("comment_id", "int"), ("body", "str"), ("changed", "bool")),
+    feature_flag="UNDX_AGENT_WRITES_ENABLED",
+    evidence=("services/pulse_feed_engine.py:update_comment",
+              "services/undx_verification.py:reel_comment_body",
+              "tests/undx_agent/test_service_api_completion.py ReelCommentAuthority"),
+    known_limitations=(
+        "Author only. The owner of the post may delete a comment but may not "
+        "rewrite one — moderation is deletion, not authorship — so an owner who "
+        "asks to 'fix' a comment on their Reel is refused, correctly.",
+        "Declares no undo. The previous body is recorded in the audit trail but "
+        "not held anywhere the runtime can read back to restore it.",
+    ),
+)
+_live(
+    "reels.comment.delete",
+    product_area="Comments", resource_type="comment",
+    native_screen="ReelDetail",
+    backend_route="POST /api/pulse/comments/<comment_id>/delete",
+    domain_service="services.pulse_feed_engine", domain_operation="delete_comment",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("comment_id", "int"), ("deleted", "bool"), ("changed", "bool"),
+                   ("moderated_by_owner", "bool")),
+    feature_flag="UNDX_AGENT_WRITES_ENABLED",
+    evidence=("services/pulse_feed_engine.py:delete_comment",
+              "services/undx_verification.py:reel_comment_deleted",
+              "tests/undx_agent/test_service_api_completion.py ReelCommentAuthority"),
+    known_limitations=(
+        "Two different acts share one verb: the author withdrawing their own "
+        "comment, and the post owner moderating somebody else's. The result "
+        "carries moderated_by_owner so the receipt can say which, because "
+        "'deleted your comment' is wrong for half of them.",
+    ),
 )
 
 # ===========================================================================
@@ -1310,24 +1434,60 @@ _live(
     evidence=("services/social_relationship_service.py:list_relationships",
               "tests/undx_agent/test_social_relationship_pack.py"),
 )
-_mapped(
-    "social.block.set",
+# ``social.block.set`` used to sit here, recorded as ``service_missing`` because the
+# only block that existed was a Flask handler reading ``flask.request``. It has been
+# replaced rather than amended: one record describing "block or unblock" was always a
+# poor fit for two operations with different receipts, and the two below are the ones
+# the registry actually declares. ``social.block.read`` survives, because a directed
+# read is a real thing the product does and still has no capability of its own.
+_live(
+    "profile.block",
     product_area="Social relationships", resource_type="block_edge",
-    description="Block or unblock an account.",
-    supported_intents=("block @handle", "unblock @handle"),
-    risk_class=_GRAVE, confirmation_policy=_ALWAYS,
-    native_screen="SafetyHub",
+    native_screen="ProfileDetail",
     backend_route="POST /api/pulse/settings/block",
-    domain_service="services.pulse_settings_routes", domain_operation="",
-    authorization_scope=_OTHER, owner_field="user_id", target_field="target_user_id",
-    result_card_type=CardType.RELATIONSHIP_CHANGE_RECEIPT,
-    implementation_status=_NO_SERVICE,
-    evidence=("services/pulse_settings_routes.py:814 block handler",),
+    domain_service="services.pulse_social_graph_service", domain_operation="block_user",
+    authorization_scope=_OTHER, owner_field="user_id",
+    output_schema=(("target_user_id", "int"), ("blocked", "bool"), ("changed", "bool")),
+    feature_flag="UNDX_AGENT_WRITES_ENABLED",
+    evidence=("services/pulse_social_graph_service.py:block_user",
+              "services/pulse_social_graph_service.py:block_state",
+              "services/undx_verification.py:profile_block_value",
+              "tests/undx_agent/test_service_api_completion.py BlockIsOneCanonicalOperation"),
     known_limitations=(
-        "Request-bound: the handler reads flask.request directly, so there is no "
-        "operation taking (user_id, target_user_id, blocked). Blocking also "
-        "severs follow edges and conversation access, which makes it "
-        "consequential rather than reversible even though an unblock exists.",
+        "Writes two tables — blocked_users, which the profile and settings "
+        "surfaces read, and comm_v2_blocks, which messaging and presence read. "
+        "One block that appears in only one of them is the defect this "
+        "consolidation exists to prevent, so the verifier reads both.",
+        "Does not file a moderation report. Blocking is a personal boundary and "
+        "reporting is an accusation; an agent that quietly did the second when "
+        "asked for the first would be filing a report the member never made.",
+        "Emits the safety notification on a best-effort path: the notifier is "
+        "reached through a lazy import inside a try/except, so a broken notifier "
+        "cannot fail the block. A block that lands without its notification is "
+        "possible and would be visible only in the logs.",
+    ),
+)
+_live(
+    "profile.unblock",
+    product_area="Social relationships", resource_type="block_edge",
+    native_screen="ProfileDetail",
+    backend_route="POST /api/pulse/settings/block",
+    domain_service="services.pulse_social_graph_service", domain_operation="unblock_user",
+    authorization_scope=_OTHER, owner_field="user_id",
+    output_schema=(("target_user_id", "int"), ("blocked", "bool"), ("changed", "bool")),
+    feature_flag="UNDX_AGENT_WRITES_ENABLED",
+    evidence=("services/pulse_social_graph_service.py:unblock_user",
+              "services/pulse_social_graph_service.py:block_state",
+              "services/undx_verification.py:profile_block_value",
+              "tests/undx_agent/test_service_api_completion.py BlockIsOneCanonicalOperation"),
+    known_limitations=(
+        "Terminal rather than strict: unblocking someone who was never blocked "
+        "succeeds with changed=False. A 404 there would be an oracle, telling the "
+        "caller whether a block row exists.",
+        "Asymmetric with the block it reverses: the blocked_users row is deleted "
+        "outright while comm_v2_blocks is flipped to inactive. That is how each "
+        "table models the fact, and it means the messaging side retains a record "
+        "of the block having happened.",
     ),
 )
 _mapped(
@@ -1336,17 +1496,21 @@ _mapped(
     description="Report whether an account is blocked.",
     supported_intents=("have I blocked @handle",),
     native_screen="SafetyHub",
-    domain_service="services.pulse_settings_routes", domain_operation="is_blocked",
+    domain_service="services.pulse_social_graph_service", domain_operation="block_state",
     authorization_scope=_OTHER, owner_field="user_id", target_field="target_user_id",
-    implementation_status=_PARTIAL,
-    evidence=("services/pulse_settings_routes.py:880 is_blocked",),
+    implementation_status=_UNVERIFIED,
+    evidence=("services/pulse_social_graph_service.py:block_state",
+              "services/pulse_settings_routes.py:880 is_blocked"),
     known_limitations=(
-        "is_blocked is symmetric: it returns true when either party blocked the "
-        "other. Used as a verifier for social.block.set it would report success "
-        "for a block that never landed, provided the other person had blocked "
-        "the caller. A directed read is required.",
+        "The directed read now exists — block_state(requester, target) reports the "
+        "caller's own block on that account, across both tables — and it is what "
+        "the block verifier uses. The older is_blocked is symmetric, returning "
+        "true when either party blocked the other; anything still calling it is "
+        "reading a different question's answer.",
+        "No capability is registered for it. The state is reachable only as the "
+        "verifier behind a write, so 'have I blocked them?' asked on its own has "
+        "nothing to answer it.",
     ),
-    read_back_missing=True,
 )
 _mapped(
     "social.mute.set",
@@ -1584,28 +1748,34 @@ _live(
               "tests/undx_agent/test_messenger_read_pack.py"),
     known_limitations=("Draft creation does not send and cannot be promoted to send without a separately certified confirmation capability.",),
 )
-_mapped(
+_live(
     "messages.send",
     product_area="Messages", resource_type="message",
-    description="Send a message to a conversation.",
-    supported_intents=("send them a message", "reply saying I'll be late"),
-    risk_class=_GRAVE, confirmation_policy=_ALWAYS,
-    native_screen="Chat",
-    backend_route="POST /api/pulse/messages/<conversation_id>",
+    backend_route="UNDX governed tool",
     domain_service="pulse_communications_v2.service", domain_operation="send_message",
-    authorization_scope=_ORACLE, owner_field="user_id", target_field="conversation_id",
-    input_schema=(("conversation_id", "int"), ("body", "str")),
-    result_card_type=CardType.MESSAGE_DRAFT_CONFIRMATION,
-    implementation_status=_PARTIAL,
-    evidence=("pulse_communications_v2/service.py:1205 send_message",
-              "pulse_communications_v2/service.py:1226 join_public=True"),
+    authorization_scope=_MEMBER, owner_field="user_id",
+    native_screen="Chat",
+    output_schema=(("conversation_id", "int"), ("message_id", "int"),
+                   ("body", "str"), ("idempotent", "bool")),
+    feature_flag="UNDX_AGENT_WRITES_ENABLED",
+    evidence=("services/undx_agent_tools.py:messages_send",
+              "services/messenger_intelligence_service.py:142 get_conversation_read_state",
+              "pulse_communications_v2/service.py:1228 join_public=True",
+              "services/undx_verification.py:message_was_sent",
+              "tests/undx_agent/test_action_surface_expansion.py"),
     known_limitations=(
-        "send_message passes join_public=True, so sending to a public room the "
-        "caller is not in silently joins them to it — a membership change the "
-        "user never asked for, produced by what looks like a send.",
-        "No get_message(user_id, message_id) exists, so there is no way to read "
-        "back the message that was just sent. A send cannot currently be verified, "
-        "and an unverifiable irreversible write is the worst class of agent action.",
+        "The scope is MEMBERSHIP_SCOPED because the executor makes it so, not "
+        "because the service does. send_message calls _conversation_access with "
+        "join_public=True, which for a public room the caller is not in adds them "
+        "as a participant and then sends — a membership change produced by what "
+        "looks like a send. messages_send therefore pre-checks membership through "
+        "get_conversation_read_state and refuses before the service is entered. "
+        "The hazard is contained at the UNDX boundary and still live for every "
+        "other caller of send_message.",
+        "A send cannot be undone. undo_capability_id is empty and always will be: "
+        "messages.delete has no certified executor, and even a working unsend "
+        "would not undo the fact of having been read. The single-use confirmation "
+        "row is the whole of the protection.",
     ),
 )
 _mapped(
@@ -1937,12 +2107,38 @@ _mapped(
     domain_service="services.pulse_feed_engine", domain_operation="report",
     authorization_scope=_SELF, owner_field="user_id", target_field="target_id",
     implementation_status=_PARTIAL,
-    evidence=("services/pulse_feed_engine.py:1845 report",),
+    evidence=("services/pulse_feed_engine.py:report",),
     known_limitations=(
-        "Append-only, returns no report id, and cannot be withdrawn. With no id "
-        "there is nothing to read back, so the write is unverifiable; and with no "
-        "withdrawal there is no undo. A false report filed against a real person "
-        "on a misread instruction cannot be taken back.",
+        "The older of two report paths. Append-only, returns no report id, and "
+        "cannot be withdrawn, so a write through it is unverifiable. Superseded "
+        "for agent use by feed.report, which is built on report_content; this "
+        "record stays because the HTTP surface still calls report().",
+    ),
+)
+_live(
+    "feed.report",
+    product_area="Reporting", resource_type="report",
+    native_screen="UndxActionCenter",
+    backend_route="POST /api/pulse/report",
+    domain_service="services.pulse_feed_engine", domain_operation="report_content",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("report_id", "int"), ("content_type", "str"), ("content_id", "int"),
+                   ("status", "str"), ("changed", "bool")),
+    feature_flag="UNDX_AGENT_WRITES_ENABLED",
+    evidence=("services/pulse_feed_engine.py:report_content",
+              "services/pulse_feed_engine.py:get_report_state",
+              "services/undx_verification.py:content_reported",
+              "tests/undx_agent/test_service_api_completion.py ReportingIsScopedToTheReporter"),
+    known_limitations=(
+        "An accusation against a real account, and the one capability here that "
+        "deliberately reaches content the caller does not own — that is what a "
+        "report is. Confirmation is ALWAYS and the reason text is shown in full.",
+        "No withdrawal exists. A report filed on a misread instruction cannot be "
+        "taken back through any verb the product has, which is why this declares "
+        "no undo rather than declaring one that would not work.",
+        "Reporting the same content twice updates the open case instead of filing "
+        "a second, so a retry cannot inflate a queue. A case a moderator already "
+        "rejected stays rejected; an approved one returns to needs_review.",
     ),
 )
 _mapped(
@@ -1951,11 +2147,18 @@ _mapped(
     description="Check the status of a report.",
     supported_intents=("what happened to my report",),
     native_screen="SafetyHub",
+    domain_service="services.pulse_feed_engine", domain_operation="get_report_state",
     authorization_scope=_SELF, owner_field="user_id", target_field="report_id",
-    implementation_status=_NONE,
-    evidence=("services/pulse_feed_engine.py:1845 report — returns no identifier",),
-    known_limitations=("Nothing to read: report() hands back no id, so a status lookup has "
-                       "no key to look up.",),
+    implementation_status=_UNVERIFIED,
+    evidence=("services/pulse_feed_engine.py:get_report_state",),
+    known_limitations=(
+        "A readable state now exists: get_report_state(user_id, content_type, "
+        "content_id) returns the caller's own case and is scoped to them, so it "
+        "cannot see a stranger's report on the same content.",
+        "Keyed by content, not by report id, so 'what happened to report 41' still "
+        "has nothing to look up. No capability is registered for it either; it is "
+        "reachable only as the verifier behind feed.report.",
+    ),
 )
 
 # ===========================================================================
@@ -2094,17 +2297,126 @@ _mapped(
     known_limitations=("Spends the user's money. Held out of agent reach; the agent may "
                        "deep-link the person to the listing and stop there.",),
 )
-_mapped(
+#: Carried on all five listing records. The two-catalogue problem is a property of
+#: the product, not of any one verb, and a member who reads it once should not have
+#: to work out that it applies to the other four.
+_TWO_CATALOGUES = (
+    "Acts on the Business OS seller catalogue (business_os_mkt_products, string "
+    "'mktp_' ids), which is a different table from the consumer marketplace read "
+    "by marketplace.search (marketplace_listings, integer ids). The key spaces "
+    "cannot collide, so no write can land on the wrong row, but the shared word "
+    "'marketplace' hides two catalogues."
+)
+
+_live(
     "marketplace.listing.create",
     product_area="Marketplace", resource_type="listing",
-    description="Create a listing for sale.",
-    supported_intents=("list this for sale",),
-    risk_class=_GRAVE, confirmation_policy=_ALWAYS,
-    native_screen="MarketplaceCreateGateway",
-    authorization_scope=_SELF, owner_field="user_id", target_field="listing_id",
-    implementation_status=_NO_SERVICE,
-    evidence=("mobile-native/src/navigation/linking.ts MarketplaceCreateGateway",),
-    known_limitations=("Publicly visible commercial offer created under the user's name.",),
+    native_screen="UndxActionCenter",
+    backend_route="POST /api/business-os/marketplace/products",
+    domain_service="services.business_os.marketplace.service", domain_operation="create_product",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("listing_id", "str"), ("title", "str"), ("status", "str"),
+                   ("price_cents", "int")),
+    feature_flag="BUSINESS_OS_MARKETPLACE",
+    evidence=("services/business_os/marketplace/service.py:create_product",
+              "services/undx_agent_tools.py:marketplace_listing_create",
+              "tests/undx_agent/test_service_api_completion.py MarketplaceListingAuthority"),
+    known_limitations=(
+        "Publicly visible commercial offer created under the member's name, and "
+        "not idempotent — a retry creates a second listing.",
+        "Creates a draft, not a live listing. A seller told the listing was created "
+        "and not told it is unpublished will reasonably assume it is on sale, so "
+        "the receipt says draft explicitly.",
+        "Refuses unless the account is an approved seller, which is checked by the "
+        "service rather than by the capability.",
+        _TWO_CATALOGUES,
+    ),
+)
+_live(
+    "marketplace.listing.update",
+    product_area="Marketplace", resource_type="listing",
+    native_screen="UndxActionCenter",
+    backend_route="PATCH /api/business-os/marketplace/products/<product_id>",
+    domain_service="services.business_os.marketplace.service", domain_operation="update_product",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("listing_id", "str"), ("field", "str"), ("value", "str")),
+    feature_flag="BUSINESS_OS_MARKETPLACE",
+    evidence=("services/business_os/marketplace/service.py:update_product",
+              "services/undx_verification.py:marketplace_listing_field_value",
+              "tests/undx_agent/test_service_api_completion.py MarketplaceListingAuthority"),
+    known_limitations=(
+        "Offers a narrower field set than the service accepts. Currency is "
+        "deliberately absent: repricing a listing into another currency has no "
+        "confirmation wording that would be honest about what it does to offers "
+        "already made against it.",
+        "Status is not settable here. Moving a listing between draft, active, "
+        "paused and archived goes through the transition verbs, which re-run the "
+        "activation gate; an update that could write status would bypass it.",
+        "A listing owned by another seller and one that does not exist both refuse "
+        "with not_found, so a refusal cannot be used to enumerate listing ids.",
+        _TWO_CATALOGUES,
+    ),
+)
+_live(
+    "marketplace.listing.pause",
+    product_area="Marketplace", resource_type="listing",
+    native_screen="UndxActionCenter",
+    backend_route="POST /api/business-os/marketplace/products/<product_id>/pause",
+    domain_service="services.business_os.marketplace.service", domain_operation="transition_product",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("listing_id", "str"), ("status", "str")),
+    feature_flag="BUSINESS_OS_MARKETPLACE",
+    evidence=("services/business_os/marketplace/service.py:transition_product",
+              "services/undx_verification.py:marketplace_listing_status",
+              "tests/undx_agent/test_service_api_completion.py MarketplaceListingAuthority"),
+    known_limitations=(
+        "A state machine, not a toggle: pausing an already-paused listing is an "
+        "illegal transition and is refused rather than silently converging. That "
+        "is the service's own rule and the capability does not soften it.",
+        _TWO_CATALOGUES,
+    ),
+)
+_live(
+    "marketplace.listing.resume",
+    product_area="Marketplace", resource_type="listing",
+    native_screen="UndxActionCenter",
+    backend_route="POST /api/business-os/marketplace/products/<product_id>/resume",
+    domain_service="services.business_os.marketplace.service", domain_operation="transition_product",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("listing_id", "str"), ("status", "str")),
+    feature_flag="BUSINESS_OS_MARKETPLACE",
+    evidence=("services/business_os/marketplace/service.py:transition_product",
+              "services/undx_verification.py:marketplace_listing_status",
+              "tests/undx_agent/test_service_api_completion.py MarketplaceListingAuthority"),
+    known_limitations=(
+        "Returning to active re-runs the full activation gate, so a suspended "
+        "seller, an account hold or zero inventory on a physical item refuses "
+        "here. Resume is not guaranteed to succeed just because pause did.",
+        _TWO_CATALOGUES,
+    ),
+)
+_live(
+    "marketplace.listing.delete",
+    product_area="Marketplace", resource_type="listing",
+    native_screen="UndxActionCenter",
+    backend_route="POST /api/business-os/marketplace/products/<product_id>/archive",
+    domain_service="services.business_os.marketplace.service", domain_operation="transition_product",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("listing_id", "str"), ("status", "str")),
+    feature_flag="BUSINESS_OS_MARKETPLACE",
+    evidence=("services/business_os/marketplace/service.py:transition_product",
+              "services/undx_verification.py:marketplace_listing_status",
+              "tests/undx_agent/test_service_api_completion.py MarketplaceListingAuthority"),
+    known_limitations=(
+        "'Delete' is archive. The row survives and an operator can restore it to "
+        "draft; nothing is destroyed. The word the member uses is kept because it "
+        "is the word they use, but the receipt says archived.",
+        "Declares no undo even though archived -> draft is a legal transition, "
+        "because restore returns the listing as a draft rather than to the state "
+        "it was in. An undo that silently unpublishes a listing that was live is "
+        "worse than no undo button.",
+        _TWO_CATALOGUES,
+    ),
 )
 
 # ===========================================================================

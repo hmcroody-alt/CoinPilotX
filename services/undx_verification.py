@@ -395,6 +395,186 @@ def profile_preference_value(user_id, arguments, result):
     )
 
 
+def feed_post_hidden_value(user_id: int, arguments: dict[str, Any], result: ToolResult) -> VerificationResult:
+    """Confirm the viewer-scoped hide row exists.
+
+    Read from ``pulse_post_hides`` for this account rather than from the post, so
+    a "hidden" answer can only mean *hidden for this person*. A read that looked at
+    the post would be reading a shared object to answer a per-viewer question.
+    """
+    from services.pulse_feed_engine import get_post_hidden
+
+    post_id = int(arguments.get("post_id") or 0)
+    expected = True
+    try:
+        observed = bool(get_post_hidden(int(user_id), post_id))
+    except Exception as exc:  # pragma: no cover - defensive
+        return _unreadable(f"Hidden-post read-back failed: {exc.__class__.__name__}", expected)
+    return VerificationResult(
+        state=VerificationState.VERIFIED if observed == expected else VerificationState.FAILED,
+        expected=expected,
+        observed=observed,
+        detail="" if observed == expected else "The post is still showing in your Home feed.",
+        evidence={
+            "canonical_resource_id": f"post:{post_id}",
+            "read_back": {"hidden": observed},
+            "source": "pulse_feed_engine.get_post_hidden",
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Messaging
+# ---------------------------------------------------------------------------
+
+
+def conversation_read_state(user_id: int, arguments: dict[str, Any], result: ToolResult) -> VerificationResult:
+    """Confirm the caller's unread counter for one conversation is zero.
+
+    A conversation that cannot be read back is not the same as one that failed to
+    change — a membership that ended between the write and the read would produce
+    ``None`` here — so that case is reported as unreadable rather than as a failure.
+    """
+    from services.messenger_intelligence_service import get_conversation_read_state
+
+    conversation_id = int(arguments.get("conversation_id") or 0)
+    expected = 0
+    try:
+        state = get_conversation_read_state(int(user_id), conversation_id)
+    except Exception as exc:  # pragma: no cover - defensive
+        return _unreadable(f"Conversation read-back failed: {exc.__class__.__name__}", expected)
+    if state is None:
+        return _unreadable("The conversation could not be read back on this account.", expected)
+    observed = int(state.get("unread_count") or 0)
+    return VerificationResult(
+        state=VerificationState.VERIFIED if observed == expected else VerificationState.FAILED,
+        expected=expected,
+        observed=observed,
+        detail="" if observed == expected else "The conversation still shows unread messages.",
+        evidence={
+            "canonical_resource_id": f"conversation:{conversation_id}",
+            "read_back": {
+                "unread_count": observed,
+                "last_read_message_id": int(state.get("last_read_message_id") or 0),
+            },
+            "source": "messenger_intelligence_service.get_conversation_read_state",
+        },
+    )
+
+
+def message_exists(user_id: int, arguments: dict[str, Any], result: ToolResult) -> VerificationResult:
+    """Confirm the sent message is present in the conversation and authored by the caller.
+
+    The id comes from the result, because a send has no argument that names the row
+    it will create. That is the narrowest possible concession: the result says which
+    message to go and look for, and this function decides whether it is there. The
+    read window is deliberately the message list a member would see, so a message
+    that was written but is not visible to the account that sent it does not verify.
+    """
+    from services.messenger_intelligence_service import list_conversation_messages
+
+    conversation_id = int(arguments.get("conversation_id") or 0)
+    message_id = int((result.data or {}).get("message_id") or 0)
+    expected = True
+    if message_id <= 0:
+        return VerificationResult(
+            state=VerificationState.FAILED, expected=expected, observed=False,
+            detail="The send did not return a message id to verify.",
+            evidence={"canonical_resource_id": f"conversation:{conversation_id}",
+                      "read_back": {"message_id": 0},
+                      "source": "messenger_intelligence_service.list_conversation_messages"},
+        )
+    try:
+        window = list_conversation_messages(int(user_id), conversation_id, limit=50)
+    except Exception as exc:  # pragma: no cover - defensive
+        return _unreadable(f"Message read-back failed: {exc.__class__.__name__}", expected)
+    match = next((row for row in window if int(row.get("message_id") or 0) == message_id), None)
+    observed = bool(match) and int(match.get("sender_user_id") or 0) == int(user_id)
+    return VerificationResult(
+        state=VerificationState.VERIFIED if observed == expected else VerificationState.FAILED,
+        expected=expected,
+        observed=observed,
+        detail="" if observed == expected else "The message was not found in the conversation.",
+        evidence={
+            "canonical_resource_id": f"message:{message_id}",
+            "read_back": {
+                "message_id": message_id,
+                "present": bool(match),
+                "body": clean((match or {}).get("body"), 200),
+            },
+            "source": "messenger_intelligence_service.list_conversation_messages",
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Business OS
+# ---------------------------------------------------------------------------
+
+
+def campaign_operational_status(user_id: int, arguments: dict[str, Any], result: ToolResult) -> VerificationResult:
+    """Read the campaign's operational status back through the ownership-enforcing view.
+
+    The expectation comes from the capability rather than from the arguments, for
+    the same reason the watchlist verifier does it: an argument can disagree with
+    the capability that actually ran, and then a resume that quietly did nothing
+    would verify against a paused campaign.
+    """
+    from services.business_os.advertising import operations as ops
+
+    campaign_id = clean(arguments.get("campaign_id"), 120)
+    expected = "paused" if result.capability_id == "business.campaign.pause" else "active"
+    try:
+        view = ops.get_operational_view(campaign_id, requester_user_id=int(user_id))
+    except Exception as exc:  # pragma: no cover - defensive
+        return _unreadable(f"Campaign read-back failed: {exc.__class__.__name__}", expected)
+    observed = clean((view or {}).get("operational_status") or "", 40)
+    return VerificationResult(
+        state=VerificationState.VERIFIED if observed == expected else VerificationState.FAILED,
+        expected=expected,
+        observed=observed,
+        detail="" if observed == expected else (
+            f"The campaign reads as {observed or 'unknown'} rather than {expected}."),
+        evidence={
+            "canonical_resource_id": f"campaign:{campaign_id}",
+            "read_back": {
+                "operational_status": observed,
+                # Carried because "paused" alone invites the reading that money
+                # stopped moving. Neither state here spends or refunds anything.
+                "funding_status": clean((view or {}).get("funding_status") or "", 40),
+                "delivering": bool((view or {}).get("delivering")),
+            },
+            "source": "business_os.advertising.operations.get_operational_view",
+        },
+    )
+
+
+def business_profile_field_value(user_id: int, arguments: dict[str, Any], result: ToolResult) -> VerificationResult:
+    """Read one seller-profile field back through the owner view."""
+    from services.business_os.profile import api as profile_api
+
+    field = clean(arguments.get("field"), 40)
+    expected = clean(arguments.get("value"), 600)
+    try:
+        status, body = profile_api.get_profile(int(user_id))
+    except Exception as exc:  # pragma: no cover - defensive
+        return _unreadable(f"Business profile read-back failed: {exc.__class__.__name__}", expected)
+    if int(status) != 200 or not body.get("ok"):
+        return _unreadable("The business profile could not be read back.", expected)
+    observed = clean((body.get("profile") or {}).get(field), 600)
+    return VerificationResult(
+        state=VerificationState.VERIFIED if observed == expected else VerificationState.FAILED,
+        expected=expected,
+        observed=observed,
+        detail="" if observed == expected else "The business profile field did not match the request.",
+        evidence={
+            "canonical_resource_id": f"user:{int(user_id)}:{field}",
+            "read_back": {"field": field, "value": observed},
+            "source": "business_os.profile.api.get_profile",
+        },
+    )
+
+
 # ---------------------------------------------------------------------------
 # Crypto watchlist and portfolio
 # ---------------------------------------------------------------------------
@@ -807,10 +987,431 @@ def settings_preference_value(user_id: int, arguments: dict[str, Any], result: T
 
 
 # ---------------------------------------------------------------------------
+# Consumer social graph, profile, Reels and moderation
+# ---------------------------------------------------------------------------
+
+
+def profile_block_value(user_id: int, arguments: dict[str, Any], result: ToolResult) -> VerificationResult:
+    """Read the block edge back from the canonical block state.
+
+    The expectation comes from ``result.capability_id`` rather than from the
+    arguments, because block and unblock share one argument shape and one
+    verifier. If it read an argument, an unblock that quietly did nothing would
+    verify against the still-present block it was supposed to remove.
+
+    ``block_state`` reads both ``blocked_users`` and the comms-v2 mirror, so a
+    write that landed in one table and not the other reads back as a mismatch
+    rather than as success — which is the specific failure the union write was
+    built to make impossible, and therefore the one worth checking for.
+    """
+    from services.pulse_social_graph_service import block_state
+
+    target_id = int(arguments.get("target_user_id") or 0)
+    expected = result.capability_id == "profile.block"
+    try:
+        state = block_state(int(user_id), target_id) or {}
+    except Exception as exc:  # pragma: no cover - defensive
+        return _unreadable(f"Block read-back failed: {exc.__class__.__name__}", expected)
+    observed = bool(state.get("blocked"))
+    return VerificationResult(
+        state=VerificationState.VERIFIED if observed == expected else VerificationState.FAILED,
+        expected=expected,
+        observed=observed,
+        detail="" if observed == expected else "The block state did not match the request.",
+        evidence={
+            "canonical_resource_id": f"user:{target_id}",
+            "read_back": {
+                "blocked": observed,
+                # Carried because the two can disagree only if a write half-landed,
+                # and that is precisely when the receipt needs to show both.
+                "messaging_block_status": clean(state.get("messaging_block_status") or "", 40),
+            },
+            "source": "pulse_social_graph_service.block_state",
+        },
+    )
+
+
+def profile_bio_value(user_id: int, arguments: dict[str, Any], result: ToolResult) -> VerificationResult:
+    """Read the stored bio back and compare it to the text that was requested.
+
+    Compared against the *requested* bio clipped to the service ceiling, not
+    against the raw argument: the service truncates at ``BIO_MAX`` and a verifier
+    that ignored that would report every over-long bio as a failure when the
+    stored value is exactly what the service was always going to keep.
+    """
+    from services import pulse_profile_service
+
+    expected = clean(arguments.get("bio"), pulse_profile_service.BIO_MAX)
+    try:
+        snapshot = pulse_profile_service.profile_state(int(user_id)) or {}
+    except Exception as exc:  # pragma: no cover - defensive
+        return _unreadable(f"Profile read-back failed: {exc.__class__.__name__}", expected)
+    if not snapshot:
+        return _unreadable("The profile could not be read back.", expected)
+    observed = clean(snapshot.get("bio") or "", pulse_profile_service.BIO_MAX)
+    return VerificationResult(
+        state=VerificationState.VERIFIED if observed == expected else VerificationState.FAILED,
+        expected=expected,
+        observed=observed,
+        detail="" if observed == expected else "The stored bio did not match the request.",
+        evidence={
+            "canonical_resource_id": f"user:{int(user_id)}:bio",
+            "read_back": {"bio": observed},
+            "source": "pulse_profile_service.profile_state",
+        },
+    )
+
+
+def reel_deleted(user_id: int, arguments: dict[str, Any], result: ToolResult) -> VerificationResult:
+    """Confirm the caller's own Reel row reads as deleted.
+
+    ``None`` from the owner-scoped read means "not yours, or not there". After a
+    delete this account performed, that is unreadable rather than failed: the
+    mutation already proved ownership, so a missing row here is a read-path
+    problem and reporting it as a failed deletion would be the wrong alarm.
+    """
+    from services.pulse_feed_engine import get_owned_reel_deletion_state
+
+    reel_id = int(arguments.get("reel_id") or 0)
+    try:
+        state = get_owned_reel_deletion_state(int(user_id), reel_id)
+    except Exception as exc:  # pragma: no cover - defensive
+        return _unreadable(f"Reel read-back failed: {exc.__class__.__name__}", True)
+    if state is None:
+        return _unreadable("The Reel could not be read back on this account.", True)
+    observed = bool(state.get("deleted"))
+    return VerificationResult(
+        state=VerificationState.VERIFIED if observed is True else VerificationState.FAILED,
+        expected=True,
+        observed=observed,
+        detail="" if observed is True else "The Reel was still visible after the deletion request.",
+        evidence={
+            "canonical_resource_id": f"reel:{reel_id}",
+            "read_back": {"deleted": observed, "status": clean(state.get("status") or "", 40)},
+            "source": "pulse_feed_engine.get_owned_reel_deletion_state",
+        },
+    )
+
+
+def reel_comment_body(user_id: int, arguments: dict[str, Any], result: ToolResult) -> VerificationResult:
+    """Read a comment's stored text back after a create or an edit.
+
+    Shared by ``reels.comment.create`` and ``reels.comment.update``, which differ
+    only in where the comment id comes from: a create has none until the write
+    returns one, an edit was given one. Taking the id from the result on a create
+    is not the same as trusting the result — the id is *which row to go and look
+    at*, and every claim about its contents still comes from the read.
+
+    A comment that reads back as deleted is a failure, not an unreadable: the text
+    the person asked to be there is provably not there.
+    """
+    from services.pulse_feed_engine import get_comment_state
+
+    comment_id = int(arguments.get("comment_id") or (result.data or {}).get("comment_id") or 0)
+    expected = clean(arguments.get("body"), 2200)
+    if not comment_id:
+        return VerificationResult(
+            state=VerificationState.FAILED,
+            expected=expected,
+            observed=None,
+            detail="PulseSoc did not return a canonical comment id.",
+        )
+    try:
+        state = get_comment_state(int(user_id), comment_id)
+    except Exception as exc:  # pragma: no cover - defensive
+        return _unreadable(f"Comment read-back failed: {exc.__class__.__name__}", expected)
+    if not state or not state.get("exists"):
+        return VerificationResult(
+            state=VerificationState.FAILED,
+            expected=expected,
+            observed=None,
+            detail="The comment could not be found after the write.",
+            evidence={"canonical_resource_id": f"comment:{comment_id}",
+                      "source": "pulse_feed_engine.get_comment_state"},
+        )
+    if state.get("deleted"):
+        return VerificationResult(
+            state=VerificationState.FAILED,
+            expected=expected,
+            observed=None,
+            detail="The comment reads as deleted.",
+            evidence={"canonical_resource_id": f"comment:{comment_id}",
+                      "read_back": {"deleted": True},
+                      "source": "pulse_feed_engine.get_comment_state"},
+        )
+    observed = clean(state.get("body") or "", 2200)
+    return VerificationResult(
+        state=VerificationState.VERIFIED if observed == expected else VerificationState.FAILED,
+        expected=expected,
+        observed=observed,
+        detail="" if observed == expected else "The stored comment text did not match the request.",
+        evidence={
+            "canonical_resource_id": f"comment:{comment_id}",
+            "read_back": {"body": observed, "post_id": int(state.get("post_id") or 0)},
+            "source": "pulse_feed_engine.get_comment_state",
+        },
+    )
+
+
+def reel_comment_deleted(user_id: int, arguments: dict[str, Any], result: ToolResult) -> VerificationResult:
+    """Confirm a comment row reads as deleted.
+
+    Uses ``get_comment_state`` rather than ``get_comment`` deliberately: the
+    latter filters deleted rows out, so it answers ``None`` both for "deleted"
+    and for "never existed", and a verifier that cannot tell those apart would
+    happily certify the deletion of a comment id that was never real.
+    """
+    from services.pulse_feed_engine import get_comment_state
+
+    comment_id = int(arguments.get("comment_id") or 0)
+    try:
+        state = get_comment_state(int(user_id), comment_id)
+    except Exception as exc:  # pragma: no cover - defensive
+        return _unreadable(f"Comment read-back failed: {exc.__class__.__name__}", True)
+    if not state:
+        return _unreadable("The comment could not be read back.", True)
+    if not state.get("exists"):
+        # A hard-deleted row is gone rather than flagged. The person asked for it
+        # to stop existing and it does not exist, which is the outcome they wanted.
+        return VerificationResult(
+            state=VerificationState.VERIFIED,
+            expected=True,
+            observed=True,
+            detail="",
+            evidence={"canonical_resource_id": f"comment:{comment_id}",
+                      "read_back": {"exists": False, "deleted": True},
+                      "source": "pulse_feed_engine.get_comment_state"},
+        )
+    observed = bool(state.get("deleted"))
+    return VerificationResult(
+        state=VerificationState.VERIFIED if observed is True else VerificationState.FAILED,
+        expected=True,
+        observed=observed,
+        detail="" if observed is True else "The comment was still visible after the deletion request.",
+        evidence={
+            "canonical_resource_id": f"comment:{comment_id}",
+            "read_back": {"exists": True, "deleted": observed},
+            "source": "pulse_feed_engine.get_comment_state",
+        },
+    )
+
+
+def content_reported(user_id: int, arguments: dict[str, Any], result: ToolResult) -> VerificationResult:
+    """Confirm this reporter now holds an open report on this target.
+
+    Scoped to the reporter, never to the target. A read that answered "is this
+    content reported" would tell the caller whether other people had complained
+    about it, which is a moderation fact and not theirs to learn from a receipt.
+
+    The reason is compared as well as the existence, because the capability
+    declares it verified. Filing a report against the right post with somebody
+    else's stored complaint attached is a real outcome and would otherwise pass.
+    """
+    from services.pulse_feed_engine import get_report_state
+
+    content_type = clean(arguments.get("content_type"), 40).lower()
+    content_id = int(arguments.get("content_id") or 0)
+    expected = {"reported": True, "reason": clean(arguments.get("reason"), 500)}
+    try:
+        state = get_report_state(int(user_id), content_type, content_id)
+    except Exception as exc:  # pragma: no cover - defensive
+        return _unreadable(f"Report read-back failed: {exc.__class__.__name__}", expected)
+    if state is None:
+        return _unreadable("The report could not be read back.", expected)
+    observed = {
+        "reported": bool(state.get("reported")),
+        "reason": clean(state.get("reason") or "", 500),
+    }
+    # An already-open duplicate report keeps its original text, and the service
+    # deliberately does not overwrite it. Requiring the reason to match would
+    # turn correct idempotency into a reported failure, so the stored reason only
+    # has to match when this call is the one that created the row.
+    created = bool((result.data or {}).get("changed"))
+    matches = observed["reported"] and (observed["reason"] == expected["reason"] or not created)
+    return VerificationResult(
+        state=VerificationState.VERIFIED if matches else VerificationState.FAILED,
+        expected=expected,
+        observed=observed,
+        detail="" if matches else (
+            "The report is not open on this account."
+            if not observed["reported"] else
+            "The stored report reason did not match the request."),
+        evidence={
+            "canonical_resource_id": f"{content_type}:{content_id}",
+            "read_back": {**observed, "report_id": state.get("report_id"),
+                          "status": clean(state.get("status") or "", 40)},
+            "source": "pulse_feed_engine.get_report_state",
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Marketplace (Business OS seller catalogue)
+# ---------------------------------------------------------------------------
+
+
+def _marketplace_product(user_id: int, listing_id: str):
+    """Owner-scoped product read. ``None`` means missing *or* not this seller's.
+
+    ``get_product`` collapses those two cases on purpose so that a stranger
+    cannot use it to discover which listing ids exist. The verifier inherits that
+    and does not try to distinguish them either.
+    """
+    from services.business_os.marketplace import service as marketplace
+
+    return marketplace.get_product(listing_id, requester_user_id=int(user_id))
+
+
+def marketplace_listing_created(user_id: int, arguments: dict[str, Any], result: ToolResult) -> VerificationResult:
+    """Confirm a newly created listing exists and carries the requested terms.
+
+    Checks every field the capability can set, not just the title it is keyed on.
+    A create verifier that confirmed only the name would certify a listing priced
+    at zero, or shipped physically when the seller said digital, as correct.
+    """
+    listing_id = clean((result.data or {}).get("listing_id"), 120)
+    if not listing_id:
+        return VerificationResult(
+            state=VerificationState.FAILED,
+            expected="a created listing",
+            observed=None,
+            detail="PulseSoc did not return a canonical listing id.",
+        )
+    try:
+        product = _marketplace_product(user_id, listing_id)
+    except Exception as exc:  # pragma: no cover - defensive
+        return _unreadable(f"Listing read-back failed: {exc.__class__.__name__}")
+    if not product:
+        return VerificationResult(
+            state=VerificationState.FAILED,
+            expected="a created listing",
+            observed=None,
+            detail="The new listing could not be read back on this account.",
+            evidence={"canonical_resource_id": f"listing:{listing_id}",
+                      "source": "business_os.marketplace.service.get_product"},
+        )
+    expected = {
+        "title": clean(arguments.get("title"), 160),
+        "price_cents": int(arguments.get("price_cents") or 0),
+        "description": clean(arguments.get("description"), 2000),
+        "fulfillment_type": clean(arguments.get("fulfillment_type"), 24) or "physical",
+    }
+    observed = {
+        "title": clean(product.get("title"), 160),
+        "price_cents": int(product.get("price_cents") or 0),
+        "description": clean(product.get("description") or "", 2000),
+        "fulfillment_type": clean(product.get("fulfillment_type") or "", 24),
+    }
+    matches = observed == expected
+    return VerificationResult(
+        state=VerificationState.VERIFIED if matches else VerificationState.FAILED,
+        expected=expected,
+        observed=observed,
+        detail="" if matches else "The stored listing did not match what was requested.",
+        evidence={
+            "canonical_resource_id": f"listing:{listing_id}",
+            # Included because a created listing is a draft: a seller told their
+            # listing is "verified" without being told it is unpublished will
+            # reasonably assume it is on sale.
+            "read_back": {**observed, "status": clean(product.get("status") or "", 40)},
+            "source": "business_os.marketplace.service.get_product",
+        },
+    )
+
+
+def marketplace_listing_field_value(user_id: int, arguments: dict[str, Any], result: ToolResult) -> VerificationResult:
+    """Read one edited listing field back.
+
+    ``price_cents`` and ``inventory_qty`` are compared as integers because the
+    capability accepts the value as text and the column stores a number: "1500"
+    and 1500 are the same edit, and a string comparison would fail every numeric
+    change the capability is designed to make.
+    """
+    listing_id = clean(arguments.get("listing_id"), 120)
+    field = clean(arguments.get("field"), 40)
+    numeric = field in {"price_cents", "inventory_qty"}
+    try:
+        expected: Any = int(float(arguments.get("value"))) if numeric else clean(arguments.get("value"), 2000)
+    except (TypeError, ValueError):
+        return _unreadable(f"{field} was not a whole number.", arguments.get("value"))
+    try:
+        product = _marketplace_product(user_id, listing_id)
+    except Exception as exc:  # pragma: no cover - defensive
+        return _unreadable(f"Listing read-back failed: {exc.__class__.__name__}", expected)
+    if not product:
+        return _unreadable("The listing could not be read back on this account.", expected)
+    raw = product.get(field)
+    observed: Any = int(raw or 0) if numeric else clean(raw or "", 2000)
+    return VerificationResult(
+        state=VerificationState.VERIFIED if observed == expected else VerificationState.FAILED,
+        expected=expected,
+        observed=observed,
+        detail="" if observed == expected else "The listing field did not match the request.",
+        evidence={
+            "canonical_resource_id": f"listing:{listing_id}",
+            "read_back": {"field": field, "value": observed,
+                          "status": clean(product.get("status") or "", 40)},
+            "source": "business_os.marketplace.service.get_product",
+        },
+    )
+
+
+#: Which persisted status each lifecycle capability must produce. ``delete`` maps
+#: to ``archived`` because that is the terminal state the marketplace actually
+#: has — see the capability spec for why nothing here hard-deletes a listing.
+_MARKETPLACE_EXPECTED_STATUS = {
+    "marketplace.listing.pause": "paused",
+    "marketplace.listing.resume": "active",
+    "marketplace.listing.delete": "archived",
+}
+
+
+def marketplace_listing_status(user_id: int, arguments: dict[str, Any], result: ToolResult) -> VerificationResult:
+    """Confirm the listing holds the status its lifecycle capability requested.
+
+    The expectation is keyed on the capability, never on the arguments, so a
+    resume that silently did nothing verifies against ``active`` and fails,
+    instead of verifying against whatever the listing already was.
+    """
+    listing_id = clean(arguments.get("listing_id"), 120)
+    expected = _MARKETPLACE_EXPECTED_STATUS.get(result.capability_id, "")
+    if not expected:
+        return _unreadable("No expected status is declared for this action.")
+    try:
+        product = _marketplace_product(user_id, listing_id)
+    except Exception as exc:  # pragma: no cover - defensive
+        return _unreadable(f"Listing read-back failed: {exc.__class__.__name__}", expected)
+    if not product:
+        return _unreadable("The listing could not be read back on this account.", expected)
+    observed = clean(product.get("status") or "", 40)
+    return VerificationResult(
+        state=VerificationState.VERIFIED if observed == expected else VerificationState.FAILED,
+        expected=expected,
+        observed=observed,
+        detail="" if observed == expected else (
+            f"The listing reads as {observed or 'unknown'} rather than {expected}."),
+        evidence={
+            "canonical_resource_id": f"listing:{listing_id}",
+            "read_back": {"status": observed, "title": clean(product.get("title") or "", 160)},
+            "source": "business_os.marketplace.service.get_product",
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
 # Resolution
 # ---------------------------------------------------------------------------
 
 VERIFIERS: dict[str, Callable[[int, dict[str, Any], ToolResult], VerificationResult]] = {
+    "profile_block_value": profile_block_value,
+    "profile_bio_value": profile_bio_value,
+    "reel_deleted": reel_deleted,
+    "reel_comment_body": reel_comment_body,
+    "reel_comment_deleted": reel_comment_deleted,
+    "content_reported": content_reported,
+    "marketplace_listing_created": marketplace_listing_created,
+    "marketplace_listing_field_value": marketplace_listing_field_value,
+    "marketplace_listing_status": marketplace_listing_status,
     "crypto_alert_status": crypto_alert_status,
     "crypto_alert_exists": crypto_alert_exists,
     "crypto_alert_threshold": crypto_alert_threshold,
@@ -820,6 +1421,11 @@ VERIFIERS: dict[str, Callable[[int, dict[str, Any], ToolResult], VerificationRes
     "social_following_value": social_following_value,
     "feed_post_like_value": feed_post_like_value,
     "feed_post_deleted": feed_post_deleted,
+    "feed_post_hidden_value": feed_post_hidden_value,
+    "conversation_read_state": conversation_read_state,
+    "message_exists": message_exists,
+    "campaign_operational_status": campaign_operational_status,
+    "business_profile_field_value": business_profile_field_value,
     "reel_saved_value": reel_saved_value,
     "reel_liked_value": reel_liked_value,
     "profile_preference_value": profile_preference_value,

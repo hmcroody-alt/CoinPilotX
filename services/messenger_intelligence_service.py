@@ -138,6 +138,52 @@ def list_conversation_messages(
     finally:
         conn.close()
 
+
+def get_conversation_read_state(user_id: int, conversation_id: int) -> dict[str, Any] | None:
+    """Return this account's read cursor for one conversation, or ``None``.
+
+    The canonical read-back for ``messages.mark_read``.  It exists rather than
+    reusing :func:`list_my_conversations` because that list is capped and ordered
+    by recency — a conversation outside the window would read as "not found" and
+    turn a successful write into a spurious verification failure.
+
+    Membership is checked in the same query, so a foreign or departed
+    conversation is indistinguishable from a missing one and this cannot be used
+    as an existence oracle.
+    """
+    owner_id = int(user_id or 0)
+    target_id = int(conversation_id or 0)
+    if owner_id <= 0 or target_id <= 0:
+        return None
+    conn = db_service.connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT p.unread_count, p.last_read_message_id, p.last_read_at
+            FROM comm_v2_participants p
+            JOIN comm_v2_conversations c ON c.id=p.conversation_id
+            WHERE p.user_id=? AND p.conversation_id=?
+              AND p.membership_state='active' AND COALESCE(p.left_at,'')=''
+              AND c.status='active' AND COALESCE(c.deleted_at,'')=''
+            LIMIT 1
+            """,
+            (owner_id, target_id),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return None
+        data = dict(row)
+        return {
+            "conversation_id": target_id,
+            "unread_count": max(0, int(data.get("unread_count") or 0)),
+            "last_read_message_id": int(data.get("last_read_message_id") or 0),
+            "last_read_at": clean(data.get("last_read_at"), 40),
+        }
+    finally:
+        conn.close()
+
+
 def search_messages(
     user_id: int,
     query: str,

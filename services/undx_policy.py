@@ -200,6 +200,50 @@ PRODUCTION_TOOL_REGISTRY: dict[str, dict[str, Any]] = {
     "pulsesoc.localization.translation.update": {"method": None, "route": "services.content_translation.set_preference", "risk": "medium", "confirmation": False, "canonical_key": "user_id", "verification_route": "services.content_translation.get_preference"},
     "pulsesoc.settings.privacy.audience.update": {"method": None, "route": "services.pulse_settings_routes.save_preferences", "risk": "high", "confirmation": True, "canonical_key": "user_id", "verification_route": "services.pulse_settings_routes.load_preferences"},
     "pulsesoc.settings.appearance.theme.update": {"method": None, "route": "services.pulse_settings_routes.save_preferences", "risk": "low", "confirmation": False, "canonical_key": "user_id", "verification_route": "services.pulse_settings_routes.load_preferences"},
+    # Action surface expansion. Same in-process convention again. Note that every
+    # ``verification_route`` here names a reader in a different module from the
+    # writer beside it — the feed engine writes the hide and the feed engine reads
+    # it back, but messaging writes through comm_v2 and reads back through
+    # ``messenger_intelligence_service``, and the campaign verbs read back through
+    # the ownership-enforcing operational view rather than through the transition
+    # they just performed.
+    "pulsesoc.feed.posts.hide": {"method": None, "route": "services.pulse_feed_engine.hide_post", "risk": "medium", "confirmation": False, "canonical_key": "post_id", "verification_route": "services.pulse_feed_engine.get_post_hidden"},
+    "pulsesoc.messages.mark_read": {"method": None, "route": "pulse_communications_v2.service.mark_read", "risk": "medium", "confirmation": False, "canonical_key": "conversation_id", "verification_route": "services.messenger_intelligence_service.get_conversation_read_state"},
+    "pulsesoc.messages.send": {"method": None, "route": "pulse_communications_v2.service.send_message", "risk": "high", "confirmation": True, "canonical_key": "conversation_id", "verification_route": "services.messenger_intelligence_service.list_conversation_messages"},
+    "pulsesoc.business.campaign.pause": {"method": None, "route": "services.business_os.advertising.operations.pause_campaign", "risk": "medium", "confirmation": False, "canonical_key": "campaign_id", "verification_route": "services.business_os.advertising.operations.get_operational_view"},
+    "pulsesoc.business.campaign.resume": {"method": None, "route": "services.business_os.advertising.operations.resume_campaign", "risk": "medium", "confirmation": False, "canonical_key": "campaign_id", "verification_route": "services.business_os.advertising.operations.get_operational_view"},
+    "pulsesoc.business.profile.update": {"method": None, "route": "services.business_os.profile.api.update_profile", "risk": "high", "confirmation": True, "canonical_key": "user_id", "verification_route": "services.business_os.profile.api.get_profile"},
+    # Shared mutation service APIs. Same in-process convention once more. Two
+    # things about this block are worth stating rather than leaving to be
+    # rediscovered from the strings.
+    #
+    # First, ``route`` names a *service* function in every case, never a Flask
+    # handler, because that is the point of the work these entries land: the
+    # HTTP routes for these operations now call the same functions named here,
+    # so UNDX and the web app share one authority path instead of two that
+    # happen to agree today.
+    #
+    # Second, the marketplace entries name ``business_os.marketplace.service``,
+    # which is the seller catalogue keyed by ``mktp_``-prefixed string ids — a
+    # different table from the consumer ``marketplace_listings`` read by
+    # ``pulsesoc.marketplace.search`` a few dozen lines above, which is keyed by
+    # integer. Same word, two namespaces. The key spaces cannot collide, so a
+    # write cannot land on the wrong row, but anyone reading this registry
+    # top-to-bottom will see ``marketplace`` twice and should know they are not
+    # the same catalogue.
+    "pulsesoc.profile.block": {"method": None, "route": "services.pulse_social_graph_service.block_user", "risk": "medium", "confirmation": False, "canonical_key": "target_user_id", "verification_route": "services.pulse_social_graph_service.block_state"},
+    "pulsesoc.profile.unblock": {"method": None, "route": "services.pulse_social_graph_service.unblock_user", "risk": "medium", "confirmation": False, "canonical_key": "target_user_id", "verification_route": "services.pulse_social_graph_service.block_state"},
+    "pulsesoc.profile.bio.update": {"method": None, "route": "services.pulse_profile_service.update_profile_bio", "risk": "high", "confirmation": True, "canonical_key": "user_id", "verification_route": "services.pulse_profile_service.profile_state"},
+    "pulsesoc.reels.delete": {"method": None, "route": "services.pulse_feed_engine.delete_owned_reel", "risk": "high", "confirmation": True, "canonical_key": "reel_id", "verification_route": "services.pulse_feed_engine.get_owned_reel_deletion_state"},
+    "pulsesoc.reels.comment.create": {"method": None, "route": "services.pulse_feed_engine.add_comment", "risk": "high", "confirmation": True, "canonical_key": "comment_id", "verification_route": "services.pulse_feed_engine.get_comment_state"},
+    "pulsesoc.reels.comment.update": {"method": None, "route": "services.pulse_feed_engine.update_comment", "risk": "high", "confirmation": True, "canonical_key": "comment_id", "verification_route": "services.pulse_feed_engine.get_comment_state"},
+    "pulsesoc.reels.comment.delete": {"method": None, "route": "services.pulse_feed_engine.delete_comment", "risk": "high", "confirmation": True, "canonical_key": "comment_id", "verification_route": "services.pulse_feed_engine.get_comment_state"},
+    "pulsesoc.feed.report": {"method": None, "route": "services.pulse_feed_engine.report_content", "risk": "high", "confirmation": True, "canonical_key": "report_id", "verification_route": "services.pulse_feed_engine.get_report_state"},
+    "pulsesoc.marketplace.listing.create": {"method": None, "route": "services.business_os.marketplace.service.create_product", "risk": "high", "confirmation": True, "canonical_key": "listing_id", "verification_route": "services.business_os.marketplace.service.get_product"},
+    "pulsesoc.marketplace.listing.update": {"method": None, "route": "services.business_os.marketplace.service.update_product", "risk": "medium", "confirmation": False, "canonical_key": "listing_id", "verification_route": "services.business_os.marketplace.service.get_product"},
+    "pulsesoc.marketplace.listing.pause": {"method": None, "route": "services.business_os.marketplace.service.transition_product", "risk": "medium", "confirmation": False, "canonical_key": "listing_id", "verification_route": "services.business_os.marketplace.service.get_product"},
+    "pulsesoc.marketplace.listing.resume": {"method": None, "route": "services.business_os.marketplace.service.transition_product", "risk": "medium", "confirmation": False, "canonical_key": "listing_id", "verification_route": "services.business_os.marketplace.service.get_product"},
+    "pulsesoc.marketplace.listing.delete": {"method": None, "route": "services.business_os.marketplace.service.transition_product", "risk": "high", "confirmation": True, "canonical_key": "listing_id", "verification_route": "services.business_os.marketplace.service.get_product"},
     "web.search": {"method": None, "route": "services.pulse_ai_web_search.search", "risk": "medium", "confirmation": False},
     "calculator.execute": {"method": None, "route": "deterministic_server_calculator", "risk": "low", "confirmation": False},
 }

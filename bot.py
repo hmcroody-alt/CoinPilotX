@@ -305,7 +305,9 @@ from services import (
     chat_health_service,
     pulse_moderation_engine,
     pulse_search_engine,
+    pulse_profile_service,
     pulse_security_core,
+    pulse_social_graph_service,
     privilege_engine,
     prestige_engine,
     push_service,
@@ -82402,23 +82404,29 @@ def api_pulse_reel_manage(reel_id):
         return api_error("Reel not found.", 404, trace_id)
     if not reel.get("can_manage"):
         return api_error("Only the Reel owner can manage this Reel.", 403, trace_id)
+    if request.method == "DELETE":
+        # Transport only. The delete is owner-scoped in the service too — the
+        # `can_manage` check above is kept because it produces this route's
+        # 403 wording, but it is no longer the only thing standing between a
+        # request and the UPDATE.
+        try:
+            result = pulse_feed_engine.delete_owned_reel(int(user["user_id"]), reel_id, surface="web_reels")
+        except Exception as exc:
+            logging.exception("PULSE_REEL_DELETE_FAILED trace_id=%s user_id=%s reel_id=%s error=%s", trace_id, user.get("user_id"), reel_id, exc)
+            return api_error("Reel could not be deleted.", 500, trace_id)
+        if not result.get("ok"):
+            return api_error(result.get("message") or "Reel could not be deleted.", 404 if result.get("error") == "not_found" else 400, trace_id)
+        post_id = int(result.get("post_id") or reel.get("post_id") or 0)
+        # Emitted on the already-deleted path too: the event is idempotent for
+        # every listener that consumes it, and suppressing it would make a
+        # retried delete leave client caches showing a Reel the server no
+        # longer serves.
+        pulse_emit_event("pulse_reel_deleted", {"reel_id": reel_id, "post_id": post_id, "trace_id": trace_id}, user["user_id"], post_id)
+        return jsonify({"ok": True, "message": "Reel deleted.", "reel_id": reel_id, "trace_id": trace_id})
     now = datetime.utcnow().isoformat(timespec="seconds")
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    if request.method == "DELETE":
-        try:
-            cur.execute("UPDATE pulse_reels SET status='deleted', updated_at=? WHERE id=? AND user_id=?", (now, reel_id, user["user_id"]))
-            cur.execute("UPDATE pulse_posts SET status='deleted', deleted_at=?, updated_at=? WHERE id=? AND user_id=?", (now, now, int(reel["post_id"]), user["user_id"]))
-            conn.commit()
-        except Exception as exc:
-            conn.rollback()
-            logging.exception("PULSE_REEL_DELETE_FAILED trace_id=%s user_id=%s reel_id=%s error=%s", trace_id, user.get("user_id"), reel_id, exc)
-            return api_error("Reel could not be deleted.", 500, trace_id)
-        finally:
-            conn.close()
-        pulse_emit_event("pulse_reel_deleted", {"reel_id": reel_id, "post_id": int(reel["post_id"]), "trace_id": trace_id}, user["user_id"], int(reel["post_id"]))
-        return jsonify({"ok": True, "message": "Reel deleted.", "reel_id": reel_id, "trace_id": trace_id})
     payload = request.get_json(silent=True) or {}
     title = clean_html(payload.get("title") or reel.get("title") or "PulseSoc Reel")[:140]
     caption = clean_html(payload.get("description") or payload.get("caption") or payload.get("body") or reel.get("caption") or reel.get("body") or "")[:2200]
@@ -82536,38 +82544,23 @@ def api_pulse_reel_comment_manage(comment_id):
     if not comment:
         return api_error("Comment not found.", 404, trace_id)
     post_id = safe_int(comment.get("post_id"), 0)
-    conn = db()
-    conn.row_factory = sqlite3.Row
-    cur = conn.cursor()
-    cur.execute("SELECT user_id FROM pulse_posts WHERE id=? AND deleted_at IS NULL LIMIT 1", (post_id,))
-    post = dict(cur.fetchone() or {})
-    owner_id = safe_int(post.get("user_id"), 0)
-    author_id = safe_int(comment.get("user_id"), 0)
     viewer_id = safe_int(user.get("user_id"), 0)
+    # Transport only. Both branches used to resolve the post owner and apply
+    # their own permission rule inline; the rules — author-only for edit,
+    # author-or-post-owner for delete — now live in the service, which is what
+    # UNDX calls too. The wording of each refusal is preserved exactly.
+    _COMMENT_STATUS = {"forbidden": 403, "not_found": 404, "empty_body": 400, "invalid_request": 400}
     if request.method == "PATCH":
-        if author_id != viewer_id:
-            conn.close()
-            return api_error("Only the comment author can edit this comment.", 403, trace_id)
         payload = request.get_json(silent=True) or {}
-        body = clean_html(payload.get("body") or "")[:2200]
-        if not body:
-            conn.close()
-            return api_error("Comment cannot be empty.", 400, trace_id)
-        now = datetime.utcnow().isoformat(timespec="seconds")
-        cur.execute("UPDATE pulse_comments SET body=?, edited_at=?, updated_at=? WHERE id=? AND user_id=?", (body, now, now, comment_id, viewer_id))
-        conn.commit()
-        conn.close()
-        updated = pulse_feed_engine.get_comment(comment_id)
+        result = pulse_feed_engine.update_comment(viewer_id, comment_id, payload.get("body") or "", surface="web_reels")
+        if not result.get("ok"):
+            return api_error(result.get("message") or "Comment could not be updated.", _COMMENT_STATUS.get(result.get("error"), 400), trace_id)
         pulse_emit_event("pulse_reel_comment_updated", {"comment_id": comment_id, "post_id": post_id}, viewer_id, post_id)
-        return jsonify({"ok": True, "message": "Comment updated.", "comment": updated, "trace_id": trace_id})
-    if author_id != viewer_id and owner_id != viewer_id:
-        conn.close()
-        return api_error("Only the comment author or Reel owner can delete this comment.", 403, trace_id)
-    now = datetime.utcnow().isoformat(timespec="seconds")
-    cur.execute("UPDATE pulse_comments SET deleted_at=?, updated_at=? WHERE id=?", (now, now, comment_id))
-    conn.commit()
-    conn.close()
-    pulse_emit_event("pulse_reel_comment_deleted", {"comment_id": comment_id, "post_id": post_id, "moderated_by_owner": owner_id == viewer_id and author_id != viewer_id}, viewer_id, post_id)
+        return jsonify({"ok": True, "message": "Comment updated.", "comment": result.get("comment"), "trace_id": trace_id})
+    result = pulse_feed_engine.delete_comment(viewer_id, comment_id, surface="web_reels")
+    if not result.get("ok"):
+        return api_error(result.get("message") or "Comment could not be deleted.", _COMMENT_STATUS.get(result.get("error"), 400), trace_id)
+    pulse_emit_event("pulse_reel_comment_deleted", {"comment_id": comment_id, "post_id": post_id, "moderated_by_owner": bool(result.get("moderated_by_owner"))}, viewer_id, post_id)
     return jsonify({"ok": True, "message": "Comment deleted.", "comment_id": comment_id, "trace_id": trace_id})
 
 
@@ -90932,8 +90925,14 @@ def api_pulse_report():
     target_type = clean_html(payload.get("target_type") or "post")[:80]
     target_id = safe_int(payload.get("target_id"), 0)
     reason = clean_html(payload.get("reason") or "reported")[:500]
-    result = pulse_feed_engine.report(user["user_id"], target_type, target_id, reason)
-    if result.get("ok"):
+    # Transport only. Note the behaviour change this inherits: an unrecognised
+    # target_type used to be silently rewritten to "post", filing the report
+    # against a different piece of content. It is now a 400 the client can see.
+    result = pulse_feed_engine.report_content(user["user_id"], target_type, target_id, reason, surface="web_feed")
+    if not result.get("ok"):
+        status = {"unauthenticated": 401, "not_found": 404}.get(result.get("error"), 400)
+        return jsonify(result), status
+    if result.get("changed"):
         conn = db(); cur = conn.cursor()
         pulse_emit_comms_safety_event(
             cur,
@@ -90998,65 +90997,44 @@ def api_pulse_block_user():
             return jsonify({"ok": False, "message": "User not found."}), 404
         target = dict(target)
         blocked_user_id = int(target.get("user_id") or 0)
-        if blocked_user_id == int(user["user_id"]):
-            conn.close()
-            return jsonify({"ok": False, "message": "You cannot block yourself."}), 400
-        now = datetime.utcnow().isoformat(timespec="seconds")
-        cur.execute(
-            "INSERT INTO blocked_users (blocker_user_id, blocked_user_id, reason, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(blocker_user_id, blocked_user_id) DO UPDATE SET reason=excluded.reason",
-            (int(user["user_id"]), blocked_user_id, reason, now),
-        )
-        details = json.dumps({"source": "pulse_feed_block", "trace_id": trace_id, "public_player_id": target.get("public_player_id") or public_player_id})
-        cur.execute(
-            """
-            INSERT INTO pulse_reports (reporter_user_id, target_type, target_id, reason, details, status, created_at, updated_at)
-            VALUES (?, 'user', ?, ?, ?, 'open', ?, ?)
-            """,
-            (int(user["user_id"]), blocked_user_id, reason or "Blocked abusive user", details, now, now),
-        )
-        report_id = int(cur.lastrowid or 0)
-        pulse_emit_comms_safety_event(
-            cur,
-            user["user_id"],
-            "user_blocked",
-            "user",
-            blocked_user_id,
-            actor_user_id=user["user_id"],
-            target_url="/pulse/safety",
-            title="User blocked",
-            body="This user was blocked and added to safety review.",
-            category="safety",
-            extra={"blocked_user_id": blocked_user_id, "report_id": report_id, "trace_id": trace_id},
-        )
-        pulse_emit_comms_safety_event(
-            cur,
-            user["user_id"],
-            "report_submitted",
-            "report",
-            report_id,
-            actor_user_id=user["user_id"],
-            target_url="/pulse/account-health",
-            title="Report submitted",
-            body="Your safety report was submitted for review.",
-            category="safety",
-            extra={"report_id": report_id, "target_type": "user", "target_id": blocked_user_id, "reason": reason, "trace_id": trace_id},
-        )
-        conn.commit()
-        log_product_event(user["user_id"], "pulse_user_blocked", {"blocked_user_id": blocked_user_id, "trace_id": trace_id})
-        pulse_emit_event("pulse_user_blocked", {"blocked_user_id": blocked_user_id, "trace_id": trace_id}, user["user_id"], blocked_user_id)
-        conn.close()
-        return jsonify({
-            "ok": True,
-            "message": "User blocked and sent to moderation.",
-            "blocked_user_id": blocked_user_id,
-            "public_player_id": target.get("public_player_id") or public_player_id,
-            "trace_id": trace_id,
-        })
     except Exception as exc:
-        conn.rollback()
-        conn.close()
+        logging.exception("PULSE_BLOCK_USER_LOOKUP_FAILED trace_id=%s user_id=%s", trace_id, user.get("user_id"))
+        return api_error("Block action failed. The team can trace this safely.", 500, trace_id, error_type=exc.__class__.__name__)
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    # Everything above resolves a public_player_id to a user_id. The block
+    # itself belongs to the shared authority, not here.
+    #
+    # This route used to do more than block: it also opened a `pulse_reports`
+    # row on every call, so "I don't want to see this person" and "I am
+    # accusing this person of something" filed the same moderation case. That
+    # made the open-report count meaningless and put unreviewed accusations
+    # against people whose only offence was being blocked out of a feed. The
+    # report is gone; the block, the safety notification and the analytics
+    # event remain, and reporting is still available explicitly through
+    # /api/pulse/report.
+    try:
+        result = pulse_social_graph_service.block_user(
+            int(user["user_id"]), blocked_user_id, reason=reason, surface="pulse_feed")
+    except pulse_social_graph_service.SocialGraphError as exc:
+        return jsonify({"ok": False, "message": str(exc)}), exc.http_status
+    except Exception as exc:
         logging.exception("PULSE_BLOCK_USER_FAILED trace_id=%s user_id=%s", trace_id, user.get("user_id"))
         return api_error("Block action failed. The team can trace this safely.", 500, trace_id, error_type=exc.__class__.__name__)
+    log_product_event(user["user_id"], "pulse_user_blocked", {"blocked_user_id": blocked_user_id, "trace_id": trace_id})
+    pulse_emit_event("pulse_user_blocked", {"blocked_user_id": blocked_user_id, "trace_id": trace_id}, user["user_id"], blocked_user_id)
+    return jsonify({
+        "ok": True,
+        "message": "User blocked.",
+        "blocked_user_id": blocked_user_id,
+        "public_player_id": target.get("public_player_id") or public_player_id,
+        "correlation_id": result.get("correlation_id"),
+        "trace_id": trace_id,
+    })
 
 
 @webhook_app.route("/api/pulse/posts/<int:post_id>/view", methods=["POST"])
@@ -98409,55 +98387,33 @@ def api_pulse_profile_update():
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     payload = request.get_json(silent=True) or {}
-    display_name = clean_html(payload.get("display_name") or "")[:80]
-    username = clean_html(payload.get("username") or "")[:40].strip().lstrip("@")
-    bio = clean_html(payload.get("bio") or "")[:500]
-    social_links = clean_html(payload.get("social_links") or "")[:800]
-    expertise_tags = clean_html(payload.get("expertise_tags") or "")[:500]
-    visibility = payload.get("profile_visibility") if payload.get("profile_visibility") in {"public", "private"} else "public"
-    if not display_name:
-        return jsonify({"ok": False, "message": "Display name is required."}), 400
-    username_ok, username_or_error = dashboard_account_command_center.safe_username(username)
-    if not username_ok:
-        return jsonify({"ok": False, "message": username_or_error}), 400
-    username = username_or_error
-    conn = db()
-    conn.row_factory = sqlite3.Row
-    cur = conn.cursor()
-    allowed, rate_message = dashboard_account_command_center.profile_change_allowed(conn, int(user["user_id"]))
-    if not allowed:
-        conn.close()
-        return jsonify({"ok": False, "message": rate_message}), 429
-    cur.execute("SELECT * FROM users WHERE user_id=? LIMIT 1", (user["user_id"],))
-    before_profile = dashboard_account_command_center.profile_snapshot(dict(cur.fetchone() or user))
-    if username:
-        cur.execute("SELECT user_id FROM users WHERE LOWER(username)=LOWER(?) AND user_id<>? LIMIT 1", (username, user["user_id"]))
-        if cur.fetchone():
-            conn.close()
-            return jsonify({"ok": False, "message": "That username is already taken."}), 409
-    cur.execute(
-        """
-        UPDATE users
-        SET display_name=?, username=COALESCE(NULLIF(?,''), username), bio=?, social_links_json=?, expertise_tags_json=?, profile_visibility=?, updated_at=?
-        WHERE user_id=?
-        """,
-        (display_name, username, bio, social_links, expertise_tags, visibility, datetime.utcnow().isoformat(timespec="seconds"), user["user_id"]),
-    )
-    conn.commit()
-    cur.execute("SELECT * FROM users WHERE user_id=? LIMIT 1", (user["user_id"],))
-    fresh = dict(cur.fetchone() or {})
-    dashboard_account_command_center.record_profile_audit(
-        conn,
-        user_id=int(user["user_id"]),
-        actor_user_id=int(user["user_id"]),
-        action="profile_updated",
-        before=before_profile,
-        after=dashboard_account_command_center.profile_snapshot(fresh),
-        ip_hash=client_ip_hash(),
-        user_agent_hash=hashlib.sha256((request.headers.get("User-Agent") or "").encode()).hexdigest()[:32],
-    )
-    conn.commit()
-    conn.close()
+    # Transport only. Sanitation, the reserved-handle check, the uniqueness
+    # probe, the hourly rate limit, the UPDATE and the audit write all live in
+    # `pulse_profile_service` so that a caller which is not an HTTP request can
+    # reach the same authority instead of writing its own `UPDATE users`.
+    #
+    # This form always sends every field, so every field is passed. A caller
+    # that only wants to change one passes only that one — the service treats
+    # "not supplied" and "supplied empty" as different, which is what stops a
+    # partial update from reverting fields it never meant to touch.
+    try:
+        result = pulse_profile_service.update_profile(
+            int(user["user_id"]),
+            display_name=payload.get("display_name") or "",
+            username=payload.get("username") or "",
+            bio=payload.get("bio") or "",
+            social_links=payload.get("social_links") or "",
+            expertise_tags=payload.get("expertise_tags") or "",
+            profile_visibility=payload.get("profile_visibility") if payload.get("profile_visibility") in {"public", "private"} else "public",
+            surface="web_profile",
+            ip_hash=client_ip_hash(),
+            user_agent_hash=hashlib.sha256((request.headers.get("User-Agent") or "").encode()).hexdigest()[:32],
+        )
+    except pulse_profile_service.ProfileError as exc:
+        return jsonify({"ok": False, "message": str(exc)}), exc.http_status
+    fresh = result.get("profile") or {}
+    display_name = (result.get("after") or {}).get("display_name") or ""
+    username = (result.get("after") or {}).get("username") or ""
     pulse_emit_event("profile_updated", {"display_name": display_name, "message": "A PulseSoc profile was updated."}, user["user_id"], 0)
     avatar_url = clean_html(fresh.get("avatar_url") or "")[:1000]
     cover_url = clean_html(fresh.get("cover_url") or fresh.get("banner_url") or "")[:1000]
@@ -99219,27 +99175,17 @@ def api_messages_block():
     blocked_user_id = int(payload.get("user_id") or payload.get("blocked_user_id") or 0)
     if not blocked_user_id or blocked_user_id == user["user_id"]:
         return jsonify({"ok": False, "message": "Valid user required."}), 400
-    conn = db()
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO blocked_users (blocker_user_id, blocked_user_id, reason, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(blocker_user_id, blocked_user_id) DO UPDATE SET reason=excluded.reason",
-        (user["user_id"], blocked_user_id, clean_html(payload.get("reason") or "")[:400], datetime.now().isoformat()),
-    )
-    pulse_emit_comms_safety_event(
-        cur,
-        user["user_id"],
-        "user_blocked",
-        "user",
-        blocked_user_id,
-        actor_user_id=user["user_id"],
-        target_url="/pulse/safety",
-        title="User blocked",
-        body="This user was blocked from messaging.",
-        category="safety",
-        extra={"blocked_user_id": blocked_user_id, "source": "messages"},
-    )
-    conn.commit()
-    conn.close()
+    # Blocking from Messenger used to write only `blocked_users`, while
+    # `pulse_communications_v2` wrote only `comm_v2_blocks` — and
+    # `presence_service` reads both. Whether blocking actually hid your presence
+    # therefore depended on which screen you did it from. The shared service
+    # writes both, so it no longer does.
+    try:
+        pulse_social_graph_service.block_user(
+            int(user["user_id"]), blocked_user_id,
+            reason=clean_html(payload.get("reason") or "")[:400], surface="messages")
+    except pulse_social_graph_service.SocialGraphError as exc:
+        return jsonify({"ok": False, "message": str(exc)}), exc.http_status
     return jsonify({"ok": True})
 
 

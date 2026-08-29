@@ -969,6 +969,70 @@ def resolve_saved_post_write_arguments(text: str, arguments: dict[str, Any]) -> 
     return resolved
 
 
+#: A campaign named the way people name them — "the summer campaign", "my Black
+#: Friday campaign" — rather than by the 32-character hex id nobody reads off a
+#: screen. The words before the noun are the name; anything shorter than three
+#: characters is not attempted, because a one-letter substring matches everything.
+_CAMPAIGN_PHRASE = re.compile(
+    r"\b(?:the|my)\s+(.{3,60}?)\s+campaign\b"
+    r"|\bcampaign\s+(?:called|named)\s+[\"']?(.{3,60}?)[\"']?(?:[.!?,]|$)",
+    re.IGNORECASE)
+
+#: Words that survive the phrase match but name no campaign. Without this,
+#: "pause the paused campaign" would search for a campaign called "paused".
+_CAMPAIGN_STOPWORDS = frozenset({
+    "paused", "active", "running", "live", "current", "first", "second", "last",
+    "latest", "newest", "oldest", "only", "other", "same", "whole", "entire",
+})
+
+
+def resolve_campaign_arguments(user_id: int, text: str,
+                               arguments: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """Turn a campaign named in words into the id it owns, or leave it unset.
+
+    Returns the arguments and whether the runtime — rather than the person — chose
+    the target, because a name matched against a list is a proposal and has to
+    reach the policy as one.
+
+    Ambiguity leaves ``campaign_id`` absent on purpose. Two campaigns whose names
+    both contain "summer" is exactly the case the mission says never to guess at,
+    and an absent required field asks "which campaign?" instead of picking. It
+    would be better to offer the two by name in a chooser; ``Reference`` carries an
+    integer resource id and a campaign id is a hex string, so that card cannot be
+    built without widening a type that six other resolvers depend on. Asking is the
+    honest behaviour available today, and the narrower fix is worth doing later.
+
+    An id written out in full is left exactly as it arrived. This function only
+    ever adds a value that was missing.
+    """
+    resolved = dict(arguments)
+    if clean(resolved.get("campaign_id") or "", 120):
+        return resolved, False
+    lowered = clean(text, MAX_TEXT_CHARS)
+    match = _CAMPAIGN_PHRASE.search(lowered)
+    if not match:
+        return resolved, False
+    phrase = clean(match.group(1) or match.group(2) or "", 60).strip().lower()
+    if len(phrase) < 3 or phrase in _CAMPAIGN_STOPWORDS:
+        return resolved, False
+    try:
+        from services.business_os.advertising import service as ad_service
+
+        campaigns = ad_service.list_campaigns_for_owner(int(user_id))
+    except Exception:  # noqa: BLE001 - a resolver may decline, never fail a turn
+        logger.debug("undx_campaign_read_failed user=%s", int(user_id))
+        return resolved, False
+    hits = [row for row in campaigns
+            if phrase in str(row.get("name") or "").lower()]
+    if len(hits) != 1:
+        return resolved, False
+    campaign_id = clean(hits[0].get("campaign_id") or "", 120)
+    if not campaign_id:
+        return resolved, False
+    resolved["campaign_id"] = campaign_id
+    return resolved, True
+
+
 def resolve_user_target_arguments(text: str, arguments: dict[str, Any]) -> dict[str, Any]:
     """Extract an explicit numeric QA-safe user target; names require disambiguation."""
     resolved = dict(arguments)
@@ -1894,15 +1958,25 @@ def resolve_arguments(user_id: int, spec: CapabilitySpec, text: str,
     if spec.capability_id in {
         "messages.list", "messages.search", "conversations.summarize",
         "messages.suggest", "messages.draft",
+        "messages.mark_read", "messages.send",
     } and not arguments.get("conversation_id"):
         found = resource_reference(text, _RESOURCE_NOUNS["conversation_id"])
         if found:
             arguments["conversation_id"] = found
+        # No fallback for the two writes. There is no messaging equivalent of
+        # resolve_recent_post that could be trusted here: the most recent thread is
+        # a plausible guess, and a plausible guess is the one thing a send must not
+        # be built on. Leaving conversation_id unset makes the gateway ask.
     if spec.capability_id == "messages.search" and not arguments.get("query"):
         match = re.search(r"(?:where|for)\s+(.+?)(?:\s+in\s+conversation\s+\d+)?[.!?]?$", text, re.IGNORECASE)
         if match:
             arguments["query"] = clean(match.group(1), 120)
-    if spec.capability_id == "messages.draft" and not arguments.get("body"):
+    if spec.capability_id in {"messages.draft", "messages.send"} and not arguments.get("body"):
+        # Same extraction for both, deliberately. A draft and a send differ in what
+        # happens afterwards, not in how the sentence names the words to write, and
+        # two regexes drifting apart would mean the text a person previewed as a
+        # draft is not the text that would go out. The send is still gated by an
+        # ALWAYS confirmation whose card shows this exact string.
         match = re.search(r"(?:saying|say|body)\s+(.+?)(?:\s+to\s+conversation\s+\d+)?[.!?]?$", text, re.IGNORECASE)
         if match:
             arguments["body"] = clean(match.group(1), 2000)
@@ -1923,6 +1997,19 @@ def resolve_arguments(user_id: int, spec: CapabilitySpec, text: str,
             if found:
                 arguments["post_id"] = found
                 agent_chose_target = True
+    if spec.capability_id == "feed.posts.hide" and not arguments.get("post_id"):
+        # Reference only, and kept out of the set above on purpose. That set falls
+        # through to resolve_recent_post, which returns the caller's own most recent
+        # post — and hide_post refuses own posts with 400 "Your own post cannot be
+        # hidden from your Home feed." The fallback would therefore turn every vague
+        # "hide that post" into a guaranteed write_rejected against a row the person
+        # never named. Hiding is about somebody else's post; it has to be pointed at.
+        found = resource_reference(text, _RESOURCE_NOUNS["post_id"])
+        if found:
+            arguments["post_id"] = found
+    if spec.capability_id in {"business.campaign.pause", "business.campaign.resume"}:
+        arguments, campaign_chosen = resolve_campaign_arguments(int(user_id), text, arguments)
+        agent_chose_target = agent_chose_target or campaign_chosen
     if spec.capability_id == "translation.content.translate":
         lowered = text.lower()
         if not arguments.get("content_type"):
@@ -2259,6 +2346,69 @@ def preview(user_id: int, spec: CapabilitySpec,
             # the card names the row the before-value came from.
             return (before, spec.capability_id == "feed.posts.like",
                     describe_post(get_post(int(user_id), post_id)))
+        if spec.capability_id == "feed.posts.hide" and arguments.get("post_id"):
+            from services.feed_intelligence_service import get_post
+            from services.pulse_feed_engine import get_post_hidden
+
+            post_id = int(arguments["post_id"])
+            return (get_post_hidden(int(user_id), post_id), True,
+                    describe_post(get_post(int(user_id), post_id)))
+        if spec.capability_id == "messages.send" and arguments.get("conversation_id"):
+            from services.messenger_intelligence_service import get_conversation_read_state
+
+            # A send has no before-value: nothing is being changed, something is being
+            # added, and a card that invented one would be describing a state the
+            # action does not touch. What the person actually needs to check is the
+            # two things they cannot take back — the words, and who receives them —
+            # so the after-value is the exact body that will be written and the label
+            # proves the thread was found under this user's own membership. If the
+            # read-back is None the membership is gone; the label stays empty and the
+            # gap is visible, which is the honest rendering of "we could not confirm
+            # this thread is yours" on the one card in this system that must not be
+            # pressed absent-mindedly.
+            state = get_conversation_read_state(int(user_id), int(arguments["conversation_id"]))
+            label = "" if state is None else f"conversation {state['conversation_id']}"
+            return None, clean(arguments.get("body") or "", 2000), label
+        if spec.capability_id in {"business.campaign.pause", "business.campaign.resume"} \
+                and arguments.get("campaign_id"):
+            from services.business_os.advertising import operations as ad_ops
+            from services.business_os.advertising import service as ad_service
+
+            campaign_id = clean(arguments["campaign_id"], 120)
+            # Same ownership-enforcing view the executor pre-checks through and the
+            # verifier reads back from. A preview that reached the campaign by a
+            # laxer path could show a card for a campaign the action would then
+            # refuse — or worse, show one the caller does not own.
+            view = ad_ops.get_operational_view(
+                campaign_id, requester_user_id=int(user_id)) or {}
+            # The operational projection deliberately carries no name, so the label
+            # takes a second, equally owner-scoped read. Worth the extra query here:
+            # resolve_campaign_arguments can put a campaign on this card that the
+            # sentence only described by name, and a hex id is the one thing the
+            # person has no way to check.
+            campaign = ad_service.get_campaign(
+                campaign_id, requester_user_id=int(user_id)) or {}
+            # The status is the field the write moves; funding is deliberately left
+            # out of it, for the same reason the verifier keeps the two apart —
+            # "paused" is a delivery state, and a card that let it read as "money
+            # stopped" would be promising something this action does not do.
+            return (clean(view.get("operational_status") or "", 40),
+                    "paused" if spec.capability_id.endswith("pause") else "active",
+                    clean(campaign.get("name") or "", 120))
+        if spec.capability_id == "business.profile.update" and arguments.get("field"):
+            from services.business_os.profile import api as profile_api
+
+            field = clean(arguments["field"], 40)
+            status, body = profile_api.get_profile(int(user_id))
+            if int(status) != 200 or not body.get("ok"):
+                return None, clean(arguments.get("value") or "", 600), ""
+            # The before-value is the whole point on this card. This write is
+            # CONSEQUENTIAL because the previous text is not recoverable from the
+            # arguments — there is no undo capability — so the card is the last place
+            # the old wording exists in front of the person about to replace it.
+            return (clean((body.get("profile") or {}).get(field), 600),
+                    clean(arguments.get("value") or "", 600),
+                    field.replace("_", " "))
     except Exception:  # pragma: no cover - a preview must never block the action
         return None, None, ""
     return None, None, ""

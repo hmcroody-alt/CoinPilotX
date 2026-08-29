@@ -868,6 +868,33 @@ _register(CapabilitySpec(
     target_field="post_id",
 ))
 
+_register(CapabilitySpec(
+    capability_id="feed.posts.hide",
+    description="Hide one other account's post from the authenticated user's Home feed",
+    intents=("hide this post", "hide post", "stop showing me this post",
+             "don't show me this post"),
+    risk=RiskLevel.REVERSIBLE_WRITE,
+    # Contextual rather than never. The post is somebody else's, so the runtime
+    # cannot fall back to "your most recent post" the way the like path does, and a
+    # target the runtime resolved on its own is confirmed by the generic rule
+    # regardless of what is written here.
+    confirmation=ConfirmationPolicy.CONTEXTUAL,
+    tool_name="pulsesoc.feed.posts.hide",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(_POST_ID,),
+    executor="feed_post_hide",
+    verifier="feed_post_hidden_value",
+    verified_fields=("hidden",),
+    native_route="/pulse/post/:post_id",
+    result_card=CardType.ACTION_SUCCESS_RECEIPT,
+    audit_category="feed_visibility_write",
+    target_field="post_id",
+    # No ``undo_capability_id``: ``pulse_feed_engine`` has no ``unhide_post``, and
+    # an undo that named a capability which cannot exist would be a promise the
+    # receipt could not keep. The deep link opens the post; that is the honest
+    # affordance until the service grows the inverse.
+))
+
 
 # --- Notification preferences ---------------------------------------------
 
@@ -1474,6 +1501,602 @@ for _spec in (
                    target_field="theme"),
 ):
     _register(_spec)
+
+
+# ---------------------------------------------------------------------------
+# Messaging writes
+# ---------------------------------------------------------------------------
+#
+# Messenger has had read capabilities since the first pack — list, search,
+# summarize, draft. Draft in particular has always stopped one step short on
+# purpose: it composes and hands the words back, and a person sends them. These
+# two capabilities are the first that touch the conversation itself, and they are
+# deliberately unequal. Marking read changes a counter that only the caller sees.
+# Sending puts words in front of another person under the caller's name, cannot be
+# recalled, and is the one action in this expansion whose blast radius leaves the
+# account entirely.
+
+_register(CapabilitySpec(
+    capability_id="messages.mark_read",
+    description="Mark one of the authenticated user's conversations as read",
+    intents=("mark this conversation read", "mark as read", "clear my unread",
+             "mark this chat read"),
+    risk=RiskLevel.REVERSIBLE_WRITE,
+    confirmation=ConfirmationPolicy.CONTEXTUAL,
+    tool_name="pulsesoc.messages.mark_read",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(_CONVERSATION_ID,),
+    executor="messages_mark_read",
+    verifier="conversation_read_state",
+    verified_fields=("unread_count",),
+    native_route="/pulse/messages/:conversation_id",
+    result_card=CardType.ACTION_SUCCESS_RECEIPT,
+    audit_category="messages_read_state_write",
+    target_field="conversation_id",
+    # Read receipts go out to the other participants when this runs, so the
+    # counter is private but the fact of having read is not. There is no
+    # ``mark_unread`` in comm_v2 and inventing one here would not un-send those
+    # receipts, so no undo is offered.
+))
+
+_register(CapabilitySpec(
+    capability_id="messages.send",
+    description="Send one text message to a conversation the authenticated user is already in",
+    intents=("send this message", "send it", "reply to this conversation",
+             "send that message now"),
+    # Consequential, not reversible: comm_v2 has no delete-for-everyone on this
+    # path, and even if it did, the message has already been delivered and pushed
+    # by the time an undo could run. The recipient's copy is not ours to retract.
+    risk=RiskLevel.CONSEQUENTIAL_WRITE,
+    confirmation=ConfirmationPolicy.ALWAYS,
+    tool_name="pulsesoc.messages.send",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(_CONVERSATION_ID,
+            FieldSpec("body", "str", required=True, max_length=2000)),
+    executor="messages_send",
+    verifier="message_exists",
+    # ``body`` is mutable and therefore has to be verified, which is the point of
+    # the rule: the confirmation card shows exact words, and the receipt may only
+    # say "sent" once those exact words have been found in the conversation.
+    verified_fields=("body", "message_id"),
+    native_route="/pulse/messages/:conversation_id",
+    result_card=CardType.ACTION_SUCCESS_RECEIPT,
+    audit_category="messages_write",
+    target_field="conversation_id",
+    idempotent=False,
+))
+
+
+# ---------------------------------------------------------------------------
+# Business OS
+# ---------------------------------------------------------------------------
+#
+# Only the two READY advertising verbs and the seller profile's descriptive text.
+# Budget, funding, payouts and the card-payment switch are all absent and stay
+# absent: pausing a campaign stops it being eligible for a future delivery worker
+# and moves no money, which is exactly why it is safe to expose while the money
+# verbs beside it are not.
+
+_BUSINESS_CAMPAIGN_ID = FieldSpec("campaign_id", "identifier", required=True, max_length=120)
+
+#: Where a receipt for a Business OS action sends the person, and the reason it is
+#: not a Business OS screen.
+#:
+#: The screens exist — ``BusinessProfile`` and ``BusinessOsAdvertising`` are both
+#: registered in ``AppNavigator.tsx`` — but neither appears in ``linking.ts``, so
+#: the whole Business OS surface is currently unreachable by URL. A capability may
+#: not declare a route the client does not serve: the deep link on the receipt is a
+#: promise that tapping it goes somewhere, and a dead link is a small lie told at
+#: the exact moment the person is checking whether the action really happened.
+#:
+#: Per-campaign linking has a second obstacle even once a path is declared.
+#: ``business_os.advertising.service`` mints campaign ids with ``uuid4().hex`` while
+#: ``RootStackParamList.BusinessOsAdvertising`` types ``campaignId`` as ``number``,
+#: so a correct id cannot be carried by the screen that would receive it. Both are
+#: reported as MISSING APIs rather than patched from here — widening a native param
+#: type is a client change, and inventing a URL prefix the web app does not serve
+#: would break every one of these links the moment it left the app.
+#:
+#: Until then the UNDX action centre is the honest destination: it is declared, it
+#: is reachable, and it is the screen whose actual job is showing what UNDX did.
+#: Named for the screen rather than for Business OS: the same destination now
+#: carries marketplace and moderation receipts, and a ``_BUSINESS_`` prefix would
+#: read as a constraint that does not exist.
+_UNDX_ACTION_CENTRE = "/pulse/undx/actions"
+
+#: Kept in step with ``undx_agent_tools.BUSINESS_PROFILE_WRITABLE_FIELDS`` by a test
+#: rather than by import, so that widening one without the other fails loudly.
+_BUSINESS_PROFILE_FIELDS = (
+    "about", "what_you_sell", "service_area", "shipping_summary",
+    "return_summary", "response_expectations", "response_hours",
+)
+
+_register(CapabilitySpec(
+    capability_id="business.campaign.pause",
+    description="Pause one advertising campaign owned by the authenticated user",
+    intents=("pause my campaign", "pause the campaign", "stop my campaign",
+             "pause the summer campaign"),
+    risk=RiskLevel.REVERSIBLE_WRITE,
+    confirmation=ConfirmationPolicy.CONTEXTUAL,
+    tool_name="pulsesoc.business.campaign.pause",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(_BUSINESS_CAMPAIGN_ID,),
+    executor="business_campaign_pause",
+    verifier="campaign_operational_status",
+    verified_fields=("operational_status",),
+    native_route=_UNDX_ACTION_CENTRE,
+    result_card=CardType.ACTION_SUCCESS_RECEIPT,
+    audit_category="business_advertising_write",
+    target_field="campaign_id",
+    undo_capability_id="business.campaign.resume",
+    undo_argument_map=(("campaign_id", "campaign_id"),),
+))
+
+_register(CapabilitySpec(
+    capability_id="business.campaign.resume",
+    description="Resume one paused advertising campaign owned by the authenticated user",
+    intents=("resume my campaign", "unpause the campaign", "start my campaign again",
+             "resume the summer campaign"),
+    # Resuming re-enters ``active``, so ``resume_campaign`` re-runs the full
+    # activation gate — a suspended advertiser or released funding refuses here
+    # rather than in this layer, which is the correct place for it.
+    risk=RiskLevel.REVERSIBLE_WRITE,
+    confirmation=ConfirmationPolicy.CONTEXTUAL,
+    tool_name="pulsesoc.business.campaign.resume",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(_BUSINESS_CAMPAIGN_ID,),
+    executor="business_campaign_resume",
+    verifier="campaign_operational_status",
+    verified_fields=("operational_status",),
+    native_route=_UNDX_ACTION_CENTRE,
+    result_card=CardType.ACTION_SUCCESS_RECEIPT,
+    audit_category="business_advertising_write",
+    target_field="campaign_id",
+    undo_capability_id="business.campaign.pause",
+    undo_argument_map=(("campaign_id", "campaign_id"),),
+))
+
+_register(CapabilitySpec(
+    capability_id="business.profile.update",
+    description="Update one descriptive text field on the user's business profile",
+    intents=("update my business description", "change what my business sells",
+             "update my shipping info", "change my return policy",
+             "update my business about section"),
+    # Public the moment it saves — the seller profile is what a buyer reads — so
+    # the exact proposed text is shown and approved before it is written.
+    risk=RiskLevel.CONSEQUENTIAL_WRITE,
+    confirmation=ConfirmationPolicy.ALWAYS,
+    tool_name="pulsesoc.business.profile.update",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(FieldSpec("field", "enum", required=True, choices=_BUSINESS_PROFILE_FIELDS),
+            FieldSpec("value", "str", required=True, max_length=600)),
+    executor="business_profile_update",
+    verifier="business_profile_field_value",
+    verified_fields=("value",),
+    native_route=_UNDX_ACTION_CENTRE,
+    result_card=CardType.SETTING_CHANGE_RECEIPT,
+    audit_category="business_profile_write",
+    # Undo would need the text that was there before, which the arguments do not
+    # carry and ``update_profile`` does not return. The audit table keeps it, but
+    # reading a value out of an audit log to write it back is a different
+    # capability than this one and should be built as such if it is wanted.
+    target_field="field",
+))
+
+
+# ---------------------------------------------------------------------------
+# Consumer social graph, profile, Reels and moderation
+# ---------------------------------------------------------------------------
+#
+# Every capability below dispatches to a shared service that the HTTP routes also
+# call. The permission scope declared here is not where ownership is decided —
+# ``delete_owned_reel`` refuses a Reel it does not own whoever asks — it is the
+# gateway's structural check that this capability cannot be pointed at somebody
+# else's account by an argument.
+#
+# ``self_account_only`` on the Reels, comment and report capabilities may read
+# oddly, since a comment can be deleted from a Reel the caller owns but did not
+# write, and a report is filed *about* content that is not theirs. The scope
+# describes which rows the caller may reach, and in each case the row that moves
+# is one they own or moderate: their Reel, their comment, their report. The one
+# exception is spelled out on ``feed.report``.
+#
+# ``owned_content_target`` would be the more descriptive scope for several of
+# these, but ``undx_tool_gateway._enforce_permission_scope`` refuses it outright:
+# it has no resolver for that scope and fails closed rather than executing under
+# an ownership check that does not exist. Declaring it would take these
+# capabilities off the air. ``feed.posts.hide`` — somebody else's post, scoped
+# ``self_account_only`` — is the standing precedent.
+
+_COMMENT_ID = FieldSpec("comment_id", "int", required=True, minimum=1)
+
+#: 2200 characters, matching what ``pulse_feed_engine`` accepts for a comment body.
+_COMMENT_BODY = FieldSpec("body", "str", required=True, max_length=2200)
+
+#: Kept in step with ``pulse_feed_engine.REPORT_TARGET_TYPES`` by a test rather than
+#: by import, following ``_BUSINESS_PROFILE_FIELDS``. Importing the feed engine here
+#: would pull the whole media/moderation/notification graph into a module the
+#: gateway loads on every request, and this file is deliberately import-light.
+_REPORT_CONTENT_TYPES = ("post", "comment", "media", "user")
+
+
+_register(CapabilitySpec(
+    capability_id="profile.block",
+    description="Block one PulseSoc account so it can no longer reach the user",
+    intents=("block user", "block this account", "block them", "stop them contacting me",
+             "block this person", "i want to block"),
+    # Reversible in the strict sense — ``profile.unblock`` restores the prior state
+    # exactly — but a block is observable to the other party through what they can
+    # no longer do, so the confirmation is contextual rather than never.
+    risk=RiskLevel.REVERSIBLE_WRITE,
+    confirmation=ConfirmationPolicy.CONTEXTUAL,
+    tool_name="pulsesoc.profile.block",
+    permission=PermissionScope.OTHER_USER_TARGET,
+    fields=(_TARGET_USER_ID,),
+    executor="profile_block",
+    verifier="profile_block_value",
+    # Not a declared field: which of block/unblock ran is what sets the expected
+    # value, the same arrangement ``feed.posts.like`` uses. Naming it is what lets
+    # the receipt say "they are blocked" rather than "that setting is on".
+    verified_fields=("blocked",),
+    native_route="/pulse/profile/:profileKey",
+    result_card=CardType.RELATIONSHIP_CHANGE_RECEIPT,
+    audit_category="social_safety_write",
+    target_field="target_user_id",
+    undo_capability_id="profile.unblock",
+))
+
+_register(CapabilitySpec(
+    capability_id="profile.unblock",
+    description="Remove an existing block on one PulseSoc account",
+    intents=("unblock user", "unblock this account", "unblock them", "remove my block",
+             "let them contact me again"),
+    risk=RiskLevel.REVERSIBLE_WRITE,
+    confirmation=ConfirmationPolicy.CONTEXTUAL,
+    tool_name="pulsesoc.profile.unblock",
+    permission=PermissionScope.OTHER_USER_TARGET,
+    fields=(_TARGET_USER_ID,),
+    executor="profile_unblock",
+    verifier="profile_block_value",
+    verified_fields=("blocked",),
+    native_route="/pulse/profile/:profileKey",
+    result_card=CardType.RELATIONSHIP_CHANGE_RECEIPT,
+    audit_category="social_safety_write",
+    target_field="target_user_id",
+    undo_capability_id="profile.block",
+))
+
+# The six descriptions below say "the caller" where the surrounding file says "the
+# authenticated user", and the inconsistency is load-bearing. ``undx_brain.attention``
+# builds its routing index from these strings and then drops any term appearing in more
+# than ``len(RECORDS) * _COMMON_TERM_SHARE`` records, on the principle that a word in a
+# quarter of the map names no subject. Before this capability pack "user" sat at 32
+# postings against a ceiling of 38; writing "the authenticated user" six more times put
+# it at 42 against 41 and the term was dropped outright, which cost "who is user 99" its
+# routing entirely — it had nothing else to match on. Every write here is performed by
+# the authenticated user, so saying so discriminates nothing; the word is kept for the
+# two capabilities where a user is the *subject* (``profile.block``/``profile.unblock``,
+# whose intents are "block user"/"unblock user"). Restoring house style in these six
+# strings will silently re-break that routing, and no test in this file will notice —
+# the guard is ``tests/undx_agent/test_question_framed_writes.py``.
+_register(CapabilitySpec(
+    capability_id="profile.bio.update",
+    description="Replace the text of the caller's own profile bio",
+    intents=("update my bio", "change my bio", "rewrite my bio", "set my bio",
+             "edit my profile bio", "my bio should say"),
+    # Public the moment it saves, so the exact proposed text is approved first —
+    # the same reasoning as ``business.profile.update``.
+    risk=RiskLevel.CONSEQUENTIAL_WRITE,
+    confirmation=ConfirmationPolicy.ALWAYS,
+    tool_name="pulsesoc.profile.bio.update",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    # ``FieldSpec.coerce`` rejects an empty string, so this cannot clear a bio.
+    # ``update_profile`` distinguishes "clear it" from "leave it alone" and would
+    # honour a clear; reaching that through UNDX needs its own capability, because
+    # "update my bio" arriving with an empty value is far more likely to be a
+    # planner that lost the text than a person who meant to erase theirs.
+    fields=(FieldSpec("bio", "str", required=True, max_length=500),),
+    executor="profile_bio_update",
+    verifier="profile_bio_value",
+    verified_fields=("bio",),
+    native_route="/pulse/settings",
+    result_card=CardType.SETTING_CHANGE_RECEIPT,
+    audit_category="profile_write",
+    # No undo. Reversing this needs the previous text, which the arguments do not
+    # carry and ``update_profile_bio`` does not hand back in a form
+    # ``undo_argument_map`` can read. The before-state is in the profile audit
+    # trail; reading a value out of an audit log to write it back is a different
+    # capability and should be built as one.
+    target_field="bio",
+))
+
+_register(CapabilitySpec(
+    capability_id="reels.delete",
+    description="Soft-delete one Reel the caller owns",
+    intents=("delete my reel", "delete this reel", "remove my reel", "take down my reel"),
+    risk=RiskLevel.CONSEQUENTIAL_WRITE,
+    confirmation=ConfirmationPolicy.ALWAYS,
+    tool_name="pulsesoc.reels.delete",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(_REEL_ID,),
+    executor="reels_delete",
+    verifier="reel_deleted",
+    native_route="/pulse/reels/:reel_id",
+    result_card=CardType.ACTION_SUCCESS_RECEIPT,
+    audit_category="reels_write",
+    target_field="reel_id",
+))
+
+_register(CapabilitySpec(
+    capability_id="reels.comment.create",
+    description="Post a comment on one Reel the caller can see",
+    intents=("comment on this reel", "reply to this reel", "leave a comment on the reel",
+             "post a comment saying"),
+    # Immediately public under somebody else's Reel, so the exact words are approved
+    # before they are published rather than after.
+    risk=RiskLevel.CONSEQUENTIAL_WRITE,
+    confirmation=ConfirmationPolicy.ALWAYS,
+    tool_name="pulsesoc.reels.comment.create",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(_REEL_ID, _COMMENT_BODY),
+    executor="reels_comment_create",
+    verifier="reel_comment_body",
+    verified_fields=("body",),
+    native_route="/pulse/reels/:reel_id",
+    result_card=CardType.ACTION_SUCCESS_RECEIPT,
+    audit_category="reels_comments_write",
+    target_field="reel_id",
+    undo_capability_id="reels.comment.delete",
+    # Deleting the comment just created needs its id, which appears nowhere in the
+    # arguments — only in the verified result. An unverified creation therefore
+    # offers no undo rather than a delete aimed at nothing.
+    undo_argument_map=(("comment_id", "@target"),),
+    # Two identical comments are two comments. Suppressing the second as a duplicate
+    # would be the gateway deciding the person did not mean what they repeated.
+    idempotent=False,
+))
+
+_register(CapabilitySpec(
+    capability_id="reels.comment.update",
+    description="Edit the text of a comment the caller wrote",
+    intents=("edit my comment", "change my comment", "fix my comment", "reword my comment"),
+    risk=RiskLevel.CONSEQUENTIAL_WRITE,
+    confirmation=ConfirmationPolicy.ALWAYS,
+    tool_name="pulsesoc.reels.comment.update",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(_COMMENT_ID, _COMMENT_BODY),
+    executor="reels_comment_update",
+    verifier="reel_comment_body",
+    verified_fields=("body",),
+    # Only ``comment_id`` is declared, so the ``:reel_id`` placeholder is stripped
+    # and the link lands on Reels rather than on a specific one. A comment has no
+    # addressable screen of its own; this is the closest honest destination.
+    native_route="/pulse/reels/:reel_id",
+    result_card=CardType.ACTION_SUCCESS_RECEIPT,
+    audit_category="reels_comments_write",
+    target_field="comment_id",
+))
+
+_register(CapabilitySpec(
+    capability_id="reels.comment.delete",
+    description="Soft-delete a comment the caller wrote, or one on a Reel the caller owns",
+    intents=("delete my comment", "remove my comment", "delete this comment",
+             "remove that comment from my reel"),
+    risk=RiskLevel.CONSEQUENTIAL_WRITE,
+    confirmation=ConfirmationPolicy.ALWAYS,
+    tool_name="pulsesoc.reels.comment.delete",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(_COMMENT_ID,),
+    executor="reels_comment_delete",
+    verifier="reel_comment_deleted",
+    native_route="/pulse/reels/:reel_id",
+    result_card=CardType.ACTION_SUCCESS_RECEIPT,
+    audit_category="reels_comments_write",
+    target_field="comment_id",
+))
+
+_register(CapabilitySpec(
+    capability_id="feed.report",
+    description="File a moderation report against a post, comment, media item or account",
+    intents=("report this post", "report this comment", "report this account",
+             "report this user", "flag this post", "report this to moderation"),
+    # Consequential because it puts a human moderator's attention on another
+    # person's content and, for an approved post, moves it into review. A report
+    # filed by a planner that misread the conversation is not something an undo
+    # can retract from the moderation queue.
+    risk=RiskLevel.CONSEQUENTIAL_WRITE,
+    confirmation=ConfirmationPolicy.ALWAYS,
+    tool_name="pulsesoc.feed.report",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    # ``content_id`` can name another account when ``content_type`` is ``user``, and
+    # it is deliberately not called ``target_user_id``: that name is reserved by
+    # ``_ACTOR_NAMING_FIELDS`` for fields that select *whose data is mutated*, and
+    # this one selects what is being complained about. The row this writes is the
+    # caller's own report. ``report_content`` refuses a self-report and checks the
+    # target exists before filing.
+    fields=(
+        FieldSpec("content_type", "enum", required=True, choices=_REPORT_CONTENT_TYPES),
+        FieldSpec("content_id", "int", required=True, minimum=1),
+        FieldSpec("reason", "str", required=True, max_length=500),
+    ),
+    executor="feed_report",
+    verifier="content_reported",
+    verified_fields=("content_type", "reason"),
+    native_route=_UNDX_ACTION_CENTRE,
+    result_card=CardType.ACTION_SUCCESS_RECEIPT,
+    audit_category="moderation_write",
+    target_field="content_id",
+    # No undo: withdrawing a report is a moderator-side state change on a row the
+    # reporter no longer solely owns, and ``report_content`` exposes no retraction.
+))
+
+
+# ---------------------------------------------------------------------------
+# Marketplace listings
+# ---------------------------------------------------------------------------
+#
+# These act on the Business OS seller catalog — ``business_os_mkt_products``,
+# whose primary key is a string like ``mktp_9f2c…`` — through
+# ``services.business_os.marketplace.service`` exactly as it stands. That service
+# already enforces the feature flag, the approved-seller requirement, the account
+# hold, product ownership and the legal status transitions, and writes its own
+# ``business_os_mkt_audit`` trail. Nothing here re-decides any of it.
+#
+# SHARP EDGE, and it is worth stating plainly: ``marketplace.search`` and
+# ``marketplace.listing.summary`` above read a *different* table —
+# ``marketplace_listings``, the older consumer marketplace, whose ids are
+# integers. The two namespaces share the word "listing" and nothing else. An id
+# obtained from the read capabilities cannot be used with the write capabilities:
+# an integer fails the ``identifier`` field's own coercion or, if it were to pass,
+# would miss every ``mktp_``-prefixed row and surface as "Product not found."
+# That is a confusing failure but a safe one — ids cannot collide across the two
+# key spaces, so no write can land on the wrong row. Unifying or renaming the two
+# surfaces is a product decision and is reported as an open finding rather than
+# quietly resolved by giving them the same field type here.
+#
+# ``marketplace.listing.delete`` maps to the service's ``archive`` transition.
+# There is no hard delete in the product and this is not the place to invent one:
+# orders reference products, and a row that vanishes from under a buyer's receipt
+# is a support incident, not a feature. The capability keeps the word "delete"
+# because that is the word a person uses; the receipt reports the archived status.
+
+_MKT_LISTING_ID = FieldSpec("listing_id", "identifier", required=True, max_length=120)
+
+#: Kept in step with the ``allowed`` set in ``marketplace.service.update_product``
+#: by a test. ``status`` is absent on purpose — it is reachable only through the
+#: lifecycle verbs, which is what makes the transition table enforceable.
+_MKT_UPDATABLE_FIELDS = ("title", "description", "price_cents", "fulfillment_type", "inventory_qty")
+
+_register(CapabilitySpec(
+    capability_id="marketplace.listing.create",
+    description="Create a draft Marketplace listing owned by the authenticated seller",
+    intents=("create a listing", "list an item for sale", "add a marketplace listing",
+             "sell this on marketplace", "new marketplace listing"),
+    risk=RiskLevel.CONSEQUENTIAL_WRITE,
+    confirmation=ConfirmationPolicy.ALWAYS,
+    tool_name="pulsesoc.marketplace.listing.create",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(
+        FieldSpec("title", "str", required=True, max_length=160),
+        FieldSpec("price_cents", "int", required=True, minimum=0, maximum=100_000_000),
+        FieldSpec("description", "str", required=False, max_length=2000),
+        FieldSpec("fulfillment_type", "enum", required=False,
+                  choices=("physical", "digital"), default="physical"),
+    ),
+    executor="marketplace_listing_create",
+    verifier="marketplace_listing_created",
+    # No row exists yet to name, so the target is the title — the same choice
+    # ``crypto.alerts.create`` makes with ``symbol``. It keeps two different
+    # "list my bike" and "list my desk" requests in one message from sharing an
+    # idempotency key.
+    target_field="title",
+    verified_fields=("price_cents", "description", "fulfillment_type"),
+    native_route=_UNDX_ACTION_CENTRE,
+    result_card=CardType.ACTION_SUCCESS_RECEIPT,
+    audit_category="marketplace_listings_write",
+    # No undo. The inverse of "create" here would be ``archive``, which leaves the
+    # row in place with a different status — not a reversal, and offering it as one
+    # would tell the seller their listing was undone while it still exists.
+    idempotent=False,
+))
+
+_register(CapabilitySpec(
+    capability_id="marketplace.listing.update",
+    description="Change one mutable field on a Marketplace listing the caller owns",
+    intents=("update my listing", "change my listing price", "edit my listing",
+             "change the price of my listing", "update the listing description"),
+    # Reversible: the previous value can be written back through this same
+    # capability. Contextual confirmation still catches the case that matters —
+    # a target the runtime resolved rather than the person naming it.
+    risk=RiskLevel.REVERSIBLE_WRITE,
+    confirmation=ConfirmationPolicy.CONTEXTUAL,
+    tool_name="pulsesoc.marketplace.listing.update",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(
+        _MKT_LISTING_ID,
+        FieldSpec("field", "enum", required=True, choices=_MKT_UPDATABLE_FIELDS),
+        FieldSpec("value", "str", required=True, max_length=2000),
+    ),
+    executor="marketplace_listing_update",
+    verifier="marketplace_listing_field_value",
+    # Both, not just ``value``: the verifier reads back the field the call named,
+    # so listing only ``value`` would leave "which field moved" unchecked.
+    verified_fields=("field", "value"),
+    native_route=_UNDX_ACTION_CENTRE,
+    result_card=CardType.SETTING_CHANGE_RECEIPT,
+    audit_category="marketplace_listings_write",
+    target_field="listing_id",
+    # No undo, for the reason ``business.profile.update`` gives: reversing needs
+    # the previous value, which neither the arguments nor the service return.
+))
+
+_register(CapabilitySpec(
+    capability_id="marketplace.listing.pause",
+    description="Pause an active Marketplace listing so it stops being purchasable",
+    intents=("pause my listing", "unlist my item", "take my listing off sale",
+             "stop selling this", "pause the listing"),
+    risk=RiskLevel.REVERSIBLE_WRITE,
+    confirmation=ConfirmationPolicy.CONTEXTUAL,
+    tool_name="pulsesoc.marketplace.listing.pause",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(_MKT_LISTING_ID,),
+    executor="marketplace_listing_pause",
+    verifier="marketplace_listing_status",
+    verified_fields=("status",),
+    native_route=_UNDX_ACTION_CENTRE,
+    result_card=CardType.ACTION_SUCCESS_RECEIPT,
+    audit_category="marketplace_listings_write",
+    target_field="listing_id",
+    undo_capability_id="marketplace.listing.resume",
+    undo_argument_map=(("listing_id", "listing_id"),),
+))
+
+_register(CapabilitySpec(
+    capability_id="marketplace.listing.resume",
+    description="Return a paused Marketplace listing to active",
+    intents=("resume my listing", "relist my item", "put my listing back on sale",
+             "start selling this again", "unpause the listing"),
+    # ``transition_product`` re-runs the full activation gate on the way back to
+    # ``active`` — a suspended seller, an account hold or zero inventory on a
+    # physical item refuses there, which is the right place for it.
+    risk=RiskLevel.REVERSIBLE_WRITE,
+    confirmation=ConfirmationPolicy.CONTEXTUAL,
+    tool_name="pulsesoc.marketplace.listing.resume",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(_MKT_LISTING_ID,),
+    executor="marketplace_listing_resume",
+    verifier="marketplace_listing_status",
+    verified_fields=("status",),
+    native_route=_UNDX_ACTION_CENTRE,
+    result_card=CardType.ACTION_SUCCESS_RECEIPT,
+    audit_category="marketplace_listings_write",
+    target_field="listing_id",
+    undo_capability_id="marketplace.listing.pause",
+    undo_argument_map=(("listing_id", "listing_id"),),
+))
+
+_register(CapabilitySpec(
+    capability_id="marketplace.listing.delete",
+    description="Retire a Marketplace listing by archiving it",
+    intents=("delete my listing", "remove my listing", "archive my listing",
+             "take down my listing permanently", "get rid of my listing"),
+    risk=RiskLevel.CONSEQUENTIAL_WRITE,
+    confirmation=ConfirmationPolicy.ALWAYS,
+    tool_name="pulsesoc.marketplace.listing.delete",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(_MKT_LISTING_ID,),
+    executor="marketplace_listing_delete",
+    verifier="marketplace_listing_status",
+    verified_fields=("status",),
+    native_route=_UNDX_ACTION_CENTRE,
+    result_card=CardType.ACTION_SUCCESS_RECEIPT,
+    audit_category="marketplace_listings_write",
+    target_field="listing_id",
+    # ``archived -> draft`` is a legal restore, but it is not this capability's
+    # inverse: restoring returns the listing to draft, not to the active or paused
+    # state it was archived from. An Undo button that silently changed which state
+    # the seller ends in is worse than no button.
+))
 
 
 # ---------------------------------------------------------------------------
