@@ -70,11 +70,28 @@ class AgentFixture:
         # A minimal users table: alert_engine reads it for delivery-channel readiness.
         # Only the columns it actually consults are present, so the fixture cannot
         # accidentally satisfy a lookup that production would fail.
+        # The columns ``alert_engine`` consults, plus the ones the feed's author join
+        # selects by name. A feed query names them explicitly (``u.display_name``,
+        # ``u.premium_status`` and a dozen more), so a users table with only the alert
+        # engine's columns does not fail the *feed* test — it fails it as an
+        # ``OperationalError: no such column``, which looks like a code defect and is
+        # a fixture gap. Nothing here grants anything: every added column is presentation
+        # or plan metadata, and ``hidden_from_discovery`` defaults to visible exactly as
+        # production does.
         self.cur.execute(
             """CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER PRIMARY KEY, username TEXT, email TEXT,
                 phone_number TEXT, phone_verified INTEGER DEFAULT 0,
-                account_status TEXT DEFAULT 'active')"""
+                account_status TEXT DEFAULT 'active',
+                full_name TEXT, display_name TEXT, avatar_url TEXT,
+                plan TEXT, subscription_plan TEXT, subscription_status TEXT,
+                is_pro INTEGER DEFAULT 0, pro_active INTEGER DEFAULT 0,
+                pro_expires_at TEXT, subscription_expires_at TEXT,
+                premium_status TEXT, premium_expires_at TEXT,
+                lifetime_premium INTEGER DEFAULT 0,
+                premium_glow_manual_grant INTEGER DEFAULT 0,
+                premium_mark_override INTEGER DEFAULT 0, premium_mark_type TEXT,
+                hidden_from_discovery INTEGER DEFAULT 0)"""
         )
         # alert_engine also reports delivery-channel readiness on create, which counts
         # push subscriptions. Present but empty is the honest fixture state: these test
@@ -147,6 +164,95 @@ class AgentFixture:
         assert alert_id, f"fixture could not create an alert: {made}"
         self.commit()
         return alert_id
+
+    #: The feed tables ``pulse_feed_engine`` reads to answer one visible-post query.
+    #: Written out rather than borrowed from ``bot.init_db`` because that function
+    #: builds roughly a hundred and seventy tables and imports the whole monolith to do
+    #: it. Only the columns the feed query actually names are here; a column the engine
+    #: does not read is a column this fixture must not invent, since inventing one is
+    #: how a fixture starts satisfying a lookup production would fail.
+    FEED_SCHEMA = (
+        """CREATE TABLE IF NOT EXISTS pulse_posts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER,
+            post_type TEXT DEFAULT 'text', title TEXT, body TEXT,
+            media_ids_json TEXT DEFAULT '[]', tags_json TEXT DEFAULT '[]',
+            visibility TEXT DEFAULT 'public', moderation_status TEXT DEFAULT 'approved',
+            status TEXT DEFAULT 'published', deleted_at TEXT,
+            created_at TEXT, updated_at TEXT,
+            engagement_score REAL DEFAULT 0, risk_score REAL DEFAULT 0,
+            view_count INTEGER DEFAULT 0, repost_of_post_id INTEGER,
+            public_player_id TEXT)""",
+        """CREATE TABLE IF NOT EXISTS pulse_reactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, post_id INTEGER, user_id INTEGER,
+            reaction_type TEXT, created_at TEXT, UNIQUE(post_id, user_id))""",
+        """CREATE TABLE IF NOT EXISTS pulse_comments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, post_id INTEGER, user_id INTEGER,
+            parent_comment_id INTEGER, body TEXT, media_ids_json TEXT DEFAULT '[]',
+            moderation_status TEXT DEFAULT 'approved',
+            deleted_at TEXT, created_at TEXT)""",
+        """CREATE TABLE IF NOT EXISTS pulse_post_views (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, post_id INTEGER, user_id INTEGER,
+            visitor_id TEXT, viewed_at TEXT, dwell_ms INTEGER DEFAULT 0)""",
+        """CREATE TABLE IF NOT EXISTS pulse_post_saves (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, post_id INTEGER, user_id INTEGER,
+            collection_name TEXT DEFAULT 'Saved', created_at TEXT,
+            UNIQUE(post_id, user_id))""",
+        """CREATE TABLE IF NOT EXISTS arena_profiles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER,
+            public_player_id TEXT, avatar_url TEXT)""",
+        """CREATE TABLE IF NOT EXISTS pulse_follows (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            follower_user_id INTEGER, followed_user_id INTEGER)""",
+        """CREATE TABLE IF NOT EXISTS pulse_friends (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER,
+            friend_user_id INTEGER, status TEXT DEFAULT 'active')""",
+        """CREATE TABLE IF NOT EXISTS blocked_users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            blocker_user_id INTEGER, blocked_user_id INTEGER)""",
+    )
+
+    def ensure_feed_schema(self) -> None:
+        """Create the feed tables. Idempotent, so tests may call it or not."""
+        for statement in self.FEED_SCHEMA:
+            self.cur.execute(statement)
+        self.commit()
+
+    def make_post(self, user_id: int = OWNER_ID, *, body: str = "Launch day is close.",
+                  created_at: str = "2026-08-01T00:00:00", visibility: str = "public",
+                  title: str = "") -> int:
+        """Insert one visible post and return its id.
+
+        ``created_at`` is an explicit argument rather than "now", because every test
+        that means anything here is about *which* post is the most recent one, and a
+        fixture that stamps two rows in the same millisecond cannot express that.
+        """
+        self.ensure_feed_schema()
+        self.cur.execute(
+            """INSERT INTO pulse_posts
+               (user_id, post_type, title, body, visibility, moderation_status,
+                status, created_at, updated_at)
+               VALUES (?,'text',?,?,?,'approved','published',?,?)""",
+            (int(user_id), title, body, visibility, created_at, created_at),
+        )
+        post_id = int(self.cur.lastrowid or 0)
+        assert post_id, "fixture could not create a post"
+        self.commit()
+        return post_id
+
+    def post_liked(self, post_id: int, user_id: int = OWNER_ID) -> bool:
+        """Whether this account has liked this post, read straight from the table.
+
+        The evidence, not the receipt. ``feed_intelligence_service.get_post_like``
+        would also answer, but it is the function the *verifier* calls, so asserting
+        against it would let one read vouch for itself.
+        """
+        self.cur.execute(
+            "SELECT reaction_type FROM pulse_reactions WHERE post_id=? AND user_id=? LIMIT 1",
+            (int(post_id), int(user_id)),
+        )
+        row = self.cur.fetchone()
+        return bool(row and (dict(row).get("reaction_type") if hasattr(row, "keys")
+                             else row[0]) == "like")
 
     def alert_status(self, alert_id: int, user_id: int = OWNER_ID) -> str:
         """Read status straight from the service, bypassing the agent entirely.

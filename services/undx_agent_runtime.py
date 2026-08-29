@@ -47,6 +47,7 @@ from services.undx_agent_contracts import (
     VerificationState,
     clean,
     describe_alert,
+    describe_post,
     format_amount,
     new_id,
 )
@@ -640,6 +641,73 @@ def resource_reference(text: str, nouns: tuple[str, ...]) -> int:
     return 0
 
 
+#: A post named by recency rather than by number. This is how people actually refer to
+#: the thing at the top of a feed — nobody reads a post id off a screen — and until it
+#: was resolved, "like the most recent post" reached ``feed.posts.like`` with no
+#: ``post_id``, which is a *missing field*, which is answered by asking "Which post?
+#: Tell me its number". Correct about the schema and useless to the person, who is
+#: looking at the post and cannot see a number anywhere on it.
+_RECENT_POST = re.compile(
+    r"\b(?:most\s+recent|latest|newest|last)\s+post\b"
+    r"|\bpost\s+(?:i|you)\s+(?:just\s+)?(?:made|posted|published|shared)\b",
+    re.IGNORECASE)
+
+#: Whether that recency phrase is scoped to the caller's own posts. "My latest post" is
+#: a different row from "the latest post", and reading them as the same one would mean
+#: liking a stranger's post because the person asked about their own.
+_RECENT_POST_IS_MINE = re.compile(
+    r"\bmy\s+(?:own\s+)?(?:most\s+recent|latest|newest|last)\s+post\b"
+    r"|\b(?:most\s+recent|latest|newest|last)\s+post\s+(?:of\s+mine|i\s+\w+)"
+    r"|\bpost\s+i\s+(?:just\s+)?(?:made|posted|published|shared)\b",
+    re.IGNORECASE)
+
+
+def resolve_recent_post(user_id: int, text: str) -> int:
+    """The post a recency phrase names, or 0.
+
+    Zero has one meaning here and it is "no opinion", never "there is no such post".
+    Every way this can fail — the sentence not asking, the feed being unreadable, the
+    account having posted nothing, the read raising — returns it, and the caller then
+    behaves exactly as it did before this function existed. That is deliberate: this is
+    an *additional* road to a target, and an additional road that can degrade the
+    existing one is not worth having.
+
+    The read is the same owner-scoped feed read the ``feed.posts.list`` capability uses,
+    so visibility is decided by ``pulse_feed_engine`` under the caller's own id. Nothing
+    here can surface a post the person could not already see, and nothing here consults
+    an id the person supplied — the id is produced by the read, not checked by it.
+
+    Recency is taken from ``created_at`` rather than from feed order, because
+    ``for_you`` is *ranked*: its first row is the most interesting post, which on any
+    account with engagement is not the most recent one. Sorting by the timestamp the
+    record actually carries is the difference between answering the question asked and
+    answering a different question that happens to agree on an empty account. The post
+    id breaks ties, so two posts written in the same second still resolve to exactly one
+    row and the answer does not depend on dictionary order.
+    """
+    lowered = clean(text, MAX_TEXT_CHARS).lower()
+    if not _RECENT_POST.search(lowered):
+        return 0
+    if not _read_permitted(user_id, "feed.posts.list"):
+        return 0
+    mine = bool(_RECENT_POST_IS_MINE.search(lowered))
+    try:
+        result = undx_agent_tools.feed_posts_list(
+            int(user_id), {"feed": "my_posts" if mine else "for_you", "limit": 40})
+    except Exception:  # noqa: BLE001 - a resolver may decline, never fail a turn
+        logger.debug("undx_recent_post_read_failed user=%s", int(user_id))
+        return 0
+    if not result.ok:
+        return 0
+    posts = [item for item in result.records
+             if isinstance(item, dict) and int(item.get("post_id") or 0) > 0]
+    if not posts:
+        return 0
+    newest = max(posts, key=lambda item: (str(item.get("created_at") or ""),
+                                          int(item.get("post_id") or 0)))
+    return int(newest.get("post_id") or 0)
+
+
 #: Written thresholds as people write them. "100k" is a hundred thousand in every
 #: context this field appears in, and refusing it would mean refusing the most common
 #: way a person states a price target.
@@ -889,18 +957,29 @@ class Resolution:
     ambiguous reference has candidates and needs one of them chosen. Inferring the
     difference from "are there candidates?" would work today, when one resolver exists,
     and would quietly become wrong the first time a second one returned an empty list.
+
+    ``agent_chose_target`` records that the resource being acted on was picked by the
+    runtime rather than named by the person. "Like post 9" and "like the most recent
+    post" arrive at the gateway as the same argument set, and they are not the same
+    request: in the first the person named the row and owns the choice, in the second
+    the runtime read a feed and chose one. That difference has to survive into the
+    policy, because it is exactly the difference between an instruction and a guess
+    the person has not seen yet.
     """
 
-    __slots__ = ("arguments", "resolved_count", "unresolved", "missing", "choice_field")
+    __slots__ = ("arguments", "resolved_count", "unresolved", "missing", "choice_field",
+                 "agent_chose_target")
 
     def __init__(self, arguments: dict[str, Any], *, resolved_count: int = 1,
                  unresolved: Reference | None = None,
-                 missing: tuple[str, ...] = (), choice_field: str = "") -> None:
+                 missing: tuple[str, ...] = (), choice_field: str = "",
+                 agent_chose_target: bool = False) -> None:
         self.arguments = arguments
         self.resolved_count = int(resolved_count)
         self.unresolved = unresolved
         self.missing = tuple(missing)
         self.choice_field = str(choice_field or "")
+        self.agent_chose_target = bool(agent_chose_target)
 
 
 def missing_required(spec: CapabilitySpec, arguments: dict[str, Any]) -> tuple[str, ...]:
@@ -1216,6 +1295,46 @@ _WITHDRAWN = re.compile(
     r"stop|"
     r"no)"
     r"(?:\W+" + _WITHDRAWAL_FILLER + r")*\W*$",
+    re.IGNORECASE)
+
+#: Words that carry no meaning of their own around an approval. Deliberately a different
+#: set from :data:`_WITHDRAWAL_FILLER`: "wait", "hold on" and "sorry" are all filler in
+#: front of "cancel" and all hesitation in front of "yes", and reading "yes, wait" as an
+#: unqualified approval would spend a grant on somebody who was in the middle of changing
+#: their mind. Nothing here can name or modify a thing, which is the same guard the
+#: withdrawal filler relies on.
+_AFFIRMATION_FILLER = (r"(?:please|just|then|now|it|that|this|"
+                       r"thanks|thank\s+you|of\s+course)")
+
+#: Approving a staged action in words — the missing half of :data:`_WITHDRAWN`.
+#:
+#: Anchored end to end for the identical reason, in the identical shape, and the symmetry
+#: is the argument for both. A grant is live when this is consulted, so a false positive
+#: does not misread a reply — it performs a write the person had not agreed to. Requiring
+#: the approval to be the *whole* message is what separates "yes" from "yes, but make it
+#: 95000": the second is a person amending a proposal, and the amendment is not filler,
+#: so the message does not match and falls through to be routed on its own merits.
+#:
+#: The bare words admitted here are unambiguous only *next to a confirmation card*, which
+#: is the sole context this is ever consulted in — :func:`handle` reaches it only for a
+#: message that matched no capability, answered no open question, and found exactly one
+#: pending approval on the account. In isolation "sure" is conversation, and it keeps
+#: being conversation, because with nothing staged this function returns ``None``.
+#:
+#: "yes" beats "no" to nothing: :func:`_withdraw_pending` runs first and the two
+#: vocabularies are disjoint, so "no thanks" is a withdrawal and never an approval.
+_AFFIRMED = re.compile(
+    r"^\W*(?:" + _AFFIRMATION_FILLER + r"\W+)*"
+    r"(?:yes|yeah|yep|yup|"
+    r"ok|okay|"
+    r"sure|"
+    r"confirm(?:ed|\s+it|\s+that)?|"
+    r"go\s+ahead|proceed|"
+    r"do\s+(?:it|that)|"
+    r"affirmative|"
+    r"correct|"
+    r"that'?s\s+right)"
+    r"(?:\W+" + _AFFIRMATION_FILLER + r")*\W*$",
     re.IGNORECASE)
 
 #: Words that carry no distinguishing power, so a reply consisting only of these has
@@ -1688,6 +1807,7 @@ def resolve_arguments(user_id: int, spec: CapabilitySpec, text: str,
     arguments = dict(arguments)
     resolved_count = 1
     unresolved_reference: Reference | None = None
+    agent_chose_target = False
 
     # Resolve which resource the request is about. A capability that names an
     # ``alert_id`` field needs exactly one, and the count travels to the gateway so
@@ -1751,6 +1871,16 @@ def resolve_arguments(user_id: int, spec: CapabilitySpec, text: str,
         found = resource_reference(text, _RESOURCE_NOUNS["post_id"])
         if found:
             arguments["post_id"] = found
+        else:
+            # Only once the sentence has been given every chance to name the row itself.
+            # A number the person typed is an instruction; a row the runtime found is a
+            # proposal, and the two must not be able to change places. Ordering is the
+            # whole of that guarantee: this branch is unreachable whenever an id was
+            # written down, so no feed read can ever override one.
+            found = resolve_recent_post(int(user_id), text)
+            if found:
+                arguments["post_id"] = found
+                agent_chose_target = True
     if spec.capability_id == "translation.content.translate":
         lowered = text.lower()
         if not arguments.get("content_type"):
@@ -1828,15 +1958,18 @@ def resolve_arguments(user_id: int, spec: CapabilitySpec, text: str,
         # they may also owe is asked on the turn after, by which time the target is
         # settled and the question can name it.
         return Resolution(arguments, resolved_count=resolved_count, missing=missing,
-                          unresolved=unresolved_reference, choice_field="alert_id")
+                          unresolved=unresolved_reference, choice_field="alert_id",
+                          agent_chose_target=agent_chose_target)
     if missing:
         # Asked rather than passed on, for the same reason an ambiguous alert reference
         # is. The gateway would reject this too, and correctly, but as a schema error
         # naming a field — accurate, unanswerable, and identical whether the person
         # forgot to say something or said something the product does not support.
         return Resolution(arguments, resolved_count=resolved_count, missing=missing,
-                          unresolved=Reference(0, detail=_missing_field_question(spec, missing)))
-    return Resolution(arguments, resolved_count=resolved_count)
+                          unresolved=Reference(0, detail=_missing_field_question(spec, missing)),
+                          agent_chose_target=agent_chose_target)
+    return Resolution(arguments, resolved_count=resolved_count,
+                      agent_chose_target=agent_chose_target)
 
 
 # ---------------------------------------------------------------------------
@@ -2071,10 +2204,19 @@ def preview(user_id: int, spec: CapabilitySpec,
             before = is_following(int(user_id), int(arguments["target_user_id"]))
             return before, spec.capability_id == "social.follow", ""
         if spec.capability_id in {"feed.posts.like", "feed.posts.unlike"} and arguments.get("post_id"):
-            from services.feed_intelligence_service import get_post_like
+            from services.feed_intelligence_service import get_post, get_post_like
 
-            before = get_post_like(int(user_id), int(arguments["post_id"]))
-            return before, spec.capability_id == "feed.posts.like", ""
+            post_id = int(arguments["post_id"])
+            before = get_post_like(int(user_id), post_id)
+            # A label here, unlike the three cases above, because this target is not
+            # always a word the person typed. ``resolve_recent_post`` can hand this
+            # capability a row the sentence only described, and on that path the id is
+            # the one thing the person has no way to check: "confirm this change" over
+            # a post they never named is the habituation exercise this function's own
+            # docstring is about. Read back rather than composed from the request, so
+            # the card names the row the before-value came from.
+            return (before, spec.capability_id == "feed.posts.like",
+                    describe_post(get_post(int(user_id), post_id)))
     except Exception:  # pragma: no cover - a preview must never block the action
         return None, None, ""
     return None, None, ""
@@ -2575,6 +2717,163 @@ def _withdraw_pending(cur, user_id: int, text: str, request_id: str,
                          latency_ms=int((time.monotonic() - started) * 1000))
 
 
+def _confirm_pending(cur, user_id: int, text: str, *, request_id: str,
+                     conversation_id: int, client_request_id: str,
+                     correlation_id: str, started: float) -> AgentResponse | None:
+    """Read this message as approving a staged action, and execute it if it is.
+
+    The exact mirror of :func:`_withdraw_pending`, and the reason it had to be written is
+    that only the withdrawal half existed. UNDX could raise a confirmation from a sentence
+    and could cancel one from a sentence, but it could only *spend* one from a tapped
+    button carrying a bearer token. So "like the most recent post" staged a real grant,
+    "yes" matched no capability, answered no question and was not a withdrawal, and the
+    turn came back ``handled=False`` — handing the conversation to a language model that
+    then talked about the action instead of performing it. The grant sat pending until it
+    lapsed. Nothing was broken; the path simply did not exist.
+
+    Returns ``None`` for every message that is not an approval, which is nearly all of
+    them, so the caller falls through to its existing behaviour untouched.
+
+    **Reached only when the message routed nowhere.** The same consult rule the other two
+    text paths run under, and load-bearing for the same reason: "confirm my bitcoin alert"
+    is a request that must keep routing to a capability, and only a message that matched
+    nothing can safely be read as a bare approval.
+
+    **A live question wins.** Returning ``None`` while a continuation is open is what
+    keeps "yes" answering the chooser it was asked next to. The two are never both live in
+    practice — the runtime either asked something or staged something — so deferring costs
+    nothing and closes the one case where the word is ambiguous. If the check itself
+    fails, this declines: reading a reply to an unseen question as an approval performs a
+    write, and the cost of being wrong the other way is one unanswered "yes".
+
+    **More than one live grant is a question, never a guess.** Two approvals can overlap
+    inside a five-minute TTL, and a bare "yes" next to two cards names neither of them.
+    Picking the newest would be a plausible-looking rule that is wrong exactly when it
+    matters — the person is looking at both — so the turn asks instead. This is also what
+    answers "a different request before Yes": staging a second action makes the pronoun
+    ambiguous and the ambiguity is refused rather than resolved in favour of whichever
+    card happened to be more recent.
+
+    **The arguments are the server's, not the sentence's.** What executes is the payload
+    stored on the approval row, replayed verbatim — never a fresh reading of "yes".
+    Re-deriving arguments from the approving message is the failure
+    :func:`create_continuation` names: it would silently retarget the write to whatever
+    the reply happened to mention, and "yes" mentions nothing at all. The gateway then
+    re-validates that payload, re-runs the permission scope over it, and binds the
+    redemption to its hash, so a tampered row fails to redeem rather than executing.
+
+    **Duplicate "yes" cannot double-execute.** ``consume_approval`` burns the row under a
+    ``status='pending'`` predicate, so the second attempt matches nothing, the gateway
+    refuses, and the person is told the confirmation is no longer valid. The same
+    predicate settles the race against a simultaneously tapped Confirm: exactly one of the
+    two wins.
+
+    **Past the gateway call there is no falling through.** The same discipline
+    :func:`services.pulse_ai_service._agent_confirm` documents, for the same reason: once
+    the approval is spent the write may have happened, and handing the turn back to
+    conversation would let a model answer as though it had not.
+    """
+    if not _AFFIRMED.match(text or ""):
+        return None
+    if _WITHDRAWN.match(text or ""):
+        # Belt and braces. The vocabularies are disjoint and the withdrawal path runs
+        # first, so this is unreachable today; it is here so that adding a word to either
+        # list cannot quietly turn a refusal into an approval.
+        return None
+
+    from services import undx_architecture
+
+    try:
+        grants = undx_architecture.pending_approvals(cur, int(user_id))
+    except Exception:  # noqa: BLE001
+        logger.debug("undx_confirm_read_failed user=%s", int(user_id))
+        return None
+    if not grants:
+        return None
+
+    try:
+        if undx_architecture.pending_continuation(cur, int(user_id)):
+            return None
+    except Exception:  # noqa: BLE001
+        logger.debug("undx_confirm_continuation_check_failed user=%s", int(user_id))
+        return None
+
+    if len(grants) > 1:
+        labels = []
+        for grant in grants[:4]:
+            candidate = get(grant["action_id"])
+            if candidate is None:
+                continue
+            labels.append(clean(str(candidate.description or candidate.capability_id), 120))
+        listed = "; ".join(labels)
+        return AgentResponse(
+            handled=True,
+            reply=("More than one action is waiting on your approval, so I do not know "
+                   + (f"which one you mean: {listed}. " if listed else "which one you mean. ")
+                   + "Tell me which, or tap Confirm on the one you want."),
+            card={
+                "component": CardType.CLARIFICATION_REQUIRED,
+                "status": AgentOutcome.CLARIFICATION_REQUIRED,
+                "candidate_capability_ids": [grant["action_id"] for grant in grants[:4]],
+                "pending_approvals": len(grants),
+                "may_claim_done": False,
+            },
+            latency_ms=int((time.monotonic() - started) * 1000),
+        )
+
+    grant = grants[0]
+    spec = get(grant["action_id"])
+    if spec is None:
+        # A grant for a capability this build no longer has. Nothing is executed and
+        # nothing is burned; inventing an action to run would be far worse than saying so.
+        logger.info("undx_confirm_unknown_capability action=%s", grant["action_id"])
+        return AgentResponse(
+            handled=True,
+            reply=("That confirmation is for something I can no longer carry out, so I "
+                   "have not changed anything."),
+            latency_ms=int((time.monotonic() - started) * 1000),
+        )
+
+    arguments = dict(grant.get("arguments") or {})
+    try:
+        current_value, proposed_value, resource_label = (
+            preview(int(user_id), spec, arguments) if spec.is_write else (None, None, ""))
+    except Exception:  # noqa: BLE001
+        # Presentation only. A label that cannot be read is a less descriptive receipt,
+        # not a reason to refuse an approval the person has already given.
+        current_value, proposed_value, resource_label = None, None, ""
+
+    outcome = undx_tool_gateway.execute(
+        cur, user_id=int(user_id), capability_id=spec.capability_id,
+        proposed_arguments=arguments, current_value=current_value,
+        proposed_value=proposed_value, resource_label=resource_label,
+        request_id=request_id, task_id=request_id,
+        client_request_id=client_request_id, correlation_id=correlation_id,
+        confirmation_id=grant["confirmation_id"],
+        # True, and true in the same sense the button path means it: the person was shown
+        # exactly what would happen and said yes to it. It is not a claim about the
+        # original sentence, and it grants nothing on its own — the redemption above is
+        # what authorises this call.
+        explicit_request=True,
+        resolved_resource_count=1, question=text,
+        recent_replies=recent_replies(cur, int(user_id), int(conversation_id)),
+    )
+    try:
+        card = build_card(spec, outcome)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.critical("undx_confirm_card_build_failed capability=%s user=%s error=%s",
+                        spec.capability_id, int(user_id), exc.__class__.__name__)
+        card = None
+    return AgentResponse(
+        handled=True,
+        receipt=outcome.receipt,
+        card=card,
+        reply=outcome.receipt.user_explanation,
+        capability_id=spec.capability_id,
+        latency_ms=int((time.monotonic() - started) * 1000),
+    )
+
+
 def _resume_pending(
     cur, user_id: int, text: str,
 ) -> tuple[CapabilitySpec, dict[str, Any], tuple[str, ...]] | _Reask | None:
@@ -2889,7 +3188,8 @@ def _act(cur, spec: CapabilitySpec, *, user_id: int, text: str,
             request_id=request_id, task_id=request_id,
             client_request_id=client_request_id, correlation_id=correlation_id,
             confirmation_token=confirmation_token, explicit_request=is_explicit(text),
-            resolved_resource_count=resolved_count, question=text,
+            resolved_resource_count=resolved_count,
+            target_chosen_by_agent=resolution.agent_chose_target, question=text,
             goal_shape=goal_shape_for(
                 brain_goal, narrowed=narrowed_to_one_resource(spec, resolution)),
             recent_replies=recent_replies(cur, int(user_id), int(conversation_id)),
@@ -3290,6 +3590,19 @@ def handle(
             withdrawn = _withdraw_pending(cur, int(user_id), text, request_id, started)
             if withdrawn is not None:
                 return withdrawn
+            # Or whether it approves one. Same consult rule, same position, opposite
+            # answer — and after the withdrawal check so that a message which is somehow
+            # both is read as the refusal. A staged action that can be called off in words
+            # but only carried out with a bearer token is not a conversation, and until
+            # this line existed that asymmetry was the whole of the execution gap: "yes"
+            # fell through to the model, which described the action instead of doing it.
+            confirmed = _confirm_pending(
+                cur, int(user_id), text, request_id=request_id,
+                conversation_id=int(conversation_id),
+                client_request_id=client_request_id, correlation_id=correlation_id,
+                started=started)
+            if confirmed is not None:
+                return confirmed
             # Otherwise, check whether it is an answer: the runtime may have asked this
             # account a question one message ago, and "9" is a complete reply to
             # "which post?" while being, by design, unroutable in isolation.

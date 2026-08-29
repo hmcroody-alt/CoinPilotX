@@ -819,6 +819,12 @@ _register(CapabilitySpec(
     fields=(_POST_ID,),
     executor="feed_post_like",
     verifier="feed_post_like_value",
+    # Not a declared field — the like state is implied by which capability ran, the
+    # same arrangement ``reels.like`` uses. Naming it here is what lets the receipt say
+    # "your like is on that post" instead of "that setting is on", which on a path where
+    # the runtime chose the post is the difference between a checkable receipt and a
+    # sentence that is true of any write at all.
+    verified_fields=("liked",),
     native_route="/pulse/post/:post_id",
     result_card=CardType.ACTION_SUCCESS_RECEIPT,
     audit_category="feed_reactions_write",
@@ -837,6 +843,7 @@ _register(CapabilitySpec(
     fields=(_POST_ID,),
     executor="feed_post_unlike",
     verifier="feed_post_like_value",
+    verified_fields=("liked",),
     native_route="/pulse/post/:post_id",
     result_card=CardType.ACTION_SUCCESS_RECEIPT,
     audit_category="feed_reactions_write",

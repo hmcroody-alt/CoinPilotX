@@ -374,15 +374,35 @@ def _mint_confirmation(cur, user_id: int, spec: CapabilitySpec, arguments: dict[
 
 
 def _redeem(cur, user_id: int, spec: CapabilitySpec, arguments: dict[str, Any],
-            token: str) -> dict[str, Any] | None:
+            token: str, confirmation_id: str = "") -> dict[str, Any] | None:
     """Redeem an approval for exactly this action, or return ``None``.
 
     Both bindings are asserted inside :func:`undx_architecture.consume_confirmation`,
     which checks them before burning the row, so a wrong-action redemption neither
     destroys a valid grant nor reveals that one existed.
+
+    Two ways in, one set of rules. A client that holds the bearer token presents it; the
+    conversational path, which never receives the plaintext, addresses the same row by
+    the id :func:`undx_architecture.pending_approvals` handed it. The token is preferred
+    when both arrive, because it is the stronger credential — possession of it proves the
+    caller saw the card — and a caller holding one has no reason to fall back.
+
+    The id route is not a weaker door. ``consume_approval`` applies the identical owner
+    scope, pending-and-unexpired predicate, continuation-namespace guard, action and
+    argument bindings, and single-use burn. What it does *not* require is a secret, and
+    that is sound only because the id is never a credential on its own: it is read out of
+    the caller's own rows, under their own user id, by a function that cannot see anybody
+    else's. Authority comes from the authenticated session, exactly as it does for the
+    revoke path this mirrors.
     """
-    return undx_architecture.consume_confirmation(
-        cur, int(user_id), token,
+    if clean(token, 500):
+        return undx_architecture.consume_confirmation(
+            cur, int(user_id), token,
+            expect_action_id=spec.capability_id,
+            expect_argument_hash=canonical_hash(arguments),
+        )
+    return undx_architecture.consume_approval(
+        cur, int(user_id), clean(confirmation_id, 120),
         expect_action_id=spec.capability_id,
         expect_argument_hash=canonical_hash(arguments),
     )
@@ -649,8 +669,10 @@ def execute(
     client_request_id: str = "",
     correlation_id: str = "",
     confirmation_token: str = "",
+    confirmation_id: str = "",
     explicit_request: bool = False,
     resolved_resource_count: int = 1,
+    target_chosen_by_agent: bool = False,
     current_value: Any = None,
     proposed_value: Any = None,
     resource_label: str = "",
@@ -711,6 +733,7 @@ def execute(
         int(user_id), spec, arguments,
         explicit_request=bool(explicit_request),
         resolved_resource_count=int(resolved_resource_count),
+        target_chosen_by_agent=bool(target_chosen_by_agent),
     )
     if decision.denied:
         return GatewayOutcome(_receipt(
@@ -741,8 +764,15 @@ def execute(
     #    So: a token that was presented is redeemed, whatever the policy concluded. A
     #    token that cannot be redeemed refuses the call rather than falling through to
     #    an execution that the presented approval no longer authorises.
+    #
+    #    "Presented" means an approval was *named*, by either of the two handles that can
+    #    name one. A tapped Confirm carries the token; a typed "yes" carries the id, and
+    #    it has to carry something, or the sentence would fall through to the mint branch
+    #    and stage a second card in answer to the approval of the first. That was the
+    #    whole of the execution gap: the conversational path could raise a confirmation
+    #    and had no way to spend one.
     grant: dict[str, Any] | None = None
-    presented = clean(confirmation_token, 500)
+    presented = clean(confirmation_token, 500) or clean(confirmation_id, 120)
     if decision.needs_confirmation and not presented:
         request = _mint_confirmation(
             cur, int(user_id), spec, arguments, task_id=task_id,
@@ -751,10 +781,26 @@ def execute(
             resource_label=resource_label,
         )
         _checkpoint(cur)
+        # The label, when the preview read one back, rather than the bare ask. A card
+        # renders the target in its own right; this string is what a text transcript
+        # has instead of a card, and "confirm this before I make the change" over a row
+        # the person never named asks them to approve something they cannot see. The
+        # fallback is the old sentence, not a guess: a preview that read nothing has no
+        # name to offer, and inventing one here would describe the request rather than
+        # the row — the one substitution this whole path exists to prevent.
+        label = clean(resource_label, 160)
         return GatewayOutcome(
             _receipt(spec, user_id=user_id, request_id=request_id, task_id=task_id,
                      status=AgentOutcome.CONFIRMATION_REQUIRED,
-                     explanation="I need you to confirm this before I make the change.",
+                     # Title then label, the same two parts in the same order the card
+                     # draws them, so a person who reads one and then the other is not
+                     # comparing two renderings of the same approval. The description is
+                     # not conjugated into the sentence — it is a registry noun phrase
+                     # and reads as one; splicing it after "I will" produces prose that
+                     # is grammatical and slightly wrong, which is worse here than plain.
+                     explanation=(f"{spec.description}: {label}. Confirm and I will make "
+                                  "the change." if label
+                                  else "I need you to confirm this before I make the change."),
                      arguments=arguments,
                      evidence={"confirmation_id": request.confirmation_id,
                                "expires_at": request.expires_at}),
@@ -762,7 +808,8 @@ def execute(
             is_write=spec.is_write,
         )
     if presented:
-        grant = _redeem(cur, int(user_id), spec, arguments, confirmation_token)
+        grant = _redeem(cur, int(user_id), spec, arguments, confirmation_token,
+                        confirmation_id)
         # Durable before the authorised write runs. See :func:`_checkpoint`.
         _checkpoint(cur)
         if not grant:

@@ -1120,6 +1120,76 @@ def revoke_approval(cur, user_id: int, confirmation_id: str) -> bool:
     return int(cur.rowcount or 0) == 1
 
 
+def consume_approval(cur, user_id: int, confirmation_id: str, *,
+                     expect_action_id: str | None = None,
+                     expect_argument_hash: str | None = None) -> dict[str, Any] | None:
+    """Redeem one pending approval by its id rather than by its bearer token.
+
+    The exact counterpart of :func:`revoke_approval`, and it exists for the same reason
+    that one does: the text path does not hold a token. ``create_confirmation`` stores
+    only ``sha256(token)``, so a person who *types* "yes" cannot be turned back into a
+    bearer credential by any amount of server-side work — the plaintext left with the
+    card. Without an addressed-by-id redemption there is therefore no way for a sentence
+    to reach the grant a button press reaches, and approving in words could only ever be
+    silence. :func:`revoke_approval` already established that a by-id handle is the right
+    shape for the half of the conversation that says no; this is the half that says yes.
+
+    Every guard :func:`consume_confirmation` applies is applied here, in the same order
+    and for the same reasons, because a weaker redemption path is a bypass of the
+    stronger one:
+
+    *Owner-scoped.* ``user_id`` is in the ``WHERE``, so a confirmation id belonging to
+    another account matches nothing. Ids are unguessable (``secrets.token_hex(10)``) but
+    that is not what makes this safe — the scoping is.
+
+    *Pending and unexpired only.* A spent, revoked or lapsed approval is not revivable.
+
+    *Never a continuation.* The namespace guard is repeated here rather than trusted
+    from the caller, exactly as in :func:`revoke_approval`. A remembered question shares
+    this table and this status; redeeming one as an approval would turn "which post?"
+    into permission to act on whatever the person named next.
+
+    *Bound before it is burned.* ``expect_action_id`` and ``expect_argument_hash`` are
+    checked before the consuming ``UPDATE``, so a caller that has resolved the wrong
+    capability or a mutated argument set neither destroys a good grant nor learns that
+    one existed.
+
+    *Single use.* The ``status='pending'`` predicate on the ``UPDATE`` is what makes a
+    second "yes" — or a "yes" racing a tapped Confirm — match zero rows and return
+    ``None``. Exactly one of the two callers wins, without a lock, and the action
+    therefore happens once or not at all.
+
+    Returns the redeemed row on success and ``None`` for every failure, all of them
+    indistinguishable from each other by design.
+    """
+    cur.execute(
+        """SELECT * FROM pulse_ai_confirmations
+        WHERE confirmation_id=? AND user_id=? AND status='pending' AND expires_at>?
+          AND action_id NOT LIKE ? LIMIT 1""",
+        (clean(confirmation_id, 120), int(user_id), now(), CONTINUATION_PREFIX + "%"),
+    )
+    row = cur.fetchone()
+    if not row:
+        return None
+    result = dict(row)
+    if expect_action_id is not None and str(result.get("action_id") or "") != str(expect_action_id):
+        return None
+    if expect_argument_hash is not None and str(result.get("argument_hash") or "") != str(expect_argument_hash):
+        return None
+    timestamp = now()
+    cur.execute(
+        "UPDATE pulse_ai_confirmations SET status='consumed', consumed_at=?, updated_at=? "
+        "WHERE id=? AND status='pending'",
+        (timestamp, timestamp, int(result["id"])),
+    )
+    if int(cur.rowcount or 0) != 1:
+        return None
+    result["status"] = "consumed"
+    result["consumed_at"] = timestamp
+    result["arguments"] = json.loads(result.get("arguments_json") or "{}")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Continuations
 # ---------------------------------------------------------------------------

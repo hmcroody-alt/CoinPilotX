@@ -231,6 +231,7 @@ def evaluate(
     *,
     explicit_request: bool = False,
     resolved_resource_count: int = 1,
+    target_chosen_by_agent: bool = False,
 ) -> Decision:
     """Decide whether this user may run this capability with these arguments now.
 
@@ -238,6 +239,12 @@ def evaluate(
     from the user's message, and they can only ever *tighten* the outcome or satisfy
     a contextual confirmation — never bypass an ``ALWAYS`` policy, a disabled flag or
     the high-risk bar.
+
+    ``target_chosen_by_agent`` is not derived from the message at all — it is the
+    runtime reporting that *it* picked the row, because the sentence described one
+    ("the most recent post") instead of naming one. It can only tighten: it raises a
+    card where the capability would not have asked for one, and it can never remove
+    one, satisfy one, or reach past a denial above it.
     """
     # 1. High risk is unreachable. No flag, cohort or approval unlocks it; these
     #    actions need a separately reviewed workflow, not an agent shortcut.
@@ -298,6 +305,19 @@ def evaluate(
     if spec.confirmation == ConfirmationPolicy.ALWAYS:
         return Decision(REQUIRE_CONFIRMATION, spec.capability_id, spec.risk,
                         reason="policy_always")
+
+    # 6a. A write whose target the runtime chose is confirmed whatever the capability
+    #     says, because the capability's policy answers a different question. "Never"
+    #     on ``feed.posts.like`` means a like is cheap to undo, and that is true — of a
+    #     like on the row the person named. It says nothing about a like on a row the
+    #     runtime picked out of a feed, where the cheap-to-reverse act is the *second*
+    #     mistake and the first one is silent: the person is never shown which post was
+    #     chosen, so a wrong choice reads exactly like a right one. The card is the only
+    #     place that choice becomes visible before it is acted on.
+    if spec.is_write and target_chosen_by_agent:
+        return Decision(REQUIRE_CONFIRMATION, spec.capability_id, spec.risk,
+                        reason="agent_chosen_target")
+
     if spec.confirmation == ConfirmationPolicy.CONTEXTUAL:
         # An unambiguous, explicitly-phrased instruction against exactly one
         # resolved resource is its own approval. Anything vaguer gets a card.

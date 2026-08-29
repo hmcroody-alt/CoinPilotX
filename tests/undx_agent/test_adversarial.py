@@ -127,9 +127,16 @@ class PromptInjection(AgentTestCase):
         """Structural, not behavioural: ``evaluate`` has nowhere to put a message.
 
         Its parameters are the authenticated user id, the registry spec, the validated
-        arguments, and two booleans. No amount of hostile prose can influence a
+        arguments, and three booleans. No amount of hostile prose can influence a
         function that has no parameter to receive it. Asserting on the signature makes
         the guarantee break loudly the day somebody adds ``text=`` for convenience.
+
+        The list is pinned *and* the reason is asserted separately below, because the
+        list alone degrades into a rubber stamp. It has already broken once for a safe
+        addition — ``target_chosen_by_agent``, a bool the runtime sets when it picked
+        the target row itself — and the only work a reviewer does at that point is
+        decide whether the new name is prose or not. Making that decision an assertion
+        means the next addition is checked rather than waved through.
         """
         import inspect
 
@@ -138,7 +145,34 @@ class PromptInjection(AgentTestCase):
         parameters = set(inspect.signature(policy.evaluate).parameters)
         self.assertEqual(
             parameters,
-            {"user_id", "spec", "arguments", "explicit_request", "resolved_resource_count"})
+            {"user_id", "spec", "arguments", "explicit_request", "resolved_resource_count",
+             "target_chosen_by_agent"})
+
+    def test_no_policy_parameter_can_carry_prose(self):
+        """The property the whitelist above is a proxy for.
+
+        ``spec`` is a frozen registry object and ``arguments`` has already been through
+        schema validation, so neither is a channel for the message. Everything else
+        must be a scalar the runtime computed *about* the request rather than a copy of
+        it — which in practice means an int or a bool, and never a ``str``.
+
+        Written as a type check rather than a name check so that a future parameter
+        called something innocuous like ``phrasing`` or ``context`` fails here even if
+        somebody adds it to the list above.
+        """
+        import inspect
+
+        from services import undx_agent_policy as policy
+
+        signature = inspect.signature(policy.evaluate)
+        offending = sorted(
+            name for name, parameter in signature.parameters.items()
+            if name not in {"spec", "arguments"}
+            and parameter.annotation in {str, "str"}
+        )
+        self.assertEqual(
+            offending, [],
+            f"the policy engine gained a string parameter: {offending}")
 
     def test_explicit_phrasing_cannot_downgrade_an_always_policy(self):
         """``explicit_request`` satisfies a CONTEXTUAL policy and nothing more.

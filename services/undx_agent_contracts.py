@@ -373,6 +373,36 @@ def describe_alert(record: Any) -> str:
     return clean(" · ".join(parts), 160)
 
 
+def describe_post(record: Any) -> str:
+    """Name one post the way a person would recognise it, from a row that was read.
+
+    Same discipline as :func:`describe_alert` and here for the same reason, one step
+    further along: a post's id is never something a person recognises, so a card that
+    carries only the id is unreadable even when it is right. Where an alert at least
+    has a symbol the person typed, "post 2" has nothing.
+
+    Built from the record and never from the request. The failure this guards is the
+    one ``resolve_recent_post`` introduces by existing — the runtime picking a row the
+    sentence only described — and a label drawn from the request would say "your most
+    recent post" over whichever row was actually chosen, which is precisely the
+    reassurance a wrong choice needs in order to go unnoticed.
+
+    Author first because the same body text on two accounts is a real case (a repost,
+    a quote, a duplicate), and whose post it is decides whether liking it is what the
+    person meant. The date disambiguates the recency claim itself, which on this path
+    is the claim being checked. The snippet is last and is the part that is allowed to
+    be lossy: it identifies, it does not reproduce.
+    """
+    if not isinstance(record, dict) or not record:
+        return ""
+    created = clean(record.get("created_at"), 40).split("T")[0]
+    snippet = clean(record.get("title"), 90) or clean(record.get("body"), 90)
+    parts = [part for part in (clean(record.get("author_name"), 80),
+                               created,
+                               f"“{snippet}”" if snippet else "") if part]
+    return clean(" · ".join(parts), 160)
+
+
 def canonical_hash(value: Any) -> str:
     """Stable fingerprint of a JSON-serialisable value.
 
