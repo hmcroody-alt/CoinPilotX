@@ -57,6 +57,11 @@ def _flight_lock(key: str) -> threading.Lock:
 
 def _cached(key: str, ttl: int, loader):
     """TTL cache with single-flight: concurrent callers share one fetch."""
+    # Third cache in the product with its own TTLs (client, market_data, here),
+    # so the monthly credit guard's stretch is applied at each of them. A
+    # briefing sent every six hours is the least freshness-sensitive consumer
+    # of market data we have; it should be the first to widen under pressure.
+    ttl = coingecko_client.effective_ttl(ttl)
     with _CACHE_LOCK:
         entry = _CACHE.get(key)
         if entry and time.time() - entry["at"] < ttl:

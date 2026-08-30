@@ -98,9 +98,9 @@ Attempts are counted, not successes. A failed request still consumed provider
 quota, so counting only successes would let a failing loop run at full speed
 into a 429 wall.
 
-**Known gap:** the governor guards the per-minute limit only. It has no notion
-of the monthly credit budget, which is the tighter constraint. See "Credit
-budget" below.
+The governor guards the per-minute limit **only**. The monthly credit budget is
+the tighter constraint by two orders of magnitude, and it is enforced
+separately — see "Monthly credit guard".
 
 ### Cache, single-flight, stale serve
 
@@ -194,6 +194,90 @@ does not need market data that is 180 seconds fresh.
 Beyond that, the options are a plan upgrade (a billing decision) or a shared
 Redis cache so the per-process multiplier stops applying.
 
+## Monthly credit guard
+
+The projection above is a model. The guard is what happens when the model is
+wrong. It lives in `coingecko_client` beside the rate governor and enforces the
+limit the governor does not.
+
+### States
+
+Thresholds are cumulative month-to-date spend, not rates:
+
+| State | Spend | Behaviour |
+| --- | --- | --- |
+| `normal` | < 50,000 | full speed |
+| `warning` | ≥ 50,000 | observe only; budget refreshed more often |
+| `high` | ≥ 75,000 | cache TTLs ×2 |
+| `protective` | ≥ 90,000 | TTLs ×4 **and** non-essential refreshes refused |
+
+Target is 80,000 (`BUDGET_TARGET`); every threshold is env-tunable, and
+`COINGECKO_BUDGET_GUARD=0` disables the whole mechanism without a deploy.
+
+**Protective mode is a brake, not a kill switch.** Essential reads still go
+out, cached values still serve, Coinbase still answers, and nothing is ever
+fabricated. A refused request returns `None`, which lands the caller on the
+degrade path it already had. A soft budget threshold must never take the crypto
+product offline — if the plan is genuinely exhausted, the provider will say so;
+we do not black out pre-emptively.
+
+`ESSENTIAL_PATH_PREFIXES` is `/simple/price` — the fast-price path behind alert
+evaluation and live portfolio valuation, where a stale number has consequences.
+Board and chart refreshes are not essential: they degrade visibly and safely.
+Any call site can override with `essential=True`.
+
+### Knowing what we've spent
+
+`/key` is the only account-wide view. Per-process counters cannot see each
+other, and there are four processes with private caches.
+
+But `/key` **is not free — measured at ~0.5 credits per call.** Polling it every
+10 minutes from 4 processes costs ~17,000 credits/month: the guard would consume
+17% of the budget it exists to protect. So the refresh interval is earned by
+risk — 1800s in `normal`, down to 300s in `protective` — and between refreshes
+each process adds its own attempt count to the last authoritative reading.
+
+That estimate is a **lower bound** on fleet spend: other processes are invisible
+until the next refresh. It can reach a threshold late, never early. Which is
+exactly why the interval tightens as spend rises — the window in which we can be
+wrong shrinks as being wrong starts to matter.
+
+A `/key` read that fails keeps the previous reading rather than resetting to
+unknown. Unknown spend reports `normal`: the guard fails **open**, because
+treating a provider hiccup as a budget emergency would degrade the product for
+a reason unrelated to the budget.
+
+### Three caches, three stretches
+
+The TTL multiplier has to be applied in three places, because there are three
+independent caches:
+
+| Cache | Where |
+| --- | --- |
+| client shared cache | `get_json_cached_meta` |
+| market board + chart history | `services/market_data.py` |
+| briefings overview/movers/trending | `services/pulse_briefings/crypto_provider.py` |
+
+Missing any one of them is a real bug, not a rounding error. `market_data`
+holds the single largest consumer and calls `get_json` directly, so without an
+explicit stretch protective mode would drop the board to the three-row Coinbase
+fallback rather than serving the real board a little longer — a worse user
+outcome for the same saving. Tests assert the stretch reaches each cache.
+
+`STALE_MAX_SECONDS` is deliberately **not** stretched. Budget pressure may
+widen freshness windows; it may not extend how long a stale value is allowed to
+serve.
+
+### Observability
+
+`telemetry_snapshot()` carries `cg_budget_state`, `cg_current_month_calls`,
+`cg_estimated_remaining`, `cg_budget_reading_age_seconds` and
+`cg_budget_ttl_multiplier`. `budget_snapshot()` adds the threshold table,
+provider-reported vs locally-estimated spend, and the counters
+(`cache_hits`, `provider_requests`, `429s`, `budget_throttles`). Both reach
+`GET /api/admin/briefings/status` via the briefings metrics chain. Neither ever
+contains the key.
+
 ## Which services need the key
 
 `COINGECKO_API_KEY` belongs only on services that reach market data:
@@ -228,7 +312,11 @@ enforced by structure rather than by discipline.
    Booleans and SHA-256 prefixes only.
 4. **Never guess a coin id.** `coin_id()` returning `None` means ask, not assume.
 5. **Watch the monthly credit, not just the rate limit.** The governor does not
-   protect you from the budget.
+   protect you from the budget; the credit guard does. A new cache with its own
+   TTL must call `coingecko_client.effective_ttl()` or it will ignore budget
+   pressure entirely.
+6. **Degrade, never black out.** No budget threshold may take crypto offline.
+   Stretch caches, refuse non-essential refreshes, fall back — but keep serving.
 
 ## Verification
 

@@ -163,7 +163,13 @@ def summary_metrics(markets):
 
 def live_market_board(category="top_volume", limit=50):
     now = time.time()
-    if CACHE["data"] and now - CACHE["created_at"] < CACHE_SECONDS:
+    # This board keeps its own cache rather than the client's, so the monthly
+    # credit guard's TTL stretch has to be applied here explicitly. Without it
+    # the largest CoinGecko consumer in the product would ignore budget
+    # pressure entirely, and protective mode would push the board onto the
+    # 3-row Coinbase fallback instead of simply serving the real board a little
+    # longer -- a worse user outcome for the same saving.
+    if CACHE["data"] and now - CACHE["created_at"] < coingecko_client.effective_ttl(CACHE_SECONDS):
         cached = dict(CACHE["data"])
         cached["markets"] = sort_markets(cached.get("markets", []), category)[:limit]
         return cached
@@ -238,7 +244,10 @@ def asset_history(symbol, range_key="24H"):
     cache_key = (symbol, range_key)
     now = time.time()
     cached = HISTORY_CACHE.get(cache_key)
-    if cached and now - cached["created_at"] < HISTORY_CACHE_SECONDS[range_key]:
+    # Charts are the term that keeps growing with users -- per (coin, range)
+    # slot, per process -- so they are exactly what budget pressure should slow.
+    if cached and now - cached["created_at"] < coingecko_client.effective_ttl(
+            HISTORY_CACHE_SECONDS[range_key]):
         return dict(cached["payload"])
 
     # Known majors resolve from the canonical table first, so the id survives a

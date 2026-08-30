@@ -48,6 +48,22 @@ class ClientTestCase(unittest.TestCase):
         with cg._CACHE_LOCK:
             cg._CACHE.clear()
             cg._FLIGHT_LOCKS.clear()
+        self._reset_budget()
+
+    @staticmethod
+    def _reset_budget(**overrides):
+        """Budget state is module-global; a test that leaves it in 'protective'
+        would silently throttle every later test's non-essential request."""
+        with cg._BUDGET_LOCK:
+            cg._BUDGET.update({"used": None, "credit": None, "at": 0.0,
+                               "last_attempt": 0.0, "local_calls": 0, "error": None})
+            cg._BUDGET.update(overrides)
+
+    def _set_spend(self, used):
+        """Pin month-to-date spend and mark the reading fresh so the guard does
+        not try to refresh it from the network mid-test."""
+        self._reset_budget(used=used, credit=cg.MONTHLY_CREDIT,
+                           at=time.time(), last_attempt=time.time())
 
     def tearDown(self):
         self._env.stop()
@@ -390,6 +406,235 @@ class HistoryRangeTests(ClientTestCase):
         self.assertEqual(fetch.call_args[0][0], "bitcoin")
         board.assert_not_called()
         market_data.HISTORY_CACHE.clear()
+
+
+class BudgetGuardTests(ClientTestCase):
+    """The monthly credit budget guard.
+
+    The per-minute governor and this guard protect different limits. Basic
+    allows 300 req/min but only 100,000 credits/month -- a sustained 2.31
+    req/min. A loop running inside the governor's 270/min allowance burns the
+    whole month in 6.2 hours, so passing the governor proves nothing about the
+    budget.
+    """
+
+    def test_thresholds_map_to_states(self):
+        for used, expected in [(0, "normal"), (49_999, "normal"),
+                               (50_000, "warning"), (74_999, "warning"),
+                               (75_000, "high"), (89_999, "high"),
+                               (90_000, "protective"), (250_000, "protective")]:
+            self._set_spend(used)
+            self.assertEqual(cg.budget_state(), expected, f"used={used}")
+
+    def test_unknown_spend_fails_open(self):
+        """No successful /key read yet must not degrade the product. The guard
+        stretches caches; it is not an outage trigger."""
+        self._reset_budget(last_attempt=time.time())
+        self.assertIsNone(cg.estimated_month_calls())
+        self.assertEqual(cg.budget_state(), "normal")
+        self.assertTrue(cg._budget_allows("/coins/markets", None))
+
+    def test_protective_refuses_nonessential_but_not_essential(self):
+        self._set_spend(95_000)
+        self.assertFalse(cg._budget_allows("/coins/markets", None))
+        self.assertFalse(cg._budget_allows("/coins/bitcoin/market_chart", None))
+        # Alert evaluation and live portfolio valuation keep their prices.
+        self.assertTrue(cg._budget_allows("/simple/price", None))
+        self.assertEqual(cg._TELEMETRY["cg_budget_throttles"], 2)
+
+    def test_explicit_essential_overrides_path_default(self):
+        self._set_spend(95_000)
+        self.assertTrue(cg._budget_allows("/coins/markets", True))
+        self.assertFalse(cg._budget_allows("/simple/price", False))
+
+    def test_high_throttles_nothing_only_stretches_ttl(self):
+        """HIGH is a brake on refresh frequency, not on availability."""
+        self._set_spend(80_000)
+        self.assertEqual(cg.budget_state(), "high")
+        self.assertTrue(cg._budget_allows("/coins/markets", None))
+        self.assertEqual(cg.effective_ttl(60), 120)
+
+    def test_ttl_multiplier_scales_with_state(self):
+        for used, expected in [(0, 60), (50_000, 60), (75_000, 120), (90_000, 240)]:
+            self._set_spend(used)
+            self.assertEqual(cg.effective_ttl(60), expected, f"used={used}")
+
+    def test_stretched_ttl_actually_suppresses_the_refetch(self):
+        """The multiplier has to reach the freshness check, not just a getter."""
+        self._set_spend(90_000)
+        payload = {"v": 1}
+        with mock.patch.object(cg.requests, "get",
+                               return_value=FakeResponse(200, payload)) as get:
+            cg.get_json_cached("/coins/markets", ttl=1, cache_key="k", essential=True)
+            time.sleep(1.1)  # past the nominal TTL, inside the 4x stretched one
+            cg.get_json_cached("/coins/markets", ttl=1, cache_key="k", essential=True)
+        self.assertEqual(get.call_count, 1)
+
+    def test_throttled_request_serves_stale_cache_never_fabricates(self):
+        """A refusal must land the caller on its normal degrade path: the last
+        real value, marked stale. Not a fresh-looking guess."""
+        self._set_spend(0)
+        with mock.patch.object(cg.requests, "get",
+                               return_value=FakeResponse(200, {"price": 42})):
+            cg.get_json_cached("/coins/markets", ttl=0, cache_key="board")
+        self._set_spend(95_000)
+        with mock.patch.object(cg.requests, "get") as get:
+            value = cg.get_json_cached("/coins/markets", ttl=0, cache_key="board")
+        get.assert_not_called()
+        self.assertEqual(value["price"], 42)
+        self.assertTrue(value["stale"])
+        self.assertEqual(cg._TELEMETRY["cg_stale_served"], 1)
+
+    def test_throttled_request_with_no_cache_returns_none(self):
+        """No cached value and no provider call means omit. Never invent."""
+        self._set_spend(95_000)
+        with mock.patch.object(cg.requests, "get") as get:
+            self.assertIsNone(cg.get_json_cached("/coins/markets", ttl=60, cache_key="cold"))
+        get.assert_not_called()
+
+    def test_key_probe_is_never_gated_by_the_guard(self):
+        """/key is how the guard learns it can stand down. Gating it on the
+        budget would make protective mode a one-way door."""
+        self._set_spend(99_999)
+        self.assertTrue(cg._budget_allows(cg.KEY_PATH, None))
+
+    def test_refresh_adopts_provider_truth_and_clears_local_drift(self):
+        os.environ["COINGECKO_API_KEY"] = "test-key"
+        self._reset_budget(used=10, local_calls=500)
+        with mock.patch.object(cg.requests, "get", return_value=FakeResponse(
+                200, {"plan": "Basic", "monthly_call_credit": 100000,
+                      "current_total_monthly_calls": 61234})):
+            cg._fetch_key_usage()
+        # Provider truth wins outright: the local counter was only ever an
+        # estimate of what this one process added since the last reading.
+        self.assertEqual(cg.estimated_month_calls(), 61234)
+        self.assertEqual(cg.budget_state(), "warning")
+
+    def test_failed_refresh_keeps_last_good_reading(self):
+        os.environ["COINGECKO_API_KEY"] = "test-key"
+        self._set_spend(60_000)
+        with mock.patch.object(cg.requests, "get", return_value=FakeResponse(500, {})):
+            cg._fetch_key_usage()
+        self.assertEqual(cg._BUDGET["used"], 60_000)
+        self.assertIsNotNone(cg._BUDGET["error"])
+        self.assertEqual(cg.budget_state(), "warning")
+
+    def test_local_counter_tracks_attempts_between_refreshes(self):
+        """Attempts, not successes -- a failed request still spent the credit."""
+        self._set_spend(1_000)
+        with mock.patch.object(cg.requests, "get", return_value=FakeResponse(500, {})):
+            cg.get_json("/coins/markets", retries=1)
+        self.assertEqual(cg.estimated_month_calls(), 1_002)  # initial + one retry
+
+    def test_refresh_interval_tightens_as_spend_rises(self):
+        """The guard's own /key probe costs ~0.5 credits. Polling it at the
+        protective cadence all month would itself be a material line item, so
+        the cadence has to be earned by risk."""
+        self.assertGreater(cg.BUDGET_REFRESH_SECONDS["normal"],
+                           cg.BUDGET_REFRESH_SECONDS["warning"])
+        self.assertGreater(cg.BUDGET_REFRESH_SECONDS["warning"],
+                           cg.BUDGET_REFRESH_SECONDS["high"])
+        self.assertGreater(cg.BUDGET_REFRESH_SECONDS["high"],
+                           cg.BUDGET_REFRESH_SECONDS["protective"])
+
+    def test_fresh_reading_does_not_trigger_a_refresh(self):
+        os.environ["COINGECKO_API_KEY"] = "test-key"
+        self._set_spend(1_000)
+        with mock.patch.object(cg, "_fetch_key_usage") as fetch:
+            cg._maybe_refresh_budget()
+        fetch.assert_not_called()
+
+    def test_stale_reading_triggers_exactly_one_refresh(self):
+        os.environ["COINGECKO_API_KEY"] = "test-key"
+        self._reset_budget(used=1_000, credit=cg.MONTHLY_CREDIT,
+                           at=time.time() - 99_999, last_attempt=time.time() - 99_999)
+        with mock.patch.object(cg, "_fetch_key_usage") as fetch:
+            cg._maybe_refresh_budget()
+            cg._maybe_refresh_budget()  # last_attempt unchanged (fetch is mocked)
+        self.assertGreaterEqual(fetch.call_count, 1)
+
+    def test_guard_can_be_disabled_by_env(self):
+        """An escape hatch that does not require a deploy, for the case where
+        the guard itself is the thing misbehaving."""
+        self._set_spend(99_999)
+        with mock.patch.object(cg, "BUDGET_GUARD_ENABLED", False):
+            self.assertEqual(cg.budget_state(), "normal")
+            self.assertTrue(cg._budget_allows("/coins/markets", None))
+            self.assertEqual(cg.effective_ttl(60), 60)
+
+    def test_snapshot_reports_the_required_operator_fields(self):
+        self._set_spend(60_000)
+        snap = cg.budget_snapshot()
+        for field in ("current_month_calls", "estimated_remaining", "cache_hits",
+                      "provider_requests", "429s", "budget_throttles", "state"):
+            self.assertIn(field, snap)
+        self.assertEqual(snap["current_month_calls"], 60_000)
+        self.assertEqual(snap["estimated_remaining"], 40_000)
+        self.assertEqual(snap["state"], "warning")
+
+    def test_snapshot_never_exposes_the_key(self):
+        os.environ["COINGECKO_API_KEY"] = "cg-super-secret-value"
+        blob = repr(cg.budget_snapshot()) + repr(cg.telemetry_snapshot())
+        self.assertNotIn("cg-super-secret-value", blob)
+
+    def test_telemetry_snapshot_carries_budget_fields(self):
+        self._set_spend(95_000)
+        snap = cg.telemetry_snapshot()
+        self.assertEqual(snap["cg_budget_state"], "protective")
+        self.assertEqual(snap["cg_current_month_calls"], 95_000)
+        self.assertEqual(snap["cg_estimated_remaining"], 5_000)
+        self.assertEqual(snap["cg_budget_ttl_multiplier"], 4.0)
+
+    def test_thresholds_are_ordered_and_under_the_plan(self):
+        self.assertLess(cg.BUDGET_WARN, cg.BUDGET_HIGH)
+        self.assertLess(cg.BUDGET_HIGH, cg.BUDGET_PROTECT)
+        self.assertLess(cg.BUDGET_PROTECT, cg.MONTHLY_CREDIT)
+        self.assertLessEqual(cg.BUDGET_TARGET, cg.MONTHLY_CREDIT)
+
+    def test_stretch_reaches_the_market_board_cache(self):
+        """market_data keeps its OWN cache and calls get_json directly, so the
+        client-level stretch does not reach it. If this regresses, the single
+        largest CoinGecko consumer ignores budget pressure and protective mode
+        drops the board to the 3-row Coinbase fallback instead of serving the
+        real board a little longer."""
+        from services import market_data
+
+        market_data.CACHE.update({"data": {"markets": [], "source": "coingecko"},
+                                  "created_at": time.time() - 90})
+        self._set_spend(95_000)  # protective: 60s TTL becomes 240s
+        with mock.patch.object(market_data, "fetch_coingecko_markets") as fetch:
+            market_data.live_market_board()
+        fetch.assert_not_called()
+        market_data.CACHE.update({"data": None, "created_at": 0})
+
+    def test_stretch_reaches_the_chart_history_cache(self):
+        from services import market_data
+
+        market_data.HISTORY_CACHE[("BTC", "24H")] = {
+            "payload": {"points": []}, "created_at": time.time() - 300}
+        self._set_spend(95_000)  # 24H TTL 180s -> 720s
+        with mock.patch.object(market_data, "fetch_coingecko_history") as fetch:
+            market_data.asset_history("BTC", "24H")
+        fetch.assert_not_called()
+        market_data.HISTORY_CACHE.clear()
+
+    def test_stretch_reaches_the_briefings_provider_cache(self):
+        from services.pulse_briefings import crypto_provider as cp
+
+        cp._CACHE.clear()
+        cp._CACHE["k"] = {"value": {"v": 1}, "at": time.time() - 400}
+        self._set_spend(95_000)  # 300s TTL -> 1200s
+        loader = mock.Mock(return_value={"v": 2})
+        self.assertEqual(cp._cached("k", 300, loader), {"v": 1})
+        loader.assert_not_called()
+        cp._CACHE.clear()
+
+    def test_exhausted_budget_still_serves_essential_reads(self):
+        """Even past 100% the guard does not hard-stop. If the plan is truly
+        exhausted the provider says so; we do not pre-emptively black out."""
+        self._set_spend(cg.MONTHLY_CREDIT + 50_000)
+        self.assertTrue(cg._budget_allows("/simple/price", None))
+        self.assertEqual(cg.budget_snapshot()["estimated_remaining"], 0)
 
 
 if __name__ == "__main__":
