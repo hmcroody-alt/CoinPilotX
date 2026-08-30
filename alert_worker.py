@@ -59,6 +59,15 @@ def main():
     except Exception as exc:
         logging.exception("Alert worker database initialization failed: %s", exc)
         alert_engine.record_worker_heartbeat("alert_worker", 0, 0, 1, f"init_db failed: {exc}")
+    # One-shot embedding provider probe. Inert unless UNDX_EMBEDDING_PROBE is set,
+    # and wrapped again here because a diagnostic that could stop the worker from
+    # booting would be worse than the uncertainty it exists to remove.
+    try:
+        from services import undx_embedding_diagnostic
+
+        undx_embedding_diagnostic.run_startup_probe_if_enabled()
+    except Exception:
+        logging.exception("UNDX embedding probe hook failed; worker start unaffected.")
     logging.info("CoinPlotXAI alert worker started interval=%s limit=%s", interval, limit)
     signal.signal(signal.SIGTERM, _handle_stop)
     signal.signal(signal.SIGINT, _handle_stop)
