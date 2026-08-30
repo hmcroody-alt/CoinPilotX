@@ -101,7 +101,8 @@ def main():
             )
             logging.info(
                 "Briefing tick status=%s shadow=%s processed=%s sent=%s suppressed=%s "
-                "by_rules=%s by_dedupe=%s by_quiet_hours=%s by_shadow=%s failed=%s",
+                "by_rules=%s by_dedupe=%s by_quiet_hours=%s by_shadow=%s "
+                "disabled_by_user=%s failed=%s",
                 briefing_result.get("status", "active"), briefing_result.get("shadow"),
                 briefing_result.get("processed"), briefing_result.get("sent"),
                 briefing_result.get("suppressed"),
@@ -109,6 +110,7 @@ def main():
                 briefing_result.get("suppressed_by_dedupe"),
                 briefing_result.get("suppressed_by_quiet_hours"),
                 briefing_result.get("suppressed_by_shadow"),
+                briefing_result.get("disabled_by_user"),
                 briefing_result.get("failed"),
             )
         except Exception as exc:

@@ -48,6 +48,13 @@ def _fresh_conn() -> sqlite3.Connection:
         """CREATE TABLE pulse_region_preferences (
             user_id INTEGER PRIMARY KEY, preferred_timezone TEXT)"""
     )
+    # Owned by bot.init_db(); modelled here because the cycle honours the global
+    # push opt-out that lives on the category='global' row.
+    cur.execute(
+        """CREATE TABLE notification_preferences (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, category TEXT,
+            enable_push_notifications INTEGER DEFAULT 1, UNIQUE(user_id, category))"""
+    )
     conn.commit()
     engine.ensure_schema(conn)
     return conn
@@ -451,7 +458,10 @@ class ShadowModeTests(unittest.TestCase):
         conn.commit()
         return conn
 
-    def _run_cycle(self, conn, *, shadow: bool):
+    def _run_cycle_limited(self, conn, *, limit: int):
+        return self._run_cycle(conn, shadow=False, limit=limit)
+
+    def _run_cycle(self, conn, *, shadow: bool, limit: int | None = None):
         """One real cycle at a fixed clock, with a live market and every delivery
         surface instrumented. Returns (cycle result, deliver mock, send_push mock)."""
         deliver = mock.Mock(wraps=engine._deliver)
@@ -469,7 +479,8 @@ class ShadowModeTests(unittest.TestCase):
              mock.patch.object(engine, "_deliver", deliver), \
              mock.patch.object(services, "push_service", fake_push, create=True), \
              mock.patch.object(services, "notification_service", fake_notif, create=True):
-            result = engine.run_scheduled_cycle(conn=conn)
+            kwargs = {"conn": conn} if limit is None else {"conn": conn, "limit": limit}
+            result = engine.run_scheduled_cycle(**kwargs)
         return result, deliver, fake_push.send_push
 
     # --- the control: this scenario really does send -----------------------
@@ -544,6 +555,70 @@ class ShadowModeTests(unittest.TestCase):
             out = engine.evaluate_user_briefing(conn, {"user_id": 205}, now_utc=later, send=False)
         self.assertEqual(out["status"], "suppressed")
         self.assertEqual(out["reason"], "duplicate_fingerprint")
+        conn.close()
+
+    # --- global push opt-out is binding on briefings too -------------------
+
+    def _opt_out(self, conn, user_id: int) -> None:
+        conn.cursor().execute(
+            "INSERT INTO notification_preferences (user_id, category, enable_push_notifications)"
+            " VALUES (?,'global',0)", (user_id,))
+        conn.commit()
+
+    def test_global_push_opt_out_blocks_delivery(self):
+        """_deliver calls push_service.send_push directly, bypassing the canonical
+        _rules_check, so without an explicit guard a user who turned push off
+        globally would still be pushed -- for briefings and nothing else."""
+        conn = self._conn((301,))
+        self._opt_out(conn, 301)
+        result, deliver, send_push = self._run_cycle(conn, shadow=False)
+        self.assertEqual(result["sent"], 0)
+        self.assertEqual(deliver.call_count, 0)
+        self.assertEqual(send_push.call_count, 0)     # hard zero at the transport
+        self.assertEqual(result["disabled_by_user"], 1)
+        cur = conn.cursor()
+        cur.execute("SELECT count(*) FROM pulse_briefings WHERE user_id=301")
+        # No claim row: the window stays claimable if they re-enable push later.
+        self.assertEqual(cur.fetchone()[0], 0)
+        conn.close()
+
+    def test_opt_out_is_per_user_not_global_suppression(self):
+        """The opt-out must not become an outage: the neighbouring user still sends."""
+        conn = self._conn((302, 303))
+        self._opt_out(conn, 302)
+        result, _, send_push = self._run_cycle(conn, shadow=False)
+        self.assertEqual(result["disabled_by_user"], 1)
+        self.assertEqual(result["sent"], 1)
+        self.assertEqual(send_push.call_count, 1)
+        self.assertEqual(send_push.call_args[0][0], 303)   # and it is the right user
+        conn.close()
+
+    def test_absent_preference_row_is_not_an_opt_out(self):
+        """Fail open on a missing row: never having opened notification settings
+        is not the same as having declined."""
+        conn = self._conn((304,))
+        cur = conn.cursor()
+        cur.execute("SELECT count(*) FROM notification_preferences WHERE user_id=304")
+        self.assertEqual(cur.fetchone()[0], 0)
+        result, _, send_push = self._run_cycle(conn, shadow=False)
+        self.assertEqual(result["sent"], 1)
+        self.assertEqual(send_push.call_count, 1)
+        conn.close()
+
+    # --- batch fairness: no eligible user is starved by the limit ----------
+
+    def test_batch_limit_rotates_instead_of_restarting(self):
+        """LIMIT with no ORDER BY re-selects the same arbitrary N users forever, so
+        above the batch limit the tail is never evaluated. Least-recently-briefed
+        ordering must make every eligible user reachable."""
+        users = (401, 402, 403, 404)
+        conn = self._conn(users)
+        seen: set[int] = set()
+        for _ in range(len(users)):
+            _, _, send_push = self._run_cycle_limited(conn, limit=1)
+            for call in send_push.call_args_list:
+                seen.add(call[0][0])
+        self.assertEqual(seen, set(users))   # full coverage, one user per cycle
         conn.close()
 
     def test_suppression_reasons_are_distinguished(self):

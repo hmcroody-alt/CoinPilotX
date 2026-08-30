@@ -164,6 +164,34 @@ def get_preferences(user_id: int, *, conn=None) -> dict[str, Any]:
     }
 
 
+def push_notifications_allowed(cur, user_id: int) -> bool:
+    """Global push opt-out, read from the same row the canonical notification
+    rules engine reads (notification_preferences category='global',
+    experience.enable_push_notifications). Fails OPEN on a missing row -- a user
+    who has never opened notification settings has not opted out -- and fails
+    CLOSED on a query error, because being unable to prove consent is not
+    consent."""
+    try:
+        cur.execute(
+            "SELECT enable_push_notifications FROM notification_preferences "
+            "WHERE user_id=? AND category='global' LIMIT 1",
+            (int(user_id),),
+        )
+        row = cur.fetchone()
+    except Exception:  # noqa: BLE001
+        logging.exception("BRIEFING_PUSH_OPTOUT_LOOKUP_FAILED user_id=%s", user_id)
+        return False
+    if not row:
+        return True
+    try:
+        value = row["enable_push_notifications"]
+    except Exception:  # noqa: BLE001 - tuple-shaped cursor
+        value = row[0]
+    if value is None:
+        return True
+    return bool(value)
+
+
 def update_preferences(user_id: int, values: dict[str, Any], *, conn=None) -> dict[str, Any]:
     owns = conn is None
     conn = conn or user_context.connect()
@@ -269,6 +297,15 @@ def evaluate_user_briefing(conn, user: dict[str, Any], *, now_utc: datetime | No
     prefs = get_preferences(user_id, conn=conn)
     if not prefs["enabled"] or prefs["frequency"] == "off":
         return {"status": "disabled"}
+    if not push_notifications_allowed(cur, user_id):
+        # The briefing-specific toggle is not the only opt-out that binds us: a user
+        # who turned push off globally has disabled push, full stop. _deliver() calls
+        # push_service.send_push directly and so never reaches the canonical
+        # _rules_check that enforces this everywhere else -- without this guard a
+        # global opt-out would be silently overridden for briefings alone.
+        # Returns before CLAIM so no row is written and the window stays claimable
+        # if the user re-enables push later in the same window.
+        return {"status": "push_disabled_by_user"}
     zone = _user_zone(cur, user_id)
     local_now = (now_utc or _now()).astimezone(zone)
     window = current_window(local_now, prefs["frequency"])
@@ -431,13 +468,52 @@ def run_scheduled_cycle(limit: int = 50, *, conn=None) -> dict[str, Any]:
             SELECT u.user_id, u.preferred_language FROM users u
             JOIN push_subscriptions ps ON ps.user_id = u.user_id AND COALESCE(ps.is_active, ps.active, 1)=1
             LEFT JOIN pulse_briefing_prefs p ON p.user_id = u.user_id
+            LEFT JOIN notification_preferences np
+                   ON np.user_id = u.user_id AND np.category = 'global'
+            LEFT JOIN (SELECT user_id, MAX(id) AS last_id FROM pulse_briefings GROUP BY user_id) b
+                   ON b.user_id = u.user_id
             WHERE COALESCE(p.enabled, 1)=1 AND COALESCE(p.frequency,'every_6h')<>'off'
+              AND COALESCE(np.enable_push_notifications, 1)<>0
               AND COALESCE(NULLIF(u.created_at,''), NULLIF(u.signup_time,''), '') < ?
-            GROUP BY u.user_id LIMIT ?
+            GROUP BY u.user_id, b.last_id
+            -- Fairness, not just a cheap page: LIMIT with no ORDER BY re-selects the
+            -- same arbitrary N users every cycle, so above BRIEFING_CYCLE_BATCH_LIMIT
+            -- eligible users the tail is never evaluated at all. Least-recently-briefed
+            -- first (never-briefed sort first, then rotate to the back) makes coverage
+            -- of every eligible user a property of the ordering rather than of the
+            -- batch size. The np filter is not merely an optimisation under that
+            -- ordering: an opted-out user never gets a briefing row, so last_id stays
+            -- 0 and they would sort first forever, permanently occupying the head of
+            -- the queue. Excluding them in SQL is what keeps the rotation moving.
+            -- evaluate_user_briefing re-checks the opt-out as the binding guard.
+            ORDER BY COALESCE(b.last_id, 0) ASC, u.user_id ASC
+            LIMIT ?
             """,
             (cutoff, max(1, min(limit, SEND_RATE_CAP_PER_CYCLE))),
         )
         users = [dict(r) for r in cur.fetchall()]
+        # Counted separately precisely because the query above excludes them: the
+        # activation report has to be able to state how many users were withheld by
+        # their own opt-out, and a filter that works leaves no trace in the loop.
+        opted_out = 0
+        try:
+            cur.execute(
+                """
+                SELECT COUNT(DISTINCT u.user_id) FROM users u
+                JOIN push_subscriptions ps ON ps.user_id = u.user_id AND COALESCE(ps.is_active, ps.active, 1)=1
+                LEFT JOIN pulse_briefing_prefs p ON p.user_id = u.user_id
+                JOIN notification_preferences np
+                     ON np.user_id = u.user_id AND np.category = 'global'
+                WHERE COALESCE(p.enabled, 1)=1 AND COALESCE(p.frequency,'every_6h')<>'off'
+                  AND np.enable_push_notifications=0
+                  AND COALESCE(NULLIF(u.created_at,''), NULLIF(u.signup_time,''), '') < ?
+                """,
+                (cutoff,),
+            )
+            row = cur.fetchone()
+            opted_out = int(row[0] or 0) if row else 0
+        except Exception:  # noqa: BLE001 - reporting only, never blocks the cycle
+            logging.exception("BRIEFING_OPTOUT_COUNT_FAILED")
         results = {
             "processed": 0, "sent": 0, "suppressed": 0, "skipped": 0, "failed": 0,
             # Why a briefing did not reach a user, kept apart because they are four
@@ -445,6 +521,12 @@ def run_scheduled_cycle(limit: int = 50, *, conn=None) -> dict[str, Any]:
             # "suppressed" total would be indistinguishable from a scoring regression.
             "suppressed_by_rules": 0, "suppressed_by_dedupe": 0,
             "suppressed_by_quiet_hours": 0, "suppressed_by_shadow": 0,
+            # Distinct from suppressed_by_rules: this is the user's own opt-out being
+            # honoured, which the activation report has to state on its own line.
+            # Seeded from the SQL exclusion; the in-loop guard adds any straggler it
+            # catches (a row shape the filter missed), so the two can never disagree
+            # silently.
+            "disabled_by_user": opted_out,
         }
         for user in users:
             outcome = evaluate_user_briefing(conn, user, send=not shadow)
@@ -462,7 +544,9 @@ def run_scheduled_cycle(limit: int = 50, *, conn=None) -> dict[str, Any]:
                 results["failed"] += 1
             else:
                 results["skipped"] += 1
-                if status == "quiet_hours":
+                if status in ("push_disabled_by_user", "disabled"):
+                    results["disabled_by_user"] += 1
+                elif status == "quiet_hours":
                     results["suppressed_by_quiet_hours"] += 1
                 elif outcome.get("shadow") and outcome.get("briefing_id"):
                     # Generated, settled, and withheld at the delivery boundary. Counted
