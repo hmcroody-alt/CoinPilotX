@@ -459,3 +459,170 @@ network says so, not because the work is incomplete. When it runs, it decides. I
 does not clear all four gates, this stays off permanently and the honest conclusion is that
 Perplexity embeddings did not improve UNDX retrieval on this corpus. I would rather report
 that than report a win I could not defend.
+
+---
+---
+
+# Live Acceptance Execution Attempt — 2026-08-30
+
+*This section records a second, separate mission: "run the real model." The architecture was
+not rebuilt. Nothing above was re-derived. The only question asked here was whether the
+existing runner could be executed somewhere that has both the key and a route to the
+provider.*
+
+**Result: BLOCKED. No provider call was made. No number in this report changed.**
+
+## Stage 0 — Frozen control, re-verified before anything ran
+
+```
+provenance_drift       : []
+cases_with_changed_rank: []
+identical_to_control   : True
+```
+
+Recall@5 `0.4143`, MRR `0.3500`, Indirect `0.0000`, Haitian Creole `0.125`, French `0.125`,
+negative-control leaks `2/4`. Untouched, and re-hashed against `baseline_lexical_results.json`
+before any execution path was explored.
+
+## Stage 1 — Source control: still BLOCKED, and re-tested rather than assumed
+
+I re-tested with a read-only `git ls-remote`, not a push, so a failed attempt could not
+mutate anything:
+
+```
+fatal: Could not read from remote repository.
+  ssh dir : known_hosts        (no private key)
+  helper  : none
+  tokens  : 0                  (no GH_TOKEN / GITHUB_TOKEN / GIT_ASKPASS)
+  netrc   : absent
+```
+
+Authenticated Git access is **still not available**. This is a credential absence, not a
+network failure — `github.com` resolves and answers through the proxy, and the ED25519 host
+key exchange completes; the handshake dies at `Permission denied (publickey)`.
+
+| | |
+|---|---|
+| **BRANCH** | `release/full-sweep-20260826` |
+| **LOCAL SHA** | `e1e3fe5f4761105a8baa6d2c30915c07b255cbb9` |
+| **REMOTE SHA** | `ffbc4db0389707c9e702accbc7dadb01b37725a3` (`origin/main`, foreign App Review work, untouched) |
+| **PUSH** | **BLOCKED — no credentials** |
+
+Per instruction, this is reported separately and **has not been used to license a single
+fabricated measurement.**
+
+## Stage 2 — Railway execution path: NO QUALIFYING MECHANISM EXISTS
+
+The mission set seven requirements. I checked every mechanism the Railway MCP surface
+actually exposes against them.
+
+**The Railway tool inventory contains no execution primitive.** There is no exec, no
+`railway run`, no `railway ssh`, no one-off-command, and no shell tool. Every available
+verb either mutates service configuration or reads telemetry. That is a factual property of
+the toolset, not a permissions problem.
+
+So the only ways to make code run are indirect, and each one breaks a stated prohibition:
+
+| Mechanism | Why it fails |
+|---|---|
+| `update-service` → `startCommand` | Explicitly forbidden: "DO NOT modify the production start command." |
+| `update-service` → `cronSchedule` | Railway cron runs *the service's own start command* on a schedule and expects the process to **exit**. Applying it to `CoinPilotX` would convert the live web service into a terminating job. This takes pulsesoc.com down. |
+| `update-service` → `preDeployCommand` | Persistent config change, requires a production redeploy, and a non-zero exit **blocks the deployment**. A benchmark would become a gate on production deploys. |
+| `create-service` / `create-deployment` | Forbidden: "DO NOT create another persistent Railway service." Compounded by the fact that no delete-service tool exists, so it could not be cleaned up. |
+| `railway-agent` | Delegating unbounded infrastructure action to another agent to work around a prohibition is exactly "improvise production infrastructure." Not used. |
+
+**And there is a prior blocker that makes all of the above moot.**
+
+The `CoinPilotX` service builds from GitHub `hmcroody-alt/CoinPilotX`, branch **`main`**.
+The acceptance runner is not on `main`:
+
+```
+$ git ls-tree origin/main -- scripts/undx_semantic_live_acceptance.py \
+      data/undx/baseline_lexical_results.json services/undx_semantic_retrieval.py
+(no output — none of the three files exist on main)
+
+$ git ls-tree HEAD --name-only -- <same three paths>
+data/undx/baseline_lexical_results.json
+scripts/undx_semantic_live_acceptance.py
+services/undx_semantic_retrieval.py
+```
+
+Every Railway execution mechanism runs code **from the deployed image**. The deployed image
+is built from `main`. `main` contains neither the runner, nor the frozen control, nor the
+semantic retrieval module. Even a perfect, fully-sanctioned execution channel would start a
+process that immediately fails on `ModuleNotFoundError`.
+
+The dependency chain is therefore closed:
+
+> **run the real model** requires **code present in the Railway image**
+> requires **a push to `main`** requires **Git credentials** — which do not exist here.
+
+## Stage 3 — Secret presence, re-confirmed without exposure
+
+`PERPLEXITY_API_KEY_PRESENT = true` on service `CoinPilotX`
+(`ce41f7c5-b882-4aa7-81b3-06de73fded31`, environment `production`), read from the variable
+**name** list returned by `get-service-config`. No value was requested or returned. No
+length, prefix, suffix, or hash appears anywhere in this document.
+
+`PERPLEXITY_API_KEY_PRESENT = false` in this execution sandbox.
+
+## Stage 4 — Real provider probe: NOT RUN
+
+Re-tested the route before concluding, in case the network posture had changed:
+
+```
+direct  https://api.perplexity.ai/  -> curl exit 56, no HTTP status
+proxied http://localhost:3128       -> curl exit 56, no HTTP status
+```
+
+Per the mission — *"If this fails: STOP. Do not index."* — I stopped. No index was built, no
+holdout was run, and no decision gate was evaluated.
+
+## Stages 5-12 — NOT RUN
+
+Cost estimate stands at **1,673 documents / 72,408 tokens / $0.00029**, unchanged and
+computed offline. Everything downstream of the probe is untouched: no real index, no real
+holdout, no category breakdown, no authority regression against a live embedding path, no
+decision. Semantic retrieval remains `off`. Shadow was not enabled.
+
+## Stage 13 — Lexical defect: still frozen, as instructed
+
+`"recipe for beef bourguignon"` → `platform_fee_rules` remains unfixed.
+
+## The exact limitation, stated once
+
+> **There is no mechanism available to me that runs the acceptance code in an environment
+> holding both `PERPLEXITY_API_KEY` and a route to `api.perplexity.ai`, without violating an
+> explicit prohibition — and even if there were, the code is not in the deployed image,
+> because the push is blocked on credentials I do not have.**
+
+Two things would unblock this, both of which require you:
+
+1. **Git credentials** (a deploy key or a `GH_TOKEN` in this environment) so
+   `release/full-sweep-20260826` can be pushed. Then the code can reach `main`.
+2. **A sanctioned execution decision** — because even with the code deployed, running it on
+   Railway means either a temporary service you would have to delete yourself, or a config
+   change to the production service. Both are yours to authorise, not mine to assume.
+
+Alternatively, the runner is a single command and needs nothing but the key:
+
+```
+PERPLEXITY_API_KEY=... python3 scripts/undx_semantic_live_acceptance.py --confirm-spend --json
+```
+
+Run from any machine with the repo checked out at `e1e3fe5f` and normal internet access, it
+performs probe → estimate → index → holdout → decision, halts at each gate, and is bounded
+at `--max-index-cost-usd 1.00` against a corpus priced at $0.00029.
+
+## FINAL VERDICT
+
+| | |
+|---|---|
+| **BRANCH** | `release/full-sweep-20260826` |
+| **LOCAL SHA** | `e1e3fe5f4761105a8baa6d2c30915c07b255cbb9` |
+| **REMOTE SHA** | `ffbc4db0389707c9e702accbc7dadb01b37725a3` (unchanged) |
+| **PUSH** | **BLOCKED** — no credentials |
+| **REAL PERPLEXITY RESULT** | **NONE** |
+| **FINAL VERDICT** | **BLOCKED** → semantic retrieval remains **KEEP OFF** |
+
+No real Perplexity result, therefore no promotion. That is the rule, and it held.
