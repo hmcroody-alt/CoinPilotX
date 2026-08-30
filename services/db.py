@@ -303,6 +303,11 @@ AUTO_PK_TABLES = {
     # the Save button, among many others.
     "pulse_notifications": "id",
     "pulse_notification_deliveries": "id",
+    # Pulse Briefings: engine.evaluate_user_briefing reads cur.lastrowid right
+    # after the claim INSERT and threads it through every settle UPDATE and the
+    # push deeplink. Unregistered, Postgres gets no RETURNING clause, lastrowid
+    # stays None, rows stick in `processing` and the deeplink says briefing=None.
+    "pulse_briefings": "id",
     "pulse_jobs": "id",
     "pulse_post_attempts": "id",
     "telegram_debug_events": "id",

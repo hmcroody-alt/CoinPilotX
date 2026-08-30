@@ -463,5 +463,15 @@ class SummarizerTests(unittest.TestCase):
         self.assertIn("quiet", copy["body"].lower())
 
 
+class PostgresCompatTests(unittest.TestCase):
+    """The engine reads cur.lastrowid after the claim INSERT. That only works on
+    Postgres if services.db appends RETURNING id, which requires registration in
+    AUTO_PK_TABLES. Found broken in production acceptance (2026-08-30)."""
+
+    def test_pulse_briefings_registered_for_returning_id(self):
+        from services.db import AUTO_PK_TABLES
+        self.assertEqual(AUTO_PK_TABLES.get("pulse_briefings"), "id")
+
+
 if __name__ == "__main__":
     unittest.main()
