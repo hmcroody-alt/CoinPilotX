@@ -29,14 +29,31 @@ class CryptoPulseCollector(BaseCollector):
         binance: dict[str, Any] = {}
 
         try:
-            data, cached, duration = self.fetch_json(
-                coingecko_client.url("/simple/price?ids=bitcoin,ethereum,solana&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true&include_market_cap=true"),
+            # Canonical client, not self.fetch_json: this used to borrow only the
+            # URL and headers and then issue its own urlopen, which meant the
+            # collector's CoinGecko traffic was invisible to the rate governor,
+            # got no retry or 429 classification, appeared in no telemetry, and
+            # kept a private 45s cache that the crypto screen, alerts and
+            # briefings could not share. Same key, same host -- but a request
+            # the governor cannot see is a request it cannot hold back.
+            data, cached, duration = coingecko_client.get_json_cached_meta(
+                "/simple/price",
+                {"ids": ",".join(sorted(ASSETS)), "vs_currencies": "usd",
+                 "include_24hr_change": "true", "include_24hr_vol": "true",
+                 "include_market_cap": "true"},
+                ttl=45,
                 cache_key="coingecko_simple_price_btc_eth_sol",
-                ttl_seconds=45,
-                headers=coingecko_client.auth_headers(),
+                timeout=self.timeout_seconds,
             )
             coingecko = data if isinstance(data, dict) else {}
-            statuses.append(source_status("coingecko", "success_cached" if cached else "success", duration_ms=duration, candidates=len(coingecko)))
+            if not coingecko:
+                # get_json_cached_meta degrades to None rather than raising, so
+                # an empty result is the provider failing, not a quiet success.
+                statuses.append(source_status(
+                    "coingecko", "failed",
+                    reason=coingecko_client.last_error().get("code") or "no_data"))
+            else:
+                statuses.append(source_status("coingecko", "success_cached" if cached else "success", duration_ms=duration, candidates=len(coingecko)))
         except Exception as exc:
             statuses.append(source_status("coingecko", "failed", reason=network_error_message(exc)))
 

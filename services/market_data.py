@@ -22,7 +22,15 @@ HISTORY_CACHE_SECONDS = {
 }
 # CoinGecko `days` parameter per supported range. 1H has no `days` of its own —
 # it is the tail of the 1-day series, which arrives at ~5 minute granularity.
-HISTORY_RANGE_DAYS = {"1H": 1, "24H": 1, "7D": 7, "1M": 30, "1Y": 365, "ALL": "max"}
+#
+# "ALL" is a number, not "max". The Basic plan rejects days=max outright (401)
+# and caps numeric days at 730 — 730 answers, 731 is refused. So "max" made the
+# ALL tab fail on every single request, surfacing as "temporarily unavailable"
+# or an indefinitely stale series: a permanent plan limit wearing the costume of
+# a provider blip. 730 is what this plan can actually answer. Widening it is a
+# billing decision, not a code change, hence the env override.
+HISTORY_MAX_DAYS = int(os.getenv("COINGECKO_HISTORY_MAX_DAYS", "730"))
+HISTORY_RANGE_DAYS = {"1H": 1, "24H": 1, "7D": 7, "1M": 30, "1Y": 365, "ALL": HISTORY_MAX_DAYS}
 HISTORY_RANGES = tuple(HISTORY_RANGE_DAYS)
 # Enough points to draw a smooth line, few enough to keep the payload small.
 HISTORY_MAX_POINTS = 120
@@ -233,8 +241,16 @@ def asset_history(symbol, range_key="24H"):
     if cached and now - cached["created_at"] < HISTORY_CACHE_SECONDS[range_key]:
         return dict(cached["payload"])
 
-    asset = get_symbol(symbol)
-    coin_id = (asset or {}).get("id")
+    # Known majors resolve from the canonical table first, so the id survives a
+    # board outage. It also avoids a specific wrong answer: during Coinbase
+    # fallback the board's `id` is a lowercased ticker ("btc"), and asking
+    # CoinGecko for /coins/btc/market_chart is a 404 for an asset we can name
+    # perfectly well. Unknown symbols still resolve from the live board, which
+    # tracks new listings that no static table would.
+    coin_id = coingecko_client.coin_id(symbol)
+    if not coin_id:
+        asset = get_symbol(symbol)
+        coin_id = (asset or {}).get("id")
     if not coin_id:
         stale = HISTORY_CACHE.get(cache_key)
         if stale:

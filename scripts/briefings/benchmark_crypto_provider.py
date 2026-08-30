@@ -19,8 +19,17 @@ import time
 
 import requests
 
-BASE = os.getenv("COINGECKO_API_BASE", "https://api.coingecko.com/api/v3")
-KEY = os.getenv("COINGECKO_API_KEY", "").strip()
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+from services import coingecko_client  # noqa: E402
+
+# Host and auth come from the canonical client. This script used to default to
+# the public host and unconditionally send x-cg-demo-api-key, so benchmarking
+# with the real paid key measured a 401 against the wrong host -- the exact
+# pro/demo split the canonical client exists to make impossible. A benchmark
+# that does not exercise the production configuration is measuring fiction.
+BASE = coingecko_client.base_url()
+KEY = coingecko_client.api_key()
 N = int(os.getenv("BENCH_SAMPLES", "10"))
 
 ENDPOINTS = {
@@ -32,9 +41,8 @@ ENDPOINTS = {
 
 
 def bench(name: str, path: str, params: dict) -> dict:
-    headers = {"Accept": "application/json"}
-    if KEY:
-        headers["x-cg-demo-api-key"] = KEY
+    # Header name is derived from the resolved host, never hardcoded.
+    headers = coingecko_client.auth_headers()
     lat, errors, throttled = [], 0, 0
     sample = None
     for _ in range(N):
@@ -64,7 +72,11 @@ def bench(name: str, path: str, params: dict) -> dict:
 
 def main() -> int:
     results = [bench(name, path, params) for name, (path, params) in ENDPOINTS.items()]
-    print(json.dumps({"provider": "coingecko", "base": BASE, "keyed": bool(KEY), "results": results}, indent=2))
+    print(json.dumps({
+        "provider": "coingecko", "base": BASE, "keyed": bool(KEY),
+        "auth_header": coingecko_client.auth_header_name() if KEY else None,
+        "results": results,
+    }, indent=2))
     return 0 if any(r["samples_ok"] for r in results) else 1
 
 
