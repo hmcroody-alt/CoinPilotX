@@ -1,8 +1,8 @@
 /**
  * Zero-delay live end: static architecture guard.
  *
- * Ensures finishBroadcast in LiveHostSessionScreen never re-acquires the
- * blocking `await endLive(...)` ordering before navigation release.
+ * Ensures finishBroadcast in LiveHostSessionScreen never re-acquires blocking
+ * end-session or local media teardown ordering before navigation release.
  * Reads source text only — no rendering, no LiveKit, no audio path.
  *
  * Principle: docs/never_block_the_user.md
@@ -36,8 +36,10 @@ describe("LiveEndNonBlockingArchitecture", () => {
     expect(fn).toMatch(/endLive\s*\(\s*liveId\s*\)\s*\.catch/);
   });
 
-  it("still awaits the unchanged broadcast teardown before goBack", () => {
-    const stopIdx = fn.indexOf('await room.stopBroadcast("host_ended")');
+  it("does not await local broadcast teardown before releasing navigation", () => {
+    expect(fn).not.toContain('await room.stopBroadcast("host_ended")');
+    expect(fn).toContain('const localRelease = room.stopBroadcast("host_ended")');
+    const stopIdx = fn.indexOf('room.stopBroadcast("host_ended")');
     const backIdx = fn.indexOf("navigation.goBack()");
     expect(stopIdx).toBeGreaterThan(-1);
     expect(backIdx).toBeGreaterThan(stopIdx);
