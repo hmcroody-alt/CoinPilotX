@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import argparse
 import ast
+import hashlib
 import json
 import re
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -150,9 +152,86 @@ def data_entities() -> list[dict[str, Any]]:
     return entries
 
 
+#: Field that tells two same-named records of a kind apart. ``server_route`` keys on
+#: "METHODS /path", but Flask permits two handlers on one method+path (Werkzeug serves
+#: the first-registered rule and the rest are dead code), so the path alone is not an
+#: identity. Kinds absent here have no known collision mode and fall back to a content
+#: digest if one ever appears.
+_DISAMBIGUATORS = {"server_route": "handler"}
+
+
+def _dedupe_and_disambiguate(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Give every entry an id nothing else shares, without inventing records.
+
+    Two situations arrive here looking the same, and the downstream ``doc_id`` primary
+    key collapses both -- which is right for one of them and a silent data loss for the
+    other:
+
+    * The same record emitted twice. ``Reels``/``Saved``/``Search`` are declared both as
+      a tab and as a stack screen with the same component, so the generator sees one
+      navigable surface twice. These are byte-identical and must collapse to one record:
+      indexing them under two keys would put the same document in the corpus twice and
+      dilute retrieval rather than improve it.
+    * Two genuinely different records sharing a path-derived key -- two Flask handlers
+      registered on one method+path. These must NOT collapse. Overwriting one with the
+      other is invisible from the outside, because the indexer reports the number of
+      documents it wrote, not the number that survived the write.
+
+    So exact repeats collapse and real conflicts get a suffixed id. The suffix is applied
+    only inside a colliding group, which keeps every already-unique id byte-stable: the
+    semantic index is keyed by ``doc_id``, and rewriting all 1,600-odd of them to fix
+    five would churn the entire table to no purpose.
+    """
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for entry in entries:
+        grouped.setdefault(str(entry.get("id")), []).append(entry)
+
+    resolved: list[dict[str, Any]] = []
+    for entry_id, group in grouped.items():
+        unique: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for entry in group:
+            fingerprint = json.dumps(entry, sort_keys=True, ensure_ascii=False)
+            if fingerprint in seen:
+                continue
+            seen.add(fingerprint)
+            unique.append(entry)
+
+        if len(unique) == 1:
+            resolved.append(unique[0])
+            continue
+
+        field = _DISAMBIGUATORS.get(str(unique[0].get("kind")))
+        for entry in unique:
+            if field and str(entry.get(field) or "").strip():
+                suffix = str(entry[field]).strip()
+            else:
+                # No declared disambiguator: fall back to a digest of the entry so the id
+                # stays deterministic and unique. Reaching this branch means a new
+                # collision mode appeared and _DISAMBIGUATORS wants updating.
+                payload = json.dumps(entry, sort_keys=True, ensure_ascii=False)
+                suffix = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
+            entry["id"] = f"{entry_id}#{suffix}"
+            resolved.append(entry)
+
+    counts = Counter(str(entry.get("id")) for entry in resolved)
+    collisions = sorted(key for key, total in counts.items() if total > 1)
+    if collisions:
+        # Refuse to emit a manifest that cannot be indexed without loss. A duplicate id
+        # downstream is not a warning: undx_semantic_index deletes by doc_id before it
+        # inserts, so the later record replaces the earlier one and the stored row count
+        # quietly disagrees with the reported document count.
+        raise SystemExit(
+            "FAIL: %d manifest id(s) still collide after disambiguation: %s"
+            % (len(collisions), ", ".join(collisions[:5]))
+        )
+    return resolved
+
+
 def build_manifest() -> dict[str, Any]:
     entries = native_surfaces() + native_api_capabilities() + server_routes() + data_entities()
-    entries.sort(key=lambda item: (item["kind"], item["name"], item["source"]))
+    entries = _dedupe_and_disambiguate(entries)
+    entries.sort(key=lambda item: (item["kind"], item["name"], item["source"], item["id"]))
     counts: dict[str, int] = {}
     for item in entries:
         counts[item["kind"]] = counts.get(item["kind"], 0) + 1

@@ -5,7 +5,7 @@
   "counts": {
     "data_entity": 729,
     "native_api": 44,
-    "native_surface": 103,
+    "native_surface": 100,
     "server_route": 853
   },
   "entries": [
@@ -7675,15 +7675,6 @@
       "search_text": "Reels ReelsScreen Reels"
     },
     {
-      "id": "native_surface:mobile-native/src/navigation/AppNavigator.tsx:Reels",
-      "kind": "native_surface",
-      "name": "Reels",
-      "source": "mobile-native/src/navigation/AppNavigator.tsx",
-      "component": "ReelsScreen",
-      "public_summary": "Reels is a navigable PulseSoc app surface.",
-      "search_text": "Reels ReelsScreen Reels"
-    },
-    {
       "id": "native_surface:mobile-native/src/navigation/AppNavigator.tsx:RegionTime",
       "kind": "native_surface",
       "name": "RegionTime",
@@ -7729,15 +7720,6 @@
       "search_text": "Saved SavedScreen Saved"
     },
     {
-      "id": "native_surface:mobile-native/src/navigation/AppNavigator.tsx:Saved",
-      "kind": "native_surface",
-      "name": "Saved",
-      "source": "mobile-native/src/navigation/AppNavigator.tsx",
-      "component": "SavedScreen",
-      "public_summary": "Saved is a navigable PulseSoc app surface.",
-      "search_text": "Saved SavedScreen Saved"
-    },
-    {
       "id": "native_surface:mobile-native/src/navigation/AppNavigator.tsx:ScamShield",
       "kind": "native_surface",
       "name": "ScamShield",
@@ -7745,15 +7727,6 @@
       "component": "TrustSafetyScreen",
       "public_summary": "ScamShield is a navigable PulseSoc app surface.",
       "search_text": "ScamShield TrustSafetyScreen ScamShield"
-    },
-    {
-      "id": "native_surface:mobile-native/src/navigation/AppNavigator.tsx:Search",
-      "kind": "native_surface",
-      "name": "Search",
-      "source": "mobile-native/src/navigation/AppNavigator.tsx",
-      "component": "SearchScreen",
-      "public_summary": "Search is a navigable PulseSoc app surface.",
-      "search_text": "Search SearchScreen Search"
     },
     {
       "id": "native_surface:mobile-native/src/navigation/AppNavigator.tsx:Search",
@@ -15787,21 +15760,7 @@
       "search_text": "/api/crypto/watchlists/<int:watchlist_id>/assets api_crypto_watchlist_assets api crypto watchlists item assets"
     },
     {
-      "id": "server_route:bot.py:POST /api/dashboard/account/verification/appeal",
-      "kind": "server_route",
-      "name": "POST /api/dashboard/account/verification/appeal",
-      "source": "bot.py",
-      "handler": "api_dashboard_verification_appeal",
-      "methods": [
-        "POST"
-      ],
-      "route": "/api/dashboard/account/verification/appeal",
-      "public": true,
-      "public_summary": "PulseSoc supports dashboard account verification appeal.",
-      "search_text": "/api/dashboard/account/verification/appeal api_dashboard_verification_appeal api dashboard account verification appeal"
-    },
-    {
-      "id": "server_route:bot.py:POST /api/dashboard/account/verification/appeal",
+      "id": "server_route:bot.py:POST /api/dashboard/account/verification/appeal#api_dashboard_account_verification_appeal",
       "kind": "server_route",
       "name": "POST /api/dashboard/account/verification/appeal",
       "source": "bot.py",
@@ -15815,21 +15774,21 @@
       "search_text": "/api/dashboard/account/verification/appeal api_dashboard_account_verification_appeal api dashboard account verification appeal"
     },
     {
-      "id": "server_route:bot.py:POST /api/dashboard/account/verification/document",
+      "id": "server_route:bot.py:POST /api/dashboard/account/verification/appeal#api_dashboard_verification_appeal",
       "kind": "server_route",
-      "name": "POST /api/dashboard/account/verification/document",
+      "name": "POST /api/dashboard/account/verification/appeal",
       "source": "bot.py",
-      "handler": "api_dashboard_verification_document",
+      "handler": "api_dashboard_verification_appeal",
       "methods": [
         "POST"
       ],
-      "route": "/api/dashboard/account/verification/document",
+      "route": "/api/dashboard/account/verification/appeal",
       "public": true,
-      "public_summary": "PulseSoc supports dashboard account verification document.",
-      "search_text": "/api/dashboard/account/verification/document api_dashboard_verification_document api dashboard account verification document"
+      "public_summary": "PulseSoc supports dashboard account verification appeal.",
+      "search_text": "/api/dashboard/account/verification/appeal api_dashboard_verification_appeal api dashboard account verification appeal"
     },
     {
-      "id": "server_route:bot.py:POST /api/dashboard/account/verification/document",
+      "id": "server_route:bot.py:POST /api/dashboard/account/verification/document#api_dashboard_account_verification_document",
       "kind": "server_route",
       "name": "POST /api/dashboard/account/verification/document",
       "source": "bot.py",
@@ -15843,21 +15802,21 @@
       "search_text": "/api/dashboard/account/verification/document api_dashboard_account_verification_document api dashboard account verification document"
     },
     {
-      "id": "server_route:bot.py:POST /api/dashboard/account/verification/request",
+      "id": "server_route:bot.py:POST /api/dashboard/account/verification/document#api_dashboard_verification_document",
       "kind": "server_route",
-      "name": "POST /api/dashboard/account/verification/request",
+      "name": "POST /api/dashboard/account/verification/document",
       "source": "bot.py",
-      "handler": "api_dashboard_verification_request",
+      "handler": "api_dashboard_verification_document",
       "methods": [
         "POST"
       ],
-      "route": "/api/dashboard/account/verification/request",
+      "route": "/api/dashboard/account/verification/document",
       "public": true,
-      "public_summary": "PulseSoc supports dashboard account verification request.",
-      "search_text": "/api/dashboard/account/verification/request api_dashboard_verification_request api dashboard account verification request"
+      "public_summary": "PulseSoc supports dashboard account verification document.",
+      "search_text": "/api/dashboard/account/verification/document api_dashboard_verification_document api dashboard account verification document"
     },
     {
-      "id": "server_route:bot.py:POST /api/dashboard/account/verification/request",
+      "id": "server_route:bot.py:POST /api/dashboard/account/verification/request#api_dashboard_account_verification_request",
       "kind": "server_route",
       "name": "POST /api/dashboard/account/verification/request",
       "source": "bot.py",
@@ -15869,6 +15828,20 @@
       "public": true,
       "public_summary": "PulseSoc supports dashboard account verification request.",
       "search_text": "/api/dashboard/account/verification/request api_dashboard_account_verification_request api dashboard account verification request"
+    },
+    {
+      "id": "server_route:bot.py:POST /api/dashboard/account/verification/request#api_dashboard_verification_request",
+      "kind": "server_route",
+      "name": "POST /api/dashboard/account/verification/request",
+      "source": "bot.py",
+      "handler": "api_dashboard_verification_request",
+      "methods": [
+        "POST"
+      ],
+      "route": "/api/dashboard/account/verification/request",
+      "public": true,
+      "public_summary": "PulseSoc supports dashboard account verification request.",
+      "search_text": "/api/dashboard/account/verification/request api_dashboard_verification_request api dashboard account verification request"
     },
     {
       "id": "server_route:bot.py:POST /api/dashboard/ai-advisor/goals",

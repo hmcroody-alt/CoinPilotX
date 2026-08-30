@@ -341,7 +341,47 @@ def canonical_documents() -> list[IndexDocument]:
             body=f"{summary} {search_text}".strip()[:1200],
             content_class="canonical_public",
         ))
-    return documents
+    return _resolve_duplicate_ids(documents)
+
+
+class DuplicateDocumentId(RuntimeError):
+    """Two different canonical documents claim the same ``doc_id``."""
+
+
+def _resolve_duplicate_ids(documents: list[IndexDocument]) -> list[IndexDocument]:
+    """Refuse to hand the indexer a corpus it cannot store without losing rows.
+
+    ``undx_semantic_index.doc_id`` is the primary key and ``index_documents`` deletes by
+    ``doc_id`` before inserting, so a repeated id is not a duplicate row — it is one row
+    silently overwriting another. The indexer counts what it wrote, not what survived,
+    which is how a run reported 1,673 documents into an index holding 1,667.
+
+    The generator already makes ids unique, so this is defence in depth against a stale
+    or hand-edited manifest reaching the indexer. Identical repeats collapse, because two
+    copies of one document are one document. Conflicting repeats raise: guessing which of
+    two different descriptions of a capability is the real one is exactly the judgement a
+    retrieval corpus must not make on its own.
+    """
+    by_id: dict[str, IndexDocument] = {}
+    ordered: list[IndexDocument] = []
+    conflicts: list[str] = []
+    for document in documents:
+        existing = by_id.get(document.doc_id)
+        if existing is None:
+            by_id[document.doc_id] = document
+            ordered.append(document)
+            continue
+        if (existing.title, existing.body, existing.content_class) != (
+            document.title, document.body, document.content_class
+        ):
+            conflicts.append(document.doc_id)
+    if conflicts:
+        unique_conflicts = sorted(set(conflicts))
+        raise DuplicateDocumentId(
+            "%d canonical doc_id(s) map to conflicting documents; indexing would "
+            "silently overwrite: %s" % (len(unique_conflicts), ", ".join(unique_conflicts[:5]))
+        )
+    return ordered
 
 
 @dataclass
@@ -531,6 +571,52 @@ def load_index(corpus: str = CANONICAL_CORPUS) -> _LoadedIndex | None:
     with _INDEX_LOCK:
         _index_cache[corpus] = loaded
     return loaded
+
+
+def prune_missing_documents(
+    documents: Sequence[IndexDocument],
+    *,
+    corpus: str = CANONICAL_CORPUS,
+    conn=None,
+) -> list[str]:
+    """Delete stored rows whose ``doc_id`` is no longer in the corpus.
+
+    ``index_documents`` only ever deletes the id it is about to write, so a record that
+    changes id — which is exactly what disambiguating a collision does — leaves its old
+    row behind. That orphan is not inert: it stays in the vector index and can still be
+    returned as a retrieval candidate, describing a capability under a key nothing
+    regenerates any more.
+
+    The caller must pass the WHOLE corpus. Passing a chunk would delete everything else,
+    so this is deliberately not folded into ``index_documents``: a partial or aborted
+    indexing run must never be able to empty the table.
+    """
+    keep = {document.doc_id for document in documents}
+    if not keep:
+        # An empty corpus is a bug upstream, not an instruction to wipe the index.
+        raise ValueError("refusing to prune against an empty corpus")
+
+    owns = conn is None
+    conn = conn or _connect()
+    removed: list[str] = []
+    try:
+        ensure_schema(conn)
+        cursor = conn.cursor()
+        cursor.execute("SELECT doc_id FROM undx_semantic_index WHERE corpus = ?", (corpus,))
+        stored = [str(row[0]) for row in (cursor.fetchall() or [])]
+        removed = sorted(doc_id for doc_id in stored if doc_id not in keep)
+        for doc_id in removed:
+            cursor.execute(
+                "DELETE FROM undx_semantic_index WHERE corpus = ? AND doc_id = ?",
+                (corpus, doc_id),
+            )
+        conn.commit()
+    finally:
+        if owns:
+            conn.close()
+    if removed:
+        invalidate_cache()
+    return removed
 
 
 def index_status(corpus: str = CANONICAL_CORPUS) -> dict[str, Any]:

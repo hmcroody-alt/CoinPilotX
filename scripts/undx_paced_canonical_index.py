@@ -154,6 +154,29 @@ def run_paced_index() -> dict:
             time.sleep(PACE_SECONDS)
 
     after = dict(embed.telemetry_snapshot())
+
+    # Remove rows the corpus no longer declares. ``index_documents`` deletes only the
+    # doc_id it is about to write, so any record whose id changed since the last run --
+    # exactly what disambiguating a collision does -- left its old row behind, still a
+    # live retrieval candidate under a key nothing regenerates.
+    #
+    # Gated on a complete run, and on the whole corpus rather than the chunks that
+    # landed. A run that aborted or lost chunks has no idea which ids are genuinely gone
+    # versus merely unwritten this time, and pruning on that belief would delete real
+    # rows to fix a provider outage.
+    pruned: list[str] = []
+    prune_skipped = ""
+    if aborted or failed:
+        prune_skipped = "run incomplete; a partial corpus cannot distinguish removed from unwritten"
+        emit("prune_skipped", {"reason": prune_skipped, "failed": failed, "aborted": aborted})
+    else:
+        try:
+            pruned = semantic.prune_missing_documents(documents)
+            emit("prune", {"removed": len(pruned), "doc_ids": pruned[:20]})
+        except Exception as exc:  # noqa: BLE001 - report, do not lose the index run
+            prune_skipped = type(exc).__name__
+            emit("prune_error", {"error": prune_skipped})
+
     semantic.invalidate_cache()
     status = semantic.index_status()
 
@@ -180,6 +203,8 @@ def run_paced_index() -> dict:
         "pace_seconds": PACE_SECONDS,
         "failed_offsets": failed_offsets[:20],
         "aborted": aborted,
+        "orphans_pruned": len(pruned),
+        "prune_skipped": prune_skipped,
         "index_status": status,
     }
 
@@ -214,9 +239,21 @@ def main() -> int:
                           "recommendation": "RERUN_INDEX",
                           "reason": "no provider evidence about retrieval quality was produced"})
         return 4
-    if stored < index["documents_total"]:
-        emit("partial_index", {"stored": stored, "expected": index["documents_total"],
+    # Reconcile what the corpus declares against what the table actually holds. The
+    # indexer counts documents it *sent*, so this is the only place the two numbers are
+    # compared -- and the disagreement is the whole reason the previous run reported
+    # 1,673 documents into an index holding 1,667.
+    expected = int(index["documents_total"])
+    if stored < expected:
+        emit("partial_index", {"stored": stored, "expected": expected,
                                "note": "benchmark runs against a partial index; recall is a floor"})
+    elif stored > expected:
+        emit("orphan_rows", {"stored": stored, "expected": expected,
+                             "surplus": stored - expected,
+                             "note": "rows exist that the corpus does not declare; prune did not "
+                                     "clear them and they remain retrievable"})
+    else:
+        emit("reconciled", {"stored": stored, "expected": expected})
 
     # Scoped to this process only. Nothing about any deployment's flags changes here.
     os.environ["UNDX_SEMANTIC_RETRIEVAL_STAGE"] = "production"
