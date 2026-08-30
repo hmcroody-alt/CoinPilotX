@@ -76,8 +76,8 @@ is ready.**
 | **SHADOW** | **NOT ENABLED.** No evidence exists to justify enabling it. Flag remains `off`. |
 | **QA COHORT** | **NOT ENABLED.** |
 | **GLOBAL PRODUCTION** | **DO NOT ENABLE.** |
-| **COMMIT** | See Stage 11. |
-| **PUSH** | See Stage 11. |
+| **COMMIT** | **DONE** — `1bf02e67`, 16 files, +5,918 / −2. Explicit paths only; no `git add -A`. |
+| **PUSH** | **BLOCKED — no credentials.** Network to GitHub works; there is no SSH key and no token in this environment. `LOCAL SHA == REMOTE SHA` therefore **NOT VERIFIED**. See Stage 11. |
 | **FINAL RECOMMENDATION** | **KEEP OFF.** Then run the live acceptance command and let the numbers decide. |
 
 ---
@@ -342,6 +342,60 @@ That is a defensible convention and an easy one to misread when setting a Railwa
 in a hurry.
 
 **The worker lacks the key.** Harmless now, silent later — see Stage 1.
+
+---
+
+## Stage 11 — Source control
+
+**Commit: done.** `1bf02e67` on `release/full-sweep-20260826`, parent `f1759800`, 16 files,
++5,918 / −2. Every path staged explicitly; **`git add -A` was never used**, so nothing
+outside this mission entered the commit.
+
+**Foreign work preserved.** `origin/main` carries one commit this branch does not have —
+`ffbc4db0 fix(premium): surface expired subscription history for App Review`. It was not
+merged, rebased over, reverted, or otherwise touched. My branch simply does not contain it,
+which is the correct state for a feature branch and leaves the other work intact.
+
+**The lock problem, and what it actually was.** The repository lives on a FUSE mount where
+`create` and `rename` succeed but **`unlink` returns "Operation not permitted"**. Git's
+locking protocol depends on being able to delete a lock file. So every git command that
+touches the index leaves `.git/index.lock` behind, and the *next* command reports "another
+git process seems to be running" — with no such process existing. The fix is rename, not
+delete: each stale lock is verified zero-byte with no live git process and moved to
+`.git/stale-locks-quarantine/` rather than removed, so nothing is destroyed and the
+evidence survives.
+
+The commit succeeded and then triggered git's automatic background `gc`, which failed
+mid-flight for the same reason and left **89 stale `.lock` files scattered across nearly
+every ref** — `HEAD.lock`, `refs/heads/main.lock`, every remote-tracking ref. That would
+have blocked all future ref updates. All 89 were verified empty and quarantined, and
+`gc.auto` is now set to `0` for this checkout, because a garbage collector that cannot
+unlink cannot finish and will keep doing this. Five non-empty locks on unrelated
+`codex/junk_*` branches were **left alone** — a non-empty lock may contain real content and
+is not mine to judge.
+
+Working tree is clean and the commit verifies: correct tree, correct parent, all 16 files
+present in the object store.
+
+**Push: blocked on credentials.** Not on network — the proxy reaches `github.com` and the
+host key exchanged successfully. The remote is `git@github.com:hmcroody-alt/CoinPilotX.git`
+over SSH, and this environment has **no SSH private key, no credential helper and no
+token**; `ls-remote` returns `Permission denied (publickey)`. Obtaining or entering a
+credential is not something I will do on your behalf, so the push stops here.
+
+**`LOCAL SHA == REMOTE SHA` is therefore NOT VERIFIED, and I am not going to claim
+otherwise.** The commit exists locally at `1bf02e67` and is intact. To publish it:
+
+```bash
+cd ~/Desktop/CoinPilotX
+git push origin release/full-sweep-20260826    # NOT main — see below
+git rev-parse HEAD && git rev-parse origin/release/full-sweep-20260826
+```
+
+I have deliberately written that as the feature branch rather than `main`. The branch's
+upstream is configured as `origin/main`, so a bare `git push` would land these commits on
+`main` — and `coinpilotx-undx-worker` builds from `main`, which makes that a **production
+deploy**. Nothing here needs to deploy to be measured.
 
 ---
 
