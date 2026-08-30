@@ -45083,8 +45083,7 @@ def pulse_referral_status_for_user(cur, user_id):
 
     Progress OS owns this number. Before it existed, ``completed`` counted rows
     that ``record_referral_signup`` writes with ``counted=1`` at signup time,
-    and ``privilege_engine`` unlocks Live at ``referral_count >= 30`` — so
-    thirty empty accounts unlocked Live Creator. ``progress.bridge`` replaces
+    and ``privilege_engine`` used to unlock Live at thirty signups. ``progress.bridge`` replaces
     the count with referrals that actually qualified (profile + two separate
     posting days + good standing) and grandfathers anyone who had already
     earned access under the old rule into an explicit ``livestream_access``

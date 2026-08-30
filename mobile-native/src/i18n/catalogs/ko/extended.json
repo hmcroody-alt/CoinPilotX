@@ -1939,8 +1939,8 @@
     }
   },
   "progress": {
-    "title": "진행 상황",
-    "subtitle": "파운딩 멤버 챌린지",
+    "title": "Founding Path",
+    "subtitle": "PULSESOC FOUNDING PATH",
     "privateNote": "나만 볼 수 있어요.",
     "notVerification": "이 프로그램은 신원 확인이 아니에요.",
     "loading": "진행 상황을 불러오는 중…",
@@ -1953,53 +1953,59 @@
       "complete": "파운딩 멤버"
     },
     "overview": {
-      "heading": "나의 챌린지",
-      "qualified_other": "인정된 추천 {{count}}명",
+      "heading": "FOUNDING PATH",
       "remaining": "{{count}}명 남음",
       "complete": "챌린지 완료",
       "nextMilestone": "다음: {{label}}",
-      "nextReward": "다음 {{amount}}까지 {{count}}명",
       "foundingMember": "파운딩 멤버가 되셨어요",
-      "keepGoing": "인정된 추천 {{target}}명마다 {{amount}}을 더 받아요."
+      "certified_one": "{{count}} Certified Invite",
+      "certified_other": "{{count}} Certified Invites",
+      "nextUnlock": "Next unlock",
+      "highestTier": "Highest founding tier",
+      "moreCertified_one": "{{count}} more Certified Invite",
+      "moreCertified_other": "{{count}} more Certified Invites",
+      "liveUnlocked": "LIVE CREATOR UNLOCKED",
+      "liveUnlockedBody": "You helped grow the PulseSoc network. You can now broadcast LIVE.",
+      "startLive": "Start Your First Live",
+      "exploreLive": "Explore Live"
     },
     "breakdown": {
       "invited": "초대함",
       "inProgress": "진행 중",
-      "qualified": "인정됨",
       "inReview": "확인 중",
-      "closed": "종료됨"
+      "closed": "종료됨",
+      "certified": "Certified"
     },
     "sections": {
       "milestones": "마일스톤",
       "referrals": "내 추천",
       "invite": "친구 초대",
-      "rewards": "보상 및 수익",
       "missions": "미션",
-      "badge": "파운딩 멤버 배지",
       "insights": "인사이트",
       "activity": "활동",
       "howItWorks": "진행 방식",
-      "faq": "자주 묻는 질문"
+      "faq": "자주 묻는 질문",
+      "legacy": "Your founding legacy"
     },
     "milestones": {
-      "heading": "보상 단계",
+      "heading": "YOUR UNLOCKS",
       "locked": "잠김",
       "inProgress": "진행 중",
       "completed": "획득함",
       "earnedOn": "{{date}}에 획득",
-      "threshold": "추천 {{count}}명에서",
+      "threshold": "{{count}} Certified Invites",
       "oneTime": "1회 한정",
       "repeatable": "{{count}}명마다 반복"
     },
     "referrals": {
-      "heading": "내 추천",
+      "heading": "YOUR CERTIFIED INVITES",
       "tabAll": "전체",
-      "tabQualified": "인정됨",
+      "tabQualified": "CERTIFIED",
       "tabPending": "진행 중",
       "tabReview": "확인 중",
       "empty": "아직 추천이 없어요",
       "emptyBody": "링크를 공유하고 시작해 보세요.",
-      "counts": "챌린지에 반영돼요",
+      "counts": "Certified",
       "doesNotCountYet": "아직 반영되지 않았어요",
       "anonymous": "새로운 멤버",
       "detailHeading": "인정 조건 체크리스트",
@@ -2027,23 +2033,6 @@
       "unavailable": "초대 링크가 아직 준비되지 않았어요.",
       "fairness": "실제로 아는 사람을 초대해 주세요. 수보다 질이 중요해요."
     },
-    "rewards": {
-      "heading": "보상 및 수익",
-      "earned": "획득",
-      "pending": "대기 중",
-      "available": "사용 가능",
-      "pendingNote": "대기 중은 정상이에요. 보상은 지급 전에 한 번 확인을 거쳐요.",
-      "cycles_other": "{{count}}사이클 완료",
-      "cycleLabel": "{{count}}번째 사이클",
-      "historyEmpty": "아직 보상이 없어요",
-      "historyEmptyBody": "인정된 추천 {{target}}명이 되면 첫 {{amount}}이 도착해요.",
-      "howYouEarn": "인정된 추천 {{count}}명마다 {{amount}}을 받아요.",
-      "statusPending": "대기 중",
-      "statusApproved": "승인됨",
-      "statusDisbursed": "사용 가능",
-      "statusOnHold": "보류 중",
-      "statusDenied": "지급되지 않음"
-    },
     "missions": {
       "heading": "미션",
       "trackCreator": "나의 크리에이터 여정",
@@ -2069,8 +2058,8 @@
       "heading": "파운딩 멤버",
       "lockedBody": "인정된 추천 {{target}}명을 달성하면 영구 파운딩 멤버 배지를 받아요.",
       "earnedBody": "이 배지는 영구적이에요. PulseSoc을 함께 만들어 주셔서 고마워요.",
-      "liveUnlocked": "라이브 크리에이터 잠금 해제",
-      "liveLocked": "라이브 크리에이터는 {{target}}명에서 열려요"
+      "generation": "Founding Generation",
+      "permanent": "Permanent historical status on your account"
     },
     "insights": {
       "heading": "인사이트",
@@ -2085,7 +2074,6 @@
       "referralSignedUp": "{{name}}님이 내 링크로 가입했어요",
       "referralQualified": "{{name}}님이 챌린지에 반영됐어요",
       "milestoneEarned": "마일스톤을 달성했어요",
-      "rewardEarned": "보상을 받았어요",
       "genericEvent": "진행 상황 업데이트"
     },
     "howItWorks": {
@@ -2103,14 +2091,11 @@
       "howReferralsWork": "초대 링크를 공유하세요. 그 링크로 가입한 사람이 내 추천이 돼요.",
       "whatCounts": "프로필을 완성하고 서로 다른 이틀에 게시하며 정상적으로 이용 중이면 추천으로 인정돼요.",
       "whyNotCountedYet": "대부분은 아직 둘째 날 게시물이 없어서예요. 추천을 열어 남은 조건을 확인해 보세요.",
-      "whenDoIEarn": "인정된 추천 {{target}}명에서 {{amount}}을 받고, 그 이후에도 {{target}}명마다 다시 받아요.",
-      "canIEarnAgain": "네. {{amount}} 보상은 반복돼요. 배지와 라이브 크리에이터 권한, 얼리 서포터는 1회 한정이에요.",
-      "howToUnlockLive": "라이브 크리에이터 자격은 {{target}}번째 인정된 추천에서 열려요.",
+      "howToUnlockLive": "Live Creator eligibility unlocks at 2 Certified Invites.",
       "canFamilyParticipate": "네. 가족, 룸메이트, 같은 반 친구, 동료 모두 참여할 수 있어요. 같은 네트워크를 써도 괜찮아요.",
       "underReview": "확인 중이라는 건 자동으로 점검하고 있다는 뜻이에요. 보통 저절로 해결되고, 따로 하실 일은 없어요.",
-      "howRewardsBecomeAvailable": "보상은 바로 적립되고, 지급 전에 한 번 확인을 거쳐요.",
       "isThereALimit": "인정된 추천 수에도, 반복 보상에도 한도가 없어요.",
-      "whenDoesItEnd": "챌린지는 {{target}}명에서 끝나지만, 여정은 계속돼요. 그 뒤에는 새로운 미션이 열려요.",
+      "whenDoesItEnd": "Founding Member is the highest founding tier, but your creator journey and missions continue.",
       "questions": {
         "howReferralsWork": "추천은 어떻게 작동하나요?",
         "whatCounts": "추천은 언제 인정되나요?",

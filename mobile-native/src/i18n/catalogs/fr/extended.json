@@ -1942,8 +1942,8 @@
     }
   },
   "progress": {
-    "title": "Progression",
-    "subtitle": "Défi Membre Fondateur",
+    "title": "Founding Path",
+    "subtitle": "PULSESOC FOUNDING PATH",
     "privateNote": "Vous seul pouvez voir ceci.",
     "notVerification": "Ce programme n'est pas une vérification d'identité.",
     "loading": "Chargement de votre progression…",
@@ -1956,54 +1956,59 @@
       "complete": "Membre Fondateur"
     },
     "overview": {
-      "heading": "Votre défi",
-      "qualified_one": "{{count}} filleul validé",
-      "qualified_other": "{{count}} filleuls validés",
+      "heading": "FOUNDING PATH",
       "remaining": "Encore {{count}}",
       "complete": "Défi terminé",
       "nextMilestone": "Ensuite : {{label}}",
-      "nextReward": "{{count}} de plus pour vos prochains {{amount}}",
       "foundingMember": "Vous êtes Membre Fondateur",
-      "keepGoing": "Chaque {{target}} filleuls validés vous rapporte {{amount}} de plus."
+      "certified_one": "{{count}} Certified Invite",
+      "certified_other": "{{count}} Certified Invites",
+      "nextUnlock": "Next unlock",
+      "highestTier": "Highest founding tier",
+      "moreCertified_one": "{{count}} more Certified Invite",
+      "moreCertified_other": "{{count}} more Certified Invites",
+      "liveUnlocked": "LIVE CREATOR UNLOCKED",
+      "liveUnlockedBody": "You helped grow the PulseSoc network. You can now broadcast LIVE.",
+      "startLive": "Start Your First Live",
+      "exploreLive": "Explore Live"
     },
     "breakdown": {
       "invited": "Invités",
       "inProgress": "En cours",
-      "qualified": "Validés",
       "inReview": "En cours d'examen",
-      "closed": "Clôturés"
+      "closed": "Clôturés",
+      "certified": "Certified"
     },
     "sections": {
       "milestones": "Paliers",
       "referrals": "Vos filleuls",
       "invite": "Inviter des amis",
-      "rewards": "Récompenses et gains",
       "missions": "Missions",
-      "badge": "Badge Membre Fondateur",
       "insights": "Statistiques",
       "activity": "Activité",
       "howItWorks": "Comment ça marche",
-      "faq": "FAQ"
+      "faq": "FAQ",
+      "legacy": "Your founding legacy"
     },
     "milestones": {
-      "heading": "Échelle des récompenses",
+      "heading": "YOUR UNLOCKS",
       "locked": "Verrouillé",
       "inProgress": "En cours",
       "completed": "Obtenu",
       "earnedOn": "Obtenu le {{date}}",
-      "threshold": "À {{count}} filleuls",
+      "threshold": "{{count}} Certified Invites",
       "oneTime": "Une seule fois",
       "repeatable": "Se répète tous les {{count}}"
     },
     "referrals": {
-      "heading": "Vos filleuls",
+      "heading": "YOUR CERTIFIED INVITES",
       "tabAll": "Tous",
-      "tabQualified": "Validés",
+      "tabQualified": "CERTIFIED",
       "tabPending": "En cours",
       "tabReview": "En cours d'examen",
       "empty": "Aucun filleul pour l'instant",
       "emptyBody": "Partagez votre lien pour commencer.",
-      "counts": "Compte pour votre défi",
+      "counts": "Certified",
       "doesNotCountYet": "Ne compte pas encore",
       "anonymous": "Un nouveau membre",
       "detailHeading": "Liste des conditions",
@@ -2031,24 +2036,6 @@
       "unavailable": "Votre lien d'invitation n'est pas encore prêt.",
       "fairness": "Invitez des personnes que vous connaissez vraiment. La qualité compte plus que le nombre."
     },
-    "rewards": {
-      "heading": "Récompenses et gains",
-      "earned": "Gagné",
-      "pending": "En attente",
-      "available": "Disponible",
-      "pendingNote": "L'attente est normale. Les récompenses sont vérifiées avant d'être versées.",
-      "cycles_one": "{{count}} cycle terminé",
-      "cycles_other": "{{count}} cycles terminés",
-      "cycleLabel": "Cycle {{count}}",
-      "historyEmpty": "Aucune récompense pour l'instant",
-      "historyEmptyBody": "Vos premiers {{amount}} arrivent à {{target}} filleuls validés.",
-      "howYouEarn": "Vous gagnez {{amount}} tous les {{count}} filleuls validés.",
-      "statusPending": "En attente",
-      "statusApproved": "Approuvée",
-      "statusDisbursed": "Disponible",
-      "statusOnHold": "Suspendue",
-      "statusDenied": "Non accordée"
-    },
     "missions": {
       "heading": "Missions",
       "trackCreator": "Votre parcours de créateur",
@@ -2074,8 +2061,8 @@
       "heading": "Membre Fondateur",
       "lockedBody": "Atteignez {{target}} filleuls validés pour obtenir le badge permanent Membre Fondateur.",
       "earnedBody": "Ce badge est permanent. Merci d'aider à construire PulseSoc.",
-      "liveUnlocked": "Créateur Live débloqué",
-      "liveLocked": "Créateur Live se débloque à {{target}}"
+      "generation": "Founding Generation",
+      "permanent": "Permanent historical status on your account"
     },
     "insights": {
       "heading": "Statistiques",
@@ -2090,7 +2077,6 @@
       "referralSignedUp": "{{name}} a rejoint via votre lien",
       "referralQualified": "{{name}} compte maintenant pour votre défi",
       "milestoneEarned": "Vous avez atteint un palier",
-      "rewardEarned": "Vous avez gagné une récompense",
       "genericEvent": "Mise à jour de la progression"
     },
     "howItWorks": {
@@ -2108,14 +2094,11 @@
       "howReferralsWork": "Partagez votre lien d'invitation. Toute personne qui s'inscrit avec devient l'un de vos filleuls.",
       "whatCounts": "Un filleul compte une fois qu'il a complété son profil, publié deux jours différents et que son compte est en règle.",
       "whyNotCountedYet": "La plupart du temps, il n'a pas encore publié un deuxième jour. Ouvrez le filleul pour voir exactement ce qu'il reste.",
-      "whenDoIEarn": "Vous gagnez {{amount}} à {{target}} filleuls validés, puis à nouveau tous les {{target}} suivants.",
-      "canIEarnAgain": "Oui. La récompense de {{amount}} se répète. Le badge, l'accès Créateur Live et Soutien de la Première Heure sont uniques.",
-      "howToUnlockLive": "L'accès Créateur Live se débloque avec le {{target}}e filleul validé.",
+      "howToUnlockLive": "Live Creator eligibility unlocks at 2 Certified Invites.",
       "canFamilyParticipate": "Oui. La famille, les colocataires, les camarades de classe et les collègues peuvent tous participer, y compris depuis le même réseau.",
       "underReview": "Un examen signifie que nous vérifions quelque chose automatiquement. Cela se règle en général tout seul et vous n'avez rien à faire.",
-      "howRewardsBecomeAvailable": "Les récompenses sont acquises immédiatement et vérifiées avant d'être versées.",
       "isThereALimit": "Il n'y a aucune limite de filleuls validés ni de récompenses répétées.",
-      "whenDoesItEnd": "Le défi se termine à {{target}}, mais pas votre parcours. De nouvelles missions s'ouvrent ensuite.",
+      "whenDoesItEnd": "Founding Member is the highest founding tier, but your creator journey and missions continue.",
       "questions": {
         "howReferralsWork": "Comment fonctionnent les filleuls ?",
         "whatCounts": "Qu'est-ce qui rend un filleul valide ?",

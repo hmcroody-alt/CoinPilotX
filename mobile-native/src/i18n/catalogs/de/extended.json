@@ -1942,8 +1942,8 @@
     }
   },
   "progress": {
-    "title": "Fortschritt",
-    "subtitle": "Founding-Member-Challenge",
+    "title": "Founding Path",
+    "subtitle": "PULSESOC FOUNDING PATH",
     "privateNote": "Nur du kannst das sehen.",
     "notVerification": "Dieses Programm ist keine Identitätsprüfung.",
     "loading": "Dein Fortschritt wird geladen…",
@@ -1956,54 +1956,59 @@
       "complete": "Founding Member"
     },
     "overview": {
-      "heading": "Deine Challenge",
-      "qualified_one": "{{count}} qualifizierte Empfehlung",
-      "qualified_other": "{{count}} qualifizierte Empfehlungen",
+      "heading": "FOUNDING PATH",
       "remaining": "Noch {{count}}",
       "complete": "Challenge abgeschlossen",
       "nextMilestone": "Als Nächstes: {{label}}",
-      "nextReward": "Noch {{count}} bis zu deinen nächsten {{amount}}",
       "foundingMember": "Du bist Founding Member",
-      "keepGoing": "Alle {{target}} qualifizierten Empfehlungen bringen dir weitere {{amount}}."
+      "certified_one": "{{count}} Certified Invite",
+      "certified_other": "{{count}} Certified Invites",
+      "nextUnlock": "Next unlock",
+      "highestTier": "Highest founding tier",
+      "moreCertified_one": "{{count}} more Certified Invite",
+      "moreCertified_other": "{{count}} more Certified Invites",
+      "liveUnlocked": "LIVE CREATOR UNLOCKED",
+      "liveUnlockedBody": "You helped grow the PulseSoc network. You can now broadcast LIVE.",
+      "startLive": "Start Your First Live",
+      "exploreLive": "Explore Live"
     },
     "breakdown": {
       "invited": "Eingeladen",
       "inProgress": "In Arbeit",
-      "qualified": "Qualifiziert",
       "inReview": "In Prüfung",
-      "closed": "Beendet"
+      "closed": "Beendet",
+      "certified": "Certified"
     },
     "sections": {
       "milestones": "Meilensteine",
       "referrals": "Deine Empfehlungen",
       "invite": "Freunde einladen",
-      "rewards": "Prämien & Verdienst",
       "missions": "Missionen",
-      "badge": "Founding-Member-Abzeichen",
       "insights": "Einblicke",
       "activity": "Aktivität",
       "howItWorks": "So funktioniert's",
-      "faq": "FAQ"
+      "faq": "FAQ",
+      "legacy": "Your founding legacy"
     },
     "milestones": {
-      "heading": "Prämienstufen",
+      "heading": "YOUR UNLOCKS",
       "locked": "Gesperrt",
       "inProgress": "In Arbeit",
       "completed": "Erhalten",
       "earnedOn": "Erhalten am {{date}}",
-      "threshold": "Bei {{count}} Empfehlungen",
+      "threshold": "{{count}} Certified Invites",
       "oneTime": "Nur einmalig",
       "repeatable": "Wiederholt sich alle {{count}}"
     },
     "referrals": {
-      "heading": "Deine Empfehlungen",
+      "heading": "YOUR CERTIFIED INVITES",
       "tabAll": "Alle",
-      "tabQualified": "Qualifiziert",
+      "tabQualified": "CERTIFIED",
       "tabPending": "In Arbeit",
       "tabReview": "In Prüfung",
       "empty": "Noch keine Empfehlungen",
       "emptyBody": "Teile deinen Link, um loszulegen.",
-      "counts": "Zählt für deine Challenge",
+      "counts": "Certified",
       "doesNotCountYet": "Zählt noch nicht",
       "anonymous": "Ein neues Mitglied",
       "detailHeading": "Checkliste zur Qualifizierung",
@@ -2031,24 +2036,6 @@
       "unavailable": "Dein Einladungslink ist noch nicht bereit.",
       "fairness": "Lade Menschen ein, die du wirklich kennst. Qualität zählt mehr als Menge."
     },
-    "rewards": {
-      "heading": "Prämien & Verdienst",
-      "earned": "Verdient",
-      "pending": "Ausstehend",
-      "available": "Verfügbar",
-      "pendingNote": "Ausstehend ist normal. Prämien werden vor der Auszahlung geprüft.",
-      "cycles_one": "{{count}} Zyklus abgeschlossen",
-      "cycles_other": "{{count}} Zyklen abgeschlossen",
-      "cycleLabel": "Zyklus {{count}}",
-      "historyEmpty": "Noch keine Prämien",
-      "historyEmptyBody": "Deine ersten {{amount}} gibt es bei {{target}} qualifizierten Empfehlungen.",
-      "howYouEarn": "Du erhältst {{amount}} für je {{count}} qualifizierte Empfehlungen.",
-      "statusPending": "Ausstehend",
-      "statusApproved": "Genehmigt",
-      "statusDisbursed": "Verfügbar",
-      "statusOnHold": "Zurückgestellt",
-      "statusDenied": "Nicht gewährt"
-    },
     "missions": {
       "heading": "Missionen",
       "trackCreator": "Dein Creator-Weg",
@@ -2074,8 +2061,8 @@
       "heading": "Founding Member",
       "lockedBody": "Erreiche {{target}} qualifizierte Empfehlungen und erhalte das dauerhafte Founding-Member-Abzeichen.",
       "earnedBody": "Dieses Abzeichen bleibt für immer. Danke, dass du PulseSoc mit aufbaust.",
-      "liveUnlocked": "Live Creator freigeschaltet",
-      "liveLocked": "Live Creator wird bei {{target}} freigeschaltet"
+      "generation": "Founding Generation",
+      "permanent": "Permanent historical status on your account"
     },
     "insights": {
       "heading": "Einblicke",
@@ -2090,7 +2077,6 @@
       "referralSignedUp": "{{name}} ist über deinen Link beigetreten",
       "referralQualified": "{{name}} zählt jetzt für deine Challenge",
       "milestoneEarned": "Du hast einen Meilenstein erreicht",
-      "rewardEarned": "Du hast eine Prämie erhalten",
       "genericEvent": "Fortschritts-Update"
     },
     "howItWorks": {
@@ -2108,14 +2094,11 @@
       "howReferralsWork": "Teile deinen Einladungslink. Wer darüber beitritt, wird zu einer deiner Empfehlungen.",
       "whatCounts": "Eine Empfehlung zählt, sobald das Profil vervollständigt ist, an zwei separaten Tagen gepostet wurde und alles in Ordnung ist.",
       "whyNotCountedYet": "Meistens fehlt noch der Beitrag an einem zweiten Tag. Öffne die Empfehlung, um genau zu sehen, was noch fehlt.",
-      "whenDoIEarn": "Du erhältst {{amount}} bei {{target}} qualifizierten Empfehlungen und danach für alle weiteren {{target}}.",
-      "canIEarnAgain": "Ja. Die Prämie von {{amount}} wiederholt sich. Abzeichen, Live-Creator-Zugang und Early Supporter gibt es nur einmal.",
-      "howToUnlockLive": "Die Live-Creator-Berechtigung wird mit der {{target}}. qualifizierten Empfehlung freigeschaltet.",
+      "howToUnlockLive": "Live Creator eligibility unlocks at 2 Certified Invites.",
       "canFamilyParticipate": "Ja. Familie, Mitbewohner, Mitschüler und Kollegen können alle mitmachen, auch im selben Netzwerk.",
       "underReview": "Eine Prüfung bedeutet, dass wir etwas automatisch kontrollieren. Das klärt sich meist von selbst und du musst nichts tun.",
-      "howRewardsBecomeAvailable": "Prämien werden sofort verdient und vor der Auszahlung geprüft.",
       "isThereALimit": "Es gibt keine Obergrenze für qualifizierte Empfehlungen oder wiederholte Prämien.",
-      "whenDoesItEnd": "Die Challenge endet bei {{target}}, dein Weg aber nicht. Danach öffnen sich neue Missionen.",
+      "whenDoesItEnd": "Founding Member is the highest founding tier, but your creator journey and missions continue.",
       "questions": {
         "howReferralsWork": "Wie funktionieren Empfehlungen?",
         "whatCounts": "Wann zählt eine Empfehlung?",

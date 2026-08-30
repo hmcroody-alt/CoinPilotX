@@ -1,5 +1,5 @@
 /**
- * Progress OS client — the Founding Member Challenge and the retention journey.
+ * Progress OS client — the PulseSoc Founding Path.
  *
  * Two rules shape every type in this file, and both are deliberate omissions
  * rather than oversights:
@@ -10,8 +10,8 @@
  *    me someone else's referral progress". Privacy here is a property of the
  *    call signatures, not of a check a future caller has to remember.
  *
- * 2. **Nothing is computed locally.** The qualified count, the reward amount,
- *    Live eligibility and badge eligibility all arrive decided. This client
+ * 2. **Nothing is computed locally.** The certified count, Live eligibility
+ *    and badge eligibility all arrive decided. This client
  *    formats what it is given and nothing more. A client that could add up
  *    referrals would eventually disagree with the server, and the member would
  *    believe the number that is wrong — the one on their own screen.
@@ -60,17 +60,6 @@ export type ProgressNextMilestone = {
   remaining: number;
 };
 
-/**
- * Progress toward the *next* $30, not toward the first one. After 30 qualified
- * referrals `current` resets to 0 against the same `target` — the ladder ends
- * but the cycle does not, which is the whole point of the repeatable reward.
- */
-export type ProgressNextReward = {
-  current?: number;
-  target?: number;
-  remaining?: number;
-};
-
 export type ProgressOverview = {
   ok?: boolean;
   campaign?: ProgressCampaign;
@@ -80,7 +69,6 @@ export type ProgressOverview = {
   milestones_earned?: string[];
   founding_member?: boolean;
   track?: string;
-  next_reward?: ProgressNextReward;
   /**
    * The server's standing reminder that this program is not identity
    * verification. Rendered verbatim so the disclaimer cannot drift between
@@ -161,37 +149,6 @@ export type ProgressReferralDetail = {
 };
 
 /* -------------------------------------------------------------------------- *
- * Rewards
- * -------------------------------------------------------------------------- */
-
-/**
- * Status comes from the rewards engine, not from Progress OS. `pending` is the
- * normal resting state for cash — it is not an error and must not be styled as
- * one.
- */
-export type ProgressRewardCycle = {
-  cycle: number;
-  amount_cents: number;
-  currency: string;
-  status: string;
-  earned_at?: string | null;
-  qualified_count_snapshot?: number;
-};
-
-export type ProgressRewards = {
-  ok?: boolean;
-  currency?: string;
-  earned_cents?: number;
-  pending_cents?: number;
-  available_cents?: number;
-  cycles_completed?: number;
-  next_cycle?: ProgressNextReward;
-  reward_amount_cents?: number;
-  history?: ProgressRewardCycle[];
-  how_you_earn?: { interval: number; amount_cents: number; currency: string };
-};
-
-/* -------------------------------------------------------------------------- *
  * Missions, activity, invite, static copy
  * -------------------------------------------------------------------------- */
 
@@ -227,7 +184,10 @@ export type ProgressActivityItem = {
   created_at: string;
 };
 
-export type ProgressActivity = { ok?: boolean; activity?: ProgressActivityItem[] };
+export type ProgressActivity = {
+  ok?: boolean;
+  activity?: ProgressActivityItem[];
+};
 
 export type ProgressInvite = {
   ok?: boolean;
@@ -248,7 +208,10 @@ export type ProgressHowItWorks = {
   not_verification?: string;
 };
 
-export type ProgressFaq = { ok?: boolean; faq?: Array<{ key: string; order: number }> };
+export type ProgressFaq = {
+  ok?: boolean;
+  faq?: Array<{ key: string; order: number }>;
+};
 
 /* -------------------------------------------------------------------------- *
  * Profile tile
@@ -282,16 +245,16 @@ export async function getProgressMilestones() {
 }
 
 export async function getProgressReferrals(tab: ProgressReferralTab = "all") {
-  return pulseApi<ProgressReferralList>(`/api/progress/referrals?tab=${encodeURIComponent(tab)}`);
+  return pulseApi<ProgressReferralList>(
+    `/api/progress/referrals?tab=${encodeURIComponent(tab)}`,
+  );
 }
 
 /** `ref` is the opaque token from the list; there is no id-based variant. */
 export async function getProgressReferralDetail(ref: string) {
-  return pulseApi<ProgressReferralDetail>(`/api/progress/referrals/${encodeURIComponent(ref)}`);
-}
-
-export async function getProgressRewards() {
-  return pulseApi<ProgressRewards>("/api/progress/rewards");
+  return pulseApi<ProgressReferralDetail>(
+    `/api/progress/referrals/${encodeURIComponent(ref)}`,
+  );
 }
 
 export async function getProgressMissions() {
@@ -317,22 +280,6 @@ export async function getProgressFaq() {
 /* -------------------------------------------------------------------------- *
  * Formatting helpers
  * -------------------------------------------------------------------------- */
-
-/**
- * Cents to major units, for handing to the i18n currency formatter.
- *
- * Deliberately *not* a string formatter. Money has to be rendered through
- * `useFormatters().currency`, which knows each locale's symbol placement,
- * separators and spacing; a helper here that produced "$30" would ship a dollar
- * sign to all eleven languages.
- *
- * The divide is the only arithmetic the app does on money, and this must not
- * grow into somewhere totals get summed — every total the UI shows already
- * arrived decided from the server.
- */
-export function rewardMajorUnits(cents: number | undefined): number {
-  return Math.max(0, Math.round(Number(cents) || 0)) / 100;
-}
 
 /**
  * Clamp a server percent into a bar width.

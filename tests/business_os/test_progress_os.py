@@ -1,21 +1,7 @@
 """Progress OS adversarial suite (PROG-001..).
 
-These tests are written from the attacker's chair, not the happy path. The
-Founding Member Challenge pays real money for referrals, which makes it a
-standing invitation to fraud, and it withholds real money from real people,
-which makes false positives just as expensive in a different currency. Both
-failure directions are asserted here:
-
-* **Fraud must not pay.** Signup farms, same-day double posts, replayed
-  events, forged client claims, and duplicate attribution all have to earn
-  exactly zero.
-* **Normal life must not be punished.** Families, roommates, offices, schools
-  and CGNAT share IPs and devices. A shared network is not evidence of
-  anything, and no test here lets it cost someone a reward.
-
-The money assertions are deliberately exact — 29 → $0, 30 → $30, replay →
-still $30, 59 → $30, 60 → $60 — because "roughly right" is not a property a
-payout system can have.
+Certified Invites reuse the existing qualification and anti-abuse rules.
+Milestones are permanent server awards; Founding Path creates no cash cycles.
 """
 
 import os
@@ -38,6 +24,7 @@ from services.business_os.progress import missions as missions_mod  # noqa: E402
 from services.business_os.progress import progress_api as papi  # noqa: E402
 from services.business_os.progress import qualification as qual  # noqa: E402
 from services.business_os.progress import schema as sch  # noqa: E402
+from services.privilege_engine import get_user_privileges  # noqa: E402
 
 CAMP = camp_mod.get()
 
@@ -54,6 +41,21 @@ def setup_module():
         "CREATE TABLE IF NOT EXISTS pulse_posts (id INTEGER PRIMARY KEY, "
         "user_id INTEGER, created_at TEXT, deleted_at TEXT, "
         "moderation_status TEXT, post_type TEXT, repost_of_post_id INTEGER)"
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS pulse_badges (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "badge_key TEXT UNIQUE, label TEXT, description TEXT, active INTEGER DEFAULT 1, "
+        "created_at TEXT)"
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS pulse_user_badges (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "user_id INTEGER, badge_key TEXT, granted_by INTEGER, created_at TEXT, "
+        "UNIQUE (user_id, badge_key))"
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS livestream_access (user_id INTEGER PRIMARY KEY, "
+        "status TEXT DEFAULT 'locked', referral_count INTEGER DEFAULT 0, "
+        "approved_by INTEGER, suspended_reason TEXT, created_at TEXT, updated_at TEXT)"
     )
     conn.commit()
     conn.close()
@@ -225,7 +227,7 @@ def test_prog_015_profile_is_required_before_posts_count():
 
 
 # =====================================================================
-# Money: the exact arithmetic
+# Founding Path never creates cash cycles
 # =====================================================================
 def _bring_to(referrer, base, n):
     for i, u in enumerate(uid_block(base, n)):
@@ -233,69 +235,15 @@ def _bring_to(referrer, base, n):
     return qual.qualified_count(referrer)
 
 
-def test_prog_020_twentynine_pays_nothing():
+def test_prog_020_founding_path_creates_no_cash_cycles():
     ref = mkuser(1000)
-    assert _bring_to(ref, 1100, 29) == 29
-    ms.sync(ref)
-    assert ms.reward_summary(ref)["earned_cents"] == 0
-
-
-def test_prog_021_thirty_pays_exactly_thirty_dollars_and_replay_does_not():
-    ref = mkuser(2000)
-    assert _bring_to(ref, 2100, 30) == 30
-    assert ms.sync(ref)["cycles_created"] == [1]
-    assert ms.reward_summary(ref)["earned_cents"] == 3000
-    for _ in range(5):
-        assert ms.sync(ref)["cycles_created"] == []
-    assert ms.reward_summary(ref)["earned_cents"] == 3000
-
-
-def test_prog_022_fiftynine_still_pays_thirty():
-    ref = mkuser(3000)
-    _bring_to(ref, 3100, 59)
-    ms.sync(ref)
-    assert ms.reward_summary(ref)["earned_cents"] == 3000
-
-
-def test_prog_023_sixty_pays_sixty_and_replay_does_not():
-    ref = mkuser(4000)
-    _bring_to(ref, 4100, 60)
-    ms.sync(ref)
-    assert ms.reward_summary(ref)["earned_cents"] == 6000
-    for _ in range(5):
-        ms.sync(ref)
-    assert ms.reward_summary(ref)["earned_cents"] == 6000
-    cycles = ms.reward_summary(ref)["history"]
-    assert [c["cycle"] for c in cycles] == [1, 2]
-
-
-def test_prog_024_jumping_straight_to_sixty_creates_two_cycles_not_two_of_one():
-    """A backfill that discovers 60 at once must pay cycle 1 and cycle 2."""
-    ref = mkuser(5000)
-    _bring_to(ref, 5100, 60)
-    result = ms.sync(ref)
-    assert result["cycles_created"] == [1, 2]
-    assert ms.reward_summary(ref)["earned_cents"] == 6000
-
-
-def test_prog_025_reward_event_keys_are_deterministic_and_distinct():
-    """The key is the second, independent lock on double payment."""
-    k1 = ms.reward_event_key(CAMP.campaign_id, 77, 1)
-    k2 = ms.reward_event_key(CAMP.campaign_id, 77, 2)
-    assert k1 == ms.reward_event_key(CAMP.campaign_id, 77, 1)
-    assert k1 != k2
-    assert k1 != ms.reward_event_key(CAMP.campaign_id, 78, 1)
-
-
-def test_prog_026_progress_os_never_moves_money():
-    """Every recorded cycle is unpaid until a separate, audited approval."""
-    ref = mkuser(6000)
-    _bring_to(ref, 6100, 30)
-    ms.sync(ref)
+    assert _bring_to(ref, 1100, 30) == 30
+    assert ms.sync(ref)["cycles_created"] == []
     summary = ms.reward_summary(ref)
+    assert summary["earned_cents"] == 0
+    assert summary["pending_cents"] == 0
     assert summary["available_cents"] == 0
-    assert summary["pending_cents"] == 3000
-    assert all(c["status"] != "disbursed" for c in summary["history"])
+    assert summary["history"] == []
 
 
 # =====================================================================
@@ -306,7 +254,8 @@ def test_prog_030_milestones_award_once_and_never_repeat_at_sixty():
     _bring_to(ref, 7100, 30)
     first = ms.sync(ref)
     assert sorted(first["milestones_awarded"]) == [
-        "creator_perk", "early_supporter", "founding_member", "priority_creator"]
+        "creator_perk", "early_supporter", "founding_creator", "founding_member",
+        "live_creator", "network_builder", "priority_creator"]
     _bring_to(ref, 7200, 30)
     second = ms.sync(ref)
     assert second["qualified"] == 60
@@ -315,17 +264,86 @@ def test_prog_030_milestones_award_once_and_never_repeat_at_sixty():
 
 def test_prog_031_milestone_thresholds_match_the_published_ladder():
     thresholds = {m.key: m.threshold for m in CAMP.milestones}
-    assert thresholds == {"early_supporter": 5, "creator_perk": 10,
-                          "priority_creator": 20, "founding_member": 30}
+    assert thresholds == {
+        "live_creator": 2, "early_supporter": 5, "creator_perk": 10,
+        "network_builder": 15, "priority_creator": 20,
+        "founding_creator": 25, "founding_member": 30,
+    }
 
 
 def test_prog_032_partial_progress_awards_only_what_is_reached():
     ref = mkuser(8000)
     _bring_to(ref, 8100, 19)
     awarded = sorted(ms.sync(ref)["milestones_awarded"])
-    assert awarded == ["creator_perk", "early_supporter"]
+    assert awarded == ["creator_perk", "early_supporter", "live_creator", "network_builder"]
     _bring_to(ref, 8200, 1)
     assert ms.sync(ref)["milestones_awarded"] == ["priority_creator"]
+
+
+def test_prog_033_live_creator_is_server_authoritative_at_two_and_persists():
+    ref = mkuser(8300)
+    _bring_to(ref, 8310, 1)
+    ms.sync(ref)
+    conn = db.connect()
+    assert conn.execute("SELECT 1 FROM livestream_access WHERE user_id=?", (ref,)).fetchone() is None
+    conn.close()
+
+    _bring_to(ref, 8320, 1)
+    ms.sync(ref)
+    conn = db.connect()
+    access = dict(conn.execute(
+        "SELECT status, referral_count FROM livestream_access WHERE user_id=?", (ref,)
+    ).fetchone())
+    badge = dict(conn.execute(
+        "SELECT ub.badge_key, ub.granted_by, b.label FROM pulse_user_badges ub "
+        "JOIN pulse_badges b ON b.badge_key=ub.badge_key "
+        "WHERE ub.user_id=? AND ub.badge_key='live_creator'",
+        (ref,),
+    ).fetchone())
+    conn.close()
+    assert access == {"status": "eligible", "referral_count": 2}
+    assert badge["badge_key"] == "live_creator"
+    assert badge["granted_by"] == 0
+    assert badge["label"] == "Live Creator"
+
+    # A new connection models an app/server restart; the canonical rows remain.
+    status, body = papi.overview(ref)
+    assert status == 200
+    assert "live_creator" in body["milestones_earned"]
+    assert get_user_privileges(ref, referral_count=2, live_status=access["status"])["can_go_live"]
+    assert not get_user_privileges(ref, referral_count=1, live_status="locked")["can_go_live"]
+
+
+def test_prog_034_suspended_live_access_is_never_overridden_by_progress_sync():
+    ref = mkuser(8400)
+    _bring_to(ref, 8410, 2)
+    ms.sync(ref)
+    conn = db.connect()
+    conn.execute("UPDATE livestream_access SET status='suspended' WHERE user_id=?", (ref,))
+    conn.commit()
+    conn.close()
+    ms.sync(ref)
+    conn = db.connect()
+    status = conn.execute("SELECT status FROM livestream_access WHERE user_id=?", (ref,)).fetchone()[0]
+    conn.close()
+    assert status == "suspended"
+
+
+def test_prog_035_every_published_threshold_is_permanent_and_exact():
+    expected = {
+        0: [], 1: [], 2: ["live_creator"], 5: ["live_creator", "early_supporter"],
+        10: ["live_creator", "early_supporter", "creator_perk"],
+        15: ["live_creator", "early_supporter", "creator_perk", "network_builder"],
+        20: ["live_creator", "early_supporter", "creator_perk", "network_builder", "priority_creator"],
+        25: ["live_creator", "early_supporter", "creator_perk", "network_builder", "priority_creator", "founding_creator"],
+        30: ["live_creator", "early_supporter", "creator_perk", "network_builder", "priority_creator", "founding_creator", "founding_member"],
+    }
+    base = 12000
+    for offset, (count, keys) in enumerate(expected.items()):
+        ref = mkuser(base + offset * 100)
+        _bring_to(ref, base + offset * 100 + 10, count)
+        ms.sync(ref)
+        assert {m["milestone_key"] for m in ms.earned_milestones(ref)} == set(keys)
 
 
 # =====================================================================
@@ -579,14 +597,12 @@ def test_prog_075_revoked_milestone_stops_counting_but_keeps_its_evidence():
     assert "farm" in row["revoked_reason"]
 
 
-def test_prog_076_reward_hold_is_not_a_denial_and_release_is_not_an_approval():
+def test_prog_076_founding_path_has_no_new_reward_cycle_to_hold():
     ref = mkuser(11600)
     _bring_to(ref, 11700, 30)
     ms.sync(ref)
     status, body = padmin.hold_reward(ref, 1, actor="admin:7", reason="investigating cluster")
-    assert status == 200 and body["status"] == padmin.REWARD_HOLD
-    status, body = padmin.release_reward(ref, 1, actor="admin:7", reason="cleared")
-    assert status == 200 and body["status"] == padmin.REWARD_PENDING
+    assert status == 404 and body["error"] == "not_found"
     assert ms.reward_summary(ref)["available_cents"] == 0
 
 
@@ -628,16 +644,15 @@ def test_prog_079_admin_inspection_carries_evidence_but_not_a_verdict():
 # =====================================================================
 def test_prog_080_campaign_rules_are_config_not_code():
     assert CAMP.qualification_target == 30
-    assert CAMP.reward_interval == 30
-    assert CAMP.reward_amount_cents == 3000
+    assert CAMP.reward_interval == 0
+    assert CAMP.reward_amount_cents == 0
     assert CAMP.required_posting_days == 2
-    assert CAMP.campaign_version >= 1
+    assert CAMP.campaign_version >= 2
 
 
 def test_prog_081_cycle_arithmetic_at_the_boundaries():
-    for count, expected in ((0, 0), (1, 0), (29, 0), (30, 1), (31, 1),
-                            (59, 1), (60, 2), (89, 2), (90, 3)):
-        assert CAMP.cycles_earned(count) == expected, count
+    for count in (0, 1, 29, 30, 31, 59, 60, 89, 90):
+        assert CAMP.cycles_earned(count) == 0, count
 
 
 def test_prog_082_negative_and_garbage_counts_earn_nothing():

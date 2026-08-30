@@ -1932,8 +1932,8 @@
     }
   },
   "progress": {
-    "title": "進捗",
-    "subtitle": "ファウンディングメンバー チャレンジ",
+    "title": "Founding Path",
+    "subtitle": "PULSESOC FOUNDING PATH",
     "privateNote": "これはあなただけに表示されます。",
     "notVerification": "このプログラムは本人確認ではありません。",
     "loading": "進捗を読み込んでいます…",
@@ -1946,53 +1946,59 @@
       "complete": "ファウンディングメンバー"
     },
     "overview": {
-      "heading": "あなたのチャレンジ",
-      "qualified_other": "条件を満たした紹介{{count}}人",
+      "heading": "FOUNDING PATH",
       "remaining": "あと{{count}}人",
       "complete": "チャレンジ達成",
       "nextMilestone": "次: {{label}}",
-      "nextReward": "次の{{amount}}まであと{{count}}人",
       "foundingMember": "あなたはファウンディングメンバーです",
-      "keepGoing": "条件を満たした紹介が{{target}}人増えるごとに、さらに{{amount}}を獲得できます。"
+      "certified_one": "{{count}} Certified Invite",
+      "certified_other": "{{count}} Certified Invites",
+      "nextUnlock": "Next unlock",
+      "highestTier": "Highest founding tier",
+      "moreCertified_one": "{{count}} more Certified Invite",
+      "moreCertified_other": "{{count}} more Certified Invites",
+      "liveUnlocked": "LIVE CREATOR UNLOCKED",
+      "liveUnlockedBody": "You helped grow the PulseSoc network. You can now broadcast LIVE.",
+      "startLive": "Start Your First Live",
+      "exploreLive": "Explore Live"
     },
     "breakdown": {
       "invited": "招待済み",
       "inProgress": "進行中",
-      "qualified": "条件達成",
       "inReview": "確認中",
-      "closed": "終了"
+      "closed": "終了",
+      "certified": "Certified"
     },
     "sections": {
       "milestones": "マイルストーン",
       "referrals": "紹介した人",
       "invite": "友だちを招待",
-      "rewards": "報酬と獲得額",
       "missions": "ミッション",
-      "badge": "ファウンディングメンバーバッジ",
       "insights": "インサイト",
       "activity": "アクティビティ",
       "howItWorks": "仕組み",
-      "faq": "よくある質問"
+      "faq": "よくある質問",
+      "legacy": "Your founding legacy"
     },
     "milestones": {
-      "heading": "報酬のステップ",
+      "heading": "YOUR UNLOCKS",
       "locked": "未達成",
       "inProgress": "進行中",
       "completed": "獲得済み",
       "earnedOn": "{{date}}に獲得",
-      "threshold": "紹介{{count}}人で達成",
+      "threshold": "{{count}} Certified Invites",
       "oneTime": "1回限り",
       "repeatable": "{{count}}人ごとに繰り返し"
     },
     "referrals": {
-      "heading": "紹介した人",
+      "heading": "YOUR CERTIFIED INVITES",
       "tabAll": "すべて",
-      "tabQualified": "条件達成",
+      "tabQualified": "CERTIFIED",
       "tabPending": "進行中",
       "tabReview": "確認中",
       "empty": "まだ紹介はありません",
       "emptyBody": "リンクをシェアして始めましょう。",
-      "counts": "チャレンジにカウントされます",
+      "counts": "Certified",
       "doesNotCountYet": "まだカウントされていません",
       "anonymous": "新しいメンバー",
       "detailHeading": "達成条件のチェックリスト",
@@ -2020,23 +2026,6 @@
       "unavailable": "招待リンクはまだ準備中です。",
       "fairness": "実際に知っている人を招待しましょう。数より質が大切です。"
     },
-    "rewards": {
-      "heading": "報酬と獲得額",
-      "earned": "獲得済み",
-      "pending": "保留中",
-      "available": "受け取り可能",
-      "pendingNote": "保留中は通常の状態です。報酬はお渡しする前に確認しています。",
-      "cycles_other": "{{count}}サイクル達成",
-      "cycleLabel": "サイクル{{count}}",
-      "historyEmpty": "まだ報酬はありません",
-      "historyEmptyBody": "条件を満たした紹介が{{target}}人になると、最初の{{amount}}が届きます。",
-      "howYouEarn": "条件を満たした紹介{{count}}人ごとに{{amount}}を獲得できます。",
-      "statusPending": "保留中",
-      "statusApproved": "承認済み",
-      "statusDisbursed": "受け取り可能",
-      "statusOnHold": "一時保留",
-      "statusDenied": "対象外"
-    },
     "missions": {
       "heading": "ミッション",
       "trackCreator": "クリエイターへの道",
@@ -2062,8 +2051,8 @@
       "heading": "ファウンディングメンバー",
       "lockedBody": "条件を満たした紹介{{target}}人を達成すると、永久のファウンディングメンバーバッジを獲得できます。",
       "earnedBody": "このバッジは永久のものです。PulseSocを一緒に育ててくれてありがとうございます。",
-      "liveUnlocked": "ライブクリエイターが解放されました",
-      "liveLocked": "ライブクリエイターは{{target}}人で解放されます"
+      "generation": "Founding Generation",
+      "permanent": "Permanent historical status on your account"
     },
     "insights": {
       "heading": "インサイト",
@@ -2078,7 +2067,6 @@
       "referralSignedUp": "{{name}}さんがあなたのリンクから参加しました",
       "referralQualified": "{{name}}さんがチャレンジにカウントされました",
       "milestoneEarned": "マイルストーンを達成しました",
-      "rewardEarned": "報酬を獲得しました",
       "genericEvent": "進捗の更新"
     },
     "howItWorks": {
@@ -2096,14 +2084,11 @@
       "howReferralsWork": "招待リンクをシェアします。そのリンクから参加した人が、あなたの紹介になります。",
       "whatCounts": "プロフィールを完成させ、別々の2日に投稿し、利用状況が良好であれば、その紹介はカウントされます。",
       "whyNotCountedYet": "多くの場合、まだ2日目の投稿がされていません。紹介を開くと、残りの条件を確認できます。",
-      "whenDoIEarn": "条件を満たした紹介が{{target}}人で{{amount}}を獲得し、その後も{{target}}人ごとに獲得できます。",
-      "canIEarnAgain": "はい。{{amount}}の報酬は繰り返し獲得できます。バッジ、ライブクリエイター、アーリーサポーターは1回限りです。",
-      "howToUnlockLive": "ライブクリエイターの資格は、{{target}}人目の条件達成でアンロックされます。",
+      "howToUnlockLive": "Live Creator eligibility unlocks at 2 Certified Invites.",
       "canFamilyParticipate": "はい。家族、ルームメイト、同級生、同僚も参加できます。同じネットワークからでも大丈夫です。",
       "underReview": "確認中とは、自動的なチェックを行っている状態です。ほとんどは自然に解消され、あなたが行うことは何もありません。",
-      "howRewardsBecomeAvailable": "報酬はすぐに獲得され、お渡しする前に確認を行います。",
       "isThereALimit": "条件を満たした紹介にも、繰り返しの報酬にも上限はありません。",
-      "whenDoesItEnd": "チャレンジは{{target}}人で終わりますが、あなたの歩みは続きます。その後は新しいミッションが開きます。",
+      "whenDoesItEnd": "Founding Member is the highest founding tier, but your creator journey and missions continue.",
       "questions": {
         "howReferralsWork": "紹介はどのように機能しますか？",
         "whatCounts": "紹介はどうすればカウントされますか？",

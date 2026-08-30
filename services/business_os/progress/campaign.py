@@ -29,7 +29,7 @@ from __future__ import annotations
 from typing import Optional
 
 #: Milestones are awarded at most once per user per campaign, forever.
-#: The cash reward is the only repeatable element (see ``reward_interval``).
+#: Founding Path milestones are permanent one-time recognition.
 ONE_TIME = "one_time"
 
 #: Milestone reward kinds. These name what the milestone *unlocks*; the
@@ -121,7 +121,7 @@ class Campaign:
         return n // self.reward_interval
 
     def next_cycle_progress(self, qualified_count: int) -> dict:
-        """Progress toward the *next* cash reward, for display."""
+        """Legacy reward-cycle progress. Disabled campaigns return zeroes."""
         n = max(0, int(qualified_count or 0))
         if self.reward_interval <= 0:
             return {"current": 0, "target": 0, "remaining": 0}
@@ -162,47 +162,53 @@ class Campaign:
 
 
 # --- the shipped campaign ---------------------------------------------------
-# NOTE ON THE 20 vs 30 LIVE SPLIT
-# The privilege engine models Live access as a single boolean, so there is no
-# honest way to grant "half of Live" at 20. Rather than invent a second live
-# tier the media stack knows nothing about, 20 is modelled as *priority
-# standing* (a recognition milestone that support and admin can act on) and 30
-# is the real unlock. Advertising 20 as partial Live access would be a promise
-# no gate could keep.
+# Founding Path is recognition and existing privilege access, never a bounty.
+# Reward-cycle fields remain in the versioned campaign contract so old rows can
+# still be explained, but zero values make new cycle creation impossible.
 FOUNDING_MEMBER_CHALLENGE_V1 = Campaign(
-    "FOUNDING_MEMBER_CHALLENGE_V1", 1, "Founding Member Challenge",
+    "FOUNDING_MEMBER_CHALLENGE_V1", 2, "PulseSoc Founding Path",
     qualification_target=30,
-    reward_interval=30,
-    reward_amount_cents=3000,
+    reward_interval=0,
+    reward_amount_cents=0,
     reward_currency="usd",
     required_posting_days=2,
     milestones=(
         Milestone(
+            "live_creator", "Live Creator", 2, LIVE_ELIGIBILITY,
+            badge_key="live_creator",
+            entitlement_key="live_access",
+            description="Host PulseSoc Live with existing creator tools.",
+        ),
+        Milestone(
             "early_supporter", "Early Supporter", 5, RECOGNITION,
             badge_key="early_supporter",
-            description="Recognition for the first five people you brought in.",
+            description="Permanent early-supporter identity and profile recognition.",
         ),
         Milestone(
-            "creator_perk", "Creator Profile Perk", 10, CREATOR_PERK,
-            badge_key="creator_perk",
+            "creator_perk", "Rising Creator", 10, CREATOR_PERK,
+            badge_key="rising_creator",
             entitlement_key="premium.profile.customization",
-            description="Unlocks profile customization on your account.",
+            description="Creator identity and supported profile customization perks.",
         ),
         Milestone(
-            "priority_creator", "Priority Creator Standing", 20, LIVE_PRIORITY,
+            "network_builder", "Network Builder", 15, RECOGNITION,
+            badge_key="network_builder",
+            description="Network impact and community-building recognition.",
+        ),
+        Milestone(
+            "priority_creator", "Priority Creator", 20, LIVE_PRIORITY,
             badge_key="priority_creator",
-            description=(
-                "Priority standing toward Live Creator. Live itself unlocks at "
-                "30 qualified referrals."
-            ),
+            description="Priority eligibility for supported creator opportunities.",
         ),
         Milestone(
-            "founding_member", "Founding Member", 30, LIVE_ELIGIBILITY,
+            "founding_creator", "Founding Creator", 25, RECOGNITION,
+            badge_key="founding_creator",
+            description="Founding Creator identity and selected beta eligibility.",
+        ),
+        Milestone(
+            "founding_member", "Founding Member", 30, RECOGNITION,
             badge_key="founding_member",
-            description=(
-                "Live Creator eligibility, the permanent Founding Member badge, "
-                "and your first $30 reward."
-            ),
+            description="Permanent Founding Generation recognition on your account.",
         ),
     ),
 )

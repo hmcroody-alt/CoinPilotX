@@ -67,15 +67,22 @@ def reward_event_key(campaign_id: str, user_id, cycle_index: int) -> str:
 
 
 # --- badge + entitlement side effects ---------------------------------------
-def _award_badge(conn, user_id: int, badge_key: str) -> bool:
+def _award_badge(conn, user_id: int, badge_key: str, label: str = "",
+                 description: str = "") -> bool:
     """Write to the canonical badge store. Never creates a second one."""
     if not badge_key:
         return False
     try:
         conn.execute(
+            "INSERT OR IGNORE INTO pulse_badges "
+            "(badge_key, label, description, active, created_at) VALUES (?, ?, ?, 1, ?)",
+            (badge_key, label or badge_key,
+             description or "PulseSoc Founding Path status.", _utcnow()),
+        )
+        conn.execute(
             "INSERT OR IGNORE INTO pulse_user_badges "
             "(user_id, badge_key, granted_by, created_at) VALUES (?, ?, ?, ?)",
-            (user_id, badge_key, "progress_os", _utcnow()),
+            (user_id, badge_key, 0, _utcnow()),
         )
         return True
     except Exception:
@@ -98,6 +105,38 @@ def _grant_entitlement(user_id: int, key: str, reference: str) -> bool:
         return False
 
 
+def _grant_live_access(conn, user_id: int, qualified: int) -> bool:
+    """Project Live Creator into the existing server-authoritative Live gate.
+
+    Suspensions and revocations always win. All other pre-unlock states may
+    advance to eligible once the persisted milestone exists.
+    """
+    try:
+        now = _utcnow()
+        conn.execute(
+            """
+            INSERT INTO livestream_access
+            (user_id, status, referral_count, approved_by, suspended_reason,
+             created_at, updated_at)
+            VALUES (?, 'eligible', ?, 0, '', ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+              status=CASE
+                WHEN lower(COALESCE(livestream_access.status,'')) IN ('suspended','revoked')
+                  THEN livestream_access.status
+                ELSE 'eligible'
+              END,
+              referral_count=CASE
+                WHEN COALESCE(livestream_access.referral_count,0) > excluded.referral_count
+                  THEN livestream_access.referral_count
+                ELSE excluded.referral_count
+              END,
+              updated_at=excluded.updated_at
+            """,
+            (user_id, int(qualified or 0), now, now),
+        )
+        return True
+    except Exception:
+        return False
 # --- milestones -------------------------------------------------------------
 def award_milestones(user_id, *, campaign_id: str = "", conn=None,
                      qualified: Optional[int] = None) -> dict:
@@ -132,6 +171,14 @@ def award_milestones(user_id, *, campaign_id: str = "", conn=None,
         awarded, already = [], []
         for m in camp.milestones_reached(count):
             if m.key in existing:
+                # Repair projections for awards written under an older campaign
+                # version without creating a second achievement authority.
+                _award_badge(conn, uid, m.badge_key, m.label, m.description)
+                if m.entitlement_key:
+                    _grant_entitlement(uid, m.entitlement_key,
+                                       f"{camp.campaign_id}:{uid}:{m.key}")
+                if m.key == "live_creator":
+                    _grant_live_access(conn, uid, count)
                 already.append(m.key)
                 continue
             try:
@@ -152,10 +199,12 @@ def award_milestones(user_id, *, campaign_id: str = "", conn=None,
                     already.append(m.key)
                     continue
                 raise
-            _award_badge(conn, uid, m.badge_key)
+            _award_badge(conn, uid, m.badge_key, m.label, m.description)
             if m.entitlement_key:
                 _grant_entitlement(uid, m.entitlement_key,
                                    f"{camp.campaign_id}:{uid}:{m.key}")
+            if m.key == "live_creator":
+                _grant_live_access(conn, uid, count)
             qual._log_event(
                 conn, camp.campaign_id, user_id=uid,
                 event_type="milestone_earned", visibility="public",
@@ -392,7 +441,7 @@ def _reward_statuses(event_keys) -> dict:
 
 # --- the one entry point ----------------------------------------------------
 def sync(user_id, *, campaign_id: str = "", conn=None) -> dict:
-    """Recompute milestones and reward cycles for one referrer.
+    """Recompute Founding Path milestones for one referrer.
 
     Call this after any qualification change. Everything it does is idempotent,
     so calling it too often is merely wasted work — never a double award.
@@ -409,8 +458,13 @@ def sync(user_id, *, campaign_id: str = "", conn=None) -> dict:
         count = qual.qualified_count(uid, campaign_id=camp.campaign_id, conn=conn)
         ms = award_milestones(uid, campaign_id=camp.campaign_id, conn=conn,
                               qualified=count)
-        rc = sync_reward_cycles(uid, campaign_id=camp.campaign_id, conn=conn,
-                                qualified=count)
+        rc = {"created": []}
+        # Historical campaigns may still define reward cycles. Founding Path
+        # deliberately defines zero, so a read or qualification can never
+        # create a new cash award.
+        if camp.reward_interval > 0 and camp.reward_amount_cents > 0:
+            rc = sync_reward_cycles(uid, campaign_id=camp.campaign_id, conn=conn,
+                                    qualified=count)
         if owned:
             conn.commit()
         return {"ok": True, "qualified": count,

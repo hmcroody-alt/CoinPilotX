@@ -44,7 +44,7 @@ def level_for_trust(score, verification_types=None, referral_count=0):
         level = "Teacher"
     if "seller" in verification_types and PRIVILEGE_LEVELS.index(level) < PRIVILEGE_LEVELS.index("Marketplace Seller"):
         level = "Marketplace Seller"
-    if int(referral_count or 0) >= 30 and PRIVILEGE_LEVELS.index(level) < PRIVILEGE_LEVELS.index("Livestream Eligible"):
+    if int(referral_count or 0) >= 2 and PRIVILEGE_LEVELS.index(level) < PRIVILEGE_LEVELS.index("Livestream Eligible"):
         level = "Livestream Eligible"
     return level
 
@@ -92,11 +92,11 @@ def get_user_privileges(user_id=None, trust_score=0, current_level="", referral_
     level_index = PRIVILEGE_LEVELS.index(level) if level in PRIVILEGE_LEVELS else 0
     referral_count = int(referral_count or 0)
     trust_score = int(trust_score or 0)
-    live_unlocked = live_status in {"eligible", "approved"} or referral_count >= 30 or level_index >= PRIVILEGE_LEVELS.index("Livestream Eligible")
+    live_unlocked = live_status in {"eligible", "approved"} or referral_count >= 2 or level_index >= PRIVILEGE_LEVELS.index("Livestream Eligible")
 
     next_steps = []
-    if referral_count < 30:
-        next_steps.append(f"Invite {30 - referral_count} more real members to unlock Live.")
+    if referral_count < 2:
+        next_steps.append(f"Earn {2 - referral_count} more Certified Invite{'s' if referral_count == 0 else ''} to unlock Live.")
     if trust_score < 50:
         next_steps.append("Complete your profile and keep posting helpful PulseSoc content.")
     if "identity" not in verification_types:

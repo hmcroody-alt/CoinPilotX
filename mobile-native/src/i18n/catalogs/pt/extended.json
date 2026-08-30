@@ -1942,8 +1942,8 @@
     }
   },
   "progress": {
-    "title": "Progresso",
-    "subtitle": "Desafio Membro Fundador",
+    "title": "Founding Path",
+    "subtitle": "PULSESOC FOUNDING PATH",
     "privateNote": "Só você vê isto.",
     "notVerification": "Este programa não é uma verificação de identidade.",
     "loading": "Carregando seu progresso…",
@@ -1956,54 +1956,59 @@
       "complete": "Membro Fundador"
     },
     "overview": {
-      "heading": "Seu desafio",
-      "qualified_one": "{{count}} indicação qualificada",
-      "qualified_other": "{{count}} indicações qualificadas",
+      "heading": "FOUNDING PATH",
       "remaining": "Faltam {{count}}",
       "complete": "Desafio concluído",
       "nextMilestone": "A seguir: {{label}}",
-      "nextReward": "Mais {{count}} para seus próximos {{amount}}",
       "foundingMember": "Você é Membro Fundador",
-      "keepGoing": "A cada {{target}} indicações qualificadas você ganha mais {{amount}}."
+      "certified_one": "{{count}} Certified Invite",
+      "certified_other": "{{count}} Certified Invites",
+      "nextUnlock": "Next unlock",
+      "highestTier": "Highest founding tier",
+      "moreCertified_one": "{{count}} more Certified Invite",
+      "moreCertified_other": "{{count}} more Certified Invites",
+      "liveUnlocked": "LIVE CREATOR UNLOCKED",
+      "liveUnlockedBody": "You helped grow the PulseSoc network. You can now broadcast LIVE.",
+      "startLive": "Start Your First Live",
+      "exploreLive": "Explore Live"
     },
     "breakdown": {
       "invited": "Convidados",
       "inProgress": "Em andamento",
-      "qualified": "Qualificados",
       "inReview": "Em revisão",
-      "closed": "Encerrados"
+      "closed": "Encerrados",
+      "certified": "Certified"
     },
     "sections": {
       "milestones": "Marcos",
       "referrals": "Suas indicações",
       "invite": "Convidar amigos",
-      "rewards": "Recompensas e ganhos",
       "missions": "Missões",
-      "badge": "Selo de Membro Fundador",
       "insights": "Análises",
       "activity": "Atividade",
       "howItWorks": "Como funciona",
-      "faq": "Perguntas frequentes"
+      "faq": "Perguntas frequentes",
+      "legacy": "Your founding legacy"
     },
     "milestones": {
-      "heading": "Escada de recompensas",
+      "heading": "YOUR UNLOCKS",
       "locked": "Bloqueado",
       "inProgress": "Em andamento",
       "completed": "Conquistado",
       "earnedOn": "Conquistado em {{date}}",
-      "threshold": "Com {{count}} indicações",
+      "threshold": "{{count}} Certified Invites",
       "oneTime": "Só uma vez",
       "repeatable": "Repete a cada {{count}}"
     },
     "referrals": {
-      "heading": "Suas indicações",
+      "heading": "YOUR CERTIFIED INVITES",
       "tabAll": "Todas",
-      "tabQualified": "Qualificadas",
+      "tabQualified": "CERTIFIED",
       "tabPending": "Em andamento",
       "tabReview": "Em revisão",
       "empty": "Nenhuma indicação ainda",
       "emptyBody": "Compartilhe seu link para começar.",
-      "counts": "Conta para o seu desafio",
+      "counts": "Certified",
       "doesNotCountYet": "Ainda não conta",
       "anonymous": "Um novo membro",
       "detailHeading": "Lista de qualificação",
@@ -2031,24 +2036,6 @@
       "unavailable": "Seu link de convite ainda não está pronto.",
       "fairness": "Convide pessoas que você conhece de verdade. Qualidade importa mais que quantidade."
     },
-    "rewards": {
-      "heading": "Recompensas e ganhos",
-      "earned": "Ganho",
-      "pending": "Pendente",
-      "available": "Disponível",
-      "pendingNote": "Ficar pendente é normal. As recompensas passam por revisão antes de serem liberadas.",
-      "cycles_one": "{{count}} ciclo concluído",
-      "cycles_other": "{{count}} ciclos concluídos",
-      "cycleLabel": "Ciclo {{count}}",
-      "historyEmpty": "Nenhuma recompensa ainda",
-      "historyEmptyBody": "Seus primeiros {{amount}} chegam com {{target}} indicações qualificadas.",
-      "howYouEarn": "Você ganha {{amount}} a cada {{count}} indicações qualificadas.",
-      "statusPending": "Pendente",
-      "statusApproved": "Aprovada",
-      "statusDisbursed": "Disponível",
-      "statusOnHold": "Em espera",
-      "statusDenied": "Não concedida"
-    },
     "missions": {
       "heading": "Missões",
       "trackCreator": "Sua jornada de criador",
@@ -2074,8 +2061,8 @@
       "heading": "Membro Fundador",
       "lockedBody": "Alcance {{target}} indicações qualificadas para ganhar o selo permanente de Membro Fundador.",
       "earnedBody": "Este selo é permanente. Obrigado por ajudar a construir o PulseSoc.",
-      "liveUnlocked": "Criador ao Vivo liberado",
-      "liveLocked": "Criador ao Vivo libera em {{target}}"
+      "generation": "Founding Generation",
+      "permanent": "Permanent historical status on your account"
     },
     "insights": {
       "heading": "Análises",
@@ -2090,7 +2077,6 @@
       "referralSignedUp": "{{name}} entrou pelo seu link",
       "referralQualified": "{{name}} agora conta para o seu desafio",
       "milestoneEarned": "Você alcançou um marco",
-      "rewardEarned": "Você ganhou uma recompensa",
       "genericEvent": "Atualização de progresso"
     },
     "howItWorks": {
@@ -2108,14 +2094,11 @@
       "howReferralsWork": "Compartilhe seu link de convite. Quem entrar por ele vira uma das suas indicações.",
       "whatCounts": "Uma indicação conta quando a pessoa completa o perfil, publica em dois dias diferentes e está com a conta em dia.",
       "whyNotCountedYet": "Na maioria das vezes é porque ela ainda não publicou num segundo dia. Abra a indicação para ver exatamente o que falta.",
-      "whenDoIEarn": "Você ganha {{amount}} com {{target}} indicações qualificadas e de novo a cada {{target}} depois disso.",
-      "canIEarnAgain": "Sim. A recompensa de {{amount}} se repete. O selo, o acesso a Criador ao Vivo e o Apoiador Inicial são só uma vez.",
-      "howToUnlockLive": "A elegibilidade para Criador ao Vivo libera na {{target}}ª indicação qualificada.",
+      "howToUnlockLive": "Live Creator eligibility unlocks at 2 Certified Invites.",
       "canFamilyParticipate": "Sim. Família, colegas de casa, de turma e de trabalho podem participar, inclusive na mesma rede.",
       "underReview": "Uma revisão significa que estamos conferindo algo automaticamente. Costuma se resolver sozinha e você não precisa fazer nada.",
-      "howRewardsBecomeAvailable": "As recompensas são ganhas na hora e revisadas antes de serem liberadas.",
       "isThereALimit": "Não há limite de indicações qualificadas nem de recompensas repetidas.",
-      "whenDoesItEnd": "O desafio termina em {{target}}, mas sua jornada não. Novas missões aparecem depois disso.",
+      "whenDoesItEnd": "Founding Member is the highest founding tier, but your creator journey and missions continue.",
       "questions": {
         "howReferralsWork": "Como funcionam as indicações?",
         "whatCounts": "O que faz uma indicação contar?",

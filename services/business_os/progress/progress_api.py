@@ -43,7 +43,7 @@ from .schema import ensure_schema
 #: Public-facing program disclaimer. The challenge is a growth program, not a
 #: verification or identity signal, and the surface says so in its own payload.
 NOT_VERIFICATION = (
-    "The Founding Member Challenge is a community growth program. It is not "
+    "The PulseSoc Founding Path is a community progression program. It is not "
     "identity verification and does not affect verification eligibility.")
 
 
@@ -96,6 +96,7 @@ def overview(user_id, *, campaign_id: str = "") -> tuple:
     try:
         ensure_schema(conn)
         qualified = qual.qualified_count(uid, campaign_id=camp.campaign_id, conn=conn)
+        ms.sync(uid, campaign_id=camp.campaign_id, conn=conn)
         counts = qual.breakdown(uid, campaign_id=camp.campaign_id, conn=conn)
         earned = {m.get("milestone_key") for m in
                   ms.earned_milestones(uid, campaign_id=camp.campaign_id, conn=conn)}
@@ -127,7 +128,6 @@ def overview(user_id, *, campaign_id: str = "") -> tuple:
             "milestones_earned": sorted(earned),
             "founding_member": "founding_member" in earned,
             "track": track,
-            "next_reward": camp.next_cycle_progress(qualified),
             "not_verification": NOT_VERIFICATION,
         }
         return 200, body
@@ -151,6 +151,7 @@ def milestones(user_id, *, campaign_id: str = "") -> tuple:
     try:
         ensure_schema(conn)
         qualified = qual.qualified_count(uid, campaign_id=camp.campaign_id, conn=conn)
+        ms.sync(uid, campaign_id=camp.campaign_id, conn=conn)
         earned = {m.get("milestone_key"): m for m in
                   ms.earned_milestones(uid, campaign_id=camp.campaign_id, conn=conn)}
         out = []
@@ -311,6 +312,7 @@ def missions(user_id, *, campaign_id: str = "") -> tuple:
     try:
         ensure_schema(conn)
         qualified = qual.qualified_count(uid, campaign_id=camp.campaign_id, conn=conn)
+        ms.sync(uid, campaign_id=camp.campaign_id, conn=conn)
         track = missions_mod.track_for(qualified, campaign_id=camp.campaign_id)
         items = missions_mod.list_missions(
             uid, track=track, campaign_id=camp.campaign_id,
@@ -402,9 +404,6 @@ def how_it_works(*, campaign_id: str = "") -> tuple:
         ],
         "required_posting_days": camp.required_posting_days,
         "target": camp.qualification_target,
-        "reward_amount_cents": camp.reward_amount_cents,
-        "reward_currency": camp.reward_currency,
-        "reward_interval": camp.reward_interval,
         "fairness_note_key": "progress.howItWorks.fairness",
         "not_verification": NOT_VERIFICATION,
     }
@@ -413,10 +412,9 @@ def how_it_works(*, campaign_id: str = "") -> tuple:
 def faq(*, campaign_id: str = "") -> tuple:
     """FAQ as i18n keys; the server never ships display copy to the app."""
     keys = (
-        "howReferralsWork", "whatCounts", "whyNotCountedYet", "whenDoIEarn",
-        "canIEarnAgain", "howToUnlockLive", "canFamilyParticipate",
-        "underReview", "howRewardsBecomeAvailable", "isThereALimit",
-        "whenDoesItEnd",
+        "howReferralsWork", "whatCounts", "whyNotCountedYet",
+        "howToUnlockLive", "canFamilyParticipate", "underReview",
+        "isThereALimit", "whenDoesItEnd",
     )
     return 200, {"ok": True,
                  "faq": [{"key": f"progress.faq.{k}", "order": i}
