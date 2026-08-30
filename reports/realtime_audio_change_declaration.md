@@ -1536,3 +1536,80 @@ declaration.
 Single-commit `git revert` restores the awaited ordering and the synchronous
 backend branch. No schema changes; `pulse_jobs` rows enqueued by the new path
 remain valid for the old worker logic. Safe at any time.
+
+## Live-end local media release addendum (2026-08-30)
+
+Declares the protected-file changes in `1f02b2e6` ("perf(live): release native
+end flow immediately"), a follow-on to `922896a8` which declared the
+server-ack half of the same work but predates this commit. The gate correctly
+rejected the earlier addendum as describing a previous change.
+
+### Why the change is required
+
+`922896a8` removed the blocking `await endLive(...)` so the server round-trip no
+longer held the UI. The local teardown was still awaited, so
+`await room.stopBroadcast("host_ended")` remained on the critical path between
+the host tapping End and the screen dismissing. On a slow engine release that is
+the visible stall the zero-delay work set out to remove.
+
+### Which feature required it
+
+Livestream host end-session latency (`docs/never_block_the_user.md`). No
+audio-quality, AVAudioSession, microphone-publication, routing, or ownership
+change was made or authorized.
+
+### Which protected files changed
+
+| File | Category | Change |
+|---|---|---|
+| `mobile-native/src/screens/LiveHostSessionScreen.tsx` | livestream_audio_adapter | `room.stopBroadcast("host_ended")` is started before `navigation.goBack()` but no longer awaited; its promise is retained as `localRelease` and its rejection is absorbed so the unawaited chain cannot surface as an unhandled rejection. Adds a `[live-end] local media released in Nms` trace. |
+| `mobile-native/src/api/live.ts` | backend_token_and_room_policy | Type-only widening of `EndLiveResult` with `status` and `replayStatus`, both read from the existing `/end` response. No new request, header, token, or room-policy field. |
+
+Supporting non-protected file:
+`src/__tests__/LiveEndNonBlockingArchitecture.test.ts`, whose guard was
+inverted — it now asserts `await room.stopBroadcast("host_ended")` is absent and
+that the call is still ordered before `navigation.goBack()`, so the blocking
+ordering cannot silently return.
+
+### Expected behavior change
+
+Ending a live dismisses the host screen without waiting for the Agora engine to
+finish releasing local capture. Release still begins before navigation, so
+ordering is unchanged; only the await is gone. Audio capture, routing, session
+category, ownership arbitration, and viewer-side behavior are unchanged.
+
+### Regression risk
+
+The real risk is a leaked microphone: teardown now completes after the screen
+unmounts, so a release that throws or never settles would leave capture held.
+Bounded by three existing properties — `stopBroadcast` is the engine's own
+idempotent release, ownership arbitration (not this screen) owns the session
+lease, and the `.catch` keeps a failed release from becoming an unhandled
+rejection. The static guard above prevents the ordering from regressing. This
+does not substitute for the audible check below.
+
+### Tests run (this merge, base `origin/main` 18c60221)
+
+- `npm run test:realtime-audio-critical` — 191 passed / 11 suites
+- `npm run test:realtime-audio` — 310 passed / 18 suites
+- `npm run test:realtime-audio-architecture` — 22 passed
+- `python -m unittest tests.protection.test_realtime_audio_architecture` — 19 passed
+- `python -m pytest tests/protection/test_agora_token_generation.py tests/protection/test_agora_rtc_provider_contract.py` — 13 passed
+- `npm run typecheck` — clean
+- `npm run verify` — 5065 passed / 304 suites
+- `scripts/protection/run_protection_suite.py` — 225 checks across 21 suites
+
+### Physical validation required
+
+YES — NOT YET PERFORMED. Required on device "p3r7or" and the iPhone 17 Pro Max
+simulator before this is considered verified: end a live and confirm the mic
+indicator clears (no retained capture after dismissal); start a second live
+immediately after ending the first and confirm the mic publishes; end a live
+while the network is degraded and confirm no stuck capture. No audible
+verification is claimed in this declaration.
+
+### Rollback procedure
+
+Restore `await room.stopBroadcast("host_ended")` and revert the
+`LiveEndNonBlockingArchitecture` guard to its awaited form. No schema or
+backend change; `live.ts` field additions are additive and safe to leave.
