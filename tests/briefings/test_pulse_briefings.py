@@ -23,6 +23,8 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from unittest import mock
 
+from services import pulse_region_preferences as region_preferences
+from services import schema_guard
 from services.pulse_briefings import crypto_provider, engine, facts, summarizer
 
 
@@ -30,9 +32,13 @@ def _iso(dt: datetime) -> str:
     return dt.isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
-def _fresh_conn() -> sqlite3.Connection:
+def _fresh_conn(*, region_prefs: bool = True) -> sqlite3.Connection:
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
+    # Each test builds a new in-memory database while the once-per-process DDL
+    # guard persists for the whole session; without this the second test would
+    # skip creation and find no pulse_region_preferences table.
+    schema_guard.reset_all()
     cur = conn.cursor()
     cur.execute(
         """CREATE TABLE pulse_notifications (
@@ -51,10 +57,13 @@ def _fresh_conn() -> sqlite3.Connection:
             notify_sms INTEGER DEFAULT 0, notify_in_app INTEGER DEFAULT 1,
             note TEXT, created_at TEXT, updated_at TEXT, last_triggered_at TEXT)"""
     )
-    cur.execute(
-        """CREATE TABLE pulse_region_preferences (
-            user_id INTEGER PRIMARY KEY, preferred_timezone TEXT)"""
-    )
+    # pulse_region_preferences is deliberately NOT hand-rolled here. The previous
+    # fixture invented a two-column (user_id, preferred_timezone) shape that the
+    # canonical service does not own -- the same class of divergence that let
+    # crypto_alerts stay green locally while production raised UndefinedColumn.
+    # engine.ensure_schema now creates it through pulse_region_preferences, so
+    # the test sees exactly the production table.
+    #
     # Owned by bot.init_db(); modelled here because the cycle honours the global
     # push opt-out that lives on the category='global' row.
     cur.execute(
@@ -64,6 +73,11 @@ def _fresh_conn() -> sqlite3.Connection:
     )
     conn.commit()
     engine.ensure_schema(conn)
+    if not region_prefs:
+        # Reproduces the production state that caused the incident: the engine's
+        # own tables exist, the optional region-preference table does not.
+        conn.execute("DROP TABLE IF EXISTS pulse_region_preferences")
+        conn.commit()
     return conn
 
 
@@ -318,13 +332,83 @@ class WindowAndQuietHoursTests(unittest.TestCase):
         self.assertEqual(a, b)
         self.assertTrue(0 <= a <= engine.JITTER_MINUTES)
 
-    def test_timezone_resolution(self):
+
+class TimezoneAuthorityTests(unittest.TestCase):
+    """Section A: the briefing zone must come from the canonical authority.
+
+    Quiet hours, the six-hour window and the idempotency key are all derived
+    from this one value, so a silent UTC fallback is not a cosmetic defect --
+    it schedules a 22:00-07:00 quiet band against a clock the user never set.
+    """
+
+    def test_real_zones_round_trip_through_the_authority(self):
         conn = _fresh_conn()
-        cur = conn.cursor()
-        cur.execute("INSERT INTO pulse_region_preferences VALUES (7, 'America/New_York')")
+        for user_id, zone in ((1, "America/Los_Angeles"), (2, "America/New_York"),
+                              (3, "Europe/Paris"), (4, "UTC")):
+            region_preferences.update_preferences(user_id, {"time_zone": zone}, conn=conn)
         conn.commit()
-        self.assertEqual(engine._user_zone(cur, 7).key, "America/New_York")
-        self.assertEqual(engine._user_zone(cur, 8).key, "UTC")  # missing row -> UTC
+        for user_id, zone in ((1, "America/Los_Angeles"), (2, "America/New_York"),
+                              (3, "Europe/Paris"), (4, "UTC")):
+            self.assertEqual(engine._user_zone(conn, user_id).key, zone)
+        conn.close()
+
+    def test_missing_preference_row_falls_back_to_utc(self):
+        conn = _fresh_conn()
+        self.assertEqual(engine._user_zone(conn, 999).key, "UTC")
+        conn.close()
+
+    def test_automatic_preference_falls_back_to_utc(self):
+        # "auto" is stored as empty by the authority; it must not be treated as
+        # a zone name, and it must not be guessed at from the locale.
+        conn = _fresh_conn()
+        region_preferences.update_preferences(5, {"time_zone": "auto", "locale": "en-US"}, conn=conn)
+        conn.commit()
+        self.assertEqual(engine._user_zone(conn, 5).key, "UTC")
+        conn.close()
+
+    def test_missing_optional_table_falls_back_without_raising(self):
+        # The production incident verbatim: alert_worker never served the
+        # settings route, so the table had never been created in that database.
+        conn = _fresh_conn(region_prefs=False)
+        with mock.patch.object(engine.logging, "exception") as logged:
+            self.assertEqual(engine._user_zone(conn, 1).key, "UTC")
+        self.assertTrue(logged.called)  # degraded, and says so
+        conn.close()
+
+    def test_ensure_schema_creates_the_region_table(self):
+        # The fix is not "catch the error" -- the engine's own schema pass must
+        # leave the canonical table present in every process that briefs.
+        conn = _fresh_conn()
+        row = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='pulse_region_preferences'"
+        ).fetchone()
+        self.assertIsNotNone(row)
+        conn.close()
+
+    def test_unknown_zone_name_falls_back_to_utc(self):
+        conn = _fresh_conn()
+        conn.execute(
+            "INSERT INTO pulse_region_preferences "
+            "(user_id, preferred_timezone, preferred_date_format, updated_at) VALUES (6,?,?,?)",
+            ("Mars/Olympus_Mons", "auto", "2026-08-30T00:00:00+00:00"),
+        )
+        conn.commit()
+        self.assertEqual(engine._user_zone(conn, 6).key, "UTC")
+        conn.close()
+
+    def test_window_key_is_local_not_utc(self):
+        # The consequence the fallback was hiding: at 02:00 UTC a Los Angeles
+        # user is still in the previous local day's 18:00 window.
+        conn = _fresh_conn()
+        region_preferences.update_preferences(1, {"time_zone": "America/Los_Angeles"}, conn=conn)
+        conn.commit()
+        utc_now = datetime(2026, 8, 31, 2, 0, tzinfo=timezone.utc)
+        local = utc_now.astimezone(engine._user_zone(conn, 1))
+        key, _ = engine.current_window(local, "every_6h")
+        self.assertEqual(key, "2026-08-30:18")
+        # Same instant, no preference stored -> UTC -> a different window entirely.
+        utc_key, _ = engine.current_window(utc_now.astimezone(engine._user_zone(conn, 999)), "every_6h")
+        self.assertEqual(utc_key, "2026-08-31:00")
         conn.close()
 
 
@@ -359,6 +443,33 @@ class PreferencesTests(unittest.TestCase):
         out = engine.evaluate_user_briefing(conn, {"user_id": 2}, send=False)
         self.assertEqual(out["status"], "disabled")
         conn.close()
+
+
+class _ClaimFailingCursor:
+    """Fails only the claim INSERT. sqlite3.Cursor is immutable, so the fault
+    is injected by proxy rather than by patching the driver type."""
+
+    def __init__(self, cur):
+        self._cur = cur
+
+    def execute(self, sql, params=()):
+        if "INSERT INTO pulse_briefings" in str(sql):
+            raise sqlite3.OperationalError("disk I/O error")
+        return self._cur.execute(sql, params)
+
+    def __getattr__(self, name):
+        return getattr(self._cur, name)
+
+
+class _ClaimFailingConn:
+    def __init__(self, conn):
+        self._conn = conn
+
+    def cursor(self):
+        return _ClaimFailingCursor(self._conn.cursor())
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
 
 
 class EngineFlowTests(unittest.TestCase):
@@ -407,6 +518,69 @@ class EngineFlowTests(unittest.TestCase):
         cur = conn.cursor()
         cur.execute("SELECT COUNT(*) AS n FROM pulse_briefings WHERE user_id=11")
         self.assertEqual(dict(cur.fetchone())["n"], 1)
+        conn.close()
+
+    def test_duplicate_claim_raises_no_driver_error(self):
+        """Section B: the duplicate is the expected path, not an exception.
+
+        Catching a UniqueViolation made services/db.py emit a full
+        SQL_EXECUTE_FAILED block -- statement, params and traceback -- once per
+        user per cycle. That flood is what evicted real boot diagnostics from
+        the Railway log window, so "no exception" is the assertion that matters
+        here, not just the returned status.
+        """
+        conn = self._conn_for(21, notif_count=2)
+        engine.evaluate_user_briefing(conn, {"user_id": 21}, now_utc=self.NOW, send=False)
+        with mock.patch.object(engine.logging, "exception") as logged:
+            second = engine.evaluate_user_briefing(conn, {"user_id": 21}, now_utc=self.NOW, send=False)
+        self.assertEqual(second["status"], "already_claimed")
+        self.assertFalse(logged.called)  # no traceback, no log flood
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) AS n FROM pulse_briefings WHERE user_id=21")
+        self.assertEqual(dict(cur.fetchone())["n"], 1)  # zero duplicate rows
+        conn.close()
+
+    def test_duplicate_claim_sends_nothing(self):
+        conn = self._conn_for(22, notif_count=3)
+        fake_push = types.SimpleNamespace(send_push=mock.Mock(return_value={"ok": True}))
+        fake_notif = types.SimpleNamespace(send_in_app_notification=mock.Mock())
+        import services
+        with mock.patch.object(services, "push_service", fake_push, create=True), \
+             mock.patch.object(services, "notification_service", fake_notif, create=True):
+            first = engine.evaluate_user_briefing(conn, {"user_id": 22}, now_utc=self.NOW, send=True)
+            self.assertEqual(first["status"], "sent")
+            for _ in range(3):  # worker re-ticks inside the same window
+                out = engine.evaluate_user_briefing(conn, {"user_id": 22}, now_utc=self.NOW, send=True)
+                self.assertEqual(out["status"], "already_claimed")
+        self.assertEqual(fake_push.send_push.call_count, 1)  # zero duplicate push
+        conn.close()
+
+    def test_claim_returns_the_real_row_id(self):
+        # The explicit RETURNING has to survive both engines; the repo's
+        # INSERT OR IGNORE shorthand would have suppressed it and left the
+        # settlement UPDATE writing to id=None.
+        conn = self._conn_for(23, notif_count=2)
+        out = engine.evaluate_user_briefing(conn, {"user_id": 23}, now_utc=self.NOW, send=False)
+        self.assertEqual(out["status"], "generated")
+        cur = conn.cursor()
+        cur.execute("SELECT id, status FROM pulse_briefings WHERE user_id=23")
+        row = dict(cur.fetchone())
+        self.assertEqual(row["id"], out["briefing_id"])
+        self.assertEqual(row["status"], "shadow")
+        conn.close()
+
+    def test_real_claim_failure_is_failed_not_already_claimed(self):
+        # With DO NOTHING an exception is no longer a duplicate. Reporting one
+        # as 'already_claimed' would disable briefings for everyone while the
+        # cycle log still read healthy.
+        conn = self._conn_for(24, notif_count=2)
+        with mock.patch.object(engine.logging, "exception"):
+            out = engine.evaluate_user_briefing(
+                _ClaimFailingConn(conn), {"user_id": 24}, now_utc=self.NOW, send=False)
+        self.assertEqual(out["status"], "failed")
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) AS n FROM pulse_briefings WHERE user_id=24")
+        self.assertEqual(dict(cur.fetchone())["n"], 0)
         conn.close()
 
     def test_quiet_hours_defer(self):
@@ -812,13 +986,49 @@ class SummarizerTests(unittest.TestCase):
 
 
 class PostgresCompatTests(unittest.TestCase):
-    """The engine reads cur.lastrowid after the claim INSERT. That only works on
-    Postgres if services.db appends RETURNING id, which requires registration in
-    AUTO_PK_TABLES. Found broken in production acceptance (2026-08-30)."""
+    """The claim statement has to survive services.db's SQL translation.
+
+    The engine used to read cur.lastrowid, which on Postgres only worked
+    because AUTO_PK_TABLES made CompatCursor inject RETURNING id (found broken
+    in production acceptance, 2026-08-30). The claim now names RETURNING
+    itself, so what must be proved is that the translator leaves it alone --
+    one RETURNING, and no second ON CONFLICT bolted onto the one already there.
+    """
+
+    CLAIM_SQL = (
+        "INSERT INTO pulse_briefings (user_id, window_key, status, created_at) VALUES (?,?,?,?) "
+        "ON CONFLICT (user_id, window_key) DO NOTHING RETURNING id"
+    )
+
+    def test_claim_sql_is_the_statement_the_engine_actually_runs(self):
+        import inspect
+        source = inspect.getsource(engine.evaluate_user_briefing)
+        self.assertIn("ON CONFLICT (user_id, window_key) DO NOTHING RETURNING id", source)
+        self.assertNotIn("cur.lastrowid", source)
+
+    def test_translation_keeps_exactly_one_returning(self):
+        from services import db
+        translated = db._translate_sql(self.CLAIM_SQL)
+        self.assertEqual(translated.upper().count("RETURNING"), 1)
+        self.assertEqual(translated.upper().count("DO NOTHING"), 1)
+        self.assertIn("%s", translated)  # placeholders converted for psycopg
+        self.assertTrue(db._has_conflict_clause(translated))
 
     def test_pulse_briefings_registered_for_returning_id(self):
+        # Still asserted: other writers to this table rely on the injection.
         from services.db import AUTO_PK_TABLES
         self.assertEqual(AUTO_PK_TABLES.get("pulse_briefings"), "id")
+
+    def test_unique_index_backs_the_conflict_target(self):
+        # ON CONFLICT (user_id, window_key) is only a legal inference target if
+        # a unique index over exactly those columns exists.
+        conn = _fresh_conn()
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_pulse_briefings_window'"
+        ).fetchone()
+        self.assertIsNotNone(row)
+        self.assertIn("UNIQUE", row[0].upper())
+        conn.close()
 
 
 if __name__ == "__main__":
