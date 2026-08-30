@@ -1,0 +1,493 @@
+# UNDX external dataset registry
+#
+# Every Hugging Face artifact evaluated for the corpus expansion mission, with the
+# decision taken on it and the reason. Written to be read by a person deciding whether
+# to acquire something, not by a downloader: nothing here has been fetched.
+#
+# Two facts constrain every decision below and are stated once rather than repeated
+# per entry.
+#
+#   1. There is no training substrate in this repository. `torch`, `transformers`,
+#      `peft`, `Trainer` and `TrainingArguments` appear nowhere in services/, scripts/
+#      or the root modules. The only match for "torch" is `advanced:[{torch:true}]` at
+#      bot.py:51377, a camera-flashlight constraint in inline JavaScript. `undx_router`
+#      calls OpenAI, Claude, Gemini, DeepSeek and Groq over HTTP. There are no weights
+#      here to fine-tune, so FINE_TUNE and DISTILL are not decisions this repository
+#      can currently take, and no entry claims them.
+#
+#   2. The measured gap is not a knowledge gap. `scripts/undx_routing_generalisation.py`
+#      reports that UNDX routes blind paraphrases at 1.9% and held-out controls at 0%,
+#      because `match_capability` matches words in order and nothing else. No corpus of
+#      instruction text repairs that; a semantic similarity layer does. That moves the
+#      relevant Hugging Face artifact class from *datasets* to *sentence-embedding
+#      models*, which is recorded under `models:` below.
+#
+# Discovery method: the sandbox cannot reach huggingface.co (HTTP 403 from the egress
+# proxy, for both huggingface.co and datasets-server.huggingface.co), so listings were
+# read through the authenticated browser session against /api/datasets and /api/models,
+# sorted by downloads. Download counts and licences are as reported by that API on
+# 2026-08-29. Licence strings come from each repo's `license:` tag; a tag is not a
+# licence review, and `OWNER_REVIEW_REQUIRED` below means exactly that.
+
+meta:
+  mission: UNDX Hugging Face Intelligence Corpus Expansion
+  recorded: 2026-08-29
+  discovery_channel: authenticated browser session, huggingface.co public API
+  sandbox_reachability: blocked (403 at egress proxy)
+  artifacts_downloaded: 0
+  token_handled: false        # no HF token was read, printed, stored or transmitted
+  gated_agreements_accepted: 0
+
+# Decisions used. FINE_TUNE and DISTILL are defined for completeness and are
+# unavailable here for the reason in note 1 above.
+decisions:
+  RAG: content may be ingested into services/undx_brain/corpus.py as NON-CANONICAL
+    external knowledge, injection-scanned at ingest and wrapped in a data envelope.
+  EVALUATION_ONLY: used to measure UNDX, never to teach it. Nothing from the file
+    reaches a prompt as instruction.
+  SAFETY_TEST_ONLY: adversarial inputs, replayed against the guard path to see whether
+    it holds. Never ingested.
+  REJECT: not acquired.
+  OWNER_REVIEW_REQUIRED: blocked pending a human licence decision. No UNKNOWN-licence
+    artifact goes into production.
+
+# ---------------------------------------------------------------------------
+# Tool use and function calling
+# ---------------------------------------------------------------------------
+datasets:
+
+  - id: gorilla-llm/Berkeley-Function-Calling-Leaderboard
+    domain: tool_use
+    downloads: 151963
+    license: apache-2.0
+    gated: false
+    decision: EVALUATION_ONLY
+    rationale: >-
+      The strongest tool-use benchmark on the hub by adoption, and permissively
+      licensed. Its value here is as a yardstick for whether UNDX's argument
+      resolution holds up against a standard, not as material. Its schemas are
+      generic function signatures; PulseSoc's are a closed registry of 120
+      capabilities with owner-scoped authorization, so its cases cannot be replayed
+      against the real gateway without inventing capabilities that do not exist.
+    canonical_authority: NON_CANONICAL
+
+  - id: NousResearch/hermes-function-calling-v1
+    domain: tool_use
+    downloads: 60807
+    license: apache-2.0
+    gated: false
+    decision: REJECT
+    rationale: >-
+      A fine-tuning corpus for teaching a base model to emit tool calls. With no
+      training substrate it would be a file nobody imports — the precedent named in
+      the docstring of services/undx_brain/corpus.py, where the v6 corpus was
+      generated, audited, committed, and imported by nothing.
+    canonical_authority: NON_CANONICAL
+
+  - id: glaiveai/glaive-function-calling-v2
+    domain: tool_use
+    downloads: 59029
+    license: apache-2.0
+    gated: false
+    decision: REJECT
+    rationale: Same as hermes-function-calling-v1. SFT material with no consumer.
+    canonical_authority: NON_CANONICAL
+
+  - id: Salesforce/xlam-function-calling-60k
+    domain: tool_use
+    downloads: 30964
+    license: cc-by-4.0
+    gated: true
+    decision: OWNER_REVIEW_REQUIRED
+    rationale: >-
+      Gated behind an agreement that a person must accept in their own account. The
+      mission forbids bypassing gated agreements and this entry exists to record that
+      it was not bypassed. Moot in any case while decision would be REJECT for the
+      same reason as the two above.
+    canonical_authority: NON_CANONICAL
+
+  - id: lockon/xlam-function-calling-60k
+    domain: tool_use
+    downloads: 28425
+    license: cc-by-4.0
+    gated: false
+    decision: REJECT
+    rationale: >-
+      An ungated re-upload of the gated Salesforce dataset. Acquiring it would obtain
+      by mirror what the agreement withholds directly, which is the prohibition in
+      substance whatever the mirror's own licence tag says.
+    canonical_authority: NON_CANONICAL
+
+  - id: minpeter/xlam-function-calling-60k-parsed
+    domain: tool_use
+    downloads: 13871
+    license: cc-by-4.0
+    gated: false
+    decision: REJECT
+    rationale: Re-upload of the same gated source. Same reasoning.
+    canonical_authority: NON_CANONICAL
+
+  - id: argilla/apigen-function-calling
+    domain: tool_use
+    downloads: 7294
+    license: cc-by-4.0
+    gated: false
+    decision: REJECT
+    rationale: SFT material, no consumer.
+    canonical_authority: NON_CANONICAL
+
+# ---------------------------------------------------------------------------
+# Agent trajectories
+# ---------------------------------------------------------------------------
+
+  - id: obaydata/mcp-agent-trajectory-benchmark
+    domain: agentic
+    downloads: 1351
+    license: apache-2.0
+    gated: false
+    decision: EVALUATION_ONLY
+    rationale: >-
+      The only agent-trajectory dataset in the top results with both a permissive
+      licence and a benchmark framing. Adoption is low enough (1.3k) that it should be
+      treated as one opinion about multi-step behaviour rather than a standard.
+    canonical_authority: NON_CANONICAL
+
+  - id: agent-eto/eto-sft-trajectory
+    domain: agentic
+    downloads: 377
+    license: apache-2.0
+    gated: false
+    decision: REJECT
+    rationale: SFT trajectories, no training substrate.
+    canonical_authority: NON_CANONICAL
+
+  - id: zake7749/Qwen-3.6-plus-agent-tool-calling-trajectory
+    domain: agentic
+    downloads: 2320
+    license: NONE
+    gated: false
+    decision: OWNER_REVIEW_REQUIRED
+    rationale: >-
+      No licence tag. The highest-adoption agentic-trajectory result, and unusable
+      until somebody with authority to accept licence risk decides otherwise. Recorded
+      rather than quietly dropped because "we did not use it" and "we could not tell
+      whether we were allowed to" are different states.
+    canonical_authority: NON_CANONICAL
+
+  - id: zake7749/deepseek-v4-pro-agent-tool-calling-trajectory
+    domain: agentic
+    downloads: 408
+    license: NONE
+    gated: false
+    decision: OWNER_REVIEW_REQUIRED
+    rationale: No licence tag. Same as above.
+    canonical_authority: NON_CANONICAL
+
+  - id: sunnydubey1111/agent-trajectory-sentinel
+    domain: agentic
+    downloads: 1920
+    license: other
+    gated: false
+    decision: OWNER_REVIEW_REQUIRED
+    rationale: >-
+      Licence tagged `other`, which names a file rather than a permission. Requires
+      reading the repository's own LICENSE before any use.
+    canonical_authority: NON_CANONICAL
+
+  - id: OzymandisLi/ChemCraft-Agent-Trajectory
+    domain: agentic
+    downloads: 168
+    license: cc-by-nc-nd-4.0
+    gated: false
+    decision: REJECT
+    rationale: >-
+      NoDerivatives forbids the filtering and normalisation any ingestion would
+      perform, and NonCommercial is incompatible with a commercial product. Rejected
+      on licence, independently of usefulness.
+    canonical_authority: NON_CANONICAL
+
+# ---------------------------------------------------------------------------
+# Reasoning and instruction following
+# ---------------------------------------------------------------------------
+
+  - id: allenai/tulu-3-sft-personas-instruction-following
+    domain: instruction_following
+    downloads: 15799
+    license: odc-by
+    gated: false
+    decision: REJECT
+    rationale: >-
+      Well-licensed and widely used, and still SFT material. Listed because its
+      absence from the final set would otherwise look like an oversight.
+    canonical_authority: NON_CANONICAL
+
+  - id: wis-k/instruction-following-eval
+    domain: instruction_following
+    downloads: 4574
+    license: apache-2.0
+    gated: false
+    decision: EVALUATION_ONLY
+    rationale: >-
+      IFEval-style verifiable constraints — "answer in exactly three sentences",
+      "do not use the letter e" — which can be checked programmatically without a
+      judge model. The one external evaluation here that costs nothing per run and
+      whose result cannot be argued with.
+    canonical_authority: NON_CANONICAL
+
+  - id: nvidia/Nemotron-SFT-Instruction-Following-Chat-v3
+    domain: instruction_following
+    downloads: 9594
+    license: odc-by,cc-by-4.0,apache-2.0,other
+    gated: false
+    decision: OWNER_REVIEW_REQUIRED
+    rationale: >-
+      Four licence tags on one repository means the terms are per-subset, so a
+      blanket decision on the dataset would be a guess about which subset it lands on.
+      Needs the per-split mapping read before any subset is used.
+    canonical_authority: NON_CANONICAL
+
+  - id: livebench/instruction_following
+    domain: instruction_following
+    downloads: 5523
+    license: NONE
+    gated: false
+    decision: OWNER_REVIEW_REQUIRED
+    rationale: No licence tag despite high adoption.
+    canonical_authority: NON_CANONICAL
+
+  - id: livebench/reasoning
+    domain: reasoning
+    downloads: 7277
+    license: NONE
+    gated: false
+    decision: OWNER_REVIEW_REQUIRED
+    rationale: No licence tag.
+    canonical_authority: NON_CANONICAL
+
+  - id: FreedomIntelligence/medical-o1-reasoning-SFT
+    domain: reasoning
+    downloads: 16253
+    license: apache-2.0
+    gated: false
+    decision: REJECT
+    rationale: >-
+      Medical domain. PulseSoc is a social platform; ingesting clinical reasoning
+      would give UNDX fluent-sounding vocabulary in a field where it has no authority
+      and where a confident wrong answer has consequences this product cannot carry.
+    canonical_authority: NON_CANONICAL
+
+# ---------------------------------------------------------------------------
+# Safety and adversarial input
+# ---------------------------------------------------------------------------
+
+  - id: neuralchemy/Prompt-injection-dataset
+    domain: safety
+    downloads: 2085
+    license: apache-2.0
+    gated: false
+    decision: SAFETY_TEST_ONLY
+    rationale: >-
+      The highest-value external artifact identified by this mission. UNDX ingests
+      repository text through services/undx_brain/corpus.py, which scans for
+      injection shapes at ingest via `_injection_shaped` and wraps records in a data
+      envelope. That scanner has never been tested against a corpus of real injection
+      attempts written by people trying to break something. Replaying these against
+      `_injection_shaped` measures a guard that currently has only its author's
+      imagination behind it.
+    canonical_authority: NON_CANONICAL
+    handling: >-
+      Never ingested as knowledge. Loaded by a test, passed to the scanner, asserted
+      on. A corpus of attacks stored where the corpus loader can see it would be the
+      attack.
+
+  - id: 3nesdeniz/agentic-prompt-injection-boundary-pairs
+    domain: safety
+    downloads: 687
+    license: cc-by-4.0
+    gated: false
+    decision: SAFETY_TEST_ONLY
+    rationale: >-
+      Paired benign/malicious inputs, which is the shape that measures false
+      positives as well as misses. A scanner that rejects everything scores perfectly
+      against attacks alone; the benign half is what makes the number mean something.
+    canonical_authority: NON_CANONICAL
+
+  - id: Lakera/mosscap_prompt_injection
+    domain: safety
+    downloads: 877
+    license: mit
+    gated: false
+    decision: SAFETY_TEST_ONLY
+    rationale: >-
+      Attempts harvested from a public prompt-injection game, so the distribution is
+      real adversarial effort rather than synthesised examples of what an author
+      expected an attacker to try.
+    canonical_authority: NON_CANONICAL
+
+  - id: xTRam1/safe-guard-prompt-injection
+    domain: safety
+    downloads: 1429
+    license: NONE
+    gated: false
+    decision: OWNER_REVIEW_REQUIRED
+    rationale: No licence tag.
+    canonical_authority: NON_CANONICAL
+
+  - id: rogue-security/prompt-injections-benchmark
+    domain: safety
+    downloads: 933
+    license: cc-by-nc-4.0
+    gated: true
+    decision: REJECT
+    rationale: >-
+      Gated and NonCommercial. Both bar it independently; the agreement was not
+      accepted.
+    canonical_authority: NON_CANONICAL
+
+  - id: facebook/cyberseceval3-visual-prompt-injection
+    domain: safety
+    downloads: 1300
+    license: mit
+    gated: false
+    decision: REJECT
+    rationale: >-
+      Visual injection through images. UNDX's ingestion surface is text. Nothing in
+      the corpus path reads an image, so there is no guard here for it to exercise.
+    canonical_authority: NON_CANONICAL
+
+# ---------------------------------------------------------------------------
+# Domain corpora: support, marketplace, creator, multilingual
+# ---------------------------------------------------------------------------
+
+  - id: bitext/Bitext-customer-support-llm-chatbot-training-dataset
+    domain: business
+    downloads: 5442
+    license: cdla-sharing-1.0
+    gated: false
+    decision: REJECT
+    rationale: >-
+      The clearest illustration of the mission's canonical/non-canonical boundary.
+      It is generic support dialogue about refunds, orders and account access, and
+      PulseSoc has its own answers to every one of those. Ingesting it teaches UNDX to
+      speak confidently about a *different* company's policies in PulseSoc's voice.
+      The failure would not look like an error; it would look like an answer.
+    canonical_authority: NON_CANONICAL
+
+  - id: Tobi-Bueck/customer-support-tickets
+    domain: business
+    downloads: 1844
+    license: cc-by-nc-4.0
+    gated: false
+    decision: REJECT
+    rationale: NonCommercial. Real support tickets also carry PII risk the mission bars.
+    canonical_authority: NON_CANONICAL
+
+  - id: NebulaByte/E-Commerce_Customer_Support_Conversations
+    domain: marketplace
+    downloads: 462
+    license: NONE
+    gated: false
+    decision: OWNER_REVIEW_REQUIRED
+    rationale: No licence tag, and support transcripts are a PII-bearing shape.
+    canonical_authority: NON_CANONICAL
+
+  - id: Waterfront/social-media-captions-20k
+    domain: creator
+    downloads: 45
+    license: mit
+    gated: false
+    decision: REJECT
+    rationale: >-
+      The closest match on the hub to PulseSoc's creator surface, and 45 downloads
+      with no provenance statement. Adoption this low means nobody has audited it;
+      the licence permits use but says nothing about what is inside.
+    canonical_authority: NON_CANONICAL
+
+  - id: saillab/alpaca-haitian_creole-cleaned
+    domain: multilingual
+    downloads: 19
+    license: NONE
+    gated: false
+    decision: OWNER_REVIEW_REQUIRED
+    rationale: >-
+      Haitian Creole is a first-class language for this product and the hub has
+      almost nothing for it. Every result was either speech data for TTS or a
+      machine-translated Alpaca derivative in the low tens of downloads, none with a
+      licence tag. Recorded so the absence is documented rather than rediscovered:
+      the answer for Creole is not on Hugging Face today.
+    canonical_authority: NON_CANONICAL
+
+  - id: jsbeaudry/cmu_haitian_creole_speech
+    domain: multilingual
+    downloads: 170
+    license: mit
+    gated: false
+    decision: REJECT
+    rationale: >-
+      Speech corpus for TTS/ASR. UNDX has no speech path; PulseSoc's audio is LiveKit
+      and Mux transport, not recognition.
+    canonical_authority: NON_CANONICAL
+
+# ---------------------------------------------------------------------------
+# Searches that returned nothing, recorded because an empty result is a finding
+# ---------------------------------------------------------------------------
+
+empty_searches:
+  - query: self-correction critique
+    note: >-
+      Zero results. Self-correction is one of the capabilities the mission asks for
+      and the hub's multi-word search does not surface a corpus for it under this
+      phrasing.
+  - query: abstention unanswerable
+    note: Zero results. Nothing found for calibrated refusal or uncertainty.
+  - query: retrieval augmented generation grounded
+    note: Zero results under this phrasing.
+  - query: product listing ecommerce
+    note: >-
+      Zero results. PulseSoc's marketplace surface has no external corpus behind it,
+      which is consistent with the synthetic route being the only one available.
+  - query: bug fix debugging
+    note: Zero results under this phrasing.
+
+# ---------------------------------------------------------------------------
+# Models — where the measured gap actually points
+# ---------------------------------------------------------------------------
+#
+# Recorded but NOT adopted. Every entry here would require a model runtime this
+# repository does not have, and adding one to a Flask monolith that boots optional
+# route packs inside `except Exception` blocks is an architecture decision, not a
+# mission task. They are listed so the option is documented with real candidates
+# rather than described in the abstract.
+
+models:
+  - id: sentence-transformers/all-MiniLM-L6-v2-class
+    note: >-
+      The MiniLM sentence-embedding family is the obvious candidate for the routing
+      gap: encode the 451 declared intent phrases once, encode the incoming message,
+      route on cosine similarity above a threshold and fall back to the existing
+      subsequence matcher below it. That is additive — `match_capability` keeps its
+      current behaviour as the floor — which matters because the authorization,
+      confirmation and audit layers all sit downstream of routing and none of them
+      would change.
+    decision: NOT_ADOPTED
+    blocker: >-
+      Requires sentence-transformers plus a ~90MB weight file in the web dyno, or a
+      separate inference service. Both are deployment changes for the owner to weigh.
+
+  - id: cross-encoder/ettin-reranker-68m-v1
+    downloads: 16286
+    license: apache-2.0
+    note: >-
+      A reranker would only matter after a retrieval layer exists that returns more
+      than one candidate. `match_capability` returns exactly one capability and no
+      indication of closeness — asserted in tests/undx_brain/test_selection.py — so
+      there is nothing to rerank today.
+    decision: NOT_ADOPTED
+    blocker: No candidate list exists to rerank.
+
+  - id: cross-encoder-testing/reranker-bert-tiny-gooaq-bce
+    downloads: 271410
+    license: apache-2.0
+    note: Highest-adoption reranker found. Same blocker.
+    decision: NOT_ADOPTED
+    blocker: No candidate list exists to rerank.

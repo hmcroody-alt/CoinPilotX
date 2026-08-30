@@ -1417,7 +1417,18 @@ for _spec in (
                    "/pulse/portfolio", CardType.ACTION_SUCCESS_RECEIPT, "crypto_portfolio_write",
                    target_field="item_id"),
     CapabilitySpec("notifications.mark_read", "Mark one of the user's notifications as read",
-                   ("mark this notification read", "mark as read", "dismiss this notification",
+                   # "mark as read" is deliberately absent here, and absent from
+                   # ``messages.mark_read`` for the same reason: both writes declared it,
+                   # so one phrase named two different actions — dismissing a notification
+                   # and clearing a conversation's unread state — with nothing to choose
+                   # between them. ``match_capability`` broke the tie on capability id and
+                   # ``undx_brain.selection.rank`` broke it the other way, so the ranking
+                   # shown and the action run disagreed. The phrase is ambiguous in English
+                   # too: someone who types it has not yet said what. Removing it from both
+                   # costs no reachability — each keeps three phrasings that name their own
+                   # object — and turns a silent wrong write into no match, which is the
+                   # failure this registry exists to prefer.
+                   ("mark this notification read", "dismiss this notification",
                     "clear this alert"),
                    RiskLevel.REVERSIBLE_WRITE, ConfirmationPolicy.CONTEXTUAL,
                    "pulsesoc.notifications.mark_read", PermissionScope.SELF_ACCOUNT_ONLY,
@@ -1519,8 +1530,9 @@ for _spec in (
 _register(CapabilitySpec(
     capability_id="messages.mark_read",
     description="Mark one of the authenticated user's conversations as read",
-    intents=("mark this conversation read", "mark as read", "clear my unread",
-             "mark this chat read"),
+    # "mark as read" removed; see the note on ``notifications.mark_read``, which
+    # declared the same phrase for a different write.
+    intents=("mark this conversation read", "clear my unread", "mark this chat read"),
     risk=RiskLevel.REVERSIBLE_WRITE,
     confirmation=ConfirmationPolicy.CONTEXTUAL,
     tool_name="pulsesoc.messages.mark_read",

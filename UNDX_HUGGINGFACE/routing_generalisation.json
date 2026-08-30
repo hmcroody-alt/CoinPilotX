@@ -1,0 +1,1728 @@
+{
+  "groups": {
+    "blind": {
+      "bodies": 320,
+      "capabilities": 40,
+      "missed_to_nothing": 303,
+      "missed_to_wrong_capability": 11,
+      "misses": [
+        {
+          "command": "hold campaign 3, we are burning budget",
+          "expected": "business.campaign.pause",
+          "observed": ""
+        },
+        {
+          "command": "stop my ads running for now",
+          "expected": "business.campaign.pause",
+          "observed": ""
+        },
+        {
+          "command": "put the promotion on ice",
+          "expected": "business.campaign.pause",
+          "observed": ""
+        },
+        {
+          "command": "halt campaign 7 temporarily",
+          "expected": "business.campaign.pause",
+          "observed": ""
+        },
+        {
+          "command": "i need my advertising to stop spending",
+          "expected": "business.campaign.pause",
+          "observed": ""
+        },
+        {
+          "command": "freeze the ad push i have going",
+          "expected": "business.campaign.pause",
+          "observed": ""
+        },
+        {
+          "command": "suspend the campaign without ending it",
+          "expected": "business.campaign.pause",
+          "observed": ""
+        },
+        {
+          "command": "take my ads out of rotation for a bit",
+          "expected": "business.campaign.pause",
+          "observed": ""
+        },
+        {
+          "command": "bring campaign 3 back up",
+          "expected": "business.campaign.resume",
+          "observed": ""
+        },
+        {
+          "command": "start my ads spending again",
+          "expected": "business.campaign.resume",
+          "observed": ""
+        },
+        {
+          "command": "take the promotion off hold",
+          "expected": "business.campaign.resume",
+          "observed": ""
+        },
+        {
+          "command": "reactivate campaign 7",
+          "expected": "business.campaign.resume",
+          "observed": ""
+        },
+        {
+          "command": "my advertising can go live again",
+          "expected": "business.campaign.resume",
+          "observed": ""
+        },
+        {
+          "command": "unfreeze the ad push",
+          "expected": "business.campaign.resume",
+          "observed": ""
+        },
+        {
+          "command": "put the campaign back into rotation",
+          "expected": "business.campaign.resume",
+          "observed": ""
+        },
+        {
+          "command": "let my ads run once more",
+          "expected": "business.campaign.resume",
+          "observed": ""
+        },
+        {
+          "command": "our returns window is 30 days now, put that up",
+          "expected": "business.profile.update",
+          "observed": ""
+        },
+        {
+          "command": "change what the business page says we sell",
+          "expected": "business.profile.update",
+          "observed": ""
+        },
+        {
+          "command": "our shipping terms moved, update them",
+          "expected": "business.profile.update",
+          "observed": ""
+        },
+        {
+          "command": "revise the company description on the page",
+          "expected": "business.profile.update",
+          "observed": ""
+        },
+        {
+          "command": "the about section for my business is out of date",
+          "expected": "business.profile.update",
+          "observed": ""
+        },
+        {
+          "command": "fix what customers read about our policies",
+          "expected": "business.profile.update",
+          "observed": ""
+        },
+        {
+          "command": "amend the details on my business profile",
+          "expected": "business.profile.update",
+          "observed": ""
+        },
+        {
+          "command": "our storefront copy needs changing",
+          "expected": "business.profile.update",
+          "observed": ""
+        },
+        {
+          "command": "has anything i set actually gone off",
+          "expected": "crypto.alerts.activity",
+          "observed": ""
+        },
+        {
+          "command": "read me the trigger history",
+          "expected": "crypto.alerts.activity",
+          "observed": ""
+        },
+        {
+          "command": "did alert 3 ever hit",
+          "expected": "crypto.alerts.activity",
+          "observed": ""
+        },
+        {
+          "command": "what has been going off on my account",
+          "expected": "crypto.alerts.activity",
+          "observed": ""
+        },
+        {
+          "command": "show me when my alerts last triggered",
+          "expected": "crypto.alerts.activity",
+          "observed": "crypto.alerts.list"
+        },
+        {
+          "command": "have any thresholds been crossed",
+          "expected": "crypto.alerts.activity",
+          "observed": ""
+        },
+        {
+          "command": "give me the firing record for my alerts",
+          "expected": "crypto.alerts.activity",
+          "observed": "crypto.alerts.list"
+        },
+        {
+          "command": "how has bitcoin been moving lately",
+          "expected": "crypto.market.observations",
+          "observed": ""
+        },
+        {
+          "command": "pull the recent samples for eth",
+          "expected": "crypto.market.observations",
+          "observed": ""
+        },
+        {
+          "command": "what does the price record look like for sol",
+          "expected": "crypto.market.observations",
+          "observed": ""
+        },
+        {
+          "command": "give me the raw market data on bitcoin",
+          "expected": "crypto.market.observations",
+          "observed": ""
+        },
+        {
+          "command": "show recent volume readings for ethereum",
+          "expected": "crypto.market.observations",
+          "observed": ""
+        },
+        {
+          "command": "what prices have come in for that asset",
+          "expected": "crypto.market.observations",
+          "observed": ""
+        },
+        {
+          "command": "read me the last few data points on btc",
+          "expected": "crypto.market.observations",
+          "observed": ""
+        },
+        {
+          "command": "history of observations for solana",
+          "expected": "crypto.market.observations",
+          "observed": ""
+        },
+        {
+          "command": "how much has btc shifted in the past hour",
+          "expected": "crypto.market.window",
+          "observed": ""
+        },
+        {
+          "command": "what did eth do over the last 30 minutes",
+          "expected": "crypto.market.window",
+          "observed": ""
+        },
+        {
+          "command": "movement on sol since this morning",
+          "expected": "crypto.market.window",
+          "observed": ""
+        },
+        {
+          "command": "how far has bitcoin travelled today",
+          "expected": "crypto.market.window",
+          "observed": ""
+        },
+        {
+          "command": "change in ethereum across the last 4 hours",
+          "expected": "crypto.market.window",
+          "observed": ""
+        },
+        {
+          "command": "did sol swing much in the last 15 minutes",
+          "expected": "crypto.market.window",
+          "observed": ""
+        },
+        {
+          "command": "percentage move on btc over a short window",
+          "expected": "crypto.market.window",
+          "observed": ""
+        },
+        {
+          "command": "how volatile has eth been in the last day",
+          "expected": "crypto.market.window",
+          "observed": ""
+        },
+        {
+          "command": "chart what my holdings have done",
+          "expected": "crypto.portfolio.history",
+          "observed": "crypto.portfolio.holdings.list"
+        },
+        {
+          "command": "was my portfolio worth more last month",
+          "expected": "crypto.portfolio.history",
+          "observed": ""
+        },
+        {
+          "command": "track my portfolio value across the last week",
+          "expected": "crypto.portfolio.history",
+          "observed": "crypto.portfolio.summary"
+        },
+        {
+          "command": "how did my portfolio trend recently",
+          "expected": "crypto.portfolio.history",
+          "observed": ""
+        },
+        {
+          "command": "give me the shape of my portfolio over 90d",
+          "expected": "crypto.portfolio.history",
+          "observed": ""
+        },
+        {
+          "command": "has my portfolio been climbing",
+          "expected": "crypto.portfolio.history",
+          "observed": ""
+        },
+        {
+          "command": "compare my portfolio now against before",
+          "expected": "crypto.portfolio.history",
+          "observed": ""
+        },
+        {
+          "command": "i picked up 2 eth, put it in my portfolio",
+          "expected": "crypto.portfolio.holding.add",
+          "observed": ""
+        },
+        {
+          "command": "record a new position for me",
+          "expected": "crypto.portfolio.holding.add",
+          "observed": ""
+        },
+        {
+          "command": "add 100 sol to what i hold",
+          "expected": "crypto.portfolio.holding.add",
+          "observed": ""
+        },
+        {
+          "command": "i want to enter a purchase i made",
+          "expected": "crypto.portfolio.holding.add",
+          "observed": ""
+        },
+        {
+          "command": "note down that i acquired some ada",
+          "expected": "crypto.portfolio.holding.add",
+          "observed": ""
+        },
+        {
+          "command": "put a new coin into my holdings",
+          "expected": "crypto.portfolio.holding.add",
+          "observed": "crypto.portfolio.holdings.list"
+        },
+        {
+          "command": "register 15 matic against my account",
+          "expected": "crypto.portfolio.holding.add",
+          "observed": ""
+        },
+        {
+          "command": "i closed that position, take it out",
+          "expected": "crypto.portfolio.holding.delete",
+          "observed": ""
+        },
+        {
+          "command": "get rid of holding 5",
+          "expected": "crypto.portfolio.holding.delete",
+          "observed": ""
+        },
+        {
+          "command": "erase item 3 from my holdings",
+          "expected": "crypto.portfolio.holding.delete",
+          "observed": "crypto.portfolio.holdings.list"
+        },
+        {
+          "command": "that position is gone, drop it",
+          "expected": "crypto.portfolio.holding.delete",
+          "observed": ""
+        },
+        {
+          "command": "take one of my coins out of the portfolio",
+          "expected": "crypto.portfolio.holding.delete",
+          "observed": ""
+        },
+        {
+          "command": "i exited, delete the entry",
+          "expected": "crypto.portfolio.holding.delete",
+          "observed": ""
+        },
+        {
+          "command": "remove holding 9 entirely",
+          "expected": "crypto.portfolio.holding.delete",
+          "observed": ""
+        },
+        {
+          "command": "the amount on holding 4 is wrong, fix it",
+          "expected": "crypto.portfolio.holding.update",
+          "observed": ""
+        },
+        {
+          "command": "correct my position to 3 eth",
+          "expected": "crypto.portfolio.holding.update",
+          "observed": ""
+        },
+        {
+          "command": "i need to amend one of my holdings",
+          "expected": "crypto.portfolio.holding.update",
+          "observed": "crypto.portfolio.holdings.list"
+        },
+        {
+          "command": "change item 7 to reflect the real cost basis",
+          "expected": "crypto.portfolio.holding.update",
+          "observed": ""
+        },
+        {
+          "command": "my average buy price is off, adjust it",
+          "expected": "crypto.portfolio.holding.update",
+          "observed": ""
+        },
+        {
+          "command": "revise the quantity on that position",
+          "expected": "crypto.portfolio.holding.update",
+          "observed": ""
+        },
+        {
+          "command": "edit what i recorded for holding 2",
+          "expected": "crypto.portfolio.holding.update",
+          "observed": ""
+        },
+        {
+          "command": "the numbers on one of my positions need updating",
+          "expected": "crypto.portfolio.holding.update",
+          "observed": ""
+        },
+        {
+          "command": "which coins are actually in my portfolio",
+          "expected": "crypto.portfolio.holdings.list",
+          "observed": ""
+        },
+        {
+          "command": "break down what i own by asset",
+          "expected": "crypto.portfolio.holdings.list",
+          "observed": ""
+        },
+        {
+          "command": "list every position i have open",
+          "expected": "crypto.portfolio.holdings.list",
+          "observed": ""
+        },
+        {
+          "command": "what did i end up buying",
+          "expected": "crypto.portfolio.holdings.list",
+          "observed": ""
+        },
+        {
+          "command": "read me back my positions",
+          "expected": "crypto.portfolio.holdings.list",
+          "observed": ""
+        },
+        {
+          "command": "enumerate the assets sitting in my account",
+          "expected": "crypto.portfolio.holdings.list",
+          "observed": ""
+        },
+        {
+          "command": "which tokens do i still have",
+          "expected": "crypto.portfolio.holdings.list",
+          "observed": ""
+        },
+        {
+          "command": "show me each thing i hold separately",
+          "expected": "crypto.portfolio.holdings.list",
+          "observed": ""
+        },
+        {
+          "command": "how much is everything i own worth",
+          "expected": "crypto.portfolio.summary",
+          "observed": ""
+        },
+        {
+          "command": "give me the total on my crypto",
+          "expected": "crypto.portfolio.summary",
+          "observed": ""
+        },
+        {
+          "command": "where does my portfolio stand",
+          "expected": "crypto.portfolio.summary",
+          "observed": ""
+        },
+        {
+          "command": "am i up or down overall",
+          "expected": "crypto.portfolio.summary",
+          "observed": ""
+        },
+        {
+          "command": "what is the damage on my coins",
+          "expected": "crypto.portfolio.summary",
+          "observed": ""
+        },
+        {
+          "command": "run me the numbers on my portfolio",
+          "expected": "crypto.portfolio.summary",
+          "observed": ""
+        },
+        {
+          "command": "total value of what i am holding",
+          "expected": "crypto.portfolio.summary",
+          "observed": ""
+        },
+        {
+          "command": "how did my crypto end up",
+          "expected": "crypto.portfolio.summary",
+          "observed": ""
+        },
+        {
+          "command": "keep an eye on doge for me",
+          "expected": "crypto.watchlist.add",
+          "observed": ""
+        },
+        {
+          "command": "i want to follow avax without buying it",
+          "expected": "crypto.watchlist.add",
+          "observed": ""
+        },
+        {
+          "command": "start monitoring link",
+          "expected": "crypto.watchlist.add",
+          "observed": ""
+        },
+        {
+          "command": "throw solana onto the list i watch",
+          "expected": "crypto.watchlist.add",
+          "observed": ""
+        },
+        {
+          "command": "add a coin to the ones i follow",
+          "expected": "crypto.watchlist.add",
+          "observed": ""
+        },
+        {
+          "command": "begin tracking a new asset for me",
+          "expected": "crypto.watchlist.add",
+          "observed": ""
+        },
+        {
+          "command": "i would like to monitor another token",
+          "expected": "crypto.watchlist.add",
+          "observed": ""
+        },
+        {
+          "command": "put xrp somewhere i can keep watching it",
+          "expected": "crypto.watchlist.add",
+          "observed": ""
+        },
+        {
+          "command": "which coins am i keeping an eye on",
+          "expected": "crypto.watchlist.list",
+          "observed": ""
+        },
+        {
+          "command": "read back everything i am monitoring",
+          "expected": "crypto.watchlist.list",
+          "observed": ""
+        },
+        {
+          "command": "what did i put on there to follow",
+          "expected": "crypto.watchlist.list",
+          "observed": ""
+        },
+        {
+          "command": "list the assets i am tracking passively",
+          "expected": "crypto.watchlist.list",
+          "observed": ""
+        },
+        {
+          "command": "remind me which tokens i flagged to watch",
+          "expected": "crypto.watchlist.list",
+          "observed": ""
+        },
+        {
+          "command": "what is sitting in my monitoring list",
+          "expected": "crypto.watchlist.list",
+          "observed": ""
+        },
+        {
+          "command": "show the coins i follow without owning",
+          "expected": "crypto.watchlist.list",
+          "observed": ""
+        },
+        {
+          "command": "enumerate what i chose to keep tabs on",
+          "expected": "crypto.watchlist.list",
+          "observed": ""
+        },
+        {
+          "command": "i do not care about doge anymore, drop it",
+          "expected": "crypto.watchlist.remove",
+          "observed": ""
+        },
+        {
+          "command": "quit monitoring avax",
+          "expected": "crypto.watchlist.remove",
+          "observed": ""
+        },
+        {
+          "command": "take link off the list i follow",
+          "expected": "crypto.watchlist.remove",
+          "observed": ""
+        },
+        {
+          "command": "stop keeping tabs on solana",
+          "expected": "crypto.watchlist.remove",
+          "observed": ""
+        },
+        {
+          "command": "clear one of the coins i was tracking",
+          "expected": "crypto.watchlist.remove",
+          "observed": ""
+        },
+        {
+          "command": "i am done watching that token",
+          "expected": "crypto.watchlist.remove",
+          "observed": ""
+        },
+        {
+          "command": "remove an asset from my monitoring list",
+          "expected": "crypto.watchlist.remove",
+          "observed": ""
+        },
+        {
+          "command": "delist xrp from what i follow",
+          "expected": "crypto.watchlist.remove",
+          "observed": ""
+        },
+        {
+          "command": "take post 41 down for good",
+          "expected": "feed.posts.delete",
+          "observed": ""
+        },
+        {
+          "command": "i regret posting that, get rid of it",
+          "expected": "feed.posts.delete",
+          "observed": ""
+        },
+        {
+          "command": "wipe one of my posts off the feed",
+          "expected": "feed.posts.delete",
+          "observed": ""
+        },
+        {
+          "command": "remove post 12 permanently",
+          "expected": "feed.posts.delete",
+          "observed": ""
+        },
+        {
+          "command": "that post needs to come off my profile",
+          "expected": "feed.posts.delete",
+          "observed": ""
+        },
+        {
+          "command": "erase what i published earlier",
+          "expected": "feed.posts.delete",
+          "observed": ""
+        },
+        {
+          "command": "pull down the post i made yesterday",
+          "expected": "feed.posts.delete",
+          "observed": ""
+        },
+        {
+          "command": "i do not want to see post 33 again",
+          "expected": "feed.posts.hide",
+          "observed": ""
+        },
+        {
+          "command": "stop surfacing this one to me",
+          "expected": "feed.posts.hide",
+          "observed": ""
+        },
+        {
+          "command": "keep that post out of my feed",
+          "expected": "feed.posts.hide",
+          "observed": ""
+        },
+        {
+          "command": "make post 19 disappear from my timeline",
+          "expected": "feed.posts.hide",
+          "observed": ""
+        },
+        {
+          "command": "quit showing me this particular post",
+          "expected": "feed.posts.hide",
+          "observed": ""
+        },
+        {
+          "command": "bury this one for me",
+          "expected": "feed.posts.hide",
+          "observed": ""
+        },
+        {
+          "command": "i would rather not see that post again",
+          "expected": "feed.posts.hide",
+          "observed": ""
+        },
+        {
+          "command": "this post breaks the rules, escalate it",
+          "expected": "feed.report",
+          "observed": ""
+        },
+        {
+          "command": "send post 22 to moderation",
+          "expected": "feed.report",
+          "observed": ""
+        },
+        {
+          "command": "i want the moderators to look at this comment",
+          "expected": "feed.report",
+          "observed": ""
+        },
+        {
+          "command": "flag account 91 for harassment",
+          "expected": "feed.report",
+          "observed": ""
+        },
+        {
+          "command": "raise a moderation case on that reel",
+          "expected": "feed.report",
+          "observed": ""
+        },
+        {
+          "command": "this is spam, put it in front of your team",
+          "expected": "feed.report",
+          "observed": ""
+        },
+        {
+          "command": "escalate comment 14 as abusive",
+          "expected": "feed.report",
+          "observed": ""
+        },
+        {
+          "command": "somebody needs to review this content",
+          "expected": "feed.report",
+          "observed": ""
+        },
+        {
+          "command": "run the app in haitian creole",
+          "expected": "localization.region.update",
+          "observed": ""
+        },
+        {
+          "command": "i moved, my clock is wrong",
+          "expected": "localization.region.update",
+          "observed": ""
+        },
+        {
+          "command": "show prices in euros instead",
+          "expected": "localization.region.update",
+          "observed": ""
+        },
+        {
+          "command": "set me to the port-au-prince time zone",
+          "expected": "localization.region.update",
+          "observed": ""
+        },
+        {
+          "command": "i want the interface in french",
+          "expected": "localization.region.update",
+          "observed": ""
+        },
+        {
+          "command": "dates should be day first, not month first",
+          "expected": "localization.region.update",
+          "observed": ""
+        },
+        {
+          "command": "change what country the app thinks i am in",
+          "expected": "localization.region.update",
+          "observed": ""
+        },
+        {
+          "command": "switch my money display to gourdes",
+          "expected": "localization.region.update",
+          "observed": ""
+        },
+        {
+          "command": "i am tired of being asked, just translate french automatically",
+          "expected": "localization.translation.update",
+          "observed": ""
+        },
+        {
+          "command": "leave spanish posts alone from now on",
+          "expected": "localization.translation.update",
+          "observed": ""
+        },
+        {
+          "command": "check with me before converting anything",
+          "expected": "localization.translation.update",
+          "observed": ""
+        },
+        {
+          "command": "handle creole posts without prompting me",
+          "expected": "localization.translation.update",
+          "observed": ""
+        },
+        {
+          "command": "quit converting english content",
+          "expected": "localization.translation.update",
+          "observed": ""
+        },
+        {
+          "command": "set what happens when a post is in another language",
+          "expected": "localization.translation.update",
+          "observed": ""
+        },
+        {
+          "command": "translate portuguese without asking each time",
+          "expected": "localization.translation.update",
+          "observed": ""
+        },
+        {
+          "command": "prompt me first for german content",
+          "expected": "localization.translation.update",
+          "observed": ""
+        },
+        {
+          "command": "put my old iphone up for 250 dollars",
+          "expected": "marketplace.listing.create",
+          "observed": ""
+        },
+        {
+          "command": "i have something to sell, set it up",
+          "expected": "marketplace.listing.create",
+          "observed": ""
+        },
+        {
+          "command": "post an item on the marketplace for me",
+          "expected": "marketplace.listing.create",
+          "observed": ""
+        },
+        {
+          "command": "advertise a bike at 90 dollars",
+          "expected": "marketplace.listing.create",
+          "observed": ""
+        },
+        {
+          "command": "open a sale entry for my camera",
+          "expected": "marketplace.listing.create",
+          "observed": ""
+        },
+        {
+          "command": "i want to offer something to buyers",
+          "expected": "marketplace.listing.create",
+          "observed": ""
+        },
+        {
+          "command": "put a product up at 40 dollars",
+          "expected": "marketplace.listing.create",
+          "observed": ""
+        },
+        {
+          "command": "start selling an item through the marketplace",
+          "expected": "marketplace.listing.create",
+          "observed": ""
+        },
+        {
+          "command": "that item sold elsewhere, take listing 3 down for good",
+          "expected": "marketplace.listing.delete",
+          "observed": ""
+        },
+        {
+          "command": "i am done selling this, wipe the entry",
+          "expected": "marketplace.listing.delete",
+          "observed": ""
+        },
+        {
+          "command": "permanently clear listing 8",
+          "expected": "marketplace.listing.delete",
+          "observed": ""
+        },
+        {
+          "command": "get the item off the marketplace entirely",
+          "expected": "marketplace.listing.delete",
+          "observed": ""
+        },
+        {
+          "command": "remove what i had for sale, i will not relist",
+          "expected": "marketplace.listing.delete",
+          "observed": ""
+        },
+        {
+          "command": "erase my sale entry completely",
+          "expected": "marketplace.listing.delete",
+          "observed": ""
+        },
+        {
+          "command": "listing 6 should not exist anymore",
+          "expected": "marketplace.listing.delete",
+          "observed": ""
+        },
+        {
+          "command": "scrap the item i put up",
+          "expected": "marketplace.listing.delete",
+          "observed": ""
+        },
+        {
+          "command": "hold listing 5 for now, i will relist later",
+          "expected": "marketplace.listing.pause",
+          "observed": ""
+        },
+        {
+          "command": "take my item off the market temporarily",
+          "expected": "marketplace.listing.pause",
+          "observed": ""
+        },
+        {
+          "command": "i do not want buyers seeing this right now",
+          "expected": "marketplace.listing.pause",
+          "observed": ""
+        },
+        {
+          "command": "suspend listing 9 without deleting it",
+          "expected": "marketplace.listing.pause",
+          "observed": ""
+        },
+        {
+          "command": "put the sale on ice for a bit",
+          "expected": "marketplace.listing.pause",
+          "observed": ""
+        },
+        {
+          "command": "make my item unavailable for a while",
+          "expected": "marketplace.listing.pause",
+          "observed": ""
+        },
+        {
+          "command": "shelve listing 1 for the moment",
+          "expected": "marketplace.listing.pause",
+          "observed": ""
+        },
+        {
+          "command": "stop showing my item to buyers for now",
+          "expected": "marketplace.listing.pause",
+          "observed": ""
+        },
+        {
+          "command": "bring listing 5 back online",
+          "expected": "marketplace.listing.resume",
+          "observed": ""
+        },
+        {
+          "command": "my item can go back up for sale",
+          "expected": "marketplace.listing.resume",
+          "observed": ""
+        },
+        {
+          "command": "reactivate what i shelved",
+          "expected": "marketplace.listing.resume",
+          "observed": ""
+        },
+        {
+          "command": "make listing 9 visible to buyers again",
+          "expected": "marketplace.listing.resume",
+          "observed": ""
+        },
+        {
+          "command": "take the item off hold",
+          "expected": "marketplace.listing.resume",
+          "observed": ""
+        },
+        {
+          "command": "i am ready to sell that again",
+          "expected": "marketplace.listing.resume",
+          "observed": ""
+        },
+        {
+          "command": "restore listing 1 to the marketplace",
+          "expected": "marketplace.listing.resume",
+          "observed": ""
+        },
+        {
+          "command": "put the thing i paused back on the market",
+          "expected": "marketplace.listing.resume",
+          "observed": ""
+        },
+        {
+          "command": "drop the price on listing 3 to 200",
+          "expected": "marketplace.listing.update",
+          "observed": ""
+        },
+        {
+          "command": "the description on my item is wrong",
+          "expected": "marketplace.listing.update",
+          "observed": ""
+        },
+        {
+          "command": "i want to change what my listing says",
+          "expected": "marketplace.listing.update",
+          "observed": ""
+        },
+        {
+          "command": "adjust listing 7 to 45 dollars",
+          "expected": "marketplace.listing.update",
+          "observed": ""
+        },
+        {
+          "command": "amend the details on the thing i am selling",
+          "expected": "marketplace.listing.update",
+          "observed": ""
+        },
+        {
+          "command": "revise the price of what i have up",
+          "expected": "marketplace.listing.update",
+          "observed": ""
+        },
+        {
+          "command": "the copy on listing 2 needs rewriting",
+          "expected": "marketplace.listing.update",
+          "observed": ""
+        },
+        {
+          "command": "fix something on my sale entry",
+          "expected": "marketplace.listing.update",
+          "observed": ""
+        },
+        {
+          "command": "clear the unread badge on conversation 9",
+          "expected": "messages.mark_read",
+          "observed": ""
+        },
+        {
+          "command": "i already saw that thread, stop flagging it",
+          "expected": "messages.mark_read",
+          "observed": ""
+        },
+        {
+          "command": "wipe the unread count on that chat",
+          "expected": "messages.mark_read",
+          "observed": ""
+        },
+        {
+          "command": "treat conversation 3 as caught up",
+          "expected": "messages.mark_read",
+          "observed": ""
+        },
+        {
+          "command": "the bold marker on that conversation can go",
+          "expected": "messages.mark_read",
+          "observed": ""
+        },
+        {
+          "command": "i have read everything in there",
+          "expected": "messages.mark_read",
+          "observed": ""
+        },
+        {
+          "command": "settle the unread state on chat 15",
+          "expected": "messages.mark_read",
+          "observed": ""
+        },
+        {
+          "command": "acknowledge that conversation for me",
+          "expected": "messages.mark_read",
+          "observed": ""
+        },
+        {
+          "command": "tell conversation 14 i am running late",
+          "expected": "messages.send",
+          "observed": ""
+        },
+        {
+          "command": "write back to that thread saying yes",
+          "expected": "messages.send",
+          "observed": ""
+        },
+        {
+          "command": "shoot a note to the chat about tomorrow",
+          "expected": "messages.send",
+          "observed": ""
+        },
+        {
+          "command": "answer conversation 7 with on my way",
+          "expected": "messages.send",
+          "observed": ""
+        },
+        {
+          "command": "let them know in that thread that i agree",
+          "expected": "messages.send",
+          "observed": ""
+        },
+        {
+          "command": "put a message into the conversation i had open",
+          "expected": "messages.send",
+          "observed": ""
+        },
+        {
+          "command": "respond in chat 22 saying thanks",
+          "expected": "messages.send",
+          "observed": ""
+        },
+        {
+          "command": "get a message across to that thread",
+          "expected": "messages.send",
+          "observed": ""
+        },
+        {
+          "command": "wipe every unread notice in my likes",
+          "expected": "notifications.mark_all_read",
+          "observed": ""
+        },
+        {
+          "command": "zero out the whole notification list",
+          "expected": "notifications.mark_all_read",
+          "observed": ""
+        },
+        {
+          "command": "i want a clean slate on all my alerts",
+          "expected": "notifications.mark_all_read",
+          "observed": "crypto.alerts.list"
+        },
+        {
+          "command": "acknowledge everything sitting in my follows",
+          "expected": "notifications.mark_all_read",
+          "observed": ""
+        },
+        {
+          "command": "flush the entire notification badge",
+          "expected": "notifications.mark_all_read",
+          "observed": ""
+        },
+        {
+          "command": "settle all of them at once in comments",
+          "expected": "notifications.mark_all_read",
+          "observed": ""
+        },
+        {
+          "command": "nothing should be marked new anymore",
+          "expected": "notifications.mark_all_read",
+          "observed": ""
+        },
+        {
+          "command": "clear the whole stack of mentions",
+          "expected": "notifications.mark_all_read",
+          "observed": ""
+        },
+        {
+          "command": "notification 6 can be dismissed",
+          "expected": "notifications.mark_read",
+          "observed": ""
+        },
+        {
+          "command": "i saw that one, clear it",
+          "expected": "notifications.mark_read",
+          "observed": ""
+        },
+        {
+          "command": "get rid of the badge on that single alert",
+          "expected": "notifications.mark_read",
+          "observed": "crypto.alerts.delete"
+        },
+        {
+          "command": "acknowledge notification 21",
+          "expected": "notifications.mark_read",
+          "observed": ""
+        },
+        {
+          "command": "that one notice is dealt with",
+          "expected": "notifications.mark_read",
+          "observed": ""
+        },
+        {
+          "command": "settle just that one alert",
+          "expected": "notifications.mark_read",
+          "observed": "crypto.alerts.get"
+        },
+        {
+          "command": "stop highlighting notification 4",
+          "expected": "notifications.mark_read",
+          "observed": ""
+        },
+        {
+          "command": "i handled that notification already",
+          "expected": "notifications.mark_read",
+          "observed": ""
+        },
+        {
+          "command": "i do not want people knowing when i was last on",
+          "expected": "presence.privacy.update",
+          "observed": ""
+        },
+        {
+          "command": "make me invisible while i browse",
+          "expected": "presence.privacy.update",
+          "observed": ""
+        },
+        {
+          "command": "let people see when i am around again",
+          "expected": "presence.privacy.update",
+          "observed": ""
+        },
+        {
+          "command": "conceal my activity status",
+          "expected": "presence.privacy.update",
+          "observed": ""
+        },
+        {
+          "command": "turn my online indicator back on",
+          "expected": "presence.privacy.update",
+          "observed": ""
+        },
+        {
+          "command": "stop broadcasting that i am here",
+          "expected": "presence.privacy.update",
+          "observed": ""
+        },
+        {
+          "command": "keep my last active time private",
+          "expected": "presence.privacy.update",
+          "observed": ""
+        },
+        {
+          "command": "reveal my presence to others again",
+          "expected": "presence.privacy.update",
+          "observed": ""
+        },
+        {
+          "command": "make my about line say builder in port-au-prince",
+          "expected": "profile.bio.update",
+          "observed": ""
+        },
+        {
+          "command": "replace what my profile says about me",
+          "expected": "profile.bio.update",
+          "observed": ""
+        },
+        {
+          "command": "i want different wording on my profile blurb",
+          "expected": "profile.bio.update",
+          "observed": ""
+        },
+        {
+          "command": "swap out the description under my name",
+          "expected": "profile.bio.update",
+          "observed": ""
+        },
+        {
+          "command": "put something new in my about section",
+          "expected": "profile.bio.update",
+          "observed": ""
+        },
+        {
+          "command": "rewrite the little paragraph on my profile",
+          "expected": "profile.bio.update",
+          "observed": ""
+        },
+        {
+          "command": "change the text people read on my profile",
+          "expected": "profile.bio.update",
+          "observed": ""
+        },
+        {
+          "command": "my profile description needs new copy",
+          "expected": "profile.bio.update",
+          "observed": ""
+        },
+        {
+          "command": "i never want to hear from user 812 again",
+          "expected": "profile.block",
+          "observed": ""
+        },
+        {
+          "command": "cut off that account completely",
+          "expected": "profile.block",
+          "observed": ""
+        },
+        {
+          "command": "make sure they cannot reach me",
+          "expected": "profile.block",
+          "observed": ""
+        },
+        {
+          "command": "shut down contact from user 44",
+          "expected": "profile.block",
+          "observed": ""
+        },
+        {
+          "command": "keep that person away from my account",
+          "expected": "profile.block",
+          "observed": ""
+        },
+        {
+          "command": "prevent them from messaging or following me",
+          "expected": "profile.block",
+          "observed": ""
+        },
+        {
+          "command": "sever contact with user 205",
+          "expected": "profile.block",
+          "observed": ""
+        },
+        {
+          "command": "put a wall between me and that account",
+          "expected": "profile.block",
+          "observed": ""
+        },
+        {
+          "command": "i changed my mind about user 812, let them back",
+          "expected": "profile.unblock",
+          "observed": ""
+        },
+        {
+          "command": "lift the restriction on that account",
+          "expected": "profile.unblock",
+          "observed": ""
+        },
+        {
+          "command": "allow user 44 to reach me again",
+          "expected": "profile.unblock",
+          "observed": ""
+        },
+        {
+          "command": "undo what i did to that person",
+          "expected": "profile.unblock",
+          "observed": ""
+        },
+        {
+          "command": "restore contact with user 205",
+          "expected": "profile.unblock",
+          "observed": ""
+        },
+        {
+          "command": "they are fine now, open it back up",
+          "expected": "profile.unblock",
+          "observed": ""
+        },
+        {
+          "command": "take the barrier off that account",
+          "expected": "profile.unblock",
+          "observed": ""
+        },
+        {
+          "command": "reverse the block i placed",
+          "expected": "profile.unblock",
+          "observed": ""
+        },
+        {
+          "command": "leave a note under reel 7 saying nice work",
+          "expected": "reels.comment.create",
+          "observed": ""
+        },
+        {
+          "command": "write back on that reel",
+          "expected": "reels.comment.create",
+          "observed": ""
+        },
+        {
+          "command": "add my thoughts underneath the video",
+          "expected": "reels.comment.create",
+          "observed": ""
+        },
+        {
+          "command": "post something on reel 12 for me",
+          "expected": "reels.comment.create",
+          "observed": ""
+        },
+        {
+          "command": "respond to the reel i was watching",
+          "expected": "reels.comment.create",
+          "observed": ""
+        },
+        {
+          "command": "drop a line under that short",
+          "expected": "reels.comment.create",
+          "observed": ""
+        },
+        {
+          "command": "say congratulations on reel 4",
+          "expected": "reels.comment.create",
+          "observed": ""
+        },
+        {
+          "command": "put a message beneath the reel",
+          "expected": "reels.comment.create",
+          "observed": ""
+        },
+        {
+          "command": "pull comment 11 down",
+          "expected": "reels.comment.delete",
+          "observed": ""
+        },
+        {
+          "command": "i should not have written that, take it off",
+          "expected": "reels.comment.delete",
+          "observed": ""
+        },
+        {
+          "command": "erase my reply under the reel",
+          "expected": "reels.comment.delete",
+          "observed": ""
+        },
+        {
+          "command": "get rid of comment 2",
+          "expected": "reels.comment.delete",
+          "observed": ""
+        },
+        {
+          "command": "remove what i said beneath the video",
+          "expected": "reels.comment.delete",
+          "observed": ""
+        },
+        {
+          "command": "delete the note i left on that reel",
+          "expected": "reels.comment.delete",
+          "observed": ""
+        },
+        {
+          "command": "my comment needs to go",
+          "expected": "reels.comment.delete",
+          "observed": ""
+        },
+        {
+          "command": "take comment 17 off entirely",
+          "expected": "reels.comment.delete",
+          "observed": ""
+        },
+        {
+          "command": "i made a typo, fix comment 9",
+          "expected": "reels.comment.update",
+          "observed": ""
+        },
+        {
+          "command": "reword what i wrote under that reel",
+          "expected": "reels.comment.update",
+          "observed": ""
+        },
+        {
+          "command": "amend my note on the video",
+          "expected": "reels.comment.update",
+          "observed": ""
+        },
+        {
+          "command": "change comment 3 to say something else",
+          "expected": "reels.comment.update",
+          "observed": ""
+        },
+        {
+          "command": "my comment reads wrong, correct it",
+          "expected": "reels.comment.update",
+          "observed": ""
+        },
+        {
+          "command": "revise the thing i posted under the reel",
+          "expected": "reels.comment.update",
+          "observed": ""
+        },
+        {
+          "command": "update the wording of my reply on reel 5",
+          "expected": "reels.comment.update",
+          "observed": ""
+        },
+        {
+          "command": "edit what i said underneath",
+          "expected": "reels.comment.update",
+          "observed": ""
+        },
+        {
+          "command": "take reel 6 down",
+          "expected": "reels.delete",
+          "observed": ""
+        },
+        {
+          "command": "i want that video off my profile",
+          "expected": "reels.delete",
+          "observed": ""
+        },
+        {
+          "command": "get rid of the reel i posted",
+          "expected": "reels.delete",
+          "observed": ""
+        },
+        {
+          "command": "pull reel 18 permanently",
+          "expected": "reels.delete",
+          "observed": ""
+        },
+        {
+          "command": "remove the short video i uploaded",
+          "expected": "reels.delete",
+          "observed": ""
+        },
+        {
+          "command": "that reel should not be up anymore",
+          "expected": "reels.delete",
+          "observed": ""
+        },
+        {
+          "command": "erase reel 3 from my account",
+          "expected": "reels.delete",
+          "observed": ""
+        },
+        {
+          "command": "take my latest reel offline for good",
+          "expected": "reels.delete",
+          "observed": ""
+        },
+        {
+          "command": "the app is too bright at night",
+          "expected": "settings.appearance.theme.update",
+          "observed": ""
+        },
+        {
+          "command": "flip the interface to something darker",
+          "expected": "settings.appearance.theme.update",
+          "observed": ""
+        },
+        {
+          "command": "i want the pale look back",
+          "expected": "settings.appearance.theme.update",
+          "observed": ""
+        },
+        {
+          "command": "follow whatever my phone is set to",
+          "expected": "settings.appearance.theme.update",
+          "observed": ""
+        },
+        {
+          "command": "make the background black",
+          "expected": "settings.appearance.theme.update",
+          "observed": ""
+        },
+        {
+          "command": "switch the colours on the interface",
+          "expected": "settings.appearance.theme.update",
+          "observed": ""
+        },
+        {
+          "command": "put it on the night appearance",
+          "expected": "settings.appearance.theme.update",
+          "observed": ""
+        },
+        {
+          "command": "match the app to my device setting",
+          "expected": "settings.appearance.theme.update",
+          "observed": ""
+        },
+        {
+          "command": "only people i follow should be able to dm me",
+          "expected": "settings.privacy.audience.update",
+          "observed": ""
+        },
+        {
+          "command": "narrow down who is allowed to tag me",
+          "expected": "settings.privacy.audience.update",
+          "observed": ""
+        },
+        {
+          "command": "limit my stories to my followers",
+          "expected": "settings.privacy.audience.update",
+          "observed": "social.followers.list"
+        },
+        {
+          "command": "nobody outside my circle should mention me",
+          "expected": "settings.privacy.audience.update",
+          "observed": ""
+        },
+        {
+          "command": "tighten up who reaches my live videos",
+          "expected": "settings.privacy.audience.update",
+          "observed": ""
+        },
+        {
+          "command": "restrict the audience on what i post",
+          "expected": "settings.privacy.audience.update",
+          "observed": ""
+        },
+        {
+          "command": "change who is permitted to message me",
+          "expected": "settings.privacy.audience.update",
+          "observed": ""
+        },
+        {
+          "command": "lock down who can see my stories",
+          "expected": "settings.privacy.audience.update",
+          "observed": ""
+        },
+        {
+          "command": "what does post 12 say in english",
+          "expected": "translation.content.translate",
+          "observed": ""
+        },
+        {
+          "command": "render that comment in french for me",
+          "expected": "translation.content.translate",
+          "observed": ""
+        },
+        {
+          "command": "i cannot read this, put it in creole",
+          "expected": "translation.content.translate",
+          "observed": ""
+        },
+        {
+          "command": "convert reel 4 into spanish",
+          "expected": "translation.content.translate",
+          "observed": ""
+        },
+        {
+          "command": "give me an english version of that message",
+          "expected": "translation.content.translate",
+          "observed": ""
+        },
+        {
+          "command": "turn this into a language i understand",
+          "expected": "translation.content.translate",
+          "observed": ""
+        },
+        {
+          "command": "what is post 9 saying, translate it",
+          "expected": "translation.content.translate",
+          "observed": ""
+        },
+        {
+          "command": "read that back to me in portuguese",
+          "expected": "translation.content.translate",
+          "observed": ""
+        }
+      ],
+      "rate": 1.9,
+      "routed": 6
+    },
+    "co_authored": {
+      "bodies": 800,
+      "capabilities": 80,
+      "missed_to_nothing": 0,
+      "missed_to_wrong_capability": 0,
+      "misses": [],
+      "rate": 100.0,
+      "routed": 800
+    },
+    "held_out": {
+      "bodies": 24,
+      "capabilities": 8,
+      "missed_to_nothing": 24,
+      "missed_to_wrong_capability": 0,
+      "misses": [
+        {
+          "command": "scrap trigger 3 entirely",
+          "expected": "crypto.alerts.delete",
+          "observed": ""
+        },
+        {
+          "command": "i do not need that warning anymore",
+          "expected": "crypto.alerts.delete",
+          "observed": ""
+        },
+        {
+          "command": "wipe number 5 off my account",
+          "expected": "crypto.alerts.delete",
+          "observed": ""
+        },
+        {
+          "command": "what have i got set up to warn me on price",
+          "expected": "crypto.alerts.list",
+          "observed": ""
+        },
+        {
+          "command": "read back the triggers i configured",
+          "expected": "crypto.alerts.list",
+          "observed": ""
+        },
+        {
+          "command": "which coins will ping me",
+          "expected": "crypto.alerts.list",
+          "observed": ""
+        },
+        {
+          "command": "stop trigger 4 from bothering me",
+          "expected": "crypto.alerts.pause",
+          "observed": ""
+        },
+        {
+          "command": "silence number 2 until monday",
+          "expected": "crypto.alerts.pause",
+          "observed": ""
+        },
+        {
+          "command": "put warning 6 on hold",
+          "expected": "crypto.alerts.pause",
+          "observed": ""
+        },
+        {
+          "command": "what have i published lately",
+          "expected": "feed.posts.list",
+          "observed": ""
+        },
+        {
+          "command": "read back what i put out",
+          "expected": "feed.posts.list",
+          "observed": ""
+        },
+        {
+          "command": "everything i have written recently",
+          "expected": "feed.posts.list",
+          "observed": ""
+        },
+        {
+          "command": "what am i currently allowed to be pinged about",
+          "expected": "notifications.preference.read",
+          "observed": ""
+        },
+        {
+          "command": "how are my ping settings configured",
+          "expected": "notifications.preference.read",
+          "observed": ""
+        },
+        {
+          "command": "what noise does the app make for me",
+          "expected": "notifications.preference.read",
+          "observed": ""
+        },
+        {
+          "command": "dig around for something on the platform",
+          "expected": "search.global",
+          "observed": ""
+        },
+        {
+          "command": "look across everything for a keyword",
+          "expected": "search.global",
+          "observed": ""
+        },
+        {
+          "command": "hunt the whole site for that",
+          "expected": "search.global",
+          "observed": ""
+        },
+        {
+          "command": "start keeping up with account 42",
+          "expected": "social.follow",
+          "observed": ""
+        },
+        {
+          "command": "i want their stuff in my timeline",
+          "expected": "social.follow",
+          "observed": ""
+        },
+        {
+          "command": "add user 9 to who i keep up with",
+          "expected": "social.follow",
+          "observed": ""
+        },
+        {
+          "command": "who signed up to see my stuff",
+          "expected": "social.followers.list",
+          "observed": ""
+        },
+        {
+          "command": "read back my audience",
+          "expected": "social.followers.list",
+          "observed": ""
+        },
+        {
+          "command": "which accounts keep up with me",
+          "expected": "social.followers.list",
+          "observed": ""
+        }
+      ],
+      "rate": 0.0,
+      "routed": 0
+    }
+  },
+  "intents_per_capability": {
+    "blind_mean": 4.8,
+    "co_authored_mean": 3.2
+  },
+  "registry_intent_phrases": 449
+}

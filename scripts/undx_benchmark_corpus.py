@@ -1062,6 +1062,507 @@ COMMANDS: dict[str, tuple[str, ...]] = {
         "who can see me online today",
         "show my presence privacy for me",
     ),
+
+    # =========================================================================
+    # The forty that had no coverage at all.
+    #
+    # The baseline run of this benchmark reported 80 of 120 capabilities covered.
+    # The other 40 were not failing — they were absent, which is worse, because a
+    # capability with no case cannot regress in a way this file would notice. Every
+    # capability added by missions 05 and 06 was in that set: all thirteen of them
+    # shipped with tests proving their authorization and zero cases proving anyone
+    # could reach them by asking.
+    #
+    # These bodies avoid the suffix padding used above ("please", "now", "today",
+    # "for me"). Five spellings of one sentence measure the matcher once. Where the
+    # capability takes a required field with no default, roughly half the bodies
+    # name a value and half do not, because both endings are legitimate: naming one
+    # must be runnable, omitting it must come back as a question in the person's own
+    # words, and the split between those two is what `extraction_summary` reports.
+    # =========================================================================
+
+    # --- Crypto portfolio and watchlist -------------------------------------
+    "crypto.portfolio.summary": (
+        "how much is everything i own worth",
+        "give me the total on my crypto",
+        "where does my portfolio stand",
+        "am i up or down overall",
+        "what is the damage on my coins",
+        "run me the numbers on my portfolio",
+        "total value of what i am holding",
+        "how did my crypto end up",
+    ),
+    "crypto.portfolio.holdings.list": (
+        "which coins are actually in my portfolio",
+        "break down what i own by asset",
+        "list every position i have open",
+        "what did i end up buying",
+        "read me back my positions",
+        "enumerate the assets sitting in my account",
+        "which tokens do i still have",
+        "show me each thing i hold separately",
+    ),
+    "crypto.portfolio.history": (
+        "how has my portfolio moved over time",
+        "chart what my holdings have done",
+        "was my portfolio worth more last month",
+        "track my portfolio value across the last week",
+        "how did my portfolio trend recently",
+        "give me the shape of my portfolio over 90d",
+        "has my portfolio been climbing",
+        "compare my portfolio now against before",
+    ),
+    "crypto.portfolio.holding.add": (
+        "i picked up 2 eth, put it in my portfolio",
+        "log that i bought 0.5 btc at 61000",
+        "record a new position for me",
+        "add 100 sol to what i hold",
+        "i want to enter a purchase i made",
+        "note down that i acquired some ada",
+        "put a new coin into my holdings",
+        "register 15 matic against my account",
+    ),
+    "crypto.portfolio.holding.update": (
+        "the amount on holding 4 is wrong, fix it",
+        "correct my position to 3 eth",
+        "i need to amend one of my holdings",
+        "change item 7 to reflect the real cost basis",
+        "my average buy price is off, adjust it",
+        "revise the quantity on that position",
+        "edit what i recorded for holding 2",
+        "the numbers on one of my positions need updating",
+    ),
+    "crypto.portfolio.holding.delete": (
+        "i closed that position, take it out",
+        "get rid of holding 5",
+        "i offloaded my sol, remove it from my portfolio",
+        "erase item 3 from my holdings",
+        "that position is gone, drop it",
+        "take one of my coins out of the portfolio",
+        "i exited, delete the entry",
+        "remove holding 9 entirely",
+    ),
+    "crypto.watchlist.list": (
+        "which coins am i keeping an eye on",
+        "read back everything i am monitoring",
+        "what did i put on there to follow",
+        "list the assets i am tracking passively",
+        "remind me which tokens i flagged to watch",
+        "what is sitting in my monitoring list",
+        "show the coins i follow without owning",
+        "enumerate what i chose to keep tabs on",
+    ),
+    "crypto.watchlist.add": (
+        "keep an eye on doge for me",
+        "i want to follow avax without buying it",
+        "start monitoring link",
+        "throw solana onto the list i watch",
+        "add a coin to the ones i follow",
+        "begin tracking a new asset for me",
+        "i would like to monitor another token",
+        "put xrp somewhere i can keep watching it",
+    ),
+    "crypto.watchlist.remove": (
+        "i do not care about doge anymore, drop it",
+        "quit monitoring avax",
+        "take link off the list i follow",
+        "stop keeping tabs on solana",
+        "clear one of the coins i was tracking",
+        "i am done watching that token",
+        "remove an asset from my monitoring list",
+        "delist xrp from what i follow",
+    ),
+    "crypto.alerts.activity": (
+        "has anything i set actually gone off",
+        "which of my alerts fired recently",
+        "read me the trigger history",
+        "did alert 3 ever hit",
+        "what has been going off on my account",
+        "show me when my alerts last triggered",
+        "have any thresholds been crossed",
+        "give me the firing record for my alerts",
+    ),
+    "crypto.market.observations": (
+        "how has bitcoin been moving lately",
+        "pull the recent samples for eth",
+        "what does the price record look like for sol",
+        "give me the raw market data on bitcoin",
+        "show recent volume readings for ethereum",
+        "what prices have come in for that asset",
+        "read me the last few data points on btc",
+        "history of observations for solana",
+    ),
+    "crypto.market.window": (
+        "how much has btc shifted in the past hour",
+        "what did eth do over the last 30 minutes",
+        "movement on sol since this morning",
+        "how far has bitcoin travelled today",
+        "change in ethereum across the last 4 hours",
+        "did sol swing much in the last 15 minutes",
+        "percentage move on btc over a short window",
+        "how volatile has eth been in the last day",
+    ),
+
+    # --- Feed, reels and moderation -----------------------------------------
+    "feed.posts.delete": (
+        "take post 41 down for good",
+        "i regret posting that, get rid of it",
+        "wipe one of my posts off the feed",
+        "remove post 12 permanently",
+        "that post needs to come off my profile",
+        "erase what i published earlier",
+        "pull down the post i made yesterday",
+        "delete post 8 from my account",
+    ),
+    "feed.posts.hide": (
+        "i do not want to see post 33 again",
+        "stop surfacing this one to me",
+        "keep that post out of my feed",
+        "make post 19 disappear from my timeline",
+        "quit showing me this particular post",
+        "bury this one for me",
+        "i would rather not see that post again",
+        "hide post 5 from what i scroll",
+    ),
+    "feed.report": (
+        "this post breaks the rules, escalate it",
+        "send post 22 to moderation",
+        "i want the moderators to look at this comment",
+        "flag account 91 for harassment",
+        "raise a moderation case on that reel",
+        "this is spam, put it in front of your team",
+        "escalate comment 14 as abusive",
+        "somebody needs to review this content",
+    ),
+    "reels.delete": (
+        "take reel 6 down",
+        "i want that video off my profile",
+        "get rid of the reel i posted",
+        "pull reel 18 permanently",
+        "remove the short video i uploaded",
+        "that reel should not be up anymore",
+        "erase reel 3 from my account",
+        "take my latest reel offline for good",
+    ),
+    "reels.comment.create": (
+        "leave a note under reel 7 saying nice work",
+        "write back on that reel",
+        "add my thoughts underneath the video",
+        "post something on reel 12 for me",
+        "respond to the reel i was watching",
+        "drop a line under that short",
+        "say congratulations on reel 4",
+        "put a message beneath the reel",
+    ),
+    "reels.comment.update": (
+        "i made a typo, fix comment 9",
+        "reword what i wrote under that reel",
+        "amend my note on the video",
+        "change comment 3 to say something else",
+        "my comment reads wrong, correct it",
+        "revise the thing i posted under the reel",
+        "update the wording of my reply on reel 5",
+        "edit what i said underneath",
+    ),
+    "reels.comment.delete": (
+        "pull comment 11 down",
+        "i should not have written that, take it off",
+        "erase my reply under the reel",
+        "get rid of comment 2",
+        "remove what i said beneath the video",
+        "delete the note i left on that reel",
+        "my comment needs to go",
+        "take comment 17 off entirely",
+    ),
+
+    # --- Profile and social graph -------------------------------------------
+    "profile.bio.update": (
+        "make my about line say builder in port-au-prince",
+        "replace what my profile says about me",
+        "i want different wording on my profile blurb",
+        "swap out the description under my name",
+        "put something new in my about section",
+        "rewrite the little paragraph on my profile",
+        "change the text people read on my profile",
+        "my profile description needs new copy",
+    ),
+    "profile.block": (
+        "i never want to hear from user 812 again",
+        "cut off that account completely",
+        "make sure they cannot reach me",
+        "shut down contact from user 44",
+        "keep that person away from my account",
+        "prevent them from messaging or following me",
+        "sever contact with user 205",
+        "put a wall between me and that account",
+    ),
+    "profile.unblock": (
+        "i changed my mind about user 812, let them back",
+        "lift the restriction on that account",
+        "allow user 44 to reach me again",
+        "undo what i did to that person",
+        "restore contact with user 205",
+        "they are fine now, open it back up",
+        "take the barrier off that account",
+        "reverse the block i placed",
+    ),
+
+    # --- Marketplace --------------------------------------------------------
+    "marketplace.listing.create": (
+        "put my old iphone up for 250 dollars",
+        "i have something to sell, set it up",
+        "post an item on the marketplace for me",
+        "advertise a bike at 90 dollars",
+        "open a sale entry for my camera",
+        "i want to offer something to buyers",
+        "put a product up at 40 dollars",
+        "start selling an item through the marketplace",
+    ),
+    "marketplace.listing.update": (
+        "drop the price on listing 3 to 200",
+        "the description on my item is wrong",
+        "i want to change what my listing says",
+        "adjust listing 7 to 45 dollars",
+        "amend the details on the thing i am selling",
+        "revise the price of what i have up",
+        "the copy on listing 2 needs rewriting",
+        "fix something on my sale entry",
+    ),
+    "marketplace.listing.pause": (
+        "hold listing 5 for now, i will relist later",
+        "take my item off the market temporarily",
+        "i do not want buyers seeing this right now",
+        "suspend listing 9 without deleting it",
+        "put the sale on ice for a bit",
+        "make my item unavailable for a while",
+        "shelve listing 1 for the moment",
+        "stop showing my item to buyers for now",
+    ),
+    "marketplace.listing.resume": (
+        "bring listing 5 back online",
+        "my item can go back up for sale",
+        "reactivate what i shelved",
+        "make listing 9 visible to buyers again",
+        "take the item off hold",
+        "i am ready to sell that again",
+        "restore listing 1 to the marketplace",
+        "put the thing i paused back on the market",
+    ),
+    "marketplace.listing.delete": (
+        "that item sold elsewhere, take listing 3 down for good",
+        "i am done selling this, wipe the entry",
+        "permanently clear listing 8",
+        "get the item off the marketplace entirely",
+        "remove what i had for sale, i will not relist",
+        "erase my sale entry completely",
+        "listing 6 should not exist anymore",
+        "scrap the item i put up",
+    ),
+
+    # --- Messages and notifications -----------------------------------------
+    "messages.send": (
+        "tell conversation 14 i am running late",
+        "write back to that thread saying yes",
+        "shoot a note to the chat about tomorrow",
+        "answer conversation 7 with on my way",
+        "let them know in that thread that i agree",
+        "put a message into the conversation i had open",
+        "respond in chat 22 saying thanks",
+        "get a message across to that thread",
+    ),
+    "messages.mark_read": (
+        "clear the unread badge on conversation 9",
+        "i already saw that thread, stop flagging it",
+        "wipe the unread count on that chat",
+        "treat conversation 3 as caught up",
+        "the bold marker on that conversation can go",
+        "i have read everything in there",
+        "settle the unread state on chat 15",
+        "acknowledge that conversation for me",
+    ),
+    "notifications.mark_read": (
+        "notification 6 can be dismissed",
+        "i saw that one, clear it",
+        "get rid of the badge on that single alert",
+        "acknowledge notification 21",
+        "that one notice is dealt with",
+        "settle just that one alert",
+        "stop highlighting notification 4",
+        "i handled that notification already",
+    ),
+    "notifications.mark_all_read": (
+        "wipe every unread notice in my likes",
+        "zero out the whole notification list",
+        "i want a clean slate on all my alerts",
+        "acknowledge everything sitting in my follows",
+        "flush the entire notification badge",
+        "settle all of them at once in comments",
+        "nothing should be marked new anymore",
+        "clear the whole stack of mentions",
+    ),
+
+    # --- Settings, presence, localization, translation ----------------------
+    "settings.appearance.theme.update": (
+        "the app is too bright at night",
+        "flip the interface to something darker",
+        "i want the pale look back",
+        "follow whatever my phone is set to",
+        "make the background black",
+        "switch the colours on the interface",
+        "put it on the night appearance",
+        "match the app to my device setting",
+    ),
+    "settings.privacy.audience.update": (
+        "only people i follow should be able to dm me",
+        "narrow down who is allowed to tag me",
+        "limit my stories to my followers",
+        "nobody outside my circle should mention me",
+        "tighten up who reaches my live videos",
+        "restrict the audience on what i post",
+        "change who is permitted to message me",
+        "lock down who can see my stories",
+    ),
+    "presence.privacy.update": (
+        "i do not want people knowing when i was last on",
+        "make me invisible while i browse",
+        "let people see when i am around again",
+        "conceal my activity status",
+        "turn my online indicator back on",
+        "stop broadcasting that i am here",
+        "keep my last active time private",
+        "reveal my presence to others again",
+    ),
+    "localization.region.update": (
+        "run the app in haitian creole",
+        "i moved, my clock is wrong",
+        "show prices in euros instead",
+        "set me to the port-au-prince time zone",
+        "i want the interface in french",
+        "dates should be day first, not month first",
+        "change what country the app thinks i am in",
+        "switch my money display to gourdes",
+    ),
+    "localization.translation.update": (
+        "i am tired of being asked, just translate french automatically",
+        "leave spanish posts alone from now on",
+        "check with me before converting anything",
+        "handle creole posts without prompting me",
+        "quit converting english content",
+        "set what happens when a post is in another language",
+        "translate portuguese without asking each time",
+        "prompt me first for german content",
+    ),
+    "translation.content.translate": (
+        "what does post 12 say in english",
+        "render that comment in french for me",
+        "i cannot read this, put it in creole",
+        "convert reel 4 into spanish",
+        "give me an english version of that message",
+        "turn this into a language i understand",
+        "what is post 9 saying, translate it",
+        "read that back to me in portuguese",
+    ),
+
+    # --- Business -----------------------------------------------------------
+    "business.campaign.pause": (
+        "hold campaign 3, we are burning budget",
+        "stop my ads running for now",
+        "put the promotion on ice",
+        "halt campaign 7 temporarily",
+        "i need my advertising to stop spending",
+        "freeze the ad push i have going",
+        "suspend the campaign without ending it",
+        "take my ads out of rotation for a bit",
+    ),
+    "business.campaign.resume": (
+        "bring campaign 3 back up",
+        "start my ads spending again",
+        "take the promotion off hold",
+        "reactivate campaign 7",
+        "my advertising can go live again",
+        "unfreeze the ad push",
+        "put the campaign back into rotation",
+        "let my ads run once more",
+    ),
+    "business.profile.update": (
+        "our returns window is 30 days now, put that up",
+        "change what the business page says we sell",
+        "our shipping terms moved, update them",
+        "revise the company description on the page",
+        "the about section for my business is out of date",
+        "fix what customers read about our policies",
+        "amend the details on my business profile",
+        "our storefront copy needs changing",
+    ),
+}
+
+
+#: Paraphrases that must never be edited to make them pass.
+#:
+#: Writing the forty blocks above produced a result worth preserving as a permanent
+#: control. ``COMMANDS`` routed at 800/800 for the eighty capabilities it already
+#: covered and 6/320 for the forty it did not. The obvious reading — that the forty
+#: are somehow harder — is wrong, and the numbers say so: the forty carry *more*
+#: declared intent phrases each (mean 4.8) than the eighty do (mean 3.2).
+#:
+#: The real explanation is in ``match_capability``. It scores an intent phrase by
+#: whether the phrase's words appear **in order** in the message. There is no synonym
+#: table, no embedding, no similarity of meaning. A message routes when it reuses the
+#: registry's own words and misses when it does not. The eighty pass because their
+#: bodies were written alongside that matcher and reuse those words; the forty were
+#: written from the capability's *meaning* and do not.
+#:
+#: Which makes ``routes_to_capability`` at 4000/4000 a statement about how the corpus
+#: was authored, not about how well the router generalises. This dict is the control
+#: that proves it: paraphrases for capabilities the pre-existing corpus already covers
+#: at 100 percent, written the same blind way. It scored 0/24.
+#:
+#: The rule that gives it its value: **when one of these fails, the fix is in the
+#: router or the registry, never here.** Rewording an entry until it passes converts
+#: the control back into a mirror, which is the exact defect the module docstring
+#: above says this benchmark exists to remove. ``scripts/undx_routing_generalisation.py``
+#: reports the rate; it is a measurement, not a gate.
+HELD_OUT_CONTROL: dict[str, tuple[str, ...]] = {
+    "crypto.alerts.list": (
+        "what have i got set up to warn me on price",
+        "read back the triggers i configured",
+        "which coins will ping me",
+    ),
+    "crypto.alerts.pause": (
+        "stop trigger 4 from bothering me",
+        "silence number 2 until monday",
+        "put warning 6 on hold",
+    ),
+    "crypto.alerts.delete": (
+        "scrap trigger 3 entirely",
+        "i do not need that warning anymore",
+        "wipe number 5 off my account",
+    ),
+    "feed.posts.list": (
+        "what have i published lately",
+        "read back what i put out",
+        "everything i have written recently",
+    ),
+    "social.followers.list": (
+        "who signed up to see my stuff",
+        "read back my audience",
+        "which accounts keep up with me",
+    ),
+    "notifications.preference.read": (
+        "what am i currently allowed to be pinged about",
+        "how are my ping settings configured",
+        "what noise does the app make for me",
+    ),
+    "search.global": (
+        "dig around for something on the platform",
+        "look across everything for a keyword",
+        "hunt the whole site for that",
+    ),
+    "social.follow": (
+        "start keeping up with account 42",
+        "i want their stuff in my timeline",
+        "add user 9 to who i keep up with",
+    ),
 }
 
 

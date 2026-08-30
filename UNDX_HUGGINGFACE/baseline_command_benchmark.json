@@ -1,0 +1,325 @@
+{
+  "by_check": {
+    "a_named_id_selects_that_row": {
+      "passed": 42,
+      "total": 42
+    },
+    "does_not_reach_a_write": {
+      "passed": 20,
+      "total": 20
+    },
+    "governance_coherence": {
+      "passed": 120,
+      "total": 120
+    },
+    "intent_phrase_is_reachable": {
+      "passed": 450,
+      "total": 451
+    },
+    "renders_a_consistent_answer": {
+      "passed": 128,
+      "total": 144
+    },
+    "routes_to_capability": {
+      "passed": 4000,
+      "total": 4000
+    },
+    "routes_to_nothing": {
+      "passed": 30,
+      "total": 30
+    },
+    "runnable_or_answerable": {
+      "passed": 800,
+      "total": 800
+    },
+    "the_chooser_is_answerable": {
+      "passed": 50,
+      "total": 50
+    },
+    "the_question_is_answerable": {
+      "passed": 53,
+      "total": 53
+    }
+  },
+  "capabilities_covered": 80,
+  "capabilities_in_registry": 120,
+  "capabilities_uncovered": [
+    "business.campaign.pause",
+    "business.campaign.resume",
+    "business.profile.update",
+    "crypto.alerts.activity",
+    "crypto.market.observations",
+    "crypto.market.window",
+    "crypto.portfolio.history",
+    "crypto.portfolio.holding.add",
+    "crypto.portfolio.holding.delete",
+    "crypto.portfolio.holding.update",
+    "crypto.portfolio.holdings.list",
+    "crypto.portfolio.summary",
+    "crypto.watchlist.add",
+    "crypto.watchlist.list",
+    "crypto.watchlist.remove",
+    "feed.posts.delete",
+    "feed.posts.hide",
+    "feed.report",
+    "localization.region.update",
+    "localization.translation.update",
+    "marketplace.listing.create",
+    "marketplace.listing.delete",
+    "marketplace.listing.pause",
+    "marketplace.listing.resume",
+    "marketplace.listing.update",
+    "messages.mark_read",
+    "messages.send",
+    "notifications.mark_all_read",
+    "notifications.mark_read",
+    "presence.privacy.update",
+    "profile.bio.update",
+    "profile.block",
+    "profile.unblock",
+    "reels.comment.create",
+    "reels.comment.delete",
+    "reels.comment.update",
+    "reels.delete",
+    "settings.appearance.theme.update",
+    "settings.privacy.audience.update",
+    "translation.content.translate"
+  ],
+  "case_count": 5710,
+  "distinct_command_bodies": 800,
+  "distinct_commands": 4673,
+  "extraction_summary": {
+    "asks_a_question": 53,
+    "bodies": 800,
+    "by_capability": {
+      "crypto.alerts.create": 7,
+      "crypto.alerts.update": 8,
+      "feed.posts.like": 3,
+      "feed.posts.unlike": 2,
+      "groups.search": 1,
+      "live.search": 1,
+      "marketplace.order.status": 4,
+      "messages.draft": 9,
+      "messages.suggest": 5,
+      "notifications.explain": 5,
+      "profile.preferences.update": 7,
+      "saved.post.set": 1
+    },
+    "runnable": 747
+  },
+  "failure_count": 17,
+  "governance_notes": [
+    {
+      "action": "like",
+      "confirmation": {
+        "feed.posts.like": "never",
+        "reels.like": "contextual"
+      },
+      "kind": "sibling_confirmation_divergence"
+    },
+    {
+      "action": "unlike",
+      "confirmation": {
+        "feed.posts.unlike": "never",
+        "reels.unlike": "contextual"
+      },
+      "kind": "sibling_confirmation_divergence"
+    },
+    {
+      "action": "save",
+      "confirmation": {
+        "reels.save": "contextual",
+        "saved.post.set": "never"
+      },
+      "kind": "sibling_confirmation_divergence"
+    },
+    {
+      "capabilities": [
+        "business.profile.update",
+        "crypto.alerts.delete",
+        "crypto.alerts.update",
+        "crypto.portfolio.holding.delete",
+        "crypto.portfolio.holding.update",
+        "feed.posts.delete",
+        "feed.posts.hide",
+        "feed.report",
+        "localization.region.update",
+        "localization.translation.update",
+        "marketplace.listing.create",
+        "marketplace.listing.delete",
+        "marketplace.listing.update",
+        "messages.mark_read",
+        "messages.send",
+        "notifications.mark_all_read",
+        "notifications.mark_read",
+        "profile.bio.update",
+        "profile.preferences.update",
+        "reels.comment.delete",
+        "reels.comment.update",
+        "reels.delete",
+        "settings.appearance.theme.update",
+        "settings.privacy.audience.update"
+      ],
+      "kind": "write_without_undo"
+    },
+    {
+      "count": 17,
+      "crossing_a_write_boundary": [
+        [
+          "crypto.portfolio.holdings.list",
+          "my holdings",
+          "crypto.portfolio.holding.update",
+          "edit my holding"
+        ],
+        [
+          "crypto.portfolio.holdings.list",
+          "my holdings",
+          "crypto.portfolio.holding.update",
+          "update my holding"
+        ],
+        [
+          "crypto.watchlist.list",
+          "my watchlist",
+          "crypto.watchlist.add",
+          "add to my watchlist"
+        ],
+        [
+          "crypto.watchlist.list",
+          "my watchlist",
+          "crypto.watchlist.add",
+          "put on my watchlist"
+        ],
+        [
+          "crypto.watchlist.list",
+          "my watchlist",
+          "crypto.watchlist.remove",
+          "remove from my watchlist"
+        ],
+        [
+          "crypto.watchlist.list",
+          "my watchlist",
+          "crypto.watchlist.remove",
+          "take off my watchlist"
+        ],
+        [
+          "notifications.preference.read",
+          "my notifications",
+          "notifications.mark_all_read",
+          "clear my notifications"
+        ],
+        [
+          "notifications.preference.read",
+          "my notifications",
+          "notifications.mark_all_read",
+          "empty my notifications"
+        ]
+      ],
+      "kind": "overlapping_intent_surface",
+      "pairs": [
+        [
+          "crypto.alerts.list",
+          "my alerts",
+          "crypto.alerts.activity",
+          "did my alert trigger"
+        ],
+        [
+          "crypto.alerts.list",
+          "my alerts",
+          "crypto.alerts.activity",
+          "when did my alert go off"
+        ],
+        [
+          "crypto.alerts.list",
+          "which alerts",
+          "crypto.alerts.activity",
+          "which alerts fired"
+        ],
+        [
+          "crypto.portfolio.holdings.list",
+          "my holdings",
+          "crypto.portfolio.holding.update",
+          "edit my holding"
+        ],
+        [
+          "crypto.portfolio.holdings.list",
+          "my holdings",
+          "crypto.portfolio.holding.update",
+          "update my holding"
+        ],
+        [
+          "crypto.watchlist.list",
+          "my watchlist",
+          "crypto.watchlist.add",
+          "add to my watchlist"
+        ],
+        [
+          "crypto.watchlist.list",
+          "my watchlist",
+          "crypto.watchlist.add",
+          "put on my watchlist"
+        ],
+        [
+          "crypto.watchlist.list",
+          "my watchlist",
+          "crypto.watchlist.remove",
+          "remove from my watchlist"
+        ],
+        [
+          "crypto.watchlist.list",
+          "my watchlist",
+          "crypto.watchlist.remove",
+          "take off my watchlist"
+        ],
+        [
+          "feed.posts.get",
+          "show post",
+          "feed.post.performance.summary",
+          "show post performance"
+        ],
+        [
+          "feed.posts.list",
+          "search posts",
+          "search.content",
+          "search posts and reels"
+        ],
+        [
+          "messages.search",
+          "messages in conversation",
+          "messages.list",
+          "show messages in conversation"
+        ],
+        [
+          "notifications.preference.read",
+          "my notifications",
+          "notifications.group_summary",
+          "summarize my notifications"
+        ],
+        [
+          "notifications.preference.read",
+          "my notifications",
+          "notifications.inbox.list",
+          "show my notification inbox"
+        ],
+        [
+          "notifications.preference.read",
+          "my notifications",
+          "notifications.mark_all_read",
+          "clear my notifications"
+        ],
+        [
+          "notifications.preference.read",
+          "my notifications",
+          "notifications.mark_all_read",
+          "empty my notifications"
+        ],
+        [
+          "profile.get",
+          "summarize my account",
+          "account.health.summary",
+          "summarize my account health"
+        ]
+      ]
+    }
+  ],
+  "ok": false
+}
