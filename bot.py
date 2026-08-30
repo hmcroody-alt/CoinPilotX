@@ -50928,6 +50928,30 @@ def pulse_live_publish_replay_reel(live_id, *, trace_id=""):
         except Exception:
             logging.exception("PULSE_LIVE_REPLAY_REEL_EMIT_FAILED trace_id=%s live_id=%s reel_id=%s", trace_id, live_id, reel_id)
         logging.info("PULSE_LIVE_REPLAY_REEL_PUBLISHED trace_id=%s live_id=%s reel_id=%s post_id=%s", trace_id, live_id, reel_id, post_id)
+        # Followers hear about the replay when it is actually READY — from
+        # whichever async path (media_worker job or Mux webhook) won the
+        # replay_reel_id claim. created=True fires exactly once per session,
+        # so retries and races cannot double-notify.
+        try:
+            nconn = db(); nconn.row_factory = sqlite3.Row; ncur = nconn.cursor()
+            ncur.execute("SELECT * FROM users WHERE user_id=? LIMIT 1", (host_user_id,))
+            host = dict(ncur.fetchone() or {})
+            if host:
+                replay_notifications = pulse_notify_followers(
+                    ncur,
+                    host,
+                    "replay_available",
+                    "Live replay available",
+                    f"{pulse_actor_display_name(host)} has a new PulseSoc Live replay.",
+                    pulse_live_watch_url(live_id, "replay"),
+                    entity_type="live_replay",
+                    entity_id=str(live_id),
+                    metadata={"live_id": int(live_id), "reel_id": reel_id},
+                )
+                logging.info("PULSE_LIVE_REPLAY_NOTIFICATIONS trace_id=%s live_id=%s count=%s", trace_id, live_id, replay_notifications)
+            nconn.commit(); nconn.close()
+        except Exception:
+            logging.exception("PULSE_LIVE_REPLAY_NOTIFY_FAILED trace_id=%s live_id=%s", trace_id, live_id)
         return {"ok": True, "created": True, "reel_id": reel_id, "post_id": post_id}
     except Exception as exc:
         logging.exception("PULSE_LIVE_REPLAY_REEL_FAILED trace_id=%s live_id=%s error=%s", trace_id, live_id, exc)
@@ -50980,7 +51004,10 @@ def api_pulse_live_end(live_id):
         "UPDATE pulse_live_sessions SET status='ended', publish_state='ended', stream_health='ended', agora_recording_filename=COALESCE(NULLIF(?,''),agora_recording_filename), mux_recording_asset_id=COALESCE(NULLIF(?,''),mux_recording_asset_id), mux_recording_playback_id=COALESCE(NULLIF(?,''),mux_recording_playback_id), replay_url=COALESCE(NULLIF(?,''),replay_url), recording_status=?, recording_error=?, ended_at=?, updated_at=? WHERE id=?",
         (live.get("agora_recording_filename") or "", live.get("mux_recording_asset_id") or "", live.get("mux_recording_playback_id") or "", replay_url if replay_is_cdn else "", recording_status, recording_error, now, now, live_id),
     )
-    if has_recording_source and not replay_is_cdn:
+    if has_recording_source or replay_is_cdn:
+        # ZERO-DELAY LIVE END: every replay path — including sessions whose Mux
+        # playback id or CDN replay URL is already known when the host taps
+        # End — finalizes through the durable media_worker job, never inline.
         cur.execute(
             "SELECT id FROM pulse_jobs WHERE job_type='finalize_live_replay' AND target_type='live' AND target_id=? AND status IN ('pending','processing') LIMIT 1",
             (live_id,),
@@ -50997,64 +51024,40 @@ def api_pulse_live_end(live_id):
     share_options = live_archive_share_service.create_post_live_options(cur, live_id=live_id, replay_url=replay_url if replay_is_cdn else "")
     cur.execute("INSERT INTO pulse_live_chat (live_id, user_id, body, message_type, moderation_status, pinned, metadata_json, created_at) VALUES (?, ?, 'Live stream ended.', 'system', 'approved', 1, ?, ?)", (live_id, user["user_id"], json.dumps({"kind": "ended"}, default=str), now))
     conn.commit(); conn.close()
-    replay_playback_id = live.get("mux_recording_playback_id") or ""
-    replay_playback_url = f"https://stream.mux.com/{replay_playback_id}.m3u8" if replay_playback_id else (replay_url if replay_is_cdn else "")
-    replay_reel = {}
-    if replay_playback_url:
-        try:
-            replay_reel = pulse_live_publish_replay_reel(live_id, trace_id=f"live-end-{live_id}")
-        except Exception:
-            logging.exception("PULSE_LIVE_REPLAY_REEL_PUBLISH_FAILED live_id=%s", live_id)
-            replay_reel = {"ok": False, "reason": "exception"}
-        try:
-            pulse_video_index_upsert(
-                user["user_id"], "replay", live_id, 0, live.get("title") or "PulseSoc Live Replay",
-                live.get("description") or "", live.get("visibility") or "public",
-                media={
-                    "media_type": "video",
-                    "media_url": replay_url if replay_is_cdn else "",
-                    "playback_url": replay_playback_url,
-                    "mux_playback_id": replay_playback_id,
-                    "mux_asset_id": live.get("mux_recording_asset_id") or "",
-                    "mux_status": "ready",
-                    "processing_status": "ready",
-                    "thumbnail_url": live.get("thumbnail_url") or "",
-                },
-            )
-        except Exception:
-            logging.exception("PULSE_LIVE_REPLAY_INDEX_FAILED live_id=%s", live_id)
-        try:
-            conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-            replay_notifications = pulse_notify_followers(
-                cur,
-                user,
-                "replay_available",
-                "Live replay available",
-                f"{pulse_actor_display_name(user)} has a new PulseSoc Live replay.",
-                pulse_live_watch_url(live_id, "replay"),
-                entity_type="live_replay",
-                entity_id=str(live_id),
-                metadata={"live_id": live_id, "replay_url_present": True},
-            )
-            conn.commit(); conn.close()
-            logging.info("PULSE_LIVE_REPLAY_NOTIFICATIONS live_id=%s count=%s", live_id, replay_notifications)
-        except Exception:
-            logging.exception("PULSE_LIVE_REPLAY_NOTIFY_FAILED live_id=%s", live_id)
+    # ZERO-DELAY LIVE END: nothing below this line may do media work, replay
+    # publication, video indexing, or follower fan-out. The host is waiting on
+    # this response to leave the screen; everything downstream belongs to the
+    # durable finalize_live_replay job (media_worker), which resolves the
+    # recording, flips the feed post to its replay representation, publishes
+    # the reel idempotently, and notifies followers when the replay is READY.
     try:
         pulse_emit_event("livestream_ended", {"live_id": live_id, "message": "Live stream ended."}, user["user_id"], None)
     except Exception:
         logging.exception("PULSE_LIVE_END_EMIT_FAILED live_id=%s", live_id)
+    replay_status = (
+        "ready" if replay_is_cdn
+        else "processing" if has_recording_source
+        else "unavailable"
+    )
+    logging.info(
+        "PULSE_LIVE_END_ACK live_id=%s replay_status=%s recording_status=%s",
+        live_id, replay_status, recording_status,
+    )
     return jsonify({
         "ok": True,
+        "status": "ended",
         "message": "Live stream ended.",
         "live_id": live_id,
         "feed_post_id": feed_post_id,
         "recording_status": recording_status,
         "recording_error": recording_error,
+        "replay_status": replay_status,
         "replay_url": replay_url if replay_is_cdn else "",
         "replay_available": replay_is_cdn,
-        "replay_reel_id": safe_int(replay_reel.get("reel_id"), 0),
-        "replay_reel_post_id": safe_int(replay_reel.get("post_id"), 0),
+        # The replay reel no longer exists at end time by design; it is
+        # published asynchronously. Keys retained for response compatibility.
+        "replay_reel_id": 0,
+        "replay_reel_post_id": 0,
         "post_live_options": share_options,
     })
 

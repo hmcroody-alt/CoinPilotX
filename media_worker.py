@@ -673,6 +673,22 @@ def _process_live_replay_job(cur, job) -> None:
     if not live or (live.get("status") or "").lower() != "ended":
         _complete_job(cur, int(job.get("id") or 0), "done")
         return
+    if (live.get("recording_status") or "") == "replay_ready" and str(live.get("replay_url") or "").strip():
+        # CDN-supplied replay: the host attached a durable replay URL at end
+        # time, so there is no recording to cut. The end endpoint no longer
+        # publishes inline (zero-delay live end); this branch flips the feed
+        # post to its playable replay and hands the reel publication to the
+        # idempotent publish step below.
+        bot.live_feed_service.mark_live_feed_replay_ready(
+            cur,
+            live_id=live_id,
+            playback_url=str(live.get("replay_url") or "").strip(),
+            preview_url=live.get("thumbnail_url") or "",
+            viewer_count=int(live.get("viewer_count") or 0),
+        )
+        REPLAYS_READY_TO_PUBLISH.add(live_id)
+        _complete_job(cur, int(job.get("id") or 0), "done")
+        return
     asset_id = str(live.get("mux_recording_asset_id") or "")
     live_stream_id = str(live.get("mux_live_stream_id") or "")
     if not asset_id and live_stream_id and not live.get("agora_recording_sid"):

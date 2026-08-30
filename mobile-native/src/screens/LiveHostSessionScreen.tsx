@@ -305,10 +305,24 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
     if (endedRef.current) return;
     endedRef.current = true;
     setEnding(true);
-    await endLive(liveId).catch(() => undefined);
+    const endTappedAt = Date.now();
+    // ZERO-DELAY LIVE END: the server acknowledgement must never hold the host
+    // on this screen. Fire the end call immediately, tear down local media
+    // through the one verified stopBroadcast path (unchanged), and release the
+    // UI. Replay finalization is server-owned and continues in the background
+    // whatever this device does next — including being killed.
+    const endAck = endLive(liveId).catch(() => null);
     await room.stopBroadcast("host_ended").catch(() => undefined);
-    setEnding(false);
+    console.log(`[live-end] navigation released in ${Date.now() - endTappedAt}ms`);
     navigation.goBack();
+    endAck.then((result) => {
+      console.log(`[live-end] server ack in ${Date.now() - endTappedAt}ms status=${result ? result.recordingStatus || "ok" : "failed"}`);
+      if (!result) {
+        // One best-effort retry; the backend replay reconciler also repairs a
+        // session whose end call never landed, so this is belt-and-braces.
+        endLive(liveId).catch(() => undefined);
+      }
+    });
   }, [liveId, navigation, room]);
 
   const confirmEnd = useCallback(() => {

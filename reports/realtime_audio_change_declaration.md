@@ -1458,3 +1458,81 @@ device (P3r7or), which is what the lock change exists to enable.
 The app is installed on a device in this range, but no call was placed and no
 livestream was started or listened to. No audible verification is claimed.
 Section 7 of `reports/realtime_audio_verified_baseline.md` remains open.
+
+## Zero-delay live end addendum (2026-08-29)
+
+This addendum declares the protected-file change on branch
+`release/full-sweep-20260826` for the ZERO-DELAY LIVE END / REPLAY FINALIZATION
+mission.
+
+### Why the change is required
+
+The host "End Live" flow blocked the UI on a network round-trip:
+`finishBroadcast` in `LiveHostSessionScreen.tsx` awaited `endLive(liveId)`
+(POST /api/pulse/live/<id>/end) before `room.stopBroadcast()` and
+`navigation.goBack()`. On slow networks — or when the backend ran its
+synchronous replay-publish branch — the host stared at a spinner for seconds.
+Mission targets are end tap → visual ack <100ms and → usable UI <500ms. The
+blocking `await` lives inside this protected screen; no change outside it can
+remove the wait.
+
+### Which feature required it
+
+PulseSoc Live host end-of-broadcast flow (background replay finalization). Not
+an audio feature: this is a call-ordering change around the existing, unmodified
+broadcast teardown.
+
+### Which protected files changed
+
+| File | Category | Change |
+|---|---|---|
+| `mobile-native/src/screens/LiveHostSessionScreen.tsx` | livestream_audio_adapter | `finishBroadcast` only: `endLive` is fired without `await` (one retry on failure); `await room.stopBroadcast("host_ended")` is byte-identical and still awaited before `navigation.goBack()`; pre-navigation `setEnding(false)` removed to avoid unmounted setState; telemetry logs added. |
+
+Explicitly NOT changed: `mobile-native/src/api/live.ts`
+(backend_token_and_room_policy), LiveKit transport, `stopBroadcast`
+implementation, microphone/audio path, AVAudioSession, token/room policy.
+`bot.py` was edited in the same mission but its diff matches zero
+`backend_diff_patterns` (verified with
+`scripts/realtime_audio_change_gate.py`).
+
+### Expected behavior change
+
+Before: tap End → await endLive POST → stopBroadcast → goBack.
+After: tap End → fire endLive (non-blocking) → await stopBroadcast (unchanged)
+→ goBack immediately; server ack resolves in the background and is logged.
+Audio teardown ordering relative to unmount is identical — only the network
+POST left the critical path.
+
+### Regression risk
+
+Low. Risks considered: (1) endLive failing after navigation — mitigated by one
+retry, the media_worker reconciler (`reconcile_live_replay_backlog`, 10-min
+stale-job recovery) and the Mux `video.asset.ready` webhook, each of which
+finalizes the replay independently and idempotently
+(`replay_reel_id` claim in `pulse_live_publish_replay_reel`); (2) double-end —
+`endedRef` guard unchanged, backend `/end` idempotent; (3) setState after
+unmount — the offending call was removed.
+
+### Tests run
+
+Recorded in the mission final report for this commit: `npx tsc --noEmit`,
+Jest realtime-audio architecture suites (no forbidden markers introduced: no
+`room.connect(`/`room.disconnect(`, no livekit-client import, no
+AVAudioSession/setAudioModeAsync), `python3 -m unittest
+tests.protection.test_realtime_audio_architecture`, and
+`scripts/realtime_audio_change_gate.py --base <premium-commit> --head HEAD`.
+
+### Physical validation required
+
+YES — pending, out of sandbox, on device "p3r7or" + iPhone 17 Pro Max
+simulator: 5s/30s/multi-minute lives (end releases UI <500ms; audio audible
+throughout; replay tile progresses "Preparing replay…" → playable); kill app
+immediately after end tap (replay still finalizes); start a new live after
+ending one (mic publishes normally). No audible verification is claimed in this
+declaration.
+
+### Rollback procedure
+
+Single-commit `git revert` restores the awaited ordering and the synchronous
+backend branch. No schema changes; `pulse_jobs` rows enqueued by the new path
+remain valid for the old worker logic. Safe at any time.
