@@ -52,6 +52,7 @@ jest.mock("../../api/marketplace", () => ({
 import { businessOsHubSections, businessOsLaunchSections, businessOsNavigationArgs } from "../../api/businessOs";
 import { preloadNamespaces } from "../../i18n/engine";
 import { businessModuleId, isLaunchGated } from "../../launch/readiness";
+import { businessOsSectionHasLanding } from "../../launch/sectionCapabilities";
 import { BUSINESS_OS_LOAD_TIMEOUT_MS, BusinessOsScreen, resetBusinessOsFreshness } from "../BusinessOsScreen";
 
 /**
@@ -171,11 +172,19 @@ describe("Business OS hub", () => {
     });
   });
 
-  it("dispatches the navigation the registry describes when a ready tile is tapped", async () => {
+  /**
+   * A section with nothing missing keeps the behaviour it always had. This is
+   * the assertion that stops the landing layer from becoming a toll booth in
+   * front of finished work — if it ever starts appearing for a complete
+   * section, this test is what says so.
+   */
+  it("dispatches the navigation the registry describes when a finished tile is tapped", async () => {
     const view = await renderHub();
-    const ready = businessOsLaunchSections().filter((section) => !isLaunchGated(businessModuleId(section.key)));
-    expect(ready.length).toBeGreaterThan(0);
-    for (const section of ready) {
+    const direct = businessOsLaunchSections().filter(
+      (section) => !isLaunchGated(businessModuleId(section.key)) && !businessOsSectionHasLanding(section.key)
+    );
+    expect(direct.length).toBeGreaterThan(0);
+    for (const section of direct) {
       view.navigation.navigate.mockClear();
       fireEvent.press(view.getByLabelText(tileLabel(section)));
       const [route, params] = businessOsNavigationArgs(section);
@@ -183,28 +192,52 @@ describe("Business OS hub", () => {
     }
   });
 
+  it("opens the section's landing layer when part of it is still being built", async () => {
+    const view = await renderHub();
+    const withLanding = businessOsLaunchSections().filter((section) => businessOsSectionHasLanding(section.key));
+    expect(withLanding.length).toBeGreaterThan(0);
+    for (const section of withLanding) {
+      view.navigation.navigate.mockClear();
+      fireEvent.press(view.getByLabelText(tileLabel(section)));
+      // The landing is pushed by section key, so it stays correct if the
+      // section is ever repointed at a different destination.
+      expect(view.navigation.navigate).toHaveBeenCalledWith("BusinessOsSection", { section: section.key });
+    }
+  });
+
   /**
    * The half of the gate that actually protects anything.
    *
-   * A locked tile that still navigated would be worse than no gate at all: the
-   * badge would promise the module is not ready while the tap dropped the user
-   * into it anyway. So the assertion is not "something happened" but the
-   * conjunction — the sheet opened AND `navigate` was never called.
+   * A locked tile that still navigated into its module would be worse than no
+   * gate at all: the badge would promise the module is not ready while the tap
+   * dropped the user into it anyway. What the tap opens instead — the landing
+   * that explains the section, or the Coming Soon message when there is nothing
+   * written down to explain — is secondary; that it never opens the module is
+   * the property.
    */
-  it("opens Coming Soon instead of navigating when a gated tile is tapped", async () => {
+  it("never navigates into a gated section", async () => {
     const gated = businessOsLaunchSections().filter((section) => isLaunchGated(businessModuleId(section.key)));
     expect(gated.length).toBeGreaterThan(0);
 
     for (const section of gated) {
       const view = await renderHub();
       fireEvent.press(view.getByLabelText(tileLabel(section)));
-      expect(view.getByTestId(`coming-soon-${businessModuleId(section.key)}`)).toBeTruthy();
-      expect(view.navigation.navigate).not.toHaveBeenCalled();
 
-      // Dismissing returns the user to the hub rather than stranding them in a
-      // modal whose only other exit is force-quitting the app.
-      fireEvent.press(view.getByTestId("coming-soon-dismiss"));
-      await waitFor(() => expect(view.queryByTestId(`coming-soon-${businessModuleId(section.key)}`)).toBeNull());
+      const dispatched = view.navigation.navigate.mock.calls.map(([route]) => route);
+      expect(dispatched).not.toContain(section.route);
+
+      if (businessOsSectionHasLanding(section.key)) {
+        expect(dispatched).toContain("BusinessOsSection");
+      } else {
+        // The fallback for a section gated without its capabilities written
+        // down. Nothing is in that state today, so this branch is the one that
+        // keeps working when something arrives in it.
+        expect(view.getByTestId(`coming-soon-${businessModuleId(section.key)}`)).toBeTruthy();
+        // Dismissing returns the user to the hub rather than stranding them in
+        // a modal whose only other exit is force-quitting the app.
+        fireEvent.press(view.getByTestId("coming-soon-dismiss"));
+        await waitFor(() => expect(view.queryByTestId(`coming-soon-${businessModuleId(section.key)}`)).toBeNull());
+      }
       view.unmount();
     }
   });

@@ -86,7 +86,11 @@ describe("launch readiness table", () => {
     // compile time and take the runtime check with it.
     const sectionKeys = new Set<string>(BUSINESS_OS_SECTIONS.map((section) => section.key));
     GATED_IDS.filter((id) => id.startsWith("business:")).forEach((id) => {
-      expect(sectionKeys.has(id.slice("business:".length))).toBe(true);
+      // `business:store` and `business:store.views` are the same check on the
+      // part before the dot; the capability half is checked against the
+      // registry in the suite below.
+      const [sectionKey] = id.slice("business:".length).split(".");
+      expect(sectionKeys.has(sectionKey)).toBe(true);
     });
     // Presence has one gated action and it is the one the audit found: the
     // per-presence Business OS entry that navigates without a page id.

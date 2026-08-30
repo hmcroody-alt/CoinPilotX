@@ -1,5 +1,6 @@
 import { NavigatorScreenParams } from "@react-navigation/native";
 
+import type { BusinessOsSectionKey } from "../api/businessOs";
 import type { MarketplaceListing } from "../api/marketplace";
 import type { MarketplaceFulfillmentKind } from "../api/marketplaceFulfillment";
 
@@ -339,6 +340,12 @@ export type RootStackParamList = {
    * the legacy `Events` live-discovery route, which is untouched.
    */
   BusinessOsEvents: { title?: string } | undefined;
+  /**
+   * A Business OS section's landing layer — its purpose, what it does today and
+   * what is still coming. Pushed instead of the section itself when the section
+   * has locked capabilities; see `launch/sectionCapabilities.ts`.
+   */
+  BusinessOsSection: { section: BusinessOsSectionKey };
   /**
    * The unified Activity feed (the bell in every seller header). Aggregates
    * social / marketplace / orders / ads / payments / system notifications; its

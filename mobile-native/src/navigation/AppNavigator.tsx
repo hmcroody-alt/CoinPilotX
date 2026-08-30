@@ -9,6 +9,7 @@ import { AppState } from "react-native";
 // local state — a second source alongside `UnreadCountStore`, which is how the
 // bell and the seller headers came to disagree. `navigation/__tests__/badgeSources.test.ts`
 // fails if this import comes back.
+import { businessOsSection } from "../api/businessOs";
 import { getMyProfile, PulseProfile } from "../api/profile";
 import { MasterNavigationDrawer } from "../components/MasterNavigationDrawer";
 import { MinimizedCallBanner } from "../calls/MinimizedCallBanner";
@@ -36,6 +37,7 @@ import { BusinessBuyerPreviewScreen } from "../screens/BusinessBuyerPreviewScree
 import { BusinessHubRoute } from "../screens/BusinessHubRoute";
 import { BusinessOsInsightsScreen } from "../screens/BusinessOsInsightsScreen";
 import { BusinessOsPaymentsScreen } from "../screens/BusinessOsPaymentsScreen";
+import { BusinessOsSectionScreen } from "../screens/BusinessOsSectionScreen";
 import { RewardsScreen } from "../screens/RewardsScreen";
 import { BusinessProfileScreen } from "../screens/BusinessProfileScreen";
 import { EventsRoute } from "../screens/EventsRoute";
@@ -427,6 +429,18 @@ export function AppNavigator() {
         name="BusinessOsEvents"
         component={EventsRoute}
         options={{ headerShown: false }}
+      />
+      {/* A section's landing layer — purpose, what works today, what is coming.
+          Pushed by the Business OS grid in place of the section itself when the
+          section has locked capabilities. It renders through `Screen`, which has
+          no back affordance of its own, so it keeps the stack header exactly as
+          `BusinessOs` above does. The title is the section's own name. */}
+      <Stack.Screen
+        name="BusinessOsSection"
+        component={BusinessOsSectionScreen}
+        options={({ route }) => ({
+          title: businessOsSection(route.params?.section)?.label || t("common:screens.businessOs")
+        })}
       />
       {/* `ActivityRoute` renders the unified Activity feed reached from every
           seller header's bell. It draws its own navy header (back / Activity /
