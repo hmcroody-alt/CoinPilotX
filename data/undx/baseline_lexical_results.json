@@ -1,0 +1,874 @@
+{
+  "control_name": "lexical_baseline_pre_stage_14",
+  "purpose": "Immutable comparison control for UNDX semantic retrieval. Frozen before any change to the lexical implementation. Do not regenerate to make a later result look better.",
+  "frozen_at_utc": "2026-08-30T17:00:26+00:00",
+  "provenance_sha256": {
+    "services/undx_platform_knowledge.py": "f7e926a42a0ed3ba541dc290fff61fd41f71a4439ee9d68d8f3b5f8efe85abb8",
+    "data/undx/semantic_retrieval_holdout.json": "a90545587d0e0bb01d9837a9d243a7ceca97c5592dc3a7a0b6fb2d0939cd5b6f",
+    "scripts/undx_semantic_retrieval_benchmark.py": "317edc72c74e5262f799a6a71ab3bba8cb213a693cfbd8320bed85646b4e09ec"
+  },
+  "holdout": "data/undx/semantic_retrieval_holdout.json",
+  "positive_cases": 70,
+  "negative_cases": 4,
+  "top_k": [
+    1,
+    3,
+    5
+  ],
+  "headline": {
+    "recall_at_1": 0.3,
+    "recall_at_3": 0.3857,
+    "recall_at_5": 0.4143,
+    "mrr": 0.35,
+    "empty_result_cases": 13,
+    "miss_count": 41,
+    "latency_p50_ms": 1.3,
+    "latency_p95_ms": 1.84
+  },
+  "recall_at_5_by_category": {
+    "exact": 1.0,
+    "indirect": 0.0,
+    "paraphrase": 0.2903,
+    "slang": 0.3333,
+    "terminology": 0.875,
+    "typo": 0.4286
+  },
+  "recall_at_5_by_language": {
+    "en": 0.5435,
+    "es": 0.25,
+    "fr": 0.125,
+    "ht": 0.125
+  },
+  "negative_controls": {
+    "cases": 4,
+    "stayed_empty": 2,
+    "leaked": [
+      {
+        "id": "ng-03",
+        "query": "recipe for beef bourguignon",
+        "returned": [
+          "performance_traces",
+          "platform_fee_rules",
+          "platform_payouts"
+        ]
+      },
+      {
+        "id": "ng-04",
+        "query": "who won the 1998 world cup",
+        "returned": [
+          "arena_world_events",
+          "arena_world_history",
+          "arena_world_state"
+        ]
+      }
+    ],
+    "pass": false
+  },
+  "per_case": [
+    {
+      "id": "ex-01",
+      "language": "en",
+      "category": "exact",
+      "rank": 1,
+      "returned": [
+        "notificationpreferences",
+        "notifications"
+      ]
+    },
+    {
+      "id": "ex-02",
+      "language": "en",
+      "category": "exact",
+      "rank": 1,
+      "returned": [
+        "marketplace",
+        "marketplace",
+        "marketplace_buyer_interest",
+        "marketplace_listings",
+        "marketplace_merchant_applications"
+      ]
+    },
+    {
+      "id": "ex-03",
+      "language": "en",
+      "category": "exact",
+      "rank": 1,
+      "returned": [
+        "cryptoalertmanagement"
+      ]
+    },
+    {
+      "id": "ex-04",
+      "language": "en",
+      "category": "exact",
+      "rank": 1,
+      "returned": [
+        "creatorstudio",
+        "creatorstudioalias"
+      ]
+    },
+    {
+      "id": "ex-05",
+      "language": "en",
+      "category": "exact",
+      "rank": 1,
+      "returned": [
+        "merchantdashboard"
+      ]
+    },
+    {
+      "id": "ex-06",
+      "language": "en",
+      "category": "exact",
+      "rank": 1,
+      "returned": [
+        "scamshield",
+        "support"
+      ]
+    },
+    {
+      "id": "ex-07",
+      "language": "en",
+      "category": "exact",
+      "rank": 1,
+      "returned": [
+        "verificationcenter",
+        "verificationwebcenter"
+      ]
+    },
+    {
+      "id": "ex-08",
+      "language": "en",
+      "category": "exact",
+      "rank": 1,
+      "returned": [
+        "buyerorders",
+        "orders",
+        "buyerorderdetail",
+        "buyerordersdashboard",
+        "buyerpurchases"
+      ]
+    },
+    {
+      "id": "pa-01",
+      "language": "en",
+      "category": "paraphrase",
+      "rank": 1,
+      "returned": [
+        "notifications",
+        "notifications",
+        "notifications",
+        "notifications",
+        "auth"
+      ]
+    },
+    {
+      "id": "pa-02",
+      "language": "en",
+      "category": "paraphrase",
+      "rank": null,
+      "returned": [
+        "scam_scans",
+        "scam_shield_scans",
+        "calls",
+        "live",
+        "messenger"
+      ]
+    },
+    {
+      "id": "pa-03",
+      "language": "en",
+      "category": "paraphrase",
+      "rank": 2,
+      "returned": [
+        "marketplace",
+        "merchantapply",
+        "post /api/pulse/marketplace/seller/apply",
+        "admin_approvals",
+        "marketplace_merchant_applications"
+      ]
+    },
+    {
+      "id": "pa-04",
+      "language": "en",
+      "category": "paraphrase",
+      "rank": null,
+      "returned": [
+        "account",
+        "account_recovery_tokens",
+        "conversion_funnel_events",
+        "pulse_ad_account_profiles",
+        "pulse_ad_accounts"
+      ]
+    },
+    {
+      "id": "pa-05",
+      "language": "en",
+      "category": "paraphrase",
+      "rank": null,
+      "returned": [
+        "ad_videos",
+        "pulse_video_categories",
+        "pulse_video_comments",
+        "pulse_video_reactions",
+        "pulse_video_views"
+      ]
+    },
+    {
+      "id": "pa-06",
+      "language": "en",
+      "category": "paraphrase",
+      "rank": 1,
+      "returned": [
+        "saved",
+        "saved",
+        "saved",
+        "arena_academy_paths",
+        "arena_academy_progress"
+      ]
+    },
+    {
+      "id": "pa-07",
+      "language": "en",
+      "category": "paraphrase",
+      "rank": null,
+      "returned": [
+        "pulse_ad_platform_settings",
+        "get /api/business-os/advertising/ad-sets/<ad_set_id>/creatives",
+        "get /api/business-os/advertising/campaigns/<campaign_id>/ad-sets",
+        "alert_delivery_jobs",
+        "alert_events"
+      ]
+    },
+    {
+      "id": "pa-08",
+      "language": "en",
+      "category": "paraphrase",
+      "rank": null,
+      "returned": [
+        "business_os_undx_emergency_stops",
+        "undxactions",
+        "post /api/auto-signals/stop",
+        "post /api/business-os/undx/emergency-stop"
+      ]
+    },
+    {
+      "id": "pa-09",
+      "language": "en",
+      "category": "paraphrase",
+      "rank": 1,
+      "returned": [
+        "profile",
+        "profile",
+        "profileedit",
+        "arena_profiles",
+        "creator_profiles"
+      ]
+    },
+    {
+      "id": "pa-10",
+      "language": "en",
+      "category": "paraphrase",
+      "rank": 2,
+      "returned": [
+        "live",
+        "postscheduler",
+        "postschedulerpulsealias",
+        "notification_schedules",
+        "performance_traces"
+      ]
+    },
+    {
+      "id": "sl-01",
+      "language": "en",
+      "category": "slang",
+      "rank": null,
+      "returned": []
+    },
+    {
+      "id": "sl-02",
+      "language": "en",
+      "category": "slang",
+      "rank": 1,
+      "returned": [
+        "live",
+        "live",
+        "alert_delivery_jobs",
+        "arena_live_matches",
+        "delivery_logs"
+      ]
+    },
+    {
+      "id": "sl-03",
+      "language": "en",
+      "category": "slang",
+      "rank": 1,
+      "returned": [
+        "premium",
+        "premium",
+        "premium_entitlements",
+        "pulse_premium_audit_logs",
+        "pulse_premium_entitlements"
+      ]
+    },
+    {
+      "id": "sl-04",
+      "language": "en",
+      "category": "slang",
+      "rank": null,
+      "returned": [
+        "creator",
+        "creator_payouts",
+        "creator_payouts_placeholder",
+        "checkout_attempts",
+        "creator_balances"
+      ]
+    },
+    {
+      "id": "sl-05",
+      "language": "en",
+      "category": "slang",
+      "rank": null,
+      "returned": [
+        "reels"
+      ]
+    },
+    {
+      "id": "sl-06",
+      "language": "en",
+      "category": "slang",
+      "rank": null,
+      "returned": [
+        "dashboard",
+        "dashboard",
+        "creator_dashboard_metrics",
+        "dashboard_audit_logs",
+        "dashboard_categories"
+      ]
+    },
+    {
+      "id": "ty-01",
+      "language": "en",
+      "category": "typo",
+      "rank": null,
+      "returned": []
+    },
+    {
+      "id": "ty-02",
+      "language": "en",
+      "category": "typo",
+      "rank": 2,
+      "returned": [
+        "marketplace_listings",
+        "marketplace",
+        "undxactions",
+        "get /api/pulse/marketplace/seller/listings",
+        "patch,post /api/pulse/marketplace/seller/listings/<int:listing_id>"
+      ]
+    },
+    {
+      "id": "ty-03",
+      "language": "en",
+      "category": "typo",
+      "rank": 1,
+      "returned": [
+        "messenger",
+        "messengerordering",
+        "messenger"
+      ]
+    },
+    {
+      "id": "ty-04",
+      "language": "en",
+      "category": "typo",
+      "rank": null,
+      "returned": [
+        "crypto_news_cache",
+        "business_os_crypto_alert_events",
+        "business_os_crypto_alerts",
+        "business_os_crypto_audit",
+        "business_os_crypto_holdings"
+      ]
+    },
+    {
+      "id": "ty-05",
+      "language": "en",
+      "category": "typo",
+      "rank": null,
+      "returned": []
+    },
+    {
+      "id": "ty-06",
+      "language": "en",
+      "category": "typo",
+      "rank": null,
+      "returned": [
+        "settings",
+        "pulse_ad_platform_settings",
+        "user_portfolio_settings",
+        "user_settings",
+        "user_settings"
+      ]
+    },
+    {
+      "id": "ty-07",
+      "language": "en",
+      "category": "typo",
+      "rank": 4,
+      "returned": [
+        "camera",
+        "reels",
+        "camerastudio",
+        "creatorstudio",
+        "creatorstudioalias"
+      ]
+    },
+    {
+      "id": "in-01",
+      "language": "en",
+      "category": "indirect",
+      "rank": null,
+      "returned": [
+        "account",
+        "accounthealth",
+        "admin_approvals",
+        "arena_friend_challenges",
+        "connected_wallets"
+      ]
+    },
+    {
+      "id": "in-02",
+      "language": "en",
+      "category": "indirect",
+      "rank": null,
+      "returned": []
+    },
+    {
+      "id": "in-03",
+      "language": "en",
+      "category": "indirect",
+      "rank": null,
+      "returned": []
+    },
+    {
+      "id": "in-04",
+      "language": "en",
+      "category": "indirect",
+      "rank": null,
+      "returned": [
+        "ad_videos",
+        "pulse_video_categories",
+        "pulse_video_comments",
+        "pulse_video_reactions",
+        "pulse_video_views"
+      ]
+    },
+    {
+      "id": "in-05",
+      "language": "en",
+      "category": "indirect",
+      "rank": null,
+      "returned": [
+        "arena_friendships",
+        "i18n_missing_translations",
+        "pulse_ai_posts",
+        "pulse_friends",
+        "pulse_friendships"
+      ]
+    },
+    {
+      "id": "in-06",
+      "language": "en",
+      "category": "indirect",
+      "rank": null,
+      "returned": [
+        "brand_deals",
+        "command_history",
+        "saved_command_results",
+        "command_center_ai_events",
+        "command_center_message_events"
+      ]
+    },
+    {
+      "id": "in-07",
+      "language": "en",
+      "category": "indirect",
+      "rank": null,
+      "returned": [
+        "reels",
+        "admin_user_notes",
+        "notification_delivery_logs",
+        "notification_failures",
+        "notification_jobs"
+      ]
+    },
+    {
+      "id": "te-01",
+      "language": "en",
+      "category": "terminology",
+      "rank": null,
+      "returned": [
+        "business_os_merchant_audit",
+        "business_os_merchant_proposals",
+        "business_os_merchant_rules",
+        "business_os_merchant_signals",
+        "get /api/business-os/merchant/proposals"
+      ]
+    },
+    {
+      "id": "te-02",
+      "language": "en",
+      "category": "terminology",
+      "rank": 2,
+      "returned": [
+        "creator",
+        "business_os_creator_contributions",
+        "business_os_creator_supporters",
+        "get /api/business-os/creator/supporters",
+        "post /api/business-os/creator/contributions"
+      ]
+    },
+    {
+      "id": "te-03",
+      "language": "en",
+      "category": "terminology",
+      "rank": 1,
+      "returned": [
+        "premium",
+        "premium",
+        "premium_entitlements",
+        "pulse_premium_entitlements",
+        "dashboard_entitlements"
+      ]
+    },
+    {
+      "id": "te-04",
+      "language": "en",
+      "category": "terminology",
+      "rank": 1,
+      "returned": [
+        "marketplace",
+        "marketplace",
+        "marketplace_orders_placeholder",
+        "get /api/business-os/marketplace/orders",
+        "get /api/business-os/marketplace/orders/<order_id>"
+      ]
+    },
+    {
+      "id": "te-05",
+      "language": "en",
+      "category": "terminology",
+      "rank": 1,
+      "returned": [
+        "alert_rules",
+        "user_alert_rules",
+        "alert_rules",
+        "alerts",
+        "intelligence"
+      ]
+    },
+    {
+      "id": "te-06",
+      "language": "en",
+      "category": "terminology",
+      "rank": 2,
+      "returned": [
+        "users",
+        "blocked_users",
+        "feed",
+        "messenger",
+        "admin_users"
+      ]
+    },
+    {
+      "id": "te-07",
+      "language": "en",
+      "category": "terminology",
+      "rank": 1,
+      "returned": [
+        "reels",
+        "reels",
+        "reels",
+        "pulse_reels",
+        "camera"
+      ]
+    },
+    {
+      "id": "te-08",
+      "language": "en",
+      "category": "terminology",
+      "rank": 2,
+      "returned": [
+        "undxactions",
+        "undxactioncenter",
+        "get /api/business-os/undx/action-center",
+        "business_os_undx_action_receipts",
+        "business_os_undx_action_requests"
+      ]
+    },
+    {
+      "id": "ht-01",
+      "language": "ht",
+      "category": "paraphrase",
+      "rank": null,
+      "returned": []
+    },
+    {
+      "id": "ht-02",
+      "language": "ht",
+      "category": "paraphrase",
+      "rank": null,
+      "returned": []
+    },
+    {
+      "id": "ht-03",
+      "language": "ht",
+      "category": "paraphrase",
+      "rank": null,
+      "returned": [
+        "pulse_reel_sound_saves",
+        "pulse_saved_sounds",
+        "pulse_trending_sounds",
+        "intelligence_sources",
+        "get /api/pulse/reels/sounds"
+      ]
+    },
+    {
+      "id": "ht-04",
+      "language": "ht",
+      "category": "paraphrase",
+      "rank": null,
+      "returned": []
+    },
+    {
+      "id": "ht-05",
+      "language": "ht",
+      "category": "indirect",
+      "rank": null,
+      "returned": [
+        "ai_agents",
+        "global_intelligence_edges",
+        "global_intelligence_nodes",
+        "global_intelligence_signals",
+        "global_intelligence_snapshots"
+      ]
+    },
+    {
+      "id": "ht-06",
+      "language": "ht",
+      "category": "paraphrase",
+      "rank": null,
+      "returned": [
+        "enterprise_leads",
+        "last_prices",
+        "price_history",
+        "privacy_preferences",
+        "private_messages"
+      ]
+    },
+    {
+      "id": "ht-07",
+      "language": "ht",
+      "category": "paraphrase",
+      "rank": 1,
+      "returned": [
+        "premium",
+        "premium",
+        "premium_entitlements",
+        "pulse_premium_audit_logs",
+        "pulse_premium_entitlements"
+      ]
+    },
+    {
+      "id": "ht-08",
+      "language": "ht",
+      "category": "paraphrase",
+      "rank": null,
+      "returned": []
+    },
+    {
+      "id": "fr-01",
+      "language": "fr",
+      "category": "paraphrase",
+      "rank": 4,
+      "returned": [
+        "notification_preferences",
+        "pulse_notification_preferences",
+        "notification_preferences",
+        "notifications",
+        "notificationpreferences"
+      ]
+    },
+    {
+      "id": "fr-02",
+      "language": "fr",
+      "category": "paraphrase",
+      "rank": null,
+      "returned": [
+        "ai_messages",
+        "arena_chat_messages",
+        "arena_message_requests",
+        "arena_room_messages",
+        "message_attachments"
+      ]
+    },
+    {
+      "id": "fr-03",
+      "language": "fr",
+      "category": "paraphrase",
+      "rank": null,
+      "returned": [
+        "ad_placements",
+        "admin_task_comments",
+        "arena_playbook_comments",
+        "creator_payouts_placeholder",
+        "marketplace_buyer_interest"
+      ]
+    },
+    {
+      "id": "fr-04",
+      "language": "fr",
+      "category": "paraphrase",
+      "rank": null,
+      "returned": []
+    },
+    {
+      "id": "fr-05",
+      "language": "fr",
+      "category": "indirect",
+      "rank": null,
+      "returned": [
+        "messenger",
+        "admin_roles",
+        "admin_user_roles",
+        "ai_messages",
+        "alert_rules"
+      ]
+    },
+    {
+      "id": "fr-06",
+      "language": "fr",
+      "category": "paraphrase",
+      "rank": null,
+      "returned": [
+        "alerts",
+        "admin_task_comments",
+        "arena_playbook_comments",
+        "crypto_news_cache",
+        "pulse_comment_reactions"
+      ]
+    },
+    {
+      "id": "fr-07",
+      "language": "fr",
+      "category": "paraphrase",
+      "rank": null,
+      "returned": [
+        "messenger",
+        "admin_roles",
+        "admin_user_roles",
+        "ai_messages",
+        "alert_rules"
+      ]
+    },
+    {
+      "id": "fr-08",
+      "language": "fr",
+      "category": "paraphrase",
+      "rank": null,
+      "returned": [
+        "pulse_video_comments",
+        "reels",
+        "get,post /api/pulse/videos/<int:video_id>/comments",
+        "ad_videos",
+        "admin_task_comments"
+      ]
+    },
+    {
+      "id": "es-01",
+      "language": "es",
+      "category": "paraphrase",
+      "rank": null,
+      "returned": [
+        "admin_permissions",
+        "admin_role_permissions",
+        "arena_mission_attempts",
+        "arena_missions",
+        "dashboard_permissions"
+      ]
+    },
+    {
+      "id": "es-02",
+      "language": "es",
+      "category": "paraphrase",
+      "rank": null,
+      "returned": [
+        "admin_permissions",
+        "admin_role_permissions",
+        "arena_mission_attempts",
+        "arena_missions",
+        "dashboard_permissions"
+      ]
+    },
+    {
+      "id": "es-03",
+      "language": "es",
+      "category": "paraphrase",
+      "rank": null,
+      "returned": []
+    },
+    {
+      "id": "es-04",
+      "language": "es",
+      "category": "paraphrase",
+      "rank": 1,
+      "returned": [
+        "premium",
+        "premium",
+        "premium_entitlements",
+        "pulse_premium_audit_logs",
+        "pulse_premium_entitlements"
+      ]
+    },
+    {
+      "id": "es-05",
+      "language": "es",
+      "category": "indirect",
+      "rank": null,
+      "returned": [
+        "ai_action_requests",
+        "arena_message_requests",
+        "arena_quest_progress",
+        "arena_quests",
+        "education_quiz_questions"
+      ]
+    },
+    {
+      "id": "es-06",
+      "language": "es",
+      "category": "paraphrase",
+      "rank": null,
+      "returned": []
+    },
+    {
+      "id": "es-07",
+      "language": "es",
+      "category": "paraphrase",
+      "rank": 1,
+      "returned": [
+        "chat",
+        "auth",
+        "live",
+        "pulse",
+        "undxactions"
+      ]
+    },
+    {
+      "id": "es-08",
+      "language": "es",
+      "category": "paraphrase",
+      "rank": null,
+      "returned": []
+    }
+  ]
+}

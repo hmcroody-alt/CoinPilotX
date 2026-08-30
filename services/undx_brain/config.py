@@ -651,6 +651,87 @@ CATALOG: tuple[Flag, ...] = (
         "state, so a response built on partial evidence can say so.",
         fail="open",
     ),
+    # -------------------------------------------------------- semantic retrieval ----
+    Flag(
+        "UNDX_SEMANTIC_RETRIEVAL_STAGE", "str", "off",
+        "Rollout rung for embedding-backed retrieval, which sits beside the existing "
+        "lexical matcher and never replaces it. ``off`` means the lexical path runs "
+        "exactly as it does today and no embedding provider is contacted at all. "
+        "``shadow`` computes the semantic answer, logs how it compares, and still "
+        "serves the lexical one — the only rung that produces comparison evidence at "
+        "zero user-visible risk. ``qa`` serves the fused answer to UNDX_AGENT_QA_USER_IDS "
+        "and nobody else. ``production`` serves it to everyone. An unrecognised value "
+        "reads as ``off`` rather than as the nearest match, because a rung reached by "
+        "typo is a rung nobody decided to enter.",
+        fail="closed",
+        choices=("off", "shadow", "qa", "production"),
+    ),
+    Flag(
+        "UNDX_SEMANTIC_SIMILARITY_FLOOR", "str", "0.30",
+        "Cosine floor below which a semantic candidate is discarded. A vector index "
+        "always has a nearest neighbour, so without a floor an unrelated question gets "
+        "a confident-looking answer; the lexical path returns nothing for such a "
+        "question today and that behaviour has to survive. Declared as a string rather "
+        "than an int because the catalog has no float kind and rounding this to an "
+        "integer would be worse than leaving it uncoerced.",
+        fail="closed",
+    ),
+    Flag(
+        "UNDX_EMBEDDING_MODEL", "str", "pplx-embed-v1-0.6b",
+        "Embedding model. Vectors from two models are not comparable, so changing this "
+        "invalidates the index rather than degrading it — the model name is part of "
+        "every cache key and of the index load predicate, which means a change is "
+        "answered by an empty index and a lexical fallback rather than by silently "
+        "wrong similarities.",
+        fail="open",
+    ),
+    Flag(
+        "UNDX_EMBEDDING_MODEL_VERSION", "str", "1",
+        "Operator-set label that participates in the cache key. The provider exposes no "
+        "build identifier on the embeddings response, so there is no way to detect a "
+        "silent model refresh from the wire. Bumping this is the manual lever that "
+        "invalidates every cached vector.",
+        fail="open",
+    ),
+    Flag(
+        "UNDX_EMBEDDING_DIMENSIONS", "int", "256",
+        "Output dimensionality, obtained by Matryoshka truncation. 256 is a measured "
+        "choice: a brute-force scan over the 1,673-entry canonical corpus costs about "
+        "6 ms at 256 dimensions and about 25 ms at 1024, inside a request that is "
+        "already calling a model provider. Changing it invalidates the index.",
+        fail="n/a", minimum=32, maximum=4096,
+    ),
+    Flag(
+        "UNDX_EMBEDDING_ENDPOINT", "str", "https://api.perplexity.ai/v1/embeddings",
+        "Provider endpoint. Declared so a deployment can point at a proxy without a "
+        "code change, and so that the one place a base URL could be redirected is "
+        "visible in the catalog rather than inlined at a call site.",
+        fail="open",
+    ),
+    Flag(
+        "UNDX_EMBEDDING_TIMEOUT_SECONDS", "int", "8",
+        "Wall-clock bound on one embedding call. Deliberately short: this sits inside a "
+        "user-facing request and the fallback answer is better than a slow one.",
+        fail="n/a", minimum=1, maximum=60,
+    ),
+    Flag(
+        "UNDX_EMBEDDING_MAX_RETRIES", "int", "2",
+        "Bounded retries for 429 and 5xx only. Zero is a legitimate production setting; "
+        "a non-retryable failure — bad credential, malformed body — is never retried at "
+        "any value.",
+        fail="n/a", minimum=0, maximum=5,
+    ),
+    Flag(
+        "UNDX_EMBEDDING_MONTHLY_BUDGET_USD", "str", "5",
+        "Cost guard, checked before every provider call against tokens embedded this "
+        "calendar month. A runaway indexing loop is the failure this stops: exceeding "
+        "the budget makes embedding unavailable, which degrades retrieval to lexical "
+        "rather than spending without a ceiling. Zero disables the guard, which is not "
+        "the default. Declared as a string for the same reason as the similarity floor: "
+        "the catalog has no float kind, and reporting a $2.50 budget as $2 would make "
+        "the dashboard disagree with the code.",
+        fail="closed",
+    ),
 )
 
 BY_NAME: dict[str, Flag] = {flag.name: flag for flag in CATALOG}

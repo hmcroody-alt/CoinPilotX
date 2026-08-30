@@ -14,7 +14,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from services import pulse_ai_knowledge, pulse_ai_provider_router, pulse_ai_router, pulse_ai_safety, pulse_ai_web_search, undx_architecture, undx_operator, undx_platform_knowledge, undx_policy, undx_self_knowledge
+from services import pulse_ai_knowledge, pulse_ai_provider_router, pulse_ai_router, pulse_ai_safety, pulse_ai_web_search, undx_architecture, undx_operator, undx_platform_knowledge, undx_policy, undx_self_knowledge, undx_semantic_retrieval
 
 
 LOGGER = logging.getLogger(__name__)
@@ -908,7 +908,19 @@ def send_message(user_id: int, payload: dict | None = None) -> dict:
         # Extend the existing approved-knowledge pipeline with only a small,
         # request-relevant slice of the offline source inventory. Never send the
         # complete manifest, schemas, or source paths to a model provider.
-        knowledge[0:0] = undx_platform_knowledge.retrieve(body)
+        #
+        # ``undx_semantic_retrieval.retrieve`` is the same retrieval placed behind a
+        # rollout flag that defaults to off: with the flag off, or the embedding
+        # provider unavailable, or the semantic index empty, it returns exactly what
+        # ``undx_platform_knowledge.retrieve(body)`` returns, in the same shape and
+        # under the same item and character bounds. The ``or`` is the last rung of the
+        # fallback ladder rather than the first — it only runs if the wrapper itself
+        # failed — and it is written out so the lexical path stays visible at the call
+        # site instead of being buried one module away.
+        knowledge[0:0] = (
+            undx_semantic_retrieval.retrieve(body, user_id=int(user_id))
+            or undx_platform_knowledge.retrieve(body)
+        )
         search_result = {}
         if route.get("needs_web_search"):
             search_result = pulse_ai_web_search.search(body, purpose="pulse_ai_messenger")
