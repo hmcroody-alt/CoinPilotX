@@ -41,6 +41,7 @@ import base64
 import hashlib
 import json
 import logging
+import math
 import os
 import struct
 import threading
@@ -95,7 +96,20 @@ NORMALIZATION_VERSION = "1"
 
 #: Bumped whenever the stored vector encoding changes. Separate from the normalization
 #: version because the two can move independently.
-ENCODING_VERSION = "1"
+#:
+#: "2" — 2026-08-30. Corrected to the real Perplexity wire contract. The provider returns
+#: ``base64_int8`` (a base64 string decoding to signed int8 bytes), not a JSON array of
+#: floats; the decode-then-L2-normalise path is a different pipeline from the one "1"
+#: described, so it gets a different cache namespace.
+ENCODING_VERSION = "2"
+
+#: Output encoding requested from the provider. Perplexity's ``encoding_format`` accepts
+#: only ``base64_int8`` and ``base64_binary`` — **there is no float option**. int8 is the
+#: documented default and the one that is compared with cosine similarity; ``base64_binary``
+#: packs one bit per dimension and requires Hamming distance, which is not what the
+#: retrieval scorer does. Sent explicitly so a change to the provider's default cannot
+#: silently swap the vector space underneath a stored index.
+EMBEDDING_ENCODING_FORMAT = "base64_int8"
 
 
 class EmbeddingUnavailable(RuntimeError):
@@ -574,6 +588,52 @@ def _post(payload: dict[str, Any], *, api_key: str, timeout: float) -> dict[str,
     return body
 
 
+def _decode_embedding(raw: Any) -> list[float]:
+    """Turn one ``data[].embedding`` value into a list of floats.
+
+    Perplexity's documented wire format is ``base64_int8``: the field is a **base64
+    string** that decodes to exactly ``dimensions`` signed int8 bytes. It is not a JSON
+    array of floats. Assuming the OpenAI float shape is what made the live probe fail
+    with "provider returned an empty vector" — the string is not a ``list``, so the
+    old shape check rejected a perfectly good HTTP 200.
+
+    A JSON array is still accepted, because a proxy or a future ``encoding_format`` may
+    speak floats and there is no reason to break on a response that is easier to read
+    than the one we asked for.
+    """
+    if isinstance(raw, str):
+        text = raw.strip()
+        if not text:
+            raise EmbeddingUnavailable("provider returned an empty vector", retryable=False)
+        try:
+            decoded = base64.b64decode(text, validate=True)
+        except Exception as exc:
+            raise EmbeddingUnavailable(
+                "provider returned a vector that is not valid base64", retryable=False
+            ) from exc
+        if not decoded:
+            raise EmbeddingUnavailable("provider returned an empty vector", retryable=False)
+        # "b" is signed char. int8 is always finite, so no isfinite check is needed here.
+        return [float(value) for value in struct.unpack(f"{len(decoded)}b", decoded)]
+
+    if isinstance(raw, list):
+        if not raw:
+            raise EmbeddingUnavailable("provider returned an empty vector", retryable=False)
+        try:
+            values = [float(value) for value in raw]
+        except (TypeError, ValueError) as exc:
+            raise EmbeddingUnavailable("provider returned a non-numeric vector", retryable=False) from exc
+        if not all(math.isfinite(value) for value in values):
+            raise EmbeddingUnavailable(
+                "provider returned a non-finite vector component", retryable=False
+            )
+        return values
+
+    raise EmbeddingUnavailable(
+        f"provider returned a vector of unsupported type {type(raw).__name__}", retryable=False
+    )
+
+
 def _parse(body: dict[str, Any], *, expected: int, dimensions: int) -> tuple[list[list[float]], int]:
     """Pull vectors out of an OpenAI-shaped embeddings response, defensively.
 
@@ -594,13 +654,9 @@ def _parse(body: dict[str, Any], *, expected: int, dimensions: int) -> tuple[lis
     for item in sorted(data, key=lambda row: int((row or {}).get("index", 0)) if isinstance(row, dict) else 0):
         if not isinstance(item, dict):
             raise EmbeddingUnavailable("provider returned a malformed vector entry", retryable=False)
-        raw = item.get("embedding")
-        if not isinstance(raw, list) or not raw:
-            raise EmbeddingUnavailable("provider returned an empty vector", retryable=False)
-        try:
-            values = [float(value) for value in raw]
-        except (TypeError, ValueError) as exc:
-            raise EmbeddingUnavailable("provider returned a non-numeric vector", retryable=False) from exc
+        if "embedding" not in item:
+            raise EmbeddingUnavailable("provider returned an entry with no embedding", retryable=False)
+        values = _decode_embedding(item.get("embedding"))
         if len(values) != dimensions:
             raise EmbeddingUnavailable(
                 f"provider returned {len(values)} dimensions, expected {dimensions}", retryable=False
@@ -660,6 +716,7 @@ def embed_texts(texts: Sequence[str], *, purpose: str = "unspecified") -> Embedd
             "model": model,
             "input": [prepared[index] for index in indices],
             "dimensions": dimensions,
+            "encoding_format": EMBEDDING_ENCODING_FORMAT,
         }
         attempt = 0
         while True:

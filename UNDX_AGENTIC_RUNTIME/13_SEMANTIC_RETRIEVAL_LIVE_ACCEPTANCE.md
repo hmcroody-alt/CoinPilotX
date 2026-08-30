@@ -626,3 +626,145 @@ at `--max-index-cost-usd 1.00` against a corpus priced at $0.00029.
 | **FINAL VERDICT** | **BLOCKED** → semantic retrieval remains **KEEP OFF** |
 
 No real Perplexity result, therefore no promotion. That is the rule, and it held.
+
+---
+
+# STAGE 14 — REAL PERPLEXITY LIVE ACCEPTANCE EXECUTION (2026-08-30)
+
+> This section **supersedes the FINAL VERDICT above**, which was written while the push was
+> still blocked. The branch was subsequently pushed by the owner, a sanctioned execution
+> environment was found, and the accepted runner was executed **unmodified** against the real
+> provider. Everything below is measured, not inferred, except where explicitly labelled
+> *deduction*.
+
+## The sanctioned execution path
+
+The second blocker was "no environment contains branch code + secret + outbound access to
+`api.perplexity.ai` simultaneously." It was resolved with **Option 1 — a Railway ephemeral
+service**, created only after removability was confirmed in advance.
+
+| Guard | How it was satisfied |
+|---|---|
+| Removable cleanly | Confirmed **before creation** — Railway supports service deletion on request, plus the owner click-path Project → service → Settings → Delete Service |
+| No production impact | New service `TEMP-undx-semantic-acceptance-DELETE-AFTER`, created **empty** so the `Procfile` `web:` gunicorn line could never launch the monolith |
+| No production DB mutation | `DATABASE_URL=sqlite:////tmp/undx_acceptance.db`. `services/db.py` `connect()` routes non-Postgres URLs to local SQLite, so the two index tables could only be written to an ephemeral container file — **stricter than the mission's allowance** of approved tables in production Postgres |
+| Secret never seen | `PERPLEXITY_API_KEY = ${{CoinPilotX.PERPLEXITY_API_KEY}}` — a Railway reference resolved server-side. The value was never requested, returned, logged or printed. Runner reports `secret_value_exposed: false` |
+| Runs once and exits | `restartPolicyType: NEVER`, no domain, no volume, no healthcheck, no traffic |
+| Semantic retrieval not globally enabled | Service variable `UNDX_SEMANTIC_RETRIEVAL_STAGE=off`. The runner sets `production` **in-process only** (`undx_semantic_live_acceptance.py:395`) |
+
+Production `CoinPilotX` was **not touched**: no start-command change, no cron, no
+`preDeployCommand`, no restart, no merge to `main`.
+
+### Two operational notes for anyone repeating this
+
+1. The mission's literal command `--json` is invalid CLI — argparse requires a path argument
+   (`scripts/undx_semantic_live_acceptance.py:335`). Supplying `--json /tmp/report.json` is
+   **not a benchmark modification**: `finish()` prints the full report to stdout regardless
+   (lines 349-353), which is what the deploy logs captured.
+2. Railway `redeploy` re-runs the **prior deployment's config snapshot** and ignores an updated
+   start command. Only a genuinely new deployment (re-calling `connect-service-source`) picks
+   up changed service config.
+
+## Provenance of the code under test
+
+Railway built commit **`ce7dfa5e10a81749a3735f3abfcb70308bc118f2`** on branch
+`release/full-sweep-20260826` — byte-identical to the REMOTE SHA supplied by the owner.
+`1bf02e67`, `e1e3fe5f` and `5d3ed462` are all ancestors. The code that ran is the accepted
+implementation, unmodified.
+
+## RESULT — reproduced twice, independently
+
+| Deployment | Started | Probe latency | Outcome |
+|---|---|---|---|
+| `1408130e-53b4-4ae2-8372-a350650059b2` | 17:46 UTC | **284.3 ms** | halted at probe |
+| `d5849d34-0d49-4311-bbb9-a23558e4e3af` | 17:51 UTC | **343.3 ms** | halted at probe — identical error |
+
+```
+api_key_present : true
+endpoint        : https://api.perplexity.ai/v1/embeddings
+model           : pplx-embed-v1-0.6b
+requested dims  : 256
+status          : FAIL
+auth            : FAIL          <- roll-up field, NOT a credential rejection (see below)
+vector_returned : false
+provider_error  : "provider returned an empty vector"
+retryable       : false
+halted_at       : "probe"
+telemetry       : requests 1 | provider_errors 1 | 429 0 | timeouts 0 | budget_blocks 0
+                  texts_embedded 0 | tokens_embedded 0 | estimated_cost_usd 0.0
+```
+
+### Connectivity SUCCEEDED. The embedding call failed. These are different findings.
+
+A 284 ms and a 343 ms round trip to `api.perplexity.ai` means DNS, TCP, TLS and HTTP all
+completed. The mission's `PROVIDER CONNECTIVITY` line is therefore **PASS**; what failed is
+the embeddings request itself.
+
+**Deduction from `services/undx_embedding_service.py` — the HTTP status was 200.** The error
+raised is `"provider returned an empty vector"`, which is reachable from exactly one line
+(`_parse`, line 599). Every other outcome raises a *different* message:
+
+| Condition | Line | Message that would have appeared |
+|---|---|---|
+| 429 | 559 | `provider rate limited (429)` |
+| 5xx | 561 | `provider server error (5xx)` |
+| **401 / 403** | **565** | **`provider rejected the credential`** |
+| any other non-200 | 567 | `provider returned <status>` |
+| non-JSON body | 571 | `provider returned a non-JSON body` |
+| `data` missing or wrong length | 588 | `provider returned N vectors for 1 inputs` |
+| wrong vector length | 605 | `provider returned N dimensions, expected 256` |
+
+None of those appeared. So the response was **HTTP 200**, JSON, an object, with `data` as a
+list of exactly one dict — and that dict's `embedding` key was absent, empty, or not a list.
+
+**The credential was therefore not rejected.** `auth: "FAIL"` in the report is a derived
+roll-up of overall probe status; reporting it as an authentication failure would be wrong.
+
+Leading hypothesis (**unverified**): the payload sends no `encoding_format`
+(`embed_texts`, lines 659-663), so the provider's default applies. If Perplexity returns
+base64 by default, `embedding` is a `str`, `isinstance(raw, list)` is `False`, and line 599
+fires exactly as observed. A wrong model name or a different response key would produce the
+same symptom. **This has not been confirmed on the wire and must not be reported as fact.**
+
+## REQUIRED OUTPUT
+
+| Measurement | Value |
+|---|---|
+| PROVIDER CONNECTIVITY | **PASS** — 284.3 ms / 343.3 ms round trips completed |
+| EMBEDDING CALL | **FAIL** — HTTP 200, unparseable vector payload |
+| MODEL | `pplx-embed-v1-0.6b` (requested; provider never returned a usable vector) |
+| VECTOR DIMENSIONS | **NOT MEASURED** — 256 requested, none returned |
+| PROBE LATENCY | **284.3 ms** (run 1), **343.3 ms** (run 2) |
+| DOCUMENTS INDEXED | **0** |
+| INDEX COST | **$0.00** |
+| LEXICAL RECALL@5 | `0.4143` (frozen control, untouched) |
+| SEMANTIC RECALL@5 | **NOT MEASURED** |
+| HYBRID RECALL@5 | **NOT MEASURED** |
+| LEXICAL MRR | `0.3500` (frozen control, untouched) |
+| SEMANTIC MRR | **NOT MEASURED** |
+| HYBRID MRR | **NOT MEASURED** |
+| INDIRECT | `0.0000` → **NOT MEASURED** → **NOT MEASURED** |
+| HAITIAN CREOLE | `0.125` → **NOT MEASURED** → **NOT MEASURED** |
+| FRENCH | `0.125` → **NOT MEASURED** → **NOT MEASURED** |
+| NEGATIVE CONTROLS | `2/4` → **NOT MEASURED** → **NOT MEASURED** |
+| AUTHORITY SUITE | **NOT RUN** — runner halted before the authority phase |
+| FAILURE FALLBACK | **PASS** — observed in production conditions: the provider failed, the runner halted fail-closed, spent $0.00, indexed nothing, and left the lexical path untouched |
+| RUNNER DECISION | **HALTED AT PROBE** |
+| SHADOW | **NOT ENABLED** |
+| GLOBAL PRODUCTION | **NOT ENABLED** |
+
+## VERDICT
+
+**No usable vector was returned by Perplexity, therefore no promotion.** Semantic retrieval
+remains **KEEP OFF**. The frozen lexical control is unchanged and remains the production path.
+
+The mission's stop condition — *"no sanctioned environment combining branch code + secret +
+outbound provider access"* — **no longer applies**; that environment was built, used, and
+worked. The remaining blocker is narrower and different in kind:
+
+> **REMAINING BLOCKER:** the embeddings request returns HTTP 200 with a payload the client
+> cannot parse into a vector. This is a client/provider contract mismatch — model name,
+> endpoint, or response encoding — **not** a credentials problem and **not** an access problem.
+> Resolving it requires one bounded diagnostic capturing the raw 200 response shape
+> (credential redacted). Until then, no semantic number exists and none may be invented.
+
