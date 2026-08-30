@@ -2376,7 +2376,44 @@
           "hint": "Des expérimentations auxquelles vous pouvez participer, à venir plus tard."
         }
       },
-      "note": "Les espaces marqués Bientôt ne sont pas encore actifs, et aucun n'est facturé séparément. Chacun apparaîtra ici dès qu'il sera prêt."
+      "note": "Les espaces marqués Bientôt ne sont pas encore actifs, et aucun n'est facturé séparément. Chacun apparaîtra ici dès qu'il sera prêt.",
+      "usage": {
+        "monthTitle": "Votre Premium ce mois-ci",
+        "liveChip": "En direct",
+        "notSet": "Non défini",
+        "omittedNote": "Ce que nous ne pouvons pas mesurer est masqué, jamais estimé.",
+        "allUsed": "Vous utilisez déjà tout ce que votre abonnement offre.",
+        "signals": {
+          "advanced_alert_rules": "Règles d'alerte avancées",
+          "alerts_triggered_month": "Alertes déclenchées ce mois-ci",
+          "portfolio_holdings": "Actifs de votre portefeuille",
+          "profile_theme": "Thème de profil",
+          "identity_effect": "Effet d'identité",
+          "blue_check_application": "Demande de vérification"
+        },
+        "reasons": {
+          "no_advanced_rules": {
+            "title": "Essayez les alertes avancées",
+            "body": "Vous n'avez pas encore créé de règle d'alerte avancée. Combinez des conditions pour capter exactement les mouvements qui comptent."
+          },
+          "within_free_ceiling": {
+            "title": "De la place pour votre portefeuille",
+            "body": "Vous êtes encore sous la limite gratuite. Le suivi Premium n'a pas de plafond."
+          },
+          "no_theme_set": {
+            "title": "Choisissez un thème de profil",
+            "body": "Les thèmes Premium sont inclus dans votre abonnement : choisissez-en un et personnalisez votre profil."
+          },
+          "no_effect_set": {
+            "title": "Ajoutez un effet d'identité",
+            "body": "Les effets d'identité font partie de votre abonnement et aucun n'est encore actif."
+          },
+          "not_applied": {
+            "title": "Lancez la vérification d'identité",
+            "body": "Premium ouvre la porte à l'examen standard — il n'achète jamais le badge. Vous n'avez pas encore fait de demande."
+          }
+        }
+      }
     },
     "free": {
       "heading": "Toujours gratuit",

@@ -2376,7 +2376,44 @@
           "hint": "Experimentos iniciais dos quais você pode participar, chegando em uma etapa posterior."
         }
       },
-      "note": "Os espaços marcados como Próximo ainda não estão ativos, e nenhum deles é cobrado separadamente. Cada um aparecerá aqui quando estiver pronto."
+      "note": "Os espaços marcados como Próximo ainda não estão ativos, e nenhum deles é cobrado separadamente. Cada um aparecerá aqui quando estiver pronto.",
+      "usage": {
+        "monthTitle": "Seu Premium este mês",
+        "liveChip": "Ao vivo",
+        "notSet": "Não definido",
+        "omittedNote": "O que não podemos medir agora fica oculto, nunca estimado.",
+        "allUsed": "Você já está usando tudo o que sua assinatura oferece.",
+        "signals": {
+          "advanced_alert_rules": "Regras de alerta avançadas",
+          "alerts_triggered_month": "Alertas acionados este mês",
+          "portfolio_holdings": "Ativos no seu portfólio",
+          "profile_theme": "Tema de perfil",
+          "identity_effect": "Efeito de identidade",
+          "blue_check_application": "Solicitação de verificação"
+        },
+        "reasons": {
+          "no_advanced_rules": {
+            "title": "Experimente alertas avançados",
+            "body": "Você ainda não criou uma regra de alerta avançada. Combine condições para captar exatamente os movimentos que importam."
+          },
+          "within_free_ceiling": {
+            "title": "Espaço para crescer seu portfólio",
+            "body": "Você ainda está dentro do limite gratuito. O acompanhamento Premium não tem teto."
+          },
+          "no_theme_set": {
+            "title": "Defina um tema de perfil",
+            "body": "Os temas Premium estão incluídos na sua assinatura — escolha um e deixe o perfil com a sua cara."
+          },
+          "no_effect_set": {
+            "title": "Adicione um efeito de identidade",
+            "body": "Os efeitos de identidade fazem parte da sua assinatura e nenhum está ativo ainda."
+          },
+          "not_applied": {
+            "title": "Inicie a verificação de identidade",
+            "body": "O Premium abre a porta para a análise padrão — nunca compra o selo. Você ainda não se inscreveu."
+          }
+        }
+      }
     },
     "free": {
       "heading": "Sempre gratuito",

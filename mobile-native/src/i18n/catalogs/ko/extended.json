@@ -2370,7 +2370,44 @@
           "hint": "직접 참여할 수 있는 초기 실험으로, 이후 단계에 제공됩니다."
         }
       },
-      "note": "다음으로 표시된 공간은 아직 켜지지 않았으며, 별도로 청구되는 공간은 없습니다. 각 공간은 준비되는 대로 여기에 표시됩니다."
+      "note": "다음으로 표시된 공간은 아직 켜지지 않았으며, 별도로 청구되는 공간은 없습니다. 각 공간은 준비되는 대로 여기에 표시됩니다.",
+      "usage": {
+        "monthTitle": "이번 달 나의 Premium",
+        "liveChip": "실시간",
+        "notSet": "설정 안 됨",
+        "omittedNote": "지금 측정할 수 없는 항목은 숨겨지며, 절대 추정하지 않습니다.",
+        "allUsed": "이미 멤버십이 제공하는 모든 기능을 사용하고 있습니다.",
+        "signals": {
+          "advanced_alert_rules": "고급 알림 규칙",
+          "alerts_triggered_month": "이번 달 발생한 알림",
+          "portfolio_holdings": "포트폴리오 보유 자산",
+          "profile_theme": "프로필 테마",
+          "identity_effect": "아이덴티티 효과",
+          "blue_check_application": "인증 신청"
+        },
+        "reasons": {
+          "no_advanced_rules": {
+            "title": "고급 알림을 사용해 보세요",
+            "body": "아직 고급 알림 규칙을 만들지 않았습니다. 조건을 조합해 원하는 움직임만 정확히 포착하세요."
+          },
+          "within_free_ceiling": {
+            "title": "포트폴리오를 더 키울 수 있어요",
+            "body": "아직 무료 보유 한도 내에 있습니다. Premium 추적에는 상한이 없습니다."
+          },
+          "no_theme_set": {
+            "title": "프로필 테마를 설정하세요",
+            "body": "Premium 테마는 멤버십에 포함되어 있습니다. 하나를 골라 프로필을 나답게 꾸며 보세요."
+          },
+          "no_effect_set": {
+            "title": "아이덴티티 효과를 추가하세요",
+            "body": "아이덴티티 효과는 멤버십에 포함되어 있지만 아직 활성화된 것이 없습니다."
+          },
+          "not_applied": {
+            "title": "본인 인증을 시작하세요",
+            "body": "Premium은 표준 심사의 문을 열어줄 뿐, 인증 배지를 구매하지 않습니다. 아직 신청하지 않으셨네요."
+          }
+        }
+      }
     },
     "free": {
       "heading": "언제나 무료",

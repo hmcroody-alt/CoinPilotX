@@ -450,6 +450,42 @@ def status_center(user_id: Any, *, subject_type: str = "user",
     })
 
 
+def usage_center(user_id: Any, *, subject_type: str = "user",
+                 context: Optional[dict] = None) -> tuple:
+    """"Your Premium this month" — real usage signals + unused-benefit discovery.
+
+    Every value comes from ``usage_summary.summarize``, which queries the live
+    domain tables at request time and OMITS anything it cannot measure. Nothing
+    here is estimated. Membership is resolved by the canonical resolver and
+    passed down; recommendations exist only for members.
+    """
+    if not user_id:
+        return (401, {"ok": False, "error": "Login required."})
+    try:
+        _ensure_schema_once()
+        state = _prem.resolve(user_id, subject_type=subject_type, context=context)
+    except Exception:  # noqa: BLE001
+        _log.exception("premium_usage_membership_resolve_failed")
+        return (500, {"ok": False, "error": "Premium usage is unavailable."})
+    held = bool(state["is_premium"]) and not state["account_hold"]
+    try:
+        from services.business_os.entitlements import usage_summary as _us
+        summary = _us.summarize(user_id, is_member=held)
+    except Exception:  # noqa: BLE001
+        _log.exception("premium_usage_summary_failed")
+        return (500, {"ok": False, "error": "Premium usage is unavailable."})
+    return (200, {
+        "ok": True,
+        "membership": {
+            "is_premium": bool(state["is_premium"]),
+            "usable_now": held,
+            "on_hold": state["account_hold"],
+        },
+        "usage": summary,
+        "not_verification": NOT_VERIFICATION,
+    })
+
+
 # ---------------------------------------------------------------------------
 # Admin Premium Control Center
 # ---------------------------------------------------------------------------

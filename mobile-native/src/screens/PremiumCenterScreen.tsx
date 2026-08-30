@@ -46,11 +46,13 @@ import {
 } from "react-native";
 import {
   getPremiumCenter,
+  getPremiumUsageCenter,
   premiumExperience,
   type PremiumBenefit,
   type PremiumCenter,
   type PremiumExperience,
-  type PremiumSubscription
+  type PremiumSubscription,
+  type PremiumUsageCenter
 } from "../api/premiumCenter";
 import { useFormatters, useTranslation } from "../i18n";
 import { RootStackParamList } from "../navigation/types";
@@ -109,6 +111,26 @@ export function PremiumCenterScreen({ route, navigation }: Props) {
 
   const [busy, setBusy] = useState<"" | "purchasing" | "restoring">("");
   const [flash, setFlash] = useState<Flash | null>(null);
+
+  /**
+   * "Your Premium this month" — live counts, never cached (rule 1 applies:
+   * a stale usage number is a small lie). Fetched only for members, re-fetched
+   * after every successful status load so it tracks the same freshness. On
+   * failure it stays `null` and the Command Center modules render as absent —
+   * absence is the honest fallback, not zeros.
+   */
+  const [usageCenter, setUsageCenter] = useState<PremiumUsageCenter | null>(null);
+  useEffect(() => {
+    if (!center?.membership.is_premium) {
+      setUsageCenter(null);
+      return;
+    }
+    let cancelled = false;
+    getPremiumUsageCenter()
+      .then((next) => { if (!cancelled) setUsageCenter(next.ok ? next : null); })
+      .catch(() => { if (!cancelled) setUsageCenter(null); });
+    return () => { cancelled = true; };
+  }, [center]);
 
   /** `premium_plan_viewed` is a funnel step, not a render count. Fire it once. */
   const planViewed = useRef(false);
@@ -466,7 +488,12 @@ export function PremiumCenterScreen({ route, navigation }: Props) {
 
       <NotYetSection items={center?.not_yet || []} />
 
-      <CommandCenterSection experience={experience} held={Boolean(center?.membership.is_premium)} navigation={navigation} />
+      <CommandCenterSection
+        experience={experience}
+        held={Boolean(center?.membership.is_premium)}
+        usage={usageCenter}
+        navigation={navigation}
+      />
 
       <FreeCoreSection />
 
@@ -1230,8 +1257,13 @@ function ActionsSection({
  * Command Center (member headquarters)
  * -------------------------------------------------------------------------- */
 
-/** Headquarters modules that are planned but not yet built. */
-const COMMAND_MODULES = ["activity", "valueRecap", "usage", "achievements", "unlocked", "recommended"] as const;
+/**
+ * Headquarters modules that are planned but not yet built. `usage` and
+ * `recommended` left this list when the usage-center backend shipped — they now
+ * render live from `GET /api/premium/usage-center` (see `UsageModule` /
+ * `RecommendedModule`). The rest stay here, inert, until a backend measures them.
+ */
+const COMMAND_MODULES = ["activity", "valueRecap", "achievements", "unlocked"] as const;
 
 /**
  * A Premium space tile.
@@ -1290,10 +1322,12 @@ const COMMAND_SPACES: readonly CommandSpace[] = [
 function CommandCenterSection({
   experience,
   held,
+  usage,
   navigation
 }: {
   experience: PremiumExperience;
   held: boolean;
+  usage: PremiumUsageCenter | null;
   navigation: Props["navigation"];
 }) {
   const { t } = useTranslation();
@@ -1303,6 +1337,9 @@ function CommandCenterSection({
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>{t("premium:commandCenter.heading")}</Text>
       <Text style={styles.note}>{t("premium:commandCenter.subhead")}</Text>
+
+      <UsageModule usage={usage} />
+      <RecommendedModule usage={usage} />
 
       {COMMAND_MODULES.map((key) => (
         <View key={key} style={styles.benefitRow}>
@@ -1332,6 +1369,92 @@ function CommandCenterSection({
       </View>
 
       <Text style={styles.note}>{t("premium:commandCenter.note")}</Text>
+    </View>
+  );
+}
+
+/**
+ * "Your Premium this month" — the live usage module.
+ *
+ * Renders ONLY what the server measured. Each row is a signal whose value was
+ * counted from the owning domain table at request time (`provenance:
+ * "live_counts"`); a source the server could not measure never appears. While
+ * the fetch is in flight or failed, the module renders nothing at all — no
+ * skeleton with fake zeros, no NEXT chip pretending it is unbuilt.
+ */
+function UsageModule({ usage }: { usage: PremiumUsageCenter | null }) {
+  const { t } = useTranslation();
+  const fmt = useFormatters();
+  if (!usage || !usage.usage.signals.length) return null;
+  return (
+    <View style={styles.benefitRow}>
+      <Ionicons name="pulse-outline" size={18} color={premiumTheme.gold} />
+      <View style={styles.benefitBody}>
+        <View style={styles.benefitHead}>
+          <Text style={styles.benefitLabel} numberOfLines={1}>
+            {t("premium:commandCenter.usage.monthTitle")}
+          </Text>
+          <View style={styles.activeChip}>
+            <Text style={styles.activeChipText}>{t("premium:commandCenter.usage.liveChip")}</Text>
+          </View>
+        </View>
+        {usage.usage.signals.map((signal) => (
+          <Text key={signal.key} style={styles.note} numberOfLines={1}>
+            {t(`premium:commandCenter.usage.signals.${signal.key}`, { defaultValue: signal.label })}
+            {"  ·  "}
+            {signal.kind === "count"
+              ? fmt.number(Number(signal.value || 0)) +
+                (typeof signal.free_limit === "number" && !signal.beyond_free_limit
+                  ? ` / ${fmt.number(signal.free_limit)}`
+                  : "")
+              : signal.in_use && typeof signal.value === "string"
+                ? signal.value
+                : t("premium:commandCenter.usage.notSet")}
+          </Text>
+        ))}
+        {usage.usage.omitted.length ? (
+          <Text style={styles.note} numberOfLines={2}>
+            {t("premium:commandCenter.usage.omittedNote")}
+          </Text>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Unused-benefit discovery. Every row was derived server-side from a signal the
+ * member can see in the usage module above — never speculative, members only.
+ * A member using everything sees an "all used" line rather than invented tips.
+ */
+function RecommendedModule({ usage }: { usage: PremiumUsageCenter | null }) {
+  const { t } = useTranslation();
+  if (!usage) return null;
+  const recommendations = usage.usage.recommendations;
+  return (
+    <View style={styles.benefitRow}>
+      <Ionicons name="compass-outline" size={18} color={premiumTheme.gold} />
+      <View style={styles.benefitBody}>
+        <View style={styles.benefitHead}>
+          <Text style={styles.benefitLabel} numberOfLines={1}>
+            {t("premium:commandCenter.modules.recommended.label")}
+          </Text>
+        </View>
+        {recommendations.length ? (
+          recommendations.map((rec) => (
+            <View key={`${rec.capability}:${rec.reason}`} style={styles.recommendationRow}>
+              <Text style={styles.benefitLabel} numberOfLines={1}>
+                {t(`premium:commandCenter.usage.reasons.${rec.reason}.title`, { defaultValue: rec.title })}
+              </Text>
+              <Text style={styles.note} numberOfLines={2}>
+                {t(`premium:commandCenter.usage.reasons.${rec.reason}.body`, { defaultValue: rec.body })}
+              </Text>
+            </View>
+          ))
+        ) : (
+          <Text style={styles.note}>{t("premium:commandCenter.usage.allUsed")}</Text>
+        )}
+      </View>
     </View>
   );
 }
@@ -1557,6 +1680,7 @@ const styles = createThemedStyles(() => ({
   },
   activeChipText: { color: colors.background, fontSize: 10, fontWeight: "700", letterSpacing: 0.4, textTransform: "uppercase" },
   allowance: { gap: 4 },
+  recommendationRow: { gap: 2, marginTop: 4 },
   barTrack: { backgroundColor: colors.surfaceRaised, borderRadius: premiumTheme.radius.chip, height: 6, overflow: "hidden", width: "100%" },
   barFill: { borderRadius: premiumTheme.radius.chip, height: 6 },
 

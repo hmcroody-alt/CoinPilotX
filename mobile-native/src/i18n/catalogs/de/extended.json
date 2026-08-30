@@ -2376,7 +2376,44 @@
           "hint": "Frühe Experimente, an denen du teilnehmen kannst — später verfügbar."
         }
       },
-      "note": "Bereiche mit der Markierung Als Nächstes sind noch nicht aktiv, und keiner wird separat abgerechnet. Jeder erscheint hier, sobald er bereit ist."
+      "note": "Bereiche mit der Markierung Als Nächstes sind noch nicht aktiv, und keiner wird separat abgerechnet. Jeder erscheint hier, sobald er bereit ist.",
+      "usage": {
+        "monthTitle": "Dein Premium diesen Monat",
+        "liveChip": "Live",
+        "notSet": "Nicht festgelegt",
+        "omittedNote": "Was wir gerade nicht messen können, wird ausgeblendet, nie geschätzt.",
+        "allUsed": "Du nutzt bereits alles, was deine Mitgliedschaft bietet.",
+        "signals": {
+          "advanced_alert_rules": "Erweiterte Alarmregeln",
+          "alerts_triggered_month": "Ausgelöste Alarme diesen Monat",
+          "portfolio_holdings": "Positionen im Portfolio",
+          "profile_theme": "Profil-Theme",
+          "identity_effect": "Identitätseffekt",
+          "blue_check_application": "Verifizierungsantrag"
+        },
+        "reasons": {
+          "no_advanced_rules": {
+            "title": "Erweiterte Alarme ausprobieren",
+            "body": "Du hast noch keine erweiterte Alarmregel erstellt. Kombiniere Bedingungen, um genau die Bewegungen zu erfassen, die dir wichtig sind."
+          },
+          "within_free_ceiling": {
+            "title": "Platz für dein Portfolio",
+            "body": "Du bist noch innerhalb des kostenlosen Limits. Premium-Tracking hat keine Obergrenze."
+          },
+          "no_theme_set": {
+            "title": "Profil-Theme festlegen",
+            "body": "Premium-Themes sind in deiner Mitgliedschaft enthalten — wähle eins und mach dein Profil zu deinem."
+          },
+          "no_effect_set": {
+            "title": "Identitätseffekt hinzufügen",
+            "body": "Identitätseffekte gehören zu deiner Mitgliedschaft, und noch ist keiner aktiv."
+          },
+          "not_applied": {
+            "title": "Identitätsverifizierung starten",
+            "body": "Premium öffnet die Tür zur regulären Prüfung — es kauft nie das Häkchen. Du hast dich noch nicht beworben."
+          }
+        }
+      }
     },
     "free": {
       "heading": "Immer kostenlos",

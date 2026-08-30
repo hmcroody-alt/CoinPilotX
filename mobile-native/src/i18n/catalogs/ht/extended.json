@@ -2371,7 +2371,44 @@
           "hint": "Eksperyans bonè ou ka chwazi patisipe, k ap vini pita."
         }
       },
-      "note": "Espas ki make Pwochen poko limen, e okenn nan yo pa faktire apa. Chak ap parèt isit la lè li pare."
+      "note": "Espas ki make Pwochen poko limen, e okenn nan yo pa faktire apa. Chak ap parèt isit la lè li pare.",
+      "usage": {
+        "monthTitle": "Premium ou mwa sa a",
+        "liveChip": "An dirèk",
+        "notSet": "Poko defini",
+        "omittedNote": "Sa nou pa ka mezire kounye a rete kache, nou pa janm estime li.",
+        "allUsed": "W ap deja itilize tout sa manm ou an ofri.",
+        "signals": {
+          "advanced_alert_rules": "Règ alèt avanse",
+          "alerts_triggered_month": "Alèt ki deklanche mwa sa a",
+          "portfolio_holdings": "Aktif nan pòtfèy ou",
+          "profile_theme": "Tèm pwofil",
+          "identity_effect": "Efè idantite",
+          "blue_check_application": "Demann verifikasyon"
+        },
+        "reasons": {
+          "no_advanced_rules": {
+            "title": "Eseye alèt avanse yo",
+            "body": "Ou poko kreye yon règ alèt avanse. Konbine kondisyon pou kenbe egzakteman mouvman ki enpòtan pou ou yo."
+          },
+          "within_free_ceiling": {
+            "title": "Plas pou pòtfèy ou grandi",
+            "body": "Ou toujou anba limit gratis la. Suivi Premium pa gen plafon."
+          },
+          "no_theme_set": {
+            "title": "Chwazi yon tèm pwofil",
+            "body": "Tèm Premium yo enkli nan manm ou an — chwazi youn pou fè pwofil ou vin pa w."
+          },
+          "no_effect_set": {
+            "title": "Ajoute yon efè idantite",
+            "body": "Efè idantite yo fè pati manm ou an epi okenn poko aktif."
+          },
+          "not_applied": {
+            "title": "Kòmanse verifikasyon idantite",
+            "body": "Premium ouvri pòt pou revizyon estanda a — li pa janm achte badj la. Ou poko aplike."
+          }
+        }
+      }
     },
     "free": {
       "heading": "Toujou gratis",

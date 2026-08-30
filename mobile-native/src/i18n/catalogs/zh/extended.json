@@ -2370,7 +2370,44 @@
           "hint": "你可以选择参与的早期实验，将在后续阶段推出。"
         }
       },
-      "note": "标记为“即将推出”的空间尚未启用，且均不单独收费。每个空间准备就绪后都会显示在此。"
+      "note": "标记为“即将推出”的空间尚未启用，且均不单独收费。每个空间准备就绪后都会显示在此。",
+      "usage": {
+        "monthTitle": "你本月的 Premium",
+        "liveChip": "实时",
+        "notSet": "未设置",
+        "omittedNote": "目前无法衡量的内容会被隐藏，绝不估算。",
+        "allUsed": "你已在使用会员提供的所有功能。",
+        "signals": {
+          "advanced_alert_rules": "高级提醒规则",
+          "alerts_triggered_month": "本月触发的提醒",
+          "portfolio_holdings": "投资组合持仓",
+          "profile_theme": "个人资料主题",
+          "identity_effect": "身份特效",
+          "blue_check_application": "认证申请"
+        },
+        "reasons": {
+          "no_advanced_rules": {
+            "title": "试试高级提醒",
+            "body": "你还没有创建高级提醒规则。组合多个条件，精准捕捉你关心的行情变化。"
+          },
+          "within_free_ceiling": {
+            "title": "投资组合还有增长空间",
+            "body": "你仍在免费持仓上限内。Premium 跟踪没有上限。"
+          },
+          "no_theme_set": {
+            "title": "设置个人资料主题",
+            "body": "Premium 主题已包含在你的会员中——选择一个，让个人资料更有你的风格。"
+          },
+          "no_effect_set": {
+            "title": "添加身份特效",
+            "body": "身份特效是你会员权益的一部分，目前还没有启用任何特效。"
+          },
+          "not_applied": {
+            "title": "开始身份认证",
+            "body": "Premium 为你打开标准审核的大门——它绝不购买认证标志。你还没有提交申请。"
+          }
+        }
+      }
     },
     "free": {
       "heading": "始终免费",

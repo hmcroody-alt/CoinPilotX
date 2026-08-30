@@ -2376,7 +2376,44 @@
           "hint": "Early experiments you can opt into, arriving in a later pass."
         }
       },
-      "note": "Spaces marked Next are not on yet, and none of them is billed separately. Each one appears here once it is ready."
+      "note": "Spaces marked Next are not on yet, and none of them is billed separately. Each one appears here once it is ready.",
+      "usage": {
+        "monthTitle": "Your Premium this month",
+        "liveChip": "Live",
+        "notSet": "Not set",
+        "omittedNote": "Anything we can't measure right now is hidden, never estimated.",
+        "allUsed": "You're using everything your membership offers right now.",
+        "signals": {
+          "advanced_alert_rules": "Advanced alert rules",
+          "alerts_triggered_month": "Alerts triggered this month",
+          "portfolio_holdings": "Portfolio holdings",
+          "profile_theme": "Profile theme",
+          "identity_effect": "Identity effect",
+          "blue_check_application": "Verification application"
+        },
+        "reasons": {
+          "no_advanced_rules": {
+            "title": "Try advanced alerts",
+            "body": "You haven't built an advanced alert rule yet. Combine conditions to catch exactly the moves you care about."
+          },
+          "within_free_ceiling": {
+            "title": "Room to grow your portfolio",
+            "body": "You're still within the free holding limit. Premium tracking has no ceiling."
+          },
+          "no_theme_set": {
+            "title": "Set a profile theme",
+            "body": "Premium themes are included with your membership — pick one to make your profile yours."
+          },
+          "no_effect_set": {
+            "title": "Add an identity effect",
+            "body": "Identity effects are part of your membership and none is active yet."
+          },
+          "not_applied": {
+            "title": "Start identity verification",
+            "body": "Premium opens the door to the standard review — it never buys the check. You haven't applied yet."
+          }
+        }
+      }
     },
     "free": {
       "heading": "Always free",

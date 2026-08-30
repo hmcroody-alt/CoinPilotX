@@ -2376,7 +2376,44 @@
           "hint": "Experimentos iniciales a los que puedes unirte, llegarán en una fase posterior."
         }
       },
-      "note": "Los espacios marcados como Siguiente aún no están activos, y ninguno se cobra por separado. Cada uno aparecerá aquí cuando esté listo."
+      "note": "Los espacios marcados como Siguiente aún no están activos, y ninguno se cobra por separado. Cada uno aparecerá aquí cuando esté listo.",
+      "usage": {
+        "monthTitle": "Tu Premium este mes",
+        "liveChip": "En vivo",
+        "notSet": "Sin configurar",
+        "omittedNote": "Lo que no podemos medir ahora mismo se oculta, nunca se estima.",
+        "allUsed": "Ya estás usando todo lo que ofrece tu membresía.",
+        "signals": {
+          "advanced_alert_rules": "Reglas de alerta avanzadas",
+          "alerts_triggered_month": "Alertas activadas este mes",
+          "portfolio_holdings": "Activos en tu portafolio",
+          "profile_theme": "Tema de perfil",
+          "identity_effect": "Efecto de identidad",
+          "blue_check_application": "Solicitud de verificación"
+        },
+        "reasons": {
+          "no_advanced_rules": {
+            "title": "Prueba las alertas avanzadas",
+            "body": "Aún no has creado una regla de alerta avanzada. Combina condiciones para captar justo los movimientos que te importan."
+          },
+          "within_free_ceiling": {
+            "title": "Espacio para ampliar tu portafolio",
+            "body": "Todavía estás dentro del límite gratuito. El seguimiento Premium no tiene tope."
+          },
+          "no_theme_set": {
+            "title": "Elige un tema de perfil",
+            "body": "Los temas Premium están incluidos en tu membresía: elige uno y haz tuyo tu perfil."
+          },
+          "no_effect_set": {
+            "title": "Añade un efecto de identidad",
+            "body": "Los efectos de identidad forman parte de tu membresía y aún no hay ninguno activo."
+          },
+          "not_applied": {
+            "title": "Inicia la verificación de identidad",
+            "body": "Premium abre la puerta a la revisión estándar; nunca compra la insignia. Aún no has aplicado."
+          }
+        }
+      }
     },
     "free": {
       "heading": "Siempre gratis",

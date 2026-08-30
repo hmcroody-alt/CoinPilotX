@@ -21774,6 +21774,19 @@ def api_premium_status_center():
         _papi.status_center(int(user.get("user_id") or 0)))
 
 
+@webhook_app.route("/api/premium/usage-center", methods=["GET"])
+@webhook_app.route("/api/pulse/premium/usage-center", methods=["GET"])
+def api_premium_usage_center():
+    """Real Premium usage this month + unused-benefit discovery. Live counts only."""
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "error": "Login required."}), 401
+    from services.business_os.entitlements import premium_api as _papi
+    return _premium_center_reply(
+        _papi.usage_center(int(user.get("user_id") or 0)))
+
+
 @webhook_app.route("/admin/business-os/premium/overview", methods=["GET"])
 def admin_business_os_premium_overview():
     """Owner-only read: migration state, honesty gap, and founder cohort."""
@@ -115372,6 +115385,7 @@ def undx_policy_health_check():
     try:
         from services import undx_agent_policy as _policy
         from services import undx_agent_tools as _tools
+        from services import undx_flag_diagnostics as _flag_diagnostics
         from services import undx_architecture as _architecture
         from services import undx_mission_runtime as _mission_runtime
         from services import undx_tool_gateway as _gateway
@@ -115477,6 +115491,12 @@ def undx_policy_health_check():
                 "registry_executor": not missing_executors,
                 "policy": not policy_gaps,
             },
+            # Which switch produced the state the booleans above describe. The rest of
+            # this payload reports that writes are unavailable; this names the variable
+            # responsible and how to clear it, which is the question that actually gets
+            # asked when someone reports "UNDX said it needs the PulseSoc interface".
+            # Read-only, and derived entirely from the policy module already imported.
+            "capability_diagnostics": _flag_diagnostics.snapshot(),
             "corpus": {
                 "present": os.path.isfile(corpus_state.manifest.corpus_path),
                 "audited": corpus_state.manifest.audit_status == "pass" and not bool(corpus_state.fatal),

@@ -264,6 +264,98 @@ function normalizeSubscription(input: Partial<PremiumSubscription>): PremiumSubs
 }
 
 /**
+ * Usage Center — "Your Premium this month".
+ *
+ * Talks to `GET /api/premium/usage-center`. Every value the server sends is a
+ * live count from the domain table the feature itself reads
+ * (`usage_summary.py`); a source the server could not measure is OMITTED from
+ * `signals` and named in `omitted`. The client renders exactly what arrives and
+ * never zero-fills, estimates, or invents a number — same golden rule as the
+ * benefit list. NOT cached: a usage count shown stale is a small lie.
+ */
+export type PremiumUsageSignal = {
+  key: string;
+  /** The entitlement capability this signal belongs to. */
+  capability: string;
+  label: string;
+  kind: "count" | "state";
+  scope: "current" | "month" | "day";
+  /** count -> number; state -> the state string or null when unset. */
+  value: number | string | null;
+  free_limit?: number;
+  beyond_free_limit?: boolean;
+  in_use?: boolean;
+};
+
+export type PremiumUsageRecommendation = {
+  capability: string;
+  /** The signal key this recommendation was derived from — never speculative. */
+  signal: string;
+  reason: string;
+  title: string;
+  body: string;
+};
+
+export type PremiumUsageCenter = {
+  ok: boolean;
+  membership: { is_premium: boolean; usable_now: boolean; on_hold: boolean };
+  usage: {
+    month: string;
+    signals: PremiumUsageSignal[];
+    /** Sources that could not be measured this request. Shown as absent. */
+    omitted: string[];
+    recommendations: PremiumUsageRecommendation[];
+    provenance: string;
+  };
+  not_verification: string;
+};
+
+export async function getPremiumUsageCenter(): Promise<PremiumUsageCenter> {
+  return normalizePremiumUsageCenter(
+    await pulseApi<Partial<PremiumUsageCenter>>("/api/premium/usage-center")
+  );
+}
+
+/**
+ * Fail-closed normalize, same posture as `normalizePremiumCenter`: a malformed
+ * payload yields empty lists (nothing rendered), never fabricated counts.
+ */
+export function normalizePremiumUsageCenter(
+  input: Partial<PremiumUsageCenter> | null | undefined
+): PremiumUsageCenter {
+  const usage = input?.usage;
+  const signals = Array.isArray(usage?.signals)
+    ? usage.signals.filter(
+        (s): s is PremiumUsageSignal =>
+          Boolean(s && typeof s.key === "string" && typeof s.label === "string") &&
+          (s.kind === "count" ? typeof s.value === "number" : true)
+      )
+    : [];
+  const recommendations = Array.isArray(usage?.recommendations)
+    ? usage.recommendations.filter(
+        (r): r is PremiumUsageRecommendation =>
+          Boolean(r && typeof r.title === "string" && typeof r.signal === "string")
+      )
+    : [];
+  return {
+    ok: Boolean(input?.ok),
+    membership: {
+      is_premium: Boolean(input?.membership?.is_premium),
+      usable_now: Boolean(input?.membership?.usable_now),
+      on_hold: Boolean(input?.membership?.on_hold)
+    },
+    usage: {
+      month: String(usage?.month || ""),
+      signals,
+      omitted: Array.isArray(usage?.omitted) ? usage.omitted.map(String) : [],
+      recommendations,
+      provenance: String(usage?.provenance || "")
+    },
+    not_verification: String(input?.not_verification || "")
+  };
+}
+
+/**
  * The layout this member gets.
  *
  * Order matters. Founder is checked first because a Founder who also holds a
