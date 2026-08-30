@@ -240,17 +240,11 @@ def _original_purchase_at(raw_json: Any) -> Optional[str]:
     return _ms_to_iso(value)
 
 
-def subscription_summary(user_id: Any, *, subject_type: str = "user") -> Optional[dict]:
-    """Safe billing facts for the member's own subscription, or ``None``.
+def _canonical_subscription(user_id: Any, *, subject_type: str = "user") -> Optional[dict]:
+    """The provider-backed subscription record, or ``None`` when there is none.
 
-    ``None`` is a real and common answer, not a failure: a Founder or an
-    admin-granted member has canonical Premium with no provider subscription
-    behind it at all. The Control Center renders that as a grandfathered plan
-    rather than as missing data.
-
-    Nothing identifying is returned. No subscription id, no transaction id, no
-    receipt, no raw provider payload, no internal row id — see
-    :data:`_SUB_PUBLIC_COLUMNS`.
+    This is authority 1. A row here was written from a cryptographically
+    verified provider payload, so when it exists nothing else may override it.
     """
     try:
         from services import db
@@ -309,6 +303,230 @@ def subscription_summary(user_id: Any, *, subject_type: str = "user") -> Optiona
         # screen omits the row; it does not print a placeholder.
         "original_purchase_at": _original_purchase_at(data.get("raw_json")),
     }
+
+
+# --- authority 2: legitimate legacy history ---------------------------------
+#
+# Everything below exists because ``business_os_ent_provider_subs`` only started
+# being written when the Business OS entitlement tables went canonical. Members
+# who subscribed — or trialled — before that have real, recorded subscription
+# history that lives entirely in the legacy ``subscriptions`` table and the
+# premium columns on ``users``. Reading only authority 1 reports those members as
+# having never subscribed, which is false, and which is what made a lapsed
+# account indistinguishable from a brand-new one on the Premium screen.
+#
+# This fallback surfaces history that already exists. It does not create it. In
+# particular it never claims a provider the record does not name: a PulseSoc
+# trial reports as a PulseSoc trial, and no legacy row is ever relabelled as an
+# App Store subscription.
+
+#: Legacy ``payment_type``/``plan`` words that mean "this was a platform trial",
+#: not a purchase through a payment provider.
+_LEGACY_TRIAL_TYPES = {"trial", "trialing", "free_trial"}
+
+#: Legacy status words that constitute evidence of a real subscription having
+#: existed. A NULL, empty, "none" or "free" status is the absence of history,
+#: not a lapsed subscription, and must keep returning ``None`` so a genuinely
+#: new account is still described as never having subscribed.
+_LEGACY_HISTORY_STATUSES = {
+    "active", "trialing", "trial", "expired", "canceled", "cancelled",
+    "past_due", "unpaid", "grace_period", "grace", "billing_retry",
+    "paused", "refunded", "revoked", "lifetime",
+}
+
+#: Provider identity for a legacy record that names no payment provider. These
+#: are deliberately NOT payment-processor names: the platform itself granted the
+#: trial, and calling it "stripe" or "apple_app_store" would be a fabrication.
+_LEGACY_PROVIDER_TRIAL = "pulsesoc_trial"
+_LEGACY_PROVIDER_OTHER = "pulsesoc_legacy"
+
+
+def _legacy_provider(stored_provider: Any, payment_type: Any) -> str:
+    """The truthful provider label for a legacy row.
+
+    The stored provider wins when the row actually names one. Otherwise the
+    label is derived from ``payment_type`` and stays inside the PulseSoc
+    namespace. There is deliberately no branch that can return an App Store
+    identity: a legacy row has no verified Apple transaction behind it, so
+    describing it as one would be exactly the fabrication this must not commit.
+    """
+    provider = str(stored_provider or "").strip().lower()
+    if provider:
+        return provider
+    if str(payment_type or "").strip().lower() in _LEGACY_TRIAL_TYPES:
+        return _LEGACY_PROVIDER_TRIAL
+    return _LEGACY_PROVIDER_OTHER
+
+
+def _first_present(row: Any, *keys: str) -> Any:
+    """First non-empty value among ``keys``, or ``None``."""
+    for key in keys:
+        try:
+            value = row[key]
+        except (TypeError, IndexError, KeyError):
+            continue
+        if value not in (None, "", 0, "0"):
+            return value
+    return None
+
+
+def _legacy_subscription(user_id: Any) -> Optional[dict]:
+    """Real prior subscription history from the legacy tables, or ``None``.
+
+    ``None`` here means what it has always meant: this account has no
+    subscription history at all. It is returned whenever the legacy record is
+    missing, unreadable, or carries no status that evidences a subscription.
+    """
+    try:
+        from services import db
+    except Exception:  # noqa: BLE001
+        return None
+
+    legacy_row = None
+    user_row = None
+    try:
+        conn = db.connect()
+        try:
+            # The legacy subscriptions ledger. Newest row wins for the same
+            # reason authority 1 orders by ``updated_at``: someone who trialled,
+            # lapsed, then subscribed again has several rows and only the latest
+            # describes where they stand now.
+            try:
+                cur = conn.execute(
+                    "SELECT status, plan, payment_type, provider, "
+                    "current_period_end, pro_expires_at, trial_end_date, "
+                    "trial_start_date, cancel_at_period_end, created_at "
+                    "FROM subscriptions WHERE user_id = ? "
+                    "ORDER BY updated_at DESC, id DESC LIMIT 1",
+                    (int(user_id),),
+                )
+                legacy_row = cur.fetchone()
+            except Exception:  # noqa: BLE001 — table absent on newer installs
+                _log.debug("legacy subscriptions table unavailable user=%s", user_id)
+            try:
+                cur = conn.execute(
+                    "SELECT subscription_status, subscription_plan, "
+                    "subscription_expires_at, subscription_started_at, "
+                    "premium_expires_at, pro_expires_at, trial_start_date, "
+                    "trial_end_date, plan "
+                    "FROM users WHERE user_id = ? LIMIT 1",
+                    (int(user_id),),
+                )
+                user_row = cur.fetchone()
+            except Exception:  # noqa: BLE001 — older/narrower users schema
+                _log.debug("legacy premium columns unavailable user=%s", user_id)
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001 — history must never break the page
+        _log.exception("legacy subscription lookup failed for user=%s", user_id)
+        return None
+
+    if legacy_row is None and user_row is None:
+        return None
+
+    status = ""
+    if legacy_row is not None:
+        status = str(_first_present(legacy_row, "status") or "").strip().lower()
+    if not status and user_row is not None:
+        status = str(_first_present(user_row, "subscription_status") or "").strip().lower()
+    if status not in _LEGACY_HISTORY_STATUSES:
+        # No evidence of a subscription ever having existed. This is the
+        # never-subscribed case and it must stay never-subscribed.
+        return None
+
+    period_end = None
+    if legacy_row is not None:
+        period_end = _first_present(
+            legacy_row, "current_period_end", "pro_expires_at", "trial_end_date")
+    if period_end is None and user_row is not None:
+        period_end = _first_present(
+            user_row, "subscription_expires_at", "premium_expires_at",
+            "pro_expires_at", "trial_end_date")
+    period_end = str(period_end) if period_end is not None else None
+
+    started_at = None
+    if legacy_row is not None:
+        started_at = _first_present(legacy_row, "trial_start_date", "created_at")
+    if started_at is None and user_row is not None:
+        started_at = _first_present(
+            user_row, "subscription_started_at", "trial_start_date")
+
+    payment_type = _first_present(legacy_row, "payment_type") if legacy_row is not None else None
+    stored_provider = _first_present(legacy_row, "provider") if legacy_row is not None else None
+    provider = _legacy_provider(stored_provider, payment_type)
+
+    # The clock still outranks the status word, exactly as it does for authority
+    # 1: a legacy row frozen at 'active' with a period end in the past describes
+    # a lapsed subscription, whatever it says about itself.
+    state = _subscription_state(status, current_period_end=period_end)
+
+    # A legacy plan word ('pro', 'free') is not a canonical plan key and must not
+    # be mapped through the Apple product table. Passing it through unmapped is
+    # what keeps `product_id` None and the billing period blank rather than
+    # asserting a monthly or annual Apple product that was never purchased.
+    plan_key = str(
+        (_first_present(legacy_row, "plan") if legacy_row is not None else None)
+        or (_first_present(user_row, "subscription_plan", "plan") if user_row is not None else None)
+        or ""
+    )
+
+    return {
+        "provider": provider,
+        "plan_key": plan_key,
+        "billing_period": _PLAN_PERIOD.get(plan_key, ""),
+        "status": status,
+        "current_period_end": period_end,
+        "cancel_at_period_end": bool(
+            _first_present(legacy_row, "cancel_at_period_end")
+            if legacy_row is not None else None
+        ),
+        "state": state,
+        # A legacy record describes a subscription that is over, or one the
+        # provider tables no longer track. Either way nothing here is going to
+        # bill again, so the screen must never render "Renews on".
+        "auto_renew": False,
+        "renews_at": None,
+        "expires_at": period_end,
+        # There is no Apple product behind a legacy record. The app asks
+        # StoreKit for the CURRENT catalog products on the purchase surface, so
+        # a null here costs the member nothing and stops the screen implying an
+        # App Store subscription lapsed.
+        "product_id": None,
+        # Our own recorded start date, not an Apple-signed originalPurchaseDate.
+        "original_purchase_at": str(started_at) if started_at is not None else None,
+    }
+
+
+def subscription_summary(user_id: Any, *, subject_type: str = "user") -> Optional[dict]:
+    """Safe billing facts for the member's own subscription, or ``None``.
+
+    Authority order:
+
+    1. the canonical provider subscription record, when one exists;
+    2. legitimate legacy subscription history, when authority 1 is silent;
+    3. ``None`` — and only then — meaning this account has never subscribed.
+
+    ``None`` is a real and common answer, not a failure: a Founder or an
+    admin-granted member has canonical Premium with no provider subscription
+    behind it at all. The Control Center renders that as a grandfathered plan
+    rather than as missing data.
+
+    Note what this function is NOT: it is not an entitlement check. A returned
+    record describes subscription *history*, and "history says expired" is fully
+    compatible with "current entitlement is inactive" — that pair is precisely
+    the lapsed member. Access is decided by :func:`premium.resolve`, never here.
+
+    Nothing identifying is returned. No subscription id, no transaction id, no
+    receipt, no raw provider payload, no internal row id — see
+    :data:`_SUB_PUBLIC_COLUMNS`.
+    """
+    canonical = _canonical_subscription(user_id, subject_type=subject_type)
+    if canonical is not None:
+        return canonical
+    if str(subject_type or "user") != "user":
+        # The legacy tables are keyed by user id and describe nothing else.
+        return None
+    return _legacy_subscription(user_id)
 
 
 def _allowance(user_id: Any, key: str, subject_type: str) -> Optional[dict]:
