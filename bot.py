@@ -37809,6 +37809,83 @@ def api_pulse_notifications_preferences():
     return response
 
 
+# --- Pulse Briefings (network + crypto intelligence digests) -----------------
+# Owner-scoped only. Generation/scheduling is server-side in alert_worker via
+# services.pulse_briefings; these routes are reads + preference writes.
+
+@webhook_app.route("/api/pulse/briefings", methods=["GET"])
+def api_pulse_briefings_list():
+    init_db()
+    user = api_account_user()
+    if not user:
+        response = jsonify({"ok": False, "message": "Login required."})
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response, 401
+    from services import pulse_briefings as briefing_service
+    items = briefing_service.list_briefings(user["user_id"], safe_int(request.args.get("limit"), 20))
+    response = jsonify({"ok": True, "briefings": items})
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
+@webhook_app.route("/api/pulse/briefings/<int:briefing_id>", methods=["GET"])
+def api_pulse_briefing_detail(briefing_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        response = jsonify({"ok": False, "message": "Login required."})
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response, 401
+    from services import pulse_briefings as briefing_service
+    item = briefing_service.get_briefing(user["user_id"], briefing_id)
+    if not item:
+        response = jsonify({"ok": False, "message": "Briefing not found."})
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response, 404
+    response = jsonify({"ok": True, "briefing": item})
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
+@webhook_app.route("/api/pulse/briefings/preferences", methods=["GET", "PATCH"])
+def api_pulse_briefing_preferences():
+    init_db()
+    user = api_account_user()
+    if not user:
+        response = jsonify({"ok": False, "message": "Login required."})
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response, 401
+    from services import pulse_briefings as briefing_service
+    if request.method == "PATCH":
+        payload = request.get_json(silent=True) or {}
+        prefs = briefing_service.update_preferences(user["user_id"], payload.get("preferences") or payload)
+    else:
+        prefs = briefing_service.get_preferences(user["user_id"])
+    response = jsonify({"ok": True, "preferences": prefs})
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
+@webhook_app.route("/api/admin/briefings/status", methods=["GET"])
+def api_admin_briefings_status():
+    init_db()
+    admin, error = require_owner_api()
+    if error:
+        return error
+    from services import pulse_briefings as briefing_service
+    from services.pulse_briefings import engine as briefing_engine
+    response = jsonify({
+        "ok": True,
+        "enabled": briefing_service.briefings_enabled(),
+        "kill_switch_env": "BRIEFINGS_DISABLED",
+        "metrics": briefing_engine.metrics_snapshot(),
+        "windows_local_hours": list(briefing_service.BRIEFING_WINDOWS),
+        "send_rate_cap_per_cycle": briefing_engine.SEND_RATE_CAP_PER_CYCLE,
+    })
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
 @webhook_app.route("/api/push/subscribe", methods=["POST"])
 @webhook_app.route("/api/push/register-device", methods=["POST"])
 def api_push_subscribe():

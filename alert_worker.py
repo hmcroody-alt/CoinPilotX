@@ -15,6 +15,7 @@ import signal
 import time
 
 from services import alert_engine, auto_signals_service, live_market_service, market_observations
+from services import pulse_briefings
 from services.sentinel import runtime as sentinel_runtime
 
 
@@ -67,6 +68,16 @@ def main():
             sample = _sample_market()
             result = alert_engine.evaluate_all_active_alerts(limit=limit, worker_name="alert_worker")
             sentinel_results = sentinel_runtime.run_scheduled_ingestion()
+            # Pulse Briefings tick: an evaluation window, never a mandatory
+            # send. Isolated so a briefing fault can never break the alert
+            # sweep, and gated server-side by BRIEFINGS_DISABLED.
+            try:
+                briefing_result = pulse_briefings.run_scheduled_cycle(
+                    limit=int(os.getenv("BRIEFING_CYCLE_BATCH_LIMIT", "50"))
+                )
+            except Exception:
+                logging.exception("Briefing cycle failed; alert sweep unaffected.")
+                briefing_result = {"ok": False, "processed": 0}
             logging.info(
                 "Alert worker cycle auto_users=%s auto_rules=%s sampled=%s checked=%s triggered=%s errors=%s latency_ms=%s sentinel_runs=%s",
                 auto_result.get("checked_users"),
@@ -77,6 +88,11 @@ def main():
                 result.get("error_count"),
                 result.get("latency_ms"),
                 len(sentinel_results),
+            )
+            logging.info(
+                "Briefing tick processed=%s sent=%s suppressed=%s failed=%s",
+                briefing_result.get("processed"), briefing_result.get("sent"),
+                briefing_result.get("suppressed"), briefing_result.get("failed"),
             )
         except Exception as exc:
             logging.exception("Alert worker cycle failed: %s", exc)
