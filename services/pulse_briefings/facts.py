@@ -131,22 +131,35 @@ def collect_crypto_facts(cur, user_id: int, *, watchlist_enabled: bool) -> dict[
         facts["trending"] = []
     if watchlist_enabled:
         try:
+            # Column names are asset_symbol/condition_type/target_value -- the older
+            # symbol/type/threshold spelling raises UndefinedColumn on Postgres, and
+            # because the whole block is one try/except that silently emptied BOTH
+            # watchlist and alert_proximity for every user on every cycle.
             cur.execute(
-                "SELECT symbol, type, threshold FROM crypto_alerts WHERE user_id=? AND COALESCE(status,'active')='active' LIMIT 25",
+                "SELECT asset_symbol, condition_type, target_value FROM crypto_alerts "
+                "WHERE user_id=? AND COALESCE(status,'active')='active' LIMIT 25",
                 (int(user_id),),
             )
             rows = [dict(r) if not isinstance(r, dict) else r for r in cur.fetchall()]
-            symbols = sorted({str(r.get("symbol") or "").upper() for r in rows if r.get("symbol")})
+            symbols = sorted({str(r.get("asset_symbol") or "").upper() for r in rows if r.get("asset_symbol")})
             snapshots = {a["symbol"]: a for a in crypto_provider.get_watchlist_snapshots(symbols)}
             facts["watchlist"] = [
                 {"symbol": s, "price": snapshots[s]["price"], "change_24h": snapshots[s]["change_24h"]}
                 for s in symbols if s in snapshots
             ]
             for r in rows:  # Stage 41: proximity only — never trigger early
-                symbol = str(r.get("symbol") or "").upper()
+                symbol = str(r.get("asset_symbol") or "").upper()
                 snap = snapshots.get(symbol)
-                threshold = float(r.get("threshold") or 0)
-                if not snap or threshold <= 0 or str(r.get("type") or "") not in ("price", "coin_price"):
+                try:
+                    threshold = float(r.get("target_value") or 0)
+                except (TypeError, ValueError):
+                    continue
+                # condition_type holds the stored condition vocabulary
+                # (above/below/moves_up_percent/...), NOT the derived alert-type
+                # strings the old code compared against. Percent-move conditions
+                # carry a percentage in target_value, so a price-distance
+                # calculation would be meaningless for them.
+                if not snap or threshold <= 0 or str(r.get("condition_type") or "") not in ("above", "below"):
                     continue
                 price = float(snap.get("price") or 0)
                 if price <= 0:

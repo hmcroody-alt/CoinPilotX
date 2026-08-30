@@ -39,10 +39,17 @@ def _fresh_conn() -> sqlite3.Connection:
             id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, type TEXT,
             title TEXT, body TEXT, is_read INTEGER DEFAULT 0, created_at TEXT)"""
     )
+    # Mirrors production Postgres exactly. The previous fixture invented
+    # symbol/type/threshold, which matched the (wrong) query in facts.py rather
+    # than the real table -- so the suite stayed green while every production
+    # cycle raised UndefinedColumn and silently emptied the watchlist.
     cur.execute(
         """CREATE TABLE crypto_alerts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, symbol TEXT,
-            type TEXT, threshold REAL, status TEXT DEFAULT 'active')"""
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, asset_symbol TEXT,
+            condition_type TEXT, target_value REAL, status TEXT DEFAULT 'active',
+            notify_push INTEGER DEFAULT 1, notify_email INTEGER DEFAULT 0,
+            notify_sms INTEGER DEFAULT 0, notify_in_app INTEGER DEFAULT 1,
+            note TEXT, created_at TEXT, updated_at TEXT, last_triggered_at TEXT)"""
     )
     cur.execute(
         """CREATE TABLE pulse_region_preferences (
@@ -194,6 +201,69 @@ class StalenessTests(unittest.TestCase):
         self.assertEqual(out["unavailable_reason"], "stale_or_provider_down")
         self.assertNotIn("btc_price", out)  # never present stale data as current
         conn.close()
+
+
+class WatchlistFactTests(unittest.TestCase):
+    """The watchlist + alert_proximity block is one try/except, so a query fault
+    empties BOTH and looks exactly like 'user watches nothing'. These tests
+    insert real crypto_alerts rows so a wrong column name fails loudly."""
+
+    def setUp(self):
+        _clear_provider_cache()
+        self.conn = _fresh_conn()
+
+    def tearDown(self):
+        self.conn.close()
+
+    def _alert(self, user_id, symbol, condition, target):
+        self.conn.execute(
+            "INSERT INTO crypto_alerts (user_id, asset_symbol, condition_type, target_value, status) "
+            "VALUES (?,?,?,?,'active')",
+            (user_id, symbol, condition, target),
+        )
+        self.conn.commit()
+
+    def _facts(self, user_id=1):
+        with mock.patch.object(facts.crypto_provider, "get_watchlist_snapshots",
+                               return_value=[{"symbol": "BTC", "price": 100.0, "change_24h": 1.0}]), \
+             mock.patch.object(facts.crypto_provider, "get_market_overview",
+                               return_value={"generated_at": _iso(datetime.now(timezone.utc)),
+                                             "provider": "coingecko",
+                                             "btc": {"price": 100.0, "change_24h": 1.0},
+                                             "eth": {"price": 50.0, "change_24h": 1.0}}), \
+             mock.patch.object(facts.crypto_provider, "get_top_movers",
+                               return_value={"gainers": [], "losers": []}), \
+             mock.patch.object(facts.crypto_provider, "get_trending", return_value=[]):
+            return facts.collect_crypto_facts(self.conn.cursor(), user_id, watchlist_enabled=True)
+
+    def test_watchlist_populates_from_real_columns(self):
+        self._alert(1, "BTC", "above", 45000.0)
+        out = self._facts()
+        self.assertEqual(out["watchlist"], [{"symbol": "BTC", "price": 100.0, "change_24h": 1.0}])
+
+    def test_proximity_reported_when_threshold_is_near(self):
+        self._alert(1, "BTC", "above", 103.0)  # 3% above a $100 price
+        out = self._facts()
+        self.assertEqual(out["alert_proximity"],
+                         [{"symbol": "BTC", "threshold": 103.0, "distance_pct": 3.0}])
+
+    def test_distant_threshold_is_not_reported(self):
+        self._alert(1, "BTC", "above", 45000.0)  # ~450x away
+        self.assertEqual(self._facts()["alert_proximity"], [])
+
+    def test_percent_move_conditions_are_not_treated_as_prices(self):
+        """target_value on a moves_up_percent alert is a percentage, so a
+        price-distance calculation against it would be meaningless."""
+        self._alert(1, "BTC", "moves_up_percent", 101.0)
+        out = self._facts()
+        self.assertEqual(out["alert_proximity"], [])
+        self.assertEqual(out["watchlist"], [{"symbol": "BTC", "price": 100.0, "change_24h": 1.0}])
+
+    def test_watchlist_is_owner_scoped(self):
+        self._alert(2, "BTC", "above", 103.0)  # belongs to another user
+        out = self._facts(user_id=1)
+        self.assertEqual(out["watchlist"], [])
+        self.assertEqual(out["alert_proximity"], [])
 
 
 class SignificanceTests(unittest.TestCase):
