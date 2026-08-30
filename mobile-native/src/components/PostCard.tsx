@@ -362,13 +362,18 @@ export function PostCard({
       ) : isReplayProcessing ? (
         <View style={[styles.liveProcessing, mediaBleedStyle]}>
           {post.live?.preview_url ? <Image source={{ uri: post.live.preview_url }} style={StyleSheet.absoluteFill} blurRadius={8} /> : null}
+          <View style={styles.liveProcessingShade} />
+          <View style={styles.liveProcessingBadge}>
+            <Ionicons name="time-outline" size={14} color={colors.accent} />
+            <Text style={styles.liveProcessingBadgeText}>Background processing</Text>
+          </View>
           <Text style={styles.liveProcessingTitle}>Live ended</Text>
-          <ActivityIndicator color={colors.accent} />
-          <Text style={styles.liveProcessingBody}>Preparing replay…</Text>
+          <Text style={styles.liveProcessingBody}>Replay is processing in the background. You can keep using PulseSoc.</Text>
         </View>
       ) : isReplayUnavailable ? (
         <View style={[styles.liveProcessing, mediaBleedStyle]}>
           {post.live?.preview_url ? <Image source={{ uri: post.live.preview_url }} style={StyleSheet.absoluteFill} blurRadius={8} /> : null}
+          <View style={styles.liveProcessingShade} />
           <Text style={styles.liveProcessingTitle}>Live ended</Text>
           <Text style={styles.liveProcessingBody}>Replay unavailable</Text>
         </View>
@@ -1459,15 +1464,41 @@ const styles = createThemedStyles(() => ({
   },
   liveProcessing: {
     alignItems: "center",
-    aspectRatio: 9 / 16,
+    aspectRatio: 4 / 3,
     backgroundColor: "#030812",
     justifyContent: "center",
+    overflow: "hidden",
     padding: 24
+  },
+  liveProcessingBadge: {
+    alignItems: "center",
+    backgroundColor: "rgba(8, 17, 30, 0.78)",
+    borderColor: "rgba(77, 255, 216, 0.28)",
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 6,
+    marginBottom: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 7
+  },
+  liveProcessingBadgeText: {
+    color: colors.accent,
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 0.3
+  },
+  liveProcessingShade: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(3, 8, 18, 0.72)"
   },
   liveProcessingBody: {
     color: colors.muted,
     fontSize: 14,
-    marginTop: 6
+    lineHeight: 20,
+    marginTop: 8,
+    maxWidth: 280,
+    textAlign: "center"
   },
   liveProcessingTitle: {
     color: colors.text,

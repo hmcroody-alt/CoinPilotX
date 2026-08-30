@@ -312,17 +312,22 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
     // UI. Replay finalization is server-owned and continues in the background
     // whatever this device does next — including being killed.
     const endAck = endLive(liveId).catch(() => null);
-    await room.stopBroadcast("host_ended").catch(() => undefined);
+    const localRelease = room.stopBroadcast("host_ended")
+      .then(() => {
+        console.log(`[live-end] local media released in ${Date.now() - endTappedAt}ms`);
+      })
+      .catch(() => undefined);
     console.log(`[live-end] navigation released in ${Date.now() - endTappedAt}ms`);
     navigation.goBack();
     endAck.then((result) => {
-      console.log(`[live-end] server ack in ${Date.now() - endTappedAt}ms status=${result ? result.recordingStatus || "ok" : "failed"}`);
+      console.log(`[live-end] server ack in ${Date.now() - endTappedAt}ms status=${result ? result.replayStatus || result.recordingStatus || "ok" : "failed"}`);
       if (!result) {
         // One best-effort retry; the backend replay reconciler also repairs a
         // session whose end call never landed, so this is belt-and-braces.
         endLive(liveId).catch(() => undefined);
       }
     });
+    localRelease.catch(() => undefined);
   }, [liveId, navigation, room]);
 
   const confirmEnd = useCallback(() => {

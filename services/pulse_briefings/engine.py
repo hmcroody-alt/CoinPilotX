@@ -30,9 +30,10 @@ import os
 import random
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from . import crypto_provider, facts as facts_mod, summarizer
+from .. import pulse_region_preferences as region_preferences
 from .. import user_context
 
 BRIEFING_WINDOWS = (0, 6, 12, 18)  # local-time window starts (hours)
@@ -136,6 +137,17 @@ def ensure_schema(conn=None) -> None:
         )
         """
     )
+    # Timezone authority (section A): quiet hours and window selection are only
+    # correct if the canonical region-preference table exists in THIS process.
+    # alert_worker never serves the settings route, so the service's own lazy
+    # ensure_schema had never run there and every lookup raised UndefinedTable.
+    # Creating it here -- inside the engine's own committing DDL block -- means
+    # the table is present before the first claim, and the @run_once_per_process
+    # guard can never be burned by a later transaction rollback.
+    try:
+        region_preferences.ensure_schema(conn)
+    except Exception:  # noqa: BLE001 - never let an optional table block briefings
+        logging.exception("BRIEFING_REGION_PREF_SCHEMA_FAILED")
     conn.commit()
     if owns:
         conn.close()
@@ -235,16 +247,30 @@ def update_preferences(user_id: int, values: dict[str, Any], *, conn=None) -> di
 
 # --- Scheduling (Stage 13/15/30/52) ----------------------------------------
 
-def _user_zone(cur, user_id: int) -> ZoneInfo:
+def _user_zone(conn, user_id: int) -> ZoneInfo:
+    """Resolve a user's zone through the canonical authority, never by guessing.
+
+    Order: the user's stored region preference, then UTC. There is no second
+    account/region authority in PulseSoc -- pulse_region_preferences is it --
+    and deriving a zone from preferred_locale is deliberately NOT done: "en-US"
+    spans six zones, so a guess would move quiet hours to a time the user never
+    chose. UTC is wrong in a way that is obvious and auditable; a guessed zone
+    is wrong in a way that looks right.
+    """
     try:
-        cur.execute("SELECT preferred_timezone FROM pulse_region_preferences WHERE user_id=? LIMIT 1", (int(user_id),))
-        row = cur.fetchone()
-        name = (dict(row) if row else {}).get("preferred_timezone") or ""
-        if name:
-            return ZoneInfo(str(name))
-    except Exception:  # noqa: BLE001
-        pass
-    return ZoneInfo("UTC")
+        prefs = region_preferences.get_preferences(int(user_id), conn=conn)
+    except Exception:  # noqa: BLE001 - timezone must never break a briefing
+        logging.exception("BRIEFING_TIMEZONE_LOOKUP_FAILED user_id=%s", user_id)
+        return ZoneInfo("UTC")
+
+    name = str(prefs.get("preferred_timezone") or "").strip()
+    if not name:
+        return ZoneInfo("UTC")
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        logging.warning("BRIEFING_TIMEZONE_UNKNOWN user_id=%s zone=%s", user_id, name)
+        return ZoneInfo("UTC")
 
 
 def _windows_for_frequency(frequency: str) -> tuple[int, ...]:
@@ -306,7 +332,7 @@ def evaluate_user_briefing(conn, user: dict[str, Any], *, now_utc: datetime | No
         # Returns before CLAIM so no row is written and the window stays claimable
         # if the user re-enables push later in the same window.
         return {"status": "push_disabled_by_user"}
-    zone = _user_zone(cur, user_id)
+    zone = _user_zone(conn, user_id)
     local_now = (now_utc or _now()).astimezone(zone)
     window = current_window(local_now, prefs["frequency"])
     if not window:
@@ -319,18 +345,38 @@ def evaluate_user_briefing(conn, user: dict[str, Any], *, now_utc: datetime | No
         return {"status": "quiet_hours"}  # deferred; window stays claimable
 
     # CLAIM: unique (user_id, window_key) is the idempotency anchor (Stage 30).
+    # ON CONFLICT DO NOTHING rather than INSERT-and-catch: the duplicate is the
+    # EXPECTED path (every user hits it on every re-tick within a window), and
+    # letting it surface as a driver exception made services/db.py print a full
+    # SQL_EXECUTE_FAILED block -- sql, params, traceback -- per user per cycle.
+    # That flood is what pushed real boot diagnostics out of the Railway log
+    # window. A duplicate is now a returned empty result, not an error.
+    #
+    # RETURNING is written explicitly, not left to CompatCursor's AUTO_PK_TABLES
+    # injection: the repo's "INSERT OR IGNORE" shorthand sets append_do_nothing,
+    # which suppresses that injection and destroys lastrowid. Naming both clauses
+    # keeps the claimed id on Postgres and on sqlite (>=3.35) alike.
     try:
         cur.execute(
-            "INSERT INTO pulse_briefings (user_id, window_key, status, created_at) VALUES (?,?,?,?)",
+            "INSERT INTO pulse_briefings (user_id, window_key, status, created_at) VALUES (?,?,?,?) "
+            "ON CONFLICT (user_id, window_key) DO NOTHING RETURNING id",
             (user_id, window_key, "processing", _iso(_now())),
         )
+        claimed = cur.fetchone()  # must read BEFORE commit closes the cursor
         conn.commit()
-    except Exception:  # noqa: BLE001 - unique violation: window already handled
+    except Exception:  # noqa: BLE001 - with DO NOTHING this is a REAL failure
+        # Reporting an unexpected error as 'already_claimed' would silently
+        # disable briefings for everyone while the cycle still looked healthy.
         conn.rollback()
+        logging.exception("BRIEFING_CLAIM_FAILED user_id=%s window=%s", user_id, window_key)
+        _METRICS["briefing_jobs_failed"] += 1
+        return {"status": "failed", "error": "claim_failed"}
+
+    if not claimed:
         return {"status": "already_claimed"}
 
     _METRICS["briefing_jobs_started"] += 1
-    briefing_id = cur.lastrowid
+    briefing_id = int(claimed[0])
     try:
         cur.execute(
             # 'shadow' counts as a predecessor so a shadow run reproduces the real

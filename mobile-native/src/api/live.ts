@@ -280,7 +280,9 @@ export async function getLiveJoinStatus(liveId: number): Promise<{
 }
 
 export type EndLiveResult = {
+  status: string;
   recordingStatus: string;
+  replayStatus: string;
   replayUrl: string;
   replayAvailable: boolean;
 };
@@ -294,7 +296,9 @@ export async function endLive(liveId: number, opts: { replayUrl?: string } = {})
     body: JSON.stringify(body)
   });
   return {
+    status: String(data.status || ""),
     recordingStatus: String(data.recording_status || ""),
+    replayStatus: String(data.replay_status || ""),
     replayUrl: String(data.replay_url || ""),
     replayAvailable: Boolean(data.replay_available)
   };
