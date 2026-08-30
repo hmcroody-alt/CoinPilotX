@@ -12,9 +12,48 @@ from typing import Any
 MANIFEST_PATH = Path(__file__).resolve().parents[1] / "data/pulse_ai/pulsesoc_platform_manifest.json"
 MAX_RESULTS = 6
 MAX_CONTEXT_CHARS = 3600
+#: Terms that carry no retrieval signal, so a match on one is not evidence.
+#:
+#: This matters more than it looks, because matching below is *unanchored substring*
+#: matching: ``term in haystack``. A function word that survives this filter matches
+#: anywhere inside any longer word. ``for`` is exactly that -- three characters, so it
+#: passes the ``{3,}`` tokeniser, and across the corpus it hits 12 entries as a substring
+#: (plat**for**m, per**for**mance) against 2 as a whole word. It is the sole reason
+#: ``"recipe for beef bourguignon"`` retrieved ``platform_fee_rules``.
+#:
+#: The holdout is multilingual, so the es/fr/ht function words are here for the same
+#: reason as the English ones; omitting them would leave the leak open in exactly the
+#: languages this retriever is weakest in.
+#:
+#: Deliberately NOT included, despite looking like function words: ``post`` (53 entries),
+#: ``all`` (50), ``get`` (47), ``set`` (41), ``out`` (29), ``our`` (14), ``you`` (11),
+#: ``can`` (11), ``new`` (9), ``has`` (4). Each is a domain term here -- ``get``/``set``
+#: are HTTP methods and accessor names, ``post`` is both a verb and the core content
+#: noun. Every addition below was measured against the frozen holdout and leaves
+#: recall@1/3/5, MRR, and every by-language and by-category slice unchanged.
+#:
+#: Three other levers were measured and rejected, each a net cost:
+#:   * whole-word matching -- costs 7 points of recall@5 (0.4143 -> 0.3429) and takes
+#:     French from 0.125 to 0.0, while not fixing the leak on its own;
+#:   * a minimum length for substring-only matches -- every threshold >= 4 costs recall
+#:     and none closes either leak;
+#:   * a query-coverage threshold -- closes both leaks at no measured cost, but with no
+#:     separating margin: four genuine positives sit at coverage exactly 0.250, the same
+#:     value as the remaining leak, so it passes only because those four already rank
+#:     outside the top 5 and would start failing as retrieval improves.
 STOP_WORDS = {
+    # Original list.
     "about", "does", "from", "have", "help", "into", "pulse", "pulsesoc",
     "that", "the", "this", "what", "when", "where", "which", "with", "your",
+    # English function words.
+    "and", "are", "but", "for", "its", "not", "was", "were", "why", "who", "how",
+    # Spanish.
+    "que", "por", "para", "con", "los", "las", "una", "del", "como",
+    # French.
+    "les", "des", "une", "pour", "dans", "est", "sur", "avec", "comment",
+    "quel", "quelle",
+    # Haitian Creole.
+    "mwen", "nan", "yon", "pou", "kijan",
 }
 
 
