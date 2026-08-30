@@ -5,6 +5,8 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from services import coingecko_client
+
 from .base import BaseCollector, CollectorResult, IntelligenceCandidate, compact, network_error_message, safe_float, source_status, utc_now_iso
 
 
@@ -28,9 +30,10 @@ class CryptoPulseCollector(BaseCollector):
 
         try:
             data, cached, duration = self.fetch_json(
-                "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true&include_market_cap=true",
+                coingecko_client.url("/simple/price?ids=bitcoin,ethereum,solana&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true&include_market_cap=true"),
                 cache_key="coingecko_simple_price_btc_eth_sol",
                 ttl_seconds=45,
+                headers=coingecko_client.auth_headers(),
             )
             coingecko = data if isinstance(data, dict) else {}
             statuses.append(source_status("coingecko", "success_cached" if cached else "success", duration_ms=duration, candidates=len(coingecko)))

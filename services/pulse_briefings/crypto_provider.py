@@ -21,8 +21,8 @@ from typing import Any
 
 import requests
 
-COINGECKO_BASE = os.getenv("COINGECKO_API_BASE", "https://api.coingecko.com/api/v3")
-_CG_KEY = os.getenv("COINGECKO_API_KEY", "").strip()
+from services import coingecko_client
+
 COINBASE_TICKER = "https://api.exchange.coinbase.com/products/{symbol}-USD/ticker"
 
 OVERVIEW_TTL_SECONDS = int(os.getenv("BRIEFING_MARKET_OVERVIEW_TTL", "180"))
@@ -42,7 +42,9 @@ def _now_iso() -> str:
 
 
 def metrics_snapshot() -> dict[str, int]:
-    return dict(_METRICS)
+    merged = dict(_METRICS)
+    merged.update(coingecko_client.telemetry_snapshot())
+    return merged
 
 
 def _flight_lock(key: str) -> threading.Lock:
@@ -84,20 +86,18 @@ def _cached(key: str, ttl: int, loader):
 
 
 def _cg_get(path: str, params: dict[str, Any] | None = None):
-    headers = {"Accept": "application/json"}
-    if _CG_KEY:
-        headers["x-cg-demo-api-key"] = _CG_KEY
-    try:
-        resp = requests.get(f"{COINGECKO_BASE}{path}", params=params or {}, headers=headers, timeout=REQUEST_TIMEOUT)
-        if resp.status_code == 429:
+    """All CoinGecko traffic flows through the canonical client (paid auth,
+    governor, telemetry live there). Briefing-level counters stay for the
+    engine's metrics_snapshot contract."""
+    before = coingecko_client.telemetry_snapshot()
+    data = coingecko_client.get_json(path, params, timeout=REQUEST_TIMEOUT)
+    if data is None:
+        after = coingecko_client.telemetry_snapshot()
+        if after["cg_http_429"] > before["cg_http_429"]:
             _METRICS["crypto_provider_429"] += 1
-            return None
-        resp.raise_for_status()
-        return resp.json()
-    except Exception as exc:  # noqa: BLE001 - provider fault must degrade, not raise
-        _METRICS["crypto_provider_errors"] += 1
-        logging.warning("BRIEFING_CRYPTO_PROVIDER_ERROR path=%s error=%s", path, str(exc)[:200])
-        return None
+        else:
+            _METRICS["crypto_provider_errors"] += 1
+    return data
 
 
 def _asset(row: dict[str, Any], observed_at: str) -> dict[str, Any]:

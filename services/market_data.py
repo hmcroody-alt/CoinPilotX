@@ -3,6 +3,8 @@ import time
 import logging
 import requests
 
+from services import coingecko_client
+
 CACHE = {"data": None, "created_at": 0}
 CACHE_SECONDS = int(os.getenv("MARKETS_CACHE_SECONDS", "60"))
 
@@ -64,13 +66,12 @@ def normalize_market_item(item):
 
 
 def fetch_coingecko_markets():
-    headers = {}
-    api_key = os.getenv("COINGECKO_API_KEY")
-    if api_key:
-        headers["x-cg-demo-api-key"] = api_key
-    response = requests.get(
-        "https://api.coingecko.com/api/v3/coins/markets",
-        params={
+    # All auth/host/retry/telemetry lives in the canonical client. This function
+    # keeps its raise-on-failure contract because `live_market_board` uses the
+    # exception to trigger the Coinbase fallback ladder.
+    data = coingecko_client.get_json(
+        "/coins/markets",
+        {
             "vs_currency": "usd",
             "order": "volume_desc",
             "per_page": 50,
@@ -80,11 +81,11 @@ def fetch_coingecko_markets():
             "sparkline": "true",
             "price_change_percentage": "24h",
         },
-        headers=headers,
         timeout=12,
     )
-    response.raise_for_status()
-    return [normalize_market_item(item) for item in response.json()]
+    if not isinstance(data, list):
+        raise RuntimeError("coingecko markets unavailable")
+    return [normalize_market_item(item) for item in data]
 
 
 def fetch_coinbase_fallback_markets():
@@ -199,18 +200,16 @@ def get_symbol(symbol):
 
 
 def fetch_coingecko_history(coin_id, days):
-    headers = {}
-    api_key = os.getenv("COINGECKO_API_KEY")
-    if api_key:
-        headers["x-cg-demo-api-key"] = api_key
-    response = requests.get(
-        f"https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart",
-        params={"vs_currency": "usd", "days": days},
-        headers=headers,
+    # Raise-on-failure preserved: `asset_history` catches and serves its own
+    # stale/unavailable ladder.
+    data = coingecko_client.get_json(
+        f"/coins/{coin_id}/market_chart",
+        {"vs_currency": "usd", "days": days},
         timeout=12,
     )
-    response.raise_for_status()
-    return response.json().get("prices") or []
+    if not isinstance(data, dict):
+        raise RuntimeError("coingecko history unavailable")
+    return data.get("prices") or []
 
 
 def asset_history(symbol, range_key="24H"):

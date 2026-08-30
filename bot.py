@@ -102522,13 +102522,12 @@ def normalize_market_item(item):
 
 
 def fetch_coingecko_markets():
-    headers = {}
-    api_key = os.getenv("COINGECKO_API_KEY")
-    if api_key:
-        headers["x-cg-demo-api-key"] = api_key
-    response = requests.get(
-        "https://api.coingecko.com/api/v3/coins/markets",
-        params={
+    # Canonical client owns host/auth (pro vs demo), retry and telemetry.
+    from services import coingecko_client
+
+    data = coingecko_client.get_json(
+        "/coins/markets",
+        {
             "vs_currency": "usd",
             "order": "volume_desc",
             "per_page": 50,
@@ -102536,11 +102535,11 @@ def fetch_coingecko_markets():
             "sparkline": "false",
             "price_change_percentage": "24h",
         },
-        headers=headers,
         timeout=12,
     )
-    response.raise_for_status()
-    return [normalize_market_item(item) for item in response.json()]
+    if not isinstance(data, list):
+        raise RuntimeError("coingecko markets unavailable")
+    return [normalize_market_item(item) for item in data]
 
 
 def fetch_coinmarketcap_markets():
