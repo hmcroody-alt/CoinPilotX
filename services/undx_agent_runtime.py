@@ -426,6 +426,13 @@ def _capability_withdrawn(user_id: int, spec: CapabilitySpec) -> AgentError | No
 #: capability permits rather than the executor's conversational default of 20.
 _MAX_REFERENCE_SCAN = 50
 
+#: The most assistant replies :func:`recent_replies` will read for the repetition check.
+#: Set to the window the only consumer actually looks at —
+#: ``undx_response_intelligence.HISTORY_WINDOW`` — because reading more than the consumer
+#: can use is cost with no corresponding answer. Named here rather than imported to keep
+#: this module's database reads describable without loading the response layer.
+_MAX_REPLY_HISTORY = 5
+
 _SYMBOL_ALIASES = {
     "bitcoin": "BTC", "btc": "BTC", "ethereum": "ETH", "eth": "ETH",
     "solana": "SOL", "sol": "SOL", "cardano": "ADA", "ada": "ADA",
@@ -3325,6 +3332,13 @@ def recent_replies(cur, user_id: int, conversation_id: int, *, limit: int = 5) -
     harms: a missing history makes an answer slightly more repetitive, while a raised
     exception here would abort a turn that may already have changed the user's data.
     Nothing downstream treats an empty history as meaningful.
+
+    ``limit`` is clamped to ``_MAX_REPLY_HISTORY``. It reaches a SQL ``LIMIT`` and each
+    row it returns is then expanded to ``MAX_TEXT_CHARS``, so an unclamped value is a
+    caller-sized read and a caller-sized allocation on the response path. The real
+    ceiling used to live downstream, where the gateway slices the tail off a list that
+    had already been fetched in full — a bound applied after the cost was paid, which is
+    not a bound. Asking for more than the consumer can use is now refused here.
     """
     if int(user_id or 0) <= 0 or int(conversation_id or 0) <= 0:
         return ()
@@ -3333,7 +3347,8 @@ def recent_replies(cur, user_id: int, conversation_id: int, *, limit: int = 5) -
             """SELECT body FROM pulse_ai_messages
                WHERE conversation_id=? AND user_id=? AND role='assistant'
                ORDER BY id DESC LIMIT ?""",
-            (int(conversation_id), int(user_id), max(1, int(limit))),
+            (int(conversation_id), int(user_id),
+             max(1, min(int(limit), _MAX_REPLY_HISTORY))),
         )
         rows = cur.fetchall() or []
     except Exception:
