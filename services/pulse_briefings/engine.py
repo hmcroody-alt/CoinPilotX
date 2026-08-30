@@ -7,6 +7,19 @@ window, enforced by a UNIQUE index so worker restarts can never double-send.
 
 Kill switch: BRIEFINGS_DISABLED=true stops scheduled sends only; normal
 PulseSoc notifications are unaffected.
+
+Three flags, three distinct states, deliberately not overloaded:
+
+    BRIEFINGS_DISABLED=true       engine off; run_scheduled_cycle returns before
+                                  a single row is read. Nothing is measurable.
+    BRIEFING_SHADOW_MODE=true     engine runs end to end -- claim, gather, score,
+                                  suppress, summarize, settle -- and delivery is
+                                  skipped. Zero pushes, by construction.
+    (neither set)                 normal delivery.
+
+BRIEFINGS_DISABLED short-circuits PULSE_BRIEFINGS_ENABLED, so those two are one
+gate and not two layers; shadow is the separate axis because "off" and "runs but
+sends nothing" are different questions and a single flag cannot answer both.
 """
 
 from __future__ import annotations
@@ -34,7 +47,14 @@ FREQUENCIES = ("off", "important_only", "every_6h", "morning_evening")
 _METRICS = {
     "briefing_jobs_started": 0, "briefing_jobs_completed": 0, "briefing_jobs_failed": 0,
     "briefings_sent": 0, "briefings_suppressed": 0, "briefings_duplicate_suppressed": 0,
+    "briefings_shadow_suppressed": 0,
 }
+
+_TRUTHY = ("1", "true", "yes", "on")
+
+
+def _env_flag(name: str, default: str = "") -> bool:
+    return str(os.getenv(name, default) or "").strip().lower() in _TRUTHY
 
 
 def metrics_snapshot() -> dict[str, int]:
@@ -44,9 +64,25 @@ def metrics_snapshot() -> dict[str, int]:
 
 
 def briefings_enabled() -> bool:
-    if str(os.getenv("BRIEFINGS_DISABLED", "")).strip().lower() in ("1", "true", "yes", "on"):
+    if _env_flag("BRIEFINGS_DISABLED"):
         return False
-    return str(os.getenv("PULSE_BRIEFINGS_ENABLED", "true")).strip().lower() in ("1", "true", "yes", "on")
+    return _env_flag("PULSE_BRIEFINGS_ENABLED", "true")
+
+
+def shadow_mode() -> bool:
+    """Run the engine for real, deliver nothing.
+
+    Exists because BRIEFINGS_DISABLED is the wrong instrument for acceptance: it
+    returns before the first query, so it proves nothing about scheduling, scoring,
+    suppression, the Postgres claim/settle path or the deeplink id. Shadow keeps
+    every one of those on the real production database and removes exactly one
+    step -- the push.
+
+    Independent of the kill switch on purpose. BRIEFINGS_DISABLED still wins; a
+    shadow flag that could re-enable a disabled engine would be a kill switch with
+    a bypass.
+    """
+    return _env_flag("BRIEFING_SHADOW_MODE")
 
 
 def _now() -> datetime:
@@ -260,7 +296,11 @@ def evaluate_user_briefing(conn, user: dict[str, Any], *, now_utc: datetime | No
     briefing_id = cur.lastrowid
     try:
         cur.execute(
-            "SELECT fingerprint, sent_at, created_at FROM pulse_briefings WHERE user_id=? AND id<>? AND status='sent' ORDER BY id DESC LIMIT 1",
+            # 'shadow' counts as a predecessor so a shadow run reproduces the real
+            # dedupe decision instead of re-deriving "new" facts every window and
+            # reporting a duplicate rate of zero. No row carries this status unless
+            # shadow mode ran, so normal operation is unaffected.
+            "SELECT fingerprint, sent_at, created_at FROM pulse_briefings WHERE user_id=? AND id<>? AND status IN ('sent','shadow') ORDER BY id DESC LIMIT 1",
             (user_id, briefing_id),
         )
         prev = cur.fetchone()
@@ -311,9 +351,22 @@ def evaluate_user_briefing(conn, user: dict[str, Any], *, now_utc: datetime | No
             cur.execute("UPDATE pulse_briefings SET status='sent', sent_at=? WHERE id=?", (_iso(_now()), briefing_id))
             conn.commit()
             _METRICS["briefings_sent"] += 1
+        elif not send:
+            # Shadow settle: a terminal status of its own rather than leaving the row
+            # at 'generated'. list_briefings surfaces 'generated' rows, so a shadow run
+            # that merely stopped short of the push would still drop an undelivered
+            # briefing into the user's in-app history -- visible product state from a
+            # run that is supposed to be invisible. This is the same settlement UPDATE
+            # against the same claimed row, so it exercises the Postgres lastrowid path
+            # identically; it is only excluded from user-facing reads.
+            cur.execute("UPDATE pulse_briefings SET status='shadow', sent_at='' WHERE id=?", (briefing_id,))
+            conn.commit()
+            _METRICS["briefings_shadow_suppressed"] += 1
         _METRICS["briefing_jobs_completed"] += 1
         return {"status": "sent" if sent else "generated", "briefing_id": briefing_id,
-                "title": copy["title"], "source": copy.get("source")}
+                "title": copy["title"], "source": copy.get("source"),
+                "delivered": sent, "shadow": not send,
+                "deep_link": "pulse://notifications?briefing=%d" % int(briefing_id)}
     except Exception:  # noqa: BLE001 - settle the claim; never crash the worker
         logging.exception("BRIEFING_EVALUATE_FAILED user_id=%s window=%s", user_id, window_key)
         _METRICS["briefing_jobs_failed"] += 1
@@ -362,7 +415,11 @@ def _deliver(user_id: int, briefing_id: int, copy: dict[str, str], fact_pack: di
 def run_scheduled_cycle(limit: int = 50, *, conn=None) -> dict[str, Any]:
     """Called from alert_worker each cycle. Cheap when nothing is due."""
     if not briefings_enabled():
-        return {"ok": True, "status": "disabled", "processed": 0}
+        # No "sent" key, deliberately: the disabled path has never had one, and the
+        # resulting `sent=None` in the worker log is the signature production
+        # acceptance already reads to distinguish "off" from "on and nothing due".
+        return {"ok": True, "status": "disabled", "processed": 0, "shadow": False}
+    shadow = shadow_mode()
     owns = conn is None
     conn = conn or user_context.connect()
     try:
@@ -381,23 +438,40 @@ def run_scheduled_cycle(limit: int = 50, *, conn=None) -> dict[str, Any]:
             (cutoff, max(1, min(limit, SEND_RATE_CAP_PER_CYCLE))),
         )
         users = [dict(r) for r in cur.fetchall()]
-        results = {"processed": 0, "sent": 0, "suppressed": 0, "skipped": 0, "failed": 0}
+        results = {
+            "processed": 0, "sent": 0, "suppressed": 0, "skipped": 0, "failed": 0,
+            # Why a briefing did not reach a user, kept apart because they are four
+            # different findings. A shadow run that reported one undifferentiated
+            # "suppressed" total would be indistinguishable from a scoring regression.
+            "suppressed_by_rules": 0, "suppressed_by_dedupe": 0,
+            "suppressed_by_quiet_hours": 0, "suppressed_by_shadow": 0,
+        }
         for user in users:
-            outcome = evaluate_user_briefing(conn, user)
+            outcome = evaluate_user_briefing(conn, user, send=not shadow)
             status = outcome.get("status")
             results["processed"] += 1
             if status == "sent":
                 results["sent"] += 1
             elif status == "suppressed":
                 results["suppressed"] += 1
+                if outcome.get("reason") == "duplicate_fingerprint":
+                    results["suppressed_by_dedupe"] += 1
+                else:
+                    results["suppressed_by_rules"] += 1
             elif status == "failed":
                 results["failed"] += 1
             else:
                 results["skipped"] += 1
+                if status == "quiet_hours":
+                    results["suppressed_by_quiet_hours"] += 1
+                elif outcome.get("shadow") and outcome.get("briefing_id"):
+                    # Generated, settled, and withheld at the delivery boundary. Counted
+                    # here and never in "sent": a shadow briefing is not a push.
+                    results["suppressed_by_shadow"] += 1
         _prune_history(cur)
         conn.commit()
-        logging.info("BRIEFING_CYCLE %s metrics=%s", results, metrics_snapshot())
-        return {"ok": True, **results}
+        logging.info("BRIEFING_CYCLE shadow=%s %s metrics=%s", shadow, results, metrics_snapshot())
+        return {"ok": True, "shadow": shadow, **results}
     except Exception:  # noqa: BLE001 - a briefing fault must never break alerts
         logging.exception("BRIEFING_CYCLE_FAILED")
         return {"ok": False, "processed": 0}

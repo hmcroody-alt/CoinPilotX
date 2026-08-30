@@ -37874,10 +37874,15 @@ def api_admin_briefings_status():
         return error
     from services import pulse_briefings as briefing_service
     from services.pulse_briefings import engine as briefing_engine
+    # Flags are read from *this* process. Railway scopes variables per service, so
+    # this reports the web service's view; the scheduled cycle runs in alert_worker
+    # and its own log line is the authority for what that process is doing.
     response = jsonify({
         "ok": True,
         "enabled": briefing_service.briefings_enabled(),
         "kill_switch_env": "BRIEFINGS_DISABLED",
+        "shadow": briefing_engine.shadow_mode(),
+        "shadow_env": "BRIEFING_SHADOW_MODE",
         "metrics": briefing_engine.metrics_snapshot(),
         "windows_local_hours": list(briefing_service.BRIEFING_WINDOWS),
         "send_rate_cap_per_cycle": briefing_engine.SEND_RATE_CAP_PER_CYCLE,

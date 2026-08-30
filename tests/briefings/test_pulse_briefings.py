@@ -289,6 +289,19 @@ class EngineFlowTests(unittest.TestCase):
 
     NOW = datetime(2026, 8, 30, 13, 30, tzinfo=timezone.utc)  # window 12, past jitter
 
+    def setUp(self):
+        # These tests pin now_utc but the engine's "facts since" fallback is
+        # _iso(_now() - 6h) off the real clock, so with the wall clock more than ~5h
+        # past NOW the fixture notifications fall outside the lookback, significance
+        # scores zero and every send-path test suppresses. That made the suite pass or
+        # fail by time of day. Pin the one clock the engine actually reads.
+        self._clock = mock.patch.object(engine, "_now", return_value=self.NOW)
+        self._facts_clock = mock.patch.object(facts, "_now_iso", return_value=_iso(self.NOW))
+        self._clock.start()
+        self._facts_clock.start()
+        self.addCleanup(self._clock.stop)
+        self.addCleanup(self._facts_clock.stop)
+
     def _conn_for(self, user_id: int, notif_count: int = 0) -> sqlite3.Connection:
         conn = _fresh_conn()
         engine.update_preferences(user_id, {"crypto_enabled": False}, conn=conn)
@@ -371,7 +384,14 @@ class EngineFlowTests(unittest.TestCase):
 
     def test_owner_scoped_reads(self):
         conn = self._conn_for(15, notif_count=2)
-        engine.evaluate_user_briefing(conn, {"user_id": 15}, now_utc=self.NOW, send=False)
+        # Delivered, not shadow: send=False now settles to 'shadow', which is
+        # deliberately invisible to owner-scoped reads (see ShadowModeTests).
+        fake_push = types.SimpleNamespace(send_push=mock.Mock(return_value={"ok": True}))
+        fake_notif = types.SimpleNamespace(send_in_app_notification=mock.Mock())
+        import services
+        with mock.patch.object(services, "push_service", fake_push, create=True), \
+             mock.patch.object(services, "notification_service", fake_notif, create=True):
+            engine.evaluate_user_briefing(conn, {"user_id": 15}, now_utc=self.NOW, send=True)
         rows = engine.list_briefings(15, conn=conn)
         self.assertEqual(len(rows), 1)
         bid = rows[0]["id"]
@@ -379,6 +399,189 @@ class EngineFlowTests(unittest.TestCase):
         self.assertIsNone(engine.get_briefing(999, bid, conn=conn))  # cross-account blocked
         self.assertEqual(engine.list_briefings(999, conn=conn), [])
         conn.close()
+
+
+class ShadowModeTests(unittest.TestCase):
+    """BRIEFING_SHADOW_MODE: the engine runs for real and delivers nothing.
+
+    The bar is not "we did not observe a push". It is that the *same* scenario that
+    demonstrably sends under normal flags sends zero times under shadow. Each test
+    below is paired against that control, because a zero-push assertion on a scenario
+    that would never have sent anyway proves only that the fixtures were quiet.
+    """
+
+    NOW = datetime(2026, 8, 30, 13, 30, tzinfo=timezone.utc)  # window 12, past jitter
+
+    MARKET = {
+        "provider": "coingecko", "generated_at": _iso(NOW), "stale": False,
+        "btc": {"symbol": "BTC", "price": 65000.0, "change_24h": -4.2},
+        "eth": {"symbol": "ETH", "price": 3200.0, "change_24h": -3.8},
+        "total_market_cap": 2.4e12, "market_cap_change_24h_pct": -3.1,
+        "btc_dominance": 53.2, "market_direction": "down", "breadth_positive_top10": 2,
+        "assets": [],
+    }
+    MOVERS = {"gainers": [{"symbol": "SOL", "change_24h": 6.3}],
+              "losers": [{"symbol": "BTC", "change_24h": -4.2}]}
+
+    def setUp(self):
+        _clear_provider_cache()
+        os.environ.pop("BRIEFING_SHADOW_MODE", None)
+        os.environ.pop("BRIEFINGS_DISABLED", None)
+
+    tearDown = setUp
+
+    def _conn(self, user_ids: tuple[int, ...]) -> sqlite3.Connection:
+        """A cycle-shaped database: eligible users with active push subscriptions,
+        old enough to pass the account-age gate, each with unread network activity."""
+        conn = _fresh_conn()
+        cur = conn.cursor()
+        cur.execute("""CREATE TABLE users (user_id INTEGER PRIMARY KEY,
+            preferred_language TEXT DEFAULT 'en', created_at TEXT, signup_time TEXT)""")
+        cur.execute("""CREATE TABLE push_subscriptions (id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER, is_active INTEGER DEFAULT 1, active INTEGER DEFAULT 1)""")
+        old = _iso(self.NOW - timedelta(days=30))
+        recent = _iso(self.NOW - timedelta(hours=1))
+        for uid in user_ids:
+            cur.execute("INSERT INTO users (user_id, preferred_language, created_at, signup_time)"
+                        " VALUES (?,?,?,?)", (uid, "en", old, old))
+            cur.execute("INSERT INTO push_subscriptions (user_id, is_active, active) VALUES (?,1,1)", (uid,))
+            for _ in range(3):  # network activity: 3 unread messages
+                cur.execute("INSERT INTO pulse_notifications (user_id, type, is_read, created_at)"
+                            " VALUES (?,?,0,?)", (uid, "message", recent))
+        conn.commit()
+        return conn
+
+    def _run_cycle(self, conn, *, shadow: bool):
+        """One real cycle at a fixed clock, with a live market and every delivery
+        surface instrumented. Returns (cycle result, deliver mock, send_push mock)."""
+        deliver = mock.Mock(wraps=engine._deliver)
+        fake_push = types.SimpleNamespace(send_push=mock.Mock(return_value={"ok": True}))
+        fake_notif = types.SimpleNamespace(send_in_app_notification=mock.Mock())
+        import services
+        env = {"BRIEFING_SHADOW_MODE": "true"} if shadow else {"BRIEFING_SHADOW_MODE": "false"}
+        with mock.patch.dict(os.environ, env), \
+             mock.patch.object(engine, "_now", return_value=self.NOW), \
+             mock.patch.object(facts, "_now_iso", return_value=_iso(self.NOW)), \
+             mock.patch.object(facts.crypto_provider, "get_market_overview", return_value=self.MARKET), \
+             mock.patch.object(facts.crypto_provider, "is_stale", return_value=False), \
+             mock.patch.object(facts.crypto_provider, "get_top_movers", return_value=self.MOVERS), \
+             mock.patch.object(facts.crypto_provider, "get_watchlist_snapshots", return_value=[]), \
+             mock.patch.object(engine, "_deliver", deliver), \
+             mock.patch.object(services, "push_service", fake_push, create=True), \
+             mock.patch.object(services, "notification_service", fake_notif, create=True):
+            result = engine.run_scheduled_cycle(conn=conn)
+        return result, deliver, fake_push.send_push
+
+    # --- the control: this scenario really does send -----------------------
+
+    def test_control_normal_mode_delivers(self):
+        conn = self._conn((201,))
+        result, deliver, send_push = self._run_cycle(conn, shadow=False)
+        self.assertFalse(result["shadow"])
+        self.assertEqual(result["processed"], 1)
+        self.assertEqual(result["sent"], 1)
+        self.assertEqual(deliver.call_count, 1)
+        self.assertEqual(send_push.call_count, 1)
+        self.assertEqual(result["suppressed_by_shadow"], 0)
+        conn.close()
+
+    # --- the requirement: the identical scenario delivers nothing ----------
+
+    def test_shadow_mode_delivers_zero(self):
+        conn = self._conn((202,))
+        result, deliver, send_push = self._run_cycle(conn, shadow=True)
+        self.assertTrue(result["shadow"])
+        self.assertEqual(result["processed"], 1)
+        self.assertEqual(result["sent"], 0)            # never counted as a push
+        self.assertEqual(deliver.call_count, 0)        # hard zero at the boundary
+        self.assertEqual(send_push.call_count, 0)      # and at the transport
+        self.assertEqual(result["suppressed_by_shadow"], 1)
+        conn.close()
+
+    def test_shadow_still_claims_settles_and_produces_a_deeplink_id(self):
+        """The Postgres defect class this exists to exercise: the claim INSERT must
+        yield a real row id that every settlement UPDATE and the deeplink then use."""
+        conn = self._conn((203,))
+        self._run_cycle(conn, shadow=True)
+        cur = conn.cursor()
+        cur.execute("SELECT id, status, title, body, fingerprint, sent_at FROM pulse_briefings WHERE user_id=203")
+        rows = [dict(r) for r in cur.fetchall()]
+        self.assertEqual(len(rows), 1)                 # claimed exactly once
+        row = rows[0]
+        self.assertIsNotNone(row["id"])
+        self.assertEqual(row["status"], "shadow")      # settled, not left in 'processing'
+        self.assertEqual(row["sent_at"], "")           # nothing was ever sent
+        self.assertTrue(row["title"] and row["body"])  # summarization really ran
+        self.assertTrue(row["fingerprint"])            # scoring really ran
+        deep_link = "pulse://notifications?briefing=%d" % int(row["id"])
+        self.assertNotIn("None", deep_link)
+        conn.close()
+
+    def test_shadow_briefings_are_invisible_to_the_user(self):
+        conn = self._conn((204,))
+        self._run_cycle(conn, shadow=True)
+        self.assertEqual(engine.list_briefings(204, conn=conn), [])
+        conn.close()
+
+    def test_shadow_reproduces_the_dedupe_decision(self):
+        """A shadow run must reach the same suppress/send verdicts production would,
+        so a 'shadow' predecessor counts for fingerprint dedupe the way 'sent' does."""
+        conn = self._conn((205,))
+        first, _, _ = self._run_cycle(conn, shadow=True)
+        self.assertEqual(first["suppressed_by_shadow"], 1)
+        later = self.NOW + timedelta(hours=6)          # next window, identical facts
+        cur = conn.cursor()                            # same unread count since the claim
+        for _ in range(3):
+            cur.execute("INSERT INTO pulse_notifications (user_id, type, is_read, created_at)"
+                        " VALUES (205,'message',0,?)", (_iso(self.NOW + timedelta(hours=5)),))
+        conn.commit()
+        with mock.patch.object(engine, "_now", return_value=later), \
+             mock.patch.object(facts, "_now_iso", return_value=_iso(later)), \
+             mock.patch.object(facts.crypto_provider, "get_market_overview", return_value=self.MARKET), \
+             mock.patch.object(facts.crypto_provider, "is_stale", return_value=False), \
+             mock.patch.object(facts.crypto_provider, "get_top_movers", return_value=self.MOVERS), \
+             mock.patch.object(facts.crypto_provider, "get_watchlist_snapshots", return_value=[]):
+            out = engine.evaluate_user_briefing(conn, {"user_id": 205}, now_utc=later, send=False)
+        self.assertEqual(out["status"], "suppressed")
+        self.assertEqual(out["reason"], "duplicate_fingerprint")
+        conn.close()
+
+    def test_suppression_reasons_are_distinguished(self):
+        conn = self._conn((206,))
+        result, _, _ = self._run_cycle(conn, shadow=True)
+        for key in ("suppressed_by_rules", "suppressed_by_dedupe",
+                    "suppressed_by_quiet_hours", "suppressed_by_shadow"):
+            self.assertIn(key, result)
+        self.assertEqual(result["suppressed_by_rules"], 0)
+        self.assertEqual(result["suppressed_by_dedupe"], 0)
+        self.assertEqual(result["suppressed_by_quiet_hours"], 0)
+        self.assertEqual(result["suppressed_by_shadow"], 1)
+        conn.close()
+
+    def test_kill_switch_outranks_shadow_and_evaluates_nothing(self):
+        """BRIEFINGS_DISABLED must not be re-openable by any other flag."""
+        conn = self._conn((207,))
+        evaluate = mock.Mock(wraps=engine.evaluate_user_briefing)
+        with mock.patch.dict(os.environ, {"BRIEFINGS_DISABLED": "true",
+                                          "BRIEFING_SHADOW_MODE": "false",
+                                          "PULSE_BRIEFINGS_ENABLED": "true"}), \
+             mock.patch.object(engine, "evaluate_user_briefing", evaluate):
+            out = engine.run_scheduled_cycle(conn=conn)
+        self.assertEqual(out["status"], "disabled")
+        self.assertEqual(out["processed"], 0)
+        self.assertEqual(evaluate.call_count, 0)       # no evaluation at all
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) AS n FROM pulse_briefings")
+        self.assertEqual(dict(cur.fetchone())["n"], 0)
+        conn.close()
+
+    def test_shadow_flag_parsing_is_conservative(self):
+        for raw, expected in (("true", True), ("1", True), ("yes", True), ("ON", True),
+                              ("false", False), ("0", False), ("", False), ("maybe", False)):
+            with mock.patch.dict(os.environ, {"BRIEFING_SHADOW_MODE": raw}):
+                self.assertIs(engine.shadow_mode(), expected, raw)
+        os.environ.pop("BRIEFING_SHADOW_MODE", None)
+        self.assertFalse(engine.shadow_mode())         # absent means normal delivery
 
 
 class KillSwitchTests(unittest.TestCase):

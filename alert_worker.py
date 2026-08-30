@@ -70,7 +70,8 @@ def main():
             sentinel_results = sentinel_runtime.run_scheduled_ingestion()
             # Pulse Briefings tick: an evaluation window, never a mandatory
             # send. Isolated so a briefing fault can never break the alert
-            # sweep, and gated server-side by BRIEFINGS_DISABLED.
+            # sweep, gated server-side by BRIEFINGS_DISABLED, and delivery-gated
+            # independently by BRIEFING_SHADOW_MODE.
             try:
                 briefing_result = pulse_briefings.run_scheduled_cycle(
                     limit=int(os.getenv("BRIEFING_CYCLE_BATCH_LIMIT", "50"))
@@ -90,9 +91,16 @@ def main():
                 len(sentinel_results),
             )
             logging.info(
-                "Briefing tick processed=%s sent=%s suppressed=%s failed=%s",
+                "Briefing tick status=%s shadow=%s processed=%s sent=%s suppressed=%s "
+                "by_rules=%s by_dedupe=%s by_quiet_hours=%s by_shadow=%s failed=%s",
+                briefing_result.get("status", "active"), briefing_result.get("shadow"),
                 briefing_result.get("processed"), briefing_result.get("sent"),
-                briefing_result.get("suppressed"), briefing_result.get("failed"),
+                briefing_result.get("suppressed"),
+                briefing_result.get("suppressed_by_rules"),
+                briefing_result.get("suppressed_by_dedupe"),
+                briefing_result.get("suppressed_by_quiet_hours"),
+                briefing_result.get("suppressed_by_shadow"),
+                briefing_result.get("failed"),
             )
         except Exception as exc:
             logging.exception("Alert worker cycle failed: %s", exc)
