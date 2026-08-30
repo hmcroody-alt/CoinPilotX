@@ -86,6 +86,103 @@ def _enforce_undx_reply_identity(value: Any, user_prompt: str = "") -> str:
     return text or UNDX_UNAVAILABLE_MESSAGE
 
 
+#: What replaces a conversational reply that narrates an action. The whole reply goes,
+#: not the offending sentence: a reply built around an execution that never happened is
+#: wrong throughout, and snipping one clause out of it leaves the surrounding paragraph
+#: still implying the action landed. That is the same judgement the agent runtime
+#: already makes when its own explanation over-claims
+#: (:mod:`services.undx_agent_runtime`, the metacognitive self-check), and there is no
+#: reason for the conversational path to be gentler with a model than the runtime is
+#: with itself.
+UNDX_NO_ACTION_TAKEN_REPLY = (
+    "I did not run anything on your account for that message, so I can't tell you it "
+    "was done. Tell me the specific thing you want changed and I will prepare it and "
+    "show you the confirmation before anything is executed."
+)
+
+#: What replaces a reply that invents a limitation. Not the LIMITED sentence itself and
+#: not an apology: both would be another unfounded claim about system state, which is
+#: the failure being corrected.
+UNDX_NO_KNOWN_LIMITATION_REPLY = (
+    "I can't answer that one accurately right now. Tell me the specific thing you want "
+    "to do and I will either do it or tell you exactly what is stopping me."
+)
+
+#: The distinctive tail of ``CANONICAL_STATUS_LANGUAGE["LIMITED"]``. Matched as a phrase
+#: rather than by string equality against the canonical sentence because a model that
+#: was handed the sentence paraphrases it — the fragment survives the paraphrase and the
+#: full sentence does not.
+_CURRENT_INTERFACE_CLAIM = re.compile(
+    r"\brequires?\s+(?:the\s+)?(?:current\s+)?pulse\s*soc\s+interface\b"
+    r"|\bin\s+the\s+current\s+pulse\s*soc\s+interface\b",
+    re.IGNORECASE,
+)
+
+
+def _strip_unsupported_execution_claims(reply: str) -> tuple[str, str]:
+    """A conversational reply, and the unsupported claim removed from it.
+
+    This runs on the one path where a language model's words reach the person: the
+    fallback taken when the agent runtime returns ``handled=False``. On that path no
+    capability was resolved, no confirmation was raised and no tool gateway was called,
+    so **no receipt exists by construction**. Every execution claim in the text is
+    therefore false, and the check needs no receipt lookup to know it — the absence is
+    structural, which is what makes this deterministic rather than a heuristic about
+    whether the model happened to be telling the truth.
+
+    The handled path is not covered here and does not need to be. It short-circuits the
+    provider entirely and returns the receipt's own explanation, which the runtime has
+    already checked against verification state.
+
+    Three claims are refused, in the order they are cheapest to be wrong about:
+
+    * an execution in progress — :func:`~services.undx_response_intelligence.execution_narration`,
+    * an execution completed — :func:`~services.undx_response_intelligence.completion_claim`,
+    * a limitation that does not exist — the "current PulseSoc interface" wording, and
+      only when nothing currently holds LIMITED status, because when something does the
+      sentence is true and suppressing it would be its own lie.
+
+    Returns ``(reply, "")`` when the text claims nothing, which is the overwhelmingly
+    common case and leaves the reply byte-identical.
+    """
+    text = str(reply or "")
+    if not text.strip():
+        return text, ""
+    try:
+        from services.undx_response_intelligence import (
+            MAX_SCANNED_REPLY_CHARS,
+            completion_claim,
+            execution_narration,
+        )
+
+        narrated = execution_narration(text)
+        # Explicitly widened past the composed-explanation default. A claim in the
+        # fourth paragraph is exactly as false as one in the first.
+        claimed = "" if narrated else completion_claim(text, MAX_SCANNED_REPLY_CHARS)
+    except Exception:  # pragma: no cover - the response layer is a hard dependency
+        LOGGER.exception("execution-claim self-check unavailable")
+        narrated = claimed = ""
+    if narrated:
+        return UNDX_NO_ACTION_TAKEN_REPLY, f"execution_narration:{narrated}"
+    if claimed:
+        return UNDX_NO_ACTION_TAKEN_REPLY, f"completion_claim:{claimed}"
+    if _CURRENT_INTERFACE_CLAIM.search(text):
+        try:
+            from services import undx_capability_lifecycle
+
+            limited = int(undx_capability_lifecycle.lifecycle_counts()
+                          .get(undx_capability_lifecycle.CapabilityStatus.LIMITED, 0))
+        except Exception:  # pragma: no cover - policy read is the authority, not us
+            # Unknown policy state. Leave the sentence alone: an invented limitation is
+            # a worse answer than the truth, but a *suppressed real* limitation would
+            # tell someone an action is coming that policy has actually suspended.
+            LOGGER.exception("capability lifecycle counts unavailable")
+            limited = 1
+        if not limited:
+            return UNDX_NO_KNOWN_LIMITATION_REPLY, "unsupported_limitation_claim"
+    return text, ""
+
+
 def _json_loads(value: str | None, fallback: Any = None) -> Any:
     try:
         return json.loads(value or "")
@@ -966,6 +1063,16 @@ def send_message(user_id: int, payload: dict | None = None) -> dict:
         _record_provider_events(cur, int(user_id), task, result, correlation_id)
         if result.get("ok"):
             reply = _enforce_undx_reply_identity(result.get("reply") or "", body)
+            # Last thing before the reply is persisted and returned. Placed here rather
+            # than inside the provider router so that it sees the text exactly as the
+            # person will: after identity rewriting, after every fallback attempt, with
+            # nothing downstream able to reintroduce a claim.
+            reply, unsupported_claim = _strip_unsupported_execution_claims(reply)
+            if unsupported_claim:
+                LOGGER.warning(
+                    "undx.unsupported_claim_removed correlation_id=%s claim=%s",
+                    correlation_id, unsupported_claim,
+                )
             assistant_id = _insert_message(
                 cur,
                 int(conversation["id"]),
@@ -978,6 +1085,11 @@ def send_message(user_id: int, payload: dict | None = None) -> dict:
                 correlation_id=correlation_id,
                 metadata={
                     "attempts": result.get("attempts") or [],
+                    # Empty on a clean turn. Present means a provider reply asserted an
+                    # action this path cannot have taken and was replaced; the value
+                    # names which pattern caught it, so the rate and the shape are both
+                    # recoverable from stored messages without re-running anything.
+                    "unsupported_claim": unsupported_claim,
                     "knowledge_ids": [item.get("id") for item in knowledge if item.get("id")],
                     "web_search": {
                         "used": bool(search_result),

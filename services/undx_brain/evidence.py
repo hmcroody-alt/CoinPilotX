@@ -74,6 +74,12 @@ OUTCOME_FAMILY: dict[str, EvidenceState] = {
     "verified_success": EvidenceState.EXECUTED,
     # Executed, explicitly not verified. Already the honest reading.
     "accepted_unverified": EvidenceState.EXECUTED,
+    # Accepted and queued for the worker. Emphatically not ``EXECUTED``: no executor has
+    # been entered, so there is nothing to verify and nothing to claim. ``PROPOSED`` is
+    # the same family a cancelled action lands in, which is right — both describe an
+    # action that was staged and has not happened — and it denies the completion claim,
+    # which is the property that matters here.
+    "accepted_queued": EvidenceState.PROPOSED,
     "confirmation_required": EvidenceState.AWAITING_CONFIRMATION,
     # A question was asked. Nothing was attempted, so nothing is proposed either — the
     # runtime does not yet know what it would do.

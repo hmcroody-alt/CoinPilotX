@@ -435,8 +435,33 @@ _SENT_CLAIM_PATTERNS: tuple[re.Pattern[str], ...] = tuple(re.compile(p, re.IGNOR
 #: ``verified_success`` — the only state in which the system has independently
 #: observed the new value.
 _COMPLETION_CLAIM_PATTERNS: tuple[re.Pattern[str], ...] = tuple(re.compile(p, re.IGNORECASE) for p in (
-    r"\b(?:i|undx)\s+(?:have\s+)?(?:sent|posted|published|deleted|removed|created|updated|changed|cancell?ed|paused|resumed)\b",
-    r"\b(?:has|have)\s+been\s+(?:sent|posted|published|deleted|removed|created|updated|changed|cancell?ed|paused|resumed)\b",
+    # The first-person completion claim. Three things were missing from the original,
+    # and each was one surface form of a concept the pattern already covered:
+    #
+    # * the contraction — "I've completed that" (the space after ``i`` never came),
+    # * an adverb between subject and verb — "I just changed it", "I successfully
+    #   liked the post",
+    # * the verbs a *model* reaches for rather than the ones this module writes —
+    #   "completed", "liked", "turned it off".
+    #
+    # They were missing because the list was grown against the runtime's own prose,
+    # which is generated from a fixed vocabulary and never contracts or hedges. Model
+    # prose does both, and the model is now the thing being checked: see
+    # :func:`services.pulse_ai_service._strip_unsupported_execution_claims`, which runs
+    # this over a provider reply on the path where no receipt can exist.
+    #
+    # The adverb slot is a closed set rather than ``\w+``, which is what keeps a
+    # negation from being swallowed: "I have not sent it" and "I never deleted
+    # anything" claim nothing and must go on claiming nothing. ``followed(?!\s+up)``
+    # is there for the same reason — "I followed up on that" is not a claim to have
+    # followed an account.
+    r"\b(?:i|undx)(?:'ve|\s+have|\s+has)?\s+(?:(?:just|already|successfully|now|then)\s+){0,2}"
+    r"(?:sent|posted|published|deleted|removed|created|updated|changed|cancell?ed"
+    r"|paused|resumed|completed|finished|liked|unliked|saved|unsaved|scheduled"
+    r"|enabled|disabled|blocked|unblocked|muted|unmuted|unfollowed|reported"
+    r"|followed(?!\s+up)|turned\s+(?:it\s+)?(?:on|off))\b",
+    r"\b(?:i|undx)(?:'ve|\s+have)\s+(?:just\s+|already\s+)?done\s+(?:that|it|this)\b",
+    r"\b(?:has|have)\s+been\s+(?:sent|posted|published|deleted|removed|created|updated|changed|cancell?ed|paused|resumed|completed|liked|unliked|saved|enabled|disabled|blocked|muted|reported)\b",
     # ``are`` as well as ``is``. The plural was missing and the omission is the same
     # shape as every other near-miss in a hand-written list: the concept was obviously
     # covered, and exactly one of its surface forms was. "Push notifications are now
@@ -468,8 +493,17 @@ _COMPLETION_CLAIM_PATTERNS: tuple[re.Pattern[str], ...] = tuple(re.compile(p, re
 ))
 
 
-def completion_claim(text: str) -> str:
+def completion_claim(text: str, limit: int = MAX_EXPLANATION_CHARS) -> str:
     """The completion claim this sentence makes, or ``""``.
+
+    ``limit`` bounds how much of ``text`` is read, and defaults to the cap that suits
+    the original caller: :func:`validate_consistency` is handed a *composed*
+    explanation, which this module built and which cannot exceed
+    :data:`MAX_EXPLANATION_CHARS`. The conversational guard in
+    :mod:`services.pulse_ai_service` is handed free-form provider output instead, which
+    the transport allows up to 6000 characters, and raises the limit accordingly — a
+    claim in a fourth paragraph is exactly as false as one in the first, and a default
+    that quietly stopped reading at 1200 would have been a hole rather than a bound.
 
     The single reader of :data:`_COMPLETION_CLAIM_PATTERNS`, extracted so that the two
     places which need this question — :func:`validate_consistency` here, and the
@@ -496,13 +530,79 @@ def completion_claim(text: str) -> str:
     Returns the matching pattern source, truncated, so callers can log *which* claim was
     found rather than only that one was. Empty string means the sentence claims nothing.
     """
-    body = clean(text, MAX_EXPLANATION_CHARS)
+    body = clean(text, limit)
     if not body:
         return ""
     for pattern in _COMPLETION_CLAIM_PATTERNS:
         if pattern.search(body):
             return pattern.pattern[:40]
     return ""
+
+
+#: How much of a reply :func:`execution_narration` reads. Deliberately not
+#: :data:`MAX_EXPLANATION_CHARS`: that cap bounds a *composed* explanation, and this
+#: function is pointed at free-form provider output, which the transport allows up to
+#: 6000 characters. Scanning the first 1200 would have meant a model could put the
+#: narration in a fourth paragraph and walk straight past the guard.
+MAX_SCANNED_REPLY_CHARS = 8000
+
+#: Narration of an execution *in progress*. A separate list from
+#: :data:`_COMPLETION_CLAIM_PATTERNS` because it is a separate claim, and the
+#: distinction matters: "[Executing action...]" asserts that nothing has finished yet,
+#: so the completion list is right to ignore it. It is nonetheless exactly as
+#: forbidden, because saying an execution is under way is a claim that an execution
+#: *started*, and in this system only the tool gateway starts one. A model that has
+#: called no gateway and writes "one moment while I like that" has already told the
+#: reader something untrue, and the reader will read whatever follows in that light.
+#:
+#: Every pattern is anchored on first-person agency or on bracketed machine narration.
+#: Second-person instruction must not be caught — "you can like a post by tapping the
+#: heart" is help, and "PulseSoc is processing your upload" is a statement about the
+#: platform rather than a claim about what UNDX just did. That is why there is no bare
+#: ``\bexecuting\b`` here despite it being the single most obvious word to match.
+_EXECUTION_NARRATION_PATTERNS: tuple[re.Pattern[str], ...] = tuple(re.compile(p, re.IGNORECASE) for p in (
+    # The literal string from the failure this guard was written for, and the shape of
+    # it. Models emit bracketed stage directions because their training data is full of
+    # transcripts that contain them; the model is imitating a tool-calling trace it
+    # never produced. Bracket content is bounded so an ordinary long aside in square
+    # brackets cannot drift into a match.
+    r"\[\s*(?:executing|running|calling|performing|processing|invoking|action|tool)[^\]]{0,60}\]",
+    r"\bexecuting\s+(?:the\s+|this\s+|your\s+)?(?:action|request|command|tool|capability|change)\b",
+    r"\b(?:i'?m|i\s+am|undx\s+is)\s+(?:now\s+)?(?:executing|running|performing|invoking|submitting|applying)\b",
+    r"\b(?:i'?m|i\s+am)\s+(?:now\s+)?(?:going\s+ahead\s+and\s+)?"
+    r"(?:liking|posting|deleting|updating|sending|saving|scheduling|following|unfollowing"
+    r"|blocking|muting|reporting|cancell?ing|pausing|resuming)\b",
+    r"\blet\s+me\s+(?:go\s+ahead\s+and\s+)?(?:execute|run|perform|do)\s+(?:that|it|this)\b",
+    r"\bone\s+moment\s+while\s+i\b",
+    r"\bhold\s+on\s+while\s+i\b",
+    r"\bi'?ll\s+(?:go\s+ahead\s+and\s+)?(?:do|execute|run|perform|handle)\s+(?:that|it|this)\s+(?:right\s+)?now\b",
+    r"\bworking\s+on\s+(?:that|it)\s+(?:right\s+)?now\b",
+    r"\baction\s+in\s+progress\b",
+    r"\bcalling\s+the\s+(?:api|tool|gateway|backend|endpoint)\b",
+))
+
+
+def execution_narration(text: str) -> str:
+    """The in-progress execution claim this text makes, or ``""``.
+
+    The counterpart to :func:`completion_claim`, and deliberately not folded into it.
+    A completion claim is checked against whether the action *verified*; an execution
+    narration is checked against whether an action was *attempted at all*. Those are
+    different questions with different answers, and a caller that has neither — the
+    conversational path, where by construction there is no receipt — needs to ask both.
+
+    Returns the matching pattern source, truncated, so a caller can log which shape was
+    found rather than only that something was. Empty string means the text narrates no
+    execution.
+    """
+    body = clean(text, MAX_SCANNED_REPLY_CHARS)
+    if not body:
+        return ""
+    for pattern in _EXECUTION_NARRATION_PATTERNS:
+        if pattern.search(body):
+            return pattern.pattern[:40]
+    return ""
+
 
 #: Claims that the answer is the whole answer. Forbidden whenever a source degraded,
 #: because a partial view asserted as total is precisely the confident-zero failure.
@@ -2449,6 +2549,7 @@ __all__ = [
     "EvidenceView",
     "GoalShape",
     "MAX_EXPLANATION_CHARS",
+    "MAX_SCANNED_REPLY_CHARS",
     "ResponseMode",
     "ResponsePlan",
     "ResponseType",
@@ -2459,6 +2560,7 @@ __all__ = [
     "compose",
     "detect_repetition",
     "draft_quality_issues",
+    "execution_narration",
     "is_follow_up",
     "must_not_do_for",
     "nouns_for",

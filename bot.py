@@ -1264,6 +1264,19 @@ _load_route_pack("business_os_web", "services.business_os_web")
 # 37 /api/business-os endpoints plus the /business-os/commerce seller console
 # page. Every endpoint is DARK (404) until its BUSINESS_OS_* flag is on.
 _load_route_pack("business_os_commerce", "services.business_os_commerce_routes")
+# UNDX durable agent runs, read side only: GET /api/undx/runs and /<run_id>. The write
+# half of a run is queued by the existing /api/pulse-ai/message path and executed by the
+# undx_worker service; this pack is how the person who asked finds out what became of it.
+_load_route_pack("undx_agent_runs", "services.undx_agent_run_routes")
+# The one state change a client may make to a run: POST /api/undx/runs/<id>/cancel. Kept
+# in its own pack so the read pack above stays provably GET-only — that property is
+# asserted over the URL map, and a POST registered alongside it would quietly retire the
+# proof rather than fail a test.
+_load_route_pack("undx_agent_run_control", "services.undx_agent_run_control_routes")
+# GET /health/undx/runs — queue depth, worker liveness and web/worker sha agreement.
+# Unauthenticated by design and therefore counts only; kept out of both packs above so
+# neither loses its "every route here is owner-scoped" guarantee.
+_load_route_pack("undx_run_health", "services.undx_run_health_routes")
 
 
 def cancel_scheduled_account_deletion(cur, user_id):

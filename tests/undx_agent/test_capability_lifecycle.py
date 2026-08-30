@@ -74,15 +74,58 @@ def test_policy_denylist_demotes_registered_capability_to_disabled():
         assert views[capability_id]["status"] == "DISABLED"
 
 
-def test_grounding_block_contains_counts_and_canonical_language():
+def test_grounding_block_always_reports_every_count():
     block = lifecycle.capability_lifecycle_block()
     assert "UNDX capability state" in block
+    # Counts are unconditional, zeroes included: a zero is information, and the block
+    # would be misleading if a status could vanish from it entirely.
     for status in lifecycle.CapabilityStatus.ALL:
         assert status in block
-    assert lifecycle.CANONICAL_STATUS_LANGUAGE["AVAILABLE"] in block
-    assert lifecycle.CANONICAL_STATUS_LANGUAGE["TRAINING"] in block
-    assert lifecycle.CANONICAL_STATUS_LANGUAGE["PLANNED"] in block
     assert "Never present a TRAINING or PLANNED capability as complete" in block
+
+
+def _block_with_counts(**counts):
+    full = {status: 0 for status in lifecycle.CapabilityStatus.ALL}
+    full.update(counts)
+    with mock.patch.object(lifecycle, "lifecycle_counts", return_value=full):
+        return lifecycle.capability_lifecycle_block()
+
+
+def test_a_status_sentence_is_offered_only_when_something_holds_that_status():
+    """The fix for a model refusing an action it was allowed to take.
+
+    This block is prepended to every conversational system prompt. The version that
+    listed all five canonical sentences unconditionally handed the model the words
+    "final execution still requires the current PulseSoc interface" even on a
+    deployment where nothing was LIMITED — and a model reaching for the most fluent
+    excuse sitting in its own context is the predictable failure, not a surprising one.
+    """
+    limited = lifecycle.CANONICAL_STATUS_LANGUAGE["LIMITED"]
+    assert "current PulseSoc interface" in limited, "the sentence under test moved"
+
+    healthy = _block_with_counts(AVAILABLE=40, TRAINING=30, PLANNED=19)
+    assert limited not in healthy
+    assert "current PulseSoc interface" not in healthy
+    assert lifecycle.CANONICAL_STATUS_LANGUAGE["AVAILABLE"] in healthy
+    assert lifecycle.CANONICAL_STATUS_LANGUAGE["TRAINING"] in healthy
+    assert lifecycle.CANONICAL_STATUS_LANGUAGE["PLANNED"] in healthy
+
+    # And the converse, which is the half that keeps this from being a gag order: when
+    # policy really has suspended part of a capability the sentence is true, and the
+    # model needs it.
+    suspended = _block_with_counts(LIMITED=120, TRAINING=30)
+    assert limited in suspended
+    assert lifecycle.CANONICAL_STATUS_LANGUAGE["AVAILABLE"] not in suspended
+
+
+def test_the_grounding_block_survives_every_status_being_empty():
+    """No capabilities at all is a degenerate but reachable state (policy off, empty
+    registry). It must produce a block, not an empty framing clause or a stray colon."""
+    block = _block_with_counts()
+    assert "UNDX capability state" in block
+    assert "When describing what you can do" not in block
+    for sentence in lifecycle.CANONICAL_STATUS_LANGUAGE.values():
+        assert sentence not in block
 
 
 def test_self_knowledge_exposes_lifecycle():

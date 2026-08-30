@@ -110,7 +110,25 @@ class GatewayOutcome:
         answered from the account succeeded, and there is still nothing completed to tell
         the person about. Keeping the two names apart is the point: collapsing them is how
         "the lookup worked" turns into "your change is done".
+
+        **The two halves are asked differently because they are different questions.** A
+        write succeeded when the receipt says so — status completed *and* an independent
+        read-back that verified — which is :attr:`AgentReceipt.may_claim_completed`
+        unchanged. A read has no such second condition available to it: a read-only
+        capability declares no verifier, so :func:`_verify` returns ``impossible`` and the
+        receipt's verification state says so truthfully. Holding a lookup to a write's
+        read-back requirement made this property return ``False`` for every read that ever
+        ran, in flat contradiction of the sentence above it, and the durable run queue —
+        the one caller that reads this — recorded every successfully executed read as a
+        failure. See ``scripts/undx_read_settlement_probe.py`` for the measurement.
+
+        The asymmetry can only widen the *read* answer and cannot touch the write answer,
+        which is what makes it safe. Nothing downstream turns a successful read into a
+        completion claim either: :attr:`may_claim_done` stays narrow, because the Brain
+        assesses a read as ``RETRIEVED`` no matter how well it went.
         """
+        if not self.is_write:
+            return self.receipt.status in AgentOutcome.COMPLETED
         return self.receipt.may_claim_completed
 
     @property

@@ -2122,6 +2122,14 @@ def _card_type(spec: CapabilitySpec, status: str) -> str:
         # capability's *success* card — which is precisely how a question about which
         # alert to pause came to be drawn as though an alert had been paused.
         return CardType.CLARIFICATION_REQUIRED
+    if status == AgentOutcome.ACCEPTED_QUEUED:
+        # Never ``spec.result_card``. The fall-through at the bottom hands back the
+        # capability's *success* card, and this status exists precisely because nothing
+        # has succeeded — a queued run drawn as a receipt would report a change that no
+        # executor has yet been entered for. ``action_progress`` is the client's existing
+        # name for work still running and already carries the kicker "IN PROGRESS", so no
+        # client ships before the server can say this truthfully.
+        return CardType.ACTION_PROGRESS
     if status == AgentOutcome.PERMISSION_DENIED:
         return CardType.PERMISSION_DENIED
     if status == AgentOutcome.UNSUPPORTED_CAPABILITY:
@@ -2415,16 +2423,24 @@ def preview(user_id: int, spec: CapabilitySpec,
 
 
 def _bare_receipt(spec: CapabilitySpec, *, user_id: int, request_id: str, status: str,
-                  explanation: str, evidence: dict[str, Any] | None = None) -> AgentReceipt:
+                  explanation: str, evidence: dict[str, Any] | None = None,
+                  verification: str = VerificationState.IMPOSSIBLE) -> AgentReceipt:
     """A receipt for an outcome that never reached the gateway.
 
     Refusals get the same shape as successes so no caller can mistake a refusal for
     an absence of one — and so the client renders every outcome through one path.
+
+    ``verification`` defaults to ``IMPOSSIBLE`` because that is true of every caller
+    this function had until durable runs existed: a refusal, a question or a fault has
+    no change to read back and never will. A queued run is the one case where it is
+    false — the read-back has not happened *yet* — and those two must not share a value,
+    because ``IMPOSSIBLE`` is a permanent verdict and something is going to verify this
+    one in a few seconds.
     """
     return AgentReceipt(
         task_id=request_id, request_id=request_id, capability_id=spec.capability_id,
         action=spec.description, status=status, owner_user_id=int(user_id),
-        verification_state=VerificationState.IMPOSSIBLE,
+        verification_state=verification,
         evidence=dict(evidence or {}), native_deep_link=spec.deep_link({}),
         user_explanation=clean(explanation, 400), risk_level=spec.risk,
     )
@@ -2519,6 +2535,149 @@ def _unresolved_response(spec: CapabilitySpec, reference: Reference, request_id:
     return AgentResponse(handled=True, receipt=receipt, card=card, reply=receipt.user_explanation,
                          capability_id=spec.capability_id,
                          latency_ms=int((time.monotonic() - started) * 1000))
+
+
+def _queued_response(spec: CapabilitySpec, run_id: str, request_id: str,
+                     user_id: int, started: float, *, reason: str) -> AgentResponse:
+    """The turn ended with the work accepted and handed to the worker.
+
+    Nothing has been attempted, and every field here says so. ``verified`` is False and
+    ``verification_state`` is ``PENDING`` because there is no read-back to report — not
+    a failed one, an absent one. The component is ``action_progress``, which the native
+    client already classifies as progress and draws under "IN PROGRESS"; it is not
+    ``spec.result_card``, because the capability's own card is a receipt and a receipt
+    for something that has not run is the one claim this system exists to refuse.
+
+    ``run_id`` travels on the card so the person's next question — "did that finish?" —
+    has an answer that does not depend on the conversation being remembered.
+    """
+    receipt = _bare_receipt(
+        spec, user_id=user_id, request_id=request_id,
+        status=AgentOutcome.ACCEPTED_QUEUED,
+        explanation="UNDX is working on that now. It will keep going if you close the app.",
+        evidence={"run_id": run_id, "dispatch_reason": reason},
+        verification=VerificationState.PENDING,
+    )
+    return AgentResponse(
+        handled=True, receipt=receipt,
+        card={
+            "component": CardType.ACTION_PROGRESS,
+            "capability_id": spec.capability_id,
+            "status": AgentOutcome.ACCEPTED_QUEUED,
+            "verification_state": receipt.verification_state,
+            "verified": False,
+            "title": spec.description,
+            "message": receipt.user_explanation,
+            "risk": spec.risk,
+            "deep_link": receipt.native_deep_link,
+            "task_id": request_id,
+            "run_id": run_id,
+            "timestamp": receipt.timestamp,
+        },
+        reply=receipt.user_explanation, capability_id=spec.capability_id,
+        latency_ms=int((time.monotonic() - started) * 1000),
+    )
+
+
+def _maybe_queue(cur, spec: CapabilitySpec, *, user_id: int, arguments: dict[str, Any],
+                 resolved_count: int, confirmation_token: str, request_id: str,
+                 client_request_id: str, correlation_id: str,
+                 started: float) -> AgentResponse | None:
+    """Hand this action to the worker, or decline and let the turn run it here.
+
+    Returns ``None`` for "not queued, carry on" and an :class:`AgentResponse` for
+    "queued, the turn is over". The ``None`` is the important half: every branch that
+    cannot prove deferral is correct returns it, and the cost of that is a slow turn
+    rather than an unattributed row in a queue.
+
+    Three things are deliberately not done here.
+
+    It does not read the person's sentence. ``decide`` is handed the registry entry, the
+    number of targets the *deterministic* resolver pinned, and the flag surface — facts
+    about the system, none of them a model's opinion about what was meant. A capability
+    becomes worker-backed because somebody added it to a list, never because a turn
+    argued for it.
+
+    It does not translate ``confirmation_token`` into a confirmation id, because no such
+    lookup exists in :mod:`services.undx_architecture` and inventing one here would put
+    the authorship of an approval reference in the wrong module. The consequence is
+    stated rather than hidden: **no write can currently be queued.** It is unreachable
+    rather than unhandled — ``WORKER_ELIGIBLE_CAPABILITIES`` holds only read-only
+    capabilities, so ``decide`` returns synchronous at its eligibility step before
+    ``has_confirmation`` is ever consulted. The guard below is a second lock on the same
+    door, placed here so that adding a write to that list changes the behaviour to a
+    synchronous turn rather than to an unconfirmed queued run.
+
+    It does not commit. This module never owns the transaction — the request boundary
+    does — and a queue row committed here while the rest of the turn later rolls back
+    would be a job nobody asked for, holding an approval nobody granted.
+
+    Failure falls through. If ``enqueue`` refuses or the runs table is unavailable, the
+    turn proceeds to the gateway and executes synchronously, which is slower and correct.
+    The opposite reflex — surfacing the queue's error to the person — would turn an
+    infrastructure fault into a refusal of work the system is perfectly able to do.
+    """
+    try:
+        from services import undx_worker_dispatch
+    except Exception:  # pragma: no cover - dispatch module is optional at runtime
+        logger.warning("undx_dispatch_unavailable capability=%s", spec.capability_id,
+                       exc_info=True)
+        return None
+
+    try:
+        decision = undx_worker_dispatch.decide(
+            spec, resolved_count=int(resolved_count or 1),
+            has_confirmation=bool(confirmation_token),
+        )
+    except Exception:  # pragma: no cover - a broken decision is a synchronous turn
+        logger.warning("undx_dispatch_failed capability=%s", spec.capability_id,
+                       exc_info=True)
+        return None
+
+    if decision.synchronous:
+        return None
+
+    if not str(client_request_id or "").strip():
+        # No idempotency anchor, so no durable run. ``enqueue`` refuses this too, but it
+        # refuses it as an exception the branch below would swallow into a warning, and
+        # a caller omitting the one field that makes retries safe deserves better than a
+        # log line that looks like a fault.
+        #
+        # Synchronous is the correct answer rather than a consolation prize. The reason
+        # to refuse is that a queued run keyed on a server-generated id would be a *new*
+        # run every time the phone retried the same tap — the person taps once, the
+        # network stutters, and two jobs execute out of their sight. Executed in the
+        # request, a duplicate is at worst a duplicate the person is present to see.
+        logger.info("undx_queue_skipped_no_request_id capability=%s", spec.capability_id)
+        return None
+
+    if spec.is_write:
+        # See the docstring. Reached only if somebody adds a write to the eligible set
+        # before there is a way to carry its approval onto the row; logged loudly and
+        # executed here, where the confirmation token in hand is still redeemable.
+        logger.error(
+            "undx_queue_refused_write capability=%s reason=%s",
+            spec.capability_id, decision.reason,
+        )
+        return None
+
+    try:
+        from services import undx_agent_runs
+        run_id = undx_agent_runs.enqueue(
+            cur, user_id=int(user_id), capability_id=spec.capability_id,
+            arguments=arguments, confirmation_id="",
+            client_request_id=client_request_id, correlation_id=correlation_id,
+            dispatch_reason=decision.reason,
+        )
+    except Exception:
+        logger.warning("undx_enqueue_failed capability=%s", spec.capability_id,
+                       exc_info=True)
+        return None
+
+    logger.info("undx_run_queued run=%s capability=%s user=%s reason=%s",
+                run_id, spec.capability_id, user_id, decision.reason)
+    return _queued_response(spec, str(run_id), request_id, int(user_id), started,
+                            reason=decision.reason)
 
 
 def _error_response(spec: CapabilitySpec, exc: AgentError, request_id: str,
@@ -3375,6 +3534,27 @@ def _act(cur, spec: CapabilitySpec, *, user_id: int, text: str,
     current_value, proposed_value, resource_label = (
         preview(int(user_id), spec, arguments) if spec.is_write else (None, None, ""))
 
+    # The user→queue edge. Above the gateway on purpose: the worker executes a claimed
+    # run by calling the same gateway, so a dispatch branch placed inside
+    # ``undx_tool_gateway.execute`` would meet the worker's own call and enqueue it
+    # again, forever. Deferral is decided once, in the request, by the code that knows
+    # it is in a request.
+    #
+    # ``decide`` is not told what the person typed and cannot be. Everything it reads is
+    # a fact about the system: the registry entry, how many targets the *deterministic*
+    # resolver pinned, and the flag surface. The one contextual input is whether an
+    # approval already exists, which is why this sits after ``preview`` — a write with
+    # no approval must fall through to the gateway so the confirmation card gets minted
+    # and shown, rather than being queued to ask somebody who has stopped watching.
+    queued = _maybe_queue(
+        cur, spec, user_id=int(user_id), arguments=arguments,
+        resolved_count=resolved_count, confirmation_token=confirmation_token,
+        request_id=request_id, client_request_id=client_request_id,
+        correlation_id=correlation_id, started=started,
+    )
+    if queued is not None:
+        return queued
+
     def _gateway_call():
         return undx_tool_gateway.execute(
             cur, user_id=int(user_id), capability_id=spec.capability_id,
@@ -3635,6 +3815,78 @@ def question_framed_write_refusal(
     )
 
 
+def _planned_capability(text: str, *, user_id: int, brain_focus: Any = None,
+                        correlation_id: str = "") -> CapabilitySpec | None:
+    """Ask the planner, but only for a turn the deterministic stack has already refused.
+
+    Position is the whole safety argument, so it is worth stating plainly. By the time
+    this runs, :func:`match_capability` has returned ``None``, no approval was pending,
+    nothing was withdrawn and no outstanding question was answered. The turn's existing
+    outcome is ``handled=False`` — a conversational reply. So the only state this
+    function can change is *that*, and the only direction it can change it in is from
+    "UNDX talked about it" to "UNDX proposed it, under the usual governance".
+
+    Nothing that routes today routes differently. A message the matcher understands
+    never reaches this line, which is what makes the change additive rather than a
+    replacement, and is why the 100% co-authored routing rate cannot regress: those
+    messages exit several branches earlier.
+
+    Three refusals still apply to whatever comes back, in this order:
+
+    * The id must be registered. :mod:`services.undx_planner` enforces that before
+      returning, and :func:`get` here is the second reading of the same rule — cheap,
+      and it closes the window where a flag or a deploy retires a capability between
+      the planner's answer and its use.
+    * Bounded attention still vetoes. ``brain_focus`` is restrictive only, exactly as it
+      is for a brain selection twenty lines above: a proposal outside the focus is
+      dropped, never promoted into it.
+    * Authorization is untouched. This returns a spec, not a permission. The caller
+      continues into :func:`question_framed_write_refusal`, calibration, and then the
+      gateway, where policy, confirmation, idempotency, the executor receipt and the
+      verifier all run exactly as they would for a matched phrase.
+
+    Returns ``None`` for every fault, which restores the conversational reply. There is
+    deliberately no error surface here: a planner outage should be invisible to the
+    person typing, not an apology.
+    """
+    try:
+        from services import undx_capability_planner
+    except Exception:  # pragma: no cover - absent module is degradation, not failure
+        return None
+    try:
+        if not undx_capability_planner.enabled():
+            return None
+        result = undx_capability_planner.plan(text, user_id=int(user_id))
+    except Exception:  # noqa: BLE001 - a planner fault must never fail a turn
+        logger.warning("undx_planner_failed correlation_id=%s", correlation_id, exc_info=True)
+        return None
+    if not result.ok:
+        return None
+
+    spec = get(result.capability_id)
+    if spec is None:
+        return None
+    focus_ids = getattr(brain_focus, "capability_ids", None) if (
+        brain_focus is not None and getattr(brain_focus, "ok", False)) else None
+    if focus_ids and result.capability_id not in focus_ids:
+        logger.info("undx_planner_outside_focus correlation_id=%s capability_id=%s",
+                    correlation_id, result.capability_id)
+        return None
+    # The decision contract is logged in full and consumed in part. ``intent`` and
+    # ``target_reference`` are what the model *believed* it was acting on; the row that
+    # matters offline is the one pairing that belief with the id the deterministic
+    # resolver went on to choose from the user's own words, because a divergence there is
+    # a routing defect that no outcome-level metric can see. Nothing on this line feeds
+    # the gateway — note that ``result.advisory_arguments`` is read nowhere in this
+    # function, and see the planner module docstring for why it is named that way.
+    logger.info("UNDX_PLANNER_SELECTION correlation_id=%s capability_id=%s confidence=%.2f "
+                "provider=%s is_write=%s intent=%s target_reference=%s advisory_keys=%s",
+                correlation_id, result.capability_id, result.confidence,
+                result.provider, bool(spec.is_write), result.intent[:80],
+                result.target_reference[:80], sorted(result.advisory_arguments))
+    return spec
+
+
 def handle(
     cur,
     *,
@@ -3803,9 +4055,31 @@ def handle(
             # "which post?" while being, by design, unroutable in isolation.
             recovered = _resume_pending(cur, int(user_id), text)
             if recovered is None:
-                # Nothing actionable and nothing outstanding. The normal case for the
-                # overwhelming majority of messages, which want a conversation.
-                return AgentResponse(handled=False, latency_ms=int((time.monotonic() - started) * 1000))
+                # Nothing actionable and nothing outstanding — which used to end the
+                # turn here, as a conversation. It is also the only honest place to ask
+                # a model what was meant: everything deterministic has now declined, so
+                # a planner answer competes with a chat reply rather than with the
+                # matcher. See :func:`_planned_capability` for why that ordering is the
+                # safety argument and not merely a preference.
+                planned = _planned_capability(
+                    text, user_id=int(user_id), brain_focus=brain_focus,
+                    correlation_id=correlation_id)
+                if planned is None:
+                    # The normal case for the overwhelming majority of messages, which
+                    # want a conversation.
+                    return AgentResponse(handled=False, latency_ms=int((time.monotonic() - started) * 1000))
+                # Rejoins the existing path carrying the same caller-supplied ``arguments``
+                # the matcher branch carries — the planner contributes nothing to it — so
+                # reference resolution and ``missing_required`` run over the planner's
+                # choice exactly as they do over the matcher's. The planner names the
+                # action; it does not get to fill in what the action operates on.
+                #
+                # ``_abandon_pending`` is the one piece of state this branch writes. A
+                # continuation left outstanding while a new action is staged could be
+                # answered later by a "yes" that the person believes applies to the new
+                # action, so the stale one is burned rather than left to be redeemed.
+                _abandon_pending(cur, int(user_id))
+                recovered = (planned, arguments, answered)
             if isinstance(recovered, _Reask):
                 # An answer that missed. Handled here rather than below because there is
                 # no action to take: nothing was resolved, so ``_act`` has nothing to

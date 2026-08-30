@@ -328,6 +328,24 @@ CATALOG: tuple[Flag, ...] = (
         fail="n/a", minimum=15, maximum=900,
     ),
     Flag(
+        "UNDX_AGENT_RUNS_ENABLED", "bool", "0",
+        "Allow the worker to execute agent runs the user already confirmed in a request.",
+        fail="closed",
+    ),
+    Flag(
+        "UNDX_AGENT_RUN_LEASE_SECONDS", "int", "120",
+        "Fixed lease duration for one claimed agent run. Longer than the mission lease "
+        "because a run calls a real executor rather than advancing a lifecycle node.",
+        fail="n/a", minimum=30, maximum=900,
+    ),
+    Flag(
+        "UNDX_AGENT_RUN_MAX_ATTEMPTS", "int", "3",
+        "How many times a single agent run may be claimed before it is dead-lettered. "
+        "A claim is counted even when the container dies mid-execution, so this bounds "
+        "crash loops as well as retries.",
+        fail="n/a", minimum=1, maximum=10,
+    ),
+    Flag(
         "UNDX_WORKER_SLEEP_SECONDS", "int", "60",
         "Fixed delay between worker polls when no mission is advanced.",
         fail="n/a", minimum=15, maximum=300,

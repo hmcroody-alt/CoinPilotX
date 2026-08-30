@@ -254,6 +254,42 @@ class AgentFixture:
         return bool(row and (dict(row).get("reaction_type") if hasattr(row, "keys")
                              else row[0]) == "like")
 
+    def grant_confirmation(self, capability_id: str, arguments: dict, *,
+                           user_id: int = OWNER_ID, target_id: str | None = None,
+                           ttl_seconds: int = 300) -> str:
+        """Mint a real approval bound to exactly this action, and return its id.
+
+        Tests used to pass literals like ``"conf_abc"`` into ``enqueue``. That was
+        readable and it was wrong: a string that names no row proves nothing about the
+        binding, and once ``enqueue`` began checking the binding those tests asserted
+        only that a fabricated id is rejected — which is a different test, written once
+        and deliberately, further down.
+
+        The target is derived from the registry's own ``canonical_target`` rather than
+        being handed in, so a fixture cannot approve a target the capability would never
+        produce. The 160-character truncation mirrors what the gateway stores, because
+        an approval that matched here and missed there would make this helper a source
+        of false green.
+        """
+        from services import undx_architecture, undx_capability_registry
+
+        if target_id is None:
+            spec = undx_capability_registry.get(capability_id)
+            assert spec is not None, f"no such capability: {capability_id}"
+            target_id = spec.canonical_target(arguments or {})
+        grant = undx_architecture.create_confirmation(
+            self.cur, int(user_id),
+            {
+                "action_id": capability_id,
+                "action_version": "agent.1",
+                "target_id": str(target_id)[:160],
+                "arguments": arguments or {},
+            },
+            ttl_seconds=ttl_seconds,
+        )
+        self.commit()
+        return str(grant["confirmation_id"])
+
     def alert_status(self, alert_id: int, user_id: int = OWNER_ID) -> str:
         """Read status straight from the service, bypassing the agent entirely.
 

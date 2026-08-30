@@ -43,6 +43,21 @@ class AgentOutcome:
 
     VERIFIED_SUCCESS = "verified_success"
     ACCEPTED_UNVERIFIED = "accepted_unverified"
+    #: The request was accepted and moved to the worker. Nothing has been attempted yet.
+    #:
+    #: A separate value rather than a reuse of ``ACCEPTED_UNVERIFIED``, and the
+    #: distinction is the entire reason durable runs are safe to have. That one means
+    #: *the write was performed and could not be read back* — a real change with an
+    #: unknown result. This one means *no executor has been entered*. Collapsing them
+    #: would let a row sitting in a queue render under the client's receipt kicker, which
+    #: is the precise failure the whole verification chain exists to prevent, reached by
+    #: the one route the verification chain cannot see.
+    #:
+    #: It is deliberately absent from ``COMPLETED`` and from ``AWAITING_USER``. Not
+    #: completed because nothing ran; not awaiting the user because the next thing that
+    #: happens is a worker claiming it, and a client that treats this as an open question
+    #: would hold a conversation open waiting for an answer nobody was asked for.
+    ACCEPTED_QUEUED = "accepted_queued"
     CONFIRMATION_REQUIRED = "confirmation_required"
     #: The agent understood the request and is waiting to be told one more thing.
     #:
@@ -82,6 +97,7 @@ class AgentOutcome:
     ALL = frozenset({
         VERIFIED_SUCCESS,
         ACCEPTED_UNVERIFIED,
+        ACCEPTED_QUEUED,
         CONFIRMATION_REQUIRED,
         CLARIFICATION_REQUIRED,
         CANCELLED,
@@ -161,6 +177,45 @@ class ConfirmationPolicy:
     ALWAYS = "always"
 
     ALL = frozenset({NEVER, CONTEXTUAL, ALWAYS})
+
+
+class RunConfirmation:
+    """The approval state recorded on a durable run row.
+
+    Distinct from :class:`ConfirmationPolicy`, which says what a *capability* demands.
+    This says what a particular queued run *has*, which is a fact about one row.
+
+    It lives here, in the dependency-free contracts module, because two modules that
+    must never disagree about it are otherwise on opposite sides of a heavy import.
+    :mod:`services.undx_agent_runs` writes the column and decides on its strength
+    whether a worker may claim the row; :mod:`services.undx_run_status` reads the same
+    column and decides on its strength whether to tell somebody their request is waiting
+    on them. Held as two literal sets in two modules, those drift, and the drift is
+    silent in the worst direction: a run the projection calls "waiting for you" that the
+    claim query happily picks up and executes anyway.
+
+    :data:`PENDING_STATES` carries three spellings rather than one on purpose. Nothing in
+    this repository writes them yet — ``enqueue`` refuses to create an unapproved write at
+    all — so the set exists to be *recognised*, and a recogniser that only knows the
+    spelling in use today fails open the first time another module picks a synonym.
+    """
+
+    #: The capability is read-only or ``confirmation=never``; no approval was ever needed.
+    NOT_REQUIRED = "not_required"
+    #: A person approved this exact capability, target and argument hash.
+    GRANTED = "granted"
+
+    PENDING = "pending"
+    REQUIRED = "required"
+    AWAITING = "awaiting"
+
+    #: Parked on a person. A run in any of these states is not work a worker can advance,
+    #: and Stage 18 of the durable-run design turns on that: claiming one would hold a
+    #: lease and spend an attempt against an approval that does not exist yet.
+    PENDING_STATES = frozenset({PENDING, REQUIRED, AWAITING})
+
+    #: Every spelling this column is allowed to hold.
+    ALL = frozenset({NOT_REQUIRED, GRANTED}) | PENDING_STATES
 
 
 class VerificationState:
@@ -782,7 +837,8 @@ class AgentResponse:
 
 
 __all__ = [
-    "AgentOutcome", "RiskLevel", "PermissionScope", "ConfirmationPolicy", "VerificationState",
+    "AgentOutcome", "RiskLevel", "PermissionScope", "ConfirmationPolicy", "RunConfirmation",
+    "VerificationState",
     "TaskStatus", "CardType", "AgentError", "FieldSpec", "validate_arguments",
     "AgentRequest", "ToolCall", "ToolResult", "VerificationResult",
     "ConfirmationRequest", "AgentReceipt", "AgentTask", "NativeCard",

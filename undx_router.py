@@ -324,13 +324,25 @@ def provider_priority(classification: dict[str, Any]) -> list[str]:
     return list(dict.fromkeys(provider for provider in ordered if provider in PROVIDERS))
 
 
-def _messages(system_prompt: str, message: str, history: Any) -> list[dict[str, str]]:
+def _messages(system_prompt: str, message: str, history: Any,
+              *, user_content: str | None = None) -> list[dict[str, str]]:
+    """Provider-neutral message list.
+
+    ``user_content``, when supplied, replaces the builder scaffolding on the final
+    user turn and is sent verbatim. That scaffolding names report sections
+    ("Mission Classification", "Build Steps", …) and is exactly right for the
+    mission-builder this router was written for — and exactly wrong for a caller
+    that needs one machine-readable object back. Such a caller would be fighting
+    its own transport for the shape of the answer.
+
+    Defaulting to ``None`` keeps every existing call byte-identical.
+    """
     messages = [{"role": "system", "content": system_prompt}]
     messages.extend(clean_history(history))
     messages.append(
         {
             "role": "user",
-            "content": (
+            "content": _clean_text(user_content, 6000) if user_content else (
                 f"Mission directive from user:\n{_clean_text(message)}\n\n"
                 "When relevant, use these sections: Mission Classification, Objective, Suggested Modules, "
                 "Build Steps, Security Notes, Recommended Next Action."
@@ -340,13 +352,15 @@ def _messages(system_prompt: str, message: str, history: Any) -> list[dict[str, 
     return messages
 
 
-def _openai_compatible(provider: str, endpoint: str, system_prompt: str, message: str, history: Any, timeout: int) -> dict[str, Any]:
+def _openai_compatible(provider: str, endpoint: str, system_prompt: str, message: str, history: Any, timeout: int,
+                       *, user_content: str | None = None,
+                       temperature: float = 0.35, max_tokens: int = 900) -> dict[str, Any]:
     config = PROVIDERS[provider]
     payload = {
         "model": _model(provider),
-        "messages": _messages(system_prompt, message, history),
-        "max_tokens": 900,
-        "temperature": 0.35,
+        "messages": _messages(system_prompt, message, history, user_content=user_content),
+        "max_tokens": max_tokens,
+        "temperature": temperature,
     }
     response = requests.post(
         endpoint,
@@ -359,26 +373,29 @@ def _openai_compatible(provider: str, endpoint: str, system_prompt: str, message
     return {"text": text, "model": payload["model"], "source": config.label}
 
 
-def _call_openai(system_prompt: str, message: str, history: Any, timeout: int) -> dict[str, Any]:
-    return _openai_compatible("openai", "https://api.openai.com/v1/chat/completions", system_prompt, message, history, timeout)
+def _call_openai(system_prompt: str, message: str, history: Any, timeout: int, **kwargs: Any) -> dict[str, Any]:
+    return _openai_compatible("openai", "https://api.openai.com/v1/chat/completions", system_prompt, message, history, timeout, **kwargs)
 
 
-def _call_deepseek(system_prompt: str, message: str, history: Any, timeout: int) -> dict[str, Any]:
-    return _openai_compatible("deepseek", "https://api.deepseek.com/chat/completions", system_prompt, message, history, timeout)
+def _call_deepseek(system_prompt: str, message: str, history: Any, timeout: int, **kwargs: Any) -> dict[str, Any]:
+    return _openai_compatible("deepseek", "https://api.deepseek.com/chat/completions", system_prompt, message, history, timeout, **kwargs)
 
 
-def _call_groq(system_prompt: str, message: str, history: Any, timeout: int) -> dict[str, Any]:
-    return _openai_compatible("groq", "https://api.groq.com/openai/v1/chat/completions", system_prompt, message, history, timeout)
+def _call_groq(system_prompt: str, message: str, history: Any, timeout: int, **kwargs: Any) -> dict[str, Any]:
+    return _openai_compatible("groq", "https://api.groq.com/openai/v1/chat/completions", system_prompt, message, history, timeout, **kwargs)
 
 
-def _call_claude(system_prompt: str, message: str, history: Any, timeout: int) -> dict[str, Any]:
-    messages = [item for item in _messages(system_prompt, message, history) if item["role"] != "system"]
+def _call_claude(system_prompt: str, message: str, history: Any, timeout: int,
+                 *, user_content: str | None = None,
+                 temperature: float = 0.35, max_tokens: int = 900) -> dict[str, Any]:
+    messages = [item for item in _messages(system_prompt, message, history, user_content=user_content)
+                if item["role"] != "system"]
     payload = {
         "model": _model("claude"),
         "system": system_prompt,
         "messages": messages,
-        "max_tokens": 900,
-        "temperature": 0.35,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
     }
     response = requests.post(
         "https://api.anthropic.com/v1/messages",
@@ -396,11 +413,13 @@ def _call_claude(system_prompt: str, message: str, history: Any, timeout: int) -
     return {"text": text, "model": payload["model"], "source": "Claude"}
 
 
-def _call_gemini(system_prompt: str, message: str, history: Any, timeout: int) -> dict[str, Any]:
+def _call_gemini(system_prompt: str, message: str, history: Any, timeout: int,
+                 *, user_content: str | None = None,
+                 temperature: float = 0.35, max_tokens: int = 900) -> dict[str, Any]:
     contents = []
     for item in clean_history(history):
         contents.append({"role": "model" if item["role"] == "assistant" else "user", "parts": [{"text": item["content"]}]})
-    contents.append({"role": "user", "parts": [{"text": _messages(system_prompt, message, [])[1]["content"]}]})
+    contents.append({"role": "user", "parts": [{"text": _messages(system_prompt, message, [], user_content=user_content)[1]["content"]}]})
     model = _model("gemini")
     response = requests.post(
         f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
@@ -414,7 +433,7 @@ def _call_gemini(system_prompt: str, message: str, history: Any, timeout: int) -
         json={
             "systemInstruction": {"parts": [{"text": system_prompt}]},
             "contents": contents,
-            "generationConfig": {"temperature": 0.35, "maxOutputTokens": 900},
+            "generationConfig": {"temperature": temperature, "maxOutputTokens": max_tokens},
         },
         timeout=timeout,
     )
@@ -432,6 +451,83 @@ CALLERS = {
     "deepseek": _call_deepseek,
     "groq": _call_groq,
 }
+
+
+def route_structured_request(
+    user_id: Any,
+    system_prompt: str,
+    user_content: str,
+    *,
+    timeout: int = 12,
+    temperature: float = 0.0,
+    max_tokens: int = 320,
+    providers: list[str] | None = None,
+) -> dict[str, Any]:
+    """One model turn whose answer is meant to be parsed, not read.
+
+    Same provider selection, same server-side key handling and same failover as
+    :func:`route_undx_request` — the point of routing through here rather than
+    calling a provider directly is that API keys stay on the server and one module
+    owns which vendor is tried in what order.
+
+    What differs is the contract. The user turn is sent verbatim instead of being
+    wrapped in the mission-builder scaffolding, temperature defaults to ``0`` and the
+    budget is small, because a caller that needs a single structured object back
+    gains nothing from either creativity or length.
+
+    Returns the same envelope shape as :func:`route_undx_request`. It deliberately
+    does not parse or validate the text: this function knows about transport, and
+    the caller knows what the answer is supposed to mean.
+    """
+    history: list[dict[str, str]] = []
+    ordered = [p for p in (providers or []) if p in PROVIDERS]
+    if not ordered:
+        ordered = provider_priority(classify_request(user_content)) if router_enabled() \
+            else [default_provider()]
+    attempts: list[dict[str, str]] = []
+    started = time.time()
+
+    for provider in ordered:
+        config = PROVIDERS[provider]
+        if not _api_key(provider):
+            attempts.append({"provider": config.label, "status": "not_configured"})
+            continue
+        try:
+            result = CALLERS[provider](
+                system_prompt, "", history, timeout,
+                user_content=user_content, temperature=temperature, max_tokens=max_tokens,
+            )
+            text = _clean_text(result.get("text"), 4000)
+            if not text:
+                raise ValueError("empty provider response")
+            return {
+                "ok": True,
+                "response": text,
+                "provider": provider,
+                "source": result.get("source") or config.label,
+                "model": result.get("model") or _model(provider),
+                "attempts": attempts + [{"provider": config.label, "status": "success"}],
+                "latency_ms": int((time.time() - started) * 1000),
+            }
+        except requests.Timeout:
+            logging.warning("UNDX structured provider timeout user_id=%s provider=%s", user_id, provider)
+            attempts.append({"provider": config.label, "status": "timeout"})
+        except requests.RequestException as exc:
+            logging.warning("UNDX structured provider request failed provider=%s error=%s",
+                            provider, _safe_error(exc))
+            attempts.append({"provider": config.label, "status": "request_failed"})
+        except Exception as exc:  # noqa: BLE001 - a transport fault must stay a typed miss
+            logging.warning("UNDX structured provider response failed provider=%s error=%s",
+                            provider, _safe_error(exc))
+            attempts.append({"provider": config.label, "status": "response_failed"})
+
+    return {
+        "ok": False,
+        "response": "",
+        "error": "no configured provider answered",
+        "attempts": attempts,
+        "latency_ms": int((time.time() - started) * 1000),
+    }
 
 
 def route_undx_request(user_id: Any, message: str, history: Any = None, system_prompt: str = DEFAULT_UNDX_SYSTEM_PROMPT, timeout: int = 25) -> dict[str, Any]:

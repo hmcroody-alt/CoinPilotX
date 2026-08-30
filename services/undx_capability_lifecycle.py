@@ -199,28 +199,78 @@ def lifecycle_counts(views: list[dict[str, Any]] | None = None) -> dict[str, int
     return counts
 
 
+# The order the status sentences are offered to the model in, and the clause each one
+# is wrapped in. DISABLED is absent on purpose: there is no sentence a model should
+# reach for on its own about a deliberately unreachable capability, and the refusal for
+# one comes from the gateway rather than from prose.
+_LANGUAGE_ORDER = (
+    CapabilityStatus.AVAILABLE,
+    CapabilityStatus.LIMITED,
+    CapabilityStatus.TRAINING,
+    CapabilityStatus.PLANNED,
+)
+
+_LANGUAGE_CLAUSE = {
+    CapabilityStatus.AVAILABLE: (
+        'for AVAILABLE say "{sentence}", and where an action needs confirmation say '
+        "you can prepare it but need confirmation before it is executed"
+    ),
+    CapabilityStatus.LIMITED: 'for LIMITED say "{sentence}"',
+    CapabilityStatus.TRAINING: 'for TRAINING say "{sentence}"',
+    CapabilityStatus.PLANNED: 'for PLANNED say "{sentence}"',
+}
+
+
 def capability_lifecycle_block() -> str:
     """Short grounding paragraph: live capability state + the canonical sentences.
 
     Deliberately counts, not the full inventory — the model needs the honest
     frame, not 100 lines of ids. Clients that need the list call
     ``lifecycle_inventory()`` through the self-knowledge surface.
+
+    A status's sentence is offered **only when something currently holds that status**.
+    Every count line is still printed, including the zeroes, because a zero is
+    information; but a fluent, ready-made sentence is not neutral information. This
+    block is prepended to every conversational system prompt
+    (:func:`services.pulse_ai_provider_router.prepare_undx_model_request`), and the
+    version that handed over all five sentences unconditionally handed a model the
+    words "final execution still requires the current PulseSoc interface" on turns
+    where nothing was LIMITED at all. A model reaching for the most available excuse
+    in its context is not a surprising failure; it is the predictable one, and it
+    produced a refusal for an action the gateway would have executed.
+
+    Suppressing the AVAILABLE sentence when the count is zero follows from the same
+    rule and is not collateral damage: if policy has suspended reads and writes then
+    nothing is executable, and "I can complete that through PulseSoc" is a sentence the
+    model should not have either.
     """
     counts = lifecycle_counts()
-    return (
+    lines = [
         "UNDX capability state (live, server-authoritative — reflects current "
-        "policy flags):\n"
-        f"- AVAILABLE (executable and verified): {counts[CapabilityStatus.AVAILABLE]}\n"
-        f"- LIMITED (real but partially suspended by policy): {counts[CapabilityStatus.LIMITED]}\n"
-        f"- TRAINING (being integrated; draft/explain only): {counts[CapabilityStatus.TRAINING]}\n"
-        f"- PLANNED (roadmap; recommend/explain only): {counts[CapabilityStatus.PLANNED]}\n"
-        f"- DISABLED (deliberately unavailable): {counts[CapabilityStatus.DISABLED]}\n"
-        "When describing what you can do, use exactly this framing: for AVAILABLE "
-        f"say \"{CANONICAL_STATUS_LANGUAGE[CapabilityStatus.AVAILABLE]}\"; for actions "
-        "needing confirmation say you can prepare the action but need confirmation "
-        f"before it is executed; for LIMITED say \"{CANONICAL_STATUS_LANGUAGE[CapabilityStatus.LIMITED]}\"; "
-        f"for TRAINING say \"{CANONICAL_STATUS_LANGUAGE[CapabilityStatus.TRAINING]}\"; "
-        f"for PLANNED say \"{CANONICAL_STATUS_LANGUAGE[CapabilityStatus.PLANNED]}\". "
-        "Never present a TRAINING or PLANNED capability as complete, and never "
-        "claim an execution succeeded unless the PulseSoc backend verified it."
+        "policy flags):",
+        f"- AVAILABLE (executable and verified): {counts[CapabilityStatus.AVAILABLE]}",
+        f"- LIMITED (real but partially suspended by policy): {counts[CapabilityStatus.LIMITED]}",
+        f"- TRAINING (being integrated; draft/explain only): {counts[CapabilityStatus.TRAINING]}",
+        f"- PLANNED (roadmap; recommend/explain only): {counts[CapabilityStatus.PLANNED]}",
+        f"- DISABLED (deliberately unavailable): {counts[CapabilityStatus.DISABLED]}",
+    ]
+    present = [status for status in _LANGUAGE_ORDER if counts[status]]
+    if present:
+        clauses = "; ".join(
+            _LANGUAGE_CLAUSE[status].format(sentence=CANONICAL_STATUS_LANGUAGE[status])
+            for status in present
+        )
+        lines.append(f"When describing what you can do, use exactly this framing: {clauses}.")
+    # The prohibition is stated without quoting the wording it forbids. Naming the
+    # LIMITED sentence here in order to ban it would put the sentence back into the
+    # context window, which is the entire mechanism this function was changed to close;
+    # a negative instruction is not a reliable defence against the availability of a
+    # fluent phrase.
+    lines.append(
+        "Only the framings listed immediately above are available to you. Do not "
+        "invent a restriction for a status whose count is zero, and do not tell the "
+        "person an action must be completed somewhere else unless a listed framing "
+        "says so. Never present a TRAINING or PLANNED capability as complete, and "
+        "never claim an execution succeeded unless the PulseSoc backend verified it."
     )
+    return "\n".join(lines)
