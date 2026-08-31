@@ -412,8 +412,63 @@ class _IndexedCase:
         return False
 
 
+#: The query the serving-path tests probe with.
+_FIXTURE_PROBE_QUERY = "marketplace orders"
+
+
+def _cosine(left, right) -> float:
+    dot = sum(a * b for a, b in zip(left, right))
+    left_norm = sum(a * a for a in left) ** 0.5
+    right_norm = sum(b * b for b in right) ** 0.5
+    return dot / (left_norm * right_norm) if left_norm and right_norm else 0.0
+
+
 def _sample_documents(count: int = 40):
-    return semantic.canonical_documents()[:count]
+    """A deterministic slice of the real corpus that the probe query can actually retrieve.
+
+    This used to be ``canonical_documents()[:count]``, which coupled every serving-path
+    test to the corpus's sort order. Documents sort by kind then name, so the first forty
+    were whatever happened to sort first, and whether any of them cleared the similarity
+    floor for ``marketplace orders`` was luck. The luck ran out when the manifest grew from
+    1,726 entries to 2,220: the head of the list moved to ``account_*`` tables, no sample
+    document cleared the floor, ``semantic_candidates`` correctly returned nothing,
+    retrieval correctly fell back to lexical, and three tests read that correct behaviour
+    as a fusion regression.
+
+    Picking documents by *word* overlap would not fix it either, because the embedder in
+    these tests is a SHA-256 pseudo-embedder: its geometry has nothing to do with meaning,
+    so the only documents guaranteed to be retrievable are the ones that score highest
+    under that same function. Selecting them here is what makes the fixture independent of
+    both corpus size and corpus ordering -- and it is honest about what the fake embedder
+    is for, which is exercising plumbing, never relevance.
+
+    The text hashed here must be the text the provider is actually handed, which is
+    ``normalize_text(...)``, not the raw ``embed_text()``. Every one of the 2,154 canonical
+    documents differs from its normalised form, so ranking on the raw string ranks by a
+    vector the pipeline never computes: of the forty documents that selection picked, two
+    cleared the floor rather than twenty-three, and the suite passed on those two by
+    accident. The closing assertion is what keeps this honest -- a future corpus or
+    embedding change that leaves nothing above the floor now fails here, loudly and in one
+    place, instead of surfacing three files away as a phantom fusion regression.
+    """
+    dimensions = int(BASE_ENV["UNDX_EMBEDDING_DIMENSIONS"])
+    probe = _deterministic_vector(embed.normalize_text(_FIXTURE_PROBE_QUERY), dimensions)
+
+    def similarity(document) -> float:
+        prepared = embed.normalize_text(document.embed_text())
+        return _cosine(probe, _deterministic_vector(prepared, dimensions))
+
+    documents = semantic.canonical_documents()
+    ranked = sorted(documents, key=lambda document: (-similarity(document), document.doc_id))
+    sample = ranked[:count]
+    floor = semantic.similarity_floor()
+    assert sample and similarity(sample[0]) >= floor, (
+        "no canonical document clears the similarity floor "
+        f"({similarity(sample[0]) if sample else 0.0:.4f} < {floor}); the serving-path "
+        "tests below would fall back to lexical and report a fusion regression that is "
+        "really a fixture failure"
+    )
+    return sample
 
 
 class CacheEconomics(unittest.TestCase):
