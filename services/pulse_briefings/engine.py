@@ -650,7 +650,21 @@ def run_scheduled_cycle(limit: int = 50, *, conn=None) -> dict[str, Any]:
         cur.execute(
             """
             SELECT u.user_id, u.preferred_language FROM users u
-            JOIN push_subscriptions ps ON ps.user_id = u.user_id AND COALESCE(ps.is_active, ps.active, 1)=1
+            -- LEFT JOIN, not JOIN: push is a DELIVERY layer, not an eligibility gate.
+            -- An INNER JOIN here hard-excluded every user without an active
+            -- push_subscriptions row -- including users who have briefings enabled but
+            -- whose device token was never registered, was revoked, or was lost on a
+            -- reinstall. Those users then had zero pulse_briefings rows written, so
+            -- their in-app history stayed empty forever while delivery_status
+            -- separately reported push_ready=false with reason=no_devices. The
+            -- documented intent (see this module's docstring) is that an evaluation
+            -- window is NOT a mandatory send: _deliver's push_service.send_push
+            -- returns not_configured when no rows exist, evaluate_user_briefing
+            -- settles the row at 'generated' (visible in the hub), and the inbox
+            -- copy still writes. Gating evaluation on push existence therefore
+            -- disabled the entire product for anyone whose device state drifted from
+            -- their preference row.
+            LEFT JOIN push_subscriptions ps ON ps.user_id = u.user_id AND COALESCE(ps.is_active, ps.active, 1)=1
             LEFT JOIN pulse_briefing_prefs p ON p.user_id = u.user_id
             LEFT JOIN notification_preferences np
                    ON np.user_id = u.user_id AND np.category = 'global'
@@ -679,12 +693,16 @@ def run_scheduled_cycle(limit: int = 50, *, conn=None) -> dict[str, Any]:
         # Counted separately precisely because the query above excludes them: the
         # activation report has to be able to state how many users were withheld by
         # their own opt-out, and a filter that works leaves no trace in the loop.
+        # LEFT JOIN push_subscriptions here mirrors the main SELECT above -- an
+        # opted-out user without an active device is still an opt-out, and the
+        # metric must not silently under-count them now that push is a delivery
+        # concern rather than an eligibility gate.
         opted_out = 0
         try:
             cur.execute(
                 """
                 SELECT COUNT(DISTINCT u.user_id) FROM users u
-                JOIN push_subscriptions ps ON ps.user_id = u.user_id AND COALESCE(ps.is_active, ps.active, 1)=1
+                LEFT JOIN push_subscriptions ps ON ps.user_id = u.user_id AND COALESCE(ps.is_active, ps.active, 1)=1
                 LEFT JOIN pulse_briefing_prefs p ON p.user_id = u.user_id
                 JOIN notification_preferences np
                      ON np.user_id = u.user_id AND np.category = 'global'
