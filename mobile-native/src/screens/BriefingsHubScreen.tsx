@@ -71,17 +71,40 @@ export function pushStatusKey(status: BriefingDeliveryStatus): string {
   }
 }
 
-/** Defensive timestamp formatter: never throws, never invents a value. */
-function formatWhen(value?: string | null): string {
+/**
+ * Defensive timestamp formatter: never throws, never invents a value.
+ *
+ * `zone` is the user's canonical briefing timezone and is NOT optional in
+ * spirit. Every time on this screen belongs to that zone: the quiet-hours
+ * range and the "Timezone:" line are both stated in it, and the scheduler
+ * picks windows in it. Formatting without an explicit timeZone falls back to
+ * the *device* zone, which silently re-renders the server's already-canonical
+ * `next_check_local` into whatever the handset happens to be set to. On a
+ * UTC account held by a device in PDT that turned 12:04 UTC into "5:04 AM"
+ * and made the card claim a check inside the 22:00-07:00 quiet range it was
+ * printing directly underneath.
+ *
+ * An unknown IANA id makes toLocaleString throw RangeError, so a bad zone
+ * degrades to device-local rather than blanking the card.
+ */
+export function formatWhen(value: string | null | undefined, zone?: string | null): string {
   if (!value) return "";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString(undefined, {
+  const opts: Intl.DateTimeFormatOptions = {
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit"
-  });
+  };
+  if (zone) {
+    try {
+      return parsed.toLocaleString(undefined, { ...opts, timeZone: zone });
+    } catch {
+      /* unknown zone id — fall through to device-local */
+    }
+  }
+  return parsed.toLocaleString(undefined, opts);
 }
 
 /** Shift an "HH:MM" quiet-hours boundary by whole hours, wrapping at 24. */
@@ -252,7 +275,7 @@ export function BriefingsHubScreen({ navigation }: Props) {
             style={styles.latest}
           >
             <Text style={styles.rowTitle}>{latest.title}</Text>
-            <Text style={styles.rowMeta}>{formatWhen(latest.sent_at || latest.generated_at)}</Text>
+            <Text style={styles.rowMeta}>{formatWhen(latest.sent_at || latest.generated_at, status?.timezone)}</Text>
             <Text style={styles.body} numberOfLines={3}>{latest.body}</Text>
           </Pressable>
         ) : historyFailed ? (
@@ -282,7 +305,7 @@ export function BriefingsHubScreen({ navigation }: Props) {
             <View style={styles.gap}>
               {status.enabled && status.next_check_local ? (
                 <Text style={styles.statusLine}>
-                  {t("briefings:status.nextCheck", { time: formatWhen(status.next_check_local) })}
+                  {t("briefings:status.nextCheck", { time: formatWhen(status.next_check_local, status.timezone) })}
                 </Text>
               ) : (
                 <Text style={styles.statusLine}>{t("briefings:status.nextCheckNone")}</Text>
@@ -434,7 +457,7 @@ export function BriefingsHubScreen({ navigation }: Props) {
               >
                 <View style={styles.rowHead}>
                   <Text style={styles.rowTitle} numberOfLines={1}>{item.title}</Text>
-                  <Text style={styles.rowMeta}>{formatWhen(item.sent_at || item.generated_at)}</Text>
+                  <Text style={styles.rowMeta}>{formatWhen(item.sent_at || item.generated_at, status?.timezone)}</Text>
                 </View>
                 <Text style={styles.muted} numberOfLines={2}>{item.body}</Text>
               </Pressable>
