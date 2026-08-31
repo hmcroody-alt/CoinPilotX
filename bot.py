@@ -12588,6 +12588,23 @@ def admin_users_page():
         except Exception:
             return clean_html(str(v or 0))
 
+    def _revenue_cell(u):
+        # Apple/Google-billed members settle through the store, not our
+        # payment_records — an honest "—" beats a fake $0.00 (Stage 34).
+        if not (u.get("payment_count") or 0) and (u.get("access_source") or "") in ("apple_app_store", "google_play"):
+            return "<span class='muted' title='Billed via App Store / Google Play; settled amounts are not recorded platform-side'>&mdash;</span>"
+        return _money(u.get("total_revenue"))
+
+    def _pro_cell(u):
+        parts = ["Pro" if u.get("has_pro_access") else "&mdash;"]
+        access_type = u.get("pro_access_type")
+        if access_type not in (None, "", "none"):
+            parts.append(" · " + clean_html(access_type))
+        source = u.get("access_source")
+        if source:
+            parts.append(" <span class='muted'>(" + clean_html(source) + ")</span>")
+        return "".join(parts)
+
     def _pill(status):
         s = (status or "").lower()
         if s in ("restricted", "suspended", "deleted"):
@@ -12603,6 +12620,15 @@ def admin_users_page():
     trial_n = sum(1 for u in users if u.get("pro_access_type") == "trial")
     flagged_n = sum(1 for u in users if (u.get("account_status") or "active").lower() in ("restricted", "suspended", "deleted"))
     users = users[(page - 1) * per:(page - 1) * per + per]
+
+    # Stage 40: a failed entitlement-store read must never render as an
+    # authoritative zero — flag it instead of silently undercounting.
+    source_warn = "" if data.get("entitlement_source_ok", True) else (
+        "<div class='card' style='border-color:var(--warn,#e0a800);margin-bottom:14px'>"
+        "<strong>Entitlement store unreachable.</strong> "
+        "<span class='muted'>Paid Pro / Trial counts below exclude App Store &amp; Google Play members and are NOT authoritative.</span>"
+        "</div>"
+    )
 
     tiles = (
         "<div class='ops-kpis'>"
@@ -12636,8 +12662,8 @@ def admin_users_page():
         f"<td class='muted'>{clean_html(str(u.get('user_id')))}</td>"
         f"<td>{_pill(u.get('account_status'))}</td>"
         f"<td class='muted'>{clean_html(u.get('plan') or '')}</td>"
-        f"<td>{('Pro' if u.get('has_pro_access') else '&mdash;')}{(' · ' + clean_html(u.get('pro_access_type'))) if u.get('pro_access_type') else ''}</td>"
-        f"<td>{_money(u.get('total_revenue'))}</td>"
+        f"<td>{_pro_cell(u)}</td>"
+        f"<td>{_revenue_cell(u)}</td>"
         f"<td class='muted'>{clean_html(u.get('created_at') or '')}</td>"
         "</tr>"
         for u in users
@@ -12651,7 +12677,7 @@ def admin_users_page():
     body = (
         "<h1>User Management Center</h1>"
         "<p class='muted'>Owner-grade user database, Pro status, payments, email logs, restrictions, and account controls.</p>"
-        f"{tiles}{search_form}"
+        f"{source_warn}{tiles}{search_form}"
         f"<div class='card' style='margin-bottom:14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center'>{filter_links}{export_btn}</div>"
         f"{pager}"
         "<div class='card'><table><tr><th>Name</th><th>Email</th><th>ID</th><th>Status</th><th>Plan</th><th>Pro Access</th><th>Revenue</th><th>Signup</th></tr>"
@@ -12696,6 +12722,24 @@ def admin_users_payload(scan_limit=500):
         scan_limit = max(1, int(scan_limit))
     except Exception:
         scan_limit = 500
+    # Canonical entitlement truth, fetched ONCE (no per-row queries). Apple and
+    # Google purchases write canonical-only — the legacy plan/subscription
+    # columns never see them — so counting from user columns alone is why the
+    # center showed Paid Pro = 0 while paid members existed.
+    canonical_map, canonical_ok = premium_entitlement_service.canonical_premium_access_map()
+    # Provider subscriptions in payment-trouble states (billing retry, grace,
+    # refund) for the Payment Issues filter; legacy Stripe columns alone miss
+    # every Apple case.
+    provider_issue_ids = set()
+    try:
+        cur.execute(
+            "SELECT DISTINCT subject_id FROM business_os_ent_provider_subs "
+            "WHERE subject_type='user' AND lower(COALESCE(status,'')) IN "
+            "('past_due','unpaid','billing_retry','grace_period','refunded')"
+        )
+        provider_issue_ids = {str(r[0]) for r in cur.fetchall()}
+    except Exception:
+        provider_issue_ids = set()
     cur.execute(
         """
         SELECT u.*,
@@ -12714,18 +12758,22 @@ def admin_users_payload(scan_limit=500):
     users = []
     for row in [dict(r) for r in cur.fetchall()]:
         status = (row.get("account_status") or "active").lower()
-        access_type = pro_access_type(row)
+        canonical = canonical_map.get(str(row.get("user_id")))
+        access_type = pro_access_service.merged_access_type(row, canonical)
         if search and search not in " ".join(str(row.get(k) or "").lower() for k in ("email", "full_name", "display_name", "phone", "user_id", "telegram_user_id", "stripe_customer_id")):
             continue
         if filter_key == "pro" and access_type != "paid":
             continue
         if filter_key == "trial" and access_type != "trial":
             continue
-        if filter_key == "free" and has_pro_access(row):
+        if filter_key == "free" and access_type != "none":
             continue
         if filter_key in {"restricted", "suspended", "deleted"} and status != filter_key:
             continue
-        if filter_key == "payment_issue" and (row.get("subscription_status") or "").lower() not in {"past_due", "unpaid", "canceled"}:
+        if filter_key == "payment_issue" and (
+            (row.get("subscription_status") or "").lower() not in {"past_due", "unpaid", "canceled"}
+            and str(row.get("user_id")) not in provider_issue_ids
+        ):
             continue
         users.append({
             "user_id": row.get("user_id"),
@@ -12737,8 +12785,10 @@ def admin_users_payload(scan_limit=500):
             "plan": row.get("plan") or row.get("subscription_plan") or "free",
             "subscription_status": row.get("subscription_status") or "inactive",
             "trial_status": row.get("trial_status") or "",
-            "has_pro_access": has_pro_access(row),
+            "has_pro_access": access_type != "none",
             "pro_access_type": access_type,
+            "access_source": (canonical or {}).get("source") or ("stripe" if pro_access_type(row) != "none" else ""),
+            "payment_issue": (row.get("subscription_status") or "").lower() in {"past_due", "unpaid", "canceled"} or str(row.get("user_id")) in provider_issue_ids,
             "signup_date": row.get("created_at") or row.get("signup_time") or "",
             "created_at": row.get("created_at") or row.get("signup_time") or "",
             "last_login": row.get("last_login_at") or "",
@@ -12750,7 +12800,8 @@ def admin_users_payload(scan_limit=500):
             "risk_status": row.get("restricted_reason") or row.get("suspended_reason") or "",
         })
     conn.close()
-    return {"ok": True, "filter": filter_key, "count": len(users), "users": users}
+    return {"ok": True, "filter": filter_key, "count": len(users), "users": users,
+            "entitlement_source_ok": canonical_ok}
 
 
 @webhook_app.route("/api/admin/users", methods=["GET"])
@@ -14665,12 +14716,32 @@ def admin_saas_summary():
     telegram_linked = cur.fetchone()[0]
     cur.execute("SELECT * FROM users WHERE email!=''")
     user_rows = [dict(row) for row in cur.fetchall()]
-    paid_pro = sum(1 for row in user_rows if is_paid_pro_user(row))
-    trial_users = sum(1 for row in user_rows if is_trialing_user(row))
-    free_users = sum(1 for row in user_rows if not has_pro_access(row))
-    active_pro_access = paid_pro + trial_users
+    # Canonical entitlement merge: Apple/Google purchases live ONLY in the
+    # canonical grant store, never in the legacy users columns — counting from
+    # user rows alone is the root cause of "Paid Pro = 0 with paid members".
+    canonical_map, entitlement_source_ok = premium_entitlement_service.canonical_premium_access_map()
+    _access = {
+        str(row.get("user_id")): pro_access_service.merged_access_type(
+            row, canonical_map.get(str(row.get("user_id"))))
+        for row in user_rows
+    }
+    paid_pro = sum(1 for v in _access.values() if v == "paid")
+    trial_users = sum(1 for v in _access.values() if v == "trial")
+    free_users = sum(1 for v in _access.values() if v == "none")
+    active_pro_access = sum(1 for v in _access.values() if v != "none")
     cur.execute("SELECT COUNT(*) FROM users WHERE lower(COALESCE(subscription_status,'')) IN ('past_due','unpaid')")
     failed_payments = cur.fetchone()[0]
+    # Provider-side payment trouble (Apple billing retry / grace / refund) that
+    # the legacy Stripe columns can never reflect.
+    try:
+        cur.execute(
+            "SELECT COUNT(DISTINCT subject_id) FROM business_os_ent_provider_subs "
+            "WHERE subject_type='user' AND lower(COALESCE(status,'')) IN "
+            "('past_due','unpaid','billing_retry','grace_period','refunded')"
+        )
+        failed_payments += cur.fetchone()[0] or 0
+    except Exception:
+        pass
     cur.execute("SELECT COUNT(*) FROM unmatched_payments WHERE resolved_at IS NULL")
     unmatched = cur.fetchone()[0]
     cur.execute("SELECT COUNT(*) FROM email_logs WHERE created_at>=?", (since_day,))
@@ -14726,6 +14797,7 @@ def admin_saas_summary():
         mrr_estimate,
     )
     return {
+        "entitlement_source_ok": entitlement_source_ok,
         "total_users": total_users,
         "new_today": new_today,
         "new_week": new_week,
@@ -14901,6 +14973,7 @@ def admin_page_html(title, body, admin=None):
         "<span class='ops-stat' data-svc='database'><span class='d'></span>DB</span>"
         "<span class='ops-stat' data-svc='queues'><span class='d'></span>Queue</span>"
         "<span class='ops-stat' data-svc='payments'><span class='d'></span>Payments</span>"
+        "<span class='ops-stat' data-svc='entitlements'><span class='d'></span>Entitlements</span>"
         "<span class='ops-stat' data-svc='live'><span class='d'></span>Live</span>"
         "<span class='ops-stat' data-svc='calls'><span class='d'></span>Calls</span>"
         "<span class='ops-stat' data-svc='ai'><span class='d'></span>AI</span>"
@@ -14990,6 +15063,17 @@ def admin_ops_status_json():
             return (datetime.now() - datetime.fromisoformat(ts)) <= timedelta(minutes=minutes)
         except Exception:
             return None
+
+    # Entitlements: canonical grant store readability (the source behind Paid
+    # Pro / Trial counts). Down here means admin membership counts are not
+    # authoritative — surfaced instead of silently rendering zeros.
+    try:
+        _ent_conn = db()
+        _ent_conn.execute("SELECT 1 FROM business_os_ent_grants LIMIT 1")
+        _ent_conn.close()
+        services["entitlements"] = "ok"
+    except Exception:
+        services["entitlements"] = "down"
 
     # Payments: honest config-presence signal (no live Stripe call in a poll).
     if STRIPE_SECRET_KEY and STRIPE_PRICE_ID:
@@ -15432,8 +15516,15 @@ def admin_dashboard_page():
         f"<div class='muted' style='font-size:.82rem'>{_n(stats.get('failed_payments'))} past-due / unpaid</div></div>"
         "</div>"
     )
+    # Stage 40: entitlement-store read failure must be visible, not a silent 0.
+    ent_warn = "" if stats.get("entitlement_source_ok", True) else (
+        "<div class='card' style='border-color:var(--warn,#e0a800)'>"
+        "<strong>Entitlement store unreachable.</strong> "
+        "<span class='muted'>Paid Pro / Trial / Free counts exclude App Store &amp; Google Play members and are NOT authoritative.</span>"
+        "</div>"
+    )
     subs = (
-        "<h2>Subscriptions</h2><div class='grid'>"
+        "<h2>Subscriptions</h2>" + ent_warn + "<div class='grid'>"
         + _stat_card("Paid Pro", stats["paid_pro"], "/admin/users?filter=pro")
         + _stat_card("Trial", stats["trial_users"], "/admin/users?filter=trial")
         + _stat_card("Free", stats["free_users"], "/admin/users?filter=free")

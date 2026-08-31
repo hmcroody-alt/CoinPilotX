@@ -518,6 +518,23 @@ def _canonical_provider_premium(user_id: int) -> bool:
         return False
 
 
+def canonical_premium_access_map() -> tuple[dict[str, dict], bool]:
+    """Bulk canonical ``premium.access`` verdicts for admin projections.
+
+    Returns ``(map, ok)`` where map is ``{user_id_str: {allowed, mode, source}}``
+    and ``ok`` distinguishes "store read fine, nobody holds grants" (True, {})
+    from "store unreadable" (False, {}). Admin surfaces MUST NOT render a
+    counter as an authoritative 0 when ok is False — that is the exact
+    "query failed, rendered as fact" failure mode this exists to prevent.
+    """
+    try:
+        from services.business_os.entitlements import service as _canon
+        return _canon.resolve_all_subjects(_CANONICAL_PREMIUM_KEY), True
+    except Exception:  # noqa: BLE001 — package absent, table missing, engine down
+        _log.exception("canonical premium bulk resolution failed")
+        return {}, False
+
+
 def has_entitlement(user_id: int, key: str) -> bool:
     ensure_founder_schema()
     conn = db_service.connect()
