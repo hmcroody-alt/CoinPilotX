@@ -92,6 +92,15 @@ export function nativeObjectDestination(routePath: string): NativeObjectDestinat
   const adMatch = path.match(/^\/pulse\/(?:ads?|advertisements?)\/([1-9]\d*)\/?$/);
   const undxTaskMatch = path.match(/^\/pulse\/(?:undx|ai)\/tasks\/([^/]+)\/?$/);
   const callMatch = path.match(/^\/pulse\/calls\/([^/]+)\/?$/);
+  // `pulsesoc://crypto/bitcoin` and `/pulse/crypto/bitcoin` both mean "open this
+  // coin". The reserved words are the crypto screens that already own a path
+  // under here — without them, `/pulse/crypto/alerts` would resolve as a coin
+  // named "alerts". The token is passed through untouched: resolving a symbol
+  // or a CoinGecko id is the server's job, and a second resolver in native code
+  // is exactly what the two would eventually disagree about.
+  const cryptoAssetMatch = path.match(
+    /^(?:\/pulse)?\/crypto\/(?!alerts|portfolio|watchlist|watchlists|market|search|history|assets\b)([A-Za-z0-9][A-Za-z0-9._-]{0,63})\/?$/
+  );
 
   if (objectMatch) return { screen: "PostDetail", params: { postId: positiveId(objectMatch[1]), title: "Post" } };
   if (reelMatch) return { screen: "ReelDetail", params: { reelId: positiveId(reelMatch[1]), title: "Reel" } };
@@ -105,6 +114,7 @@ export function nativeObjectDestination(routePath: string): NativeObjectDestinat
   if (storeMatch) return { screen: "MerchantProfile", params: { sellerId: safeDecode(storeMatch[1]), title: "Business" } };
   if (adMatch) return { screen: "GrowthCenter", params: { contentType: "advertisement", contentId: positiveId(adMatch[1]), title: "Advertisement" } };
   if (undxTaskMatch) return { screen: "Tabs", params: { screen: "PulseAI", params: { taskId: safeDecode(undxTaskMatch[1]) } } };
+  if (cryptoAssetMatch) return { screen: "MarketPulse", params: { openAsset: safeDecode(cryptoAssetMatch[1]) } };
   if (callMatch) return {
     screen: "Call",
     params: {
@@ -192,6 +202,14 @@ export function openNativeRoute(navigation: NativeRouteNavigation, routePath: st
   // "Watchlists" above a translated screen. `/pulse/premium` sets the same
   // precedent one line above.
   else if (path === "/pulse/portfolio") navigation.navigate("Portfolio");
+  else if (path === "/pulse/watchlists") navigation.navigate("Watchlists");
+  // Bare `/crypto` and `/pulse/crypto` open the board. `category` only picks a
+  // chip, and an unknown one is dropped rather than guessed at — the screen's
+  // own default is "all".
+  else if (path === "/pulse/crypto" || path === "/crypto") navigation.navigate("MarketPulse", {
+    category: (["all", "gainers", "losers", "trending", "watchlist"] as const)
+      .find((chip) => chip === String(query.get("category") || "").toLowerCase())
+  });
   else if (path === "/pulse/courses") navigation.navigate("Courses", { title: "Courses" });
   else if (path === "/terms" || path === "/privacy") navigation.navigate("Tabs", { screen: "Settings" });
   else openDashboardRoute(navigation, route.relative);

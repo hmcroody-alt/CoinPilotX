@@ -1126,7 +1126,7 @@ function NotYetSection({ items }: { items: Array<{ key: string; label: string; s
  * entitlement checks are shared unchanged; Premium owns no crypto data logic.
  */
 type CryptoIntelligenceFeature = {
-  key: "alerts" | "portfolio" | "watchlists" | "undx";
+  key: "alerts" | "portfolio" | "watchlists" | "undx" | "marketPulse";
   icon: keyof typeof Ionicons.glyphMap;
   go?: (navigation: Props["navigation"]) => void;
 };
@@ -1143,7 +1143,14 @@ const CRYPTO_INTELLIGENCE_FEATURES: readonly CryptoIntelligenceFeature[] = [
   // the crypto domain is registered in it — so this row advertises only what
   // UNDX can actually do right now, and can never claim a capability the server
   // has not published. The Command Center below opens the same destination.
-  { key: "undx", icon: "sparkles-outline", go: (nav) => nav.navigate("UndxCapabilities") }
+  { key: "undx", icon: "sparkles-outline", go: (nav) => nav.navigate("UndxCapabilities") },
+  // Market Pulse is the one row here that opens live market data rather than a
+  // member's own saved state, so it navigates directly instead of through the
+  // dashboard resolver: there is no legacy web spelling of this screen to
+  // reconcile, and routing a brand-new native screen through a string matcher
+  // would only invent a way for it to miss. The screen it opens reads the same
+  // canonical market service the rest of the product already polls.
+  { key: "marketPulse", icon: "stats-chart-outline", go: (nav) => nav.navigate("MarketPulse") }
 ];
 
 export function CryptoIntelligenceSection({ navigation }: { navigation: Props["navigation"] }) {

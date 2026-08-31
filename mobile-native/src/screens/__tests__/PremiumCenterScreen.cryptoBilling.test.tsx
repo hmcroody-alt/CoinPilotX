@@ -33,10 +33,11 @@ describe("Premium Crypto Intelligence rows", () => {
     ["alerts", "AlertManagement", { title: "Alerts" }],
     ["portfolio", "Portfolio", undefined],
     ["watchlists", "Watchlists", { title: "Watchlists" }],
-    ["undx", "UndxCapabilities", undefined]
+    ["undx", "UndxCapabilities", undefined],
+    ["marketPulse", "MarketPulse", undefined]
   ];
 
-  it("renders exactly the four required entries", () => {
+  it("renders exactly the five required entries", () => {
     const { getByText } = render(<CryptoIntelligenceSection navigation={nav()} />);
     for (const [key] of EXPECTED) {
       expect(getByText(`discovery:crypto.intelligence.${key}.label`)).toBeTruthy();
@@ -53,7 +54,7 @@ describe("Premium Crypto Intelligence rows", () => {
     expect(navigate.mock.calls).toEqual([params ? [routeName, params] : [routeName]]);
   });
 
-  it("routes the four rows to four distinct destinations", () => {
+  it("routes the five rows to five distinct destinations", () => {
     const navigation = nav();
     const { getByLabelText } = render(<CryptoIntelligenceSection navigation={navigation} />);
     for (const [key] of EXPECTED) {
@@ -61,7 +62,7 @@ describe("Premium Crypto Intelligence rows", () => {
     }
     const navigate = (navigation as { navigate: jest.Mock }).navigate;
     const destinations = navigate.mock.calls.map((call) => call[0]);
-    expect(new Set(destinations).size).toBe(4);
+    expect(new Set(destinations).size).toBe(EXPECTED.length);
   });
 });
 

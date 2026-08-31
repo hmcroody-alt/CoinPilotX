@@ -30,6 +30,7 @@ import { AssetDetailScreen } from "../screens/AssetDetailScreen";
 import { CryptoAlertCenterScreen } from "../screens/CryptoAlertCenterScreen";
 import { CryptoAlertHistoryScreen } from "../screens/CryptoAlertHistoryScreen";
 import { CryptoPortfolioScreen } from "../screens/CryptoPortfolioScreen";
+import { MarketPulseScreen } from "../screens/MarketPulseScreen";
 import { PortfolioScreen } from "../screens/PortfolioScreen";
 import { WatchlistsScreen } from "../screens/WatchlistsScreen";
 import { ActivityRoute } from "../screens/ActivityRoute";
@@ -587,6 +588,7 @@ export function AppNavigator() {
       <Stack.Screen name="UndxCapabilities" component={UndxCapabilitiesScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.undxCapabilities") })} />
       <Stack.Screen name="Watchlists" component={WatchlistsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.watchlists") })} />
       <Stack.Screen name="Portfolio" component={PortfolioScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.portfolio") })} />
+      <Stack.Screen name="MarketPulse" component={MarketPulseScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.marketPulse") })} />
       {/* This is the first-frame title only: AssetDetailScreen calls
           `setOptions` on mount and replaces it with the asset's name, which is a
           proper noun and so is deliberately not routed through the catalog. The

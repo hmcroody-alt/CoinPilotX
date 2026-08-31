@@ -17,6 +17,7 @@ HISTORY_CACHE_SECONDS = {
     "24H": 180,
     "7D": 900,
     "1M": 3600,
+    "3M": 7200,
     "1Y": 21600,
     "ALL": 21600,
 }
@@ -30,8 +31,11 @@ HISTORY_CACHE_SECONDS = {
 # a provider blip. 730 is what this plan can actually answer. Widening it is a
 # billing decision, not a code change, hence the env override.
 HISTORY_MAX_DAYS = int(os.getenv("COINGECKO_HISTORY_MAX_DAYS", "730"))
-HISTORY_RANGE_DAYS = {"1H": 1, "24H": 1, "7D": 7, "1M": 30, "1Y": 365, "ALL": HISTORY_MAX_DAYS}
+HISTORY_RANGE_DAYS = {"1H": 1, "24H": 1, "7D": 7, "1M": 30, "3M": 90, "1Y": 365, "ALL": HISTORY_MAX_DAYS}
 HISTORY_RANGES = tuple(HISTORY_RANGE_DAYS)
+# The Market Pulse chart labels these 30D/90D; the keys stay 1M/3M because that
+# is what every existing caller, cache entry and stored preference already uses.
+HISTORY_RANGE_ALIASES = {"30D": "1M", "90D": "3M", "3M": "3M", "1D": "24H", "MAX": "ALL"}
 # Enough points to draw a smooth line, few enough to keep the payload small.
 HISTORY_MAX_POINTS = 120
 SPARKLINE_MAX_POINTS = 24
@@ -172,6 +176,10 @@ def live_market_board(category="top_volume", limit=50):
     if CACHE["data"] and now - CACHE["created_at"] < coingecko_client.effective_ttl(CACHE_SECONDS):
         cached = dict(CACHE["data"])
         cached["markets"] = sort_markets(cached.get("markets", []), category)[:limit]
+        # Age is measured from when the provider answered, not from when this
+        # request was served. A cache hit must not reset "Updated Ns ago" to 0.
+        cached["observed_epoch"] = CACHE["created_at"]
+        cached["age_seconds"] = int(now - CACHE["created_at"])
         return cached
     warning = None
     source = "coingecko"
@@ -187,6 +195,10 @@ def live_market_board(category="top_volume", limit=50):
     payload = {
         "source": source if markets else "unavailable",
         "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        # Unambiguous companions to the naive local-time string above, which a
+        # client cannot safely turn into an age. Freshness labels read these.
+        "observed_epoch": now,
+        "age_seconds": 0,
         "warning": warning,
         "markets": sort_markets(markets, category)[:limit],
         "summary": summary_metrics(markets),
@@ -238,6 +250,7 @@ def asset_history(symbol, range_key="24H"):
     """
     symbol = (symbol or "BTC").upper()
     range_key = str(range_key or "24H").upper()
+    range_key = HISTORY_RANGE_ALIASES.get(range_key, range_key)
     if range_key not in HISTORY_RANGE_DAYS:
         range_key = "24H"
 

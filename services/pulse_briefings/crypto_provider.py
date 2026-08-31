@@ -41,6 +41,16 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
+def _num(value: Any) -> float | None:
+    """Provider number or None -- never zero standing in for 'unknown'."""
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def metrics_snapshot() -> dict[str, int]:
     merged = dict(_METRICS)
     merged.update(coingecko_client.telemetry_snapshot())
@@ -136,9 +146,16 @@ def _load_overview() -> dict[str, Any] | None:
     positive = sum(1 for a in top10 if (a["change_24h"] or 0) > 0)
     g = _cg_get("/global")
     gdata = (g or {}).get("data") or {}
-    total_cap = float((gdata.get("total_market_cap") or {}).get("usd") or 0)
-    total_vol = float((gdata.get("total_volume") or {}).get("usd") or 0)
-    dominance = float((gdata.get("market_cap_percentage") or {}).get("btc") or 0)
+    # /global is a separate call from /coins/markets and can fail on its own.
+    # When it does, these aggregates are unknown -- and 0.0 would render as a
+    # real number on the global strip, so absence stays absent.
+    total_cap = _num((gdata.get("total_market_cap") or {}).get("usd"))
+    total_vol = _num((gdata.get("total_volume") or {}).get("usd"))
+    cap_pct = gdata.get("market_cap_percentage") or {}
+    dominance = _num(cap_pct.get("btc"))
+    # Same already-fetched /global payload, second dict read: no extra provider
+    # call. Market Pulse's global strip shows ETH dominance beside BTC's.
+    eth_dominance = _num(cap_pct.get("eth"))
     cap_change = gdata.get("market_cap_change_percentage_24h_usd")
     changes = [a["change_24h"] for a in top10 if a["change_24h"] is not None]
     avg_move = sum(abs(c) for c in changes) / len(changes) if changes else 0.0
@@ -154,6 +171,7 @@ def _load_overview() -> dict[str, Any] | None:
         "total_volume_24h": total_vol,
         "market_cap_change_24h_pct": cap_change,
         "btc_dominance": dominance,
+        "eth_dominance": eth_dominance,
         "market_direction": direction,
         "breadth_positive_top10": positive,
         "volatility_avg_abs_24h": round(avg_move, 2),
@@ -182,8 +200,10 @@ def _coinbase_fallback_overview() -> dict[str, Any] | None:
     return {
         "generated_at": observed_at, "provider": "coinbase", "stale": False,
         "btc": by_symbol.get("BTC"), "eth": by_symbol.get("ETH"), "assets": assets,
-        "total_market_cap": 0.0, "total_volume_24h": 0.0, "market_cap_change_24h_pct": None,
-        "btc_dominance": 0.0, "market_direction": "unknown",
+        "total_market_cap": None, "total_volume_24h": None, "market_cap_change_24h_pct": None,
+        # Coinbase gives no aggregate market data. Zero would read as a fact, so
+        # dominance stays null here and the strip renders it as unavailable.
+        "btc_dominance": None, "eth_dominance": None, "market_direction": "unknown",
         "breadth_positive_top10": None, "volatility_avg_abs_24h": None,
     }
 

@@ -27,11 +27,24 @@ export function sendMessage(conversationId: number, body: string) {
   return sendConversationMessage(conversationId, { body });
 }
 
+/**
+ * One question to the PulseSoc assistant, persisted to the caller's own AI
+ * conversation by the server. Owner comes from the session; there is no user
+ * parameter to get wrong.
+ *
+ * `ok` is part of the contract, not an afterthought: the route answers HTTP 200
+ * with `ok: false` and an explanatory `message` when the router failed, so a
+ * caller that only checked for a thrown error would render the failure text as
+ * though it were the assistant's reply.
+ */
 export function askPulseAi(message: string) {
-  return pulseApi<{ response?: string; reply?: string; message?: string }>("/api/pulse/assistant/chat", {
-    method: "POST",
-    body: JSON.stringify({ message })
-  });
+  return pulseApi<{ ok?: boolean; response?: string; reply?: string; message?: string }>(
+    "/api/pulse/assistant/chat",
+    {
+      method: "POST",
+      body: JSON.stringify({ message })
+    }
+  );
 }
 
 export function getProfile() {

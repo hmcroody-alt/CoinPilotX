@@ -1495,6 +1495,37 @@
         "undx": {
           "label": "UNDX crypto intelligence",
           "hint": "Understand why alerts triggered and what is moving your portfolio."
+        },
+        "marketPulse": {
+          "label": "Market Pulse",
+          "hint": "Live prices, market trends, movers, charts, and intelligence."
+        }
+      },
+      "marketPulse": {
+        "globalTitle": "Global market",
+        "totalCap": "Total market cap",
+        "volume24h": "24h volume",
+        "btcDominance": "BTC dominance",
+        "ethDominance": "ETH dominance",
+        "marketChange": "Market 24h",
+        "live": "Live",
+        "delayed": "Delayed",
+        "cached": "Cached",
+        "partial": "Some market figures are unavailable right now.",
+        "overlayUnavailable": "Your watchlist and alert markers could not be loaded.",
+        "loadError": "The market could not load.",
+        "searchPlaceholder": "Search a coin by name or symbol",
+        "searching": "Searching…",
+        "searchResults": "Results · {{count}}",
+        "noMatches": "No coins match that search.",
+        "empty": "No assets to show right now.",
+        "emptyWatchlist": "Nothing on your watchlist yet. Open a coin and add it.",
+        "category": {
+          "all": "All",
+          "gainers": "Gainers",
+          "losers": "Losers",
+          "trending": "Trending",
+          "watchlist": "Watchlist"
         }
       },
       "entry": {

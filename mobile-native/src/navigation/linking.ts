@@ -332,6 +332,18 @@ export const linking: LinkingOptions<RootStackParamList> = {
       // changed — otherwise the one screen that would let a user check the claim is
       // the one screen the receipt cannot link to.
       Watchlists: "pulse/watchlists",
+      // `pulsesoc://pulse/crypto` opens the market board. The per-asset spelling
+      // — `crypto/bitcoin` — is handled in `nativeObjectDestination`, which
+      // carries the token through as `openAsset` so the screen can resolve it
+      // against the server board before opening a detail view. A token this
+      // build cannot resolve then lands on the market, not on a screen that can
+      // only ever read "Unavailable".
+      MarketPulse: {
+        path: "pulse/crypto",
+        parse: {
+          category: String
+        }
+      },
       AccountCenter: {
         path: "pulse/settings/:section",
         parse: {

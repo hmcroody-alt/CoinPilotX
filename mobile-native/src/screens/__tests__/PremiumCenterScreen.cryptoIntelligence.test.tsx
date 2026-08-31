@@ -32,7 +32,7 @@ describe("Crypto intelligence — the roster", () => {
     const { getByText } = render(
       <CryptoIntelligenceSection navigation={navigation as never} />
     );
-    for (const key of ["alerts", "portfolio", "watchlists", "undx"]) {
+    for (const key of ["alerts", "portfolio", "watchlists", "undx", "marketPulse"]) {
       expect(getByText(`discovery:crypto.intelligence.${key}.label`)).toBeTruthy();
     }
   });
@@ -47,7 +47,11 @@ describe("Crypto intelligence — where the rows go", () => {
     // capability registry, and the Command Center on this same screen already
     // opens it. Leaving this row inert made the section advertise UNDX crypto
     // intelligence while refusing to open the one screen that reports it.
-    ["undx", "UndxCapabilities", undefined]
+    ["undx", "UndxCapabilities", undefined],
+    // Market Pulse takes no params: the screen's own default chip is "all", and
+    // passing a category here would make the Premium row an opinion about which
+    // view of the market a member wanted.
+    ["marketPulse", "MarketPulse", undefined]
   ])("sends %s to its own screen", (key, route, params) => {
     const navigation = nav();
     const { getByLabelText } = render(

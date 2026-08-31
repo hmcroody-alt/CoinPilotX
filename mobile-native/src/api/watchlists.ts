@@ -32,8 +32,15 @@ const ASSET_DETAIL_CACHE_PREFIX = "pulsesoc.native.crypto.asset.";
 const ASSET_HISTORY_CACHE_PREFIX = "pulsesoc.native.crypto.history.";
 
 /** The ranges the backend knows how to answer. The server still decides which
- *  of them a given asset actually supports; this is only the union. */
-export const HISTORY_RANGES = ["1H", "24H", "7D", "1M", "1Y", "ALL"] as const;
+ *  of them a given asset actually supports; this is only the union.
+ *
+ *  It must stay a superset of `HISTORY_RANGE_DAYS` in `services/market_data.py`,
+ *  because `normalizeAssetDetail` filters the server's `ranges` against this
+ *  tuple. A range the server can answer but this list omits is not a missing
+ *  feature that surfaces as an error — it is a chip that silently never renders,
+ *  which is why `"3M"` (labelled 90D on Market Pulse) was invisible on asset
+ *  detail while the backend was serving it perfectly well. */
+export const HISTORY_RANGES = ["1H", "24H", "7D", "1M", "3M", "1Y", "ALL"] as const;
 export type HistoryRange = (typeof HISTORY_RANGES)[number];
 
 export type AssetQuote = {
