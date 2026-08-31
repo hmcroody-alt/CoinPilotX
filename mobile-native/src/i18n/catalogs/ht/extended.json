@@ -2743,5 +2743,102 @@
       "paused": "An poz",
       "unknown": "Pa disponib"
     }
+  },
+  "briefings": {
+    "tile": {
+      "status": {
+        "new": "NEW"
+      },
+      "hint": "Louvri espas Pulse Briefings ou.",
+      "a11y": {
+        "new": "Briefings. Gen yon nouvo rezime disponib.",
+        "none": "Briefings. Rezime rezo ou ak mache a."
+      }
+    },
+    "hub": {
+      "title": "Pulse Briefings",
+      "subtitle": "Aktivite rezo ou ak mache a, rezime apati done reyèl.",
+      "loading": "Ap chaje…",
+      "openHint": "Louvri rezime konplè a.",
+      "offlineNotice": "Pa gen koneksyon — n ap montre dènye rezime ou te sove yo.",
+      "saveError": "Nou pa t ka sove chanjman an. Paramèt ou yo pa chanje.",
+      "loadError": "Nou pa t ka chaje rezime yo. Tcheke koneksyon ou epi eseye ankò.",
+      "retry": "Eseye ankò",
+      "loadMore": "Chaje plis",
+      "latestTitle": "Dènye rezime",
+      "statusTitle": "Livrezon",
+      "settingsTitle": "Paramèt rezime",
+      "topicsTitle": "Sijè",
+      "historyTitle": "Istwa",
+      "empty": {
+        "title": "Poko gen rezime",
+        "body": "Premye rezime ou ap rive apre pwochen verifikasyon an, lè gen yon bagay ki merite di ou."
+      }
+    },
+    "status": {
+      "nextCheck": "Pwochen verifikasyon anviwon {{time}}",
+      "nextCheckNone": "Rezime yo an poz.",
+      "quiet": "Lè trankil: {{start}} – {{end}}",
+      "timezone": "Zòn lè: {{zone}}",
+      "pushOn": "Notifikasyon push yo aktive.",
+      "pushOff": "Notifikasyon push yo dezaktive — rezime yo parèt isit la sèlman."
+    },
+    "settings": {
+      "master": "Pulse Briefings",
+      "masterHint": "Aktive oswa dezaktive rezime peryodik pou kont ou.",
+      "frequency": "Frekans",
+      "frequencyNote": "Yon verifikasyon se yon chans pou resevwa yon rezime — n ap avèti ou sèlman lè gen yon bagay enpòtan.",
+      "quiet": "Lè trankil",
+      "quietFrom": "Depi",
+      "quietUntil": "Jiska",
+      "quietNote": "Pa gen rezime pandan lè sa yo, nan zòn lè lokal ou.",
+      "earlier": "Yon èdtan pi bonè",
+      "later": "Yon èdtan pita"
+    },
+    "frequency": {
+      "smart": "Entèlijan",
+      "recommended": "Rekòmande",
+      "every_6h": "Anviwon chak 6 èdtan",
+      "morning_evening": "Maten ak aswè",
+      "daily": "Yon fwa pa jou",
+      "important_only": "Sèlman sa ki enpòtan"
+    },
+    "topics": {
+      "network": "Rezo ou",
+      "networkHint": "Mesaj, moun k ap suiv ou, mansyon ak kòmand — kantite sèlman.",
+      "crypto": "Mache kripto",
+      "cryptoHint": "BTC, ETH ak mouvman jeneral mache a.",
+      "watchlist": "Lis ou ap suiv",
+      "watchlistHint": "Kripto ou ap suiv ak pwoksimite alèt pri yo."
+    },
+    "detail": {
+      "loadError": "Nou pa t ka chaje rezime sa a.",
+      "networkTitle": "Rezo ou",
+      "cryptoTitle": "Mache kripto",
+      "watchlistTitle": "Lis ou ap suiv",
+      "openActivity": "Louvri Aktivite",
+      "openWatchlists": "Louvri lis yo",
+      "disclaimer": "Done mache yo se enfòmasyon sèlman, se pa konsèy envestisman.",
+      "alertProximity": "{{symbol}} pre alèt la"
+    },
+    "network": {
+      "unread_messages": "Mesaj ki poko li",
+      "friend_requests": "Demann zanmi",
+      "new_followers": "Nouvo moun k ap suiv ou",
+      "mentions": "Mansyon",
+      "comments": "Kòmantè",
+      "reactions": "Reyaksyon",
+      "marketplace_orders": "Kòmand marketplace",
+      "security_alerts": "Alèt sekirite",
+      "community_events": "Evènman kominote"
+    },
+    "crypto": {
+      "btc": "Bitcoin",
+      "eth": "Ethereum",
+      "marketCap": "Kapitalizasyon 24è",
+      "dominance": "Dominans BTC",
+      "gainers": "Pi gwo monte",
+      "losers": "Pi gwo bès"
+    }
   }
 }

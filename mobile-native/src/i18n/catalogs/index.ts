@@ -32,7 +32,8 @@ export const CATALOG_NAMESPACES = [
   "discovery",
   "settings",
   "progress",
-  "premium"
+  "premium",
+  "briefings"
 ] as const;
 
 export type CatalogNamespace = (typeof CATALOG_NAMESPACES)[number];
@@ -61,7 +62,10 @@ export const NAMESPACE_TIER: Readonly<Record<CatalogNamespace, CatalogTier>> = O
   progress: "extended",
   // Same as Progress: one tile at the end of the profile grid, and the tile's
   // own micro-status is the only part of it that renders before a tap.
-  premium: "extended"
+  premium: "extended",
+  // One profile tile plus its hub; the tile's NEW micro-label is the only
+  // piece that renders before navigation.
+  briefings: "extended"
 });
 
 /** Namespaces the provider warms before it renders children. */

@@ -515,6 +515,10 @@ export type RootStackParamList = {
     category?: "all" | "messages" | "calls" | "social" | "safety" | "verification" | "marketplace" | "creator_growth" | "intelligence_alerts";
     title?: string;
   } & ProfileOsParams) | undefined;
+  /** Pulse Briefings hub: latest briefing, history, settings, delivery status. */
+  BriefingsHub: ({ title?: string } & ProfileOsParams) | undefined;
+  /** One briefing: title, body, and only the fact sections actually present. */
+  BriefingDetail: { briefingId: number; title?: string };
   ActivityInboxLegacyInbox: { title?: string } | undefined;
   ActivityInboxWebActivity: { title?: string } | undefined;
   ActivityInboxWebInbox: { title?: string } | undefined;

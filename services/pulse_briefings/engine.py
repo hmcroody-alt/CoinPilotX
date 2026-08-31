@@ -43,7 +43,14 @@ DEFAULT_QUIET_END = "07:00"
 MIN_ACCOUNT_AGE_HOURS = int(os.getenv("BRIEFING_MIN_ACCOUNT_AGE_HOURS", "24"))  # Stage 53
 HISTORY_RETENTION_DAYS = int(os.getenv("BRIEFING_HISTORY_RETENTION_DAYS", "60"))
 SEND_RATE_CAP_PER_CYCLE = int(os.getenv("BRIEFING_SEND_RATE_CAP", "200"))
-FREQUENCIES = ("off", "important_only", "every_6h", "morning_evening")
+# "smart" is the recommended default cadence: it evaluates on the standard
+# 6-hour windows and relies on the significance/dedupe gates (which apply to
+# EVERY frequency) to decide whether anything is worth sending. Mechanically it
+# shares every_6h's windows today; it exists as its own value so the product can
+# tighten or loosen its gating later without a preference migration. "daily"
+# evaluates once per local morning. Frequency is an evaluation cadence, never a
+# delivery promise.
+FREQUENCIES = ("off", "important_only", "every_6h", "morning_evening", "daily", "smart")
 
 _METRICS = {
     "briefing_jobs_started": 0, "briefing_jobs_completed": 0, "briefing_jobs_failed": 0,
@@ -133,10 +140,22 @@ def ensure_schema(conn=None) -> None:
             quiet_start TEXT DEFAULT '22:00',
             quiet_end TEXT DEFAULT '07:00',
             jitter_minutes INTEGER DEFAULT -1,
+            last_seen_at TEXT DEFAULT '',
             updated_at TEXT DEFAULT ''
         )
         """
     )
+    # Idempotent upgrade for rows created before the hub shipped. Isolated in
+    # its own mini-transaction: on Postgres a failed ALTER poisons the current
+    # transaction, so committing first means a duplicate-column failure rolls
+    # back nothing but itself.
+    conn.commit()
+    try:
+        cur.execute("ALTER TABLE pulse_briefing_prefs ADD COLUMN last_seen_at TEXT DEFAULT ''")
+        conn.commit()
+    except Exception:  # noqa: BLE001 - column already exists
+        conn.rollback()
+        cur = conn.cursor()
     # Timezone authority (section A): quiet hours and window selection are only
     # correct if the canonical region-preference table exists in THIS process.
     # alert_worker never serves the settings route, so the service's own lazy
@@ -276,6 +295,8 @@ def _user_zone(conn, user_id: int) -> ZoneInfo:
 def _windows_for_frequency(frequency: str) -> tuple[int, ...]:
     if frequency == "morning_evening":
         return (6, 18)
+    if frequency == "daily":
+        return (6,)
     return BRIEFING_WINDOWS
 
 
@@ -620,7 +641,10 @@ def _prune_history(cur) -> None:
 
 # --- Owner-scoped reads (Stage 55) ------------------------------------------
 
-def list_briefings(user_id: int, limit: int = 20, *, conn=None) -> list[dict[str, Any]]:
+VISIBLE_STATUSES = ("sent", "generated")  # user-visible history; never shadow/failed/suppressed
+
+
+def list_briefings(user_id: int, limit: int = 20, *, offset: int = 0, conn=None) -> list[dict[str, Any]]:
     owns = conn is None
     conn = conn or user_context.connect()
     ensure_schema(conn)
@@ -628,13 +652,28 @@ def list_briefings(user_id: int, limit: int = 20, *, conn=None) -> list[dict[str
     cur.execute(
         """SELECT id, window_key, status, title, body, summary_source, locale, generated_at, sent_at
            FROM pulse_briefings WHERE user_id=? AND status IN ('sent','generated')
-           ORDER BY id DESC LIMIT ?""",
-        (int(user_id), max(1, min(int(limit), 50))),
+           ORDER BY id DESC LIMIT ? OFFSET ?""",
+        (int(user_id), max(1, min(int(limit), 50)), max(0, int(offset))),
     )
     rows = [dict(r) for r in cur.fetchall()]
     if owns:
         conn.close()
     return rows
+
+
+def list_briefings_page(user_id: int, limit: int = 20, offset: int = 0, *, conn=None) -> dict[str, Any]:
+    """Cursorless pagination for the native hub: fetch limit+1, trim, report has_more."""
+    # Cap at 49 so the +1 lookahead stays inside list_briefings' own 50-row cap;
+    # a clamped lookahead would silently report has_more=False on a full page.
+    limit = max(1, min(int(limit or 20), 49))
+    offset = max(0, int(offset or 0))
+    rows = list_briefings(user_id, limit + 1, offset=offset, conn=conn)
+    has_more = len(rows) > limit
+    return {
+        "briefings": rows[:limit],
+        "has_more": has_more,
+        "next_offset": offset + limit if has_more else None,
+    }
 
 
 def get_briefing(user_id: int, briefing_id: int, *, conn=None) -> dict[str, Any] | None:
@@ -653,3 +692,112 @@ def get_briefing(user_id: int, briefing_id: int, *, conn=None) -> dict[str, Any]
         except ValueError:
             result["facts"] = {}
     return result
+
+
+# --- Seen tracking + delivery status (Profile OS hub) ------------------------
+
+def mark_briefings_seen(user_id: int, *, conn=None) -> str:
+    """Stamp the briefing-specific unread cursor. Upserts so a user who has
+    never opened briefing settings still gets a prefs row; column defaults keep
+    every other preference at its canonical default."""
+    owns = conn is None
+    conn = conn or user_context.connect()
+    ensure_schema(conn)
+    cur = conn.cursor()
+    now = _iso(_now())
+    cur.execute(
+        "INSERT INTO pulse_briefing_prefs (user_id, last_seen_at, updated_at) VALUES (?,?,?) "
+        "ON CONFLICT(user_id) DO UPDATE SET last_seen_at=excluded.last_seen_at",
+        (int(user_id), now, now),
+    )
+    conn.commit()
+    if owns:
+        conn.close()
+    return now
+
+
+def unseen_briefings_count(user_id: int, *, conn=None) -> int:
+    """Visible briefings newer than the user's seen cursor, capped at 99.
+
+    A user who has never opened the hub has last_seen_at='' and every visible
+    briefing counts as unseen -- real history, real badge. ISO-8601 strings
+    compare correctly as text, so no datetime parsing is needed."""
+    owns = conn is None
+    conn = conn or user_context.connect()
+    ensure_schema(conn)
+    cur = conn.cursor()
+    last_seen = ""
+    try:
+        cur.execute("SELECT last_seen_at FROM pulse_briefing_prefs WHERE user_id=? LIMIT 1", (int(user_id),))
+        row = cur.fetchone()
+        if row:
+            try:
+                last_seen = str(row["last_seen_at"] or "")
+            except (TypeError, KeyError, IndexError):
+                last_seen = str(row[0] or "")
+    except Exception:  # noqa: BLE001 - a badge must never break a read
+        logging.exception("BRIEFING_SEEN_CURSOR_READ_FAILED user_id=%s", user_id)
+    cur.execute(
+        "SELECT COUNT(*) AS n FROM (SELECT 1 FROM pulse_briefings "
+        "WHERE user_id=? AND status IN ('sent','generated') AND created_at > ? LIMIT 99) capped",
+        (int(user_id), last_seen),
+    )
+    row = cur.fetchone()
+    if owns:
+        conn.close()
+    try:
+        return int(row["n"] if not isinstance(row, tuple) else row[0]) if row else 0
+    except (TypeError, KeyError, IndexError, ValueError):
+        return int(row[0] or 0) if row else 0
+
+
+def delivery_status(user_id: int, *, conn=None) -> dict[str, Any]:
+    """Owner-scoped status snapshot for the hub's DELIVERY STATUS section.
+
+    next_check_local is an evaluation estimate (window start + the user's own
+    deterministic jitter) -- copy built on it must say "around", never promise
+    delivery. Quiet hours and timezone come from the same canonical authorities
+    the scheduler uses, so what the screen shows is what the engine does."""
+    owns = conn is None
+    conn = conn or user_context.connect()
+    ensure_schema(conn)
+    cur = conn.cursor()
+    prefs = get_preferences(user_id, conn=conn)
+    zone = _user_zone(conn, user_id)
+    local_now = _now().astimezone(zone)
+    push_enabled = push_notifications_allowed(cur, user_id)
+    cur.execute(
+        "SELECT id, title, status, generated_at, sent_at, created_at FROM pulse_briefings "
+        "WHERE user_id=? AND status IN ('sent','generated') ORDER BY id DESC LIMIT 1",
+        (int(user_id),),
+    )
+    row = cur.fetchone()
+    last = dict(row) if row else None
+    next_check = None
+    if prefs["enabled"] and prefs["frequency"] != "off" and briefings_enabled():
+        jitter = _jitter_offset_minutes(user_id)
+        candidates = []
+        for day_offset in (0, 1):
+            day = local_now + timedelta(days=day_offset)
+            for hour in _windows_for_frequency(prefs["frequency"]):
+                start = day.replace(hour=hour, minute=0, second=0, microsecond=0) + timedelta(minutes=jitter)
+                if start > local_now:
+                    candidates.append(start)
+        if candidates:
+            next_check = min(candidates).isoformat(timespec="minutes")
+    unseen = unseen_briefings_count(user_id, conn=conn)
+    if owns:
+        conn.close()
+    return {
+        "enabled": prefs["enabled"],
+        "frequency": prefs["frequency"],
+        "frequencies": [f for f in FREQUENCIES],
+        "quiet_start": prefs["quiet_start"],
+        "quiet_end": prefs["quiet_end"],
+        "timezone": str(zone.key),
+        "push_enabled": push_enabled,
+        "briefings_feature_enabled": briefings_enabled(),
+        "last_briefing": last,
+        "next_check_local": next_check,
+        "unseen_count": unseen,
+    }

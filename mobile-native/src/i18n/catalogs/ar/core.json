@@ -204,7 +204,9 @@
       "presence": "الحضور",
       "cryptoAlertCenter": "تنبيهات الكريبتو",
       "cryptoAlertHistory": "سجل التنبيهات",
-      "cryptoPortfolio": "محفظة الكريبتو"
+      "cryptoPortfolio": "محفظة الكريبتو",
+      "briefingsHub": "موجزات Pulse",
+      "briefing": "موجز"
     },
     "navSubtitles": {
       "missionControl": "مركز القيادة",

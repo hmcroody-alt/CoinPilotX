@@ -2742,5 +2742,102 @@
       "paused": "일시 중지됨",
       "unknown": "확인 불가"
     }
+  },
+  "briefings": {
+    "tile": {
+      "status": {
+        "new": "NEW"
+      },
+      "hint": "Pulse 브리핑 허브를 엽니다.",
+      "a11y": {
+        "new": "브리핑. 새 브리핑이 있습니다.",
+        "none": "브리핑. 네트워크와 시장 요약."
+      }
+    },
+    "hub": {
+      "title": "Pulse 브리핑",
+      "subtitle": "실제 데이터로 요약한 내 네트워크와 시장 동향.",
+      "loading": "불러오는 중…",
+      "openHint": "브리핑 전문을 엽니다.",
+      "offlineNotice": "오프라인 — 마지막으로 저장된 브리핑을 표시합니다.",
+      "saveError": "변경 사항을 저장하지 못했습니다. 설정은 그대로입니다.",
+      "loadError": "브리핑을 불러오지 못했습니다. 연결을 확인하고 다시 시도하세요.",
+      "retry": "다시 시도",
+      "loadMore": "더 불러오기",
+      "latestTitle": "최신 브리핑",
+      "statusTitle": "전달",
+      "settingsTitle": "브리핑 설정",
+      "topicsTitle": "주제",
+      "historyTitle": "기록",
+      "empty": {
+        "title": "아직 브리핑이 없습니다",
+        "body": "다음 확인 후 알려드릴 만한 내용이 있으면 첫 브리핑이 도착합니다."
+      }
+    },
+    "status": {
+      "nextCheck": "다음 확인 예정: 약 {{time}}",
+      "nextCheckNone": "브리핑이 일시중지되었습니다.",
+      "quiet": "방해 금지 시간: {{start}} – {{end}}",
+      "timezone": "시간대: {{zone}}",
+      "pushOn": "푸시 알림이 켜져 있습니다.",
+      "pushOff": "푸시 알림이 꺼져 있습니다 — 브리핑은 여기에서만 표시됩니다."
+    },
+    "settings": {
+      "master": "Pulse 브리핑",
+      "masterHint": "계정의 정기 브리핑을 켜거나 끕니다.",
+      "frequency": "빈도",
+      "frequencyNote": "확인은 브리핑을 받을 기회일 뿐이며, 중요한 내용이 있을 때만 알림을 받습니다.",
+      "quiet": "방해 금지 시간",
+      "quietFrom": "시작",
+      "quietUntil": "종료",
+      "quietNote": "이 시간 동안(현지 시간대 기준)에는 브리핑이 전송되지 않습니다.",
+      "earlier": "1시간 앞당기기",
+      "later": "1시간 늦추기"
+    },
+    "frequency": {
+      "smart": "스마트",
+      "recommended": "추천",
+      "every_6h": "약 6시간마다",
+      "morning_evening": "아침과 저녁",
+      "daily": "하루 한 번",
+      "important_only": "중요한 것만"
+    },
+    "topics": {
+      "network": "내 네트워크",
+      "networkHint": "메시지, 팔로워, 멘션, 주문 — 개수만 표시.",
+      "crypto": "암호화폐 시장",
+      "cryptoHint": "BTC, ETH 및 전체 시장 동향.",
+      "watchlist": "내 관심 목록",
+      "watchlistHint": "팔로우 중인 코인과 가격 알림 근접도."
+    },
+    "detail": {
+      "loadError": "이 브리핑을 불러오지 못했습니다.",
+      "networkTitle": "내 네트워크",
+      "cryptoTitle": "암호화폐 시장",
+      "watchlistTitle": "내 관심 목록",
+      "openActivity": "활동 열기",
+      "openWatchlists": "관심 목록 열기",
+      "disclaimer": "시장 데이터는 정보 제공용이며 투자 조언이 아닙니다.",
+      "alertProximity": "{{symbol}} 알림 근접"
+    },
+    "network": {
+      "unread_messages": "읽지 않은 메시지",
+      "friend_requests": "친구 요청",
+      "new_followers": "새 팔로워",
+      "mentions": "멘션",
+      "comments": "댓글",
+      "reactions": "반응",
+      "marketplace_orders": "마켓플레이스 주문",
+      "security_alerts": "보안 알림",
+      "community_events": "커뮤니티 이벤트"
+    },
+    "crypto": {
+      "btc": "비트코인",
+      "eth": "이더리움",
+      "marketCap": "시가총액 24시간",
+      "dominance": "BTC 점유율",
+      "gainers": "상승률 상위",
+      "losers": "하락률 상위"
+    }
   }
 }

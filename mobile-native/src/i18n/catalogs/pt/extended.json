@@ -2756,5 +2756,102 @@
       "paused": "Pausada",
       "unknown": "Indisponível"
     }
+  },
+  "briefings": {
+    "tile": {
+      "status": {
+        "new": "NEW"
+      },
+      "hint": "Abre o seu hub de Pulse Briefings.",
+      "a11y": {
+        "new": "Briefings. Novo briefing disponível.",
+        "none": "Briefings. Resumo da sua rede e do mercado."
+      }
+    },
+    "hub": {
+      "title": "Pulse Briefings",
+      "subtitle": "A atividade da sua rede e do mercado, resumida a partir de dados reais.",
+      "loading": "Carregando…",
+      "openHint": "Abre o briefing completo.",
+      "offlineNotice": "Offline — mostrando seus últimos briefings salvos.",
+      "saveError": "Não foi possível salvar a alteração. Suas configurações não mudaram.",
+      "loadError": "Não foi possível carregar os briefings. Verifique sua conexão e tente novamente.",
+      "retry": "Tentar novamente",
+      "loadMore": "Carregar mais",
+      "latestTitle": "Último briefing",
+      "statusTitle": "Entrega",
+      "settingsTitle": "Configurações de briefings",
+      "topicsTitle": "Tópicos",
+      "historyTitle": "Histórico",
+      "empty": {
+        "title": "Nenhum briefing ainda",
+        "body": "Seu primeiro briefing chegará após a próxima verificação, quando houver algo que valha a pena contar."
+      }
+    },
+    "status": {
+      "nextCheck": "Próxima verificação por volta de {{time}}",
+      "nextCheckNone": "Os briefings estão pausados.",
+      "quiet": "Horário de silêncio: {{start}} – {{end}}",
+      "timezone": "Fuso horário: {{zone}}",
+      "pushOn": "As notificações push estão ativadas.",
+      "pushOff": "As notificações push estão desativadas — os briefings aparecem apenas aqui."
+    },
+    "settings": {
+      "master": "Pulse Briefings",
+      "masterHint": "Ative ou desative os briefings periódicos da sua conta.",
+      "frequency": "Frequência",
+      "frequencyNote": "Uma verificação é uma chance de receber um briefing — você só é notificado quando há algo significativo.",
+      "quiet": "Horário de silêncio",
+      "quietFrom": "De",
+      "quietUntil": "Até",
+      "quietNote": "Sem briefings durante essas horas, no seu fuso horário local.",
+      "earlier": "Uma hora mais cedo",
+      "later": "Uma hora mais tarde"
+    },
+    "frequency": {
+      "smart": "Inteligente",
+      "recommended": "Recomendado",
+      "every_6h": "A cada 6 horas aprox.",
+      "morning_evening": "Manhã e noite",
+      "daily": "Uma vez por dia",
+      "important_only": "Apenas o importante"
+    },
+    "topics": {
+      "network": "Sua rede",
+      "networkHint": "Mensagens, seguidores, menções e pedidos — apenas contagens.",
+      "crypto": "Mercado cripto",
+      "cryptoHint": "BTC, ETH e movimentos gerais do mercado.",
+      "watchlist": "Sua lista de acompanhamento",
+      "watchlistHint": "Moedas que você segue e proximidade de alertas de preço."
+    },
+    "detail": {
+      "loadError": "Não foi possível carregar este briefing.",
+      "networkTitle": "Sua rede",
+      "cryptoTitle": "Mercado cripto",
+      "watchlistTitle": "Sua lista de acompanhamento",
+      "openActivity": "Abrir Atividade",
+      "openWatchlists": "Abrir listas",
+      "disclaimer": "Os dados de mercado são apenas informativos, não são conselho de investimento.",
+      "alertProximity": "{{symbol}} perto do alerta"
+    },
+    "network": {
+      "unread_messages": "Mensagens não lidas",
+      "friend_requests": "Pedidos de amizade",
+      "new_followers": "Novos seguidores",
+      "mentions": "Menções",
+      "comments": "Comentários",
+      "reactions": "Reações",
+      "marketplace_orders": "Pedidos do marketplace",
+      "security_alerts": "Alertas de segurança",
+      "community_events": "Eventos da comunidade"
+    },
+    "crypto": {
+      "btc": "Bitcoin",
+      "eth": "Ethereum",
+      "marketCap": "Capitalização 24h",
+      "dominance": "Dominância do BTC",
+      "gainers": "Maiores altas",
+      "losers": "Maiores quedas"
+    }
   }
 }

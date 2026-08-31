@@ -24,6 +24,8 @@ import { AccountCenterScreen } from "../screens/AccountCenterScreen";
 import { AccountHealthAppealsScreen } from "../screens/AccountHealthAppealsScreen";
 import { ActivityInboxScreen } from "../screens/ActivityInboxScreen";
 import { AlertManagementScreen } from "../screens/AlertManagementScreen";
+import { BriefingDetailScreen } from "../screens/BriefingDetailScreen";
+import { BriefingsHubScreen } from "../screens/BriefingsHubScreen";
 import { AssetDetailScreen } from "../screens/AssetDetailScreen";
 import { CryptoAlertCenterScreen } from "../screens/CryptoAlertCenterScreen";
 import { CryptoAlertHistoryScreen } from "../screens/CryptoAlertHistoryScreen";
@@ -618,6 +620,8 @@ export function AppNavigator() {
       <Stack.Screen name="VerificationCenter" component={VerificationCenterScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.verificationCenter") })} />
       <Stack.Screen name="VerificationWebCenter" component={VerificationCenterScreen} options={{ title: t("common:screens.verificationCenter") }} />
       <Stack.Screen name="ActivityInbox" component={ActivityInboxScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.activityInbox") })} />
+      <Stack.Screen name="BriefingsHub" component={BriefingsHubScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.briefingsHub") })} />
+      <Stack.Screen name="BriefingDetail" component={BriefingDetailScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.briefing") })} />
       <Stack.Screen name="ActivityInboxLegacyInbox" component={ActivityInboxScreen} options={{ title: t("common:screens.activityInbox") }} />
       <Stack.Screen name="ActivityInboxWebActivity" component={ActivityInboxScreen} options={{ title: t("common:screens.activityInbox") }} />
       <Stack.Screen name="ActivityInboxWebInbox" component={ActivityInboxScreen} options={{ title: t("common:screens.activityInbox") }} />

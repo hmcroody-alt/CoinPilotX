@@ -13,6 +13,7 @@ import { ProfileHeader, ProfileModuleKey, ProfileStatKey } from "../components/P
 import { ContentCover, ContentCoverKind } from "../components/covers/ContentCover";
 import { buildProfileContext, subjectName } from "../profile/profileContext";
 import { profileOsDestination, tileNoun, visibleProfileOsTiles } from "../profile/profileOsTiles";
+import { useBriefingsTile } from "../profile/useBriefingsTile";
 import { usePremiumTile } from "../profile/usePremiumTile";
 import { trackPremium } from "../payments/premiumAnalytics";
 import { useAuth } from "../session/auth";
@@ -90,7 +91,15 @@ export function ProfileScreen({ route, navigation }: Props) {
   // Owner-only. The Premium tile is not on a visitor's grid, so nothing is
   // fetched and no one else's screen pays for it.
   const premiumTile = usePremiumTile(profileContext.isOwnProfile);
-  const moduleState = useMemo(() => (premiumTile ? { premium: premiumTile } : undefined), [premiumTile]);
+  // Owner-only for the same reason: briefings are the owner's private digest.
+  const briefingsTile = useBriefingsTile(profileContext.isOwnProfile);
+  const moduleState = useMemo(() => {
+    if (!premiumTile && !briefingsTile) return undefined;
+    return {
+      ...(premiumTile ? { premium: premiumTile } : null),
+      ...(briefingsTile ? { briefings: briefingsTile } : null)
+    };
+  }, [premiumTile, briefingsTile]);
 
   function postsLookupKey(nextProfile: PulseProfile | null, fallbackKey = profileKey) {
     if (!nextProfile) return fallbackKey;

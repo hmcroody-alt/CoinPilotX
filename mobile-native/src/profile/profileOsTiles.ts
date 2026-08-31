@@ -115,6 +115,21 @@ const TILES: Record<ProfileModuleKey, TileDef> = {
     // feed for the profile owner.
     visitor: null
   },
+  briefings: {
+    key: "briefings",
+    noun: "Briefings",
+    // No `title` override: the hub route has localized copy in
+    // `common:screens.briefingsHub`, like Progress and Premium.
+    owner: (context) => route("BriefingsHub", context),
+    /**
+     * Hidden from visitors by design, not by gap. A briefing is the owner's
+     * private intelligence digest — their unread counts, their watchlist,
+     * their alert proximity. None of it may reach another member, and the
+     * server agrees independently: every `/api/pulse/briefings` route is
+     * session-scoped and accepts no target user.
+     */
+    visitor: null
+  },
   collections: {
     key: "collections",
     noun: "Collections",
@@ -242,6 +257,9 @@ export const PROFILE_OS_TILE_ORDER: ProfileModuleKey[] = [
   "pulse_dna",
   "achievements",
   "activity",
+  // Directly after Activity: the mission places the intelligence digest next
+  // to the surfaces it summarizes. State-carrying — shows NEW when unseen.
+  "briefings",
   "collections",
   "communities",
   "marketplace",
