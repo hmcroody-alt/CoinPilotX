@@ -1217,6 +1217,33 @@ def _alert_counts_by_symbol(conn: Any, user_id: int) -> dict[str, int]:
     return counts
 
 
+def personal_overlay(conn: Any, user_id: int) -> dict[str, Any]:
+    """The caller's own watchlist / favorite / alert symbols, and nothing else.
+
+    Market Pulse renders a shared market list, but "Watching", the star, and the
+    alert badge are per-account facts. They are read here, scoped to one
+    ``user_id``, rather than being derived on the client from anything the
+    shared list carries — a shared payload must never be able to leak another
+    account's watchlist just because two users hit the same cached board.
+    """
+    ensure_tables(conn)
+    user_id = int(user_id)
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT DISTINCT asset_symbol FROM crypto_watchlist_assets WHERE user_id=?",
+        (user_id,),
+    )
+    watching = {_safe_symbol(row[0]) for row in (cur.fetchall() or [])}
+    watching.discard("")
+    return {
+        "watching": sorted(watching),
+        "favorites": sorted(_favorite_symbols(conn, user_id)),
+        # Symbol -> count. A badge only appears where the canonical alert engine
+        # actually holds a live rule; it is never inferred from the watchlist.
+        "alertCounts": _alert_counts_by_symbol(conn, user_id),
+    }
+
+
 def asset_detail(conn: Any, user_id: int, symbol: str) -> dict[str, Any]:
     """Everything the asset detail screen needs, in one owner-scoped read."""
     ensure_tables(conn)

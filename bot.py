@@ -465,17 +465,15 @@ logging.basicConfig(
     format="%(asctime)s - %(message)s"
 )
 
-
-class _PushTraceOnlyFilter(logging.Filter):
-    def filter(self, record):
-        return "PUSH_TRACE" in record.getMessage()
-
-
-_push_trace_stdout_handler = logging.StreamHandler(sys.stdout)
-_push_trace_stdout_handler.setLevel(logging.INFO)
-_push_trace_stdout_handler.setFormatter(logging.Formatter("%(asctime)s - %(message)s"))
-_push_trace_stdout_handler.addFilter(_PushTraceOnlyFilter())
-logging.getLogger().addHandler(_push_trace_stdout_handler)
+# Container platforms (Railway) only capture stdout/stderr. A file-only root
+# logger made every backend log line — including the live replay pipeline —
+# invisible in production; only a PUSH_TRACE-filtered handler reached stdout.
+# Mirror all INFO+ records to stdout unless explicitly disabled.
+if str(os.getenv("LOG_TO_STDOUT", "1")).strip().lower() not in {"0", "false", "no"}:
+    _stdout_log_handler = logging.StreamHandler(sys.stdout)
+    _stdout_log_handler.setLevel(logging.INFO)
+    _stdout_log_handler.setFormatter(logging.Formatter("%(asctime)s - %(message)s"))
+    logging.getLogger().addHandler(_stdout_log_handler)
 
 # =========================
 # PHASE 5 DATABASE UPGRADE
@@ -1277,6 +1275,12 @@ _load_route_pack("undx_agent_run_control", "services.undx_agent_run_control_rout
 # Unauthenticated by design and therefore counts only; kept out of both packs above so
 # neither loses its "every route here is owner-scoped" guarantee.
 _load_route_pack("undx_run_health", "services.undx_run_health_routes")
+# Market Pulse: GET-only read surface over the market foundation the dashboard
+# board and Pulse Briefings already poll. It adds no CoinGecko networking of its
+# own — every write (watchlist rows, alert rules) still goes through the
+# existing crypto API, so there is no second watchlist store and no second
+# alert engine behind this pack.
+_load_route_pack("pulse_market_pulse", "services.market_pulse_routes")
 
 
 def cancel_scheduled_account_deletion(cur, user_id):
@@ -48207,6 +48211,12 @@ def api_pulse_live_start():
         )
         logging.info("PULSE_LIVE_START_NOTIFICATIONS trace_id=%s live_id=%s count=%s", trace_id, live_id, follower_notifications)
         conn.commit(); conn.close()
+        # Start the replay recording server-side so it never depends on the
+        # client reaching /native-publish. Async: Start Live stays fast.
+        try:
+            pulse_live_bootstrap_recording_async(live_id, trace_id=trace_id)
+        except Exception:
+            logging.exception("PULSE_LIVE_RECORDING_BOOTSTRAP_DISPATCH_FAILED trace_id=%s live_id=%s", trace_id, live_id)
         try:
             pulse_emit_event("livestream_created", {"live_id": live_id, "title": title, "live_url": live_watch_url, "studio_url": studio_url}, user_id, None)
         except Exception:
@@ -49656,6 +49666,87 @@ def api_pulse_live_debug_event(live_id):
         return jsonify({"ok": False, "message": "Live debug event could not be stored."}), 500
 
 
+def pulse_live_bootstrap_recording(cur, live, *, trace_id=""):
+    """Start the cloud recording for a live session exactly once, server-side.
+
+    ROOT-CAUSE FIX: the recording used to start ONLY when the mobile client
+    successfully reached /native-publish. If that call never happened (app
+    crash, network drop, the client-side track-count gate), the session ended
+    with no recording source and the replay was structurally impossible.
+    Recording now starts at live START, so replay existence never depends on a
+    client callback. The provider's maxIdleTime (120s) bounds cost if the host
+    never actually joins the channel.
+
+    Idempotent: the sid claim is a guarded UPDATE on empty agora_recording_sid;
+    a duplicate start from a concurrent caller is stopped immediately so one
+    live can never produce two recordings.
+    """
+    live_id = safe_int(live.get("id"), 0)
+    if not live_id:
+        return {"ok": False, "reason": "live_not_found"}
+    if str(live.get("agora_recording_sid") or "").strip():
+        return {"ok": True, "already": True}
+    channel_name = live.get("webrtc_room_id") or f"pulse-live-{live_id}"
+    recording = {"ok": False, "reason": "not_attempted"}
+    try:
+        acquired = agora_cloud_recording_service.acquire(live_id=live_id, channel_name=channel_name)
+        if acquired.get("ok") and acquired.get("resource_id"):
+            recording = agora_cloud_recording_service.start(live_id=live_id, channel_name=channel_name, resource_id=acquired["resource_id"], recording_uid=acquired["recording_uid"])
+            recording.update({"resource_id": acquired["resource_id"], "recording_uid": acquired["recording_uid"]})
+        else:
+            recording = acquired
+    except Exception:
+        logging.exception("PULSE_LIVE_RECORDING_BOOTSTRAP_FAILED live_id=%s trace_id=%s", live_id, trace_id)
+        recording = {"ok": False, "reason": "exception", "message": "Replay recording could not start."}
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    if recording.get("ok") and recording.get("sid"):
+        cur.execute(
+            "UPDATE pulse_live_sessions SET recording_status='recording', recording_error='', agora_recording_resource_id=?, agora_recording_sid=?, agora_recording_uid=?, agora_recording_prefix=?, updated_at=? WHERE id=? AND COALESCE(agora_recording_sid,'')=''",
+            (recording.get("resource_id") or "", recording.get("sid") or "", recording.get("recording_uid") or "", recording.get("prefix") or "", now, live_id),
+        )
+        if int(cur.rowcount or 0) <= 0:
+            # Lost the claim to a concurrent starter; stop this duplicate so
+            # one live never carries two provider recordings.
+            try:
+                agora_cloud_recording_service.stop(channel_name=channel_name, resource_id=recording.get("resource_id") or "", sid=recording.get("sid") or "", recording_uid=recording.get("recording_uid") or "")
+            except Exception:
+                logging.exception("PULSE_LIVE_RECORDING_BOOTSTRAP_DUP_STOP_FAILED live_id=%s", live_id)
+            return {"ok": True, "already": True}
+        pulse_live_record_timeline_event(cur, "recording_bootstrap_started", live_id=live_id, actor_user_id=safe_int(live.get("user_id"), 0), post_id=safe_int(live.get("feed_post_id"), 0), payload={"trace_id": trace_id, "source": "server"})
+        logging.info("PULSE_LIVE_RECORDING_BOOTSTRAP_STARTED live_id=%s trace_id=%s", live_id, trace_id)
+        return {"ok": True, "sid": recording.get("sid") or ""}
+    error = clean_html(recording.get("message") or recording.get("reason") or "Replay recording could not start.")[:500]
+    cur.execute(
+        "UPDATE pulse_live_sessions SET recording_status='recording_failed', recording_error=?, updated_at=? WHERE id=? AND COALESCE(agora_recording_sid,'')=''",
+        (error, now, live_id),
+    )
+    logging.warning("PULSE_LIVE_RECORDING_BOOTSTRAP_FAILED live_id=%s reason=%s trace_id=%s", live_id, error, trace_id)
+    return {"ok": False, "message": error}
+
+
+def pulse_live_bootstrap_recording_async(live_id, *, trace_id=""):
+    """Fire-and-forget recording bootstrap so Start Live latency never pays
+    for provider REST calls. Must be invoked only after the session row is
+    committed. /native-publish remains the synchronous fallback path."""
+    def _run():
+        try:
+            conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+            cur.execute("SELECT * FROM pulse_live_sessions WHERE id=? LIMIT 1", (safe_int(live_id, 0),))
+            live = dict(cur.fetchone() or {})
+            if not live:
+                conn.close()
+                return
+            pulse_live_bootstrap_recording(cur, live, trace_id=trace_id)
+            conn.commit(); conn.close()
+        except Exception:
+            logging.exception("PULSE_LIVE_RECORDING_BOOTSTRAP_ASYNC_FAILED live_id=%s trace_id=%s", live_id, trace_id)
+            try:
+                conn.rollback(); conn.close()
+            except Exception:
+                pass
+    threading.Thread(target=_run, name=f"live-rec-bootstrap-{live_id}", daemon=True).start()
+
+
 @webhook_app.route("/api/pulse/live/<int:live_id>/native-publish", methods=["POST"])
 @webhook_app.route("/api/pulse/live/<int:live_id>/browser-publish", methods=["POST"])
 def api_pulse_live_browser_publish(live_id):
@@ -49686,12 +49777,23 @@ def api_pulse_live_browser_publish(live_id):
             recording = {"ok": False, "reason": "not_attempted"}
             try:
                 channel_name = live.get("webrtc_room_id") or f"pulse-live-{live_id}"
-                acquired = agora_cloud_recording_service.acquire(live_id=live_id, channel_name=channel_name)
-                if acquired.get("ok") and acquired.get("resource_id"):
-                    recording = agora_cloud_recording_service.start(live_id=live_id, channel_name=channel_name, resource_id=acquired["resource_id"], recording_uid=acquired["recording_uid"])
-                    recording.update({"resource_id": acquired["resource_id"], "recording_uid": acquired["recording_uid"]})
+                existing_sid = str(live.get("agora_recording_sid") or "").strip()
+                existing_alive = False
+                if existing_sid:
+                    # The recording now starts server-side at live start. Reuse
+                    # it while the provider still knows it; a dead recorder
+                    # (idle timeout before the host joined) is restarted below.
+                    probe = agora_cloud_recording_service.query(resource_id=live.get("agora_recording_resource_id") or "", sid=existing_sid)
+                    existing_alive = bool(probe.get("ok"))
+                if existing_alive:
+                    recording = {"ok": True, "sid": existing_sid, "resource_id": live.get("agora_recording_resource_id") or "", "recording_uid": live.get("agora_recording_uid") or "", "prefix": live.get("agora_recording_prefix") or ""}
                 else:
-                    recording = acquired
+                    acquired = agora_cloud_recording_service.acquire(live_id=live_id, channel_name=channel_name)
+                    if acquired.get("ok") and acquired.get("resource_id"):
+                        recording = agora_cloud_recording_service.start(live_id=live_id, channel_name=channel_name, resource_id=acquired["resource_id"], recording_uid=acquired["recording_uid"])
+                        recording.update({"resource_id": acquired["resource_id"], "recording_uid": acquired["recording_uid"]})
+                    else:
+                        recording = acquired
             except Exception:
                 logging.exception("PULSE_LIVE_AGORA_RECORDING_START_FAILED live_id=%s", live_id)
                 recording = {"ok": False, "reason": "exception", "message": "Replay recording could not start."}

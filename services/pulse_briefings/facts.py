@@ -136,10 +136,11 @@ def _collect_market_overview(facts: dict[str, Any]) -> None:
         "total_market_cap": overview.get("total_market_cap"),
         "market_cap_change_24h_pct": overview.get("market_cap_change_24h_pct"),
         "btc_dominance": overview.get("btc_dominance"),
+        "eth_dominance": overview.get("eth_dominance"),
         "market_direction": overview.get("market_direction"),
         "breadth_positive_top10": overview.get("breadth_positive_top10"),
         # Paid-depth market snapshot fields. Only facts the provider actually
-        # returned — no derived guesses (Coinbase fallback leaves these None/0).
+        # returned — no derived guesses (Coinbase fallback leaves these None).
         "total_volume_24h": overview.get("total_volume_24h"),
         "volatility_avg_abs_24h": overview.get("volatility_avg_abs_24h"),
         "gainers": [{"symbol": a["symbol"], "change_24h": a["change_24h"]} for a in movers["gainers"]],

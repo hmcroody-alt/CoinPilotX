@@ -1495,6 +1495,37 @@
         "undx": {
           "label": "Intelligence crypto UNDX",
           "hint": "Comprenez pourquoi les alertes se sont déclenchées et ce qui fait bouger votre portefeuille."
+        },
+        "marketPulse": {
+          "label": "Pouls du marché",
+          "hint": "Cours en direct, tendances du marché, plus fortes variations, graphiques et analyses."
+        }
+      },
+      "marketPulse": {
+        "globalTitle": "Marché global",
+        "totalCap": "Capitalisation totale",
+        "volume24h": "Volume 24 h",
+        "btcDominance": "Dominance BTC",
+        "ethDominance": "Dominance ETH",
+        "marketChange": "Marché 24 h",
+        "live": "En direct",
+        "delayed": "Différé",
+        "cached": "En cache",
+        "partial": "Certains chiffres du marché sont indisponibles pour le moment.",
+        "overlayUnavailable": "Vos repères de watchlist et d'alertes n'ont pas pu être chargés.",
+        "loadError": "Le marché n'a pas pu être chargé.",
+        "searchPlaceholder": "Rechercher une crypto par nom ou symbole",
+        "searching": "Recherche…",
+        "searchResults": "Résultats · {{count}}",
+        "noMatches": "Aucune crypto ne correspond à cette recherche.",
+        "empty": "Aucun actif à afficher pour le moment.",
+        "emptyWatchlist": "Rien dans votre watchlist pour l'instant. Ouvrez une crypto et ajoutez-la.",
+        "category": {
+          "all": "Toutes",
+          "gainers": "Hausses",
+          "losers": "Baisses",
+          "trending": "Tendances",
+          "watchlist": "Watchlist"
         }
       },
       "entry": {

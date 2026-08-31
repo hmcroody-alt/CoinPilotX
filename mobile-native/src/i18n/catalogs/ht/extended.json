@@ -1493,6 +1493,37 @@
         "undx": {
           "label": "Entèlijans kripto UNDX",
           "hint": "Konprann poukisa alèt yo te deklanche ak sa k ap fè pòtfèy ou bouje."
+        },
+        "marketPulse": {
+          "label": "Pouls Mache a",
+          "hint": "Pri an dirèk, tandans mache a, pi gwo mouvman, graf ak analiz."
+        }
+      },
+      "marketPulse": {
+        "globalTitle": "Mache mondyal",
+        "totalCap": "Kapitalizasyon total",
+        "volume24h": "Volim 24 è",
+        "btcDominance": "Dominasyon BTC",
+        "ethDominance": "Dominasyon ETH",
+        "marketChange": "Mache 24 è",
+        "live": "An dirèk",
+        "delayed": "An reta",
+        "cached": "Nan kachèt",
+        "partial": "Kèk chif mache a pa disponib kounye a.",
+        "overlayUnavailable": "Nou pa t ka chaje mak lis siveyans ak alèt ou yo.",
+        "loadError": "Mache a pa t ka chaje.",
+        "searchPlaceholder": "Chèche yon pyès monnen pa non oswa senbòl",
+        "searching": "N ap chèche…",
+        "searchResults": "Rezilta · {{count}}",
+        "noMatches": "Pa gen pyès monnen ki koresponn ak rechèch sa a.",
+        "empty": "Pa gen aktif pou montre kounye a.",
+        "emptyWatchlist": "Pa gen anyen nan lis siveyans ou an ankò. Louvri yon pyès monnen epi ajoute l.",
+        "category": {
+          "all": "Tout",
+          "gainers": "K ap monte",
+          "losers": "K ap desann",
+          "trending": "Tandans",
+          "watchlist": "Lis siveyans"
         }
       },
       "entry": {

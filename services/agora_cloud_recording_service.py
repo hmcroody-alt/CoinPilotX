@@ -80,6 +80,21 @@ def start(*, live_id: int, channel_name: str, resource_id: str, recording_uid: s
     return {**result, "sid": data.get("sid") or "", "prefix": "/".join(prefix)}
 
 
+def query(*, resource_id: str, sid: str) -> dict:
+    """Read-only status probe for an in-flight recording.
+
+    Returns ok=True only while the recording session is still known to the
+    provider. Once the recorder exits (stopped, idle timeout, kicked), the
+    provider answers 404 and this returns ok=False, which callers use to
+    decide whether an existing sid can be reused or a fresh start is needed.
+    """
+    if not resource_id or not sid:
+        return {"ok": False, "reason": "missing_identifiers"}
+    result = _request(f"cloud_recording/resourceid/{quote(resource_id)}/sid/{quote(sid)}/mode/{MODE}/query", method="GET")
+    server = (result.get("data") or {}).get("serverResponse") or {}
+    return {**result, "recording_status": server.get("status"), "upload_status": server.get("uploadingStatus") or ""}
+
+
 def stop(*, channel_name: str, resource_id: str, sid: str, recording_uid: str) -> dict:
     result = _request(f"cloud_recording/resourceid/{quote(resource_id)}/sid/{quote(sid)}/mode/{MODE}/stop", payload={"cname": channel_name, "uid": str(recording_uid), "clientRequest": {"async_stop": False}})
     server = (result.get("data") or {}).get("serverResponse") or {}

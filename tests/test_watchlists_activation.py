@@ -589,7 +589,14 @@ def test_chart_timeframe_switches_between_real_ranges():
     market_data_service.get_symbol = lambda symbol: {"id": "bitcoin", "symbol": "BTC"}
     market_data_service.HISTORY_CACHE.clear()
     try:
-        for range_key, expected_days in (("24H", 1), ("7D", 7), ("1M", 30), ("1Y", 365), ("ALL", "max")):
+        # "ALL" is HISTORY_MAX_DAYS, not the string "max": the Basic plan 401s
+        # on days=max, so the old spelling made the ALL tab fail on every single
+        # request. 3M/90D is the range the Market Pulse chart added.
+        cases = (
+            ("24H", 1), ("7D", 7), ("1M", 30), ("3M", 90), ("1Y", 365),
+            ("ALL", market_data_service.HISTORY_MAX_DAYS),
+        )
+        for range_key, expected_days in cases:
             payload = market_data_service.asset_history("BTC", range_key)
             assert payload["ok"] is True, range_key
             assert payload["range"] == range_key

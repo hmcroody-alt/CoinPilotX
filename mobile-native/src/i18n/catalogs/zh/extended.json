@@ -1493,6 +1493,37 @@
         "undx": {
           "label": "UNDX 加密货币智能",
           "hint": "了解提醒为何触发，以及是什么在影响你的投资组合。"
+        },
+        "marketPulse": {
+          "label": "市场脉搏",
+          "hint": "实时价格、市场趋势、涨跌榜、图表与分析。"
+        }
+      },
+      "marketPulse": {
+        "globalTitle": "全球市场",
+        "totalCap": "总市值",
+        "volume24h": "24小时成交额",
+        "btcDominance": "BTC 占比",
+        "ethDominance": "ETH 占比",
+        "marketChange": "市场 24小时",
+        "live": "实时",
+        "delayed": "延迟",
+        "cached": "已缓存",
+        "partial": "部分市场数据当前不可用。",
+        "overlayUnavailable": "无法加载你的自选与提醒标记。",
+        "loadError": "市场数据加载失败。",
+        "searchPlaceholder": "按名称或代号搜索币种",
+        "searching": "搜索中…",
+        "searchResults": "结果 · {{count}}",
+        "noMatches": "没有匹配的币种。",
+        "empty": "暂无可显示的资产。",
+        "emptyWatchlist": "自选还是空的。打开一个币种并添加。",
+        "category": {
+          "all": "全部",
+          "gainers": "涨幅榜",
+          "losers": "跌幅榜",
+          "trending": "热门",
+          "watchlist": "自选"
         }
       },
       "entry": {

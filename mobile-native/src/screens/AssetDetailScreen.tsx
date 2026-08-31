@@ -26,10 +26,43 @@
  * "Create alert" navigates to the canonical alert flow with this asset
  * prefilled, so there is exactly one place where an alert rule comes into
  * existence and exactly one set of validation rules for it.
+ *
+ * ## The quick action bar
+ *
+ * Watchlist, alert, UNDX — the three things a member wants to do once they have
+ * looked at a coin. None of them is implemented here:
+ *
+ * - **Watchlist** calls `addWatchlistAsset` against the member's existing lists.
+ *   There is no "default watchlist" in this product, so the one unambiguous case
+ *   — exactly one list — is added to in a single tap, and zero or several lists
+ *   both open the Watchlists screen, which is the only place lists are created
+ *   and chosen. Silently picking a list for somebody is how an asset ends up on
+ *   a list they never open. The button only says "Added" when the server said
+ *   `ok`; a request that did not throw is not the same as a write that landed.
+ *
+ * - **Create alert** hands off to the canonical alert flow (see above).
+ *
+ * - **Ask UNDX** sends the numbers *this screen is currently showing* to the
+ *   existing assistant endpoint, and renders the answer next to them. The facts
+ *   travel inside the question because that is the only channel that reaches the
+ *   assistant without a second market client or a second AI surface: the
+ *   canonical `ui_context` is a strict allowlist of device and route signals, by
+ *   design, and widening it is not this mission's to do. The question also tells
+ *   the assistant, in as many words, to say it does not know rather than invent a
+ *   cause for a move — a plausible reason for a 4% drop is the single most
+ *   convincing thing this screen could get wrong.
+ *
+ * ## What is deliberately absent
+ *
+ * No portfolio line. The directive permits "IN PORTFOLIO" context only where the
+ * existing Portfolio services already supply it, and `AssetDetail` carries no
+ * holdings field — asset, memberships, alerts, ranges, market status and nothing
+ * else. A holdings badge would have to come from somewhere, and there is nowhere
+ * for it to come from that is not a guess.
  */
 
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -43,8 +76,10 @@ import {
 import {
   AssetDetail,
   AssetHistory,
+  HistoryPoint,
   HistoryRange,
   UNKNOWN_VALUE,
+  addWatchlistAsset,
   formatCompact,
   formatPercent,
   formatPrice,
@@ -53,10 +88,12 @@ import {
   formatSupply,
   getAssetDetail,
   getAssetHistory,
+  getWatchlistMarketView,
   loadCachedAssetDetail,
   loadCachedAssetHistory,
   setFavoriteAsset
 } from "../api/watchlists";
+import { askPulseAi } from "../api/pulse";
 import { alertConditionLabel, alertStatusLabel } from "../api/alerts";
 import { AssetPriceChart } from "../components/crypto/AssetSparkline";
 import { Panel } from "../components/Panel";
@@ -72,6 +109,25 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "overview", label: "Overview" },
   { key: "alerts", label: "Alerts" }
 ];
+
+/**
+ * The timestamp under the finger.
+ *
+ * `t` is the millisecond epoch the provider gave us. Short ranges get a clock,
+ * long ones get a date: a 1Y chart labelled "14:35" says nothing, and a 1H chart
+ * labelled "30 Aug" repeats itself sixty times.
+ */
+function scrubTimeLabel(t: number, range: HistoryRange): string {
+  const when = new Date(t);
+  if (Number.isNaN(when.getTime())) return UNKNOWN_VALUE;
+  if (range === "1H" || range === "24H") {
+    return when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  }
+  if (range === "1Y" || range === "ALL") {
+    return when.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  }
+  return when.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
 
 function changeColor(change: number | null): string {
   if (change === null) return colors.muted;
@@ -92,10 +148,20 @@ export function AssetDetailScreen({ route, navigation }: Props) {
   const [chartLoading, setChartLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const [watchlistBusy, setWatchlistBusy] = useState(false);
+  const [watchlistNotice, setWatchlistNotice] = useState("");
+  const [undxOpen, setUndxOpen] = useState(false);
+  const [undxLoading, setUndxLoading] = useState(false);
+  const [undxAnswer, setUndxAnswer] = useState("");
+  const [undxError, setUndxError] = useState("");
+  // The point under the finger while scrubbing the chart. Purely a read of the
+  // series already in memory: dragging never triggers a fetch.
+  const [scrubbed, setScrubbed] = useState<HistoryPoint | null>(null);
 
   const asset = detail?.asset;
   const ranges = detail?.ranges || [];
   const alerts = detail?.alerts || [];
+  const memberships = detail?.watchlists || [];
   const chartWidth = Math.max(180, width - 60);
 
   const loadDetail = useCallback(
@@ -172,6 +238,13 @@ export function AssetDetailScreen({ route, navigation }: Props) {
     };
   }, [symbol, range, ranges.length]);
 
+  // A new range means a new series, so the old crosshair reading no longer
+  // describes anything on screen. Clearing it beats leaving a 24h price hovering
+  // over a 1Y line.
+  useEffect(() => {
+    setScrubbed(null);
+  }, [range, symbol]);
+
   async function onToggleFavorite() {
     if (!asset) return;
     try {
@@ -179,6 +252,87 @@ export function AssetDetailScreen({ route, navigation }: Props) {
       await loadDetail("refresh");
     } catch (favoriteError) {
       setError(favoriteError instanceof Error ? favoriteError.message : "Favorites could not be updated.");
+    }
+  }
+
+  async function onAddToWatchlist() {
+    if (!asset || watchlistBusy) return;
+    setWatchlistNotice("");
+    // Already watched: the button is reporting a state, not offering an action.
+    // Tapping it goes to the lists rather than adding a second copy.
+    if (memberships.length) {
+      navigation.navigate("Watchlists", { title: "Watchlists" });
+      return;
+    }
+    setWatchlistBusy(true);
+    try {
+      const lists = (await getWatchlistMarketView()).watchlists || [];
+      // Zero lists means there is nothing to add to; several means the choice
+      // belongs to the member. Both go to the screen that owns creating and
+      // choosing lists, which is the honest answer to "which one?".
+      if (lists.length !== 1) {
+        navigation.navigate("Watchlists", { title: "Watchlists" });
+        return;
+      }
+      const result = await addWatchlistAsset(lists[0].id, asset.symbol);
+      // A request that did not throw is not a write that landed. The server's
+      // own `ok` is the only thing that turns this button into "Watching".
+      if (!result.ok) {
+        setWatchlistNotice(result.message || `${symbol} could not be added to your watchlist.`);
+        return;
+      }
+      await loadDetail("refresh");
+    } catch (addError) {
+      setWatchlistNotice(
+        addError instanceof Error ? addError.message : `${symbol} could not be added to your watchlist.`
+      );
+    } finally {
+      setWatchlistBusy(false);
+    }
+  }
+
+  /**
+   * The question, built from what is on screen right now.
+   *
+   * Unknown values arrive as the same "--" the screen prints, so the assistant is
+   * told a figure is missing rather than handed a zero it would read as a fact.
+   */
+  const undxQuestion = useMemo(() => {
+    const facts = [
+      `price ${formatPrice(asset?.price ?? null)}`,
+      `24h change ${formatPercent(asset?.change_24h ?? null)}`,
+      `market cap ${formatCompact(asset?.market_cap ?? null)}`,
+      `24h volume ${formatCompact(asset?.volume_24h ?? null)}`,
+      `market cap rank ${formatRank(asset?.market_cap_rank ?? null)}`
+    ].join(", ");
+    return (
+      `PulseSoc is showing me ${asset?.name || symbol} (${symbol}) with ${facts}. ` +
+      `Explain what these figures do and do not tell me about this asset. ` +
+      `A value shown as "--" is one PulseSoc has no data for — treat it as unknown, not as zero. ` +
+      `If you do not know why the price moved, say that you do not know instead of suggesting a cause.`
+    );
+  }, [asset, symbol]);
+
+  async function onAskUndx() {
+    setUndxOpen(true);
+    if (undxLoading) return;
+    setUndxLoading(true);
+    setUndxError("");
+    setUndxAnswer("");
+    try {
+      const reply = await askPulseAi(undxQuestion);
+      const text = String(reply.response || reply.reply || reply.message || "").trim();
+      // `ok: false` carries the server's reason in `message`; rendering that as
+      // an answer would dress a failure up as analysis.
+      if (reply.ok === false || !text) {
+        setUndxError(text || "UNDX could not answer that right now.");
+        return;
+      }
+      setUndxAnswer(text);
+    } catch (askError) {
+      setUndxError(askError instanceof Error ? askError.message : "UNDX could not answer that right now.");
+    } finally {
+      setUndxLoading(false);
     }
   }
 
@@ -233,6 +387,80 @@ export function AssetDetailScreen({ route, navigation }: Props) {
         {error ? <Text style={styles.error}>{error}</Text> : null}
       </Panel>
 
+      {/* The three things to do with a coin, in one bar, on every asset. Each
+          one hands off to the system that already owns it. */}
+      <View style={styles.actionBar}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ disabled: watchlistBusy, selected: memberships.length > 0 }}
+          accessibilityLabel={
+            memberships.length
+              ? `${symbol} is on your watchlist. Open watchlists.`
+              : `Add ${symbol} to a watchlist`
+          }
+          disabled={watchlistBusy}
+          style={[styles.action, memberships.length ? styles.actionOn : null]}
+          onPress={onAddToWatchlist}
+        >
+          {watchlistBusy ? (
+            <ActivityIndicator color={colors.accent} />
+          ) : (
+            <Text style={[styles.actionLabel, memberships.length ? styles.actionLabelOn : null]}>
+              {memberships.length ? "Watching ✓" : "+ Watchlist"}
+            </Text>
+          )}
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={
+            alerts.length ? `Alerts for ${symbol}: ${alerts.length} active` : `Create an alert for ${symbol}`
+          }
+          style={[styles.action, alerts.length ? styles.actionOn : null]}
+          // The canonical alert flow with this asset prefilled. When rules
+          // already exist the bar shows how many rather than pretending the
+          // member is starting from nothing.
+          onPress={() => navigation.navigate("AlertManagement", { presetSymbol: symbol, title: "Alerts" })}
+        >
+          <Text style={[styles.actionLabel, alerts.length ? styles.actionLabelOn : null]}>
+            {alerts.length ? `Alerts · ${alerts.length}` : "Create Alert"}
+          </Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Ask UNDX about ${symbol}`}
+          style={styles.action}
+          onPress={onAskUndx}
+        >
+          <Text style={styles.actionLabel}>Ask UNDX</Text>
+        </Pressable>
+      </View>
+      {watchlistNotice ? <Text style={styles.error}>{watchlistNotice}</Text> : null}
+
+      {undxOpen ? (
+        <Panel>
+          <Text style={styles.sectionTitle}>UNDX on {symbol}</Text>
+          {undxLoading ? <ActivityIndicator color={colors.accent} /> : null}
+          {undxAnswer ? <Text style={styles.undxAnswer}>{undxAnswer}</Text> : null}
+          {undxError ? <Text style={styles.error}>{undxError}</Text> : null}
+          {undxAnswer && !undxLoading ? (
+            <Text style={styles.muted}>
+              Answered from the figures shown above, at the time you asked. Educational information only — not
+              financial advice.
+            </Text>
+          ) : null}
+          <Pressable
+            accessibilityRole="button"
+            style={styles.secondaryButton}
+            // The full assistant, where a follow-up question can be typed. This
+            // card answers one question; the conversation lives in one place.
+            // Same spelling `openNativeRoute` uses for `/pulse/ai`.
+            onPress={() => navigation.navigate("Tabs", { screen: "PulseAI" })}
+          >
+            <Text style={styles.secondaryButtonLabel}>Continue in UNDX</Text>
+          </Pressable>
+        </Panel>
+      ) : null}
+
       <Panel>
         <Text style={styles.sectionTitle}>Price history</Text>
         {ranges.length ? (
@@ -251,7 +479,30 @@ export function AssetDetailScreen({ route, navigation }: Props) {
               ))}
             </View>
             {chartPoints.length >= 2 ? (
-              <AssetPriceChart values={chartPoints} width={chartWidth} color={tint} />
+              <>
+                {/* The readout keeps the height of a line whether or not a finger
+                    is down, so scrubbing does not shunt the chart up and down. */}
+                <View style={styles.scrubReadout}>
+                  {scrubbed ? (
+                    <>
+                      <Text style={styles.scrubPrice}>{formatPrice(scrubbed.price)}</Text>
+                      <Text style={styles.scrubTime}>{scrubTimeLabel(scrubbed.t, range)}</Text>
+                    </>
+                  ) : (
+                    <Text style={styles.scrubTime}>Touch and drag the chart to read a point.</Text>
+                  )}
+                </View>
+                <AssetPriceChart
+                  values={chartPoints}
+                  width={chartWidth}
+                  color={tint}
+                  // A read of `history.points`, which is already in memory. No
+                  // request is made on any part of a drag.
+                  onScrub={(index) =>
+                    setScrubbed(index === null ? null : history?.points[index] ?? null)
+                  }
+                />
+              </>
             ) : (
               <Text style={styles.muted}>
                 {chartLoading ? "Loading…" : history?.warning || `No ${range} history is available.`}
@@ -343,6 +594,21 @@ function MetricRow({ label, value }: { label: string; value: string }) {
 }
 
 const styles = createThemedStyles(() => ({
+  action: {
+    alignItems: "center",
+    borderColor: colors.border,
+    borderRadius: 10,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: "center",
+    // Tall enough that swapping the label for a spinner does not resize the bar.
+    minHeight: 42,
+    paddingHorizontal: 8
+  },
+  actionBar: { flexDirection: "row", gap: 8 },
+  actionLabel: { color: colors.text, fontSize: 13, fontWeight: "800", textAlign: "center" },
+  actionLabelOn: { color: colors.accent },
+  actionOn: { backgroundColor: colors.signalDim, borderColor: colors.accent },
   alertCondition: { color: colors.text, fontSize: 14, fontWeight: "700", textTransform: "capitalize" },
   alertRow: {
     borderTopColor: colors.border,
@@ -387,6 +653,18 @@ const styles = createThemedStyles(() => ({
   rangeLabelActive: { color: colors.accent },
   ranges: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   root: { backgroundColor: "transparent", flex: 1 },
+  scrubPrice: { color: colors.text, fontSize: 15, fontWeight: "900" },
+  // A fixed height so the chart does not jump when the readout appears.
+  scrubReadout: { alignItems: "baseline", flexDirection: "row", gap: 8, height: 20 },
+  scrubTime: { color: colors.muted, fontSize: 12 },
+  secondaryButton: {
+    alignItems: "center",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingVertical: 10
+  },
+  secondaryButtonLabel: { color: colors.accent, fontSize: 13, fontWeight: "800" },
   sectionTitle: { color: colors.text, fontSize: 15, fontWeight: "900" },
   star: { color: colors.muted, fontSize: 24 },
   starOn: { color: colors.warning },
@@ -402,5 +680,6 @@ const styles = createThemedStyles(() => ({
   tabLabel: { color: colors.muted, fontSize: 13, fontWeight: "700" },
   tabLabelActive: { color: colors.accent },
   tabs: { flexDirection: "row", gap: 8 },
+  undxAnswer: { color: colors.text, fontSize: 14, lineHeight: 21 },
   warning: { color: colors.warning, fontSize: 13, lineHeight: 19 }
 }));

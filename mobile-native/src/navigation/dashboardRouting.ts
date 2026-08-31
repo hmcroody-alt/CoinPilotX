@@ -153,6 +153,14 @@ export function openDashboardRoute(navigation: DashboardNavigation, route: strin
     navigation.navigate("AlertManagement", { title: "Alerts" });
     return;
   }
+  // Market Pulse joins the crypto family above `/premium` for the same reason
+  // its four siblings are here: the server serves it premium-scoped as well as
+  // bare. The spellings are deliberately narrow — a bare `/market` would match
+  // `/marketplace` and send a shopper to a price board.
+  if (path.includes("/crypto/market") || path.includes("/market-pulse") || path.includes("/market_pulse")) {
+    navigation.navigate("MarketPulse");
+    return;
+  }
   if (path.includes("/intelligence") || path.includes("/signals") || path.includes("/briefing") || path.includes("/forecasts")) {
     navigation.navigate("IntelligenceCenter", { title: "Intelligence" });
     return;

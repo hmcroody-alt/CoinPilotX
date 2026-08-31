@@ -473,6 +473,18 @@ export type RootStackParamList = {
   CryptoPortfolio: { title?: string } | undefined;
   Watchlists: { title?: string } | undefined;
   Portfolio: { title?: string } | undefined;
+  // `category` is the chip to open on. It only chooses a view of the shared
+  // board — every chip is a sort or a filter of data the screen already has.
+  // `openAsset` carries the raw token from a `crypto/<token>` deep link. It is
+  // NOT assumed to be a symbol: the screen resolves it against the server board
+  // and opens AssetDetail only on a real match, so a stale or misspelled link
+  // lands on the market rather than on a detail screen that can only ever read
+  // "Unavailable".
+  MarketPulse: {
+    category?: "all" | "gainers" | "losers" | "trending" | "watchlist";
+    openAsset?: string;
+    title?: string;
+  } | undefined;
   AssetDetail: { symbol: string; name?: string; title?: string };
   AccountCenter: { section?: "account" | "security" | "privacy" | "devices"; title?: string } | undefined;
   AccountSettings: { title?: string } | undefined;

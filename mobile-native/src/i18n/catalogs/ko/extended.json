@@ -1493,6 +1493,37 @@
         "undx": {
           "label": "UNDX 암호화폐 인텔리전스",
           "hint": "알림이 발생한 이유와 포트폴리오를 움직이는 요인을 파악하세요."
+        },
+        "marketPulse": {
+          "label": "마켓 펄스",
+          "hint": "실시간 가격, 시장 추세, 급등·급락 종목, 차트, 분석."
+        }
+      },
+      "marketPulse": {
+        "globalTitle": "전체 시장",
+        "totalCap": "총 시가총액",
+        "volume24h": "24시간 거래대금",
+        "btcDominance": "BTC 점유율",
+        "ethDominance": "ETH 점유율",
+        "marketChange": "시장 24시간",
+        "live": "실시간",
+        "delayed": "지연됨",
+        "cached": "캐시됨",
+        "partial": "일부 시장 수치를 지금은 가져올 수 없습니다.",
+        "overlayUnavailable": "관심목록과 알림 표시를 불러오지 못했습니다.",
+        "loadError": "시장 정보를 불러오지 못했습니다.",
+        "searchPlaceholder": "이름 또는 심볼로 코인 검색",
+        "searching": "검색 중…",
+        "searchResults": "결과 · {{count}}",
+        "noMatches": "검색과 일치하는 코인이 없습니다.",
+        "empty": "지금 표시할 자산이 없습니다.",
+        "emptyWatchlist": "관심목록이 비어 있습니다. 코인을 열어 추가하세요.",
+        "category": {
+          "all": "전체",
+          "gainers": "상승",
+          "losers": "하락",
+          "trending": "트렌딩",
+          "watchlist": "관심목록"
         }
       },
       "entry": {

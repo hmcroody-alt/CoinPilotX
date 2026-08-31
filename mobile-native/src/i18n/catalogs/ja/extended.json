@@ -1485,6 +1485,37 @@
         "undx": {
           "label": "UNDX暗号資産インテリジェンス",
           "hint": "アラートが作動した理由と、ポートフォリオを動かしている要因を理解できます。"
+        },
+        "marketPulse": {
+          "label": "マーケットパルス",
+          "hint": "リアルタイム価格、市場トレンド、値動きの大きい銘柄、チャート、分析。"
+        }
+      },
+      "marketPulse": {
+        "globalTitle": "市場全体",
+        "totalCap": "時価総額合計",
+        "volume24h": "24時間出来高",
+        "btcDominance": "BTCドミナンス",
+        "ethDominance": "ETHドミナンス",
+        "marketChange": "市場 24時間",
+        "live": "ライブ",
+        "delayed": "遅延",
+        "cached": "キャッシュ",
+        "partial": "一部の市場数値は現在取得できません。",
+        "overlayUnavailable": "ウォッチリストとアラートの表示を読み込めませんでした。",
+        "loadError": "市場データを読み込めませんでした。",
+        "searchPlaceholder": "名称またはシンボルで銘柄を検索",
+        "searching": "検索中…",
+        "searchResults": "結果 · {{count}}",
+        "noMatches": "該当する銘柄はありません。",
+        "empty": "表示できる銘柄がありません。",
+        "emptyWatchlist": "ウォッチリストはまだ空です。銘柄を開いて追加してください。",
+        "category": {
+          "all": "すべて",
+          "gainers": "上昇",
+          "losers": "下落",
+          "trending": "トレンド",
+          "watchlist": "ウォッチリスト"
         }
       },
       "entry": {
