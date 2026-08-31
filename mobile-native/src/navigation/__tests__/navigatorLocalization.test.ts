@@ -104,7 +104,11 @@ describe("navigator header titles", () => {
     //
     // 134 + 2: the Pulse Briefings pair — `BriefingsHub` and `BriefingDetail`,
     // both titled via `route.params?.title || t("common:screens....")`.
-    expect(TITLE_OPTIONS.length).toBe(136);
+    //
+    // 136 + 1: `MarketPulse`, titled `route.params?.title ||
+    // t("common:screens.marketPulse")`. It arrived with the Market Pulse work
+    // that had been sitting uncommitted in the release worktree.
+    expect(TITLE_OPTIONS.length).toBe(137);
   });
 
   it("has no hardcoded string literal titles", () => {
