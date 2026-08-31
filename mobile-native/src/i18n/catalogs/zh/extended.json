@@ -2780,7 +2780,9 @@
       "quiet": "免打扰时间：{{start}} – {{end}}",
       "timezone": "时区：{{zone}}",
       "pushOn": "推送通知已开启。",
-      "pushOff": "推送通知已关闭 — 简报仅在此处显示。"
+      "pushOff": "推送通知已关闭 — 简报仅在此处显示。",
+      "pushNoDevice": "本设备尚未设置推送通知 — 简报仅在此处显示。",
+      "pushPaused": "推送发送已暂停 — 简报仅在此处显示。"
     },
     "settings": {
       "master": "Pulse 简报",

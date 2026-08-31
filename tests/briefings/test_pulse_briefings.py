@@ -71,6 +71,20 @@ def _fresh_conn(*, region_prefs: bool = True) -> sqlite3.Connection:
             id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, category TEXT,
             enable_push_notifications INTEGER DEFAULT 1, UNIQUE(user_id, category))"""
     )
+    # Owned by bot.init_db(). Modelled here because it is the table
+    # push_service.send_push actually reads to find a device: a user with zero
+    # rows CANNOT receive a briefing push no matter what their preferences say.
+    # BOTH active and is_active, as production carries: `active` comes from
+    # bot.init_db() and `is_active` was added later by push_service, which is why
+    # every reader coalesces the pair. A fixture with only one of them makes the
+    # real query raise "no such column" -- the crypto_alerts divergence again.
+    cur.execute(
+        """CREATE TABLE push_subscriptions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, endpoint TEXT UNIQUE,
+            subscription_json TEXT, user_agent TEXT, device_type TEXT, browser TEXT,
+            active INTEGER DEFAULT 1, is_active INTEGER DEFAULT 1,
+            created_at TEXT, updated_at TEXT, last_seen_at TEXT)"""
+    )
     conn.commit()
     engine.ensure_schema(conn)
     if not region_prefs:
@@ -280,6 +294,83 @@ class WatchlistFactTests(unittest.TestCase):
         self.assertEqual(out["alert_proximity"], [])
 
 
+class TopicIndependenceTests(unittest.TestCase):
+    """Crypto market and watchlist are separate switches on the hub, so they must
+    be separate in the fact pack. Turning the market topic off used to skip the
+    whole crypto collector, which deleted the user's watchlist as a side effect:
+    the watchlist switch read ON while contributing nothing."""
+
+    def setUp(self):
+        _clear_provider_cache()
+        self.conn = _fresh_conn()
+        self.conn.execute(
+            "INSERT INTO crypto_alerts (user_id, asset_symbol, condition_type, target_value, status) "
+            "VALUES (1,'BTC','above',103.0,'active')"
+        )
+        self.conn.commit()
+
+    def tearDown(self):
+        self.conn.close()
+
+    def _build(self, *, crypto_enabled, watchlist_enabled):
+        # A big market move: 9% BTC. Whether it may score is the point of the test.
+        with mock.patch.object(facts.crypto_provider, "get_watchlist_snapshots",
+                               return_value=[{"symbol": "BTC", "price": 100.0, "change_24h": 1.0}]), \
+             mock.patch.object(facts.crypto_provider, "get_market_overview",
+                               return_value={"generated_at": _iso(datetime.now(timezone.utc)),
+                                             "provider": "coingecko",
+                                             "btc": {"price": 100.0, "change_24h": 9.0},
+                                             "eth": {"price": 50.0, "change_24h": 1.0},
+                                             "market_cap_change_24h_pct": 9.0}), \
+             mock.patch.object(facts.crypto_provider, "get_top_movers",
+                               return_value={"gainers": [], "losers": []}), \
+             mock.patch.object(facts.crypto_provider, "get_trending", return_value=[]):
+            return facts.build_briefing_facts(
+                self.conn.cursor(), 1, since_iso=_iso(datetime.now(timezone.utc)),
+                timezone_name="UTC", locale="en",
+                prefs={"network_enabled": False,
+                       "crypto_enabled": crypto_enabled,
+                       "watchlist_enabled": watchlist_enabled},
+            )
+
+    def test_market_off_with_watchlist_on_still_returns_watchlist(self):
+        pack = self._build(crypto_enabled=False, watchlist_enabled=True)
+        crypto = pack["crypto"]
+        self.assertIsNotNone(crypto, "watchlist ON must still produce a crypto fact block")
+        self.assertEqual(crypto["watchlist"], [{"symbol": "BTC", "price": 100.0, "change_24h": 1.0}])
+        self.assertEqual(crypto["alert_proximity"],
+                         [{"symbol": "BTC", "threshold": 103.0, "distance_pct": 3.0}])
+
+    def test_market_off_contributes_no_market_facts_or_score(self):
+        pack = self._build(crypto_enabled=False, watchlist_enabled=True)
+        crypto = pack["crypto"]
+        self.assertNotIn("btc_price", crypto)
+        self.assertNotIn("btc_change_24h", crypto)
+        self.assertFalse(crypto["market_enabled"])
+        # A 9% BTC move must score zero when the market topic is off; only the
+        # user's own alert proximity (8) may count.
+        self.assertEqual(pack["crypto_score"], 8)
+
+    def test_market_on_scores_the_move(self):
+        pack = self._build(crypto_enabled=True, watchlist_enabled=True)
+        self.assertTrue(pack["crypto"]["market_enabled"])
+        self.assertEqual(pack["crypto"]["btc_change_24h"], 9.0)
+        self.assertEqual(pack["crypto_score"], 10 + 6 + 8)
+
+    def test_watchlist_off_keeps_market_and_drops_personal_facts(self):
+        pack = self._build(crypto_enabled=True, watchlist_enabled=False)
+        crypto = pack["crypto"]
+        self.assertEqual(crypto["btc_change_24h"], 9.0)
+        self.assertEqual(crypto["watchlist"], [])
+        self.assertEqual(crypto["alert_proximity"], [])
+        self.assertEqual(pack["crypto_score"], 10 + 6)
+
+    def test_both_off_removes_the_crypto_block_entirely(self):
+        pack = self._build(crypto_enabled=False, watchlist_enabled=False)
+        self.assertIsNone(pack["crypto"])
+        self.assertEqual(pack["crypto_score"], 0)
+
+
 class SignificanceTests(unittest.TestCase):
     def test_network_significance_weights(self):
         net = {"security_alerts": 1, "unread_messages": 2, "new_followers": 3}
@@ -312,11 +403,21 @@ class WindowAndQuietHoursTests(unittest.TestCase):
         self.assertEqual(key, "2026-08-30:00")
 
     def test_morning_evening_windows(self):
-        key, _ = engine.current_window(datetime(2026, 8, 30, 7, 0), "morning_evening")
-        self.assertEqual(key, "2026-08-30:06")
-        self.assertIsNone(engine.current_window(datetime(2026, 8, 30, 13, 0), "morning_evening"))
+        # Morning opens at 08:00 local, not 06:00: "morning" should not mean a
+        # window whose whole first hours sit inside a default 22:00-07:00 quiet
+        # range, where every send would be suppressed anyway.
+        key, _ = engine.current_window(datetime(2026, 8, 30, 9, 0), "morning_evening")
+        self.assertEqual(key, "2026-08-30:08")
+        self.assertIsNone(engine.current_window(datetime(2026, 8, 30, 15, 0), "morning_evening"))
         key, _ = engine.current_window(datetime(2026, 8, 30, 3, 0), "morning_evening")
         self.assertEqual(key, "2026-08-29:18")  # pre-dawn maps to prior evening
+
+    def test_off_has_no_window_at_any_hour(self):
+        """"off" used to fall through to the full four-window schedule, leaving
+        every caller to remember the guard separately."""
+        self.assertEqual(engine._windows_for_frequency("off"), ())
+        for hour in range(24):
+            self.assertIsNone(engine.current_window(datetime(2026, 8, 30, hour, 30), "off"))
 
     def test_quiet_hours_wraparound(self):
         qa = engine._quiet_hours_active
@@ -420,18 +521,51 @@ class PreferencesTests(unittest.TestCase):
         self.assertEqual(prefs["frequency"], "every_6h")
         self.assertEqual(prefs["quiet_start"], "22:00")
         updated = engine.update_preferences(1, {
-            "frequency": "hourly_spam",  # invalid -> ignored
-            "quiet_start": "25:99",      # invalid -> ignored
-            "quiet_end": "8:5",          # normalized
+            "quiet_end": "8:5",  # under-padded but unambiguous -> normalized
             "crypto_enabled": False,
         }, conn=conn)
-        self.assertEqual(updated["frequency"], "every_6h")
-        self.assertEqual(updated["quiet_start"], "22:00")
         self.assertEqual(updated["quiet_end"], "08:05")
         self.assertFalse(updated["crypto_enabled"])
         # persisted
         again = engine.get_preferences(1, conn=conn)
         self.assertEqual(again["quiet_end"], "08:05")
+        conn.close()
+
+    def test_invalid_values_are_refused_not_quietly_dropped(self):
+        """Silently ignoring a bad value and returning 200 tells the client the
+        write succeeded while storing something else -- the user reads it as
+        "my setting didn't stick"."""
+        conn = _fresh_conn()
+        for field, value in (("frequency", "hourly_spam"), ("quiet_start", "25:99"),
+                             ("quiet_end", "noon"), ("enabled", "yes please")):
+            with self.subTest(field=field):
+                with self.assertRaises(engine.InvalidPreference) as caught:
+                    engine.update_preferences(1, {field: value}, conn=conn)
+                self.assertEqual(caught.exception.field, field)
+        conn.close()
+
+    def test_a_refused_write_stores_nothing_at_all(self):
+        """The valid half of a partly-invalid patch must not land: a half-applied
+        write is the one outcome neither side can reason about."""
+        conn = _fresh_conn()
+        engine.update_preferences(1, {"frequency": "daily"}, conn=conn)
+        with self.assertRaises(engine.InvalidPreference):
+            engine.update_preferences(
+                1, {"network_enabled": False, "frequency": "every_minute"}, conn=conn)
+        after = engine.get_preferences(1, conn=conn)
+        self.assertEqual(after["frequency"], "daily")
+        self.assertTrue(after["network_enabled"])
+        conn.close()
+
+    def test_boolean_toggles_accept_real_booleans_and_reject_prose(self):
+        conn = _fresh_conn()
+        self.assertFalse(engine.update_preferences(1, {"crypto_enabled": False}, conn=conn)["crypto_enabled"])
+        self.assertTrue(engine.update_preferences(1, {"crypto_enabled": 1}, conn=conn)["crypto_enabled"])
+        # "false" is a non-empty string: bool() would make it True and silently
+        # re-enable a topic the user just switched off.
+        self.assertFalse(engine.update_preferences(1, {"crypto_enabled": "false"}, conn=conn)["crypto_enabled"])
+        with self.assertRaises(engine.InvalidPreference):
+            engine.update_preferences(1, {"crypto_enabled": "sometimes"}, conn=conn)
         conn.close()
 
     def test_disabled_user_never_evaluated(self):
@@ -688,8 +822,8 @@ class ShadowModeTests(unittest.TestCase):
         cur = conn.cursor()
         cur.execute("""CREATE TABLE users (user_id INTEGER PRIMARY KEY,
             preferred_language TEXT DEFAULT 'en', created_at TEXT, signup_time TEXT)""")
-        cur.execute("""CREATE TABLE push_subscriptions (id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER, is_active INTEGER DEFAULT 1, active INTEGER DEFAULT 1)""")
+        # push_subscriptions now comes from _fresh_conn with the full production
+        # column set, so this suite no longer hand-rolls a narrower copy.
         old = _iso(self.NOW - timedelta(days=30))
         recent = _iso(self.NOW - timedelta(hours=1))
         for uid in user_ids:
@@ -1056,11 +1190,11 @@ class HubBackendTests(unittest.TestCase):
 
     def test_smart_shares_standard_windows_daily_is_morning_only(self):
         self.assertEqual(engine._windows_for_frequency("smart"), engine.BRIEFING_WINDOWS)
-        self.assertEqual(engine._windows_for_frequency("daily"), (6,))
-        key, _ = engine.current_window(datetime(2026, 8, 30, 7, 0), "daily")
-        self.assertEqual(key, "2026-08-30:06")
+        self.assertEqual(engine._windows_for_frequency("daily"), (8,))
+        key, _ = engine.current_window(datetime(2026, 8, 30, 9, 0), "daily")
+        self.assertEqual(key, "2026-08-30:08")
         # Outside the single morning window nothing is claimable for daily.
-        self.assertIsNone(engine.current_window(datetime(2026, 8, 30, 14, 0), "daily"))
+        self.assertIsNone(engine.current_window(datetime(2026, 8, 30, 16, 0), "daily"))
 
     def test_pagination_first_page_20_and_has_more(self):
         conn = _fresh_conn()
@@ -1139,6 +1273,107 @@ class HubBackendTests(unittest.TestCase):
             status = engine.delivery_status(6, conn=conn)
         self.assertIsNone(status["next_check_local"])
         self.assertIsNone(status["last_briefing"])
+        conn.close()
+
+    def test_next_check_never_lands_inside_quiet_hours(self):
+        """The worker suppresses a window that opens during quiet hours, so
+        advertising one as "next check" promises a check that will not run."""
+        conn = _fresh_conn()
+        region_preferences.update_preferences(50, {"time_zone": "UTC"}, conn=conn)
+        conn.commit()
+        # Quiet 00:00-07:00 kills the 00:00 window; 08:00/12:00/18:00 survive.
+        engine.update_preferences(
+            50, {"frequency": "every_6h", "quiet_start": "00:00", "quiet_end": "07:00"}, conn=conn)
+        with mock.patch.dict(os.environ, {"BRIEFINGS_DISABLED": "", "PULSE_BRIEFINGS_ENABLED": "true"}):
+            status = engine.delivery_status(50, conn=conn)
+        self.assertIsNotNone(status["next_check_local"])
+        nxt = datetime.fromisoformat(status["next_check_local"])
+        self.assertFalse(engine._quiet_hours_active(nxt, "00:00", "07:00"),
+                         f"advertised {nxt} but the worker would suppress it")
+        conn.close()
+
+    def test_next_check_still_resolves_when_today_is_fully_quiet(self):
+        """A quiet range covering every remaining window today must roll forward,
+        not report None -- the screen renders None as "Briefings are paused"."""
+        conn = _fresh_conn()
+        region_preferences.update_preferences(51, {"time_zone": "UTC"}, conn=conn)
+        conn.commit()
+        engine.update_preferences(
+            51, {"frequency": "daily", "quiet_start": "07:00", "quiet_end": "09:00"}, conn=conn)
+        with mock.patch.dict(os.environ, {"BRIEFINGS_DISABLED": "", "PULSE_BRIEFINGS_ENABLED": "true"}):
+            status = engine.delivery_status(51, conn=conn)
+        # The only daily window (08:00 + jitter) is always quiet -> honestly None.
+        self.assertIsNone(status["next_check_local"])
+        conn.close()
+
+    def _register_device(self, conn, user_id: int, *, active: int = 1) -> None:
+        conn.execute(
+            "INSERT INTO push_subscriptions (user_id, endpoint, subscription_json, active, is_active) "
+            "VALUES (?,?,?,?,?)",
+            (user_id, "ExponentPushToken[u%d]" % user_id, "{}", active, active),
+        )
+        conn.commit()
+
+    def _status(self, conn, user_id: int) -> dict:
+        with mock.patch.dict(os.environ, {"BRIEFINGS_DISABLED": "", "PULSE_BRIEFINGS_ENABLED": "true",
+                                          "PUSH_NOTIFICATIONS_ENABLED": "true"}):
+            return engine.delivery_status(user_id, conn=conn)
+
+    def test_push_is_not_reported_ready_without_a_registered_device(self):
+        """The hub used to read the preference row and say "Push notifications
+        are on" to a user who had never granted the OS prompt -- so they waited
+        for a notification the sender could never deliver."""
+        conn = _fresh_conn()
+        status = self._status(conn, 40)
+        self.assertTrue(status["push_enabled"])      # preference: not opted out
+        self.assertFalse(status["push_ready"])       # reality: nowhere to send
+        self.assertEqual(status["push_blocked_reason"], "no_devices")
+        self.assertEqual(status["push_device_count"], 0)
+        conn.close()
+
+    def test_push_is_ready_once_a_device_is_registered(self):
+        conn = _fresh_conn()
+        self._register_device(conn, 41)
+        status = self._status(conn, 41)
+        self.assertTrue(status["push_ready"])
+        self.assertIsNone(status["push_blocked_reason"])
+        self.assertEqual(status["push_device_count"], 1)
+        conn.close()
+
+    def test_an_inactive_device_row_does_not_count_as_transport(self):
+        """Same predicate send_push uses; a signed-out device must not read as
+        reachable."""
+        conn = _fresh_conn()
+        self._register_device(conn, 42, active=0)
+        status = self._status(conn, 42)
+        self.assertFalse(status["push_ready"])
+        self.assertEqual(status["push_blocked_reason"], "no_devices")
+        conn.close()
+
+    def test_global_opt_out_outranks_a_registered_device(self):
+        conn = _fresh_conn()
+        self._register_device(conn, 43)
+        conn.execute(
+            "INSERT INTO notification_preferences (user_id, category, enable_push_notifications) "
+            "VALUES (43,'global',0)"
+        )
+        conn.commit()
+        status = self._status(conn, 43)
+        self.assertFalse(status["push_enabled"])
+        self.assertFalse(status["push_ready"])
+        self.assertEqual(status["push_blocked_reason"], "preference_off")
+        conn.close()
+
+    def test_provider_kill_switch_is_reported_over_everything_else(self):
+        """PUSH_NOTIFICATIONS_ENABLED=false makes send_push return before it
+        looks at tokens, so the status must lead with that."""
+        conn = _fresh_conn()
+        self._register_device(conn, 44)
+        with mock.patch.dict(os.environ, {"BRIEFINGS_DISABLED": "", "PULSE_BRIEFINGS_ENABLED": "true",
+                                          "PUSH_NOTIFICATIONS_ENABLED": "false"}):
+            status = engine.delivery_status(44, conn=conn)
+        self.assertFalse(status["push_ready"])
+        self.assertEqual(status["push_blocked_reason"], "provider_disabled")
         conn.close()
 
     def test_last_seen_column_upgrade_is_idempotent(self):

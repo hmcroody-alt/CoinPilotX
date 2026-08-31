@@ -37862,7 +37862,20 @@ def api_pulse_briefing_preferences():
     from services import pulse_briefings as briefing_service
     if request.method == "PATCH":
         payload = request.get_json(silent=True) or {}
-        prefs = briefing_service.update_preferences(user["user_id"], payload.get("preferences") or payload)
+        try:
+            prefs = briefing_service.update_preferences(user["user_id"], payload.get("preferences") or payload)
+        except briefing_service.InvalidPreference as exc:
+            # Stage 25: an unusable value is a client bug, and answering 200 with
+            # the unchanged preferences hides it until the user notices their
+            # setting never stuck. Name the field so the client can point at it.
+            response = jsonify({
+                "ok": False,
+                "message": str(exc),
+                "field": exc.field,
+                "expected": exc.expected,
+            })
+            response.headers["Cache-Control"] = "no-store, max-age=0"
+            return response, 400
     else:
         prefs = briefing_service.get_preferences(user["user_id"])
     response = jsonify({"ok": True, "preferences": prefs})

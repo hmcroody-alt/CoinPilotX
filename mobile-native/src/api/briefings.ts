@@ -102,7 +102,17 @@ export type BriefingDeliveryStatus = {
   quiet_end: string;
   /** IANA zone the server schedules against — shown, never silently UTC. */
   timezone: string;
+  /** The user's push PREFERENCE (global opt-out). Not proof of delivery. */
   push_enabled: boolean;
+  /**
+   * Whether a briefing push can actually reach a device right now. Optional:
+   * a client can outlive the backend that introduced it, and guessing a value
+   * for an absent field is how the screen started lying in the first place.
+   */
+  push_ready?: boolean;
+  /** Why push cannot arrive, when push_ready is false. */
+  push_blocked_reason?: "provider_disabled" | "preference_off" | "no_devices" | null;
+  push_device_count?: number;
   briefings_feature_enabled: boolean;
   last_briefing: {
     id: number;

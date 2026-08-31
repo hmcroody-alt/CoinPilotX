@@ -2781,7 +2781,9 @@
       "quiet": "Lè trankil: {{start}} – {{end}}",
       "timezone": "Zòn lè: {{zone}}",
       "pushOn": "Notifikasyon push yo aktive.",
-      "pushOff": "Notifikasyon push yo dezaktive — rezime yo parèt isit la sèlman."
+      "pushOff": "Notifikasyon push yo dezaktive — rezime yo parèt isit la sèlman.",
+      "pushNoDevice": "Push pa konfigire sou aparèy sa a — rezime yo parèt isit la sèlman.",
+      "pushPaused": "Livrezon push la an poz — rezime yo parèt isit la sèlman."
     },
     "settings": {
       "master": "Pulse Briefings",

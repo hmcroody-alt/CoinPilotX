@@ -46,6 +46,31 @@ type Props = NativeStackScreenProps<RootStackParamList, "BriefingsHub">;
 /** "off" is the master switch, not a cadence — the picker never offers it. */
 const FREQUENCY_CHOICES: BriefingFrequency[] = ["smart", "every_6h", "morning_evening", "daily", "important_only"];
 
+/**
+ * Which push line to show. "Briefings enabled" and "a push can reach you" are
+ * different facts: this screen used to read the preference flag and tell a user
+ * with no registered device that push was on, so they waited for a notification
+ * the server could never send. push_ready is the server's answer to "would a
+ * send succeed right now"; push_blocked_reason says why not.
+ *
+ * push_ready is optional at runtime because an older backend won't return it —
+ * in that case fall back to the preference flag rather than claiming a state.
+ */
+export function pushStatusKey(status: BriefingDeliveryStatus): string {
+  if (status.push_ready === undefined) {
+    return status.push_enabled ? "briefings:status.pushOn" : "briefings:status.pushOff";
+  }
+  if (status.push_ready) return "briefings:status.pushOn";
+  switch (status.push_blocked_reason) {
+    case "no_devices":
+      return "briefings:status.pushNoDevice";
+    case "provider_disabled":
+      return "briefings:status.pushPaused";
+    default:
+      return "briefings:status.pushOff";
+  }
+}
+
 /** Defensive timestamp formatter: never throws, never invents a value. */
 function formatWhen(value?: string | null): string {
   if (!value) return "";
@@ -266,9 +291,7 @@ export function BriefingsHubScreen({ navigation }: Props) {
                 {t("briefings:status.quiet", { start: status.quiet_start, end: status.quiet_end })}
               </Text>
               <Text style={styles.muted}>{t("briefings:status.timezone", { zone: status.timezone })}</Text>
-              <Text style={styles.muted}>
-                {status.push_enabled ? t("briefings:status.pushOn") : t("briefings:status.pushOff")}
-              </Text>
+              <Text style={styles.muted}>{t(pushStatusKey(status))}</Text>
             </View>
           </Panel>
         </>
