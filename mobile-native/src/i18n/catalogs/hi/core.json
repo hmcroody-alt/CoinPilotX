@@ -204,7 +204,9 @@
       "presence": "उपस्थिति",
       "cryptoAlertCenter": "क्रिप्टो अलर्ट",
       "cryptoAlertHistory": "अलर्ट इतिहास",
-      "cryptoPortfolio": "क्रिप्टो पोर्टफोलियो"
+      "cryptoPortfolio": "क्रिप्टो पोर्टफोलियो",
+      "briefingsHub": "Pulse Briefings",
+      "briefing": "ब्रीफ़िंग"
     },
     "navSubtitles": {
       "missionControl": "मिशन कंट्रोल",

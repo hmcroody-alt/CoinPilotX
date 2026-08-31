@@ -26,6 +26,7 @@ export type ProfileModuleKey =
   | "pulse_dna"
   | "achievements"
   | "activity"
+  | "briefings"
   | "collections"
   | "communities"
   | "marketplace"
@@ -88,6 +89,9 @@ const MODULES: ModuleDef[] = [
   { key: "pulse_dna", label: "Pulse DNA", icon: "pulse-outline" },
   { key: "achievements", label: "Achievements", icon: "trophy-outline" },
   { key: "activity", label: "Activity", icon: "flash-outline" },
+  // Telescope, not a bell: this tile is the owner's intelligence digest
+  // (network + market observation), not another notification inbox.
+  { key: "briefings", label: "Briefings", icon: "telescope-outline" },
   { key: "collections", label: "Collections", icon: "albums-outline" },
   { key: "communities", label: "Communities", icon: "people-outline" },
   { key: "marketplace", label: "Marketplace", icon: "storefront-outline" },

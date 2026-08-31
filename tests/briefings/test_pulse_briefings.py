@@ -1031,5 +1031,132 @@ class PostgresCompatTests(unittest.TestCase):
         conn.close()
 
 
+class HubBackendTests(unittest.TestCase):
+    """Profile OS Briefings Hub backend: new frequencies, pagination, seen
+    cursor, delivery status. All owner-scoped; history is sent/generated only."""
+
+    def _seed_briefings(self, conn, user_id: int, count: int, status: str = "sent"):
+        cur = conn.cursor()
+        for i in range(count):
+            cur.execute(
+                "INSERT INTO pulse_briefings (user_id, window_key, status, title, body, created_at) "
+                "VALUES (?,?,?,?,?,?)",
+                (user_id, f"{status}-2026-08-{(i % 28) + 1:02d}:{(i * 6) % 24:02d}", status,
+                 f"Briefing {i}", "body", _iso(datetime(2026, 8, 1, tzinfo=timezone.utc) + timedelta(hours=i))),
+            )
+        conn.commit()
+
+    def test_new_frequencies_accepted_and_persisted(self):
+        conn = _fresh_conn()
+        for freq in ("smart", "daily"):
+            updated = engine.update_preferences(1, {"frequency": freq}, conn=conn)
+            self.assertEqual(updated["frequency"], freq)
+            self.assertEqual(engine.get_preferences(1, conn=conn)["frequency"], freq)
+        conn.close()
+
+    def test_smart_shares_standard_windows_daily_is_morning_only(self):
+        self.assertEqual(engine._windows_for_frequency("smart"), engine.BRIEFING_WINDOWS)
+        self.assertEqual(engine._windows_for_frequency("daily"), (6,))
+        key, _ = engine.current_window(datetime(2026, 8, 30, 7, 0), "daily")
+        self.assertEqual(key, "2026-08-30:06")
+        # Outside the single morning window nothing is claimable for daily.
+        self.assertIsNone(engine.current_window(datetime(2026, 8, 30, 14, 0), "daily"))
+
+    def test_pagination_first_page_20_and_has_more(self):
+        conn = _fresh_conn()
+        self._seed_briefings(conn, 1, 25)
+        page = engine.list_briefings_page(1, 20, 0, conn=conn)
+        self.assertEqual(len(page["briefings"]), 20)
+        self.assertTrue(page["has_more"])
+        self.assertEqual(page["next_offset"], 20)
+        # Newest first, no overlap between pages.
+        page2 = engine.list_briefings_page(1, 20, page["next_offset"], conn=conn)
+        self.assertEqual(len(page2["briefings"]), 5)
+        self.assertFalse(page2["has_more"])
+        self.assertIsNone(page2["next_offset"])
+        ids = [b["id"] for b in page["briefings"]] + [b["id"] for b in page2["briefings"]]
+        self.assertEqual(ids, sorted(ids, reverse=True))
+        conn.close()
+
+    def test_history_excludes_invisible_statuses(self):
+        conn = _fresh_conn()
+        for status in ("shadow", "failed", "suppressed", "processing"):
+            self._seed_briefings(conn, 2, 1, status=status)
+        page = engine.list_briefings_page(2, 20, 0, conn=conn)
+        self.assertEqual(page["briefings"], [])
+        self.assertFalse(page["has_more"])
+        conn.close()
+
+    def test_seen_cursor_and_unseen_count(self):
+        conn = _fresh_conn()
+        self._seed_briefings(conn, 3, 3)
+        # Never opened the hub: all visible briefings are unseen.
+        self.assertEqual(engine.unseen_briefings_count(3, conn=conn), 3)
+        engine.mark_briefings_seen(3, conn=conn)
+        self.assertEqual(engine.unseen_briefings_count(3, conn=conn), 0)
+        # A briefing created after the cursor becomes unseen again.
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO pulse_briefings (user_id, window_key, status, title, created_at) VALUES (?,?,?,?,?)",
+            (3, "2026-09-01:06", "sent", "Newer", _iso(datetime(2027, 1, 1, tzinfo=timezone.utc))),
+        )
+        conn.commit()
+        self.assertEqual(engine.unseen_briefings_count(3, conn=conn), 1)
+        conn.close()
+
+    def test_mark_seen_upserts_without_touching_other_prefs(self):
+        conn = _fresh_conn()
+        engine.update_preferences(4, {"frequency": "daily", "crypto_enabled": False}, conn=conn)
+        engine.mark_briefings_seen(4, conn=conn)
+        prefs = engine.get_preferences(4, conn=conn)
+        self.assertEqual(prefs["frequency"], "daily")
+        self.assertFalse(prefs["crypto_enabled"])
+        conn.close()
+
+    def test_delivery_status_shape_and_next_check(self):
+        conn = _fresh_conn()
+        region_preferences.update_preferences(5, {"time_zone": "America/New_York"}, conn=conn)
+        conn.commit()
+        self._seed_briefings(conn, 5, 1)
+        with mock.patch.dict(os.environ, {"BRIEFINGS_DISABLED": "", "PULSE_BRIEFINGS_ENABLED": "true"}):
+            status = engine.delivery_status(5, conn=conn)
+        self.assertTrue(status["enabled"])
+        self.assertEqual(status["timezone"], "America/New_York")
+        self.assertIn(status["frequency"], engine.FREQUENCIES)
+        self.assertTrue(status["push_enabled"])  # no opt-out row -> fails open
+        self.assertEqual(status["last_briefing"]["title"], "Briefing 0")
+        self.assertEqual(status["unseen_count"], 1)
+        # next check is a future local timestamp, jitter included, never a promise
+        self.assertIsNotNone(status["next_check_local"])
+        nxt = datetime.fromisoformat(status["next_check_local"])
+        self.assertGreater(nxt, datetime.now(nxt.tzinfo))
+        conn.close()
+
+    def test_delivery_status_off_frequency_has_no_next_check(self):
+        conn = _fresh_conn()
+        engine.update_preferences(6, {"frequency": "off"}, conn=conn)
+        with mock.patch.dict(os.environ, {"BRIEFINGS_DISABLED": "", "PULSE_BRIEFINGS_ENABLED": "true"}):
+            status = engine.delivery_status(6, conn=conn)
+        self.assertIsNone(status["next_check_local"])
+        self.assertIsNone(status["last_briefing"])
+        conn.close()
+
+    def test_last_seen_column_upgrade_is_idempotent(self):
+        # ensure_schema runs its ALTER on every call; a second pass must not
+        # raise and must leave the column usable.
+        conn = _fresh_conn()
+        engine.ensure_schema(conn)
+        engine.ensure_schema(conn)
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(pulse_briefing_prefs)").fetchall()}
+        self.assertIn("last_seen_at", cols)
+        conn.close()
+
+    def test_scheduler_sql_still_excludes_only_off(self):
+        # smart/daily users must remain eligible for the cycle query.
+        import inspect
+        source = inspect.getsource(engine.run_scheduled_cycle)
+        self.assertIn("<>'off'", source.replace('"', "'"))
+
+
 if __name__ == "__main__":
     unittest.main()

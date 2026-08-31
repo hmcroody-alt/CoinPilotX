@@ -204,7 +204,9 @@
       "presence": "プレゼンス",
       "cryptoAlertCenter": "暗号資産アラート",
       "cryptoAlertHistory": "アラート履歴",
-      "cryptoPortfolio": "暗号資産ポートフォリオ"
+      "cryptoPortfolio": "暗号資産ポートフォリオ",
+      "briefingsHub": "Pulseブリーフィング",
+      "briefing": "ブリーフィング"
     },
     "navSubtitles": {
       "missionControl": "管制センター",

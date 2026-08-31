@@ -204,7 +204,9 @@
       "presence": "Présence",
       "cryptoAlertCenter": "Alertes crypto",
       "cryptoAlertHistory": "Historique des alertes",
-      "cryptoPortfolio": "Portefeuille crypto"
+      "cryptoPortfolio": "Portefeuille crypto",
+      "briefingsHub": "Pulse Briefings",
+      "briefing": "Briefing"
     },
     "navSubtitles": {
       "missionControl": "Centre de pilotage",

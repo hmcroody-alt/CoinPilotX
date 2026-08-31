@@ -101,7 +101,10 @@ describe("navigator header titles", () => {
     // 133 + 1: `BusinessOsSection`, the Business OS section landing page. Its
     // title is `route.params.title || t("common:screens.businessOs")` — a
     // titled route, so it counts.
-    expect(TITLE_OPTIONS.length).toBe(134);
+    //
+    // 134 + 2: the Pulse Briefings pair — `BriefingsHub` and `BriefingDetail`,
+    // both titled via `route.params?.title || t("common:screens....")`.
+    expect(TITLE_OPTIONS.length).toBe(136);
   });
 
   it("has no hardcoded string literal titles", () => {

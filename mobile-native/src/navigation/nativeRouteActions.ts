@@ -86,6 +86,7 @@ export function nativeObjectDestination(routePath: string): NativeObjectDestinat
   const listingMatch = path.match(/^\/pulse\/marketplace\/([1-9]\d*)\/?$/);
   const messageMatch = path.match(/^\/pulse\/messages\/([1-9]\d*)\/?$/);
   const notificationMatch = path.match(/^\/pulse\/notifications\/([1-9]\d*)\/?$/);
+  const briefingMatch = path.match(/^\/pulse\/briefings\/([1-9]\d*)\/?$/);
   const eventMatch = path.match(/^\/pulse\/events\/([1-9]\d*)\/?$/);
   const storeMatch = path.match(/^\/pulse\/(?:stores?|business(?:es)?)\/([^/]+)\/?$/);
   const adMatch = path.match(/^\/pulse\/(?:ads?|advertisements?)\/([1-9]\d*)\/?$/);
@@ -99,6 +100,7 @@ export function nativeObjectDestination(routePath: string): NativeObjectDestinat
   if (listingMatch) return { screen: "MarketplaceDetail", params: { listingId: positiveId(listingMatch[1]), title: "Marketplace" } };
   if (messageMatch) return { screen: "Chat", params: { conversationId: positiveId(messageMatch[1]), title: "Conversation" } };
   if (notificationMatch) return { screen: "NotificationCenter", params: { notificationId: positiveId(notificationMatch[1]) } };
+  if (briefingMatch) return { screen: "BriefingDetail", params: { briefingId: positiveId(briefingMatch[1]) } };
   if (eventMatch) return { screen: "EventDetail", params: { eventId: positiveId(eventMatch[1]), title: "Event" } };
   if (storeMatch) return { screen: "MerchantProfile", params: { sellerId: safeDecode(storeMatch[1]), title: "Business" } };
   if (adMatch) return { screen: "GrowthCenter", params: { contentType: "advertisement", contentId: positiveId(adMatch[1]), title: "Advertisement" } };
@@ -135,7 +137,12 @@ export function openNativeRoute(navigation: NativeRouteNavigation, routePath: st
   else if (path === "/pulse/search") navigation.navigate("Tabs", { screen: "Search", params: { query: query.get("q") || query.get("query") || undefined } });
   else if (path === "/search") navigation.navigate("Search", { query: query.get("q") || query.get("query") || undefined, title: "Search" });
   else if (path === "/pulse/activity") navigation.navigate("ActivityInbox", { title: "Activity Inbox", category: activityRouteCategory(query.get("category")) });
+  // Briefing push deeplinks are `pulse://notifications?briefing=<id>` — the
+  // canonical id routes straight to that briefing's detail. Without the query
+  // param, `/pulse/notifications` keeps its existing NotificationCenter meaning.
+  else if (path === "/pulse/notifications" && positiveId(query.get("briefing") || undefined)) navigation.navigate("BriefingDetail", { briefingId: positiveId(query.get("briefing") || undefined) as number });
   else if (path === "/pulse/notifications") navigation.navigate("NotificationCenter");
+  else if (path === "/pulse/briefings") navigation.navigate("BriefingsHub");
   else if (path === "/pulse/messages/new") navigation.navigate("NewChat", { initialQuery: query.get("q") || undefined, targetUserId: positiveId(query.get("user") || undefined) || undefined });
   else if (path === "/pulse/messages") navigation.navigate("Tabs", { screen: "Messenger" });
   else if (path === "/pulse/profile") navigation.navigate("Tabs", { screen: "Profile" });

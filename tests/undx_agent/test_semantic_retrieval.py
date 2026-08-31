@@ -285,6 +285,75 @@ class SecretAndContentHygiene(unittest.TestCase):
         self.assertEqual(private & indexed, set())
 
 
+def _load_manifest_generator():
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[2] / "scripts/generate_pulsesoc_platform_manifest.py"
+    spec = importlib.util.spec_from_file_location("_manifest_generator", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class CanonicalDocumentIdentity(unittest.TestCase):
+    """``doc_id`` is the index primary key, so a repeat is a lost row, not a dup row.
+
+    ``index_documents`` deletes by ``doc_id`` before inserting. A corpus with a repeated
+    id therefore stores fewer rows than it reports writing — the first live run wrote
+    1,673 documents into an index that held 1,667 — and nothing in the write path
+    notices, because it counts what it sent rather than what survived.
+    """
+
+    def test_every_canonical_document_has_a_unique_id(self):
+        ids = [document.doc_id for document in semantic.canonical_documents()]
+        duplicates = sorted({key for key in ids if ids.count(key) > 1})
+        self.assertEqual(duplicates, [], "duplicate doc_id would silently overwrite")
+        self.assertEqual(len(ids), len(set(ids)))
+
+    def test_identical_repeats_collapse_to_one_document(self):
+        document = semantic.IndexDocument(
+            doc_id="dup", title="t", body="b", content_class="canonical_public")
+        self.assertEqual(len(semantic._resolve_duplicate_ids([document, document])), 1)
+
+    def test_conflicting_repeats_raise_rather_than_overwrite(self):
+        first = semantic.IndexDocument(
+            doc_id="dup", title="t", body="one", content_class="canonical_public")
+        second = semantic.IndexDocument(
+            doc_id="dup", title="t", body="two", content_class="canonical_public")
+        with self.assertRaises(semantic.DuplicateDocumentId):
+            semantic._resolve_duplicate_ids([first, second])
+
+    def test_manifest_generator_disambiguates_routes_sharing_a_path(self):
+        # Two Flask handlers may be registered on one method+path; Werkzeug serves the
+        # first and the rest are dead code, but both are real records in the inventory
+        # and must not overwrite each other on the way into the index.
+        entries = [
+            {"id": "server_route:bot.py:POST /x", "kind": "server_route",
+             "name": "POST /x", "source": "bot.py", "handler": "first"},
+            {"id": "server_route:bot.py:POST /x", "kind": "server_route",
+             "name": "POST /x", "source": "bot.py", "handler": "second"},
+        ]
+        resolved = _load_manifest_generator()._dedupe_and_disambiguate(entries)
+        self.assertEqual(len(resolved), 2)
+        self.assertEqual(len({entry["id"] for entry in resolved}), 2)
+        self.assertTrue(all("#" in entry["id"] for entry in resolved))
+
+    def test_manifest_generator_collapses_byte_identical_repeats(self):
+        # One navigable surface declared as both a tab and a stack screen is one record
+        # seen twice, not two records. Indexing it twice would dilute the corpus.
+        entry = {"id": "native_surface:nav.tsx:Reels", "kind": "native_surface",
+                 "name": "Reels", "source": "nav.tsx", "component": "ReelsScreen"}
+        resolved = _load_manifest_generator()._dedupe_and_disambiguate([dict(entry), dict(entry)])
+        self.assertEqual(len(resolved), 1)
+        self.assertEqual(resolved[0]["id"], "native_surface:nav.tsx:Reels")
+
+    def test_checked_in_manifest_carries_no_duplicate_ids(self):
+        ids = [str(item.get("id")) for item in (lexical.load_manifest().get("entries") or [])
+               if isinstance(item, dict)]
+        duplicates = sorted({key for key in ids if ids.count(key) > 1})
+        self.assertEqual(duplicates, [])
+
+
 class CacheIdentity(unittest.TestCase):
     def test_cache_key_is_deterministic(self):
         args = dict(model="pplx-embed-v1-0.6b", model_version="1", dimensions=256)
@@ -343,8 +412,63 @@ class _IndexedCase:
         return False
 
 
+#: The query the serving-path tests probe with.
+_FIXTURE_PROBE_QUERY = "marketplace orders"
+
+
+def _cosine(left, right) -> float:
+    dot = sum(a * b for a, b in zip(left, right))
+    left_norm = sum(a * a for a in left) ** 0.5
+    right_norm = sum(b * b for b in right) ** 0.5
+    return dot / (left_norm * right_norm) if left_norm and right_norm else 0.0
+
+
 def _sample_documents(count: int = 40):
-    return semantic.canonical_documents()[:count]
+    """A deterministic slice of the real corpus that the probe query can actually retrieve.
+
+    This used to be ``canonical_documents()[:count]``, which coupled every serving-path
+    test to the corpus's sort order. Documents sort by kind then name, so the first forty
+    were whatever happened to sort first, and whether any of them cleared the similarity
+    floor for ``marketplace orders`` was luck. The luck ran out when the manifest grew from
+    1,726 entries to 2,220: the head of the list moved to ``account_*`` tables, no sample
+    document cleared the floor, ``semantic_candidates`` correctly returned nothing,
+    retrieval correctly fell back to lexical, and three tests read that correct behaviour
+    as a fusion regression.
+
+    Picking documents by *word* overlap would not fix it either, because the embedder in
+    these tests is a SHA-256 pseudo-embedder: its geometry has nothing to do with meaning,
+    so the only documents guaranteed to be retrievable are the ones that score highest
+    under that same function. Selecting them here is what makes the fixture independent of
+    both corpus size and corpus ordering -- and it is honest about what the fake embedder
+    is for, which is exercising plumbing, never relevance.
+
+    The text hashed here must be the text the provider is actually handed, which is
+    ``normalize_text(...)``, not the raw ``embed_text()``. Every one of the 2,154 canonical
+    documents differs from its normalised form, so ranking on the raw string ranks by a
+    vector the pipeline never computes: of the forty documents that selection picked, two
+    cleared the floor rather than twenty-three, and the suite passed on those two by
+    accident. The closing assertion is what keeps this honest -- a future corpus or
+    embedding change that leaves nothing above the floor now fails here, loudly and in one
+    place, instead of surfacing three files away as a phantom fusion regression.
+    """
+    dimensions = int(BASE_ENV["UNDX_EMBEDDING_DIMENSIONS"])
+    probe = _deterministic_vector(embed.normalize_text(_FIXTURE_PROBE_QUERY), dimensions)
+
+    def similarity(document) -> float:
+        prepared = embed.normalize_text(document.embed_text())
+        return _cosine(probe, _deterministic_vector(prepared, dimensions))
+
+    documents = semantic.canonical_documents()
+    ranked = sorted(documents, key=lambda document: (-similarity(document), document.doc_id))
+    sample = ranked[:count]
+    floor = semantic.similarity_floor()
+    assert sample and similarity(sample[0]) >= floor, (
+        "no canonical document clears the similarity floor "
+        f"({similarity(sample[0]) if sample else 0.0:.4f} < {floor}); the serving-path "
+        "tests below would fall back to lexical and report a fusion regression that is "
+        "really a fixture failure"
+    )
+    return sample
 
 
 class CacheEconomics(unittest.TestCase):
@@ -356,6 +480,178 @@ class CacheEconomics(unittest.TestCase):
         self.assertGreater(first.embedded, 0)
         self.assertEqual(second.embedded, 0, "unchanged canonical material must not be re-paid for")
         self.assertEqual(second.cached, len(documents))
+
+
+class OrphanedRowPruning(unittest.TestCase):
+    """A record whose ``doc_id`` changes leaves its old row behind, still retrievable.
+
+    ``index_documents`` deletes only the id it is about to write. Disambiguating a
+    collision changes an id by definition, so without a prune the pre-fix row survives in
+    the vector index describing a capability under a key nothing regenerates. It is not
+    inert — it is still a candidate the retriever can return.
+    """
+
+    def _stored_ids(self, case) -> set[str]:
+        conn = case._connection_factory()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT doc_id FROM undx_semantic_index WHERE corpus = ?",
+                (semantic.CANONICAL_CORPUS,),
+            )
+            return {str(row[0]) for row in (cursor.fetchall() or [])}
+        finally:
+            conn.close()
+
+    def test_prune_removes_rows_the_corpus_no_longer_declares(self):
+        with _IndexedCase() as case:
+            documents = _sample_documents(12)
+            case.index(documents)
+            self.assertEqual(len(self._stored_ids(case)), len(documents))
+
+            survivors = documents[:-3]
+            dropped = {document.doc_id for document in documents[-3:]}
+            removed = semantic.prune_missing_documents(
+                survivors, conn=case._connection_factory()
+            )
+
+            self.assertEqual(set(removed), dropped)
+            stored = self._stored_ids(case)
+            self.assertEqual(stored, {document.doc_id for document in survivors})
+            self.assertFalse(stored & dropped, "an orphan row is still a live candidate")
+
+    def test_prune_is_a_no_op_when_every_stored_row_is_still_declared(self):
+        with _IndexedCase() as case:
+            documents = _sample_documents(12)
+            case.index(documents)
+            removed = semantic.prune_missing_documents(
+                documents, conn=case._connection_factory()
+            )
+        self.assertEqual(removed, [], "a clean corpus must not delete anything")
+
+    def test_prune_refuses_an_empty_corpus_rather_than_emptying_the_index(self):
+        # The dangerous call is the accidental one: an upstream failure that yields zero
+        # documents must not read as an instruction to wipe every indexed row.
+        with _IndexedCase() as case:
+            documents = _sample_documents(8)
+            case.index(documents)
+            with self.assertRaises(ValueError):
+                semantic.prune_missing_documents([], conn=case._connection_factory())
+            self.assertEqual(len(self._stored_ids(case)), len(documents))
+
+    def test_prune_leaves_other_corpora_untouched(self):
+        # Prune is scoped by corpus; a shared table must not lose another corpus's rows.
+        with _IndexedCase() as case:
+            documents = _sample_documents(6)
+            case.index(documents)
+            conn = case._connection_factory()
+            try:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "UPDATE undx_semantic_index SET corpus = ? WHERE doc_id = ?",
+                    ("some_other_corpus", documents[0].doc_id),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            semantic.prune_missing_documents(
+                documents[1:], conn=case._connection_factory()
+            )
+
+            conn = case._connection_factory()
+            try:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT COUNT(*) FROM undx_semantic_index WHERE corpus = ?",
+                    ("some_other_corpus",),
+                )
+                foreign = int(cursor.fetchone()[0])
+            finally:
+                conn.close()
+        self.assertEqual(foreign, 1)
+
+
+def _load_paced_indexer():
+    import importlib.util  # noqa: PLC0415 - a script, not an importable package member
+
+    path = Path(__file__).resolve().parents[2] / "scripts/undx_paced_canonical_index.py"
+    spec = importlib.util.spec_from_file_location("_paced_canonical_index", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class PruneGating(unittest.TestCase):
+    """The bulk indexer may only prune after a run that saw the whole corpus.
+
+    Pruning is the one step in the indexer that deletes. A run that aborted or lost
+    chunks cannot tell "this id was removed from the corpus" apart from "this id failed
+    to write this time", and acting on that confusion would turn a provider outage into
+    real data loss.
+    """
+
+    def setUp(self):
+        self.paced = _load_paced_indexer()
+
+    def _run(self, *, chunk_results, documents):
+        calls: list = []
+
+        def fake_index(chunk):
+            calls.append(list(chunk))
+            return chunk_results.pop(0)
+
+        pruned_with: list = []
+
+        def fake_prune(docs):
+            pruned_with.append(list(docs))
+            return ["orphan:one"]
+
+        with patch.object(self.paced.semantic, "canonical_documents", lambda: documents), \
+             patch.object(self.paced.semantic, "index_documents", fake_index), \
+             patch.object(self.paced.semantic, "prune_missing_documents", fake_prune), \
+             patch.object(self.paced.semantic, "invalidate_cache", lambda: None), \
+             patch.object(self.paced.semantic, "index_status", lambda: {"loaded": True}), \
+             patch.object(self.paced, "PACE_SECONDS", 0.0), \
+             patch.object(self.paced, "CHUNK_SIZE", 2), \
+             patch.object(self.paced, "BACKOFF_SECONDS", []):
+            result = self.paced.run_paced_index()
+        return result, pruned_with
+
+    @staticmethod
+    def _ok(count):
+        return type("R", (), {"ok": True, "documents": count, "embedded": count,
+                              "cached": 0, "tokens": count, "notes": []})()
+
+    @staticmethod
+    def _fail():
+        return type("R", (), {"ok": False, "documents": 0, "embedded": 0,
+                              "cached": 0, "tokens": 0, "notes": ["refused"]})()
+
+    def test_complete_run_prunes_against_the_whole_corpus(self):
+        documents = semantic.canonical_documents()[:4]
+        result, pruned_with = self._run(
+            chunk_results=[self._ok(2), self._ok(2)], documents=documents
+        )
+        self.assertEqual(result["documents_failed"], 0)
+        self.assertEqual(len(pruned_with), 1, "a clean run must prune exactly once")
+        self.assertEqual(
+            [doc.doc_id for doc in pruned_with[0]],
+            [doc.doc_id for doc in documents],
+            "prune must see the whole corpus, never the chunk that just landed",
+        )
+        self.assertEqual(result["orphans_pruned"], 1)
+        self.assertEqual(result["prune_skipped"], "")
+
+    def test_run_with_a_failed_chunk_does_not_prune(self):
+        documents = semantic.canonical_documents()[:4]
+        result, pruned_with = self._run(
+            chunk_results=[self._ok(2), self._fail()], documents=documents
+        )
+        self.assertEqual(result["documents_failed"], 2)
+        self.assertEqual(pruned_with, [], "an incomplete run must never delete rows")
+        self.assertEqual(result["orphans_pruned"], 0)
+        self.assertTrue(result["prune_skipped"])
 
 
 class FallbackLadder(unittest.TestCase):

@@ -2756,5 +2756,102 @@
       "paused": "Paused",
       "unknown": "Unavailable"
     }
+  },
+  "briefings": {
+    "tile": {
+      "status": {
+        "new": "NEW"
+      },
+      "hint": "Opens your Pulse Briefings hub.",
+      "a11y": {
+        "new": "Briefings. New briefing available.",
+        "none": "Briefings. Your network and market digest."
+      }
+    },
+    "hub": {
+      "title": "Pulse Briefings",
+      "subtitle": "Your network and market activity, summarized from real data.",
+      "loading": "Loading…",
+      "openHint": "Opens the full briefing.",
+      "offlineNotice": "Offline — showing your last saved briefings.",
+      "saveError": "Couldn't save that change. Your settings are unchanged.",
+      "loadError": "Couldn't load briefings. Check your connection and try again.",
+      "retry": "Try again",
+      "loadMore": "Load more",
+      "latestTitle": "Latest briefing",
+      "statusTitle": "Delivery",
+      "settingsTitle": "Briefing settings",
+      "topicsTitle": "Topics",
+      "historyTitle": "History",
+      "empty": {
+        "title": "No briefings yet",
+        "body": "Your first briefing will arrive after the next check, once there's something worth telling you."
+      }
+    },
+    "status": {
+      "nextCheck": "Next check around {{time}}",
+      "nextCheckNone": "Briefings are paused.",
+      "quiet": "Quiet hours: {{start}} – {{end}}",
+      "timezone": "Timezone: {{zone}}",
+      "pushOn": "Push notifications are on.",
+      "pushOff": "Push notifications are off — briefings appear here only."
+    },
+    "settings": {
+      "master": "Pulse Briefings",
+      "masterHint": "Turn periodic briefings on or off for your account.",
+      "frequency": "Frequency",
+      "frequencyNote": "A check is a chance to receive a briefing — you're only notified when there's something significant.",
+      "quiet": "Quiet hours",
+      "quietFrom": "From",
+      "quietUntil": "Until",
+      "quietNote": "No briefings during these hours, in your local timezone.",
+      "earlier": "One hour earlier",
+      "later": "One hour later"
+    },
+    "frequency": {
+      "smart": "Smart",
+      "recommended": "Recommended",
+      "every_6h": "About every 6 hours",
+      "morning_evening": "Morning and evening",
+      "daily": "Once a day",
+      "important_only": "Important only"
+    },
+    "topics": {
+      "network": "Your network",
+      "networkHint": "Messages, followers, mentions and orders — counts only.",
+      "crypto": "Crypto market",
+      "cryptoHint": "BTC, ETH and overall market moves.",
+      "watchlist": "Your watchlist",
+      "watchlistHint": "Coins you follow and price-alert proximity."
+    },
+    "detail": {
+      "loadError": "Couldn't load this briefing.",
+      "networkTitle": "Your network",
+      "cryptoTitle": "Crypto market",
+      "watchlistTitle": "Your watchlist",
+      "openActivity": "Open Activity",
+      "openWatchlists": "Open Watchlists",
+      "disclaimer": "Market data is informational only, not investment advice.",
+      "alertProximity": "{{symbol}} near alert"
+    },
+    "network": {
+      "unread_messages": "Unread messages",
+      "friend_requests": "Friend requests",
+      "new_followers": "New followers",
+      "mentions": "Mentions",
+      "comments": "Comments",
+      "reactions": "Reactions",
+      "marketplace_orders": "Marketplace orders",
+      "security_alerts": "Security alerts",
+      "community_events": "Community events"
+    },
+    "crypto": {
+      "btc": "Bitcoin",
+      "eth": "Ethereum",
+      "marketCap": "Market cap 24h",
+      "dominance": "BTC dominance",
+      "gainers": "Top gainers",
+      "losers": "Top losers"
+    }
   }
 }

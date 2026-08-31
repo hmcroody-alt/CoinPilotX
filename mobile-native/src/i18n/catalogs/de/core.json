@@ -204,7 +204,9 @@
       "presence": "Präsenz",
       "cryptoAlertCenter": "Krypto-Alarme",
       "cryptoAlertHistory": "Alarmverlauf",
-      "cryptoPortfolio": "Krypto-Portfolio"
+      "cryptoPortfolio": "Krypto-Portfolio",
+      "briefingsHub": "Pulse Briefings",
+      "briefing": "Briefing"
     },
     "navSubtitles": {
       "missionControl": "Einsatzzentrale",

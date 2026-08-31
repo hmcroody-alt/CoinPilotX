@@ -37822,8 +37822,12 @@ def api_pulse_briefings_list():
         response.headers["Cache-Control"] = "no-store, max-age=0"
         return response, 401
     from services import pulse_briefings as briefing_service
-    items = briefing_service.list_briefings(user["user_id"], safe_int(request.args.get("limit"), 20))
-    response = jsonify({"ok": True, "briefings": items})
+    page = briefing_service.list_briefings_page(
+        user["user_id"],
+        safe_int(request.args.get("limit"), 20),
+        safe_int(request.args.get("offset"), 0),
+    )
+    response = jsonify({"ok": True, **page})
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
 
@@ -37862,6 +37866,38 @@ def api_pulse_briefing_preferences():
     else:
         prefs = briefing_service.get_preferences(user["user_id"])
     response = jsonify({"ok": True, "preferences": prefs})
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
+@webhook_app.route("/api/pulse/briefings/seen", methods=["POST"])
+def api_pulse_briefings_seen():
+    init_db()
+    user = api_account_user()
+    if not user:
+        response = jsonify({"ok": False, "message": "Login required."})
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response, 401
+    from services import pulse_briefings as briefing_service
+    seen_at = briefing_service.mark_briefings_seen(user["user_id"])
+    response = jsonify({"ok": True, "last_seen_at": seen_at, "unseen_count": 0})
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
+@webhook_app.route("/api/pulse/briefings/status", methods=["GET"])
+def api_pulse_briefings_status():
+    # Owner-scoped delivery status for the native hub (last briefing, next
+    # evaluation estimate, quiet hours, push state, unread count). Distinct from
+    # the admin route below, which reports process-level engine health.
+    init_db()
+    user = api_account_user()
+    if not user:
+        response = jsonify({"ok": False, "message": "Login required."})
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response, 401
+    from services import pulse_briefings as briefing_service
+    response = jsonify({"ok": True, "status": briefing_service.delivery_status(user["user_id"])})
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
 

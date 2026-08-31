@@ -2756,5 +2756,102 @@
       "paused": "En pause",
       "unknown": "Indisponible"
     }
+  },
+  "briefings": {
+    "tile": {
+      "status": {
+        "new": "NEW"
+      },
+      "hint": "Ouvre votre espace Pulse Briefings.",
+      "a11y": {
+        "new": "Briefings. Nouveau briefing disponible.",
+        "none": "Briefings. Résumé de votre réseau et du marché."
+      }
+    },
+    "hub": {
+      "title": "Pulse Briefings",
+      "subtitle": "L'activité de votre réseau et du marché, résumée à partir de données réelles.",
+      "loading": "Chargement…",
+      "openHint": "Ouvre le briefing complet.",
+      "offlineNotice": "Hors ligne — affichage de vos derniers briefings enregistrés.",
+      "saveError": "Impossible d'enregistrer ce changement. Vos réglages sont inchangés.",
+      "loadError": "Impossible de charger les briefings. Vérifiez votre connexion et réessayez.",
+      "retry": "Réessayer",
+      "loadMore": "Charger plus",
+      "latestTitle": "Dernier briefing",
+      "statusTitle": "Livraison",
+      "settingsTitle": "Réglages des briefings",
+      "topicsTitle": "Sujets",
+      "historyTitle": "Historique",
+      "empty": {
+        "title": "Aucun briefing pour l'instant",
+        "body": "Votre premier briefing arrivera après la prochaine vérification, dès qu'il y aura quelque chose à vous dire."
+      }
+    },
+    "status": {
+      "nextCheck": "Prochaine vérification vers {{time}}",
+      "nextCheckNone": "Les briefings sont en pause.",
+      "quiet": "Heures calmes : {{start}} – {{end}}",
+      "timezone": "Fuseau horaire : {{zone}}",
+      "pushOn": "Les notifications push sont activées.",
+      "pushOff": "Les notifications push sont désactivées — les briefings n'apparaissent qu'ici."
+    },
+    "settings": {
+      "master": "Pulse Briefings",
+      "masterHint": "Activez ou désactivez les briefings périodiques de votre compte.",
+      "frequency": "Fréquence",
+      "frequencyNote": "Une vérification est une occasion de recevoir un briefing — vous n'êtes averti que s'il y a quelque chose d'important.",
+      "quiet": "Heures calmes",
+      "quietFrom": "De",
+      "quietUntil": "Jusqu'à",
+      "quietNote": "Aucun briefing pendant ces heures, dans votre fuseau horaire local.",
+      "earlier": "Une heure plus tôt",
+      "later": "Une heure plus tard"
+    },
+    "frequency": {
+      "smart": "Intelligent",
+      "recommended": "Recommandé",
+      "every_6h": "Environ toutes les 6 heures",
+      "morning_evening": "Matin et soir",
+      "daily": "Une fois par jour",
+      "important_only": "Important uniquement"
+    },
+    "topics": {
+      "network": "Votre réseau",
+      "networkHint": "Messages, abonnés, mentions et commandes — uniquement des compteurs.",
+      "crypto": "Marché crypto",
+      "cryptoHint": "BTC, ETH et tendances générales du marché.",
+      "watchlist": "Votre liste de suivi",
+      "watchlistHint": "Cryptos suivies et proximité des alertes de prix."
+    },
+    "detail": {
+      "loadError": "Impossible de charger ce briefing.",
+      "networkTitle": "Votre réseau",
+      "cryptoTitle": "Marché crypto",
+      "watchlistTitle": "Votre liste de suivi",
+      "openActivity": "Ouvrir l'activité",
+      "openWatchlists": "Ouvrir les listes",
+      "disclaimer": "Les données de marché sont fournies à titre informatif, pas comme un conseil en investissement.",
+      "alertProximity": "{{symbol}} proche de l'alerte"
+    },
+    "network": {
+      "unread_messages": "Messages non lus",
+      "friend_requests": "Demandes d'ami",
+      "new_followers": "Nouveaux abonnés",
+      "mentions": "Mentions",
+      "comments": "Commentaires",
+      "reactions": "Réactions",
+      "marketplace_orders": "Commandes marketplace",
+      "security_alerts": "Alertes de sécurité",
+      "community_events": "Événements de communauté"
+    },
+    "crypto": {
+      "btc": "Bitcoin",
+      "eth": "Ethereum",
+      "marketCap": "Capitalisation 24 h",
+      "dominance": "Dominance du BTC",
+      "gainers": "Plus fortes hausses",
+      "losers": "Plus fortes baisses"
+    }
   }
 }

@@ -2756,5 +2756,102 @@
       "paused": "En pausa",
       "unknown": "No disponible"
     }
+  },
+  "briefings": {
+    "tile": {
+      "status": {
+        "new": "NEW"
+      },
+      "hint": "Abre tu centro de Pulse Briefings.",
+      "a11y": {
+        "new": "Briefings. Nuevo informe disponible.",
+        "none": "Briefings. Resumen de tu red y del mercado."
+      }
+    },
+    "hub": {
+      "title": "Pulse Briefings",
+      "subtitle": "La actividad de tu red y del mercado, resumida a partir de datos reales.",
+      "loading": "Cargando…",
+      "openHint": "Abre el informe completo.",
+      "offlineNotice": "Sin conexión: se muestran tus últimos informes guardados.",
+      "saveError": "No se pudo guardar el cambio. Tu configuración no cambió.",
+      "loadError": "No se pudieron cargar los informes. Revisa tu conexión e inténtalo de nuevo.",
+      "retry": "Reintentar",
+      "loadMore": "Cargar más",
+      "latestTitle": "Último informe",
+      "statusTitle": "Entrega",
+      "settingsTitle": "Configuración de informes",
+      "topicsTitle": "Temas",
+      "historyTitle": "Historial",
+      "empty": {
+        "title": "Aún no hay informes",
+        "body": "Tu primer informe llegará después de la próxima revisión, cuando haya algo que valga la pena contarte."
+      }
+    },
+    "status": {
+      "nextCheck": "Próxima revisión alrededor de las {{time}}",
+      "nextCheckNone": "Los informes están en pausa.",
+      "quiet": "Horas de silencio: {{start}} – {{end}}",
+      "timezone": "Zona horaria: {{zone}}",
+      "pushOn": "Las notificaciones push están activadas.",
+      "pushOff": "Las notificaciones push están desactivadas: los informes solo aparecen aquí."
+    },
+    "settings": {
+      "master": "Pulse Briefings",
+      "masterHint": "Activa o desactiva los informes periódicos de tu cuenta.",
+      "frequency": "Frecuencia",
+      "frequencyNote": "Una revisión es una oportunidad de recibir un informe: solo se te notifica cuando hay algo importante.",
+      "quiet": "Horas de silencio",
+      "quietFrom": "Desde",
+      "quietUntil": "Hasta",
+      "quietNote": "Sin informes durante estas horas, en tu zona horaria local.",
+      "earlier": "Una hora antes",
+      "later": "Una hora después"
+    },
+    "frequency": {
+      "smart": "Inteligente",
+      "recommended": "Recomendado",
+      "every_6h": "Cada 6 horas aprox.",
+      "morning_evening": "Mañana y noche",
+      "daily": "Una vez al día",
+      "important_only": "Solo lo importante"
+    },
+    "topics": {
+      "network": "Tu red",
+      "networkHint": "Mensajes, seguidores, menciones y pedidos: solo recuentos.",
+      "crypto": "Mercado cripto",
+      "cryptoHint": "BTC, ETH y movimientos generales del mercado.",
+      "watchlist": "Tu lista de seguimiento",
+      "watchlistHint": "Monedas que sigues y proximidad de alertas de precio."
+    },
+    "detail": {
+      "loadError": "No se pudo cargar este informe.",
+      "networkTitle": "Tu red",
+      "cryptoTitle": "Mercado cripto",
+      "watchlistTitle": "Tu lista de seguimiento",
+      "openActivity": "Abrir Actividad",
+      "openWatchlists": "Abrir listas",
+      "disclaimer": "Los datos del mercado son solo informativos, no son asesoramiento de inversión.",
+      "alertProximity": "{{symbol}} cerca de la alerta"
+    },
+    "network": {
+      "unread_messages": "Mensajes sin leer",
+      "friend_requests": "Solicitudes de amistad",
+      "new_followers": "Nuevos seguidores",
+      "mentions": "Menciones",
+      "comments": "Comentarios",
+      "reactions": "Reacciones",
+      "marketplace_orders": "Pedidos del marketplace",
+      "security_alerts": "Alertas de seguridad",
+      "community_events": "Eventos de la comunidad"
+    },
+    "crypto": {
+      "btc": "Bitcoin",
+      "eth": "Ethereum",
+      "marketCap": "Capitalización 24 h",
+      "dominance": "Dominancia de BTC",
+      "gainers": "Mayores subidas",
+      "losers": "Mayores caídas"
+    }
   }
 }

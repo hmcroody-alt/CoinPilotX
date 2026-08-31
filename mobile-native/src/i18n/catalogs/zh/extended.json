@@ -2742,5 +2742,102 @@
       "paused": "已暂停",
       "unknown": "无法获取"
     }
+  },
+  "briefings": {
+    "tile": {
+      "status": {
+        "new": "NEW"
+      },
+      "hint": "打开你的 Pulse 简报中心。",
+      "a11y": {
+        "new": "简报。有新的简报。",
+        "none": "简报。你的网络与市场摘要。"
+      }
+    },
+    "hub": {
+      "title": "Pulse 简报",
+      "subtitle": "基于真实数据，汇总你的网络与市场动态。",
+      "loading": "加载中…",
+      "openHint": "打开完整简报。",
+      "offlineNotice": "离线 — 正在显示上次保存的简报。",
+      "saveError": "无法保存更改。你的设置未变。",
+      "loadError": "无法加载简报。请检查网络后重试。",
+      "retry": "重试",
+      "loadMore": "加载更多",
+      "latestTitle": "最新简报",
+      "statusTitle": "投递",
+      "settingsTitle": "简报设置",
+      "topicsTitle": "主题",
+      "historyTitle": "历史",
+      "empty": {
+        "title": "暂无简报",
+        "body": "下次检查后，如有值得告诉你的内容，你的第一份简报就会送达。"
+      }
+    },
+    "status": {
+      "nextCheck": "下次检查约在 {{time}}",
+      "nextCheckNone": "简报已暂停。",
+      "quiet": "免打扰时间：{{start}} – {{end}}",
+      "timezone": "时区：{{zone}}",
+      "pushOn": "推送通知已开启。",
+      "pushOff": "推送通知已关闭 — 简报仅在此处显示。"
+    },
+    "settings": {
+      "master": "Pulse 简报",
+      "masterHint": "为你的账户开启或关闭定期简报。",
+      "frequency": "频率",
+      "frequencyNote": "检查只是收到简报的机会 — 只有出现重要内容时才会通知你。",
+      "quiet": "免打扰时间",
+      "quietFrom": "开始",
+      "quietUntil": "结束",
+      "quietNote": "在这些时段内（按你的本地时区）不发送简报。",
+      "earlier": "提前一小时",
+      "later": "推后一小时"
+    },
+    "frequency": {
+      "smart": "智能",
+      "recommended": "推荐",
+      "every_6h": "约每 6 小时",
+      "morning_evening": "早晚各一次",
+      "daily": "每天一次",
+      "important_only": "仅重要内容"
+    },
+    "topics": {
+      "network": "你的网络",
+      "networkHint": "消息、粉丝、提及与订单 — 仅显示数量。",
+      "crypto": "加密市场",
+      "cryptoHint": "BTC、ETH 及整体市场走势。",
+      "watchlist": "你的自选",
+      "watchlistHint": "你关注的币种及价格提醒的接近程度。"
+    },
+    "detail": {
+      "loadError": "无法加载此简报。",
+      "networkTitle": "你的网络",
+      "cryptoTitle": "加密市场",
+      "watchlistTitle": "你的自选",
+      "openActivity": "打开动态",
+      "openWatchlists": "打开自选",
+      "disclaimer": "市场数据仅供参考，不构成投资建议。",
+      "alertProximity": "{{symbol}} 接近提醒"
+    },
+    "network": {
+      "unread_messages": "未读消息",
+      "friend_requests": "好友请求",
+      "new_followers": "新粉丝",
+      "mentions": "提及",
+      "comments": "评论",
+      "reactions": "互动",
+      "marketplace_orders": "市集订单",
+      "security_alerts": "安全提醒",
+      "community_events": "社区活动"
+    },
+    "crypto": {
+      "btc": "比特币",
+      "eth": "以太坊",
+      "marketCap": "市值 24 小时",
+      "dominance": "BTC 占比",
+      "gainers": "涨幅居前",
+      "losers": "跌幅居前"
+    }
   }
 }

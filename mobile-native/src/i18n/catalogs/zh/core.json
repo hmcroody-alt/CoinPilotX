@@ -204,7 +204,9 @@
       "presence": "公众形象",
       "cryptoAlertCenter": "加密货币提醒",
       "cryptoAlertHistory": "提醒历史",
-      "cryptoPortfolio": "加密货币投资组合"
+      "cryptoPortfolio": "加密货币投资组合",
+      "briefingsHub": "Pulse 简报",
+      "briefing": "简报"
     },
     "navSubtitles": {
       "missionControl": "指挥中心",

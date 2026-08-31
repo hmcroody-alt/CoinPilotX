@@ -2735,5 +2735,102 @@
       "paused": "一時停止中",
       "unknown": "利用できません"
     }
+  },
+  "briefings": {
+    "tile": {
+      "status": {
+        "new": "NEW"
+      },
+      "hint": "Pulseブリーフィングのハブを開きます。",
+      "a11y": {
+        "new": "ブリーフィング。新しいブリーフィングがあります。",
+        "none": "ブリーフィング。ネットワークと市場のダイジェスト。"
+      }
+    },
+    "hub": {
+      "title": "Pulseブリーフィング",
+      "subtitle": "あなたのネットワークと市場の動きを、実データから要約します。",
+      "loading": "読み込み中…",
+      "openHint": "ブリーフィング全文を開きます。",
+      "offlineNotice": "オフライン — 保存済みの最新ブリーフィングを表示しています。",
+      "saveError": "変更を保存できませんでした。設定は変更されていません。",
+      "loadError": "ブリーフィングを読み込めませんでした。接続を確認して再試行してください。",
+      "retry": "再試行",
+      "loadMore": "さらに読み込む",
+      "latestTitle": "最新のブリーフィング",
+      "statusTitle": "配信",
+      "settingsTitle": "ブリーフィング設定",
+      "topicsTitle": "トピック",
+      "historyTitle": "履歴",
+      "empty": {
+        "title": "ブリーフィングはまだありません",
+        "body": "お伝えする価値のある内容があれば、次回のチェック後に最初のブリーフィングが届きます。"
+      }
+    },
+    "status": {
+      "nextCheck": "次回チェックは{{time}}頃",
+      "nextCheckNone": "ブリーフィングは停止中です。",
+      "quiet": "サイレント時間: {{start}} – {{end}}",
+      "timezone": "タイムゾーン: {{zone}}",
+      "pushOn": "プッシュ通知はオンです。",
+      "pushOff": "プッシュ通知はオフです — ブリーフィングはここにのみ表示されます。"
+    },
+    "settings": {
+      "master": "Pulseブリーフィング",
+      "masterHint": "アカウントの定期ブリーフィングのオン/オフを切り替えます。",
+      "frequency": "頻度",
+      "frequencyNote": "チェックはブリーフィングを受け取る機会です — 重要な内容があるときだけ通知されます。",
+      "quiet": "サイレント時間",
+      "quietFrom": "開始",
+      "quietUntil": "終了",
+      "quietNote": "この時間帯（現地タイムゾーン）はブリーフィングを配信しません。",
+      "earlier": "1時間早く",
+      "later": "1時間遅く"
+    },
+    "frequency": {
+      "smart": "スマート",
+      "recommended": "おすすめ",
+      "every_6h": "約6時間ごと",
+      "morning_evening": "朝と夜",
+      "daily": "1日1回",
+      "important_only": "重要なもののみ"
+    },
+    "topics": {
+      "network": "あなたのネットワーク",
+      "networkHint": "メッセージ、フォロワー、メンション、注文 — 件数のみ。",
+      "crypto": "暗号資産市場",
+      "cryptoHint": "BTC、ETH、市場全体の動き。",
+      "watchlist": "ウォッチリスト",
+      "watchlistHint": "フォロー中の銘柄と価格アラートへの近さ。"
+    },
+    "detail": {
+      "loadError": "このブリーフィングを読み込めませんでした。",
+      "networkTitle": "あなたのネットワーク",
+      "cryptoTitle": "暗号資産市場",
+      "watchlistTitle": "ウォッチリスト",
+      "openActivity": "アクティビティを開く",
+      "openWatchlists": "ウォッチリストを開く",
+      "disclaimer": "市場データは情報提供のみを目的とし、投資助言ではありません。",
+      "alertProximity": "{{symbol}}がアラートに接近"
+    },
+    "network": {
+      "unread_messages": "未読メッセージ",
+      "friend_requests": "友達リクエスト",
+      "new_followers": "新しいフォロワー",
+      "mentions": "メンション",
+      "comments": "コメント",
+      "reactions": "リアクション",
+      "marketplace_orders": "マーケットプレイス注文",
+      "security_alerts": "セキュリティアラート",
+      "community_events": "コミュニティイベント"
+    },
+    "crypto": {
+      "btc": "ビットコイン",
+      "eth": "イーサリアム",
+      "marketCap": "時価総額24時間",
+      "dominance": "BTCドミナンス",
+      "gainers": "上昇率上位",
+      "losers": "下落率上位"
+    }
   }
 }
