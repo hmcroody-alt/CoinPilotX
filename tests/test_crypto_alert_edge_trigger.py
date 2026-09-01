@@ -303,12 +303,19 @@ def test_material_further_move_refires_while_latched():
     $64,000. The alert is a standing request to be told about this threshold,
     not a one-shot that retires itself after the first notification.
 
-    Uses an explicit 0.25% step so the "immaterial move" leg below is meaningful;
-    with the shipped default of 0 every further value notifies instead.
+    Opts into ``progress`` explicitly rather than leaning on the global default,
+    which is ``once``: this test is about the repeat feature, so it should say so
+    and keep proving the feature even if the default moves again. Also uses an
+    explicit 0.25% step so the "immaterial move" leg below is meaningful; with
+    the shipped step of 0 every further value notifies instead.
     """
     DISPATCHED.clear()
     rule_id = make_rule(condition="above", threshold=61000.0)
-    set_rule_columns(rule_id, repeat_step_percent=0.25)
+    set_rule_columns(
+        rule_id,
+        repeat_mode=alert_engine.REPEAT_MODE_PROGRESS,
+        repeat_step_percent=0.25,
+    )
     set_price(60000.0)
     observe(rule_id)
     set_price(61500.0)
@@ -334,17 +341,24 @@ def test_material_further_move_refires_while_latched():
 
 
 @own_db
-def test_every_further_move_notifies_by_default():
-    """The shipped default: no materiality floor, so small moves are still news.
+def test_every_further_move_notifies_in_progress_mode():
+    """``progress`` mode has no materiality floor, so small moves are still news.
 
-    A user who sets "BTC above $61,000" is asking to be told how this threshold
-    is developing. A $1 climb is a different fact from the one already reported,
-    so it notifies. The floor that used to suppress this
+    A member who opts into "keep telling me how this threshold is developing"
+    gets exactly that: a $1 climb is a different fact from the one already
+    reported, so it notifies. The floor that used to suppress this
     (``repeat_step_percent=0.25``) demanded a ~$150 move at these prices and is
-    now opt-in.
+    opt-in.
+
+    This is no longer the default — see
+    ``test_default_repeat_mode_is_once_so_a_rule_speaks_once_per_crossing``.
+    Production had 43 rules and every one of them read ``progress`` purely
+    because the column shipped with ``DEFAULT 'progress'``, which is not the same
+    thing as a member asking for it.
     """
     DISPATCHED.clear()
     rule_id = make_rule(condition="above", threshold=61000.0)
+    set_rule_columns(rule_id, repeat_mode=alert_engine.REPEAT_MODE_PROGRESS)
     set_price(60000.0)
     observe(rule_id)
     set_price(61500.0)
@@ -423,6 +437,7 @@ def test_repeat_respects_configured_rate_limit():
     """
     DISPATCHED.clear()
     rule_id = make_rule(condition="above", threshold=61000.0, cooldown=900)
+    set_rule_columns(rule_id, repeat_mode=alert_engine.REPEAT_MODE_PROGRESS)
     set_price(60000.0)
     observe(rule_id)
     set_price(61500.0)
@@ -456,6 +471,7 @@ def test_user_cooldown_does_not_suppress_repeats():
     """
     DISPATCHED.clear()
     rule_id = make_rule(condition="above", threshold=61000.0, cooldown=900)
+    set_rule_columns(rule_id, repeat_mode=alert_engine.REPEAT_MODE_PROGRESS)
     set_price(60000.0)
     observe(rule_id)
     set_price(61500.0)
@@ -471,8 +487,7 @@ def test_user_cooldown_does_not_suppress_repeats():
 
 @own_db
 def test_repeat_mode_once_keeps_strict_edge_trigger():
-    """A rule can opt out of repeats and keep the original one-per-crossing
-    behaviour, so the change is a new default rather than a removed option."""
+    """``once`` is one notification per crossing, stated explicitly on the rule."""
     DISPATCHED.clear()
     rule_id = make_rule(condition="above", threshold=61000.0)
     set_rule_columns(rule_id, repeat_mode=alert_engine.REPEAT_MODE_ONCE)
@@ -490,10 +505,134 @@ def test_repeat_mode_once_keeps_strict_edge_trigger():
 
 
 @own_db
-def test_paused_rule_stops_and_resumes_monitoring():
-    """Pause / resume / delete are the user's controls over a standing alert."""
+def test_default_repeat_mode_is_once_so_a_rule_speaks_once_per_crossing():
+    """A rule whose owner never chose a repeat policy speaks once per crossing.
+
+    ``make_rule`` does not write ``repeat_mode``, which is the same situation as
+    every rule in production: nothing had ever set the column on purpose. It must
+    therefore resolve through ``DEFAULT_REPEAT_MODE``, and that default is
+    ``once`` — "tell me when BTC crosses $61,000", not "narrate BTC afterwards".
+    """
     DISPATCHED.clear()
     rule_id = make_rule(condition="above", threshold=61000.0)
+    check(
+        _load_rule(rule_id).get("repeat_mode") in (None, ""),
+        "a rule created without a stated policy stores no repeat_mode",
+    )
+    set_price(60000.0)
+    observe(rule_id)
+    set_price(61500.0)
+    observe(rule_id)
+    check(len(DISPATCHED) == 1, "the crossing notified once")
+
+    for price in (61501.0, 62000.0, 64000.0, 70000.0):
+        set_price(price)
+        clear_cooldown(rule_id)
+        check(not observe(rule_id)["triggered"], f"no repeat at {price} under the default")
+    check(len(DISPATCHED) == 1, "the default never re-notifies inside one crossing")
+    check(rule_state(rule_id) == alert_engine.STATE_LATCHED, "still latched, still monitoring")
+
+
+@own_db
+def test_owner_production_rule_shape_does_not_walk_the_price_down():
+    """Regression for the reported "alert spam" using the real rule that caused it.
+
+    Owner rule 43 is "BTC below 79,000". On 2026-08-31 it emitted 23
+    notifications in a day, walking the price down 78,996 -> 78,432 — the last of
+    them reporting a $5 move. Every one carried a distinct ``trigger_key`` and
+    was correctly deduplicated, so no duplicate-suppression test could ever have
+    caught this: the rule was firing legitimately, under a repeat policy its
+    owner never chose.
+
+    Replayed here at the observed prices, the whole descent is one notification.
+    """
+    DISPATCHED.clear()
+    rule_id = make_rule(condition="below", threshold=79000.0, cooldown=900)
+    set_price(79500.0)
+    observe(rule_id)  # arms without firing
+    check(len(DISPATCHED) == 0, "arming the rule notified nothing")
+
+    observed = [
+        78996.0, 78971.0, 78965.0, 78912.0, 78887.0, 78818.0, 78795.0, 78750.0,
+        78992.0, 78952.0, 78904.0, 78873.0, 78784.0, 78761.0, 78745.0, 78675.0,
+        78664.0, 78624.0, 78572.0, 78437.0, 78432.0,
+    ]
+    for price in observed:
+        set_price(price)
+        clear_cooldown(rule_id)
+        observe(rule_id)
+
+    check(len(DISPATCHED) == 1, f"21 production observations sent 1 notification (got {len(DISPATCHED)})")
+    check(triggered_event_count(rule_id) == 1, "and recorded exactly one triggered event")
+
+    # The alert is not retired — it is latched and still watching, so the user's
+    # standing request survives. It simply has nothing new to say until BTC
+    # climbs back above 79,000 and falls through it again.
+    check(rule_state(rule_id) == alert_engine.STATE_LATCHED, "still latched, still monitoring")
+    set_price(79500.0)
+    clear_cooldown(rule_id)
+    observe(rule_id)
+    check(rule_state(rule_id) == alert_engine.STATE_ARMED, "clearing the threshold re-arms it")
+    set_price(78900.0)
+    clear_cooldown(rule_id)
+    check(observe(rule_id)["triggered"], "the next genuine crossing fires again")
+    check(len(DISPATCHED) == 2, "two crossings, two notifications")
+
+
+@own_db
+def test_schema_does_not_hand_a_repeat_policy_to_rules_that_never_chose_one():
+    """The schema must not write a repeat policy into rows on the member's behalf.
+
+    ``ALTER TABLE ... ADD COLUMN repeat_mode TEXT DEFAULT 'progress'``
+    materialises that value into every pre-existing row on PostgreSQL, which is
+    how all 43 production rules — 37 created months before the column existed —
+    came to read ``progress``. ``repeat_step_percent`` beside it already carries
+    a comment warning about exactly this trap.
+
+    Asserted behaviourally rather than by reading the DDL string: what matters is
+    that a rule inserted without a policy still *has* no policy afterwards, so
+    the single source of truth stays ``DEFAULT_REPEAT_MODE``.
+    """
+    rule_id = make_rule(condition="above", threshold=61000.0)
+    stored = _load_rule(rule_id).get("repeat_mode")
+    check(
+        stored in (None, ""),
+        f"a rule inserted without a repeat policy stores none (got {stored!r})",
+    )
+    check(
+        _load_rule(rule_id).get("repeat_step_percent") in (None, ""),
+        "and no materiality floor either",
+    )
+    # The repair that retires the historical backfill is PostgreSQL-only (SQLite
+    # cannot drop a column default without rebuilding the table). It must be
+    # wired into schema setup and must be a safe no-op here rather than raising.
+    check(
+        callable(getattr(alert_engine, "_retire_legacy_repeat_mode_default", None)),
+        "the legacy-default repair is wired into the engine",
+    )
+    conn = user_context.connect()
+    try:
+        alert_engine._retire_legacy_repeat_mode_default(conn)
+    finally:
+        conn.close()
+    check(
+        _load_rule(rule_id).get("repeat_mode") in (None, ""),
+        "the repair left the SQLite rule untouched",
+    )
+
+
+@own_db
+def test_paused_rule_stops_and_resumes_monitoring():
+    """Pause / resume / delete are the user's controls over a standing alert.
+
+    Uses ``progress`` so that resuming has something observable to do: the rule
+    is still latched from the first crossing, so under the ``once`` default a
+    resumed rule is correctly silent until the threshold clears and re-crosses,
+    which would prove nothing about pause/resume itself.
+    """
+    DISPATCHED.clear()
+    rule_id = make_rule(condition="above", threshold=61000.0)
+    set_rule_columns(rule_id, repeat_mode=alert_engine.REPEAT_MODE_PROGRESS)
     set_price(60000.0)
     observe(rule_id)
     set_price(61500.0)
@@ -521,9 +660,13 @@ def test_paused_rule_stops_and_resumes_monitoring():
 @own_db
 def test_repeat_state_survives_a_worker_restart():
     """The repeat baseline lives in the database, not worker memory, so a
-    restart mid-move cannot replay a notification the user already received."""
+    restart mid-move cannot replay a notification the user already received.
+
+    Needs ``progress`` to produce a repeat to persist a baseline for.
+    """
     DISPATCHED.clear()
     rule_id = make_rule(condition="above", threshold=61000.0)
+    set_rule_columns(rule_id, repeat_mode=alert_engine.REPEAT_MODE_PROGRESS)
     set_price(60000.0)
     observe(rule_id)
     set_price(61500.0)
@@ -676,12 +819,15 @@ TESTS = [
     test_one_crossing_sends_exactly_one_notification,
     test_flat_price_past_threshold_never_refires,
     test_material_further_move_refires_while_latched,
-    test_every_further_move_notifies_by_default,
+    test_every_further_move_notifies_in_progress_mode,
     test_repeated_identical_observation_never_duplicates,
     test_retreat_toward_threshold_does_not_refire,
     test_repeat_respects_configured_rate_limit,
     test_user_cooldown_does_not_suppress_repeats,
     test_repeat_mode_once_keeps_strict_edge_trigger,
+    test_default_repeat_mode_is_once_so_a_rule_speaks_once_per_crossing,
+    test_owner_production_rule_shape_does_not_walk_the_price_down,
+    test_schema_does_not_hand_a_repeat_policy_to_rules_that_never_chose_one,
     test_paused_rule_stops_and_resumes_monitoring,
     test_repeat_state_survives_a_worker_restart,
     test_clearing_threshold_rearms_and_next_crossing_fires,

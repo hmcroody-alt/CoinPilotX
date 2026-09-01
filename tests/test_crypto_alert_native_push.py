@@ -150,6 +150,14 @@ def test_recurring_crypto_delivery_retries_keep_rule_active():
             threshold=100000, channels={"in_app": True, "push": True, "email": True})
         assert created["ok"], created
         rule_id = created["alert_id"]
+        # This test is about a *recurring* alert (it observes a further move at
+        # 100011 after the crossing at 100010), so it opts into repeats rather
+        # than relying on the global default, which is one-per-crossing.
+        conn = db.connect()
+        conn.execute("UPDATE alert_rules SET repeat_mode=? WHERE id=?",
+                     (alert_engine.REPEAT_MODE_PROGRESS, rule_id))
+        conn.commit()
+        conn.close()
         def observe(value):
             price["value"] = value
             return alert_engine.evaluate_alert_rule(alert_engine.get_alert_rule(rule_id))

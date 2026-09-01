@@ -343,10 +343,15 @@ def test_advanced_rule_does_not_refire_while_latched_and_flat():
 
 def test_latched_advanced_rule_repeats_on_a_further_move():
     """The repeat follows the primary clause's direction, which is the number the
-    notification quotes."""
+    notification quotes.
+
+    Opts into ``progress`` explicitly: repeats are a policy a member asks for,
+    and the global default is ``once``.
+    """
     DISPATCHED.clear()
     rule_id = make_advanced_rule(clause("price", "above", 61000),
                                  clause("volume_24h", "above", 30_000_000_000))
+    set_rule_columns(rule_id, repeat_mode=alert_engine.REPEAT_MODE_PROGRESS)
     set_market(price=50_000, volume_24h=31_000_000_000)
     observe(rule_id)
     set_market(price=62_000, volume_24h=31_000_000_000)
