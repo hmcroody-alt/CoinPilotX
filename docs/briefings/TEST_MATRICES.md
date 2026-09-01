@@ -66,11 +66,16 @@ python -m unittest tests.briefings.test_pulse_briefings      # 122 tests
 # Crypto alerts — ONE FILE PER PROCESS. Each sets its own temp DATABASE_URL at
 # import time, so batching them makes whichever module imported last win and
 # produces a wall of false failures.
-for f in tests/test_crypto_alert_*.py; do python -m pytest "$f" -q; done   # 186 tests
+for f in tests/test_crypto_alert_*.py; do python -m pytest "$f" -q; done   # 180 tests
 
 # Gates
 python scripts/protection/run_protection_suite.py            # 225 checks / 21 suites
 python scripts/realtime_audio_change_gate.py --base origin/main --head HEAD
 ```
 
-All green as of the rebase onto `97b2b15a`.
+All green, re-confirmed against `main` at `8a21d1b9` (the marketplace Stage 176
+merge that landed on top of this work; it touches no alert or briefing file).
+
+The counts above are collected totals, not remembered ones — an earlier draft of
+this file said 186 crypto-alert tests, which was wrong. `--collect-only` per file
+gives 35 + 43 + 20 + 3 + 20 + 20 + 19 + 20 = 180.
