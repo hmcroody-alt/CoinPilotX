@@ -242,7 +242,8 @@ def network_significance(network: dict[str, Any]) -> int:
 
 
 def collect_crypto_facts(cur, user_id: int, *, watchlist_enabled: bool,
-                         market_enabled: bool = True) -> dict[str, Any]:
+                         market_enabled: bool = True,
+                         since_iso: str | None = None) -> dict[str, Any]:
     """Grounded market facts from the shared snapshot + user's own alerts.
 
     The two topics are independent preferences and are collected independently.
@@ -258,11 +259,14 @@ def collect_crypto_facts(cur, user_id: int, *, watchlist_enabled: bool,
         "watchlist_enabled": bool(watchlist_enabled),
         "watchlist": [],
         "alert_proximity": [],
+        "alerts_triggered": [],
     }
     if market_enabled:
         _collect_market_overview(facts)
     if watchlist_enabled:
         _collect_watchlist_facts(cur, user_id, facts)
+        if since_iso:
+            _collect_triggered_alerts(cur, user_id, facts, since_iso)
     return facts
 
 
@@ -305,37 +309,73 @@ def _collect_market_overview(facts: dict[str, Any]) -> None:
 
 def _collect_watchlist_facts(cur, user_id: int, facts: dict[str, Any]) -> None:
     """The user's own assets and alert proximity. Reached whenever the watchlist
-    topic is ON, independently of the general crypto-market topic."""
+    topic is ON, independently of the general crypto-market topic.
+
+    Reads ``alert_rules``, the table the alert engine actually evaluates.
+
+    This used to read ``crypto_alerts``, which is a LEGACY table: it is imported
+    one-way into alert_rules by reconcile_legacy_alerts (source_ref
+    'crypto_alerts:<id>') and never written back, so it drifts further from
+    reality with every alert a user creates. The whole of production holds just
+    two legacy rows against three live rules, and they disagree in all three
+    possible directions at once:
+
+      * stale     -- the owner (user 1) has a legacy row reading "BTC above
+        45000" while their live rules are "BTC above 80000" and "BTC below
+        79000". With BTC near 78400 the briefing was reporting proximity to a
+        threshold crossed long ago, and was blind to the below-79000 rule that
+        is the one actually firing;
+      * invisible -- user 34 holds a live rule (BTC above 61000) and no legacy
+        row at all, so their alert could never appear in a briefing;
+      * phantom   -- user 19 holds a legacy row (BTC above 50000) with no live
+        rule behind it, so briefings reported proximity for an alert the engine
+        does not evaluate and which can never fire.
+
+    The liveness predicate is copied verbatim from the engine's own claim guard
+    (alert_engine._active_claim_guard) so that briefings describe exactly the
+    rule set the engine evaluates -- no more, no less. The COALESCEs are not
+    defensive padding: `active` and `deleted_at` are both nullable, the engine
+    treats NULL and '' alike for deleted_at, and a rule can carry
+    status='active' while still being soft-deleted (the owner has 38 such rows).
+    Matching on status alone would resurrect all of them.
+
+    Column names differ between the two tables (symbol/condition/threshold_value
+    here, asset_symbol/condition_type/target_value there). threshold_value is
+    COALESCEd with the older target_value spelling because both are populated
+    depending on which writer created the rule.
+    """
     try:
-        # Column names are asset_symbol/condition_type/target_value -- the older
-        # symbol/type/threshold spelling raises UndefinedColumn on Postgres, and
-        # because the whole block is one try/except that silently emptied BOTH
-        # watchlist and alert_proximity for every user on every cycle.
         cur.execute(
-            "SELECT asset_symbol, condition_type, target_value FROM crypto_alerts "
-            "WHERE user_id=? AND COALESCE(status,'active')='active' LIMIT 25",
+            "SELECT symbol, condition, "
+            "       COALESCE(threshold_value, target_value) AS threshold_value "
+            "FROM alert_rules "
+            "WHERE user_id=? "
+            "  AND COALESCE(status, 'active')='active' "
+            "  AND COALESCE(active, 1)=1 "
+            "  AND COALESCE(deleted_at, '')='' "
+            "LIMIT 25",
             (int(user_id),),
         )
         rows = [dict(r) if not isinstance(r, dict) else r for r in cur.fetchall()]
-        symbols = sorted({str(r.get("asset_symbol") or "").upper() for r in rows if r.get("asset_symbol")})
+        symbols = sorted({str(r.get("symbol") or "").upper() for r in rows if r.get("symbol")})
         snapshots = {a["symbol"]: a for a in crypto_provider.get_watchlist_snapshots(symbols)}
         facts["watchlist"] = [
             {"symbol": s, "price": snapshots[s]["price"], "change_24h": snapshots[s]["change_24h"]}
             for s in symbols if s in snapshots
         ]
         for r in rows:  # Stage 41: proximity only — never trigger early
-            symbol = str(r.get("asset_symbol") or "").upper()
+            symbol = str(r.get("symbol") or "").upper()
             snap = snapshots.get(symbol)
             try:
-                threshold = float(r.get("target_value") or 0)
+                threshold = float(r.get("threshold_value") or 0)
             except (TypeError, ValueError):
                 continue
-            # condition_type holds the stored condition vocabulary
+            # `condition` holds the stored condition vocabulary
             # (above/below/moves_up_percent/...), NOT the derived alert-type
             # strings the old code compared against. Percent-move conditions
-            # carry a percentage in target_value, so a price-distance
+            # carry a percentage in the threshold, so a price-distance
             # calculation would be meaningless for them.
-            if not snap or threshold <= 0 or str(r.get("condition_type") or "") not in ("above", "below"):
+            if not snap or threshold <= 0 or str(r.get("condition") or "") not in ("above", "below"):
                 continue
             price = float(snap.get("price") or 0)
             if price <= 0:
@@ -348,6 +388,77 @@ def _collect_watchlist_facts(cur, user_id: int, facts: dict[str, Any]) -> None:
                 })
     except Exception:  # noqa: BLE001
         logging.exception("BRIEFING_WATCHLIST_FACTS_FAILED user_id=%s", user_id)
+
+
+def _collect_triggered_alerts(cur, user_id: int, facts: dict[str, Any],
+                              since_iso: str) -> None:
+    """Alerts that actually fired in this window, one entry per latch episode.
+
+    Reads ``alert_events`` -- the canonical record the alert engine writes under
+    a compare-and-set claim -- and NOT the ``crypto_alert_triggered`` rows in
+    pulse_notifications. The two are not interchangeable, and the difference is
+    the whole point of this collector.
+
+    An alert_event is created once per *notification*, so a rule in 'progress'
+    repeat mode emits one every time the price moves further into the breach.
+    Production, measured over a single 6h briefing window: the owner had 21 raw
+    events carrying 21 distinct trigger_keys -- but all 21 belonged to ONE rule,
+    BTC below 79,000, walking down from 78,996 to 78,432. Every one of those
+    keys is legitimately distinct; they are not duplicates and there is nothing
+    to clean up. They are simply not 21 things to tell someone about. They are
+    one thing: "BTC fell below your 79,000 alert, now 78,432."
+
+    So the unit here is the latch EPISODE, keyed by alert_rule_id within the
+    window, not the event and not the trigger_key. Deduping on trigger_key would
+    have produced 21 items; counting raw notifications would also have produced
+    21; grouping by rule produces 1. The progression is preserved as a
+    `notifications` count on the single entry, so the fact pack can still say
+    "and it kept moving" without scoring it 21 times.
+
+    Only the newest event per rule is reported: for a rule walking into a
+    breach, the latest observed value is the true current state, and the
+    intermediate steps are history the user does not need recited.
+    """
+    try:
+        cur.execute(
+            """
+            SELECT alert_rule_id, symbol, condition, threshold_value,
+                   observed_value, created_at, trigger_key
+            FROM alert_events
+            WHERE user_id=? AND created_at>=? AND alert_rule_id IS NOT NULL
+            ORDER BY alert_rule_id ASC, created_at ASC, id ASC
+            """,
+            (int(user_id), since_iso),
+        )
+        episodes: dict[int, dict[str, Any]] = {}
+        for row in cur.fetchall():
+            r = dict(row) if not isinstance(row, dict) else row
+            try:
+                rule_id = int(r.get("alert_rule_id"))
+            except (TypeError, ValueError):
+                continue
+            entry = episodes.get(rule_id)
+            if entry is None:
+                episodes[rule_id] = entry = {
+                    "rule_id": rule_id,
+                    "symbol": str(r.get("symbol") or "").upper(),
+                    "condition": str(r.get("condition") or ""),
+                    "threshold": r.get("threshold_value"),
+                    "observed": r.get("observed_value"),
+                    "first_at": r.get("created_at"),
+                    "last_at": r.get("created_at"),
+                    "notifications": 0,
+                }
+            # Ordered oldest-first above, so the last row seen is the newest and
+            # its observed value is the rule's current state.
+            entry["observed"] = r.get("observed_value")
+            entry["last_at"] = r.get("created_at")
+            entry["notifications"] += 1
+        facts["alerts_triggered"] = [
+            episodes[k] for k in sorted(episodes)
+        ][:10]
+    except Exception:  # noqa: BLE001 - a fact-pack fault degrades to none, never fatal
+        logging.exception("BRIEFING_TRIGGERED_ALERT_FACTS_FAILED user_id=%s", user_id)
 
 
 def crypto_significance(crypto: dict[str, Any]) -> int:
@@ -371,6 +482,14 @@ def crypto_significance(crypto: dict[str, Any]) -> int:
             score += 6
     score += 8 * len(crypto.get("alert_proximity") or [])
     score += sum(4 for w in crypto.get("watchlist") or [] if abs(w.get("change_24h") or 0) >= 4.0)
+    # An alert the user configured themselves actually firing is the single most
+    # requested thing a briefing can carry, so one episode (12) clears
+    # SEND_THRESHOLD on its own -- more than proximity (8), which is only a
+    # near-miss. Scored per EPISODE, never per notification: the owner's 21
+    # events in one window were one rule progressing, and scoring them
+    # individually would have contributed 252 and pinned the briefing on
+    # forever. That is the amplification this collector exists to prevent.
+    score += 12 * len(crypto.get("alerts_triggered") or [])
     return score
 
 
@@ -385,6 +504,7 @@ def build_briefing_facts(cur, user_id: int, *, since_iso: str, timezone_name: st
     watchlist_on = bool(prefs.get("watchlist_enabled", True))
     crypto = collect_crypto_facts(
         cur, user_id, watchlist_enabled=watchlist_on, market_enabled=market_on,
+        since_iso=since_iso,
     ) if (market_on or watchlist_on) else None
     net_score = network_significance(network) if network else 0
     cry_score = crypto_significance(crypto) if crypto else 0
@@ -434,5 +554,10 @@ def fact_fingerprint(facts: dict[str, Any]) -> str:
         "cap": bucket(crypto.get("market_cap_change_24h_pct")),
         "direction": crypto.get("market_direction"),
         "proximity": sorted(p["symbol"] for p in crypto.get("alert_proximity") or []),
+        # Keyed by rule id, not by trigger_key or event count: a rule that keeps
+        # progressing within one latch episode must hash the SAME so the window
+        # is suppressed as a duplicate rather than re-sent on every further tick.
+        # A different rule firing is genuinely new and must change the hash.
+        "fired": sorted(a["rule_id"] for a in crypto.get("alerts_triggered") or []),
     }
     return hashlib.sha256(json.dumps(signature, sort_keys=True).encode()).hexdigest()[:32]

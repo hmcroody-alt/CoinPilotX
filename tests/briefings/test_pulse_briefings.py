@@ -57,6 +57,39 @@ def _fresh_conn(*, region_prefs: bool = True) -> sqlite3.Connection:
             notify_sms INTEGER DEFAULT 0, notify_in_app INTEGER DEFAULT 1,
             note TEXT, created_at TEXT, updated_at TEXT, last_triggered_at TEXT)"""
     )
+    # The CANONICAL alert tables -- the ones the alert engine actually evaluates
+    # and writes. crypto_alerts above is retained only so a test can prove the
+    # collectors no longer read it: it is a legacy import source that
+    # reconcile_legacy_alerts fills one-way and never writes back, and in
+    # production it disagreed with alert_rules in all three directions at once
+    # (owner: 8 rules vs 1 legacy row; user 34: a rule with no legacy row; user
+    # 19: a legacy row with no rule). Column names mirror production.
+    cur.execute(
+        """CREATE TABLE alert_rules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, alert_type TEXT,
+            symbol TEXT, condition TEXT, target_value REAL, threshold_value REAL,
+            channels TEXT, channels_json TEXT, active INTEGER DEFAULT 1,
+            status TEXT DEFAULT 'active', created_at TEXT, updated_at TEXT,
+            deleted_at TEXT, condition_state TEXT, trigger_seq INTEGER DEFAULT 0,
+            trigger_count INTEGER DEFAULT 0, last_triggered_at TEXT,
+            last_observed_value REAL, last_notified_value REAL,
+            repeat_mode TEXT, repeat_step_percent REAL, source TEXT, source_ref TEXT)"""
+    )
+    # One row per NOTIFICATION, not per crossing: a rule in 'progress' repeat
+    # mode writes one every time the price moves further into the breach. That
+    # is why the collector groups these by alert_rule_id -- production's owner
+    # had 21 rows here carrying 21 distinct trigger_keys inside a single 6h
+    # window, all from one rule walking down. Distinct, not duplicated, and
+    # still only one thing to say.
+    cur.execute(
+        """CREATE TABLE alert_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER,
+            alert_rule_id INTEGER, alert_type TEXT, symbol TEXT, condition TEXT,
+            threshold_value REAL, observed_value REAL, title TEXT, body TEXT,
+            message TEXT, status TEXT, metadata TEXT, notification_id INTEGER,
+            delivery_job_id INTEGER, delivery_status TEXT, trigger_key TEXT,
+            created_at TEXT)"""
+    )
     # pulse_region_preferences is deliberately NOT hand-rolled here. The previous
     # fixture invented a two-column (user_id, preferred_timezone) shape that the
     # canonical service does not own -- the same class of divergence that let
@@ -234,7 +267,7 @@ class StalenessTests(unittest.TestCase):
 class WatchlistFactTests(unittest.TestCase):
     """The watchlist + alert_proximity block is one try/except, so a query fault
     empties BOTH and looks exactly like 'user watches nothing'. These tests
-    insert real crypto_alerts rows so a wrong column name fails loudly."""
+    insert real alert_rules rows so a wrong column name fails loudly."""
 
     def setUp(self):
         _clear_provider_cache()
@@ -244,6 +277,14 @@ class WatchlistFactTests(unittest.TestCase):
         self.conn.close()
 
     def _alert(self, user_id, symbol, condition, target):
+        self.conn.execute(
+            "INSERT INTO alert_rules (user_id, symbol, condition, threshold_value, status) "
+            "VALUES (?,?,?,?,'active')",
+            (user_id, symbol, condition, target),
+        )
+        self.conn.commit()
+
+    def _legacy_alert(self, user_id, symbol, condition, target):
         self.conn.execute(
             "INSERT INTO crypto_alerts (user_id, asset_symbol, condition_type, target_value, status) "
             "VALUES (?,?,?,?,'active')",
@@ -280,7 +321,7 @@ class WatchlistFactTests(unittest.TestCase):
         self.assertEqual(self._facts()["alert_proximity"], [])
 
     def test_percent_move_conditions_are_not_treated_as_prices(self):
-        """target_value on a moves_up_percent alert is a percentage, so a
+        """threshold_value on a moves_up_percent rule is a percentage, so a
         price-distance calculation against it would be meaningless."""
         self._alert(1, "BTC", "moves_up_percent", 101.0)
         out = self._facts()
@@ -293,6 +334,180 @@ class WatchlistFactTests(unittest.TestCase):
         self.assertEqual(out["watchlist"], [])
         self.assertEqual(out["alert_proximity"], [])
 
+    def test_legacy_crypto_alerts_rows_are_not_read(self):
+        """crypto_alerts is a one-way LEGACY import source, never written back,
+        so a row there can outlive (or never match) the rule the engine really
+        evaluates. Production user 19 held exactly this: an active legacy row
+        with no active rule behind it. Reading it would report proximity for an
+        alert that cannot fire -- a phantom."""
+        self._legacy_alert(1, "BTC", "above", 103.0)   # would be 3% proximity
+        out = self._facts()
+        self.assertEqual(out["watchlist"], [])
+        self.assertEqual(out["alert_proximity"], [])
+
+    def test_rule_with_no_legacy_row_is_still_seen(self):
+        """The mirror failure. Production user 34 held a live alert_rules row
+        (BTC above 61000) and no crypto_alerts row at all, so their alerts were
+        invisible to briefings entirely. The owner's legacy row was stale rather
+        than absent: it read BTC above 45000 while their live rules were above
+        80000 and below 79000."""
+        self._alert(1, "BTC", "above", 103.0)
+        out = self._facts()
+        self.assertEqual(out["alert_proximity"],
+                         [{"symbol": "BTC", "threshold": 103.0, "distance_pct": 3.0}])
+
+    def test_deleted_and_inactive_rules_are_excluded(self):
+        self._alert(1, "BTC", "above", 103.0)
+        self.conn.execute("UPDATE alert_rules SET status='deleted' WHERE user_id=1")
+        self.conn.commit()
+        self.assertEqual(self._facts()["alert_proximity"], [])
+        self.conn.execute(
+            "UPDATE alert_rules SET status='active', deleted_at='2026-08-01T00:00:00Z' "
+            "WHERE user_id=1"
+        )
+        self.conn.commit()
+        self.assertEqual(self._facts()["alert_proximity"], [])
+
+    def test_liveness_predicate_matches_the_engine_exactly(self):
+        """Briefings must describe the rule set the engine evaluates.
+
+        Not a superset (phantom alerts the user is told about but which can
+        never fire) and not a subset (real alerts silently missing). Each case
+        below is a column where the two predicates could plausibly disagree.
+        The engine's guard, copied from alert_engine._active_claim_guard, is
+        ``COALESCE(status,'active')='active' AND COALESCE(active,1)=1
+        AND COALESCE(deleted_at,'')=''``.
+
+        The NULL/empty-string pairs matter because production carries both
+        spellings for "not deleted", and 38 of the owner's rows are soft-deleted
+        while still reading status='active' -- so status alone is not a filter.
+        """
+        live = ("status='active', active=1, deleted_at=NULL",
+                "status='active', active=1, deleted_at=''",
+                "status=NULL, active=1, deleted_at=NULL",      # COALESCE default
+                "status='active', active=NULL, deleted_at=NULL")  # COALESCE default
+        dead = ("status='deleted', active=1, deleted_at=NULL",
+                "status='paused', active=1, deleted_at=NULL",
+                "status='active', active=0, deleted_at=NULL",
+                "status='active', active=1, deleted_at='2026-08-01T00:00:00Z'")
+
+        cases = [(s, True) for s in live] + [(s, False) for s in dead]
+        for setting, expected_visible in cases:
+            with self.subTest(setting=setting):
+                self.conn.execute("DELETE FROM alert_rules")
+                self.conn.commit()
+                self._alert(1, "BTC", "above", 103.0)
+                self.conn.execute(f"UPDATE alert_rules SET {setting} WHERE user_id=1")
+                self.conn.commit()
+                visible = bool(self._facts()["alert_proximity"])
+                self.assertEqual(
+                    visible, expected_visible,
+                    f"{setting!r}: briefings {'showed' if visible else 'hid'} a rule the "
+                    f"engine would {'evaluate' if expected_visible else 'skip'}",
+                )
+
+
+class TriggeredAlertEpisodeTests(unittest.TestCase):
+    """A briefing counts latch EPISODES, not alert_events and not notifications.
+
+    Production, one 6h window for the owner: 21 alert_events carrying 21
+    distinct trigger_keys -- all from ONE rule (BTC below 79,000) walking down
+    from 78,996 to 78,432. The keys are legitimately distinct; nothing is
+    duplicated and there is nothing to clean up. But it is one thing to say,
+    not 21, and scoring it 21 times would pin the briefing permanently on.
+    """
+
+    def setUp(self):
+        _clear_provider_cache()
+        self.conn = _fresh_conn()
+        self.now = datetime.now(timezone.utc)
+        self.since = _iso(self.now - timedelta(hours=6))
+
+    def tearDown(self):
+        self.conn.close()
+
+    def _event(self, rule_id, observed, *, user_id=1, seq=1, symbol="BTC",
+               condition="below", threshold=79000.0, minutes_ago=5):
+        self.conn.execute(
+            "INSERT INTO alert_events (user_id, alert_rule_id, symbol, condition, "
+            "threshold_value, observed_value, trigger_key, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (user_id, rule_id, symbol, condition, threshold, observed,
+             f"{rule_id}:{seq}", _iso(self.now - timedelta(minutes=minutes_ago))),
+        )
+        self.conn.commit()
+
+    def _facts(self, user_id=1):
+        with mock.patch.object(facts.crypto_provider, "get_watchlist_snapshots", return_value=[]):
+            return facts.collect_crypto_facts(
+                self.conn.cursor(), user_id, watchlist_enabled=True,
+                market_enabled=False, since_iso=self.since,
+            )
+
+    def test_the_owners_real_window_is_one_episode_not_twentyone(self):
+        """The exact production sequence: rule 43 walking 78,996 -> 78,432."""
+        walk = [78996, 78971, 78965, 78912, 78887, 78818, 78795, 78750, 78992,
+                78952, 78904, 78873, 78784, 78761, 78745, 78675, 78664, 78624,
+                78572, 78437, 78432]
+        for i, value in enumerate(walk):
+            self._event(43, float(value), seq=i + 1, minutes_ago=300 - i * 10)
+        out = self._facts()
+        self.assertEqual(len(out["alerts_triggered"]), 1)          # not 21
+        entry = out["alerts_triggered"][0]
+        self.assertEqual(entry["rule_id"], 43)
+        self.assertEqual(entry["notifications"], 21)               # progression kept
+        self.assertEqual(entry["observed"], 78432.0)               # newest, not first
+        self.assertEqual(entry["threshold"], 79000.0)
+        # 12 for one episode, NOT 12 * 21 = 252.
+        self.assertEqual(facts.crypto_significance(out), 12)
+
+    def test_distinct_rules_are_distinct_episodes(self):
+        self._event(43, 78432.0, seq=1)
+        self._event(27, 99.0, seq=1, symbol="SOL", threshold=100.6785)
+        out = self._facts()
+        self.assertEqual(len(out["alerts_triggered"]), 2)
+        self.assertEqual({e["rule_id"] for e in out["alerts_triggered"]}, {27, 43})
+        self.assertEqual(facts.crypto_significance(out), 24)
+
+    def test_one_fired_alert_clears_the_send_threshold(self):
+        """An alert the user configured themselves firing is the most requested
+        thing a briefing can carry, so a single episode must be able to send."""
+        self._event(43, 78432.0, seq=1)
+        out = self._facts()
+        self.assertGreaterEqual(facts.crypto_significance(out), facts.SEND_THRESHOLD)
+
+    def test_events_are_owner_scoped_and_windowed(self):
+        self._event(43, 78432.0, seq=1, user_id=2)                  # another user
+        self._event(44, 78400.0, seq=1, minutes_ago=60 * 24)        # outside window
+        self.assertEqual(self._facts()["alerts_triggered"], [])
+
+    def test_a_further_move_in_the_same_episode_does_not_resend(self):
+        """The fingerprint keys on rule id, so a rule progressing further inside
+        one latch episode hashes the SAME and is suppressed as a duplicate --
+        the briefing-layer half of the retrigger fix."""
+        self._event(43, 78500.0, seq=1)
+        before = facts.fact_fingerprint({"network": {}, "crypto": self._facts()})
+        self._event(43, 78432.0, seq=2, minutes_ago=1)
+        after = facts.fact_fingerprint({"network": {}, "crypto": self._facts()})
+        self.assertEqual(before, after)
+
+    def test_a_different_rule_firing_does_break_the_fingerprint(self):
+        self._event(43, 78432.0, seq=1)
+        before = facts.fact_fingerprint({"network": {}, "crypto": self._facts()})
+        self._event(27, 99.0, seq=1, symbol="SOL", threshold=100.6785)
+        after = facts.fact_fingerprint({"network": {}, "crypto": self._facts()})
+        self.assertNotEqual(before, after)
+
+    def test_collector_degrades_to_empty_on_fault(self):
+        out = {"alerts_triggered": []}
+        with mock.patch.object(facts.logging, "exception"):
+            class _Boom:
+                def execute(self, *a, **k):
+                    raise RuntimeError("table gone")
+            facts._collect_triggered_alerts(_Boom(), 1, out, self.since)
+        self.assertEqual(out["alerts_triggered"], [])
+        self.assertEqual(facts.crypto_significance(out), 0)
+
 
 class TopicIndependenceTests(unittest.TestCase):
     """Crypto market and watchlist are separate switches on the hub, so they must
@@ -304,7 +519,7 @@ class TopicIndependenceTests(unittest.TestCase):
         _clear_provider_cache()
         self.conn = _fresh_conn()
         self.conn.execute(
-            "INSERT INTO crypto_alerts (user_id, asset_symbol, condition_type, target_value, status) "
+            "INSERT INTO alert_rules (user_id, symbol, condition, threshold_value, status) "
             "VALUES (1,'BTC','above',103.0,'active')"
         )
         self.conn.commit()
