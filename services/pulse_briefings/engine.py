@@ -223,26 +223,131 @@ def push_notifications_allowed(cur, user_id: int) -> bool:
     return bool(value)
 
 
+class InvalidPreference(ValueError):
+    """A preference write the engine refuses rather than silently rewrites.
+
+    Stage 25: the old code filtered unknown values out of the update and still
+    returned 200 with the UNCHANGED preferences. A client sending
+    frequency="hourly" (or a typo'd toggle) got a success response describing a
+    state it did not ask for, and the mismatch only surfaced later as "my setting
+    didn't stick". Refusing is the only answer that keeps the client and the
+    server honest about what was stored.
+    """
+
+    def __init__(self, field: str, value: Any, expected: str):
+        self.field = field
+        self.value = value
+        self.expected = expected
+        super().__init__(f"Invalid value for {field}: expected {expected}.")
+
+
+def _validated_preferences(values: dict[str, Any], current: dict[str, Any]) -> dict[str, Any]:
+    """Return only the keys the caller actually sent, validated. Absent keys are
+    left alone -- a PATCH of one toggle must not restate the rest."""
+    out: dict[str, Any] = {}
+    for key in ("enabled", "network_enabled", "crypto_enabled", "watchlist_enabled"):
+        if key not in values:
+            continue
+        raw = values[key]
+        # Booleans only. Accepting a bare truthy string here is how "false" (a
+        # non-empty string) becomes True and silently enables a topic the user
+        # just switched off.
+        if isinstance(raw, bool):
+            out[key] = raw
+        elif isinstance(raw, int) and raw in (0, 1):
+            out[key] = bool(raw)
+        elif isinstance(raw, str) and raw.strip().lower() in ("true", "false"):
+            out[key] = raw.strip().lower() == "true"
+        else:
+            raise InvalidPreference(key, raw, "a boolean")
+    if "frequency" in values:
+        raw = values["frequency"]
+        if not isinstance(raw, str) or raw not in FREQUENCIES:
+            raise InvalidPreference("frequency", raw, "one of " + ", ".join(FREQUENCIES))
+        out["frequency"] = raw
+    for key in ("quiet_start", "quiet_end"):
+        if key not in values:
+            continue
+        raw = values[key]
+        parts = str(raw or "").split(":")
+        if len(parts) != 2:
+            raise InvalidPreference(key, raw, "HH:MM")
+        try:
+            hour, minute = int(parts[0]), int(parts[1])
+        except ValueError:
+            raise InvalidPreference(key, raw, "HH:MM") from None
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            raise InvalidPreference(key, raw, "HH:MM within 00:00-23:59")
+        out[key] = f"{hour:02d}:{minute:02d}"
+    return out
+
+
+def push_transport_status(cur, user_id: int) -> dict[str, Any]:
+    """Can a briefing push actually REACH this user right now?
+
+    "Briefings enabled" and "push will arrive" are different facts, and the hub
+    used to report the first while claiming the second. A user who denied the OS
+    prompt, signed out on their only device, or is on a build with push disabled
+    has zero rows in push_subscriptions -- yet the preference row still says push
+    is allowed, so the screen read "Push notifications are on." and the user
+    waited for a notification that could never be sent.
+
+    This queries push_subscriptions with the SAME predicate _deliver's
+    push_service.send_push uses, so the status cannot drift from the sender: if
+    this says ready, send_push finds rows; if it says no_devices, send_push
+    returns not_configured. Reason is ordered by what the sender checks first.
+    """
+    status = {
+        "preference_allows": push_notifications_allowed(cur, user_id),
+        "provider_enabled": True,
+        "device_count": 0,
+    }
+    try:
+        from .. import push_service
+        status["provider_enabled"] = bool(push_service._provider_send_enabled())
+    except Exception:  # noqa: BLE001 - transport introspection is never fatal
+        logging.exception("BRIEFING_PUSH_PROVIDER_LOOKUP_FAILED user_id=%s", user_id)
+    try:
+        cur.execute(
+            "SELECT COUNT(*) AS n FROM push_subscriptions "
+            "WHERE user_id=? AND COALESCE(is_active, active, 1)=1",
+            (int(user_id),),
+        )
+        row = cur.fetchone()
+        if row is not None:
+            try:
+                status["device_count"] = int(row["n"])
+            except Exception:  # noqa: BLE001 - tuple-shaped cursor
+                status["device_count"] = int(row[0] or 0)
+    except Exception:  # noqa: BLE001 - table may not exist in a partial schema
+        logging.exception("BRIEFING_PUSH_DEVICE_LOOKUP_FAILED user_id=%s", user_id)
+        status["device_count"] = 0
+
+    if not status["provider_enabled"]:
+        reason = "provider_disabled"
+    elif not status["preference_allows"]:
+        reason = "preference_off"
+    elif status["device_count"] <= 0:
+        reason = "no_devices"
+    else:
+        reason = None
+    status["ready"] = reason is None
+    status["reason"] = reason
+    return status
+
+
 def update_preferences(user_id: int, values: dict[str, Any], *, conn=None) -> dict[str, Any]:
     owns = conn is None
     conn = conn or user_context.connect()
     ensure_schema(conn)
     cur = conn.cursor()
     current = get_preferences(user_id, conn=conn)
-    for key in ("enabled", "network_enabled", "crypto_enabled", "watchlist_enabled"):
-        if key in values:
-            current[key] = bool(values[key])
-    if "frequency" in values and str(values["frequency"]) in FREQUENCIES:
-        current["frequency"] = str(values["frequency"])
-    for key in ("quiet_start", "quiet_end"):
-        raw = str(values.get(key) or "")
-        if raw and len(raw.split(":")) == 2:
-            try:
-                h, m = int(raw.split(":")[0]), int(raw.split(":")[1])
-                if 0 <= h <= 23 and 0 <= m <= 59:
-                    current[key] = f"{h:02d}:{m:02d}"
-            except ValueError:
-                pass
+    try:
+        current.update(_validated_preferences(values, current))
+    except InvalidPreference:
+        if owns:
+            conn.close()
+        raise
     cur.execute(
         """
         INSERT INTO pulse_briefing_prefs (user_id, enabled, network_enabled, crypto_enabled,
@@ -293,22 +398,34 @@ def _user_zone(conn, user_id: int) -> ZoneInfo:
 
 
 def _windows_for_frequency(frequency: str) -> tuple[int, ...]:
+    """Local hours at which an evaluation window opens.
+
+    "off" has no windows. It used to fall through to the full four-window
+    schedule and rely on every caller separately remembering to check for it --
+    a guard that only has to be forgotten once for an opted-out user to be
+    evaluated. An empty schedule makes "off" mean off here, at the source.
+    """
+    if frequency == "off":
+        return ()
     if frequency == "morning_evening":
-        return (6, 18)
+        return (8, 18)
     if frequency == "daily":
-        return (6,)
+        return (8,)
     return BRIEFING_WINDOWS
 
 
 def current_window(local_now: datetime, frequency: str) -> tuple[str, datetime] | None:
     """Return (window_key, window_start_local) if a window is open now."""
-    for hour in _windows_for_frequency(frequency):
+    windows = _windows_for_frequency(frequency)
+    if not windows:
+        return None
+    for hour in windows:
         start = local_now.replace(hour=hour, minute=0, second=0, microsecond=0)
         if start <= local_now < start + timedelta(hours=6):
             return f"{local_now.strftime('%Y-%m-%d')}:{hour:02d}", start
     prev = local_now - timedelta(days=1)
-    last = _windows_for_frequency(frequency)[-1]
-    if local_now < local_now.replace(hour=_windows_for_frequency(frequency)[0], minute=0, second=0, microsecond=0):
+    last = windows[-1]
+    if local_now < local_now.replace(hour=windows[0], minute=0, second=0, microsecond=0):
         return f"{prev.strftime('%Y-%m-%d')}:{last:02d}", prev.replace(hour=last, minute=0, second=0, microsecond=0)
     return None
 
@@ -765,7 +882,8 @@ def delivery_status(user_id: int, *, conn=None) -> dict[str, Any]:
     prefs = get_preferences(user_id, conn=conn)
     zone = _user_zone(conn, user_id)
     local_now = _now().astimezone(zone)
-    push_enabled = push_notifications_allowed(cur, user_id)
+    transport = push_transport_status(cur, user_id)
+    push_enabled = transport["preference_allows"]
     cur.execute(
         "SELECT id, title, status, generated_at, sent_at, created_at FROM pulse_briefings "
         "WHERE user_id=? AND status IN ('sent','generated') ORDER BY id DESC LIMIT 1",
@@ -777,12 +895,22 @@ def delivery_status(user_id: int, *, conn=None) -> dict[str, Any]:
     if prefs["enabled"] and prefs["frequency"] != "off" and briefings_enabled():
         jitter = _jitter_offset_minutes(user_id)
         candidates = []
-        for day_offset in (0, 1):
+        # Two days is not enough once quiet hours can veto a window: a user whose
+        # quiet range covers every window of the day would get next_check=None
+        # and read "Briefings are paused" while the engine was merely quiet until
+        # tomorrow. Scan far enough to distinguish "later" from "never".
+        for day_offset in (0, 1, 2):
             day = local_now + timedelta(days=day_offset)
             for hour in _windows_for_frequency(prefs["frequency"]):
                 start = day.replace(hour=hour, minute=0, second=0, microsecond=0) + timedelta(minutes=jitter)
-                if start > local_now:
-                    candidates.append(start)
+                if start <= local_now:
+                    continue
+                # The worker suppresses a window that lands inside quiet hours,
+                # so advertising it as the next check promises something that
+                # will not happen. Show the first window that can actually run.
+                if _quiet_hours_active(start, prefs["quiet_start"], prefs["quiet_end"]):
+                    continue
+                candidates.append(start)
         if candidates:
             next_check = min(candidates).isoformat(timespec="minutes")
     unseen = unseen_briefings_count(user_id, conn=conn)
@@ -795,7 +923,12 @@ def delivery_status(user_id: int, *, conn=None) -> dict[str, Any]:
         "quiet_start": prefs["quiet_start"],
         "quiet_end": prefs["quiet_end"],
         "timezone": str(zone.key),
+        # push_enabled is the user's PREFERENCE. push_ready is whether a push can
+        # actually be delivered. The screen must not conflate them.
         "push_enabled": push_enabled,
+        "push_ready": transport["ready"],
+        "push_blocked_reason": transport["reason"],
+        "push_device_count": transport["device_count"],
         "briefings_feature_enabled": briefings_enabled(),
         "last_briefing": last,
         "next_check_local": next_check,

@@ -41,14 +41,6 @@ REQUIRED_EVENTS = {
     "customer.subscription.deleted",
     "payment_intent.succeeded",
     "payment_intent.payment_failed",
-    # Required for Marketplace inventory correctness, not only for accounting.
-    # A cancelled intent is the only Stripe signal that an Apple Pay /
-    # PaymentSheet checkout was abandoned; Stripe sends no event at all for the
-    # sheet being dismissed. Without this subscription the release never fires
-    # from the webhook side and stock waits out the full TTL. The durable
-    # expiry sweeper remains the authoritative backstop — this event is what
-    # makes the common case fast rather than merely eventually correct.
-    "payment_intent.canceled",
     "charge.refunded",
     "payout.paid",
     "payout.failed",

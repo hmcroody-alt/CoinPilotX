@@ -43,4 +43,4 @@ Evidence levels: A=live prod proof · B=integration test run · C=unit test run 
 
 ## Infra remediation log (this pass)
 - email_worker Railway service b512ca74-5e43-4215-90c1-97a3b4f0205e: repo hmcroody-alt/CoinPilotX@main, start `python email_worker.py`, restart ALWAYS, 177 vars referenced from web service (`${{CoinPilotX.*}}`), UNDX_WORKER_ENABLED=0, interval 10s batch 25.
-- BREVO_WEBHOOK_SECRET set on web service (redeploy triggered). OWNER ACTION: set Brevo dashboard webhook URL to `https://pulsesoc.com/webhooks/brevo/delivery?secret=<value>` (value in Railway var).
+- BREVO_WEBHOOK_SECRET set on web service (redeploy triggered). OWNER ACTION (DONE 2026-09-01): Brevo dashboard webhook URL set to `https://pulsesoc.com/api/brevo/webhook?secret=<value>` (value in Railway var). NOTE: earlier version of this line gave a wrong path (`/webhooks/brevo/delivery` → 404); corrected and verified live — delivery events now update email status (proof: message 80ec5ce5de2f4378 sent→clicked).

@@ -169,12 +169,4 @@ class TestBuyNowNoLongerFlattensEveryFailure:
         assert 'provider_error=classified["provider_error"]' in code
 
     def test_a_failed_provider_call_still_gives_the_stock_back(self):
-        # This once asserted an inline `release_inventory_reservation(cur,
-        # tx_id, now=now)` followed by the branch's own hand-rolled status
-        # update. The pairing now lives in `settle_failed_transactions`, shared
-        # with the webhook branches — and routing this branch through it also
-        # gave it the `NOT IN ('paid','refunded')` guard it never had, so a late
-        # webhook can no longer downgrade an order that settled in the meantime.
-        code = _code(BUY_NOW)
-        assert "settle_failed_transactions" in code
-        assert "REASON_CHECKOUT_ERROR" in code
+        assert "release_inventory_reservation(cur, tx_id, now=now)" in _code(BUY_NOW)

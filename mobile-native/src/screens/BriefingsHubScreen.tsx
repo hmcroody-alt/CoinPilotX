@@ -46,17 +46,65 @@ type Props = NativeStackScreenProps<RootStackParamList, "BriefingsHub">;
 /** "off" is the master switch, not a cadence — the picker never offers it. */
 const FREQUENCY_CHOICES: BriefingFrequency[] = ["smart", "every_6h", "morning_evening", "daily", "important_only"];
 
-/** Defensive timestamp formatter: never throws, never invents a value. */
-function formatWhen(value?: string | null): string {
+/**
+ * Which push line to show. "Briefings enabled" and "a push can reach you" are
+ * different facts: this screen used to read the preference flag and tell a user
+ * with no registered device that push was on, so they waited for a notification
+ * the server could never send. push_ready is the server's answer to "would a
+ * send succeed right now"; push_blocked_reason says why not.
+ *
+ * push_ready is optional at runtime because an older backend won't return it —
+ * in that case fall back to the preference flag rather than claiming a state.
+ */
+export function pushStatusKey(status: BriefingDeliveryStatus): string {
+  if (status.push_ready === undefined) {
+    return status.push_enabled ? "briefings:status.pushOn" : "briefings:status.pushOff";
+  }
+  if (status.push_ready) return "briefings:status.pushOn";
+  switch (status.push_blocked_reason) {
+    case "no_devices":
+      return "briefings:status.pushNoDevice";
+    case "provider_disabled":
+      return "briefings:status.pushPaused";
+    default:
+      return "briefings:status.pushOff";
+  }
+}
+
+/**
+ * Defensive timestamp formatter: never throws, never invents a value.
+ *
+ * `zone` is the user's canonical briefing timezone and is NOT optional in
+ * spirit. Every time on this screen belongs to that zone: the quiet-hours
+ * range and the "Timezone:" line are both stated in it, and the scheduler
+ * picks windows in it. Formatting without an explicit timeZone falls back to
+ * the *device* zone, which silently re-renders the server's already-canonical
+ * `next_check_local` into whatever the handset happens to be set to. On a
+ * UTC account held by a device in PDT that turned 12:04 UTC into "5:04 AM"
+ * and made the card claim a check inside the 22:00-07:00 quiet range it was
+ * printing directly underneath.
+ *
+ * An unknown IANA id makes toLocaleString throw RangeError, so a bad zone
+ * degrades to device-local rather than blanking the card.
+ */
+export function formatWhen(value: string | null | undefined, zone?: string | null): string {
   if (!value) return "";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString(undefined, {
+  const opts: Intl.DateTimeFormatOptions = {
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit"
-  });
+  };
+  if (zone) {
+    try {
+      return parsed.toLocaleString(undefined, { ...opts, timeZone: zone });
+    } catch {
+      /* unknown zone id — fall through to device-local */
+    }
+  }
+  return parsed.toLocaleString(undefined, opts);
 }
 
 /** Shift an "HH:MM" quiet-hours boundary by whole hours, wrapping at 24. */
@@ -227,7 +275,7 @@ export function BriefingsHubScreen({ navigation }: Props) {
             style={styles.latest}
           >
             <Text style={styles.rowTitle}>{latest.title}</Text>
-            <Text style={styles.rowMeta}>{formatWhen(latest.sent_at || latest.generated_at)}</Text>
+            <Text style={styles.rowMeta}>{formatWhen(latest.sent_at || latest.generated_at, status?.timezone)}</Text>
             <Text style={styles.body} numberOfLines={3}>{latest.body}</Text>
           </Pressable>
         ) : historyFailed ? (
@@ -257,7 +305,7 @@ export function BriefingsHubScreen({ navigation }: Props) {
             <View style={styles.gap}>
               {status.enabled && status.next_check_local ? (
                 <Text style={styles.statusLine}>
-                  {t("briefings:status.nextCheck", { time: formatWhen(status.next_check_local) })}
+                  {t("briefings:status.nextCheck", { time: formatWhen(status.next_check_local, status.timezone) })}
                 </Text>
               ) : (
                 <Text style={styles.statusLine}>{t("briefings:status.nextCheckNone")}</Text>
@@ -266,9 +314,7 @@ export function BriefingsHubScreen({ navigation }: Props) {
                 {t("briefings:status.quiet", { start: status.quiet_start, end: status.quiet_end })}
               </Text>
               <Text style={styles.muted}>{t("briefings:status.timezone", { zone: status.timezone })}</Text>
-              <Text style={styles.muted}>
-                {status.push_enabled ? t("briefings:status.pushOn") : t("briefings:status.pushOff")}
-              </Text>
+              <Text style={styles.muted}>{t(pushStatusKey(status))}</Text>
             </View>
           </Panel>
         </>
@@ -411,7 +457,7 @@ export function BriefingsHubScreen({ navigation }: Props) {
               >
                 <View style={styles.rowHead}>
                   <Text style={styles.rowTitle} numberOfLines={1}>{item.title}</Text>
-                  <Text style={styles.rowMeta}>{formatWhen(item.sent_at || item.generated_at)}</Text>
+                  <Text style={styles.rowMeta}>{formatWhen(item.sent_at || item.generated_at, status?.timezone)}</Text>
                 </View>
                 <Text style={styles.muted} numberOfLines={2}>{item.body}</Text>
               </Pressable>

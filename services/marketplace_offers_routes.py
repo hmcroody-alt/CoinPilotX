@@ -42,10 +42,9 @@ from services import marketplace_seller_identity as seller_identity
 from services.marketplace_cart_routes import (
     _apple_pay_merchant_id,
     _listing_metadata,
-    settle_failed_transactions,
+    release_inventory_reservation,
     stripe_shipping_checkout_params,
 )
-from services import marketplace_reservation_policy as reservation_policy
 from services import marketplace_fulfillment
 from services.marketplace_payment_errors import (
     below_minimum_charge_error,
@@ -721,20 +720,11 @@ def offer_checkout(offer_id: int):
             trace_id = secrets.token_hex(6)
             LOGGER.exception("OFFER_CHECKOUT_CREATE_FAILED trace_id=%s offer_id=%s", trace_id, offer_id)
             classified = classify_provider_exception(exc)
-            # The sixth and last copy of "give the stock back, then close the
-            # order". Like the buy-now lane it carried two latent defects that
-            # routing through the shared service removes rather than patches:
-            # the status write had no `NOT IN ('paid','refunded')` guard, so a
-            # settled order could be downgraded by a late failure here; and the
-            # release passed no reason, which `release_inventory_reservation`
-            # normalises to `manual` instead of rejecting — an unexplained
-            # inventory movement in the audit trail, silent at runtime.
-            settle_failed_transactions(
-                cur, [tx_id],
-                reason=reservation_policy.REASON_CHECKOUT_ERROR,
-                terminal_status="checkout_failed", now=now,
-                metadata_json=json.dumps({"error": str(exc), "trace_id": trace_id,
-                                          "provider_error": classified["provider_error"]}, default=str),
+            release_inventory_reservation(cur, tx_id, now=now)
+            cur.execute(
+                "UPDATE seller_transactions SET status='checkout_failed', metadata_json=?, updated_at=? WHERE id=?",
+                (json.dumps({"error": str(exc), "trace_id": trace_id,
+                             "provider_error": classified["provider_error"]}, default=str), now, tx_id),
             )
             return _error(classified["message"], classified["status"],
                           code=classified["code"], trace_id=trace_id, transaction_id=tx_id,

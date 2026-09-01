@@ -39,7 +39,7 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping, Sequence
 
 from . import config as brain_config
-from .corpus import IngestedCorpus, KnowledgeRecord, ingest, prompt_block
+from .corpus import IngestedCorpus, KnowledgeRecord, ingest, prompt_block, render_line
 from .truth import TrustLevel, may_explain_product, meets, hedge_for, rank
 
 
@@ -361,6 +361,34 @@ def _limits(
     values = resolution.values
     notes: list[str] = []
     limit = max(1, min(int(values.get("UNDX_KNOWLEDGE_MAX_RESULTS", 6)), MAX_RESULTS))
+
+    # ``UNDX_SOURCE_CORPUS_MAX_CONTEXT_RECORDS`` is declared as "a hard ceiling on records
+    # that may enter a single model prompt, independent of what retrieval asks for", and
+    # until now nothing read it. Its only appearance in the codebase was its own
+    # declaration, which meant the one variable described as the thing that stops the
+    # corpus becoming one enormous prompt could be set to any value with no effect at all
+    # — the exact defect ``bounds.py`` opens by naming: a ceiling nobody reads is a
+    # comment.
+    #
+    # It is applied as a second, independent ``min`` rather than folded into the first,
+    # because the two flags answer different questions and are owned by different people.
+    # ``UNDX_KNOWLEDGE_MAX_RESULTS`` is a retrieval preference; this is a corpus-side
+    # limit that retrieval is not entitled to exceed. Whichever is tighter binds, and when
+    # it is this one the fact is recorded, so an operator who lowered the corpus ceiling
+    # and then wondered why raising the retrieval limit did nothing has an answer in the
+    # structure rather than in the source.
+    corpus_ceiling = int(values.get("UNDX_SOURCE_CORPUS_MAX_CONTEXT_RECORDS", 8))
+    if corpus_ceiling < limit:
+        notes.append(
+            f"UNDX_SOURCE_CORPUS_MAX_CONTEXT_RECORDS={corpus_ceiling} is the binding "
+            f"ceiling; the retrieval limit of {limit} was not reachable"
+        )
+        limit = corpus_ceiling
+    # ``minimum=0`` is a legitimate setting — it means "no corpus in prompts" — but the
+    # loop below reads ``limit`` as a count, so zero must stay zero rather than being
+    # clamped up to one the way a mistyped negative would be.
+    limit = max(0, limit)
+
     chars = max(
         200,
         min(int(values.get("UNDX_KNOWLEDGE_MAX_CONTEXT_CHARS", 4000)), MAX_CONTEXT_CHARS),
@@ -413,9 +441,22 @@ def retrieve(
     """
     applied_limit, applied_chars, floor, enabled, allow_discovered, config_notes = _limits(env)
     if limit is not None:
-        applied_limit = max(1, min(int(limit), MAX_RESULTS))
+        # A caller-supplied limit may lower the configured one and may not raise it. The
+        # ceilings computed in ``_limits`` include the corpus-side one, which is declared
+        # to hold "independent of what retrieval asks for" — and an argument is retrieval
+        # asking. ``min`` against ``applied_limit`` is what makes that sentence true for
+        # in-process callers as well as for configuration.
+        applied_limit = max(0, min(int(limit), MAX_RESULTS, applied_limit))
     if char_limit is not None:
-        applied_chars = max(200, min(int(char_limit), MAX_CONTEXT_CHARS))
+        # ``applied_chars`` belongs in this ``min`` for exactly the reason given above,
+        # and its absence was a defect rather than a stylistic difference between two
+        # neighbouring lines: the branch above honoured configuration and this one
+        # silently overrode it, so an operator who lowered
+        # ``UNDX_KNOWLEDGE_MAX_CONTEXT_CHARS`` to 500 got up to 6000 the moment any
+        # in-process caller named a number. Only the module constant still bound, and
+        # the comment above described a policy the code kept for one field and broke
+        # for the other. The two branches now say the same sentence.
+        applied_chars = max(200, min(int(char_limit), MAX_CONTEXT_CHARS, applied_chars))
 
     base = Retrieval(
         query=str(query or ""),
@@ -480,8 +521,20 @@ def retrieve(
     for _, _, record in scored:
         if len(kept) >= applied_limit:
             break
-        summary = record.summary[:MAX_SUMMARY_CHARS]
-        cost = len(record.path) + len(summary) + 40
+        # The record's cost is the length of the line it will actually occupy, obtained
+        # from the function that will render it. It used to be
+        # ``len(path) + len(summary) + 40`` — a hand-estimated overhead that no longer
+        # matched what :func:`~services.undx_brain.corpus.prompt_block` produces, since
+        # the rendered line also carries the category, the trust level, any ``[STALE]``
+        # marker and whatever ``envelope.neutralise`` expands.
+        #
+        # The estimate ran low, and the direction matters. Retrieval counted a record as
+        # kept, so it did not appear in ``withheld``; ``prompt_block`` then found no room
+        # and dropped it. The caller believed it had passed the model a set of records it
+        # had not passed, and no field anywhere said otherwise. Costing the real line
+        # closes that: what this function calls kept is what the block will contain, and
+        # ``withheld`` becomes a true account rather than an optimistic one.
+        cost = len(render_line(record))
         if used + cost > applied_chars:
             continue
         kept.append(record)

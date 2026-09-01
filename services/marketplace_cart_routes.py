@@ -52,7 +52,6 @@ from services.marketplace_payment_errors import (
 from services import marketplace_quote_service
 from services import marketplace_goods_policy
 from services import marketplace_payment_pause
-from services import marketplace_reservation_policy as reservation_policy
 
 LOGGER = logging.getLogger(__name__)
 
@@ -204,80 +203,7 @@ def _ensure_schema(cur) -> None:
         )
         """
     )
-    _ensure_reservation_lifecycle_columns(cur)
     _SCHEMA_READY = True
-
-
-# Lifecycle columns added after the table shipped. There is no migration
-# framework in this repo (schema is created imperatively and must be
-# idempotent), so they are added defensively here rather than by editing the
-# CREATE TABLE above — editing it would only affect fresh databases and would
-# silently skip production, which already has the table.
-_RESERVATION_LIFECYCLE_COLUMNS = (
-    # When the hold was taken. Distinct from created_at, which a future
-    # re-reservation on the same transaction would not update.
-    ("reserved_at", "TEXT"),
-    # The durable deadline. This is what makes expiry authoritative rather
-    # than dependent on a client callback that may never arrive.
-    ("expires_at", "TEXT"),
-    # Terminal timestamps, kept separate so an audit can tell a capture from a
-    # release without reading the status string.
-    ("released_at", "TEXT"),
-    ("captured_at", "TEXT"),
-    # Why it was released — see marketplace_reservation_policy.RELEASE_REASONS.
-    ("release_reason", "TEXT"),
-    # Set when a release was deferred because Stripe said the intent was still
-    # live. Lets the sweeper back off without losing the row.
-    ("reconciled_at", "TEXT"),
-    # How many consecutive sweeps have deferred this reservation. The
-    # reconciler's deferral bound is a *count*, and without somewhere durable to
-    # keep it every sweep would start again at zero — which would make
-    # `requires_action` defer forever and never reach the
-    # `buyer_never_completed` release. The bound would exist in the decision
-    # table and be unreachable in production.
-    ("reconcile_deferrals", "INTEGER"),
-)
-
-
-def _ensure_reservation_lifecycle_columns(cur) -> None:
-    """Add the lifecycle columns if this database predates them.
-
-    Uses the portable introspection helper rather than PRAGMA directly:
-    production is PostgreSQL, where PRAGMA raises and poisons the transaction,
-    which historically made these defensive ALTERs silent no-ops.
-    """
-    try:
-        from services import db as db_module
-
-        existing = db_module.get_table_columns(cur, "marketplace_inventory_reservations")
-    except Exception:
-        LOGGER.exception("RESERVATION_COLUMN_INTROSPECT_FAILED")
-        return
-    for column, definition in _RESERVATION_LIFECYCLE_COLUMNS:
-        if column in existing:
-            continue
-        try:
-            cur.execute(
-                f"ALTER TABLE marketplace_inventory_reservations ADD COLUMN {column} {definition}"
-            )
-        except Exception:
-            # A concurrent worker may have added it between the introspection
-            # and here. Losing that race is fine; anything else is logged.
-            LOGGER.exception("RESERVATION_COLUMN_ADD_FAILED column=%s", column)
-    # The sweeper's only query shape is (status, expires_at). Without this it
-    # degrades to a full scan of every reservation ever taken.
-    try:
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_mkt_reservations_status_expires "
-            "ON marketplace_inventory_reservations (status, expires_at)"
-        )
-    except Exception:
-        LOGGER.exception("RESERVATION_INDEX_CREATE_FAILED")
-    # This function has just established the true shape against the real
-    # database, so hand it to the terminal-transition path rather than making
-    # it re-probe. Cleared, not set, so the next caller re-reads post-ALTER.
-    global _RESERVATION_COLUMN_CACHE
-    _RESERVATION_COLUMN_CACHE = None
 
 
 # --------------------------------------------------------------------------
@@ -854,20 +780,11 @@ def cart_checkout():
 
         # Reserve physical inventory before handing the buyer to Stripe. The
         # reservation is keyed to the transaction, so duplicate taps cannot
-        # decrement twice.
-        #
-        # Every hold carries a durable `expires_at`. That deadline — not a
-        # client callback — is what guarantees the stock comes back: a buyer
-        # who dismisses the Apple Pay sheet produces no Stripe webhook at all,
-        # and an app that crashes or loses signal sends nothing either. The
-        # sweeper reads this column; a cancel signal from the app only makes
-        # the release happen sooner.
-        #
+        # decrement twice; expiry/failure restores it.
         # Stock is held for things there is a finite number of. A booking or a
         # seat at an event has no parcel to run out of, and the legacy test here
         # only recognised `digital` — so those lines decremented a quantity that
         # means nothing to them, in the one lane that still did it.
-        reservation_expires_at = reservation_policy.expires_at_for(now)
         for line, tx_id, line_kind in zip(lines, tx_ids, line_kinds):
             if line_kind in marketplace_fulfillment.STOCKLESS_KINDS:
                 continue
@@ -878,19 +795,14 @@ def cart_checkout():
             )
             if not cur.rowcount:
                 for held_tx in tx_ids:
-                    release_inventory_reservation(
-                        cur, held_tx, now=now,
-                        reason=reservation_policy.REASON_OUT_OF_STOCK_ROLLBACK,
-                    )
+                    release_inventory_reservation(cur, held_tx, now=now)
                 return _error("An item sold out before checkout. No card was charged.", 409,
                               code="OUT_OF_STOCK")
             cur.execute(
                 """INSERT INTO marketplace_inventory_reservations
-                (seller_transaction_id,buyer_user_id,listing_id,quantity,status,
-                 created_at,updated_at,reserved_at,expires_at)
-                VALUES (?,?,?,?, 'held',?,?,?,?) ON CONFLICT(seller_transaction_id) DO NOTHING""",
-                (tx_id, buyer_id, line["listing_id"], line["qty"], now, now,
-                 now, reservation_expires_at),
+                (seller_transaction_id,buyer_user_id,listing_id,quantity,status,created_at,updated_at)
+                VALUES (?,?,?,?, 'held',?,?) ON CONFLICT(seller_transaction_id) DO NOTHING""",
+                (tx_id, buyer_id, line["listing_id"], line["qty"], now, now),
             )
 
         if cash_payment:
@@ -1043,18 +955,13 @@ def cart_checkout():
             # the owner sees the provider fingerprint (type/code/param) on the
             # response itself, not only in a Railway log.
             classified = classify_provider_exception(exc)
-            # The cart's own checkout-create failure takes the same shared path
-            # as the webhook branches and the two other checkout lanes. It is
-            # the caller nearest the service — which is exactly why it was easy
-            # to leave hand-rolled, and why its `WHERE id=?` had no
-            # settled-order guard until it was routed here.
-            settle_failed_transactions(
-                cur, tx_ids,
-                reason=reservation_policy.REASON_CHECKOUT_ERROR,
-                terminal_status="checkout_failed", now=now,
-                metadata_json=json.dumps({"error": str(exc), "trace_id": trace_id,
-                                          "provider_error": classified["provider_error"]}, default=str),
-            )
+            for tx_id in tx_ids:
+                release_inventory_reservation(cur, tx_id, now=now)
+                cur.execute(
+                    "UPDATE seller_transactions SET status='checkout_failed', metadata_json=?, updated_at=? WHERE id=?",
+                    (json.dumps({"error": str(exc), "trace_id": trace_id,
+                                 "provider_error": classified["provider_error"]}, default=str), now, tx_id),
+                )
             return _error(classified["message"], classified["status"],
                           code=classified["code"], trace_id=trace_id, transaction_ids=tx_ids,
                           provider_error=classified["provider_error"])
@@ -1062,286 +969,21 @@ def cart_checkout():
     return _with_db(handler)
 
 
-# --------------------------------------------------------------------------
-# Reservation terminal transitions — the single shared mutation path
-# --------------------------------------------------------------------------
-# Every caller that ends a reservation goes through exactly one of these two
-# functions: the checkout error path, the webhook branches for succeeded /
-# payment_failed / canceled, the buyer's cancel signal, and the expiry
-# sweeper. Duplicating the stock arithmetic per call site is how a marketplace
-# ends up double-incrementing inventory, so it is written once, here.
-#
-# Both are compare-and-swap. The status flip is issued FIRST and its rowcount
-# is the claim: only the caller whose UPDATE actually matched a `held` row
-# proceeds to touch `marketplace_listings`. A concurrent second caller — the
-# sweeper firing at the same instant the webhook lands, say — matches zero
-# rows and returns without writing anything. This is what makes it impossible
-# to return the same unit of stock twice, and impossible for a release to
-# undo a capture: once the row is `captured`, no release can claim it.
-
-_RESERVATION_COLUMN_CACHE: set[str] | None = None
+def capture_inventory_reservation(cur, seller_transaction_id: int, *, now: str | None = None) -> None:
+    cur.execute("UPDATE marketplace_inventory_reservations SET status='captured', updated_at=? WHERE seller_transaction_id=? AND status='held'",
+                (now or _now(), int(seller_transaction_id)))
 
 
-def _reservation_columns(cur, *, refresh: bool = False) -> set[str]:
-    """Which lifecycle columns this database actually has.
-
-    Both terminal transitions run inside Stripe webhook handlers. If a
-    lifecycle column were missing — an ALTER that lost a race, a replica that
-    has not caught up, a legacy database — writing to it unconditionally would
-    raise inside the webhook, return 500, and put Stripe into an indefinite
-    retry loop while the stock stayed held. That is the exact failure this
-    mission exists to prevent, so the write degrades to the columns that are
-    present instead. The status transition itself never degrades: it is the
-    part that carries the money-safety guarantee.
-    """
-    global _RESERVATION_COLUMN_CACHE
-    if _RESERVATION_COLUMN_CACHE is not None and not refresh:
-        return _RESERVATION_COLUMN_CACHE
-    try:
-        from services import db as db_module
-
-        _RESERVATION_COLUMN_CACHE = db_module.get_table_columns(
-            cur, "marketplace_inventory_reservations")
-    except Exception:
-        # Unknown shape: assume only the original columns exist. Conservative,
-        # and still correct — the audit fields are additive metadata.
-        _RESERVATION_COLUMN_CACHE = {"seller_transaction_id", "listing_id",
-                                     "quantity", "status", "updated_at"}
-    return _RESERVATION_COLUMN_CACHE
-
-
-def _reservation_update(cur, assignments: list[tuple[str, object]], *,
-                        seller_transaction_id: int, from_status: str) -> int:
-    """Issue one guarded status transition, skipping absent columns.
-
-    Returns the number of rows claimed. Zero means another caller already
-    moved this reservation to a terminal state and this caller must not touch
-    inventory.
-    """
-    columns = _reservation_columns(cur)
-    usable = [(name, value) for name, value in assignments if name in columns]
-    clause = ", ".join(f"{name}=?" for name, _ in usable)
-    params = [value for _, value in usable] + [int(seller_transaction_id), from_status]
-    sql = (f"UPDATE marketplace_inventory_reservations SET {clause} "
-           "WHERE seller_transaction_id=? AND status=?")
-    try:
-        cur.execute(sql, params)
-    except Exception:
-        # The cached shape was wrong — most likely a second in-process
-        # database with a different schema. Re-probe once and retry; if it
-        # fails again the exception is real and must propagate.
-        columns = _reservation_columns(cur, refresh=True)
-        usable = [(name, value) for name, value in assignments if name in columns]
-        clause = ", ".join(f"{name}=?" for name, _ in usable)
-        params = [value for _, value in usable] + [int(seller_transaction_id), from_status]
-        cur.execute(
-            f"UPDATE marketplace_inventory_reservations SET {clause} "
-            "WHERE seller_transaction_id=? AND status=?",
-            params,
-        )
-    return int(cur.rowcount or 0)
-
-
-def capture_inventory_reservation(cur, seller_transaction_id: int, *,
-                                  now: str | None = None) -> dict:
-    """Consume a hold because payment settled. Idempotent; never returns stock.
-
-    Returns a dict describing what happened, so callers can emit an accurate
-    telemetry event rather than assuming the transition occurred.
-    """
-    stamp = now or _now()
-    claimed = _reservation_update(
-        cur,
-        [("status", reservation_policy.STATUS_CAPTURED),
-         ("updated_at", stamp),
-         ("captured_at", stamp)],
-        seller_transaction_id=seller_transaction_id,
-        from_status=reservation_policy.STATUS_HELD,
-    )
-    if not claimed:
-        return {"changed": False, "reason": "not_held",
-                "seller_transaction_id": int(seller_transaction_id)}
-    return {"changed": True, "status": reservation_policy.STATUS_CAPTURED,
-            "seller_transaction_id": int(seller_transaction_id)}
-
-
-def release_inventory_reservation(cur, seller_transaction_id: int, *,
-                                  now: str | None = None,
-                                  reason: str | None = None) -> dict:
-    """Return held stock to the listing exactly once, then close the row.
-
-    ``reason`` records *why* — see ``marketplace_reservation_policy``. It is
-    optional so that pre-existing call sites keep working unchanged, but an
-    unrecognised value is normalised rather than stored, because a typo'd
-    reason silently poisoning the audit trail is worse than a generic one.
-    """
-    stamp = now or _now()
-    if reason not in reservation_policy.RELEASE_REASONS:
-        reason = reservation_policy.REASON_MANUAL
-
-    # Read first — after the claim succeeds the row's own columns still hold
-    # the quantity, but reading up front keeps the claim and the credit
-    # adjacent and makes the "nothing to do" case a single round trip.
-    cur.execute(
-        "SELECT listing_id, quantity FROM marketplace_inventory_reservations "
-        "WHERE seller_transaction_id=? AND status=? LIMIT 1",
-        (int(seller_transaction_id), reservation_policy.STATUS_HELD),
-    )
+def release_inventory_reservation(cur, seller_transaction_id: int, *, now: str | None = None) -> None:
+    cur.execute("SELECT listing_id,quantity FROM marketplace_inventory_reservations WHERE seller_transaction_id=? AND status='held' LIMIT 1",
+                (int(seller_transaction_id),))
     held = dict(cur.fetchone() or {})
     if not held:
-        return {"changed": False, "reason": "not_held",
-                "seller_transaction_id": int(seller_transaction_id)}
-
-    # The claim. Losing this race means another caller already released or
-    # captured the row, and the stock must not be credited a second time.
-    claimed = _reservation_update(
-        cur,
-        [("status", reservation_policy.STATUS_RELEASED),
-         ("updated_at", stamp),
-         ("released_at", stamp),
-         ("release_reason", reason)],
-        seller_transaction_id=seller_transaction_id,
-        from_status=reservation_policy.STATUS_HELD,
-    )
-    if not claimed:
-        return {"changed": False, "reason": "lost_race",
-                "seller_transaction_id": int(seller_transaction_id)}
-
-    quantity = int(held.get("quantity") or 0)
-    listing_id = int(held.get("listing_id") or 0)
-    if quantity and listing_id:
-        cur.execute(
-            "UPDATE marketplace_listings SET quantity=COALESCE(quantity,0)+?, updated_at=? WHERE id=?",
-            (quantity, stamp, listing_id),
-        )
-    return {"changed": True, "status": reservation_policy.STATUS_RELEASED,
-            "release_reason": reason, "listing_id": listing_id,
-            "quantity": quantity,
-            "seller_transaction_id": int(seller_transaction_id)}
-
-
-def note_reservation_deferral(cur, seller_transaction_id: int, *,
-                              now: str | None = None) -> dict:
-    """Record that a sweep looked at this hold and decided not to act yet.
-
-    Lives here, beside ``capture`` and ``release``, because every write to a
-    reservation row belongs in one module — the same rule that made
-    ``settle_failed_transactions`` the only settlement path. A sweeper that
-    reached into the table itself would be the first crack in that.
-
-    Two fields, two jobs. ``reconciled_at`` is the backoff clock: it is how a
-    caller knows not to spend another provider call on this row for a while.
-    ``reconcile_deferrals`` is the bound: the reconciler's "wait for the buyer"
-    is only bounded because this number survives between sweeps, and a hold
-    that deferred six times is released rather than waited on forever.
-
-    Guarded on ``status='held'`` like every other transition, so a row that was
-    captured or released between the decision and this write is not annotated
-    after the fact. Returns whether the note landed; a caller that reports a
-    deferral it did not actually record would be reporting fiction.
-    """
-    stamp = now or _now()
-    columns = _reservation_columns(cur)
-    if "reconcile_deferrals" not in columns:
-        # A database that predates the column. Recording the timestamp alone
-        # still gives backoff; the bound degrades to "never exhausted", which
-        # holds stock too long rather than releasing it too early.
-        claimed = _reservation_update(
-            cur, [("reconciled_at", stamp), ("updated_at", stamp)],
-            seller_transaction_id=seller_transaction_id,
-            from_status=reservation_policy.STATUS_HELD,
-        )
-        return {"changed": bool(claimed), "deferrals": None,
-                "seller_transaction_id": int(seller_transaction_id)}
-
-    cur.execute(
-        "SELECT COALESCE(reconcile_deferrals,0) AS deferrals "
-        "FROM marketplace_inventory_reservations "
-        "WHERE seller_transaction_id=? AND status=? LIMIT 1",
-        (int(seller_transaction_id), reservation_policy.STATUS_HELD),
-    )
-    row = cur.fetchone()
-    if row is None:
-        return {"changed": False, "reason": "not_held",
-                "seller_transaction_id": int(seller_transaction_id)}
-    deferrals = int(dict(row).get("deferrals") or 0) + 1
-
-    claimed = _reservation_update(
-        cur,
-        [("reconciled_at", stamp), ("updated_at", stamp),
-         ("reconcile_deferrals", deferrals)],
-        seller_transaction_id=seller_transaction_id,
-        from_status=reservation_policy.STATUS_HELD,
-    )
-    if not claimed:
-        return {"changed": False, "reason": "lost_race",
-                "seller_transaction_id": int(seller_transaction_id)}
-    return {"changed": True, "deferrals": deferrals,
-            "seller_transaction_id": int(seller_transaction_id)}
-
-
-#: Statuses a transaction can never be moved *out of* by a failure branch.
-#: A settled or refunded order is finished; a late-arriving failure webhook
-#: must not rewrite it, and its stock must never be handed back.
-SETTLED_TRANSACTION_STATUSES = ("paid", "refunded")
-
-
-def settle_failed_transactions(cur, seller_transaction_ids, *, reason: str,
-                               terminal_status: str, now: str | None = None,
-                               metadata_json: str | None = None) -> list[dict]:
-    """The one path every unsuccessful-payment branch takes.
-
-    Before this existed, each Stripe webhook branch — ``checkout.session.expired``,
-    ``checkout.session.async_payment_failed``, ``payment_intent.payment_failed``,
-    once for the cart shape and again for the single-transaction shape — carried
-    its own copy of "release the hold, then move the transaction to a terminal
-    status". Four copies of an inventory mutation is four chances for one of
-    them to drift, and the branch that was *missing* entirely
-    (``payment_intent.canceled``) is exactly how a dismissed Apple Pay sheet
-    stranded stock forever.
-
-    So the mutation lives here once. Callers supply *why* (``reason``, an audit
-    value from ``marketplace_reservation_policy``) and *what the order becomes*
-    (``terminal_status``); everything else — the idempotent release, the
-    settled-order guard — is identical by construction rather than by review.
-
-    The order of the two writes matters. The release runs first and is itself a
-    compare-and-swap on ``status='held'``, so a reservation that a
-    ``payment_intent.succeeded`` handler already captured is refused here and
-    its stock stays consumed. The transaction update is then guarded by
-    ``status NOT IN ('paid','refunded')`` so a late failure event cannot
-    downgrade an order that has already settled.
-
-    Returns one result dict per id, in order, so the caller can emit telemetry
-    that reflects what actually happened instead of what it hoped happened.
-    """
-    stamp = now or _now()
-    results: list[dict] = []
-    placeholders = ",".join("?" for _ in SETTLED_TRANSACTION_STATUSES)
-    for raw_id in seller_transaction_ids or []:
-        try:
-            tx_id = int(raw_id)
-        except (TypeError, ValueError):
-            continue
-        if tx_id <= 0:
-            continue
-        outcome = release_inventory_reservation(cur, tx_id, now=stamp, reason=reason)
-        if metadata_json is None:
-            cur.execute(
-                f"UPDATE seller_transactions SET status=?, updated_at=? "
-                f"WHERE id=? AND status NOT IN ({placeholders})",
-                (terminal_status, stamp, tx_id, *SETTLED_TRANSACTION_STATUSES),
-            )
-        else:
-            cur.execute(
-                f"UPDATE seller_transactions SET status=?, metadata_json=?, updated_at=? "
-                f"WHERE id=? AND status NOT IN ({placeholders})",
-                (terminal_status, metadata_json, stamp, tx_id, *SETTLED_TRANSACTION_STATUSES),
-            )
-        outcome["transaction_updated"] = bool(cur.rowcount)
-        outcome["terminal_status"] = terminal_status
-        results.append(outcome)
-    return results
+        return
+    cur.execute("UPDATE marketplace_listings SET quantity=COALESCE(quantity,0)+?, updated_at=? WHERE id=?",
+                (int(held.get("quantity") or 0), now or _now(), int(held.get("listing_id") or 0)))
+    cur.execute("UPDATE marketplace_inventory_reservations SET status='released', updated_at=? WHERE seller_transaction_id=? AND status='held'",
+                (now or _now(), int(seller_transaction_id)))
 
 
 def register(app) -> None:

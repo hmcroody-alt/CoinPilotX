@@ -15,6 +15,7 @@ Rules:
 from .engine import (  # noqa: F401
     BRIEFING_WINDOWS,
     FREQUENCIES,
+    InvalidPreference,
     briefings_enabled,
     delivery_status,
     ensure_schema,
