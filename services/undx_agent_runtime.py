@@ -800,6 +800,15 @@ def resolve_threshold(text: str) -> float | None:
     return value * _MAGNITUDES.get(suffix, 1)
 
 
+#: Capabilities whose missing ``symbol`` the active market context may supply.
+#: A closed set on purpose — see the fallback in ``resolve_arguments``.
+_MARKET_CONTEXT_SYMBOL_CAPABILITIES = frozenset({
+    "crypto.market.quote", "crypto.market.history", "crypto.market.compare",
+    "crypto.market.window", "crypto.alerts.create",
+    "crypto.watchlist.add", "crypto.watchlist.remove",
+})
+
+
 def resolve_alert_write_arguments(text: str, arguments: dict[str, Any]) -> dict[str, Any]:
     """Symbol, condition and threshold for creating or retargeting an alert.
 
@@ -2085,6 +2094,31 @@ def resolve_arguments(user_id: int, spec: CapabilitySpec, text: str,
              if section in lowered),
             "all",
         )
+
+    # Market context continuity (Market Pulse → UNDX bridge). A person who
+    # arrived from an asset screen has already pointed at a coin by looking at
+    # it, so the active envelope may fill a missing ``symbol`` — for exactly
+    # the capabilities where the viewed asset *is* the natural target. It is
+    # deliberately absent from ``crypto.alerts.list`` (context would silently
+    # narrow "show my alerts" to one coin) and from ``crypto.alerts.update``
+    # (retargeting an existing rule to the viewed coin would be a guess).
+    # Context supplies knowledge of the target, never authority: writes keep
+    # their confirmation and verification exactly as declared, and the
+    # confirmation card shows the resolved symbol before anything happens.
+    if (spec.capability_id in _MARKET_CONTEXT_SYMBOL_CAPABILITIES
+            and any(item.name == "symbol" for item in spec.fields)
+            and not arguments.get("symbol")):
+        try:
+            from services import undx_market_context
+
+            _context = undx_market_context.active_context_for_user(int(user_id))
+        except Exception:  # noqa: BLE001 - context is optional; missing stays missing
+            _context = None
+        _context_symbol = clean(((_context or {}).get("asset") or {}).get("symbol"), 24).upper()
+        if _context_symbol:
+            arguments["symbol"] = _context_symbol
+            if spec.is_write:
+                agent_chose_target = True
 
     missing = missing_required(spec, arguments)
     if unresolved_reference is not None:

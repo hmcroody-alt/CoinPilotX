@@ -642,6 +642,148 @@ def crypto_market_observations(user_id: int, arguments: dict[str, Any]) -> ToolR
 
 
 # ---------------------------------------------------------------------------
+# Live market reads — backed by services.undx_market_context (Market Pulse)
+# ---------------------------------------------------------------------------
+#
+# The context bridge in action for the agent path. ``symbol`` may be empty:
+# a person who arrived from an asset screen already told the app which coin
+# "it" is, and that envelope is stored server-side per account. Resolution
+# never guesses — no symbol and no context is an honest ask-back, not a
+# default to Bitcoin.
+
+
+def _market_context():
+    from services import undx_market_context
+
+    return undx_market_context
+
+
+def _resolve_market_symbol(user_id: int, arguments: dict[str, Any]) -> tuple[str, str]:
+    """(symbol, via) — the argument if given, else the active screen context."""
+    symbol = clean(arguments.get("symbol"), 24).upper()
+    if symbol:
+        return symbol, "argument"
+    context = _market_context().active_context_for_user(int(user_id))
+    if context:
+        return clean((context.get("asset") or {}).get("symbol"), 24).upper(), "context"
+    return "", ""
+
+
+_NO_SYMBOL_MESSAGE = ("Tell me which coin you mean — for example \"price of BTC\" — "
+                      "or open it in Market Pulse and ask again.")
+
+
+def crypto_market_quote(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    tool, capability = "pulsesoc.crypto_market.quote", "crypto.market.quote"
+    symbol, via = _resolve_market_symbol(user_id, arguments)
+    if not symbol:
+        return _fail(tool, capability, "missing_arguments", _NO_SYMBOL_MESSAGE, started=started)
+    try:
+        record = _market_context().quote(symbol)
+    except Exception:
+        return _fail(tool, capability, "market_read_failed",
+                     "PulseSoc could not read live market data right now.",
+                     retryable=True, started=started)
+    if not record:
+        return _fail(tool, capability, "resource_not_found",
+                     f"UNDX could not find {symbol} on the live market board.",
+                     started=started)
+    return ToolResult(
+        ok=True, tool_name=tool, capability_id=capability,
+        canonical_resource_id=f"asset:{symbol}",
+        records=[record],
+        data={"symbol": symbol, "resolved_via": via,
+              "freshness": record.get("freshness") or {}},
+        latency_ms=_timed(started),
+    )
+
+
+def crypto_market_history(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    tool, capability = "pulsesoc.crypto_market.history", "crypto.market.history"
+    symbol, via = _resolve_market_symbol(user_id, arguments)
+    if not symbol:
+        return _fail(tool, capability, "missing_arguments", _NO_SYMBOL_MESSAGE, started=started)
+    context_module = _market_context()
+    range_key = context_module.normalize_range(arguments.get("range")) or "24H"
+    try:
+        pack = context_module.history_pack(symbol, range_key)
+    except Exception:
+        return _fail(tool, capability, "market_read_failed",
+                     "PulseSoc could not read price history right now.",
+                     retryable=True, started=started)
+    if not pack.get("ok"):
+        return _fail(tool, capability, "history_unavailable",
+                     clean(pack.get("warning") or f"No {range_key} history is available for {symbol}.", 200),
+                     retryable=True, started=started)
+    return ToolResult(
+        ok=True, tool_name=tool, capability_id=capability,
+        canonical_resource_id=f"asset:{symbol}:{range_key}",
+        records=[pack],
+        data={**pack, "resolved_via": via},
+        latency_ms=_timed(started),
+    )
+
+
+def crypto_market_compare(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    tool, capability = "pulsesoc.crypto_market.compare", "crypto.market.compare"
+    symbol, via = _resolve_market_symbol(user_id, arguments)
+    versus = clean(arguments.get("versus"), 24).upper()
+    if not symbol or not versus:
+        return _fail(tool, capability, "missing_arguments",
+                     _NO_SYMBOL_MESSAGE if not symbol else "Name the coin to compare against.",
+                     started=started)
+    if symbol == versus:
+        return _fail(tool, capability, "invalid_arguments",
+                     "Those are the same asset — name two different coins to compare.",
+                     started=started)
+    context_module = _market_context()
+    try:
+        left, right = context_module.quote(symbol), context_module.quote(versus)
+    except Exception:
+        return _fail(tool, capability, "market_read_failed",
+                     "PulseSoc could not read live market data right now.",
+                     retryable=True, started=started)
+    missing = [name for name, rec in ((symbol, left), (versus, right)) if not rec]
+    if missing:
+        return _fail(tool, capability, "resource_not_found",
+                     f"UNDX could not find {' and '.join(missing)} on the live market board.",
+                     started=started)
+    return ToolResult(
+        ok=True, tool_name=tool, capability_id=capability,
+        canonical_resource_id=f"asset:{symbol}:vs:{versus}",
+        records=[left, right],
+        data={"symbol": symbol, "versus": versus, "resolved_via": via,
+              "freshness": left.get("freshness") or {}},
+        latency_ms=_timed(started),
+    )
+
+
+def crypto_market_overview(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    started = time.perf_counter()
+    tool, capability = "pulsesoc.crypto_market.overview", "crypto.market.overview"
+    try:
+        metrics = _market_context().overview()
+    except Exception:
+        return _fail(tool, capability, "market_read_failed",
+                     "PulseSoc could not read the market overview right now.",
+                     retryable=True, started=started)
+    if not metrics.get("available"):
+        return _fail(tool, capability, "market_read_failed",
+                     "The live market overview is unavailable right now.",
+                     retryable=True, started=started)
+    return ToolResult(
+        ok=True, tool_name=tool, capability_id=capability,
+        canonical_resource_id="market:global",
+        records=[metrics],
+        data=metrics,
+        latency_ms=_timed(started),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Notification preferences — backed by services.pulsesoc_notification_system
 # ---------------------------------------------------------------------------
 

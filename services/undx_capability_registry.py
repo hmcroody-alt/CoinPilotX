@@ -511,6 +511,106 @@ _register(CapabilitySpec(
 ))
 
 
+# --- Live market reads (Market Pulse → UNDX context bridge) ----------------
+#
+# Four read-only capabilities over the canonical Market Pulse layer — the same
+# shared CoinGecko-backed caches the dashboard board polls, so none of these
+# adds provider calls or budget pressure. ``symbol`` is optional on purpose:
+# when a person arrives from an asset screen the active market context supplies
+# it, and the executor resolves that server-side. Following the registry
+# convention, no coin name appears in a phrasing — the intents name the
+# operation and the asset arrives in ``symbol`` or from context.
+
+_HISTORY_RANGE_CHOICES = ("1H", "24H", "7D", "1M", "3M", "1Y", "ALL",
+                          "1D", "30D", "90D", "MAX")
+
+_MARKET_SYMBOL = FieldSpec("symbol", "identifier", required=False, max_length=24, default="")
+
+_register(CapabilitySpec(
+    capability_id="crypto.market.quote",
+    description="The live price, 24h change, market cap, and volume for one "
+                "asset, with freshness disclosed",
+    intents=("current price", "price right now", "how much is it now",
+             "what is it trading at", "how much is it worth",
+             "what's it at right now", "live price"),
+    risk=RiskLevel.READ_ONLY,
+    confirmation=ConfirmationPolicy.NEVER,
+    tool_name="pulsesoc.crypto_market.quote",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(_MARKET_SYMBOL,),
+    executor="crypto_market_quote",
+    verifier="",
+    native_route="/pulse/crypto",
+    result_card=CardType.CONTENT_RESULT,
+    audit_category="crypto_market_read",
+    target_field="symbol",
+))
+
+_register(CapabilitySpec(
+    capability_id="crypto.market.history",
+    description="A chart range summarized as facts (start, end, high, low, "
+                "percent change) for one asset over a named range",
+    intents=("chart summary", "high and low", "summarize the chart",
+             "how did it do over", "performance over the range",
+             "range summary", "what does the chart show"),
+    risk=RiskLevel.READ_ONLY,
+    confirmation=ConfirmationPolicy.NEVER,
+    tool_name="pulsesoc.crypto_market.history",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(
+        _MARKET_SYMBOL,
+        FieldSpec("range", "enum", required=False,
+                  choices=_HISTORY_RANGE_CHOICES, default="24H"),
+    ),
+    executor="crypto_market_history",
+    verifier="",
+    native_route="/pulse/crypto",
+    result_card=CardType.CONTENT_RESULT,
+    audit_category="crypto_market_read",
+    target_field="symbol",
+))
+
+_register(CapabilitySpec(
+    capability_id="crypto.market.compare",
+    description="Compare two assets' live price, 24h change, and market cap "
+                "side by side",
+    intents=("compare it to", "compare with", "which performed better",
+             "how does it stack up against", "side by side with"),
+    risk=RiskLevel.READ_ONLY,
+    confirmation=ConfirmationPolicy.NEVER,
+    tool_name="pulsesoc.crypto_market.compare",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(
+        _MARKET_SYMBOL,
+        FieldSpec("versus", "identifier", required=True, max_length=24),
+    ),
+    executor="crypto_market_compare",
+    verifier="",
+    native_route="/pulse/crypto",
+    result_card=CardType.CONTENT_RESULT,
+    audit_category="crypto_market_read",
+    target_field="symbol",
+))
+
+_register(CapabilitySpec(
+    capability_id="crypto.market.overview",
+    description="The whole crypto market right now: total cap, 24h volume, "
+                "BTC/ETH dominance, and direction",
+    intents=("market overview", "how is the market doing", "total market cap",
+             "market direction", "dominance right now", "state of the market"),
+    risk=RiskLevel.READ_ONLY,
+    confirmation=ConfirmationPolicy.NEVER,
+    tool_name="pulsesoc.crypto_market.overview",
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(),
+    executor="crypto_market_overview",
+    verifier="",
+    native_route="/pulse/crypto",
+    result_card=CardType.CONTENT_RESULT,
+    audit_category="crypto_market_read",
+))
+
+
 # --- Saved content ---------------------------------------------------------
 
 _register(CapabilitySpec(

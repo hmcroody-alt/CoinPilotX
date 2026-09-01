@@ -79,6 +79,12 @@ PRODUCTION_TOOL_REGISTRY: dict[str, dict[str, Any]] = {
     "pulsesoc.crypto_portfolio.summary": {"method": None, "route": "services.portfolio_intelligence.compute_portfolio_valuation", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
     "pulsesoc.crypto_portfolio.history": {"method": None, "route": "services.portfolio_intelligence.get_portfolio_history", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
     "pulsesoc.crypto_market.observations": {"method": None, "route": "services.market_observations.get_observation_series", "risk": "read_only", "confirmation": False, "canonical_key": "asset_id"},
+    # Market Pulse context bridge — live reads over the shared canonical
+    # market layer (no new provider polling; see services.undx_market_context).
+    "pulsesoc.crypto_market.quote": {"method": None, "route": "services.undx_market_context.quote", "risk": "read_only", "confirmation": False, "canonical_key": "symbol"},
+    "pulsesoc.crypto_market.history": {"method": None, "route": "services.undx_market_context.history_pack", "risk": "read_only", "confirmation": False, "canonical_key": "symbol"},
+    "pulsesoc.crypto_market.compare": {"method": None, "route": "services.undx_market_context.quote", "risk": "read_only", "confirmation": False, "canonical_key": "symbol"},
+    "pulsesoc.crypto_market.overview": {"method": None, "route": "services.market_pulse.global_metrics", "risk": "read_only", "confirmation": False, "canonical_key": "symbol"},
     "pulsesoc.feed.posts.delete": {"method": None, "route": "services.pulse_feed_engine.delete_owned_post", "risk": "high", "confirmation": True, "canonical_key": "post_id", "verification_route": "services.pulse_feed_engine.get_owned_post_deletion_state"},
     "pulsesoc.translation.content.translate": {"method": None, "route": "services.content_translation.translate_content", "risk": "read_only", "confirmation": False, "canonical_key": "content_ref"},
     "pulsesoc.saved_items.list": {"method": None, "route": "services.saved_content_service.list_saved_items", "risk": "read_only", "confirmation": False, "canonical_key": "item_id"},

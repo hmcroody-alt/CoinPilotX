@@ -14,7 +14,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from services import pulse_ai_knowledge, pulse_ai_provider_router, pulse_ai_router, pulse_ai_safety, pulse_ai_web_search, undx_architecture, undx_operator, undx_platform_knowledge, undx_policy, undx_self_knowledge, undx_semantic_retrieval
+from services import pulse_ai_knowledge, pulse_ai_provider_router, pulse_ai_router, pulse_ai_safety, pulse_ai_web_search, undx_architecture, undx_market_context, undx_operator, undx_platform_knowledge, undx_policy, undx_self_knowledge, undx_semantic_retrieval
 
 
 LOGGER = logging.getLogger(__name__)
@@ -931,13 +931,36 @@ def send_message(user_id: int, payload: dict | None = None) -> dict:
         user_memory = _user_memory(cur, int(user_id), settings, body)
         compiled_policy = undx_policy.compile_context(body, user_id=int(user_id))
         ui_context = undx_architecture.sanitize_ui_context(payload.get("ui_context"))
-        if ui_context:
+        # --- Market Pulse context bridge ----------------------------------
+        # The market envelope is validated separately from the scalar UI hints
+        # because it is nested and typed. A fresh envelope replaces the stored
+        # one (a new asset screen must own "it"); a message without one keeps
+        # the stored envelope alive, so the context survives ordinary turns.
+        raw_ui_context = payload.get("ui_context") if isinstance(payload.get("ui_context"), dict) else {}
+        incoming_market = undx_market_context.sanitize_market_context(raw_ui_context.get("market_context"))
+        stored_market = undx_market_context.load_stored(cur, int(user_id), int(conversation["id"]))
+        persisted_context, market_context = undx_market_context.merge_for_persist(
+            ui_context, incoming_market, stored_market,
+        )
+        if persisted_context:
             cur.execute(
                 """INSERT INTO pulse_ai_client_contexts (user_id, conversation_id, context_json, updated_at)
                 VALUES (?, ?, ?, ?)
                 ON CONFLICT(user_id, conversation_id) DO UPDATE SET context_json=excluded.context_json, updated_at=excluded.updated_at""",
-                (int(user_id), int(conversation["id"]), json.dumps(ui_context), _now()),
+                (int(user_id), int(conversation["id"]), json.dumps(persisted_context), _now()),
             )
+        # Grounded live market facts for crypto questions. Reads ride the same
+        # shared CoinGecko-backed caches as the dashboard — no new provider
+        # calls — and the block is a verified live source under the fact
+        # policy, so crypto questions never fall into the company-metric
+        # refusal. Failure to build it must never block the reply.
+        market_grounding = None
+        try:
+            market_grounding = undx_market_context.grounding_block(int(user_id), body, market_context)
+        except Exception:  # noqa: BLE001 - grounding is additive, never fatal
+            LOGGER.exception("market context grounding failed correlation_id=%s", correlation_id)
+        if market_grounding:
+            knowledge.insert(0, market_grounding)
         # --- Agent runtime -------------------------------------------------
         # Consulted before the conversational path, and only for accounts inside the
         # server-owned agent cohort. When the agent is off — the default, and the state
@@ -1120,6 +1143,9 @@ def send_message(user_id: int, payload: dict | None = None) -> dict:
                         "writes_enabled": compiled_policy.get("writes_enabled", False),
                     },
                     "ui_context": ui_context,
+                    # Attach/ground/resolve telemetry only — no message text,
+                    # no account data, no secrets (mission stage 27).
+                    "market_context": undx_market_context.telemetry(market_context, market_grounding),
                     "response_components": response_components,
                     "architecture": {
                         "mission_id": architecture_plan["mission_id"],

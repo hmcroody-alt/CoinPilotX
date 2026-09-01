@@ -75,6 +75,41 @@ def has_pro_access(row):
     return pro_access_type(row) != "none"
 
 
+# Canonical-grant sources that mean "a billing provider took money" — the
+# definition of the Paid Pro counter. Documented product rule: Paid Pro counts
+# users whose access resolves allowed with a PAID provenance, either from the
+# legacy Stripe columns (plan=pro & subscription_status=active, expiry-checked
+# above) or from a live canonical grant sourced by a billing provider. Trials
+# never count as paid; admin/promotion/founder grants confer access but are
+# "granted", not paid.
+PAID_GRANT_SOURCES = frozenset({"stripe", "apple_app_store", "google_play"})
+
+
+def merged_access_type(row, canonical):
+    """Single access verdict for one user: legacy columns + canonical grant.
+
+    ``canonical`` is the user's entry from the canonical bulk resolver
+    (``{"allowed", "mode", "source"}``) or None. Legacy wins when it already
+    grants (Stripe-era rows are written there); otherwise a live canonical
+    grant fills the gap Apple/Google purchases leave in the users table —
+    those providers write canonical-only, which is exactly why the admin
+    projection showed Paid Pro = 0 while paid members existed.
+
+    Returns "paid" | "trial" | "granted" | "none". Pure: no DB access here.
+    """
+    legacy = pro_access_type(row)
+    if legacy != "none":
+        return legacy
+    if not canonical or not canonical.get("allowed"):
+        return "none"
+    source = str(canonical.get("source") or "")
+    if source in PAID_GRANT_SOURCES:
+        return "paid"
+    if source == "trial":
+        return "trial"
+    return "granted"
+
+
 def normalize_plan(row):
     if has_pro_access(row):
         return "pro"

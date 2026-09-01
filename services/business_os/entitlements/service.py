@@ -221,6 +221,49 @@ def _fetch_grants(conn, subject_type: str, subject_id: str, key: str) -> list:
     return [_row_to_dict(r) for r in cur.fetchall()]
 
 
+def resolve_all_subjects(key: str, *, subject_type: str = "user",
+                         conn=None) -> dict[str, dict]:
+    """Bulk canonical resolution of ``key`` for EVERY subject holding grants.
+
+    One query over ``business_os_ent_grants``, grouped per subject, then the
+    exact same ``_resolve`` precedence as ``has_entitlement`` — so a bulk
+    answer can never disagree with the per-subject answer. Built for admin
+    projections (user lists, counters) that must not run one query per row.
+
+    Returns ``{subject_id: {"allowed": bool, "mode": str, "source": str}}``
+    where ``source`` is the winning grant's provenance ("" when no grant wins).
+    Raises on storage errors — callers that need best-effort must catch and
+    surface the failure rather than treating it as an empty (all-deny) answer.
+    """
+    owned = conn is None
+    if owned:
+        conn = db.connect()
+    try:
+        cur = conn.execute(
+            "SELECT * FROM business_os_ent_grants "
+            "WHERE subject_type = ? AND entitlement_key = ?",
+            (subject_type, key),
+        )
+        by_subject: dict[str, list] = {}
+        for row in cur.fetchall():
+            grant = _row_to_dict(row)
+            by_subject.setdefault(str(grant.get("subject_id") or ""), []).append(grant)
+    finally:
+        if owned:
+            conn.close()
+    now = _utc_now()
+    resolved: dict[str, dict] = {}
+    for subject_id, grants in by_subject.items():
+        verdict = _resolve(grants, now)
+        winning = verdict.get("grant") or {}
+        resolved[subject_id] = {
+            "allowed": bool(verdict.get("allowed")),
+            "mode": str(verdict.get("mode") or "none"),
+            "source": str(winning.get("source") or ""),
+        }
+    return resolved
+
+
 # --- read API ---------------------------------------------------------------
 def has_entitlement(subject_id: Any, key: str, *, subject_type: str = "user",
                     conn=None) -> bool:
