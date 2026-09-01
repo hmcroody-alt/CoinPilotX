@@ -27354,17 +27354,60 @@ def admin_alerts_page():
     return admin_page_html("Alert Health", body, admin)
 
 
-@webhook_app.route("/admin/private-chat-reports", methods=["GET"])
+@webhook_app.route("/admin/private-chat-reports", methods=["GET", "POST"])
 def admin_private_chat_reports_page():
     admin, denied = require_admin_page("support.manage")
     if denied:
         return denied
+    message = ""
+    # A report a member filed must be reviewable, not just displayed: the
+    # user-side producer (/api/messages/report) has existed all along, so the
+    # queue gets the same review verbs the pulse-moderation queue has.
+    if request.method == "POST":
+        report_id = int(request.form.get("report_id") or 0)
+        action = request.form.get("action") or ""
+        if report_id and action in {"resolve", "dismiss"}:
+            new_status = "resolved" if action == "resolve" else "dismissed"
+            now_iso = datetime.now().isoformat()
+            conn = db()
+            cur = conn.cursor()
+            cur.execute(
+                "UPDATE chat_reports SET status=?, updated_at=? WHERE id=? AND status='open'",
+                (new_status, now_iso, report_id),
+            )
+            changed = cur.rowcount
+            conn.commit()
+            conn.close()
+            if changed:
+                log_admin_audit(admin.get("id"), f"admin_chat_report_{action}", "chat_report", str(report_id), {"status": new_status})
+                message = f"Report #{report_id} {new_status}."
+            else:
+                message = f"Report #{report_id} was not open (no change)."
+        else:
+            message = "Unknown action."
     conn = db()
+    conn.row_factory = sqlite3.Row
     cur = conn.cursor()
     cur.execute("SELECT id, reporter_user_id, reported_user_id, conversation_id, message_id, reason, status, created_at FROM chat_reports ORDER BY id DESC LIMIT 200")
     reports = [dict(row) for row in cur.fetchall()]
     conn.close()
-    body = f"<h1>Private Chat Reports</h1><div class='card'>{admin_rows_table(reports, [('id','ID'),('reporter_user_id','Reporter'),('reported_user_id','Reported'),('conversation_id','Conversation'),('message_id','Message'),('reason','Reason'),('status','Status'),('created_at','Created')])}</div>"
+    rows = "".join(
+        f"<tr><td>{r.get('id')}</td><td>{r.get('reporter_user_id')}</td><td>{r.get('reported_user_id')}</td>"
+        f"<td>{r.get('conversation_id')}</td><td>{r.get('message_id')}</td><td>{clean_html((r.get('reason') or '')[:180])}</td>"
+        f"<td>{clean_html(r.get('status') or '')}</td><td>{clean_html(r.get('created_at') or '')}</td>"
+        + ("<td><form method='post'>"
+           f"<input type='hidden' name='report_id' value='{r.get('id')}'>"
+           "<button name='action' value='resolve'>Resolve</button>"
+           "<button name='action' value='dismiss'>Dismiss</button></form></td>"
+           if (r.get("status") or "") == "open" else "<td></td>")
+        for r in reports
+    )
+    body = (
+        f"<h1>Private Chat Reports</h1><p>{clean_html(message)}</p><div class='card'>"
+        "<table><tr><th>ID</th><th>Reporter</th><th>Reported</th><th>Conversation</th><th>Message</th>"
+        "<th>Reason</th><th>Status</th><th>Created</th><th>Action</th></tr>"
+        f"{rows or '<tr><td colspan=9>No chat reports.</td></tr>'}</table></div>"
+    )
     return admin_page_html("Private Chat Reports", body, admin)
 
 
@@ -91457,8 +91500,6 @@ def admin_pulse_feed_health_page():
                 pulse_emit_event("pulse_post_deleted", {"post_id": post_id, "deleted": True, "source": "feed_health_flush"}, admin.get("id") or 0, post_id)
                 pulse_emit_event("post_deleted", {"post_id": post_id, "deleted": True, "source": "feed_health_flush"}, admin.get("id") or 0, post_id)
             message = f"Rebroadcast deletion purge for {len(deleted_ids)} recent deleted posts."
-        elif action in {"rebuild_feed_cache", "rebuild_trending", "regenerate_media_thumbnails"}:
-            message = f"{action.replace('_', ' ').title()} queued safely. Current local cache is read-through, so public feed queries already use canonical visibility."
     checks = []
     queries = [
         ("Visible approved posts", "SELECT COUNT(*) AS total FROM pulse_posts WHERE deleted_at IS NULL AND COALESCE(visibility,'public')='public' AND COALESCE(moderation_status,'approved')='approved'"),
@@ -91526,7 +91567,7 @@ def admin_pulse_feed_health_page():
         f"<div class='card'><h2>Cache + Feed Checks</h2>{admin_rows_table(checks, [('check','Check'),('value','Value'),('detail','Detail')])}</div>"
         f"<div class='card'><h2>Visibility Hidden Reasons</h2>{admin_rows_table(hidden_rows, [('reason','Reason'),('count','Count')])}</div>"
         f"<div class='card'><h2>Media Delivery</h2><p class='metric'>{broken_media}</p><p class='muted'>Recent PulseSoc media with missing local files or unreachable local URLs.</p>{admin_rows_table(media_rows[:30], [('id','ID'),('context_type','Context'),('context_id','Post/Context'),('media_type','Type'),('mime_type','MIME'),('width','W'),('height','H'),('public_url','Public URL'),('exists','Exists')])}</div>"
-        f"<div class='card'><h2>Repair Actions</h2><form method='post' class='actions'><button class='primary' name='action' value='flush_deleted_cache'>Flush Deleted IDs From Live Feed Clients</button><button name='action' value='rebuild_feed_cache'>Rebuild Feed Cache</button><button name='action' value='rebuild_trending'>Rebuild Trending</button><button name='action' value='regenerate_media_thumbnails'>Regenerate Media Thumbnails</button></form></div>"
+        f"<div class='card'><h2>Repair Actions</h2><form method='post' class='actions'><button class='primary' name='action' value='flush_deleted_cache'>Flush Deleted IDs From Live Feed Clients</button></form><p class='muted'>Feed and trending queries are read-through against canonical visibility; there is no rebuildable cache, so no rebuild controls are offered.</p></div>"
         f"<div class='card'><h2>Recent Deleted Posts</h2>{admin_rows_table(recent_deleted, [('id','ID'),('title','Title'),('moderation_status','Moderation'),('visibility','Visibility'),('deleted_at','Deleted'),('updated_at','Updated')])}</div>"
         f"<p class='muted'>Last checked {clean_html(now)}.</p>"
     )
