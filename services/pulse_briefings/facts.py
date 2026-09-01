@@ -35,6 +35,62 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
+# pulse_notifications.type -> significance bucket.
+#
+# The original chain compared `type` against a list that silently mixed two
+# different vocabularies: real type strings ("message", "comment", "follow")
+# alongside *category* names ("security", "system_security", "admin_security",
+# "account", "community", "reaction"). Categories are never written to
+# pulse_notifications.type, so those arms could not match anything -- production
+# writes type='security_alert', whose category is 'system_security'. Measured
+# against production: 41 of 46 live types matched nothing and 92.3% of all
+# notification rows scored zero.
+#
+# Both vocabularies are kept deliberately: a token resolves as a raw type first,
+# then as a canonical category via PULSE_TYPE_TO_CATEGORY. That preserves the
+# arms that did work, and routes the rest through the shared map instead of a
+# second hand-maintained whitelist that would drift out of sync again the next
+# time a notification type is added.
+_NETWORK_BUCKETS: dict[str, str] = {
+    # --- raw pulse_notifications.type values ---
+    "chat_message": "unread_messages", "group_message": "unread_messages",
+    "room_message": "unread_messages", "message": "unread_messages",
+    "friend_request": "friend_requests",
+    "follow": "new_followers", "new_follower": "new_followers",
+    "mention": "mentions",
+    "comment": "comments", "reply": "comments",
+    "reaction": "reactions",
+    "marketplace_order": "marketplace_orders", "purchase": "marketplace_orders",
+    "teacher_order": "marketplace_orders",
+    "community": "community_events", "group": "community_events",
+    "live": "community_events", "live_invite": "community_events",
+    # --- canonical PULSE_TYPE_TO_CATEGORY values ---
+    "security": "security_alerts", "system_security": "security_alerts",
+    "admin_security": "security_alerts", "account": "security_alerts",
+    "follows": "new_followers", "mentions": "mentions", "comments": "comments",
+    "likes": "reactions", "status": "reactions",
+    "marketplace": "marketplace_orders",
+}
+
+
+def _network_bucket(kind: str) -> str | None:
+    """Resolve a notification type to a significance bucket.
+
+    Raw type wins; otherwise fall back to the canonical category. Types with no
+    category, or whose category has no bucket (crypto, calls, payments, premium),
+    return None and are deliberately not counted as *network* activity.
+    """
+    bucket = _NETWORK_BUCKETS.get(kind)
+    if bucket:
+        return bucket
+    try:  # imported lazily: notification_service is heavy and imports back into services
+        from ..notification_service import PULSE_TYPE_TO_CATEGORY
+    except Exception:  # noqa: BLE001 - degrade to raw-type matching, never fatal
+        return None
+    category = PULSE_TYPE_TO_CATEGORY.get(kind)
+    return _NETWORK_BUCKETS.get(category) if category else None
+
+
 def collect_network_facts(cur, user_id: int, since_iso: str) -> dict[str, Any]:
     """Owner-scoped counts from canonical tables. Never another user's metrics."""
     facts = {
@@ -54,26 +110,9 @@ def collect_network_facts(cur, user_id: int, since_iso: str) -> dict[str, Any]:
         )
         for row in cur.fetchall():
             r = dict(row) if not isinstance(row, dict) else row
-            kind = str(r.get("type") or "")
-            n = int(r.get("n") or 0)
-            if kind in ("chat_message", "group_message", "room_message", "message"):
-                facts["unread_messages"] += n
-            elif kind in ("friend_request",):
-                facts["friend_requests"] += n
-            elif kind in ("follow", "new_follower"):
-                facts["new_followers"] += n
-            elif kind in ("mention",):
-                facts["mentions"] += n
-            elif kind in ("comment", "reply"):
-                facts["comments"] += n
-            elif kind in ("reaction",):
-                facts["reactions"] += n
-            elif kind in ("marketplace_order", "purchase", "teacher_order"):
-                facts["marketplace_orders"] += n
-            elif kind in ("security", "system_security", "admin_security", "account"):
-                facts["security_alerts"] += n
-            elif kind in ("community", "group", "live", "live_invite"):
-                facts["community_events"] += n
+            bucket = _network_bucket(str(r.get("type") or ""))
+            if bucket:
+                facts[bucket] += int(r.get("n") or 0)
     except Exception:  # noqa: BLE001 - a fact-pack fault degrades to zeros
         logging.exception("BRIEFING_NETWORK_FACTS_FAILED user_id=%s", user_id)
     return facts

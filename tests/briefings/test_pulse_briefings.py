@@ -393,6 +393,103 @@ class SignificanceTests(unittest.TestCase):
         self.assertNotEqual(facts.fact_fingerprint(base), facts.fact_fingerprint(changed))
 
 
+class NotificationTypeMappingTests(unittest.TestCase):
+    """collect_network_facts must score the types production actually writes.
+
+    The original chain compared pulse_notifications.type against a list that
+    mixed real type strings with *category* names. Categories are never stored
+    in that column, so those arms were unreachable: production writes
+    type='security_alert' while the chain waited for 'system_security'. Against
+    production, 41 of 46 live types matched nothing and 92.3% of notification
+    rows scored zero -- the briefing engine could see almost no user activity.
+    """
+
+    def test_real_production_types_resolve_to_buckets(self):
+        # Every pair here was observed in production pulse_notifications.
+        expected = {
+            "security_alert": "security_alerts",   # category system_security
+            "account_login": "security_alerts",    # category security
+            "new_device": "security_alerts",
+            "live_started": "community_events",
+            "replay_available": "community_events",
+            "like": "reactions",                   # category likes
+            "reel_like": "reactions",
+            "voice_message": "unread_messages",    # category chat_message
+            "reel_comment": "comments",
+            "follow_accept": "new_followers",
+            "status_reaction": "reactions",
+        }
+        for kind, bucket in expected.items():
+            with self.subTest(kind=kind):
+                self.assertEqual(facts._network_bucket(kind), bucket)
+
+    def test_direct_type_matches_still_work(self):
+        # Regression guard: the arms that did work must keep working.
+        for kind, bucket in (
+            ("message", "unread_messages"), ("comment", "comments"),
+            ("reply", "comments"), ("follow", "new_followers"),
+            ("friend_request", "friend_requests"),
+        ):
+            with self.subTest(kind=kind):
+                self.assertEqual(facts._network_bucket(kind), bucket)
+
+    def test_unscored_types_return_none(self):
+        # Calls, crypto and payments are deliberately NOT network significance:
+        # crypto is scored by crypto_significance, and call lifecycle events are
+        # noise. Scoring them here would manufacture significance every window.
+        for kind in ("crypto_alert_triggered", "call_started", "call_ended",
+                     "incoming_call", "payment_failed", "bogus_type", ""):
+            with self.subTest(kind=kind):
+                self.assertIsNone(facts._network_bucket(kind))
+
+    def test_security_alert_rows_reach_significance(self):
+        # End-to-end through the collector: a single security_alert must clear
+        # SEND_THRESHOLD, because a security event is worth interrupting for.
+        conn = _fresh_conn()
+        cur = conn.cursor()
+        since = _iso(datetime.now(timezone.utc) - timedelta(hours=6))
+        cur.execute(
+            "INSERT INTO pulse_notifications (user_id, type, is_read, created_at) VALUES (?,?,?,?)",
+            (1, "security_alert", 0, _iso(datetime.now(timezone.utc))),
+        )
+        conn.commit()
+        net = facts.collect_network_facts(cur, 1, since)
+        self.assertEqual(net["security_alerts"], 1)
+        self.assertGreaterEqual(facts.network_significance(net), facts.SEND_THRESHOLD)
+        conn.close()
+
+    def test_read_and_out_of_window_rows_are_excluded(self):
+        # The mapping fix must not weaken the unread/recency/ownership predicate.
+        conn = _fresh_conn()
+        cur = conn.cursor()
+        now = datetime.now(timezone.utc)
+        since = _iso(now - timedelta(hours=6))
+        rows = [
+            (1, "security_alert", 1, _iso(now)),                      # already read
+            (1, "security_alert", 0, _iso(now - timedelta(days=2))),  # too old
+            (2, "security_alert", 0, _iso(now)),                      # another user
+        ]
+        cur.executemany(
+            "INSERT INTO pulse_notifications (user_id, type, is_read, created_at) VALUES (?,?,?,?)",
+            rows,
+        )
+        conn.commit()
+        net = facts.collect_network_facts(cur, 1, since)
+        self.assertEqual(net["security_alerts"], 0)
+        self.assertEqual(facts.network_significance(net), 0)
+        conn.close()
+
+    def test_collector_still_degrades_to_zeros_on_fault(self):
+        class _Boom:
+            def execute(self, *a, **k):
+                raise RuntimeError("table gone")
+
+        with mock.patch.object(facts.logging, "exception"):
+            net = facts.collect_network_facts(_Boom(), 1, "2026-01-01T00:00:00Z")
+        self.assertEqual(facts.network_significance(net), 0)
+        self.assertEqual(net["security_alerts"], 0)
+
+
 class WindowAndQuietHoursTests(unittest.TestCase):
     def test_every_6h_windows(self):
         d = datetime(2026, 8, 30, 13, 5)
