@@ -1080,6 +1080,68 @@ class ShadowModeTests(unittest.TestCase):
         self.assertEqual(send_push.call_count, 1)
         conn.close()
 
+    # --- push transport is delivery, not eligibility -----------------------
+
+    def test_a_user_without_a_registered_device_is_still_evaluated(self):
+        """Push is a DELIVERY layer, not an eligibility gate. A user with
+        briefings enabled but no push_subscription row (device never registered,
+        token revoked, reinstalled the app) must still be evaluated: the row
+        settles at 'generated' so the in-app hub can render it, and send_push
+        returns not_configured without crashing. The prior INNER JOIN silently
+        excluded these users, so their pulse_briefings table stayed empty
+        forever while delivery_status separately reported push_ready=false --
+        two views of the same user that could never agree."""
+        conn = self._conn((305,))
+        cur = conn.cursor()
+        cur.execute("DELETE FROM push_subscriptions WHERE user_id=305")
+        conn.commit()
+        cur.execute("SELECT COUNT(*) FROM push_subscriptions WHERE user_id=305")
+        self.assertEqual(cur.fetchone()[0], 0)   # precondition: no transport row
+        # Model production: with zero rows, push_service.send_push returns
+        # not_configured (a truthful "we tried, there is nowhere to send").
+        # The fake in _run_cycle returns ok=True, which would incorrectly settle
+        # this row at 'sent' -- override it so the test reflects reality.
+        import services
+        fake_push = types.SimpleNamespace(
+            send_push=mock.Mock(return_value={"ok": False, "status": "not_configured"})
+        )
+        fake_notif = types.SimpleNamespace(send_in_app_notification=mock.Mock())
+        with mock.patch.dict(os.environ, {"BRIEFING_SHADOW_MODE": "false"}), \
+             mock.patch.object(engine, "_now", return_value=self.NOW), \
+             mock.patch.object(facts, "_now_iso", return_value=_iso(self.NOW)), \
+             mock.patch.object(facts.crypto_provider, "get_market_overview", return_value=self.MARKET), \
+             mock.patch.object(facts.crypto_provider, "is_stale", return_value=False), \
+             mock.patch.object(facts.crypto_provider, "get_top_movers", return_value=self.MOVERS), \
+             mock.patch.object(facts.crypto_provider, "get_watchlist_snapshots", return_value=[]), \
+             mock.patch.object(services, "push_service", fake_push, create=True), \
+             mock.patch.object(services, "notification_service", fake_notif, create=True):
+            result = engine.run_scheduled_cycle(conn=conn)
+        self.assertEqual(result["processed"], 1)               # was evaluated
+        self.assertEqual(result["sent"], 0)                    # push failed
+        self.assertEqual(fake_push.send_push.call_count, 1)    # attempted anyway
+        cur.execute(
+            "SELECT status FROM pulse_briefings WHERE user_id=305 ORDER BY id DESC LIMIT 1"
+        )
+        row = cur.fetchone()
+        self.assertIsNotNone(row)                              # row was written
+        self.assertEqual(dict(row)["status"], "generated")     # visible in hub
+        conn.close()
+
+    def test_neighbour_with_push_still_sends_when_no_push_user_present(self):
+        """The LEFT JOIN widening must not accidentally re-order or drop users
+        who DO have push. Two users, one with and one without push: both are
+        evaluated, only the one with push actually pushes."""
+        conn = self._conn((306, 307))
+        cur = conn.cursor()
+        cur.execute("DELETE FROM push_subscriptions WHERE user_id=306")
+        conn.commit()
+        result, _, send_push = self._run_cycle(conn, shadow=False)
+        self.assertEqual(result["processed"], 2)               # both evaluated
+        self.assertEqual(send_push.call_count, 2)              # attempted for both
+        pushed_ids = {call[0][0] for call in send_push.call_args_list}
+        self.assertEqual(pushed_ids, {306, 307})               # not reordered
+        conn.close()
+
     # --- batch fairness: no eligible user is starved by the limit ----------
 
     def test_batch_limit_rotates_instead_of_restarting(self):
@@ -1488,6 +1550,19 @@ class HubBackendTests(unittest.TestCase):
         import inspect
         source = inspect.getsource(engine.run_scheduled_cycle)
         self.assertIn("<>'off'", source.replace('"', "'"))
+
+    def test_scheduler_sql_left_joins_push_transport(self):
+        """The batch query must LEFT JOIN push_subscriptions: an INNER JOIN turned
+        push into an eligibility gate and silently disabled briefings for every
+        user without a registered device. Guards against the regression."""
+        import inspect, re
+        source = inspect.getsource(engine.run_scheduled_cycle)
+        pattern = re.compile(r"(LEFT\s+)?JOIN\s+push_subscriptions\b", re.IGNORECASE)
+        self.assertTrue(
+            all(match.group(1) is not None for match in pattern.finditer(source)),
+            "run_scheduled_cycle must not INNER JOIN push_subscriptions; "
+            "use LEFT JOIN so users without transport are still evaluated.",
+        )
 
 
 if __name__ == "__main__":
