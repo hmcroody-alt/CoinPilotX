@@ -91410,6 +91410,9 @@ def admin_pulse_moderation_page():
                 message = "Post deleted."
             conn.commit()
             conn.close()
+            # Moderation verdicts change what members can see; they must leave
+            # an attributable admin audit trail, not just feed events.
+            log_admin_audit(admin.get("id"), f"admin_moderation_{action}_post", "pulse_post", str(post_id), {"action": action})
             if action == "delete":
                 pulse_emit_event("pulse_post_deleted", {"post_id": post_id, "deleted": True, "source": "admin_moderation"}, admin.get("id") or 0, post_id)
                 pulse_emit_event("post_deleted", {"post_id": post_id, "deleted": True, "source": "admin_moderation"}, admin.get("id") or 0, post_id)
