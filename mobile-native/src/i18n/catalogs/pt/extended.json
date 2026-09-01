@@ -2825,7 +2825,9 @@
       "quiet": "Horário de silêncio: {{start}} – {{end}}",
       "timezone": "Fuso horário: {{zone}}",
       "pushOn": "As notificações push estão ativadas.",
-      "pushOff": "As notificações push estão desativadas — os briefings aparecem apenas aqui."
+      "pushOff": "As notificações push estão desativadas — os briefings aparecem apenas aqui.",
+      "pushNoDevice": "As notificações push não estão configuradas neste dispositivo — os briefings aparecem apenas aqui.",
+      "pushPaused": "O envio de notificações push está pausado — os briefings aparecem apenas aqui."
     },
     "settings": {
       "master": "Pulse Briefings",

@@ -25,12 +25,7 @@ def test_buy_now_is_idempotent_and_reserves_inventory():
     assert "marketplace_cart_checkout_keys" in CHECKOUT
     assert "marketplace_inventory_reservations" in CHECKOUT
     assert "quantity=quantity-1" in CHECKOUT
-    # The release no longer appears here by name. It moved into
-    # `settle_failed_transactions`, the one path shared with the webhook
-    # branches, so that "return the stock, then close the order" has a single
-    # implementation rather than five that can drift apart. What must stay true
-    # of this route is that its failure path reaches that service.
-    assert "settle_failed_transactions" in CHECKOUT
+    assert "release_inventory_reservation" in CHECKOUT
 
 
 def test_buy_now_reuses_cart_webhook_reconciliation_contract():

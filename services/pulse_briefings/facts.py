@@ -93,14 +93,38 @@ def network_significance(network: dict[str, Any]) -> int:
     )
 
 
-def collect_crypto_facts(cur, user_id: int, *, watchlist_enabled: bool) -> dict[str, Any]:
-    """Grounded market facts from the shared snapshot + user's own alerts."""
+def collect_crypto_facts(cur, user_id: int, *, watchlist_enabled: bool,
+                         market_enabled: bool = True) -> dict[str, Any]:
+    """Grounded market facts from the shared snapshot + user's own alerts.
+
+    The two topics are independent preferences and are collected independently.
+    "Crypto market" OFF with "Watchlist" ON is a legitimate combination: the user
+    wants their own positions, not general market colour. Previously the caller
+    skipped this collector entirely when crypto was off, which silently deleted
+    the watchlist too -- a watchlist toggle that read ON while doing nothing.
+    """
+    facts: dict[str, Any] = {
+        "available": False,
+        "collected_at": _now_iso(),
+        "market_enabled": bool(market_enabled),
+        "watchlist_enabled": bool(watchlist_enabled),
+        "watchlist": [],
+        "alert_proximity": [],
+    }
+    if market_enabled:
+        _collect_market_overview(facts)
+    if watchlist_enabled:
+        _collect_watchlist_facts(cur, user_id, facts)
+    return facts
+
+
+def _collect_market_overview(facts: dict[str, Any]) -> None:
+    """General market colour. Only reached when the crypto-market topic is ON."""
     overview = crypto_provider.get_market_overview()
-    facts: dict[str, Any] = {"available": False, "collected_at": _now_iso()}
     if not overview or crypto_provider.is_stale(overview):
         # Stage 32/63: never present stale data as current. Omit instead.
         facts["unavailable_reason"] = "stale_or_provider_down"
-        return facts
+        return
     movers = crypto_provider.get_top_movers()
     btc, eth = overview.get("btc") or {}, overview.get("eth") or {}
     facts.update({
@@ -121,7 +145,6 @@ def collect_crypto_facts(cur, user_id: int, *, watchlist_enabled: bool) -> dict[
         "volatility_avg_abs_24h": overview.get("volatility_avg_abs_24h"),
         "gainers": [{"symbol": a["symbol"], "change_24h": a["change_24h"]} for a in movers["gainers"]],
         "losers": [{"symbol": a["symbol"], "change_24h": a["change_24h"]} for a in movers["losers"]],
-        "watchlist": [], "alert_proximity": [],
     })
     try:
         facts["trending"] = [
@@ -130,62 +153,74 @@ def collect_crypto_facts(cur, user_id: int, *, watchlist_enabled: bool) -> dict[
         ][:5]
     except Exception:  # noqa: BLE001 - trending is optional color, never fatal
         facts["trending"] = []
-    if watchlist_enabled:
-        try:
-            # Column names are asset_symbol/condition_type/target_value -- the older
-            # symbol/type/threshold spelling raises UndefinedColumn on Postgres, and
-            # because the whole block is one try/except that silently emptied BOTH
-            # watchlist and alert_proximity for every user on every cycle.
-            cur.execute(
-                "SELECT asset_symbol, condition_type, target_value FROM crypto_alerts "
-                "WHERE user_id=? AND COALESCE(status,'active')='active' LIMIT 25",
-                (int(user_id),),
-            )
-            rows = [dict(r) if not isinstance(r, dict) else r for r in cur.fetchall()]
-            symbols = sorted({str(r.get("asset_symbol") or "").upper() for r in rows if r.get("asset_symbol")})
-            snapshots = {a["symbol"]: a for a in crypto_provider.get_watchlist_snapshots(symbols)}
-            facts["watchlist"] = [
-                {"symbol": s, "price": snapshots[s]["price"], "change_24h": snapshots[s]["change_24h"]}
-                for s in symbols if s in snapshots
-            ]
-            for r in rows:  # Stage 41: proximity only — never trigger early
-                symbol = str(r.get("asset_symbol") or "").upper()
-                snap = snapshots.get(symbol)
-                try:
-                    threshold = float(r.get("target_value") or 0)
-                except (TypeError, ValueError):
-                    continue
-                # condition_type holds the stored condition vocabulary
-                # (above/below/moves_up_percent/...), NOT the derived alert-type
-                # strings the old code compared against. Percent-move conditions
-                # carry a percentage in target_value, so a price-distance
-                # calculation would be meaningless for them.
-                if not snap or threshold <= 0 or str(r.get("condition_type") or "") not in ("above", "below"):
-                    continue
-                price = float(snap.get("price") or 0)
-                if price <= 0:
-                    continue
-                distance_pct = (threshold - price) / price * 100
-                if abs(distance_pct) <= 5.0:
-                    facts["alert_proximity"].append({
-                        "symbol": symbol, "threshold": threshold,
-                        "distance_pct": round(distance_pct, 1),
-                    })
-        except Exception:  # noqa: BLE001
-            logging.exception("BRIEFING_WATCHLIST_FACTS_FAILED user_id=%s", user_id)
-    return facts
+
+
+def _collect_watchlist_facts(cur, user_id: int, facts: dict[str, Any]) -> None:
+    """The user's own assets and alert proximity. Reached whenever the watchlist
+    topic is ON, independently of the general crypto-market topic."""
+    try:
+        # Column names are asset_symbol/condition_type/target_value -- the older
+        # symbol/type/threshold spelling raises UndefinedColumn on Postgres, and
+        # because the whole block is one try/except that silently emptied BOTH
+        # watchlist and alert_proximity for every user on every cycle.
+        cur.execute(
+            "SELECT asset_symbol, condition_type, target_value FROM crypto_alerts "
+            "WHERE user_id=? AND COALESCE(status,'active')='active' LIMIT 25",
+            (int(user_id),),
+        )
+        rows = [dict(r) if not isinstance(r, dict) else r for r in cur.fetchall()]
+        symbols = sorted({str(r.get("asset_symbol") or "").upper() for r in rows if r.get("asset_symbol")})
+        snapshots = {a["symbol"]: a for a in crypto_provider.get_watchlist_snapshots(symbols)}
+        facts["watchlist"] = [
+            {"symbol": s, "price": snapshots[s]["price"], "change_24h": snapshots[s]["change_24h"]}
+            for s in symbols if s in snapshots
+        ]
+        for r in rows:  # Stage 41: proximity only — never trigger early
+            symbol = str(r.get("asset_symbol") or "").upper()
+            snap = snapshots.get(symbol)
+            try:
+                threshold = float(r.get("target_value") or 0)
+            except (TypeError, ValueError):
+                continue
+            # condition_type holds the stored condition vocabulary
+            # (above/below/moves_up_percent/...), NOT the derived alert-type
+            # strings the old code compared against. Percent-move conditions
+            # carry a percentage in target_value, so a price-distance
+            # calculation would be meaningless for them.
+            if not snap or threshold <= 0 or str(r.get("condition_type") or "") not in ("above", "below"):
+                continue
+            price = float(snap.get("price") or 0)
+            if price <= 0:
+                continue
+            distance_pct = (threshold - price) / price * 100
+            if abs(distance_pct) <= 5.0:
+                facts["alert_proximity"].append({
+                    "symbol": symbol, "threshold": threshold,
+                    "distance_pct": round(distance_pct, 1),
+                })
+    except Exception:  # noqa: BLE001
+        logging.exception("BRIEFING_WATCHLIST_FACTS_FAILED user_id=%s", user_id)
 
 
 def crypto_significance(crypto: dict[str, Any]) -> int:
-    if not crypto.get("available"):
+    """Score the two crypto topics independently.
+
+    General market movement only scores when the crypto-market topic is ON and a
+    fresh snapshot exists. Watchlist and alert-proximity entries are only ever
+    populated when the watchlist topic is ON, so they are scored unconditionally
+    -- gating them behind the market snapshot (the old `available` early return)
+    meant a stale provider silently zeroed a user's own alert proximity too.
+    """
+    if not crypto:
         return 0
     score = 0
-    btc = abs(crypto.get("btc_change_24h") or 0)
-    cap = abs(crypto.get("market_cap_change_24h_pct") or 0)
-    if btc >= MARKET_MOVE_THRESHOLD_PCT:
-        score += 10
-    if cap >= MARKET_MOVE_THRESHOLD_PCT:
-        score += 6
+    if crypto.get("available") and crypto.get("market_enabled", True):
+        btc = abs(crypto.get("btc_change_24h") or 0)
+        cap = abs(crypto.get("market_cap_change_24h_pct") or 0)
+        if btc >= MARKET_MOVE_THRESHOLD_PCT:
+            score += 10
+        if cap >= MARKET_MOVE_THRESHOLD_PCT:
+            score += 6
     score += 8 * len(crypto.get("alert_proximity") or [])
     score += sum(4 for w in crypto.get("watchlist") or [] if abs(w.get("change_24h") or 0) >= 4.0)
     return score
@@ -195,8 +230,14 @@ def build_briefing_facts(cur, user_id: int, *, since_iso: str, timezone_name: st
                          locale: str, prefs: dict[str, Any]) -> dict[str, Any]:
     """Stage 10 contract: the ONLY payload the summarizer ever sees."""
     network = collect_network_facts(cur, user_id, since_iso) if prefs.get("network_enabled", True) else None
-    crypto = collect_crypto_facts(cur, user_id, watchlist_enabled=bool(prefs.get("watchlist_enabled", True))) \
-        if prefs.get("crypto_enabled", True) else None
+    # Crypto market and watchlist are independent topics. Collect if EITHER is on
+    # and let the collector include only the enabled halves; skipping the whole
+    # collector when the market topic was off also deleted the watchlist.
+    market_on = bool(prefs.get("crypto_enabled", True))
+    watchlist_on = bool(prefs.get("watchlist_enabled", True))
+    crypto = collect_crypto_facts(
+        cur, user_id, watchlist_enabled=watchlist_on, market_enabled=market_on,
+    ) if (market_on or watchlist_on) else None
     net_score = network_significance(network) if network else 0
     cry_score = crypto_significance(crypto) if crypto else 0
     urgency = "high" if (network or {}).get("security_alerts") else "normal"
