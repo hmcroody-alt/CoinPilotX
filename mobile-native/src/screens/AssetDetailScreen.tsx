@@ -42,15 +42,15 @@
  *
  * - **Create alert** hands off to the canonical alert flow (see above).
  *
- * - **Ask UNDX** sends the numbers *this screen is currently showing* to the
- *   existing assistant endpoint, and renders the answer next to them. The facts
- *   travel inside the question because that is the only channel that reaches the
- *   assistant without a second market client or a second AI surface: the
- *   canonical `ui_context` is a strict allowlist of device and route signals, by
- *   design, and widening it is not this mission's to do. The question also tells
- *   the assistant, in as many words, to say it does not know rather than invent a
- *   cause for a move — a plausible reason for a 4% drop is the single most
- *   convincing thing this screen could get wrong.
+ * - **Ask UNDX** hands the *typed state of this screen* — asset identity, the
+ *   snapshot on display, the selected chart range, watchlist/alert counts — to
+ *   the canonical UNDX conversation as a structured market context envelope
+ *   (see `src/undx/marketContext.ts`), then navigates there. No second chat
+ *   surface, no fabricated user message full of numbers: the member arrives at
+ *   an empty composer and UNDX already knows what "it" means. The server
+ *   validates the envelope, persists it per conversation, and grounds crypto
+ *   answers in the canonical live market layer — so answers come from live
+ *   governed reads, not from whatever this screen happened to render.
  *
  * ## What is deliberately absent
  *
@@ -62,7 +62,7 @@
  */
 
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -93,8 +93,8 @@ import {
   loadCachedAssetHistory,
   setFavoriteAsset
 } from "../api/watchlists";
-import { askPulseAi } from "../api/pulse";
 import { alertConditionLabel, alertStatusLabel } from "../api/alerts";
+import { buildMarketContextEnvelope, parkMarketContext } from "../undx/marketContext";
 import { AssetPriceChart } from "../components/crypto/AssetSparkline";
 import { Panel } from "../components/Panel";
 import { RootStackParamList } from "../navigation/types";
@@ -150,10 +150,6 @@ export function AssetDetailScreen({ route, navigation }: Props) {
   const [error, setError] = useState("");
   const [watchlistBusy, setWatchlistBusy] = useState(false);
   const [watchlistNotice, setWatchlistNotice] = useState("");
-  const [undxOpen, setUndxOpen] = useState(false);
-  const [undxLoading, setUndxLoading] = useState(false);
-  const [undxAnswer, setUndxAnswer] = useState("");
-  const [undxError, setUndxError] = useState("");
   // The point under the finger while scrubbing the chart. Purely a read of the
   // series already in memory: dragging never triggers a fetch.
   const [scrubbed, setScrubbed] = useState<HistoryPoint | null>(null);
@@ -292,48 +288,32 @@ export function AssetDetailScreen({ route, navigation }: Props) {
   }
 
   /**
-   * The question, built from what is on screen right now.
-   *
-   * Unknown values arrive as the same "--" the screen prints, so the assistant is
-   * told a figure is missing rather than handed a zero it would read as a fact.
+   * The handoff. Built from the typed state on screen right now — never from
+   * rendered text. Values the screen shows as "--" travel as null, so the
+   * assistant is told a figure is missing rather than handed a zero it would
+   * read as a fact. Parking the envelope and navigating is synchronous and
+   * cannot fail on network: the member is never blocked from reaching UNDX
+   * because a context payload had a bad day.
    */
-  const undxQuestion = useMemo(() => {
-    const facts = [
-      `price ${formatPrice(asset?.price ?? null)}`,
-      `24h change ${formatPercent(asset?.change_24h ?? null)}`,
-      `market cap ${formatCompact(asset?.market_cap ?? null)}`,
-      `24h volume ${formatCompact(asset?.volume_24h ?? null)}`,
-      `market cap rank ${formatRank(asset?.market_cap_rank ?? null)}`
-    ].join(", ");
-    return (
-      `PulseSoc is showing me ${asset?.name || symbol} (${symbol}) with ${facts}. ` +
-      `Explain what these figures do and do not tell me about this asset. ` +
-      `A value shown as "--" is one PulseSoc has no data for — treat it as unknown, not as zero. ` +
-      `If you do not know why the price moved, say that you do not know instead of suggesting a cause.`
+  function onAskUndx() {
+    parkMarketContext(
+      buildMarketContextEnvelope({
+        source: "asset_detail",
+        symbol,
+        name: asset?.name,
+        rank: asset?.market_cap_rank ?? null,
+        price: asset?.price ?? null,
+        change24h: asset?.change_24h ?? null,
+        marketCap: asset?.market_cap ?? null,
+        volume24h: asset?.volume_24h ?? null,
+        snapshotSource: detail?.market?.source || history?.source || null,
+        snapshotStale: Boolean(history?.stale),
+        selectedRange: range,
+        watchlisted: memberships.length > 0,
+        alertCount: alerts.length
+      })
     );
-  }, [asset, symbol]);
-
-  async function onAskUndx() {
-    setUndxOpen(true);
-    if (undxLoading) return;
-    setUndxLoading(true);
-    setUndxError("");
-    setUndxAnswer("");
-    try {
-      const reply = await askPulseAi(undxQuestion);
-      const text = String(reply.response || reply.reply || reply.message || "").trim();
-      // `ok: false` carries the server's reason in `message`; rendering that as
-      // an answer would dress a failure up as analysis.
-      if (reply.ok === false || !text) {
-        setUndxError(text || "UNDX could not answer that right now.");
-        return;
-      }
-      setUndxAnswer(text);
-    } catch (askError) {
-      setUndxError(askError instanceof Error ? askError.message : "UNDX could not answer that right now.");
-    } finally {
-      setUndxLoading(false);
-    }
+    navigation.navigate("Tabs", { screen: "PulseAI" });
   }
 
   if (loading && !detail) {
@@ -435,31 +415,6 @@ export function AssetDetailScreen({ route, navigation }: Props) {
         </Pressable>
       </View>
       {watchlistNotice ? <Text style={styles.error}>{watchlistNotice}</Text> : null}
-
-      {undxOpen ? (
-        <Panel>
-          <Text style={styles.sectionTitle}>UNDX on {symbol}</Text>
-          {undxLoading ? <ActivityIndicator color={colors.accent} /> : null}
-          {undxAnswer ? <Text style={styles.undxAnswer}>{undxAnswer}</Text> : null}
-          {undxError ? <Text style={styles.error}>{undxError}</Text> : null}
-          {undxAnswer && !undxLoading ? (
-            <Text style={styles.muted}>
-              Answered from the figures shown above, at the time you asked. Educational information only — not
-              financial advice.
-            </Text>
-          ) : null}
-          <Pressable
-            accessibilityRole="button"
-            style={styles.secondaryButton}
-            // The full assistant, where a follow-up question can be typed. This
-            // card answers one question; the conversation lives in one place.
-            // Same spelling `openNativeRoute` uses for `/pulse/ai`.
-            onPress={() => navigation.navigate("Tabs", { screen: "PulseAI" })}
-          >
-            <Text style={styles.secondaryButtonLabel}>Continue in UNDX</Text>
-          </Pressable>
-        </Panel>
-      ) : null}
 
       <Panel>
         <Text style={styles.sectionTitle}>Price history</Text>
@@ -657,14 +612,6 @@ const styles = createThemedStyles(() => ({
   // A fixed height so the chart does not jump when the readout appears.
   scrubReadout: { alignItems: "baseline", flexDirection: "row", gap: 8, height: 20 },
   scrubTime: { color: colors.muted, fontSize: 12 },
-  secondaryButton: {
-    alignItems: "center",
-    borderColor: colors.border,
-    borderRadius: 8,
-    borderWidth: 1,
-    paddingVertical: 10
-  },
-  secondaryButtonLabel: { color: colors.accent, fontSize: 13, fontWeight: "800" },
   sectionTitle: { color: colors.text, fontSize: 15, fontWeight: "900" },
   star: { color: colors.muted, fontSize: 24 },
   starOn: { color: colors.warning },
@@ -680,6 +627,5 @@ const styles = createThemedStyles(() => ({
   tabLabel: { color: colors.muted, fontSize: 13, fontWeight: "700" },
   tabLabelActive: { color: colors.accent },
   tabs: { flexDirection: "row", gap: 8 },
-  undxAnswer: { color: colors.text, fontSize: 14, lineHeight: 21 },
   warning: { color: colors.warning, fontSize: 13, lineHeight: 19 }
 }));

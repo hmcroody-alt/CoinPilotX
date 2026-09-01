@@ -63,6 +63,7 @@ import { APP_VERSION, PULSE_API_BASE_URL } from "../api/config";
 import { PULSESOC_QA_MESSENGER_FIXTURES } from "../api/config";
 import { recoverRoomConversation } from "../community/roomConversationRecovery";
 import { buildUndxUiContext, UndxUiContext } from "../undx/undxContext";
+import { clearMarketContext, peekMarketContext, takeMarketContextForSend } from "../undx/marketContext";
 import { choiceRowsOf, describeTransition, readTapOutcome, toActionCard, UndxTapOutcome } from "../undx/actionCards";
 import { NativeMediaViewer, NativeMediaViewerItem } from "../components/NativeMediaViewer";
 import { ConversationControlCenter } from "../components/ConversationControlCenter";
@@ -322,6 +323,11 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const [attachmentSheetOpen, setAttachmentSheetOpen] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
+  // The market-context chip: an asset screen just handed off, and the member
+  // should see — and be able to end — what "it" currently means. Dismissing
+  // clears the parked envelope too, so an unsent context never rides along
+  // after the member said no to it.
+  const [marketChip, setMarketChip] = useState(assistantConversation ? peekMarketContext() : null);
   const [controlCenterOpen, setControlCenterOpen] = useState(false);
   const [undxComponents, setUndxComponents] = useState<UndxResponseComponent[]>([]);
   const [undxActionBusy, setUndxActionBusy] = useState(false);
@@ -651,10 +657,18 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       setTyping("UNDX is typing");
       setStatusMessage("UNDX is thinking...");
       try {
+        // Market Pulse → UNDX bridge: the envelope parked by an asset screen
+        // rides along on the first send only. The server persists it per
+        // conversation, so later turns inherit it without a resend — and a
+        // resend would falsely re-stamp a minutes-old snapshot as fresh.
+        const marketContext = takeMarketContextForSend();
         const data = await sendPulseAiMessage({
           body,
           client_message_id: local.client_message_id,
-          ui_context: await collectUndxUiContext(navigation, conversationId, route.params.undxTaskId)
+          ui_context: {
+            ...(await collectUndxUiContext(navigation, conversationId, route.params.undxTaskId)),
+            ...(marketContext ? { market_context: marketContext } : {})
+          }
         });
         const nextMessages = data.messages || [];
         setMessages(nextMessages);
@@ -1741,6 +1755,24 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
           <View style={styles.composerMetaIdentity}><LiveStatusDot warning={Boolean(error)} /><Text style={styles.composerKicker}>PULSE LINK</Text></View>
           <Text style={[styles.composerState, showVoiceCapture && styles.composerStateRecording]}>{showVoiceCapture ? "RECORDING" : uploading ? "SENDING MEDIA" : error ? "RECONNECTING" : assistantConversation ? "UNDX · READY" : "SECURE · READY"}</Text>
         </View>
+        {assistantConversation && marketChip ? (
+          <View style={styles.marketContextChip}>
+            <Text style={styles.marketContextChipText} numberOfLines={1}>
+              Discussing {marketChip.asset.name} · {marketChip.asset.symbol}
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Stop discussing ${marketChip.asset.symbol}`}
+              hitSlop={8}
+              onPress={() => {
+                clearMarketContext();
+                setMarketChip(null);
+              }}
+            >
+              <Text style={styles.marketContextChipDismiss}>✕</Text>
+            </Pressable>
+          </View>
+        ) : null}
         {statusMessage && !keyboardVisible ? (
           <Pressable accessibilityRole="button" accessibilityLabel="Dismiss message status" style={styles.statusBanner} onPress={() => setStatusMessage("")}>
             <Text style={styles.statusBannerText}>{statusMessage}</Text>
@@ -2630,6 +2662,29 @@ const styles = StyleSheet.create({
   statusBannerText: {
     color: colors.text,
     fontSize: 13,
+    fontWeight: "800"
+  },
+  marketContextChip: {
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(97,216,255,0.08)",
+    borderColor: "rgba(97,216,255,0.24)",
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 5
+  },
+  marketContextChipText: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "800",
+    maxWidth: 240
+  },
+  marketContextChipDismiss: {
+    color: colors.muted,
+    fontSize: 12,
     fontWeight: "800"
   },
   replyComposer: {
