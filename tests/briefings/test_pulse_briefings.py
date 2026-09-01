@@ -434,11 +434,14 @@ class NotificationTypeMappingTests(unittest.TestCase):
                 self.assertEqual(facts._network_bucket(kind), bucket)
 
     def test_unscored_types_return_none(self):
-        # Calls, crypto and payments are deliberately NOT network significance:
-        # crypto is scored by crypto_significance, and call lifecycle events are
-        # noise. Scoring them here would manufacture significance every window.
+        # Crypto, payments and call LIFECYCLE are deliberately not network
+        # significance: crypto is scored by crypto_significance, and a call you
+        # started, accepted or ended is one you were present for. Scoring them
+        # would manufacture significance every window. Call *outcomes* (missed,
+        # declined) are scored -- see MissedCallSignificanceTests.
         for kind in ("crypto_alert_triggered", "call_started", "call_ended",
-                     "incoming_call", "payment_failed", "bogus_type", ""):
+                     "call_accepted", "incoming_call", "call_expired",
+                     "payment_failed", "bogus_type", ""):
             with self.subTest(kind=kind):
                 self.assertIsNone(facts._network_bucket(kind))
 
@@ -488,6 +491,181 @@ class NotificationTypeMappingTests(unittest.TestCase):
             net = facts.collect_network_facts(_Boom(), 1, "2026-01-01T00:00:00Z")
         self.assertEqual(facts.network_significance(net), 0)
         self.assertEqual(net["security_alerts"], 0)
+
+
+class MissedCallSignificanceTests(unittest.TestCase):
+    """A missed call is the one call outcome the user was not present for.
+
+    Call *lifecycle* stays unscored (production holds 1420 call_ended, 634
+    call_started, 436 call_accepted, 374 incoming_call; the owner alone
+    accumulated 764 lifecycle rows in 30 days, which would pin any active
+    caller permanently above SEND_THRESHOLD). Call *outcomes* are scored:
+    missed at 5, declined at 1.
+    """
+
+    def _insert(self, cur, rows):
+        cur.executemany(
+            "INSERT INTO pulse_notifications (user_id, type, is_read, created_at) "
+            "VALUES (?,?,?,?)", rows,
+        )
+
+    def test_declined_resolves_but_missed_spellings_are_handled_separately(self):
+        self.assertEqual(facts._network_bucket("call_declined"), "declined_calls")
+        # Absent from the bucket map on purpose: routing them through the
+        # GROUP BY loop is exactly what would double-count the dual-write.
+        for kind in facts._MISSED_CALL_TYPES:
+            with self.subTest(kind=kind):
+                self.assertIsNone(facts._network_bucket(kind))
+
+    def test_both_spellings_of_one_call_count_once(self):
+        """Production dual-writes call_missed AND missed_call for the same call.
+
+        Users 4, 20, 21 and 36 hold exactly equal counts of the two spellings
+        and the rows pair off to the same second. Summing them would score
+        every miss twice, halving the effective threshold for anyone on the
+        dual-write path -- one missed call would send a briefing.
+        """
+        conn = _fresh_conn()
+        cur = conn.cursor()
+        now = datetime.now(timezone.utc)
+        since = _iso(now - timedelta(hours=6))
+        at = _iso(now - timedelta(minutes=5))
+        self._insert(cur, [(1, "call_missed", 0, at), (1, "missed_call", 0, at)])
+        conn.commit()
+        net = facts.collect_network_facts(cur, 1, since)
+        self.assertEqual(net["missed_calls"], 1)                     # not 2
+        self.assertEqual(facts.network_significance(net), 5)
+        conn.close()
+
+    def test_distinct_misses_under_different_spellings_both_count(self):
+        """Dedupe must collapse a pair, not collapse the whole bucket.
+
+        max(call_missed, missed_call) would also fix the paired case but would
+        under-count here. Two real misses a minute apart are two misses even if
+        different writers filed them.
+        """
+        conn = _fresh_conn()
+        cur = conn.cursor()
+        now = datetime.now(timezone.utc)
+        since = _iso(now - timedelta(hours=6))
+        self._insert(cur, [
+            (1, "call_missed", 0, _iso(now - timedelta(minutes=5))),
+            (1, "missed_call", 0, _iso(now - timedelta(minutes=9))),
+        ])
+        conn.commit()
+        net = facts.collect_network_facts(cur, 1, since)
+        self.assertEqual(net["missed_calls"], 2)
+        conn.close()
+
+    def test_one_miss_is_recorded_but_does_not_send_and_two_do(self):
+        """The sizing decision, pinned. 'Low-to-moderate' means a single missed
+        call is worth recording and not worth interrupting for; two are."""
+        conn = _fresh_conn()
+        cur = conn.cursor()
+        now = datetime.now(timezone.utc)
+        since = _iso(now - timedelta(hours=6))
+        self._insert(cur, [(1, "call_missed", 0, _iso(now - timedelta(minutes=5)))])
+        conn.commit()
+        net = facts.collect_network_facts(cur, 1, since)
+        self.assertEqual(net["missed_calls"], 1)
+        self.assertLess(facts.network_significance(net), facts.SEND_THRESHOLD)
+
+        self._insert(cur, [(1, "call_missed", 0, _iso(now - timedelta(minutes=11)))])
+        conn.commit()
+        net = facts.collect_network_facts(cur, 1, since)
+        self.assertEqual(net["missed_calls"], 2)
+        self.assertGreaterEqual(facts.network_significance(net), facts.SEND_THRESHOLD)
+        conn.close()
+
+    def test_the_production_decline_burst_stays_silent(self):
+        """2026-07-18: six declines each for five different users inside a day --
+        a system artifact, not social activity. At weight 1 it scores 6 and
+        sends nothing. At weight 2 it would have scored 12 and sent five people
+        a briefing about nothing. Declines still compose: add one missed call
+        and the same window reaches 11 and sends."""
+        conn = _fresh_conn()
+        cur = conn.cursor()
+        now = datetime.now(timezone.utc)
+        since = _iso(now - timedelta(hours=6))
+        self._insert(cur, [
+            (1, "call_declined", 0, _iso(now - timedelta(minutes=i + 1)))
+            for i in range(6)
+        ])
+        conn.commit()
+        net = facts.collect_network_facts(cur, 1, since)
+        self.assertEqual(net["declined_calls"], 6)
+        self.assertEqual(facts.network_significance(net), 6)
+        self.assertLess(facts.network_significance(net), facts.SEND_THRESHOLD)
+
+        self._insert(cur, [(1, "call_missed", 0, _iso(now - timedelta(minutes=30)))])
+        conn.commit()
+        net = facts.collect_network_facts(cur, 1, since)
+        self.assertEqual(facts.network_significance(net), 11)
+        self.assertGreaterEqual(facts.network_significance(net), facts.SEND_THRESHOLD)
+        conn.close()
+
+    def test_call_lifecycle_volume_scores_nothing(self):
+        """The owner's real 30-day lifecycle mix, scaled down. If any of these
+        scored, an active caller would be permanently above threshold and the
+        briefing would degrade into a fixed 6-hourly send."""
+        conn = _fresh_conn()
+        cur = conn.cursor()
+        now = datetime.now(timezone.utc)
+        since = _iso(now - timedelta(hours=6))
+        rows = []
+        for kind, count in (("call_ended", 23), ("call_started", 22),
+                            ("call_accepted", 18), ("incoming_call", 12),
+                            ("call_expired", 2)):
+            rows += [(1, kind, 0, _iso(now - timedelta(minutes=n + 1)))
+                     for n in range(count)]
+        self._insert(cur, rows)
+        conn.commit()
+        net = facts.collect_network_facts(cur, 1, since)
+        self.assertEqual(net["missed_calls"], 0)
+        self.assertEqual(net["declined_calls"], 0)
+        self.assertEqual(facts.network_significance(net), 0)
+        conn.close()
+
+    def test_missed_calls_respect_unread_recency_and_ownership(self):
+        """The dedicated query must honour the same predicate as the main one --
+        it is a second SELECT, so it could drift."""
+        conn = _fresh_conn()
+        cur = conn.cursor()
+        now = datetime.now(timezone.utc)
+        since = _iso(now - timedelta(hours=6))
+        self._insert(cur, [
+            (1, "call_missed", 1, _iso(now)),                      # already read
+            (1, "call_missed", 0, _iso(now - timedelta(days=2))),  # out of window
+            (2, "call_missed", 0, _iso(now)),                      # another user
+        ])
+        conn.commit()
+        net = facts.collect_network_facts(cur, 1, since)
+        self.assertEqual(net["missed_calls"], 0)
+        self.assertEqual(facts.network_significance(net), 0)
+        conn.close()
+
+    def test_a_new_missed_call_breaks_the_dedupe_fingerprint(self):
+        """Two misses can carry a briefing alone, so a window whose only change
+        is a new missed call must not hash identically to the last one and get
+        dropped as a duplicate."""
+        base = {"network": {"missed_calls": 1}, "crypto": {}}
+        more = {"network": {"missed_calls": 2}, "crypto": {}}
+        self.assertNotEqual(facts.fact_fingerprint(base), facts.fact_fingerprint(more))
+
+    def test_declines_alone_do_not_break_the_fingerprint(self):
+        """Deliberate asymmetry: at weight 1 a decline can never reach the
+        threshold unaided, so it has nothing to say that justifies re-sending."""
+        base = {"network": {"declined_calls": 1}, "crypto": {}}
+        more = {"network": {"declined_calls": 9}, "crypto": {}}
+        self.assertEqual(facts.fact_fingerprint(base), facts.fact_fingerprint(more))
+
+    def test_missed_call_collector_degrades_to_zero_on_fault(self):
+        class _Boom:
+            def execute(self, *a, **k):
+                raise RuntimeError("table gone")
+
+        with mock.patch.object(facts.logging, "exception"):
+            self.assertEqual(facts._collect_missed_calls(_Boom(), 1, "2026-01-01T00:00:00Z"), 0)
 
 
 class WindowAndQuietHoursTests(unittest.TestCase):

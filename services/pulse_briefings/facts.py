@@ -26,6 +26,26 @@ WEIGHTS = {
     "marketplace_order": 10,
     "reaction": 1,
     "community_event": 2,
+    # Call *outcomes*, not call lifecycle. See _NETWORK_BUCKETS for why the
+    # distinction matters and why the other six call types stay unscored.
+    #
+    # missed_call at 5 is deliberately below SEND_THRESHOLD: one missed call is
+    # worth recording but is not on its own worth waking someone with a
+    # briefing. Two are (2 x 5 = 10, exactly the threshold). That puts it level
+    # with mention and friend_request -- the "someone wanted you specifically"
+    # tier -- which is the honest place for it.
+    #
+    # declined_call at 1 is a tiebreaker, never a trigger. A decline is often
+    # the user's own action replayed back at them, so it is the weakest signal
+    # here, level with reaction. The sizing is evidence-led: production's only
+    # observed decline burst (2026-07-18, six declines each for five different
+    # users within a day -- almost certainly a system artifact rather than real
+    # social activity) scores 6 and stays correctly silent. At weight 2 that
+    # same artifact would have scored 12 and sent five people a briefing about
+    # nothing. Declines still compose: six declines plus one missed call is 11,
+    # which sends.
+    "missed_call": 5,
+    "declined_call": 1,
 }
 SEND_THRESHOLD = 10
 MARKET_MOVE_THRESHOLD_PCT = 2.0  # |BTC 24h| or |cap 24h| beyond this is significant
@@ -64,6 +84,36 @@ _NETWORK_BUCKETS: dict[str, str] = {
     "teacher_order": "marketplace_orders",
     "community": "community_events", "group": "community_events",
     "live": "community_events", "live_invite": "community_events",
+    # Call OUTCOMES are scored; call LIFECYCLE is not. The six unscored types
+    # are not an oversight -- they are the whole reason calls were excluded
+    # wholesale before. Lifetime production volume:
+    #
+    #     call_ended     1420      call_missed      46   <- scored
+    #     call_started    634      missed_call      27   <- scored (same event)
+    #     call_accepted   436      call_declined    72   <- scored
+    #     incoming_call   374      call_expired     13   <- see below
+    #
+    # One user (the owner) accumulated 764 lifecycle rows in 30 days. Scoring
+    # those would hand a single active caller a permanent above-threshold score
+    # and turn the briefing into a fixed 6-hourly send, which is exactly the
+    # failure mode this work is meant to avoid. A call you started, accepted or
+    # ended is a thing you were present for; a briefing telling you about it is
+    # telling you what you already know. A call you MISSED is the opposite:
+    # it is the one call outcome you were by definition not there for.
+    #
+    # incoming_call is lifecycle too -- it fires on ring, before the outcome is
+    # known, so every missed call already counts once as call_missed and would
+    # otherwise be counted twice. call_expired (ring timeout, 13 rows lifetime)
+    # is arguably a missed call, but it is left unscored deliberately: it was
+    # not in the agreed scope, and its semantics (did the callee ever see it?)
+    # are not settled. Revisit it as its own decision, with evidence, not as a
+    # silent widening of this one.
+    "call_declined": "declined_calls",
+    # NB: call_missed / missed_call are deliberately absent from this map.
+    # They are two spellings of the SAME event and production dual-writes both
+    # for the same call, so the GROUP BY type loop below would count each miss
+    # twice. They are counted separately, deduplicated by timestamp, in
+    # _collect_missed_calls.
     # --- canonical PULSE_TYPE_TO_CATEGORY values ---
     "security": "security_alerts", "system_security": "security_alerts",
     "admin_security": "security_alerts", "account": "security_alerts",
@@ -77,8 +127,13 @@ def _network_bucket(kind: str) -> str | None:
     """Resolve a notification type to a significance bucket.
 
     Raw type wins; otherwise fall back to the canonical category. Types with no
-    category, or whose category has no bucket (crypto, calls, payments, premium),
-    return None and are deliberately not counted as *network* activity.
+    category, or whose category has no bucket (crypto, call lifecycle, payments,
+    premium), return None and are deliberately not counted as *network* activity.
+
+    Calls are a partial exception and are resolved by raw type only: no call type
+    has a PULSE_TYPE_TO_CATEGORY entry at all, so the fallback cannot reach them.
+    call_declined maps here; call_missed/missed_call are counted separately to
+    dedupe their dual-write; every other call type stays unscored on purpose.
     """
     bucket = _NETWORK_BUCKETS.get(kind)
     if bucket:
@@ -91,12 +146,61 @@ def _network_bucket(kind: str) -> str | None:
     return _NETWORK_BUCKETS.get(category) if category else None
 
 
+# The two spellings production uses for one missed call. `missed_call` is the
+# older writer (first seen 2026-07-03, 'Z' timestamps), `call_missed` the newer
+# one (2026-07-06, '+00:00' timestamps); both are still live and both fire for
+# the same call on the modern path.
+_MISSED_CALL_TYPES = ("call_missed", "missed_call")
+
+
+def _collect_missed_calls(cur, user_id: int, since_iso: str) -> int:
+    """Count missed calls once each, despite two type spellings per call.
+
+    Production writes BOTH `call_missed` and `missed_call` for the same missed
+    call: users 4, 20, 21 and 36 hold exactly equal counts of the two, and the
+    rows pair off to the same second. Summing the buckets would therefore score
+    every miss twice -- a silent doubling of a weight that was chosen to need
+    exactly two misses to send, which would have made one missed call trigger a
+    briefing for anyone on the dual-write path.
+
+    Collapsing on the second is what makes this exact rather than approximate.
+    Taking max(call_missed, missed_call) would also fix the paired case, but it
+    would under-count the unpaired one: user 1 holds 20 and 4, which is not a
+    clean pairing, and two genuinely distinct misses filed under different
+    spellings must still count as two. SUBSTR is used rather than LEFT because
+    it is spelled the same in SQLite and PostgreSQL, and it normalises the two
+    timestamp formats to a common 'YYYY-MM-DDTHH:MM:SS' prefix.
+    """
+    placeholders = ",".join("?" for _ in _MISSED_CALL_TYPES)
+    try:
+        cur.execute(
+            f"""
+            SELECT COUNT(*) AS n FROM (
+                SELECT DISTINCT SUBSTR(created_at, 1, 19) AS at_second
+                FROM pulse_notifications
+                WHERE user_id=? AND COALESCE(is_read,0)=0 AND created_at>=?
+                  AND type IN ({placeholders})
+            ) deduped
+            """,
+            (int(user_id), since_iso, *_MISSED_CALL_TYPES),
+        )
+        row = cur.fetchone()
+        if not row:
+            return 0
+        row = dict(row) if not isinstance(row, (tuple, list)) else {"n": row[0]}
+        return int(row.get("n") or 0)
+    except Exception:  # noqa: BLE001 - a fact-pack fault degrades to zero, never fatal
+        logging.exception("BRIEFING_MISSED_CALL_FACTS_FAILED user_id=%s", user_id)
+        return 0
+
+
 def collect_network_facts(cur, user_id: int, since_iso: str) -> dict[str, Any]:
     """Owner-scoped counts from canonical tables. Never another user's metrics."""
     facts = {
         "unread_messages": 0, "friend_requests": 0, "new_followers": 0,
         "mentions": 0, "comments": 0, "reactions": 0,
         "marketplace_orders": 0, "security_alerts": 0, "community_events": 0,
+        "missed_calls": 0, "declined_calls": 0,
         "collected_at": _now_iso(), "since": since_iso,
     }
     try:
@@ -115,6 +219,9 @@ def collect_network_facts(cur, user_id: int, since_iso: str) -> dict[str, Any]:
                 facts[bucket] += int(r.get("n") or 0)
     except Exception:  # noqa: BLE001 - a fact-pack fault degrades to zeros
         logging.exception("BRIEFING_NETWORK_FACTS_FAILED user_id=%s", user_id)
+    # Counted apart from the GROUP BY above because one missed call arrives as
+    # two rows under two type spellings; see _collect_missed_calls.
+    facts["missed_calls"] = _collect_missed_calls(cur, user_id, since_iso)
     return facts
 
 
@@ -129,6 +236,8 @@ def network_significance(network: dict[str, Any]) -> int:
         + network.get("marketplace_orders", 0) * WEIGHTS["marketplace_order"]
         + network.get("reactions", 0) * WEIGHTS["reaction"]
         + network.get("community_events", 0) * WEIGHTS["community_event"]
+        + network.get("missed_calls", 0) * WEIGHTS["missed_call"]
+        + network.get("declined_calls", 0) * WEIGHTS["declined_call"]
     )
 
 
@@ -310,9 +419,16 @@ def fact_fingerprint(facts: dict[str, Any]) -> str:
             return 0
 
     signature = {
+        # missed_calls joins the signature because it can carry a briefing on its
+        # own (two misses hit SEND_THRESHOLD exactly), so a window whose only
+        # change is a new missed call must not hash identically to the previous
+        # one and get dropped as a duplicate. declined_calls is deliberately
+        # left out: at weight 1 it can never reach the threshold unaided, so it
+        # has nothing to say that would justify re-sending a briefing.
         "net_counts": [network.get(k, 0) for k in (
             "unread_messages", "friend_requests", "new_followers", "mentions",
-            "comments", "marketplace_orders", "security_alerts")] if network else [],
+            "comments", "marketplace_orders", "security_alerts",
+            "missed_calls")] if network else [],
         "btc": bucket(crypto.get("btc_change_24h")),
         "eth": bucket(crypto.get("eth_change_24h")),
         "cap": bucket(crypto.get("market_cap_change_24h_pct")),
