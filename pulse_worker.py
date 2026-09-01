@@ -181,6 +181,14 @@ def _sweep_metrics(sweep: dict) -> dict:
     return {
         "last_sweep_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "last_sweep_status": last_status,
+        # Why the status alone is not enough: a sweep blocked by a missing
+        # lifecycle column, a sweep whose candidate query broke, and a sweep
+        # that released some rows and failed on others all arrive here as
+        # `degraded` with zero or partial counts. Only the reason separates
+        # "this database needs a migration" from "some rows misbehaved", and
+        # the first needs an operator while the second usually resolves itself.
+        # ``None`` on a healthy cycle, so its presence is itself the signal.
+        "last_sweep_reason": sweep.get("reason"),
         "last_sweep_dry_run": bool(sweep.get("dry_run")),
         "last_sweep_candidates": sweep.get("candidates", 0),
         "last_sweep_released": sweep.get("released", 0),

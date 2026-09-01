@@ -53,6 +53,7 @@ from services import marketplace_quote_service
 from services import marketplace_goods_policy
 from services import marketplace_payment_pause
 from services import marketplace_reservation_policy as reservation_policy
+from services import marketplace_reservation_schema as reservation_schema
 
 LOGGER = logging.getLogger(__name__)
 
@@ -190,92 +191,31 @@ def _ensure_schema(cur) -> None:
         )
         """
     )
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS marketplace_inventory_reservations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            seller_transaction_id INTEGER UNIQUE,
-            buyer_user_id INTEGER,
-            listing_id INTEGER,
-            quantity INTEGER DEFAULT 1,
-            status TEXT DEFAULT 'held',
-            created_at TEXT,
-            updated_at TEXT
-        )
-        """
-    )
-    _ensure_reservation_lifecycle_columns(cur)
+    reservation_schema.ensure_reservation_schema(cur, force=True)
     _SCHEMA_READY = True
 
 
-# Lifecycle columns added after the table shipped. There is no migration
-# framework in this repo (schema is created imperatively and must be
-# idempotent), so they are added defensively here rather than by editing the
-# CREATE TABLE above — editing it would only affect fresh databases and would
-# silently skip production, which already has the table.
-_RESERVATION_LIFECYCLE_COLUMNS = (
-    # When the hold was taken. Distinct from created_at, which a future
-    # re-reservation on the same transaction would not update.
-    ("reserved_at", "TEXT"),
-    # The durable deadline. This is what makes expiry authoritative rather
-    # than dependent on a client callback that may never arrive.
-    ("expires_at", "TEXT"),
-    # Terminal timestamps, kept separate so an audit can tell a capture from a
-    # release without reading the status string.
-    ("released_at", "TEXT"),
-    ("captured_at", "TEXT"),
-    # Why it was released — see marketplace_reservation_policy.RELEASE_REASONS.
-    ("release_reason", "TEXT"),
-    # Set when a release was deferred because Stripe said the intent was still
-    # live. Lets the sweeper back off without losing the row.
-    ("reconciled_at", "TEXT"),
-    # How many consecutive sweeps have deferred this reservation. The
-    # reconciler's deferral bound is a *count*, and without somewhere durable to
-    # keep it every sweep would start again at zero — which would make
-    # `requires_action` defer forever and never reach the
-    # `buyer_never_completed` release. The bound would exist in the decision
-    # table and be unreachable in production.
-    ("reconcile_deferrals", "INTEGER"),
-)
+# The reservation table and its lifecycle columns are owned by
+# ``services.marketplace_reservation_schema``, not by this module. They used to
+# live here, which made them reachable only from a cart route — and the expiry
+# sweeper runs in ``pulse_worker``, a process that never serves one. In
+# production that read as `column r.expires_at does not exist` on every sweep
+# cycle until a buyer happened to open a cart. The DDL moved to a module both
+# callers can own equally; this alias stays so existing callers and tests keep
+# working, and so there is still exactly one copy of the ALTER list.
+_RESERVATION_LIFECYCLE_COLUMNS = reservation_schema.RESERVATION_LIFECYCLE_COLUMNS
 
 
 def _ensure_reservation_lifecycle_columns(cur) -> None:
     """Add the lifecycle columns if this database predates them.
 
-    Uses the portable introspection helper rather than PRAGMA directly:
-    production is PostgreSQL, where PRAGMA raises and poisons the transaction,
-    which historically made these defensive ALTERs silent no-ops.
+    Delegates to the canonical owner. Kept as a named function because the
+    webhook and settlement paths, and several test harnesses, call it directly.
     """
-    try:
-        from services import db as db_module
-
-        existing = db_module.get_table_columns(cur, "marketplace_inventory_reservations")
-    except Exception:
-        LOGGER.exception("RESERVATION_COLUMN_INTROSPECT_FAILED")
-        return
-    for column, definition in _RESERVATION_LIFECYCLE_COLUMNS:
-        if column in existing:
-            continue
-        try:
-            cur.execute(
-                f"ALTER TABLE marketplace_inventory_reservations ADD COLUMN {column} {definition}"
-            )
-        except Exception:
-            # A concurrent worker may have added it between the introspection
-            # and here. Losing that race is fine; anything else is logged.
-            LOGGER.exception("RESERVATION_COLUMN_ADD_FAILED column=%s", column)
-    # The sweeper's only query shape is (status, expires_at). Without this it
-    # degrades to a full scan of every reservation ever taken.
-    try:
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_mkt_reservations_status_expires "
-            "ON marketplace_inventory_reservations (status, expires_at)"
-        )
-    except Exception:
-        LOGGER.exception("RESERVATION_INDEX_CREATE_FAILED")
-    # This function has just established the true shape against the real
-    # database, so hand it to the terminal-transition path rather than making
-    # it re-probe. Cleared, not set, so the next caller re-reads post-ALTER.
+    reservation_schema.ensure_reservation_schema(cur, force=True)
+    # The ensure has just established the true shape against the real database,
+    # so drop the terminal-transition path's cached answer rather than letting
+    # it serve a pre-ALTER one. Cleared, not set, so the next caller re-reads.
     global _RESERVATION_COLUMN_CACHE
     _RESERVATION_COLUMN_CACHE = None
 

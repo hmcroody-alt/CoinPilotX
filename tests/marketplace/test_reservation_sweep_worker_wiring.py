@@ -808,3 +808,71 @@ def test_23_a_commit_failure_reports_nothing_released(monkeypatch):
         "a rolled-back sweep reported releases it did not make"
     )
     assert pulse_worker.sweep_heartbeat_metadata(state)["last_sweep_released"] == 0
+
+
+# --------------------------------------------------------------------------
+# Stage 176B — a schema block must reach the heartbeat as a schema block
+# --------------------------------------------------------------------------
+
+def test_24_a_degraded_sweep_status_survives_the_healthy_path(monkeypatch):
+    """The sweep's own status must not be overwritten with an optimistic one.
+
+    The healthy path builds ``{"status": "ok", **summary}``. The spread is what
+    carries a degraded sweep through, and it only works because the summary now
+    carries a status of its own — so the ordering is asserted rather than
+    trusted. Reverse it and a worker whose database needs a migration reports a
+    clean cycle indefinitely.
+    """
+    monkeypatch.setattr(pulse_worker.bot, "db", _FakeConn)
+    monkeypatch.setattr(
+        sweeper, "run_reservation_expiry_sweep",
+        lambda cur, **kw: {"status": "degraded", "reason": "schema_missing",
+                           "candidates": 0, "released": 0, "failed": 1,
+                           "duration_ms": 3, "dry_run": True,
+                           "schema_missing": ["expires_at"]},
+    )
+    monkeypatch.setenv(pulse_worker.SWEEP_ENABLED_ENV_VAR, "true")
+    monkeypatch.setenv(pulse_worker.SWEEP_DRY_RUN_ENV_VAR, "true")
+
+    state: dict = {}
+    outcome = pulse_worker.run_reservation_sweep_if_due(state)
+
+    assert outcome["status"] == "degraded"
+    assert pulse_worker.sweep_heartbeat_metadata(state)["last_sweep_status"] == "degraded"
+
+
+def test_25_the_heartbeat_separates_a_migration_problem_from_a_bad_row(monkeypatch):
+    """Both arrive as ``degraded`` with ``failed=1``. Only the reason differs.
+
+    One needs an operator to touch the database; the other usually clears on
+    the next interval. Collapsing them into one status is how a silent
+    inventory leak reads as ordinary noise on a dashboard.
+    """
+    monkeypatch.setattr(pulse_worker.bot, "db", _FakeConn)
+    monkeypatch.setenv(pulse_worker.SWEEP_ENABLED_ENV_VAR, "true")
+    monkeypatch.setenv(pulse_worker.SWEEP_DRY_RUN_ENV_VAR, "true")
+
+    def _heartbeat_for(summary):
+        monkeypatch.setattr(sweeper, "run_reservation_expiry_sweep",
+                            lambda cur, **kw: summary)
+        state: dict = {}
+        pulse_worker.run_reservation_sweep_if_due(state)
+        return pulse_worker.sweep_heartbeat_metadata(state)
+
+    blocked = _heartbeat_for({"status": "degraded", "reason": "schema_missing",
+                              "candidates": 0, "released": 0, "failed": 1,
+                              "duration_ms": 3, "dry_run": True})
+    bad_row = _heartbeat_for({"status": "degraded", "reason": None,
+                              "candidates": 2, "released": 1, "failed": 1,
+                              "duration_ms": 9, "dry_run": True})
+    healthy = _heartbeat_for({"status": "ok", "reason": None, "candidates": 0,
+                              "released": 0, "failed": 0, "duration_ms": 2,
+                              "dry_run": True})
+
+    assert blocked["last_sweep_status"] == bad_row["last_sweep_status"] == "degraded"
+    assert blocked["last_sweep_reason"] == "schema_missing"
+    assert bad_row["last_sweep_reason"] is None
+    assert healthy["last_sweep_reason"] is None
+    # And the counts still say which of the two actually managed to look.
+    assert blocked["last_sweep_candidates"] == 0
+    assert bad_row["last_sweep_candidates"] == 2

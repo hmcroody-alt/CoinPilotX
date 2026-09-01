@@ -60,6 +60,7 @@ from datetime import timedelta
 from services import marketplace_cart_routes as cart
 from services import marketplace_reservation_policy as reservation_policy
 from services import marketplace_reservation_reconciler as reconciler
+from services import marketplace_reservation_schema as reservation_schema
 
 LOGGER = logging.getLogger(__name__)
 
@@ -141,16 +142,34 @@ def terminal_status_for(release_reason: str | None) -> str:
 #: Columns the decision needs, and nothing else. ``decide_for_reservation``
 #: reads only ``stripe_payment_intent_id`` and the transaction status; the rest
 #: is telemetry and bookkeeping.
-_CANDIDATE_COLUMNS = (
-    "r.seller_transaction_id AS seller_transaction_id",
-    "r.listing_id AS listing_id",
-    "r.quantity AS quantity",
-    "r.expires_at AS expires_at",
-    "r.reconciled_at AS reconciled_at",
-    "COALESCE(r.reconcile_deferrals, 0) AS reconcile_deferrals",
+#:
+#: The reservation-side projection is assembled per call from the columns the
+#: table actually has rather than written out as a constant. The previous
+#: constant named ``reconciled_at`` and ``reconcile_deferrals`` unconditionally
+#: and relied on a ``try/except`` fallback to cope with a database that lacked
+#: them — but the fallback still named ``expires_at``, so on the database that
+#: lacked *that*, both attempts raised the identical ``UndefinedColumn`` and the
+#: sweep failed the way it was written not to. A projection that is built from
+#: the observed shape cannot reference a column that is not there.
+_CANDIDATE_TRANSACTION_COLUMNS = (
     "t.status AS transaction_status",
     "t.stripe_payment_intent_id AS stripe_payment_intent_id",
 )
+
+
+def _candidate_projection(present) -> list[str]:
+    columns = [
+        "r.seller_transaction_id AS seller_transaction_id",
+        "r.listing_id AS listing_id",
+        "r.quantity AS quantity",
+        "r.expires_at AS expires_at",
+    ]
+    if "reconciled_at" in present:
+        columns.append("r.reconciled_at AS reconciled_at")
+    if "reconcile_deferrals" in present:
+        columns.append("COALESCE(r.reconcile_deferrals, 0) AS reconcile_deferrals")
+    columns.extend(_CANDIDATE_TRANSACTION_COLUMNS)
+    return columns
 
 
 def select_expiry_candidates(cur, *, now=None, limit: int | None = None,
@@ -200,7 +219,32 @@ def select_expiry_candidates(cur, *, now=None, limit: int | None = None,
 
     settled = cart.SETTLED_TRANSACTION_STATUSES
     placeholders = ",".join("?" for _ in settled)
-    columns = ", ".join(_CANDIDATE_COLUMNS)
+
+    # Read the real shape every call rather than trusting a process cache. The
+    # cost is one introspection query per sweep — negligible against a five
+    # minute cadence — and it buys the guarantee that the projection below can
+    # never name a column this database does not have, including after a
+    # concurrent migration changed the answer mid-process.
+    present = reservation_schema.reservation_columns(cur, refresh=True)
+    missing = reservation_schema.missing_sweep_columns(present)
+    if missing:
+        # Not a query failure and not an empty result. There is no honest answer
+        # to "which holds have expired" on a table with no deadline column, and
+        # returning zero candidates would be indistinguishable from a clean
+        # sweep — which is precisely how a broken sweeper reads as a healthy one
+        # on a dashboard.
+        raise reservation_schema.ReservationSchemaMissing(missing)
+
+    columns = ", ".join(_candidate_projection(present))
+    params = [reservation_policy.STATUS_HELD, deadline_cutoff, *settled]
+
+    recheck_clause = ""
+    if "reconciled_at" in present:
+        recheck_clause = (
+            "  AND (r.reconciled_at IS NULL OR r.reconciled_at = '' "
+            "       OR r.reconciled_at <= ?) ")
+        params.append(recheck_cutoff)
+    params.append(rows_limit)
 
     sql = (
         f"SELECT {columns} "
@@ -210,35 +254,12 @@ def select_expiry_candidates(cur, *, now=None, limit: int | None = None,
         "  AND r.expires_at IS NOT NULL AND r.expires_at <> '' "
         "  AND r.expires_at <= ? "
         f"  AND (t.status IS NULL OR t.status NOT IN ({placeholders})) "
-        "  AND (r.reconciled_at IS NULL OR r.reconciled_at = '' OR r.reconciled_at <= ?) "
+        f"{recheck_clause}"
         "ORDER BY r.expires_at ASC, r.seller_transaction_id ASC "
         "LIMIT ?"
     )
-    params = [reservation_policy.STATUS_HELD, deadline_cutoff, *settled,
-              recheck_cutoff, rows_limit]
 
-    try:
-        cur.execute(sql, params)
-    except Exception:
-        # Most likely a database predating `reconcile_deferrals` or
-        # `reconciled_at`. Fall back to the columns that have always existed
-        # rather than failing the whole sweep: a sweeper that stops working
-        # after a partial migration recreates the leak it exists to fix.
-        LOGGER.exception("RESERVATION_SWEEP_CANDIDATE_QUERY_FALLBACK")
-        cur.execute(
-            "SELECT r.seller_transaction_id AS seller_transaction_id, "
-            "       r.listing_id AS listing_id, r.quantity AS quantity, "
-            "       r.expires_at AS expires_at, "
-            "       t.status AS transaction_status, "
-            "       t.stripe_payment_intent_id AS stripe_payment_intent_id "
-            "FROM marketplace_inventory_reservations r "
-            "LEFT JOIN seller_transactions t ON t.id = r.seller_transaction_id "
-            "WHERE r.status = ? AND r.expires_at IS NOT NULL AND r.expires_at <> '' "
-            "  AND r.expires_at <= ? "
-            f"  AND (t.status IS NULL OR t.status NOT IN ({placeholders})) "
-            "ORDER BY r.expires_at ASC, r.seller_transaction_id ASC LIMIT ?",
-            [reservation_policy.STATUS_HELD, deadline_cutoff, *settled, rows_limit],
-        )
+    cur.execute(sql, params)
 
     candidates = []
     for raw in cur.fetchall() or []:
@@ -256,8 +277,20 @@ def select_expiry_candidates(cur, *, now=None, limit: int | None = None,
 # The sweep
 # --------------------------------------------------------------------------
 
+#: Reasons a sweep produced no measurement. Kept as constants because they are
+#: read by the worker heartbeat and by the acceptance report, and a typo in a
+#: string literal would silently become a new category of failure nobody counts.
+REASON_SCHEMA_MISSING = reservation_schema.REASON_SCHEMA_MISSING
+REASON_SCHEMA_ENSURE_FAILED = reservation_schema.REASON_SCHEMA_ENSURE_FAILED
+REASON_CANDIDATE_QUERY_FAILED = "candidate_query_failed"
+
+STATUS_OK = "ok"
+STATUS_DEGRADED = "degraded"
+
+
 def _empty_result(*, dry_run: bool, limit: int) -> dict:
     return {
+        "status": STATUS_OK, "reason": None,
         "scanned": 0, "candidates": 0,
         "released": 0, "captured": 0, "deferred": 0, "skipped": 0,
         "reconciled": 0, "failed": 0,
@@ -266,6 +299,26 @@ def _empty_result(*, dry_run: bool, limit: int) -> dict:
         "dry_run": bool(dry_run), "limit": int(limit),
         "batch_exhausted": False, "duration_ms": 0,
     }
+
+
+def _degraded(result: dict, *, reason: str, started: float,
+              detail: str | None = None, missing=()) -> dict:
+    """Mark a sweep that could not look, as distinct from one that found nothing.
+
+    ``failed=1`` and every other counter at zero is the same shape a broken
+    sweep and a clean sweep both produce, which is why the reason travels with
+    it. An operator reading ``candidates=0`` needs to know whether that is good
+    news.
+    """
+    result["status"] = STATUS_DEGRADED
+    result["reason"] = reason
+    result["failed"] = 1
+    if detail:
+        result["error"] = detail[:500]
+    if missing:
+        result["schema_missing"] = list(missing)
+    result["duration_ms"] = int((time.monotonic() - started) * 1000)
+    return result
 
 
 def run_reservation_expiry_sweep(cur, *, now=None, limit: int | None = None,
@@ -312,14 +365,43 @@ def run_reservation_expiry_sweep(cur, *, now=None, limit: int | None = None,
 
     result = _empty_result(dry_run=dry_run, limit=rows_limit)
 
+    # The worker is a separate process from the web app and may never serve an
+    # HTTP request, so it cannot inherit the lazy migration that cart routes
+    # perform. It bootstraps its own schema instead. This is the only write the
+    # sweep performs in dry-run mode, and it is deliberate: creating a nullable
+    # column and an index mutates no reservation, and without it a dry run can
+    # never measure anything, which makes the dry run itself uninformative.
+    schema_state = reservation_schema.ensure_reservation_schema(cur)
+    schema_status = schema_state.get("status")
+    if schema_status != reservation_schema.STATUS_READY:
+        reason = (REASON_SCHEMA_MISSING
+                  if schema_status == reservation_schema.STATUS_MISSING
+                  else REASON_SCHEMA_ENSURE_FAILED)
+        LOGGER.error(
+            "RESERVATION_SWEEP_SCHEMA_BLOCKED reason=%s missing=%s error=%s dry_run=%s",
+            reason, ",".join(schema_state.get("missing") or ()) or "-",
+            schema_state.get("error"), dry_run)
+        return _degraded(result, reason=reason, started=started,
+                         detail=schema_state.get("error"),
+                         missing=schema_state.get("missing") or ())
+
     try:
         candidates = select_expiry_candidates(
             cur, now=stamp, limit=rows_limit, recheck_seconds=recheck_seconds)
-    except Exception:
+    except reservation_schema.ReservationSchemaMissing as exc:
+        # The ensure said ready — from its process cache — and the table
+        # disagrees. Clear the cache so the next maintenance interval re-runs
+        # the DDL rather than short-circuiting past it for the life of the
+        # process.
+        reservation_schema.reset_schema_cache()
+        LOGGER.error("RESERVATION_SWEEP_SCHEMA_MISSING missing=%s dry_run=%s",
+                     ",".join(exc.missing), dry_run)
+        return _degraded(result, reason=REASON_SCHEMA_MISSING, started=started,
+                         detail=str(exc), missing=exc.missing)
+    except Exception as exc:
         LOGGER.exception("RESERVATION_SWEEP_CANDIDATE_QUERY_FAILED")
-        result["failed"] = 1
-        result["duration_ms"] = int((time.monotonic() - started) * 1000)
-        return result
+        return _degraded(result, reason=REASON_CANDIDATE_QUERY_FAILED,
+                         started=started, detail=str(exc))
 
     result["scanned"] = len(candidates)
     result["candidates"] = len(candidates)
@@ -346,6 +428,11 @@ def run_reservation_expiry_sweep(cur, *, now=None, limit: int | None = None,
 
     result["provider_calls"] = provider_calls["count"]
     result["duration_ms"] = int((time.monotonic() - started) * 1000)
+    if result["failed"]:
+        # Individual rows raised. The sweep did look — `scanned` and
+        # `candidates` are real measurements — so this is a partial success,
+        # reported as degraded with no schema reason attached.
+        result["status"] = STATUS_DEGRADED
     LOGGER.info(
         "RESERVATION_SWEEP_COMPLETED candidates=%s released=%s captured=%s "
         "deferred=%s skipped=%s failed=%s provider_calls=%s attention=%s "
