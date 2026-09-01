@@ -57,6 +57,39 @@ def _fresh_conn(*, region_prefs: bool = True) -> sqlite3.Connection:
             notify_sms INTEGER DEFAULT 0, notify_in_app INTEGER DEFAULT 1,
             note TEXT, created_at TEXT, updated_at TEXT, last_triggered_at TEXT)"""
     )
+    # The CANONICAL alert tables -- the ones the alert engine actually evaluates
+    # and writes. crypto_alerts above is retained only so a test can prove the
+    # collectors no longer read it: it is a legacy import source that
+    # reconcile_legacy_alerts fills one-way and never writes back, and in
+    # production it disagreed with alert_rules in all three directions at once
+    # (owner: 8 rules vs 1 legacy row; user 34: a rule with no legacy row; user
+    # 19: a legacy row with no rule). Column names mirror production.
+    cur.execute(
+        """CREATE TABLE alert_rules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, alert_type TEXT,
+            symbol TEXT, condition TEXT, target_value REAL, threshold_value REAL,
+            channels TEXT, channels_json TEXT, active INTEGER DEFAULT 1,
+            status TEXT DEFAULT 'active', created_at TEXT, updated_at TEXT,
+            deleted_at TEXT, condition_state TEXT, trigger_seq INTEGER DEFAULT 0,
+            trigger_count INTEGER DEFAULT 0, last_triggered_at TEXT,
+            last_observed_value REAL, last_notified_value REAL,
+            repeat_mode TEXT, repeat_step_percent REAL, source TEXT, source_ref TEXT)"""
+    )
+    # One row per NOTIFICATION, not per crossing: a rule in 'progress' repeat
+    # mode writes one every time the price moves further into the breach. That
+    # is why the collector groups these by alert_rule_id -- production's owner
+    # had 21 rows here carrying 21 distinct trigger_keys inside a single 6h
+    # window, all from one rule walking down. Distinct, not duplicated, and
+    # still only one thing to say.
+    cur.execute(
+        """CREATE TABLE alert_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER,
+            alert_rule_id INTEGER, alert_type TEXT, symbol TEXT, condition TEXT,
+            threshold_value REAL, observed_value REAL, title TEXT, body TEXT,
+            message TEXT, status TEXT, metadata TEXT, notification_id INTEGER,
+            delivery_job_id INTEGER, delivery_status TEXT, trigger_key TEXT,
+            created_at TEXT)"""
+    )
     # pulse_region_preferences is deliberately NOT hand-rolled here. The previous
     # fixture invented a two-column (user_id, preferred_timezone) shape that the
     # canonical service does not own -- the same class of divergence that let
@@ -234,7 +267,7 @@ class StalenessTests(unittest.TestCase):
 class WatchlistFactTests(unittest.TestCase):
     """The watchlist + alert_proximity block is one try/except, so a query fault
     empties BOTH and looks exactly like 'user watches nothing'. These tests
-    insert real crypto_alerts rows so a wrong column name fails loudly."""
+    insert real alert_rules rows so a wrong column name fails loudly."""
 
     def setUp(self):
         _clear_provider_cache()
@@ -244,6 +277,14 @@ class WatchlistFactTests(unittest.TestCase):
         self.conn.close()
 
     def _alert(self, user_id, symbol, condition, target):
+        self.conn.execute(
+            "INSERT INTO alert_rules (user_id, symbol, condition, threshold_value, status) "
+            "VALUES (?,?,?,?,'active')",
+            (user_id, symbol, condition, target),
+        )
+        self.conn.commit()
+
+    def _legacy_alert(self, user_id, symbol, condition, target):
         self.conn.execute(
             "INSERT INTO crypto_alerts (user_id, asset_symbol, condition_type, target_value, status) "
             "VALUES (?,?,?,?,'active')",
@@ -280,7 +321,7 @@ class WatchlistFactTests(unittest.TestCase):
         self.assertEqual(self._facts()["alert_proximity"], [])
 
     def test_percent_move_conditions_are_not_treated_as_prices(self):
-        """target_value on a moves_up_percent alert is a percentage, so a
+        """threshold_value on a moves_up_percent rule is a percentage, so a
         price-distance calculation against it would be meaningless."""
         self._alert(1, "BTC", "moves_up_percent", 101.0)
         out = self._facts()
@@ -293,6 +334,180 @@ class WatchlistFactTests(unittest.TestCase):
         self.assertEqual(out["watchlist"], [])
         self.assertEqual(out["alert_proximity"], [])
 
+    def test_legacy_crypto_alerts_rows_are_not_read(self):
+        """crypto_alerts is a one-way LEGACY import source, never written back,
+        so a row there can outlive (or never match) the rule the engine really
+        evaluates. Production user 19 held exactly this: an active legacy row
+        with no active rule behind it. Reading it would report proximity for an
+        alert that cannot fire -- a phantom."""
+        self._legacy_alert(1, "BTC", "above", 103.0)   # would be 3% proximity
+        out = self._facts()
+        self.assertEqual(out["watchlist"], [])
+        self.assertEqual(out["alert_proximity"], [])
+
+    def test_rule_with_no_legacy_row_is_still_seen(self):
+        """The mirror failure. Production user 34 held a live alert_rules row
+        (BTC above 61000) and no crypto_alerts row at all, so their alerts were
+        invisible to briefings entirely. The owner's legacy row was stale rather
+        than absent: it read BTC above 45000 while their live rules were above
+        80000 and below 79000."""
+        self._alert(1, "BTC", "above", 103.0)
+        out = self._facts()
+        self.assertEqual(out["alert_proximity"],
+                         [{"symbol": "BTC", "threshold": 103.0, "distance_pct": 3.0}])
+
+    def test_deleted_and_inactive_rules_are_excluded(self):
+        self._alert(1, "BTC", "above", 103.0)
+        self.conn.execute("UPDATE alert_rules SET status='deleted' WHERE user_id=1")
+        self.conn.commit()
+        self.assertEqual(self._facts()["alert_proximity"], [])
+        self.conn.execute(
+            "UPDATE alert_rules SET status='active', deleted_at='2026-08-01T00:00:00Z' "
+            "WHERE user_id=1"
+        )
+        self.conn.commit()
+        self.assertEqual(self._facts()["alert_proximity"], [])
+
+    def test_liveness_predicate_matches_the_engine_exactly(self):
+        """Briefings must describe the rule set the engine evaluates.
+
+        Not a superset (phantom alerts the user is told about but which can
+        never fire) and not a subset (real alerts silently missing). Each case
+        below is a column where the two predicates could plausibly disagree.
+        The engine's guard, copied from alert_engine._active_claim_guard, is
+        ``COALESCE(status,'active')='active' AND COALESCE(active,1)=1
+        AND COALESCE(deleted_at,'')=''``.
+
+        The NULL/empty-string pairs matter because production carries both
+        spellings for "not deleted", and 38 of the owner's rows are soft-deleted
+        while still reading status='active' -- so status alone is not a filter.
+        """
+        live = ("status='active', active=1, deleted_at=NULL",
+                "status='active', active=1, deleted_at=''",
+                "status=NULL, active=1, deleted_at=NULL",      # COALESCE default
+                "status='active', active=NULL, deleted_at=NULL")  # COALESCE default
+        dead = ("status='deleted', active=1, deleted_at=NULL",
+                "status='paused', active=1, deleted_at=NULL",
+                "status='active', active=0, deleted_at=NULL",
+                "status='active', active=1, deleted_at='2026-08-01T00:00:00Z'")
+
+        cases = [(s, True) for s in live] + [(s, False) for s in dead]
+        for setting, expected_visible in cases:
+            with self.subTest(setting=setting):
+                self.conn.execute("DELETE FROM alert_rules")
+                self.conn.commit()
+                self._alert(1, "BTC", "above", 103.0)
+                self.conn.execute(f"UPDATE alert_rules SET {setting} WHERE user_id=1")
+                self.conn.commit()
+                visible = bool(self._facts()["alert_proximity"])
+                self.assertEqual(
+                    visible, expected_visible,
+                    f"{setting!r}: briefings {'showed' if visible else 'hid'} a rule the "
+                    f"engine would {'evaluate' if expected_visible else 'skip'}",
+                )
+
+
+class TriggeredAlertEpisodeTests(unittest.TestCase):
+    """A briefing counts latch EPISODES, not alert_events and not notifications.
+
+    Production, one 6h window for the owner: 21 alert_events carrying 21
+    distinct trigger_keys -- all from ONE rule (BTC below 79,000) walking down
+    from 78,996 to 78,432. The keys are legitimately distinct; nothing is
+    duplicated and there is nothing to clean up. But it is one thing to say,
+    not 21, and scoring it 21 times would pin the briefing permanently on.
+    """
+
+    def setUp(self):
+        _clear_provider_cache()
+        self.conn = _fresh_conn()
+        self.now = datetime.now(timezone.utc)
+        self.since = _iso(self.now - timedelta(hours=6))
+
+    def tearDown(self):
+        self.conn.close()
+
+    def _event(self, rule_id, observed, *, user_id=1, seq=1, symbol="BTC",
+               condition="below", threshold=79000.0, minutes_ago=5):
+        self.conn.execute(
+            "INSERT INTO alert_events (user_id, alert_rule_id, symbol, condition, "
+            "threshold_value, observed_value, trigger_key, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (user_id, rule_id, symbol, condition, threshold, observed,
+             f"{rule_id}:{seq}", _iso(self.now - timedelta(minutes=minutes_ago))),
+        )
+        self.conn.commit()
+
+    def _facts(self, user_id=1):
+        with mock.patch.object(facts.crypto_provider, "get_watchlist_snapshots", return_value=[]):
+            return facts.collect_crypto_facts(
+                self.conn.cursor(), user_id, watchlist_enabled=True,
+                market_enabled=False, since_iso=self.since,
+            )
+
+    def test_the_owners_real_window_is_one_episode_not_twentyone(self):
+        """The exact production sequence: rule 43 walking 78,996 -> 78,432."""
+        walk = [78996, 78971, 78965, 78912, 78887, 78818, 78795, 78750, 78992,
+                78952, 78904, 78873, 78784, 78761, 78745, 78675, 78664, 78624,
+                78572, 78437, 78432]
+        for i, value in enumerate(walk):
+            self._event(43, float(value), seq=i + 1, minutes_ago=300 - i * 10)
+        out = self._facts()
+        self.assertEqual(len(out["alerts_triggered"]), 1)          # not 21
+        entry = out["alerts_triggered"][0]
+        self.assertEqual(entry["rule_id"], 43)
+        self.assertEqual(entry["notifications"], 21)               # progression kept
+        self.assertEqual(entry["observed"], 78432.0)               # newest, not first
+        self.assertEqual(entry["threshold"], 79000.0)
+        # 12 for one episode, NOT 12 * 21 = 252.
+        self.assertEqual(facts.crypto_significance(out), 12)
+
+    def test_distinct_rules_are_distinct_episodes(self):
+        self._event(43, 78432.0, seq=1)
+        self._event(27, 99.0, seq=1, symbol="SOL", threshold=100.6785)
+        out = self._facts()
+        self.assertEqual(len(out["alerts_triggered"]), 2)
+        self.assertEqual({e["rule_id"] for e in out["alerts_triggered"]}, {27, 43})
+        self.assertEqual(facts.crypto_significance(out), 24)
+
+    def test_one_fired_alert_clears_the_send_threshold(self):
+        """An alert the user configured themselves firing is the most requested
+        thing a briefing can carry, so a single episode must be able to send."""
+        self._event(43, 78432.0, seq=1)
+        out = self._facts()
+        self.assertGreaterEqual(facts.crypto_significance(out), facts.SEND_THRESHOLD)
+
+    def test_events_are_owner_scoped_and_windowed(self):
+        self._event(43, 78432.0, seq=1, user_id=2)                  # another user
+        self._event(44, 78400.0, seq=1, minutes_ago=60 * 24)        # outside window
+        self.assertEqual(self._facts()["alerts_triggered"], [])
+
+    def test_a_further_move_in_the_same_episode_does_not_resend(self):
+        """The fingerprint keys on rule id, so a rule progressing further inside
+        one latch episode hashes the SAME and is suppressed as a duplicate --
+        the briefing-layer half of the retrigger fix."""
+        self._event(43, 78500.0, seq=1)
+        before = facts.fact_fingerprint({"network": {}, "crypto": self._facts()})
+        self._event(43, 78432.0, seq=2, minutes_ago=1)
+        after = facts.fact_fingerprint({"network": {}, "crypto": self._facts()})
+        self.assertEqual(before, after)
+
+    def test_a_different_rule_firing_does_break_the_fingerprint(self):
+        self._event(43, 78432.0, seq=1)
+        before = facts.fact_fingerprint({"network": {}, "crypto": self._facts()})
+        self._event(27, 99.0, seq=1, symbol="SOL", threshold=100.6785)
+        after = facts.fact_fingerprint({"network": {}, "crypto": self._facts()})
+        self.assertNotEqual(before, after)
+
+    def test_collector_degrades_to_empty_on_fault(self):
+        out = {"alerts_triggered": []}
+        with mock.patch.object(facts.logging, "exception"):
+            class _Boom:
+                def execute(self, *a, **k):
+                    raise RuntimeError("table gone")
+            facts._collect_triggered_alerts(_Boom(), 1, out, self.since)
+        self.assertEqual(out["alerts_triggered"], [])
+        self.assertEqual(facts.crypto_significance(out), 0)
+
 
 class TopicIndependenceTests(unittest.TestCase):
     """Crypto market and watchlist are separate switches on the hub, so they must
@@ -304,7 +519,7 @@ class TopicIndependenceTests(unittest.TestCase):
         _clear_provider_cache()
         self.conn = _fresh_conn()
         self.conn.execute(
-            "INSERT INTO crypto_alerts (user_id, asset_symbol, condition_type, target_value, status) "
+            "INSERT INTO alert_rules (user_id, symbol, condition, threshold_value, status) "
             "VALUES (1,'BTC','above',103.0,'active')"
         )
         self.conn.commit()
@@ -391,6 +606,281 @@ class SignificanceTests(unittest.TestCase):
                    "market_direction": "down", "alert_proximity": []}}
         self.assertEqual(facts.fact_fingerprint(base), facts.fact_fingerprint(same))
         self.assertNotEqual(facts.fact_fingerprint(base), facts.fact_fingerprint(changed))
+
+
+class NotificationTypeMappingTests(unittest.TestCase):
+    """collect_network_facts must score the types production actually writes.
+
+    The original chain compared pulse_notifications.type against a list that
+    mixed real type strings with *category* names. Categories are never stored
+    in that column, so those arms were unreachable: production writes
+    type='security_alert' while the chain waited for 'system_security'. Against
+    production, 41 of 46 live types matched nothing and 92.3% of notification
+    rows scored zero -- the briefing engine could see almost no user activity.
+    """
+
+    def test_real_production_types_resolve_to_buckets(self):
+        # Every pair here was observed in production pulse_notifications.
+        expected = {
+            "security_alert": "security_alerts",   # category system_security
+            "account_login": "security_alerts",    # category security
+            "new_device": "security_alerts",
+            "live_started": "community_events",
+            "replay_available": "community_events",
+            "like": "reactions",                   # category likes
+            "reel_like": "reactions",
+            "voice_message": "unread_messages",    # category chat_message
+            "reel_comment": "comments",
+            "follow_accept": "new_followers",
+            "status_reaction": "reactions",
+        }
+        for kind, bucket in expected.items():
+            with self.subTest(kind=kind):
+                self.assertEqual(facts._network_bucket(kind), bucket)
+
+    def test_direct_type_matches_still_work(self):
+        # Regression guard: the arms that did work must keep working.
+        for kind, bucket in (
+            ("message", "unread_messages"), ("comment", "comments"),
+            ("reply", "comments"), ("follow", "new_followers"),
+            ("friend_request", "friend_requests"),
+        ):
+            with self.subTest(kind=kind):
+                self.assertEqual(facts._network_bucket(kind), bucket)
+
+    def test_unscored_types_return_none(self):
+        # Crypto, payments and call LIFECYCLE are deliberately not network
+        # significance: crypto is scored by crypto_significance, and a call you
+        # started, accepted or ended is one you were present for. Scoring them
+        # would manufacture significance every window. Call *outcomes* (missed,
+        # declined) are scored -- see MissedCallSignificanceTests.
+        for kind in ("crypto_alert_triggered", "call_started", "call_ended",
+                     "call_accepted", "incoming_call", "call_expired",
+                     "payment_failed", "bogus_type", ""):
+            with self.subTest(kind=kind):
+                self.assertIsNone(facts._network_bucket(kind))
+
+    def test_security_alert_rows_reach_significance(self):
+        # End-to-end through the collector: a single security_alert must clear
+        # SEND_THRESHOLD, because a security event is worth interrupting for.
+        conn = _fresh_conn()
+        cur = conn.cursor()
+        since = _iso(datetime.now(timezone.utc) - timedelta(hours=6))
+        cur.execute(
+            "INSERT INTO pulse_notifications (user_id, type, is_read, created_at) VALUES (?,?,?,?)",
+            (1, "security_alert", 0, _iso(datetime.now(timezone.utc))),
+        )
+        conn.commit()
+        net = facts.collect_network_facts(cur, 1, since)
+        self.assertEqual(net["security_alerts"], 1)
+        self.assertGreaterEqual(facts.network_significance(net), facts.SEND_THRESHOLD)
+        conn.close()
+
+    def test_read_and_out_of_window_rows_are_excluded(self):
+        # The mapping fix must not weaken the unread/recency/ownership predicate.
+        conn = _fresh_conn()
+        cur = conn.cursor()
+        now = datetime.now(timezone.utc)
+        since = _iso(now - timedelta(hours=6))
+        rows = [
+            (1, "security_alert", 1, _iso(now)),                      # already read
+            (1, "security_alert", 0, _iso(now - timedelta(days=2))),  # too old
+            (2, "security_alert", 0, _iso(now)),                      # another user
+        ]
+        cur.executemany(
+            "INSERT INTO pulse_notifications (user_id, type, is_read, created_at) VALUES (?,?,?,?)",
+            rows,
+        )
+        conn.commit()
+        net = facts.collect_network_facts(cur, 1, since)
+        self.assertEqual(net["security_alerts"], 0)
+        self.assertEqual(facts.network_significance(net), 0)
+        conn.close()
+
+    def test_collector_still_degrades_to_zeros_on_fault(self):
+        class _Boom:
+            def execute(self, *a, **k):
+                raise RuntimeError("table gone")
+
+        with mock.patch.object(facts.logging, "exception"):
+            net = facts.collect_network_facts(_Boom(), 1, "2026-01-01T00:00:00Z")
+        self.assertEqual(facts.network_significance(net), 0)
+        self.assertEqual(net["security_alerts"], 0)
+
+
+class MissedCallSignificanceTests(unittest.TestCase):
+    """A missed call is the one call outcome the user was not present for.
+
+    Call *lifecycle* stays unscored (production holds 1420 call_ended, 634
+    call_started, 436 call_accepted, 374 incoming_call; the owner alone
+    accumulated 764 lifecycle rows in 30 days, which would pin any active
+    caller permanently above SEND_THRESHOLD). Call *outcomes* are scored:
+    missed at 5, declined at 1.
+    """
+
+    def _insert(self, cur, rows):
+        cur.executemany(
+            "INSERT INTO pulse_notifications (user_id, type, is_read, created_at) "
+            "VALUES (?,?,?,?)", rows,
+        )
+
+    def test_declined_resolves_but_missed_spellings_are_handled_separately(self):
+        self.assertEqual(facts._network_bucket("call_declined"), "declined_calls")
+        # Absent from the bucket map on purpose: routing them through the
+        # GROUP BY loop is exactly what would double-count the dual-write.
+        for kind in facts._MISSED_CALL_TYPES:
+            with self.subTest(kind=kind):
+                self.assertIsNone(facts._network_bucket(kind))
+
+    def test_both_spellings_of_one_call_count_once(self):
+        """Production dual-writes call_missed AND missed_call for the same call.
+
+        Users 4, 20, 21 and 36 hold exactly equal counts of the two spellings
+        and the rows pair off to the same second. Summing them would score
+        every miss twice, halving the effective threshold for anyone on the
+        dual-write path -- one missed call would send a briefing.
+        """
+        conn = _fresh_conn()
+        cur = conn.cursor()
+        now = datetime.now(timezone.utc)
+        since = _iso(now - timedelta(hours=6))
+        at = _iso(now - timedelta(minutes=5))
+        self._insert(cur, [(1, "call_missed", 0, at), (1, "missed_call", 0, at)])
+        conn.commit()
+        net = facts.collect_network_facts(cur, 1, since)
+        self.assertEqual(net["missed_calls"], 1)                     # not 2
+        self.assertEqual(facts.network_significance(net), 5)
+        conn.close()
+
+    def test_distinct_misses_under_different_spellings_both_count(self):
+        """Dedupe must collapse a pair, not collapse the whole bucket.
+
+        max(call_missed, missed_call) would also fix the paired case but would
+        under-count here. Two real misses a minute apart are two misses even if
+        different writers filed them.
+        """
+        conn = _fresh_conn()
+        cur = conn.cursor()
+        now = datetime.now(timezone.utc)
+        since = _iso(now - timedelta(hours=6))
+        self._insert(cur, [
+            (1, "call_missed", 0, _iso(now - timedelta(minutes=5))),
+            (1, "missed_call", 0, _iso(now - timedelta(minutes=9))),
+        ])
+        conn.commit()
+        net = facts.collect_network_facts(cur, 1, since)
+        self.assertEqual(net["missed_calls"], 2)
+        conn.close()
+
+    def test_one_miss_is_recorded_but_does_not_send_and_two_do(self):
+        """The sizing decision, pinned. 'Low-to-moderate' means a single missed
+        call is worth recording and not worth interrupting for; two are."""
+        conn = _fresh_conn()
+        cur = conn.cursor()
+        now = datetime.now(timezone.utc)
+        since = _iso(now - timedelta(hours=6))
+        self._insert(cur, [(1, "call_missed", 0, _iso(now - timedelta(minutes=5)))])
+        conn.commit()
+        net = facts.collect_network_facts(cur, 1, since)
+        self.assertEqual(net["missed_calls"], 1)
+        self.assertLess(facts.network_significance(net), facts.SEND_THRESHOLD)
+
+        self._insert(cur, [(1, "call_missed", 0, _iso(now - timedelta(minutes=11)))])
+        conn.commit()
+        net = facts.collect_network_facts(cur, 1, since)
+        self.assertEqual(net["missed_calls"], 2)
+        self.assertGreaterEqual(facts.network_significance(net), facts.SEND_THRESHOLD)
+        conn.close()
+
+    def test_the_production_decline_burst_stays_silent(self):
+        """2026-07-18: six declines each for five different users inside a day --
+        a system artifact, not social activity. At weight 1 it scores 6 and
+        sends nothing. At weight 2 it would have scored 12 and sent five people
+        a briefing about nothing. Declines still compose: add one missed call
+        and the same window reaches 11 and sends."""
+        conn = _fresh_conn()
+        cur = conn.cursor()
+        now = datetime.now(timezone.utc)
+        since = _iso(now - timedelta(hours=6))
+        self._insert(cur, [
+            (1, "call_declined", 0, _iso(now - timedelta(minutes=i + 1)))
+            for i in range(6)
+        ])
+        conn.commit()
+        net = facts.collect_network_facts(cur, 1, since)
+        self.assertEqual(net["declined_calls"], 6)
+        self.assertEqual(facts.network_significance(net), 6)
+        self.assertLess(facts.network_significance(net), facts.SEND_THRESHOLD)
+
+        self._insert(cur, [(1, "call_missed", 0, _iso(now - timedelta(minutes=30)))])
+        conn.commit()
+        net = facts.collect_network_facts(cur, 1, since)
+        self.assertEqual(facts.network_significance(net), 11)
+        self.assertGreaterEqual(facts.network_significance(net), facts.SEND_THRESHOLD)
+        conn.close()
+
+    def test_call_lifecycle_volume_scores_nothing(self):
+        """The owner's real 30-day lifecycle mix, scaled down. If any of these
+        scored, an active caller would be permanently above threshold and the
+        briefing would degrade into a fixed 6-hourly send."""
+        conn = _fresh_conn()
+        cur = conn.cursor()
+        now = datetime.now(timezone.utc)
+        since = _iso(now - timedelta(hours=6))
+        rows = []
+        for kind, count in (("call_ended", 23), ("call_started", 22),
+                            ("call_accepted", 18), ("incoming_call", 12),
+                            ("call_expired", 2)):
+            rows += [(1, kind, 0, _iso(now - timedelta(minutes=n + 1)))
+                     for n in range(count)]
+        self._insert(cur, rows)
+        conn.commit()
+        net = facts.collect_network_facts(cur, 1, since)
+        self.assertEqual(net["missed_calls"], 0)
+        self.assertEqual(net["declined_calls"], 0)
+        self.assertEqual(facts.network_significance(net), 0)
+        conn.close()
+
+    def test_missed_calls_respect_unread_recency_and_ownership(self):
+        """The dedicated query must honour the same predicate as the main one --
+        it is a second SELECT, so it could drift."""
+        conn = _fresh_conn()
+        cur = conn.cursor()
+        now = datetime.now(timezone.utc)
+        since = _iso(now - timedelta(hours=6))
+        self._insert(cur, [
+            (1, "call_missed", 1, _iso(now)),                      # already read
+            (1, "call_missed", 0, _iso(now - timedelta(days=2))),  # out of window
+            (2, "call_missed", 0, _iso(now)),                      # another user
+        ])
+        conn.commit()
+        net = facts.collect_network_facts(cur, 1, since)
+        self.assertEqual(net["missed_calls"], 0)
+        self.assertEqual(facts.network_significance(net), 0)
+        conn.close()
+
+    def test_a_new_missed_call_breaks_the_dedupe_fingerprint(self):
+        """Two misses can carry a briefing alone, so a window whose only change
+        is a new missed call must not hash identically to the last one and get
+        dropped as a duplicate."""
+        base = {"network": {"missed_calls": 1}, "crypto": {}}
+        more = {"network": {"missed_calls": 2}, "crypto": {}}
+        self.assertNotEqual(facts.fact_fingerprint(base), facts.fact_fingerprint(more))
+
+    def test_declines_alone_do_not_break_the_fingerprint(self):
+        """Deliberate asymmetry: at weight 1 a decline can never reach the
+        threshold unaided, so it has nothing to say that justifies re-sending."""
+        base = {"network": {"declined_calls": 1}, "crypto": {}}
+        more = {"network": {"declined_calls": 9}, "crypto": {}}
+        self.assertEqual(facts.fact_fingerprint(base), facts.fact_fingerprint(more))
+
+    def test_missed_call_collector_degrades_to_zero_on_fault(self):
+        class _Boom:
+            def execute(self, *a, **k):
+                raise RuntimeError("table gone")
+
+        with mock.patch.object(facts.logging, "exception"):
+            self.assertEqual(facts._collect_missed_calls(_Boom(), 1, "2026-01-01T00:00:00Z"), 0)
 
 
 class WindowAndQuietHoursTests(unittest.TestCase):
@@ -983,6 +1473,68 @@ class ShadowModeTests(unittest.TestCase):
         self.assertEqual(send_push.call_count, 1)
         conn.close()
 
+    # --- push transport is delivery, not eligibility -----------------------
+
+    def test_a_user_without_a_registered_device_is_still_evaluated(self):
+        """Push is a DELIVERY layer, not an eligibility gate. A user with
+        briefings enabled but no push_subscription row (device never registered,
+        token revoked, reinstalled the app) must still be evaluated: the row
+        settles at 'generated' so the in-app hub can render it, and send_push
+        returns not_configured without crashing. The prior INNER JOIN silently
+        excluded these users, so their pulse_briefings table stayed empty
+        forever while delivery_status separately reported push_ready=false --
+        two views of the same user that could never agree."""
+        conn = self._conn((305,))
+        cur = conn.cursor()
+        cur.execute("DELETE FROM push_subscriptions WHERE user_id=305")
+        conn.commit()
+        cur.execute("SELECT COUNT(*) FROM push_subscriptions WHERE user_id=305")
+        self.assertEqual(cur.fetchone()[0], 0)   # precondition: no transport row
+        # Model production: with zero rows, push_service.send_push returns
+        # not_configured (a truthful "we tried, there is nowhere to send").
+        # The fake in _run_cycle returns ok=True, which would incorrectly settle
+        # this row at 'sent' -- override it so the test reflects reality.
+        import services
+        fake_push = types.SimpleNamespace(
+            send_push=mock.Mock(return_value={"ok": False, "status": "not_configured"})
+        )
+        fake_notif = types.SimpleNamespace(send_in_app_notification=mock.Mock())
+        with mock.patch.dict(os.environ, {"BRIEFING_SHADOW_MODE": "false"}), \
+             mock.patch.object(engine, "_now", return_value=self.NOW), \
+             mock.patch.object(facts, "_now_iso", return_value=_iso(self.NOW)), \
+             mock.patch.object(facts.crypto_provider, "get_market_overview", return_value=self.MARKET), \
+             mock.patch.object(facts.crypto_provider, "is_stale", return_value=False), \
+             mock.patch.object(facts.crypto_provider, "get_top_movers", return_value=self.MOVERS), \
+             mock.patch.object(facts.crypto_provider, "get_watchlist_snapshots", return_value=[]), \
+             mock.patch.object(services, "push_service", fake_push, create=True), \
+             mock.patch.object(services, "notification_service", fake_notif, create=True):
+            result = engine.run_scheduled_cycle(conn=conn)
+        self.assertEqual(result["processed"], 1)               # was evaluated
+        self.assertEqual(result["sent"], 0)                    # push failed
+        self.assertEqual(fake_push.send_push.call_count, 1)    # attempted anyway
+        cur.execute(
+            "SELECT status FROM pulse_briefings WHERE user_id=305 ORDER BY id DESC LIMIT 1"
+        )
+        row = cur.fetchone()
+        self.assertIsNotNone(row)                              # row was written
+        self.assertEqual(dict(row)["status"], "generated")     # visible in hub
+        conn.close()
+
+    def test_neighbour_with_push_still_sends_when_no_push_user_present(self):
+        """The LEFT JOIN widening must not accidentally re-order or drop users
+        who DO have push. Two users, one with and one without push: both are
+        evaluated, only the one with push actually pushes."""
+        conn = self._conn((306, 307))
+        cur = conn.cursor()
+        cur.execute("DELETE FROM push_subscriptions WHERE user_id=306")
+        conn.commit()
+        result, _, send_push = self._run_cycle(conn, shadow=False)
+        self.assertEqual(result["processed"], 2)               # both evaluated
+        self.assertEqual(send_push.call_count, 2)              # attempted for both
+        pushed_ids = {call[0][0] for call in send_push.call_args_list}
+        self.assertEqual(pushed_ids, {306, 307})               # not reordered
+        conn.close()
+
     # --- batch fairness: no eligible user is starved by the limit ----------
 
     def test_batch_limit_rotates_instead_of_restarting(self):
@@ -1391,6 +1943,19 @@ class HubBackendTests(unittest.TestCase):
         import inspect
         source = inspect.getsource(engine.run_scheduled_cycle)
         self.assertIn("<>'off'", source.replace('"', "'"))
+
+    def test_scheduler_sql_left_joins_push_transport(self):
+        """The batch query must LEFT JOIN push_subscriptions: an INNER JOIN turned
+        push into an eligibility gate and silently disabled briefings for every
+        user without a registered device. Guards against the regression."""
+        import inspect, re
+        source = inspect.getsource(engine.run_scheduled_cycle)
+        pattern = re.compile(r"(LEFT\s+)?JOIN\s+push_subscriptions\b", re.IGNORECASE)
+        self.assertTrue(
+            all(match.group(1) is not None for match in pattern.finditer(source)),
+            "run_scheduled_cycle must not INNER JOIN push_subscriptions; "
+            "use LEFT JOIN so users without transport are still evaluated.",
+        )
 
 
 if __name__ == "__main__":

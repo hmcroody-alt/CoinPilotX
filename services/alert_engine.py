@@ -192,7 +192,20 @@ def _ensure_alert_schema_impl(conn=None):
             # last *observed*), and the per-rule repeat policy measured against
             # it.
             ("last_notified_value", "REAL"),
-            ("repeat_mode", "TEXT DEFAULT 'progress'"),
+            # No column DEFAULT, for exactly the reason spelled out on
+            # ``repeat_step_percent`` below: this column shipped as
+            # ``TEXT DEFAULT 'progress'``, and on PostgreSQL
+            # ``ALTER TABLE ... ADD COLUMN ... DEFAULT`` writes that value into
+            # every pre-existing row. All 43 production rules came out of that
+            # ALTER reading 'progress' -- including 37 created months before the
+            # column existed, which could not have carried a policy their owner
+            # chose. ``_apply_repeat_mode`` is the only code that sets this
+            # column deliberately and it is reachable only from the mobile
+            # create/update endpoints; production has zero rules from that
+            # source, so the column had never once been written on purpose.
+            # NULL now means "use DEFAULT_REPEAT_MODE", so the policy lives in
+            # one place instead of being frozen into history at migration time.
+            ("repeat_mode", "TEXT"),
             # No column DEFAULT: NULL means "use DEFAULT_REPEAT_STEP_PERCENT".
             # A column default would bake today's policy into every existing row
             # at ALTER time, so changing the policy later would silently apply to
@@ -343,6 +356,7 @@ def _ensure_alert_schema_impl(conn=None):
     )
     conn.commit()
     _retire_legacy_repeat_step_default(conn)
+    _retire_legacy_repeat_mode_default(conn)
     if owns_connection:
         conn.close()
     return {"ok": True}
@@ -375,6 +389,77 @@ def _retire_legacy_repeat_step_default(conn):
             pass
         logging.warning(
             "alert_rules.repeat_step_percent legacy default could not be cleared.",
+            exc_info=True,
+        )
+
+
+def _retire_legacy_repeat_mode_default(conn):
+    """Clear ``repeat_mode`` values written by the column's own ALTER default.
+
+    ``repeat_mode`` shipped as ``TEXT DEFAULT 'progress'``. On PostgreSQL,
+    ``ALTER TABLE ... ADD COLUMN ... DEFAULT`` materialises that value into every
+    existing row, so the migration handed a repeat policy to rules created months
+    earlier — and to every rule created since, because the only code that sets
+    the column on purpose (``_apply_repeat_mode``) is reachable solely from the
+    mobile create/update endpoints, which no production rule has ever used.
+
+    This cannot reuse the ``repeat_step_percent`` trick of matching a sentinel
+    value, because ``'progress'`` is also a perfectly legitimate member choice;
+    a blanket rewrite would erase real preferences on every boot. So the repair
+    keys off the schema itself: the column default is the thing that did the
+    damage, and it can only be dropped once. While it is still present, no stored
+    ``'progress'`` can be distinguished from the backfill (there are no
+    mobile-created rules for it to have come from), so clearing them is safe.
+    Once dropped, later boots take the early return and any ``'progress'`` a
+    member subsequently opts into survives untouched.
+
+    PostgreSQL only. SQLite cannot drop a column default without rebuilding the
+    table, which is not worth doing to a local development database — and fresh
+    SQLite databases pick up the corrected, default-free column definition
+    anyway, so they never acquire the problem.
+
+    Rolls itself back on failure: on PostgreSQL a failed statement aborts the
+    surrounding transaction, so a swallowed error here would otherwise take every
+    later statement down with it.
+    """
+    if not db_service.IS_POSTGRES:
+        return
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT column_default FROM information_schema.columns "
+            "WHERE table_schema='public' AND table_name='alert_rules' "
+            "AND column_name='repeat_mode'"
+        )
+        row = cur.fetchone()
+        if not row:
+            return
+        current_default = row[0] if not isinstance(row, dict) else row.get("column_default")
+        if current_default is None:
+            # Already retired on an earlier boot; member choices are now real.
+            return
+        cur.execute(
+            "UPDATE alert_rules SET repeat_mode=NULL, updated_at=? WHERE repeat_mode=?",
+            (_now(), REPEAT_MODE_PROGRESS),
+        )
+        cleared = int(getattr(cur, "rowcount", 0) or 0)
+        # Dropping the default is what makes this one-shot, so it must land in
+        # the same committed unit as the clear.
+        cur.execute("ALTER TABLE alert_rules ALTER COLUMN repeat_mode DROP DEFAULT")
+        conn.commit()
+        logging.info(
+            "alert_rules.repeat_mode ALTER default retired; %s backfilled row(s) "
+            "returned to DEFAULT_REPEAT_MODE (%s).",
+            cleared,
+            DEFAULT_REPEAT_MODE,
+        )
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        logging.warning(
+            "alert_rules.repeat_mode legacy default could not be cleared.",
             exc_info=True,
         )
 
@@ -1693,13 +1778,28 @@ STATE_LATCHED = "latched"
 
 #: Repeat policy persisted on ``alert_rules.repeat_mode``.
 #:
-#: ``progress`` (the default) keeps a latched rule monitoring and re-notifies
-#: when the market moves materially *further* into the breached region.
-#: ``once`` is the strict edge-trigger of the original latch: one notification
-#: per crossing and nothing until the condition clears and re-crosses.
+#: ``once`` (the default) is the strict edge-trigger of the latch: one
+#: notification per crossing and nothing further until the condition clears and
+#: re-crosses. ``progress`` keeps a latched rule monitoring and re-notifies when
+#: the market moves *further* into the breached region.
+#:
+#: ``once`` is the default because it is what a price alert means to the member
+#: who set it: "tell me when BTC drops below 79,000", not "narrate BTC all the
+#: way down". ``progress`` is a real feature and stays available, but it is a
+#: choice a member opts into via the mobile ``frequency: "recurring"`` field --
+#: not something a rule should acquire by existing.
+#:
+#: This default previously read ``progress``, which combined with the column's
+#: own ``DEFAULT 'progress'`` meant nothing in the system could produce a
+#: once-per-crossing alert. Owner rule 43 (BTC below 79,000) emitted 23
+#: notifications in a day, walking the price down 78,996 -> 78,432; the last of
+#: them reported a $5 move. Each was a distinct, correctly-deduplicated event,
+#: which is why this was never a duplicate-suppression bug: the latch, the
+#: crossing claim and the trigger keys were all working. The rule was simply
+#: answering a question the member never asked.
 REPEAT_MODE_PROGRESS = "progress"
 REPEAT_MODE_ONCE = "once"
-DEFAULT_REPEAT_MODE = os.getenv("ALERT_DEFAULT_REPEAT_MODE", REPEAT_MODE_PROGRESS).strip().lower()
+DEFAULT_REPEAT_MODE = os.getenv("ALERT_DEFAULT_REPEAT_MODE", REPEAT_MODE_ONCE).strip().lower()
 
 #: Minimum move, as a percent of the last notified value, before a latched rule
 #: speaks again. ``0`` (the default) means *any* strictly-further move is news.

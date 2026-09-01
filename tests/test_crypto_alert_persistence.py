@@ -135,13 +135,21 @@ def triggered_event_count(rule_id):
 
 
 def new_rule(threshold=100000.0, condition="above", symbol="BTC", cooldown=900,
-             arm_at=99000.0, user_id=TEST_USER_ID):
+             arm_at=99000.0, user_id=TEST_USER_ID,
+             repeat_mode=alert_engine.REPEAT_MODE_PROGRESS):
     """Create a rule through the public API and arm it below the threshold.
 
     Arming is a real step, not test scaffolding: a brand new rule records where
     the market sits without firing, so creating "BTC above $100,000" while BTC
     already trades at $104,000 does not immediately notify. ``arm_at`` is the
     price at that first observation.
+
+    ``repeat_mode`` defaults to ``progress`` because that is the behaviour this
+    whole file is about — a standing alert that keeps reporting a developing
+    move. It is stated on the rule rather than inherited from
+    ``DEFAULT_REPEAT_MODE``, which is ``once``: repeats are a policy a member
+    opts into (mobile ``frequency: "recurring"``), not something every rule
+    acquires by existing. Passing ``repeat_mode=None`` exercises the default.
     """
     DISPATCHED.clear()
     _DELIVERY["mode"] = "ok"
@@ -157,6 +165,17 @@ def new_rule(threshold=100000.0, condition="above", symbol="BTC", cooldown=900,
     assert created.get("ok"), created
     rule_id = created.get("alert_id") or (created.get("alert") or {}).get("id")
     assert rule_id, created
+    if repeat_mode is not None:
+        conn = user_context.connect()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "UPDATE alert_rules SET repeat_mode=? WHERE id=?",
+                (repeat_mode, int(rule_id)),
+            )
+            conn.commit()
+        finally:
+            conn.close()
     if arm_at is not None:
         set_price(arm_at)
         observe(rule_id)
@@ -609,19 +628,56 @@ def test_explicit_disabled_flag_suppresses_stale_evaluation():
 
 
 @own_db
-def test_repeat_defaults_remain_progress_without_suppression():
-    rule_id = new_rule()
+def test_progress_mode_carries_no_hidden_suppression():
+    """Once a member opts into repeats, nothing silently throttles them.
+
+    The two knobs that could are both off by default, and this is what keeps the
+    "went quiet for 16 days" defect from coming back *for rules that asked for
+    repeats*: a materiality floor of 0.25% demanded a ~$250 move at BTC prices,
+    and borrowing the user-facing ``cooldown_seconds`` for repeats swallowed
+    every qualifying move inside a 15-minute window.
+    """
+    rule_id = new_rule(repeat_mode=alert_engine.REPEAT_MODE_PROGRESS)
     row = _load_rule(rule_id)
-    check((row.get("repeat_mode") or alert_engine.DEFAULT_REPEAT_MODE) == "progress", "recurring by default")
+    check(row.get("repeat_mode") == "progress", "the opt-in is stored on the rule")
     check(alert_engine.DEFAULT_REPEAT_STEP_PERCENT == 0, "no implicit 0.25 percent floor")
     check(alert_engine.DEFAULT_REPEAT_MIN_SECONDS == 0, "no implicit long repeat cooldown")
+
+
+@own_db
+def test_repeats_are_opt_in_not_the_default():
+    """A rule created through the public API acquires no repeat policy.
+
+    ``create_alert_rule`` does not write ``repeat_mode``; only
+    ``_apply_repeat_mode`` does, from the mobile ``frequency`` field. Production
+    had 43 rules and zero of them came from that path, yet every one read
+    ``progress`` — because the column shipped as ``TEXT DEFAULT 'progress'`` and
+    PostgreSQL wrote that into every existing row at ALTER time. The column no
+    longer carries a default, so the policy resolves in exactly one place.
+    """
+    rule_id = new_rule(repeat_mode=None)
+    row = _load_rule(rule_id)
+    check(row.get("repeat_mode") in (None, ""), "the API stores no repeat policy")
+    check(alert_engine.DEFAULT_REPEAT_MODE == alert_engine.REPEAT_MODE_ONCE,
+          "and the default it falls back to is once-per-crossing")
+
+    # So the standing alert stays latched and quiet through a developing move
+    # until the threshold clears and is crossed again.
+    set_price(100010.0)
+    observe(rule_id)
+    check(len(DISPATCHED) == 1, "the crossing notified once")
+    for price in (100011.0, 100500.0, 110000.0):
+        set_price(price)
+        observe(rule_id)
+    check(len(DISPATCHED) == 1, "no repeats without the opt-in")
 
 
 TESTS = [
     test_stale_evaluation_cannot_fire_after_user_stops_rule,
     test_deleted_rule_cannot_be_resumed,
     test_explicit_disabled_flag_suppresses_stale_evaluation,
-    test_repeat_defaults_remain_progress_without_suppression,
+    test_progress_mode_carries_no_hidden_suppression,
+    test_repeats_are_opt_in_not_the_default,
     test_alert_can_be_created,
     test_first_qualifying_change_fires,
     test_alert_remains_active_after_firing,
