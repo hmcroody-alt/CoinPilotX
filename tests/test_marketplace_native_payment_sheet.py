@@ -20,6 +20,7 @@ that the dangerous shapes are absent and the shared calls are present.
 """
 
 import pathlib
+import re
 
 from services import marketplace_cart_routes as cart
 from services import marketplace_offers_routes as offers
@@ -101,14 +102,22 @@ def test_the_offers_lane_reserves_stock_like_every_other_lane():
     assert "quantity=quantity-?" in code
     assert 'code="OUT_OF_STOCK"' in code
     # Failure has to give the stock back, or a Stripe outage quietly empties
-    # the catalogue.
-    assert "release_inventory_reservation(cur, tx_id, now=now)" in code
+    # the catalogue. It now does so through the shared settlement path, which
+    # is how this lane picked up the settled-order guard and the release reason
+    # its own inline copy had been missing.
+    assert "settle_failed_transactions" in code
+    assert "REASON_CHECKOUT_ERROR" in code
 
 
 def test_the_offers_lane_imports_the_cart_helpers_rather_than_copying_them():
     # Three checkout entry points with three private reservation
     # implementations is how one of them drifts.
-    assert offers.release_inventory_reservation is cart.release_inventory_reservation
+    # The identity check follows the helper the offers lane actually settles
+    # through. That used to be `release_inventory_reservation`; it is now
+    # `settle_failed_transactions`, which wraps it together with the guarded
+    # terminal-status write, so this asserts the same "no private copy"
+    # property one layer up.
+    assert offers.settle_failed_transactions is cart.settle_failed_transactions
     assert offers.stripe_shipping_checkout_params is cart.stripe_shipping_checkout_params
     assert offers._listing_metadata is cart._listing_metadata
 
@@ -172,7 +181,21 @@ def test_a_declined_delayed_payment_releases_held_stock():
     assert '"checkout.session.async_payment_failed"' in code
     assert 'terminal_status = "checkout_expired" if event_type == "checkout.session.expired" else "checkout_failed"' in code
     # And a plain card decline on a single-transaction lane must release too.
-    assert code.count("marketplace_cart_service.release_inventory_reservation(cur, tx_id, now=now)") >= 1
+    #
+    # This used to assert on a literal `release_inventory_reservation(cur,
+    # tx_id, now=now)` call sitting inline in the branch. That call is gone on
+    # purpose: four webhook branches each carried their own copy of "release the
+    # hold, then move the transaction to a terminal status", and they are now a
+    # single shared `settle_failed_transactions`. The property this test exists
+    # to defend — a decline on the single-transaction lane gives the stock back
+    # — is unchanged, so the assertion follows the call to where it moved rather
+    # than pinning the old shape.
+    single_lane_releases = [
+        call for call in re.findall(
+            r"marketplace_cart_service\.settle_failed_transactions\((?:[^()]|\([^()]*\))*\)", code)
+        if "[tx_id]" in call and "REASON_PAYMENT_FAILED" in call
+    ]
+    assert single_lane_releases, "single-transaction decline lane no longer releases stock"
 
 
 def test_the_sheet_header_names_the_store_not_the_account_holder():
