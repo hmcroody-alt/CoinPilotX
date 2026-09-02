@@ -1687,3 +1687,56 @@ here.
 | `npm test` | 307 suites / 5086 tests passed |
 | Native build verification | EAS iOS production build for this branch (recorded at submission time) |
 | Physical audible validation | Device install on P3r7or + iPhone 17 Pro Max simulator, per section 7 |
+
+## Consolidation addendum 2 — iOS build number 20 → 21 (2026-09-02)
+
+### Why
+
+Build 20 is already consumed in App Store Connect: it is attached to version
+1.0.1 and shows VALID, so Apple will reject a second upload carrying the same
+`CFBundleVersion`. The App Review resubmission therefore needs 21.
+
+The bump is applied in all three places for the same reason as the 19 → 20
+change: `mobile-native/ios/` is checked into the repo, so `expo prebuild` never
+regenerates `Info.plist`, and `Info.plist` hard-codes the literal
+`CFBundleVersion` instead of `$(CURRENT_PROJECT_VERSION)`. The number Apple
+reads is the embedded one, so `app.json` alone is not sufficient.
+
+### Which protected file changed
+
+`mobile-native/app.json` — protected by `dependency_watch`, not by any
+`categories[].paths` entry. `expo.ios.buildNumber` `"20"` → `"21"`. Changed in
+the same commit: `mobile-native/ios/PulseSoc.xcodeproj/project.pbxproj`
+(`CURRENT_PROJECT_VERSION` 20 → 21, both configurations) and
+`mobile-native/ios/PulseSoc/Info.plist` (`CFBundleVersion` 20 → 21). Verified
+consistent: app.json=21, pbxproj=21, Info.plist=21; `plutil -lint` OK.
+
+### Dependency-watch invariants, re-verified
+
+- `react-native-agora` pinned at `4.6.2` — unchanged.
+- `expo-av` pinned at `~16.0.8` — unchanged.
+- `expo` `~54.0.36`, `react-native` `^0.81.5` — unchanged.
+- `app.json:expo.ios.infoPlist.NSMicrophoneUsageDescription` present and
+  non-empty — unchanged.
+- `app.json:expo.ios.infoPlist.UIBackgroundModes` still contains `audio` —
+  unchanged (`["audio", "fetch", "remote-notification"]`).
+- `package.json`, `package-lock.json`, `eas.json`, `ios/Podfile`,
+  `ios/Podfile.lock` and `patches/react-native+0.81.5.patch` are byte-identical
+  to `origin/main`.
+
+### Expected behavior change
+
+None at runtime. The only observable difference is the build number iOS and
+App Store Connect report.
+
+### Regression risk
+
+None to real-time audio. The diff is three integer literals. No audio, media,
+LiveKit, Agora, AVAudioSession, microphone or publication line is touched, and
+a scan of the whole consolidation diff for `backend_diff_patterns`
+(`pulse_rtc_`, `pulse_live_audio_v2_`, `AGORA_`, `LIVESTREAM_AUDIO_V2_`,
+`can_publish`, `canPublish`, `audioV2Enabled`) returns zero matches.
+
+### Tests run
+
+Re-run against the 21 tree; results recorded in the consolidation report.
