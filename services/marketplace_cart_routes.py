@@ -283,16 +283,21 @@ def _fulfillment_kind(listing: dict) -> str:
 
 
 def _apple_pay_merchant_id() -> str:
-    """Empty means the native sheet offers card only.
+    """Always empty: this binary ships without an Apple Pay entitlement.
 
     Apple Pay needs a merchant identifier that matches an entitlement in the
     signed binary; announcing one the app cannot honour makes the sheet fail at
-    presentation rather than fall back, so an unset value is returned as-is and
-    the client simply does not request Apple Pay.
-    """
-    import os
+    presentation rather than fall back.
 
-    return str(os.getenv("APPLE_PAY_MERCHANT_ID") or "").strip()
+    The iOS binary no longer declares `com.apple.developer.in-app-payments`
+    (removed 2026-09-02 for App Review guideline 2.1 — PassKit was present but
+    Apple Pay was unreachable behind the Marketplace card pause). Returning a
+    constant empty string means a stale `APPLE_PAY_MERCHANT_ID` env var cannot
+    re-announce a capability the signed app cannot honour. Restore the env
+    lookup only together with the entitlement.
+    """
+
+    return ""
 
 
 def _stripe_payment_intent_data(*, bot, tx_ids: list[int], buyer_id: int,

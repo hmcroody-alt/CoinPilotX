@@ -1740,3 +1740,44 @@ a scan of the whole consolidation diff for `backend_diff_patterns`
 ### Tests run
 
 Re-run against the 21 tree; results recorded in the consolidation report.
+
+## Consolidation addendum 3 — remove unreachable Apple Pay capability (2026-09-02)
+
+**Why.** App Review rejected 1.0.1 (19) under guideline 2.1: the binary linked
+PassKit and declared `com.apple.developer.in-app-payments`, but Apple Pay could
+not be exercised because Marketplace card checkout is hard-paused
+(`services/marketplace_payment_pause.py::marketplace_card_payments_paused()`
+returns `True`). Unpausing is not permitted — `APPLE_PAY_STAGE_A_I_VERIFICATION.md`
+records a failing payment invariant (abandoned payment sheet permanently leaks
+reserved stock). The compliant fix is to stop declaring a capability the app
+cannot honour.
+
+**Which dependency-watch file changed.** `mobile-native/app.json` only:
+- removed `ios.entitlements["com.apple.developer.in-app-payments"]`
+- set the `@stripe/stripe-react-native` plugin `merchantIdentifier` to `""`
+
+No other dependency-watch file changed. `package.json`, `package-lock.json`,
+`eas.json`, `ios/Podfile`, `ios/Podfile.lock` and
+`patches/react-native+0.81.5.patch` are untouched.
+
+**Dependency-watch invariants re-verified.**
+- `react-native-agora` still pinned `4.6.2`; `expo-av` still pinned `~16.0.8`.
+- `ios.infoPlist.NSMicrophoneUsageDescription` unchanged and non-empty.
+- `ios.infoPlist.UIBackgroundModes` still contains `"audio"` (plus `fetch`,
+  `remote-notification`).
+- No protected path under `categories[].paths` was modified.
+- No backend line matching `backend_diff_patterns` (`pulse_rtc_`,
+  `pulse_live_audio_v2_`, `AGORA_`, `LIVESTREAM_AUDIO_V2_`, `can_publish`,
+  `canPublish`, `audioV2Enabled`) was added or removed.
+
+**Expected behavior change.** None for real-time audio. Apple Pay was already
+unreachable at runtime; this removes the unusable declaration of it. Card
+checkout remains paused exactly as before.
+
+**Regression risk.** None to audio, live, or calls. The changed surfaces are the
+iOS entitlement set, the Stripe plugin merchant identifier, one Marketplace
+checkout label, and a backend accessor that now returns a constant empty string.
+
+**Tests run.** typecheck, i18n:validate, jest, realtime-audio critical /
+realtime-audio / realtime-audio-architecture suites, backend compileall,
+protection suite, Agora contract tests.

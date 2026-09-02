@@ -570,7 +570,7 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
         <RadioRow
           selected={false}
           title="Card / Stripe"
-          detail="Card and Apple Pay infrastructure is preserved, but Marketplace card checkout is temporarily paused."
+          detail="Card checkout is temporarily paused. Marketplace orders settle with cash, local pickup, or in person."
           trailing={MARKETPLACE_CARD_PAUSE_BADGE}
           disabled
           onPress={() => {
