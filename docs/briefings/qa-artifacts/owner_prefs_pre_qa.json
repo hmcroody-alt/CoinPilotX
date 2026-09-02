@@ -1,0 +1,24 @@
+{
+  "_purpose": "TRUE pre-QA state of owner (user_id=1) briefing prefs, read from production Postgres at 2026-08-30 ~18:50 PDT, BEFORE any Stage 32 tap-through. Stage 33 must restore EXACTLY this, not the mission's assumed defaults.",
+  "_warning": "Stage 33 says 'restore owner settings (ON, Smart, all topics ON)' and does NOT mention quiet hours. The owner's real quiet hours are 02:00-05:00, NOT the 22:00-07:00 default. Restoring defaults would silently overwrite them.",
+  "table": "pulse_briefing_prefs",
+  "row": {
+    "user_id": 1,
+    "enabled": 1,
+    "network_enabled": 1,
+    "crypto_enabled": 1,
+    "watchlist_enabled": 1,
+    "frequency": "smart",
+    "quiet_start": "02:00",
+    "quiet_end": "05:00",
+    "jitter_minutes": -1,
+    "updated_at": "2026-08-31T01:07:02Z",
+    "last_seen_at": "2026-08-31T01:33:35Z"
+  },
+  "context": {
+    "pulse_briefings_total_rows": 5,
+    "latest_briefing_created_at": "2026-08-31T01:07:08Z",
+    "active_push_subscriptions_platform_wide": 4,
+    "owner_active_push_subscriptions": 1
+  }
+}
