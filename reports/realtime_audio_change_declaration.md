@@ -1613,3 +1613,77 @@ verification is claimed in this declaration.
 Restore `await room.stopBroadcast("host_ended")` and revert the
 `LiveEndNonBlockingArchitecture` guard to its awaited form. No schema or
 backend change; `live.ts` field additions are additive and safe to leave.
+
+## Consolidation addendum — iOS build number only (2026-09-02)
+
+This addendum declares the single `dependency_watch` file touched by branch
+`integration/all-safe-agent-work-20260902`.
+
+### Why the change is required
+
+`mobile-native/ios/PulseSoc/Info.plist` hardcoded `CFBundleVersion` as a
+literal instead of `$(CURRENT_PROJECT_VERSION)`. Because this repo checks in
+its `ios/` directory, `expo prebuild` never rewrites that value, so bumping
+`app.json:expo.ios.buildNumber` moved the Xcode setting while the embedded
+plist kept the stale number — and the number Apple reads is the embedded one.
+That is how a build uploaded to App Store Connect carried a build number
+nobody had set. The fix is to move all three locations together and to keep
+them verifiably equal.
+
+### Which feature required it
+
+App Store resubmission after rejection. No audio, livestream, or call feature
+required this change and none was made.
+
+### Which protected files changed
+
+| File | Category | Change |
+|---|---|---|
+| `mobile-native/app.json` | `dependency_watch` | `expo.ios.buildNumber` `"19"` → `"20"`. Nothing else in the file changed. |
+
+No path under `categories[].paths` was touched. Non-protected supporting files
+in the same commits: `mobile-native/ios/PulseSoc.xcodeproj/project.pbxproj`
+(`CURRENT_PROJECT_VERSION` 19 → 20, both configurations) and
+`mobile-native/ios/PulseSoc/Info.plist` (`CFBundleVersion` 19 → 20).
+
+### Dependency-watch invariants, re-verified
+
+- `react-native-agora` pinned at `4.6.2` — unchanged.
+- `expo-av` pinned at `~16.0.8` — unchanged.
+- `expo` `~54.0.36`, `react-native` `^0.81.5` — unchanged.
+- `app.json:expo.ios.infoPlist.NSMicrophoneUsageDescription` present and
+  non-empty — unchanged.
+- `app.json:expo.ios.infoPlist.UIBackgroundModes` still contains `audio` —
+  unchanged.
+- `package.json`, `package-lock.json`, `eas.json`, `ios/Podfile`,
+  `ios/Podfile.lock` and `patches/react-native+0.81.5.patch` are byte-identical
+  to `origin/main`.
+
+### Expected behavior change
+
+None at runtime. The only observable difference is the build number iOS and
+App Store Connect report.
+
+### Regression risk
+
+None to real-time audio. The diff contains no audio, media, LiveKit, Agora,
+AVAudioSession, microphone or publication line. The gate fired on the file's
+membership in `dependency_watch`, not on its content — `dependency_watch`
+exists to catch a floating dependency range or a dropped microphone/background
+-mode key changing the media stack with no code diff, and neither happened
+here.
+
+### Tests run
+
+| Gate | Result |
+|---|---|
+| `npm run test:realtime-audio-critical` | 11 suites / 191 tests passed |
+| `npm run test:realtime-audio` | 18 suites / 310 tests passed |
+| `npm run test:realtime-audio-architecture` | 1 suite / 22 tests passed |
+| `python -m unittest tests.protection.test_realtime_audio_architecture` | 19 tests OK |
+| `pytest tests/protection/test_agora_token_generation.py tests/protection/test_agora_rtc_provider_contract.py` | 13 passed |
+| `npm run typecheck` | clean |
+| `npm run i18n:validate` | 11 locales, 4138/4138, 0 orphans |
+| `npm test` | 307 suites / 5086 tests passed |
+| Native build verification | EAS iOS production build for this branch (recorded at submission time) |
+| Physical audible validation | Device install on P3r7or + iPhone 17 Pro Max simulator, per section 7 |
