@@ -41,6 +41,12 @@ _SEED_PRODUCTS = [
     ("advertiser_portal", "Advertiser Portal", "advertising"),
     ("creator_pro", "Creator Pro", "creator"),
     ("crypto_intelligence_pro", "Crypto Intelligence Pro", "crypto"),
+    # Private Office tiers. These are catalog DATA, not a new grant mechanism:
+    # the tier ladder in ``services/private_office/tiers.py`` reads the same
+    # ``business_os_ent_grants`` rows through the same precedence as every other
+    # key. Adding these rows grants nobody anything.
+    ("pulsesoc_private", "PulseSoc Private", "private_office"),
+    ("pulsesoc_private_office", "PulseSoc Private Office", "private_office"),
 ]
 
 _SEED_PLANS = [
@@ -54,6 +60,12 @@ _SEED_PLANS = [
     ("advertiser_standard", "advertiser_portal", "monthly", 0, "month"),
     ("creator_pro_monthly", "creator_pro", "monthly", 1999, "month"),
     ("crypto_pro_monthly", "crypto_intelligence_pro", "monthly", 1499, "month"),
+    # plan_type 'manual' and price 0 are the honest values today: neither tier
+    # has a published price or a self-serve checkout, and both are conferred by
+    # an operator grant. Inventing a price_cents here would put a number the
+    # business has not set into the canonical catalog.
+    ("pulse_private_manual", "pulsesoc_private", "manual", 0, None),
+    ("pulse_private_office_manual", "pulsesoc_private_office", "manual", 0, None),
 ]
 
 # (plan_key, entitlement_key, limit_value, limit_period)
@@ -129,6 +141,33 @@ _SEED_CATALOG = [
     # alert engine actually enforces is ``premium.crypto.advanced_alerts``
     # above; do not wire a new gate to this lookalike.
     ("crypto_pro_monthly", "crypto.alerts.advanced", 50, "day"),
+    # --- Private Office ladder ------------------------------------------------
+    # Tier inheritance is expressed as DATA, not as code that ORs keys together.
+    # A PRIVATE member holds ``premium.access`` and the full Premium capability
+    # set, because the existing Premium gates read those capability keys
+    # directly and know nothing about the ladder. Omitting them would mean
+    # upgrading a member to PRIVATE silently removed their Premium features.
+    ("pulse_private_manual", "private.access", None, None),
+    ("pulse_private_manual", "premium.access", None, None),
+    ("pulse_private_manual", "premium.profile.customization", None, None),
+    ("pulse_private_manual", "premium.media.higher_quality", None, None),
+    ("pulse_private_manual", "premium.undx.advanced", None, None),
+    ("pulse_private_manual", "premium.crypto.advanced_alerts", None, None),
+    ("pulse_private_manual", "premium.crypto.portfolio", None, None),
+    ("pulse_private_manual", "premium.crypto.intelligence", None, None),
+    ("pulse_private_manual", "premium.crypto.portfolio_intelligence", None, None),
+    ("pulse_private_manual", "premium.verification.blue_check.apply", None, None),
+    ("pulse_private_office_manual", "private_office.access", None, None),
+    ("pulse_private_office_manual", "private.access", None, None),
+    ("pulse_private_office_manual", "premium.access", None, None),
+    ("pulse_private_office_manual", "premium.profile.customization", None, None),
+    ("pulse_private_office_manual", "premium.media.higher_quality", None, None),
+    ("pulse_private_office_manual", "premium.undx.advanced", None, None),
+    ("pulse_private_office_manual", "premium.crypto.advanced_alerts", None, None),
+    ("pulse_private_office_manual", "premium.crypto.portfolio", None, None),
+    ("pulse_private_office_manual", "premium.crypto.intelligence", None, None),
+    ("pulse_private_office_manual", "premium.crypto.portfolio_intelligence", None, None),
+    ("pulse_private_office_manual", "premium.verification.blue_check.apply", None, None),
 ]
 
 

@@ -1281,6 +1281,11 @@ _load_route_pack("undx_run_health", "services.undx_run_health_routes")
 # existing crypto API, so there is no second watchlist store and no second
 # alert engine behind this pack.
 _load_route_pack("pulse_market_pulse", "services.market_pulse_routes")
+# Private Office canonical entitlement truth. GET-only by design: the tier
+# answer is served here so no client has to infer one, but GRANTING a tier
+# stays with the existing admin entitlement paths. A write in this pack would
+# be a second granting authority.
+_load_route_pack("private_office", "services.private_office_routes")
 
 
 def cancel_scheduled_account_deletion(cur, user_id):
@@ -115714,6 +115719,11 @@ def route_health_check():
         "/api/pulse/mobile/settings/delete-account",
         "/api/pulse/seller/application",
         "/api/pulse/seller/application/draft",
+        # The canonical tier answer. Listed because its absence is silent by
+        # design: the client fails closed to "unknown", so a deploy without this
+        # route does not error anywhere — it just stops showing paying members
+        # that they are members. Nobody would find that from a log.
+        "/api/private-office/entitlement",
     ]
     endpoints = {path: (path in rules) for path in required}
     packs = {name: bool(state.get("registered")) for name, state in ROUTE_PACK_STATUS.items()}

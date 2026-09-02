@@ -4,6 +4,7 @@ import * as Haptics from "expo-haptics";
 import { useEffect, useRef } from "react";
 import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { PulseProfile, profileWebUrl } from "../api/profile";
+import { hasMembershipMark } from "../entitlements/membershipMark";
 import { colors } from "../theme/colors";
 import { profileNeon } from "../theme/profileNeon";
 import { premiumTheme } from "../theme/premiumTheme";
@@ -201,7 +202,10 @@ export function ProfileHeader({
   // bare number is not, so it is dropped rather than displayed.
   const publicHandleKey = /^\d+$/.test(String(publicKey || "").trim()) ? "" : publicKey || "";
   const handle = profile.username || profile.public_player_id || publicHandleKey || "";
-  const premium = ["active", "premium", "founder", "lifetime"].includes(String(profile.premium_status || "").toLowerCase());
+  // Display mark only, and deliberately so: this header also draws *other
+  // people's* profiles, where the canonical endpoint cannot answer because it
+  // takes no user parameter. Nothing on this surface gates a capability off it.
+  const premium = hasMembershipMark(profile.premium_status);
   const verified = Boolean(profile.verified_badge || profile.verification_status === "verified");
   // Blue is the default identity colour of the profile surface; a profile
   // owner's chosen accent still overrides it, so customised profiles are

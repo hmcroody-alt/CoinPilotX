@@ -97,7 +97,14 @@ function normalizeSessionUser(user: unknown): PulseUser | null {
     full_name: String(input.full_name || input.display_name || ""),
     email: String(input.email || ""),
     avatar_url: String(input.avatar_url || input.avatar_thumbnail_url || ""),
-    premium_status: String(input.premium_status || input.subscription_status || ""),
+    // Carried verbatim, with no fallback to `subscription_status`. The two
+    // fields speak different vocabularies — `subscription_status` is Stripe's
+    // ("trialing", "past_due", "canceled") while `premium_status` is the
+    // platform's ({active, founder, lifetime, trial}) — so the old `||` wrote
+    // values into this field that the server never puts there, and every reader
+    // downstream then had to guess at them. An absent status stays empty;
+    // capability decisions come from `entitlements/canonicalTier`, not here.
+    premium_status: String(input.premium_status || ""),
     account_status: String(input.account_status || "active")
   };
 }

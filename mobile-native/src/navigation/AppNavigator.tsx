@@ -10,6 +10,8 @@ import { AppState } from "react-native";
 // bell and the seller headers came to disagree. `navigation/__tests__/badgeSources.test.ts`
 // fails if this import comes back.
 import { getMyProfile, PulseProfile } from "../api/profile";
+import { isMember } from "../entitlements/canonicalTier";
+import { useCanonicalTier } from "../entitlements/useCanonicalTier";
 import { MasterNavigationDrawer } from "../components/MasterNavigationDrawer";
 import { MinimizedCallBanner } from "../calls/MinimizedCallBanner";
 import { invalidateNativeSync, registerSyncInvalidation, startNativeEventSync } from "../core/eventSync";
@@ -311,6 +313,8 @@ export function AppNavigator() {
     getMyProfile().then(setProfile).catch(() => setProfile(null));
   }, []);
 
+  const canonicalTier = useCanonicalTier();
+
   const identity: GlobalNavigationIdentity = {
     displayName:
       profile?.display_name ||
@@ -320,7 +324,12 @@ export function AppNavigator() {
     username: profile?.username || authState.user?.username || "",
     avatarUrl: profile?.avatar_thumbnail_url || profile?.avatar_url || authState.user?.avatar_url || "",
     verified: Boolean(profile?.verified_badge),
-    premium: ["active", "premium", "founder"].includes(String(profile?.premium_status || authState.user?.premium_status || "").toLowerCase()),
+    // This drawer belongs to the signed-in member, so it asks the canonical
+    // resolver rather than reading `premium_status`. The array that used to be
+    // here omitted "lifetime", so a lifetime member saw a badge on their
+    // profile header and none here — the same person, two answers, one screen
+    // apart.
+    premium: isMember(canonicalTier),
     attention: String(profile?.account_status || authState.user?.account_status || "active").toLowerCase() !== "active"
   };
 
