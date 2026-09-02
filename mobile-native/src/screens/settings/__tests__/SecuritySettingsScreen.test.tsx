@@ -99,6 +99,17 @@ import {
   disableBiometricLogin
 } from "../../../session/biometricAuth";
 import { SecuritySettingsScreen } from "../SecuritySettingsScreen";
+import { activateLocale } from "../../../i18n/engine";
+
+/**
+ * Every label these tests query by lives in the `settings` namespace, which is
+ * extended-tier and therefore loaded lazily. The provider does this before the
+ * first frame in the app; without it here the screen renders humanized keys and
+ * the text queries match nothing.
+ */
+beforeAll(async () => {
+  await activateLocale("en");
+});
 
 const mockedCapability = getBiometricCapability as jest.Mock;
 const mockedIsEnabled = isBiometricEnabledForCurrentSession as jest.Mock;

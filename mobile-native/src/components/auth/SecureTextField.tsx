@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { forwardRef, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, TextInputProps, View } from "react-native";
+import { useTranslation } from "../../i18n";
 import { colors } from "../../theme/colors";
 import { logiNexus } from "../../theme/logiNexus";
 import { createThemedStyles } from "../../theme/themedStyles";
@@ -17,6 +18,7 @@ export const SecureTextField = forwardRef<TextInput, SecureTextFieldProps>(funct
   { label, iconName, secureToggle, errorText, secureTextEntry, testID, ...inputProps },
   ref
 ) {
+  const { t } = useTranslation();
   const [focused, setFocused] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const hasError = Boolean(errorText);
@@ -47,7 +49,7 @@ export const SecureTextField = forwardRef<TextInput, SecureTextFieldProps>(funct
         {secureToggle ? (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={revealed ? "Hide password" : "Show password"}
+            accessibilityLabel={revealed ? t("auth:signIn.hidePassword") : t("auth:signIn.showPassword")}
             hitSlop={10}
             onPress={() => setRevealed((value) => !value)}
           >

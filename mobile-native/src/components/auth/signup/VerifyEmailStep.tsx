@@ -5,6 +5,7 @@ import * as Haptics from "expo-haptics";
 import { changeUnverifiedEmail, getEmailConfirmationStatus, resendEmailConfirmation } from "../../../api/auth";
 import { finalizeConfirmedSignup, AuthState } from "../../../session/auth";
 import { validateEmail, normalizeEmail } from "../../../auth/signupValidation";
+import { useTranslation } from "../../../i18n";
 import { colors } from "../../../theme/colors";
 import { logiNexus } from "../../../theme/logiNexus";
 import { SecureTextField } from "../SecureTextField";
@@ -36,8 +37,9 @@ export function VerifyEmailStep({
   onConfirmed: (state: AuthState) => void;
   onEmailChanged: (nextEmail: string) => void;
 }) {
+  const { t } = useTranslation();
   const [status, setStatus] = useState<string | undefined>(
-    deliveryFailed ? "We created your account but couldn't deliver the email. Resend it below." : undefined
+    deliveryFailed ? t("auth:verify.deliveryFailed") : undefined
   );
   const [error, setError] = useState<string | undefined>();
   const [checking, setChecking] = useState(false);
@@ -57,7 +59,7 @@ export function VerifyEmailStep({
       try {
         const result = await getEmailConfirmationStatus(email);
         if (!result.confirmed) {
-          if (source === "manual") setStatus("Not confirmed yet — tap the link in your email, then try again.");
+          if (source === "manual") setStatus(t("auth:verify.notConfirmedYet"));
           return;
         }
         const state = await finalizeConfirmedSignup(email, password);
@@ -65,16 +67,16 @@ export function VerifyEmailStep({
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
           onConfirmed(state);
         } else if (source === "manual") {
-          setError("Your email is confirmed. Please sign in to finish.");
+          setError(t("auth:verify.confirmedSignInToFinish"));
         }
       } catch {
-        if (source === "manual") setError("We couldn't check your confirmation just now. Try again in a moment.");
+        if (source === "manual") setError(t("auth:verify.checkFailed"));
       } finally {
         finalizingRef.current = false;
         if (source === "manual") setChecking(false);
       }
     },
-    [email, password, onConfirmed]
+    [email, password, onConfirmed, t]
   );
 
   // Quiet background polling while this step is foregrounded.
@@ -104,11 +106,11 @@ export function VerifyEmailStep({
     setCooldown(RESEND_COOLDOWN_S);
     try {
       const result = await resendEmailConfirmation(email);
-      setStatus(result.message || "We sent a fresh confirmation link to your email.");
+      setStatus(result.message || t("auth:verify.resentLink"));
     } catch {
-      setError("Couldn't resend right now. Please wait a moment and try again.");
+      setError(t("auth:verify.resendFailed"));
     }
-  }, [cooldown, email]);
+  }, [cooldown, email, t]);
 
   const handleSaveEmail = useCallback(async () => {
     const check = validateEmail(nextEmail);
@@ -128,13 +130,13 @@ export function VerifyEmailStep({
       onEmailChanged(normalized);
       setEditingEmail(false);
       setCooldown(RESEND_COOLDOWN_S);
-      setStatus(`Confirmation link sent to ${normalized}.`);
+      setStatus(t("auth:verify.linkSentTo", { email: normalized }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't update your email. Please try again.");
+      setError(err instanceof Error ? err.message : t("auth:verify.updateEmailFailed"));
     } finally {
       setSavingEmail(false);
     }
-  }, [nextEmail, email, password, onEmailChanged]);
+  }, [nextEmail, email, password, onEmailChanged, t]);
 
   return (
     <View style={styles.root}>
@@ -143,13 +145,13 @@ export function VerifyEmailStep({
       </View>
 
       <Text style={styles.lead} maxFontSizeMultiplier={1.6}>
-        Tap the confirmation link we emailed to
+        {t("auth:verify.linkLead")}
       </Text>
       <Text style={styles.email} maxFontSizeMultiplier={1.4}>
         {email}
       </Text>
       <Text style={styles.hint} maxFontSizeMultiplier={1.6}>
-        This screen updates automatically once you confirm. You can keep it open while you check your inbox.
+        {t("auth:verify.autoUpdateHint")}
       </Text>
 
       {status ? (
@@ -166,7 +168,7 @@ export function VerifyEmailStep({
       {editingEmail ? (
         <View style={styles.editBlock}>
           <SecureTextField
-            label="New email address"
+            label={t("auth:verify.newEmailLabel")}
             iconName="mail-outline"
             autoCapitalize="none"
             autoComplete="email"
@@ -177,20 +179,20 @@ export function VerifyEmailStep({
             onChangeText={setNextEmail}
           />
           <PulsePrimaryButton
-            label={savingEmail ? "Updating…" : "Update email"}
+            label={savingEmail ? t("auth:verify.updatingEmail") : t("auth:verify.updateEmail")}
             busy={savingEmail}
             onPress={() => void handleSaveEmail()}
             testID="signup-save-email"
             iconName="checkmark"
           />
           <Pressable accessibilityRole="button" hitSlop={8} onPress={() => { setEditingEmail(false); setNextEmail(email); }}>
-            <Text style={styles.link}>Cancel</Text>
+            <Text style={styles.link}>{t("common:actions.cancel")}</Text>
           </Pressable>
         </View>
       ) : (
         <>
           <PulsePrimaryButton
-            label={checking ? "Checking…" : "I've confirmed — continue"}
+            label={checking ? t("auth:verify.checking") : t("auth:verify.confirmedContinue")}
             busy={checking}
             onPress={() => void attemptFinalize("manual")}
             testID="signup-confirm-continue"
@@ -207,12 +209,12 @@ export function VerifyEmailStep({
               testID="signup-resend"
             >
               <Text style={[styles.link, cooldown > 0 && styles.linkDisabled]}>
-                {cooldown > 0 ? `Resend link in ${cooldown}s` : "Resend link"}
+                {cooldown > 0 ? t("auth:verify.resendLinkIn", { seconds: cooldown }) : t("auth:verify.resendLink")}
               </Text>
             </Pressable>
             <Text style={styles.divider}>|</Text>
             <Pressable accessibilityRole="button" hitSlop={8} onPress={() => setEditingEmail(true)} testID="signup-change-email">
-              <Text style={styles.link}>Wrong email?</Text>
+              <Text style={styles.link}>{t("auth:verify.wrongEmail")}</Text>
             </Pressable>
           </View>
         </>
@@ -221,7 +223,7 @@ export function VerifyEmailStep({
       {!editingEmail && !checking ? (
         <View style={styles.autopoll}>
           <ActivityIndicator size="small" color={colors.muted} />
-          <Text style={styles.autopollText}>Waiting for confirmation…</Text>
+          <Text style={styles.autopollText}>{t("auth:verify.waitingForConfirmation")}</Text>
         </View>
       ) : null}
     </View>

@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useTranslation } from "../../i18n";
 import { colors } from "../../theme/colors";
 import { logiNexus } from "../../theme/logiNexus";
 import { createThemedStyles } from "../../theme/themedStyles";
@@ -13,24 +14,26 @@ export function AccountActions({
   onForgotPassword: () => void;
   onUseAnotherAccount?: () => void;
 }) {
+  const { t } = useTranslation();
+
   return (
     <View style={styles.root}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Create new account"
+        accessibilityLabel={t("auth:signIn.createNewAccount")}
         testID="create-account-button"
         style={({ pressed }) => [styles.createButton, { opacity: pressed ? 0.8 : 1 }]}
         onPress={onCreateAccount}
       >
         <Ionicons name="person-add-outline" size={18} color={colors.accentStrong} />
-        <Text style={styles.createButtonText}>Create new account</Text>
+        <Text style={styles.createButtonText}>{t("auth:signIn.createNewAccount")}</Text>
       </Pressable>
 
       <View style={styles.linkRow}>
         <Pressable accessibilityRole="button" testID="forgot-password-link" onPress={onForgotPassword} hitSlop={8}>
           <View style={styles.linkInline}>
             <Ionicons name="lock-closed-outline" size={14} color={colors.muted} />
-            <Text style={styles.linkText}>Forgot password?</Text>
+            <Text style={styles.linkText}>{t("auth:signIn.forgotPassword")}</Text>
           </View>
         </Pressable>
         {onUseAnotherAccount ? (
@@ -39,7 +42,7 @@ export function AccountActions({
             <Pressable accessibilityRole="button" testID="use-another-account-link" onPress={onUseAnotherAccount} hitSlop={8}>
               <View style={styles.linkInline}>
                 <Ionicons name="person-outline" size={14} color={colors.muted} />
-                <Text style={styles.linkText}>Use another account</Text>
+                <Text style={styles.linkText}>{t("auth:signIn.useAnotherAccount")}</Text>
               </View>
             </Pressable>
           </>

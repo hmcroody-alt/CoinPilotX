@@ -14,12 +14,18 @@ import {
   NotificationCategory
 } from "../../settings/schema";
 import { registerPushDevice } from "../../api/push";
+import { translate, useTranslation } from "../../i18n";
 import { useTheme } from "../../theme/ThemeContext";
 
+/**
+ * `label` holds a catalog key rather than display text — resolved with `t` at
+ * render time, so a language change relabels the chips instead of leaving
+ * whatever language was active when this module first loaded.
+ */
 const CHANNELS: { key: ChannelKey; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
-  { key: "push", label: "Push", icon: "phone-portrait-outline" },
-  { key: "email", label: "Email", icon: "mail-outline" },
-  { key: "inApp", label: "In-app", icon: "notifications-outline" }
+  { key: "push", label: "settings:notifications.channelPush", icon: "phone-portrait-outline" },
+  { key: "email", label: "settings:notifications.emailNotifications", icon: "mail-outline" },
+  { key: "inApp", label: "settings:notifications.channelInApp", icon: "notifications-outline" }
 ];
 
 /**
@@ -27,12 +33,18 @@ const CHANNELS: { key: ChannelKey; label: string; icon: keyof typeof Ionicons.gl
  * wall; grouped by what the notification is *about*, the user only ever reads
  * the two-to-four rows that matter to them. Each row stays collapsed to a
  * one-line summary until it is opened.
+ *
+ * `title` and `description` hold catalog keys, resolved at render time.
  */
 const CATEGORY_GROUPS: { title: string; description?: string; categories: NotificationCategory[] }[] = [
-  { title: "Conversations", description: "The ones people expect you to answer.", categories: ["messages", "calls"] },
-  { title: "Your content", categories: ["likes", "comments", "mentions", "reels"] },
-  { title: "People & communities", categories: ["follows", "live", "groups", "marketplace"] },
-  { title: "Account & updates", categories: ["security", "product"] }
+  {
+    title: "settings:notifications.groupConversations",
+    description: "settings:notifications.groupConversationsDescription",
+    categories: ["messages", "calls"]
+  },
+  { title: "settings:notifications.groupYourContent", categories: ["likes", "comments", "mentions", "reels"] },
+  { title: "settings:notifications.groupPeopleCommunities", categories: ["follows", "live", "groups", "marketplace"] },
+  { title: "settings:notifications.groupAccountUpdates", categories: ["security", "product"] }
 ];
 
 // A category added to the schema must never silently vanish from this screen,
@@ -40,7 +52,7 @@ const CATEGORY_GROUPS: { title: string; description?: string; categories: Notifi
 const CATEGORY_SECTIONS = (() => {
   const placed = new Set<NotificationCategory>(CATEGORY_GROUPS.flatMap((group) => group.categories));
   const orphans = NOTIFICATION_CATEGORIES.filter((category) => !placed.has(category));
-  return orphans.length ? [...CATEGORY_GROUPS, { title: "More", categories: orphans }] : CATEGORY_GROUPS;
+  return orphans.length ? [...CATEGORY_GROUPS, { title: "settings:notifications.groupMore", categories: orphans }] : CATEGORY_GROUPS;
 })();
 
 const MINUTES_IN_DAY = 24 * 60;
@@ -70,16 +82,21 @@ function formatClock(total: number, use24h: boolean): string {
   const hours = Math.floor(wrapped / 60);
   const minutes = String(wrapped % 60).padStart(2, "0");
   if (use24h) return `${String(hours).padStart(2, "0")}:${minutes}`;
-  return `${hours % 12 === 0 ? 12 : hours % 12}:${minutes} ${hours < 12 ? "AM" : "PM"}`;
+  return `${hours % 12 === 0 ? 12 : hours % 12}:${minutes} ${hours < 12 ? translate("settings:notifications.am") : translate("settings:notifications.pm")}`;
 }
 
 function describeQuietWindow(startMinutes: number, endMinutes: number): string {
   const span = wrapMinutes(endMinutes - startMinutes);
-  if (span === 0) return "Start and end are the same time, so nothing is muted. Pick different times.";
+  if (span === 0) return translate("settings:notifications.quietWindowEmpty");
   const hours = Math.floor(span / 60);
   const minutes = span % 60;
-  const length = [hours ? `${hours} hr` : "", minutes ? `${minutes} min` : ""].filter(Boolean).join(" ");
-  return `Notifications are muted for ${length} every day.`;
+  const length = [
+    hours ? translate("settings:notifications.quietWindowHours", { count: hours }) : "",
+    minutes ? translate("settings:notifications.quietWindowMinutes", { count: minutes }) : ""
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return translate("settings:notifications.quietWindowMuted", { length });
 }
 
 /* -------------------------------------------------------------------------- */
@@ -105,6 +122,7 @@ function PermissionBanner({
   onOpenSettings: () => void;
 }) {
   const theme = useTheme();
+  const { t } = useTranslation();
   return (
     <View
       accessibilityLiveRegion="polite"
@@ -121,12 +139,11 @@ function PermissionBanner({
       <View style={styles.bannerHead}>
         <Ionicons name="notifications-off-outline" size={theme.scaleFont(20)} color={theme.colors.warning} />
         <Text style={{ color: theme.colors.text, fontSize: theme.scaleFont(16), fontWeight: theme.metrics.titleWeight, flex: 1 }}>
-          Your device is blocking PulseSoc notifications
+          {t("settings:notifications.permissionBlockedTitle")}
         </Text>
       </View>
       <Text style={{ color: theme.colors.muted, fontSize: theme.scaleFont(14), lineHeight: theme.scaleFont(20), marginTop: 6 }}>
-        Everything you choose below is saved, but no push notification can reach this phone until PulseSoc is allowed to send
-        them.
+        {t("settings:notifications.permissionBlockedBody")}
       </Text>
       {error ? (
         <Text style={{ color: theme.colors.danger, fontSize: theme.scaleFont(13), lineHeight: theme.scaleFont(18), marginTop: 8 }}>
@@ -137,7 +154,7 @@ function PermissionBanner({
         {canAskAgain ? (
           <SettingsButton
             testID="notifications-permission-allow"
-            label="Allow notifications"
+            label={t("settings:notifications.permissionAllow")}
             icon="notifications-outline"
             busy={busy}
             onPress={onAllow}
@@ -145,7 +162,7 @@ function PermissionBanner({
         ) : null}
         <SettingsButton
           testID="notifications-permission-open-settings"
-          label="Open device settings"
+          label={t("settings:notifications.permissionOpenSettings")}
           icon="open-outline"
           variant={canAskAgain ? "secondary" : "primary"}
           onPress={onOpenSettings}
@@ -226,14 +243,15 @@ function CategoryRow({
   onChangeChannel: (channel: ChannelKey, next: boolean) => void;
 }) {
   const theme = useTheme();
+  const { t } = useTranslation();
   const meta = NOTIFICATION_CATEGORY_LABELS[category];
 
   // The summary reports what will actually be delivered, so a category whose
   // push flag is on but globally muted reads "Off" rather than lying.
   const summary = useMemo(() => {
     const live = CHANNELS.filter((channel) => channels[channel.key] && !blockedReasons[channel.key]);
-    return live.length ? live.map((channel) => channel.label).join(" · ") : "Off";
-  }, [blockedReasons, channels]);
+    return live.length ? live.map((channel) => t(channel.label)).join(" · ") : t("settings:notifications.channelsOff");
+  }, [blockedReasons, channels, t]);
 
   const reasons = useMemo(
     () => Array.from(new Set(CHANNELS.map((channel) => blockedReasons[channel.key]).filter(Boolean) as string[])),
@@ -249,7 +267,9 @@ function CategoryRow({
         onPress={onToggleExpanded}
         accessibilityRole="button"
         accessibilityState={{ selected: expanded }}
-        accessibilityHint={expanded ? "Hides the channel options for this category." : "Shows push, email, and in-app options for this category."}
+        accessibilityHint={
+          expanded ? t("settings:notifications.categoryCollapseHint") : t("settings:notifications.categoryExpandHint")
+        }
         accessory={
           <Ionicons name={expanded ? "chevron-up" : "chevron-down"} size={theme.scaleFont(17)} color={theme.colors.muted} />
         }
@@ -271,12 +291,15 @@ function CategoryRow({
                 <ChannelChip
                   key={channel.key}
                   testID={`notifications-category-${category}-${channel.key}`}
-                  label={channel.label}
+                  label={t(channel.label)}
                   icon={channel.icon}
                   active={channels[channel.key]}
                   disabled={Boolean(reason)}
                   disabledReason={reason}
-                  accessibilityLabel={`${channel.label} notifications for ${meta.title}`}
+                  accessibilityLabel={t("settings:notifications.channelToggleLabel", {
+                    channel: t(channel.label),
+                    category: meta.title
+                  })}
                   onToggle={(next) => onChangeChannel(channel.key, next)}
                 />
               );
@@ -310,6 +333,7 @@ function CategoryRow({
  */
 export function NotificationSettingsScreen() {
   const theme = useTheme();
+  const { t } = useTranslation();
   const { value, setGroup, pending } = usePreferenceGroup("notifications");
   const language = usePreferenceGroup("language");
   const use24h = language.value.timeFormat === "24h";
@@ -366,25 +390,23 @@ export function NotificationSettingsScreen() {
       const granted = await readPermission();
       if (!mounted.current) return;
       if (!granted || result.ok === false) {
-        setPermissionError(result.message || "Notifications are still blocked for PulseSoc on this device.");
+        setPermissionError(result.message || t("settings:notifications.stillBlocked"));
       }
     } catch (error) {
       if (!mounted.current) return;
       setPermissionError(
-        error instanceof Error && error.message
-          ? error.message
-          : "PulseSoc couldn't register this device for notifications. Check your connection and try again."
+        error instanceof Error && error.message ? error.message : t("settings:notifications.registerFailed")
       );
     } finally {
       if (mounted.current) setRequesting(false);
     }
-  }, [readPermission]);
+  }, [readPermission, t]);
 
   const openDeviceSettings = useCallback(() => {
     void Linking.openSettings().catch(() => {
-      if (mounted.current) setPermissionError("PulseSoc couldn't open your device settings. Open them manually and allow notifications.");
+      if (mounted.current) setPermissionError(t("settings:notifications.openSettingsFailed"));
     });
-  }, []);
+  }, [t]);
 
   const setPushEnabled = useCallback(
     (next: boolean) => {
@@ -401,19 +423,17 @@ export function NotificationSettingsScreen() {
           const granted = await readPermission();
           if (!mounted.current) return;
           if (!granted || result.ok === false) {
-            setPermissionError(result.message || "Notifications are still blocked for PulseSoc on this device.");
+            setPermissionError(result.message || t("settings:notifications.stillBlocked"));
           }
         } catch (error) {
           if (!mounted.current) return;
           setPermissionError(
-            error instanceof Error && error.message
-              ? error.message
-              : "PulseSoc couldn't register this device for push. Push is on, but this device may not receive alerts until you retry."
+            error instanceof Error && error.message ? error.message : t("settings:notifications.registerPushFailed")
           );
         }
       })();
     },
-    [readPermission, setGroup]
+    [readPermission, setGroup, t]
   );
 
   const setCategoryChannel = useCallback(
@@ -438,14 +458,14 @@ export function NotificationSettingsScreen() {
   const blockedReasons = useMemo<Partial<Record<ChannelKey, string | null>>>(
     () => ({
       push: !value.pushEnabled
-        ? "Push is turned off for all of PulseSoc. Turn it on under Channels to use it here."
+        ? t("settings:notifications.pushBlockedReason")
         : !osGranted
-          ? "Your device is blocking PulseSoc notifications, so push can't be delivered."
+          ? t("settings:notifications.pushDeviceBlockedReason")
           : null,
-      email: value.emailEnabled ? null : "Email is turned off for all of PulseSoc. Turn it on under Channels to use it here.",
+      email: value.emailEnabled ? null : t("settings:notifications.emailBlockedReason"),
       inApp: null
     }),
-    [osGranted, value.emailEnabled, value.pushEnabled]
+    [osGranted, t, value.emailEnabled, value.pushEnabled]
   );
 
   const quietStart = parseTimeToMinutes(value.quietHoursStart, 22 * 60);
@@ -453,7 +473,7 @@ export function NotificationSettingsScreen() {
 
   return (
     <SettingsShell bottomDock={false}>
-      <SettingsHeader title="Notifications" subtitle="Choose how PulseSoc reaches you, and for what." />
+      <SettingsHeader title={t("settings:notifications.title")} subtitle={t("settings:notifications.subtitle")} />
 
       {permissionChecked && !osGranted ? (
         <PermissionBanner
@@ -466,41 +486,44 @@ export function NotificationSettingsScreen() {
       ) : null}
 
       <SettingsSection
-        title="Channels"
-        description="Master switches. Anything off here stays off for every category below."
+        title={t("settings:notifications.channels")}
+        description={t("settings:notifications.channelsDescription")}
         busy={pending}
       >
         <SettingsSwitch
           testID="notifications-push-enabled"
-          title="Push notifications"
-          subtitle={osGranted ? "Alerts on this device." : "Allowed in PulseSoc, but still blocked by your device."}
+          title={t("settings:notifications.pushNotifications")}
+          subtitle={osGranted ? t("settings:notifications.pushSubtitle") : t("settings:notifications.pushBlockedSubtitle")}
           icon="phone-portrait-outline"
           value={value.pushEnabled}
           onValueChange={setPushEnabled}
         />
         <SettingsSwitch
           testID="notifications-email-enabled"
-          title="Email"
-          subtitle="Sent to the address on your account."
+          title={t("settings:notifications.emailNotifications")}
+          subtitle={t("settings:notifications.emailSubtitle")}
           icon="mail-outline"
           value={value.emailEnabled}
           onValueChange={(next) => void setGroup({ emailEnabled: next })}
         />
         <SettingsSwitch
           testID="notifications-sms-enabled"
-          title="SMS"
-          subtitle="Text messages for time-critical alerts only. Carrier rates may apply."
+          title={t("settings:notifications.sms")}
+          subtitle={t("settings:notifications.smsSubtitle")}
           icon="chatbubble-ellipses-outline"
           value={value.smsEnabled}
           onValueChange={(next) => void setGroup({ smsEnabled: next })}
         />
       </SettingsSection>
 
-      <SettingsSection title="How push arrives" footnote="Sound and vibration follow your device's ringer and Do Not Disturb settings.">
+      <SettingsSection
+        title={t("settings:notifications.howPushArrives")}
+        footnote={t("settings:notifications.howPushArrivesFootnote")}
+      >
         <SettingsSwitch
           testID="notifications-sound"
-          title="Sound"
-          subtitle="Play a tone when a push notification arrives."
+          title={t("settings:notifications.sound")}
+          subtitle={t("settings:notifications.soundSubtitle")}
           icon="volume-high-outline"
           value={value.sound}
           disabled={!value.pushEnabled}
@@ -508,8 +531,8 @@ export function NotificationSettingsScreen() {
         />
         <SettingsSwitch
           testID="notifications-vibration"
-          title="Vibration"
-          subtitle="Vibrate on arrival."
+          title={t("settings:notifications.vibration")}
+          subtitle={t("settings:notifications.vibrationSubtitle")}
           icon="pulse-outline"
           value={value.vibration}
           disabled={!value.pushEnabled}
@@ -517,8 +540,8 @@ export function NotificationSettingsScreen() {
         />
         <SettingsSwitch
           testID="notifications-preview-text"
-          title="Show message preview"
-          subtitle="Off means the notification shows only the sender, never the message body — safer on a locked screen."
+          title={t("settings:notifications.messagePreview")}
+          subtitle={t("settings:notifications.messagePreviewSubtitle")}
           icon="eye-off-outline"
           value={value.previewText}
           disabled={!value.pushEnabled}
@@ -527,17 +550,20 @@ export function NotificationSettingsScreen() {
       </SettingsSection>
 
       <SettingsSection
-        title="Quiet hours"
-        description="Hold notifications overnight, or during any window you choose."
+        title={t("settings:notifications.quietHours")}
+        description={t("settings:notifications.quietHoursDescription")}
         footnote={value.quietHoursEnabled ? describeQuietWindow(quietStart, quietEnd) : undefined}
       >
         <SettingsSwitch
           testID="notifications-quiet-hours-enabled"
-          title="Quiet hours"
+          title={t("settings:notifications.quietHours")}
           subtitle={
             value.quietHoursEnabled
-              ? `${formatClock(quietStart, use24h)} to ${formatClock(quietEnd, use24h)}`
-              : "Notifications arrive at any time of day."
+              ? t("settings:notifications.quietHoursRange", {
+                  start: formatClock(quietStart, use24h),
+                  end: formatClock(quietEnd, use24h)
+                })
+              : t("settings:notifications.quietHoursOffSubtitle")
           }
           icon="moon-outline"
           value={value.quietHoursEnabled}
@@ -547,7 +573,7 @@ export function NotificationSettingsScreen() {
             and a stepped minutes-of-day slider cannot produce an invalid time. */}
         <SettingsSlider
           testID="notifications-quiet-hours-start"
-          title="Starts"
+          title={t("settings:notifications.quietHoursStart")}
           value={quietStart}
           minimumValue={0}
           maximumValue={MINUTES_IN_DAY - QUIET_HOURS_STEP}
@@ -558,8 +584,8 @@ export function NotificationSettingsScreen() {
         />
         <SettingsSlider
           testID="notifications-quiet-hours-end"
-          title="Ends"
-          subtitle="An end time earlier than the start simply carries the window over midnight."
+          title={t("settings:notifications.quietHoursEnd")}
+          subtitle={t("settings:notifications.quietHoursEndSubtitle")}
           value={quietEnd}
           minimumValue={0}
           maximumValue={MINUTES_IN_DAY - QUIET_HOURS_STEP}
@@ -572,15 +598,15 @@ export function NotificationSettingsScreen() {
 
       <View style={{ marginTop: theme.metrics.sectionGap }}>
         <Text style={{ color: theme.colors.text, fontSize: theme.scaleFont(20), fontWeight: theme.metrics.titleWeight }}>
-          What you're notified about
+          {t("settings:notifications.categoriesTitle")}
         </Text>
         <Text style={{ color: theme.colors.muted, fontSize: theme.scaleFont(14), lineHeight: theme.scaleFont(20), marginTop: 4 }}>
-          Tap a category to pick its channels. In-app alerts always appear inside PulseSoc, even when push and email are off.
+          {t("settings:notifications.categoriesBody")}
         </Text>
       </View>
 
       {CATEGORY_SECTIONS.map((group) => (
-        <SettingsSection key={group.title} title={group.title} description={group.description}>
+        <SettingsSection key={group.title} title={t(group.title)} description={group.description ? t(group.description) : undefined}>
           {group.categories.map((category) => (
             <CategoryRow
               key={category}

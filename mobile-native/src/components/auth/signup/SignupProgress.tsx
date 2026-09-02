@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Animated, StyleSheet, Text, View } from "react-native";
+import { useTranslation } from "../../../i18n";
 import { colors } from "../../../theme/colors";
 import { logiNexus } from "../../../theme/logiNexus";
 import { useLogiNexusReducedMotion } from "../../../theme/logiNexusMotion";
@@ -12,6 +13,7 @@ import { createThemedStyles } from "../../../theme/themedStyles";
  * without shifting surrounding layout.
  */
 export function SignupProgress({ steps, currentIndex }: { steps: string[]; currentIndex: number }) {
+  const { t } = useTranslation();
   const total = steps.length;
   const clamped = Math.max(0, Math.min(currentIndex, total - 1));
   const label = steps[clamped] ?? "";
@@ -20,7 +22,7 @@ export function SignupProgress({ steps, currentIndex }: { steps: string[]; curre
     <View
       style={styles.root}
       accessibilityRole="progressbar"
-      accessibilityLabel={`Step ${clamped + 1} of ${total}, ${label}`}
+      accessibilityLabel={t("auth:signUp.progressA11y", { current: clamped + 1, total, label })}
       accessibilityValue={{ min: 1, max: total, now: clamped + 1 }}
     >
       <View style={styles.track}>
@@ -30,7 +32,7 @@ export function SignupProgress({ steps, currentIndex }: { steps: string[]; curre
       </View>
       <View style={styles.labelRow}>
         <Text style={styles.step} maxFontSizeMultiplier={1.4}>
-          Step {clamped + 1} of {total}
+          {t("auth:signUp.stepOf", { current: clamped + 1, total })}
         </Text>
         <Text style={styles.current} numberOfLines={1} maxFontSizeMultiplier={1.4}>
           {label}
