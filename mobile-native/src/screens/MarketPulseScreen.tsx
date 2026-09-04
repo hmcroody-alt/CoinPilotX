@@ -61,6 +61,7 @@ import {
 import { MarketRegime, MarketRotation, formatPlainPct } from "../api/marketIntelligence";
 import { formatPercent, formatPrice } from "../api/watchlists";
 import { AssetSparkline } from "../components/crypto/AssetSparkline";
+import { PremiumFeatureGate } from "../entitlements/PremiumFeatureGate";
 import { IntelligenceBadge } from "../components/crypto/IntelligenceBadge";
 import { Panel } from "../components/Panel";
 import { useTranslation } from "../i18n";
@@ -88,7 +89,15 @@ function changeColor(change: number | null): string {
   return colors.muted;
 }
 
-export function MarketPulseScreen({ navigation, route }: Props) {
+export function MarketPulseScreen(props: Props) {
+  return (
+    <PremiumFeatureGate onUpgrade={() => props.navigation.navigate("Premium")}>
+      <MarketPulseScreenBody {...props} />
+    </PremiumFeatureGate>
+  );
+}
+
+function MarketPulseScreenBody({ navigation, route }: Props) {
   const { t } = useTranslation();
   const translate = useRef(t);
   translate.current = t;

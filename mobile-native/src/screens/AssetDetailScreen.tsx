@@ -98,6 +98,7 @@ import { buildMarketContextEnvelope, parkMarketContext } from "../undx/marketCon
 import { AssetIntelligencePanel } from "../components/crypto/AssetIntelligencePanel";
 import { AssetPriceChart } from "../components/crypto/AssetSparkline";
 import { Panel } from "../components/Panel";
+import { PremiumFeatureGate } from "../entitlements/PremiumFeatureGate";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { createThemedStyles } from "../theme/themedStyles";
@@ -137,7 +138,15 @@ function changeColor(change: number | null): string {
   return colors.muted;
 }
 
-export function AssetDetailScreen({ route, navigation }: Props) {
+export function AssetDetailScreen(props: Props) {
+  return (
+    <PremiumFeatureGate onUpgrade={() => props.navigation.navigate("Premium")}>
+      <AssetDetailScreenBody {...props} />
+    </PremiumFeatureGate>
+  );
+}
+
+function AssetDetailScreenBody({ route, navigation }: Props) {
   const symbol = String(route.params?.symbol || "").toUpperCase();
   const { width } = useWindowDimensions();
 

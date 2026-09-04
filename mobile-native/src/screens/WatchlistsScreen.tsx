@@ -59,6 +59,7 @@ import {
 } from "../api/watchlists";
 import { AssetSparkline } from "../components/crypto/AssetSparkline";
 import { Panel } from "../components/Panel";
+import { PremiumFeatureGate } from "../entitlements/PremiumFeatureGate";
 import { useTranslation } from "../i18n";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
@@ -78,7 +79,15 @@ function changeColor(change: number | null): string {
   return colors.muted;
 }
 
-export function WatchlistsScreen({ navigation }: Props) {
+export function WatchlistsScreen(props: Props) {
+  return (
+    <PremiumFeatureGate onUpgrade={() => props.navigation.navigate("Premium")}>
+      <WatchlistsScreenBody {...props} />
+    </PremiumFeatureGate>
+  );
+}
+
+function WatchlistsScreenBody({ navigation }: Props) {
   const { t } = useTranslation();
   /**
    * The translator, reachable from `refresh` without being a dependency of it.

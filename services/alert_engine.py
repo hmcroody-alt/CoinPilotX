@@ -2702,6 +2702,24 @@ def evaluate_alert_rule(rule):
     rule = _public_rule(rule)
     if (rule.get("status") or "active") != "active":
         return {"ok": True, "triggered": False, "message": "Alert is not active."}
+    if not _advanced_alerts_capability(rule.get("user_id")):
+        # Premium hard-lock at DELIVERY time, for every rule type. When the
+        # owner's premium/trial lapses their rules are neither evaluated nor
+        # dispatched — but they are NOT deleted or deactivated. The rule row
+        # stays exactly as configured, so renewing premium resumes delivery
+        # with zero re-setup. Same fail-closed gate the API uses.
+        _mark_checked(rule.get("id"), status_message="Premium required for alert delivery.")
+        if _is_advanced_rule(rule):
+            # Preserve the advanced rules' observable state contract — their
+            # dashboards read advanced_state.last_status.
+            _note_advanced_status(rule, "premium_required")
+        return {
+            "ok": True,
+            "triggered": False,
+            "skipped": True,
+            "status": "premium_required",
+            "message": "Alert delivery paused: this account no longer has PulseSoc Premium. The rule is kept and will resume when Premium returns.",
+        }
     if _is_advanced_rule(rule):
         # Two surfaces, one table. The mobile crypto API stores its rules as
         # `advanced_conditions` JSON; the web/dashboard path stores its own as

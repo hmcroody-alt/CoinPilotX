@@ -39,8 +39,13 @@ _log = logging.getLogger("crypto_premium_gate")
 # tests/crypto_premium/test_crypto_premium_gate.py asserts this.
 CAP_CRYPTO_ADVANCED_ALERTS = "premium.crypto.advanced_alerts"
 CAP_CRYPTO_PORTFOLIO = "premium.crypto.portfolio_intelligence"
+CAP_CRYPTO_INTELLIGENCE = "premium.crypto.intelligence"
 
-_CRYPTO_CAPABILITIES = frozenset({CAP_CRYPTO_ADVANCED_ALERTS, CAP_CRYPTO_PORTFOLIO})
+_CRYPTO_CAPABILITIES = frozenset({
+    CAP_CRYPTO_ADVANCED_ALERTS,
+    CAP_CRYPTO_PORTFOLIO,
+    CAP_CRYPTO_INTELLIGENCE,
+})
 
 #: Human copy per capability for the premium-required payload.
 _CAPABILITY_MESSAGES = {
@@ -51,6 +56,10 @@ _CAPABILITY_MESSAGES = {
     CAP_CRYPTO_PORTFOLIO: (
         "Crypto portfolio intelligence is a PulseSoc Premium feature. "
         "Upgrade to Premium to unlock it."
+    ),
+    CAP_CRYPTO_INTELLIGENCE: (
+        "Market Pulse, watchlists and crypto briefings are PulseSoc Premium "
+        "features. Upgrade to Premium to unlock them."
     ),
 }
 _DEFAULT_MESSAGE = "This feature requires PulseSoc Premium."
