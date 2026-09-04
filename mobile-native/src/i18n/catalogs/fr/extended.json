@@ -3821,6 +3821,28 @@
         }
       }
     },
+    "cryptoIntelligence": {
+      "heading": "Intelligence crypto",
+      "subhead": "Les outils crypto Premium inclus dans votre offre.",
+      "items": {
+        "alerts": {
+          "label": "Alertes crypto avancées",
+          "hint": "Conditions avancées, surveillance récurrente, règles combinées et contrôles d’alerte plus complets."
+        },
+        "portfolio": {
+          "label": "Portefeuille",
+          "hint": "Positions, répartition, performance, concentration et plus-values ou moins-values latentes."
+        },
+        "watchlist": {
+          "label": "Listes de suivi",
+          "hint": "Suivez les actifs crypto de votre choix : prix, mouvements et intelligence de la liste."
+        },
+        "intelligence": {
+          "label": "Intelligence crypto UNDX",
+          "hint": "Comprenez vos alertes, les mouvements du portefeuille et l’activité des listes de suivi."
+        }
+      }
+    },
     "free": {
       "heading": "Toujours gratuit",
       "body": "Votre fil, vos publications, reels, statuts, messages, appels, vidéo en direct, profil, sécurité et récupération de compte restent gratuits. Premium ajoute à PulseSoc ; il n'enlève jamais rien."

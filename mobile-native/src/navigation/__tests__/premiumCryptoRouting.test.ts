@@ -121,4 +121,19 @@ describe("Premium crypto routes resolve to the crypto screens", () => {
     expect(resolve("/dashboard/creator")[0]?.screen).toBe("CreatorStudio");
     expect(resolve("/dashboard/growth")[0]?.screen).toBe("GrowthCenter");
   });
+
+  it("resolves every destination the Premium crypto section navigates to", () => {
+    // PremiumCenterScreen navigates natively rather than through this resolver,
+    // so this is a consistency check: a link to any of its four destinations,
+    // arriving from the web or a notification, must land on the same screen the
+    // tile opens. If the two ever disagree, one of them is showing the wrong UI.
+    const destinations = ["Watchlists", "AlertManagement", "Portfolio", "IntelligenceCenter"];
+    const resolved = [
+      "/pulse/premium/watchlists",
+      "/pulse/premium/crypto/alerts",
+      "/pulse/premium/portfolio",
+      "/pulse/premium/intelligence"
+    ].map((route) => resolve(route)[0]?.screen);
+    expect(resolved).toEqual(destinations);
+  });
 });
