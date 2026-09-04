@@ -48,6 +48,31 @@ const AUDIO_MANIFEST = path.join(REPO_ROOT, "config", "realtime-audio-protected-
  * They are listed here so the debt is visible and counted rather than silently
  * skipped. The test below asserts they really are in the audio manifest, so
  * this exemption dissolves the moment the audio lock is lifted from them.
+ *
+ * What the `MusicScreen.tsx` debt actually is, established while auditing it
+ * for the Private Office mission and written down here so the eventual fix does
+ * not have to rediscover it. `uploadReadyHint` (MusicScreen.tsx:137) predicts
+ * music-upload eligibility on-device from `verified_badge`, a substring match
+ * on `premium_status` for "premium" or "founder", and `email_verified`. The
+ * server decides it in `pulse_music_user_can_upload` (bot.py:41874), which
+ * admits a member on any of email verification, **phone** verification, a
+ * verified badge, a premium identity mark resolved by
+ * `premium_identity_engine.user_has_premium_mark`, or super-user status.
+ *
+ * So the copy has already drifted in both directions: a phone-verified member
+ * is shown "Server verified" — the not-ready label — and can upload anyway,
+ * and a substring test against a free-text status string is not the question
+ * `user_has_premium_mark` answers. It gates nothing, so nobody is locked out by
+ * it; it just tells some members something untrue about themselves.
+ *
+ * The fix is to delete the prediction outright rather than migrate it to
+ * `canonicalTier`: this is not a tier decision, it is an account-verification
+ * decision the server already refuses on with a specific, actionable message,
+ * and the pill can state the one thing true for every member (uploads are
+ * reviewed). That edit was written and reverted unapplied during the Private
+ * Office mission on discovering the file is a protected path — it belongs to an
+ * audio-authorized change with the physical audible regression testing that
+ * policy requires, not to an entitlement mission borrowing the file.
  */
 const AUDIO_FROZEN = [
   "mobile-native/src/screens/MusicScreen.tsx",
