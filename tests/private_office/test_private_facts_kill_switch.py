@@ -202,6 +202,62 @@ def test_the_switch_touches_nothing_else_in_the_office():
     assert others(before) == others(after)
 
 
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
+
+def test_every_private_office_flag_is_documented_in_env_example():
+    """An operator reaches for a kill switch under pressure, from the docs.
+
+    A flag that exists in code and not in ``.env.example`` is a switch nobody
+    can find on the day it is needed. This asserts the direction that actually
+    rots — code growing a flag the docs never learn about — so adding a
+    ``flag_env`` to the matrix without documenting it fails here rather than in
+    an incident.
+    """
+    with open(os.path.join(REPO_ROOT, ".env.example"), "r", encoding="utf-8") as handle:
+        env_example = handle.read()
+
+    declared = {spec.flag_env for spec in matrix.FEATURES.values() if spec.flag_env}
+    assert declared, "the matrix declares no flags at all — this check went vacuous"
+
+    undocumented = sorted(name for name in declared if name not in env_example)
+    assert not undocumented, (
+        "these Private Office kill switches are not in .env.example: "
+        + ", ".join(undocumented)
+    )
+
+
+def test_env_example_states_the_polarity_it_actually_has():
+    """Absent-means-enabled is surprising, so the docs must say so out loud.
+
+    The polarity is asymmetric: an unset variable leaves the feature ON, while
+    any unrecognised value — ``0``, ``false``, a typo — turns it OFF. An
+    operator who assumes the usual "unset means disabled" would ship a private
+    feature live believing it was dark. The prose in ``.env.example`` is the
+    only place that warning exists, so it is pinned here; if someone later
+    inverts the code, this fails alongside the behavioural tests above and the
+    docs cannot quietly become wrong.
+    """
+    with open(os.path.join(REPO_ROOT, ".env.example"), "r", encoding="utf-8") as handle:
+        env_example = handle.read().lower()
+
+    assert "absent means enabled" in env_example, (
+        ".env.example must state the absent-means-enabled polarity explicitly"
+    )
+
+    # And the behaviour the prose describes, asserted directly rather than
+    # trusted: unset is on, empty is on, an unrecognised value is off.
+    def state(raw):
+        with flag(raw):
+            return matrix.availability(FEATURE_ID, tiers.TIER_PRIVATE_OFFICE)["availability"]
+
+    assert state(None) == matrix.AVAIL_ENTITLED, "unset must leave the feature on"
+    assert state("") == matrix.AVAIL_ENTITLED, "empty must leave the feature on"
+    assert state("ture") == matrix.AVAIL_FEATURE_DISABLED, (
+        "an unrecognised value must fail closed, as the .env.example note warns"
+    )
+
+
 if __name__ == "__main__":
     import pytest
 

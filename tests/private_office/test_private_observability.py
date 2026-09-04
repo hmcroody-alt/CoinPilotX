@@ -51,6 +51,7 @@ import json
 import logging
 import os
 import sqlite3
+import subprocess
 import sys
 import tempfile
 
@@ -221,14 +222,37 @@ def stage_worker_safe_bootstrap():
     """Stage 34. Nothing here may depend on a web route having been hit."""
     print("\n[stage 34 — bootstrap]")
 
-    # The package is already imported by this point. If any module in it
-    # reached for the Flask app, `bot` would be in sys.modules — and `bot` is
-    # 111k lines, so this is also the check that keeps worker startup cheap.
-    check("importing the package does not import the Flask monolith",
-          "bot" not in sys.modules,
-          "bot was imported as a side effect")
-    check("importing the package does not import Flask at all",
-          "flask" not in sys.modules)
+    # Asked in a clean interpreter rather than in this one. Reading the ambient
+    # `sys.modules` only answers the question when this file is the only thing
+    # the process ever imported: run as a directory, the route-pack tests have
+    # already put a stub `bot` and the real Flask in there, and the check
+    # reports on *their* imports while appearing to report on the package's.
+    # A subprocess that imports nothing else is both order-independent and a
+    # stricter question than the one it replaces.
+    probe = (
+        "import sys;"
+        "import services.private_office.schema;"
+        "import services.private_office.facts;"
+        "import services.private_office.graph;"
+        "import services.private_office.retrieval;"
+        "import services.private_office.telemetry;"
+        "import services.private_office.health;"
+        "leaked=sorted(m for m in ('bot','flask','werkzeug') if m in sys.modules);"
+        "print(','.join(leaked))"
+    )
+    repo_root = os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))))
+    env = dict(os.environ, PYTHONPATH=repo_root)
+    completed = subprocess.run(
+        [sys.executable, "-c", probe], cwd=repo_root, env=env,
+        capture_output=True, text=True, timeout=120,
+    )
+    check("the package imports in a clean interpreter",
+          completed.returncode == 0,
+          completed.stderr.strip()[-300:])
+    leaked = completed.stdout.strip()
+    check("importing the package pulls in neither the monolith nor Flask",
+          leaked == "", f"leaked: {leaked}")
 
     # Read from source rather than from `sys.modules`, because an import
     # buried in a function body would not have run yet and so would not show

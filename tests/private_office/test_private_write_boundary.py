@@ -167,6 +167,27 @@ def offences(source: str) -> list[str]:
     return hits
 
 
+# Every alternative in `_VIOLATION` ends in `_TARGET`, which is a literal
+# alternation of the four table names and the four constant names. A match
+# therefore requires one of those eight tokens to appear verbatim in a string
+# literal, and a string literal's text is a substring of the file's text. So a
+# file whose raw bytes contain none of the eight cannot produce a hit, and
+# parsing it can be skipped without changing a single verdict.
+#
+# This is not a shortcut for its own sake. The repository contains ~2,600
+# Python files including a 118k-line monolith, and `ast.parse` on all of them
+# costs more than a minute — long enough that the guard was being excluded from
+# directory runs, which is the one outcome strictly worse than it being slow.
+# `test_prefilter_cannot_hide_a_violation` below proves the equivalence rather
+# than asserting it, and the parse/skip counts are checked so a prefilter that
+# accidentally swallowed the whole tree would fail loudly.
+_MENTIONS = re.compile("|".join(PRIVATE_TABLES + TABLE_CONSTANTS))
+
+
+def mentions_a_private_table(source: str) -> bool:
+    return _MENTIONS.search(source) is not None
+
+
 def python_files() -> list[str]:
     paths: list[str] = []
     for root, dirs, names in os.walk(REPO_ROOT):
@@ -196,6 +217,7 @@ def test_no_private_writes_outside_the_writers():
     unparseable: list[str] = []
     violations: list[str] = []
     package_seen: set[str] = set()
+    parsed = 0
 
     for path in paths:
         if path == guard_file:
@@ -207,22 +229,36 @@ def test_no_private_writes_outside_the_writers():
         except (OSError, UnicodeDecodeError) as exc:
             unparseable.append(f"{relpath}: {exc.__class__.__name__}")
             continue
+
+        in_package = relpath.startswith(PACKAGE_DIR + os.sep)
+        if in_package:
+            package_seen.add(os.path.basename(relpath))
+
+        # Files inside the package are always parsed — the membership checks
+        # depend on it and the package is small. Everything else is parsed only
+        # if it could possibly match.
+        if not in_package and not mentions_a_private_table(source):
+            continue
+
         try:
             hits = offences(source)
+            parsed += 1
         except SyntaxError as exc:
             # Recorded rather than ignored: a file the guard cannot read is a
             # file the guard does not protect, and that has to be visible.
             unparseable.append(f"{relpath}: SyntaxError line {exc.lineno}")
             continue
 
-        if relpath.startswith(PACKAGE_DIR + os.sep):
-            package_seen.add(os.path.basename(relpath))
         if hits and not may_write(relpath):
             for hit in hits:
                 violations.append(f"{relpath}: {hit}")
 
     check("no module outside the private writers writes to a private table",
           not violations, "; ".join(violations[:5]))
+    # A prefilter bug that matched nothing would leave this at roughly the size
+    # of the package alone and every violation would go unseen.
+    check("the prefilter still handed a real body of files to the parser",
+          parsed >= 20, f"{parsed} file(s) parsed")
 
     # The writers must actually be present and actually contain writes. If a
     # rename left `facts.py` behind, the check above would pass vacuously.
@@ -309,6 +345,30 @@ def test_guard_detects_known_violations():
     return None
 
 
+def test_prefilter_cannot_hide_a_violation():
+    """Whatever the guard would catch, the prefilter must let through.
+
+    The scan skips `ast.parse` for files whose raw text names none of the four
+    private tables and none of the four table constants. That is only safe if
+    every string the guard flags contains one of those eight tokens verbatim —
+    so the claim is checked against the same corpus of known offences the guard
+    itself is tested with, rather than argued for in a comment.
+    """
+    print("\n[prefilter equivalence]")
+    for label, snippet in sorted(_MUST_CATCH.items()):
+        caught = bool(offences(snippet))
+        check(f"the prefilter admits the file containing {label}",
+              (not caught) or mentions_a_private_table(snippet),
+              "prefilter would have skipped a file the guard flags")
+
+    check("the prefilter rejects a file with no private table anywhere in it",
+          not mentions_a_private_table(
+              'cur.execute("INSERT INTO users (id) VALUES (1)")'))
+    check("the prefilter admits a file that merely mentions a private table",
+          mentions_a_private_table('x = "SELECT 1 FROM private_facts"'))
+    return None
+
+
 def test_package_membership_is_explicit():
     """A new module in the package must not inherit write rights by location."""
     print("\n[package membership]")
@@ -338,6 +398,7 @@ def main() -> int:
     print("PRIVATE OFFICE WRITE BOUNDARY — Stages 7 & 10")
     print(f"repo: {REPO_ROOT}")
     test_guard_detects_known_violations()
+    test_prefilter_cannot_hide_a_violation()
     test_no_private_writes_outside_the_writers()
     test_package_membership_is_explicit()
     print("\n" + "=" * 60)
