@@ -41541,8 +41541,26 @@ def api_pulse_status_rail():
         }
         return jsonify({"ok": True, "items": items, "rail_items": rail_items, "discovery_signal": discovery_signal, "trace_id": trace_id, "lane": lane, "lanes": ["for_you", "following", "trending", "global"]})
     except Exception as exc:
-        logging.exception("PULSE_STATUS_RAIL_FAILED trace_id=%s user_id=%s error=%s", trace_id, user.get("user_id"), exc)
-        return jsonify({"ok": False, "message": "PulseSoc Status could not load.", "trace_id": trace_id}), 500
+        # STATUS_LIST_FETCH_FAILED means the rail query itself did not return --
+        # nothing was serialized, so this is never a per-item problem. Log the
+        # exception type alongside the message: the 2026-09 outage was a
+        # psycopg2 ProgrammingError ("not all arguments converted during string
+        # formatting") from a SQL translation defect, which reads like an
+        # application bug until you see the class.
+        logging.exception(
+            "PULSE_STATUS_RAIL_FAILED code=STATUS_LIST_FETCH_FAILED trace_id=%s user_id=%s lane=%s error_type=%s error=%s",
+            trace_id,
+            user.get("user_id"),
+            lane,
+            type(exc).__name__,
+            exc,
+        )
+        return jsonify({
+            "ok": False,
+            "error_code": "STATUS_LIST_FETCH_FAILED",
+            "message": "PulseSoc Status could not load.",
+            "trace_id": trace_id,
+        }), 500
 
 
 @webhook_app.route("/api/pulse/status/music/search", methods=["GET"])

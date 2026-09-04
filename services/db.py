@@ -529,24 +529,75 @@ AUTO_PK_TABLES = {
 
 
 def _replace_question_placeholders(sql):
+    """Convert ``?`` placeholders to ``%s`` for psycopg2's pyformat paramstyle.
+
+    Placeholders inside string literals, quoted identifiers, and SQL comments
+    must be left alone. Comment awareness matters as much as quote awareness:
+    an apostrophe in a ``--`` comment ("other people's faces") would otherwise
+    be read as opening a string literal that never closes, silently suppressing
+    every ``?`` after it and producing psycopg2's "not all arguments converted
+    during string formatting" at execute time.
+    """
     out = []
     in_single = False
     in_double = False
+    in_line_comment = False
+    in_block_comment = False
     escaped = False
-    for char in sql:
-        if char == "\\" and not escaped:
+    index = 0
+    length = len(sql)
+    while index < length:
+        char = sql[index]
+        next_char = sql[index + 1] if index + 1 < length else ""
+
+        if in_line_comment:
+            out.append(char)
+            if char == "\n":
+                in_line_comment = False
+            index += 1
+            continue
+
+        if in_block_comment:
+            out.append(char)
+            if char == "*" and next_char == "/":
+                out.append(next_char)
+                in_block_comment = False
+                index += 2
+                continue
+            index += 1
+            continue
+
+        if not in_single and not in_double:
+            if char == "-" and next_char == "-":
+                out.append(char)
+                out.append(next_char)
+                in_line_comment = True
+                index += 2
+                continue
+            if char == "/" and next_char == "*":
+                out.append(char)
+                out.append(next_char)
+                in_block_comment = True
+                index += 2
+                continue
+
+        if char == "\\" and not escaped and (in_single or in_double):
             escaped = True
             out.append(char)
+            index += 1
             continue
+
         if char == "'" and not in_double and not escaped:
             in_single = not in_single
         elif char == '"' and not in_single and not escaped:
             in_double = not in_double
+
         if char == "?" and not in_single and not in_double:
             out.append("%s")
         else:
             out.append(char)
         escaped = False
+        index += 1
     return "".join(out)
 
 
