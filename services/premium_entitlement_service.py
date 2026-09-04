@@ -961,15 +961,48 @@ def _is_premium_user_raw(user_id: int) -> bool:
         return True
     conn = db_service.connect()
     cur = conn.cursor()
-    cur.execute("SELECT premium_status, subscription_status, lifetime_premium, premium_glow_manual_grant FROM users WHERE user_id=? LIMIT 1", (int(user_id or 0),))
+    cur.execute("SELECT premium_status, subscription_status, lifetime_premium, premium_glow_manual_grant, trial_end_date, pro_expires_at FROM users WHERE user_id=? LIMIT 1", (int(user_id or 0),))
     row = dict(cur.fetchone() or {})
     conn.close()
-    return bool(
-        int(row.get("lifetime_premium") or 0)
-        or int(row.get("premium_glow_manual_grant") or 0)
-        or str(row.get("premium_status") or "").lower() in {"active", "founder", "lifetime", "trial"}
-        or str(row.get("subscription_status") or "").lower() in {"active", "trialing"}
-    )
+    if int(row.get("lifetime_premium") or 0) or int(row.get("premium_glow_manual_grant") or 0):
+        return True
+    premium_status = str(row.get("premium_status") or "").lower()
+    subscription_status = str(row.get("subscription_status") or "").lower()
+    if premium_status in {"active", "founder", "lifetime"}:
+        return True
+    if subscription_status == "active":
+        return True
+    # Trial statuses are TIME-BOUNDED: they only count while the recorded trial
+    # window is still open. Historically these statuses were honoured with no
+    # expiry check, so a 7-day trial silently became a lifetime grant for any
+    # account whose status was never flipped by a cleanup job. The clock — not a
+    # job — must decide, exactly as canonical grants do via ``expires_at``.
+    if premium_status == "trial" or subscription_status == "trialing":
+        return _trial_window_open(row)
+    return False
+
+
+def _trial_window_open(row: dict) -> bool:
+    """True iff the legacy trial window recorded on the user row is still open.
+
+    Uses ``trial_end_date`` first, falling back to ``pro_expires_at`` (signup
+    writes both with the same value). Fails CLOSED: a trial status with no
+    parseable end date does not confer access — an unbounded trial is exactly
+    the bug this check removes.
+    """
+    from datetime import datetime as _dt
+
+    for field in ("trial_end_date", "pro_expires_at"):
+        raw = str(row.get(field) or "").strip()
+        if not raw:
+            continue
+        try:
+            end = _dt.fromisoformat(raw)
+        except ValueError:
+            continue
+        now = _dt.now(end.tzinfo) if end.tzinfo else _dt.now()
+        return end > now
+    return False
 
 
 def _is_founder_member_raw(user_id: int) -> bool:

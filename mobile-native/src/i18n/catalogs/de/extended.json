@@ -4317,6 +4317,15 @@
         "ESTIMATED": "Geschätzt",
         "NEEDS_REVIEW": "Prüfung nötig"
       }
+    },
+    "gate": {
+      "checking": "Mitgliedschaft wird geprüft…",
+      "unavailableTitle": "Mitgliedschaft kann nicht geprüft werden",
+      "unavailableBody": "Wir konnten deine Mitgliedschaft gerade nicht bestätigen. Premium-Funktionen pausieren so lange – deine Daten sind sicher und nichts wurde entfernt.",
+      "lockedBody": "Market Pulse, Watchlists, Portfolio, erweiterte Alarme und Briefings sind Teil von PulseSoc Premium.",
+      "trialEndsToday": "Deine Premium-Testphase endet heute",
+      "trialDaysLeft_one": "Noch {{count}} Tag Premium-Testphase",
+      "trialDaysLeft_other": "Noch {{count}} Tage Premium-Testphase"
     }
   },
   "briefings": {

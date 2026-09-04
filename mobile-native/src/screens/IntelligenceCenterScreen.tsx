@@ -16,6 +16,7 @@ import {
 import { getNotificationBadgeCounts, NotificationBadgeCounts, unreadCount } from "../api/notifications";
 import { getPremiumStatus, premiumStateLabel, PremiumStatus } from "../api/premium";
 import { Panel } from "../components/Panel";
+import { PremiumFeatureGate } from "../entitlements/PremiumFeatureGate";
 import { RootStackParamList } from "../navigation/types";
 import { PRIVATE_CONTENT_MESSAGE, resolveRouteProfileContext } from "../profile/profileContext";
 import { useAuth } from "../session/auth";
@@ -24,7 +25,15 @@ import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = NativeStackScreenProps<RootStackParamList, "IntelligenceCenter">;
 
-export function IntelligenceCenterScreen({ route, navigation }: Props) {
+export function IntelligenceCenterScreen(props: Props) {
+  return (
+    <PremiumFeatureGate onUpgrade={() => props.navigation.navigate("Premium")}>
+      <IntelligenceCenterScreenBody {...props} />
+    </PremiumFeatureGate>
+  );
+}
+
+function IntelligenceCenterScreenBody({ route, navigation }: Props) {
   const { authState } = useAuth();
   // Wrong-subject guard: alerts, premium status and unread badges are all the
   // signed-in viewer's data. On another profile's route params this screen

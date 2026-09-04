@@ -59,6 +59,7 @@ import {
   getPrivateOfficeOverview,
   type PrivateOfficeProductState
 } from "../api/privateOffice";
+import { loadCanonicalTier, resetCanonicalTier } from "../entitlements/useCanonicalTier";
 import { useFormatters, useTranslation } from "../i18n";
 import { RootStackParamList } from "../navigation/types";
 import { openDashboardRoute } from "../navigation/dashboardRouting";
@@ -367,6 +368,10 @@ export function PremiumCenterScreen({ route, navigation }: Props) {
     setBusy("");
     // Always re-read. A "verified" that the server later disagrees with must
     // lose to the server, and a "pending" that in fact landed must be believed.
+    // The shared canonical answer is dropped for the same reason: every gate in
+    // the app must re-ask the server rather than keep the pre-purchase tier.
+    resetCanonicalTier();
+    void loadCanonicalTier();
     await load("refresh");
   }, [busy, load, plan, t]);
 
@@ -387,6 +392,8 @@ export function PremiumCenterScreen({ route, navigation }: Props) {
       setFlash({ tone: "warn", text: t("premium:restore.failed") });
     }
     setBusy("");
+    resetCanonicalTier();
+    void loadCanonicalTier();
     await load("refresh");
   }, [busy, load, t]);
 

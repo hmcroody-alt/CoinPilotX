@@ -4285,6 +4285,14 @@
         "ESTIMATED": "估算",
         "NEEDS_REVIEW": "待复核"
       }
+    },
+    "gate": {
+      "checking": "正在核实您的会员资格…",
+      "unavailableTitle": "暂时无法核实会员资格",
+      "unavailableBody": "我们目前无法确认您的会员资格。在确认之前，Premium 功能将暂停使用——您的数据安全，未删除任何内容。",
+      "lockedBody": "Market Pulse、自选列表、投资组合、高级提醒和简报均属于 PulseSoc Premium。",
+      "trialEndsToday": "您的 Premium 试用今天到期",
+      "trialDaysLeft_other": "您的 Premium 试用还剩 {{count}} 天"
     }
   },
   "briefings": {

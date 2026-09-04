@@ -31,6 +31,22 @@ jest.mock("../../api/alerts", () => ({
   createCryptoAlert: jest.fn().mockResolvedValue({ ok: true, alert_id: 1, message: "Alert created." })
 }));
 
+// The screen is wrapped in the premium hard lock; these tests are about the
+// preset symbol, not the gate, so the canonical tier is pinned to entitled.
+jest.mock("../../entitlements/useCanonicalTier", () => ({
+  useCanonicalTier: () => ({
+    state: "resolved",
+    effectiveTier: "PREMIUM",
+    status: "active",
+    source: "stripe",
+    expiresAt: null,
+    features: {},
+    verifiedAt: "2026-01-01T00:00:00Z"
+  }),
+  loadCanonicalTier: jest.fn().mockResolvedValue(undefined),
+  resetCanonicalTier: jest.fn()
+}));
+
 import { createCryptoAlert } from "../../api/alerts";
 import { activateLocale } from "../../i18n/engine";
 import { AlertManagementScreen } from "../AlertManagementScreen";

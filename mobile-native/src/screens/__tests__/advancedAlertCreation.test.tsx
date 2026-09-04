@@ -39,6 +39,23 @@ jest.mock("../../api/alerts", () => ({
   createCryptoAlert: jest.fn().mockResolvedValue({ ok: true, alert_id: 1, message: "Alert created." })
 }));
 
+// The screen is now wrapped in the premium hard lock. These tests are about the
+// alert form, not the gate (the gate has its own suite), so the canonical tier
+// is pinned to an entitled member.
+jest.mock("../../entitlements/useCanonicalTier", () => ({
+  useCanonicalTier: () => ({
+    state: "resolved",
+    effectiveTier: "PREMIUM",
+    status: "active",
+    source: "stripe",
+    expiresAt: null,
+    features: {},
+    verifiedAt: "2026-01-01T00:00:00Z"
+  }),
+  loadCanonicalTier: jest.fn().mockResolvedValue(undefined),
+  resetCanonicalTier: jest.fn()
+}));
+
 import {
   createCryptoAlert,
   normalizeAlertOptions,

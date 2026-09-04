@@ -4278,6 +4278,14 @@
         "ESTIMATED": "推定",
         "NEEDS_REVIEW": "要確認"
       }
+    },
+    "gate": {
+      "checking": "メンバーシップを確認しています…",
+      "unavailableTitle": "メンバーシップを確認できません",
+      "unavailableBody": "現在メンバーシップを確認できませんでした。確認できるまでPremium機能は一時停止します。データは安全で、何も削除されていません。",
+      "lockedBody": "Market Pulse、ウォッチリスト、ポートフォリオ、高度なアラート、ブリーフィングはPulseSoc Premiumの機能です。",
+      "trialEndsToday": "Premiumトライアルは本日終了します",
+      "trialDaysLeft_other": "Premiumトライアルは残り{{count}}日です"
     }
   },
   "briefings": {

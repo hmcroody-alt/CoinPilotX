@@ -5629,6 +5629,19 @@ def create_account(full_name, email, password, phone="", country="", email_opt_i
     user = load_account_by_id(user_id)
     log_product_event(user_id, "signup_completed", {"source": "website_signup"})
     log_product_event(user_id, "pro_trial_started", {"trial_end_date": trial_end, "source": "website_signup"})
+    try:
+        from services.business_os.entitlements import trial as _bos_trial
+        _trial_grant = _bos_trial.start_trial_if_eligible(
+            user_id, source_reference=f"signup:{user_id}", is_new_signup=True
+        )
+        if _trial_grant.get("started"):
+            log_product_event(user_id, "premium_trial_started", {
+                "trial_end": _trial_grant.get("trial_end"),
+                "plan": "pulse_premium_trial",
+                "source": "website_signup",
+            })
+    except Exception:
+        logging.exception("canonical premium trial grant failed user_id=%s", user_id)
     record_referral_signup(user_id, referred_by)
     dispatch_brevo_contact_sync_safe({**(user or {}), "source": "website_account"}, entity_type="user", entity_id=user_id)
     return user, ""
@@ -7374,13 +7387,29 @@ def _crypto_api_payload():
     return dict(request.form or {})
 
 
-def _crypto_api_result(callback):
+def _crypto_api_result(callback, capability=None):
+    """Run a crypto API callback with the standard auth + error envelope.
+
+    ``capability`` is the Premium hard-lock: when set, the request is resolved
+    through the ONE server gate (``services.crypto_premium_gate``) before the
+    callback runs. A user without the capability gets the canonical
+    ``premium_required`` payload with HTTP 200 — the same contract the mobile
+    portfolio gate already uses — so clients render the paywall instead of a
+    transport error. The gate fails CLOSED, so a resolver outage denies.
+    """
     correlation_id = secrets.token_hex(6)
     conn = None
     try:
         user, conn, error = _crypto_api_user_conn()
         if error:
             return error
+        if capability:
+            from services import crypto_premium_gate as _crypto_gate
+            if not _crypto_gate.has_crypto_capability(user["user_id"], capability):
+                log_product_event(user["user_id"], "premium_feature_denied", {
+                    "capability": capability, "path": request.path,
+                })
+                return jsonify(_crypto_gate.premium_required_response(capability))
         return jsonify(callback(conn, user))
     except ValueError as exc:
         if conn is not None:
@@ -7422,22 +7451,34 @@ def _crypto_api_result(callback):
             conn.close()
 
 
+# Premium hard-lock capabilities (must match services.crypto_premium_gate —
+# the gate denies any key outside its frozenset, so a typo here fails closed).
+_CAP_CRYPTO_ALERTS = "premium.crypto.advanced_alerts"
+_CAP_CRYPTO_INTELLIGENCE = "premium.crypto.intelligence"
+
+
 @webhook_app.route("/api/crypto/summary", methods=["GET"])
 def api_crypto_summary():
-    return _crypto_api_result(lambda conn, user: {"ok": True, "crypto": dashboard_crypto_command_center.build_crypto_state(conn, user)})
+    return _crypto_api_result(lambda conn, user: {"ok": True, "crypto": dashboard_crypto_command_center.build_crypto_state(conn, user)},
+                              capability=_CAP_CRYPTO_INTELLIGENCE)
 
 
 @webhook_app.route("/api/crypto/market-pulse", methods=["GET"])
 def api_crypto_market_pulse():
-    return jsonify({"ok": True, "market_pulse": dashboard_crypto_command_center.market_pulse()})
+    # Previously unauthenticated. Market Pulse is a Premium-tile feature, so it
+    # now requires a signed-in user with the intelligence capability.
+    return _crypto_api_result(lambda conn, user: {"ok": True, "market_pulse": dashboard_crypto_command_center.market_pulse()},
+                              capability=_CAP_CRYPTO_INTELLIGENCE)
 
 
 @webhook_app.route("/api/crypto/alerts", methods=["GET", "POST"])
 def api_crypto_alerts():
     if request.method == "POST":
         payload = _crypto_api_payload()
-        return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.create_alert(conn, user["user_id"], payload))
-    return _crypto_api_result(lambda conn, user: {"ok": True, "alerts": dashboard_crypto_command_center.list_alerts(conn, user["user_id"])})
+        return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.create_alert(conn, user["user_id"], payload),
+                                  capability=_CAP_CRYPTO_ALERTS)
+    return _crypto_api_result(lambda conn, user: {"ok": True, "alerts": dashboard_crypto_command_center.list_alerts(conn, user["user_id"])},
+                              capability=_CAP_CRYPTO_ALERTS)
 
 
 @webhook_app.route("/api/crypto/alerts/options", methods=["GET"])
@@ -7450,33 +7491,39 @@ def api_crypto_alert_options():
                        or "").strip().lower() in {"1", "true", "yes", "on"}
     return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.alert_options(
         conn, user["user_id"], symbol=symbol, watchlist_id=watchlist_id or None,
-        portfolio_scope=portfolio_scope))
+        portfolio_scope=portfolio_scope), capability=_CAP_CRYPTO_ALERTS)
 
 
 @webhook_app.route("/api/crypto/alerts/<int:alert_id>", methods=["PATCH", "DELETE"])
 def api_crypto_alert_detail(alert_id):
     payload = _crypto_api_payload()
     if request.method == "DELETE":
-        return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.delete_alert(conn, user["user_id"], alert_id))
-    return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.update_alert(conn, user["user_id"], alert_id, payload))
+        return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.delete_alert(conn, user["user_id"], alert_id),
+                                  capability=_CAP_CRYPTO_ALERTS)
+    return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.update_alert(conn, user["user_id"], alert_id, payload),
+                              capability=_CAP_CRYPTO_ALERTS)
 
 
 @webhook_app.route("/api/crypto/alerts/<int:alert_id>/duplicate", methods=["POST"])
 def api_crypto_alert_duplicate(alert_id):
-    return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.duplicate_alert(conn, user["user_id"], alert_id))
+    return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.duplicate_alert(conn, user["user_id"], alert_id),
+                              capability=_CAP_CRYPTO_ALERTS)
 
 
 @webhook_app.route("/api/crypto/alerts/<int:alert_id>/history", methods=["GET"])
 def api_crypto_alert_history(alert_id):
-    return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.alert_history(conn, user["user_id"], alert_id))
+    return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.alert_history(conn, user["user_id"], alert_id),
+                              capability=_CAP_CRYPTO_ALERTS)
 
 
 @webhook_app.route("/api/crypto/watchlists", methods=["GET", "POST"])
 def api_crypto_watchlists():
     if request.method == "POST":
         payload = _crypto_api_payload()
-        return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.create_watchlist(conn, user["user_id"], payload))
-    return _crypto_api_result(lambda conn, user: {"ok": True, "watchlists": dashboard_crypto_command_center.list_watchlists(conn, user["user_id"])})
+        return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.create_watchlist(conn, user["user_id"], payload),
+                                  capability=_CAP_CRYPTO_INTELLIGENCE)
+    return _crypto_api_result(lambda conn, user: {"ok": True, "watchlists": dashboard_crypto_command_center.list_watchlists(conn, user["user_id"])},
+                              capability=_CAP_CRYPTO_INTELLIGENCE)
 
 
 @webhook_app.route("/api/crypto/watchlists/market", methods=["GET"])
@@ -7487,15 +7534,18 @@ def api_crypto_watchlist_market_view():
     ten provider calls, and the join happens server-side so the client never
     has to reconcile two sources that disagree about freshness.
     """
-    return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.watchlist_market_view(conn, user["user_id"]))
+    return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.watchlist_market_view(conn, user["user_id"]),
+                              capability=_CAP_CRYPTO_INTELLIGENCE)
 
 
 @webhook_app.route("/api/crypto/watchlists/<int:watchlist_id>", methods=["PATCH", "DELETE"])
 def api_crypto_watchlist_detail(watchlist_id):
     payload = _crypto_api_payload()
     if request.method == "DELETE":
-        return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.delete_watchlist(conn, user["user_id"], watchlist_id))
-    return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.rename_watchlist(conn, user["user_id"], watchlist_id, payload))
+        return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.delete_watchlist(conn, user["user_id"], watchlist_id),
+                                  capability=_CAP_CRYPTO_INTELLIGENCE)
+    return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.rename_watchlist(conn, user["user_id"], watchlist_id, payload),
+                              capability=_CAP_CRYPTO_INTELLIGENCE)
 
 
 @webhook_app.route("/api/crypto/assets/search", methods=["GET"])
@@ -7507,31 +7557,36 @@ def api_crypto_asset_search():
         # A junk `?limit=` is a bad argument, not a server fault; silently use
         # the default rather than returning a 503 from the generic handler.
         limit = 25
-    return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.search_assets(query, limit=limit))
+    return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.search_assets(query, limit=limit),
+                              capability=_CAP_CRYPTO_INTELLIGENCE)
 
 
 @webhook_app.route("/api/crypto/assets/<symbol>", methods=["GET"])
 def api_crypto_asset_detail(symbol):
     clean_symbol = clean_html(symbol).upper()[:12]
-    return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.asset_detail(conn, user["user_id"], clean_symbol))
+    return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.asset_detail(conn, user["user_id"], clean_symbol),
+                              capability=_CAP_CRYPTO_INTELLIGENCE)
 
 
 @webhook_app.route("/api/crypto/assets/<symbol>/history", methods=["GET"])
 def api_crypto_asset_history(symbol):
     clean_symbol = clean_html(symbol).upper()[:12]
     range_key = clean_html(request.args.get("range") or "24H").upper()[:4]
-    return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.asset_history(user["user_id"], clean_symbol, range_key))
+    return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.asset_history(user["user_id"], clean_symbol, range_key),
+                              capability=_CAP_CRYPTO_INTELLIGENCE)
 
 
 @webhook_app.route("/api/crypto/watchlists/<int:watchlist_id>/assets", methods=["POST"])
 def api_crypto_watchlist_assets(watchlist_id):
     payload = _crypto_api_payload()
-    return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.add_watchlist_asset(conn, user["user_id"], watchlist_id, payload))
+    return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.add_watchlist_asset(conn, user["user_id"], watchlist_id, payload),
+                              capability=_CAP_CRYPTO_INTELLIGENCE)
 
 
 @webhook_app.route("/api/crypto/watchlists/<int:watchlist_id>/assets/<int:asset_id>", methods=["DELETE"])
 def api_crypto_watchlist_asset_delete(watchlist_id, asset_id):
-    return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.delete_watchlist_asset(conn, user["user_id"], watchlist_id, asset_id))
+    return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.delete_watchlist_asset(conn, user["user_id"], watchlist_id, asset_id),
+                              capability=_CAP_CRYPTO_INTELLIGENCE)
 
 
 @webhook_app.route("/api/crypto/ask-ai", methods=["POST"])
@@ -7542,6 +7597,12 @@ def api_crypto_ask_ai():
     if error:
         return error
     try:
+        from services import crypto_premium_gate as _crypto_gate
+        if not _crypto_gate.has_crypto_capability(user["user_id"], _CAP_CRYPTO_INTELLIGENCE):
+            log_product_event(user["user_id"], "premium_feature_denied", {
+                "capability": _CAP_CRYPTO_INTELLIGENCE, "path": request.path,
+            })
+            return jsonify(_crypto_gate.premium_required_response(_CAP_CRYPTO_INTELLIGENCE))
         result = dashboard_crypto_command_center.ask_crypto_ai(conn, user["user_id"], payload)
         status = 200 if result.get("ok") else int(dashboard_crypto_command_center.crypto_ai_status().get("http_status") or 503)
         return jsonify(result), status
@@ -7554,22 +7615,28 @@ def api_crypto_ask_ai():
 @webhook_app.route("/api/crypto/token-scan", methods=["POST"])
 def api_crypto_token_scan():
     payload = _crypto_api_payload()
-    return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.scan_token(conn, user["user_id"], payload))
+    return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.scan_token(conn, user["user_id"], payload),
+                              capability=_CAP_CRYPTO_INTELLIGENCE)
 
 
 @webhook_app.route("/api/crypto/trending", methods=["GET"])
 def api_crypto_trending():
-    return jsonify({"ok": True, "state": "BETA", "assets": dashboard_crypto_command_center.market_board("top_volume", 30).get("markets") or []})
+    # Market boards are Market Pulse content — Premium-gated like the pulse
+    # itself (previously unauthenticated).
+    return _crypto_api_result(lambda conn, user: {"ok": True, "state": "BETA", "assets": dashboard_crypto_command_center.market_board("top_volume", 30).get("markets") or []},
+                              capability=_CAP_CRYPTO_INTELLIGENCE)
 
 
 @webhook_app.route("/api/crypto/gainers", methods=["GET"])
 def api_crypto_gainers():
-    return jsonify({"ok": True, "state": "BETA", "assets": dashboard_crypto_command_center.market_board("gainers", 30).get("markets") or []})
+    return _crypto_api_result(lambda conn, user: {"ok": True, "state": "BETA", "assets": dashboard_crypto_command_center.market_board("gainers", 30).get("markets") or []},
+                              capability=_CAP_CRYPTO_INTELLIGENCE)
 
 
 @webhook_app.route("/api/crypto/losers", methods=["GET"])
 def api_crypto_losers():
-    return jsonify({"ok": True, "state": "BETA", "assets": dashboard_crypto_command_center.market_board("losers", 30).get("markets") or []})
+    return _crypto_api_result(lambda conn, user: {"ok": True, "state": "BETA", "assets": dashboard_crypto_command_center.market_board("losers", 30).get("markets") or []},
+                              capability=_CAP_CRYPTO_INTELLIGENCE)
 
 
 @webhook_app.route("/api/crypto/news", methods=["GET"])
@@ -7584,7 +7651,8 @@ def api_crypto_calendar():
 
 @webhook_app.route("/api/crypto/recent", methods=["GET"])
 def api_crypto_recent_assets():
-    return _crypto_api_result(lambda conn, user: {"ok": True, "recent": dashboard_crypto_command_center.list_recent_assets(conn, user["user_id"])})
+    return _crypto_api_result(lambda conn, user: {"ok": True, "recent": dashboard_crypto_command_center.list_recent_assets(conn, user["user_id"])},
+                              capability=_CAP_CRYPTO_INTELLIGENCE)
 
 
 @webhook_app.route("/api/crypto/favorites", methods=["GET", "POST"])
@@ -7600,8 +7668,10 @@ def api_crypto_favorite_assets():
         payload = _crypto_api_payload()
         symbol = str(payload.get("symbol") or payload.get("assetSymbol") or "")
         favorite = bool(payload.get("favorite", True))
-        return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.set_favorite_asset(conn, user["user_id"], symbol, favorite))
-    return _crypto_api_result(lambda conn, user: {"ok": True, "favorites": dashboard_crypto_command_center.list_favorite_assets(conn, user["user_id"])})
+        return _crypto_api_result(lambda conn, user: dashboard_crypto_command_center.set_favorite_asset(conn, user["user_id"], symbol, favorite),
+                                  capability=_CAP_CRYPTO_INTELLIGENCE)
+    return _crypto_api_result(lambda conn, user: {"ok": True, "favorites": dashboard_crypto_command_center.list_favorite_assets(conn, user["user_id"])},
+                              capability=_CAP_CRYPTO_INTELLIGENCE)
 
 
 @webhook_app.route("/api/dashboard/ads/state", methods=["GET"])
@@ -36598,7 +36668,13 @@ def portfolio_api():
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     if request.method == "GET":
+        # Reads stay open: a lapsed member can always SEE their stored holdings
+        # ("no data deletion on expiry" + keep read of history). Adding new
+        # holdings is Premium-tile portfolio usage and is hard-locked below.
         return jsonify({"ok": True, "portfolio": portfolio_service.calculate_user_portfolio(user["user_id"])})
+    gated = _mobile_crypto_portfolio_gate(int(user["user_id"]))
+    if gated is not None:
+        return jsonify(gated)
     payload = request.get_json(silent=True) or {}
     result = portfolio_service.add_portfolio_item(
         user["user_id"],
@@ -36898,6 +36974,17 @@ def api_mobile_crypto_alerts():
         return api_error("Login required.", 401)
     user_id = int(user["user_id"])
     has_premium = _mobile_crypto_alerts_capability(user_id)
+    if not has_premium:
+        # Premium hard-lock: ALL crypto alerts are Premium-tile content now,
+        # not just the advanced conditions. Rules already stored are kept
+        # (delivery is paused by the engine, never deleted); the canonical
+        # HTTP-200 premium_required payload tells the client to show the
+        # paywall instead of the alerts screen.
+        from services import crypto_premium_gate as _crypto_gate
+        response = jsonify(_crypto_gate.premium_required_response(
+            _crypto_gate.CAP_CRYPTO_ADVANCED_ALERTS))
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response
     if request.method == "GET":
         result = alert_engine_service.list_mobile_crypto_alerts(user_id)
         result["capabilities"] = {"advanced_alerts": has_premium}
@@ -36921,6 +37008,12 @@ def api_mobile_crypto_alerts_history():
     if not user:
         return api_error("Login required.", 401)
     user_id = int(user["user_id"])
+    if not _mobile_crypto_alerts_capability(user_id):
+        from services import crypto_premium_gate as _crypto_gate
+        response = jsonify(_crypto_gate.premium_required_response(
+            _crypto_gate.CAP_CRYPTO_ADVANCED_ALERTS))
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response
     result = alert_engine_service.list_mobile_alert_history(
         user_id,
         limit=request.args.get("limit") or 30,
@@ -36941,9 +37034,17 @@ def api_mobile_crypto_alert_item(alert_id):
         return api_error("Login required.", 401)
     user_id = int(user["user_id"])
     if request.method == "DELETE":
+        # Deleting one's OWN rule stays allowed regardless of entitlement:
+        # a lapsed member keeps control over their stored data.
         result = alert_engine_service.delete_mobile_crypto_alert(user_id, alert_id)
         return jsonify(result)
     has_premium = _mobile_crypto_alerts_capability(user_id)
+    if not has_premium:
+        from services import crypto_premium_gate as _crypto_gate
+        response = jsonify(_crypto_gate.premium_required_response(
+            _crypto_gate.CAP_CRYPTO_ADVANCED_ALERTS))
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response
     payload = request.get_json(silent=True) or {}
     result = alert_engine_service.update_mobile_crypto_alert(user_id, alert_id, payload, has_premium)
     response = jsonify(result)

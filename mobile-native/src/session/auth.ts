@@ -18,6 +18,7 @@ import { shouldRejectTemporaryQaUser } from "./qaTemporaryAccount";
 import { setMediaCacheScope } from "../media/mediaCache";
 import { clearUserScopedMediaState } from "../media/mediaSessionCleanup";
 import { rememberAccount } from "./rememberedAccounts";
+import { resetCanonicalTier } from "../entitlements/useCanonicalTier";
 
 /**
  * Deterministic session-bootstrap phases. Every restore/sign-in/sign-out path
@@ -188,6 +189,8 @@ function isTransientBootstrapError(error: unknown): boolean {
 }
 
 export async function signIn(identifier: string, password: string): Promise<AuthState> {
+  // A cached tier from the previous account must not survive into this one.
+  resetCanonicalTier();
   const session = await login(identifier, password);
   const user = sessionUser(session);
   if (!user) return unauthenticatedState();
@@ -199,6 +202,7 @@ export async function signIn(identifier: string, password: string): Promise<Auth
 }
 
 export async function createAccount(payload: { full_name: string; username: string; email: string; password: string }): Promise<AuthState> {
+  resetCanonicalTier();
   const session = await signup({ ...payload, age_confirmed: true, email_opt_in: false });
   const user = sessionUser(session);
   if (!user) return unauthenticatedState();
@@ -269,6 +273,9 @@ export type SignOutOptions = {
 };
 
 export async function signOut(options: SignOutOptions = {}): Promise<AuthState> {
+  // Drop the entitlement answer with the session: keeping it would hand this
+  // member's tier to whoever signs in next on this device.
+  resetCanonicalTier();
   await unregisterPushDevice({ preservePreferences: true, reason: "logout" }).catch(() => undefined);
   await clearUserScopedMediaState();
 
@@ -311,6 +318,7 @@ async function shouldRetainBiometricLogin(): Promise<boolean> {
 }
 
 export async function signOutEverywhere(): Promise<AuthState> {
+  resetCanonicalTier();
   await unregisterPushDevice({ preservePreferences: true, reason: "logout" }).catch(() => undefined);
   await logoutAll();
   await clearUserScopedMediaState();

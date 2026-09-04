@@ -4317,6 +4317,15 @@
         "ESTIMATED": "Estimated",
         "NEEDS_REVIEW": "Needs review"
       }
+    },
+    "gate": {
+      "checking": "Checking your membership…",
+      "unavailableTitle": "Membership check unavailable",
+      "unavailableBody": "We couldn't confirm your membership right now. Premium features are paused until we can — your data is safe and nothing has been removed.",
+      "lockedBody": "Market Pulse, watchlists, portfolio, advanced alerts and briefings are part of PulseSoc Premium.",
+      "trialEndsToday": "Your Premium trial ends today",
+      "trialDaysLeft_one": "{{count}} day left in your Premium trial",
+      "trialDaysLeft_other": "{{count}} days left in your Premium trial"
     }
   },
   "briefings": {

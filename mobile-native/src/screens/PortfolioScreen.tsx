@@ -65,6 +65,7 @@ import {
 } from "../api/portfolio";
 import { UNKNOWN_VALUE, formatPercent, formatPrice, formatSignedPrice } from "../api/watchlists";
 import { Panel } from "../components/Panel";
+import { loadCanonicalTier } from "../entitlements/useCanonicalTier";
 import { useTranslation } from "../i18n";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
@@ -170,7 +171,13 @@ export function PortfolioScreen({ navigation }: Props) {
     } catch (addError) {
       // The ceiling and a bad symbol are different failures and get different
       // offers. Only the first one may show an upgrade.
-      if (isPremiumRequired(addError)) setCeilingReached(true);
+      if (isPremiumRequired(addError)) {
+        setCeilingReached(true);
+        // The refusal may mean the entitlement itself changed (trial expired
+        // mid-session); re-fetch the shared canonical answer so every gate in
+        // the app learns at the same moment this screen did.
+        void loadCanonicalTier();
+      }
       setError(addError instanceof Error ? addError.message : t("premium:crypto.portfolio.form.addFailed"));
     } finally {
       setBusy("");

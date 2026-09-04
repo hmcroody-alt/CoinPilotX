@@ -4317,6 +4317,15 @@
         "ESTIMATED": "Estimé",
         "NEEDS_REVIEW": "À revoir"
       }
+    },
+    "gate": {
+      "checking": "Vérification de votre abonnement…",
+      "unavailableTitle": "Abonnement impossible à vérifier",
+      "unavailableBody": "Nous n'avons pas pu confirmer votre abonnement pour le moment. Les fonctions Premium sont en pause en attendant : vos données sont en sécurité et rien n'a été supprimé.",
+      "lockedBody": "Market Pulse, les listes de suivi, le portefeuille, les alertes avancées et les briefings font partie de PulseSoc Premium.",
+      "trialEndsToday": "Votre essai Premium se termine aujourd'hui",
+      "trialDaysLeft_one": "{{count}} jour restant dans votre essai Premium",
+      "trialDaysLeft_other": "{{count}} jours restants dans votre essai Premium"
     }
   },
   "briefings": {
