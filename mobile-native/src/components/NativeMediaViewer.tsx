@@ -5,7 +5,7 @@ import { PanGestureHandler, PinchGestureHandler, State, TapGestureHandler } from
 import { mediaDisplayUrl, mediaKind, PulseAuthor, PulseMedia } from "../api/feed";
 import { pollNativeMediaProcessing } from "../media/nativeMediaUpload";
 import { colors } from "../theme/colors";
-import { sharePulseObject } from "../sharing/nativeShare";
+import { saveMediaToGallery, shareMedia, type MediaActionTarget } from "../media/mediaActions";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
 import { configureReelsAudioSession } from "../core/reelsAudioSession";
 import { AttachedMusicPolicy, resolveViewerAudioPlan } from "../core/attachedMusicAudioPolicy";
@@ -51,6 +51,26 @@ type Props = {
    * gesture layer here never eats the taps that open/close native chrome.
    */
   onLike?: (item: NativeMediaViewerItem) => void;
+  /**
+   * Which product surface this viewer instance is showing, for per-surface
+   * media telemetry. Never carries a URL.
+   */
+  surface?: string;
+  /**
+   * Share the canonical PulseSoc link rather than the file itself.
+   *
+   * Off by default because the viewer's job is showing a *file*, and a person
+   * who taps Share on a photo wants the photo. Feed and Reels turn it on: a post
+   * has an author, comments and an OpenGraph preview, none of which survive
+   * being flattened into a JPEG (Stage 8).
+   */
+  shareAsLink?: boolean;
+  /**
+   * Hide "Save to Photos" where product policy forbids downloading — disappearing
+   * media, DRM-bound marketplace assets. Defaults to on, because a viewer that
+   * cannot save is the gap this foundation exists to close.
+   */
+  allowGallerySave?: boolean;
 };
 
 export const nativeMediaViewerIntegrationTargets = [
@@ -63,12 +83,33 @@ export const nativeMediaViewerIntegrationTargets = [
   "Creator Studio"
 ];
 
-export function NativeMediaViewer({ visible, items, initialIndex = 0, title = "Media", onClose, onSave, onShare, onAuthorPress, onLike }: Props) {
+export function NativeMediaViewer({
+  visible,
+  items,
+  initialIndex = 0,
+  title = "Media",
+  onClose,
+  onSave,
+  onShare,
+  onAuthorPress,
+  onLike,
+  surface,
+  shareAsLink = false,
+  allowGallerySave = true
+}: Props) {
   const [index, setIndex] = useState(initialIndex);
   const [failed, setFailed] = useState(false);
   const [buffering, setBuffering] = useState(false);
   const [checking, setChecking] = useState(false);
   const [processingMessage, setProcessingMessage] = useState("");
+  /**
+   * Transient status line under the actions. The viewer reports the *actual*
+   * outcome of a save — including "we asked and you said no" and "downloaded but
+   * the write failed" — because Stage 7 forbids reporting "Saved" for anything
+   * other than a completed write.
+   */
+  const [actionStatus, setActionStatus] = useState("");
+  const [savingToGallery, setSavingToGallery] = useState(false);
   const videoRef = useRef<Video>(null);
   const attachedSoundRef = useRef<Audio.Sound | null>(null);
   const videoPlayingRef = useRef(false);
@@ -84,6 +125,10 @@ export function NativeMediaViewer({ visible, items, initialIndex = 0, title = "M
   const processing = isProcessing(item);
   const canGoPrevious = index > 0;
   const canGoNext = index < items.length - 1;
+  // Photos accepts pictures and movies only, and `saveMediaToGallery` refuses
+  // anything else. Hiding the button for a document is more honest than showing
+  // one that can only ever answer "unsupported".
+  const canSaveToGallery = allowGallerySave && (kind === "image" || kind === "video") && Boolean(item?.url) && !processing;
   const playbackOwnerId = `media-viewer:${item?.id || index}`;
   // Attached music takes exclusive audio priority everywhere a post is played,
   // including this expanded/fullscreen viewer. Derive the same plan the inline
@@ -162,6 +207,9 @@ export function NativeMediaViewer({ visible, items, initialIndex = 0, title = "M
     setFailed(false);
     setBuffering(false);
     setProcessingMessage("");
+    // The status line describes one specific file. Swiping to the next item must
+    // not leave "Saved to your library." sitting under a photo that was not saved.
+    setActionStatus("");
     scale.setValue(1);
     translateY.setValue(0);
   }, [index, scale, translateY]);
@@ -190,19 +238,55 @@ export function NativeMediaViewer({ visible, items, initialIndex = 0, title = "M
     likeBurstRef.current?.trigger(event.nativeEvent.x, event.nativeEvent.y);
   }
 
+  function actionTargetFor(current: NativeMediaViewerItem): MediaActionTarget {
+    return {
+      url: current.url,
+      mediaId: current.id || current.media?.id,
+      kind: (current.kind === "file" ? "file" : current.kind) as MediaActionTarget["kind"],
+      mimeType: current.media?.mime_type,
+      expectedBytes: Number(current.media?.file_size || 0) || undefined,
+      surface,
+      sourceUrl: current.sourceUrl,
+      title: current.title || title,
+      description: current.subtitle,
+      author: current.author?.display_name || current.author?.name || current.author?.username,
+      thumbnailUrl: current.thumbnailUrl || (current.kind === "image" ? current.url : undefined)
+    };
+  }
+
   async function shareItem() {
     if (onShare) {
       onShare(item);
       return;
     }
-    await sharePulseObject({
-      kind: "media",
-      url: item.sourceUrl || item.url,
-      title: item.title || title,
-      description: item.subtitle,
-      author: item.author?.display_name || item.author?.name || item.author?.username,
-      previewImageUrl: item.thumbnailUrl || (item.kind === "image" ? item.url : undefined)
-    }).catch(() => undefined);
+    // Shares the real file by default and degrades to the canonical link when
+    // the file cannot be produced — see `shareMedia`.
+    const result = await shareMedia(actionTargetFor(item), { preferLink: shareAsLink });
+    if (result.status === "failed") setActionStatus(result.message);
+  }
+
+  /**
+   * Save to Photos, owned here so that all seven surfaces consuming this viewer
+   * inherit one implementation. Stage 2's rule — screens call the service, they
+   * do not own media logic — is only true if the shared component is where the
+   * action lives.
+   */
+  async function saveItemToGallery() {
+    if (savingToGallery) return;
+    setSavingToGallery(true);
+    setActionStatus("Saving to your library…");
+    try {
+      const result = await saveMediaToGallery(actionTargetFor(item));
+      setActionStatus(
+        result.status === "saved"
+          ? result.limited
+            ? "Saved to your selected photos."
+            : "Saved to your library."
+          : result.message
+      );
+    } finally {
+      setSavingToGallery(false);
+    }
   }
 
   async function checkProcessing() {
@@ -333,8 +417,21 @@ export function NativeMediaViewer({ visible, items, initialIndex = 0, title = "M
               <Text style={styles.actionText}>Next</Text>
             </Pressable>
             {onSave ? (
-              <Pressable style={styles.actionButton} onPress={() => onSave(item)}>
+              <Pressable testID="native-media-viewer-bookmark" accessibilityRole="button" accessibilityLabel="Save media to your collection" style={styles.actionButton} onPress={() => onSave(item)}>
                 <Text style={styles.actionText}>Save</Text>
+              </Pressable>
+            ) : null}
+            {canSaveToGallery ? (
+              <Pressable
+                testID="native-media-viewer-save-to-photos"
+                accessibilityRole="button"
+                accessibilityLabel="Save media to your photo library"
+                accessibilityState={{ disabled: savingToGallery, busy: savingToGallery }}
+                style={[styles.actionButton, savingToGallery && styles.disabled]}
+                disabled={savingToGallery}
+                onPress={saveItemToGallery}
+              >
+                <Text style={styles.actionText}>{savingToGallery ? "Saving" : "Save to Photos"}</Text>
               </Pressable>
             ) : null}
             <Pressable testID="native-media-viewer-share" accessibilityRole="button" accessibilityLabel="Share media" style={styles.actionButton} onPress={shareItem}>
@@ -342,6 +439,14 @@ export function NativeMediaViewer({ visible, items, initialIndex = 0, title = "M
             </Pressable>
           </View>
         </View>
+
+        {actionStatus ? (
+          <View style={styles.statusBar} pointerEvents="none">
+            <Text testID="native-media-viewer-action-status" accessibilityLiveRegion="polite" accessibilityLabel={actionStatus} style={styles.statusText} numberOfLines={3}>
+              {actionStatus}
+            </Text>
+          </View>
+        ) : null}
       </View>
     </Modal>
   );
@@ -531,6 +636,24 @@ const styles = createThemedStyles(() => ({
     fontSize: 20,
     fontWeight: "900",
     marginTop: 10
+  },
+  statusBar: {
+    backgroundColor: "rgba(8,15,28,0.86)",
+    borderColor: "rgba(255,255,255,0.14)",
+    borderRadius: 10,
+    borderWidth: 1,
+    bottom: 78,
+    left: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    position: "absolute",
+    right: 14,
+    zIndex: 11
+  },
+  statusText: {
+    color: colors.text,
+    fontSize: 13,
+    lineHeight: 18
   },
   subtitle: {
     color: "rgba(244,247,251,0.72)",

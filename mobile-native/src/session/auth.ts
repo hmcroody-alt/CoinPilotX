@@ -15,6 +15,7 @@ import {
   writeBiometricCredential
 } from "./sessionStore";
 import { shouldRejectTemporaryQaUser } from "./qaTemporaryAccount";
+import { setMediaCacheScope } from "../media/mediaCache";
 import { clearUserScopedMediaState } from "../media/mediaSessionCleanup";
 import { rememberAccount } from "./rememberedAccounts";
 
@@ -59,8 +60,17 @@ function statusForPhase(phase: SessionPhase): AuthStatus {
 
 /**
  * Single constructor for every AuthState so `status` is always in sync with `phase`.
+ *
+ * Because it is the *only* constructor, it is also the one place that observes
+ * every identity transition — sign-in, restore-from-keychain, expiry, sign-out —
+ * which is why the media cache scope is set here rather than at the six call
+ * sites that produce states. Missing one of those would silently write the next
+ * user's downloads into the previous user's cache directory, and the failure
+ * would be invisible until someone went looking for it (Stage 35).
  */
 export function stateFor(phase: SessionPhase, user: PulseUser | null = null): AuthState {
+  const userId = Number((user as { user_id?: number; id?: number } | null)?.user_id ?? (user as { id?: number } | null)?.id ?? 0);
+  setMediaCacheScope(phase === "AUTHENTICATED" && userId > 0 ? userId : null);
   return { phase, status: statusForPhase(phase), user };
 }
 
