@@ -34,7 +34,7 @@
  * "event risk: unmeasured" and "event risk: none" are opposite claims.
  */
 
-import { ReactNode, useCallback, useEffect, useState } from "react";
+import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import {
   AssetIntelligenceDetail,
@@ -162,16 +162,33 @@ export function AssetIntelligencePanel({ symbol }: { symbol: string }) {
     setOpen((current) => ({ ...current, [key]: !current[key] }));
   }, []);
 
+  /**
+   * In-flight guard, held in a ref rather than in `loading`.
+   *
+   * This is the whole fix, so it is worth saying why the obvious version is
+   * wrong. The guard has to be readable by the effect without being a
+   * *dependency* of it. When `loading` played this role, the effect both listed
+   * it and set it: `setLoading(true)` changed a dep, React tore down the run
+   * that had just started, and the teardown set `active = false` on the request
+   * that was still in the air. Every branch of the promise then no-opped —
+   * `detail` was never set and `loading` was never cleared — so the panel sat on
+   * its spinner forever and the row read as a dead tap. A ref carries the same
+   * fact without re-arming the effect.
+   */
+  const inFlight = useRef(false);
+
   // A new symbol is a new asset: keeping the previous verdict on screen while
   // the next one loads would attribute one coin's analysis to another.
   useEffect(() => {
+    inFlight.current = false;
     setDetail(null);
     setError("");
     setExpanded(false);
   }, [symbol]);
 
   useEffect(() => {
-    if (!expanded || detail || loading) return;
+    if (!expanded || detail || inFlight.current) return;
+    inFlight.current = true;
     let active = true;
     setLoading(true);
     getAssetIntelligence(symbol)
@@ -185,12 +202,13 @@ export function AssetIntelligencePanel({ symbol }: { symbol: string }) {
         setError(fetchError instanceof Error ? fetchError.message : "Market intelligence could not load.");
       })
       .finally(() => {
+        inFlight.current = false;
         if (active) setLoading(false);
       });
     return () => {
       active = false;
     };
-  }, [expanded, detail, loading, symbol]);
+  }, [expanded, detail, symbol]);
 
   if (!expanded) {
     return (
@@ -206,19 +224,28 @@ export function AssetIntelligencePanel({ symbol }: { symbol: string }) {
     );
   }
 
-  if (loading && !detail) {
-    return (
-      <View style={styles.panel}>
-        <ActivityIndicator color={colors.intelligence} />
-      </View>
-    );
-  }
-
   if (!detail) {
+    // The frame between the press and the effect has no detail, no error, and
+    // `loading` not yet true. Treating that as "unavailable" would flash a
+    // failure at somebody whose request has not been made yet, so only a
+    // recorded error counts as an answer; everything else is still work.
+    const failed = !loading && Boolean(error);
     return (
       <View style={styles.panel}>
-        <Text style={styles.heading}>UNDX intelligence</Text>
-        <Text style={styles.warning}>{error || "Market intelligence is unavailable for this asset."}</Text>
+        <View style={styles.verdictHead}>
+          <Text style={styles.heading}>UNDX intelligence</Text>
+          {/* Hide belongs to these states too. It used to appear only once a
+              verdict had arrived, which left anyone who opened the panel on an
+              asset the analysis cannot cover with no way back out of it. */}
+          <Pressable accessibilityRole="button" accessibilityLabel="Hide intelligence" onPress={() => setExpanded(false)}>
+            <Text style={styles.collapse}>Hide</Text>
+          </Pressable>
+        </View>
+        {failed ? (
+          <Text style={styles.warning}>{error}</Text>
+        ) : (
+          <ActivityIndicator accessibilityLabel={`Loading UNDX intelligence for ${symbol}`} color={colors.intelligence} />
+        )}
       </View>
     );
   }
