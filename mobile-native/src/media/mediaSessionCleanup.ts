@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { resetMediaPlayback } from "../core/mediaPlaybackCoordinator";
 import { clearAllMediaCaches, setMediaCacheScope } from "./mediaCache";
+import { resetMessengerMediaAccess } from "./messengerMediaAccess";
 
 const USER_SCOPED_MEDIA_PREFIXES = [
   "pulsesoc.native.feed.",
@@ -29,6 +30,7 @@ const USER_SCOPED_MEDIA_PREFIXES = [
  */
 export async function clearUserScopedMediaState() {
   await resetMediaPlayback().catch(() => undefined);
+  resetMessengerMediaAccess();
   await clearAllMediaCaches().catch(() => undefined);
   setMediaCacheScope(null);
   const keys = await AsyncStorage.getAllKeys().catch(() => [] as string[]);

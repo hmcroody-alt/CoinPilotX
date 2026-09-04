@@ -291,8 +291,26 @@ function requestTimeout(options: RequestInit) {
   };
 }
 
+/**
+ * Messenger media routes are excluded from session recovery.
+ *
+ * A 401 here would mean "refresh, and sign the user out if that fails". Media
+ * delivery must never reach that: a thumbnail whose short-lived access grant
+ * expired is a media condition, renewed against
+ * `/api/messages/media/<id>/access` and retried. The server already answers
+ * media failures 403/404 rather than 401 for the same reason; this is the other
+ * half of that boundary, so a misclassified response cannot cost a login.
+ */
+function isMessengerMediaPath(path: string) {
+  return path.startsWith("/api/messages/media/");
+}
+
 function shouldRefresh(path: string) {
-  return !path.startsWith("/api/mobile/auth/") && !path.startsWith("/api/pulse/mobile/auth/");
+  return (
+    !path.startsWith("/api/mobile/auth/") &&
+    !path.startsWith("/api/pulse/mobile/auth/") &&
+    !isMessengerMediaPath(path)
+  );
 }
 
 export async function recoverNativeSession(): Promise<RefreshResult> {
