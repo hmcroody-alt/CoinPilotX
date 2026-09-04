@@ -36,10 +36,25 @@ import pytest
 # Imported for its cache reset only. The package is import-cheap and pulls in
 # neither `bot` nor Flask, which `test_private_observability` proves in a clean
 # subprocess.
+from services.private_office import records as _records
 from services.private_office import schema as _schema
 
 
 _ABSENT = object()
+
+
+def _reset_schema_caches() -> None:
+    """Forget every "the tables are already there" flag in the package.
+
+    There are two of them — ``schema`` owns the four original tables and
+    ``records`` owns the six Batch C primitives — and both are module-level
+    booleans whose entire purpose is to stop the DDL running twice in one
+    process. Pointed at a different database by the rebinding below, either one
+    becomes a claim about a file this test has never opened, and the failure it
+    produces is a missing-table error several stages after the cause.
+    """
+    _schema.reset_schema_cache()
+    _records.reset_records_schema_cache()
 
 
 def _bind(module):
@@ -75,12 +90,12 @@ def private_office_module_isolation(request):
     saved_bot = sys.modules.get("bot", _ABSENT)
 
     _bind(module)
-    _schema.reset_schema_cache()
+    _reset_schema_caches()
 
     try:
         yield
     finally:
-        _schema.reset_schema_cache()
+        _reset_schema_caches()
         if saved_bot is _ABSENT:
             sys.modules.pop("bot", None)
         else:
@@ -113,15 +128,12 @@ def private_office_process_isolation(request):
 
     _bind(request.module)
 
-    # `_SCHEMA_READY` is a module-level flag whose whole purpose is to stop the
-    # DDL running twice in one process. Pointed at a different database it
-    # becomes a claim about a file this test has never opened.
-    _schema.reset_schema_cache()
+    _reset_schema_caches()
 
     try:
         yield
     finally:
-        _schema.reset_schema_cache()
+        _reset_schema_caches()
 
         if saved_bot is _ABSENT:
             sys.modules.pop("bot", None)

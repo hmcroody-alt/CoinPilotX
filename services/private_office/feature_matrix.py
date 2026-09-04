@@ -117,12 +117,16 @@ _FEATURES = (
         feature_id="capital_graph",
         minimum_tier=TIER_PRIVATE,
         server_enforced=True,
-        implementation=IMPL_NOT_IMPLEMENTED,
-        note=(
-            "Private graph substrate (private_graph_nodes/edges + graph_service) "
-            "is not written yet. Flip to IMPLEMENTED only when a real writer and "
-            "owner-scoped reader exist."
-        ),
+        # Flipped when both halves the previous note required actually existed:
+        # the writer is `private_office.graph` (upsert_node / record_edge, the
+        # only sanctioned writers, enforced by the write-boundary guard), and the
+        # owner-scoped reader is `private_office.capital_graph`, which reads
+        # exclusively through `retrieval.retrieve` and so cannot produce a row
+        # that skipped the owner, authorization, sensitivity, domain and purpose
+        # gates. Both are exercised end to end by
+        # tests/private_office/test_capital_graph.py.
+        implementation=IMPL_IMPLEMENTED,
+        flag_env="CAPITAL_GRAPH_ENABLED",
     ),
     FeatureSpec(
         feature_id="private_briefings",

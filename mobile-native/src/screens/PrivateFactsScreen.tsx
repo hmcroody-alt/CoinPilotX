@@ -52,6 +52,8 @@ import { PrivateFact, PrivateFactsResult, getPrivateFacts } from "../api/private
 import { useTranslation } from "../i18n";
 import { BOTTOM_NAV_CONTENT_CLEARANCE } from "../navigation/BottomNavVisibility";
 import { RootStackParamList } from "../navigation/types";
+import { PrivateOfficeLockGate } from "../privateOffice/PrivateOfficeLockGate";
+import { lockOfficeLocally } from "../privateOffice/officeLock";
 import { colors } from "../theme/colors";
 
 type Props = NativeStackScreenProps<RootStackParamList, "PrivateFacts">;
@@ -92,7 +94,22 @@ function groupByDomain(facts: PrivateFact[]): DomainGroup[] {
   return groups;
 }
 
-export function PrivateFactsScreen(_props: Props) {
+/**
+ * Gated shell (Stage 19): a deep link to `pulse/private-office/facts` renders
+ * the lock door here and the facts list resumes after unlock. The LOCKED branch
+ * below still exists because a grant can die mid-session (relock elsewhere,
+ * Stage 12's revoke-everywhere) between the gate's check and this screen's
+ * fetch — the honest render for that race is the lock message with a retry.
+ */
+export function PrivateFactsScreen(props: Props) {
+  return (
+    <PrivateOfficeLockGate onDismiss={() => props.navigation.goBack()}>
+      <PrivateFactsBody {...props} />
+    </PrivateOfficeLockGate>
+  );
+}
+
+function PrivateFactsBody(_props: Props) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const [state, setState] = useState<ScreenState>("LOADING");
@@ -102,6 +119,10 @@ export function PrivateFactsScreen(_props: Props) {
 
   const load = useCallback(async () => {
     const next = await getPrivateFacts();
+    // The server said the grant is dead (revoked elsewhere, expired). Drop the
+    // local token so the enclosing gate flips back to the unlock door instead
+    // of this body arguing with the server.
+    if (next.state === "LOCKED") lockOfficeLocally();
     setResult(next);
     // EMPTY is a distinct screen state but not a distinct server state: the
     // server answered READY with nothing in it, which is a real answer and must
@@ -114,6 +135,7 @@ export function PrivateFactsScreen(_props: Props) {
     (async () => {
       const next = await getPrivateFacts();
       if (cancelled) return;
+      if (next.state === "LOCKED") lockOfficeLocally();
       setResult(next);
       setState(next.state === "READY" && next.facts.length === 0 ? "EMPTY" : next.state);
     })();
@@ -213,6 +235,16 @@ export function PrivateFactsScreen(_props: Props) {
             t("premium:privateOffice.facts.notImplemented.title"),
             t("premium:privateOffice.facts.notImplemented.body"),
             false
+          )
+        : null}
+
+      {state === "LOCKED"
+        ? notice(
+            "lock-closed-outline",
+            colors.accent,
+            t("premium:privateOffice.lock.locked.title"),
+            t("premium:privateOffice.lock.locked.body"),
+            true
           )
         : null}
 

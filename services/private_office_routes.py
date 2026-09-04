@@ -29,6 +29,16 @@ first real Private Office capability.
 ``POST /api/private-office/facts``
     The member records one fact about themselves.
 
+``GET /api/private-office/capital-graph``
+``GET /api/private-office/entities/<node_id>``
+``GET /api/private-office/entities/<node_id>/relationships``
+    The Capital Graph: what the member's private graph holds, and how well each
+    part of it is known. All three delegate to ``private_office.capital_graph``,
+    which reads only through ``retrieval.retrieve``. None of them takes an owner
+    parameter and none of them computes a total — see that module for why a net
+    worth is a feature this surface declines to have rather than one it has not
+    got round to.
+
 There is deliberately no POST that grants a tier. Granting is an entitlement
 operation and belongs to the existing admin entitlement paths; adding one here
 would create a second granting authority, which is precisely the drift the
@@ -49,20 +59,29 @@ import logging
 
 from flask import Blueprint, jsonify, request
 
+from services import auth_service
 from services import db
 from services.private_office import access as po_access
 from services.private_office import audit as po_audit
+from services.private_office import capital_graph as po_capital
 from services.private_office import facts as po_facts
 from services.private_office import feature_matrix as po_matrix
 from services.private_office import model as po_model
 from services.private_office import office as po_office
 from services.private_office import schema as po_schema
+from services.private_office import security as po_security
 from services.private_office import status as po_status
 from services.private_office import tiers as po_tiers
 
 #: The capability every member-facing route in this pack depends on. Named once
 #: so the gate and the product state can never drift onto different feature ids.
 FACTS_FEATURE_ID = "private_facts"
+
+#: The Capital Graph rows are gated separately from the fact store. They are
+#: different matrix rows at different tiers, and a member may hold one without
+#: the other; gating both on ``private_facts`` would make the fact kill switch
+#: silently take the graph down with it.
+CAPITAL_FEATURE_ID = po_capital.FEATURE_ID
 
 #: How many facts one list call may return. The reader bounds this too; the
 #: route states its own ceiling so the contract is readable from the endpoint.
@@ -220,6 +239,70 @@ def _with_cursor(work):
         conn.close()
 
 
+# --- the second lock ---------------------------------------------------------
+#
+# Being signed in opens the app. It does not open the Office. Every route below
+# that returns or writes Office data stands behind ``_office_lock_gate`` as
+# well as the tier gate, and the two are different questions on purpose: the
+# tier gate asks "did this member pay for the room", the lock gate asks "did
+# the person holding the phone just prove they are the member". The threat the
+# second one addresses is precisely a valid session in the wrong hands.
+
+GRANT_HEADER = po_security.GRANT_HEADER
+DEVICE_HEADER = po_security.DEVICE_HEADER
+
+#: Extraction is owned by the security module so the binding a grant is minted
+#: against here is byte-identical to the one the UNDX surface later checks.
+_office_bindings = po_security.request_bindings
+
+
+def _locked_refusal(*, setup_required: bool):
+    """423 Locked, one shape, machine-readable. The client renders the unlock
+    screen (or the setup flow) from ``code`` + ``setup_required`` and nothing
+    else — no Office data rides along with a refusal."""
+    return _no_store(
+        {
+            "ok": False,
+            "state": po_security.ERR_LOCKED,
+            "code": po_security.ERR_LOCKED,
+            "setup_required": setup_required,
+            "message": "Unlock Private Office to continue.",
+        },
+        423,
+    )
+
+
+def _office_lock_gate(user):
+    """``None`` when this request carries a valid unlock grant; a 423 refusal
+    otherwise. Fails closed: a database problem while checking the lock is a
+    locked Office, never an open one."""
+    session_binding, device_binding = _office_bindings()
+    grant_token = (request.headers.get(GRANT_HEADER) or "").strip()
+
+    def work(cur):
+        state = po_security.security_state(cur, user["user_id"])
+        if not state["passcode_set"]:
+            return {"ok": False, "setup_required": True}
+        verdict = po_security.validate_grant(
+            cur,
+            user["user_id"],
+            grant_token,
+            session_binding=session_binding,
+            device_binding=device_binding,
+        )
+        return {"ok": bool(verdict.get("ok")), "setup_required": False}
+
+    try:
+        outcome = _with_cursor(work)
+    except Exception:  # noqa: BLE001 — a broken lock check is a locked door
+        LOGGER.exception("PRIVATE_OFFICE_LOCK_CHECK_FAILED")
+        return _locked_refusal(setup_required=False)
+
+    if outcome["ok"]:
+        return None
+    return _locked_refusal(setup_required=outcome["setup_required"])
+
+
 @private_office_blueprint.route("/api/private-office/overview", methods=["GET"])
 def api_private_office_overview():
     """Product entry state and this member's per-domain counts, in one answer."""
@@ -235,11 +318,29 @@ def api_private_office_overview():
 
     # The domain summary is only computed when the member can actually read
     # facts. Returning counts to somebody the gate would refuse would make the
-    # overview a way to read the store without going through the store.
+    # overview a way to read the store without going through the store. The
+    # same holds for the second lock: counts are Office data, so a locked
+    # request gets the product state and the lock state — enough to render the
+    # landing screen and the unlock prompt — and nothing counted.
     domains: list = []
-    if trustworthy and po_matrix.is_entitled(
+    entitled = trustworthy and po_matrix.is_entitled(
         FACTS_FEATURE_ID, resolved.get("effective_tier")
-    ):
+    )
+    lock_refusal = _office_lock_gate(user) if entitled else None
+    if entitled and lock_refusal is not None:
+        return _no_store(
+            {
+                "ok": trustworthy,
+                "private_office": product,
+                "locked": True,
+                "setup_required": bool(
+                    (lock_refusal[0].get_json(silent=True) or {}).get("setup_required")
+                ),
+                "domains": [],
+                "verified_at": resolved.get("verified_at", ""),
+            }
+        )
+    if entitled:
         try:
             domains = _with_cursor(
                 lambda cur: po_office.domain_summary(cur, owner_user_id=user["user_id"])
@@ -279,6 +380,9 @@ def api_private_office_facts():
     refusal = _gate(resolved, FACTS_FEATURE_ID)
     if refusal:
         return refusal
+    locked = _office_lock_gate(user)
+    if locked:
+        return locked
 
     raw_domain = (request.args.get("domain") or "").strip()
     domain = po_model.normalize_domain(raw_domain) if raw_domain else None
@@ -366,6 +470,9 @@ def api_private_office_create_fact():
     refusal = _gate(resolved, FACTS_FEATURE_ID)
     if refusal:
         return refusal
+    locked = _office_lock_gate(user)
+    if locked:
+        return locked
 
     body = request.get_json(silent=True) or {}
     if not isinstance(body, dict):
@@ -431,6 +538,455 @@ def api_private_office_create_fact():
         },
         201,
     )
+
+
+# --- the Capital Graph ------------------------------------------------------
+#
+# Three reads, one shape. Each resolves the caller's own tier, gates on
+# ``capital_graph``, picks a view, and hands the whole job to
+# ``private_office.capital_graph`` — which reads only through
+# ``retrieval.retrieve``. Nothing below touches ``po_graph`` or issues a query,
+# and that is the point: the shortest path from a handler to a node row is
+# ``graph.get_node``, and a handler that reaches for it has walked around the
+# owner, authorization, sensitivity, domain and purpose gates without noticing,
+# because the row comes back and looks correct.
+#
+# There is no audit call here either. ``retrieval.retrieve`` records the read
+# itself, so a second record from the route would double-count every traversal
+# and make the audit trail disagree with the store about how often the member's
+# graph was looked at.
+
+
+def _requested_view():
+    """The view named by the query string, or a 400 that lists the real ones.
+
+    An unknown view is answered rather than defaulted, for the same reason an
+    unknown domain is on the facts route: a client that asked for something this
+    server has never heard of has a bug, and quietly serving it a different view
+    hides the bug behind data that looks plausible.
+    """
+    raw = (request.args.get("view") or "").strip()
+    if not raw:
+        return po_capital.DEFAULT_VIEW, None
+    view = po_capital.normalize_view(raw)
+    if not view:
+        return None, _no_store(
+            {"ok": False, "message": "Unknown view.", "views": list(po_capital.VIEWS)},
+            400,
+        )
+    return view, None
+
+
+def _capital_failure():
+    """An unreadable graph is not an empty graph.
+
+    Reported as 503 rather than as an empty payload, because ``nodes: []`` with
+    ``ok: true`` renders as "you have nothing recorded" over a store that may be
+    full — and a member who believes their records are gone will act on it.
+    """
+    return _no_store(
+        {
+            "ok": False,
+            "state": "unavailable",
+            "message": "We could not load your information just now.",
+        },
+        503,
+    )
+
+
+@private_office_blueprint.route("/api/private-office/capital-graph", methods=["GET"])
+def api_private_office_capital_graph():
+    """The member's own Capital Graph overview for one view."""
+    user = _current_user()
+    if not user:
+        return _no_store({"ok": False, "message": "Login required."}, 401)
+
+    resolved = _resolve_for(user)
+    refusal = _gate(resolved, CAPITAL_FEATURE_ID)
+    if refusal:
+        return refusal
+    locked = _office_lock_gate(user)
+    if locked:
+        return locked
+
+    view, bad_view = _requested_view()
+    if bad_view:
+        return bad_view
+
+    try:
+        payload = _with_cursor(
+            lambda cur: po_capital.summary(
+                cur,
+                owner_user_id=user["user_id"],
+                actor_user_id=user["user_id"],
+                view=view,
+                purpose="user_request",
+            )
+        )
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("PRIVATE_OFFICE_CAPITAL_GRAPH_READ_FAILED")
+        return _capital_failure()
+
+    # A retrieval refusal is 403, not 200-with-nothing. The member asked a
+    # question the policy would not answer, and saying so is more useful than an
+    # empty graph they would read as "nothing recorded".
+    if payload["denied"]:
+        return _no_store(
+            {"ok": False, "state": "denied", "reason": payload["denied"],
+             "view": view},
+            403,
+        )
+
+    return _no_store({"ok": True, "capital_graph": payload,
+                      "views": list(po_capital.VIEWS)})
+
+
+@private_office_blueprint.route(
+    "/api/private-office/entities/<node_id>", methods=["GET"])
+def api_private_office_entity(node_id):
+    """One entity, its immediate neighbourhood, and what is asserted about it.
+
+    ``node_id`` is a path parameter and the owner is the session. A node that is
+    absent, belongs to another member, or is outside this view's domain all
+    return the same 404 — the route must not un-collapse those, or the
+    difference between the answers becomes a way to test whether an id exists.
+    """
+    user = _current_user()
+    if not user:
+        return _no_store({"ok": False, "message": "Login required."}, 401)
+
+    resolved = _resolve_for(user)
+    refusal = _gate(resolved, CAPITAL_FEATURE_ID)
+    if refusal:
+        return refusal
+    locked = _office_lock_gate(user)
+    if locked:
+        return locked
+
+    view, bad_view = _requested_view()
+    if bad_view:
+        return bad_view
+
+    try:
+        payload = _with_cursor(
+            lambda cur: po_capital.entity(
+                cur,
+                owner_user_id=user["user_id"],
+                actor_user_id=user["user_id"],
+                node_id=node_id,
+                view=view,
+                purpose="user_request",
+            )
+        )
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("PRIVATE_OFFICE_CAPITAL_ENTITY_READ_FAILED")
+        return _capital_failure()
+
+    if payload["denied"]:
+        return _no_store(
+            {"ok": False, "state": "not_found", "view": view,
+             "message": "No such entity."},
+            404,
+        )
+
+    return _no_store({"ok": True, "entity": payload["entity"],
+                      "capital_graph": payload})
+
+
+@private_office_blueprint.route(
+    "/api/private-office/entities/<node_id>/relationships", methods=["GET"])
+def api_private_office_entity_relationships(node_id):
+    """The edges touching one entity, with the far end named.
+
+    A projection of the entity read rather than a second traversal, so this
+    endpoint and the one above can never show different edges.
+    """
+    user = _current_user()
+    if not user:
+        return _no_store({"ok": False, "message": "Login required."}, 401)
+
+    resolved = _resolve_for(user)
+    refusal = _gate(resolved, CAPITAL_FEATURE_ID)
+    if refusal:
+        return refusal
+    locked = _office_lock_gate(user)
+    if locked:
+        return locked
+
+    view, bad_view = _requested_view()
+    if bad_view:
+        return bad_view
+
+    try:
+        payload = _with_cursor(
+            lambda cur: po_capital.relationships(
+                cur,
+                owner_user_id=user["user_id"],
+                actor_user_id=user["user_id"],
+                node_id=node_id,
+                view=view,
+                purpose="user_request",
+            )
+        )
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("PRIVATE_OFFICE_CAPITAL_RELATIONSHIPS_READ_FAILED")
+        return _capital_failure()
+
+    if payload["denied"]:
+        return _no_store(
+            {"ok": False, "state": "not_found", "view": view,
+             "message": "No such entity."},
+            404,
+        )
+
+    return _no_store(
+        {
+            "ok": True,
+            "entity": payload["entity"],
+            "relationships": payload["relationships"],
+            "view": payload["view"],
+            "complete": payload["complete"],
+        }
+    )
+
+
+# --- second-lock management routes ------------------------------------------
+#
+# Ordering, once, because Stage 29 makes it a gate: ENTITLEMENT BEFORE
+# PASSCODE. Every route here checks auth, then the tier gate, and only then
+# touches the lock. A member who is not entitled to the Office cannot create,
+# probe, or exercise an Office passcode — the lock is a property of the room,
+# and a member with no room gets the same 403 the room itself would give.
+#
+# The passcode arrives in a JSON body over TLS, is passed straight to the
+# security module, and is never logged, echoed, or placed in a URL or token.
+
+
+def _security_entry(min_feature: str = FACTS_FEATURE_ID):
+    """Auth + tier gate shared by every security route. Returns (user, refusal)."""
+    user = _current_user()
+    if not user:
+        return None, _no_store({"ok": False, "message": "Login required."}, 401)
+    resolved = _resolve_for(user)
+    refusal = _gate(resolved, min_feature)
+    if refusal:
+        return None, refusal
+    return user, None
+
+
+@private_office_blueprint.route("/api/private-office/security/status", methods=["GET"])
+def api_office_security_status():
+    """Setup state, cooldown, biometric preference — and whether THIS request
+    is currently unlocked. No hash material, no counters, no grant list."""
+    user, refusal = _security_entry()
+    if refusal:
+        return refusal
+    session_binding, device_binding = _office_bindings()
+    grant_token = (request.headers.get(GRANT_HEADER) or "").strip()
+
+    def work(cur):
+        state = po_security.security_state(cur, user["user_id"])
+        unlocked = False
+        if state["passcode_set"] and grant_token:
+            unlocked = bool(
+                po_security.validate_grant(
+                    cur, user["user_id"], grant_token,
+                    session_binding=session_binding,
+                    device_binding=device_binding,
+                ).get("ok")
+            )
+        return {**state, "unlocked": unlocked}
+
+    try:
+        state = _with_cursor(work)
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("PRIVATE_OFFICE_SECURITY_STATUS_FAILED")
+        return _no_store({"ok": False, "state": "unavailable"}, 503)
+    return _no_store({"ok": True, **state, "setup_required": not state["passcode_set"]})
+
+
+@private_office_blueprint.route("/api/private-office/security/setup", methods=["POST"])
+def api_office_security_setup():
+    """First-entry passcode creation (Stage 1-3). Refuses if one exists."""
+    user, refusal = _security_entry()
+    if refusal:
+        return refusal
+    body = request.get_json(silent=True) or {}
+    passcode = str(body.get("passcode") or "")
+    if str(body.get("confirm_passcode") or "") != passcode:
+        return _no_store({"ok": False, "error": "confirm_mismatch"}, 400)
+
+    try:
+        result = _with_cursor(
+            lambda cur: po_security.create_passcode(cur, user["user_id"], passcode)
+        )
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("PRIVATE_OFFICE_SECURITY_SETUP_FAILED")
+        return _no_store({"ok": False, "state": "unavailable"}, 503)
+    if not result["ok"]:
+        status = 409 if result["error"] == po_security.ERR_ALREADY_SET else 400
+        return _no_store({"ok": False, **result}, status)
+    return _no_store({"ok": True}, 201)
+
+
+@private_office_blueprint.route("/api/private-office/security/unlock", methods=["POST"])
+def api_office_security_unlock():
+    """Prove the passcode, receive one bounded grant. The server's answer is
+    the only unlock there is — Face ID success on the device ends up here too."""
+    user, refusal = _security_entry()
+    if refusal:
+        return refusal
+    body = request.get_json(silent=True) or {}
+    session_binding, device_binding = _office_bindings()
+
+    try:
+        result = _with_cursor(
+            lambda cur: po_security.verify_and_unlock(
+                cur, user["user_id"], str(body.get("passcode") or ""),
+                session_binding=session_binding, device_binding=device_binding,
+            )
+        )
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("PRIVATE_OFFICE_SECURITY_UNLOCK_FAILED")
+        return _no_store({"ok": False, "state": "unavailable"}, 503)
+    if not result["ok"]:
+        status = 429 if result["error"] == po_security.ERR_COOLDOWN else (
+            409 if result["error"] == po_security.ERR_NOT_SET else 401
+        )
+        return _no_store({"ok": False, **result}, status)
+    return _no_store({"ok": True, **result})
+
+
+@private_office_blueprint.route("/api/private-office/security/lock", methods=["POST"])
+def api_office_security_lock():
+    """Manual lock. With the grant header, that grant dies; with
+    ``{"all": true}``, every live grant for this member dies (every device)."""
+    user, refusal = _security_entry()
+    if refusal:
+        return refusal
+    body = request.get_json(silent=True) or {}
+    grant_token = (request.headers.get(GRANT_HEADER) or "").strip()
+    revoke_all = bool(body.get("all"))
+
+    try:
+        revoked = _with_cursor(
+            lambda cur: po_security.revoke_grants(
+                cur, user["user_id"], reason="manual_lock",
+                token=None if revoke_all else (grant_token or None),
+            )
+        )
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("PRIVATE_OFFICE_SECURITY_LOCK_FAILED")
+        return _no_store({"ok": False, "state": "unavailable"}, 503)
+    return _no_store({"ok": True, "revoked": revoked})
+
+
+@private_office_blueprint.route("/api/private-office/security/change", methods=["POST"])
+def api_office_security_change():
+    """Rotate the passcode. Proof of the current one is the authorization;
+    every existing grant on every device is revoked on success (Stage 12)."""
+    user, refusal = _security_entry()
+    if refusal:
+        return refusal
+    body = request.get_json(silent=True) or {}
+    new_passcode = str(body.get("new_passcode") or "")
+    if str(body.get("confirm_passcode") or "") != new_passcode:
+        return _no_store({"ok": False, "error": "confirm_mismatch"}, 400)
+
+    try:
+        result = _with_cursor(
+            lambda cur: po_security.change_passcode(
+                cur, user["user_id"],
+                str(body.get("current_passcode") or ""), new_passcode,
+            )
+        )
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("PRIVATE_OFFICE_SECURITY_CHANGE_FAILED")
+        return _no_store({"ok": False, "state": "unavailable"}, 503)
+    if not result["ok"]:
+        status = {
+            po_security.ERR_COOLDOWN: 429,
+            po_security.ERR_NOT_SET: 409,
+            po_security.ERR_WRONG_PASSCODE: 401,
+        }.get(result["error"], 400)
+        return _no_store({"ok": False, **result}, status)
+    return _no_store({"ok": True})
+
+
+@private_office_blueprint.route("/api/private-office/security/reset", methods=["POST"])
+def api_office_security_reset():
+    """Forgotten passcode (Stage 11). Elevated re-verification: the member must
+    prove the ACCOUNT PASSWORD in this request. A logged-in session alone is
+    exactly the credential the second lock distrusts, so it never suffices.
+    Failed proofs feed the same server-side rate limit as failed passcodes.
+    Office data is never destroyed by this path."""
+    user, refusal = _security_entry()
+    if refusal:
+        return refusal
+    body = request.get_json(silent=True) or {}
+    new_passcode = str(body.get("new_passcode") or "")
+    if str(body.get("confirm_passcode") or "") != new_passcode:
+        return _no_store({"ok": False, "error": "confirm_mismatch"}, 400)
+
+    account_hash = (user or {}).get("password_hash") or ""
+    if not account_hash:
+        # No account password on file (e.g. a social-only account): there is no
+        # elevated proof available here, and downgrading to "you are logged in"
+        # would erase the lock's whole point. Refuse; support recovery flows
+        # can re-establish an account password first.
+        return _no_store(
+            {"ok": False, "error": po_security.ERR_REVERIFY,
+             "message": "Set an account password first, then reset your Office passcode."},
+            403,
+        )
+
+    reverified = auth_service.verify_password(
+        account_hash, str(body.get("account_password") or "")
+    )
+
+    def work(cur):
+        if not reverified:
+            # A failed account-password proof feeds the same server-side
+            # cooldown as a failed passcode: reset must not be the cheap
+            # surface to brute-force.
+            po_security.register_external_failure(cur, user["user_id"])
+            return {"ok": False, "error": po_security.ERR_REVERIFY}
+        return po_security.reset_passcode(
+            cur, user["user_id"], new_passcode, reverified=True
+        )
+
+    try:
+        result = _with_cursor(work)
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("PRIVATE_OFFICE_SECURITY_RESET_FAILED")
+        return _no_store({"ok": False, "state": "unavailable"}, 503)
+    if not result["ok"]:
+        status = 403 if result["error"] == po_security.ERR_REVERIFY else 400
+        return _no_store({"ok": False, **result}, status)
+    return _no_store({"ok": True})
+
+
+@private_office_blueprint.route("/api/private-office/security/biometric", methods=["POST"])
+def api_office_security_biometric():
+    """Record the Face ID preference. A flag for truthful settings rendering —
+    never an unlock path; the grant still comes from /unlock."""
+    user, refusal = _security_entry()
+    if refusal:
+        return refusal
+    body = request.get_json(silent=True) or {}
+
+    try:
+        result = _with_cursor(
+            lambda cur: po_security.set_biometric_preference(
+                cur, user["user_id"], bool(body.get("enabled"))
+            )
+        )
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("PRIVATE_OFFICE_SECURITY_BIOMETRIC_FAILED")
+        return _no_store({"ok": False, "state": "unavailable"}, 503)
+    if not result["ok"]:
+        return _no_store({"ok": False, **result}, 409)
+    return _no_store({"ok": True, **result})
 
 
 @private_office_blueprint.route("/api/admin/private-office/status", methods=["GET"])

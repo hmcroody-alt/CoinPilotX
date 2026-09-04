@@ -214,7 +214,8 @@
       "briefingsHub": "브리핑",
       "briefing": "브리핑",
       "privateOffice": "프라이빗 오피스",
-      "privateFacts": "비공개 정보"
+      "privateFacts": "비공개 정보",
+      "privateOfficeSecurity": "오피스 보안"
     },
     "navSubtitles": {
       "missionControl": "관제 센터",

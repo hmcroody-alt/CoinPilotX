@@ -4584,6 +4584,14 @@ def save_reset_password_and_verify(cur, user_id, password, now):
         )
     except Exception:
         logging.info("MOBILE_SECURITY_SESSION_REVOKE_SKIPPED user_id=%s", user_id)
+    try:
+        # Account security event → the Private Office relocks everywhere.
+        # A password reset is exactly the moment to distrust every standing
+        # unlock; best-effort so a missing Office schema cannot block the reset.
+        from services.private_office import security as _office_security
+        _office_security.on_account_security_event(cur, user_id, event="password_reset")
+    except Exception:
+        logging.info("PRIVATE_OFFICE_GRANT_REVOKE_SKIPPED user_id=%s", user_id)
     return saved_hash
 
 

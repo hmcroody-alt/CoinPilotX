@@ -273,6 +273,72 @@
       "mediaAttached": "Medya atache"
     }
   },
+  "live": {
+    "guest": {
+      "state": {
+        "idle": "Ou pa sou sèn nan",
+        "requested": "W ap mande pou antre…",
+        "invited": "Yo envite w sou sèn nan",
+        "accepted": "Se ou ki apre",
+        "preparing": "Tcheke kamera ak mikwo w",
+        "joining": "W ap antre sou sèn nan…",
+        "live": "Ou an dirèk",
+        "declined": "Ou refize envitasyon an",
+        "removed": "Òganizatè a retire w sou sèn nan",
+        "left": "Ou kite sèn nan",
+        "failed": "Nou pa t ka mete w sou sèn nan"
+      },
+      "action": {
+        "accept": "Antre",
+        "decline": "Pa kounye a",
+        "confirm": "Ale an dirèk",
+        "leave": "Kite sèn nan",
+        "retry": "Eseye ankò",
+        "request": "Mande pou antre",
+        "cancelRequest": "Anile demann nan"
+      }
+    },
+    "invite": {
+      "title": "{{name}} envite w sou sèn nan",
+      "body": "Kamera ak mikwo w rete fèmen jiskaske ou pare.",
+      "expired": "Envitasyon sa a ekspire",
+      "answered": "Ou te deja reponn envitasyon sa a"
+    },
+    "stage": {
+      "full": "Sèn nan plen — {{count}} sou {{max}} envite",
+      "hostLabel": "Òganizatè",
+      "cohostLabel": "Ko-òganizatè",
+      "guestLabel": "Envite",
+      "speaking": "L ap pale",
+      "reconnecting": "N ap rekonekte…",
+      "cooldown": "Tann {{seconds}} segonn anvan w mande ankò"
+    },
+    "moderation": {
+      "mute": "Koupe mikwo",
+      "askToUnmute": "Mande pou limen mikwo a",
+      "remove": "Retire sou sèn nan",
+      "removeConfirm": "Retire {{name}} sou sèn nan?",
+      "unmuteRequest": "Òganizatè a mande w limen mikwo w",
+      "unmuteHint": "Mikwo w rete fèmen jiskaske ou limen l.",
+      "title": "Jere {{name}}",
+      "cancel": "Anile",
+      "confirmRemove": "Retire",
+      "unmuteAccept": "Limen mikwo m",
+      "unmuteDecline": "Rete an silans",
+      "noActions": "Pa gen anyen pou jere isit la"
+    },
+    "exit": {
+      "endLive": "Fini live la",
+      "endLiveConfirm": "Fini live la pou tout moun k ap gade?",
+      "leaveStage": "Kite sèn nan",
+      "leaveStageConfirm": "Kite sèn nan? Live la ap kontinye san ou.",
+      "stopWatching": "Sispann gade"
+    },
+    "host": {
+      "reconnecting": "Òganizatè a ap rekonekte… {{seconds}}s",
+      "absenceEnded": "Òganizatè a pèdi koneksyon an epi live la fini."
+    }
+  },
   "messaging": {
     "inbox": {
       "title": "Mesaj",
@@ -4169,7 +4235,8 @@
       "footnote": "Sa ki parèt la a se kont ou sou sèvè a ki deside l, se pa aplikasyon sa a.",
       "sections": {
         "available": "Disponib",
-        "notYet": "K ap vini pita"
+        "notYet": "K ap vini pita",
+        "security": "Sekirite"
       },
       "unknown": {
         "title": "Nou pa t ka konfime aksè w",
@@ -4285,6 +4352,93 @@
         "SELF_REPORTED": "Ou menm ki di l",
         "ESTIMATED": "Estime",
         "NEEDS_REVIEW": "Bezwen revizyon"
+      },
+      "security": {
+        "title": "Sekirite biwo a",
+        "subtitle": "Kontwole kijan biwo prive w la bloke ak debloke.",
+        "row": {
+          "label": "Sekirite biwo a",
+          "hint": "Kòd, byometri ak lè pou rebloke"
+        },
+        "relock": {
+          "label": "Mande kòd la",
+          "hint": "Konbyen tan anvan biwo a bloke apre ou kite app la.",
+          "immediate": "Touswit",
+          "1m": "Apre 1 minit",
+          "5m": "Apre 5 minit",
+          "15m": "Apre 15 minit"
+        },
+        "biometric": {
+          "label": "Debloke ak {{method}}",
+          "hint": "Kòd ou a toujou nesesè kòm rezèv.",
+          "confirm": "Antre kòd biwo w la pou konfime"
+        },
+        "change": {
+          "label": "Chanje kòd la",
+          "current": "Kòd aktyèl la",
+          "new": "Nouvo kòd",
+          "confirm": "Konfime nouvo kòd la",
+          "submit": "Chanje kòd la",
+          "success": "Kòd la chanje. Biwo a bloke sou tout aparèy yo."
+        },
+        "lockNow": "Bloke kounye a",
+        "lockNowHint": "Bloke biwo a sou tout aparèy ou yo."
+      },
+      "lock": {
+        "checking": "N ap verifye sekirite biwo a…",
+        "unavailable": {
+          "title": "Sekirite biwo a pa disponib",
+          "body": "Nou pa t ka jwenn sèvè a pou verifye kadna a. Eseye ankò."
+        },
+        "setup": {
+          "intro": {
+            "title": "Ajoute yon dezyèm kadna",
+            "body": "Biwo prive w la gen pwòp kòd pa li, apa de modpas kont ou an.",
+            "start": "Konfigire kòd la",
+            "notNow": "Pa kounye a"
+          },
+          "create": {
+            "title": "Kreye kòd biwo a",
+            "body": "Sèvi ak omwen {{digits}} chif. W ap bezwen li chak fwa ou ouvri biwo a."
+          },
+          "confirm": {
+            "title": "Konfime kòd la",
+            "body": "Antre menm kòd la ankò."
+          },
+          "continue": "Kontinye",
+          "back": "Tounen",
+          "mismatch": "Kòd yo pa menm. Eseye ankò.",
+          "biometric": {
+            "title": "Debloke ak {{method}}?",
+            "body": "Ouvri biwo a pi vit. Kòd ou a rete kòm rezèv.",
+            "enable": "Sèvi ak {{method}}",
+            "skip": "Sote"
+          }
+        },
+        "locked": {
+          "title": "Biwo a bloke",
+          "body": "Debloke biwo prive a pou wè kontni sa a."
+        },
+        "placeholder": "Kòd biwo a",
+        "unlock": "Debloke",
+        "wrong": "Move kòd. Eseye ankò.",
+        "cooldown": "Twòp tantativ. Eseye ankò nan {{seconds}} segonn.",
+        "policy": "Kòd la dwe gen omwen {{digits}} chif.",
+        "error": "Yon bagay pa mache. Eseye ankò.",
+        "forgot": "Ou bliye kòd la?",
+        "biometricFaceId": "Face ID",
+        "biometricTouchId": "Touch ID",
+        "biometricPrompt": "Debloke biwo prive w la",
+        "reset": {
+          "title": "Reyinisyalize kòd biwo a",
+          "body": "Konfime modpas kont ou an, epi chwazi yon nouvo kòd. Tout aparèy yo ap bloke.",
+          "password": "Modpas kont lan",
+          "newPasscode": "Nouvo kòd",
+          "confirmPasscode": "Konfime nouvo kòd la",
+          "submit": "Reyinisyalize kòd la",
+          "cancel": "Anile",
+          "failed": "Reyinisyalizasyon an echwe. Verifye modpas ou epi eseye ankò."
+        }
       }
     },
     "gate": {

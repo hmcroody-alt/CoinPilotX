@@ -49,4 +49,14 @@ __all__ = [
     # leaves, which is why callers must not assemble context from `facts` and
     # `graph` directly.
     "retrieval",
+    # The Capital Graph view (Batch B). One read boundary between the private
+    # graph and every surface that shows it: the HTTP route pack, the UNDX
+    # capability and the native screen all call the same three functions, so
+    # they cannot come to disagree about whether a stale value is worth
+    # mentioning. It imports neither `graph` nor `facts` and issues no SQL —
+    # every read goes through `retrieval.retrieve`, which is what stops a route
+    # handler reaching `graph.get_node` and walking around five gates without
+    # noticing. It computes no total and resolves no conflict, both by
+    # construction rather than by convention.
+    "capital_graph",
 ]

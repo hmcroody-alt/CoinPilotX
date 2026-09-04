@@ -276,6 +276,72 @@
       "mediaAttached": "Media attached"
     }
   },
+  "live": {
+    "guest": {
+      "state": {
+        "idle": "Not on stage",
+        "requested": "Asking to join…",
+        "invited": "You've been invited on stage",
+        "accepted": "You're up next",
+        "preparing": "Check your camera and mic",
+        "joining": "Joining the stage…",
+        "live": "You're live",
+        "declined": "Invite declined",
+        "removed": "The host removed you from the stage",
+        "left": "You left the stage",
+        "failed": "Couldn't get you on stage"
+      },
+      "action": {
+        "accept": "Join stage",
+        "decline": "Not now",
+        "confirm": "Go live",
+        "leave": "Leave stage",
+        "retry": "Try again",
+        "request": "Ask to join",
+        "cancelRequest": "Cancel request"
+      }
+    },
+    "invite": {
+      "title": "{{name}} invited you on stage",
+      "body": "Your camera and mic stay off until you're ready.",
+      "expired": "This invite expired",
+      "answered": "This invite was already answered"
+    },
+    "stage": {
+      "full": "Stage full — {{count}} of {{max}} guests",
+      "hostLabel": "Host",
+      "cohostLabel": "Co-host",
+      "guestLabel": "Guest",
+      "speaking": "Speaking",
+      "reconnecting": "Reconnecting…",
+      "cooldown": "Wait {{seconds}}s before asking again"
+    },
+    "moderation": {
+      "mute": "Mute",
+      "askToUnmute": "Ask to unmute",
+      "remove": "Remove from stage",
+      "removeConfirm": "Remove {{name}} from the stage?",
+      "unmuteRequest": "The host asked you to unmute",
+      "unmuteHint": "Your mic stays off until you turn it on.",
+      "title": "Manage {{name}}",
+      "cancel": "Cancel",
+      "confirmRemove": "Remove",
+      "unmuteAccept": "Turn on my mic",
+      "unmuteDecline": "Stay muted",
+      "noActions": "Nothing to manage here"
+    },
+    "exit": {
+      "endLive": "End live",
+      "endLiveConfirm": "End the live for everyone watching?",
+      "leaveStage": "Leave stage",
+      "leaveStageConfirm": "Leave the stage? The live keeps going without you.",
+      "stopWatching": "Stop watching"
+    },
+    "host": {
+      "reconnecting": "The host is reconnecting… {{seconds}}s",
+      "absenceEnded": "The host lost connection and the live ended."
+    }
+  },
   "messaging": {
     "inbox": {
       "title": "Messages",
@@ -4200,7 +4266,8 @@
       "footnote": "What appears here is decided by your account on the server, not by this app.",
       "sections": {
         "available": "Available",
-        "notYet": "Coming later"
+        "notYet": "Coming later",
+        "security": "Security"
       },
       "unknown": {
         "title": "We could not confirm your access",
@@ -4316,6 +4383,93 @@
         "SELF_REPORTED": "Self-reported",
         "ESTIMATED": "Estimated",
         "NEEDS_REVIEW": "Needs review"
+      },
+      "security": {
+        "title": "Office Security",
+        "subtitle": "Control how your Private Office locks and unlocks.",
+        "row": {
+          "label": "Office Security",
+          "hint": "Passcode, biometrics, and relock timing"
+        },
+        "relock": {
+          "label": "Require passcode",
+          "hint": "How soon the Office locks after you leave the app.",
+          "immediate": "Immediately",
+          "1m": "After 1 minute",
+          "5m": "After 5 minutes",
+          "15m": "After 15 minutes"
+        },
+        "biometric": {
+          "label": "Unlock with {{method}}",
+          "hint": "Your passcode stays required as a fallback.",
+          "confirm": "Enter your Office passcode to confirm"
+        },
+        "change": {
+          "label": "Change passcode",
+          "current": "Current passcode",
+          "new": "New passcode",
+          "confirm": "Confirm new passcode",
+          "submit": "Change passcode",
+          "success": "Passcode changed. The Office is now locked on all devices."
+        },
+        "lockNow": "Lock now",
+        "lockNowHint": "Locks the Office on all your devices."
+      },
+      "lock": {
+        "checking": "Checking Office security…",
+        "unavailable": {
+          "title": "Office security unavailable",
+          "body": "We couldn't reach the server to check the Office lock. Try again."
+        },
+        "setup": {
+          "intro": {
+            "title": "Add a second lock",
+            "body": "Your Private Office gets its own passcode, separate from your account password.",
+            "start": "Set up passcode",
+            "notNow": "Not now"
+          },
+          "create": {
+            "title": "Create Office passcode",
+            "body": "Use at least {{digits}} digits. You'll need it every time you open the Office."
+          },
+          "confirm": {
+            "title": "Confirm passcode",
+            "body": "Enter the same passcode again."
+          },
+          "continue": "Continue",
+          "back": "Back",
+          "mismatch": "Those passcodes don't match. Try again.",
+          "biometric": {
+            "title": "Unlock with {{method}}?",
+            "body": "Open the Office faster. Your passcode remains the fallback.",
+            "enable": "Use {{method}}",
+            "skip": "Skip"
+          }
+        },
+        "locked": {
+          "title": "Office locked",
+          "body": "Unlock the Private Office to see this content."
+        },
+        "placeholder": "Office passcode",
+        "unlock": "Unlock",
+        "wrong": "Wrong passcode. Try again.",
+        "cooldown": "Too many attempts. Try again in {{seconds}}s.",
+        "policy": "Passcodes must be at least {{digits}} digits.",
+        "error": "Something went wrong. Try again.",
+        "forgot": "Forgot passcode?",
+        "biometricFaceId": "Face ID",
+        "biometricTouchId": "Touch ID",
+        "biometricPrompt": "Unlock your Private Office",
+        "reset": {
+          "title": "Reset Office passcode",
+          "body": "Confirm your account password, then choose a new Office passcode. All devices will be locked.",
+          "password": "Account password",
+          "newPasscode": "New passcode",
+          "confirmPasscode": "Confirm new passcode",
+          "submit": "Reset passcode",
+          "cancel": "Cancel",
+          "failed": "Reset failed. Check your password and try again."
+        }
       }
     },
     "gate": {

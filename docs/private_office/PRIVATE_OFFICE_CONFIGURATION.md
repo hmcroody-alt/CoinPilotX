@@ -34,11 +34,21 @@ is temporarily off, because that is what is true.
 | Variable | Feature | Minimum tier | Effect when off |
 | --- | --- | --- | --- |
 | `PRIVATE_FACTS_ENABLED` | `private_facts` | `PRIVATE` | Fact capture and retrieval stop. `GET`/`POST /api/private-office/facts` refuse, the `private.facts.list` UNDX capability stops resolving, and the office lists the row as temporarily disabled. Stored facts are not deleted; re-enabling exposes exactly what was there before. |
+| `CAPITAL_GRAPH_ENABLED` | `capital_graph` | `PRIVATE` | The Capital Graph view stops. `GET /api/private-office/capital-graph` and both `/api/private-office/entities/...` routes refuse, the `private.capital.graph` UNDX capability stops resolving, and the office lists the row as temporarily disabled. No node, edge or fact is deleted. |
 
-`private_facts` is currently the only feature that is both `IMPLEMENTED` and
-carries a flag, which is what makes its switch load-bearing — every other
-unavailable capability is unavailable because the code does not exist yet, and
-no flag changes that.
+These two are the features that are both `IMPLEMENTED` and carry a flag, which
+is what makes their switches load-bearing — every other unavailable capability
+is unavailable because the code does not exist yet, and no flag changes that.
+
+They are deliberately **separate switches over one substrate**. The Capital
+Graph reads the same private store the fact routes write to, so a single flag
+would have been simpler. It would also mean that a problem in the traversal —
+a slow query, a projection bug, a bad view — could only be answered by taking
+fact capture down with it, and a member who cannot record anything during an
+incident loses the window in which the information was in front of them.
+Turning off a *view* and turning off a *store* are different decisions and the
+operator gets to make them separately. Neither switch deletes a row, so both
+are reversible in place.
 
 ## Polarity — absent means enabled
 

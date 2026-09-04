@@ -65,25 +65,30 @@ ENTITLED_TIERS = (tiers.TIER_PRIVATE, tiers.TIER_PRIVATE_OFFICE)
 
 
 @contextlib.contextmanager
-def flag(value):
-    """Set (or unset, with ``None``) the kill switch for the duration.
+def _env(name, value):
+    """Set (or unset, with ``None``) one variable for the duration.
 
-    The env var is restored rather than deleted on exit: this suite must leave
+    The variable is restored rather than deleted on exit: this suite must leave
     the process exactly as it found it, or a later test in the same run inherits
     a disabled feature and fails somewhere unrelated.
     """
-    previous = os.environ.get(FLAG)
+    previous = os.environ.get(name)
     if value is None:
-        os.environ.pop(FLAG, None)
+        os.environ.pop(name, None)
     else:
-        os.environ[FLAG] = value
+        os.environ[name] = value
     try:
         yield
     finally:
         if previous is None:
-            os.environ.pop(FLAG, None)
+            os.environ.pop(name, None)
         else:
-            os.environ[FLAG] = previous
+            os.environ[name] = previous
+
+
+def flag(value):
+    """The Private Facts kill switch, for the duration."""
+    return _env(FLAG, value)
 
 
 def resolved(tier):
@@ -156,10 +161,41 @@ def test_the_office_lists_it_as_temporarily_off_rather_than_unbuilt():
         assert FEATURE_ID not in {r["feature_id"] for r in state["available"]}
 
 
-def test_the_entry_does_not_open_on_a_switched_off_only_office():
-    # With Private Facts off, nothing else in the office is currently built, so
-    # the entry has nothing to open and nothing to sell.
+def test_switching_private_facts_off_leaves_the_capital_graph_alone():
+    """Two switches over one substrate must be two switches.
+
+    ``capital_graph`` reads the same private store these facts are written to,
+    and it has its own flag on purpose: an operator disabling fact capture
+    during an incident must not silently lose the read surface as well, and vice
+    versa. This is the assertion that would fail if somebody later "simplified"
+    the two flags into one.
+    """
     with flag("false"):
+        state = office.product_state(tiers.TIER_PRIVATE_OFFICE)
+        available = {row["feature_id"] for row in state["available"]}
+        assert "capital_graph" in available, (
+            "the Private Facts switch took the Capital Graph down with it")
+        assert FEATURE_ID not in available
+        # And the office still opens, because something in it still works.
+        assert state["state"] == office.ENTRY_AVAILABLE
+
+
+def test_the_entry_does_not_open_when_every_built_feature_is_switched_off():
+    """With nothing left running, the entry has nothing to open and nothing to
+    sell — and in particular must not fall back to an upgrade prompt, which
+    would take money for a room that is dark for everyone.
+
+    Every flag the matrix declares is turned off rather than a hardcoded pair,
+    so a future flagged feature joins this test automatically instead of quietly
+    leaving one row available and the assertion below wrong.
+    """
+    declared = sorted({spec.flag_env for spec in matrix.FEATURES.values()
+                       if spec.flag_env})
+    assert declared, "the matrix declares no flags at all — this went vacuous"
+
+    with contextlib.ExitStack() as stack:
+        for name in declared:
+            stack.enter_context(_env(name, "false"))
         state = office.product_state(tiers.TIER_PRIVATE_OFFICE)
         assert state["available"] == []
         assert state["state"] == office.ENTRY_UNAVAILABLE

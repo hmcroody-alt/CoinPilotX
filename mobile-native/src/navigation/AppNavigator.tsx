@@ -35,6 +35,7 @@ import { CryptoPortfolioScreen } from "../screens/CryptoPortfolioScreen";
 import { MarketPulseScreen } from "../screens/MarketPulseScreen";
 import { PrivateOfficeScreen } from "../screens/PrivateOfficeScreen";
 import { PrivateFactsScreen } from "../screens/PrivateFactsScreen";
+import { PrivateOfficeSecurityScreen } from "../screens/PrivateOfficeSecurityScreen";
 import { PortfolioScreen } from "../screens/PortfolioScreen";
 import { WatchlistsScreen } from "../screens/WatchlistsScreen";
 import { ActivityRoute } from "../screens/ActivityRoute";
@@ -608,6 +609,7 @@ export function AppNavigator() {
           this" — rather than being absent from the graph. */}
       <Stack.Screen name="PrivateOffice" component={PrivateOfficeScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateOffice") })} />
       <Stack.Screen name="PrivateFacts" component={PrivateFactsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateFacts") })} />
+      <Stack.Screen name="PrivateOfficeSecurity" component={PrivateOfficeSecurityScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateOfficeSecurity") })} />
       {/* This is the first-frame title only: AssetDetailScreen calls
           `setOptions` on mount and replaces it with the asset's name, which is a
           proper noun and so is deliberately not routed through the catalog. The

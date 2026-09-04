@@ -273,6 +273,72 @@
       "mediaAttached": "미디어 첨부됨"
     }
   },
+  "live": {
+    "guest": {
+      "state": {
+        "idle": "무대에 없음",
+        "requested": "참여 요청 중…",
+        "invited": "무대에 초대되었습니다",
+        "accepted": "다음 차례입니다",
+        "preparing": "카메라와 마이크를 확인하세요",
+        "joining": "무대에 참여하는 중…",
+        "live": "라이브 중입니다",
+        "declined": "초대를 거절했습니다",
+        "removed": "호스트가 무대에서 내보냈습니다",
+        "left": "무대에서 나갔습니다",
+        "failed": "무대에 올릴 수 없었습니다"
+      },
+      "action": {
+        "accept": "참여하기",
+        "decline": "나중에",
+        "confirm": "라이브 시작",
+        "leave": "무대에서 나가기",
+        "retry": "다시 시도",
+        "request": "참여 요청",
+        "cancelRequest": "요청 취소"
+      }
+    },
+    "invite": {
+      "title": "{{name}}님이 무대에 초대했습니다",
+      "body": "준비될 때까지 카메라와 마이크는 꺼져 있습니다.",
+      "expired": "이 초대는 만료되었습니다",
+      "answered": "이미 응답한 초대입니다"
+    },
+    "stage": {
+      "full": "무대가 가득 찼습니다 — {{max}}명 중 {{count}}명",
+      "hostLabel": "호스트",
+      "cohostLabel": "공동 호스트",
+      "guestLabel": "게스트",
+      "speaking": "말하는 중",
+      "reconnecting": "다시 연결하는 중…",
+      "cooldown": "{{seconds}}초 후에 다시 요청하세요"
+    },
+    "moderation": {
+      "mute": "음소거",
+      "askToUnmute": "음소거 해제 요청",
+      "remove": "무대에서 내보내기",
+      "removeConfirm": "{{name}} 님을 무대에서 내보낼까요?",
+      "unmuteRequest": "호스트가 마이크를 켜달라고 요청했습니다",
+      "unmuteHint": "직접 켤 때까지 마이크는 꺼져 있습니다.",
+      "title": "{{name}} 님 관리",
+      "cancel": "취소",
+      "confirmRemove": "내보내기",
+      "unmuteAccept": "내 마이크 켜기",
+      "unmuteDecline": "계속 음소거",
+      "noActions": "여기에서 관리할 항목이 없습니다"
+    },
+    "exit": {
+      "endLive": "라이브 종료",
+      "endLiveConfirm": "보고 있는 모든 사람의 라이브를 종료할까요?",
+      "leaveStage": "무대에서 나가기",
+      "leaveStageConfirm": "무대에서 나갈까요? 라이브는 계속 진행됩니다.",
+      "stopWatching": "시청 그만두기"
+    },
+    "host": {
+      "reconnecting": "호스트가 다시 연결하는 중… {{seconds}}초",
+      "absenceEnded": "호스트 연결이 끊겨 라이브가 종료되었습니다."
+    }
+  },
   "messaging": {
     "inbox": {
       "title": "메시지",
@@ -4168,7 +4234,8 @@
       "footnote": "여기에 표시되는 항목은 이 앱이 아니라 서버의 계정이 결정합니다.",
       "sections": {
         "available": "이용 가능",
-        "notYet": "추후 제공"
+        "notYet": "추후 제공",
+        "security": "보안"
       },
       "unknown": {
         "title": "접근 권한을 확인하지 못했습니다",
@@ -4284,6 +4351,93 @@
         "SELF_REPORTED": "본인 신고",
         "ESTIMATED": "추정",
         "NEEDS_REVIEW": "검토 필요"
+      },
+      "security": {
+        "title": "오피스 보안",
+        "subtitle": "프라이빗 오피스의 잠금 및 잠금 해제 방식을 설정합니다.",
+        "row": {
+          "label": "오피스 보안",
+          "hint": "암호, 생체 인식, 재잠금 시간"
+        },
+        "relock": {
+          "label": "암호 요구",
+          "hint": "앱을 떠난 후 오피스가 잠기기까지의 시간입니다.",
+          "immediate": "즉시",
+          "1m": "1분 후",
+          "5m": "5분 후",
+          "15m": "15분 후"
+        },
+        "biometric": {
+          "label": "{{method}}(으)로 잠금 해제",
+          "hint": "암호는 대체 수단으로 계속 필요합니다.",
+          "confirm": "확인을 위해 오피스 암호를 입력하세요"
+        },
+        "change": {
+          "label": "암호 변경",
+          "current": "현재 암호",
+          "new": "새 암호",
+          "confirm": "새 암호 확인",
+          "submit": "암호 변경",
+          "success": "암호가 변경되었습니다. 모든 기기에서 오피스가 잠겼습니다."
+        },
+        "lockNow": "지금 잠그기",
+        "lockNowHint": "모든 기기에서 오피스를 잠급니다."
+      },
+      "lock": {
+        "checking": "오피스 보안을 확인하는 중…",
+        "unavailable": {
+          "title": "오피스 보안을 사용할 수 없음",
+          "body": "잠금 확인을 위해 서버에 연결할 수 없습니다. 다시 시도하세요."
+        },
+        "setup": {
+          "intro": {
+            "title": "두 번째 잠금 추가",
+            "body": "프라이빗 오피스에는 계정 비밀번호와 별도의 전용 암호가 설정됩니다.",
+            "start": "암호 설정",
+            "notNow": "나중에"
+          },
+          "create": {
+            "title": "오피스 암호 만들기",
+            "body": "{{digits}}자리 이상 사용하세요. 오피스를 열 때마다 필요합니다."
+          },
+          "confirm": {
+            "title": "암호 확인",
+            "body": "같은 암호를 다시 입력하세요."
+          },
+          "continue": "계속",
+          "back": "뒤로",
+          "mismatch": "암호가 일치하지 않습니다. 다시 시도하세요.",
+          "biometric": {
+            "title": "{{method}}(으)로 잠금 해제할까요?",
+            "body": "오피스를 더 빠르게 열 수 있습니다. 암호는 대체 수단으로 유지됩니다.",
+            "enable": "{{method}} 사용",
+            "skip": "건너뛰기"
+          }
+        },
+        "locked": {
+          "title": "오피스 잠김",
+          "body": "이 콘텐츠를 보려면 프라이빗 오피스의 잠금을 해제하세요."
+        },
+        "placeholder": "오피스 암호",
+        "unlock": "잠금 해제",
+        "wrong": "잘못된 암호입니다. 다시 시도하세요.",
+        "cooldown": "시도 횟수가 너무 많습니다. {{seconds}}초 후에 다시 시도하세요.",
+        "policy": "암호는 {{digits}}자리 이상이어야 합니다.",
+        "error": "문제가 발생했습니다. 다시 시도하세요.",
+        "forgot": "암호를 잊으셨나요?",
+        "biometricFaceId": "Face ID",
+        "biometricTouchId": "Touch ID",
+        "biometricPrompt": "프라이빗 오피스 잠금 해제",
+        "reset": {
+          "title": "오피스 암호 재설정",
+          "body": "계정 비밀번호를 확인한 다음 새 오피스 암호를 선택하세요. 모든 기기가 잠깁니다.",
+          "password": "계정 비밀번호",
+          "newPasscode": "새 암호",
+          "confirmPasscode": "새 암호 확인",
+          "submit": "암호 재설정",
+          "cancel": "취소",
+          "failed": "재설정에 실패했습니다. 비밀번호를 확인하고 다시 시도하세요."
+        }
       }
     },
     "gate": {

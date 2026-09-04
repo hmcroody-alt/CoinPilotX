@@ -214,7 +214,8 @@
       "briefingsHub": "Resúmenes",
       "briefing": "Informe",
       "privateOffice": "Oficina privada",
-      "privateFacts": "Datos privados"
+      "privateFacts": "Datos privados",
+      "privateOfficeSecurity": "Seguridad de la oficina"
     },
     "navSubtitles": {
       "missionControl": "Centro de mando",

@@ -88,8 +88,13 @@ FACTS_TABLE = "private_facts"
 NODES_TABLE = "private_graph_nodes"
 EDGES_TABLE = "private_graph_edges"
 AUDIT_TABLE = "private_audit_events"
+SECURITY_TABLE = "private_office_security"
+GRANTS_TABLE = "private_office_unlock_grants"
 
-TABLES: tuple[str, ...] = (FACTS_TABLE, NODES_TABLE, EDGES_TABLE, AUDIT_TABLE)
+TABLES: tuple[str, ...] = (
+    FACTS_TABLE, NODES_TABLE, EDGES_TABLE, AUDIT_TABLE,
+    SECURITY_TABLE, GRANTS_TABLE,
+)
 
 STATUS_READY = "ready"
 STATUS_MISSING = "missing"
@@ -224,11 +229,62 @@ CREATE TABLE IF NOT EXISTS {AUDIT_TABLE} (
 )
 """
 
+# ---------------------------------------------------------------------------
+# Second lock — the office passcode record and its unlock grants
+# ---------------------------------------------------------------------------
+# `passcode_hash` holds a salted KDF hash and NOTHING else ever holds the
+# passcode: no plaintext column exists anywhere, and the audit table (above)
+# structurally cannot carry one. `hash_version` names the KDF so the scheme can
+# be migrated by rehash-on-successful-verify without a big-bang migration.
+# `failed_attempt_count` and `locked_until` are the server-side rate limit —
+# the client's counter is UX, this row is the law. UNIQUE(user_id): one lock
+# per member, by construction.
+SECURITY_TABLE_DDL = f"""
+CREATE TABLE IF NOT EXISTS {SECURITY_TABLE} (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    passcode_hash TEXT NOT NULL,
+    hash_version TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    changed_at TEXT NOT NULL,
+    failed_attempt_count INTEGER NOT NULL DEFAULT 0,
+    locked_until TEXT NOT NULL DEFAULT '',
+    biometric_preference TEXT NOT NULL DEFAULT 'unset',
+    UNIQUE(user_id)
+)
+"""
+
+# A grant row is the server's memory that this member proved the passcode on
+# this session/device recently. `token_hash` — never the token itself — is
+# stored, so the table cannot be read back into working unlock tokens.
+# `session_binding` / `device_binding` scope the grant (Stage 14): an unlock on
+# device A is meaningless presented from device B. `revoked_at` beats
+# `expires_at`: lock-now, passcode change and account security events revoke
+# explicitly rather than waiting out the clock.
+GRANTS_TABLE_DDL = f"""
+CREATE TABLE IF NOT EXISTS {GRANTS_TABLE} (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_user_id INTEGER NOT NULL,
+    token_hash TEXT NOT NULL,
+    session_binding TEXT NOT NULL DEFAULT '',
+    device_binding TEXT NOT NULL DEFAULT '',
+    scope TEXT NOT NULL DEFAULT 'private_office',
+    nonce TEXT NOT NULL,
+    issued_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    revoked_at TEXT NOT NULL DEFAULT '',
+    revoke_reason TEXT NOT NULL DEFAULT '',
+    UNIQUE(token_hash)
+)
+"""
+
 TABLE_DDL: dict[str, str] = {
     FACTS_TABLE: FACTS_TABLE_DDL,
     NODES_TABLE: NODES_TABLE_DDL,
     EDGES_TABLE: EDGES_TABLE_DDL,
     AUDIT_TABLE: AUDIT_TABLE_DDL,
+    SECURITY_TABLE: SECURITY_TABLE_DDL,
+    GRANTS_TABLE: GRANTS_TABLE_DDL,
 }
 
 #: Columns added after the first release. Empty today; the loop exists so the
@@ -239,6 +295,8 @@ TABLE_ADDED_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
     NODES_TABLE: (),
     EDGES_TABLE: (),
     AUDIT_TABLE: (),
+    SECURITY_TABLE: (),
+    GRANTS_TABLE: (),
 }
 
 #: Without these the store cannot answer its own questions, so their absence
@@ -258,6 +316,14 @@ REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
         "target_node_id", "provenance_type", "valid_from", "lifecycle_state",
     ),
     AUDIT_TABLE: ("actor_user_id", "owner_user_id", "action", "created_at"),
+    SECURITY_TABLE: (
+        "user_id", "passcode_hash", "hash_version", "created_at", "changed_at",
+        "failed_attempt_count", "locked_until", "biometric_preference",
+    ),
+    GRANTS_TABLE: (
+        "owner_user_id", "token_hash", "session_binding", "device_binding",
+        "scope", "nonce", "issued_at", "expires_at", "revoked_at",
+    ),
 }
 
 # ---------------------------------------------------------------------------
@@ -284,6 +350,8 @@ INDEX_DDL: tuple[str, ...] = (
     f"ON {EDGES_TABLE} (owner_user_id, target_node_id, relation_type)",
     f"CREATE INDEX IF NOT EXISTS idx_private_audit_actor "
     f"ON {AUDIT_TABLE} (actor_user_id, created_at)",
+    f"CREATE INDEX IF NOT EXISTS idx_private_grants_owner "
+    f"ON {GRANTS_TABLE} (owner_user_id, expires_at)",
 )
 
 

@@ -50,6 +50,7 @@ import {
 import { useTranslation } from "../i18n";
 import { BOTTOM_NAV_CONTENT_CLEARANCE } from "../navigation/BottomNavVisibility";
 import { RootStackParamList } from "../navigation/types";
+import { PrivateOfficeLockGate } from "../privateOffice/PrivateOfficeLockGate";
 import { colors } from "../theme/colors";
 
 type Props = NativeStackScreenProps<RootStackParamList, "PrivateOffice">;
@@ -96,7 +97,20 @@ const ICONS: Readonly<Record<string, keyof typeof Ionicons.glyphMap>> = {
 
 type LoadState = "LOADING" | "LOADED";
 
-export function PrivateOfficeScreen({ navigation }: Props) {
+/**
+ * The screen exports a gated shell (Stage 19: a deep link lands on the correct
+ * lock door and this content resumes after unlock) and keeps the original
+ * component as the unlocked body.
+ */
+export function PrivateOfficeScreen(props: Props) {
+  return (
+    <PrivateOfficeLockGate onDismiss={() => props.navigation.goBack()}>
+      <PrivateOfficeBody {...props} />
+    </PrivateOfficeLockGate>
+  );
+}
+
+function PrivateOfficeBody({ navigation }: Props) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const [loadState, setLoadState] = useState<LoadState>("LOADING");
@@ -251,6 +265,25 @@ export function PrivateOfficeScreen({ navigation }: Props) {
               <Text style={styles.stateMark}>{t(`premium:privateOffice.reason.${child.reason}`)}</Text>
             </View>
           ))}
+        </View>
+      ) : null}
+
+      {loadState === "LOADED" && office.state !== "ENTRY_UNKNOWN" ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t("premium:privateOffice.sections.security")}</Text>
+          <Pressable
+            style={styles.rowOpen}
+            onPress={() => navigation.navigate("PrivateOfficeSecurity" as never)}
+            accessibilityRole="button"
+            accessibilityLabel={t("premium:privateOffice.security.row.label")}
+          >
+            <Ionicons name="lock-closed-outline" size={20} color={colors.accent} />
+            <View style={styles.rowBody}>
+              <Text style={styles.rowLabel}>{t("premium:privateOffice.security.row.label")}</Text>
+              <Text style={styles.rowHint}>{t("premium:privateOffice.security.row.hint")}</Text>
+            </View>
+            <Text style={styles.openMark}>{t("premium:privateOffice.open")}</Text>
+          </Pressable>
         </View>
       ) : null}
 

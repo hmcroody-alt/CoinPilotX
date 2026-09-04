@@ -276,6 +276,72 @@
       "mediaAttached": "Medien angehängt"
     }
   },
+  "live": {
+    "guest": {
+      "state": {
+        "idle": "Nicht auf der Bühne",
+        "requested": "Anfrage läuft…",
+        "invited": "Du wurdest auf die Bühne eingeladen",
+        "accepted": "Du bist als Nächstes dran",
+        "preparing": "Prüfe Kamera und Mikrofon",
+        "joining": "Bühne wird betreten…",
+        "live": "Du bist live",
+        "declined": "Einladung abgelehnt",
+        "removed": "Der Host hat dich von der Bühne genommen",
+        "left": "Du hast die Bühne verlassen",
+        "failed": "Wir konnten dich nicht auf die Bühne holen"
+      },
+      "action": {
+        "accept": "Beitreten",
+        "decline": "Jetzt nicht",
+        "confirm": "Live gehen",
+        "leave": "Bühne verlassen",
+        "retry": "Erneut versuchen",
+        "request": "Beitritt anfragen",
+        "cancelRequest": "Anfrage abbrechen"
+      }
+    },
+    "invite": {
+      "title": "{{name}} hat dich auf die Bühne eingeladen",
+      "body": "Kamera und Mikrofon bleiben aus, bis du bereit bist.",
+      "expired": "Diese Einladung ist abgelaufen",
+      "answered": "Diese Einladung wurde bereits beantwortet"
+    },
+    "stage": {
+      "full": "Bühne voll — {{count}} von {{max}} Gästen",
+      "hostLabel": "Host",
+      "cohostLabel": "Co-Host",
+      "guestLabel": "Gast",
+      "speaking": "Spricht",
+      "reconnecting": "Verbindung wird wiederhergestellt…",
+      "cooldown": "Warte {{seconds}} Sek., bevor du erneut fragst"
+    },
+    "moderation": {
+      "mute": "Stummschalten",
+      "askToUnmute": "Um Mikrofon-Freigabe bitten",
+      "remove": "Von der Bühne entfernen",
+      "removeConfirm": "{{name}} von der Bühne entfernen?",
+      "unmuteRequest": "Der Host bittet dich, dein Mikrofon einzuschalten",
+      "unmuteHint": "Dein Mikrofon bleibt aus, bis du es einschaltest.",
+      "title": "{{name}} verwalten",
+      "cancel": "Abbrechen",
+      "confirmRemove": "Entfernen",
+      "unmuteAccept": "Mikrofon einschalten",
+      "unmuteDecline": "Stumm bleiben",
+      "noActions": "Hier gibt es nichts zu verwalten"
+    },
+    "exit": {
+      "endLive": "Live beenden",
+      "endLiveConfirm": "Das Live für alle Zuschauer beenden?",
+      "leaveStage": "Bühne verlassen",
+      "leaveStageConfirm": "Bühne verlassen? Das Live läuft ohne dich weiter.",
+      "stopWatching": "Nicht mehr zuschauen"
+    },
+    "host": {
+      "reconnecting": "Der Host verbindet sich neu… {{seconds}} s",
+      "absenceEnded": "Der Host hat die Verbindung verloren und das Live wurde beendet."
+    }
+  },
   "messaging": {
     "inbox": {
       "title": "Nachrichten",
@@ -4200,7 +4266,8 @@
       "footnote": "Was hier erscheint, entscheidet Ihr Konto auf dem Server, nicht diese App.",
       "sections": {
         "available": "Verfügbar",
-        "notYet": "Kommt später"
+        "notYet": "Kommt später",
+        "security": "Sicherheit"
       },
       "unknown": {
         "title": "Ihr Zugang konnte nicht bestätigt werden",
@@ -4316,6 +4383,93 @@
         "SELF_REPORTED": "Selbst angegeben",
         "ESTIMATED": "Geschätzt",
         "NEEDS_REVIEW": "Prüfung nötig"
+      },
+      "security": {
+        "title": "Büro-Sicherheit",
+        "subtitle": "Lege fest, wie dein privates Büro gesperrt und entsperrt wird.",
+        "row": {
+          "label": "Büro-Sicherheit",
+          "hint": "Code, Biometrie und Sperrzeit"
+        },
+        "relock": {
+          "label": "Code verlangen",
+          "hint": "Wie schnell das Büro nach Verlassen der App gesperrt wird.",
+          "immediate": "Sofort",
+          "1m": "Nach 1 Minute",
+          "5m": "Nach 5 Minuten",
+          "15m": "Nach 15 Minuten"
+        },
+        "biometric": {
+          "label": "Mit {{method}} entsperren",
+          "hint": "Dein Code bleibt als Ersatz erforderlich.",
+          "confirm": "Gib deinen Büro-Code zur Bestätigung ein"
+        },
+        "change": {
+          "label": "Code ändern",
+          "current": "Aktueller Code",
+          "new": "Neuer Code",
+          "confirm": "Neuen Code bestätigen",
+          "submit": "Code ändern",
+          "success": "Code geändert. Das Büro ist auf allen Geräten gesperrt."
+        },
+        "lockNow": "Jetzt sperren",
+        "lockNowHint": "Sperrt das Büro auf allen deinen Geräten."
+      },
+      "lock": {
+        "checking": "Büro-Sicherheit wird geprüft…",
+        "unavailable": {
+          "title": "Büro-Sicherheit nicht verfügbar",
+          "body": "Der Server zur Prüfung der Sperre war nicht erreichbar. Versuche es erneut."
+        },
+        "setup": {
+          "intro": {
+            "title": "Zweites Schloss hinzufügen",
+            "body": "Dein privates Büro bekommt einen eigenen Code, getrennt von deinem Konto-Passwort.",
+            "start": "Code einrichten",
+            "notNow": "Nicht jetzt"
+          },
+          "create": {
+            "title": "Büro-Code erstellen",
+            "body": "Verwende mindestens {{digits}} Ziffern. Du brauchst ihn bei jedem Öffnen des Büros."
+          },
+          "confirm": {
+            "title": "Code bestätigen",
+            "body": "Gib denselben Code noch einmal ein."
+          },
+          "continue": "Weiter",
+          "back": "Zurück",
+          "mismatch": "Die Codes stimmen nicht überein. Versuche es erneut.",
+          "biometric": {
+            "title": "Mit {{method}} entsperren?",
+            "body": "Öffne das Büro schneller. Dein Code bleibt der Ersatz.",
+            "enable": "{{method}} verwenden",
+            "skip": "Überspringen"
+          }
+        },
+        "locked": {
+          "title": "Büro gesperrt",
+          "body": "Entsperre das private Büro, um diesen Inhalt zu sehen."
+        },
+        "placeholder": "Büro-Code",
+        "unlock": "Entsperren",
+        "wrong": "Falscher Code. Versuche es erneut.",
+        "cooldown": "Zu viele Versuche. Versuche es in {{seconds}} s erneut.",
+        "policy": "Der Code muss mindestens {{digits}} Ziffern haben.",
+        "error": "Etwas ist schiefgelaufen. Versuche es erneut.",
+        "forgot": "Code vergessen?",
+        "biometricFaceId": "Face ID",
+        "biometricTouchId": "Touch ID",
+        "biometricPrompt": "Entsperre dein privates Büro",
+        "reset": {
+          "title": "Büro-Code zurücksetzen",
+          "body": "Bestätige dein Konto-Passwort und wähle dann einen neuen Büro-Code. Alle Geräte werden gesperrt.",
+          "password": "Konto-Passwort",
+          "newPasscode": "Neuer Code",
+          "confirmPasscode": "Neuen Code bestätigen",
+          "submit": "Code zurücksetzen",
+          "cancel": "Abbrechen",
+          "failed": "Zurücksetzen fehlgeschlagen. Prüfe dein Passwort und versuche es erneut."
+        }
       }
     },
     "gate": {

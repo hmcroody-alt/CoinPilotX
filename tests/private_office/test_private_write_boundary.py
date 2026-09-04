@@ -56,6 +56,12 @@ WRITER_MODULES = frozenset({
     "graph.py",
     "audit.py",
     "contradictions.py",
+    # Batch C. `records` owns the DDL and the row writers for all six canonical
+    # primitives. It is one module rather than six because the alternative —
+    # `obligations.py`, `risks.py`, and four more, each with its own copy of the
+    # owner-scoping and provenance rules — is exactly the duplication this guard
+    # exists to prevent, moved inside the package where the guard would bless it.
+    "records.py",
 })
 
 PRIVATE_TABLES = (
@@ -63,11 +69,28 @@ PRIVATE_TABLES = (
     "private_graph_nodes",
     "private_graph_edges",
     "private_audit_events",
+    # Batch C — the six canonical primitives. `private_domain_events` is a
+    # separate table from `private_audit_events` on purpose: one records what
+    # happened in the member's life, the other records who looked at it, and
+    # collapsing them would make the access log editable by the feature that
+    # writes life events.
+    "private_obligations",
+    "private_domain_events",
+    "private_decisions",
+    "private_requests",
+    "private_risks",
+    "private_opportunities",
 )
 
 # The schema module exports these; interpolating one into a write statement is
 # the same offence as naming the table, just harder to grep for by eye.
-TABLE_CONSTANTS = ("FACTS_TABLE", "NODES_TABLE", "EDGES_TABLE", "AUDIT_TABLE")
+# `private_table_for` is the records module's table resolver, listed here for
+# the same reason: `records.py` reaches its six tables through that call, so
+# without the token in this list every write in the module would be invisible
+# to the guard and the allowlist entry above would protect nothing. The name is
+# distinctive enough not to appear as a substring of ordinary identifiers.
+TABLE_CONSTANTS = ("FACTS_TABLE", "NODES_TABLE", "EDGES_TABLE", "AUDIT_TABLE",
+                   "private_table_for")
 
 _TARGET = "(?:" + "|".join(PRIVATE_TABLES + TABLE_CONSTANTS) + ")"
 # Quoting, braces, a module prefix or a schema qualifier may sit between the
@@ -300,6 +323,35 @@ _MUST_CATCH = {
     "an alter": 'cur.execute("ALTER TABLE private_graph_edges ADD COLUMN sneaky TEXT")',
     "a rival index": 'cur.execute("CREATE INDEX IF NOT EXISTS idx_x ON private_facts (owner_user_id)")',
     "a write split across concatenation": 'cur.execute("INSERT INTO "\n              "private_facts (id) VALUES (1)")',
+    # Batch C. A route or UNDX module writing a primitive directly is the same
+    # offence as writing a fact directly and for the same reason: the row would
+    # be missing its provenance, its dedupe key, its audit event, and — for an
+    # obligation — the guarantee that DUE_SOON was never stored as if it were
+    # a fact about the world rather than a fact about the clock.
+    "an obligation insert":
+        'cur.execute("INSERT INTO private_obligations (owner_user_id) VALUES (?)", (1,))',
+    "a domain event insert":
+        'cur.execute("INSERT INTO private_domain_events (event_type) VALUES (?)", ("X",))',
+    "a decision update that would erase the question":
+        'cur.execute("UPDATE private_decisions SET question = ? WHERE id = ?", ("q", 1))',
+    "a request delete":
+        'cur.execute("DELETE FROM private_requests WHERE id = 1")',
+    "a risk insert that would assert safety":
+        'cur.execute("insert into private_risks (severity) values (?)", ("LOW",))',
+    "an opportunity insert":
+        'cur.execute("INSERT INTO private_opportunities (title) VALUES (?)", ("x",))',
+    "a rival create table for a primitive":
+        'cur.execute("CREATE TABLE IF NOT EXISTS private_risks (id INTEGER)")',
+    "a rival index on a primitive":
+        'cur.execute("CREATE INDEX IF NOT EXISTS idx_o ON private_obligations (owner_user_id)")',
+    "the records resolver interpolated into an insert":
+        'cur.execute(f"INSERT INTO {private_table_for(kind)} (id) VALUES (?)", (1,))',
+    "the records resolver interpolated into an update":
+        'cur.execute(f"UPDATE {private_table_for(kind)} SET status = ?", ("OPEN",))',
+    "the records resolver interpolated into a create table":
+        'cur.execute(f"CREATE TABLE IF NOT EXISTS {private_table_for(kind)} (id INTEGER)")',
+    "the records resolver interpolated into an index":
+        'cur.execute(f"CREATE INDEX IF NOT EXISTS idx_x ON {private_table_for(kind)}(owner_user_id)")',
 }
 
 _MUST_IGNORE = {
@@ -313,6 +365,14 @@ _MUST_IGNORE = {
     "a docstring that describes the rule": '"""Never INSERT INTO private_facts directly; call record_fact."""',
     "a comment that describes the rule": '# do not INSERT INTO private_graph_edges by hand\nx = 1',
     "prose naming a table without a verb": 'MESSAGE = "private_facts is owned by services/private_office/facts.py"',
+    "a read of a primitive":
+        'cur.execute("SELECT id FROM private_obligations WHERE owner_user_id = ?", (1,))',
+    "a read through the records resolver":
+        'cur.execute(f"SELECT * FROM {private_table_for(kind)} WHERE owner_user_id = ?", (1,))',
+    # The token is distinctive on purpose; an identifier that merely ends in
+    # "table_for" must not be mistaken for the resolver.
+    "an unrelated identifier ending in table_for":
+        'x = f"UPDATE {mutable_table_format} SET a = 1"',
 }
 
 

@@ -55,6 +55,7 @@ knows what the member is allowed to be told.
 from __future__ import annotations
 
 from collections import deque
+from time import perf_counter as _perf_counter
 from typing import Any, Sequence
 
 from . import audit as _audit
@@ -62,6 +63,7 @@ from . import contradictions as _contradictions
 from . import facts as _facts
 from . import graph as _graph
 from . import model as _model
+from . import records as _records
 from . import schema as _schema
 from . import telemetry as _telemetry
 
@@ -535,5 +537,188 @@ def retrieve(
                    "max_edges": edge_cap},
         "truncated": {"nodes": truncated_nodes, "edges": truncated_edges,
                       "facts": truncated_facts, "depth_reached": depth_reached},
+        "denied": "",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Batch C — typed record views
+# ---------------------------------------------------------------------------
+# The six record primitives are read through this module for the same reason
+# facts and the graph are: this is the sanctioned door, and a caller that can
+# reach `records.list_records` directly can reach it without an intent, without
+# a sensitivity ceiling, and without leaving an audit row.
+#
+# `retrieve` itself is deliberately unchanged. Records are not graph material —
+# they do not participate in the walk, they have no edges, and folding them into
+# the same result would mean every existing caller's payload silently grew. A
+# second entry point that runs the *same five gates* is the honest shape: the
+# gates are the contract, not the function name.
+VIEW_OBLIGATIONS = "obligations"
+VIEW_EVENTS = "events"
+VIEW_DECISIONS = "decisions"
+VIEW_REQUESTS = "requests"
+VIEW_RISKS = "risks"
+VIEW_OPPORTUNITIES = "opportunities"
+
+#: View name -> record type. The view names are the public vocabulary; the
+#: table names appear nowhere in this mapping and nowhere in the result, which
+#: is what "do not expose raw tables directly" means in practice.
+RECORD_VIEWS: dict[str, str] = {
+    VIEW_OBLIGATIONS: _records.TYPE_OBLIGATION,
+    VIEW_EVENTS: _records.TYPE_EVENT,
+    VIEW_DECISIONS: _records.TYPE_DECISION,
+    VIEW_REQUESTS: _records.TYPE_REQUEST,
+    VIEW_RISKS: _records.TYPE_RISK,
+    VIEW_OPPORTUNITIES: _records.TYPE_OPPORTUNITY,
+}
+
+DENIED_UNKNOWN_VIEW = "unknown_view"
+
+MAX_RECORDS = 200
+
+
+def _empty_records(owner: int, intent: str, view: str, *, denied: str,
+                   domains: Sequence[str] = ()) -> dict:
+    return {
+        "owner_user_id": owner,
+        "intent": intent,
+        "view": view,
+        "domains": list(domains),
+        "sensitivity_ceiling": "",
+        "records": [],
+        "counts": {"returned": 0},
+        "truncated": False,
+        "denied": denied,
+    }
+
+
+def retrieve_records(
+    cur,
+    *,
+    owner_user_id: int,
+    view: str,
+    actor_user_id: int | None = None,
+    intent: str = INTENT_GENERAL,
+    purpose: str = "undx_context",
+    statuses: Sequence[str] | None = None,
+    domains: Sequence[str] | None = None,
+    sensitivity_ceiling: object = None,
+    due_before: object = None,
+    include_superseded: bool = False,
+    limit: int = 50,
+    before_id: int = 0,
+) -> dict:
+    """One typed view over the record primitives, owner-scoped and gated.
+
+    Same five gates as :func:`retrieve`, in the same order — owner,
+    authorization, sensitivity, domain, purpose — and the same contract for
+    ``denied``: a string, not an exception, and the empty result that comes with
+    it is indistinguishable from the result for records that do not exist.
+
+    The extra gate is the view name. An unknown view is refused rather than
+    defaulted, for the same reason an unknown intent is: substituting a
+    different collection for the one the caller named hides both the bug and the
+    probe.
+    """
+    owner = int(owner_user_id or 0)
+    actor = int(actor_user_id if actor_user_id is not None else owner)
+    wanted_intent = str(intent or "").strip().lower()
+    wanted_view = str(view or "").strip().lower()
+
+    if owner <= 0:
+        _telemetry.emit(_telemetry.EVENT_CONTEXT_DENIED, intent=wanted_intent,
+                        reason=DENIED_NO_OWNER, cross_account=False)
+        return _empty_records(owner, wanted_intent, wanted_view, denied=DENIED_NO_OWNER)
+
+    if wanted_intent not in INTENTS:
+        _refuse(cur, owner=owner, actor=actor, intent=wanted_intent,
+                reason=DENIED_UNKNOWN_INTENT, purpose=purpose)
+        return _empty_records(owner, wanted_intent, wanted_view,
+                              denied=DENIED_UNKNOWN_INTENT)
+
+    if actor != owner:
+        # Recorded before returning. An actor reading another member's records
+        # is the single most important row this audit table can hold, and a
+        # concierge queue is exactly the surface where a support tool would
+        # plausibly try.
+        _refuse(cur, owner=owner, actor=actor, intent=wanted_intent,
+                reason=DENIED_NOT_OWNER, purpose=purpose)
+        return _empty_records(owner, wanted_intent, wanted_view,
+                              denied=DENIED_NOT_OWNER)
+
+    if wanted_view not in RECORD_VIEWS:
+        _audit.record_denied(cur, actor_user_id=actor, owner_user_id=owner,
+                             object_type="RECORD_VIEW", purpose=purpose)
+        _telemetry.emit(_telemetry.EVENT_CONTEXT_DENIED, intent=wanted_intent,
+                        reason=DENIED_UNKNOWN_VIEW, cross_account=False)
+        return _empty_records(owner, wanted_intent, wanted_view,
+                              denied=DENIED_UNKNOWN_VIEW)
+
+    policy = INTENTS[wanted_intent]
+
+    allowed_domains = tuple(policy["domains"])
+    if domains:
+        asked = [d for d in (_model.normalize_domain(x) for x in domains) if d]
+        resolved_domains = tuple(d for d in asked if d in allowed_domains)
+    else:
+        resolved_domains = allowed_domains
+
+    permitted, reason = domain_join_permitted(resolved_domains)
+    if not permitted or not resolved_domains:
+        _refuse(cur, owner=owner, actor=actor, intent=wanted_intent,
+                reason=reason or DENIED_DOMAIN_JOIN, purpose=purpose,
+                domains=resolved_domains)
+        return _empty_records(owner, wanted_intent, wanted_view,
+                              denied=reason or DENIED_DOMAIN_JOIN,
+                              domains=resolved_domains)
+
+    ceiling = _lower_ceiling(
+        sensitivity_ceiling if sensitivity_ceiling is not None
+        else policy["sensitivity_ceiling"],
+        policy["sensitivity_ceiling"])
+    if not ceiling:
+        _refuse(cur, owner=owner, actor=actor, intent=wanted_intent,
+                reason="unknown_sensitivity_ceiling", purpose=purpose,
+                domains=resolved_domains)
+        return _empty_records(owner, wanted_intent, wanted_view,
+                              denied="unknown_sensitivity_ceiling",
+                              domains=resolved_domains)
+
+    record_type = RECORD_VIEWS[wanted_view]
+    bounded = max(1, min(int(limit or 50), MAX_RECORDS))
+
+    started = _perf_counter()
+    rows = _records.list_records(
+        cur, record_type=record_type, owner_user_id=owner,
+        statuses=statuses, domains=resolved_domains,
+        sensitivity_ceiling=ceiling, due_before=due_before,
+        include_superseded=include_superseded,
+        limit=bounded, before_id=before_id)
+    elapsed_ms = int((_perf_counter() - started) * 1000)
+
+    _audit.record(
+        cur, actor_user_id=actor, owner_user_id=owner,
+        action=_audit.ACTION_CONTEXT_RETRIEVED, object_type="RECORD_VIEW",
+        object_id=wanted_view, purpose=purpose, outcome=_audit.OUTCOME_OK,
+        result_count=len(rows))
+
+    # Counts and timings only. Not a title, not a question, not a description —
+    # see the note on these three events in `telemetry`.
+    _telemetry.emit(
+        _telemetry.EVENT_RECORDS_RETRIEVED,
+        record_type=record_type, intent=wanted_intent,
+        sensitivity_ceiling=ceiling, record_count=len(rows),
+        latency_ms=elapsed_ms, truncated=(len(rows) >= bounded))
+
+    return {
+        "owner_user_id": owner,
+        "intent": wanted_intent,
+        "view": wanted_view,
+        "domains": list(resolved_domains),
+        "sensitivity_ceiling": ceiling,
+        "records": rows,
+        "counts": {"returned": len(rows)},
+        "truncated": len(rows) >= bounded,
         "denied": "",
     }
