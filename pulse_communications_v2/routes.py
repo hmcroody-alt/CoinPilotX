@@ -237,6 +237,22 @@ def admin_health_deep():
     return jsonify(pulsesoc_reliability.deep_health_snapshot())
 
 
+@comm_v2_blueprint.get("/admin/health/messenger-idempotency")
+def admin_messenger_idempotency_health():
+    """Operational read-only view of the send-idempotency index.
+
+    Admin-gated on purpose: this is deployment health, not a public debug
+    surface. It carries no message content and no client ids -- only whether
+    hard database uniqueness is actually in force, and how many duplicate
+    groups blocked it if it is not.
+    """
+    admin = _current_admin()
+    if not admin:
+        return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
+    snapshot = service.message_idempotency_health()
+    return jsonify({"ok": True, "messenger_idempotency": snapshot})
+
+
 @comm_v2_blueprint.get("/admin/pulse-ai/learning")
 def admin_pulse_ai_learning_page():
     admin = _current_admin()
