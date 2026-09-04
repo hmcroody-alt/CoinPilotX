@@ -19,6 +19,7 @@
  */
 
 import type { MessengerMessage } from "./messenger";
+import { reconcileList } from "./messengerReconciler";
 
 /**
  * Monotonic within this JS runtime. `Date.now()` alone is not a safe identity:
@@ -70,27 +71,20 @@ export function compareMessengerMessages(a: MessengerMessage, b: MessengerMessag
 }
 
 /**
- * Merge `incoming` into `current`, deduping by client message id and preserving the
+ * Merge `incoming` into `current`, deduping by message identity and preserving the
  * pending/acked local status semantics ChatScreen relies on.
+ *
+ * This is now a thin adapter over `messengerReconciler`, which is the single owner
+ * of the "new message or one I already have?" decision. It used to key purely on
+ * `client_message_id || id`, and that had a hole with teeth: an event describing a
+ * message by only ONE of its two identities -- a push payload that knows the server
+ * id but not the client id, a replayed payload that knows the client id but not the
+ * server id -- landed under a different key from the row it belonged to and rendered
+ * as a second bubble. The reconciler keeps both identities pointing at one row.
  */
 export function mergeConversationMessages(
   current: MessengerMessage[],
   incoming: MessengerMessage[]
 ): MessengerMessage[] {
-  const byKey = new Map<string, MessengerMessage>();
-  [...current, ...incoming].forEach((message) => {
-    const key = messageKey(message);
-    const existing = byKey.get(key);
-    const serverAccepted = message.id > 0 && Boolean(message.client_message_id);
-    byKey.set(key, {
-      ...existing,
-      ...message,
-      local_status: serverAccepted ? undefined : message.local_status || existing?.local_status,
-      local_error: serverAccepted ? undefined : message.local_error || existing?.local_error,
-      delivery_status: serverAccepted
-        ? message.delivery_status || "sent"
-        : message.delivery_status || existing?.delivery_status
-    });
-  });
-  return Array.from(byKey.values()).sort(compareMessengerMessages);
+  return reconcileList(current, incoming);
 }
