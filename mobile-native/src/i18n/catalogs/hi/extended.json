@@ -4317,6 +4317,15 @@
         "ESTIMATED": "अनुमानित",
         "NEEDS_REVIEW": "समीक्षा आवश्यक"
       }
+    },
+    "gate": {
+      "checking": "आपकी सदस्यता की जाँच हो रही है…",
+      "unavailableTitle": "सदस्यता की पुष्टि नहीं हो सकी",
+      "unavailableBody": "हम अभी आपकी सदस्यता की पुष्टि नहीं कर सके। जब तक पुष्टि नहीं होती, Premium सुविधाएँ रुकी रहेंगी — आपका डेटा सुरक्षित है और कुछ भी हटाया नहीं गया है।",
+      "lockedBody": "Market Pulse, वॉचलिस्ट, पोर्टफोलियो, उन्नत अलर्ट और ब्रीफिंग PulseSoc Premium का हिस्सा हैं।",
+      "trialEndsToday": "आपका Premium ट्रायल आज समाप्त हो रहा है",
+      "trialDaysLeft_one": "आपके Premium ट्रायल में {{count}} दिन बचा है",
+      "trialDaysLeft_other": "आपके Premium ट्रायल में {{count}} दिन बचे हैं"
     }
   },
   "briefings": {

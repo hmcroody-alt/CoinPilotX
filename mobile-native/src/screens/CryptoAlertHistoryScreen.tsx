@@ -10,7 +10,8 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
-import { PremiumAlertTrigger, getPremiumAlertHistory, isPremiumRequired } from "../api/cryptoPremium";
+import { PremiumAlertTrigger, getPremiumAlertHistory } from "../api/cryptoPremium";
+import { reconcilePremiumRequired } from "../entitlements/reconcile";
 import { Panel } from "../components/Panel";
 import { PremiumUpsellPanel } from "../components/crypto/PremiumUpsellPanel";
 import { useTranslation } from "../i18n";
@@ -45,7 +46,7 @@ export function CryptoAlertHistoryScreen({ route, navigation }: Props) {
         setHasMore(response.has_more);
         setGated(false);
       } catch (loadError) {
-        if (isPremiumRequired(loadError)) {
+        if (reconcilePremiumRequired(loadError)) {
           setGated(true);
         } else {
           setError(loadError instanceof Error ? loadError.message : t("discovery:crypto.history.loadError"));

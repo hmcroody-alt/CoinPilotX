@@ -4286,6 +4286,14 @@
         "ESTIMATED": "Estime",
         "NEEDS_REVIEW": "Bezwen revizyon"
       }
+    },
+    "gate": {
+      "checking": "N ap verifye abònman ou…",
+      "unavailableTitle": "Nou pa ka verifye abònman an",
+      "unavailableBody": "Nou pa t ka konfime abònman ou kounye a. Fonksyon Premium yo an poz jiskaske nou kapab — done ou yo an sekirite e anyen pa efase.",
+      "lockedBody": "Market Pulse, lis siveyans, pòtfolyo, alèt avanse ak brifing yo fè pati PulseSoc Premium.",
+      "trialEndsToday": "Esè Premium ou an fini jodi a",
+      "trialDaysLeft_other": "Rete {{count}} jou nan esè Premium ou an"
     }
   },
   "briefings": {

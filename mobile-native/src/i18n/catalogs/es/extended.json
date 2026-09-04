@@ -4317,6 +4317,15 @@
         "ESTIMATED": "Estimado",
         "NEEDS_REVIEW": "Requiere revisión"
       }
+    },
+    "gate": {
+      "checking": "Comprobando tu membresía…",
+      "unavailableTitle": "No se pudo verificar la membresía",
+      "unavailableBody": "No pudimos confirmar tu membresía en este momento. Las funciones Premium quedan en pausa hasta que podamos: tus datos están a salvo y no se ha eliminado nada.",
+      "lockedBody": "Market Pulse, las listas de seguimiento, el portafolio, las alertas avanzadas y los informes forman parte de PulseSoc Premium.",
+      "trialEndsToday": "Tu prueba Premium termina hoy",
+      "trialDaysLeft_one": "Queda {{count}} día de tu prueba Premium",
+      "trialDaysLeft_other": "Quedan {{count}} días de tu prueba Premium"
     }
   },
   "briefings": {

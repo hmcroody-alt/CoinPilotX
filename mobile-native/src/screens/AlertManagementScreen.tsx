@@ -32,6 +32,7 @@ import {
   updateCryptoAlert
 } from "../api/alerts";
 import { Panel } from "../components/Panel";
+import { PremiumFeatureGate } from "../entitlements/PremiumFeatureGate";
 import { I18nContextValue, useTranslation } from "../i18n";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
@@ -137,7 +138,19 @@ function channelSummary(t: Translate, alert: AlertRule) {
   return enabled.length ? enabled.join(", ") : t("premium:crypto.alerts.channels.default");
 }
 
-export function AlertManagementScreen({ route, navigation }: Props) {
+export function AlertManagementScreen(props: Props) {
+  const { t } = useTranslation();
+  return (
+    <PremiumFeatureGate
+      onUpgrade={() => props.navigation.navigate("Premium")}
+      body={t("discovery:crypto.upsell.alertsBody")}
+    >
+      <AlertManagementScreenBody {...props} />
+    </PremiumFeatureGate>
+  );
+}
+
+function AlertManagementScreenBody({ route, navigation }: Props) {
   const { t } = useTranslation();
   /**
    * The translator, reachable from `load` without being a dependency of it.

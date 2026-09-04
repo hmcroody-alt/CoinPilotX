@@ -339,8 +339,10 @@ class AdvancedAlertEngineTestCase(unittest.TestCase):
         resumed = self._evaluate(alert_id)
         self.assertTrue(resumed.get("armed"))
 
-    def test_basic_alerts_unaffected_by_gate(self):
-        self.premium = False
+    def test_basic_alerts_also_pause_delivery_without_premium(self):
+        # Premium hard-lock policy: alerts are a Premium-tile feature, so
+        # DELIVERY stops for every rule type when premium lapses — basic rules
+        # included. The rule itself is kept untouched and resumes on renewal.
         created = ae.create_mobile_crypto_alert(
             USER_ID,
             {
@@ -355,7 +357,16 @@ class AdvancedAlertEngineTestCase(unittest.TestCase):
         self.assertEqual(created["item"]["rule_type"], "basic")
         self.assertFalse(created["item"]["premium"])
         alert_id = created["item"]["id"]
+        self.premium = False
         self.market["price"] = 150.0
+        paused = self._evaluate(alert_id)
+        self.assertFalse(paused["triggered"])
+        self.assertTrue(paused.get("skipped"))
+        self.assertEqual(paused.get("status"), "premium_required")
+        row = self._db_rule(alert_id)
+        self.assertEqual(row["status"], "active")  # kept, never deleted
+        # Premium restored: the same rule arms and then triggers normally.
+        self.premium = True
         first = self._evaluate(alert_id)
         self.assertTrue(first.get("armed"))
         second = self._evaluate(alert_id)

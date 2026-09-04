@@ -453,6 +453,23 @@ def _quiet_hours_active(local_now: datetime, quiet_start: str, quiet_end: str) -
 
 # --- Evaluation + delivery (Stages 16/17/19/26/27/30/32) --------------------
 
+def _premium_briefings_allowed(user_id: int) -> bool:
+    """Server-authoritative Premium gate for briefing generation.
+
+    Resolves through the ONE crypto gate (``services.crypto_premium_gate``),
+    same as the API routes, so trial/premium/canceled-until-period-end all
+    behave identically here. Fails CLOSED — a resolver outage pauses
+    generation rather than generating for a possibly-lapsed member.
+    """
+    try:
+        from services import crypto_premium_gate as _gate
+        return bool(_gate.has_crypto_capability(
+            user_id, _gate.CAP_CRYPTO_INTELLIGENCE))
+    except Exception:  # noqa: BLE001 — never fail open
+        logging.exception("briefing premium gate failed user_id=%s", user_id)
+        return False
+
+
 def evaluate_user_briefing(conn, user: dict[str, Any], *, now_utc: datetime | None = None,
                            send: bool = True) -> dict[str, Any]:
     """CLAIM -> GATHER -> SCORE -> SUPPRESS -> SUMMARIZE -> SEND -> SETTLE."""
@@ -461,6 +478,14 @@ def evaluate_user_briefing(conn, user: dict[str, Any], *, now_utc: datetime | No
     prefs = get_preferences(user_id, conn=conn)
     if not prefs["enabled"] or prefs["frequency"] == "off":
         return {"status": "disabled"}
+    if not _premium_briefings_allowed(user_id):
+        # Premium hard-lock at GENERATION time. Briefings are a Premium-tile
+        # feature: a lapsed member stops receiving NEW briefings, but their
+        # history and preferences remain stored and readable (the read routes
+        # are deliberately not history-locked — "keep read of history").
+        # Returns before CLAIM so nothing is written; renewing premium simply
+        # resumes generation at the next window.
+        return {"status": "premium_required"}
     if not push_notifications_allowed(cur, user_id):
         # The briefing-specific toggle is not the only opt-out that binds us: a user
         # who turned push off globally has disabled push, full stop. _deliver() calls

@@ -4505,6 +4505,19 @@
         "ESTIMATED": "تقديري",
         "NEEDS_REVIEW": "يحتاج مراجعة"
       }
+    },
+    "gate": {
+      "checking": "جارٍ التحقق من عضويتك…",
+      "unavailableTitle": "تعذر التحقق من العضوية",
+      "unavailableBody": "تعذر تأكيد عضويتك الآن. ميزات Premium متوقفة مؤقتًا حتى نتمكن من ذلك — بياناتك آمنة ولم يُحذف أي شيء.",
+      "lockedBody": "Market Pulse وقوائم المتابعة والمحفظة والتنبيهات المتقدمة والموجزات كلها جزء من PulseSoc Premium.",
+      "trialEndsToday": "تنتهي تجربة Premium اليوم",
+      "trialDaysLeft_zero": "لم يتبق أي يوم في تجربة Premium",
+      "trialDaysLeft_one": "تبقى يوم واحد في تجربة Premium",
+      "trialDaysLeft_two": "تبقى يومان في تجربة Premium",
+      "trialDaysLeft_few": "تبقت {{count}} أيام في تجربة Premium",
+      "trialDaysLeft_many": "تبقى {{count}} يومًا في تجربة Premium",
+      "trialDaysLeft_other": "تبقى {{count}} يوم في تجربة Premium"
     }
   },
   "briefings": {
