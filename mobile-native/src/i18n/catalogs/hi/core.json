@@ -342,6 +342,23 @@
       "pair": "{{first}} और {{second}}",
       "separator": ", ",
       "more": "+{{count}} और"
+    },
+    "emoji": {
+      "search": "इमोजी खोजें",
+      "noResults": "कोई इमोजी नहीं मिला",
+      "close": "इमोजी चयनकर्ता बंद करें",
+      "categories": {
+        "recent": "हाल की",
+        "smileys": "स्माइली और भावनाएँ",
+        "people": "लोग और शरीर",
+        "animals": "जानवर और प्रकृति",
+        "food": "खाना और पेय",
+        "activities": "गतिविधियाँ",
+        "travel": "यात्रा और स्थान",
+        "objects": "वस्तुएँ",
+        "symbols": "प्रतीक",
+        "flags": "झंडे"
+      }
     }
   },
   "auth": {

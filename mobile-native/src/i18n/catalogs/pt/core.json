@@ -342,6 +342,23 @@
       "pair": "{{first}} e {{second}}",
       "separator": ", ",
       "more": "+{{count}} mais"
+    },
+    "emoji": {
+      "search": "Pesquisar emoji",
+      "noResults": "Nenhum emoji encontrado",
+      "close": "Fechar seletor de emoji",
+      "categories": {
+        "recent": "Recentes",
+        "smileys": "Carinhas e emoções",
+        "people": "Pessoas e corpo",
+        "animals": "Animais e natureza",
+        "food": "Comida e bebida",
+        "activities": "Atividades",
+        "travel": "Viagens e lugares",
+        "objects": "Objetos",
+        "symbols": "Símbolos",
+        "flags": "Bandeiras"
+      }
     }
   },
   "auth": {
