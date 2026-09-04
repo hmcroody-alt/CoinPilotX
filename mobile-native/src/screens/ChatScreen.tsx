@@ -66,6 +66,7 @@ import { buildUndxUiContext, UndxUiContext } from "../undx/undxContext";
 import { clearMarketContext, peekMarketContext, takeMarketContextForSend } from "../undx/marketContext";
 import { choiceRowsOf, describeTransition, readTapOutcome, toActionCard, UndxTapOutcome } from "../undx/actionCards";
 import { NativeMediaViewer, NativeMediaViewerItem } from "../components/NativeMediaViewer";
+import { useMessengerMediaAccessUrl } from "../media/messengerMediaAccess";
 import { ConversationControlCenter } from "../components/ConversationControlCenter";
 import { ContentTranslation } from "../components/ContentTranslation";
 import { PulseCommandAvatar, PulseCommandPanel } from "../components/PulseCommand";
@@ -2126,8 +2127,25 @@ function SheetAction({ label, onPress, tone = "default" }: { label: string; onPr
 function MessageMedia({ message }: { message: MessengerMessage }) {
   const [viewerOpen, setViewerOpen] = useState(false);
   const type = (message.message_type || "text").toLowerCase();
-  const mediaUrl = absoluteMediaUrl(message.media_url);
-  const thumbnailUrl = absoluteMediaUrl(message.thumbnail_url || message.media_url);
+  // The message carries canonical media identity (attachment id). The renderer
+  // gets a short-lived access URL for it. Handing the platform image loader a
+  // protected API path is what made image loads run session refresh on the
+  // server and sign people out; see media/messengerMediaAccess.
+  const mediaAccess = useMessengerMediaAccessUrl(message.attachment_id, String(message.media_url || ""));
+  const thumbnailAccess = useMessengerMediaAccessUrl(
+    message.attachment_id,
+    String(message.thumbnail_url || message.media_url || "")
+  );
+  const mediaUrl = absoluteMediaUrl(mediaAccess.url);
+  const thumbnailUrl = absoluteMediaUrl(thumbnailAccess.url);
+  if ((type === "image" || type === "gif") && mediaAccess.failed && !mediaUrl) {
+    return (
+      <View accessible accessibilityRole="text" accessibilityLabel={`${messageAccessibilityLabel(message)}. Image unavailable.`} style={styles.voiceUnavailable}>
+        <Ionicons name="alert-circle-outline" size={18} color={colors.danger} />
+        <Text style={styles.voiceUnavailableText}>Image unavailable</Text>
+      </View>
+    );
+  }
   if (isVoiceType(type) && !mediaUrl) {
     return (
       <View accessible accessibilityRole="text" accessibilityLabel={`${messageAccessibilityLabel(message)}. Voice message unavailable.`} style={styles.voiceUnavailable}>

@@ -3120,10 +3120,33 @@ def clear_persistent_session_cookie(response):
     return response
 
 
+MEDIA_BYTE_PATH_RE = re.compile(r"^/api/messages/media/\d+/download/?$")
+
+
+def is_media_byte_delivery_path(path):
+    """True for routes whose response body is media bytes, not an API payload.
+
+    These are fetched by the platform image/video loader, which cannot send an
+    Authorization header and presents a different User-Agent than the app's HTTP
+    client. Running session refresh for them rotates the refresh token on every
+    thumbnail: concurrent loads then read as refresh_token_reuse and the loader's
+    fingerprint reads as device_mismatch, both of which revoke the session
+    family and sign the user out. Media delivery must prove access to one
+    object; it must never refresh, rotate, or revoke a login session.
+    """
+    return bool(MEDIA_BYTE_PATH_RE.match(str(path or "")))
+
+
 def restore_account_from_persistent_cookie():
     if not has_request_context() or session.get("account_user_id"):
         return session.get("account_user_id")
     if request.path.startswith(("/static/", "/icons/", "/health", "/manifest", "/site.webmanifest", "/sw.js")):
+        return None
+    if is_media_byte_delivery_path(request.path):
+        # Hard architectural boundary. Reached from before_request hooks
+        # (pulse_security_core_guard resolves account_user_id() on every
+        # request) as well as from the route itself, so the refusal lives at
+        # the mutation point rather than at any one call site.
         return None
     refresh_token = request.cookies.get(PERSISTENT_SESSION_COOKIE) or ""
     if not refresh_token:
@@ -86630,6 +86653,156 @@ def _messenger_media_user():
     return user, None
 
 
+# ---------------------------------------------------------------------------
+# Messenger media auth isolation
+#
+# MEDIA DELIVERY IS NOT AUTHENTICATION.
+#
+# A byte-serving media GET is rendered by the native image loader, which cannot
+# carry an Authorization header. Routing it through account_user_id() let it
+# fall through to restore_account_from_persistent_cookie(), which rotates the
+# mobile refresh token. Concurrent thumbnails then tripped refresh_token_reuse,
+# and the image loader's distinct User-Agent tripped device_mismatch; both
+# revoke the session family and log the user out of PulseSoc.
+#
+# The resolvers below authenticate byte delivery WITHOUT ever touching
+# mobile_security_sessions. The refresh-token reuse and device-fingerprint
+# defences are deliberately left exactly as they are -- they are correct, and
+# they are what surfaced this defect.
+# ---------------------------------------------------------------------------
+
+MESSENGER_MEDIA_TOKEN_TTL_SECONDS = messenger_media_foundation.ACCESS_TOKEN_TTL_SECONDS
+MESSENGER_MEDIA_TOKEN_ARG = messenger_media_foundation.ACCESS_TOKEN_ARG
+MESSENGER_MEDIA_TOKEN_HEADER = messenger_media_foundation.ACCESS_TOKEN_HEADER
+
+
+def mint_messenger_media_token(attachment_id, user_id, ttl_seconds=None):
+    return messenger_media_foundation.mint_access_token(COINPILOTX_SECRET_KEY, attachment_id, user_id, ttl_seconds)
+
+
+def messenger_media_token_user_id(attachment_id, token):
+    return messenger_media_foundation.access_token_user_id(COINPILOTX_SECRET_KEY, attachment_id, token)
+
+
+def messenger_media_token_state(attachment_id, token):
+    return messenger_media_foundation.access_token_state(COINPILOTX_SECRET_KEY, attachment_id, token)
+
+
+# Media failure taxonomy. A media failure is never an authentication failure, so
+# none of these may be 401: a 401 is what makes a client attempt session
+# recovery, and a media credential expiring must never log anybody out. The
+# client renews an expired grant against /access and retries; it does not
+# refresh, rotate, or drop the login session to do it.
+MESSENGER_MEDIA_ERRORS = {
+    "expired": ("media_access_expired", "Image unavailable", 403),
+    "denied": ("media_access_denied", "Image unavailable", 403),
+    "not_found": ("media_not_found", "Image unavailable", 404),
+}
+
+
+def _messenger_media_denied(attachment_id, token_state="absent"):
+    kind = "expired" if token_state == "expired" else "denied"
+    code, message, status = MESSENGER_MEDIA_ERRORS[kind]
+    logging.info(
+        "MESSENGER_MEDIA_ACCESS_DENIED attachment_id=%s reason=%s token_state=%s status=%s",
+        attachment_id,
+        code,
+        token_state,
+        status,
+    )
+    return jsonify({"ok": False, "error": code, "message": message, "category": code}), status
+
+
+def _messenger_media_request_token(attachment_id):
+    return request.args.get(MESSENGER_MEDIA_TOKEN_ARG) or request.headers.get(MESSENGER_MEDIA_TOKEN_HEADER) or ""
+
+
+def messenger_media_cookie_user_id():
+    """Identify the persistent-cookie holder WITHOUT rotating or revoking.
+
+    Builds already installed on handsets render media straight from the
+    protected download path with no media token, so they arrive carrying only
+    the persistent cookie. Refusing them outright would break shipped clients;
+    running them through rotate_mobile_refresh_token() is the defect. So this
+    reads the session row and stops -- a lookup, never a rotation, and never a
+    revocation. An unrecognised cookie is simply not an identity here; deciding
+    whether it is evidence of token theft belongs to the auth endpoints, which
+    have the device context to judge it.
+    """
+    refresh_token = request.cookies.get(PERSISTENT_SESSION_COOKIE) or ""
+    if not refresh_token:
+        return 0
+    conn = None
+    try:
+        conn = db()
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        ensure_mobile_security_session_schema(cur)
+        cur.execute(
+            """
+            SELECT user_id
+            FROM mobile_security_sessions
+            WHERE refresh_token_hash=? AND status IN ('active','rotated')
+              AND COALESCE(revoked_at,'')='' AND COALESCE(refresh_expires_at,'')>=?
+            LIMIT 1
+            """,
+            (mobile_token_hash(refresh_token), datetime.utcnow().isoformat(timespec="seconds")),
+        )
+        row = cur.fetchone()
+        conn.close()
+        return max(0, safe_int(dict(row or {}).get("user_id"), 0))
+    except Exception:
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
+        return 0
+
+
+def _messenger_media_viewer(attachment_id):
+    """Resolve the viewer for a media BYTE request.
+
+    Deliberately does not call account_user_id()/api_account_user(): those fall
+    through to persistent-cookie restoration, which rotates and can revoke the
+    mobile session. Every branch here is read-only with respect to
+    mobile_security_sessions.
+    """
+    user_id = 0
+    credential = ""
+    token_state, token_user_id = messenger_media_token_state(
+        attachment_id, _messenger_media_request_token(attachment_id)
+    )
+    if token_user_id > 0:
+        user_id, credential = token_user_id, "media_token"
+    if user_id <= 0:
+        session_user_id = safe_int(session.get("account_user_id"), 0)
+        if session_user_id > 0:
+            user_id, credential = session_user_id, "session"
+    if user_id <= 0:
+        bearer_user_id = safe_int(account_user_id_from_mobile_access_token(), 0)
+        if bearer_user_id > 0:
+            user_id, credential = bearer_user_id, "bearer"
+    if user_id <= 0:
+        # Backward compatibility for builds already on handsets. Read-only.
+        cookie_user_id = safe_int(messenger_media_cookie_user_id(), 0)
+        if cookie_user_id > 0:
+            user_id, credential = cookie_user_id, "persistent_cookie_readonly"
+            logging.info(
+                "MESSENGER_MEDIA_LEGACY_COOKIE_ACCESS attachment_id=%s user_id=%s path=%s",
+                attachment_id,
+                cookie_user_id,
+                request.path,
+            )
+    if user_id <= 0:
+        return None, "", _messenger_media_denied(attachment_id, token_state)
+    user = load_account_by_id(user_id)
+    if not user or account_login_restriction_message(user):
+        logging.info("MESSENGER_MEDIA_ACCESS_DENIED attachment_id=%s reason=viewer_unavailable credential=%s", attachment_id, credential)
+        return None, "", _messenger_media_denied(attachment_id, "invalid")
+    return user, credential, None
+
+
 def _messenger_media_json_error(conn, exc, trace_id=""):
     try:
         if conn:
@@ -86719,7 +86892,7 @@ def api_messages_media_attach():
 
 @webhook_app.route("/api/messages/media/<int:attachment_id>", methods=["GET"])
 def api_messages_media_get(attachment_id):
-    user, auth_error = _messenger_media_user()
+    user, _credential, auth_error = _messenger_media_viewer(attachment_id)
     if auth_error:
         return auth_error
     conn = None
@@ -86732,9 +86905,45 @@ def api_messages_media_get(attachment_id):
         return _messenger_media_json_error(conn, exc)
 
 
+@webhook_app.route("/api/messages/media/<int:attachment_id>/access", methods=["GET", "POST"])
+def api_messages_media_access(attachment_id):
+    """Exchange an authenticated PulseSoc API session for a renderable media URL.
+
+    This is the only place authorization is decided for rendering. The returned
+    URL is ephemeral transport authorization; it is never message content and is
+    never media identity. The canonical identity stays the attachment id.
+    """
+    user, auth_error = _messenger_media_user()
+    if auth_error:
+        return auth_error
+    conn = None
+    try:
+        conn, cur = _messenger_media_open_db()
+        result, status = messenger_media_foundation.get_attachment(cur, user, attachment_id, include_url=False)
+        conn.close()
+        if status != 200:
+            return jsonify(result), status
+        token, expires_at = mint_messenger_media_token(attachment_id, int(user["user_id"]))
+        logging.info(
+            "MESSENGER_MEDIA_ACCESS_SUCCESS attachment_id=%s user_id=%s ttl=%s",
+            attachment_id,
+            user["user_id"],
+            MESSENGER_MEDIA_TOKEN_TTL_SECONDS,
+        )
+        return jsonify({
+            "ok": True,
+            "attachment_id": int(attachment_id),
+            "access_url": "/api/messages/media/%d/download?%s=%s" % (int(attachment_id), MESSENGER_MEDIA_TOKEN_ARG, token),
+            "expires_in": max(0, expires_at - int(time.time())),
+            "attachment": result,
+        }), 200
+    except Exception as exc:
+        return _messenger_media_json_error(conn, exc)
+
+
 @webhook_app.route("/api/messages/media/<int:attachment_id>/download", methods=["GET"])
 def api_messages_media_download(attachment_id):
-    user, auth_error = _messenger_media_user()
+    user, credential, auth_error = _messenger_media_viewer(attachment_id)
     if auth_error:
         return auth_error
     conn = None
@@ -86742,6 +86951,12 @@ def api_messages_media_download(attachment_id):
         conn, cur = _messenger_media_open_db()
         target = messenger_media_foundation.attachment_download_target(cur, user, attachment_id)
         conn.close()
+        logging.info(
+            "MESSENGER_MEDIA_ACCESS_SUCCESS attachment_id=%s user_id=%s credential=%s stage=download",
+            attachment_id,
+            user.get("user_id"),
+            credential,
+        )
         if target.get("kind") == "signed_redirect":
             response = redirect(target["url"], code=302)
         else:

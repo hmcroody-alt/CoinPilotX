@@ -9,12 +9,14 @@ message.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import logging
 import os
 import re
 import shutil
 import tempfile
+import time
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -937,6 +939,76 @@ def signed_or_private_url(row: Any) -> str:
     except Exception as exc:
         logging.warning("MESSENGER_MEDIA_SIGNED_URL_FAILED attachment_id=%s error=%s", _row_get(row, "id", ""), exc)
         return ""
+
+
+# ---------------------------------------------------------------------------
+# Media access credentials
+#
+# A bounded credential that proves "this viewer may render this one attachment,
+# until this moment". It is deliberately NOT a session credential: it carries no
+# refresh material, it cannot be exchanged for one, and presenting an invalid one
+# must never cost the holder their login. The download route still re-checks
+# conversation membership in the database on every request -- this is transport
+# authorization, not an authorization bypass.
+# ---------------------------------------------------------------------------
+
+ACCESS_TOKEN_TTL_SECONDS = max(60, int(os.getenv("PULSESOC_MESSENGER_MEDIA_TOKEN_TTL_SECONDS", "900")))
+ACCESS_TOKEN_ARG = "mt"
+ACCESS_TOKEN_HEADER = "X-PulseSoc-Media-Token"
+
+
+def _access_token_signature(secret: str, body: str) -> str:
+    return hmac.new(
+        str(secret or "").encode("utf-8"),
+        ("messenger_media:v1:" + body).encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def mint_access_token(secret: str, attachment_id: int, user_id: int, ttl_seconds: int | None = None) -> tuple[str, int]:
+    """Return (token, expires_at) bound to one attachment, one viewer, one window."""
+    if not secret:
+        raise ValueError("messenger media access secret is required")
+    ttl = max(60, int(ttl_seconds or ACCESS_TOKEN_TTL_SECONDS))
+    expires_at = int(time.time()) + ttl
+    body = "%d.%d.%d" % (int(attachment_id), int(user_id), expires_at)
+    return body + "." + _access_token_signature(secret, body), expires_at
+
+
+def access_token_state(secret: str, attachment_id: int, token: str) -> tuple[str, int]:
+    """Classify a media token: ("absent"|"invalid"|"expired"|"valid", user_id).
+
+    Expiry is reported separately from forgery because the two mean different
+    things to the caller: an expired grant is a routine, renewable media
+    condition, while a bad signature is a denial. Neither is ever an
+    authentication event -- this function reads nothing and writes nothing, and
+    in particular never touches session state.
+    """
+    parts = str(token or "").strip().split(".")
+    if not str(token or "").strip():
+        return "absent", 0
+    if len(parts) != 4:
+        return "invalid", 0
+    body = ".".join(parts[:3])
+    if not hmac.compare_digest(parts[3], _access_token_signature(secret, body)):
+        return "invalid", 0
+    try:
+        token_attachment = int(parts[0])
+        token_user = int(parts[1])
+        token_expiry = int(parts[2])
+    except (TypeError, ValueError):
+        return "invalid", 0
+    if token_attachment != int(attachment_id):
+        return "invalid", 0
+    if token_expiry <= int(time.time()):
+        logging.info("MESSENGER_MEDIA_SIGNATURE_EXPIRED attachment_id=%s", attachment_id)
+        return "expired", 0
+    return "valid", max(0, token_user)
+
+
+def access_token_user_id(secret: str, attachment_id: int, token: str) -> int:
+    """Return the viewer a token authorizes for this attachment, else 0."""
+    return access_token_state(secret, attachment_id, token)[1]
 
 
 def local_download_path(cur: Any, user: dict[str, Any], attachment_id: int) -> tuple[Path, str, str]:
