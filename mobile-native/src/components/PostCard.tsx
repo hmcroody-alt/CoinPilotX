@@ -18,6 +18,7 @@ import { sharePulseObject } from "../sharing/nativeShare";
 import { ContentTranslation } from "./ContentTranslation";
 import { createThemedStyles } from "../theme/themedStyles";
 import { EmbeddedLiveViewerSurface } from "./reels/ReelLiveViewerSurface";
+import { EmojiPicker } from "../emoji";
 
 const MEDIA_ASPECT_MIN = 0.55;
 const MEDIA_ASPECT_MAX = 1.91;
@@ -116,6 +117,7 @@ export function PostCard({
   const mediaBleedStyle = computeMediaBleedStyle(mediaLayout, windowWidth, cardWidth);
   const commentInputRef = useRef<TextInput>(null);
   const [commentBody, setCommentBody] = useState("");
+  const [commentEmojiOpen, setCommentEmojiOpen] = useState(false);
   const [commentPosting, setCommentPosting] = useState(false);
   const [commentNotice, setCommentNotice] = useState("");
   const [commentComposerOpen, setCommentComposerOpen] = useState(false);
@@ -714,7 +716,7 @@ export function PostCard({
             style={styles.inlineCommentTool}
             onPress={(event) => {
               event.stopPropagation();
-              setCommentBody((current) => `${current}${current ? " " : ""}☺`);
+              setCommentEmojiOpen(true);
             }}
           >
             <Text style={styles.inlineCommentToolText}>☺</Text>
@@ -736,6 +738,12 @@ export function PostCard({
         </Pressable>
       ) : null}
       {commentNotice ? <Text style={styles.commentNotice}>{commentNotice}</Text> : null}
+      <EmojiPicker
+        visible={commentEmojiOpen}
+        stayOpenOnSelect
+        onClose={() => setCommentEmojiOpen(false)}
+        onSelect={(emoji) => setCommentBody((current) => `${current}${emoji}`)}
+      />
       </View>
       </View>
     </Pressable>

@@ -1,6 +1,7 @@
 import { MessengerConversation, MessengerMessage, MessengerPresence } from "../api/messenger";
 import { PulseGroup, PulseGroupAsset, PulseGroupInvitation, PulseGroupMember, PulseRoom, PulseRoomParticipant } from "../api/groups";
 import { compactPreview, formatShortTime } from "../utils/format";
+import { isSingleEmoji } from "../emoji/grapheme";
 
 export type PulseCommandActionKey =
   | "reply"
@@ -160,20 +161,38 @@ export function typingSummary(presence?: MessengerPresence) {
   return `${names.slice(0, 2).join(", ")} are typing`;
 }
 
-export function optimisticReaction(previous: Record<string, number>, reactionType: string) {
-  return {
+/**
+ * Optimistic reaction update. When the viewer switches their reaction, the
+ * previously selected one is decremented so counts stay accurate before the
+ * server reconciles (emoji foundation Stage 8).
+ */
+export function optimisticReaction(previous: Record<string, number>, reactionType: string, previousViewerReaction?: string) {
+  const next: Record<string, number> = {
     ...previous,
     [reactionType]: Number(previous?.[reactionType] || 0) + 1
   };
+  if (previousViewerReaction && previousViewerReaction !== reactionType) {
+    const remaining = Number(previous?.[previousViewerReaction] || 0) - 1;
+    if (remaining > 0) next[previousViewerReaction] = remaining;
+    else delete next[previousViewerReaction];
+  }
+  return next;
 }
 
+/**
+ * Display glyph for a stored reaction value. New reactions are native Unicode
+ * emoji and render as themselves; legacy named reactions map to canonical
+ * Unicode equivalents (display-only — stored values are never rewritten).
+ */
 export function reactionIcon(reaction: string) {
+  if (isSingleEmoji(reaction)) return reaction;
   const key = reaction.toLowerCase();
-  if (key.includes("spark")) return "✦";
-  if (key.includes("thank")) return "✓";
-  if (key.includes("seen")) return "◌";
+  if (key.includes("pulse")) return "❤️";
+  if (key.includes("spark")) return "✨";
+  if (key.includes("thank")) return "🙏";
+  if (key.includes("seen")) return "👀";
   if (key.includes("fire")) return "🔥";
-  return "◈";
+  return "❤️";
 }
 
 export function messageActionRules(message: MessengerMessage): PulseCommandActionRule[] {

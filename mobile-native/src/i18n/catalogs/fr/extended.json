@@ -2534,6 +2534,13 @@
           "losers": "Baisses",
           "trending": "Tendances",
           "watchlist": "Watchlist"
+        },
+        "regime": {
+          "title": "Conditions",
+          "hint": "Pourquoi ?",
+          "breadth": "{{pct}} de la liste en hausse",
+          "leader": "Groupe en tête · {{group}}",
+          "unavailable": "Les conditions du marché n'ont pas pu être mesurées à partir de cette liste."
         }
       },
       "entry": {
@@ -4183,6 +4190,133 @@
       "revoked": "Révoqué",
       "paused": "En pause",
       "unknown": "Indisponible"
+    },
+    "privateOffice": {
+      "title": "Bureau privé",
+      "subtitle": "Votre centre privé de renseignement et d'opérations personnelles.",
+      "loading": "Vérification du contenu de votre bureau…",
+      "retry": "Réessayer",
+      "open": "Ouvrir",
+      "footnote": "Ce qui apparaît ici est déterminé par votre compte sur le serveur, pas par cette application.",
+      "sections": {
+        "available": "Disponible",
+        "notYet": "À venir"
+      },
+      "unknown": {
+        "title": "Nous n'avons pas pu confirmer votre accès",
+        "body": "Votre bureau n'a pas pu être vérifié pour le moment. Rien n'a changé sur votre compte."
+      },
+      "upgrade": {
+        "title": "Mise à niveau requise",
+        "body": "Le Bureau privé est inclus avec {{tier}}.",
+        "bodyGeneric": "Le Bureau privé n'est pas inclus dans votre formule actuelle."
+      },
+      "unavailable": {
+        "title": "Indisponible",
+        "body": "Le Bureau privé n'est pas disponible pour l'instant."
+      },
+      "reason": {
+        "AVAILABLE": "Disponible",
+        "PROVIDER_REQUIRED": "Fournisseur requis",
+        "NOT_IMPLEMENTED": "Pas encore développé",
+        "TEMPORARILY_DISABLED": "Désactivé temporairement",
+        "UPGRADE_REQUIRED": "Mise à niveau requise",
+        "UNKNOWN": "Indisponible"
+      },
+      "features": {
+        "privateFacts": {
+          "label": "Informations privées",
+          "hint": "Informations vérifiées enregistrées sur vos affaires."
+        },
+        "capitalGraph": {
+          "label": "Graphe de capital",
+          "hint": "Les liens entre vos actifs, entités et obligations."
+        },
+        "privateBriefings": {
+          "label": "Briefings privés",
+          "hint": "Des briefings établis à partir de vos propres dossiers."
+        },
+        "relationshipIntelligence": {
+          "label": "Renseignement relationnel",
+          "hint": "Les personnes et organisations qui entourent vos affaires."
+        },
+        "privateShield": {
+          "label": "Bouclier privé",
+          "hint": "Surveille l'exposition de vos informations privées."
+        },
+        "breachMonitoring": {
+          "label": "Surveillance des fuites",
+          "hint": "Alertes quand vos données apparaissent dans une fuite connue."
+        },
+        "documentIntelligence": {
+          "label": "Intelligence documentaire",
+          "hint": "Extrait des informations des documents que vous fournissez."
+        },
+        "humanConcierge": {
+          "label": "Conciergerie humaine",
+          "hint": "Une personne qui traite vos demandes en votre nom."
+        }
+      },
+      "entry": {
+        "heading": "Bureau privé",
+        "hint": "Votre centre privé de renseignement et d'opérations personnelles.",
+        "lockedHint": "Inclus avec {{tier}}."
+      },
+      "facts": {
+        "subtitle": "Uniquement ce qui a été enregistré pour vous. Rien n'est déduit de votre activité publique.",
+        "loading": "Chargement de vos dossiers…",
+        "why": "Comment le savez-vous ?",
+        "source": "Source",
+        "sourceUnknown": "Non renseignée",
+        "verified": "Vérification",
+        "observedLabel": "Observé",
+        "observed": "Observé le {{date}}",
+        "confidence": "Confiance",
+        "hasDocument": "Un document source est archivé.",
+        "close": "Fermer",
+        "stale": "Obsolète",
+        "empty": {
+          "title": "Rien ici pour l'instant",
+          "body": "Aucune information vérifiée n'a encore été ajoutée."
+        },
+        "notEntitled": {
+          "title": "Mise à niveau requise",
+          "body": "Les Informations privées sont incluses avec {{tier}}.",
+          "bodyGeneric": "Les Informations privées ne sont pas incluses dans votre formule actuelle."
+        },
+        "disabled": {
+          "title": "Désactivé temporairement",
+          "body": "Les Informations privées sont désactivées pour le moment. Vos dossiers restent intacts."
+        },
+        "notImplemented": {
+          "title": "Pas encore disponible",
+          "body": "Cela n'a pas encore été développé."
+        },
+        "unavailable": {
+          "title": "Indisponible",
+          "body": "Nous n'avons pas pu lire vos dossiers pour le moment. Réessayez sous peu."
+        },
+        "error": {
+          "title": "Une erreur est survenue",
+          "body": "Vos dossiers n'ont pas pu être chargés."
+        }
+      },
+      "domains": {
+        "GENERAL": "Général",
+        "FINANCIAL": "Financier",
+        "LEGAL": "Juridique",
+        "HEALTH": "Santé",
+        "FAMILY": "Famille",
+        "IDENTITY": "Identité",
+        "SECURITY": "Sécurité"
+      },
+      "verification": {
+        "VERIFIED": "Vérifié",
+        "SOURCED": "Sourcé",
+        "SELF_REPORTED": "Déclaré par vous",
+        "ESTIMATED": "Estimé",
+        "NEEDS_REVIEW": "À revoir"
+      }
     }
   },
   "briefings": {

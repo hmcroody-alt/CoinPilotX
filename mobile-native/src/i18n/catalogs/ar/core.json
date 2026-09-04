@@ -212,7 +212,9 @@
       "cryptoAlertHistory": "سجل التنبيهات",
       "cryptoPortfolio": "محفظة الكريبتو",
       "briefingsHub": "الموجزات",
-      "briefing": "موجز"
+      "briefing": "موجز",
+      "privateOffice": "المكتب الخاص",
+      "privateFacts": "المعلومات الخاصة"
     },
     "navSubtitles": {
       "missionControl": "مركز القيادة",
@@ -394,6 +396,23 @@
       "pair": "{{first}} و{{second}}",
       "separator": "، ",
       "more": "+{{count}} أخرى"
+    },
+    "emoji": {
+      "search": "البحث عن رمز تعبيري",
+      "noResults": "لم يتم العثور على رموز تعبيرية",
+      "close": "إغلاق منتقي الرموز التعبيرية",
+      "categories": {
+        "recent": "الأخيرة",
+        "smileys": "الوجوه والمشاعر",
+        "people": "الأشخاص والجسد",
+        "animals": "الحيوانات والطبيعة",
+        "food": "الطعام والشراب",
+        "activities": "الأنشطة",
+        "travel": "السفر والأماكن",
+        "objects": "الأشياء",
+        "symbols": "الرموز",
+        "flags": "الأعلام"
+      }
     }
   },
   "auth": {

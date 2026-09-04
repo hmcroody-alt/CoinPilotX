@@ -231,6 +231,19 @@ _FEED_TYPES = ("for_you", "following", "trending", "my_posts", "crypto", "questi
 
 _ALERT_CONDITIONS = ("above", "below", "moves_up_percent", "moves_down_percent", "volatility_above")
 
+#: The Private Office domain vocabulary, read from its owning module rather than
+#: retyped. ``""`` is included as a choice because the field is optional and its
+#: default is "every domain" — an enum that rejected the empty string would make
+#: the default value unrepresentable and force the model to name a domain it was
+#: never asked about.
+def _private_fact_domain_choices() -> tuple[str, ...]:
+    from services.private_office import model as _po_model
+
+    return ("",) + tuple(_po_model.DOMAINS)
+
+
+_PRIVATE_FACT_DOMAINS = _private_fact_domain_choices()
+
 
 # ---------------------------------------------------------------------------
 # The registry
@@ -1125,6 +1138,45 @@ _register(CapabilitySpec(
     result_card=CardType.CONTENT_RESULT,
     audit_category="translation_read",
     target_field="content_ref",
+))
+
+
+# --- Private Office --------------------------------------------------------
+#
+# The first Private Office capability UNDX can reach. It is a read of the
+# member's own private fact store and nothing else: there is no companion write
+# here, because a fact written by an agent from a conversation is a fact whose
+# provenance is a model's paraphrase, and the store's whole point is that every
+# row can answer "why does PulseSoc know this?". Recording a fact stays a
+# deliberate act on the member's own screen.
+#
+# The domain choices are imported rather than restated. A vocabulary typed twice
+# is a vocabulary that will eventually disagree with itself, and the failure
+# would be quiet — a domain the model may name that the reader then filters to
+# nothing, indistinguishable from an empty store.
+_register(CapabilitySpec(
+    capability_id="private.facts.list",
+    description="List the authenticated member's own recorded private facts",
+    intents=("my private office", "what do you know about me",
+             "what have i recorded", "my private facts", "private information",
+             "what does pulsesoc know about me", "my recorded details",
+             "show my private office", "what is in my private office"),
+    risk=RiskLevel.READ_ONLY,
+    confirmation=ConfirmationPolicy.NEVER,
+    tool_name="pulsesoc.private_facts.list",
+    # There is no field naming another account, so the scope is structural: the
+    # only owner this capability can reach is the caller.
+    permission=PermissionScope.SELF_ACCOUNT_ONLY,
+    fields=(
+        FieldSpec("domain", "enum", required=False,
+                  choices=_PRIVATE_FACT_DOMAINS, default=""),
+        FieldSpec("limit", "int", required=False, minimum=1, maximum=25, default=10),
+    ),
+    executor="private_facts_list",
+    verifier="",
+    native_route="/pulse/private-office/facts",
+    result_card=CardType.SEARCH_RESULTS,
+    audit_category="private_facts_read",
 ))
 
 for _capability, _intent, _saved, _executor, _verifier, _undo in (

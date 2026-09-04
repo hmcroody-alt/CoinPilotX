@@ -2517,6 +2517,13 @@
           "losers": "K ap desann",
           "trending": "Tandans",
           "watchlist": "Lis siveyans"
+        },
+        "regime": {
+          "title": "Kondisyon",
+          "hint": "Poukisa?",
+          "breadth": "{{pct}} nan lis la ap monte",
+          "leader": "Gwoup ki alatèt · {{group}}",
+          "unavailable": "Nou pa ka mezire kondisyon mache a ak lis sa a."
         }
       },
       "entry": {
@@ -4152,6 +4159,133 @@
       "revoked": "Revoke",
       "paused": "An poz",
       "unknown": "Pa disponib"
+    },
+    "privateOffice": {
+      "title": "Biwo prive",
+      "subtitle": "Sant prive w pou entèlijans ak operasyon lavi w.",
+      "loading": "N ap tcheke sa biwo w la genyen…",
+      "retry": "Eseye ankò",
+      "open": "Louvri",
+      "footnote": "Sa ki parèt la a se kont ou sou sèvè a ki deside l, se pa aplikasyon sa a.",
+      "sections": {
+        "available": "Disponib",
+        "notYet": "K ap vini pita"
+      },
+      "unknown": {
+        "title": "Nou pa t ka konfime aksè w",
+        "body": "Nou pa t ka tcheke biwo w la kounye a. Anyen pa chanje sou kont ou."
+      },
+      "upgrade": {
+        "title": "Ou bezwen monte plan",
+        "body": "Biwo prive a enkli nan {{tier}}.",
+        "bodyGeneric": "Biwo prive a pa enkli nan plan w kounye a."
+      },
+      "unavailable": {
+        "title": "Pa disponib",
+        "body": "Biwo prive a pa disponib kounye a."
+      },
+      "reason": {
+        "AVAILABLE": "Disponib",
+        "PROVIDER_REQUIRED": "Bezwen yon founisè",
+        "NOT_IMPLEMENTED": "Poko bati",
+        "TEMPORARILY_DISABLED": "Fèmen tanporèman",
+        "UPGRADE_REQUIRED": "Ou bezwen monte plan",
+        "UNKNOWN": "Pa disponib"
+      },
+      "features": {
+        "privateFacts": {
+          "label": "Enfòmasyon prive",
+          "hint": "Enfòmasyon verifye ki anrejistre sou zafè w."
+        },
+        "capitalGraph": {
+          "label": "Graf kapital",
+          "hint": "Kijan byen, antite ak obligasyon w yo konekte."
+        },
+        "privateBriefings": {
+          "label": "Rapò prive",
+          "hint": "Rapò ki soti nan pwòp dosye w yo."
+        },
+        "relationshipIntelligence": {
+          "label": "Entèlijans relasyon",
+          "hint": "Moun ak òganizasyon ki antoure zafè w."
+        },
+        "privateShield": {
+          "label": "Boukliye prive",
+          "hint": "Li veye si enfòmasyon prive w parèt deyò."
+        },
+        "breachMonitoring": {
+          "label": "Siveyans fuit done",
+          "hint": "Alèt lè enfòmasyon w parèt nan yon fuit ki konnen."
+        },
+        "documentIntelligence": {
+          "label": "Entèlijans dokiman",
+          "hint": "Li rale enfòmasyon nan dokiman w bay yo."
+        },
+        "humanConcierge": {
+          "label": "Konsyèj imen",
+          "hint": "Yon moun ki okipe demann yo pou ou."
+        }
+      },
+      "entry": {
+        "heading": "Biwo prive",
+        "hint": "Sant prive w pou entèlijans ak operasyon lavi w.",
+        "lockedHint": "Enkli nan {{tier}}."
+      },
+      "facts": {
+        "subtitle": "Sèlman sa ki anrejistre pou ou. Anyen pa dedwi nan aktivite piblik ou.",
+        "loading": "N ap chaje dosye w yo…",
+        "why": "Poukisa ou konnen sa?",
+        "source": "Sous",
+        "sourceUnknown": "Pa anrejistre",
+        "verified": "Verifikasyon",
+        "observedLabel": "Obsève",
+        "observed": "Obsève {{date}}",
+        "confidence": "Konfyans",
+        "hasDocument": "Gen yon dokiman sous nan dosye a.",
+        "close": "Fèmen",
+        "stale": "Depase",
+        "empty": {
+          "title": "Pa gen anyen la a ankò",
+          "body": "Poko gen okenn enfòmasyon verifye ki ajoute."
+        },
+        "notEntitled": {
+          "title": "Ou bezwen monte plan",
+          "body": "Enfòmasyon prive enkli nan {{tier}}.",
+          "bodyGeneric": "Enfòmasyon prive pa enkli nan plan w kounye a."
+        },
+        "disabled": {
+          "title": "Fèmen tanporèman",
+          "body": "Enfòmasyon prive fèmen pou kounye a. Dosye w yo pa touche."
+        },
+        "notImplemented": {
+          "title": "Poko disponib",
+          "body": "Sa a poko bati."
+        },
+        "unavailable": {
+          "title": "Pa disponib",
+          "body": "Nou pa t ka li dosye w yo kounye a. Eseye ankò talè."
+        },
+        "error": {
+          "title": "Yon bagay pa mache",
+          "body": "Nou pa t ka chaje dosye w yo."
+        }
+      },
+      "domains": {
+        "GENERAL": "Jeneral",
+        "FINANCIAL": "Finansye",
+        "LEGAL": "Legal",
+        "HEALTH": "Sante",
+        "FAMILY": "Fanmi",
+        "IDENTITY": "Idantite",
+        "SECURITY": "Sekirite"
+      },
+      "verification": {
+        "VERIFIED": "Verifye",
+        "SOURCED": "Gen sous",
+        "SELF_REPORTED": "Ou menm ki di l",
+        "ESTIMATED": "Estime",
+        "NEEDS_REVIEW": "Bezwen revizyon"
+      }
     }
   },
   "briefings": {

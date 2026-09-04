@@ -212,7 +212,9 @@
       "cryptoAlertHistory": "Istwa alèt yo",
       "cryptoPortfolio": "Pòtfèy kripto",
       "briefingsHub": "Rezime",
-      "briefing": "Rezime"
+      "briefing": "Rezime",
+      "privateOffice": "Biwo prive",
+      "privateFacts": "Enfòmasyon prive"
     },
     "navSubtitles": {
       "missionControl": "Sant kontwòl",
@@ -347,6 +349,23 @@
       "pair": "{{first}} ak {{second}}",
       "separator": ", ",
       "more": "+{{count}} ankò"
+    },
+    "emoji": {
+      "search": "Chèche emoji",
+      "noResults": "Pa jwenn okenn emoji",
+      "close": "Fèmen seleksyonè emoji a",
+      "categories": {
+        "recent": "Resan",
+        "smileys": "Figi ak emosyon",
+        "people": "Moun ak kò",
+        "animals": "Bèt ak lanati",
+        "food": "Manje ak bwason",
+        "activities": "Aktivite",
+        "travel": "Vwayaj ak kote",
+        "objects": "Objè",
+        "symbols": "Senbòl",
+        "flags": "Drapo"
+      }
     }
   },
   "auth": {

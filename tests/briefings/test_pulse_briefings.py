@@ -586,6 +586,83 @@ class TopicIndependenceTests(unittest.TestCase):
         self.assertEqual(pack["crypto_score"], 0)
 
 
+class TopicIndependenceTests(unittest.TestCase):
+    """Crypto market and watchlist are separate switches on the hub, so they must
+    be separate in the fact pack. Turning the market topic off used to skip the
+    whole crypto collector, which deleted the user's watchlist as a side effect:
+    the watchlist switch read ON while contributing nothing."""
+
+    def setUp(self):
+        _clear_provider_cache()
+        self.conn = _fresh_conn()
+        self.conn.execute(
+            "INSERT INTO crypto_alerts (user_id, asset_symbol, condition_type, target_value, status) "
+            "VALUES (1,'BTC','above',103.0,'active')"
+        )
+        self.conn.commit()
+
+    def tearDown(self):
+        self.conn.close()
+
+    def _build(self, *, crypto_enabled, watchlist_enabled):
+        # A big market move: 9% BTC. Whether it may score is the point of the test.
+        with mock.patch.object(facts.crypto_provider, "get_watchlist_snapshots",
+                               return_value=[{"symbol": "BTC", "price": 100.0, "change_24h": 1.0}]), \
+             mock.patch.object(facts.crypto_provider, "get_market_overview",
+                               return_value={"generated_at": _iso(datetime.now(timezone.utc)),
+                                             "provider": "coingecko",
+                                             "btc": {"price": 100.0, "change_24h": 9.0},
+                                             "eth": {"price": 50.0, "change_24h": 1.0},
+                                             "market_cap_change_24h_pct": 9.0}), \
+             mock.patch.object(facts.crypto_provider, "get_top_movers",
+                               return_value={"gainers": [], "losers": []}), \
+             mock.patch.object(facts.crypto_provider, "get_trending", return_value=[]):
+            return facts.build_briefing_facts(
+                self.conn.cursor(), 1, since_iso=_iso(datetime.now(timezone.utc)),
+                timezone_name="UTC", locale="en",
+                prefs={"network_enabled": False,
+                       "crypto_enabled": crypto_enabled,
+                       "watchlist_enabled": watchlist_enabled},
+            )
+
+    def test_market_off_with_watchlist_on_still_returns_watchlist(self):
+        pack = self._build(crypto_enabled=False, watchlist_enabled=True)
+        crypto = pack["crypto"]
+        self.assertIsNotNone(crypto, "watchlist ON must still produce a crypto fact block")
+        self.assertEqual(crypto["watchlist"], [{"symbol": "BTC", "price": 100.0, "change_24h": 1.0}])
+        self.assertEqual(crypto["alert_proximity"],
+                         [{"symbol": "BTC", "threshold": 103.0, "distance_pct": 3.0}])
+
+    def test_market_off_contributes_no_market_facts_or_score(self):
+        pack = self._build(crypto_enabled=False, watchlist_enabled=True)
+        crypto = pack["crypto"]
+        self.assertNotIn("btc_price", crypto)
+        self.assertNotIn("btc_change_24h", crypto)
+        self.assertFalse(crypto["market_enabled"])
+        # A 9% BTC move must score zero when the market topic is off; only the
+        # user's own alert proximity (8) may count.
+        self.assertEqual(pack["crypto_score"], 8)
+
+    def test_market_on_scores_the_move(self):
+        pack = self._build(crypto_enabled=True, watchlist_enabled=True)
+        self.assertTrue(pack["crypto"]["market_enabled"])
+        self.assertEqual(pack["crypto"]["btc_change_24h"], 9.0)
+        self.assertEqual(pack["crypto_score"], 10 + 6 + 8)
+
+    def test_watchlist_off_keeps_market_and_drops_personal_facts(self):
+        pack = self._build(crypto_enabled=True, watchlist_enabled=False)
+        crypto = pack["crypto"]
+        self.assertEqual(crypto["btc_change_24h"], 9.0)
+        self.assertEqual(crypto["watchlist"], [])
+        self.assertEqual(crypto["alert_proximity"], [])
+        self.assertEqual(pack["crypto_score"], 10 + 6)
+
+    def test_both_off_removes_the_crypto_block_entirely(self):
+        pack = self._build(crypto_enabled=False, watchlist_enabled=False)
+        self.assertIsNone(pack["crypto"])
+        self.assertEqual(pack["crypto_score"], 0)
+
+
 class SignificanceTests(unittest.TestCase):
     def test_network_significance_weights(self):
         net = {"security_alerts": 1, "unread_messages": 2, "new_followers": 3}

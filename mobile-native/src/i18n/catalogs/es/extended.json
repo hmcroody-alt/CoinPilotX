@@ -2534,6 +2534,13 @@
           "losers": "Mayores bajadas",
           "trending": "Tendencia",
           "watchlist": "Watchlist"
+        },
+        "regime": {
+          "title": "Condiciones",
+          "hint": "¿Por qué?",
+          "breadth": "{{pct}} de la lista sube",
+          "leader": "Grupo líder · {{group}}",
+          "unavailable": "No se pudieron medir las condiciones del mercado con esta lista."
         }
       },
       "entry": {
@@ -4183,6 +4190,133 @@
       "revoked": "Revocada",
       "paused": "En pausa",
       "unknown": "No disponible"
+    },
+    "privateOffice": {
+      "title": "Oficina privada",
+      "subtitle": "Tu centro privado de inteligencia y operaciones personales.",
+      "loading": "Comprobando qué incluye tu oficina…",
+      "retry": "Reintentar",
+      "open": "Abrir",
+      "footnote": "Lo que aparece aquí lo decide tu cuenta en el servidor, no esta aplicación.",
+      "sections": {
+        "available": "Disponible",
+        "notYet": "Próximamente"
+      },
+      "unknown": {
+        "title": "No pudimos confirmar tu acceso",
+        "body": "No se pudo comprobar tu oficina en este momento. Nada ha cambiado en tu cuenta."
+      },
+      "upgrade": {
+        "title": "Requiere mejora de plan",
+        "body": "La Oficina privada se incluye con {{tier}}.",
+        "bodyGeneric": "La Oficina privada no está incluida en tu plan actual."
+      },
+      "unavailable": {
+        "title": "No disponible",
+        "body": "La Oficina privada no está disponible ahora mismo."
+      },
+      "reason": {
+        "AVAILABLE": "Disponible",
+        "PROVIDER_REQUIRED": "Requiere proveedor",
+        "NOT_IMPLEMENTED": "Aún sin desarrollar",
+        "TEMPORARILY_DISABLED": "Desactivado temporalmente",
+        "UPGRADE_REQUIRED": "Requiere mejora de plan",
+        "UNKNOWN": "No disponible"
+      },
+      "features": {
+        "privateFacts": {
+          "label": "Datos privados",
+          "hint": "Información verificada registrada sobre tus asuntos."
+        },
+        "capitalGraph": {
+          "label": "Gráfico de capital",
+          "hint": "Cómo se conectan tus activos, entidades y obligaciones."
+        },
+        "privateBriefings": {
+          "label": "Informes privados",
+          "hint": "Informes elaborados a partir de tus propios registros."
+        },
+        "relationshipIntelligence": {
+          "label": "Inteligencia de relaciones",
+          "hint": "Las personas y organizaciones que rodean tus asuntos."
+        },
+        "privateShield": {
+          "label": "Escudo privado",
+          "hint": "Vigila la exposición de tu información privada."
+        },
+        "breachMonitoring": {
+          "label": "Vigilancia de filtraciones",
+          "hint": "Avisos cuando tus datos aparecen en una filtración conocida."
+        },
+        "documentIntelligence": {
+          "label": "Inteligencia documental",
+          "hint": "Extrae datos de los documentos que aportas."
+        },
+        "humanConcierge": {
+          "label": "Conserjería humana",
+          "hint": "Una persona que gestiona solicitudes en tu nombre."
+        }
+      },
+      "entry": {
+        "heading": "Oficina privada",
+        "hint": "Tu centro privado de inteligencia y operaciones personales.",
+        "lockedHint": "Incluida con {{tier}}."
+      },
+      "facts": {
+        "subtitle": "Solo lo que se ha registrado para ti. Nada se deduce de tu actividad pública.",
+        "loading": "Cargando tus registros…",
+        "why": "¿Por qué sabes esto?",
+        "source": "Fuente",
+        "sourceUnknown": "Sin registrar",
+        "verified": "Verificación",
+        "observedLabel": "Observado",
+        "observed": "Observado el {{date}}",
+        "confidence": "Confianza",
+        "hasDocument": "Hay un documento de origen archivado.",
+        "close": "Cerrar",
+        "stale": "Desactualizado",
+        "empty": {
+          "title": "Aquí todavía no hay nada",
+          "body": "Todavía no se ha añadido información verificada."
+        },
+        "notEntitled": {
+          "title": "Requiere mejora de plan",
+          "body": "Los Datos privados se incluyen con {{tier}}.",
+          "bodyGeneric": "Los Datos privados no están incluidos en tu plan actual."
+        },
+        "disabled": {
+          "title": "Desactivado temporalmente",
+          "body": "Los Datos privados están desactivados por ahora. Tus registros no se han tocado."
+        },
+        "notImplemented": {
+          "title": "Aún no disponible",
+          "body": "Esto todavía no se ha desarrollado."
+        },
+        "unavailable": {
+          "title": "No disponible",
+          "body": "No pudimos leer tus registros en este momento. Inténtalo de nuevo en breve."
+        },
+        "error": {
+          "title": "Algo salió mal",
+          "body": "No se pudieron cargar tus registros."
+        }
+      },
+      "domains": {
+        "GENERAL": "General",
+        "FINANCIAL": "Financiero",
+        "LEGAL": "Legal",
+        "HEALTH": "Salud",
+        "FAMILY": "Familia",
+        "IDENTITY": "Identidad",
+        "SECURITY": "Seguridad"
+      },
+      "verification": {
+        "VERIFIED": "Verificado",
+        "SOURCED": "Con fuente",
+        "SELF_REPORTED": "Declarado por ti",
+        "ESTIMATED": "Estimado",
+        "NEEDS_REVIEW": "Requiere revisión"
+      }
     }
   },
   "briefings": {

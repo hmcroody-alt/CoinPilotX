@@ -68,6 +68,10 @@ PRODUCTION_TOOL_REGISTRY: dict[str, dict[str, Any]] = {
     # "this needs read-after-write". The agent pack supplies a real read-back verdict via
     # ``canonical_verified``, so it needs no stand-in and must not advertise a route it
     # does not have. Write semantics live in ``risk`` and ``verification_route``.
+    # Private Office. Read-only and owner-scoped by construction: the capability
+    # declares no field naming an account, so the only store it can reach is the
+    # caller's. Reached in-process, hence no method.
+    "pulsesoc.private_facts.list": {"method": None, "route": "services.private_office.facts.list_facts", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
     "pulsesoc.crypto_alerts.list": {"method": None, "route": "services.alert_engine.list_alert_rules", "risk": "read_only", "confirmation": False, "canonical_key": "alert_id"},
     "pulsesoc.crypto_alerts.get": {"method": None, "route": "services.alert_engine.get_alert_rule", "risk": "read_only", "confirmation": False, "canonical_key": "alert_id"},
     "pulsesoc.crypto_alerts.pause": {"method": None, "route": "services.alert_engine.pause_alert", "risk": "medium", "confirmation": False, "canonical_key": "alert_id", "verification_route": "services.alert_engine.get_alert_rule"},

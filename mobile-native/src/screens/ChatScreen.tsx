@@ -95,6 +95,7 @@ import {
   typingSummary
 } from "../pulseCommand/domain";
 import { colors } from "../theme/colors";
+import { EmojiPicker, QUICK_REACTIONS } from "../emoji";
 import { logiNexus } from "../theme/logiNexus";
 import { formatFileSize, formatShortTime } from "../utils/format";
 
@@ -301,6 +302,8 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const selfUserId = Number(authState.user?.user_id || 0);
   const [messages, setMessages] = useState<MessengerMessage[]>([]);
   const [draft, setDraft] = useState("");
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+  const [reactionPickerFor, setReactionPickerFor] = useState<MessengerMessage | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -799,7 +802,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       return;
     }
     const previous = message.reactions || {};
-    setMessages((current) => current.map((item) => item.id === message.id ? { ...item, reactions: optimisticReaction(previous, reactionType), viewer_reaction: reactionType } : item));
+    setMessages((current) => current.map((item) => item.id === message.id ? { ...item, reactions: optimisticReaction(previous, reactionType, message.viewer_reaction), viewer_reaction: reactionType } : item));
     setStatusMessage("Reaction sent.");
     try {
       const result = await reactToMessage(message.id, reactionType);
@@ -1809,7 +1812,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
             onChangeText={notifyTyping}
             accessibilityLabel={assistantConversation ? "Message UNDX composer" : "Message composer"}
           />
-          <SignalIconButton accessibilityLabel="Add smiling emoji" icon="happy-outline" size={42} onPress={() => setDraft((current) => `${current}😊`)} />
+          <SignalIconButton accessibilityLabel="Add emoji" icon="happy-outline" size={42} onPress={() => setEmojiPickerOpen(true)} />
           <SignalIconButton accessibilityLabel={assistantConversation ? "UNDX voice messages unavailable" : "Record voice message"} icon="mic-outline" disabled={uploading || assistantConversation} size={42} onPress={() => assistantConversation ? setStatusMessage("UNDX cannot receive voice messages yet.") : toggleVoiceRecording().catch(() => undefined)} />
           <Pressable accessibilityRole="button" accessibilityLabel="Send message" disabled={!draft.trim()} style={({ pressed }) => [styles.sendButton, !draft.trim() && styles.sendDisabled, pressed && styles.pressed]} onPress={submitText}>
             <Text style={styles.sendText}>➤</Text>
@@ -1817,6 +1820,20 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         </View>}
       </PulseCommandPanel>
       </KeyboardAvoidingView>
+      <EmojiPicker
+        visible={emojiPickerOpen}
+        stayOpenOnSelect
+        onClose={() => setEmojiPickerOpen(false)}
+        onSelect={(emoji) => setDraft((current) => `${current}${emoji}`)}
+      />
+      <EmojiPicker
+        visible={reactionPickerFor !== null}
+        onClose={() => setReactionPickerFor(null)}
+        onSelect={(emoji) => {
+          if (reactionPickerFor) react(reactionPickerFor, emoji).catch(() => undefined);
+          setReactionPickerFor(null);
+        }}
+      />
       <MessageActionSheet
         message={selectedMessage}
         onClose={() => setSelectedMessage(null)}
@@ -1827,6 +1844,10 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         onReact={(message, reactionType) => {
           react(message, reactionType).catch(() => undefined);
           setSelectedMessage(null);
+        }}
+        onReactMore={(message) => {
+          setSelectedMessage(null);
+          setReactionPickerFor(message);
         }}
         onRetry={(message) => {
           retryMessage(message).catch(() => undefined);
@@ -2030,6 +2051,7 @@ function MessageActionSheet({
   onClose,
   onReply,
   onReact,
+  onReactMore,
   onRetry,
   onDelete,
   onReport,
@@ -2039,6 +2061,7 @@ function MessageActionSheet({
   onClose: () => void;
   onReply: (message: MessengerMessage) => void;
   onReact: (message: MessengerMessage, reactionType: string) => void;
+  onReactMore: (message: MessengerMessage) => void;
   onRetry: (message: MessengerMessage) => void;
   onDelete: (message: MessengerMessage, scope: "self" | "everyone") => void;
   onReport: (message: MessengerMessage) => void;
@@ -2056,11 +2079,25 @@ function MessageActionSheet({
           <Text style={styles.sheetPreview} numberOfLines={2}>{messagePreview(message)}</Text>
           {canReact ? (
             <View style={styles.reactionChoices}>
-              {["pulse", "spark", "thanks", "seen"].map((reaction) => (
-                <Pressable key={reaction} style={styles.reactionChoice} onPress={() => onReact(message, reaction)}>
-                  <Text style={styles.reactionText}>{reactionIcon(reaction)} {reaction}</Text>
+              {QUICK_REACTIONS.map((reaction) => (
+                <Pressable
+                  key={reaction}
+                  accessibilityRole="button"
+                  accessibilityLabel={`React ${reaction}`}
+                  style={[styles.reactionChoice, message.viewer_reaction === reaction && styles.reactionActive]}
+                  onPress={() => onReact(message, reaction)}
+                >
+                  <Text style={styles.quickReactionGlyph} allowFontScaling={false}>{reaction}</Text>
                 </Pressable>
               ))}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="More reactions"
+                style={styles.reactionChoice}
+                onPress={() => onReactMore(message)}
+              >
+                <Text style={styles.quickReactionGlyph} allowFontScaling={false}>➕</Text>
+              </Pressable>
             </View>
           ) : null}
           <View style={styles.sheetGrid}>
@@ -2897,6 +2934,9 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 12,
     paddingVertical: 8
+  },
+  quickReactionGlyph: {
+    fontSize: 24
   },
   sheetGrid: {
     flexDirection: "row",

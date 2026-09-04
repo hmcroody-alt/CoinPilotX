@@ -10,6 +10,8 @@ import { AppState } from "react-native";
 // bell and the seller headers came to disagree. `navigation/__tests__/badgeSources.test.ts`
 // fails if this import comes back.
 import { getMyProfile, PulseProfile } from "../api/profile";
+import { isMember } from "../entitlements/canonicalTier";
+import { useCanonicalTier } from "../entitlements/useCanonicalTier";
 import { MasterNavigationDrawer } from "../components/MasterNavigationDrawer";
 import { MinimizedCallBanner } from "../calls/MinimizedCallBanner";
 import { invalidateNativeSync, registerSyncInvalidation, startNativeEventSync } from "../core/eventSync";
@@ -31,6 +33,8 @@ import { CryptoAlertCenterScreen } from "../screens/CryptoAlertCenterScreen";
 import { CryptoAlertHistoryScreen } from "../screens/CryptoAlertHistoryScreen";
 import { CryptoPortfolioScreen } from "../screens/CryptoPortfolioScreen";
 import { MarketPulseScreen } from "../screens/MarketPulseScreen";
+import { PrivateOfficeScreen } from "../screens/PrivateOfficeScreen";
+import { PrivateFactsScreen } from "../screens/PrivateFactsScreen";
 import { PortfolioScreen } from "../screens/PortfolioScreen";
 import { WatchlistsScreen } from "../screens/WatchlistsScreen";
 import { ActivityRoute } from "../screens/ActivityRoute";
@@ -311,6 +315,8 @@ export function AppNavigator() {
     getMyProfile().then(setProfile).catch(() => setProfile(null));
   }, []);
 
+  const canonicalTier = useCanonicalTier();
+
   const identity: GlobalNavigationIdentity = {
     displayName:
       profile?.display_name ||
@@ -320,7 +326,12 @@ export function AppNavigator() {
     username: profile?.username || authState.user?.username || "",
     avatarUrl: profile?.avatar_thumbnail_url || profile?.avatar_url || authState.user?.avatar_url || "",
     verified: Boolean(profile?.verified_badge),
-    premium: ["active", "premium", "founder"].includes(String(profile?.premium_status || authState.user?.premium_status || "").toLowerCase()),
+    // This drawer belongs to the signed-in member, so it asks the canonical
+    // resolver rather than reading `premium_status`. The array that used to be
+    // here omitted "lifetime", so a lifetime member saw a badge on their
+    // profile header and none here — the same person, two answers, one screen
+    // apart.
+    premium: isMember(canonicalTier),
     attention: String(profile?.account_status || authState.user?.account_status || "active").toLowerCase() !== "active"
   };
 
@@ -589,6 +600,14 @@ export function AppNavigator() {
       <Stack.Screen name="Watchlists" component={WatchlistsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.watchlists") })} />
       <Stack.Screen name="Portfolio" component={PortfolioScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.portfolio") })} />
       <Stack.Screen name="MarketPulse" component={MarketPulseScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.marketPulse") })} />
+      {/* Private Office and Private Facts are ordinary pushed screens with
+          ordinary back behaviour. They are registered unconditionally: the
+          navigator does not know the member's tier and must not learn it, so
+          entry is controlled by whether anything links here, and the screens
+          themselves render the server's answer — including "you do not have
+          this" — rather than being absent from the graph. */}
+      <Stack.Screen name="PrivateOffice" component={PrivateOfficeScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateOffice") })} />
+      <Stack.Screen name="PrivateFacts" component={PrivateFactsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateFacts") })} />
       {/* This is the first-frame title only: AssetDetailScreen calls
           `setOptions` on mount and replaces it with the asset's name, which is a
           proper noun and so is deliberately not routed through the catalog. The

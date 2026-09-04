@@ -2534,6 +2534,13 @@
           "losers": "Verlierer",
           "trending": "Im Trend",
           "watchlist": "Watchlist"
+        },
+        "regime": {
+          "title": "Marktlage",
+          "hint": "Warum?",
+          "breadth": "{{pct}} der Liste im Plus",
+          "leader": "Führende Gruppe · {{group}}",
+          "unavailable": "Die Marktlage konnte aus dieser Liste nicht ermittelt werden."
         }
       },
       "entry": {
@@ -4183,6 +4190,133 @@
       "revoked": "Widerrufen",
       "paused": "Pausiert",
       "unknown": "Nicht verfügbar"
+    },
+    "privateOffice": {
+      "title": "Privates Büro",
+      "subtitle": "Ihr privates Zentrum für Informationen und Lebensorganisation.",
+      "loading": "Wir prüfen, was Ihr Büro umfasst…",
+      "retry": "Erneut versuchen",
+      "open": "Öffnen",
+      "footnote": "Was hier erscheint, entscheidet Ihr Konto auf dem Server, nicht diese App.",
+      "sections": {
+        "available": "Verfügbar",
+        "notYet": "Kommt später"
+      },
+      "unknown": {
+        "title": "Ihr Zugang konnte nicht bestätigt werden",
+        "body": "Ihr Büro konnte gerade nicht geprüft werden. An Ihrem Konto hat sich nichts geändert."
+      },
+      "upgrade": {
+        "title": "Upgrade erforderlich",
+        "body": "Das Private Büro ist in {{tier}} enthalten.",
+        "bodyGeneric": "Das Private Büro ist in Ihrem aktuellen Tarif nicht enthalten."
+      },
+      "unavailable": {
+        "title": "Nicht verfügbar",
+        "body": "Das Private Büro ist derzeit nicht verfügbar."
+      },
+      "reason": {
+        "AVAILABLE": "Verfügbar",
+        "PROVIDER_REQUIRED": "Anbieter erforderlich",
+        "NOT_IMPLEMENTED": "Noch nicht gebaut",
+        "TEMPORARILY_DISABLED": "Vorübergehend aus",
+        "UPGRADE_REQUIRED": "Upgrade erforderlich",
+        "UNKNOWN": "Nicht verfügbar"
+      },
+      "features": {
+        "privateFacts": {
+          "label": "Private Angaben",
+          "hint": "Geprüfte Angaben, die zu Ihren Belangen erfasst wurden."
+        },
+        "capitalGraph": {
+          "label": "Kapitalgraph",
+          "hint": "Wie Ihre Vermögenswerte, Gesellschaften und Verpflichtungen zusammenhängen."
+        },
+        "privateBriefings": {
+          "label": "Private Briefings",
+          "hint": "Briefings aus Ihren eigenen Unterlagen."
+        },
+        "relationshipIntelligence": {
+          "label": "Beziehungsanalyse",
+          "hint": "Die Personen und Organisationen rund um Ihre Belange."
+        },
+        "privateShield": {
+          "label": "Privater Schutzschild",
+          "hint": "Achtet darauf, ob Ihre privaten Daten offengelegt werden."
+        },
+        "breachMonitoring": {
+          "label": "Leck-Überwachung",
+          "hint": "Warnt, wenn Ihre Daten in einem bekannten Leck auftauchen."
+        },
+        "documentIntelligence": {
+          "label": "Dokumentenanalyse",
+          "hint": "Liest Angaben aus Dokumenten, die Sie bereitstellen."
+        },
+        "humanConcierge": {
+          "label": "Persönlicher Concierge",
+          "hint": "Ein Mensch, der Anliegen in Ihrem Namen erledigt."
+        }
+      },
+      "entry": {
+        "heading": "Privates Büro",
+        "hint": "Ihr privates Zentrum für Informationen und Lebensorganisation.",
+        "lockedHint": "In {{tier}} enthalten."
+      },
+      "facts": {
+        "subtitle": "Nur das, was für Sie erfasst wurde. Nichts wird aus Ihrer öffentlichen Aktivität abgeleitet.",
+        "loading": "Ihre Einträge werden geladen…",
+        "why": "Woher wissen Sie das?",
+        "source": "Quelle",
+        "sourceUnknown": "Nicht erfasst",
+        "verified": "Prüfung",
+        "observedLabel": "Erfasst",
+        "observed": "Erfasst am {{date}}",
+        "confidence": "Konfidenz",
+        "hasDocument": "Ein Quelldokument liegt vor.",
+        "close": "Schließen",
+        "stale": "Veraltet",
+        "empty": {
+          "title": "Hier ist noch nichts",
+          "body": "Es wurden noch keine geprüften Angaben hinzugefügt."
+        },
+        "notEntitled": {
+          "title": "Upgrade erforderlich",
+          "body": "Private Angaben sind in {{tier}} enthalten.",
+          "bodyGeneric": "Private Angaben sind in Ihrem aktuellen Tarif nicht enthalten."
+        },
+        "disabled": {
+          "title": "Vorübergehend aus",
+          "body": "Private Angaben sind vorerst abgeschaltet. Ihre Einträge bleiben unberührt."
+        },
+        "notImplemented": {
+          "title": "Noch nicht verfügbar",
+          "body": "Das wurde noch nicht gebaut."
+        },
+        "unavailable": {
+          "title": "Nicht verfügbar",
+          "body": "Ihre Einträge konnten gerade nicht gelesen werden. Bitte gleich erneut versuchen."
+        },
+        "error": {
+          "title": "Etwas ist schiefgelaufen",
+          "body": "Ihre Einträge konnten nicht geladen werden."
+        }
+      },
+      "domains": {
+        "GENERAL": "Allgemein",
+        "FINANCIAL": "Finanzen",
+        "LEGAL": "Recht",
+        "HEALTH": "Gesundheit",
+        "FAMILY": "Familie",
+        "IDENTITY": "Identität",
+        "SECURITY": "Sicherheit"
+      },
+      "verification": {
+        "VERIFIED": "Geprüft",
+        "SOURCED": "Mit Quelle",
+        "SELF_REPORTED": "Selbst angegeben",
+        "ESTIMATED": "Geschätzt",
+        "NEEDS_REVIEW": "Prüfung nötig"
+      }
     }
   },
   "briefings": {

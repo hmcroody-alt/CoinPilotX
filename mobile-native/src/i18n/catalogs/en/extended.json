@@ -2534,6 +2534,13 @@
           "losers": "Losers",
           "trending": "Trending",
           "watchlist": "Watchlist"
+        },
+        "regime": {
+          "title": "Conditions",
+          "hint": "Why?",
+          "breadth": "{{pct}} of the board is up",
+          "leader": "Leading group · {{group}}",
+          "unavailable": "Market conditions could not be measured from this board."
         }
       },
       "entry": {
@@ -4183,6 +4190,133 @@
       "revoked": "Revoked",
       "paused": "Paused",
       "unknown": "Unavailable"
+    },
+    "privateOffice": {
+      "title": "Private Office",
+      "subtitle": "Your private intelligence and life operations center.",
+      "loading": "Checking what your office includes…",
+      "retry": "Retry",
+      "open": "Open",
+      "footnote": "What appears here is decided by your account on the server, not by this app.",
+      "sections": {
+        "available": "Available",
+        "notYet": "Coming later"
+      },
+      "unknown": {
+        "title": "We could not confirm your access",
+        "body": "Your office could not be checked just now. Nothing on your account has changed."
+      },
+      "upgrade": {
+        "title": "Upgrade required",
+        "body": "Private Office is included with {{tier}}.",
+        "bodyGeneric": "Private Office is not included in your current plan."
+      },
+      "unavailable": {
+        "title": "Unavailable",
+        "body": "Private Office is not available right now."
+      },
+      "reason": {
+        "AVAILABLE": "Available",
+        "PROVIDER_REQUIRED": "Provider required",
+        "NOT_IMPLEMENTED": "Not built yet",
+        "TEMPORARILY_DISABLED": "Temporarily off",
+        "UPGRADE_REQUIRED": "Upgrade required",
+        "UNKNOWN": "Unavailable"
+      },
+      "features": {
+        "privateFacts": {
+          "label": "Private Facts",
+          "hint": "Verified information recorded about your affairs."
+        },
+        "capitalGraph": {
+          "label": "Capital Graph",
+          "hint": "How your assets, entities and obligations connect."
+        },
+        "privateBriefings": {
+          "label": "Private Briefings",
+          "hint": "Briefings drawn from your own records."
+        },
+        "relationshipIntelligence": {
+          "label": "Relationship Intelligence",
+          "hint": "The people and organisations around your affairs."
+        },
+        "privateShield": {
+          "label": "Private Shield",
+          "hint": "Watches for exposure of your private information."
+        },
+        "breachMonitoring": {
+          "label": "Breach Monitoring",
+          "hint": "Alerts when your details appear in a known breach."
+        },
+        "documentIntelligence": {
+          "label": "Document Intelligence",
+          "hint": "Reads facts out of documents you provide."
+        },
+        "humanConcierge": {
+          "label": "Human Concierge",
+          "hint": "A person who handles requests on your behalf."
+        }
+      },
+      "entry": {
+        "heading": "Private Office",
+        "hint": "Your private intelligence and life operations center.",
+        "lockedHint": "Included with {{tier}}."
+      },
+      "facts": {
+        "subtitle": "Only what has been recorded for you. Nothing is inferred from your public activity.",
+        "loading": "Loading your records…",
+        "why": "Why do you know this?",
+        "source": "Source",
+        "sourceUnknown": "Not recorded",
+        "verified": "Verification",
+        "observedLabel": "Observed",
+        "observed": "Observed {{date}}",
+        "confidence": "Confidence",
+        "hasDocument": "A source document is on file.",
+        "close": "Close",
+        "stale": "Out of date",
+        "empty": {
+          "title": "Nothing here yet",
+          "body": "No verified information has been added yet."
+        },
+        "notEntitled": {
+          "title": "Upgrade required",
+          "body": "Private Facts is included with {{tier}}.",
+          "bodyGeneric": "Private Facts is not included in your current plan."
+        },
+        "disabled": {
+          "title": "Temporarily off",
+          "body": "Private Facts is turned off for now. Your records are untouched."
+        },
+        "notImplemented": {
+          "title": "Not available yet",
+          "body": "This has not been built yet."
+        },
+        "unavailable": {
+          "title": "Unavailable",
+          "body": "We could not read your records just now. Try again shortly."
+        },
+        "error": {
+          "title": "Something went wrong",
+          "body": "Your records could not be loaded."
+        }
+      },
+      "domains": {
+        "GENERAL": "General",
+        "FINANCIAL": "Financial",
+        "LEGAL": "Legal",
+        "HEALTH": "Health",
+        "FAMILY": "Family",
+        "IDENTITY": "Identity",
+        "SECURITY": "Security"
+      },
+      "verification": {
+        "VERIFIED": "Verified",
+        "SOURCED": "From a source",
+        "SELF_REPORTED": "Self-reported",
+        "ESTIMATED": "Estimated",
+        "NEEDS_REVIEW": "Needs review"
+      }
     }
   },
   "briefings": {

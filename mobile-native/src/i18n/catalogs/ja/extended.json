@@ -2509,6 +2509,13 @@
           "losers": "下落",
           "trending": "トレンド",
           "watchlist": "ウォッチリスト"
+        },
+        "regime": {
+          "title": "市況",
+          "hint": "なぜ?",
+          "breadth": "リストの{{pct}}が上昇",
+          "leader": "主導グループ · {{group}}",
+          "unavailable": "このリストからは市況を測定できませんでした。"
         }
       },
       "entry": {
@@ -4144,6 +4151,133 @@
       "revoked": "取り消し済み",
       "paused": "一時停止中",
       "unknown": "利用できません"
+    },
+    "privateOffice": {
+      "title": "プライベートオフィス",
+      "subtitle": "あなた専用の情報と生活運営の拠点です。",
+      "loading": "オフィスの内容を確認しています…",
+      "retry": "再試行",
+      "open": "開く",
+      "footnote": "ここに表示される内容は、このアプリではなくサーバー上のアカウントが決めています。",
+      "sections": {
+        "available": "利用可能",
+        "notYet": "今後提供予定"
+      },
+      "unknown": {
+        "title": "アクセス権を確認できませんでした",
+        "body": "現在オフィスを確認できませんでした。アカウントに変更はありません。"
+      },
+      "upgrade": {
+        "title": "アップグレードが必要です",
+        "body": "プライベートオフィスは{{tier}}に含まれます。",
+        "bodyGeneric": "プライベートオフィスは現在のプランに含まれていません。"
+      },
+      "unavailable": {
+        "title": "利用できません",
+        "body": "プライベートオフィスは現在利用できません。"
+      },
+      "reason": {
+        "AVAILABLE": "利用可能",
+        "PROVIDER_REQUIRED": "提供元が必要",
+        "NOT_IMPLEMENTED": "未実装",
+        "TEMPORARILY_DISABLED": "一時停止中",
+        "UPGRADE_REQUIRED": "アップグレードが必要",
+        "UNKNOWN": "利用できません"
+      },
+      "features": {
+        "privateFacts": {
+          "label": "プライベート情報",
+          "hint": "あなたに関して記録された確認済みの情報。"
+        },
+        "capitalGraph": {
+          "label": "資産グラフ",
+          "hint": "資産・法人・債務のつながりを表示します。"
+        },
+        "privateBriefings": {
+          "label": "プライベートブリーフィング",
+          "hint": "あなた自身の記録から作成する要約です。"
+        },
+        "relationshipIntelligence": {
+          "label": "関係性インテリジェンス",
+          "hint": "あなたの事案に関わる人物や組織。"
+        },
+        "privateShield": {
+          "label": "プライベートシールド",
+          "hint": "非公開情報の流出を監視します。"
+        },
+        "breachMonitoring": {
+          "label": "漏えい監視",
+          "hint": "既知の漏えいにあなたの情報が現れた際に通知します。"
+        },
+        "documentIntelligence": {
+          "label": "ドキュメント解析",
+          "hint": "提供された書類から情報を読み取ります。"
+        },
+        "humanConcierge": {
+          "label": "ヒューマンコンシェルジュ",
+          "hint": "担当者があなたに代わって依頼を処理します。"
+        }
+      },
+      "entry": {
+        "heading": "プライベートオフィス",
+        "hint": "あなた専用の情報と生活運営の拠点です。",
+        "lockedHint": "{{tier}}に含まれます。"
+      },
+      "facts": {
+        "subtitle": "記録された内容のみです。公開アクティビティから推測することはありません。",
+        "loading": "記録を読み込んでいます…",
+        "why": "なぜこれを知っているのですか？",
+        "source": "出典",
+        "sourceUnknown": "記録なし",
+        "verified": "確認状況",
+        "observedLabel": "記録日",
+        "observed": "{{date}}に記録",
+        "confidence": "確度",
+        "hasDocument": "出典書類が保管されています。",
+        "close": "閉じる",
+        "stale": "古い情報",
+        "empty": {
+          "title": "まだ何もありません",
+          "body": "確認済みの情報はまだ追加されていません。"
+        },
+        "notEntitled": {
+          "title": "アップグレードが必要です",
+          "body": "プライベート情報は{{tier}}に含まれます。",
+          "bodyGeneric": "プライベート情報は現在のプランに含まれていません。"
+        },
+        "disabled": {
+          "title": "一時停止中",
+          "body": "プライベート情報は現在停止しています。記録はそのまま保持されています。"
+        },
+        "notImplemented": {
+          "title": "まだ利用できません",
+          "body": "この機能はまだ作られていません。"
+        },
+        "unavailable": {
+          "title": "利用できません",
+          "body": "現在、記録を読み取れませんでした。しばらくしてからお試しください。"
+        },
+        "error": {
+          "title": "問題が発生しました",
+          "body": "記録を読み込めませんでした。"
+        }
+      },
+      "domains": {
+        "GENERAL": "一般",
+        "FINANCIAL": "財務",
+        "LEGAL": "法務",
+        "HEALTH": "健康",
+        "FAMILY": "家族",
+        "IDENTITY": "本人確認",
+        "SECURITY": "セキュリティ"
+      },
+      "verification": {
+        "VERIFIED": "確認済み",
+        "SOURCED": "出典あり",
+        "SELF_REPORTED": "本人申告",
+        "ESTIMATED": "推定",
+        "NEEDS_REVIEW": "要確認"
+      }
     }
   },
   "briefings": {

@@ -40,6 +40,28 @@ HISTORY_RANGE_ALIASES = {"30D": "1M", "90D": "3M", "3M": "3M", "1D": "24H", "MAX
 HISTORY_MAX_POINTS = 120
 SPARKLINE_MAX_POINTS = 24
 
+# The 7-day sparkline arrives from `/coins/markets` at roughly hourly
+# granularity — about 168 points — and is immediately thinned to 24 for the wire
+# (see `normalize_market_item`). 24 points across 7 days is ~7h apart: fine for
+# drawing a line, useless for asking whether an asset is extended above its own
+# recent range.
+#
+# So the full series is kept here instead of on the row. Keeping it *on* the row
+# would push ~168 floats x 50 rows into every existing board response — an
+# order-of-magnitude payload increase for consumers that never asked for it. A
+# side table costs nothing on the wire and, crucially, no extra provider call:
+# this is the same response the board was already fetching. It is the only
+# zero-cost source of per-asset history for all fifty rows at once, which is what
+# makes list-level intelligence affordable at all.
+#
+# Analysis-only. Nothing here should be serialised to a client; the wire format
+# stays the 24-point `sparkline` on the row.
+HOURLY_SERIES = {}
+# Slightly longer than the board's own cache so a series survives the gap
+# between two board refreshes, short enough that a delisted symbol does not
+# linger as an analysable asset.
+HOURLY_SERIES_TTL_SECONDS = 900
+
 
 def _downsample(values, limit):
     """Evenly thin a series to at most ``limit`` points, always keeping the last.
@@ -56,8 +78,43 @@ def _downsample(values, limit):
     return thinned
 
 
+def _record_hourly_series(symbol, series):
+    """Keep the un-thinned 7d hourly series for one symbol, for analysis only.
+
+    Called from the normaliser because that is the one place the full series
+    exists — a few lines later it has already been reduced to 24 points and the
+    original is gone.
+    """
+    symbol = (symbol or "").upper()
+    points = [float(p) for p in (series or []) if isinstance(p, (int, float))]
+    if not symbol or len(points) < 2:
+        return
+    now = time.time()
+    HOURLY_SERIES[symbol] = {"points": points, "created_at": now}
+    if len(HOURLY_SERIES) > 400:
+        for key, entry in list(HOURLY_SERIES.items()):
+            if now - entry.get("created_at", 0) > HOURLY_SERIES_TTL_SECONDS:
+                HOURLY_SERIES.pop(key, None)
+
+
+def hourly_series(symbol):
+    """The ~168-point 7d hourly series for a symbol, or [] if we have none.
+
+    Empty is a real answer: under the Coinbase fallback there is no sparkline at
+    all, and callers must render that as unavailable rather than analysing a
+    two-point line into a confident verdict.
+    """
+    entry = HOURLY_SERIES.get((symbol or "").upper())
+    if not entry:
+        return []
+    if time.time() - entry.get("created_at", 0) > HOURLY_SERIES_TTL_SECONDS:
+        return []
+    return list(entry.get("points") or [])
+
+
 def normalize_market_item(item):
     sparkline = (item.get("sparkline_in_7d") or {}).get("price") or []
+    _record_hourly_series(item.get("symbol"), sparkline)
     return {
         "id": item.get("id") or (item.get("symbol") or "").lower(),
         "name": item.get("name") or (item.get("symbol") or "").upper(),

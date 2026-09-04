@@ -212,7 +212,9 @@
       "cryptoAlertHistory": "Historial de alertas",
       "cryptoPortfolio": "Portafolio cripto",
       "briefingsHub": "Resúmenes",
-      "briefing": "Informe"
+      "briefing": "Informe",
+      "privateOffice": "Oficina privada",
+      "privateFacts": "Datos privados"
     },
     "navSubtitles": {
       "missionControl": "Centro de mando",
@@ -347,6 +349,23 @@
       "pair": "{{first}} y {{second}}",
       "separator": ", ",
       "more": "+{{count}} más"
+    },
+    "emoji": {
+      "search": "Buscar emoji",
+      "noResults": "No se encontraron emojis",
+      "close": "Cerrar selector de emoji",
+      "categories": {
+        "recent": "Recientes",
+        "smileys": "Caritas y emociones",
+        "people": "Personas y cuerpo",
+        "animals": "Animales y naturaleza",
+        "food": "Comida y bebida",
+        "activities": "Actividades",
+        "travel": "Viajes y lugares",
+        "objects": "Objetos",
+        "symbols": "Símbolos",
+        "flags": "Banderas"
+      }
     }
   },
   "auth": {

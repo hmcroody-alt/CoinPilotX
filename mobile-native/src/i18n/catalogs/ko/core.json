@@ -212,7 +212,9 @@
       "cryptoAlertHistory": "알림 기록",
       "cryptoPortfolio": "암호화폐 포트폴리오",
       "briefingsHub": "브리핑",
-      "briefing": "브리핑"
+      "briefing": "브리핑",
+      "privateOffice": "프라이빗 오피스",
+      "privateFacts": "비공개 정보"
     },
     "navSubtitles": {
       "missionControl": "관제 센터",
@@ -347,6 +349,23 @@
       "pair": "{{first}} 및 {{second}}",
       "separator": ", ",
       "more": "외 {{count}}개"
+    },
+    "emoji": {
+      "search": "이모지 검색",
+      "noResults": "이모지를 찾을 수 없습니다",
+      "close": "이모지 선택기 닫기",
+      "categories": {
+        "recent": "최근 사용",
+        "smileys": "스마일리 및 감정",
+        "people": "사람 및 신체",
+        "animals": "동물 및 자연",
+        "food": "음식 및 음료",
+        "activities": "활동",
+        "travel": "여행 및 장소",
+        "objects": "사물",
+        "symbols": "기호",
+        "flags": "깃발"
+      }
     }
   },
   "auth": {

@@ -2517,6 +2517,13 @@
           "losers": "跌幅榜",
           "trending": "热门",
           "watchlist": "自选"
+        },
+        "regime": {
+          "title": "市场状况",
+          "hint": "为什么?",
+          "breadth": "榜单中 {{pct}} 上涨",
+          "leader": "领先板块 · {{group}}",
+          "unavailable": "无法根据该榜单衡量市场状况。"
         }
       },
       "entry": {
@@ -4151,6 +4158,133 @@
       "revoked": "已撤销",
       "paused": "已暂停",
       "unknown": "无法获取"
+    },
+    "privateOffice": {
+      "title": "私人办公室",
+      "subtitle": "属于你的私人信息与生活事务中心。",
+      "loading": "正在确认你的办公室包含哪些内容…",
+      "retry": "重试",
+      "open": "打开",
+      "footnote": "这里显示的内容由服务器上的账户决定，而不是由本应用决定。",
+      "sections": {
+        "available": "可用",
+        "notYet": "稍后推出"
+      },
+      "unknown": {
+        "title": "无法确认你的访问权限",
+        "body": "此刻无法检查你的办公室。你的账户没有任何变化。"
+      },
+      "upgrade": {
+        "title": "需要升级",
+        "body": "私人办公室包含在 {{tier}} 中。",
+        "bodyGeneric": "你当前的方案不包含私人办公室。"
+      },
+      "unavailable": {
+        "title": "不可用",
+        "body": "私人办公室目前不可用。"
+      },
+      "reason": {
+        "AVAILABLE": "可用",
+        "PROVIDER_REQUIRED": "需要服务提供方",
+        "NOT_IMPLEMENTED": "尚未构建",
+        "TEMPORARILY_DISABLED": "暂时关闭",
+        "UPGRADE_REQUIRED": "需要升级",
+        "UNKNOWN": "不可用"
+      },
+      "features": {
+        "privateFacts": {
+          "label": "私人信息",
+          "hint": "为你记录的已核实信息。"
+        },
+        "capitalGraph": {
+          "label": "资本图谱",
+          "hint": "你的资产、实体与债务之间的关联。"
+        },
+        "privateBriefings": {
+          "label": "私人简报",
+          "hint": "根据你自己的记录生成的简报。"
+        },
+        "relationshipIntelligence": {
+          "label": "关系情报",
+          "hint": "与你的事务相关的人与机构。"
+        },
+        "privateShield": {
+          "label": "私人护盾",
+          "hint": "监测你的私人信息是否外泄。"
+        },
+        "breachMonitoring": {
+          "label": "泄露监控",
+          "hint": "当你的信息出现在已知泄露中时提醒你。"
+        },
+        "documentIntelligence": {
+          "label": "文档情报",
+          "hint": "从你提供的文档中读取信息。"
+        },
+        "humanConcierge": {
+          "label": "真人管家",
+          "hint": "由专人代你处理请求。"
+        }
+      },
+      "entry": {
+        "heading": "私人办公室",
+        "hint": "属于你的私人信息与生活事务中心。",
+        "lockedHint": "包含在 {{tier}} 中。"
+      },
+      "facts": {
+        "subtitle": "仅显示为你记录的内容。不会从你的公开活动中推断任何信息。",
+        "loading": "正在加载你的记录…",
+        "why": "你为什么知道这些？",
+        "source": "来源",
+        "sourceUnknown": "未记录",
+        "verified": "核实情况",
+        "observedLabel": "记录时间",
+        "observed": "记录于 {{date}}",
+        "confidence": "置信度",
+        "hasDocument": "已存有来源文件。",
+        "close": "关闭",
+        "stale": "已过时",
+        "empty": {
+          "title": "这里还没有内容",
+          "body": "尚未添加任何已核实的信息。"
+        },
+        "notEntitled": {
+          "title": "需要升级",
+          "body": "私人信息包含在 {{tier}} 中。",
+          "bodyGeneric": "你当前的方案不包含私人信息。"
+        },
+        "disabled": {
+          "title": "暂时关闭",
+          "body": "私人信息暂时已关闭。你的记录未受影响。"
+        },
+        "notImplemented": {
+          "title": "尚未提供",
+          "body": "此功能尚未构建。"
+        },
+        "unavailable": {
+          "title": "不可用",
+          "body": "此刻无法读取你的记录。请稍后再试。"
+        },
+        "error": {
+          "title": "出了点问题",
+          "body": "无法加载你的记录。"
+        }
+      },
+      "domains": {
+        "GENERAL": "综合",
+        "FINANCIAL": "财务",
+        "LEGAL": "法律",
+        "HEALTH": "健康",
+        "FAMILY": "家庭",
+        "IDENTITY": "身份",
+        "SECURITY": "安全"
+      },
+      "verification": {
+        "VERIFIED": "已核实",
+        "SOURCED": "有来源",
+        "SELF_REPORTED": "本人提供",
+        "ESTIMATED": "估算",
+        "NEEDS_REVIEW": "待复核"
+      }
     }
   },
   "briefings": {

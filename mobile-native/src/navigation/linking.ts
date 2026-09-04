@@ -344,6 +344,11 @@ export const linking: LinkingOptions<RootStackParamList> = {
           category: String
         }
       },
+      // Private Office. The paths match the routes the UNDX capability registry
+      // already publishes for `private.facts.list`, so a deep link and an agent
+      // answer name the same destination rather than two spellings of it.
+      PrivateOffice: "pulse/private-office",
+      PrivateFacts: "pulse/private-office/facts",
       AccountCenter: {
         path: "pulse/settings/:section",
         parse: {

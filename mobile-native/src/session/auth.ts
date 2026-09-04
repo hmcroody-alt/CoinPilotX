@@ -15,6 +15,7 @@ import {
   writeBiometricCredential
 } from "./sessionStore";
 import { shouldRejectTemporaryQaUser } from "./qaTemporaryAccount";
+import { setMediaCacheScope } from "../media/mediaCache";
 import { clearUserScopedMediaState } from "../media/mediaSessionCleanup";
 import { rememberAccount } from "./rememberedAccounts";
 
@@ -59,8 +60,17 @@ function statusForPhase(phase: SessionPhase): AuthStatus {
 
 /**
  * Single constructor for every AuthState so `status` is always in sync with `phase`.
+ *
+ * Because it is the *only* constructor, it is also the one place that observes
+ * every identity transition — sign-in, restore-from-keychain, expiry, sign-out —
+ * which is why the media cache scope is set here rather than at the six call
+ * sites that produce states. Missing one of those would silently write the next
+ * user's downloads into the previous user's cache directory, and the failure
+ * would be invisible until someone went looking for it (Stage 35).
  */
 export function stateFor(phase: SessionPhase, user: PulseUser | null = null): AuthState {
+  const userId = Number((user as { user_id?: number; id?: number } | null)?.user_id ?? (user as { id?: number } | null)?.id ?? 0);
+  setMediaCacheScope(phase === "AUTHENTICATED" && userId > 0 ? userId : null);
   return { phase, status: statusForPhase(phase), user };
 }
 
@@ -97,7 +107,14 @@ function normalizeSessionUser(user: unknown): PulseUser | null {
     full_name: String(input.full_name || input.display_name || ""),
     email: String(input.email || ""),
     avatar_url: String(input.avatar_url || input.avatar_thumbnail_url || ""),
-    premium_status: String(input.premium_status || input.subscription_status || ""),
+    // Carried verbatim, with no fallback to `subscription_status`. The two
+    // fields speak different vocabularies — `subscription_status` is Stripe's
+    // ("trialing", "past_due", "canceled") while `premium_status` is the
+    // platform's ({active, founder, lifetime, trial}) — so the old `||` wrote
+    // values into this field that the server never puts there, and every reader
+    // downstream then had to guess at them. An absent status stays empty;
+    // capability decisions come from `entitlements/canonicalTier`, not here.
+    premium_status: String(input.premium_status || ""),
     account_status: String(input.account_status || "active")
   };
 }

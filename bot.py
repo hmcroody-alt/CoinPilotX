@@ -245,7 +245,6 @@ from services import (
     marketplace_fulfillment as marketplace_fulfillment,
     marketplace_listing_types as marketplace_listing_types_service,
     marketplace_listing_lifecycle as marketplace_listing_lifecycle,
-    marketplace_reservation_policy as marketplace_reservation_policy,
     marketplace_seller_identity as marketplace_seller_identity,
     media_service,
     media_storage,
@@ -1282,6 +1281,11 @@ _load_route_pack("undx_run_health", "services.undx_run_health_routes")
 # existing crypto API, so there is no second watchlist store and no second
 # alert engine behind this pack.
 _load_route_pack("pulse_market_pulse", "services.market_pulse_routes")
+# Private Office canonical entitlement truth. GET-only by design: the tier
+# answer is served here so no client has to infer one, but GRANTING a tier
+# stays with the existing admin entitlement paths. A write in this pack would
+# be a second granting authority.
+_load_route_pack("private_office", "services.private_office_routes")
 
 
 def cancel_scheduled_account_deletion(cur, user_id):
@@ -41541,8 +41545,26 @@ def api_pulse_status_rail():
         }
         return jsonify({"ok": True, "items": items, "rail_items": rail_items, "discovery_signal": discovery_signal, "trace_id": trace_id, "lane": lane, "lanes": ["for_you", "following", "trending", "global"]})
     except Exception as exc:
-        logging.exception("PULSE_STATUS_RAIL_FAILED trace_id=%s user_id=%s error=%s", trace_id, user.get("user_id"), exc)
-        return jsonify({"ok": False, "message": "PulseSoc Status could not load.", "trace_id": trace_id}), 500
+        # STATUS_LIST_FETCH_FAILED means the rail query itself did not return --
+        # nothing was serialized, so this is never a per-item problem. Log the
+        # exception type alongside the message: the 2026-09 outage was a
+        # psycopg2 ProgrammingError ("not all arguments converted during string
+        # formatting") from a SQL translation defect, which reads like an
+        # application bug until you see the class.
+        logging.exception(
+            "PULSE_STATUS_RAIL_FAILED code=STATUS_LIST_FETCH_FAILED trace_id=%s user_id=%s lane=%s error_type=%s error=%s",
+            trace_id,
+            user.get("user_id"),
+            lane,
+            type(exc).__name__,
+            exc,
+        )
+        return jsonify({
+            "ok": False,
+            "error_code": "STATUS_LIST_FETCH_FAILED",
+            "message": "PulseSoc Status could not load.",
+            "trace_id": trace_id,
+        }), 500
 
 
 @webhook_app.route("/api/pulse/status/music/search", methods=["GET"])
@@ -88252,24 +88274,11 @@ def api_pulse_payments_checkout():
         # misconfigured key were indistinguishable to the buyer, and a retry was
         # the only move any of them suggested.
         classified = classify_provider_exception(exc)
-        failure_metadata = json.dumps({"error": str(exc), "trace_id": trace_id,
-                                       "provider_error": classified["provider_error"]}, default=str)
         if inventory_held:
-            # Same shared path the webhook branches take. This one is not a
-            # webhook — the buyer never reached Stripe — but the pairing of
-            # "give the stock back, then close the order" is identical, and a
-            # fifth private copy of it is a fifth thing to keep in step.
-            # Routing it here also picks up the `NOT IN ('paid','refunded')`
-            # guard, which this branch previously lacked.
-            marketplace_cart_service.settle_failed_transactions(
-                cur, [tx_id],
-                reason=marketplace_reservation_policy.REASON_CHECKOUT_ERROR,
-                terminal_status="checkout_failed", now=now,
-                metadata_json=failure_metadata,
-            )
-        else:
-            cur.execute("UPDATE seller_transactions SET status='checkout_failed', metadata_json=?, updated_at=? WHERE id=? AND status NOT IN ('paid','refunded')",
-                        (failure_metadata, now, tx_id))
+            marketplace_cart_service.release_inventory_reservation(cur, tx_id, now=now)
+        cur.execute("UPDATE seller_transactions SET status='checkout_failed', metadata_json=?, updated_at=? WHERE id=?",
+                    (json.dumps({"error": str(exc), "trace_id": trace_id,
+                                 "provider_error": classified["provider_error"]}, default=str), now, tx_id))
         pulse_emit_payment_checkout_event(
             cur,
             {**tx_event, "status": "checkout_failed"},
@@ -100435,13 +100444,9 @@ def stripe_webhook():
             conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
             from services import marketplace_cart_routes as marketplace_cart_service
             marketplace_cart_service._ensure_schema(cur)
-            marketplace_cart_service.settle_failed_transactions(
-                cur, plural_tx_ids,
-                reason=(marketplace_reservation_policy.REASON_EXPIRED
-                        if event_type == "checkout.session.expired"
-                        else marketplace_reservation_policy.REASON_PAYMENT_FAILED),
-                terminal_status=terminal_status, now=now,
-            )
+            for cart_tx_id in plural_tx_ids:
+                marketplace_cart_service.release_inventory_reservation(cur, cart_tx_id, now=now)
+                cur.execute("UPDATE seller_transactions SET status=?, updated_at=? WHERE id=? AND status NOT IN ('paid','refunded')", (terminal_status, now, cart_tx_id))
             conn.commit(); conn.close()
             record_stripe_event(event, "processed", safe_int(metadata.get("buyer_user_id"), 0) or None)
             creator_economy_service.update_webhook_event(event_id, "processed")
@@ -100455,18 +100460,9 @@ def stripe_webhook():
             tx = dict(cur.fetchone() or {})
             if tx:
                 # The buy-now and accepted-offer lanes reserve stock too, so the
-                # single-transaction path has to give it back as well. Both
-                # shapes now go through one release + terminal-status service;
-                # this branch adds only the session id, which the cart shape
-                # has no equivalent of.
-                marketplace_cart_service.settle_failed_transactions(
-                    cur, [tx_id],
-                    reason=(marketplace_reservation_policy.REASON_EXPIRED
-                            if event_type == "checkout.session.expired"
-                            else marketplace_reservation_policy.REASON_PAYMENT_FAILED),
-                    terminal_status=terminal_status, now=now,
-                )
-                cur.execute("UPDATE seller_transactions SET stripe_checkout_session_id=COALESCE(NULLIF(?, ''), stripe_checkout_session_id), updated_at=? WHERE id=? AND status NOT IN ('paid','refunded')", (session.get("id") or "", now, tx_id))
+                # single-transaction path has to give it back as well.
+                marketplace_cart_service.release_inventory_reservation(cur, tx_id, now=now)
+                cur.execute("UPDATE seller_transactions SET status=?, stripe_checkout_session_id=COALESCE(NULLIF(?, ''), stripe_checkout_session_id), updated_at=? WHERE id=? AND status NOT IN ('paid','refunded')", (terminal_status, session.get("id") or "", now, tx_id))
                 pulse_emit_payment_checkout_event(
                     cur,
                     {**tx, "status": terminal_status, "stripe_checkout_session_id": session.get("id") or ""},
@@ -100766,12 +100762,13 @@ def stripe_webhook():
             conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
             from services import marketplace_cart_routes as marketplace_cart_service
             marketplace_cart_service._ensure_schema(cur)
-            marketplace_cart_service.settle_failed_transactions(
-                cur, plural_tx_ids,
-                reason=marketplace_reservation_policy.REASON_PAYMENT_FAILED,
-                terminal_status="failed", now=now,
-                metadata_json=json.dumps({"stripe_event_id": event_id, "failure": failure}, default=str)[:4000],
-            )
+            for cart_tx_id in plural_tx_ids:
+                marketplace_cart_service.release_inventory_reservation(cur, cart_tx_id, now=now)
+                cur.execute(
+                    "UPDATE seller_transactions SET status='failed', metadata_json=?, updated_at=? "
+                    "WHERE id=? AND status NOT IN ('paid','refunded')",
+                    (json.dumps({"stripe_event_id": event_id, "failure": failure}, default=str)[:4000], now, cart_tx_id),
+                )
             conn.commit(); conn.close()
             record_stripe_event(event, "processed", safe_int(metadata.get("buyer_user_id"), 0) or None)
             creator_economy_service.update_webhook_event(event_id, "processed")
@@ -100788,12 +100785,8 @@ def stripe_webhook():
             cur.execute("UPDATE creator_transactions SET status='failed', updated_at=? WHERE id=?", (now, tx_id))
             # A declined card must give the item back to the listing; the buy-now
             # and accepted-offer lanes both hold stock from checkout creation.
-            marketplace_cart_service.settle_failed_transactions(
-                cur, [tx_id],
-                reason=marketplace_reservation_policy.REASON_PAYMENT_FAILED,
-                terminal_status="failed", now=now,
-                metadata_json=json.dumps({"stripe_event_id": event_id, "failure": failure}, default=str)[:4000],
-            )
+            marketplace_cart_service.release_inventory_reservation(cur, tx_id, now=now)
+            cur.execute("UPDATE seller_transactions SET status='failed', metadata_json=?, updated_at=? WHERE id=? AND status NOT IN ('paid','refunded')", (json.dumps({"stripe_event_id": event_id, "failure": failure}, default=str)[:4000], now, tx_id))
             if tx:
                 pulse_emit_payment_checkout_event(
                     cur,
@@ -100838,75 +100831,6 @@ def stripe_webhook():
                 )
             else:
                 record_unmatched_payment(event, payment_intent, "payment_intent.payment_failed could not resolve local user")
-
-    # `payment_intent.canceled` — the branch that did not exist.
-    #
-    # Stripe emits this when an intent is cancelled: explicitly by us, by an
-    # abandoned intent reaching Stripe's own cancellation window, or by a
-    # payment method that gives up. Without a handler the event was recorded and
-    # discarded, so the reservation stayed `held` and the listing quantity never
-    # came back — the abandoned-sheet inventory leak, arriving by a path the
-    # `payment_failed` branch does not cover, because a cancellation is not a
-    # failure and Stripe does not send both.
-    #
-    # It deliberately shares `settle_failed_transactions` with the expiry and
-    # decline branches rather than carrying its own release: one inventory
-    # mutation, three callers, no chance of the third drifting from the first
-    # two.
-    if event_type == "payment_intent.canceled":
-        payment_intent = event["data"]["object"]
-        metadata = payment_intent.get("metadata") or {}
-        cancellation_reason = payment_intent.get("cancellation_reason") or ""
-        plural_tx_ids = [safe_int(value, 0) for value in str(metadata.get("seller_transaction_ids") or "").split(",")]
-        plural_tx_ids = [value for value in plural_tx_ids if value]
-        single_tx_id = safe_int(metadata.get("transaction_id") or metadata.get("seller_transaction_id"), 0)
-        target_tx_ids = plural_tx_ids or ([single_tx_id] if single_tx_id else [])
-        if target_tx_ids:
-            now = datetime.utcnow().isoformat(timespec="seconds")
-            conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-            from services import marketplace_cart_routes as marketplace_cart_service
-            marketplace_cart_service._ensure_schema(cur)
-            cur.execute(
-                "SELECT * FROM seller_transactions WHERE id IN (%s)" % ",".join("?" for _ in target_tx_ids),
-                tuple(target_tx_ids),
-            )
-            transactions_before = {int(row["id"]): dict(row) for row in cur.fetchall()}
-            outcomes = marketplace_cart_service.settle_failed_transactions(
-                cur, target_tx_ids,
-                reason=marketplace_reservation_policy.REASON_PAYMENT_CANCELED,
-                terminal_status="canceled", now=now,
-                metadata_json=json.dumps({
-                    "stripe_event_id": event_id,
-                    "cancellation_reason": cancellation_reason,
-                }, default=str)[:4000],
-            )
-            for outcome in outcomes:
-                tx_before = transactions_before.get(int(outcome.get("seller_transaction_id") or 0))
-                if not tx_before:
-                    continue
-                pulse_emit_payment_checkout_event(
-                    cur,
-                    {**tx_before, "status": "canceled",
-                     "stripe_payment_intent_id": payment_intent.get("id") or ""},
-                    "payment_canceled",
-                    status="canceled",
-                    actor_user_id=tx_before.get("buyer_user_id") or 0,
-                    extra={"stripe_event_id": event_id,
-                           "stripe_payment_intent_id": payment_intent.get("id") or "",
-                           "cancellation_reason": cancellation_reason,
-                           "stock_returned": bool(outcome.get("changed"))},
-                )
-                resolved_event_user_id = int(tx_before.get("buyer_user_id") or 0) or resolved_event_user_id
-            conn.commit(); conn.close()
-            logging.info(
-                "MARKETPLACE_RESERVATION_RELEASED event=payment_intent.canceled event_id=%s tx_ids=%s released=%s reason=%s",
-                event_id, target_tx_ids,
-                sum(1 for outcome in outcomes if outcome.get("changed")),
-                cancellation_reason or "unspecified",
-            )
-            record_stripe_event(event, "processed", resolved_event_user_id)
-            creator_economy_service.update_webhook_event(event_id, "processed")
-            return "OK", 200
 
     # --- Wave B: seller payout lifecycle + Connect account projection --------
     # Additive: the legacy branch below still records into the old tables. The
@@ -115813,6 +115737,11 @@ def route_health_check():
         "/api/pulse/mobile/settings/delete-account",
         "/api/pulse/seller/application",
         "/api/pulse/seller/application/draft",
+        # The canonical tier answer. Listed because its absence is silent by
+        # design: the client fails closed to "unknown", so a deploy without this
+        # route does not error anywhere — it just stops showing paying members
+        # that they are members. Nobody would find that from a log.
+        "/api/private-office/entitlement",
     ]
     endpoints = {path: (path in rules) for path in required}
     packs = {name: bool(state.get("registered")) for name, state in ROUTE_PACK_STATUS.items()}

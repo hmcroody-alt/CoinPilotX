@@ -177,6 +177,79 @@ def market_pulse_search():
     return _json(payload)
 
 
+@market_pulse_blueprint.route(f"{API_PREFIX}/assets/<symbol>/intelligence", methods=["GET"])
+def market_pulse_asset_intelligence(symbol: str):
+    """The drill-down layers for one open asset.
+
+    Deliberately a separate endpoint from ``/snapshot`` rather than a fatter
+    snapshot: the list needs a verdict per row and nothing more, and the deep
+    layers are only ever wanted for the one asset a user actually opened. Making
+    them a second request is what keeps the list cheap.
+
+    The verdict is framed for a holder only when the caller's own portfolio says
+    they hold it. ``personalized`` reports whether that read succeeded, so a
+    failed portfolio lookup shows as unpersonalised rather than silently
+    answering as if the user owns nothing.
+    """
+    user, error = _require_user()
+    if error:
+        return error
+    try:
+        from services import market_intelligence_portfolio as intel_portfolio
+
+        snapshot = intel_portfolio.portfolio_snapshot(int(user["user_id"]))
+        holding = intel_portfolio.holding_for(symbol, snapshot, _risk_budget())
+    except Exception as exc:  # noqa: BLE001
+        LOGGER.info("MARKET_PULSE_HOLDING_UNAVAILABLE symbol=%s error=%s", symbol, exc)
+        snapshot, holding = {"available": False}, None
+    try:
+        payload = market_pulse.asset_intelligence(symbol, holding)
+    except Exception as exc:  # noqa: BLE001
+        LOGGER.exception("MARKET_PULSE_INTELLIGENCE_FAILED symbol=%s error=%s", symbol, exc)
+        return _json({"ok": False, "message": "Market intelligence is temporarily unavailable."}, 503)
+    payload["ok"] = True
+    payload["personalized"] = bool(snapshot.get("available"))
+    if not snapshot.get("available"):
+        payload["holding"] = dict(payload.get("holding") or {}, known=False,
+                                  note="Your portfolio could not be read, so this verdict is not personalised to a position.")
+    return _json(payload)
+
+
+@market_pulse_blueprint.route(f"{API_PREFIX}/portfolio/risk", methods=["GET"])
+def market_pulse_portfolio_risk():
+    """Concentration, correlation clusters and exposure overlap for the caller.
+
+    Reads the one existing portfolio store; there is no second holdings table
+    behind this.
+    """
+    user, error = _require_user()
+    if error:
+        return error
+    try:
+        from services import market_intelligence_portfolio as intel_portfolio
+
+        snapshot = intel_portfolio.portfolio_snapshot(int(user["user_id"]))
+        payload = intel_portfolio.portfolio_risk(snapshot)
+    except Exception as exc:  # noqa: BLE001
+        LOGGER.info("MARKET_PULSE_PORTFOLIO_RISK_FAILED error=%s", exc)
+        return _json({"ok": False, "message": "Portfolio risk is temporarily unavailable."}, 503)
+    payload["ok"] = True
+    return _json(payload)
+
+
+def _risk_budget(default: float = 1.0) -> float:
+    """Percentage of the portfolio the caller is willing to risk on one idea.
+
+    Supplied by the user, never assumed by the product. Sizing arithmetic is
+    meaningless without it and inventing a number would be advice.
+    """
+    try:
+        value = float(request.args.get("riskBudgetPct") or default)
+    except (TypeError, ValueError):
+        value = default
+    return max(0.1, min(value, 10.0))
+
+
 @market_pulse_blueprint.route(f"{API_PREFIX}/assets/<symbol>/history", methods=["GET"])
 def market_pulse_history(symbol: str):
     """Real price history for one asset and range.

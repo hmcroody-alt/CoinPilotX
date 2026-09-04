@@ -54,6 +54,11 @@ import {
   type PremiumSubscription,
   type PremiumUsageCenter
 } from "../api/premiumCenter";
+import {
+  UNKNOWN_OFFICE,
+  getPrivateOfficeOverview,
+  type PrivateOfficeProductState
+} from "../api/privateOffice";
 import { useFormatters, useTranslation } from "../i18n";
 import { RootStackParamList } from "../navigation/types";
 import { openDashboardRoute } from "../navigation/dashboardRouting";
@@ -485,6 +490,8 @@ export function PremiumCenterScreen({ route, navigation }: Props) {
       <BenefitsSection benefits={center?.benefits || []} held={Boolean(center?.membership.is_premium)} />
 
       <CryptoIntelligenceSection navigation={navigation} />
+
+      <PrivateOfficeEntrySection navigation={navigation} />
 
       <NotYetSection items={center?.not_yet || []} />
 
@@ -1201,6 +1208,84 @@ function CryptoIntelligenceRow({
     );
   }
   return <View style={styles.benefitRow}>{body}</View>;
+}
+
+/* -------------------------------------------------------------------------- *
+ * Private Office entry
+ * -------------------------------------------------------------------------- */
+
+/**
+ * The one link from Premium into Private Office.
+ *
+ * Unlike the crypto section above — which is presentation over features every
+ * member already has — this row is gated, and the gate is not here. It renders
+ * `/api/private-office/overview`'s `state`, which
+ * `services/private_office/office.product_state` derived from the canonical
+ * feature matrix:
+ *
+ *   ENTRY_AVAILABLE         something inside is built and reachable → tappable.
+ *   ENTRY_UPGRADE_REQUIRED  something is built and out of reach → names the
+ *                           tier, and still opens, because the destination
+ *                           explains the situation better than a dead row.
+ *   ENTRY_UNAVAILABLE       nothing inside is built → no row at all.
+ *   ENTRY_UNKNOWN           we could not confirm → no row, and no claim.
+ *
+ * The screen does not know the tier ladder and must not learn it: the hierarchy
+ * lives in `services/private_office/tiers.py`, and a copy here would be a second
+ * authority that diverges the first time a capability changes rung.
+ */
+function PrivateOfficeEntrySection({ navigation }: { navigation: Props["navigation"] }) {
+  const { t } = useTranslation();
+  const [office, setOffice] = useState<PrivateOfficeProductState>(UNKNOWN_OFFICE);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const overview = await getPrivateOfficeOverview();
+      if (!cancelled) setOffice(overview.office);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Absent, not disabled. An entry that cannot lead anywhere is worse than no
+  // entry: it advertises a room and then refuses to open the door.
+  if (office.state !== "ENTRY_AVAILABLE" && office.state !== "ENTRY_UPGRADE_REQUIRED") {
+    return null;
+  }
+
+  const locked = office.state === "ENTRY_UPGRADE_REQUIRED";
+  const label = t("premium:privateOffice.title");
+  const hint = locked && office.upgradeTier
+    ? t("premium:privateOffice.entry.lockedHint", { tier: office.upgradeTier })
+    : t("premium:privateOffice.entry.hint");
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>{t("premium:privateOffice.entry.heading")}</Text>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityHint={hint}
+        style={({ pressed }) => [styles.benefitRow, pressed && styles.pressed]}
+        onPress={() => navigation.navigate("PrivateOffice")}
+      >
+        <Ionicons
+          name={locked ? "lock-closed-outline" : "briefcase-outline"}
+          size={18}
+          color={locked ? colors.muted : premiumTheme.gold}
+        />
+        <View style={styles.benefitBody}>
+          <View style={styles.benefitHead}>
+            <Text style={styles.benefitLabel} numberOfLines={2}>{label}</Text>
+            <Ionicons name="chevron-forward" size={14} color={colors.muted} />
+          </View>
+          <Text style={styles.note} numberOfLines={3}>{hint}</Text>
+        </View>
+      </Pressable>
+    </View>
+  );
 }
 
 /* -------------------------------------------------------------------------- *
