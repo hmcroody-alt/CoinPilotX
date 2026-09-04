@@ -214,13 +214,33 @@ def _ensure_schema_ready(bot, cur, conn) -> None:
         ensure_schema(cur)
         _ensure_columns(bot, cur, conn)
         conn.commit()
-        _ensure_message_idempotency_index(cur, conn)
+        idempotency_status = _ensure_message_idempotency_index(cur, conn)
+        _log_message_idempotency_status(idempotency_status)
         _SCHEMA_READY = True
         elapsed_ms = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
         logging.info("PULSE_COMM_V2_SCHEMA_READY duration_ms=%s", elapsed_ms)
 
 
 MESSAGE_IDEMPOTENCY_INDEX = "idx_comm_v2_messages_client_idem"
+
+# The shape the index must have, held as data rather than only as SQL text so
+# that installation and verification are checking the same thing. A previous
+# version of this code trusted the index NAME alone; an index carrying the right
+# name and the wrong columns would have been reported healthy while offering no
+# protection at all.
+MESSAGE_IDEMPOTENCY_TABLE = "comm_v2_messages"
+MESSAGE_IDEMPOTENCY_COLUMNS = ("conversation_id", "sender_user_id", "client_message_id")
+MESSAGE_IDEMPOTENCY_PREDICATE = "client_message_id IS NOT NULL AND client_message_id <> ''"
+
+# The four states this installer can end in. They are determined by inspection,
+# never by reading a driver's error string: exception text is a presentation
+# detail of whichever driver and server version happen to be deployed, and
+# classifying "duplicates exist" by matching on it would silently reclassify
+# itself on an upgrade.
+IDEMPOTENCY_INDEX_INSTALLED = "installed"
+IDEMPOTENCY_INDEX_ALREADY_PRESENT = "already_present"
+IDEMPOTENCY_INDEX_BLOCKED_BY_DUPLICATES = "blocked_by_duplicates"
+IDEMPOTENCY_INDEX_INSTALL_ERROR = "install_error"
 
 # One logical outbound message must resolve to exactly one row. The send path
 # already looked the client id up before inserting, but a bare SELECT-then-INSERT
@@ -233,38 +253,285 @@ MESSAGE_IDEMPOTENCY_INDEX = "idx_comm_v2_messages_client_idem"
 # messages carry none, and NULLs must not collide with each other.
 _MESSAGE_IDEMPOTENCY_INDEX_SQL = (
     f"CREATE UNIQUE INDEX IF NOT EXISTS {MESSAGE_IDEMPOTENCY_INDEX} "
-    "ON comm_v2_messages (conversation_id, sender_user_id, client_message_id) "
-    "WHERE client_message_id IS NOT NULL AND client_message_id <> ''"
+    f"ON {MESSAGE_IDEMPOTENCY_TABLE} ({', '.join(MESSAGE_IDEMPOTENCY_COLUMNS)}) "
+    f"WHERE {MESSAGE_IDEMPOTENCY_PREDICATE}"
 )
 
+# Counts only. The audit script exists to name the offending rows for a human;
+# this query must never carry conversation ids, sender ids or client ids into a
+# log line, because operational telemetry is read by more people and retained in
+# more places than the database is.
+_MESSAGE_IDEMPOTENCY_DUPLICATE_SQL = (
+    "SELECT COUNT(*) AS group_count, COALESCE(SUM(row_count), 0) AS row_total FROM ("
+    "  SELECT COUNT(*) AS row_count"
+    f"  FROM {MESSAGE_IDEMPOTENCY_TABLE}"
+    f"  WHERE {MESSAGE_IDEMPOTENCY_PREDICATE}"
+    f"  GROUP BY {', '.join(MESSAGE_IDEMPOTENCY_COLUMNS)}"
+    "  HAVING COUNT(*) > 1"
+    ") AS duplicate_groups"
+)
 
-def _ensure_message_idempotency_index(cur, conn) -> bool:
-    """Install the send-idempotency index. Never raises, never blocks boot.
+_MESSAGE_IDEMPOTENCY_HEALTH = {
+    "state": None,
+    "hard_uniqueness_active": False,
+    "index_name": MESSAGE_IDEMPOTENCY_INDEX,
+    "checked_at": None,
+    "duplicate_groups": None,
+    "duplicate_rows": None,
+    "error_class": None,
+}
+_MESSAGE_IDEMPOTENCY_HEALTH_LOCK = threading.Lock()
 
-    Creation legitimately fails on a database that already contains duplicate
-    (conversation, sender, client_message_id) triples -- which is exactly the
-    defect this index exists to prevent, so historical data can carry it. That
-    is why the failure is reported rather than raised: the send path stays
-    correct without the index (it falls back to the lookup plus a conflict-safe
-    insert), it simply loses the race guarantee. `scripts/messenger_idempotency_audit.py`
-    reports the offending rows so the duplicates can be resolved deliberately,
-    by a human, instead of being deleted by a boot path.
+
+def message_idempotency_health() -> dict:
+    """Operational state: is hard database uniqueness actually in force?
+
+    Read-only, and deliberately not business state -- nothing in the send path
+    branches on this. It exists so that a deployment running on application-level
+    idempotency alone is visibly DEGRADED rather than indistinguishable from one
+    with the database gate installed. The previous code discarded the installer's
+    result entirely, which is why an index that never installed looked exactly
+    like one that did.
+    """
+    with _MESSAGE_IDEMPOTENCY_HEALTH_LOCK:
+        return dict(_MESSAGE_IDEMPOTENCY_HEALTH)
+
+
+def _record_message_idempotency_health(status: dict) -> dict:
+    with _MESSAGE_IDEMPOTENCY_HEALTH_LOCK:
+        _MESSAGE_IDEMPOTENCY_HEALTH.update(status)
+        return dict(_MESSAGE_IDEMPOTENCY_HEALTH)
+
+
+def _is_postgres(conn) -> bool:
+    """Which catalog dialect to inspect with.
+
+    Asked of the live connection rather than of a module-level flag so that a
+    test driving a sqlite connection is never routed into pg_index, and so the
+    answer cannot drift from the database actually in hand.
+    """
+    module = type(conn).__module__ or ""
+    if module.startswith("sqlite3"):
+        return False
+    if "psycopg" in module or "postgres" in module:
+        return True
+    try:
+        from services import db as _db
+
+        return bool(getattr(_db, "IS_POSTGRES", False))
+    except Exception:
+        return False
+
+
+def _normalise_predicate(raw: str) -> str:
+    """Compare predicates by meaning, not by the server's rendering of them.
+
+    PostgreSQL round-trips the predicate through its own printer, so what goes in
+    as `client_message_id <> ''` comes back as
+    `(client_message_id <> ''::text)`. Comparing the raw strings would report a
+    correct index as malformed.
+    """
+    text = (raw or "").lower()
+    text = text.replace("::text", "").replace("::character varying", "")
+    text = text.replace("(", " ").replace(")", " ").replace('"', "")
+    return " ".join(text.split())
+
+
+def _inspect_index_postgres(cur) -> dict | None:
+    cur.execute(
+        "SELECT i.indisunique, i.indisvalid, i.indisready, "
+        "       pg_get_expr(i.indpred, i.indrelid) AS predicate, "
+        "       (SELECT string_agg(a.attname, ',' ORDER BY k.ord) "
+        "          FROM unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord) "
+        "          JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum "
+        "       ) AS columns "
+        "  FROM pg_index i "
+        "  JOIN pg_class c ON c.oid = i.indexrelid "
+        "  JOIN pg_class t ON t.oid = i.indrelid "
+        " WHERE c.relname = %s AND c.relkind = 'i' AND t.relname = %s",
+        (MESSAGE_IDEMPOTENCY_INDEX, MESSAGE_IDEMPOTENCY_TABLE),
+    )
+    row = cur.fetchone()
+    if not row:
+        return None
+    unique, valid, ready, predicate, columns = (row[0], row[1], row[2], row[3], row[4])
+    return {
+        "present": True,
+        "unique": bool(unique),
+        "valid": bool(valid),
+        "ready": bool(ready),
+        "columns": tuple((columns or "").split(",")) if columns else (),
+        "predicate": _normalise_predicate(predicate or ""),
+    }
+
+
+def _inspect_index_sqlite(cur) -> dict | None:
+    """SQLite exposes uniqueness and partiality through PRAGMA, and the predicate
+    only in the stored CREATE statement -- so the predicate is recovered from
+    sqlite_master rather than through a PostgreSQL-only catalog call."""
+    cur.execute(f"PRAGMA index_list({MESSAGE_IDEMPOTENCY_TABLE})")
+    entry = None
+    for row in cur.fetchall() or []:
+        values = list(row)
+        if len(values) > 1 and values[1] == MESSAGE_IDEMPOTENCY_INDEX:
+            entry = values
+            break
+    if entry is None:
+        return None
+    unique = bool(entry[2]) if len(entry) > 2 else False
+    cur.execute(f"PRAGMA index_info({MESSAGE_IDEMPOTENCY_INDEX})")
+    columns = tuple(str(list(row)[2]) for row in (cur.fetchall() or []))
+    cur.execute(
+        "SELECT sql FROM sqlite_master WHERE type='index' AND name=?",
+        (MESSAGE_IDEMPOTENCY_INDEX,),
+    )
+    sql_row = cur.fetchone()
+    sql_text = (list(sql_row)[0] if sql_row else "") or ""
+    lowered = sql_text.lower()
+    where = lowered.split(" where ", 1)[1] if " where " in lowered else ""
+    return {
+        "present": True,
+        "unique": unique,
+        # SQLite has no invalid/not-ready index state: an index either exists in
+        # the schema or it does not.
+        "valid": True,
+        "ready": True,
+        "columns": columns,
+        "predicate": _normalise_predicate(where),
+    }
+
+
+def _inspect_message_idempotency_index(cur, conn) -> dict | None:
+    if _is_postgres(conn):
+        return _inspect_index_postgres(cur)
+    return _inspect_index_sqlite(cur)
+
+
+def _index_shape_is_correct(inspected: dict) -> bool:
+    return bool(
+        inspected
+        and inspected.get("unique")
+        and inspected.get("valid")
+        and inspected.get("ready")
+        and tuple(inspected.get("columns") or ()) == MESSAGE_IDEMPOTENCY_COLUMNS
+        and inspected.get("predicate") == _normalise_predicate(MESSAGE_IDEMPOTENCY_PREDICATE)
+    )
+
+
+def _count_message_idempotency_duplicates(cur) -> tuple[int, int]:
+    """(groups, rows beyond one per logical message)."""
+    cur.execute(_MESSAGE_IDEMPOTENCY_DUPLICATE_SQL)
+    row = cur.fetchone()
+    if not row:
+        return 0, 0
+    values = list(row)
+    groups = int(values[0] or 0)
+    total = int(values[1] or 0)
+    return groups, max(total - groups, 0)
+
+
+def _idempotency_status(state: str, active: bool, **extra) -> dict:
+    status = {
+        "state": state,
+        "hard_uniqueness_active": active,
+        "index_name": MESSAGE_IDEMPOTENCY_INDEX,
+        "checked_at": _now(),
+        "duplicate_groups": None,
+        "duplicate_rows": None,
+        "error_class": None,
+    }
+    status.update(extra)
+    return status
+
+
+def _ensure_message_idempotency_index(cur, conn) -> dict:
+    """Install the send-idempotency index and report, precisely, what happened.
+
+    Never raises and never blocks boot. Creation legitimately fails on a database
+    that already contains duplicate (conversation, sender, client_message_id)
+    triples -- which is exactly the defect this index exists to prevent, so
+    historical data can carry it. The send path stays correct without the index
+    (lookup plus a conflict-safe insert), it simply loses the race guarantee, and
+    `scripts/messenger_idempotency_audit.py` names the offending rows so a human
+    can resolve them deliberately rather than a boot path deleting them.
+
+    The order here matters. Duplicates are counted BEFORE any attempt to create,
+    so that "blocked by historical data" is established by looking at the data
+    rather than by pattern-matching whatever the driver puts in an exception. And
+    creation returning success is not the end of the check: the resulting index is
+    read back out of the catalog and its uniqueness, validity, columns and partial
+    predicate are compared against the shape declared above.
     """
     try:
+        inspected = _inspect_message_idempotency_index(cur, conn)
+        if inspected:
+            if _index_shape_is_correct(inspected):
+                return _record_message_idempotency_health(
+                    _idempotency_status(IDEMPOTENCY_INDEX_ALREADY_PRESENT, True)
+                )
+            # The name is taken by something that does not enforce what we need.
+            # Creation cannot fix this -- CREATE ... IF NOT EXISTS sees the name
+            # and does nothing -- and dropping another index is not a decision a
+            # boot path gets to make.
+            return _record_message_idempotency_health(
+                _idempotency_status(
+                    IDEMPOTENCY_INDEX_INSTALL_ERROR,
+                    False,
+                    error_class="IndexShapeMismatch",
+                )
+            )
+
+        groups, rows = _count_message_idempotency_duplicates(cur)
+        if groups:
+            return _record_message_idempotency_health(
+                _idempotency_status(
+                    IDEMPOTENCY_INDEX_BLOCKED_BY_DUPLICATES,
+                    False,
+                    duplicate_groups=groups,
+                    duplicate_rows=rows,
+                )
+            )
+
         cur.execute(_MESSAGE_IDEMPOTENCY_INDEX_SQL)
         conn.commit()
-        return True
+        verified = _inspect_message_idempotency_index(cur, conn)
+        if not _index_shape_is_correct(verified):
+            return _record_message_idempotency_health(
+                _idempotency_status(
+                    IDEMPOTENCY_INDEX_INSTALL_ERROR,
+                    False,
+                    error_class="IndexVerificationFailed",
+                )
+            )
+        return _record_message_idempotency_health(
+            _idempotency_status(IDEMPOTENCY_INDEX_INSTALLED, True, duplicate_groups=0, duplicate_rows=0)
+        )
     except Exception as exc:  # pragma: no cover - depends on live data
         try:
             conn.rollback()
         except Exception:
             pass
-        logging.warning(
-            "PULSE_COMM_V2_IDEMPOTENCY_INDEX_UNAVAILABLE index=%s error=%s",
-            MESSAGE_IDEMPOTENCY_INDEX,
-            exc,
+        return _record_message_idempotency_health(
+            _idempotency_status(
+                IDEMPOTENCY_INDEX_INSTALL_ERROR,
+                False,
+                error_class=type(exc).__name__,
+            )
         )
-        return False
+
+
+def _log_message_idempotency_status(status: dict) -> None:
+    """Exactly one line, structured, carrying no message content and no client ids."""
+    logging.info(
+        "PULSE_COMM_V2_IDEMPOTENCY_INDEX state=%s hard_uniqueness_active=%s index=%s "
+        "duplicate_groups=%s duplicate_rows=%s error_class=%s",
+        status.get("state"),
+        "true" if status.get("hard_uniqueness_active") else "false",
+        status.get("index_name"),
+        status.get("duplicate_groups") if status.get("duplicate_groups") is not None else "-",
+        status.get("duplicate_rows") if status.get("duplicate_rows") is not None else "-",
+        status.get("error_class") or "-",
+    )
 
 
 def _ensure_columns(bot, cur, conn) -> None:

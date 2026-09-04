@@ -52,7 +52,9 @@ class MessageIdentityIndexTest(unittest.TestCase):
         return int(self.cur.lastrowid)
 
     def test_index_installs_on_a_clean_database(self):
-        self.assertTrue(service._ensure_message_idempotency_index(self.cur, self.conn))
+        status = service._ensure_message_idempotency_index(self.cur, self.conn)
+        self.assertEqual(status["state"], service.IDEMPOTENCY_INDEX_INSTALLED)
+        self.assertTrue(status["hard_uniqueness_active"])
 
     def test_second_write_of_the_same_client_id_is_rejected(self):
         service._ensure_message_idempotency_index(self.cur, self.conn)
@@ -82,7 +84,9 @@ class MessageIdentityIndexTest(unittest.TestCase):
         correct without the index, so the honest response is False plus a log."""
         self._insert("native-abc")
         self._insert("native-abc")
-        self.assertFalse(service._ensure_message_idempotency_index(self.cur, self.conn))
+        status = service._ensure_message_idempotency_index(self.cur, self.conn)
+        self.assertEqual(status["state"], service.IDEMPOTENCY_INDEX_BLOCKED_BY_DUPLICATES)
+        self.assertFalse(status["hard_uniqueness_active"])
 
     def test_lookup_returns_the_original_row(self):
         message_id = self._insert("native-abc")
