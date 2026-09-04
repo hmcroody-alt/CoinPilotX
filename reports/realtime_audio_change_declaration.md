@@ -1871,3 +1871,28 @@ All green on this tree:
 
 Physical audible validation is covered by the device pass that follows this
 consolidation, per `reports/realtime_audio_verified_baseline.md` section 7.
+
+### Native linking follow-up (same change)
+
+`ios/` is checked into this repo, so `expo prebuild` is not part of the build
+path and the config-plugin output in `app.json` never reaches the real project
+on its own. The two new modules were therefore linked with `pod install`
+(additive) rather than a prebuild (regenerative, and it would have clobbered the
+hand-maintained `CFBundleVersion 21`).
+
+Three more `dependency_watch` files changed as a result, all minimally:
+
+| File | Change |
+|---|---|
+| `ios/Podfile.lock` | `ExpoMediaLibrary (18.2.1)` and `ExpoSharing (14.0.8)` added. `react-native-agora` still `4.6.2`; no other pod moved. |
+| `ios/PulseSoc.xcodeproj/project.pbxproj` | +2 lines, both the `ExpoMediaLibrary_privacy.bundle` resource entries. `CURRENT_PROJECT_VERSION = 21` still present in both configurations. |
+| `ios/PulseSoc/Info.plist` | +2 lines: `NSPhotoLibraryAddUsageDescription`, matching what `app.json` already declared. |
+
+That Info.plist key is a crash fix, not a nicety: `src/media/mediaActions.ts`
+calls `MediaLibrary.saveToLibraryAsync`, and iOS terminates the process when a
+save is attempted without the corresponding usage description. `app.json`
+declared the key but the checked-in Info.plist did not carry it, so the two had
+drifted.
+
+`UIBackgroundModes` still contains `audio`, and `NSMicrophoneUsageDescription`
+is unchanged — re-checked on the final file with `plutil -p` after the edit.

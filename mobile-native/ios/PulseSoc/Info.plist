@@ -59,6 +59,8 @@
 	<string>PulseSoc uses Face ID to unlock your saved sign-in securely.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>PulseSoc uses the microphone for native voice/video calls and media capture.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>PulseSoc saves photos and videos you download to your photo library.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>PulseSoc uses the photo library for profile, chat, status, and reels uploads.</string>
 	<key>RCTNewArchEnabled</key>
