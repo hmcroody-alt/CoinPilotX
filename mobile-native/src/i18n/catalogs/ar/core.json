@@ -207,7 +207,9 @@
       "cryptoAlertHistory": "سجل التنبيهات",
       "cryptoPortfolio": "محفظة الكريبتو",
       "briefingsHub": "الموجزات",
-      "briefing": "موجز"
+      "briefing": "موجز",
+      "privateOffice": "المكتب الخاص",
+      "privateFacts": "المعلومات الخاصة"
     },
     "navSubtitles": {
       "missionControl": "مركز القيادة",

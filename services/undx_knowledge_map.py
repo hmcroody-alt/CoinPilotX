@@ -208,6 +208,13 @@ NATIVE_ROUTES: dict[str, str] = {
     # path that reaches it. Declared here so a crypto record can land the member on
     # their holdings rather than on the nearest screen that happened to exist.
     "Portfolio": "/pulse/portfolio",
+    # Private Office. Both screens are registered in AppNavigator.tsx and given
+    # these paths in linking.ts; they are declared here so `private.facts.list`
+    # can name a destination the member can actually open. The umbrella screen is
+    # listed alongside the leaf because the leaf is only ever reached through it,
+    # and a map that knows one but not the other would describe half a journey.
+    "PrivateOffice": "/pulse/private-office",
+    "PrivateFacts": "/pulse/private-office/facts",
     "AccountCenter": "/pulse/settings/:section",
     "AccountDevices": "/pulse/settings/devices",
     "AccountHealth": "/pulse/account-health",
@@ -2703,6 +2710,56 @@ _live(
               "services/translation_providers.py:GoogleAdvancedProvider",
               "tests/test_content_translation.py"),
     known_limitations=("Google credentials and TRANSLATION_ENABLED are required; drafts remain unsent.",),
+)
+
+
+# ===========================================================================
+# Private Office — the member's own fact store
+# ===========================================================================
+#
+# ``self_account_only`` here is not an assertion about a check that happens
+# before the query; it is a description of the query. ``facts.list_facts``
+# requires ``owner_user_id`` and puts it in the WHERE clause of every statement
+# it issues, and the capability declares no field that could name a different
+# account. That is why this is not an existence oracle: another member's row is
+# not refused, it is not returned, and the two are indistinguishable from
+# outside.
+
+_live(
+    "private.facts.list",
+    product_area="Private Office", resource_type="private_fact",
+    # PrivateFactsScreen now exists and is reachable at Premium → Private Office
+    # → Private Facts, so the map names it. The screen renders the same
+    # `services.private_office.access` decision the capability does, which is why
+    # this is a real destination rather than a link that lands on a refusal: a
+    # member who can get an answer from the agent can open the screen that holds
+    # it, and a member who cannot gets the same reason from both.
+    native_screen="PrivateFacts",
+    backend_route="GET /api/private-office/facts",
+    domain_service="services.private_office.facts", domain_operation="list_facts",
+    authorization_scope=_SELF, owner_field="owner_user_id",
+    output_schema=(("id", "int"), ("fact_type", "str"), ("value", "str"),
+                   ("domain", "str"), ("sensitivity", "str"),
+                   ("observed_at", "str"), ("provenance", "dict"),
+                   ("freshness", "dict")),
+    feature_flag="UNDX_AGENT_READS_ENABLED",
+    evidence=("services/private_office/facts.py list_facts",
+              "services/private_office/access.py decide",
+              "services/private_office/office.py project_facts",
+              "services/undx_agent_tools.py private_facts_list",
+              "tests/private_office/test_private_facts_capability.py"),
+    known_limitations=(
+        "UNDX reads at a CONFIDENTIAL ceiling, below the owner's own screen. "
+        "Facts above that sensitivity are absent from the agent's answer rather "
+        "than summarised, so a short list may not be an empty store; the result "
+        "carries sensitivity_ceiling so the difference is legible.",
+        "Availability follows services.private_office.feature_matrix. "
+        "private_facts is IMPLEMENTED and reaches PRIVATE and above, but it "
+        "carries the PRIVATE_FACTS_ENABLED kill switch: with the switch off "
+        "the capability is still registered and refuses every caller, "
+        "including PRIVATE_OFFICE, as FEATURE_DISABLED rather than as an "
+        "upgrade prompt.",
+    ),
 )
 
 

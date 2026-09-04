@@ -2793,6 +2793,133 @@
       "revoked": "Revogada",
       "paused": "Pausada",
       "unknown": "Indisponível"
+    },
+    "privateOffice": {
+      "title": "Escritório privado",
+      "subtitle": "O seu centro privado de inteligência e operações pessoais.",
+      "loading": "A verificar o que o seu escritório inclui…",
+      "retry": "Tentar novamente",
+      "open": "Abrir",
+      "footnote": "O que aparece aqui é decidido pela sua conta no servidor, não por esta aplicação.",
+      "sections": {
+        "available": "Disponível",
+        "notYet": "Em breve"
+      },
+      "unknown": {
+        "title": "Não foi possível confirmar o seu acesso",
+        "body": "Não foi possível verificar o seu escritório agora. Nada mudou na sua conta."
+      },
+      "upgrade": {
+        "title": "Requer atualização de plano",
+        "body": "O Escritório privado está incluído no {{tier}}.",
+        "bodyGeneric": "O Escritório privado não está incluído no seu plano atual."
+      },
+      "unavailable": {
+        "title": "Indisponível",
+        "body": "O Escritório privado não está disponível neste momento."
+      },
+      "reason": {
+        "AVAILABLE": "Disponível",
+        "PROVIDER_REQUIRED": "Requer fornecedor",
+        "NOT_IMPLEMENTED": "Ainda não desenvolvido",
+        "TEMPORARILY_DISABLED": "Desativado temporariamente",
+        "UPGRADE_REQUIRED": "Requer atualização de plano",
+        "UNKNOWN": "Indisponível"
+      },
+      "features": {
+        "privateFacts": {
+          "label": "Dados privados",
+          "hint": "Informação verificada registada sobre os seus assuntos."
+        },
+        "capitalGraph": {
+          "label": "Grafo de capital",
+          "hint": "Como os seus ativos, entidades e obrigações se ligam."
+        },
+        "privateBriefings": {
+          "label": "Relatórios privados",
+          "hint": "Relatórios elaborados a partir dos seus próprios registos."
+        },
+        "relationshipIntelligence": {
+          "label": "Inteligência de relações",
+          "hint": "As pessoas e organizações em torno dos seus assuntos."
+        },
+        "privateShield": {
+          "label": "Escudo privado",
+          "hint": "Vigia a exposição da sua informação privada."
+        },
+        "breachMonitoring": {
+          "label": "Monitorização de fugas",
+          "hint": "Avisos quando os seus dados surgem numa fuga conhecida."
+        },
+        "documentIntelligence": {
+          "label": "Inteligência documental",
+          "hint": "Extrai dados dos documentos que fornece."
+        },
+        "humanConcierge": {
+          "label": "Concierge humano",
+          "hint": "Uma pessoa que trata de pedidos em seu nome."
+        }
+      },
+      "entry": {
+        "heading": "Escritório privado",
+        "hint": "O seu centro privado de inteligência e operações pessoais.",
+        "lockedHint": "Incluído no {{tier}}."
+      },
+      "facts": {
+        "subtitle": "Apenas o que foi registado para si. Nada é deduzido da sua atividade pública.",
+        "loading": "A carregar os seus registos…",
+        "why": "Como sabe isto?",
+        "source": "Fonte",
+        "sourceUnknown": "Não registada",
+        "verified": "Verificação",
+        "observedLabel": "Observado",
+        "observed": "Observado a {{date}}",
+        "confidence": "Confiança",
+        "hasDocument": "Existe um documento de origem em arquivo.",
+        "close": "Fechar",
+        "stale": "Desatualizado",
+        "empty": {
+          "title": "Ainda não há nada aqui",
+          "body": "Ainda não foi adicionada informação verificada."
+        },
+        "notEntitled": {
+          "title": "Requer atualização de plano",
+          "body": "Os Dados privados estão incluídos no {{tier}}.",
+          "bodyGeneric": "Os Dados privados não estão incluídos no seu plano atual."
+        },
+        "disabled": {
+          "title": "Desativado temporariamente",
+          "body": "Os Dados privados estão desligados por agora. Os seus registos não foram tocados."
+        },
+        "notImplemented": {
+          "title": "Ainda não disponível",
+          "body": "Isto ainda não foi desenvolvido."
+        },
+        "unavailable": {
+          "title": "Indisponível",
+          "body": "Não conseguimos ler os seus registos agora. Tente de novo daqui a pouco."
+        },
+        "error": {
+          "title": "Algo correu mal",
+          "body": "Não foi possível carregar os seus registos."
+        }
+      },
+      "domains": {
+        "GENERAL": "Geral",
+        "FINANCIAL": "Financeiro",
+        "LEGAL": "Jurídico",
+        "HEALTH": "Saúde",
+        "FAMILY": "Família",
+        "IDENTITY": "Identidade",
+        "SECURITY": "Segurança"
+      },
+      "verification": {
+        "VERIFIED": "Verificado",
+        "SOURCED": "Com fonte",
+        "SELF_REPORTED": "Declarado por si",
+        "ESTIMATED": "Estimado",
+        "NEEDS_REVIEW": "Requer revisão"
+      }
     }
   },
   "briefings": {

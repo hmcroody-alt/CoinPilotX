@@ -207,7 +207,9 @@
       "cryptoAlertHistory": "Historique des alertes",
       "cryptoPortfolio": "Portefeuille crypto",
       "briefingsHub": "Briefings",
-      "briefing": "Briefing"
+      "briefing": "Briefing",
+      "privateOffice": "Bureau privé",
+      "privateFacts": "Informations privées"
     },
     "navSubtitles": {
       "missionControl": "Centre de pilotage",

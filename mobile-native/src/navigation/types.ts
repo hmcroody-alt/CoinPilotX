@@ -486,6 +486,12 @@ export type RootStackParamList = {
     title?: string;
   } | undefined;
   AssetDetail: { symbol: string; name?: string; title?: string };
+  // Private Office and its first real capability. Neither route takes an
+  // entitlement parameter: what the member may see is resolved server-side on
+  // entry, and a param could only ever disagree with that answer while looking
+  // authoritative. `title` is the same optional override every titled route has.
+  PrivateOffice: { title?: string } | undefined;
+  PrivateFacts: { title?: string } | undefined;
   AccountCenter: { section?: "account" | "security" | "privacy" | "devices"; title?: string } | undefined;
   AccountSettings: { title?: string } | undefined;
   AccountSecurity: { title?: string } | undefined;

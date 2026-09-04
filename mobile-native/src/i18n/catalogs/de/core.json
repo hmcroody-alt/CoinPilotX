@@ -207,7 +207,9 @@
       "cryptoAlertHistory": "Alarmverlauf",
       "cryptoPortfolio": "Krypto-Portfolio",
       "briefingsHub": "Briefings",
-      "briefing": "Briefing"
+      "briefing": "Briefing",
+      "privateOffice": "Privates Büro",
+      "privateFacts": "Private Angaben"
     },
     "navSubtitles": {
       "missionControl": "Einsatzzentrale",

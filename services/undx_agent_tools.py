@@ -2507,10 +2507,145 @@ def marketplace_listing_delete(user_id: int, arguments: dict[str, Any]) -> ToolR
 
 
 # ---------------------------------------------------------------------------
+# Private Office — the member's own private fact store
+# ---------------------------------------------------------------------------
+
+#: The highest sensitivity UNDX may read out of the private store.
+#:
+#: The owner reading their own screen gets everything; the agent does not, and
+#: the difference is not timidity. Anything this executor returns can end up in
+#: a chat transcript, in a model's context window, and — if a hostile string
+#: elsewhere in that context gets its way — in a summary the member did not ask
+#: for. A ceiling is the one control that limits the blast radius of every such
+#: failure at once, and it costs nothing while the categories above it hold the
+#: things a person would least like read aloud.
+#:
+#: Raising this is a deliberate decision with its own review, not a default.
+UNDX_SENSITIVITY_CEILING = "CONFIDENTIAL"
+
+#: Bound on rows returned in one call, independent of the registry's field
+#: maximum. The registry bound stops a hostile argument; this one stops a
+#: well-formed argument from turning one question into a bulk export.
+UNDX_MAX_FACTS = 25
+
+
+def _private_office():
+    from services import db
+    from services.private_office import access, facts, office, schema, tiers
+
+    return db, access, facts, office, schema, tiers
+
+
+def private_facts_list(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    """Read the caller's own private facts, gated on the canonical tier truth.
+
+    Three properties are worth stating because each is enforced structurally
+    rather than by a check that could be reordered away:
+
+    **There is no owner argument.** The capability declares ``domain`` and
+    ``limit`` and nothing else, and ``list_facts`` takes ``owner_user_id`` as a
+    required keyword that goes into every ``WHERE`` clause. A model that
+    proposes ``{"owner_user_id": 999}`` has that key dropped by the field
+    validator before this function is entered, and even if it were not, there is
+    nowhere here for it to go. Cross-owner reads are not refused; they are
+    unrepresentable.
+
+    **A record belonging to somebody else is indistinguishable from no record.**
+    The reader filters rather than checks, so UNDX cannot report "that exists
+    but is not yours" — which is the disclosure this boundary exists to prevent.
+    Stage 8 asks that UNDX not reveal that another member's record exists, and
+    the reason it cannot is that it never sees one.
+
+    **The gate is the same one the screen uses.** ``access.decide`` is shared
+    with the HTTP surface, so the agent cannot open a capability the product
+    still calls unavailable, and — the direction that actually bites — cannot
+    refuse one the member is looking at.
+    """
+    started = time.perf_counter()
+    tool = "pulsesoc.private_facts.list"
+    capability = "private.facts.list"
+    db, access, facts, office, schema, tiers = _private_office()
+
+    owner = int(user_id or 0)
+    if owner <= 0:
+        return _fail(tool, capability, "authentication_required",
+                     "UNDX needs you signed in to read your Private Office.",
+                     started=started)
+
+    try:
+        resolved = tiers.resolve_tier(owner)
+    except Exception:  # noqa: BLE001 - a resolver fault is not a denial
+        resolved = {}
+    decision = access.decide(resolved, "private_facts")
+    verdict = decision["decision"]
+
+    if verdict == access.UNAVAILABLE:
+        # Retryable, and deliberately not phrased as a refusal. "We could not
+        # look" told as "you may not have this" is the one error that lands on
+        # the member who paid.
+        return _fail(tool, capability, "entitlement_unavailable",
+                     "UNDX could not confirm your Private Office access just now.",
+                     retryable=True, started=started)
+    if verdict in (access.NOT_IMPLEMENTED, access.FEATURE_DISABLED):
+        return _fail(tool, capability, "capability_not_available",
+                     "Private facts are not available yet.", started=started)
+    if verdict == access.NOT_ENTITLED:
+        return _fail(tool, capability, "not_entitled",
+                     "Your plan does not include the Private Office.",
+                     started=started)
+
+    domain = clean(arguments.get("domain") or "", 32).upper()
+    limit = max(1, min(int(arguments.get("limit") or 10), UNDX_MAX_FACTS))
+
+    connection = db.connect()
+    try:
+        cursor = connection.cursor()
+        schema.ensure_private_schema(cursor)
+        rows = facts.list_facts(
+            cursor,
+            owner_user_id=owner,
+            domains=[domain] if domain else None,
+            sensitivity_ceiling=UNDX_SENSITIVITY_CEILING,
+            limit=limit + 1,
+        )
+    except Exception:  # noqa: BLE001
+        return _fail(tool, capability, "private_store_unavailable",
+                     "UNDX could not read your Private Office just now.",
+                     retryable=True, started=started)
+    finally:
+        connection.close()
+
+    # One row past the limit, for the same reason ``crypto_alerts_list`` does it:
+    # a full page and a complete set are otherwise indistinguishable, and a
+    # confident "that is everything you have recorded" said over a truncated
+    # page is a wrong answer delivered with full authority.
+    truncated = len(rows) > limit
+    # ``project_facts`` is the same allowlist the HTTP surface returns, so the
+    # locator of a source document — and any column added later — stays behind it.
+    records = office.project_facts(rows[:limit])
+    return ToolResult(
+        ok=True,
+        tool_name=tool,
+        capability_id=capability,
+        records=records,
+        data={
+            "count": len(records),
+            "truncated": truncated,
+            "domain": domain or "ALL",
+            # Named so a caller reading an unexpectedly short list can tell a
+            # ceiling from an empty store rather than guessing.
+            "sensitivity_ceiling": UNDX_SENSITIVITY_CEILING,
+        },
+        latency_ms=_timed(started),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Resolution
 # ---------------------------------------------------------------------------
 
 EXECUTORS: dict[str, Callable[[int, dict[str, Any]], ToolResult]] = {
+    "private_facts_list": private_facts_list,
     "profile_block": profile_block,
     "profile_unblock": profile_unblock,
     "profile_bio_update": profile_bio_update,

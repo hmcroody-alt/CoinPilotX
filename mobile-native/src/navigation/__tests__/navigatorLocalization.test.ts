@@ -108,7 +108,11 @@ describe("navigator header titles", () => {
     // 136 + 1: `MarketPulse`, titled `route.params?.title ||
     // t("common:screens.marketPulse")`. It arrived with the Market Pulse work
     // that had been sitting uncommitted in the release worktree.
-    expect(TITLE_OPTIONS.length).toBe(137);
+    //
+    // 137 + 2: `PrivateOffice` and `PrivateFacts`, the first native Private
+    // Office surface. Both titled `route.params?.title ||
+    // t("common:screens.private…")`, so both count.
+    expect(TITLE_OPTIONS.length).toBe(139);
   });
 
   it("has no hardcoded string literal titles", () => {

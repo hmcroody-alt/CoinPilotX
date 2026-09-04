@@ -207,7 +207,9 @@
       "cryptoAlertHistory": "アラート履歴",
       "cryptoPortfolio": "暗号資産ポートフォリオ",
       "briefingsHub": "ブリーフィング",
-      "briefing": "ブリーフィング"
+      "briefing": "ブリーフィング",
+      "privateOffice": "プライベートオフィス",
+      "privateFacts": "プライベート情報"
     },
     "navSubtitles": {
       "missionControl": "管制センター",

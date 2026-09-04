@@ -207,7 +207,9 @@
       "cryptoAlertHistory": "알림 기록",
       "cryptoPortfolio": "암호화폐 포트폴리오",
       "briefingsHub": "브리핑",
-      "briefing": "브리핑"
+      "briefing": "브리핑",
+      "privateOffice": "프라이빗 오피스",
+      "privateFacts": "비공개 정보"
     },
     "navSubtitles": {
       "missionControl": "관제 센터",
