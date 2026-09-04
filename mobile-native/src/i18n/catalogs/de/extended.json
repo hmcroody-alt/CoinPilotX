@@ -1526,6 +1526,13 @@
           "losers": "Verlierer",
           "trending": "Im Trend",
           "watchlist": "Watchlist"
+        },
+        "regime": {
+          "title": "Marktlage",
+          "hint": "Warum?",
+          "breadth": "{{pct}} der Liste im Plus",
+          "leader": "Führende Gruppe · {{group}}",
+          "unavailable": "Die Marktlage konnte aus dieser Liste nicht ermittelt werden."
         }
       },
       "entry": {

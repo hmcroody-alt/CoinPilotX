@@ -61,6 +61,56 @@ METRIC_FIELDS: dict[str, str] = {
     "market_cap": "market_cap",
 }
 
+#: Metric key -> field, for the derived readings produced by
+#: ``services.market_intelligence``. These are computed, not published: the
+#: engine only asks for them when a rule actually names one (see
+#: :func:`spec_uses_intelligence`), so an ordinary price alert costs exactly
+#: what it cost before.
+#:
+#: All of them are numeric on purpose. The comparator vocabulary, the edge
+#: detection, the crossing-key idempotency and the cooldown all work on numbers,
+#: and the point of this addition is to reuse that machinery rather than build a
+#: second alerting path with its own idea of when something fired.
+#:
+#: The categorical concepts are given *ordered* numeric encodings, and only where
+#: an order genuinely exists. Risk has one (low to extreme). Setup readiness has
+#: one (not ready, ready). Action posture has one, from "get out" to "size in" —
+#: and that ordering is about posture only. It is not a confidence ranking and
+#: not a score, which is why it is documented here rather than left for a reader
+#: to infer from the numbers.
+INTELLIGENCE_METRIC_FIELDS: dict[str, str] = {
+    "opportunity_quality": "intel_opportunity",
+    "entry_quality": "intel_entry",
+    "risk_level": "intel_risk_ordinal",
+    "action_posture": "intel_action_posture",
+    "setup_ready": "intel_setup_ready",
+    "breakout_confirmed": "intel_breakout_confirmed",
+    "at_support": "intel_at_support",
+    "volume_ratio": "intel_volume_ratio",
+}
+METRIC_FIELDS.update(INTELLIGENCE_METRIC_FIELDS)
+
+#: Risk, low to extreme. "Risk becomes High" is ``risk_level crosses_above 2.5``.
+RISK_ORDINALS = {"LOW": 1, "MODERATE": 2, "HIGH": 3, "EXTREME": 4}
+
+#: Action posture, most defensive to most constructive. Deliberately coarse:
+#: several states share a rung because they call for the same posture, and
+#: pretending WAIT and WAIT_FOR_CONFIRMATION differ by a step would invent a
+#: precision the analysis does not have.
+ACTION_POSTURE = {
+    "EXIT": 1, "AVOID": 1, "HIGH_RISK": 1,
+    "REDUCE": 2,
+    "TAKE_PARTIAL_PROFIT": 3, "DO_NOT_CHASE": 3,
+    "WAIT": 4, "WAIT_FOR_CONFIRMATION": 4, "WAIT_FOR_PULLBACK": 4,
+    "REVERSAL_WATCH": 5, "BREAKOUT_WATCH": 5, "PULLBACK_WATCH": 5,
+    "HOLD": 6,
+    "ACCUMULATE": 7,
+    "STRONG_ACCUMULATION": 8,
+    # DATA_UNAVAILABLE has no posture. It is absent here on purpose so it
+    # resolves to None and the rule reports undecidable rather than firing an
+    # "action turned defensive" alert that was really an outage.
+}
+
 #: Human labels for notification copy and validation errors. Not user-facing
 #: translations — the native client renders its own i18n from the metric key.
 METRIC_LABELS: dict[str, str] = {
@@ -69,6 +119,14 @@ METRIC_LABELS: dict[str, str] = {
     "price_change_24h": "24h price move",
     "volume_24h": "24h volume",
     "market_cap": "market cap",
+    "opportunity_quality": "opportunity quality",
+    "entry_quality": "entry quality",
+    "risk_level": "risk level",
+    "action_posture": "action posture",
+    "setup_ready": "setup readiness",
+    "breakout_confirmed": "breakout confirmation",
+    "at_support": "pullback to support",
+    "volume_ratio": "volume vs recent median",
 }
 
 #: Metrics quoted as a percentage rather than a currency amount.
@@ -115,6 +173,22 @@ MAX_CLAUSES = 4
 
 class ConditionError(ValueError):
     """A rule the member asked for that cannot be honoured as written."""
+
+
+def spec_uses_intelligence(spec: Any) -> bool:
+    """Does this rule name any derived-intelligence metric?
+
+    The engine calls this before doing the analysis work, so a rule that only
+    reads published board fields never triggers a single line of it. Without
+    this check, adding these metrics would have quietly made every alert in the
+    system more expensive to evaluate.
+    """
+    if not isinstance(spec, dict):
+        return False
+    for clause in spec.get("clauses") or []:
+        if isinstance(clause, dict) and str(clause.get("metric") or "").strip().lower() in INTELLIGENCE_METRIC_FIELDS:
+            return True
+    return False
 
 
 def normalize_metric(metric: Any) -> str:

@@ -1524,6 +1524,13 @@
           "losers": "跌幅榜",
           "trending": "热门",
           "watchlist": "自选"
+        },
+        "regime": {
+          "title": "市场状况",
+          "hint": "为什么?",
+          "breadth": "榜单中 {{pct}} 上涨",
+          "leader": "领先板块 · {{group}}",
+          "unavailable": "无法根据该榜单衡量市场状况。"
         }
       },
       "entry": {

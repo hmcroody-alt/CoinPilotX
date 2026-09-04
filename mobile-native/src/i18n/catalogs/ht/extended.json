@@ -1524,6 +1524,13 @@
           "losers": "K ap desann",
           "trending": "Tandans",
           "watchlist": "Lis siveyans"
+        },
+        "regime": {
+          "title": "Kondisyon",
+          "hint": "Poukisa?",
+          "breadth": "{{pct}} nan lis la ap monte",
+          "leader": "Gwoup ki alatèt · {{group}}",
+          "unavailable": "Nou pa ka mezire kondisyon mache a ak lis sa a."
         }
       },
       "entry": {

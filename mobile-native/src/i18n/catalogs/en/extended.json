@@ -1526,6 +1526,13 @@
           "losers": "Losers",
           "trending": "Trending",
           "watchlist": "Watchlist"
+        },
+        "regime": {
+          "title": "Conditions",
+          "hint": "Why?",
+          "breadth": "{{pct}} of the board is up",
+          "leader": "Leading group · {{group}}",
+          "unavailable": "Market conditions could not be measured from this board."
         }
       },
       "entry": {

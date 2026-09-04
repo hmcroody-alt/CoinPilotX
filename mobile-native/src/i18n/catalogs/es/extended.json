@@ -1526,6 +1526,13 @@
           "losers": "Mayores bajadas",
           "trending": "Tendencia",
           "watchlist": "Watchlist"
+        },
+        "regime": {
+          "title": "Condiciones",
+          "hint": "¿Por qué?",
+          "breadth": "{{pct}} de la lista sube",
+          "leader": "Grupo líder · {{group}}",
+          "unavailable": "No se pudieron medir las condiciones del mercado con esta lista."
         }
       },
       "entry": {

@@ -95,6 +95,7 @@ import {
 } from "../api/watchlists";
 import { alertConditionLabel, alertStatusLabel } from "../api/alerts";
 import { buildMarketContextEnvelope, parkMarketContext } from "../undx/marketContext";
+import { AssetIntelligencePanel } from "../components/crypto/AssetIntelligencePanel";
 import { AssetPriceChart } from "../components/crypto/AssetSparkline";
 import { Panel } from "../components/Panel";
 import { RootStackParamList } from "../navigation/types";
@@ -415,6 +416,12 @@ export function AssetDetailScreen({ route, navigation }: Props) {
         </Pressable>
       </View>
       {watchlistNotice ? <Text style={styles.error}>{watchlistNotice}</Text> : null}
+
+      {/* Above the chart, because the chart is what the verdict is about and
+          reading the reasoning after scrolling past the evidence inverts the
+          order the mission asked for. Collapsed by default and fetched only on
+          expand, so opening a coin costs exactly what it cost before. */}
+      <AssetIntelligencePanel symbol={symbol} />
 
       <Panel>
         <Text style={styles.sectionTitle}>Price history</Text>

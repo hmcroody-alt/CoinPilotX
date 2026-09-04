@@ -35,6 +35,14 @@
  */
 
 import { readJsonCache, writeJsonCache } from "../core/cache";
+import {
+  AssetIntelligence,
+  MarketRegime,
+  MarketRotation,
+  normalizeIntelligence,
+  normalizeRegime,
+  normalizeRotation
+} from "./marketIntelligence";
 import { pulseApi } from "./pulseApi";
 
 const SNAPSHOT_CACHE_PREFIX = "pulsesoc.native.marketpulse.snapshot.";
@@ -80,6 +88,14 @@ export type MarketAsset = {
   alertCount: number;
   /** Set only on rows that came from the provider's trending list. */
   trending: boolean;
+  /**
+   * The server's verdict for this row, or null when it could not form one.
+   *
+   * Null is a real state and is not the same as a cautious verdict: the row's
+   * price is still true, the analysis simply had too little history. A card
+   * renders nothing rather than a placeholder opinion.
+   */
+  intelligence: AssetIntelligence | null;
 };
 
 export type MarketFreshness = {
@@ -120,6 +136,13 @@ export type MarketSnapshot = {
    * claim to know what the user is watching.
    */
   personalized: boolean;
+  /**
+   * Conditions across the whole board, computed from breadth the snapshot
+   * already contains — no extra provider call and no paid breadth feed. Null
+   * when the board was too small to measure it.
+   */
+  regime: MarketRegime | null;
+  rotation: MarketRotation | null;
 };
 
 export type PulseHistoryPoint = { t: number; price: number };
@@ -176,7 +199,10 @@ export function normalizeMarketAsset(input: Raw<MarketAsset> = {}): MarketAsset 
     favorite: Boolean(input.favorite),
     // A badge count, not a price: 0 is the honest answer for "no alerts".
     alertCount: Math.max(0, Number(input.alertCount) || 0),
-    trending: Boolean(input.trending)
+    trending: Boolean(input.trending),
+    // Owned by `marketIntelligence.ts`, because the same shape arrives from two
+    // endpoints and one normalizer for it is one place to keep it honest.
+    intelligence: normalizeIntelligence(input.intelligence)
   };
 }
 
@@ -221,7 +247,9 @@ export function normalizeSnapshot(input: Raw<MarketSnapshot> = {}): MarketSnapsh
     freshness: normalizeFreshness(input.freshness || {}),
     global: normalizeGlobalMetrics(input.global || {}),
     basis: String(input.basis || ""),
-    personalized: Boolean(input.personalized)
+    personalized: Boolean(input.personalized),
+    regime: normalizeRegime(input.regime),
+    rotation: normalizeRotation(input.rotation)
   };
 }
 

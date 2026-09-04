@@ -58,8 +58,10 @@ import {
   loadCachedMarketSnapshot,
   searchMarketAssets
 } from "../api/marketPulse";
+import { MarketRegime, MarketRotation, formatPlainPct } from "../api/marketIntelligence";
 import { formatPercent, formatPrice } from "../api/watchlists";
 import { AssetSparkline } from "../components/crypto/AssetSparkline";
+import { IntelligenceBadge } from "../components/crypto/IntelligenceBadge";
 import { Panel } from "../components/Panel";
 import { useTranslation } from "../i18n";
 import { RootStackParamList } from "../navigation/types";
@@ -324,6 +326,10 @@ export function MarketPulseScreen({ navigation, route }: Props) {
                 {freshness.warning || t("discovery:crypto.marketPulse.partial")}
               </Text>
             ) : null}
+            {/* One line, one tap. The regime is genuinely useful context for
+                every row below it, but it is context — it does not get a card
+                of its own above the board it describes. */}
+            <RegimeStrip regime={snapshot?.regime ?? null} rotation={snapshot?.rotation ?? null} />
             {snapshot && !snapshot.personalized ? (
               <Text style={styles.muted}>{t("discovery:crypto.marketPulse.overlayUnavailable")}</Text>
             ) : null}
@@ -393,6 +399,59 @@ function FreshnessBadge({ live, label }: { live: boolean; label: string }) {
   );
 }
 
+/**
+ * The market regime, in one line.
+ *
+ * Colour follows the state rather than the breadth number, because a
+ * risk-off market with 51% advancers is still risk-off and a green chip
+ * would say the opposite of the words next to it. The detail sentence is the
+ * server's own, so the reason shown here can never drift from the reason the
+ * scoring engine actually used.
+ *
+ * Renders nothing when the board was too small to measure breadth — an
+ * unmeasured regime is not a neutral one.
+ */
+function RegimeStrip({ regime, rotation }: { regime: MarketRegime | null; rotation: MarketRotation | null }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  if (!regime || !regime.state || !regime.label) return null;
+  const tint =
+    regime.state === "RISK_ON" ? colors.accent : regime.state === "RISK_OFF" ? colors.danger : colors.warning;
+  return (
+    <View style={styles.regimeWrap}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        accessibilityLabel={`${t("discovery:crypto.marketPulse.regime.title")} ${regime.label}`}
+        style={({ pressed }) => [styles.regimeHead, pressed && styles.pressed]}
+        onPress={() => setOpen((value) => !value)}
+      >
+        <View style={[styles.regimeDot, { backgroundColor: tint }]} />
+        <Text style={[styles.regimeLabel, { color: tint }]}>{regime.label}</Text>
+        {regime.breadthPct !== null ? (
+          <Text style={styles.muted}>
+            {t("discovery:crypto.marketPulse.regime.breadth", { pct: formatPlainPct(regime.breadthPct) })}
+          </Text>
+        ) : null}
+        <Text style={styles.regimeHint}>{t("discovery:crypto.marketPulse.regime.hint")}</Text>
+      </Pressable>
+      {open ? (
+        <View style={styles.regimeBody}>
+          <Text style={styles.muted}>{regime.detail}</Text>
+          {regime.basis ? <Text style={styles.regimeBasis}>{regime.basis}</Text> : null}
+          {/* Rotation is only shown when the board actually grouped into
+              something — a "leader" among one group is not a rotation. */}
+          {rotation && rotation.leader && rotation.groups.length > 1 ? (
+            <Text style={styles.muted}>
+              {t("discovery:crypto.marketPulse.regime.leader", { group: rotation.leader })}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 function Metric({ label, value, tint }: { label: string; value: string; tint?: string }) {
   return (
     <View style={styles.metric}>
@@ -432,6 +491,10 @@ function MarketRow({ asset, onPress }: { asset: MarketAsset; onPress: (asset: Ma
       <View style={styles.priceBlock}>
         <Text style={styles.price}>{formatPrice(asset.price)}</Text>
         <Text style={[styles.change, { color: tint }]}>{formatPercent(asset.change24h)}</Text>
+        {/* Beneath the price, never instead of it. The price is the fact this
+            row exists to show; the verdict is an annotation on it, and a row
+            with no analysis simply renders nothing here. */}
+        <IntelligenceBadge intelligence={asset.intelligence} />
       </View>
     </Pressable>
   );
@@ -484,6 +547,13 @@ const styles = createThemedStyles(() => ({
   price: { color: colors.text, fontSize: 14, fontWeight: "900" },
   priceBlock: { alignItems: "flex-end", gap: 2, minWidth: 92 },
   rank: { color: colors.muted, fontSize: 11, fontWeight: "800", minWidth: 22 },
+  regimeBasis: { color: colors.muted, fontSize: 11, fontStyle: "italic" },
+  regimeBody: { gap: 4, paddingLeft: 14 },
+  regimeDot: { borderRadius: 4, height: 8, width: 8 },
+  regimeHead: { alignItems: "center", flexDirection: "row", gap: 6 },
+  regimeHint: { color: premiumTheme.gold, fontSize: 11, fontWeight: "800" },
+  regimeLabel: { fontSize: 12, fontWeight: "900", letterSpacing: 0.3 },
+  regimeWrap: { gap: 4 },
   root: { backgroundColor: "transparent", flex: 1 },
   row: {
     alignItems: "center",

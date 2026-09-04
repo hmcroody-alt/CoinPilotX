@@ -1524,6 +1524,13 @@
           "losers": "하락",
           "trending": "트렌딩",
           "watchlist": "관심목록"
+        },
+        "regime": {
+          "title": "시장 상황",
+          "hint": "왜?",
+          "breadth": "목록의 {{pct}}가 상승",
+          "leader": "주도 그룹 · {{group}}",
+          "unavailable": "이 목록으로는 시장 상황을 측정할 수 없습니다."
         }
       },
       "entry": {

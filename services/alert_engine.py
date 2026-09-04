@@ -1661,6 +1661,19 @@ def evaluate_rule_condition(rule):
         return {"ok": False, "status": "error", "observations": {},
                 "message": quote.get("message") or f"{symbol} quote unavailable."}
 
+    if conditions.spec_uses_intelligence(spec):
+        # Derived readings (opportunity, entry, risk, setup) are computed only
+        # when a rule actually names one, so every existing alert evaluates on
+        # exactly the path — and at exactly the cost — it did before. A failure
+        # here yields nulls, which the spec evaluator already routes to
+        # undecidable rather than to false.
+        try:
+            from services import market_intelligence_alerts
+
+            asset = market_intelligence_alerts.enrich_asset(asset, symbol, spec)
+        except Exception as exc:  # noqa: BLE001
+            logging.info("Intelligence enrichment failed for %s: %s", symbol, exc)
+
     windows = _measure_windows(symbol, spec)
     result = conditions.evaluate_spec(asset, spec, rule.get("last_observations"), windows)
     observations = result["observations"]

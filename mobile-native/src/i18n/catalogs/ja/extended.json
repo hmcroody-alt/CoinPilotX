@@ -1516,6 +1516,13 @@
           "losers": "下落",
           "trending": "トレンド",
           "watchlist": "ウォッチリスト"
+        },
+        "regime": {
+          "title": "市況",
+          "hint": "なぜ?",
+          "breadth": "リストの{{pct}}が上昇",
+          "leader": "主導グループ · {{group}}",
+          "unavailable": "このリストからは市況を測定できませんでした。"
         }
       },
       "entry": {
