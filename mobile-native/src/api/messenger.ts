@@ -720,7 +720,17 @@ export async function drainMessengerQueue(conversationId: number) {
     if (item.conversationId !== conversationId) { remaining.push(item); continue; }
     try {
       const result = await sendConversationMessage(item.conversationId, item.payload);
-      if (result.data) sent.push(result.data);
+      // The client id is stamped back on rather than trusted from the response.
+      // A drained message ALWAYS has a bubble already on screen -- that is what
+      // being queued means -- so a server row that came back without the client
+      // id would give the reconciler no way to see the two as one message, and
+      // every message the queue sent would appear twice.
+      if (result.data) {
+        sent.push({
+          ...result.data,
+          client_message_id: result.data.client_message_id || item.payload.client_message_id
+        });
+      }
     } catch {
       remaining.push(item);
     }

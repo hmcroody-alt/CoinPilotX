@@ -479,8 +479,27 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     []
   );
 
-  const replaceLocalMessage = useCallback((localId: number, next: MessengerMessage) => {
-    setMessages((current) => mergeMessages(current.filter((message) => message.id !== localId), [next]));
+  /**
+   * Record the server's acknowledgement of a local bubble.
+   *
+   * This used to delete the local row by id and then insert the server row, which
+   * meant ChatScreen was deciding for itself that those two rows were the same
+   * message -- a second opinion on the one question `messengerReconciler` exists to
+   * own. It also broke on a retry, whose optimistic row carries a fresh negative id
+   * that no longer matches the row actually on screen.
+   *
+   * The only thing this layer knows that the reconciler cannot infer is the mapping
+   * itself, so that is all it contributes: stamp the client id onto the server row
+   * so both halves of the identity travel together, and let the reconciler collapse
+   * them. A server response that omits the client id would otherwise arrive as an
+   * unrelated message and render as a duplicate.
+   */
+  const acknowledgeLocalMessage = useCallback((local: MessengerMessage, next: MessengerMessage) => {
+    const acked: MessengerMessage = {
+      ...next,
+      client_message_id: next.client_message_id || local.client_message_id
+    };
+    setMessages((current) => mergeMessages(current, [acked]));
   }, [mergeMessages]);
 
   const load = useCallback(async ({ refresh = false } = {}) => {
@@ -721,7 +740,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         delivery_status: "sent",
         local_status: "sent"
       };
-      replaceLocalMessage(local.id, serverMessage);
+      acknowledgeLocalMessage(local, serverMessage);
       await updateCachedConversationPreview(conversationId, label, serverMessage.created_at || new Date().toISOString()).catch(() => undefined);
       await sync();
       return "sent" as const;
@@ -732,39 +751,35 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
           client_message_id: local.client_message_id,
           local_created_at: local.created_at
         }).catch(() => undefined);
+        // Routed through the reconciler rather than an `id === local.id` scan: on a
+        // retry the row on screen still carries the FIRST attempt's negative id, so
+        // matching on this attempt's id would silently update nothing. Identity is
+        // the client id, and only the reconciler knows that.
         setMessages((current) => {
-          const queuedMessages = current.map((message): MessengerMessage =>
-            message.id === local.id
-              ? {
-                  ...message,
-                  delivery_status: "queued",
-                  local_status: "queued",
-                  local_error: undefined
-                }
-              : message
-          );
+          const queuedMessages = mergeMessages(current, [{
+            ...local,
+            delivery_status: "queued",
+            local_status: "queued",
+            local_error: undefined
+          }]);
           cacheMessages(conversationId, queuedMessages).catch(() => undefined);
           return queuedMessages;
         });
         return "queued" as const;
       }
       setMessages((current) => {
-        const failedMessages = current.map((message): MessengerMessage =>
-          message.id === local.id
-            ? {
-                ...message,
-                delivery_status: "failed",
-                local_status: "failed",
-                local_error: sendError instanceof Error ? sendError.message : "Message could not be sent."
-              }
-            : message
-        );
+        const failedMessages = mergeMessages(current, [{
+          ...local,
+          delivery_status: "failed",
+          local_status: "failed",
+          local_error: sendError instanceof Error ? sendError.message : "Message could not be sent."
+        }]);
         cacheMessages(conversationId, failedMessages).catch(() => undefined);
         return failedMessages;
       });
       throw sendError;
     }
-  }, [assistantConversation, conversationId, mergeMessages, messages, navigation, replaceLocalMessage, route.params.undxTaskId, sync]);
+  }, [assistantConversation, conversationId, acknowledgeLocalMessage, mergeMessages, messages, navigation, route.params.undxTaskId, sync]);
 
   const submitText = useCallback(async () => {
     const body = draft.trim();
@@ -792,11 +807,13 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     // server recognise the resend and hand back the original row instead of
     // writing a second one.
     //
-    // The stale local row is dropped before the resend because it carries a
-    // failed status and error text that the new attempt must not inherit; the
-    // fresh optimistic bubble is inserted synchronously by sendPayload, so this
-    // is a swap rather than a visible gap.
-    setMessages((current) => current.filter((item) => item.id !== message.id));
+    // The failed row is NOT removed first. It used to be, and the delete-then-
+    // reinsert was ChatScreen quietly making the same identity decision the
+    // reconciler owns -- with a worse answer, because the two rows were only
+    // "the same message" by virtue of running one line apart. Now the retry's
+    // optimistic bubble carries the same client id, so the reconciler folds it
+    // onto the row already on screen: the failure text and retry affordance
+    // clear in place and the message keeps its position. One bubble throughout.
     await sendPayload({
       body: isVoiceLikeMessage(message) ? "" : message.body || "",
       message_type: message.message_type || "text",
