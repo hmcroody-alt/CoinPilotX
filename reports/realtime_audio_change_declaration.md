@@ -1781,3 +1781,91 @@ checkout label, and a backend accessor that now returns a constant empty string.
 **Tests run.** typecheck, i18n:validate, jest, realtime-audio critical /
 realtime-audio / realtime-audio-architecture suites, backend compileall,
 protection suite, Agora contract tests.
+
+---
+
+## Consolidation addendum 4 — branch consolidation onto main (2026-09-03)
+
+This addendum declares the dependency-watch changes carried by the branch
+consolidation that landed eleven agent branches onto `main`. **No real-time
+audio change was made or intended.** The gate fired on `dependency_watch`
+only — the category that watches the dependency manifests regardless of what
+the change is about — and not on any path under `categories[].paths`.
+
+### Why the change is required
+
+Several agents had work sitting unmerged across branches and worktrees. The
+consolidation collected it onto `main` so it could be tested and shipped as one
+verified tree rather than pushed piecemeal. Three of the landed commits belong
+to the native media delivery foundation, and that foundation is what introduces
+the two new Expo modules below.
+
+### Which dependency-watch files changed, and how
+
+| File | Change |
+|---|---|
+| `mobile-native/package.json` | Added `expo-media-library@~18.2.1` and `expo-sharing@~14.0.8`. Nothing removed, nothing re-pinned. |
+| `mobile-native/package-lock.json` | 21 inserted lines, 0 deleted — the two lockfile entries for the packages above and nothing else. |
+| `mobile-native/app.json` | Added `NSPhotoLibraryAddUsageDescription`, and added the `expo-media-library` config plugin with `photosPermission`, `savePhotosPermission`, and `isAccessMediaLocationEnabled: false`. |
+
+Neither new module touches `AVAudioSession`, the microphone, audio capture, or
+publication. `expo-media-library` saves already-produced files to the photo
+library; `expo-sharing` opens the OS share sheet. Both are consumers of finished
+media, not producers of an audio session.
+
+### Dependency-watch invariants re-verified
+
+- `react-native-agora` still pinned `4.6.2`; `expo-av` still pinned `~16.0.8`.
+- `ios.infoPlist.NSMicrophoneUsageDescription` unchanged and non-empty.
+- `ios.infoPlist.UIBackgroundModes` still `["audio", "fetch", "remote-notification"]`.
+- No protected path under `categories[].paths` was modified — the gate reported
+  exactly three files, all `dependency_watch`.
+- No backend line matching `backend_diff_patterns` was added or removed.
+- `patches/` is unchanged: still Hermes + Stripe only, still no LiveKit patch.
+- The `setAudioModeAsync` legacy allowlist is still exactly its six permitted
+  files (`pulseRadio.ts`, `reelsAudioSession.ts`, `voiceMessagePlayback.ts`,
+  `callSignalMedia.ts`, `MusicScreen.tsx`, `ChatScreen.tsx`). No seventh call
+  site was introduced; the architecture suite enforces this and passes.
+
+### A branch deliberately excluded
+
+`claude/trusting-neumann-381eb0` was in the approved consolidation set but was
+**not merged**. Inspection showed it adds
+`patches/@livekit+react-native-webrtc+144.1.1.patch`, modifies `package.json`,
+and edits protected real-time-audio paths — while `main` carries no LiveKit
+dependency at all. Merging it would have introduced a second WebRTC stack
+alongside Agora. It is excluded for the same reason as the three audio branches
+already held back, and is left intact for a dedicated audio mission.
+
+### Expected behavior change
+
+None for real-time audio, calls, or livestream. The user-visible change from the
+new modules is that downloaded media can be saved to the photo library and
+shared via the OS share sheet.
+
+### Regression risk
+
+Low and outside the audio domain. The native surface grows by two Expo modules,
+so the iOS project must be regenerated (`expo prebuild`) before the next device
+build — that is a build-system consequence, not an audio one. The audio session
+owner, the single-engine rule, and ownership arbitration are untouched.
+
+### Tests run
+
+All green on this tree:
+
+| Gate | Result |
+|---|---|
+| `tsc --noEmit` | clean |
+| `npm run i18n:validate` | 100%, 4245/4245 keys x 11 locales |
+| `npx jest` (full) | **5249 passed**, 1 skipped, 319/320 suites, first run, no flake |
+| `npm run test:realtime-audio-critical` | 191 passed, 11 suites |
+| `npm run test:realtime-audio` | 310 passed, 18 suites |
+| `npm run test:realtime-audio-architecture` | 22 passed |
+| `python -m unittest tests.protection.test_realtime_audio_architecture` | 19 passed |
+| `pytest tests/protection/test_agora_token_generation.py tests/protection/test_agora_rtc_provider_contract.py` | 13 passed |
+| `python -m compileall services` | clean |
+| `git diff --check` | clean |
+
+Physical audible validation is covered by the device pass that follows this
+consolidation, per `reports/realtime_audio_verified_baseline.md` section 7.
