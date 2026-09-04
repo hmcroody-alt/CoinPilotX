@@ -1326,6 +1326,22 @@ def api_ring_seen(call_id):
     return _timed_json("api_call_ring_seen", lambda: call_engine.mark_ring_seen(user["user_id"], call_id, request.get_json(silent=True) or {}))
 
 
+@comm_v2_blueprint.post("/api/calls/<path:call_id>/invite")
+def api_invite_to_call(call_id):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("api_call_invite", lambda: call_engine.invite_participants(user["user_id"], call_id, request.get_json(silent=True) or {}))
+
+
+@comm_v2_blueprint.get("/api/calls/capabilities")
+def api_call_capabilities():
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("api_call_capabilities", lambda: call_engine.call_capabilities(user["user_id"]))
+
+
 @comm_v2_blueprint.post("/api/calls/<path:call_id>/decline")
 def api_decline_call(call_id):
     user, denied = _require_user()

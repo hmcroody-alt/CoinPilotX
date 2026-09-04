@@ -131,6 +131,34 @@ ALLOWED_TRANSITIONS = {
     "reconnecting": {"connected", "ended", "failed"},
 }
 
+# Multi-guest launch limits (server-configurable). A call session always uses ONE
+# Agora channel; these caps bound how many participants may be joined+ringing at
+# once. Video is capped lower than audio because of device decode/render cost.
+DEFAULT_MAX_VIDEO_PARTICIPANTS = 6
+DEFAULT_MAX_AUDIO_PARTICIPANTS = 12
+
+
+def call_participant_limit(call_type: str) -> int:
+    if str(call_type or "audio").strip().lower() == "video":
+        raw = os.getenv("CALL_MAX_VIDEO_PARTICIPANTS", str(DEFAULT_MAX_VIDEO_PARTICIPANTS))
+        fallback = DEFAULT_MAX_VIDEO_PARTICIPANTS
+    else:
+        raw = os.getenv("CALL_MAX_AUDIO_PARTICIPANTS", str(DEFAULT_MAX_AUDIO_PARTICIPANTS))
+        fallback = DEFAULT_MAX_AUDIO_PARTICIPANTS
+    try:
+        value = int(str(raw).strip() or fallback)
+    except Exception:
+        value = fallback
+    return max(2, value)
+
+
+def group_calls_enabled() -> bool:
+    # Lazy import + dynamic env read so tests and Railway variable changes take
+    # effect without process-restart-time module constants.
+    from pulse_communications_v2 import flags as comm_flags
+
+    return comm_flags.subflag_enabled(comm_flags.GROUP_CALLS_FLAG)
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -170,6 +198,24 @@ ERROR_CATALOG = {
         "Self-calls are not allowed",
         "PulseSoc blocked a call where the caller and recipient are the same user.",
         "Choose another recipient.",
+    ),
+    "group_calls_disabled": (
+        "GROUP_CALLS_DISABLED",
+        "Group calls are not enabled",
+        "Multi-guest calling is currently switched off on this server.",
+        "Set PULSE_GROUP_CALLS_ENABLED=true in the deployment variables to enable group calls.",
+    ),
+    "participant_limit_exceeded": (
+        "CALL_PARTICIPANT_LIMIT_EXCEEDED",
+        "This call is full",
+        "The call has reached its maximum number of participants.",
+        "Wait for someone to leave, or adjust CALL_MAX_VIDEO_PARTICIPANTS / CALL_MAX_AUDIO_PARTICIPANTS.",
+    ),
+    "not_active_participant": (
+        "NOT_ACTIVE_CALL_PARTICIPANT",
+        "You are not in this call",
+        "Only someone currently in the call can invite others to it.",
+        "Rejoin the call, then invite again.",
     ),
     "invalid_recipient": (
         "RECIPIENT_NOT_IN_CONVERSATION",
@@ -875,6 +921,39 @@ def _mark_missed_stale_calls_cur(cur: Any, timeout_seconds: int = 45) -> int:
             _notify_missed_call(cur, call, int(call.get("created_by_user_id") or 0), recipient_id, caller_name)
         _emit_call_sync_event(cur, _get_call(cur, call.get("public_id") or call.get("id") or ""), "call_missed", int(call.get("created_by_user_id") or 0), [int(call.get("created_by_user_id") or 0), *recipients], status="missed", reason="ring_timeout")
         updated += 1
+    # Multi-guest (Stage 30): missed is PER PARTICIPANT. Once a call is live
+    # (connecting/connected/...), invitees who never answered are individually
+    # timed out to 'missed' without touching the call itself — the group keeps
+    # talking, and each non-answerer gets their own missed-call record.
+    live_statuses = ("accepted", "connecting", "connected", "active", "reconnecting")
+    placeholders = ",".join(["?"] * len(live_statuses))
+    cur.execute(
+        f"""
+        SELECT p.call_id, p.user_id, p.created_at, c.public_id, c.created_by_user_id, c.id AS c_id
+        FROM communication_call_participants p
+        JOIN communication_calls c ON c.id = p.call_id
+        WHERE p.status='ringing' AND p.role='callee' AND c.status IN ({placeholders})
+        """,
+        live_statuses,
+    )
+    for row in cur.fetchall():
+        item = dict(row)
+        try:
+            ring_ts = datetime.fromisoformat(str(item.get("created_at") or "").replace("Z", "+00:00")).timestamp()
+        except Exception:
+            continue
+        if ring_ts > threshold:
+            continue
+        cur.execute(
+            "UPDATE communication_call_participants SET status='missed', left_at=?, updated_at=? WHERE call_id=? AND user_id=? AND status='ringing'",
+            (_now(), _now(), int(item["call_id"]), int(item["user_id"])),
+        )
+        _event(cur, int(item["call_id"]), int(item["user_id"]), "invite_ring_timeout", {})
+        call_row = _get_call(cur, item.get("public_id") or item.get("c_id") or "")
+        caller_id = int(item.get("created_by_user_id") or 0)
+        caller_name = comm_service._user_summary(cur, caller_id).get("display_name") or "Someone"
+        _notify_missed_call(cur, call_row or {}, caller_id, int(item["user_id"]), caller_name)
+        updated += 1
     return updated
 
 
@@ -1088,6 +1167,16 @@ def start_call(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
             return _err("Every recipient must be a conversation participant.", 403, "invalid_recipient")
         if comm_service._blocked_between(cur, int(user_id), recipient_ids):
             return _err("Calls are blocked for this conversation.", 403, "blocked")
+        if len(recipient_ids) > 1 and not group_calls_enabled():
+            return _err("Group calls are not enabled yet.", 403, "group_calls_disabled")
+        limit = call_participant_limit(call_type)
+        if len(recipient_ids) + 1 > limit:
+            return _err(
+                f"This {call_type} call supports up to {limit} participants.",
+                400,
+                "participant_limit_exceeded",
+                error_overrides={"max_participants": limit},
+            )
         placeholders = ",".join(["?"] * len(ACTIVE_STATUSES))
         cur.execute(
             f"""
@@ -1295,6 +1384,121 @@ def mark_ring_seen(user_id: int, call_ref: str | int, payload: dict[str, Any] | 
         conn.close()
 
 
+def invite_participants(user_id: int, call_ref: str | int, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Invite additional conversation members into an ALREADY ACTIVE call.
+
+    Multi-guest core: the invitees ring into the SAME call session and the SAME
+    Agora channel (`room_name` never changes). Invite state is backend-owned:
+    duplicates are impossible (UNIQUE(call_id, user_id) + idempotent re-invite),
+    and the participant limit is enforced against joined+ringing membership.
+    """
+    payload = payload or {}
+    conn, cur = _open_db()
+    try:
+        call, participant, denied = _require_call_access(cur, int(user_id), call_ref)
+        if denied:
+            return denied
+        if str(call.get("status") or "") in FINAL_STATUSES:
+            return _err("This call has ended.", 409, "call_final")
+        if not group_calls_enabled():
+            return _err("Group calls are not enabled yet.", 403, "group_calls_disabled")
+        if str(participant.get("status") or "") not in {"joined", "ringing"}:
+            return _err("Only active call participants can invite others.", 403, "not_active_participant")
+        call_id = int(call["id"])
+        call_type = str(call.get("call_type") or "audio")
+        conversation_id = int(call.get("conversation_id") or 0)
+        member_ids = {int(item["user_id"]) for item in _conversation_participants(cur, conversation_id)}
+        target_ids = sorted({int(value) for value in payload.get("user_ids") or [] if int(value or 0)})
+        if not target_ids:
+            return _err("Choose at least one person to invite.", 400, "missing_recipient")
+        if int(user_id) in target_ids:
+            return _err("You are already in this call.", 400, "self_call_blocked")
+        invalid = [value for value in target_ids if value not in member_ids]
+        if invalid:
+            return _err("Every invitee must be a conversation participant.", 403, "invalid_recipient")
+        if comm_service._blocked_between(cur, int(user_id), target_ids):
+            return _err("Calls are blocked with one or more invitees.", 403, "blocked")
+        cur.execute(
+            "SELECT user_id, status FROM communication_call_participants WHERE call_id=?",
+            (call_id,),
+        )
+        existing = {int(row["user_id"]): str(row["status"] or "") for row in cur.fetchall()}
+        active_count = sum(1 for status in existing.values() if status in {"joined", "ringing"})
+        # Idempotent: already joined/ringing invitees are skipped, not errors.
+        new_ids = [value for value in target_ids if existing.get(value) not in {"joined", "ringing"}]
+        limit = call_participant_limit(call_type)
+        if active_count + len(new_ids) > limit:
+            return _err(
+                f"This {call_type} call supports up to {limit} participants.",
+                409,
+                "participant_limit_exceeded",
+                error_overrides={"max_participants": limit, "active_participants": active_count},
+            )
+        now = _now()
+        invited: list[int] = []
+        for target_id in new_ids:
+            if target_id in existing:
+                # Re-invite someone who previously left/declined/missed: re-ring
+                # the same row (UNIQUE(call_id, user_id) forbids a second one).
+                cur.execute(
+                    "UPDATE communication_call_participants SET status='ringing', left_at=NULL, joined_at=NULL, updated_at=?, created_at=? WHERE call_id=? AND user_id=?",
+                    (now, now, call_id, target_id),
+                )
+            else:
+                cur.execute(
+                    """
+                    INSERT INTO communication_call_participants
+                    (call_id, user_id, role, status, muted_audio, muted_video, device_info_json, created_at, updated_at)
+                    VALUES (?, ?, 'callee', 'ringing', 0, 0, '{}', ?, ?)
+                    """,
+                    (call_id, target_id, now, now),
+                )
+            _event(cur, call_id, target_id, "participant_invited", {"invited_by": int(user_id), "mid_call": True})
+            invited.append(target_id)
+        if invited:
+            inviter_name = comm_service._user_summary(cur, int(user_id)).get("display_name") or "Someone"
+            notifications = _notify_incoming_call(cur, call, int(user_id), invited, inviter_name)
+            _emit_call_sync_event(
+                cur,
+                _get_call(cur, call_ref),
+                "call_participants_invited",
+                int(user_id),
+                [*sorted(existing), *invited],
+                status=str(call.get("status") or ""),
+            )
+        else:
+            notifications = []
+        conn.commit()
+        return _ok({
+            "call": _serialize_call(cur, _get_call(cur, call_ref), int(user_id)),
+            "invited_user_ids": invited,
+            "already_in_call": [value for value in target_ids if value not in invited],
+            "notifications": notifications,
+            "max_participants": limit,
+        })
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def call_capabilities(user_id: int) -> dict[str, Any]:
+    """Server-owned calling capabilities so clients never hardcode limits/flags."""
+    from pulse_communications_v2 import flags as comm_flags
+
+    return _ok({
+        "capabilities": {
+            "provider": rtc_provider(),
+            "group_calls_enabled": group_calls_enabled(),
+            "audio_calls_enabled": comm_flags.subflag_enabled(comm_flags.AUDIO_CALLS_FLAG, True),
+            "video_calls_enabled": comm_flags.subflag_enabled(comm_flags.VIDEO_CALLS_FLAG, True),
+            "max_audio_participants": call_participant_limit("audio"),
+            "max_video_participants": call_participant_limit("video"),
+        }
+    })
+
+
 def decline_call(user_id: int, call_ref: str | int, payload: dict[str, Any] | None = None) -> dict[str, Any]:
     conn, cur = _open_db()
     try:
@@ -1336,8 +1540,26 @@ def end_call(user_id: int, call_ref: str | int, payload: dict[str, Any] | None =
         # nobody in it, and had to press End Call themselves. Ending at fewer
         # than two active participants makes hang-up automatically two-sided in
         # both directions, and still lets a group call outlive one leaver.
-        if active < 2 or int(call.get("created_by_user_id") or 0) == int(user_id):
-            _transition(cur, call, "ended", int(user_id), (payload or {}).get("reason") or "ended_by_participant")
+        #
+        # Multi-guest policy (Stage 18): in a group-scope call the creator
+        # leaving is just a leave — the remaining participants continue, and the
+        # call ends when fewer than two active participants remain. The creator
+        # may still explicitly end the session for everyone by sending
+        # `end_for_everyone: true`. Direct calls keep the historical behavior
+        # (either side hanging up ends the call).
+        scope = str(call.get("call_scope") or "direct").strip().lower()
+        creator_left = int(call.get("created_by_user_id") or 0) == int(user_id)
+        end_for_everyone = creator_left and bool((payload or {}).get("end_for_everyone"))
+        should_end = active < 2 or end_for_everyone or (creator_left and scope != "group")
+        if should_end:
+            reason = (payload or {}).get("reason") or ("ended_for_everyone" if end_for_everyone else "ended_by_participant")
+            _transition(cur, call, "ended", int(user_id), reason)
+            # Close out any still-active participant rows so nobody keeps
+            # polling a live-looking membership on an ended call.
+            cur.execute(
+                "UPDATE communication_call_participants SET status='left', left_at=?, updated_at=? WHERE call_id=? AND status IN ('joined','ringing')",
+                (now, now, int(call["id"])),
+            )
         _emit_call_sync_event(cur, _get_call(cur, call_ref), "call_ended", int(user_id), status="ended", reason=(payload or {}).get("reason") or "ended_by_participant")
         conn.commit()
         return _ok({"call": _serialize_call(cur, _get_call(cur, call_ref), int(user_id))})

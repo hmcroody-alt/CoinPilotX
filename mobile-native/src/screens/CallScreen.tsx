@@ -26,6 +26,9 @@ import {
   submitCallQuality
 } from "../api/calls";
 import { useNativeCallRoom } from "../calls/useNativeCallRoom";
+import { AddParticipantsSheet } from "../calls/AddParticipantsSheet";
+import { loadCallCapabilities, maxParticipantsFor, useCallCapabilities } from "../calls/callCapabilities";
+import { connectedParticipants, ringingParticipants, useCallParticipants } from "../calls/callParticipants";
 import {
   adoptCallSnapshot,
   beginCallSession,
@@ -75,6 +78,9 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const autoStartRequested = useRef(false);
   const qualitySubmitted = useRef(false);
   const room = useNativeCallRoom();
+  const participants = useCallParticipants();
+  const capabilities = useCallCapabilities();
+  const [addSheetVisible, setAddSheetVisible] = useState(false);
   const insets = useSafeAreaInsets();
   const reducedMotion = useLogiNexusReducedMotion();
   const glow = useRef(new Animated.Value(0)).current;
@@ -110,7 +116,30 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const connected = room.connected;
   const everConnected = session.everConnected;
   const caller = useMemo(() => callParticipant(call, incoming), [call, incoming]);
-  const title = caller.display_name || caller.username || params.title || session.title || "Connecting participant";
+
+  // Canonical participant views: backend registry ⋈ Agora media presence.
+  // The UI never infers identity on its own — it renders these views only.
+  const connectedViews = useMemo(() => connectedParticipants(participants), [participants]);
+  const remoteConnectedViews = useMemo(() => connectedViews.filter((view) => !view.isLocal), [connectedViews]);
+  const ringingViews = useMemo(() => ringingParticipants(participants), [participants]);
+  const isGroupCall = call?.call_scope === "group" || remoteConnectedViews.length + ringingViews.length > 1;
+  const participantLimit = maxParticipantsFor(callType === "video" ? "video" : "audio");
+  const canAddParticipants = Boolean(
+    capabilities.group_calls_enabled &&
+    (params.conversationId || call?.conversation_id) &&
+    callId &&
+    !terminal &&
+    connectedViews.length + ringingViews.length < participantLimit
+  );
+
+  useEffect(() => {
+    loadCallCapabilities().catch(() => undefined);
+  }, []);
+
+  const groupTitle = isGroupCall
+    ? remoteConnectedViews.map((view) => view.displayName.split(/\s+/)[0]).slice(0, 3).join(", ")
+    : "";
+  const title = groupTitle || caller.display_name || caller.username || params.title || session.title || "Connecting participant";
 
   useEffect(() => {
     if (Platform.OS !== "web") {
@@ -306,13 +335,38 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
   return (
     <View style={styles.screen}>
       <Pressable accessibilityRole="button" accessibilityLabel="Show or hide call controls" style={StyleSheet.absoluteFill} onPress={() => setControlsVisible((visible) => !visible)}>
-        {agoraVideo && AgoraVideoViewComponent && room.remoteUids?.length ? (
+        {agoraVideo && AgoraVideoViewComponent && remoteConnectedViews.length ? (
           <View style={styles.agoraRemoteGrid}>
-            {room.remoteUids.slice(0, 4).map((uid: number) => (
-              <View key={uid} style={[styles.agoraRemoteTile, room.remoteUids.length === 1 && styles.agoraRemoteTileSolo]}>
-                <AgoraVideoViewComponent canvas={{ uid }} style={styles.remoteVideo} />
+            {remoteConnectedViews.slice(0, Math.max(1, participantLimit - 1)).map((view, index, tiles) => (
+              <View key={view.rtcUid} style={[styles.agoraRemoteTile, gridTileStyle(tiles.length), view.speaking && styles.speakingTile]}>
+                {view.videoMuted ? (
+                  <View style={styles.videoOffTile}>
+                    <Avatar participant={{ display_name: view.displayName, avatar_url: view.avatarUrl }} />
+                  </View>
+                ) : (
+                  <AgoraVideoViewComponent canvas={{ uid: view.rtcUid }} style={styles.remoteVideo} />
+                )}
+                <View style={styles.tileNamePill}>
+                  {view.audioMuted ? <Ionicons name="mic-off" size={12} color="#ffbf55" /> : null}
+                  <Text style={styles.tileName} numberOfLines={1}>{view.displayName}</Text>
+                </View>
               </View>
             ))}
+          </View>
+        ) : !agoraVideo && isGroupCall && remoteConnectedViews.length > 1 ? (
+          <View style={styles.audioBackground}>
+            <View style={styles.planet} />
+            <View style={styles.audioGroupGrid}>
+              {remoteConnectedViews.slice(0, Math.max(1, participantLimit - 1)).map((view) => (
+                <View key={view.rtcUid} style={[styles.audioGroupCell, view.speaking && styles.speakingAvatarCell]}>
+                  <Avatar participant={{ display_name: view.displayName, avatar_url: view.avatarUrl }} />
+                  <View style={styles.audioNameRow}>
+                    {view.audioMuted ? <Ionicons name="mic-off" size={12} color="#ffbf55" /> : null}
+                    <Text style={styles.tileName} numberOfLines={1}>{view.displayName}</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
           </View>
         ) : (
           <View style={styles.audioBackground}>
@@ -340,6 +394,17 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
         {agoraVideo && AgoraVideoViewComponent && room.localUid ? (
           <View style={styles.localPreviewShell}>
             <AgoraVideoViewComponent canvas={{ uid: 0 }} style={styles.localPreview} zOrderMediaOverlay />
+          </View>
+        ) : null}
+
+        {ringingViews.length ? (
+          <View style={styles.ringingRow}>
+            {ringingViews.slice(0, 4).map((view) => (
+              <View key={view.userId} style={styles.ringingChip}>
+                <Ionicons name="call-outline" size={12} color={colors.accent} />
+                <Text style={styles.ringingChipText} numberOfLines={1}>{view.displayName} · Ringing…</Text>
+              </View>
+            ))}
           </View>
         ) : null}
 
@@ -386,6 +451,9 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
             <CallControl label={room.videoEnabled ? "Camera" : "Camera off"} icon={room.videoEnabled ? "videocam" : "videocam-off"} active={room.videoEnabled} onPress={() => runMediaAction(() => room.setCameraEnabled(!room.videoEnabled), room.videoEnabled ? "disable-video" : "enable-video")} />
             <CallControl label={room.speakerEnabled ? "Speaker" : "Earpiece"} icon={room.speakerEnabled ? "volume-high" : "ear-outline"} active={room.speakerEnabled} onLongPress={() => runMediaAction(room.showAudioRoutePicker, "speaker", { picker: true })} onPress={() => runMediaAction(() => room.setSpeakerEnabled(!room.speakerEnabled), "speaker", { enabled: !room.speakerEnabled })} />
             <CallControl label="Flip" icon="camera-reverse" disabled={!room.videoEnabled} onPress={() => runMediaAction(room.switchCamera, "switch-camera")} />
+            {canAddParticipants ? (
+              <CallControl label="Add" icon="person-add" onPress={() => setAddSheetVisible(true)} />
+            ) : null}
           </View>
           <Pressable accessibilityRole="button" accessibilityLabel="End call" disabled={actionBusy === "end"} style={({ pressed }) => [styles.endButton, pressed && styles.pressed]} onPress={hangup}>
             <Ionicons name="call" color="#fff" size={30} style={styles.endIcon} />
@@ -393,8 +461,25 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
           </Pressable>
         </View>
       ) : null}
+
+      <AddParticipantsSheet
+        visible={addSheetVisible}
+        callId={callId}
+        conversationId={params.conversationId || call?.conversation_id}
+        participants={participants}
+        maxParticipants={participantLimit}
+        onClose={() => setAddSheetVisible(false)}
+      />
     </View>
   );
+}
+
+/** Grid sizing: 1 = full, 2 = vertical split, 3–4 = 2×2, 5+ = 2×3. */
+function gridTileStyle(tileCount: number) {
+  if (tileCount <= 1) return styles.agoraRemoteTileSolo;
+  if (tileCount === 2) return styles.agoraRemoteTileHalfRow;
+  if (tileCount <= 4) return null; // default 50% × 50% quad tile
+  return styles.agoraRemoteTileSixth;
 }
 
 function CircleButton({ label, icon, onPress }: { label: string; icon: keyof typeof Ionicons.glyphMap; onPress: () => void }) {
@@ -489,6 +574,19 @@ const styles = StyleSheet.create({
   agoraRemoteGrid: { ...StyleSheet.absoluteFillObject, flexDirection: "row", flexWrap: "wrap", backgroundColor: "#030812" },
   agoraRemoteTile: { position: "relative", width: "50%", height: "50%", overflow: "hidden", borderWidth: 1, borderColor: "rgba(97,216,255,0.12)" },
   agoraRemoteTileSolo: { width: "100%", height: "100%", borderWidth: 0 },
+  agoraRemoteTileHalfRow: { width: "100%", height: "50%" },
+  agoraRemoteTileSixth: { width: "50%", height: "33.34%" },
+  speakingTile: { borderWidth: 2, borderColor: colors.accent },
+  videoOffTile: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center", backgroundColor: "#0a1626" },
+  tileNamePill: { position: "absolute", left: 8, bottom: 8, flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "rgba(3,10,20,0.78)", borderRadius: 12, paddingHorizontal: 9, paddingVertical: 4, maxWidth: "82%" },
+  tileName: { color: colors.text, fontSize: 11, fontWeight: "800", flexShrink: 1 },
+  audioGroupGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", alignItems: "center", gap: 18, paddingHorizontal: 24, maxWidth: 430 },
+  audioGroupCell: { alignItems: "center", gap: 8, padding: 10, borderRadius: 24 },
+  audioNameRow: { flexDirection: "row", alignItems: "center", gap: 5, maxWidth: 130 },
+  speakingAvatarCell: { backgroundColor: "rgba(48,230,185,0.1)", borderWidth: 1, borderColor: "rgba(48,230,185,0.45)" },
+  ringingRow: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 8, marginTop: 14, paddingHorizontal: 16 },
+  ringingChip: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(7,24,37,0.9)", borderWidth: 1, borderColor: "rgba(97,216,255,0.3)", borderRadius: 16, paddingHorizontal: 11, paddingVertical: 6, maxWidth: 220 },
+  ringingChipText: { color: "#aebbd0", fontSize: 12, fontWeight: "700", flexShrink: 1 },
   audioBackground: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center", backgroundColor: "#030812" },
   planet: { position: "absolute", width: 520, height: 520, borderRadius: 260, backgroundColor: "rgba(25,64,102,0.24)", right: -220, top: 160, borderWidth: 1, borderColor: "rgba(97,216,255,0.12)" },
   signalHalo: { position: "absolute", width: 280, height: 280, borderRadius: 140, borderWidth: 2, borderColor: colors.accent, shadowColor: colors.accent, shadowOpacity: 0.8, shadowRadius: 38 },
