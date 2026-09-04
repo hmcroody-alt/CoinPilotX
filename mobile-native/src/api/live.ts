@@ -311,13 +311,74 @@ export async function listJoinRequests(liveId: number): Promise<LiveGuestRequest
 }
 
 /**
- * Host guest-management snapshot: pending join requests plus the active guests
- * already on stage. One call to the real `GET /join-requests` endpoint, which
- * returns both arrays. Host-gated by the backend.
+ * Server-owned stage capacity and multi-guest feature flags.
+ *
+ * Stage 5 and Stage 40. The ceiling is a deployment setting, not an app
+ * constant, and the two flags can be turned off underneath a running app. A
+ * client that hardcodes 12 will tell a host the stage is full when it is not,
+ * or offer an invite button on a deployment where invites are switched off —
+ * both of which look like the Live is broken rather than configured.
  */
-export async function listGuestManagement(liveId: number): Promise<{ requests: LiveGuestRequest[]; guests: LiveGuest[] }> {
-  const data = await pulseApi<{ requests?: unknown; guests?: unknown }>(`/api/pulse/live/${liveId}/join-requests`);
-  return { requests: normalizeGuestRequests(data.requests), guests: normalizeLiveGuests(data.guests) };
+export type LiveStageCapacity = {
+  maxGuests: number;
+  maxPublishers: number;
+  guestsActive: number;
+  slotsAvailable: number;
+  stageFull: boolean;
+  multiGuestEnabled: boolean;
+  guestRequestsEnabled: boolean;
+};
+
+/**
+ * Absent-payload default. Deliberately permissive on capacity and permissive on
+ * the flags, because this value is only reached when the request failed or an
+ * older server answered — and in both cases the honest state is "we do not know
+ * yet", which must not present as a locked stage. The server refuses anything
+ * it should refuse regardless of what the client believes.
+ */
+const UNKNOWN_STAGE_CAPACITY: LiveStageCapacity = {
+  maxGuests: 0,
+  maxPublishers: 1,
+  guestsActive: 0,
+  slotsAvailable: 0,
+  stageFull: false,
+  multiGuestEnabled: true,
+  guestRequestsEnabled: true
+};
+
+export function normalizeStageCapacity(raw: unknown): LiveStageCapacity {
+  const data = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  if (!Object.keys(data).length) return { ...UNKNOWN_STAGE_CAPACITY };
+  const maxGuests = Math.max(0, Number(data.max_guests || 0));
+  const guestsActive = Math.max(0, Number(data.guests_active || 0));
+  return {
+    maxGuests,
+    maxPublishers: Math.max(1, Number(data.max_publishers || maxGuests + 1)),
+    guestsActive,
+    slotsAvailable: Math.max(0, Number(data.slots_available ?? maxGuests - guestsActive)),
+    stageFull: Boolean(data.stage_full),
+    multiGuestEnabled: data.multi_guest_live_enabled !== false,
+    guestRequestsEnabled: data.live_guest_requests_enabled !== false
+  };
+}
+
+/**
+ * Host guest-management snapshot: pending join requests, the active guests
+ * already on stage, and the server's own view of how many more will fit. One
+ * call to the real `GET /join-requests` endpoint, which returns all three.
+ * Host-gated by the backend.
+ */
+export async function listGuestManagement(
+  liveId: number
+): Promise<{ requests: LiveGuestRequest[]; guests: LiveGuest[]; stage: LiveStageCapacity }> {
+  const data = await pulseApi<{ requests?: unknown; guests?: unknown; stage?: unknown }>(
+    `/api/pulse/live/${liveId}/join-requests`
+  );
+  return {
+    requests: normalizeGuestRequests(data.requests),
+    guests: normalizeLiveGuests(data.guests),
+    stage: normalizeStageCapacity(data.stage)
+  };
 }
 
 /** Mute, unmute, or remove an active guest (host only). Wired to the real guest-action endpoint. */

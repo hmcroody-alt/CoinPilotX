@@ -34,6 +34,7 @@ import {
   respondToJoinRequest,
   sendLiveChat,
   unmuteGuest,
+  type LiveStageCapacity,
   type PulseLiveChatMessage
 } from "../api/live";
 import { sharePulseObject } from "../sharing/nativeShare";
@@ -44,6 +45,7 @@ import { claimLivePlaybackOwner, releaseLivePlaybackOwner } from "../live/livePl
 import { colors } from "../theme/colors";
 import { useAuth } from "../session/auth";
 import { GlassCircleButton, GlassPill, LiveBottomSheet, ToolTile } from "../live/liveHostUi";
+import { mergeLiveChat } from "../live/liveEventContinuity";
 import { LiveReactionLayer, type ReactionLayerHandle } from "../live/LiveReactionLayer";
 import { LiveChatComposer, LiveChatMessageRow, LiveChatStream, type LiveChatModerationAction } from "../live/LiveChatOverlay";
 import { RtcVideoView } from "../live/RtcVideoView";
@@ -104,6 +106,9 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
   const [category, setCategory] = useState("");
   const [requests, setRequests] = useState<LiveGuestRequest[]>([]);
   const [activeGuests, setActiveGuests] = useState<LiveGuest[]>([]);
+  // Stages 5 and 40. Null until the server has said something. The panel renders
+  // the count it can see until then; it never invents a ceiling.
+  const [stage, setStage] = useState<LiveStageCapacity | null>(null);
   const [messages, setMessages] = useState<PulseLiveChatMessage[]>([]);
   const [elapsed, setElapsed] = useState(0);
   const [ending, setEnding] = useState(false);
@@ -242,7 +247,11 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
     if (liveId <= 0) return;
     const [state, management] = await Promise.all([
       getLiveState(liveId).catch(() => null),
-      listGuestManagement(liveId).catch(() => ({ requests: [] as LiveGuestRequest[], guests: [] as LiveGuest[] }))
+      listGuestManagement(liveId).catch(() => ({
+        requests: [] as LiveGuestRequest[],
+        guests: [] as LiveGuest[],
+        stage: null as LiveStageCapacity | null
+      }))
     ]);
     if (state) {
       setViewerCount(Number(state.viewer_count || 0));
@@ -250,12 +259,23 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
     }
     setRequests(management.requests);
     setActiveGuests(management.guests);
+    // Stages 5 and 40. Only overwritten when the server actually answered — a
+    // failed poll must leave the last known capacity in place rather than
+    // collapsing the backstage panel to "0 of 0" for one refresh cycle.
+    if (management.stage) setStage(management.stage);
   }, [liveId]);
 
   const refreshChat = useCallback(async () => {
     if (liveId <= 0) return;
     const chat = await listLiveChat(liveId).catch(() => [] as PulseLiveChatMessage[]);
-    if (chat.length) setMessages(chat);
+    // Stage 27. Merge rather than replace. The endpoint returns a trailing
+    // window, so assigning it wholesale drops anything that has scrolled past
+    // the window and re-mounts every row on screen; on a busy Live that reads
+    // as the comments clearing themselves every few seconds. The merge also
+    // means a guest coming on stage — which changes nothing here — cannot
+    // produce a visible blink even if a refresh happens to land at the same
+    // moment.
+    setMessages((previous) => mergeLiveChat(previous, chat));
   }, [liveId]);
 
   useEffect(() => {
@@ -355,13 +375,22 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
   );
 
   const acceptAll = useCallback(async () => {
-    const pending = [...requests];
+    // Stage 46. Only as many as there are seats. The server is the authority and
+    // will refuse the rest anyway, but a host who taps "accept all" and watches
+    // most of the queue bounce has no way to tell a capacity limit from a bug —
+    // and the ones that bounced stay in the list looking un-actioned. Requests
+    // beyond the ceiling are deliberately left pending rather than denied, so
+    // they are still there when a guest leaves.
+    const seats = stage ? Math.max(0, stage.slotsAvailable) : requests.length;
+    const pending = requests.slice(0, seats);
+    if (!pending.length) return;
     for (const request of pending) {
       await respondToJoinRequest(liveId, request.requestId, "accept").catch(() => undefined);
     }
-    setRequests([]);
+    const accepted = new Set(pending.map((item) => item.requestId));
+    setRequests((current) => current.filter((item) => !accepted.has(item.requestId)));
     refreshLiveMeta().catch(() => undefined);
-  }, [requests, liveId, refreshLiveMeta]);
+  }, [requests, liveId, refreshLiveMeta, stage]);
 
   const moderateGuest = useCallback(
     async (guest: LiveGuest, action: "mute" | "unmute" | "remove") => {
@@ -913,7 +942,21 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
 
       {/* ---------- SHEETS ---------- */}
       <LiveBottomSheet visible={sheet === "guests"} onClose={closeSheet} title="Guests" subtitle="Manage who is on stage">
-        <Text style={styles.sheetLabel}>On stage · {activeGuests.length}</Text>
+        {/* Stages 5, 40 and 46. The ceiling comes from the server, so "stage
+            full" is the real limit for this deployment rather than a constant
+            compiled into the app — and it is stated before an approval is
+            refused, not after. Until the server has answered, only the count
+            the panel can actually see is shown. */}
+        <Text style={styles.sheetLabel}>
+          On stage · {activeGuests.length}
+          {stage && stage.maxGuests > 0 ? ` of ${stage.maxGuests}` : ""}
+        </Text>
+        {stage?.stageFull ? (
+          <Text style={styles.sheetEmpty}>The stage is full. Remove a guest to make room for another.</Text>
+        ) : null}
+        {stage && !stage.multiGuestEnabled ? (
+          <Text style={styles.sheetEmpty}>Guests are turned off for this deployment. Your broadcast is unaffected.</Text>
+        ) : null}
         {activeGuests.length === 0 ? (
           <Text style={styles.sheetEmpty}>No guests are publishing yet. Accepted guests appear here to mute or remove.</Text>
         ) : (
@@ -985,9 +1028,12 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={`Accept ${request.displayName} onto the stage`}
-                accessibilityState={{ disabled: busyRequestId === request.requestId }}
-                style={[styles.manageBtn, styles.manageBtnAccent]}
-                disabled={busyRequestId === request.requestId}
+                accessibilityState={{ disabled: busyRequestId === request.requestId || Boolean(stage?.stageFull) }}
+                // Stage 46. Disabled on a full stage rather than allowed through
+                // to a 409. Deny stays enabled, so a host can still clear the
+                // queue honestly instead of being stuck with it.
+                style={[styles.manageBtn, styles.manageBtnAccent, stage?.stageFull ? { opacity: 0.4 } : null]}
+                disabled={busyRequestId === request.requestId || Boolean(stage?.stageFull)}
                 onPress={() => respond(request, "accept").catch(() => undefined)}
               >
                 <Ionicons name="checkmark" size={18} color={colors.background} />
@@ -995,9 +1041,14 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
             </View>
           ))
         )}
-        {requests.length > 0 ? (
+        {requests.length > 0 && !stage?.stageFull ? (
+          // Stage 46. "Accept all" is capped at the seats that actually exist.
+          // Offering to admit nine people onto a stage with two free slots
+          // guarantees seven refusals the host cannot explain to their viewers.
           <Pressable style={styles.sheetPrimary} onPress={() => acceptAll().catch(() => undefined)}>
-            <Text style={styles.sheetPrimaryText}>Accept all ({requests.length})</Text>
+            <Text style={styles.sheetPrimaryText}>
+              Accept all ({stage ? Math.min(requests.length, stage.slotsAvailable) : requests.length})
+            </Text>
           </Pressable>
         ) : null}
       </LiveBottomSheet>
