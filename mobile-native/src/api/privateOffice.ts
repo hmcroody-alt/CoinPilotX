@@ -32,6 +32,7 @@
  */
 
 import { PulseApiError, pulseApi } from "./pulseApi";
+import { officeRequestHeaders, setOfficeUnlocked } from "../privateOffice/officeLock";
 
 /* --- vocabulary --------------------------------------------------------- */
 
@@ -116,6 +117,14 @@ export type PrivateOfficeOverview = {
   office: PrivateOfficeProductState;
   domains: PrivateDomainCount[];
   verifiedAt: string;
+  /**
+   * The second lock (Stage 15). True means the member is entitled but this
+   * request carried no valid unlock grant — the overview arrives with entry
+   * state only and no counts. `setupRequired` distinguishes "no passcode has
+   * ever been created" (render the setup flow) from "locked" (render unlock).
+   */
+  locked: boolean;
+  setupRequired: boolean;
 };
 
 export type PrivateFactProvenance = {
@@ -156,6 +165,8 @@ export type PrivateFactsResult =
   | { state: "FEATURE_DISABLED" }
   | { state: "NOT_IMPLEMENTED" }
   | { state: "UNAVAILABLE" }
+  /** 423: entitled, but no valid unlock grant rode on this request. */
+  | { state: "LOCKED"; setupRequired: boolean }
   | { state: "ERROR"; message: string };
 
 export const UNKNOWN_OFFICE: PrivateOfficeProductState = {
@@ -171,7 +182,9 @@ export const UNKNOWN_OVERVIEW: PrivateOfficeOverview = {
   resolved: false,
   office: UNKNOWN_OFFICE,
   domains: [],
-  verifiedAt: ""
+  verifiedAt: "",
+  locked: false,
+  setupRequired: false
 };
 
 /* --- parsing ------------------------------------------------------------ */
@@ -252,7 +265,12 @@ export function parseOverview(payload: unknown): PrivateOfficeOverview {
     resolved,
     office: resolved ? office : { ...office, state: office.state },
     domains: resolved ? parseDomains(body.domains) : [],
-    verifiedAt: asText(body.verified_at)
+    verifiedAt: asText(body.verified_at),
+    // Read, never derived: the server says whether the second lock stood in
+    // the way of this response. A client that inferred it from empty domains
+    // would draw an empty office as a locked one.
+    locked: body.locked === true,
+    setupRequired: body.setup_required === true
   };
 }
 
@@ -303,7 +321,11 @@ export const PRIVATE_OFFICE_FACTS_PATH = "/api/private-office/facts";
  */
 export async function getPrivateOfficeOverview(): Promise<PrivateOfficeOverview> {
   try {
-    return parseOverview(await pulseApi<unknown>(PRIVATE_OFFICE_OVERVIEW_PATH));
+    return parseOverview(
+      await pulseApi<unknown>(PRIVATE_OFFICE_OVERVIEW_PATH, {
+        headers: await officeRequestHeaders()
+      })
+    );
   } catch (error) {
     if (error instanceof PulseApiError && error.details) {
       // A 503 from this endpoint still carries the product block; the counts
@@ -319,7 +341,11 @@ export async function getPrivateOfficeOverview(): Promise<PrivateOfficeOverview>
 export async function getPrivateFacts(domain?: string): Promise<PrivateFactsResult> {
   const query = domain ? `?domain=${encodeURIComponent(domain)}` : "";
   try {
-    const body = asRecord(await pulseApi<unknown>(`${PRIVATE_OFFICE_FACTS_PATH}${query}`));
+    const body = asRecord(
+      await pulseApi<unknown>(`${PRIVATE_OFFICE_FACTS_PATH}${query}`, {
+        headers: await officeRequestHeaders()
+      })
+    );
     const rows = Array.isArray(body.facts) ? body.facts : [];
     return { state: "READY", facts: rows.map(parseFact), domain: asText(body.domain) };
   } catch (error) {
@@ -329,6 +355,11 @@ export async function getPrivateFacts(domain?: string): Promise<PrivateFactsResu
     const details = asRecord(error.details);
     const serverState = asText(details.state).trim().toUpperCase();
 
+    // The second lock (Stage 15-16). Checked before the entitlement words:
+    // a 423 carries the one instruction that matters — unlock, or set up.
+    if (serverState === "PRIVATE_OFFICE_LOCKED" || error.status === 423) {
+      return { state: "LOCKED", setupRequired: details.setup_required === true };
+    }
     if (serverState === "NOT_ENTITLED") {
       return { state: "NOT_ENTITLED", minimumTier: asText(details.minimum_tier) };
     }
@@ -340,5 +371,214 @@ export async function getPrivateFacts(domain?: string): Promise<PrivateFactsResu
       return { state: "UNAVAILABLE" };
     }
     return { state: "ERROR", message: error.message || "" };
+  }
+}
+
+/* --- second lock: security API ------------------------------------------- */
+
+export const PRIVATE_OFFICE_SECURITY_PATH = "/api/private-office/security";
+
+export type OfficeSecurityStatus = {
+  state: "READY" | "UNAVAILABLE";
+  passcodeSet: boolean;
+  setupRequired: boolean;
+  /** Seconds until another attempt is allowed. 0 when not cooling down. */
+  cooldownSeconds: number;
+  biometricPreference: "enabled" | "disabled" | "unset";
+  /** Whether the grant THIS device presented is currently valid. */
+  unlocked: boolean;
+};
+
+/**
+ * Every mutation below answers with a tagged result rather than a throw, for
+ * the same reason `PrivateFactsResult` does: the refusals are the product.
+ * `COOLDOWN` carries the server's own countdown so the client renders the
+ * server's clock and never invents one (Stage 9 — the limit is server-side).
+ */
+export type OfficeSecurityWriteResult =
+  | { state: "OK" }
+  | { state: "POLICY"; reason: string }
+  | { state: "ALREADY_SET" }
+  | { state: "NOT_SET" }
+  | { state: "WRONG_PASSCODE" }
+  | { state: "COOLDOWN"; retryAfterSeconds: number }
+  | { state: "REVERIFY_FAILED" }
+  | { state: "UNAVAILABLE" }
+  | { state: "ERROR"; message: string };
+
+export type OfficeUnlockResult =
+  | { state: "UNLOCKED" }
+  | Exclude<OfficeSecurityWriteResult, { state: "OK" }>;
+
+function writeFailure(error: unknown): OfficeSecurityWriteResult {
+  if (!(error instanceof PulseApiError)) return { state: "ERROR", message: "" };
+  const details = asRecord(error.details);
+  const code = asText(details.error).trim().toLowerCase();
+  if (code === "cooldown") {
+    return {
+      state: "COOLDOWN",
+      retryAfterSeconds: asFiniteNumber(details.retry_after_seconds) ?? 0
+    };
+  }
+  if (code === "wrong_passcode") return { state: "WRONG_PASSCODE" };
+  if (code === "passcode_policy" || code === "confirm_mismatch") {
+    return { state: "POLICY", reason: asText(details.reason) || code };
+  }
+  if (code === "passcode_already_set") return { state: "ALREADY_SET" };
+  if (code === "passcode_not_set") return { state: "NOT_SET" };
+  if (code === "reverification_failed") return { state: "REVERIFY_FAILED" };
+  if (error.status === 503 || error.status === 504) return { state: "UNAVAILABLE" };
+  return { state: "ERROR", message: error.message || "" };
+}
+
+/** Setup state and cooldown for the signed-in member. Never throws. */
+export async function getOfficeSecurityStatus(): Promise<OfficeSecurityStatus> {
+  try {
+    const body = asRecord(
+      await pulseApi<unknown>(`${PRIVATE_OFFICE_SECURITY_PATH}/status`, {
+        headers: await officeRequestHeaders()
+      })
+    );
+    const preference = asText(body.biometric_preference).trim().toLowerCase();
+    return {
+      state: "READY",
+      passcodeSet: body.passcode_set === true,
+      setupRequired: body.setup_required === true,
+      cooldownSeconds: asFiniteNumber(body.cooldown_seconds) ?? 0,
+      biometricPreference:
+        preference === "enabled" || preference === "disabled" ? preference : "unset",
+      unlocked: body.unlocked === true
+    };
+  } catch {
+    return {
+      state: "UNAVAILABLE",
+      passcodeSet: false,
+      setupRequired: false,
+      cooldownSeconds: 0,
+      biometricPreference: "unset",
+      unlocked: false
+    };
+  }
+}
+
+/** First-entry passcode creation (Stages 1-3). The value crosses once, in the body. */
+export async function setupOfficePasscode(
+  passcode: string,
+  confirmPasscode: string
+): Promise<OfficeSecurityWriteResult> {
+  try {
+    await pulseApi<unknown>(`${PRIVATE_OFFICE_SECURITY_PATH}/setup`, {
+      method: "POST",
+      headers: await officeRequestHeaders(),
+      body: JSON.stringify({ passcode, confirm_passcode: confirmPasscode })
+    });
+    return { state: "OK" };
+  } catch (error) {
+    return writeFailure(error);
+  }
+}
+
+/**
+ * Prove the passcode; on success the server's grant is stowed in memory via
+ * `setOfficeUnlocked`, and every subsequent Office read carries it. This is the
+ * single unlock path — Face ID resolves to a passcode and lands here too.
+ */
+export async function unlockOffice(passcode: string, userId: number): Promise<OfficeUnlockResult> {
+  try {
+    const body = asRecord(
+      await pulseApi<unknown>(`${PRIVATE_OFFICE_SECURITY_PATH}/unlock`, {
+        method: "POST",
+        headers: await officeRequestHeaders(),
+        body: JSON.stringify({ passcode })
+      })
+    );
+    const grant = asText(body.grant_token);
+    if (!grant) return { state: "ERROR", message: "" };
+    setOfficeUnlocked(grant, asText(body.expires_at), userId);
+    return { state: "UNLOCKED" };
+  } catch (error) {
+    const failure = writeFailure(error);
+    return failure.state === "OK" ? { state: "ERROR", message: "" } : failure;
+  }
+}
+
+/**
+ * Server-side lock. `allDevices` revokes every live grant for this member
+ * (Stage 25's "Lock now"); otherwise only the presented grant dies. The local
+ * token is dropped by the caller via `lockOfficeLocally` either way.
+ */
+export async function lockOffice(allDevices: boolean): Promise<OfficeSecurityWriteResult> {
+  try {
+    await pulseApi<unknown>(`${PRIVATE_OFFICE_SECURITY_PATH}/lock`, {
+      method: "POST",
+      headers: await officeRequestHeaders(),
+      body: JSON.stringify(allDevices ? { all: true } : {})
+    });
+    return { state: "OK" };
+  } catch (error) {
+    return writeFailure(error);
+  }
+}
+
+/** Rotate the passcode. Success revokes every grant on every device (Stage 12). */
+export async function changeOfficePasscode(
+  currentPasscode: string,
+  newPasscode: string,
+  confirmPasscode: string
+): Promise<OfficeSecurityWriteResult> {
+  try {
+    await pulseApi<unknown>(`${PRIVATE_OFFICE_SECURITY_PATH}/change`, {
+      method: "POST",
+      headers: await officeRequestHeaders(),
+      body: JSON.stringify({
+        current_passcode: currentPasscode,
+        new_passcode: newPasscode,
+        confirm_passcode: confirmPasscode
+      })
+    });
+    return { state: "OK" };
+  } catch (error) {
+    return writeFailure(error);
+  }
+}
+
+/**
+ * Forgotten passcode (Stage 11): the ACCOUNT PASSWORD is the elevated proof.
+ * A logged-in session alone is precisely what the second lock distrusts.
+ */
+export async function resetOfficePasscode(
+  accountPassword: string,
+  newPasscode: string,
+  confirmPasscode: string
+): Promise<OfficeSecurityWriteResult> {
+  try {
+    await pulseApi<unknown>(`${PRIVATE_OFFICE_SECURITY_PATH}/reset`, {
+      method: "POST",
+      headers: await officeRequestHeaders(),
+      body: JSON.stringify({
+        account_password: accountPassword,
+        new_passcode: newPasscode,
+        confirm_passcode: confirmPasscode
+      })
+    });
+    return { state: "OK" };
+  } catch (error) {
+    return writeFailure(error);
+  }
+}
+
+/** Record the Face ID preference server-side — truthful settings, never an unlock. */
+export async function setOfficeBiometricPreference(
+  enabled: boolean
+): Promise<OfficeSecurityWriteResult> {
+  try {
+    await pulseApi<unknown>(`${PRIVATE_OFFICE_SECURITY_PATH}/biometric`, {
+      method: "POST",
+      headers: await officeRequestHeaders(),
+      body: JSON.stringify({ enabled })
+    });
+    return { state: "OK" };
+  } catch (error) {
+    return writeFailure(error);
   }
 }

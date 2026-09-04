@@ -67,6 +67,7 @@ from services.private_office import facts  # noqa: E402
 from services.private_office import graph  # noqa: E402
 from services.private_office import health  # noqa: E402
 from services.private_office import model  # noqa: E402
+from services.private_office import records  # noqa: E402
 from services.private_office import retrieval  # noqa: E402
 from services.private_office import schema  # noqa: E402
 from services.private_office import telemetry  # noqa: E402
@@ -274,6 +275,17 @@ def stage_worker_safe_bootstrap():
                 roots = [node.module.split(".")[0]]
             for root in roots:
                 if root in ("bot", "flask", "werkzeug"):
+                    # One narrow, named exception: `security.py` reads the
+                    # office-unlock grant off the live request, so its
+                    # `request_bindings`/`request_grant_token` import `flask`
+                    # lazily inside a try/except and fail closed without it.
+                    # That is the opposite shape from Stage 176B — the module
+                    # works *without* Flask rather than requiring it — and the
+                    # clean-interpreter probe above stays the enforcement that
+                    # importing the package pulls in neither Flask nor the
+                    # monolith. `bot` stays forbidden everywhere.
+                    if name == "security.py" and root == "flask":
+                        continue
                     offenders.append(f"{name}:{node.lineno} {root}")
     check("no module in the package imports bot, flask or werkzeug — at any depth",
           offenders == [], "; ".join(offenders[:3]))
@@ -674,6 +686,31 @@ def stage_telemetry_carries_no_member_data():
         cur, owner_user_id=USER_A, subject_id="910")
     check("the contradiction was detected, so its metric fired",
           len(conflicts) == 1, str(len(conflicts)))
+
+    # And the three record events, through the real writer, the real closer,
+    # and the real typed view — with a planted secret in the title so the
+    # payload inspection below has something concrete to catch.
+    obligation = records.create_record(
+        cur, record_type=records.TYPE_OBLIGATION, owner_user_id=USER_A,
+        title=f"Premium for {SECRETS[0]}", obligation_type="TAX",
+        due_at="2026-12-01T00:00:00+00:00", domain="FINANCIAL")
+    check("a record write fired its metric through the canonical writer",
+          obligation["status"] == records.STATUS_CREATED,
+          str(obligation["status"]))
+    closed = records.update_record(
+        cur, record_type=records.TYPE_OBLIGATION, owner_user_id=USER_A,
+        record_id=obligation["record_id"], status="RESOLVED")
+    check("closing the obligation fired the closure metric",
+          (closed["record"] or {}).get("status") == "RESOLVED",
+          str((closed["record"] or {}).get("status")))
+    listed = retrieval.retrieve_records(
+        cur, owner_user_id=USER_A, actor_user_id=USER_A,
+        view=retrieval.VIEW_OBLIGATIONS,
+        intent=retrieval.INTENT_PROPERTY_PORTFOLIO)
+    check("the typed record view read back the row and fired its metric",
+          listed["denied"] == "" and len(listed["records"]) >= 1,
+          f"denied={listed['denied']!r} count={len(listed['records'])}")
+
     conn.commit()
     conn.close()
 

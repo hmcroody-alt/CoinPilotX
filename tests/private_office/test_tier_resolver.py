@@ -34,6 +34,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 
 from services import db  # noqa: E402
 from services.business_os.entitlements import service as svc  # noqa: E402
+from services.private_office import access as po_access  # noqa: E402
 from services.private_office import feature_matrix as fm  # noqa: E402
 from services.private_office import status as po_status  # noqa: E402
 from services.private_office import tiers  # noqa: E402
@@ -290,12 +291,64 @@ def test_ladder_ordering_and_unknown_tier_fails_closed():
 # --- Stage 4: the feature matrix --------------------------------------------
 def test_unbuilt_features_are_never_entitled_at_any_tier():
     """The headline honesty lock. A PRIVATE_OFFICE member — the person paying
-    the most — must still be told 'not built', never 'upgrade to unlock'."""
-    for feature_id in ("human_concierge", "capital_graph",
-                       "relationship_intelligence", "private_briefings"):
+    the most — must still be told 'not built', never 'upgrade to unlock'.
+
+    ``capital_graph`` was in this list until Batch B built it. It was removed
+    from the *fixture*, not from the *property*: the property is asserted below
+    against every row the matrix itself declares unbuilt, which is the form that
+    cannot go stale the next time something ships. The three named here stay as
+    a canary — if one of them is quietly flipped to IMPLEMENTED without a reader
+    behind it, this fails by name rather than by count.
+    """
+    for feature_id in ("human_concierge", "relationship_intelligence",
+                       "private_briefings"):
         got = fm.availability(feature_id, tiers.TIER_PRIVATE_OFFICE)
         assert got["availability"] == fm.AVAIL_NOT_IMPLEMENTED, feature_id
         assert not fm.is_entitled(feature_id, tiers.TIER_PRIVATE_OFFICE), feature_id
+
+    # The same lock, stated over the matrix rather than over a list somebody has
+    # to remember to edit. Every row that is not IMPLEMENTED must refuse the top
+    # of the ladder, whatever it is called and whenever it was added.
+    unbuilt = [spec.feature_id for spec in fm.FEATURES.values()
+               if spec.implementation != fm.IMPL_IMPLEMENTED]
+    assert unbuilt, "no unbuilt rows left — this check has gone vacuous"
+    for feature_id in unbuilt:
+        got = fm.availability(feature_id, tiers.TIER_PRIVATE_OFFICE)
+        assert got["availability"] == fm.AVAIL_NOT_IMPLEMENTED, feature_id
+        assert not fm.is_entitled(feature_id, tiers.TIER_PRIVATE_OFFICE), feature_id
+        # Nothing unbuilt may carry a price *at the surface*. The matrix row
+        # keeps its minimum_tier — that is the row's own declaration of where it
+        # will sit once it exists — but the shared decision every surface reads
+        # must drop it, or a client renders an upgrade button in front of a
+        # feature nobody has written.
+        decision = po_access.decide(
+            {"resolver_state": tiers.RESOLVER_OK,
+             "effective_tier": tiers.TIER_PRIVATE_OFFICE},
+            feature_id,
+        )
+        assert decision["decision"] == po_access.NOT_IMPLEMENTED, feature_id
+        assert decision["minimum_tier"] == "", feature_id
+
+
+def test_the_capital_graph_is_built_and_gated_at_private():
+    """The other half of the flip above, so the change is pinned both ways.
+
+    ``capital_graph`` moved to IMPLEMENTED because a writer and an owner-scoped
+    reader now exist. That must show up as ENTITLED at PRIVATE and above and as
+    NOT_ENTITLED below — an implemented feature that silently stayed unreachable
+    would be indistinguishable, from the member's side, from one nobody built.
+    """
+    got = fm.availability("capital_graph", tiers.TIER_PRIVATE)
+    assert got["implementation"] == fm.IMPL_IMPLEMENTED
+    assert got["availability"] == fm.AVAIL_ENTITLED
+    assert fm.is_entitled("capital_graph", tiers.TIER_PRIVATE_OFFICE)
+
+    for tier in (tiers.TIER_FREE, tiers.TIER_PREMIUM):
+        below = fm.availability("capital_graph", tier)
+        assert below["availability"] == fm.AVAIL_NOT_ENTITLED, tier
+        # Here a minimum_tier is correct and required: this one is real, it is
+        # for sale, and the member needs to know what to buy.
+        assert below["minimum_tier"] == tiers.TIER_PRIVATE, tier
 
 
 def test_breach_monitoring_is_provider_required_and_never_entitled():

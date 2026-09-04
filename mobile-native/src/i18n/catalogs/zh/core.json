@@ -214,7 +214,8 @@
       "briefingsHub": "简报",
       "briefing": "简报",
       "privateOffice": "私人办公室",
-      "privateFacts": "私人信息"
+      "privateFacts": "私人信息",
+      "privateOfficeSecurity": "办公室安全"
     },
     "navSubtitles": {
       "missionControl": "指挥中心",

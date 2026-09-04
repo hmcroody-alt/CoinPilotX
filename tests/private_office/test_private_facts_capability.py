@@ -29,6 +29,8 @@ What these tests are actually defending
   PulseSoc know this?".
 """
 
+import contextlib
+import hashlib
 import os
 import sys
 import tempfile
@@ -49,6 +51,7 @@ from services.private_office import facts  # noqa: E402
 from services.private_office import feature_matrix  # noqa: E402
 from services.private_office import model  # noqa: E402
 from services.private_office import schema  # noqa: E402
+from services.private_office import security as office_security  # noqa: E402
 from services.private_office import tiers  # noqa: E402
 
 CAPABILITY_ID = "private.facts.list"
@@ -122,9 +125,61 @@ def setup_environment():
           sensitivity=model.SENSITIVITY_RESTRICTED)
     _seed(USER_B, model.DOMAIN_FINANCIAL, "bank_name", "Fact belonging to B")
 
+    # The second lock stands between the tier and the data. The members whose
+    # reads these stages expect to SUCCEED unlock the canonical way.
+    for uid in (USER_A, USER_B):
+        _mint_unlock(uid)
 
-def _call(user_id, **arguments):
-    return agent_tools.resolve("private_facts_list")(user_id, dict(arguments))
+
+# --- second lock plumbing (Stage 17) ----------------------------------------
+# The executor asks `request_is_unlocked`, which validates the grant carried by
+# the CURRENT Flask request against the session and device it was minted for.
+# So an "unlocked" call here is a real one: a passcode created through the
+# canonical service, a grant minted by `verify_and_unlock` under the same
+# bindings the request context will present, and both headers on the request.
+# Outside such a context the executor must refuse — which stage_gate asserts.
+
+_OFFICE_PASSCODE = "917364"
+_UNLOCKS: dict[int, tuple[str, str, str]] = {}  # uid -> (bearer, device, grant)
+
+
+def _mint_unlock(uid: int) -> None:
+    bearer = f"capability-test-bearer-{uid}"
+    device = f"od1-capability-test-{uid}"
+    session_binding = hashlib.sha256(bearer.encode("utf-8")).hexdigest()
+    conn = db.connect()
+    try:
+        cur = conn.cursor()
+        office_security.create_passcode(cur, uid, _OFFICE_PASSCODE)
+        minted = office_security.verify_and_unlock(
+            cur, uid, _OFFICE_PASSCODE,
+            session_binding=session_binding, device_binding=device,
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    assert minted.get("ok"), f"unlock mint failed for {uid}: {minted}"
+    _UNLOCKS[uid] = (bearer, device, str(minted["grant_token"]))
+
+
+@contextlib.contextmanager
+def _unlocked_request(uid: int):
+    from flask import Flask
+    bearer, device, grant = _UNLOCKS[uid]
+    app = Flask(__name__)
+    with app.test_request_context(headers={
+        "Authorization": f"Bearer {bearer}",
+        office_security.DEVICE_HEADER: device,
+        office_security.GRANT_HEADER: grant,
+    }):
+        yield
+
+
+def _call(user_id, _unlocked=False, **arguments):
+    if not _unlocked or user_id not in _UNLOCKS:
+        return agent_tools.resolve("private_facts_list")(user_id, dict(arguments))
+    with _unlocked_request(user_id):
+        return agent_tools.resolve("private_facts_list")(user_id, dict(arguments))
 
 
 # ---------------------------------------------------------------------------
@@ -212,13 +267,22 @@ def stage_gate_matches_the_http_surface():
           resolved["effective_tier"] == tiers.TIER_PRIVATE_OFFICE,
           str(resolved.get("effective_tier")))
     decision = access.decide(resolved, FEATURE_ID)
-    result = _call(USER_A)
+    result = _call(USER_A, _unlocked=True)
 
     if _facts_are_live():
         check("the shared gate allows an entitled member",
               decision["decision"] == access.ALLOW, decision["decision"])
-        check("so the executor succeeds", result.ok,
+        check("so the executor succeeds behind a valid unlock grant", result.ok,
               f"{result.error_code} {result.error_message}")
+        # Stage 17 — the UNDX hard lock. The same entitled member, without the
+        # grant on the request, is refused with the one sentence that names no
+        # fact, no count and no domain.
+        locked = _call(USER_A)
+        check("without a grant the executor refuses as LOCKED",
+              not locked.ok and locked.error_code == "PRIVATE_OFFICE_LOCKED",
+              f"ok={locked.ok} code={locked.error_code}")
+        check("the locked refusal carries no records", locked.records == [],
+              str(locked.records))
     else:
         check("the shared gate refuses an unbuilt capability",
               decision["decision"] == access.NOT_IMPLEMENTED, decision["decision"])
@@ -284,8 +348,8 @@ def stage_owner_isolation():
         print("  NOTE  isolation asserted at the reader; executor path is gated")
         return
 
-    a_result = _call(USER_A, limit=25)
-    b_result = _call(USER_B, limit=25)
+    a_result = _call(USER_A, _unlocked=True, limit=25)
+    b_result = _call(USER_B, _unlocked=True, limit=25)
     check("A's read succeeds", a_result.ok, a_result.error_code)
     check("B's read succeeds", b_result.ok, b_result.error_code)
     blob_a = repr(a_result.records)
@@ -297,10 +361,11 @@ def stage_owner_isolation():
 
     # Substituting B's identity is not possible through the contract, but prove
     # that a caller who tries anyway is answered as themselves.
-    smuggled = agent_tools.resolve("private_facts_list")(
-        USER_A, {"user_id": USER_B, "owner_user_id": USER_B, "fact_id": 1,
-                 "limit": 25},
-    )
+    with _unlocked_request(USER_A):
+        smuggled = agent_tools.resolve("private_facts_list")(
+            USER_A, {"user_id": USER_B, "owner_user_id": USER_B, "fact_id": 1,
+                     "limit": 25},
+        )
     check("arguments naming another member are inert",
           smuggled.ok and "belonging to B" not in repr(smuggled.records),
           repr(smuggled.records)[:200])
@@ -313,8 +378,8 @@ def stage_absence_is_not_an_oracle():
         print("  NOTE  not exercised over the executor: private_facts is not live yet")
         return
     # FINANCIAL: B holds one, A holds none. LEGAL: nobody holds one.
-    held_by_other = _call(USER_A, domain=model.DOMAIN_FINANCIAL)
-    held_by_nobody = _call(USER_A, domain=model.DOMAIN_LEGAL)
+    held_by_other = _call(USER_A, _unlocked=True, domain=model.DOMAIN_FINANCIAL)
+    held_by_nobody = _call(USER_A, _unlocked=True, domain=model.DOMAIN_LEGAL)
     check("both answers succeed", held_by_other.ok and held_by_nobody.ok)
     check("a domain another member populates is empty for A",
           held_by_other.records == [], str(held_by_other.records))
@@ -340,7 +405,7 @@ def stage_ceiling_and_bounds():
     if not _facts_are_live():
         print("  NOTE  ceiling not exercised over the executor: private_facts is not live yet")
         return
-    result = _call(USER_A, limit=100)
+    result = _call(USER_A, _unlocked=True, limit=100)
     check("an over-large limit is clamped, not honoured",
           len(result.records) <= agent_tools.UNDX_MAX_FACTS, str(len(result.records)))
     check("the ceiling is reported so a short list is not read as an empty store",

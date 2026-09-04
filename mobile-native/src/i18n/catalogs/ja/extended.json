@@ -273,6 +273,72 @@
       "mediaAttached": "メディア添付あり"
     }
   },
+  "live": {
+    "guest": {
+      "state": {
+        "idle": "ステージ外です",
+        "requested": "参加をリクエスト中…",
+        "invited": "ステージに招待されました",
+        "accepted": "次はあなたの番です",
+        "preparing": "カメラとマイクを確認してください",
+        "joining": "ステージに参加中…",
+        "live": "ライブ配信中です",
+        "declined": "招待を辞退しました",
+        "removed": "ホストがあなたをステージから外しました",
+        "left": "ステージから退出しました",
+        "failed": "ステージに参加できませんでした"
+      },
+      "action": {
+        "accept": "参加する",
+        "decline": "今はしない",
+        "confirm": "ライブを開始",
+        "leave": "ステージから退出",
+        "retry": "もう一度試す",
+        "request": "参加をリクエスト",
+        "cancelRequest": "リクエストを取り消す"
+      }
+    },
+    "invite": {
+      "title": "{{name}}さんがステージに招待しました",
+      "body": "準備ができるまで、カメラとマイクはオフのままです。",
+      "expired": "この招待は期限切れです",
+      "answered": "この招待にはすでに回答済みです"
+    },
+    "stage": {
+      "full": "ステージが満員です（{{max}}人中{{count}}人）",
+      "hostLabel": "ホスト",
+      "cohostLabel": "共同ホスト",
+      "guestLabel": "ゲスト",
+      "speaking": "発言中",
+      "reconnecting": "再接続中…",
+      "cooldown": "再度リクエストするまで{{seconds}}秒お待ちください"
+    },
+    "moderation": {
+      "mute": "ミュート",
+      "askToUnmute": "ミュート解除を依頼",
+      "remove": "ステージから外す",
+      "removeConfirm": "{{name}} をステージから外しますか？",
+      "unmuteRequest": "ホストがマイクをオンにするよう求めています",
+      "unmuteHint": "自分でオンにするまでマイクはオフのままです。",
+      "title": "{{name}} を管理",
+      "cancel": "キャンセル",
+      "confirmRemove": "外す",
+      "unmuteAccept": "マイクをオンにする",
+      "unmuteDecline": "ミュートのままにする",
+      "noActions": "ここで管理できるものはありません"
+    },
+    "exit": {
+      "endLive": "ライブを終了",
+      "endLiveConfirm": "視聴者全員のライブを終了しますか？",
+      "leaveStage": "ステージから退出",
+      "leaveStageConfirm": "ステージから退出しますか？ライブはあなたなしで続きます。",
+      "stopWatching": "視聴をやめる"
+    },
+    "host": {
+      "reconnecting": "ホストが再接続しています… {{seconds}} 秒",
+      "absenceEnded": "ホストの接続が切れ、ライブが終了しました。"
+    }
+  },
   "messaging": {
     "inbox": {
       "title": "メッセージ",
@@ -4161,7 +4227,8 @@
       "footnote": "ここに表示される内容は、このアプリではなくサーバー上のアカウントが決めています。",
       "sections": {
         "available": "利用可能",
-        "notYet": "今後提供予定"
+        "notYet": "今後提供予定",
+        "security": "セキュリティ"
       },
       "unknown": {
         "title": "アクセス権を確認できませんでした",
@@ -4277,6 +4344,93 @@
         "SELF_REPORTED": "本人申告",
         "ESTIMATED": "推定",
         "NEEDS_REVIEW": "要確認"
+      },
+      "security": {
+        "title": "オフィスのセキュリティ",
+        "subtitle": "プライベートオフィスのロックと解除の方法を設定します。",
+        "row": {
+          "label": "オフィスのセキュリティ",
+          "hint": "パスコード、生体認証、再ロックのタイミング"
+        },
+        "relock": {
+          "label": "パスコードを要求",
+          "hint": "アプリを離れてからオフィスがロックされるまでの時間。",
+          "immediate": "すぐに",
+          "1m": "1分後",
+          "5m": "5分後",
+          "15m": "15分後"
+        },
+        "biometric": {
+          "label": "{{method}}でロック解除",
+          "hint": "パスコードは引き続き予備として必要です。",
+          "confirm": "確認のためオフィスのパスコードを入力してください"
+        },
+        "change": {
+          "label": "パスコードを変更",
+          "current": "現在のパスコード",
+          "new": "新しいパスコード",
+          "confirm": "新しいパスコードを確認",
+          "submit": "パスコードを変更",
+          "success": "パスコードを変更しました。すべての端末でオフィスがロックされました。"
+        },
+        "lockNow": "今すぐロック",
+        "lockNowHint": "すべての端末でオフィスをロックします。"
+      },
+      "lock": {
+        "checking": "オフィスのセキュリティを確認しています…",
+        "unavailable": {
+          "title": "オフィスのセキュリティを利用できません",
+          "body": "ロックの確認のためサーバーに接続できませんでした。もう一度お試しください。"
+        },
+        "setup": {
+          "intro": {
+            "title": "2つ目のロックを追加",
+            "body": "プライベートオフィスには、アカウントのパスワードとは別の専用パスコードを設定します。",
+            "start": "パスコードを設定",
+            "notNow": "今はしない"
+          },
+          "create": {
+            "title": "オフィスのパスコードを作成",
+            "body": "{{digits}}桁以上を使用してください。オフィスを開くたびに必要になります。"
+          },
+          "confirm": {
+            "title": "パスコードを確認",
+            "body": "同じパスコードをもう一度入力してください。"
+          },
+          "continue": "続ける",
+          "back": "戻る",
+          "mismatch": "パスコードが一致しません。もう一度お試しください。",
+          "biometric": {
+            "title": "{{method}}でロック解除しますか？",
+            "body": "オフィスをより速く開けます。パスコードは予備として残ります。",
+            "enable": "{{method}}を使う",
+            "skip": "スキップ"
+          }
+        },
+        "locked": {
+          "title": "オフィスはロック中",
+          "body": "このコンテンツを見るにはプライベートオフィスのロックを解除してください。"
+        },
+        "placeholder": "オフィスのパスコード",
+        "unlock": "ロック解除",
+        "wrong": "パスコードが違います。もう一度お試しください。",
+        "cooldown": "試行回数が多すぎます。{{seconds}}秒後にもう一度お試しください。",
+        "policy": "パスコードは{{digits}}桁以上にしてください。",
+        "error": "問題が発生しました。もう一度お試しください。",
+        "forgot": "パスコードをお忘れですか？",
+        "biometricFaceId": "Face ID",
+        "biometricTouchId": "Touch ID",
+        "biometricPrompt": "プライベートオフィスのロックを解除",
+        "reset": {
+          "title": "オフィスのパスコードをリセット",
+          "body": "アカウントのパスワードを確認してから、新しいオフィスのパスコードを選んでください。すべての端末がロックされます。",
+          "password": "アカウントのパスワード",
+          "newPasscode": "新しいパスコード",
+          "confirmPasscode": "新しいパスコードを確認",
+          "submit": "パスコードをリセット",
+          "cancel": "キャンセル",
+          "failed": "リセットに失敗しました。パスワードを確認してもう一度お試しください。"
+        }
       }
     },
     "gate": {

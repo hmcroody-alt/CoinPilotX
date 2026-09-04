@@ -53,12 +53,15 @@ _stub.require_admin_api = _require_admin_api
 sys.modules["bot"] = _stub
 
 from flask import Flask  # noqa: E402
+from flask.testing import FlaskClient  # noqa: E402
 
 from services import db  # noqa: E402
 from services.business_os.entitlements import service as svc  # noqa: E402
 from services import private_office_routes as routes  # noqa: E402
+from services.private_office import capital_graph  # noqa: E402
 from services.private_office import facts  # noqa: E402
 from services.private_office import feature_matrix  # noqa: E402
+from services.private_office import graph  # noqa: E402
 from services.private_office import model  # noqa: E402
 from services.private_office import office  # noqa: E402
 from services.private_office import schema  # noqa: E402
@@ -78,14 +81,67 @@ def check(label: str, condition: bool, detail: str = "") -> None:
     print(f"  FAIL  {label}{(' — ' + detail) if detail else ''}")
 
 
+#: Unlock grants, per member, minted once in ``setup_environment``.
+#:
+#: The Office carries a second lock in front of every data route: a passcode,
+#: and a bounded grant proving it was entered on this session. These tests are
+#: not about that lock — they are about what the routes do once it is open — so
+#: the grant is minted once and injected by the client below. The lock itself
+#: gets one direct assertion in ``stage_capital_graph_over_http`` so that
+#: "unlocked" stays a thing the tests had to obtain rather than a thing they
+#: assumed.
+_GRANTS: dict[int, str] = {}
+PASSCODE = "849271"
+
+
+class _GrantClient(FlaskClient):
+    """A test client that presents the current member's unlock grant.
+
+    ``setdefault`` rather than assignment on purpose: a caller that passes the
+    header explicitly — including an empty one, to exercise a locked request —
+    keeps what it passed.
+    """
+
+    def open(self, *args, **kwargs):
+        user = _stub._test_user or {}
+        token = _GRANTS.get(int(user.get("user_id") or 0), "")
+        if token:
+            headers = dict(kwargs.get("headers") or {})
+            headers.setdefault(routes.GRANT_HEADER, token)
+            kwargs["headers"] = headers
+        return super().open(*args, **kwargs)
+
+
 def _app():
     app = Flask(__name__)
+    app.test_client_class = _GrantClient
     routes.register(app)
     return app
 
 
 def _as(user_id):
     _stub._test_user = {"user_id": user_id, "account_status": "active", "access_enabled": 1}
+
+
+def _unlock(user_id):
+    """Set a passcode and take a grant, both over HTTP.
+
+    Through the real endpoints rather than by writing a grant row directly: a
+    grant is bound to the session that earned it, and minting one out of band
+    would produce a binding no later request could match.
+    """
+    app = Flask(__name__)
+    routes.register(app)
+    client = app.test_client()
+    _as(user_id)
+    client.post("/api/private-office/security/setup",
+                json={"passcode": PASSCODE, "confirm_passcode": PASSCODE})
+    resp = client.post("/api/private-office/security/unlock",
+                       json={"passcode": PASSCODE})
+    token = (resp.get_json() or {}).get("grant_token") or ""
+    if token:
+        _GRANTS[int(user_id)] = token
+    return token
 
 
 def setup_environment():
@@ -111,6 +167,10 @@ def setup_environment():
         conn.close()
     for uid in (USER_A, USER_B):
         svc.grant_entitlement(uid, "private_office.access", source="admin")
+    _GRANTS.clear()
+    for uid in (USER_A, USER_B):
+        _unlock(uid)
+    _stub._test_user = None
 
 
 def _facts_are_live() -> bool:
@@ -376,6 +436,163 @@ def stage_input_validation():
         print("  NOTE  write validation not exercised: private_facts is not live yet")
 
 
+def _seed_capital(owner, suffix):
+    """A two-node owned chain plus one fact, written through the canonical writer.
+
+    Seeded directly rather than over HTTP for the same reason as ``_seed_direct``:
+    there is no write surface for the graph, and the read tests need something
+    real to read. ``suffix`` keeps the two members' external refs distinguishable
+    so a leak shows up as a literal string in the other member's JSON.
+    """
+    conn = db.connect()
+    try:
+        cur = conn.cursor()
+        person = graph.upsert_node(
+            cur, owner_user_id=owner, node_type=model.NODE_PERSON,
+            external_ref=f"person-{suffix}", domain=model.DOMAIN_GENERAL,
+        )
+        prop = graph.upsert_node(
+            cur, owner_user_id=owner, node_type=model.NODE_PROPERTY,
+            external_ref=f"property-{suffix}", domain=model.DOMAIN_FINANCIAL,
+        )
+        graph.record_edge(
+            cur, owner_user_id=owner, source=person["node_id"],
+            relation_type=model.RELATION_OWNS, target=prop["node_id"],
+            provenance_type=model.PROVENANCE_USER_ASSERTED,
+        )
+        facts.record_fact(
+            cur, owner_user_id=owner, subject_type=facts.SUBJECT_NODE,
+            subject_id=str(prop["node_id"]), fact_type="street_address",
+            value=f"1 {suffix} Lane", value_type=model.VALUE_STRING,
+            provenance_type=model.PROVENANCE_VERIFIED,
+            domain=model.DOMAIN_FINANCIAL,
+        )
+        conn.commit()
+        return {"person": person["node_id"], "property": prop["node_id"]}
+    finally:
+        conn.close()
+
+
+def stage_capital_graph_over_http():
+    """Batch B item 6 — the three read routes, asserted at the wire.
+
+    The service-level properties are pinned in ``test_capital_graph.py``; what
+    can only be asserted here is that the HTTP layer does not undo them — that
+    the gate is applied, that the projection survives serialisation, and that a
+    foreign node id is byte-identical to one that was never issued.
+    """
+    print("\n[capital graph over http]")
+    a_nodes = _seed_capital(USER_A, "alpha")
+    b_nodes = _seed_capital(USER_B, "bravo")
+
+    paths = (
+        "/api/private-office/capital-graph",
+        f"/api/private-office/entities/{a_nodes['property']}",
+        f"/api/private-office/entities/{a_nodes['property']}/relationships",
+    )
+
+    _stub._test_user = None
+    anon = _app().test_client()
+    for path in paths:
+        check(f"GET {path} requires login", anon.get(path).status_code == 401)
+
+    _as(USER_A)
+    client = _app().test_client()
+
+    # The second lock, asserted once and directly: an entitled, signed-in member
+    # presenting no unlock grant is refused with 423 and given no Office data.
+    # Everything below rides on a grant the suite actually had to obtain.
+    locked = client.get("/api/private-office/capital-graph",
+                        headers={routes.GRANT_HEADER: ""})
+    check("a locked request is refused 423, not served",
+          locked.status_code == 423, str(locked.status_code))
+    check("the locked refusal carries no graph",
+          "capital_graph" not in (locked.get_json() or {}), str(locked.get_json()))
+
+    live = capital_graph.FEATURE_ID in feature_matrix.implemented_feature_ids()
+    if not live:
+        for path in paths:
+            check(f"GET {path} is refused while the feature is off",
+                  client.get(path).status_code == 404)
+        print("  NOTE  read path not exercised: capital_graph is not live")
+        return
+
+    resp = client.get("/api/private-office/capital-graph")
+    body = resp.get_json()
+    check("an entitled member is allowed through", resp.status_code == 200,
+          f"{resp.status_code} {body}")
+    check("the response advertises the real views",
+          set(body.get("views") or []) == set(capital_graph.VIEWS),
+          str(body.get("views")))
+    check("the capital graph is never cached",
+          "no-store" in resp.headers.get("Cache-Control", ""))
+
+    bad_view = client.get("/api/private-office/capital-graph?view=nope")
+    check("an unknown view is a 400, not a silent default read",
+          bad_view.status_code == 400, str(bad_view.status_code))
+    check("the 400 lists the real vocabulary",
+          set(bad_view.get_json().get("views") or []) == set(capital_graph.VIEWS))
+
+    blob = json.dumps(body, default=str)
+    # No aggregate may appear on the wire. A number labelled like a net worth is
+    # read as one whether or not the server meant it that way.
+    for invented in ("net_worth", "networth", "total_value", "total_assets",
+                     "portfolio_value", "estate_value"):
+        check(f"the payload states no {invented}", invented not in blob.lower())
+    for leaked in ("owner_user_id", "node_key", "edge_key", "subject_id",
+                   "provenance_ref"):
+        check(f"{leaked} never appears in the response", leaked not in blob)
+    check("A's payload contains A's own property", "1 alpha Lane" in blob)
+    check("A's payload contains nothing of B's",
+          "bravo" not in blob and "1 bravo Lane" not in blob)
+
+    entity = client.get(f"/api/private-office/entities/{a_nodes['property']}")
+    check("the entity route answers 200", entity.status_code == 200,
+          str(entity.status_code))
+    check("it returns the entity that was asked for",
+          (entity.get_json().get("entity") or {}).get("id") == a_nodes["property"],
+          str(entity.get_json().get("entity")))
+
+    rels = client.get(
+        f"/api/private-office/entities/{a_nodes['property']}/relationships")
+    rels_body = rels.get_json()
+    check("the relationships route answers 200", rels.status_code == 200,
+          str(rels.status_code))
+    check("it carries the owning edge",
+          any(row.get("relation_type") == model.RELATION_OWNS
+              for row in (rels_body.get("relationships") or [])),
+          str(rels_body.get("relationships")))
+
+    # The surface is not an existence oracle: a real foreign node and an id that
+    # was never issued must be indistinguishable, or a caller can enumerate the
+    # other member's graph by diffing responses.
+    foreign = client.get(f"/api/private-office/entities/{b_nodes['property']}")
+    absent = client.get("/api/private-office/entities/99999999")
+    check("a foreign node answers exactly like a nonexistent one",
+          foreign.status_code == absent.status_code
+          and foreign.get_json() == absent.get_json(),
+          f"{foreign.status_code}/{absent.status_code}")
+
+    # The kill switch, at the wire. A switched-off feature must 404 without
+    # offering anything to buy, and must not take the fact routes with it.
+    spec = feature_matrix.FEATURES[capital_graph.FEATURE_ID]
+    previous = os.environ.get(spec.flag_env)
+    os.environ[spec.flag_env] = "false"
+    try:
+        off = client.get("/api/private-office/capital-graph")
+        check("the kill switch closes the route", off.status_code == 404,
+              str(off.status_code))
+        check("the switched-off route sells nothing",
+              "minimum_tier" not in (off.get_json() or {}), str(off.get_json()))
+        check("the switch does not take the fact routes down with it",
+              client.get("/api/private-office/facts").status_code == 200)
+    finally:
+        if previous is None:
+            os.environ.pop(spec.flag_env, None)
+        else:
+            os.environ[spec.flag_env] = previous
+
+
 # ---------------------------------------------------------------------------
 def main() -> int:
     _FAILURES.clear()
@@ -388,6 +605,7 @@ def main() -> int:
     stage_owner_isolation_over_http()
     stage_response_carries_the_projection()
     stage_input_validation()
+    stage_capital_graph_over_http()
     print("\n" + "=" * 60)
     if _FAILURES:
         print(f"FAIL — {len(_FAILURES)} check(s) failed:")

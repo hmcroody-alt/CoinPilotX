@@ -214,7 +214,8 @@
       "briefingsHub": "ブリーフィング",
       "briefing": "ブリーフィング",
       "privateOffice": "プライベートオフィス",
-      "privateFacts": "プライベート情報"
+      "privateFacts": "プライベート情報",
+      "privateOfficeSecurity": "オフィスのセキュリティ"
     },
     "navSubtitles": {
       "missionControl": "管制センター",

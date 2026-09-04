@@ -2536,6 +2536,19 @@ def _private_office():
     return db, access, facts, office, schema, tiers
 
 
+def _office_locked_result(tool: str, capability: str, started: float) -> ToolResult:
+    """The one sentence UNDX may say about a locked Office.
+
+    No fact names, no counts, no domains, no "you have 3 insurance policies" —
+    the refusal itself must not leak what the lock protects. The message is the
+    Stage 17 wording verbatim so the agent's transcript renders an instruction,
+    not a summary.
+    """
+    return _fail(tool, capability, "PRIVATE_OFFICE_LOCKED",
+                 "Unlock Private Office to access that information.",
+                 started=started)
+
+
 def private_facts_list(user_id: int, arguments: dict[str, Any]) -> ToolResult:
     """Read the caller's own private facts, gated on the canonical tier truth.
 
@@ -2601,6 +2614,16 @@ def private_facts_list(user_id: int, arguments: dict[str, Any]) -> ToolResult:
     try:
         cursor = connection.cursor()
         schema.ensure_private_schema(cursor)
+
+        # The second lock (Stage 17). The tier said the member may have the
+        # room; this asks whether the person holding the device just proved
+        # they are the member. Same validator, same request bindings as the
+        # HTTP surface — the agent can never read what the screen would show
+        # locked. Fails closed, including when there is no request context.
+        from services.private_office import security as office_security
+        if not office_security.request_is_unlocked(cursor, owner).get("ok"):
+            return _office_locked_result(tool, capability, started)
+
         rows = facts.list_facts(
             cursor,
             owner_user_id=owner,

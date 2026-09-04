@@ -492,6 +492,7 @@ export type RootStackParamList = {
   // authoritative. `title` is the same optional override every titled route has.
   PrivateOffice: { title?: string } | undefined;
   PrivateFacts: { title?: string } | undefined;
+  PrivateOfficeSecurity: { title?: string } | undefined;
   AccountCenter: { section?: "account" | "security" | "privacy" | "devices"; title?: string } | undefined;
   AccountSettings: { title?: string } | undefined;
   AccountSecurity: { title?: string } | undefined;

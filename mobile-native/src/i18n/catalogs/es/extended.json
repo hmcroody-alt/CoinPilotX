@@ -276,6 +276,72 @@
       "mediaAttached": "Multimedia adjunta"
     }
   },
+  "live": {
+    "guest": {
+      "state": {
+        "idle": "Fuera del escenario",
+        "requested": "Pidiendo unirte…",
+        "invited": "Te invitaron al escenario",
+        "accepted": "Eres el siguiente",
+        "preparing": "Revisa tu cámara y tu micrófono",
+        "joining": "Entrando al escenario…",
+        "live": "Estás en directo",
+        "declined": "Invitación rechazada",
+        "removed": "El anfitrión te quitó del escenario",
+        "left": "Saliste del escenario",
+        "failed": "No pudimos subirte al escenario"
+      },
+      "action": {
+        "accept": "Unirse",
+        "decline": "Ahora no",
+        "confirm": "Salir en directo",
+        "leave": "Salir del escenario",
+        "retry": "Reintentar",
+        "request": "Pedir unirse",
+        "cancelRequest": "Cancelar solicitud"
+      }
+    },
+    "invite": {
+      "title": "{{name}} te invitó al escenario",
+      "body": "Tu cámara y tu micrófono siguen apagados hasta que estés listo.",
+      "expired": "Esta invitación caducó",
+      "answered": "Esta invitación ya fue respondida"
+    },
+    "stage": {
+      "full": "Escenario lleno: {{count}} de {{max}} invitados",
+      "hostLabel": "Anfitrión",
+      "cohostLabel": "Coanfitrión",
+      "guestLabel": "Invitado",
+      "speaking": "Hablando",
+      "reconnecting": "Reconectando…",
+      "cooldown": "Espera {{seconds}} s antes de volver a pedirlo"
+    },
+    "moderation": {
+      "mute": "Silenciar",
+      "askToUnmute": "Pedir que active el micro",
+      "remove": "Quitar del escenario",
+      "removeConfirm": "¿Quitar a {{name}} del escenario?",
+      "unmuteRequest": "El anfitrión te pidió activar el micro",
+      "unmuteHint": "Tu micro sigue apagado hasta que lo actives.",
+      "title": "Gestionar a {{name}}",
+      "cancel": "Cancelar",
+      "confirmRemove": "Quitar",
+      "unmuteAccept": "Activar mi micro",
+      "unmuteDecline": "Seguir en silencio",
+      "noActions": "Nada que gestionar aquí"
+    },
+    "exit": {
+      "endLive": "Finalizar en vivo",
+      "endLiveConfirm": "¿Finalizar el en vivo para todos los que lo ven?",
+      "leaveStage": "Salir del escenario",
+      "leaveStageConfirm": "¿Salir del escenario? El en vivo continúa sin ti.",
+      "stopWatching": "Dejar de ver"
+    },
+    "host": {
+      "reconnecting": "El anfitrión se está reconectando… {{seconds}} s",
+      "absenceEnded": "El anfitrión perdió la conexión y el en vivo terminó."
+    }
+  },
   "messaging": {
     "inbox": {
       "title": "Mensajes",
@@ -4200,7 +4266,8 @@
       "footnote": "Lo que aparece aquí lo decide tu cuenta en el servidor, no esta aplicación.",
       "sections": {
         "available": "Disponible",
-        "notYet": "Próximamente"
+        "notYet": "Próximamente",
+        "security": "Seguridad"
       },
       "unknown": {
         "title": "No pudimos confirmar tu acceso",
@@ -4316,6 +4383,93 @@
         "SELF_REPORTED": "Declarado por ti",
         "ESTIMATED": "Estimado",
         "NEEDS_REVIEW": "Requiere revisión"
+      },
+      "security": {
+        "title": "Seguridad de la oficina",
+        "subtitle": "Controla cómo se bloquea y desbloquea tu oficina privada.",
+        "row": {
+          "label": "Seguridad de la oficina",
+          "hint": "Código, biometría y tiempo de bloqueo"
+        },
+        "relock": {
+          "label": "Exigir código",
+          "hint": "Cuánto tarda la oficina en bloquearse al salir de la app.",
+          "immediate": "Inmediatamente",
+          "1m": "Después de 1 minuto",
+          "5m": "Después de 5 minutos",
+          "15m": "Después de 15 minutos"
+        },
+        "biometric": {
+          "label": "Desbloquear con {{method}}",
+          "hint": "Tu código sigue siendo necesario como respaldo.",
+          "confirm": "Introduce el código de tu oficina para confirmar"
+        },
+        "change": {
+          "label": "Cambiar código",
+          "current": "Código actual",
+          "new": "Código nuevo",
+          "confirm": "Confirmar código nuevo",
+          "submit": "Cambiar código",
+          "success": "Código cambiado. La oficina quedó bloqueada en todos los dispositivos."
+        },
+        "lockNow": "Bloquear ahora",
+        "lockNowHint": "Bloquea la oficina en todos tus dispositivos."
+      },
+      "lock": {
+        "checking": "Comprobando la seguridad de la oficina…",
+        "unavailable": {
+          "title": "Seguridad de la oficina no disponible",
+          "body": "No pudimos contactar con el servidor para comprobar el bloqueo. Inténtalo de nuevo."
+        },
+        "setup": {
+          "intro": {
+            "title": "Añade un segundo candado",
+            "body": "Tu oficina privada tiene su propio código, separado de la contraseña de tu cuenta.",
+            "start": "Configurar código",
+            "notNow": "Ahora no"
+          },
+          "create": {
+            "title": "Crea el código de la oficina",
+            "body": "Usa al menos {{digits}} dígitos. Lo necesitarás cada vez que abras la oficina."
+          },
+          "confirm": {
+            "title": "Confirma el código",
+            "body": "Introduce el mismo código otra vez."
+          },
+          "continue": "Continuar",
+          "back": "Atrás",
+          "mismatch": "Los códigos no coinciden. Inténtalo de nuevo.",
+          "biometric": {
+            "title": "¿Desbloquear con {{method}}?",
+            "body": "Abre la oficina más rápido. Tu código sigue siendo el respaldo.",
+            "enable": "Usar {{method}}",
+            "skip": "Omitir"
+          }
+        },
+        "locked": {
+          "title": "Oficina bloqueada",
+          "body": "Desbloquea la oficina privada para ver este contenido."
+        },
+        "placeholder": "Código de la oficina",
+        "unlock": "Desbloquear",
+        "wrong": "Código incorrecto. Inténtalo de nuevo.",
+        "cooldown": "Demasiados intentos. Vuelve a intentarlo en {{seconds}} s.",
+        "policy": "El código debe tener al menos {{digits}} dígitos.",
+        "error": "Algo salió mal. Inténtalo de nuevo.",
+        "forgot": "¿Olvidaste el código?",
+        "biometricFaceId": "Face ID",
+        "biometricTouchId": "Touch ID",
+        "biometricPrompt": "Desbloquea tu oficina privada",
+        "reset": {
+          "title": "Restablecer el código de la oficina",
+          "body": "Confirma la contraseña de tu cuenta y elige un nuevo código. Se bloquearán todos los dispositivos.",
+          "password": "Contraseña de la cuenta",
+          "newPasscode": "Código nuevo",
+          "confirmPasscode": "Confirmar código nuevo",
+          "submit": "Restablecer código",
+          "cancel": "Cancelar",
+          "failed": "No se pudo restablecer. Revisa tu contraseña e inténtalo de nuevo."
+        }
       }
     },
     "gate": {

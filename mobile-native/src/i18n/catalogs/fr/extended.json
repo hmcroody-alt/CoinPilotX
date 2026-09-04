@@ -276,6 +276,72 @@
       "mediaAttached": "Média joint"
     }
   },
+  "live": {
+    "guest": {
+      "state": {
+        "idle": "Hors scène",
+        "requested": "Demande en cours…",
+        "invited": "Vous êtes invité sur scène",
+        "accepted": "C'est bientôt à vous",
+        "preparing": "Vérifiez votre caméra et votre micro",
+        "joining": "Arrivée sur scène…",
+        "live": "Vous êtes en direct",
+        "declined": "Invitation refusée",
+        "removed": "L'hôte vous a retiré de la scène",
+        "left": "Vous avez quitté la scène",
+        "failed": "Impossible de vous mettre sur scène"
+      },
+      "action": {
+        "accept": "Rejoindre",
+        "decline": "Pas maintenant",
+        "confirm": "Passer en direct",
+        "leave": "Quitter la scène",
+        "retry": "Réessayer",
+        "request": "Demander à rejoindre",
+        "cancelRequest": "Annuler la demande"
+      }
+    },
+    "invite": {
+      "title": "{{name}} vous invite sur scène",
+      "body": "Votre caméra et votre micro restent coupés jusqu'à ce que vous soyez prêt.",
+      "expired": "Cette invitation a expiré",
+      "answered": "Cette invitation a déjà reçu une réponse"
+    },
+    "stage": {
+      "full": "Scène complète — {{count}} invités sur {{max}}",
+      "hostLabel": "Hôte",
+      "cohostLabel": "Co-hôte",
+      "guestLabel": "Invité",
+      "speaking": "Parle",
+      "reconnecting": "Reconnexion…",
+      "cooldown": "Attendez {{seconds}} s avant de redemander"
+    },
+    "moderation": {
+      "mute": "Couper le micro",
+      "askToUnmute": "Demander de réactiver le micro",
+      "remove": "Retirer de la scène",
+      "removeConfirm": "Retirer {{name}} de la scène ?",
+      "unmuteRequest": "L'hôte vous demande de réactiver votre micro",
+      "unmuteHint": "Votre micro reste coupé jusqu'à ce que vous l'activiez.",
+      "title": "Gérer {{name}}",
+      "cancel": "Annuler",
+      "confirmRemove": "Retirer",
+      "unmuteAccept": "Activer mon micro",
+      "unmuteDecline": "Rester muet",
+      "noActions": "Rien à gérer ici"
+    },
+    "exit": {
+      "endLive": "Terminer le live",
+      "endLiveConfirm": "Terminer le live pour tous les spectateurs ?",
+      "leaveStage": "Quitter la scène",
+      "leaveStageConfirm": "Quitter la scène ? Le live continue sans vous.",
+      "stopWatching": "Arrêter de regarder"
+    },
+    "host": {
+      "reconnecting": "L'hôte se reconnecte… {{seconds}} s",
+      "absenceEnded": "L'hôte a perdu la connexion et le live s'est terminé."
+    }
+  },
   "messaging": {
     "inbox": {
       "title": "Messages",
@@ -4200,7 +4266,8 @@
       "footnote": "Ce qui apparaît ici est déterminé par votre compte sur le serveur, pas par cette application.",
       "sections": {
         "available": "Disponible",
-        "notYet": "À venir"
+        "notYet": "À venir",
+        "security": "Sécurité"
       },
       "unknown": {
         "title": "Nous n'avons pas pu confirmer votre accès",
@@ -4316,6 +4383,93 @@
         "SELF_REPORTED": "Déclaré par vous",
         "ESTIMATED": "Estimé",
         "NEEDS_REVIEW": "À revoir"
+      },
+      "security": {
+        "title": "Sécurité du bureau",
+        "subtitle": "Contrôlez comment votre bureau privé se verrouille et se déverrouille.",
+        "row": {
+          "label": "Sécurité du bureau",
+          "hint": "Code, biométrie et délai de verrouillage"
+        },
+        "relock": {
+          "label": "Exiger le code",
+          "hint": "Délai avant que le bureau se verrouille après avoir quitté l'app.",
+          "immediate": "Immédiatement",
+          "1m": "Après 1 minute",
+          "5m": "Après 5 minutes",
+          "15m": "Après 15 minutes"
+        },
+        "biometric": {
+          "label": "Déverrouiller avec {{method}}",
+          "hint": "Votre code reste requis en secours.",
+          "confirm": "Saisissez le code de votre bureau pour confirmer"
+        },
+        "change": {
+          "label": "Changer le code",
+          "current": "Code actuel",
+          "new": "Nouveau code",
+          "confirm": "Confirmer le nouveau code",
+          "submit": "Changer le code",
+          "success": "Code changé. Le bureau est verrouillé sur tous les appareils."
+        },
+        "lockNow": "Verrouiller maintenant",
+        "lockNowHint": "Verrouille le bureau sur tous vos appareils."
+      },
+      "lock": {
+        "checking": "Vérification de la sécurité du bureau…",
+        "unavailable": {
+          "title": "Sécurité du bureau indisponible",
+          "body": "Impossible de joindre le serveur pour vérifier le verrou. Réessayez."
+        },
+        "setup": {
+          "intro": {
+            "title": "Ajouter un second verrou",
+            "body": "Votre bureau privé a son propre code, distinct du mot de passe de votre compte.",
+            "start": "Configurer le code",
+            "notNow": "Pas maintenant"
+          },
+          "create": {
+            "title": "Créer le code du bureau",
+            "body": "Utilisez au moins {{digits}} chiffres. Il sera demandé à chaque ouverture du bureau."
+          },
+          "confirm": {
+            "title": "Confirmer le code",
+            "body": "Saisissez le même code à nouveau."
+          },
+          "continue": "Continuer",
+          "back": "Retour",
+          "mismatch": "Les codes ne correspondent pas. Réessayez.",
+          "biometric": {
+            "title": "Déverrouiller avec {{method}} ?",
+            "body": "Ouvrez le bureau plus vite. Votre code reste le secours.",
+            "enable": "Utiliser {{method}}",
+            "skip": "Ignorer"
+          }
+        },
+        "locked": {
+          "title": "Bureau verrouillé",
+          "body": "Déverrouillez le bureau privé pour voir ce contenu."
+        },
+        "placeholder": "Code du bureau",
+        "unlock": "Déverrouiller",
+        "wrong": "Code incorrect. Réessayez.",
+        "cooldown": "Trop de tentatives. Réessayez dans {{seconds}} s.",
+        "policy": "Le code doit contenir au moins {{digits}} chiffres.",
+        "error": "Une erreur est survenue. Réessayez.",
+        "forgot": "Code oublié ?",
+        "biometricFaceId": "Face ID",
+        "biometricTouchId": "Touch ID",
+        "biometricPrompt": "Déverrouillez votre bureau privé",
+        "reset": {
+          "title": "Réinitialiser le code du bureau",
+          "body": "Confirmez le mot de passe de votre compte, puis choisissez un nouveau code. Tous les appareils seront verrouillés.",
+          "password": "Mot de passe du compte",
+          "newPasscode": "Nouveau code",
+          "confirmPasscode": "Confirmer le nouveau code",
+          "submit": "Réinitialiser le code",
+          "cancel": "Annuler",
+          "failed": "Échec de la réinitialisation. Vérifiez votre mot de passe et réessayez."
+        }
       }
     },
     "gate": {

@@ -198,10 +198,21 @@ def test_status_returns_health_for_an_admin():
 
 
 # --- no second granting authority -------------------------------------------
-#: The one path in this pack allowed to accept a write. It adds a row the member
-#: owns to the member's own fact store through the canonical writer; it cannot
-#: change what anybody is entitled to. Every other path stays read-only.
-_WRITABLE = frozenset({"/api/private-office/facts"})
+#: The paths in this pack allowed to accept a write. The facts endpoint adds a
+#: row the member owns through the canonical writer; the security endpoints
+#: manage the member's own second-lock passcode and unlock grants. None of them
+#: can change what anybody is entitled to — an unlock grant is not a tier, and
+#: `verify_and_unlock` never consults or writes the entitlement tables. Every
+#: other path stays read-only.
+_WRITABLE = frozenset({
+    "/api/private-office/facts",
+    "/api/private-office/security/setup",
+    "/api/private-office/security/unlock",
+    "/api/private-office/security/lock",
+    "/api/private-office/security/change",
+    "/api/private-office/security/reset",
+    "/api/private-office/security/biometric"
+})
 
 
 def test_no_route_here_can_grant_a_tier():

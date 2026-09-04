@@ -112,7 +112,10 @@ describe("navigator header titles", () => {
     // 137 + 2: `PrivateOffice` and `PrivateFacts`, the first native Private
     // Office surface. Both titled `route.params?.title ||
     // t("common:screens.private…")`, so both count.
-    expect(TITLE_OPTIONS.length).toBe(139);
+    //
+    // 139 + 1: `PrivateOfficeSecurity`, the Office second-lock settings screen.
+    // Titled `route.params?.title || t("common:screens.privateOfficeSecurity")`.
+    expect(TITLE_OPTIONS.length).toBe(140);
   });
 
   it("has no hardcoded string literal titles", () => {

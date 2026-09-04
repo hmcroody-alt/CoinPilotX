@@ -349,6 +349,7 @@ export const linking: LinkingOptions<RootStackParamList> = {
       // answer name the same destination rather than two spellings of it.
       PrivateOffice: "pulse/private-office",
       PrivateFacts: "pulse/private-office/facts",
+      PrivateOfficeSecurity: "pulse/private-office/security",
       AccountCenter: {
         path: "pulse/settings/:section",
         parse: {

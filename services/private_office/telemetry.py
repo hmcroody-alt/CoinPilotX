@@ -144,8 +144,32 @@ CONFLICT_REASON_VOCAB = frozenset({
     "boolean_values_differ", "text_values_differ",
 })
 
+#: The six Batch C record primitives. A closed vocabulary for the same reason
+#: intents are: this is a policy name chosen by the package, never anything a
+#: member typed, so it is safe to publish and an unrecognised one collapses to
+#: ``other`` rather than being echoed into a log line.
+RECORD_TYPE_VOCAB = frozenset({
+    "OBLIGATION", "EVENT", "DECISION", "REQUEST", "RISK", "OPPORTUNITY",
+})
+
+#: Record writer outcomes. Note ``existing`` and ``revised``: a store that
+#: cannot distinguish a new obligation from the same obligation arriving again
+#: from a nightly sweep looks busy either way.
+RECORD_OUTCOME_VOCAB = frozenset({
+    "created", "existing", "updated", "revised", "rejected",
+})
+
+#: Every terminal status across the six primitives. Publishing *which* closure
+#: a record reached is the difference between "the concierge queue drains" and
+#: "the concierge queue is cancelled", which are the same count.
+RECORD_STATUS_VOCAB = frozenset({
+    "RESOLVED", "DISMISSED", "DECIDED", "ABANDONED",
+    "COMPLETED", "CANCELED", "PASSED", "CLOSED",
+})
+
+
 # ---------------------------------------------------------------------------
-# The six events
+# The events
 # ---------------------------------------------------------------------------
 EVENT_FACT_WRITE = "private_office.fact_write"
 EVENT_GRAPH_WRITE = "private_office.graph_write"
@@ -153,6 +177,9 @@ EVENT_CONTEXT_RETRIEVED = "private_office.context_retrieved"
 EVENT_CONTEXT_DENIED = "private_office.context_denied"
 EVENT_CONFLICT_DETECTED = "private_office.conflict_detected"
 EVENT_SCHEMA_STATE = "private_office.schema_state"
+EVENT_RECORD_WRITE = "private_office.record_write"
+EVENT_RECORD_CLOSED = "private_office.record_closed"
+EVENT_RECORDS_RETRIEVED = "private_office.records_retrieved"
 
 #: ``event name -> {field name -> (kind, vocabulary or None)}``.
 #:
@@ -210,6 +237,39 @@ EVENTS: dict[str, dict[str, tuple[str, frozenset[str] | None]]] = {
         "missing_table_count": (KIND_COUNT, None),
         "added_column_count": (KIND_COUNT, None),
         "cached": (KIND_FLAG, None),
+    },
+    # Batch C. Deliberately absent from all three: the title of an obligation,
+    # the question a decision asks, the description of a concierge request, the
+    # summary of a risk. Those are the whole content of the primitive, and a
+    # metric that carried any of them would be a copy of the private store in
+    # the log aggregator — the one place with the loosest retention and the
+    # widest read access. What is published is process health: how many were
+    # written, how many closed and into which terminal state, how long a
+    # retrieval took.
+    EVENT_RECORD_WRITE: {
+        "outcome": (KIND_ENUM, RECORD_OUTCOME_VOCAB),
+        "record_type": (KIND_ENUM, RECORD_TYPE_VOCAB),
+        "domain": (KIND_ENUM, DOMAIN_VOCAB),
+        "sensitivity": (KIND_ENUM, SENSITIVITY_VOCAB),
+        "provenance_type": (KIND_ENUM, PROVENANCE_VOCAB),
+        "superseded": (KIND_FLAG, None),
+    },
+    EVENT_RECORD_CLOSED: {
+        "record_type": (KIND_ENUM, RECORD_TYPE_VOCAB),
+        "status": (KIND_ENUM, RECORD_STATUS_VOCAB),
+        "domain": (KIND_ENUM, DOMAIN_VOCAB),
+    },
+    EVENT_RECORDS_RETRIEVED: {
+        "record_type": (KIND_ENUM, RECORD_TYPE_VOCAB),
+        "intent": (KIND_ENUM, INTENT_VOCAB),
+        "sensitivity_ceiling": (KIND_ENUM, SENSITIVITY_VOCAB),
+        "record_count": (KIND_COUNT, None),
+        # Milliseconds, as a count. Clamped by `MAX_COUNT` like any other, which
+        # is fine: a retrieval that took longer than a thousand seconds is a
+        # timeout, and the exact figure would tell you nothing the clamp does
+        # not.
+        "latency_ms": (KIND_COUNT, None),
+        "truncated": (KIND_FLAG, None),
     },
 }
 
