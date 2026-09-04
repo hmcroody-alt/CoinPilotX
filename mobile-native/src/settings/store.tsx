@@ -25,6 +25,7 @@ import {
 } from "react";
 import { AppState, AppStateStatus } from "react-native";
 import { readJsonCache, writeJsonCache } from "../core/cache";
+import { setHapticsEnabled } from "../native/haptics";
 import {
   fetchRemotePreferences,
   PreferenceSyncError,
@@ -241,6 +242,12 @@ export function PreferencesProvider({ children, enabled = true }: { children: Re
       void flush();
     }, COALESCE_MS);
   }, [flush]);
+
+  /* ----------------- Mirror the accessibility haptics preference ----------- */
+
+  useEffect(() => {
+    setHapticsEnabled(preferences.accessibility.hapticFeedback);
+  }, [preferences.accessibility.hapticFeedback]);
 
   /* -------------------------------- Hydration ------------------------------ */
 

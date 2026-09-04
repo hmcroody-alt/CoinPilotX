@@ -1,9 +1,9 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import * as Clipboard from "expo-clipboard";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
+  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,13 +11,15 @@ import {
   TextInput,
   View
 } from "react-native";
-import QRCode from "react-native-qrcode-svg";
 import {
   MessengerUserSearchResult,
   openDirectConversation,
   searchMessengerUsers,
   sendConversationMessage
 } from "../api/messenger";
+import { copyToClipboard } from "../native/clipboard";
+import { PulseQr } from "../native/PulseQr";
+import { ScanSheet } from "../native/ScanSheet";
 import { RootStackParamList } from "../navigation/types";
 import { buildNativeSharePayload, openSystemShare } from "../sharing/nativeShare";
 import { saveShareComposerHandoff, ShareComposerMode } from "../sharing/shareComposerHandoff";
@@ -35,6 +37,7 @@ export function PulseShareScreen({ route, navigation }: Props) {
   const [sendingUserId, setSendingUserId] = useState(0);
   const [showPeople, setShowPeople] = useState(false);
   const [showQr, setShowQr] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
   const [notice, setNotice] = useState("");
   const sequence = useRef(0);
   const messengerClientIds = useRef(new Map<number, string>());
@@ -67,7 +70,7 @@ export function PulseShareScreen({ route, navigation }: Props) {
   }, [query, showPeople]);
 
   async function copyLink() {
-    await Clipboard.setStringAsync(metadata.url);
+    await copyToClipboard(metadata.url, "link");
     setNotice("Link copied.");
   }
 
@@ -145,13 +148,23 @@ export function PulseShareScreen({ route, navigation }: Props) {
           setNotice("");
         }} />
         <ShareAction label="More apps" detail="AirDrop, SMS, email" onPress={() => openSystemShare(metadata).catch(() => setNotice("System share sheet could not open."))} />
+        <ShareAction label="Scan QR code" detail="Open a shared PulseSoc link" onPress={() => {
+          setShowScanner(true);
+          setNotice("");
+        }} />
       </View>
+
+      <ScanSheet
+        visible={showScanner}
+        onClose={() => setShowScanner(false)}
+        onPulseSocLink={(_path, url) => {
+          Linking.openURL(url).catch(() => setNotice("Scanned link could not open."));
+        }}
+      />
 
       {showQr ? (
         <View style={styles.qrPanel}>
-          <View testID="pulse-share-qr" style={styles.qrSurface}>
-            <QRCode value={metadata.url} size={220} backgroundColor="#FFFFFF" color="#06101B" />
-          </View>
+          <PulseQr testID="pulse-share-qr" value={metadata.url} size={220} />
           <Text style={styles.qrTitle}>Scan to open in PulseSoc</Text>
           <Text style={styles.qrText}>This QR code contains only the canonical PulseSoc link.</Text>
         </View>
@@ -241,7 +254,6 @@ const styles = createThemedStyles(() => ({
   actionLabel: { color: colors.text, fontSize: 14, fontWeight: "900" },
   actionDetail: { color: colors.muted, fontSize: 11, lineHeight: 16 },
   qrPanel: { alignItems: "center", backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 20, borderWidth: 1, gap: 8, padding: 18 },
-  qrSurface: { backgroundColor: "#FFFFFF", borderRadius: 16, padding: 14 },
   qrTitle: { color: colors.text, fontSize: 16, fontWeight: "900" },
   qrText: { color: colors.muted, fontSize: 12, textAlign: "center" },
   peoplePanel: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 20, borderWidth: 1, gap: 10, padding: 14 },

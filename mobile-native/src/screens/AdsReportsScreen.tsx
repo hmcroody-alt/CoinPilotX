@@ -23,7 +23,7 @@ import {
   TextInput,
   View
 } from "react-native";
-import * as Clipboard from "expo-clipboard";
+import { copyToClipboard } from "../native/clipboard";
 
 import {
   AD_REPORT_BREAKDOWNS,
@@ -151,7 +151,7 @@ export function AdsReportsScreen({ route, navigation }: Props) {
         if (viaShare) {
           await Share.share({ message: csv });
         } else {
-          await Clipboard.setStringAsync(csv);
+          await copyToClipboard(csv, "text");
           setExportNote(t(`${NS}.csvCopied`));
         }
       } catch {

@@ -32,7 +32,6 @@
 
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
-import * as Clipboard from "expo-clipboard";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import {
@@ -61,6 +60,7 @@ import {
   type ProgressReferralTab
 } from "../api/progress";
 import { useFormatters, useTranslation } from "../i18n";
+import { copyToClipboard } from "../native/clipboard";
 import { RootStackParamList } from "../navigation/types";
 import { PRIVATE_CONTENT_MESSAGE, resolveRouteProfileContext } from "../profile/profileContext";
 import { useAuth } from "../session/auth";
@@ -177,7 +177,7 @@ export function ProgressCenterScreen({ navigation, route }: Props) {
   const onCopy = useCallback(async () => {
     const link = invite?.referral_link;
     if (!link) return;
-    await Clipboard.setStringAsync(link);
+    await copyToClipboard(link, "invite_code");
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }, [invite?.referral_link]);
