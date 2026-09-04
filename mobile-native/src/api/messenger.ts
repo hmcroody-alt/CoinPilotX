@@ -10,6 +10,9 @@ import {
   domainScope,
   scopeIncludes
 } from "./conversationDomain";
+// messengerOrdering imports only TYPES from this module, so the cycle is erased
+// at runtime and this value import is safe.
+import { mintClientMessageId } from "./messengerOrdering";
 
 const CONVERSATION_CACHE_KEY = "pulsesoc.native.messenger.v2.conversations";
 /**
@@ -652,6 +655,15 @@ export async function cacheMessages(conversationId: number, messages: MessengerM
 }
 
 export async function sendConversationMessage(conversationId: number, payload: SendMessagePayload) {
+  // Identity floor. Callers SHOULD mint and hold their own id so a retry reuses
+  // it, but no path may reach the server without one: a message with no client
+  // id cannot be reconciled against its own echo, and is the shape that has
+  // produced duplicate messages in production before. Minting here does not give
+  // retry-stability -- only the caller can do that -- but it guarantees every
+  // message is at least addressable.
+  payload = payload.client_message_id
+    ? payload
+    : { ...payload, client_message_id: mintClientMessageId() };
   if (conversationId === PULSE_AI_CONVERSATION_ID) {
     const data = await sendPulseAiMessage({ body: payload.body || "", client_message_id: payload.client_message_id });
     const serverMessage = (data.messages || []).find((message) => message.client_message_id === payload.client_message_id)
@@ -689,7 +701,11 @@ export async function sendConversationMessage(conversationId: number, payload: S
 
 export async function enqueueMessengerMessage(conversationId: number, payload: SendMessagePayload) {
   const queue = await readOutboundQueue();
-  const clientId = payload.client_message_id || `native-queued-${Date.now()}`;
+  // The clock-only fallback that used to live here could collide when several
+  // messages were queued in the same millisecond -- an offline burst is exactly
+  // that shape -- and two colliding ids now mean the server treats the second
+  // message as a repeat of the first and drops it.
+  const clientId = payload.client_message_id || mintClientMessageId("queued");
   if (!queue.some((item) => item.payload.client_message_id === clientId)) {
     queue.push({ conversationId, payload: { ...payload, client_message_id: clientId } });
     await AsyncStorage.setItem(OUTBOUND_QUEUE_KEY, JSON.stringify(queue.slice(-100)));
@@ -1437,7 +1453,18 @@ function qaMessage(
   ], conversationId)[0];
 }
 
-export function createLocalMessage(conversationId: number, body: string, messageType = "text"): MessengerMessage {
+/**
+ * The optimistic bubble. `clientMessageId` is accepted so a RETRY can re-present
+ * the same logical message: minting a fresh identity on retry is what turns a
+ * lost response into a genuine duplicate on the server, because the retry no
+ * longer looks like the message that may already have landed.
+ */
+export function createLocalMessage(
+  conversationId: number,
+  body: string,
+  messageType = "text",
+  clientMessageId?: string
+): MessengerMessage {
   const now = new Date().toISOString();
   const localId = -Date.now();
   return {
@@ -1450,6 +1477,6 @@ export function createLocalMessage(conversationId: number, body: string, message
     local_status: "sending",
     created_at: now,
     is_mine: true,
-    client_message_id: `native-${Math.abs(localId)}`
+    client_message_id: clientMessageId || mintClientMessageId()
   };
 }

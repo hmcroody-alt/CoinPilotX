@@ -648,6 +648,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     attachment_ids?: number[];
     reply_to_message_id?: number;
     reply_preview?: string;
+    client_message_id?: string;
   }) => {
     if (assistantConversation) {
       if ((payload.message_type || "text") !== "text" || payload.media_url || payload.attachment_ids?.length || payload.media_ids?.length) {
@@ -656,7 +657,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       }
       const body = (payload.body || "").trim();
       if (!body) return "failed" as const;
-      const local = createLocalMessage(conversationId, body, "text");
+      const local = createLocalMessage(conversationId, body, "text", payload.client_message_id);
       setMessages((current) => mergeMessages(current, [local]));
       setTyping("UNDX is typing");
       setStatusMessage("UNDX is thinking...");
@@ -699,7 +700,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     }
     const payloadType = normalizedMessageType(payload.message_type || "text");
     const label = payload.body?.trim() || mediaPreviewLabel(payloadType, Boolean(payload.media_url));
-    const local = createLocalMessage(conversationId, payload.body || "", payload.message_type || "text");
+    const local = createLocalMessage(conversationId, payload.body || "", payload.message_type || "text", payload.client_message_id);
     local.media_url = payload.media_url;
     local.thumbnail_url = payload.thumbnail_url;
     local.file_size = payload.file_size;
@@ -784,6 +785,17 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   }, [assistantConversation, conversationId, draft, replyTo, sendPayload]);
 
   const retryMessage = useCallback(async (message: MessengerMessage) => {
+    // A retry is the SAME logical message, so it must carry the same identity.
+    // Minting a fresh one here is what turned "the response was lost in flight"
+    // into a guaranteed duplicate: the first attempt may well have reached the
+    // server and only its acknowledgement went missing. Reusing the id lets the
+    // server recognise the resend and hand back the original row instead of
+    // writing a second one.
+    //
+    // The stale local row is dropped before the resend because it carries a
+    // failed status and error text that the new attempt must not inherit; the
+    // fresh optimistic bubble is inserted synchronously by sendPayload, so this
+    // is a swap rather than a visible gap.
     setMessages((current) => current.filter((item) => item.id !== message.id));
     await sendPayload({
       body: isVoiceLikeMessage(message) ? "" : message.body || "",
@@ -793,7 +805,8 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       file_size: message.file_size,
       duration_seconds: message.duration_seconds,
       reply_to_message_id: message.reply_to_message_id,
-      reply_preview: message.reply_preview
+      reply_preview: message.reply_preview,
+      client_message_id: message.client_message_id || undefined
     });
   }, [sendPayload]);
 
