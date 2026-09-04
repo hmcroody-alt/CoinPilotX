@@ -60,8 +60,17 @@ class AgoraTokenGenerationTests(unittest.TestCase):
     def test_native_agora_live_quality_and_publish_confirmation_contract(self) -> None:
         adapter = (ROOT / "mobile-native/src/live/useAgoraLiveBroadcastRoom.ts").read_text(encoding="utf-8")
         host = (ROOT / "mobile-native/src/screens/LiveHostSessionScreen.tsx").read_text(encoding="utf-8")
+        quality = (ROOT / "mobile-native/src/live/liveStreamQuality.ts").read_text(encoding="utf-8")
         self.assertIn("AudioProfileMusicHighQuality", adapter)
-        self.assertIn("width: 720, height: 1280", adapter)
+        # The 720x1280 encoder this used to assert inline is now the *solo* rung
+        # of the publish ladder, and the adapter applies the ladder rather than a
+        # constant. The property being protected is unchanged — a host alone on
+        # stage still publishes 720x1280 — but it is now stated somewhere the
+        # stage size can move it, so six publishers do not each upload a
+        # resolution nobody subscribes to. The rest of the ladder, including its
+        # recording-cost consequences, is in test_live_recording_archive.py.
+        self.assertIn("width: 720, height: 1280, frameRate: 30", quality)
+        self.assertIn("publisherVideoProfile(", adapter)
         self.assertIn("MaintainBalanced", adapter)
         self.assertIn("StreamFallbackOptionAudioOnly", adapter)
         self.assertIn("onFirstLocalAudioFramePublished", adapter)

@@ -129,6 +129,15 @@ export type LiveGuest = {
   audioMuted: boolean;
   videoEnabled: boolean;
   joinedAt: string;
+  /**
+   * The guest's Agora uid, supplied by the server. This is what lets the app
+   * know that the remote stream arriving on uid 4242 belongs to this person.
+   * Without it a component has no choice but to guess remote identity from
+   * arrival order, which is wrong as soon as a second guest joins.
+   */
+  rtcUid: number;
+  /** Server-assigned stage order, so every client renders the same layout. */
+  layoutPosition: number;
 };
 
 const CATEGORY_BY_LIVE_TYPE: Record<LiveTypeKey, string> = {
@@ -303,7 +312,12 @@ export function normalizeLiveGuest(raw: Record<string, unknown> | null | undefin
     status: toStr(data.status, "active"),
     audioMuted: toBool(data.audio_muted),
     videoEnabled: toBool(data.video_enabled),
-    joinedAt: toStr(data.joined_at ?? data.live_at)
+    joinedAt: toStr(data.joined_at ?? data.live_at),
+    // The server sends rtc_uid explicitly. Falling back to user_id matches the
+    // server's own derivation and keeps guests identifiable when an older
+    // backend is still deployed, rather than leaving the app to guess.
+    rtcUid: toNum(data.rtc_uid) || userId,
+    layoutPosition: toNum(data.layout_position)
   };
 }
 

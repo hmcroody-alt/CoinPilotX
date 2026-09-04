@@ -280,8 +280,19 @@ describe("normalizeLiveGuest(s)", () => {
       status: "active",
       audioMuted: true,
       videoEnabled: true,
-      joinedAt: "2026-07-20T10:00:00Z"
+      joinedAt: "2026-07-20T10:00:00Z",
+      // The Agora uid is the PulseSoc user id, so a guest tile can be matched to
+      // the remote stream that carries it without the UI guessing at identity.
+      rtcUid: 88,
+      // Server-assigned stage slot. Absent from this payload, so it falls back to
+      // 0 rather than leaving the guest unplaceable.
+      layoutPosition: 0
     });
+  });
+
+  it("falls back to the user id for the RTC uid, because that is what Agora carries", () => {
+    expect(normalizeLiveGuest({ id: 3, user_id: 41 })?.rtcUid).toBe(41);
+    expect(normalizeLiveGuest({ id: 3, user_id: 41, rtc_uid: 41 })?.rtcUid).toBe(41);
   });
 
   it("drops guests without a usable guest id and dedupes by id", () => {

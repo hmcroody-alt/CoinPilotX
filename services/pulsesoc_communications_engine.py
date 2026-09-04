@@ -21,7 +21,7 @@ from urllib.parse import urlparse, urlunparse
 from typing import Any
 
 from pulse_communications_v2 import service as comm_service
-from services import pulsesoc_notification_system
+from services import live_participants, pulsesoc_notification_system
 
 
 CALL_TABLES = (
@@ -523,15 +523,32 @@ def generate_agora_live_token(room_name: str, user_id: int, role: str, *, live_i
         from agora_token_builder import RtcTokenBuilder
     except ImportError:
         return _err("Agora token generation is unavailable.", 503, "agora_token_builder_missing", provider="agora")
-    normalized_role = str(role or "viewer").strip().lower()
-    can_publish = normalized_role in {"host", "cohost", "guest"}
-    if normalized_role not in {"host", "cohost", "guest", "viewer"}:
+    raw_role = str(role or "viewer").strip().lower()
+    if raw_role not in {"host", "cohost", "co-host", "co_host", "guest", "viewer", "audience"}:
         return _err("Unsupported Agora Live role.", 400, "invalid_live_role", provider="agora")
+    # One role vocabulary, shared with the routes and the client. Co-host is a
+    # distinct role here rather than a label on a guest: it carries moderation
+    # authority, which is exactly the difference the guest table's role column
+    # was always meant to express.
+    normalized_role = live_participants.normalize_role(raw_role)
+    can_publish = live_participants.can_publish(normalized_role)
+    permissions = live_participants.role_permissions(normalized_role)
     app_id = os.getenv("AGORA_APP_ID", "").strip()
     certificate = os.getenv("AGORA_APP_CERTIFICATE", "").strip()
-    ttl = 1800 if normalized_role in {"cohost", "guest"} else 7200 if normalized_role == "host" else 3600
+    # Stage tokens stay deliberately short-lived. A removed guest cannot outlive
+    # their removal by more than the TTL, because the refresh path re-checks the
+    # active guest slot before minting again.
+    if normalized_role in {live_participants.ROLE_COHOST, live_participants.ROLE_GUEST}:
+        ttl = 1800
+    elif normalized_role == live_participants.ROLE_HOST:
+        ttl = 7200
+    else:
+        ttl = 3600
     expires_at = int(time.time()) + ttl
-    uid = _agora_uid(user_id)
+    uid = live_participants.rtc_uid(user_id)
+    # Agora's own privilege is what actually enforces publishing: a subscriber
+    # token is rejected by the media server, so a client cannot self-promote by
+    # lying about its role.
     token = RtcTokenBuilder.buildTokenWithUid(app_id, certificate, room_name, uid, 1 if can_publish else 2, expires_at)
     return {
         "ok": True,
@@ -546,11 +563,14 @@ def generate_agora_live_token(room_name: str, user_id: int, role: str, *, live_i
         "identity": f"pulse-user-{uid}",
         "can_publish": can_publish,
         "can_subscribe": True,
-        "can_publish_sources": ["microphone", "camera"] if can_publish else [],
+        "can_publish_sources": live_participants.publish_sources(normalized_role),
         "can_publish_data": can_publish,
         "can_update_own_metadata": False,
         "room_join": True,
-        "role": normalized_role,
+        "role": live_participants.wire_role(normalized_role),
+        "canonical_role": normalized_role,
+        "role_label": live_participants.role_label(normalized_role),
+        "permissions": permissions,
         "guest_id": int(guest_id),
         "request_id": int(request_id),
         "expires_at": datetime.fromtimestamp(expires_at, timezone.utc).isoformat(timespec="seconds"),

@@ -235,6 +235,7 @@ from services import (
     live_health_service,
     live_ranking_engine,
     live_ops_engine,
+    live_participants,
     live_presence_engine,
     live_restream_service,
     live_scene_engine,
@@ -47898,8 +47899,7 @@ def pulse_live_studio_page(stream_id):
         LIMIT 80
     """, (stream_id,))
     chat = [dict(row) for row in cur.fetchall()]
-    cur.execute("SELECT COUNT(*) AS total FROM pulse_live_viewers WHERE live_id=? AND status IN ('watching','hosting')", (stream_id,))
-    viewers = int(dict(cur.fetchone() or {}).get("total") or 0)
+    viewers = pulse_live_viewer_count(cur, stream_id)
     cur.execute("SELECT reaction_type FROM pulse_live_reactions WHERE live_id=? ORDER BY id DESC LIMIT 12", (stream_id,))
     reactions = [dict(row) for row in cur.fetchall()]
     pending_requests = pulse_live_pending_guest_requests(cur, stream_id)
@@ -49015,7 +49015,7 @@ def pulse_live_record_timeline_event(cur, event_type, *, live_id=0, actor_user_i
     return {"event": event_name, "created_at": now}
 
 
-PULSE_LIVE_GUEST_REQUEST_STATES = {"pending", "accepted", "joining", "joined", "publishing", "live", "denied", "cancelled", "expired", "removed", "blocked"}
+PULSE_LIVE_GUEST_REQUEST_STATES = {"pending", "invited", "accepted", "joining", "joined", "publishing", "live", "denied", "declined", "cancelled", "expired", "removed", "blocked"}
 PULSE_COHOST_STATE_MACHINE = {
     "idle",
     "checking_permissions",
@@ -49144,6 +49144,16 @@ PULSE_COHOST_ERROR_CODES = {
     "LIVEKIT_PUBLISH_FAILED": ("Agora camera or microphone publish failed.", "publish_failed"),
     "NETWORK_TIMEOUT": ("Network timeout while preparing co-host access.", "network_failed"),
     "UNKNOWN_COHOST_ERROR": ("Co-host request could not be completed.", "unavailable_with_reason"),
+    # Multi-guest stage codes. Distinct from GUEST_LIMIT_REACHED because these
+    # report the real server-owned ceiling rather than a client's guess.
+    "STAGE_FULL": ("The stage is full.", "stage_capacity_check"),
+    "MULTI_GUEST_DISABLED": ("Multiple guests are not enabled for this Live.", "checking_live_availability"),
+    "REQUEST_RATE_LIMITED": ("Wait a moment before asking to join again.", "rate_limited"),
+    "INVITE_NOT_FOUND": ("This invite is no longer available.", "invite_lookup"),
+    "INVITE_EXPIRED": ("This invite expired.", "invite_expired"),
+    "INVITE_ALREADY_ANSWERED": ("This invite was already answered.", "invite_answered"),
+    "INVITE_TARGET_INVALID": ("That account cannot be invited to this Live.", "invite_target_validation"),
+    "ALREADY_ON_STAGE": ("That person is already on stage.", "invite_target_validation"),
 }
 
 
@@ -49189,6 +49199,13 @@ def pulse_live_guest_request_payload(row):
         "mic_ready": bool(item.get("mic_ready")),
         "network_quality": clean_html(item.get("network_quality") or "unknown"),
         "request_message": clean_html(item.get("request_message") or ""),
+        # Stage rows created by a host invite carry a stable id so a client that
+        # receives the same invite over push, realtime and polling shows one
+        # prompt rather than three.
+        "origin": clean_html(item.get("origin") or live_participants.ORIGIN_REQUEST)[:16],
+        "invite_id": clean_html(item.get("invite_id") or "")[:64],
+        "invited_by": int(item.get("invited_by") or 0),
+        "expires_at": item.get("expires_at") or "",
         "created_at": created,
         "updated_at": item.get("updated_at") or created,
     }
@@ -49196,16 +49213,25 @@ def pulse_live_guest_request_payload(row):
 
 def pulse_live_guest_payload(row):
     item = dict(row or {})
-    guest_role = clean_html(item.get("guest_role") or item.get("role") or "cohost")[:40]
-    if guest_role in {"co-host", "co_host"}:
-        guest_role = "cohost"
+    guest_role = live_participants.normalize_role(item.get("guest_role") or item.get("role") or "cohost")
+    if guest_role == live_participants.ROLE_AUDIENCE:
+        # A row in the guest table is on stage by definition. An unrecognised
+        # stored role degrades to plain guest rather than to audience, which
+        # would otherwise strip publishing rights from a legitimate guest.
+        guest_role = live_participants.ROLE_GUEST
     return {
         "id": int(item.get("id") or 0),
         "live_id": int(item.get("live_id") or 0),
         "user_id": int(item.get("user_id") or 0),
         "request_id": int(item.get("request_id") or 0),
         "role": guest_role,
-        "role_label": "Co-host" if guest_role == "cohost" else "Guest",
+        "role_label": live_participants.role_label(guest_role),
+        # The Agora uid every client needs in order to know whose remote stream
+        # it is looking at. Without this the app has no choice but to guess
+        # identity from arrival order, which is wrong the moment a second guest
+        # joins or the host reconnects after one.
+        "rtc_uid": live_participants.safe_rtc_uid(item.get("user_id")),
+        "permissions": live_participants.role_permissions(guest_role),
         "display_name": clean_html(item.get("display_name") or item.get("username") or "Guest"),
         "avatar_url": clean_html(item.get("avatar_url") or ""),
         "status": clean_html(item.get("status") or "active"),
@@ -49240,11 +49266,11 @@ def pulse_live_latest_guest_request(cur, live_id, user_id):
 
 def pulse_live_active_guest(cur, live_id, user_id):
     cur.execute(
-        """
+        f"""
         SELECT g.*, COALESCE(u.display_name,u.username,'Guest') AS display_name, COALESCE(u.avatar_url,'') AS avatar_url
         FROM pulse_live_guests g
         LEFT JOIN users u ON u.user_id=g.user_id
-        WHERE g.live_id=? AND g.user_id=? AND g.status IN ('active','accepted','joining','joined','publishing','live')
+        WHERE g.live_id=? AND g.user_id=? AND g.status IN ({live_participants.guest_status_sql_list()})
         ORDER BY g.id DESC
         LIMIT 1
         """,
@@ -49254,18 +49280,59 @@ def pulse_live_active_guest(cur, live_id, user_id):
 
 
 def pulse_live_active_guests(cur, live_id):
+    # The stage ceiling is server-owned rather than a literal buried in this
+    # query, so it can be configured per deployment and reported honestly to the
+    # client instead of being discovered through a failed join.
     cur.execute(
-        """
+        f"""
         SELECT g.*, COALESCE(u.display_name,u.username,'Guest') AS display_name, COALESCE(u.avatar_url,'') AS avatar_url
         FROM pulse_live_guests g
         LEFT JOIN users u ON u.user_id=g.user_id
-        WHERE g.live_id=? AND g.status IN ('active','accepted','joining','joined','publishing','live')
+        WHERE g.live_id=? AND g.status IN ({live_participants.guest_status_sql_list()})
         ORDER BY COALESCE(g.layout_position,0), g.id
-        LIMIT 12
+        LIMIT ?
         """,
-        (int(live_id or 0),),
+        (int(live_id or 0), live_participants.max_guests()),
     )
     return [pulse_live_guest_payload(row) for row in cur.fetchall()]
+
+
+#: Stage 29. The presence statuses that count as "someone is watching this
+#: Live". Deliberately a module constant rather than a literal repeated in each
+#: query: the three call sites that used to spell this out by hand were one
+#: careless edit away from disagreeing, and a viewer count that changes
+#: depending on which endpoint the client happened to poll reads to a host as
+#: their audience walking out.
+PULSE_LIVE_PRESENT_STATUSES = ("watching", "hosting")
+
+
+def pulse_live_viewer_count(cur, live_id):
+    """The number of people present at a Live. One rule, one place.
+
+    The property that matters for multi-guest: this counts *presence*, not
+    audience membership. A viewer who is promoted onto the stage keeps their
+    ``pulse_live_viewers`` row exactly as it was — going on stage is a change of
+    role, not a departure — so the count does not dip when a guest joins and
+    does not jump when they leave. A host watching their own viewer number fall
+    every time they bring someone up would reasonably conclude that adding
+    guests costs them their audience.
+
+    It also counts each *person* once, which is a property of how rows are
+    written rather than of this query: every presence write updates the caller's
+    existing row and only inserts when that update matches nothing, so a second
+    device or a reconnect cannot add a second head to the count. The counting is
+    left as a plain ``COUNT(*)`` on purpose — a ``COUNT(DISTINCT COALESCE(...))``
+    over the mixed ``user_id``/``visitor_id`` pair would defend the same property
+    a second time, and would do it by comparing an integer column with a text one
+    in a query that has to run on both SQLite and PostgreSQL.
+    """
+    placeholders = ",".join("?" for _ in PULSE_LIVE_PRESENT_STATUSES)
+    cur.execute(
+        f"SELECT COUNT(*) AS total FROM pulse_live_viewers "
+        f"WHERE live_id=? AND status IN ({placeholders})",
+        (int(live_id or 0), *PULSE_LIVE_PRESENT_STATUSES),
+    )
+    return int(dict(cur.fetchone() or {}).get("total") or 0)
 
 
 def pulse_live_pending_guest_requests(cur, live_id):
@@ -49276,11 +49343,114 @@ def pulse_live_pending_guest_requests(cur, live_id):
         LEFT JOIN users u ON u.user_id=r.user_id
         WHERE r.live_id=? AND r.status='pending'
         ORDER BY r.created_at ASC, r.id ASC
-        LIMIT 30
+        LIMIT ?
         """,
-        (int(live_id or 0),),
+        (int(live_id or 0), live_participants.LIVE_MAX_PENDING_REQUESTS),
     )
     return [pulse_live_guest_request_payload(row) for row in cur.fetchall()]
+
+
+def pulse_live_stage_snapshot(cur, live_id, guests=None):
+    """Capacity + flag snapshot so a client never hardcodes the stage limit.
+
+    Returned alongside the roster wherever guests are sent, which lets the UI
+    say "stage full, 12 of 12" before anyone requests a slot rather than after
+    the server refuses one.
+    """
+
+    roster = guests if guests is not None else pulse_live_active_guests(cur, live_id)
+    snapshot = live_participants.stage_capacity(len(roster))
+    snapshot.update(live_participants.live_feature_flags())
+    return snapshot
+
+
+def pulse_live_request_cooldown_remaining(latest_request, now_iso):
+    """Seconds a viewer must still wait before asking to join again.
+
+    Only closed attempts start a cooldown. A pending request is handled by the
+    duplicate check above, and an accepted one is not an attempt at all — this
+    exists purely to stop a declined viewer from re-asking in a tight loop.
+    """
+
+    row = dict(latest_request or {})
+    status = str(row.get("status") or "").lower()
+    if status not in {"denied", "declined", "cancelled", "expired"}:
+        return 0
+    stamp = str(row.get("updated_at") or row.get("created_at") or "").strip()
+    if not stamp:
+        return 0
+    try:
+        last = datetime.fromisoformat(stamp)
+        current = datetime.fromisoformat(str(now_iso))
+    except (TypeError, ValueError):
+        # An unreadable timestamp must not lock a viewer out of a Live.
+        return 0
+    elapsed = (current - last).total_seconds()
+    if elapsed < 0:
+        return 0
+    remaining = live_participants.LIVE_REQUEST_COOLDOWN_SECONDS - elapsed
+    return int(remaining) + 1 if remaining > 0 else 0
+
+
+def pulse_live_promote_guest_row(cur, live, *, target_user_id, request_id, actor_user_id, now, trace_id="", role=None):
+    """Put an approved participant on stage. The single writer of guest rows.
+
+    Both routes onto the stage end here — the host approving an audience request
+    and a viewer accepting a host invite — so the two can never drift into
+    granting different permissions or different roles for the same seat.
+
+    Returns ``(guest_id, guest_payload, identity, room_name)``. Does not commit;
+    the caller owns the transaction.
+    """
+
+    live = dict(live or {})
+    live_id = int(live.get("id") or 0)
+    target_user_id = int(target_user_id or 0)
+    # Stage 22. Coming on stage makes someone a guest. Co-host is a moderation
+    # role and therefore a deliberate promotion, never a default — the previous
+    # default of COHOST meant every approved viewer was stored as a co-host, so
+    # the moment the role table became load-bearing every guest on stage would
+    # have been able to mute and remove every other guest.
+    guest_role = live_participants.normalize_role(role or live_participants.ROLE_GUEST)
+    if guest_role not in {live_participants.ROLE_COHOST, live_participants.ROLE_GUEST}:
+        # Nothing on this path may mint a host. Promotion to host is a separate,
+        # deliberate act; an approval must never be able to hand over the Live.
+        guest_role = live_participants.ROLE_GUEST
+    room_name = clean_html(live.get("webrtc_room_id") or f"pulse-live-{live_id}")[:120]
+    identity = f"pulse-live-guest-{live_id}-{target_user_id}-{int(request_id or 0)}"
+    # A returning guest must not leave a second stale row behind, or the roster
+    # would count one person twice and consume two stage slots.
+    cur.execute(
+        f"UPDATE pulse_live_guests SET status='removed', removed_at=?, removed_by=?, updated_at=? WHERE live_id=? AND user_id=? AND status IN ({live_participants.guest_status_sql_list()})",
+        (now, int(actor_user_id or 0), now, live_id, target_user_id),
+    )
+    cur.execute(
+        """
+        INSERT INTO pulse_live_guests
+            (live_id, user_id, request_id, status, guest_role, livekit_identity, livekit_room, audio_muted, video_enabled, layout_position, joined_at, created_at, updated_at, permissions_json, metadata_json)
+        VALUES (?, ?, ?, 'accepted', ?, ?, ?, 0, 1, 0, ?, ?, ?, ?, ?)
+        """,
+        (
+            live_id,
+            target_user_id,
+            int(request_id or 0),
+            guest_role,
+            identity,
+            room_name,
+            None,
+            now,
+            now,
+            json.dumps({"can_publish_audio": True, "can_publish_video": True, "can_share_screen": False}, default=str),
+            json.dumps({"approved_by": int(actor_user_id or 0), "request_id": int(request_id or 0), "role": guest_role, "trace_id": trace_id}, default=str),
+        ),
+    )
+    guest_id = safe_int(cur.lastrowid, 0)
+    guest = pulse_live_active_guest(cur, live_id, target_user_id)
+    if not guest_id and guest:
+        # Postgres drivers do not populate lastrowid; recover from the row this
+        # transaction just wrote rather than failing an otherwise good approval.
+        guest_id = safe_int(guest.get("id") or guest.get("guest_id"), 0)
+    return guest_id, guest, identity, room_name
 
 
 def pulse_live_user_is_blocked(cur, live_id, user_id):
@@ -49796,13 +49966,35 @@ def api_pulse_live_agora_token(live_id):
     if requested_role in {"publisher", "host", "creator"} and not is_host:
         conn.close()
         return pulse_live_cohost_error("NOT_AUTHORIZED", status=403, message="Only the live host can publish this broadcast.", trace_id=trace_id, live_id=live_id, viewer_user_id=user_id, host_user_id=host_user_id)
+    if is_guest_request and not live_participants.multi_guest_enabled():
+        # Stage 40. The flag has to be a kill switch, not merely a closed door.
+        # Turning it off used to stop new requests and new invites while leaving
+        # every guest already on stage able to renew a publisher token forever —
+        # so the one control an operator would reach for during an incident did
+        # not actually take anybody off the air. Refusing the mint here is what
+        # makes the flag terminate an in-flight multi-guest Live: the guest's
+        # current token expires within its TTL and cannot be replaced. The host
+        # branch below is untouched, so a single-host Live is unaffected.
+        conn.close()
+        return pulse_live_cohost_error("MULTI_GUEST_DISABLED", status=409, trace_id=trace_id, live_id=live_id, viewer_user_id=user_id, host_user_id=host_user_id)
     if is_guest_request and not guest:
         conn.close()
         return pulse_live_cohost_error("TOKEN_MISSING_PUBLISH_PERMISSION", status=403, trace_id=trace_id, live_id=live_id, viewer_user_id=user_id, host_user_id=host_user_id)
     if is_guest_request and not pulse_live_session_accepts_guest_requests(live):
         conn.close()
         return pulse_live_cohost_error("LIVE_ENDED", status=409, trace_id=trace_id, live_id=live_id, viewer_user_id=user_id, host_user_id=host_user_id)
-    token_role = "cohost" if is_guest_request else "host" if is_host and requested_role in {"publisher", "host", "creator"} else "viewer"
+    # The role is read off the stored guest row, never off the request body. A
+    # client asking for "cohost" gets co-host authority only if the host already
+    # granted it; otherwise they get the plain guest role their slot carries.
+    # This is the difference between a permission and a request for one.
+    if is_guest_request:
+        token_role = live_participants.normalize_role(guest.get("role") or live_participants.ROLE_GUEST)
+        if token_role not in {live_participants.ROLE_COHOST, live_participants.ROLE_GUEST}:
+            token_role = live_participants.ROLE_GUEST
+    elif is_host and requested_role in {"publisher", "host", "creator"}:
+        token_role = live_participants.ROLE_HOST
+    else:
+        token_role = live_participants.ROLE_AUDIENCE
     room_name = clean_html(live.get("webrtc_room_id") or f"pulse-live-{live_id}")[:120]
     from services import pulsesoc_communications_engine as call_engine
     token = call_engine.generate_agora_live_token(
@@ -50366,8 +50558,11 @@ def api_pulse_live_state(live_id):
     """, (live_id,))
     messages = [dict(row) for row in cur.fetchall()]
     messages.reverse()
-    cur.execute("SELECT COUNT(*) AS total FROM pulse_live_viewers WHERE live_id=? AND status IN ('watching','hosting')", (live_id,))
-    viewer_count = int(dict(cur.fetchone() or {}).get("total") or live.get("viewer_count") or 0)
+    # Stage 29. The stored `viewer_count` is a denormalised cache and was used
+    # here as a fallback; it is deliberately no longer consulted. Falling back to
+    # it meant an empty presence table reported the last number the session ever
+    # saw, so a Live nobody was watching kept displaying its peak audience.
+    viewer_count = pulse_live_viewer_count(cur, live_id)
     cur.execute("SELECT reaction_type FROM pulse_live_reactions WHERE live_id=? ORDER BY id DESC LIMIT 24", (live_id,))
     reactions = [dict(row) for row in cur.fetchall()]
     is_host = pulse_live_is_host(live, user) or bool(admin_current_user())
@@ -50414,11 +50609,15 @@ def api_pulse_live_state(live_id):
         "guest": pulse_live_guest_payload(viewer_guest) if viewer_guest else None,
         "guests": guests,
         "guest_count": len(guests),
+        # Capacity and flags travel with the roster so the client can say
+        # "stage full, 12 of 12" before anyone asks for a slot, instead of
+        # discovering the limit from a rejected request.
+        "stage": pulse_live_stage_snapshot(None, live_id, guests=guests),
         "cohost": {
             "enabled": accepting_guests,
             "pending_count": len(join_requests),
             "active_count": len(guests),
-            "max_active": 12,
+            "max_active": live_participants.max_guests(),
             "room": live.get("webrtc_room_id") or "",
             "agora_configured": bool(call_engine.agora_config_status().get("configured")),
         },
@@ -50497,8 +50696,7 @@ def api_pulse_live_join(live_id):
     cur.execute("UPDATE pulse_live_viewers SET status='watching', last_seen_at=? WHERE live_id=? AND user_id=?", (now, live_id, user["user_id"]))
     if not cur.rowcount:
         cur.execute("INSERT INTO pulse_live_viewers (live_id, user_id, visitor_id, status, joined_at, last_seen_at, device_json) VALUES (?, ?, ?, 'watching', ?, ?, ?)", (live_id, user["user_id"], visitor, now, now, json.dumps({"path": request.path}, default=str)))
-    cur.execute("SELECT COUNT(*) AS total FROM pulse_live_viewers WHERE live_id=? AND status IN ('watching','hosting')", (live_id,))
-    viewers = int(dict(cur.fetchone() or {}).get("total") or 0)
+    viewers = pulse_live_viewer_count(cur, live_id)
     cur.execute("UPDATE pulse_live_sessions SET viewer_count=?, updated_at=? WHERE id=?", (viewers, now, live_id))
     feed_post_id = int(live.get("feed_post_id") or 0)
     if feed_post_id:
@@ -50607,6 +50805,12 @@ def api_pulse_live_join_request(live_id):
         if pulse_live_is_host(live, user):
             conn.close()
             return pulse_live_cohost_error("NOT_AUTHORIZED", status=409, message="You are already hosting this Live.", step="request_creation", trace_id=trace_id, live_id=live_id, viewer_user_id=user.get("user_id"), host_user_id=live.get("user_id"))
+        if not live_participants.guest_requests_enabled():
+            # Deployment-level switch. With it off a host can still run an
+            # invite-only stage; only the audience-pull direction is closed.
+            conn.commit()
+            conn.close()
+            return pulse_live_cohost_error("COHOST_DISABLED", status=409, message="Requests to join are not enabled right now.", step="request_creation", trace_id=trace_id, live_id=live_id, viewer_user_id=user.get("user_id"), host_user_id=live.get("user_id"))
         if not pulse_live_session_accepts_guest_requests(live):
             conn.commit()
             conn.close()
@@ -50650,6 +50854,22 @@ def api_pulse_live_join_request(live_id):
         current_step = "duplicate_check"
         latest = pulse_live_latest_guest_request(cur, live_id, user["user_id"])
         pulse_live_cohost_step_log(trace_id, "duplicate_checked", live_id=live_id, viewer_user_id=user["user_id"], payload={"existing_request_id": int((latest or {}).get("id") or 0), "existing_status": (latest or {}).get("status") or "none"})
+        current_step = "stage_capacity_check"
+        stage_snapshot = pulse_live_stage_snapshot(cur, live_id)
+        if stage_snapshot.get("stage_full"):
+            # Refused here rather than at approval time, so the viewer is told
+            # the real reason and the host's backstage panel is not filled with
+            # requests that could never have been granted.
+            conn.commit(); conn.close()
+            return pulse_live_cohost_error("STAGE_FULL", status=409, message=f"The stage is full ({stage_snapshot.get('guests_active')} of {stage_snapshot.get('max_guests')} guests).", step="stage_capacity_check", trace_id=trace_id, live_id=live_id, viewer_user_id=user.get("user_id"), host_user_id=host_user_id)
+        current_step = "rate_limit_check"
+        # A viewer who was just declined must not be able to re-ask in a loop and
+        # bury the host's panel mid-broadcast.
+        cooldown_remaining = pulse_live_request_cooldown_remaining(latest, now)
+        if cooldown_remaining > 0:
+            conn.commit(); conn.close()
+            return pulse_live_cohost_error("REQUEST_RATE_LIMITED", status=429, message=f"Wait {cooldown_remaining}s before asking to join again.", step="rate_limited", trace_id=trace_id, live_id=live_id, viewer_user_id=user.get("user_id"), host_user_id=host_user_id)
+        current_step = "duplicate_check"
         if latest and latest.get("status") == "pending":
             pulse_live_cohost_trace(cur, live_id=live_id, viewer_user_id=user["user_id"], host_user_id=int(live.get("user_id") or 0), request_id=int(latest.get("id") or 0), step="cohost_waiting_for_host", trace_id=trace_id, post_id=int(live.get("feed_post_id") or 0))
             conn.commit()
@@ -51062,8 +51282,15 @@ def api_pulse_live_join_requests(live_id):
         return pulse_live_cohost_error("NOT_AUTHORIZED", status=403, message="Only the live host can manage join requests.", live_id=live_id, viewer_user_id=user.get("user_id"), host_user_id=live.get("user_id"))
     requests = pulse_live_pending_guest_requests(cur, live_id)
     guests = pulse_live_active_guests(cur, live_id)
+    # Stages 5 and 40. This is the host's backstage panel — the one screen that
+    # has to say "stage full, 12 of 12" *before* an approval is refused rather
+    # than after. It was the only place guests were sent without the capacity
+    # and flag snapshot beside them, which left the panel with nothing to read
+    # but the length of the array it was given and a constant it would have had
+    # to invent locally.
+    stage = pulse_live_stage_snapshot(cur, live_id, guests=guests)
     conn.close()
-    return jsonify({"ok": True, "requests": requests, "guests": guests})
+    return jsonify({"ok": True, "requests": requests, "guests": guests, "stage": stage})
 
 
 @webhook_app.route("/api/pulse/live/<int:live_id>/join-requests/<int:request_id>/<action>", methods=["POST"])
@@ -51155,9 +51382,25 @@ def api_pulse_live_join_request_action(live_id, request_id, action):
             )
             conn.commit(); conn.close()
             return jsonify({"ok": True, "status": "denied", "step": "request_denied", "error_code": "REQUEST_DENIED", "trace_id": trace_id, "request_id": request_id, "message": "Join request denied."})
+        if not live_participants.multi_guest_enabled():
+            # Stage 40. A request that was created while the flag was on must not
+            # still be approvable after it is turned off. The deny branch above is
+            # deliberately left reachable, so an operator who closes multi-guest
+            # mid-broadcast can still clear the backstage queue honestly instead
+            # of leaving viewers waiting on a request nobody can answer.
+            conn.close()
+            return pulse_live_cohost_error("MULTI_GUEST_DISABLED", status=409, trace_id=trace_id, live_id=live_id, viewer_user_id=target_user_id, host_user_id=live.get("user_id"), request_id=request_id)
         if not pulse_live_session_accepts_guest_requests(live):
             conn.close()
             return pulse_live_cohost_error("HOST_NOT_ACCEPTING_GUESTS", status=409, message="This Live is no longer accepting guests.", trace_id=trace_id, live_id=live_id, viewer_user_id=target_user_id, host_user_id=live.get("user_id"), request_id=request_id)
+        current_step = "stage_capacity_check"
+        # The ceiling is enforced here rather than at RTC join, so an approved
+        # guest is never told yes by the host and then refused by the media
+        # layer in front of the audience.
+        stage_before = pulse_live_stage_snapshot(cur, live_id)
+        if stage_before.get("stage_full") and not pulse_live_active_guest(cur, live_id, target_user_id):
+            conn.close()
+            return pulse_live_cohost_error("STAGE_FULL", status=409, message=f"The stage is full ({stage_before.get('guests_active')} of {stage_before.get('max_guests')} guests).", step="stage_capacity_check", trace_id=trace_id, live_id=live_id, viewer_user_id=target_user_id, host_user_id=live.get("user_id"), request_id=request_id)
         room_name = clean_html(live.get("webrtc_room_id") or f"pulse-live-{live_id}")[:120]
         identity = f"pulse-live-guest-{int(live_id)}-{target_user_id}-{request_id}"
         pulse_live_cohost_step_log(trace_id, "cohost_identity_generated", live_id=live_id, viewer_user_id=target_user_id, payload={"stage_number": 12, "identity": identity, "room": room_name, "request_id": request_id})
@@ -51169,36 +51412,17 @@ def api_pulse_live_join_request_action(live_id, request_id, action):
         if cur.rowcount != 1:
             conn.rollback(); conn.close()
             return pulse_live_cohost_error("UNKNOWN_COHOST_ERROR", status=409, message="Join request was already handled.", trace_id=trace_id, live_id=live_id, viewer_user_id=target_user_id, host_user_id=live.get("user_id"), request_id=request_id)
-        current_step = "active_guest_revocation"
-        cur.execute(
-            "UPDATE pulse_live_guests SET status='removed', removed_at=?, removed_by=?, updated_at=? WHERE live_id=? AND user_id=? AND status IN ('active','accepted','joining','joined','publishing','live')",
-            (now, user["user_id"], now, live_id, target_user_id),
-        )
         current_step = "guest_permission_insert"
-        cur.execute(
-            """
-            INSERT INTO pulse_live_guests
-                (live_id, user_id, request_id, status, guest_role, livekit_identity, livekit_room, audio_muted, video_enabled, layout_position, joined_at, created_at, updated_at, permissions_json, metadata_json)
-            VALUES (?, ?, ?, 'accepted', 'cohost', ?, ?, 0, 1, 0, ?, ?, ?, ?, ?)
-            """,
-            (
-                live_id,
-                target_user_id,
-                request_id,
-                identity,
-                room_name,
-                None,
-                now,
-                now,
-                json.dumps({"can_publish_audio": True, "can_publish_video": True, "can_share_screen": False}, default=str),
-                json.dumps({"approved_by": user["user_id"], "request_id": request_id, "role": "cohost", "trace_id": trace_id}, default=str),
-            ),
+        guest_id, guest, identity, room_name = pulse_live_promote_guest_row(
+            cur,
+            live,
+            target_user_id=target_user_id,
+            request_id=request_id,
+            actor_user_id=user["user_id"],
+            now=now,
+            trace_id=trace_id,
+            role=live_participants.ROLE_COHOST,
         )
-        guest_id = safe_int(cur.lastrowid, 0)
-        guest = pulse_live_active_guest(cur, live_id, target_user_id)
-        if not guest_id and guest:
-            # Same Postgres lastrowid recovery as the request insert above.
-            guest_id = safe_int(guest.get("id") or guest.get("guest_id"), 0)
         current_step = "request_acceptance_commit"
         conn.commit()
         pulse_live_cohost_step_log(trace_id, "cohost_host_accepted", live_id=live_id, viewer_user_id=target_user_id, payload={"stage_number": 11, "request_id": request_id, "guest_id": guest_id, "state": "accepted"})
@@ -51282,6 +51506,482 @@ def api_pulse_live_join_request_cancel(live_id, request_id):
     return jsonify({"ok": True, "status": "cancelled", "step": "request_cancelled", "trace_id": trace_id, "request_id": request_id, "message": "Join request cancelled."})
 
 
+# ---------------------------------------------------------------------------
+# Host-initiated invites
+# ---------------------------------------------------------------------------
+#
+# The audience-pull path above (request -> host approves) already existed. This
+# is the push direction: the host offers a seat and the target accepts. The two
+# share one table and one promotion helper, so a stage seat means the same thing
+# whichever way it was obtained.
+#
+# Consent runs the opposite way here. A viewer who requested has already opted
+# in, so host approval puts them straight on stage. An invited viewer has not,
+# so the invite only creates an offer — nothing touches their camera or their
+# microphone until they answer.
+
+
+def pulse_live_invite_expired(row, now_dt=None):
+    """Whether an invite row has aged out. Time is checked, never trusted from the client."""
+
+    expires_at = str((row or {}).get("expires_at") or "").strip()
+    if not expires_at:
+        return False
+    try:
+        expiry = datetime.fromisoformat(expires_at)
+    except (TypeError, ValueError):
+        # An unparseable expiry is treated as expired rather than as eternal.
+        return True
+    return (now_dt or datetime.utcnow()) >= expiry
+
+
+def pulse_live_invite_payload(row):
+    """Invite as the client sees it, including the stable id used for dedup."""
+
+    item = dict(row or {})
+    request_id = int(item.get("id") or 0)
+    live_id = int(item.get("live_id") or 0)
+    payload = pulse_live_guest_request_payload(item)
+    payload.update({
+        "invite_id": clean_html(item.get("invite_id") or live_participants.build_invite_id(live_id, request_id))[:64],
+        "request_id": request_id,
+        "origin": live_participants.ORIGIN_INVITE,
+        "invited_by": int(item.get("invited_by") or item.get("host_user_id") or 0),
+        "inviter_name": clean_html(item.get("inviter_name") or "")[:120],
+        "expires_at": item.get("expires_at") or "",
+        "expired": pulse_live_invite_expired(item),
+        "role": live_participants.normalize_role(item.get("requested_role") or live_participants.ROLE_COHOST),
+    })
+    return payload
+
+
+def pulse_live_load_invite(cur, live_id, request_id):
+    cur.execute(
+        """
+        SELECT r.*, COALESCE(u.display_name,u.username,'Guest') AS display_name, COALESCE(u.avatar_url,'') AS avatar_url,
+               COALESCE(h.display_name,h.username,'Host') AS inviter_name
+        FROM pulse_live_guest_requests r
+        LEFT JOIN users u ON u.user_id=r.user_id
+        LEFT JOIN users h ON h.user_id=r.invited_by
+        WHERE r.id=? AND r.live_id=? LIMIT 1
+        """,
+        (int(request_id or 0), int(live_id or 0)),
+    )
+    return dict(cur.fetchone() or {})
+
+
+def pulse_live_can_invite(cur, live, user):
+    """Who may issue an invite. Server-authoritative; the client never decides this.
+
+    Host always may. A co-host may only if their stored role says so — which is
+    the whole point of co-host being a real role rather than a label on a guest.
+    """
+
+    if pulse_live_is_host(live, user) or admin_current_user():
+        return True, live_participants.ROLE_HOST
+    guest = pulse_live_active_guest(cur, int((live or {}).get("id") or 0), int((user or {}).get("user_id") or 0))
+    if not guest:
+        return False, ""
+    role = live_participants.normalize_role(guest.get("role") or guest.get("guest_role"))
+    if live_participants.role_permissions(role).get("invite_guests"):
+        return True, role
+    return False, role
+
+
+@webhook_app.route("/api/pulse/live/<int:live_id>/invite", methods=["POST"])
+@webhook_app.route("/api/pulse/live/<int:live_id>/invites", methods=["POST"])
+def api_pulse_live_invite_create(live_id):
+    raw_payload = request.get_json(silent=True)
+    payload = raw_payload if isinstance(raw_payload, dict) else {}
+    trace_id = clean_html(payload.get("trace_id") or secrets.token_hex(6))[:80]
+    pulse_live_cohost_step_log(trace_id, "invite_entry_received", live_id=live_id, payload={"path": request.path, "payload": payload})
+    if raw_payload is not None and not isinstance(raw_payload, dict):
+        return pulse_live_cohost_error("INVALID_REQUEST_PAYLOAD", status=400, step="entry_validation", trace_id=trace_id, live_id=live_id)
+    allowed_fields = {"user_id", "userId", "target_user_id", "targetUserId", "role", "message", "trace_id"}
+    unknown_fields = sorted(str(key) for key in payload if str(key) not in allowed_fields)
+    if unknown_fields:
+        return pulse_live_cohost_error("INVALID_REQUEST_PAYLOAD", status=400, message=f"Unsupported invite fields: {', '.join(unknown_fields[:10])}.", step="entry_validation", trace_id=trace_id, live_id=live_id)
+    user = api_account_user()
+    if not user or not int(user.get("user_id") or 0):
+        return pulse_live_cohost_error("AUTH_FAILED", status=401, step="auth_validation", trace_id=trace_id, live_id=live_id)
+    target_user_id = safe_int(payload.get("user_id") or payload.get("userId") or payload.get("target_user_id") or payload.get("targetUserId"), 0)
+    if target_user_id <= 0:
+        return pulse_live_cohost_error("INVITE_TARGET_INVALID", status=400, message="An invite needs a target account.", step="invite_target_validation", trace_id=trace_id, live_id=live_id, viewer_user_id=user["user_id"])
+    if target_user_id == int(user["user_id"]):
+        return pulse_live_cohost_error("INVITE_TARGET_INVALID", status=400, message="You cannot invite yourself.", step="invite_target_validation", trace_id=trace_id, live_id=live_id, viewer_user_id=user["user_id"])
+    requested_role = live_participants.normalize_role(payload.get("role") or live_participants.ROLE_COHOST)
+    if requested_role not in {live_participants.ROLE_COHOST, live_participants.ROLE_GUEST}:
+        # An invite may seat someone; it may never hand over the Live.
+        requested_role = live_participants.ROLE_COHOST
+    invite_message = clean_html(payload.get("message") or "")[:280]
+    try:
+        init_db()
+    except Exception as exc:
+        return pulse_live_cohost_error("DB_CONNECTION_FAILED", status=503, step="db_connection", trace_id=trace_id, live_id=live_id, viewer_user_id=user["user_id"], debug_error=exc)
+    now_dt = datetime.utcnow()
+    now = now_dt.isoformat(timespec="seconds")
+    expires_at = (now_dt + timedelta(seconds=live_participants.LIVE_INVITE_TTL_SECONDS)).isoformat(timespec="seconds")
+    current_step = "db_connection"
+    conn = None
+    try:
+        conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+        current_step = "live_lookup"
+        cur.execute("SELECT * FROM pulse_live_sessions WHERE id=? LIMIT 1", (live_id,))
+        live = dict(cur.fetchone() or {})
+        if not live:
+            conn.close()
+            return pulse_live_cohost_error("LIVE_NOT_FOUND", status=404, step="live_lookup", trace_id=trace_id, live_id=live_id, viewer_user_id=user["user_id"])
+        host_user_id = int(live.get("user_id") or 0)
+        current_step = "permission_check"
+        if not live_participants.multi_guest_enabled():
+            conn.close()
+            return pulse_live_cohost_error("MULTI_GUEST_DISABLED", status=409, trace_id=trace_id, live_id=live_id, viewer_user_id=user["user_id"], host_user_id=host_user_id)
+        allowed, actor_role = pulse_live_can_invite(cur, live, user)
+        if not allowed:
+            conn.close()
+            return pulse_live_cohost_error("NOT_AUTHORIZED", status=403, message="Only the host or a co-host can invite guests.", step="permission_check", trace_id=trace_id, live_id=live_id, viewer_user_id=user["user_id"], host_user_id=host_user_id)
+        if pulse_live_cohost_live_status(live) == "ended":
+            conn.close()
+            return pulse_live_cohost_error("LIVE_ENDED", status=409, step="permission_check", trace_id=trace_id, live_id=live_id, viewer_user_id=user["user_id"], host_user_id=host_user_id)
+        current_step = "invite_target_validation"
+        cur.execute("SELECT user_id FROM users WHERE user_id=? LIMIT 1", (target_user_id,))
+        if not cur.fetchone():
+            conn.close()
+            return pulse_live_cohost_error("INVITE_TARGET_INVALID", status=404, message="That account no longer exists.", step="invite_target_validation", trace_id=trace_id, live_id=live_id, viewer_user_id=target_user_id, host_user_id=host_user_id)
+        if target_user_id == host_user_id:
+            conn.close()
+            return pulse_live_cohost_error("INVITE_TARGET_INVALID", status=409, message="The host is already on stage.", step="invite_target_validation", trace_id=trace_id, live_id=live_id, viewer_user_id=target_user_id, host_user_id=host_user_id)
+        # Moderation outranks the invite. A host who blocked someone, or who is
+        # blocked by them, must not be able to route around it through an invite.
+        if pulse_live_user_is_blocked(cur, live_id, target_user_id):
+            conn.close()
+            return pulse_live_cohost_error("BLOCKED_BY_HOST", status=403, step="invite_target_validation", trace_id=trace_id, live_id=live_id, viewer_user_id=target_user_id, host_user_id=host_user_id)
+        authorized, _reason = pulse_live_viewer_authorized(cur, live, target_user_id)
+        if not authorized:
+            conn.close()
+            return pulse_live_cohost_error("INVITE_TARGET_INVALID", status=403, message="That account cannot watch this Live, so it cannot be invited to it.", step="invite_target_validation", trace_id=trace_id, live_id=live_id, viewer_user_id=target_user_id, host_user_id=host_user_id)
+        if pulse_live_active_guest(cur, live_id, target_user_id):
+            conn.close()
+            return pulse_live_cohost_error("ALREADY_ON_STAGE", status=409, step="invite_target_validation", trace_id=trace_id, live_id=live_id, viewer_user_id=target_user_id, host_user_id=host_user_id)
+        current_step = "stage_capacity_check"
+        stage = pulse_live_stage_snapshot(cur, live_id)
+        if stage.get("stage_full"):
+            conn.close()
+            return pulse_live_cohost_error("STAGE_FULL", status=409, message=f"The stage is full ({stage.get('guests_active')} of {stage.get('max_guests')} guests).", step="stage_capacity_check", trace_id=trace_id, live_id=live_id, viewer_user_id=target_user_id, host_user_id=host_user_id)
+        current_step = "invite_dedup"
+        # Expire anything that aged out before deduplicating, or a dead invite
+        # would keep blocking a fresh one.
+        cur.execute(
+            "UPDATE pulse_live_guest_requests SET status='expired', updated_at=? WHERE live_id=? AND user_id=? AND status='invited' AND COALESCE(expires_at,'') < ?",
+            (now, live_id, target_user_id, now),
+        )
+        existing = pulse_live_latest_guest_request(cur, live_id, target_user_id)
+        if existing and existing.get("status") == "invited" and not pulse_live_invite_expired(existing, now_dt):
+            # Re-inviting someone who already has a live invite returns the same
+            # invite rather than creating a second one, so the target sees one
+            # prompt however many times the host taps.
+            conn.commit()
+            invite_row = pulse_live_load_invite(cur, live_id, int(existing.get("id") or 0))
+            conn.close()
+            return jsonify({"ok": True, "status": "invited", "state": "invited", "step": "invite_already_sent", "duplicate": True, "trace_id": trace_id, "invite": pulse_live_invite_payload(invite_row), "stage": stage, "message": "Invite already sent."})
+        if existing and existing.get("status") == "pending":
+            # They asked first. Honour the request rather than racing it with an
+            # invite: approve the pending request instead of creating a rival row.
+            conn.commit()
+            conn.close()
+            return jsonify({"ok": True, "status": "pending_request", "state": "pending_request", "step": "approve_existing_request", "trace_id": trace_id, "request": pulse_live_guest_request_payload(existing), "stage": stage, "message": "This viewer already asked to join. Approve their request."})
+        current_step = "invite_insert"
+        cur.execute(
+            """
+            INSERT INTO pulse_live_guest_requests
+                (live_id, user_id, host_user_id, status, requested_role, camera_ready, mic_ready, network_quality, request_message, connection_json, created_at, updated_at, expires_at, audit_json, invited_by, origin)
+            VALUES (?, ?, ?, 'invited', ?, 0, 0, 'unknown', ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                live_id,
+                target_user_id,
+                host_user_id,
+                requested_role,
+                invite_message,
+                json.dumps({"source": "host_invite"}, default=str),
+                now,
+                now,
+                expires_at,
+                json.dumps({"trace_id": trace_id, "source": "host_invite", "actor_role": actor_role}, default=str)[:2000],
+                int(user["user_id"]),
+                live_participants.ORIGIN_INVITE,
+            ),
+        )
+        request_id = safe_int(cur.lastrowid, 0)
+        if not request_id:
+            recovered = pulse_live_latest_guest_request(cur, live_id, target_user_id)
+            request_id = int((recovered or {}).get("id") or 0)
+        if not request_id:
+            conn.rollback(); conn.close()
+            return pulse_live_cohost_error("DB_INSERT_FAILED", status=500, step="invite_insert", trace_id=trace_id, live_id=live_id, viewer_user_id=target_user_id, host_user_id=host_user_id)
+        invite_id = live_participants.build_invite_id(live_id, request_id)
+        cur.execute("UPDATE pulse_live_guest_requests SET invite_id=? WHERE id=?", (invite_id, request_id))
+        conn.commit()
+        invite_row = pulse_live_load_invite(cur, live_id, request_id)
+        pulse_live_cohost_step_log(trace_id, "invite_created", live_id=live_id, viewer_user_id=target_user_id, payload={"invite_id": invite_id, "request_id": request_id, "role": requested_role, "actor_role": actor_role})
+        try:
+            pulse_live_audit(cur, live_id, user["user_id"], "live_invite_sent", target_user_id=target_user_id, metadata={"invite_id": invite_id, "request_id": request_id, "role": requested_role})
+            pulse_live_record_timeline_event(cur, "live_guest_invited", live_id=live_id, actor_user_id=user["user_id"], post_id=int(live.get("feed_post_id") or 0), payload={"invite_id": invite_id, "request_id": request_id, "target_user_id": target_user_id})
+            notify_user(
+                cur,
+                target_user_id,
+                "live_invite_received",
+                "Invited to join a Live",
+                f"{pulse_actor_display_name(user)} invited you on stage.",
+                pulse_live_watch_url(live_id),
+                actor_user_id=user["user_id"],
+                entity_type="live",
+                entity_id=str(live_id),
+                metadata={
+                    "event_type": "live_invite_received",
+                    "live_id": live_id,
+                    "invite_id": invite_id,
+                    "request_id": request_id,
+                    "expires_at": expires_at,
+                    "priority": "high",
+                    "mobile_deep_link": f"pulse://reels?live={live_id}&invite={invite_id}",
+                    "deep_link": pulse_live_watch_url(live_id),
+                },
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            logging.exception("PULSE_LIVE_INVITE_SIDE_EFFECT_FAILED trace_id=%s live_id=%s invite_id=%s", trace_id, live_id, invite_id)
+        conn.close()
+        try:
+            # The stable invite_id travels on the realtime event too, so a client
+            # that also got the push shows one prompt rather than two.
+            pulse_emit_event("live_guest_invited", {"live_id": live_id, "invite_id": invite_id, "request_id": request_id, "target_user_id": target_user_id, "host_user_id": host_user_id, "expires_at": expires_at, "trace_id": trace_id}, user["user_id"], int(live.get("feed_post_id") or 0))
+        except Exception:
+            logging.exception("PULSE_LIVE_INVITE_REALTIME_FAILED trace_id=%s live_id=%s invite_id=%s", trace_id, live_id, invite_id)
+        return jsonify({"ok": True, "status": "invited", "state": "invited", "step": "invite_sent", "duplicate": False, "trace_id": trace_id, "invite": pulse_live_invite_payload(invite_row), "stage": stage, "message": "Invite sent."})
+    except Exception as exc:
+        logging.exception("PULSE_LIVE_INVITE_FAILED live_id=%s target=%s step=%s error=%s", live_id, target_user_id, current_step, exc)
+        try:
+            if conn is not None:
+                conn.rollback(); conn.close()
+        except Exception:
+            pass
+        return pulse_live_cohost_error("REQUEST_PIPELINE_FAILED", status=500, step=current_step, trace_id=trace_id, live_id=live_id, viewer_user_id=target_user_id, debug_error=exc)
+
+
+@webhook_app.route("/api/pulse/live/<int:live_id>/invites/<invite_id>/<action>", methods=["POST"])
+def api_pulse_live_invite_action(live_id, invite_id, action):
+    action = clean_html(action or "")[:16].lower()
+    if action not in {"accept", "decline", "cancel"}:
+        return pulse_live_cohost_error("INVALID_REQUEST_PAYLOAD", status=400, message="Invite action must be accept, decline or cancel.", step="entry_validation", live_id=live_id)
+    payload = request.get_json(silent=True) or {}
+    trace_id = clean_html(payload.get("trace_id") or secrets.token_hex(6))[:80]
+    parsed = live_participants.parse_invite_id(invite_id)
+    if not parsed or parsed["live_id"] != int(live_id):
+        # A malformed or mismatched id never reaches a query.
+        return pulse_live_cohost_error("INVITE_NOT_FOUND", status=404, step="invite_lookup", trace_id=trace_id, live_id=live_id)
+    request_id = parsed["request_id"]
+    init_db()
+    user = api_account_user()
+    if not user or not int(user.get("user_id") or 0):
+        return pulse_live_cohost_error("AUTH_FAILED", status=401, step="auth_validation", trace_id=trace_id, live_id=live_id, request_id=request_id)
+    now_dt = datetime.utcnow()
+    now = now_dt.isoformat(timespec="seconds")
+    conn = None
+    current_step = "invite_lookup"
+    try:
+        conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+        cur.execute("SELECT * FROM pulse_live_sessions WHERE id=? LIMIT 1", (live_id,))
+        live = dict(cur.fetchone() or {})
+        if not live:
+            conn.close()
+            return pulse_live_cohost_error("LIVE_NOT_FOUND", status=404, step="live_lookup", trace_id=trace_id, live_id=live_id, request_id=request_id)
+        host_user_id = int(live.get("user_id") or 0)
+        invite = pulse_live_load_invite(cur, live_id, request_id)
+        if not invite or str(invite.get("origin") or "") != live_participants.ORIGIN_INVITE:
+            conn.close()
+            return pulse_live_cohost_error("INVITE_NOT_FOUND", status=404, step="invite_lookup", trace_id=trace_id, live_id=live_id, request_id=request_id)
+        target_user_id = int(invite.get("user_id") or 0)
+        actor_id = int(user["user_id"])
+        current_step = "invite_authorization"
+        if action in {"accept", "decline"}:
+            # Only the invited account may answer. This is the check that stops
+            # an audience member from talking their way onto the stage using
+            # someone else's invite id.
+            if actor_id != target_user_id:
+                conn.close()
+                return pulse_live_cohost_error("NOT_AUTHORIZED", status=403, message="This invite belongs to another account.", step="invite_authorization", trace_id=trace_id, live_id=live_id, viewer_user_id=actor_id, host_user_id=host_user_id, request_id=request_id)
+        else:
+            allowed, _actor_role = pulse_live_can_invite(cur, live, user)
+            if not allowed:
+                conn.close()
+                return pulse_live_cohost_error("NOT_AUTHORIZED", status=403, message="Only the host or a co-host can revoke an invite.", step="invite_authorization", trace_id=trace_id, live_id=live_id, viewer_user_id=actor_id, host_user_id=host_user_id, request_id=request_id)
+        current_step = "invite_state_check"
+        status = str(invite.get("status") or "").lower()
+        if status != live_participants.INVITE_STATUS_PENDING:
+            conn.close()
+            code = "INVITE_EXPIRED" if status == "expired" else "INVITE_ALREADY_ANSWERED"
+            return pulse_live_cohost_error(code, status=409, message=f"This invite is already {status or 'closed'}.", step="invite_answered", trace_id=trace_id, live_id=live_id, viewer_user_id=target_user_id, host_user_id=host_user_id, request_id=request_id)
+        if pulse_live_invite_expired(invite, now_dt):
+            cur.execute("UPDATE pulse_live_guest_requests SET status='expired', updated_at=? WHERE id=? AND status='invited'", (now, request_id))
+            conn.commit(); conn.close()
+            return pulse_live_cohost_error("INVITE_EXPIRED", status=409, step="invite_expired", trace_id=trace_id, live_id=live_id, viewer_user_id=target_user_id, host_user_id=host_user_id, request_id=request_id)
+        if action in {"decline", "cancel"}:
+            next_status = live_participants.INVITE_STATUS_DECLINED if action == "decline" else live_participants.INVITE_STATUS_CANCELLED
+            cur.execute(
+                "UPDATE pulse_live_guest_requests SET status=?, responded_at=?, updated_at=? WHERE id=? AND status='invited'",
+                (next_status, now, now, request_id),
+            )
+            if cur.rowcount != 1:
+                conn.rollback(); conn.close()
+                return pulse_live_cohost_error("INVITE_ALREADY_ANSWERED", status=409, trace_id=trace_id, live_id=live_id, viewer_user_id=target_user_id, host_user_id=host_user_id, request_id=request_id)
+            pulse_live_audit(cur, live_id, actor_id, f"live_invite_{next_status}", target_user_id=target_user_id, metadata={"invite_id": invite_id, "request_id": request_id})
+            conn.commit(); conn.close()
+            try:
+                pulse_emit_event(f"live_invite_{next_status}", {"live_id": live_id, "invite_id": invite_id, "request_id": request_id, "target_user_id": target_user_id, "host_user_id": host_user_id, "trace_id": trace_id}, actor_id, int(live.get("feed_post_id") or 0))
+            except Exception:
+                logging.exception("PULSE_LIVE_INVITE_ACTION_REALTIME_FAILED live_id=%s invite_id=%s action=%s", live_id, invite_id, action)
+            return jsonify({"ok": True, "status": next_status, "state": next_status, "step": f"invite_{next_status}", "trace_id": trace_id, "invite_id": invite_id, "request_id": request_id, "message": "Invite declined." if action == "decline" else "Invite revoked."})
+        current_step = "permission_check"
+        if not live_participants.multi_guest_enabled():
+            # Stage 40. Same reasoning as the request path: an invite issued
+            # before the flag was turned off must not still seat someone after.
+            # Decline and cancel stay reachable above, so both the target and the
+            # host can close the invite rather than being stuck holding it.
+            conn.close()
+            return pulse_live_cohost_error("MULTI_GUEST_DISABLED", status=409, trace_id=trace_id, live_id=live_id, viewer_user_id=target_user_id, host_user_id=host_user_id, request_id=request_id)
+        current_step = "stage_capacity_check"
+        # Capacity is re-checked at accept, not only at invite. Between the two
+        # moments other guests may have taken the remaining seats, and it is far
+        # better to say so here than to let someone start a camera and then be
+        # refused by the media layer on air.
+        stage = pulse_live_stage_snapshot(cur, live_id)
+        if stage.get("stage_full"):
+            conn.close()
+            return pulse_live_cohost_error("STAGE_FULL", status=409, message=f"The stage filled up ({stage.get('guests_active')} of {stage.get('max_guests')} guests).", step="stage_capacity_check", trace_id=trace_id, live_id=live_id, viewer_user_id=target_user_id, host_user_id=host_user_id, request_id=request_id)
+        if not pulse_live_session_accepts_guest_requests(live):
+            conn.close()
+            return pulse_live_cohost_error("HOST_NOT_ACCEPTING_GUESTS", status=409, trace_id=trace_id, live_id=live_id, viewer_user_id=target_user_id, host_user_id=host_user_id, request_id=request_id)
+        if pulse_live_user_is_blocked(cur, live_id, target_user_id):
+            conn.close()
+            return pulse_live_cohost_error("BLOCKED_BY_HOST", status=403, trace_id=trace_id, live_id=live_id, viewer_user_id=target_user_id, host_user_id=host_user_id, request_id=request_id)
+        current_step = "invite_acceptance_update"
+        cur.execute(
+            "UPDATE pulse_live_guest_requests SET status='accepted', responded_at=?, host_action_by=?, host_action_at=?, updated_at=? WHERE id=? AND status='invited'",
+            (now, int(invite.get("invited_by") or host_user_id), now, now, request_id),
+        )
+        if cur.rowcount != 1:
+            conn.rollback(); conn.close()
+            return pulse_live_cohost_error("INVITE_ALREADY_ANSWERED", status=409, trace_id=trace_id, live_id=live_id, viewer_user_id=target_user_id, host_user_id=host_user_id, request_id=request_id)
+        current_step = "guest_permission_insert"
+        guest_id, guest, identity, room_name = pulse_live_promote_guest_row(
+            cur,
+            live,
+            target_user_id=target_user_id,
+            request_id=request_id,
+            actor_user_id=int(invite.get("invited_by") or host_user_id),
+            now=now,
+            trace_id=trace_id,
+            role=invite.get("requested_role") or live_participants.ROLE_COHOST,
+        )
+        conn.commit()
+        # Recomputed after the seat is taken, so the caller is told the stage as
+        # it now stands rather than as it stood a moment before they joined it.
+        stage = pulse_live_stage_snapshot(cur, live_id)
+        pulse_live_cohost_step_log(trace_id, "invite_accepted", live_id=live_id, viewer_user_id=target_user_id, payload={"invite_id": invite_id, "request_id": request_id, "guest_id": guest_id, "identity": identity, "room": room_name, "stage": stage})
+        try:
+            pulse_live_audit(cur, live_id, target_user_id, "live_invite_accepted", target_user_id=target_user_id, metadata={"invite_id": invite_id, "request_id": request_id, "guest_id": guest_id})
+            pulse_live_record_timeline_event(cur, "live_guest_invite_accepted", live_id=live_id, actor_user_id=target_user_id, post_id=int(live.get("feed_post_id") or 0), payload={"invite_id": invite_id, "guest_id": guest_id})
+            cur.execute(
+                "INSERT INTO pulse_live_chat (live_id, user_id, body, message_type, moderation_status, pinned, metadata_json, created_at) VALUES (?, ?, ?, 'system', 'approved', 0, ?, ?)",
+                (live_id, target_user_id, f"{invite.get('display_name') or 'A guest'} joined the stage.", json.dumps({"kind": "guest_accepted", "invite_id": invite_id, "guest_id": guest_id}, default=str), now),
+            )
+            if host_user_id and host_user_id != target_user_id:
+                notify_user(
+                    cur,
+                    host_user_id,
+                    "live_invite_accepted",
+                    "Guest accepted",
+                    f"{invite.get('display_name') or 'Your guest'} is joining the stage.",
+                    f"/pulse/live/studio?live_id={live_id}&panel=backstage",
+                    actor_user_id=target_user_id,
+                    entity_type="live",
+                    entity_id=str(live_id),
+                    metadata={"event_type": "live_invite_accepted", "live_id": live_id, "invite_id": invite_id, "guest_id": guest_id, "priority": "high"},
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            logging.exception("PULSE_LIVE_INVITE_ACCEPT_SIDE_EFFECT_FAILED live_id=%s invite_id=%s", live_id, invite_id)
+        conn.close()
+        try:
+            pulse_emit_event("live_invite_accepted", {"live_id": live_id, "invite_id": invite_id, "request_id": request_id, "guest_id": guest_id, "target_user_id": target_user_id, "host_user_id": host_user_id, "trace_id": trace_id}, target_user_id, int(live.get("feed_post_id") or 0))
+        except Exception:
+            logging.exception("PULSE_LIVE_INVITE_ACCEPT_REALTIME_FAILED live_id=%s invite_id=%s", live_id, invite_id)
+        return jsonify({"ok": True, "status": "accepted", "state": "accepted", "step": "invite_accepted", "trace_id": trace_id, "invite_id": invite_id, "request_id": request_id, "guest": pulse_live_guest_payload(guest), "stage": stage, "message": "Invite accepted. Preparing your camera."})
+    except Exception as exc:
+        logging.exception("PULSE_LIVE_INVITE_ACTION_FAILED live_id=%s invite_id=%s action=%s step=%s error=%s", live_id, invite_id, action, current_step, exc)
+        try:
+            if conn is not None:
+                conn.rollback(); conn.close()
+        except Exception:
+            pass
+        return pulse_live_cohost_error("REQUEST_PIPELINE_FAILED", status=500, step=current_step, trace_id=trace_id, live_id=live_id, request_id=request_id, debug_error=exc)
+
+
+@webhook_app.route("/api/pulse/live/<int:live_id>/invites", methods=["GET"])
+def api_pulse_live_invites_list(live_id):
+    """Outstanding invites. The host sees all of them; a viewer sees only their own."""
+
+    init_db()
+    user = api_account_user()
+    if not user or not int(user.get("user_id") or 0):
+        return pulse_live_cohost_error("AUTH_FAILED", status=401, step="auth_validation", live_id=live_id)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    try:
+        cur.execute("SELECT * FROM pulse_live_sessions WHERE id=? LIMIT 1", (live_id,))
+        live = dict(cur.fetchone() or {})
+        if not live:
+            conn.close()
+            return pulse_live_cohost_error("LIVE_NOT_FOUND", status=404, live_id=live_id)
+        cur.execute(
+            "UPDATE pulse_live_guest_requests SET status='expired', updated_at=? WHERE live_id=? AND status='invited' AND COALESCE(expires_at,'') < ?",
+            (now, live_id, now),
+        )
+        allowed, _actor_role = pulse_live_can_invite(cur, live, user)
+        params = [live_id]
+        scope_sql = ""
+        if not allowed:
+            scope_sql = " AND r.user_id=?"
+            params.append(int(user["user_id"]))
+        cur.execute(
+            f"""
+            SELECT r.*, COALESCE(u.display_name,u.username,'Guest') AS display_name, COALESCE(u.avatar_url,'') AS avatar_url,
+                   COALESCE(h.display_name,h.username,'Host') AS inviter_name
+            FROM pulse_live_guest_requests r
+            LEFT JOIN users u ON u.user_id=r.user_id
+            LEFT JOIN users h ON h.user_id=r.invited_by
+            WHERE r.live_id=? AND r.status='invited'{scope_sql}
+            ORDER BY r.id DESC
+            LIMIT ?
+            """,
+            (*params, live_participants.LIVE_MAX_PENDING_REQUESTS),
+        )
+        invites = [pulse_live_invite_payload(row) for row in cur.fetchall()]
+        stage = pulse_live_stage_snapshot(cur, live_id)
+        conn.commit(); conn.close()
+        return jsonify({"ok": True, "invites": invites, "count": len(invites), "scope": "host" if allowed else "self", "stage": stage})
+    except Exception as exc:
+        logging.exception("PULSE_LIVE_INVITE_LIST_FAILED live_id=%s error=%s", live_id, exc)
+        try:
+            conn.close()
+        except Exception:
+            pass
+        return pulse_live_cohost_error("REQUEST_PIPELINE_FAILED", status=500, step="invite_list", live_id=live_id, debug_error=exc)
+
+
 @webhook_app.route("/api/pulse/live/<int:live_id>/guests/<int:guest_id>/<action>", methods=["POST"])
 def api_pulse_live_guest_action(live_id, guest_id, action):
     init_db()
@@ -51306,9 +52006,30 @@ def api_pulse_live_guest_action(live_id, guest_id, action):
             return api_error("Guest not found.", 404)
         is_host = pulse_live_is_host(live, user) or bool(admin_current_user())
         is_self_guest = int(guest.get("user_id") or 0) == int(user["user_id"] or 0)
-        if action in {"mute", "unmute", "remove"} and not is_host:
+        # Stage 22. Moderation authority comes from the role table in
+        # services/live_participants.py, not from an inline "is this the owner"
+        # test. The table is what the client reads to decide which buttons to
+        # draw, so if authorization here disagreed with it the product would
+        # offer a co-host a Remove button and then refuse the request — which a
+        # user reads as the feature being broken, not as a rule being enforced.
+        actor_guest = pulse_live_active_guest(cur, live_id, int(user["user_id"] or 0)) or {}
+        actor_role = live_participants.normalize_role(
+            live_participants.ROLE_HOST if is_host else (actor_guest.get("role") or actor_guest.get("guest_role"))
+        )
+        if action in {"mute", "unmute", "remove"} and not live_participants.can_moderate(actor_role):
             conn.close()
-            return api_error("Only the host can manage guests.", 403)
+            return api_error("Only the host or a co-host can manage guests.", 403)
+        # A co-host may run the room; they may not take it. The host's own media
+        # and seat are outside anyone else's authority, and this is the check
+        # that makes "co-host is not an alias for host" true at the server rather
+        # than only in the UI.
+        if (
+            action in {"mute", "unmute", "remove"}
+            and not is_host
+            and int(guest.get("user_id") or 0) == int(live.get("user_id") or 0)
+        ):
+            conn.close()
+            return api_error("The host cannot be muted or removed from their own broadcast.", 403)
         if action == "leave" and not is_self_guest:
             conn.close()
             return api_error("Only the guest can leave their guest slot.", 403)
@@ -109044,6 +109765,14 @@ def _init_db_impl():
         ("cancelled_at", "TEXT"),
         ("denied_reason", "TEXT"),
         ("audit_json", "TEXT"),
+        # Host-initiated invites share this table with audience requests so a
+        # viewer can never hold a pending request and a pending invite at once.
+        # origin records which direction the offer came from, because an invite
+        # carries no prior consent and must be confirmed before any camera runs.
+        ("invite_id", "TEXT"),
+        ("invited_by", "INTEGER DEFAULT 0"),
+        ("origin", "TEXT DEFAULT 'request'"),
+        ("responded_at", "TEXT"),
     ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_live_guests (
@@ -109413,6 +110142,7 @@ def _init_db_impl():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_viewers_live ON pulse_live_viewers(live_id, status)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_guest_requests_live_status ON pulse_live_guest_requests(live_id, status, created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_guest_requests_user ON pulse_live_guest_requests(live_id, user_id, status)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_guest_requests_invite ON pulse_live_guest_requests(invite_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_guests_live_status ON pulse_live_guests(live_id, status, updated_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_guests_user ON pulse_live_guests(live_id, user_id, status)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_audit_logs_live ON pulse_live_audit_logs(live_id, created_at)")
