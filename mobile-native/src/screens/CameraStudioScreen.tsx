@@ -13,6 +13,7 @@ import {
 import { createPost, listFeed, PulsePost } from "../api/feed";
 import { createReel, listReels, PulseReel } from "../api/reels";
 import { sendConversationMessage, uploadMessengerMedia } from "../api/messenger";
+import { mintClientMessageId } from "../api/messengerOrdering";
 import { uploadProfileAvatar, uploadProfileCover } from "../api/profile";
 import { createStatus, StatusVisibility } from "../api/status";
 import { createComposerModeFromCameraTarget, saveCreateCameraCaptureResult } from "../create/createComposerHandoff";
@@ -110,6 +111,12 @@ export function CameraStudioScreen({ route, navigation }: Props) {
   const [error, setError] = useState("");
   const cameraRef = useRef<CameraView | null>(null);
   const musicMonitorRef = useRef<Audio.Sound | null>(null);
+  // Identity for the Messenger send this screen may perform, held across renders
+  // and across publish attempts. Publishing is a multi-step operation -- upload,
+  // then send -- and either step can fail after the send has actually reached
+  // the server. Minting the id inside the send call would make every "Try again"
+  // a brand new logical message; holding it here makes the retry idempotent.
+  const messengerClientIdRef = useRef("");
   const qaMediaSeedRef = useRef("");
   const qaPublishRef = useRef("");
   const uploadOptions = useMemo(
@@ -421,14 +428,21 @@ export function CameraStudioScreen({ route, navigation }: Props) {
         name: asset.name,
         mimeType: asset.mimeType
       });
+      if (!messengerClientIdRef.current) messengerClientIdRef.current = mintClientMessageId("camera");
       await sendConversationMessage(conversationId, {
         body: caption.trim(),
         message_type: uploaded.message_type || uploaded.type || asset.mediaType,
         media_url: uploaded.media_url || "",
         thumbnail_url: uploaded.thumbnail_url || "",
         file_size: uploaded.file_size || asset.size || 0,
-        media_ids: uploaded.media_id ? [uploaded.media_id] : []
+        media_ids: uploaded.media_id ? [uploaded.media_id] : [],
+        client_message_id: messengerClientIdRef.current
       });
+      // Only once the send is acknowledged does the id retire. Clearing it
+      // earlier would let a retry mint a new identity and duplicate; never
+      // clearing it would make a genuinely new capture look like a repeat of
+      // the last one and be silently discarded by the server.
+      messengerClientIdRef.current = "";
       return { ok: true, message: "Media sent to Messenger.", conversationId };
     }
 

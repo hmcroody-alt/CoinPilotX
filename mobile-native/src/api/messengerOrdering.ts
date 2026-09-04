@@ -20,7 +20,32 @@
 
 import type { MessengerMessage } from "./messenger";
 
-function messageKey(message: MessengerMessage): string {
+/**
+ * Monotonic within this JS runtime. `Date.now()` alone is not a safe identity:
+ * two sends in the same millisecond -- a double tap, a queue drain, a share to
+ * several people at once -- produce the same value. That used to be merely
+ * untidy. Now that the server enforces uniqueness on
+ * (conversation, sender, client_message_id), a collision would make the server
+ * treat a genuinely new message as a repeat of the previous one and silently
+ * discard it. Losing a message is far worse than showing one twice, so identity
+ * carries a sequence and entropy as well as a clock.
+ */
+let clientMessageSequence = 0;
+
+export function mintClientMessageId(prefix = "native"): string {
+  clientMessageSequence += 1;
+  const clock = Date.now().toString(36);
+  const sequence = clientMessageSequence.toString(36);
+  const entropy = Math.random().toString(36).slice(2, 10);
+  return `${prefix}-${clock}-${sequence}-${entropy}`.slice(0, 120);
+}
+
+/**
+ * The identity every layer must agree on. A local bubble, the REST response,
+ * a realtime echo, a reconnect replay and a push event are five observations of
+ * ONE logical message; they reconcile here or they duplicate on screen.
+ */
+export function messageKey(message: MessengerMessage): string {
   return message.client_message_id || String(message.id);
 }
 

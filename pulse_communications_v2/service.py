@@ -214,9 +214,57 @@ def _ensure_schema_ready(bot, cur, conn) -> None:
         ensure_schema(cur)
         _ensure_columns(bot, cur, conn)
         conn.commit()
+        _ensure_message_idempotency_index(cur, conn)
         _SCHEMA_READY = True
         elapsed_ms = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
         logging.info("PULSE_COMM_V2_SCHEMA_READY duration_ms=%s", elapsed_ms)
+
+
+MESSAGE_IDEMPOTENCY_INDEX = "idx_comm_v2_messages_client_idem"
+
+# One logical outbound message must resolve to exactly one row. The send path
+# already looked the client id up before inserting, but a bare SELECT-then-INSERT
+# is a time-of-check/time-of-use race: two retries of the same message can both
+# read "not present" and both insert. This index is the hard gate underneath that
+# check -- the second writer loses at the database rather than at a lucky
+# interleaving.
+#
+# The predicate excludes blank ids because legacy rows and server-authored
+# messages carry none, and NULLs must not collide with each other.
+_MESSAGE_IDEMPOTENCY_INDEX_SQL = (
+    f"CREATE UNIQUE INDEX IF NOT EXISTS {MESSAGE_IDEMPOTENCY_INDEX} "
+    "ON comm_v2_messages (conversation_id, sender_user_id, client_message_id) "
+    "WHERE client_message_id IS NOT NULL AND client_message_id <> ''"
+)
+
+
+def _ensure_message_idempotency_index(cur, conn) -> bool:
+    """Install the send-idempotency index. Never raises, never blocks boot.
+
+    Creation legitimately fails on a database that already contains duplicate
+    (conversation, sender, client_message_id) triples -- which is exactly the
+    defect this index exists to prevent, so historical data can carry it. That
+    is why the failure is reported rather than raised: the send path stays
+    correct without the index (it falls back to the lookup plus a conflict-safe
+    insert), it simply loses the race guarantee. `scripts/messenger_idempotency_audit.py`
+    reports the offending rows so the duplicates can be resolved deliberately,
+    by a human, instead of being deleted by a boot path.
+    """
+    try:
+        cur.execute(_MESSAGE_IDEMPOTENCY_INDEX_SQL)
+        conn.commit()
+        return True
+    except Exception as exc:  # pragma: no cover - depends on live data
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        logging.warning(
+            "PULSE_COMM_V2_IDEMPOTENCY_INDEX_UNAVAILABLE index=%s error=%s",
+            MESSAGE_IDEMPOTENCY_INDEX,
+            exc,
+        )
+        return False
 
 
 def _ensure_columns(bot, cur, conn) -> None:
@@ -1204,6 +1252,22 @@ def list_conversations(user_id: int, filters: dict | None = None) -> dict:
         conn.close()
 
 
+def _message_for_client_id(cur, conversation_id: int, user_id: int, client_id: str):
+    """The row a given client_message_id already names, if any.
+
+    Deleted rows are excluded deliberately. A client id names a logical message,
+    and a message the sender has since deleted should not be resurrected and
+    handed back as though the resend had succeeded.
+    """
+    if not client_id:
+        return None
+    cur.execute(
+        "SELECT * FROM comm_v2_messages WHERE conversation_id=? AND sender_user_id=? AND client_message_id=? AND COALESCE(deleted_at,'')='' LIMIT 1",
+        (int(conversation_id), int(user_id), client_id),
+    )
+    return _row(cur.fetchone())
+
+
 def send_message(user_id: int, conversation_ref: int | str, payload: dict | None = None) -> dict:
     disabled = _disabled("send_message")
     if disabled:
@@ -1244,11 +1308,7 @@ def send_message(user_id: int, conversation_ref: int | str, payload: dict | None
         attachment_ids = valid_attachment_ids
         client_id = _clean(payload.get("client_message_id") or "", 120)
         if client_id:
-            cur.execute(
-                "SELECT * FROM comm_v2_messages WHERE conversation_id=? AND sender_user_id=? AND client_message_id=? AND COALESCE(deleted_at,'')='' LIMIT 1",
-                (conversation_id, int(user_id), client_id),
-            )
-            existing = _row(cur.fetchone())
+            existing = _message_for_client_id(cur, conversation_id, user_id, client_id)
             if existing:
                 return _ok({"message": _message_payload(cur, existing, user_id), "message_id": int(existing["id"]), "idempotent": True})
         reply_to = int(payload.get("reply_to_message_id") or payload.get("reply_to_id") or 0)
@@ -1267,14 +1327,57 @@ def send_message(user_id: int, conversation_ref: int | str, payload: dict | None
             media_ids,
             client_id,
         )
-        cur.execute(
-            """
+        insert_sql = """
             INSERT INTO comm_v2_messages
             (public_id, conversation_id, sender_user_id, message_type, body, reply_to_message_id, thread_root_message_id, client_message_id, delivery_status, moderation_status, metadata_json, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'sent', 'approved', ?, ?, ?)
-            """,
-            (_public_id("msg"), conversation_id, int(user_id), message_type, body, reply_to, thread_root, client_id, json.dumps(payload.get("metadata") or {}, default=str)[:4000], now, now),
+        """
+        insert_params = (
+            _public_id("msg"),
+            conversation_id,
+            int(user_id),
+            message_type,
+            body,
+            reply_to,
+            thread_root,
+            client_id,
+            json.dumps(payload.get("metadata") or {}, default=str)[:4000],
+            now,
+            now,
         )
+        try:
+            cur.execute(insert_sql, insert_params)
+        except Exception:
+            # The uniqueness gate fired: a concurrent retry of this same logical
+            # message won the race between our lookup above and this insert. The
+            # honest answer is the message that already exists, not a second one
+            # and not an error -- the caller's message did arrive.
+            #
+            # The rollback is required, not defensive: PostgreSQL aborts the
+            # whole transaction on a constraint violation, so the recovery SELECT
+            # would fail too. Nothing else has been written at this point in
+            # send_message, so there is no work to lose.
+            if not client_id:
+                raise
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            winner = _message_for_client_id(cur, conversation_id, user_id, client_id)
+            if not winner:
+                raise
+            logging.info(
+                "COMM_V2_SEND_IDEMPOTENT_CONFLICT conversation_id=%s user_id=%s client_message_id=%s message_id=%s",
+                conversation_id,
+                int(user_id),
+                client_id,
+                int(winner["id"]),
+            )
+            return _ok({
+                "message": _message_payload(cur, winner, user_id),
+                "message_id": int(winner["id"]),
+                "idempotent": True,
+            })
         message_id = int(cur.lastrowid)
         step = "attach_media"
         attachments = _attach_media(cur, user_id, conversation_id, message_id, media_ids)
