@@ -11,6 +11,7 @@ import { peekSaveState } from "../social/savedStore";
 import { setSaved } from "../social/useSaveAction";
 import { ProfileHeader, ProfileModuleKey, ProfileStatKey } from "../components/ProfileHeader";
 import { ContentCover, ContentCoverKind } from "../components/covers/ContentCover";
+import { hasMembershipMark } from "../entitlements/membershipMark";
 import { buildProfileContext, subjectName } from "../profile/profileContext";
 import { profileOsDestination, tileNoun, visibleProfileOsTiles } from "../profile/profileOsTiles";
 import { useBriefingsTile } from "../profile/useBriefingsTile";
@@ -312,7 +313,10 @@ export function ProfileScreen({ route, navigation }: Props) {
         display_name: profile.display_name,
         public_player_id: profile.public_player_id || profile.username || profileTarget?.publicPlayerId || profileKey,
         avatar_url: profile.avatar_url || "",
-        premium: Boolean(profile.premium_status),
+        // Display mark for the person being messaged, not a gate. `Boolean(...)`
+        // was true for every non-empty string, so "expired" and "cancelled" both
+        // drew a diamond; `hasMembershipMark` uses the server's own status set.
+        premium: hasMembershipMark(profile.premium_status),
         premium_mark: profile.verified_badge ? "verified" : ""
       };
       const result = await openDirectConversation(target);
@@ -332,7 +336,10 @@ export function ProfileScreen({ route, navigation }: Props) {
         display_name: profile.display_name,
         public_player_id: profile.public_player_id || profile.username || profileTarget?.publicPlayerId || profileKey,
         avatar_url: profile.avatar_url || "",
-        premium: Boolean(profile.premium_status),
+        // Display mark for the person being messaged, not a gate. `Boolean(...)`
+        // was true for every non-empty string, so "expired" and "cancelled" both
+        // drew a diamond; `hasMembershipMark` uses the server's own status set.
+        premium: hasMembershipMark(profile.premium_status),
         premium_mark: profile.verified_badge ? "verified" : ""
       };
       const result = await openDirectConversation(target);

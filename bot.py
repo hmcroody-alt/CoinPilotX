@@ -1281,6 +1281,11 @@ _load_route_pack("undx_run_health", "services.undx_run_health_routes")
 # existing crypto API, so there is no second watchlist store and no second
 # alert engine behind this pack.
 _load_route_pack("pulse_market_pulse", "services.market_pulse_routes")
+# Private Office canonical entitlement truth. GET-only by design: the tier
+# answer is served here so no client has to infer one, but GRANTING a tier
+# stays with the existing admin entitlement paths. A write in this pack would
+# be a second granting authority.
+_load_route_pack("private_office", "services.private_office_routes")
 
 
 def cancel_scheduled_account_deletion(cur, user_id):
@@ -41540,8 +41545,26 @@ def api_pulse_status_rail():
         }
         return jsonify({"ok": True, "items": items, "rail_items": rail_items, "discovery_signal": discovery_signal, "trace_id": trace_id, "lane": lane, "lanes": ["for_you", "following", "trending", "global"]})
     except Exception as exc:
-        logging.exception("PULSE_STATUS_RAIL_FAILED trace_id=%s user_id=%s error=%s", trace_id, user.get("user_id"), exc)
-        return jsonify({"ok": False, "message": "PulseSoc Status could not load.", "trace_id": trace_id}), 500
+        # STATUS_LIST_FETCH_FAILED means the rail query itself did not return --
+        # nothing was serialized, so this is never a per-item problem. Log the
+        # exception type alongside the message: the 2026-09 outage was a
+        # psycopg2 ProgrammingError ("not all arguments converted during string
+        # formatting") from a SQL translation defect, which reads like an
+        # application bug until you see the class.
+        logging.exception(
+            "PULSE_STATUS_RAIL_FAILED code=STATUS_LIST_FETCH_FAILED trace_id=%s user_id=%s lane=%s error_type=%s error=%s",
+            trace_id,
+            user.get("user_id"),
+            lane,
+            type(exc).__name__,
+            exc,
+        )
+        return jsonify({
+            "ok": False,
+            "error_code": "STATUS_LIST_FETCH_FAILED",
+            "message": "PulseSoc Status could not load.",
+            "trace_id": trace_id,
+        }), 500
 
 
 @webhook_app.route("/api/pulse/status/music/search", methods=["GET"])
@@ -115714,6 +115737,11 @@ def route_health_check():
         "/api/pulse/mobile/settings/delete-account",
         "/api/pulse/seller/application",
         "/api/pulse/seller/application/draft",
+        # The canonical tier answer. Listed because its absence is silent by
+        # design: the client fails closed to "unknown", so a deploy without this
+        # route does not error anywhere — it just stops showing paying members
+        # that they are members. Nobody would find that from a log.
+        "/api/private-office/entitlement",
     ]
     endpoints = {path: (path in rules) for path in required}
     packs = {name: bool(state.get("registered")) for name, state in ROUTE_PACK_STATUS.items()}

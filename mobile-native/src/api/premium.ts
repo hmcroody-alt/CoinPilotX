@@ -110,8 +110,25 @@ export function premiumWebUrl(path = "/pulse/premium") {
   return `${PULSE_API_BASE_URL}${normalized}`;
 }
 
+/**
+ * Fill in the display fields `/api/premium/status` may omit. It does not decide
+ * membership — that is the server's job.
+ *
+ * This used to OR four fields together: `premium_active`, `founder_active`, and
+ * a substring test over `subscription_status` and `provider_status`. Because
+ * `api_premium_status` (bot.py:11839) *always* sends a real `premium_active`
+ * boolean, those extra terms could only ever widen access past the server's
+ * answer, never narrow it. The worst case was concrete: the backend separates
+ * ownership (`premium_active`) from hold-aware access
+ * (`effective_premium_access`) precisely so a suspended owner is not shown
+ * access the API will then deny — and a held account still carries
+ * `subscription_status: "active"`, so the client flipped it straight back on.
+ *
+ * Capability gates belong to `entitlements/canonicalTier`; this shapes one
+ * payload for the Premium Center's labels.
+ */
 export function normalizePremiumStatus(input: PremiumStatus): PremiumStatus {
-  const active = Boolean(input.premium_active || input.founder_active || activeText(input.subscription_status) || activeText(input.provider_status));
+  const active = Boolean(input.premium_active || input.founder_active);
   const founderActive = Boolean(input.founder_active);
   const plan = String(input.plan || (founderActive ? "founder_premium" : active ? "premium" : "free"));
   const subscription = String(input.subscription_status || (active ? "active" : "inactive"));
@@ -225,10 +242,6 @@ function mapServerEntitlement(item: Record<string, unknown>): PremiumEntitlement
     status: active ? "active" : unavailable ? "unavailable" : "locked",
     detail: String(item.description || item.summary || item.locked_reason || item.reason || (active ? "Server marks this entitlement active." : "Server marks this entitlement locked."))
   };
-}
-
-function activeText(value?: string) {
-  return ["active", "trialing", "premium", "founder"].includes(String(value || "").toLowerCase());
 }
 
 function labelize(value: string) {
