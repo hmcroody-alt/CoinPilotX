@@ -1821,7 +1821,9 @@ media, not producers of an audio session.
 - No protected path under `categories[].paths` was modified — the gate reported
   exactly three files, all `dependency_watch`.
 - No backend line matching `backend_diff_patterns` was added or removed.
-- `patches/` is unchanged: still Hermes + Stripe only, still no LiveKit patch.
+- `patches/` is unchanged and still holds exactly one file,
+  `react-native+0.81.5.patch` (the Hermes build fix). No LiveKit patch, and this
+  consolidation added, removed, and edited nothing in `patches/`.
 - The `setAudioModeAsync` legacy allowlist is still exactly its six permitted
   files (`pulseRadio.ts`, `reelsAudioSession.ts`, `voiceMessagePlayback.ts`,
   `callSignalMedia.ts`, `MusicScreen.tsx`, `ChatScreen.tsx`). No seventh call
