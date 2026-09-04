@@ -88,18 +88,36 @@ OFFICE_CHILD_IDS: tuple[str, ...] = (
 
 # --- entry states ------------------------------------------------------------
 
+# These are wire values, not internal names. They are emitted verbatim as
+# ``private_office.state`` by /api/private-office/overview and are matched
+# against a closed whitelist in the native client
+# (mobile-native/src/api/privateOffice.ts, ENTRY_STATES). The ``ENTRY_``
+# prefix is load-bearing on both sides and must stay.
+#
+# They were once the bare words AVAILABLE / UPGRADE_REQUIRED / UNAVAILABLE /
+# UNKNOWN, which no client recognised: the parser degraded every one of them to
+# ENTRY_UNKNOWN and PremiumCenterScreen renders no row for that, so the Private
+# Office entry was invisible to every member at every tier regardless of
+# entitlement. Nothing errored, because "absent" is the deliberate rendering of
+# "unconfirmed" — the failure had no symptom other than a missing row.
+#
+# Deliberately *not* shared with the per-child ``reason`` vocabulary below,
+# which is bare on purpose ("AVAILABLE", "UPGRADE_REQUIRED", …) and which the
+# client whitelists separately as REASON_WORDS. Two vocabularies, two
+# whitelists; collapsing them breaks the half you were not looking at.
+
 #: At least one child is genuinely usable by this member right now.
-ENTRY_AVAILABLE = "AVAILABLE"
+ENTRY_AVAILABLE = "ENTRY_AVAILABLE"
 #: Something real exists behind the door, and this member's tier does not reach
 #: it. This is the only state in which an upgrade prompt is honest.
-ENTRY_UPGRADE_REQUIRED = "UPGRADE_REQUIRED"
+ENTRY_UPGRADE_REQUIRED = "ENTRY_UPGRADE_REQUIRED"
 #: Nothing inside is built. Not for this member, not for anyone. No upgrade
 #: changes it, so no upgrade may be offered.
-ENTRY_UNAVAILABLE = "UNAVAILABLE"
+ENTRY_UNAVAILABLE = "ENTRY_UNAVAILABLE"
 #: We could not resolve the member's tier. Distinct from UNAVAILABLE on
 #: purpose: "we could not look" and "we looked and there is nothing" must never
 #: share a shape.
-ENTRY_UNKNOWN = "UNKNOWN"
+ENTRY_UNKNOWN = "ENTRY_UNKNOWN"
 
 # --- verification vocabulary -------------------------------------------------
 
