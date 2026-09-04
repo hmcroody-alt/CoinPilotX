@@ -38,6 +38,7 @@ jest.mock("react-native-agora", () => {
   const engine = {
     initialize: jest.fn(),
     enableAudio: jest.fn(),
+    enableAudioVolumeIndication: jest.fn(),
     enableVideo: jest.fn(),
     startPreview: jest.fn(),
     registerEventHandler: jest.fn(),
@@ -56,7 +57,9 @@ jest.mock("react-native-agora", () => {
     createAgoraRtcEngine: jest.fn(() => engine),
     ConnectionStateType: { ConnectionStateConnected: 3, ConnectionStateReconnecting: 4, ConnectionStateFailed: 5 },
     ClientRoleType: { ClientRoleBroadcaster: 1 },
-    ChannelProfileType: { ChannelProfileCommunication: 0 }
+    ChannelProfileType: { ChannelProfileCommunication: 0 },
+    RemoteAudioStateReason: { RemoteAudioReasonRemoteMuted: 5, RemoteAudioReasonRemoteUnmuted: 6 },
+    RemoteVideoStateReason: { RemoteVideoStateReasonRemoteMuted: 5, RemoteVideoStateReasonRemoteUnmuted: 6 }
   };
 });
 

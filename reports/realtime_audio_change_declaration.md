@@ -1896,3 +1896,93 @@ drifted.
 
 `UIBackgroundModes` still contains `audio`, and `NSMicrophoneUsageDescription`
 is unchanged — re-checked on the final file with `plutil -p` after the edit.
+
+## Multi-guest calls addendum (2026-09-04)
+
+This addendum declares the protected-file changes for the multi-guest
+audio/video call mission: the existing call model was converted into a
+participant-based room model so 1:1 is simply the two-participant case.
+No livestream file was touched (zero lines under `src/live/` in this diff).
+
+### Why the change is required
+
+Group calls need (a) a way for the client to fetch server-owned capabilities
+and post mid-call invites (`src/api/calls.ts`), and (b) a call screen that can
+render N participants instead of exactly one remote (`CallScreen.tsx`). Both
+files are protected, so both changes are declared here.
+
+### Which feature required it
+
+Multi-guest calls: 1:1 → add participant → group call, dynamic join/leave,
+active-speaker indication, participant grid, remote mute display. Gated
+server-side by `PULSE_GROUP_CALLS_ENABLED` (default OFF) — with the flag off,
+the app behaves exactly as before.
+
+### Which protected files changed
+
+| File | Category | Change |
+|---|---|---|
+| `mobile-native/src/api/calls.ts` | protected call API | Additive only: `PulseCallCapabilities` / `InviteToCallResponse` types, `normalizeCapabilities`, `inviteToCall()` (POST `/api/calls/<id>/invite`), `getCallCapabilities()`. No change to token, join, status, or hangup functions. |
+| `mobile-native/src/screens/CallScreen.tsx` | protected call UI | Additive: participant grid over the registry (`connectedParticipants`), ringing chips, active-speaker border, videoMuted avatar tiles, "Add" control gated on capabilities, `AddParticipantsSheet` mount. No AVAudioSession call, no track, no publication path, no engine access — the screen still consumes the store only. |
+
+Supporting non-protected files: `src/calls/callParticipants.ts` (new canonical
+registry, joins backend `participants[]` to Agora `remoteUids[]` strictly by
+`rtc_uid == user_id`), `src/calls/callCapabilities.ts` (new, server-owned
+flags/limits cache, conservative defaults), `src/calls/AddParticipantsSheet.tsx`
+(new, pure UI + one backend POST), `src/calls/callSessionStore.ts`
+(`enableAudioVolumeIndication(400,3,false)` — pure reporting; remote
+audio/video state handlers that flip display state ONLY on
+RemoteMuted/RemoteUnmuted reasons, so network stalls never render as muted;
+media-substate reset on teardown), four jest files (one new registry suite,
+three agora-mock updates).
+
+### Expected behavior change
+
+With the server flag ON: call screen shows a grid of connected participants,
+ringing chips for invitees, a speaking highlight driven by
+`onAudioVolumeIndication`, and an Add button that invites conversation members
+into the SAME Agora channel (`room_name` never changes). With the flag OFF
+(default): no visible change; 1:1 flows are byte-identical in behavior.
+Audio capture, session category, routing, and livestream are unchanged.
+
+### Regression risk
+
+Low-moderate, confined to call UI and event handling. The one risk to audio is
+the `enableAudioVolumeIndication` call at engine setup; it is reporting-only
+and covered by the passing store suite. One engine owner is preserved (exactly
+1 `createAgoraRtcEngine` call site, in `callSessionStore.ts`); no new
+`setAudioModeAsync` call site was added (the calls slot remains
+`callSignalMedia.ts`); the expo-av allowlist is unchanged.
+
+### Tests run
+
+- Backend: `tests/test_call_multi_guest.py` 22/22 (invites, flags, limits,
+  membership, creator-leave, per-participant missed, join security: outsider
+  forbidden, non-participant denied, ended-call denied, uid binding, duplicate
+  join idempotent, multi-device same-row); `test_call_two_sided_hangup.py`
+  6/6; `test_call_acceptance_sync.py` 10/10.
+- Jest calls battery: 10 suites / 80 tests passed (incl. new
+  `callParticipants.test.ts`, 9 tests).
+- `npm run test:realtime-audio-critical`: 11 suites / 191 tests passed.
+- `npm run test:realtime-audio`: 309/310 — the single failure is
+  `src/live/__tests__/liveSession.test.ts`, caused by uncommitted foreign
+  changes to `src/live/liveSession.ts` from the separate multi-guest LIVE
+  mission; this diff contains no `src/live` change.
+- `npx tsc --noEmit`: exit 0. `npm run i18n:validate`: OK, 11 locales.
+
+### Physical validation required
+
+Three-device physical test before release: A calls B (1:1), A adds C, all
+three must audibly hear each other (full audio matrix: A↔B, A↔C, B↔C), C
+leaves, A↔B must continue; creator leaves, B↔C must continue. Mute/unmute must
+reflect on the other two devices; active-speaker highlight must follow the
+actual speaker. This declaration does NOT claim audible validation was
+performed — a grid rendering three people is not evidence that three people
+can hear each other.
+
+### Rollback procedure
+
+Server: set `PULSE_GROUP_CALLS_ENABLED=false` (instant, no deploy — the client
+hides every multi-guest affordance and 1:1 continues on the unchanged paths).
+Code: revert the multi-guest commit; the protected-file changes are additive,
+so the revert restores the exact prior 1:1 surface.

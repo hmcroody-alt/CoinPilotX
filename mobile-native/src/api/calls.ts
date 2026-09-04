@@ -113,6 +113,21 @@ export type CallStatusResponse = PulseCallEnvelope & PulseCall & {
   events?: PulseCallEvent[];
 };
 
+export type PulseCallCapabilities = {
+  provider?: string;
+  group_calls_enabled?: boolean;
+  audio_calls_enabled?: boolean;
+  video_calls_enabled?: boolean;
+  max_audio_participants?: number;
+  max_video_participants?: number;
+};
+
+export type InviteToCallResponse = PulseCallEnvelope & {
+  invited_user_ids?: number[];
+  already_in_call?: number[];
+  max_participants?: number;
+};
+
 export type CallControlAction =
   | "mute-audio"
   | "unmute-audio"
@@ -160,6 +175,28 @@ export async function acceptCall(callId: string) {
   const call = normalizeCallPayload(data);
   await cacheCallStatus(call).catch(() => undefined);
   return call;
+}
+
+export async function inviteToCall(callId: string, userIds: number[]) {
+  const data = await pulseApi<InviteToCallResponse>(`/api/calls/${encodeURIComponent(callId)}/invite`, {
+    method: "POST",
+    body: JSON.stringify({ user_ids: userIds, source: "native" })
+  });
+  const call = normalizeCallPayload(data);
+  await cacheCallStatus(call).catch(() => undefined);
+  return {
+    ...call,
+    invited_user_ids: data.invited_user_ids || [],
+    already_in_call: data.already_in_call || [],
+    max_participants: Number(data.max_participants || 0) || undefined
+  };
+}
+
+export async function getCallCapabilities() {
+  const data = await pulseApi<{ ok?: boolean; capabilities?: PulseCallCapabilities; message?: string }>(
+    "/api/calls/capabilities"
+  );
+  return normalizeCapabilities(data.capabilities || {});
 }
 
 export async function markRingSeen(callId: string) {
@@ -330,6 +367,17 @@ function normalizeJoin(join: PulseCallJoin): PulseCallJoin {
     token: String(join.token || ""),
     room_name: String(join.room_name || ""),
     provider: "agora"
+  };
+}
+
+export function normalizeCapabilities(capabilities: PulseCallCapabilities): PulseCallCapabilities {
+  return {
+    provider: String(capabilities.provider || "agora"),
+    group_calls_enabled: Boolean(capabilities.group_calls_enabled),
+    audio_calls_enabled: capabilities.audio_calls_enabled !== false,
+    video_calls_enabled: capabilities.video_calls_enabled !== false,
+    max_audio_participants: Math.max(2, Number(capabilities.max_audio_participants || 0) || 12),
+    max_video_participants: Math.max(2, Number(capabilities.max_video_participants || 0) || 6)
   };
 }
 

@@ -43,6 +43,12 @@ import {
 import { reportPresenceActivity } from "../api/presenceSession";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
 import { stopVoiceMessagePlayback } from "../core/voiceMessagePlayback";
+import {
+  resetParticipantMediaState,
+  setRemoteAudioMuted,
+  setRemoteVideoMuted,
+  setSpeakingUids
+} from "./callParticipants";
 import { playCallCue, stopCallTone } from "./callSignalMedia";
 import { endCallKitCall, markCallKitConnected } from "./callKitBridge";
 import { isTerminalCallStatus, shouldConnectCallMedia, shouldPlayUnavailablePrompt } from "./callToneLifecycle";
@@ -570,6 +576,7 @@ export async function disconnectCallMedia(reason = "local_disconnect") {
   }
   engineHandler = null;
   joinRequested = false;
+  resetParticipantMediaState();
   reportPresenceActivity("idle", "").catch(() => undefined);
   setSnapshot({ ...baseMediaState, supported: snapshot.supported, disconnectReason: reason, diagnosticCode: reason });
 }
@@ -600,6 +607,9 @@ export async function connectCallMedia(
     engine = nextEngine;
     nextEngine.initialize({ appId: join.app_id });
     nextEngine.enableAudio();
+    // Active-speaker levels for the participant grid. Pure reporting — this
+    // does not alter the audio session, routes, tracks, or publication path.
+    nextEngine.enableAudioVolumeIndication(400, 3, false);
     if (options.video) {
       nextEngine.enableVideo();
       nextEngine.startPreview();
@@ -683,6 +693,36 @@ export async function connectCallMedia(
       onRequestToken: () => {
         setSnapshot({ diagnosticCode: "AGORA_TOKEN_EXPIRED", error: "Restoring secure call access…" });
         void renew();
+      },
+      onAudioVolumeIndication: (_connection, speakers, _speakerNumber, _totalVolume) => {
+        // Active-speaker hint only — display state, never identity. uid 0 in
+        // this callback means the LOCAL user; map it to the real local uid so
+        // the participant registry keys everything by user id (rtc_uid==user_id).
+        const speaking = (speakers || [])
+          .filter((speaker) => Number(speaker?.volume || 0) > 40)
+          .map((speaker) => {
+            const uid = Number(speaker?.uid || 0);
+            return uid === 0 ? snapshot.localUid : uid;
+          })
+          .filter((uid) => uid > 0);
+        setSpeakingUids(speaking);
+      },
+      onRemoteAudioStateChanged: (_connection, remoteUid, _state, reason) => {
+        // Per-participant mute display state. Only explicit remote mute /
+        // unmute reasons flip the flag — network stalls must not render as
+        // "muted", that would be fake state.
+        if (reason === agora.RemoteAudioStateReason.RemoteAudioReasonRemoteMuted) {
+          setRemoteAudioMuted(Number(remoteUid), true);
+        } else if (reason === agora.RemoteAudioStateReason.RemoteAudioReasonRemoteUnmuted) {
+          setRemoteAudioMuted(Number(remoteUid), false);
+        }
+      },
+      onRemoteVideoStateChanged: (_connection, remoteUid, _state, reason) => {
+        if (reason === agora.RemoteVideoStateReason.RemoteVideoStateReasonRemoteMuted) {
+          setRemoteVideoMuted(Number(remoteUid), true);
+        } else if (reason === agora.RemoteVideoStateReason.RemoteVideoStateReasonRemoteUnmuted) {
+          setRemoteVideoMuted(Number(remoteUid), false);
+        }
       },
       onError: (errorCode) => setSnapshot({ error: `Agora media error (${errorCode}).`, diagnosticCode: `AGORA_${errorCode}` })
     };
