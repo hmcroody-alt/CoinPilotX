@@ -264,6 +264,20 @@ def pulse_visibility_decision(post, viewer_user_id=None, include_private=False):
     return False, f"visibility:{visibility}"
 
 
+# An ended livestream is published as ONE canonical post (post_type='live',
+# live_status='archived') carrying its video on replay_url/playback_url rather than as a
+# chat_media_uploads asset -- see bot.pulse_live_publish_replay_reel and
+# services/live_feed_service.ensure_live_feed_post. `_public_post` already synthesizes a
+# media payload for exactly this shape, so the presentation layer treats a finished replay
+# as a media post; these predicates are what let the SQL agree with it. Gated on a non-empty
+# playback URL so a live that ended without a usable recording is never offered as a reel.
+_ARCHIVED_LIVE_REPLAY_SQL = (
+    "(p.post_type='live'"
+    " AND lower(COALESCE(p.live_status,'')) IN ('archived','replay_ready')"
+    " AND COALESCE(NULLIF(p.replay_url,''), NULLIF(p.playback_url,''), '') <> '')"
+)
+
+
 def _public_feed_where(alias="p"):
     prefix = f"{alias}." if alias else ""
     return [
@@ -1426,7 +1440,11 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
         where.append("(" + " OR ".join(crypto_clauses) + ")")
     elif feed == "reels":
         where = [clause.replace("COALESCE(p.visibility,'public')='public'", "COALESCE(p.visibility,'public') IN ('public','reel_only')") for clause in where]
-        where.append("(p.post_type IN ('video','replay','roast_clip') OR COALESCE(p.media_ids_json,'[]') NOT IN ('[]',''))")
+        where.append("(" + " OR ".join([
+            "p.post_type IN ('video','replay','roast_clip')",
+            "COALESCE(p.media_ids_json,'[]') NOT IN ('[]','')",
+            _ARCHIVED_LIVE_REPLAY_SQL,
+        ]) + ")")
     if topic:
         where.append("(p.tags_json LIKE ? OR p.body LIKE ?)")
         token = f"%{topic.strip('#').lower()}%"
@@ -1616,7 +1634,15 @@ def count_user_posts(user_id, viewer_user_id=None, media_only=False):
             where.append("NOT EXISTS (SELECT 1 FROM pulse_user_mutes pum WHERE pum.user_id=? AND pum.muted_user_id=p.user_id AND (pum.muted_until IS NULL OR pum.muted_until='' OR pum.muted_until>?))")
             params.extend([int(viewer_user_id), _now()])
     if media_only:
-        where.append("COALESCE(p.media_ids_json,'') NOT IN ('', '[]')")
+        # `list_user_posts` + `_public_post` return an archived live replay with a
+        # synthesized video payload, so the Media tab renders it. Counting only rows with a
+        # populated media_ids_json would put the badge back out of step with the listing --
+        # the exact defect this function's docstring exists to prevent.
+        where.append(
+            "(COALESCE(p.media_ids_json,'') NOT IN ('', '[]') OR "
+            + _ARCHIVED_LIVE_REPLAY_SQL
+            + ")"
+        )
     conn = user_context.connect()
     _ensure_home_safety_tables(conn)
     cur = conn.cursor()
