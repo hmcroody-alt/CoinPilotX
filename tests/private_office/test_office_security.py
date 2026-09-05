@@ -263,6 +263,94 @@ class TestBindings:
             assert not verdict["ok"], (session, device)
 
 
+def _request_bindings_for(bearer="", cookie="", device="device-1"):
+    """request_bindings() as computed inside a synthetic Flask request."""
+    from flask import Flask
+
+    headers = {security.DEVICE_HEADER: device}
+    if bearer:
+        headers["Authorization"] = "Bearer " + bearer
+    if cookie:
+        headers["Cookie"] = "session=" + cookie
+    app = Flask(__name__)
+    with app.test_request_context("/", headers=headers):
+        return security.request_bindings()
+
+
+class TestSessionFamilyBinding:
+    """The mobile bearer rotates every ~15 minutes; a standing grant must
+    survive that rotation (bind to the session family), yet still die with the
+    sign-in itself (logout / revocation empties the resolver's answer)."""
+
+    def teardown_method(self):
+        security.register_session_family_resolver(None)
+
+    def test_rotated_bearer_keeps_the_same_binding_and_the_grant_survives(self):
+        conn, cur = _conn()
+        _fresh_user(cur, conn, USER_A, PASSCODE_A)
+        family = {"token-epoch-1": "fam-A", "token-epoch-2": "fam-A"}
+        security.register_session_family_resolver(lambda tok: family.get(tok, ""))
+
+        minted_session, minted_device = _request_bindings_for(bearer="token-epoch-1")
+        rotated_session, rotated_device = _request_bindings_for(bearer="token-epoch-2")
+        assert minted_session == rotated_session
+        assert minted_device == rotated_device == "device-1"
+
+        result = security.verify_and_unlock(
+            cur, USER_A, PASSCODE_A,
+            session_binding=minted_session, device_binding=minted_device,
+        )
+        verdict = security.validate_grant(
+            cur, USER_A, result["grant_token"],
+            session_binding=rotated_session, device_binding=rotated_device,
+        )
+        assert verdict["ok"]
+
+    def test_revoked_session_family_kills_the_grant(self):
+        conn, cur = _conn()
+        _fresh_user(cur, conn, USER_A, PASSCODE_A)
+        alive = {"token-epoch-1": "fam-A"}
+        security.register_session_family_resolver(lambda tok: alive.get(tok, ""))
+
+        minted_session, minted_device = _request_bindings_for(bearer="token-epoch-1")
+        result = security.verify_and_unlock(
+            cur, USER_A, PASSCODE_A,
+            session_binding=minted_session, device_binding=minted_device,
+        )
+
+        # Logout/revocation: the next sign-in's bearer belongs to no known
+        # family, so the binding falls back to the raw-token hash and the old
+        # grant's family binding can never match again.
+        later_session, later_device = _request_bindings_for(bearer="token-epoch-3")
+        verdict = security.validate_grant(
+            cur, USER_A, result["grant_token"],
+            session_binding=later_session, device_binding=later_device,
+        )
+        assert not verdict["ok"]
+
+    def test_without_resolver_each_bearer_hashes_alone(self):
+        session_1, _ = _request_bindings_for(bearer="token-epoch-1")
+        session_2, _ = _request_bindings_for(bearer="token-epoch-2")
+        assert session_1 and session_2 and session_1 != session_2
+
+    def test_resolver_failure_falls_back_to_raw_bearer_hash(self):
+        baseline, _ = _request_bindings_for(bearer="token-epoch-1")
+
+        def explode(_tok):
+            raise RuntimeError("resolver down")
+
+        security.register_session_family_resolver(explode)
+        degraded, _ = _request_bindings_for(bearer="token-epoch-1")
+        assert degraded == baseline
+
+    def test_cookie_only_requests_are_untouched(self):
+        security.register_session_family_resolver(lambda tok: "fam-A")
+        with_resolver, _ = _request_bindings_for(cookie="web-session-1")
+        security.register_session_family_resolver(None)
+        without_resolver, _ = _request_bindings_for(cookie="web-session-1")
+        assert with_resolver == without_resolver
+
+
 class TestRateLimit:
     def test_escalating_cooldown_then_reset(self):
         conn, cur = _conn()

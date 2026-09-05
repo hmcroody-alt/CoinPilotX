@@ -30474,6 +30474,53 @@ def issue_mobile_security_tokens(user, payload=None, *, rotate_from=""):
     }
 
 
+def private_office_session_family_for_bearer(access_token):
+    """Stable session identity behind a rotating mobile bearer, or "".
+
+    The Office unlock grant is bound to the session that earned it. Binding to
+    a hash of the raw bearer meant the binding died every ~15 minutes when the
+    access token rotated, relocking the Office mid-use. The session family id
+    survives rotation and is revoked with the sign-in, which is exactly the
+    lifetime the grant is supposed to share.
+    """
+    token = str(access_token or "")
+    if not token:
+        return ""
+    cache_attr = "_office_session_family_" + mobile_token_hash(token)[:16]
+    if has_request_context():
+        cached = g.get(cache_attr)
+        if cached is not None:
+            return cached
+    family = ""
+    try:
+        conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+        try:
+            cur.execute(
+                """
+                SELECT session_family_id FROM mobile_security_sessions
+                WHERE access_token_hash=? AND status='active' AND COALESCE(revoked_at,'')=''
+                LIMIT 1
+                """,
+                (mobile_token_hash(token),),
+            )
+            row = cur.fetchone()
+            family = str(dict(row).get("session_family_id") or "") if row else ""
+        finally:
+            conn.close()
+    except Exception:
+        family = ""
+    if has_request_context():
+        setattr(g, cache_attr, family)
+    return family
+
+
+try:
+    from services.private_office import security as _office_grant_security
+    _office_grant_security.register_session_family_resolver(private_office_session_family_for_bearer)
+except Exception:
+    logging.info("PRIVATE_OFFICE_SESSION_FAMILY_RESOLVER_UNREGISTERED")
+
+
 def rotate_mobile_refresh_token(refresh_token, payload=None):
     refresh_hash = mobile_token_hash(refresh_token)
     if not refresh_token:

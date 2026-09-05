@@ -117,6 +117,23 @@ def token_hash(token: str) -> str:
 GRANT_HEADER = "X-Office-Grant"
 DEVICE_HEADER = "X-Office-Device"
 
+_SESSION_FAMILY_RESOLVER = None
+
+
+def register_session_family_resolver(resolver) -> None:
+    """Install the host app's bearer-token → session-family lookup.
+
+    The mobile access token rotates every ~15 minutes by design. Hashing the
+    raw bearer into the session binding therefore orphaned the member's
+    standing unlock grant at every rotation, relocking the Office mid-use.
+    The host registers a resolver mapping a bearer to its stable session
+    family id, which lives exactly as long as the sign-in itself — logout,
+    revocation and password change still kill the binding; a routine token
+    refresh no longer does. Pass ``None`` to uninstall (tests).
+    """
+    global _SESSION_FAMILY_RESOLVER
+    _SESSION_FAMILY_RESOLVER = resolver
+
 
 def request_bindings() -> tuple[str, str]:
     """(session_binding, device_binding) for the CURRENT Flask request.
@@ -126,11 +143,12 @@ def request_bindings() -> tuple[str, str]:
     later checked with — two extractors would eventually disagree and the
     disagreement would present as random lockouts.
 
-    The session binding hashes the credential that authenticated this request
-    (mobile bearer token, else web session cookie): a grant therefore dies with
-    the session that earned it, and a stolen grant token presented by a
-    different session fails equality. Outside a request context both are empty,
-    which can only ever *fail* a validation, never pass one.
+    The session binding hashes the credential family that authenticated this
+    request (the mobile bearer's session family when the host resolver knows
+    it, else the raw bearer, else the web session cookie): a grant therefore
+    dies with the session that earned it, and a stolen grant token presented
+    by a different session fails equality. Outside a request context both are
+    empty, which can only ever *fail* a validation, never pass one.
     """
     try:
         from flask import has_request_context, request
@@ -142,6 +160,13 @@ def request_bindings() -> tuple[str, str]:
     auth_header = (request.headers.get("Authorization") or "").strip()
     if auth_header.lower().startswith("bearer "):
         source = auth_header.split(" ", 1)[1].strip()
+        if source and _SESSION_FAMILY_RESOLVER is not None:
+            try:
+                family = str(_SESSION_FAMILY_RESOLVER(source) or "")
+            except Exception:  # noqa: BLE001 — a resolver failure must never widen access
+                family = ""
+            if family:
+                source = "session-family:" + family
     if not source:
         source = request.cookies.get("session") or ""
     session_binding = (
