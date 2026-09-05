@@ -4395,9 +4395,8 @@
           "label": "Exigir código",
           "hint": "Quanto tempo até o escritório bloquear depois de sair do app.",
           "immediate": "Imediatamente",
-          "1m": "Após 1 minuto",
-          "5m": "Após 5 minutos",
-          "15m": "Após 15 minutos"
+          "after_one": "Após {{count}} minuto",
+          "after_other": "Após {{count}} minutos"
         },
         "biometric": {
           "label": "Desbloquear com {{method}}",

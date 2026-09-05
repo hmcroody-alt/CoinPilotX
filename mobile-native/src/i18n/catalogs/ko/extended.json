@@ -4363,9 +4363,8 @@
           "label": "암호 요구",
           "hint": "앱을 떠난 후 오피스가 잠기기까지의 시간입니다.",
           "immediate": "즉시",
-          "1m": "1분 후",
-          "5m": "5분 후",
-          "15m": "15분 후"
+          "after_one": "{{count}}분 후",
+          "after_other": "{{count}}분 후"
         },
         "biometric": {
           "label": "{{method}}(으)로 잠금 해제",

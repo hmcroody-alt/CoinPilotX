@@ -4364,9 +4364,8 @@
           "label": "Mande kòd la",
           "hint": "Konbyen tan anvan biwo a bloke apre ou kite app la.",
           "immediate": "Touswit",
-          "1m": "Apre 1 minit",
-          "5m": "Apre 5 minit",
-          "15m": "Apre 15 minit"
+          "after_one": "Apre {{count}} minit",
+          "after_other": "Apre {{count}} minit"
         },
         "biometric": {
           "label": "Debloke ak {{method}}",

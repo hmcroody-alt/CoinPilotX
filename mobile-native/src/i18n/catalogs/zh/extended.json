@@ -4363,9 +4363,8 @@
           "label": "要求输入密码",
           "hint": "离开应用后办公室多久锁定。",
           "immediate": "立即",
-          "1m": "1 分钟后",
-          "5m": "5 分钟后",
-          "15m": "15 分钟后"
+          "after_one": "{{count}} 分钟后",
+          "after_other": "{{count}} 分钟后"
         },
         "biometric": {
           "label": "使用{{method}}解锁",

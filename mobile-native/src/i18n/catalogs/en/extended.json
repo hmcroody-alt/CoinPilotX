@@ -4395,9 +4395,8 @@
           "label": "Require passcode",
           "hint": "How soon the Office locks after you leave the app.",
           "immediate": "Immediately",
-          "1m": "After 1 minute",
-          "5m": "After 5 minutes",
-          "15m": "After 15 minutes"
+          "after_one": "After {{count}} minute",
+          "after_other": "After {{count}} minutes"
         },
         "biometric": {
           "label": "Unlock with {{method}}",

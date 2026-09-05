@@ -33,7 +33,7 @@
  */
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as SecureStore from "expo-secure-store";
+import * as SecureStore from "../native/secureStore";
 import { Platform } from "react-native";
 
 /** Header names — must match `services/private_office/security.py`. */
@@ -70,6 +70,18 @@ const RELOCK_MS: Record<OfficeRelockTiming, number> = {
   "5m": 300_000,
   "15m": 900_000
 };
+
+/**
+ * The delay a timing actually enforces, in whole minutes.
+ *
+ * The picker labels itself from this rather than from a number written into the
+ * catalogs, so a row can never advertise a window the lock does not honour, and
+ * the copy stays translatable (and correctly pluralised and digited) in every
+ * language. `immediate` is 0 and is labelled by its own word, not a count.
+ */
+export function relockMinutes(timing: OfficeRelockTiming): number {
+  return Math.round(RELOCK_MS[timing] / 60_000);
+}
 
 type OfficeLockState = {
   unlocked: boolean;

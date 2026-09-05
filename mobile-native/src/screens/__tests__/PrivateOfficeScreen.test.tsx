@@ -41,17 +41,54 @@ jest.mock("../../i18n", () => ({
 }));
 
 const mockGetOverview = jest.fn();
+const mockOfficeStatus = jest.fn();
+const mockUnlockOffice = jest.fn();
 
-// Only the network read is replaced. `parseOverview`, `parseProductState` and
+// Only the network reads are replaced. `parseOverview`, `parseProductState` and
 // `UNKNOWN_OVERVIEW` are the real ones — they are the contract under test, and
 // a stubbed parser would leave a suite that proves the stub agrees with itself.
+//
+// The two security reads are stubbed at the same boundary because the screen is
+// now wrapped in `PrivateOfficeLockGate`: it asks `/security/status` before it
+// will render anything, and mints a grant through `/security/unlock`. Both are
+// replaced with the answers a member who has set a passcode actually gets. The
+// gate, the lock store and the unlock flow all stay real — `unlockOffice`'s
+// stub does exactly what the real one does once the server has answered
+// (stow the minted grant via `setOfficeUnlocked`), so the office only opens
+// here for the same reason it opens in production: a live grant exists.
 jest.mock("../../api/privateOffice", () => ({
   ...jest.requireActual("../../api/privateOffice"),
-  getPrivateOfficeOverview: (...args: unknown[]) => mockGetOverview(...args)
+  getPrivateOfficeOverview: (...args: unknown[]) => mockGetOverview(...args),
+  getOfficeSecurityStatus: (...args: unknown[]) => mockOfficeStatus(...args),
+  unlockOffice: (...args: unknown[]) => mockUnlockOffice(...args)
+}));
+
+// An unlock grant belongs to an account, and the gate relocks on every mount
+// that finds no signed-in member (`reconcileOfficeOwner`). Without a session
+// the suite would be modelling a signed-out device rather than a member with a
+// locked office, so the envelope is supplied here and the grant is bound to it.
+jest.mock("../../session/sessionStore", () => ({
+  ...jest.requireActual("../../session/sessionStore"),
+  getSessionEnvelope: async () => ({
+    version: 1,
+    userId: 4021,
+    accessToken: "access-token",
+    accessTokenExpiresAt: Date.now() + 600_000,
+    refreshToken: "refresh-token",
+    refreshTokenExpiresAt: Date.now() + 600_000
+  })
 }));
 
 import { parseOverview } from "../../api/privateOffice";
+import {
+  __resetOfficeLockForTests,
+  isOfficeUnlocked,
+  setOfficeUnlocked
+} from "../../privateOffice/officeLock";
 import { PrivateOfficeScreen } from "../PrivateOfficeScreen";
+
+/** The member's office passcode for this suite. Any other value is refused. */
+const OFFICE_PASSCODE = "846195";
 
 /** A `_child_state` row exactly as `office.product_state` emits it. */
 function child(overrides: Record<string, unknown> = {}) {
@@ -83,7 +120,35 @@ function overview(office: Record<string, unknown> = {}, ok = true) {
   });
 }
 
-function renderScreen() {
+/**
+ * Open the second lock the way a member does: the gate's own passcode field and
+ * unlock button. Nothing here bypasses the lock — the office is shut until this
+ * runs, which is itself the first thing every case below asserts.
+ */
+async function unlockOffice(utils: ReturnType<typeof render>) {
+  const { getByLabelText, getByText, queryByText } = utils;
+  // A grant minted earlier in the same test is still live, so this mount goes
+  // straight through — exactly as a second office screen does in production.
+  if (isOfficeUnlocked()) return;
+  // Otherwise the lock door is the first thing on screen, and the body is not
+  // mounted behind it.
+  await waitFor(() => getByText("premium:privateOffice.lock.unlock"));
+  fireEvent.changeText(
+    getByLabelText("premium:privateOffice.lock.placeholder"),
+    OFFICE_PASSCODE
+  );
+  // Pressability latches `disabled` one effect flush behind the prop, so a
+  // press dispatched in the same turn as the passcode entry silently no-ops.
+  await waitFor(() =>
+    expect(getByLabelText("premium:privateOffice.lock.placeholder").props.value).toBe(
+      OFFICE_PASSCODE
+    )
+  );
+  fireEvent.press(getByText("premium:privateOffice.lock.unlock"));
+  await waitFor(() => expect(queryByText("premium:privateOffice.lock.unlock")).toBeNull());
+}
+
+async function renderScreen() {
   const navigation = { navigate: jest.fn(), goBack: jest.fn(), setOptions: jest.fn() };
   const utils = render(
     <PrivateOfficeScreen
@@ -91,17 +156,39 @@ function renderScreen() {
       navigation={navigation as never}
     />
   );
+  await unlockOffice(utils);
   return { ...utils, navigation };
 }
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // Every case starts locked: the in-memory grant does not survive a test.
+  __resetOfficeLockForTests();
   mockGetOverview.mockResolvedValue(overview());
+  mockOfficeStatus.mockResolvedValue({
+    state: "READY",
+    passcodeSet: true,
+    setupRequired: false,
+    cooldownSeconds: 0,
+    biometricPreference: "unset",
+    unlocked: false
+  });
+  // Mirrors the real `unlockOffice`: the server is the only thing that can mint
+  // a grant, and a wrong passcode mints nothing.
+  mockUnlockOffice.mockImplementation(async (passcode: string, userId: number) => {
+    if (passcode !== OFFICE_PASSCODE) return { state: "WRONG_PASSCODE" };
+    setOfficeUnlocked(
+      "office-grant-token",
+      new Date(Date.now() + 300_000).toISOString(),
+      Number(userId) || 0
+    );
+    return { state: "UNLOCKED" };
+  });
 });
 
 describe("PrivateOfficeScreen", () => {
   it("renders the office heading and its stated purpose", async () => {
-    const { getByText } = renderScreen();
+    const { getByText } = await renderScreen();
     await waitFor(() => getByText("premium:privateOffice.title"));
     expect(getByText("premium:privateOffice.subtitle")).toBeTruthy();
   });
@@ -115,7 +202,7 @@ describe("PrivateOfficeScreen", () => {
         ]
       })
     );
-    const { getByText, queryByText } = renderScreen();
+    const { getByText, queryByText } = await renderScreen();
     await waitFor(() => getByText("premium:privateOffice.features.privateFacts.label"));
     expect(getByText("premium:privateOffice.features.capitalGraph.label")).toBeTruthy();
     // Nothing invented: a capability this build knows a name for but the server
@@ -132,12 +219,12 @@ describe("PrivateOfficeScreen", () => {
         ]
       })
     );
-    const { getByText } = renderScreen();
+    const { getByText } = await renderScreen();
     await waitFor(() => getByText("some_future_thing"));
   });
 
   it("opens Private Facts when the server says the child opens", async () => {
-    const { getByText, navigation } = renderScreen();
+    const { getByText, navigation } = await renderScreen();
     await waitFor(() => getByText("premium:privateOffice.features.privateFacts.label"));
     fireEvent.press(getByText("premium:privateOffice.features.privateFacts.label"));
     expect(navigation.navigate).toHaveBeenCalledWith("PrivateFacts");
@@ -147,7 +234,7 @@ describe("PrivateOfficeScreen", () => {
     mockGetOverview.mockResolvedValue(
       overview({ available: [child({ opens: false })] })
     );
-    const { getByText, navigation } = renderScreen();
+    const { getByText, navigation } = await renderScreen();
     await waitFor(() => getByText("premium:privateOffice.features.privateFacts.label"));
     fireEvent.press(getByText("premium:privateOffice.features.privateFacts.label"));
     expect(navigation.navigate).not.toHaveBeenCalled();
@@ -164,7 +251,7 @@ describe("PrivateOfficeScreen", () => {
         ]
       })
     );
-    const { getByText } = renderScreen();
+    const { getByText } = await renderScreen();
     await waitFor(() => getByText("premium:privateOffice.reason.PROVIDER_REQUIRED"));
     expect(getByText("premium:privateOffice.reason.NOT_IMPLEMENTED")).toBeTruthy();
     expect(getByText("premium:privateOffice.reason.TEMPORARILY_DISABLED")).toBeTruthy();
@@ -180,7 +267,7 @@ describe("PrivateOfficeScreen", () => {
         upgrade_tier: "PRIVATE_OFFICE"
       })
     );
-    const { getByText } = renderScreen();
+    const { getByText } = await renderScreen();
     await waitFor(() => getByText("premium:privateOffice.upgrade.title"));
   });
 
@@ -188,7 +275,7 @@ describe("PrivateOfficeScreen", () => {
     mockGetOverview.mockResolvedValue(
       overview({ state: "ENTRY_UNKNOWN", effective_tier: "", available: [], unavailable: [] }, false)
     );
-    const { getByText, queryByText } = renderScreen();
+    const { getByText, queryByText } = await renderScreen();
     await waitFor(() => getByText("premium:privateOffice.unknown.title"));
     expect(getByText("premium:privateOffice.retry")).toBeTruthy();
     // The distinction that matters: "we could not look" is not "not available".
@@ -199,7 +286,7 @@ describe("PrivateOfficeScreen", () => {
     mockGetOverview.mockResolvedValue(
       overview({ state: "ENTRY_UNKNOWN", available: [], unavailable: [] }, false)
     );
-    const { getByText } = renderScreen();
+    const { getByText } = await renderScreen();
     await waitFor(() => getByText("premium:privateOffice.retry"));
     mockGetOverview.mockResolvedValue(overview());
     fireEvent.press(getByText("premium:privateOffice.retry"));

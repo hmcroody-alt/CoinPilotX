@@ -172,6 +172,36 @@ jest.mock("../../api/marketplace", () => ({
   loadCachedSellerStore: jest.fn(async () => null)
 }));
 
+// IntelligenceCenterScreen's body now sits behind `PremiumFeatureGate`. The
+// gate is a *different* refusal from the one under test here: with no answer
+// from the entitlement endpoint it draws "we can't confirm your membership"
+// and never mounts the body, so the wrong-subject guard would go unexercised
+// and the suite would pass on the wrong refusal.
+//
+// Only the network read is replaced, with the payload the server sends an
+// entitled member. `parseTierAnswer`, `tierSatisfies` and the shared
+// `useCanonicalTier` cache stay real, so the gate resolves the way it does in
+// production and the assertion below still proves the owner gate — not the
+// premium gate — is what turns a visitor away.
+jest.mock("../../entitlements/canonicalTier", () => {
+  const actual = jest.requireActual("../../entitlements/canonicalTier");
+  return {
+    ...actual,
+    fetchCanonicalTier: async () =>
+      actual.parseTierAnswer({
+        ok: true,
+        resolver_state: "ok",
+        effective_tier: "PREMIUM",
+        status: "active",
+        source: "stripe",
+        expires_at: null,
+        features: {},
+        verified_at: "2026-09-01T00:00:00Z"
+      })
+  };
+});
+
+import { resetCanonicalTier } from "../../entitlements/useCanonicalTier";
 import { PRIVATE_CONTENT_MESSAGE } from "../../profile/profileContext";
 import { ActivityInboxScreen } from "../ActivityInboxScreen";
 import { BusinessOsScreen } from "../BusinessOsScreen";
@@ -196,13 +226,20 @@ function navigationSpy() {
 async function renderAsVisitor(element: React.ReactElement) {
   const view = render(element);
   await act(async () => {
-    await Promise.resolve();
+    // A gated screen settles over several microtask turns (entitlement fetch,
+    // publish to the shared cache, the subscriber's setState), so one flush is
+    // not enough to reach the body's own first render.
+    for (let turn = 0; turn < 5; turn += 1) await Promise.resolve();
   });
   return view;
 }
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // Entitlement is cached module-side and deliberately survives unmount; drop
+  // it so each case resolves the gate itself rather than inheriting the
+  // previous one's answer.
+  resetCanonicalTier();
   // The music library search is public catalogue data, so it stays live even
   // for a visitor; everything me-scoped must never be dispatched at all.
   mockSearchPulseMusic.mockResolvedValue({ tracks: [] });

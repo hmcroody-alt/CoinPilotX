@@ -4395,9 +4395,8 @@
           "label": "Code verlangen",
           "hint": "Wie schnell das Büro nach Verlassen der App gesperrt wird.",
           "immediate": "Sofort",
-          "1m": "Nach 1 Minute",
-          "5m": "Nach 5 Minuten",
-          "15m": "Nach 15 Minuten"
+          "after_one": "Nach {{count}} Minute",
+          "after_other": "Nach {{count}} Minuten"
         },
         "biometric": {
           "label": "Mit {{method}} entsperren",

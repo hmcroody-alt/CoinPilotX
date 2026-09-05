@@ -4395,9 +4395,8 @@
           "label": "Exiger le code",
           "hint": "Délai avant que le bureau se verrouille après avoir quitté l'app.",
           "immediate": "Immédiatement",
-          "1m": "Après 1 minute",
-          "5m": "Après 5 minutes",
-          "15m": "Après 15 minutes"
+          "after_one": "Après {{count}} minute",
+          "after_other": "Après {{count}} minutes"
         },
         "biometric": {
           "label": "Déverrouiller avec {{method}}",

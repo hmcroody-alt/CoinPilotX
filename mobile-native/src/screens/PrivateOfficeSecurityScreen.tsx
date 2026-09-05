@@ -47,6 +47,7 @@ import {
   getOfficeBiometricUserId,
   getOfficeRelockTiming,
   lockOfficeLocally,
+  relockMinutes,
   setOfficeRelockTiming
 } from "../privateOffice/officeLock";
 import { getBiometricCapability } from "../session/biometricAuth";
@@ -262,7 +263,11 @@ function SecuritySettings() {
             accessibilityState={{ selected: relock === timing }}
           >
             <Text style={relock === timing ? styles.optionTextActive : styles.optionText}>
-              {t(`premium:privateOffice.security.relock.${timing}`)}
+              {timing === "immediate"
+                ? t("premium:privateOffice.security.relock.immediate")
+                : t("premium:privateOffice.security.relock.after", {
+                    count: relockMinutes(timing)
+                  })}
             </Text>
             {relock === timing ? (
               <Ionicons name="checkmark-circle" size={18} color={colors.accent} />
