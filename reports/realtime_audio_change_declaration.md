@@ -2470,3 +2470,146 @@ audio tests exercise modules unreachable from the app entry point, is in
 behaviour moves in either direction. The manifest change and the two test changes
 are independent — reverting only the manifest leaves the tests failing, which is
 the correct signal, not a broken build to work around.
+
+---
+
+## Release-range addendum — the retroactively protected multi-guest layer (2026-09-04)
+
+Run the gate over the whole release range rather than over a single commit and it
+fails:
+
+```
+python3 scripts/realtime_audio_change_gate.py --base origin/main --head HEAD
+DECLARATION NOT ACCEPTED
+  - reports/realtime_audio_change_declaration.md does not name these changed
+    protected files: ... 13 paths ...
+```
+
+This addendum exists to make that pass honestly, and the reason it was ever
+failing is worth recording, because it is a property of the gate that will recur.
+
+### Why the change is required
+
+An ordering problem, not a code problem. Thirteen files changed early in this
+range, at a time when none of them was protected. Two later commits in the *same*
+range — `ed1e5398` and `88340849` — widened `categories[].paths` to cover them.
+So by the time the range is evaluated as a whole, the manifest says thirteen
+protected files changed, and no addendum names them: the addendum written when
+they changed had no reason to, and the addendum that protected them correctly
+described them as "unchanged in this commit".
+
+Both statements were true when written. Their conjunction over the range is a
+gap, and per-commit runs cannot see it — only a `--base origin/main` run can.
+That is the finding: **a manifest widening applies retroactively to its own
+range**, so protecting a file is also a promise to declare every change it
+already received since the merge base.
+
+### Which feature required it
+
+None. This addendum adds no code. It is the declaration owed for work already
+described by "Repository consolidation addendum (2026-09-04)" above, which covers
+`5c451905` and remains the substantive record.
+
+### Which protected files changed
+
+All thirteen, at full path, with what each actually received in this range:
+
+| File | In this range | Category |
+|---|---|---|
+| `mobile-native/src/live/liveSeatReconciliation.ts` | new file (`5c451905`) | `live_seat_and_identity_authority` |
+| `mobile-native/src/live/liveSessionLifecycle.ts` | new file (`5c451905`) | `live_seat_and_identity_authority` |
+| `mobile-native/src/live/liveParticipantRegistry.ts` | new file (`5c451905`) | `live_seat_and_identity_authority` |
+| `mobile-native/src/live/liveMediaOwnership.ts` | new file (`5c451905`) | `live_seat_and_identity_authority` |
+| `mobile-native/src/live/liveStreamQuality.ts` | new file (`5c451905`) | `media_adaptation_policy` |
+| `mobile-native/src/live/liveMusicMixing.ts` | **modified** (`5c451905`) | `livestream_audio_adapter` |
+| `mobile-native/src/live/__tests__/liveSeatReconciliation.test.ts` | new file | `critical_audio_tests` |
+| `mobile-native/src/live/__tests__/liveSessionLifecycle.test.ts` | new file | `critical_audio_tests` |
+| `mobile-native/src/live/__tests__/liveParticipantRegistry.test.ts` | new file | `critical_audio_tests` |
+| `mobile-native/src/live/__tests__/liveMediaOwnership.test.ts` | new file | `critical_audio_tests` |
+| `mobile-native/src/live/__tests__/liveStreamQuality.test.ts` | new file | `critical_audio_tests` |
+| `mobile-native/src/live/__tests__/multiGuestBroadcastScenarios.test.ts` | new file | `critical_audio_tests` |
+| `mobile-native/src/live/__tests__/liveMusicMixing.test.ts` | **modified** | `critical_audio_tests` |
+
+Twelve of the thirteen are files that did not exist on `origin/main`. A new file
+cannot regress behaviour that shipped, so the only entry carrying real risk is
+the one that was modified.
+
+**`liveMusicMixing.ts`, stated precisely.** `git diff origin/main..HEAD` on it is
+**+47, −0**: one type and two functions appended
+(`musicRestorationAfterAudioChange`, `musicRestorationIsRequired`). The two
+pre-existing exports that the shipping mix path depends on —
+`clampLiveMixLevel` and `liveMixLevelToAgoraVolume`, the latter being the
+argument to `adjustRecordingSignalVolume`, the microphone's gain — are byte-for-byte
+untouched. The change is additive in the strict sense, not merely in spirit.
+
+### Expected behavior change
+
+None reachable on the shipping configuration.
+
+The new `liveMusicMixing` code has exactly one production call site,
+`useAgoraLiveBroadcastRoom.ts:392`, and it sits *after* the early return at line
+380: `nextEchoScenario` returns `null` when the resolved scenario equals the one
+already applied, which is the solo-host case. The scenario only moves when the
+stage stops being solo, and with `MULTI_GUEST_LIVE_ENABLED=false` no guest can
+be seated. So on production today line 392 is not reached.
+
+Two of the new modules are reachable regardless of the flag, and saying otherwise
+would be the easy overstatement here:
+
+- `liveStreamQuality.publisherVideoProfile` runs via `applyPublisherEncoder` at
+  line 378 — *before* the early return — so a solo host does go through the
+  ladder. It resolves to the 720x1280 solo rung, which is what the constant it
+  replaced also produced, and it is video encoder only: no audio profile is on
+  the ladder.
+- `liveParticipantRegistry` and, through it, `liveSessionLifecycle` back the
+  stage roster, which renders for a solo host too.
+
+`liveMediaOwnership.ts` is the opposite case and is not reachable at all: its
+only consumer, `LiveModerationSheet.tsx`, is still imported by nothing but its
+own test.
+
+### Regression risk
+
+Low and bounded, but not zero, and the boundary is the flag rather than the code.
+The audio-carrying paths are either unchanged (`liveMixLevelToAgoraVolume`) or
+unreachable while multi-guest is off. What is reachable on a single-host Live is
+the video encoder ladder and the roster — neither of which can move audio, which
+is the specific claim `test_the_encoder_ladder_is_driven_by_the_stage_size_module`
+and the `liveAudioMatrix` suites exist to hold.
+
+The residual risk is the one the gate just demonstrated: the protection over
+these files is only as good as the moment it was added, and everything they
+received *before* that moment was reviewed as unprotected code.
+
+### Tests run
+
+Re-run against this exact tree, not quoted from the commits that introduced it:
+
+- Full native gate — `npm run verify` (typecheck + i18n + jest): **345 suites,
+  5753 tests, 0 failures.**
+- Full backend protection suite — `run_protection_suite.py`: **327 checks across
+  28 suites, exit 0**, with no suite reporting zero checks.
+- `tests/protection/test_realtime_audio_gate_coverage.py` — 14 tests; invokes the
+  real gate as a subprocess rather than inspecting the JSON.
+- `tests/protection/test_realtime_audio_architecture.py` — 19 tests.
+- Backend Live/Calls contracts — `test_live_participants.py`,
+  `test_call_multi_guest.py`, `test_call_acceptance_sync.py`,
+  `test_call_two_sided_hangup.py`, `test_agora_private_mux_input.py`: 94 passed.
+
+### Physical validation required
+
+**Unchanged and still outstanding.** This addendum discharges nothing: it names
+files, it does not put a phone in anyone's hand.
+
+The owed matrix is the one already written under "Physical validation NOT
+performed" in the repository consolidation addendum above — host alone, host plus
+one guest both directions, host plus two guests full matrix, a guest leaving,
+host mute/unmute of a guest, and `MULTI_GUEST_LIVE_ENABLED=false` mid-broadcast.
+Of those, only **host alone** is exercised by the configuration that actually
+ships today; the rest cannot occur until the flag is turned on, and turning it on
+is what makes them due.
+
+### Rollback procedure
+
+Nothing to roll back — this addendum is prose. The code it describes is reverted
+by reverting `5c451905`, as recorded above.
