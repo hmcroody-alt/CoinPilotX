@@ -158,6 +158,23 @@ export function ProfileScreen({ route, navigation }: Props) {
     }
   }
 
+  function postsLookupKey(nextProfile: PulseProfile | null, fallbackKey = profileKey) {
+    if (!nextProfile) return fallbackKey;
+    const canonicalUserId = Number(nextProfile.user_id || (owner ? viewerUserId : 0) || 0);
+    return (canonicalUserId > 0 ? String(canonicalUserId) : "") || nextProfile.canonical_profile_key || nextProfile.public_player_id || nextProfile.username || fallbackKey || "";
+  }
+
+  function profilePostTarget(nextProfile: PulseProfile) {
+    const canonicalUserId = Number(nextProfile.user_id || (owner ? viewerUserId : 0) || 0);
+    const key = postsLookupKey(nextProfile);
+    return {
+      userId: canonicalUserId > 0 ? canonicalUserId : undefined,
+      profileKey: key,
+      publicPlayerId: nextProfile.public_player_id,
+      username: nextProfile.username
+    };
+  }
+
   async function load(mode: "initial" | "refresh" = "initial") {
     setErrorState(null);
     setOffline(false);
