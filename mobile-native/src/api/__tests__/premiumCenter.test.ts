@@ -41,7 +41,9 @@ function center(overrides: Partial<PremiumCenter> = {}): PremiumCenter {
       mode: "active",
       decided_by: "canonical",
       on_hold: false,
-      account_status: "active"
+      account_status: "active",
+      reason: "ACTIVE_SUBSCRIPTION",
+      lifetime: false
     },
     ...overrides
   });
@@ -230,6 +232,57 @@ describe("premiumExperience", () => {
     // rather than pretend nothing is happening.
     expect(premiumExperience(center({ membership: { is_premium: true, mode: "grace" } } as never))).toBe("grace");
   });
+
+  it("reads a lifetime membership as lifetime even with a dead subscription row behind it", () => {
+    // The whole reason `lifetime` is a server fact rather than something the
+    // screen deduces. This payload is byte-for-byte the "lapsed member" fixture
+    // above except that the server says the membership is permanent — and the
+    // subscription row is the same expired, cancel-at-period-end apple_iap row
+    // that makes the lapsed case read "expired". If the client inferred instead
+    // of being told, these two would be indistinguishable and the owner would be
+    // shown a Renew button for a membership that cannot end.
+    const permanent = center({
+      membership: { is_premium: true, mode: "owner_lifetime", reason: "OWNER_LIFETIME", lifetime: true },
+      subscription: {
+        provider: "apple_iap",
+        plan_key: "premium_annual",
+        billing_period: "annual",
+        status: "expired",
+        current_period_end: "2025-01-01T00:00:00Z",
+        cancel_at_period_end: true
+      }
+    } as never);
+    expect(premiumExperience(permanent)).toBe("lifetime");
+    expect(premiumExperience(permanent)).not.toBe("expired");
+  });
+
+  it("lets an account hold and a founder number still outrank lifetime", () => {
+    // Lifetime is a billing fact, not a security verdict: a hold must still be
+    // able to say so. And a founder who is also permanent keeps the founder
+    // layout, because the founder number is the rarer thing to show.
+    const held = center({
+      membership: { is_premium: true, usable_now: false, mode: "owner_lifetime", lifetime: true, on_hold: true }
+    } as never);
+    expect(premiumExperience(held)).toBe("hold");
+
+    const founder = center({
+      membership: { is_premium: true, mode: "owner_lifetime", lifetime: true },
+      founder: { is_founder: true, founder_number: 1, price_cents: 4999 }
+    } as never);
+    expect(premiumExperience(founder)).toBe("founder");
+  });
+
+  it("never reports lifetime for a membership the server did not mark permanent", () => {
+    // `lifetime` alone is not enough — it is paired with `is_premium` so a
+    // stale or malformed flag cannot light up the permanent layout for someone
+    // who has no access at all.
+    expect(premiumExperience(center({
+      membership: { is_premium: false, mode: "inactive", lifetime: true }
+    } as never))).not.toBe("lifetime");
+    expect(premiumExperience(center({
+      membership: { is_premium: true, mode: "active", lifetime: false }
+    } as never))).toBe("active");
+  });
 });
 
 describe("premiumTileState", () => {
@@ -251,6 +304,16 @@ describe("premiumTileState", () => {
     expect(premiumTileState(center())).toBe("active");
     expect(premiumTileState(center({ membership: { is_premium: true, mode: "grace" } } as never))).toBe("grace");
     expect(premiumTileState(center({ founder: { is_founder: true, founder_number: 1 } } as never))).toBe("founder");
+  });
+
+  it("gives a lifetime member the ordinary active badge", () => {
+    // The tile is a micro-status, not a place to advertise permanence. What
+    // matters here is only that it is not null and not a lapsed state: a
+    // permanent member must never see the tile go quiet the way an expired one
+    // does.
+    expect(premiumTileState(center({
+      membership: { is_premium: true, mode: "owner_lifetime", lifetime: true }
+    } as never))).toBe("active");
   });
 });
 

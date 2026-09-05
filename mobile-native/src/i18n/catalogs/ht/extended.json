@@ -3613,6 +3613,7 @@
     "status": {
       "active": "Aktif",
       "founder": "Pou tout tan",
+      "lifetime": "Pou tout tan",
       "grace": "Renouvèlman ap tann",
       "hold": "Kont sispann",
       "expired": "Fini",
@@ -3621,6 +3622,7 @@
     "blurb": {
       "active": "Avantaj Premium ou yo aktif.",
       "founder": "Manm fondatè ou pa janm ekspire e li pa janm faktire.",
+      "lifetime": "Manm ou an pèmanan. Pa gen anyen pou renouvle e pa gen dat pou siveye.",
       "grace": "Avantaj ou yo rete aktif pandan Apple ap reeseye renouvèlman an.",
       "hold": "Avantaj ou yo an poz jiskaske sispansyon kont ou an rezoud.",
       "expired": "Abònman ou fini. Ou ka rekòmanse l nenpòt kilè.",
@@ -3684,6 +3686,7 @@
       "cancelPending": "Abònman sa a pral fini e li p ap renouvle.",
       "none": "Nou pa gen enfòmasyon fakti pou manm sa a.",
       "founderNone": "Manm fondatè — pa gen fakti, pa gen anyen pou renouvle.",
+      "lifetimeNone": "Manm pèmanan — pa gen fakti, pa gen anyen pou renouvle.",
       "planValue": "PulseSoc Premium — {{period}}",
       "planValueUnknown": "PulseSoc Premium",
       "price": "Pri",

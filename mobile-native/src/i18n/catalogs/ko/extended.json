@@ -3612,6 +3612,7 @@
     "status": {
       "active": "이용 중",
       "founder": "평생",
+      "lifetime": "평생",
       "grace": "갱신 대기 중",
       "hold": "계정 보류",
       "expired": "종료됨",
@@ -3620,6 +3621,7 @@
     "blurb": {
       "active": "프리미엄 혜택이 켜져 있습니다.",
       "founder": "창립 멤버십은 만료되지 않고 결제도 없습니다.",
+      "lifetime": "멤버십이 영구적입니다. 갱신할 것도, 확인할 날짜도 없습니다.",
       "grace": "Apple이 갱신을 다시 시도하는 동안에도 혜택은 유지됩니다.",
       "hold": "계정 보류가 해제될 때까지 혜택이 일시 중지됩니다.",
       "expired": "구독이 종료되었습니다. 언제든지 다시 시작할 수 있습니다.",
@@ -3683,6 +3685,7 @@
       "cancelPending": "이 구독은 종료 예정이며 갱신되지 않습니다.",
       "none": "이 멤버십의 결제 정보가 없습니다.",
       "founderNone": "창립 멤버십 — 결제도 갱신도 없습니다.",
+      "lifetimeNone": "영구 멤버십 — 결제도 갱신도 없습니다.",
       "planValue": "PulseSoc Premium — {{period}}",
       "planValueUnknown": "PulseSoc Premium",
       "price": "가격",

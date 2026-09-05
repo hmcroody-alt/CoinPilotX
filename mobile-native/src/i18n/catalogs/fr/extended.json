@@ -3635,6 +3635,7 @@
     "status": {
       "active": "Actif",
       "founder": "À vie",
+      "lifetime": "À vie",
       "grace": "Renouvellement en attente",
       "hold": "Compte suspendu",
       "expired": "Terminé",
@@ -3643,6 +3644,7 @@
     "blurb": {
       "active": "Vos avantages Premium sont actifs.",
       "founder": "Votre adhésion fondateur n'expire pas et n'est jamais facturée.",
+      "lifetime": "Votre adhésion est permanente. Il n'y a rien à renouveler ni aucune date à surveiller.",
       "grace": "Vos avantages restent actifs pendant qu'Apple relance le renouvellement.",
       "hold": "Vos avantages sont en pause jusqu'à la levée de la suspension de votre compte.",
       "expired": "Votre abonnement a pris fin. Vous pouvez le relancer à tout moment.",
@@ -3707,6 +3709,7 @@
       "cancelPending": "Cet abonnement doit prendre fin et ne sera pas renouvelé.",
       "none": "Nous n'avons pas d'informations de facturation pour cette adhésion.",
       "founderNone": "Adhésion fondateur : aucune facturation, rien à renouveler.",
+      "lifetimeNone": "Adhésion permanente : aucune facturation, rien à renouveler.",
       "planValue": "PulseSoc Premium — {{period}}",
       "planValueUnknown": "PulseSoc Premium",
       "price": "Prix",

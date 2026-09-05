@@ -87,6 +87,7 @@ def test_status_center_bootstraps_its_schema_before_first_canonical_read(monkeyp
         "is_premium": False,
         "membership_mode": "none",
         "source": "canonical_grant",
+        "reason": prem.REASON_NO_ENTITLEMENT,
         "account_hold": False,
         "account_status": "active",
     })

@@ -559,20 +559,33 @@ export function PremiumCenterScreen({ route, navigation }: Props) {
 function HeaderSection({ center, experience }: { center: PremiumCenter | null; experience: PremiumExperience }) {
   const { t } = useTranslation();
   const founderNumber = center?.founder.founder_number || 0;
-  const tone = premiumTheme.state[experience === "founder" || experience === "active" ? experience : experience === "grace" ? "grace" : experience === "hold" ? "hold" : "none"];
+  // `lifetime` borrows the founder tone: gold is this screen's colour for a
+  // membership that does not run out, and that is exactly what it is.
+  const tone = premiumTheme.state[
+    experience === "founder" || experience === "active" ? experience
+      : experience === "lifetime" ? "founder"
+        : experience === "grace" ? "grace"
+          : experience === "hold" ? "hold"
+            : "none"
+  ];
 
   const heading =
     experience === "founder"
       ? t("premium:header.founder")
-      : experience === "active" || experience === "grace" || experience === "hold"
+      // Not `header.founder`: a permanent membership is not a Founder number,
+      // and borrowing that word would claim a status this account was never
+      // assigned. It is a Premium member whose membership does not end.
+      : experience === "lifetime" || experience === "active" || experience === "grace" || experience === "hold"
         ? t("premium:header.member")
         : t("premium:header.free");
 
   return (
-    <View style={[styles.hero, (experience === "founder" || experience === "active") && styles.heroGold]}>
+    <View style={[styles.hero, (experience === "founder" || experience === "lifetime" || experience === "active") && styles.heroGold]}>
       <View style={styles.heroTop}>
         <View style={styles.heroCrest}>
-          <Ionicons name={experience === "founder" ? "diamond" : "diamond-outline"} size={26} color={premiumTheme.gold} />
+          {/* Filled for the two permanent states, outlined for the ones that
+              depend on a renewal going through. */}
+          <Ionicons name={experience === "founder" || experience === "lifetime" ? "diamond" : "diamond-outline"} size={26} color={premiumTheme.gold} />
         </View>
         <View style={styles.heroBody}>
           <Text style={styles.heroTitle}>{heading}</Text>
@@ -831,6 +844,23 @@ export function BillingSection({
 }) {
   const { t } = useTranslation();
   const fmt = useFormatters();
+
+  // A permanent membership has no billing to show and, more importantly, no
+  // date that means anything. Checked ahead of `!subscription` rather than
+  // inside it, because the case that matters is the one where a subscription
+  // row DOES exist: an owner who once subscribed and let it lapse still has
+  // that history, and every branch below would read it as the current state and
+  // print "Ends" over a date in the past. The membership did not end. Like the
+  // Founder branch this is also enforced here rather than only at the call
+  // site, because the component is exported and rendered directly by tests.
+  if (experience === "lifetime") {
+    return (
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>{t("premium:billing.heading")}</Text>
+        <Text style={styles.body}>{t("premium:billing.lifetimeNone")}</Text>
+      </View>
+    );
+  }
 
   if (!subscription) {
     // The server has no billing row but Apple can prove one. Show Apple's own

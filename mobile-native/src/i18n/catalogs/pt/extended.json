@@ -3635,6 +3635,7 @@
     "status": {
       "active": "Ativa",
       "founder": "Vitalícia",
+      "lifetime": "Vitalícia",
       "grace": "Renovação pendente",
       "hold": "Conta em espera",
       "expired": "Encerrada",
@@ -3643,6 +3644,7 @@
     "blurb": {
       "active": "Seus benefícios Premium estão ativos.",
       "founder": "Sua assinatura de fundador não expira e nunca é cobrada.",
+      "lifetime": "Sua assinatura é permanente. Não há nada a renovar nem data alguma para acompanhar.",
       "grace": "Seus benefícios continuam ativos enquanto a Apple tenta renovar.",
       "hold": "Seus benefícios estão pausados até que a espera na sua conta seja resolvida.",
       "expired": "Sua assinatura terminou. Você pode reativá-la quando quiser.",
@@ -3707,6 +3709,7 @@
       "cancelPending": "Esta assinatura está marcada para terminar e não será renovada.",
       "none": "Não temos dados de cobrança para esta assinatura.",
       "founderNone": "Assinatura de fundador — sem cobrança, nada a renovar.",
+      "lifetimeNone": "Assinatura permanente — sem cobrança, nada a renovar.",
       "planValue": "PulseSoc Premium — {{period}}",
       "planValueUnknown": "PulseSoc Premium",
       "price": "Preço",

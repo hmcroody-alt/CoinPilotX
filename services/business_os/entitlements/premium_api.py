@@ -45,6 +45,7 @@ import logging
 import threading
 from typing import Any, Optional
 
+from services.business_os.entitlements import owner as _owner
 from services.business_os.entitlements import premium as _prem
 from services.business_os.entitlements import readiness as _rd
 from services.business_os.entitlements import schema as _schema
@@ -658,6 +659,16 @@ def status_center(user_id: Any, *, subject_type: str = "user",
             "decided_by": state["source"],
             "on_hold": state["account_hold"],
             "account_status": state["account_status"],
+            # Why the resolver answered as it did, from the closed enum in
+            # premium.REASONS. Already computed for every decision; it was
+            # simply never carried to the screen, which left the client
+            # inferring "expired" from the presence of a subscription row.
+            "reason": state["reason"],
+            # Does this membership have an end at all? The screen needs this as
+            # a fact, not as something to deduce: a permanent membership with a
+            # lapsed provider row behind it looks exactly like a lapsed
+            # membership if all you have is the row.
+            "lifetime": state["membership_mode"] == _owner.MODE_OWNER_LIFETIME,
         },
         "founder": founder,
         "subscription": subscription_summary(user_id, subject_type=subject_type),

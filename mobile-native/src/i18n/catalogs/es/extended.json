@@ -3635,6 +3635,7 @@
     "status": {
       "active": "Activa",
       "founder": "De por vida",
+      "lifetime": "De por vida",
       "grace": "Renovación pendiente",
       "hold": "Cuenta retenida",
       "expired": "Finalizada",
@@ -3643,6 +3644,7 @@
     "blurb": {
       "active": "Tus beneficios Premium están activos.",
       "founder": "Tu membresía de fundador no caduca y nunca se cobra.",
+      "lifetime": "Tu membresía es permanente. No hay nada que renovar ni ninguna fecha que vigilar.",
       "grace": "Tus beneficios siguen activos mientras Apple reintenta la renovación.",
       "hold": "Tus beneficios están en pausa hasta que se resuelva la retención de tu cuenta.",
       "expired": "Tu suscripción finalizó. Puedes reactivarla cuando quieras.",
@@ -3707,6 +3709,7 @@
       "cancelPending": "Esta suscripción está programada para finalizar y no se renovará.",
       "none": "No tenemos datos de facturación para esta membresía.",
       "founderNone": "Membresía de fundador: sin facturación, nada que renovar.",
+      "lifetimeNone": "Membresía permanente: sin facturación, nada que renovar.",
       "planValue": "PulseSoc Premium — {{period}}",
       "planValueUnknown": "PulseSoc Premium",
       "price": "Precio",

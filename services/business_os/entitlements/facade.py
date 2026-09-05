@@ -33,6 +33,7 @@ import os
 from typing import Any, Callable, Optional
 
 from services import db
+from services.business_os.entitlements import owner as _owner
 from services.business_os.entitlements import service as _svc
 
 _log = logging.getLogger("business_os.entitlements.facade")
@@ -299,6 +300,36 @@ def explain(subject_id: Any, key: str, *, subject_type: str = "user",
     mode = get_mode()
     legacy = _legacy_opinion(subject_id, key)
     legacy_bool = bool(legacy) if legacy is not None else False
+
+    # --- owner lifetime -----------------------------------------------------
+    # Scoped by `owner.confers`, which admits the Premium key set and nothing
+    # else. That scope check is not defensive tidiness: this function is called
+    # with every entitlement key in the product, `private.access` and
+    # `private_office.access` included, and an unscoped short-circuit here would
+    # hand the owner the Private Office through a change whose commit message
+    # says "premium". Private tiers are earned by a grant row or not at all.
+    #
+    # Evaluated before the MODE_OFF return because `off` is the production
+    # default, and a rule that only holds once an operator advances a migration
+    # flag is not a guarantee. The account hold is resolved first and suppresses
+    # the rule, so the ordering is: hold -> owner -> everything else.
+    #
+    # Note the hold is looked up ONLY for the owner. Every other subject keeps
+    # the exact query profile and the exact `off`-mode answer it had before.
+    if _owner.confers(key) and _owner.is_owner_account(subject_id):
+        owner_hold = _account_hold(subject_id, context)
+        if _owner.applies(subject_id, owner_hold):
+            return {
+                "allowed": True,
+                "flag_mode": mode,
+                "decision_source": _owner.SOURCE_OWNER_LIFETIME,
+                "mode": _owner.MODE_OWNER_LIFETIME,
+                "account_hold": False,
+                "account_status": owner_hold["account_status"],
+                "reason": _owner.REASON_OWNER_LIFETIME,
+                "legacy": legacy,
+                "canonical_grant": None,
+            }
 
     if mode == MODE_OFF:
         # Preserve current behaviour exactly: legacy only, no account-hold overlay.

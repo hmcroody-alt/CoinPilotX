@@ -46,6 +46,7 @@ export const PREMIUM_CACHE_CONTRACT = "display-only";
 
 /** Membership mode as decided by `services/business_os/entitlements/premium.py`. */
 export type PremiumMembershipMode =
+  | "owner_lifetime"
   | "active"
   | "grace"
   | "grandfathered"
@@ -65,6 +66,23 @@ export type PremiumMembership = {
   decided_by: string;
   on_hold: boolean;
   account_status: string | null;
+  /**
+   * Why the server answered as it did, from the closed enum in
+   * `premium.REASONS`. Diagnostic, like `decided_by` — the copy a member reads
+   * comes from `premiumExperience`, not from this string.
+   */
+  reason: string;
+  /**
+   * Does this membership have an end at all?
+   *
+   * A server FACT, not a client deduction, and the distinction matters. A
+   * permanent membership can have a lapsed provider subscription sitting behind
+   * it — history that really happened — and from the row alone it is
+   * indistinguishable from a membership that ran out. Deducing "expired" from
+   * the presence of that row is what would put a renewal prompt in front of
+   * someone whose access cannot lapse.
+   */
+  lifetime: boolean;
 };
 
 export type PremiumFounder = {
@@ -174,6 +192,7 @@ export type PremiumCenter = {
  */
 export type PremiumExperience =
   | "founder"
+  | "lifetime"
   | "active"
   | "grace"
   | "hold"
@@ -214,7 +233,11 @@ export function normalizePremiumCenter(input: Partial<PremiumCenter> | null | un
       mode: (membership?.mode || "none") as PremiumMembershipMode,
       decided_by: String(membership?.decided_by || ""),
       on_hold: Boolean(membership?.on_hold),
-      account_status: membership?.account_status ?? null
+      account_status: membership?.account_status ?? null,
+      reason: String(membership?.reason || ""),
+      // Unentitled by default, like every other field here: a truncated payload
+      // must not be able to assert a permanent membership.
+      lifetime: Boolean(membership?.lifetime)
     },
     founder: {
       is_founder: Boolean(founder?.is_founder),
@@ -363,11 +386,17 @@ export function normalizePremiumUsageCenter(
  * would read as having lost the status. The account hold is checked before
  * `active` for the opposite reason: a member whose access is paused must not be
  * told everything is fine.
+ *
+ * `lifetime` sits between them. Above `hold` it would tell a suspended account
+ * everything is fine; below `grace` or `active` it would never fire, because a
+ * permanent membership is also a premium one and `active` would swallow it —
+ * and "Active" is the layout with the renewal date on it.
  */
 export function premiumExperience(payload: PremiumCenter | null): PremiumExperience {
   if (!payload) return "none";
   if (payload.founder.is_founder || payload.membership.mode === "grandfathered") return "founder";
   if (payload.membership.on_hold) return "hold";
+  if (payload.membership.lifetime && payload.membership.is_premium) return "lifetime";
   if (payload.membership.mode === "grace") return "grace";
   if (payload.membership.is_premium) return "active";
   // Someone with a subscription row who is no longer premium has lapsed; someone
@@ -389,6 +418,9 @@ export function premiumTileState(payload: PremiumCenter | null): "active" | "fou
   const experience = premiumExperience(payload);
   if (experience === "founder") return "founder";
   if (experience === "grace") return "grace";
-  if (experience === "active") return "active";
+  // A permanent membership reads as "active" on the tile. The tile has three
+  // words and no room for a fourth, and of the three this is the only one that
+  // is true: the membership is on, and it is not a Founder number.
+  if (experience === "active" || experience === "lifetime") return "active";
   return null;
 }

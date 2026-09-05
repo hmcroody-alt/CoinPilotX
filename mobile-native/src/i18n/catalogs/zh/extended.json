@@ -3612,6 +3612,7 @@
     "status": {
       "active": "生效中",
       "founder": "永久",
+      "lifetime": "永久",
       "grace": "待续订",
       "hold": "账号受限",
       "expired": "已结束",
@@ -3620,6 +3621,7 @@
     "blurb": {
       "active": "你的高级会员权益已开启。",
       "founder": "你的创始会员资格永不过期，也不会产生费用。",
+      "lifetime": "你的会员资格是永久的。无需续订，也没有到期日。",
       "grace": "Apple 重新尝试续订期间，你的权益仍然有效。",
       "hold": "在账号限制解除前，你的权益暂停使用。",
       "expired": "你的订阅已结束。随时可以重新开通。",
@@ -3683,6 +3685,7 @@
       "cancelPending": "此订阅将结束，不会续订。",
       "none": "我们没有此会员资格的扣费信息。",
       "founderNone": "创始会员资格 — 无扣费，无需续订。",
+      "lifetimeNone": "永久会员资格 — 无扣费，无需续订。",
       "planValue": "PulseSoc Premium — {{period}}",
       "planValueUnknown": "PulseSoc Premium",
       "price": "价格",

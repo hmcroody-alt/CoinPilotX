@@ -45,6 +45,15 @@ not reach out to the frozen legacy deciders listed in the ownership contract.
 PRIVATE and PRIVATE_OFFICE have NO fallback. They are new tiers; there is no
 legacy authority that could know about them, so anything other than a canonical
 grant is a bug, and inventing a fallback would be inventing access.
+
+The owner floor
+---------------
+The owner account holds Premium permanently
+(``business_os.entitlements.owner``). That is a FLOOR at PREMIUM, applied after
+the account hold and after a real umbrella grant has had its say, so it can
+raise the owner off FREE and can neither lower a higher grant nor manufacture
+one. PRIVATE and PRIVATE_OFFICE stay grant-only for the owner exactly as they
+are for everybody else.
 """
 
 from __future__ import annotations
@@ -54,6 +63,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from services.business_os.entitlements import facade as _facade
+from services.business_os.entitlements import owner as _owner
 from services.business_os.entitlements import premium as _premium
 from services.business_os.entitlements import service as _svc
 
@@ -228,6 +238,39 @@ def resolve_tier(user_id: Any, *, context: Optional[dict] = None,
     # answer, and it is "no". Falling back to a legacy column there would let a
     # stale ``users.lifetime_premium`` flag resurrect access an operator
     # deliberately took away.
+    # 2b. The owner floor.
+    #
+    # Reached only when no umbrella grant won above, so this can RAISE the owner
+    # to PREMIUM and can never lower a real PRIVATE or PRIVATE_OFFICE grant —
+    # those returned at step 2. Nor can it grant them: the floor is PREMIUM by
+    # construction, and the owner reaches the upper tiers the same way anyone
+    # else does, with a grant row. "Owner" is a Premium guarantee, not a skeleton
+    # key for the Private Office.
+    #
+    # Placed ahead of the bridge rather than inside it because the bridge only
+    # fires when canonical is SILENT. An owner who once held a real
+    # ``premium.access`` grant that has since expired or been revoked is not
+    # silent — canonical has an answer, and the answer is "no". That is correct
+    # for everyone else and wrong for exactly one account, which is the case
+    # this floor exists to catch.
+    if _owner.applies(user_id, hold):
+        owner_resolved = {
+            "user_id": user_id,
+            "effective_tier": TIER_PREMIUM,
+            "source": _owner.SOURCE_OWNER_LIFETIME,
+            "status": STATUS_ACTIVE,
+            # No period end, because there is no period. The client renders this
+            # field directly, so a date here would be a countdown on a
+            # membership that does not run out.
+            "expires_at": None,
+            "features": {},
+            "verified_at": _utc_now_iso(),
+            "resolver_state": RESOLVER_OK,
+        }
+        if include_features:
+            owner_resolved["features"] = _features_for(TIER_PREMIUM)
+        return owner_resolved
+
     try:
         _canonical_allowed, canonical_silent = _premium.canonical_premium(user_id)
         bridged = (

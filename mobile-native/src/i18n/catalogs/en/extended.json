@@ -3635,6 +3635,7 @@
     "status": {
       "active": "Active",
       "founder": "Lifetime",
+      "lifetime": "Lifetime",
       "grace": "Renewal pending",
       "hold": "Account hold",
       "expired": "Ended",
@@ -3643,6 +3644,7 @@
     "blurb": {
       "active": "Your Premium benefits are on.",
       "founder": "Your founding membership doesn't expire and is never billed.",
+      "lifetime": "Your membership is permanent. There is nothing to renew and no date to watch.",
       "grace": "Your benefits stay on while Apple retries the renewal.",
       "hold": "Your benefits are paused until the hold on your account is resolved.",
       "expired": "Your subscription has ended. You can start it again any time.",
@@ -3707,6 +3709,7 @@
       "cancelPending": "This subscription is set to end and will not renew.",
       "none": "We don't have billing details for this membership.",
       "founderNone": "Founding membership — no billing, nothing to renew.",
+      "lifetimeNone": "Permanent membership — no billing, nothing to renew.",
       "planValue": "PulseSoc Premium — {{period}}",
       "planValueUnknown": "PulseSoc Premium",
       "price": "Price",

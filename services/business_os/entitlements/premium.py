@@ -46,6 +46,7 @@ from typing import Any, Optional
 
 from services import db
 from services.business_os.entitlements import facade as _facade
+from services.business_os.entitlements import owner as _owner
 from services.business_os.entitlements import service as _svc
 
 _log = logging.getLogger("business_os.entitlements.premium")
@@ -307,6 +308,44 @@ def resolve(user_id: Any, *, subject_type: str = "user",
     row = identity_row(user_id)
     identity = identity_premium(user_id, row=row) if row else None
 
+    # --- owner lifetime -----------------------------------------------------
+    # Placed here on purpose: after the account hold, before every clock.
+    #
+    # AFTER THE HOLD, because a suspended account is suspended regardless of who
+    # owns it. ``owner.applies`` is handed the resolved hold and stands aside
+    # when one is on, which drops the request through to the unchanged path
+    # below rather than inventing a denial of its own.
+    #
+    # BEFORE EVERY CLOCK, because that is the entire bug. Below this point sit
+    # ``legacy_premium`` (which consults row_period_ended), the trial window,
+    # the subscription expiry, the canonical grant's expires_at, and the
+    # provider's revocation state — five independent ways for a timestamp or a
+    # store event to end a membership that is not supposed to be endable. The
+    # owner's Premium is not a term that renews; it is a standing rule, so no
+    # clock is consulted to confirm it and no refund can retract it.
+    #
+    # This runs in ALL THREE flag modes. Under the production default (`off`)
+    # the branch below returns the legacy answer untouched — and the legacy
+    # reader has no notion of an owner, which is exactly why the owner's badge
+    # (authority C, which does know) and the owner's access (authority A, which
+    # does not) disagreed in the first place.
+    #
+    # The identity check appears twice on purpose. Here it guards the hold
+    # LOOKUP, so a non-owner's query profile stays byte-for-byte what it was
+    # before this branch existed — no extra read is issued on behalf of the
+    # millions of accounts the rule will never apply to. `owner.applies` then
+    # re-asks it as the single semantic gate, which keeps the stand-aside-on-hold
+    # rule in one place rather than restated at all three call sites. The repeat
+    # costs an environment read and a set membership test, and performs no I/O.
+    hold = _facade.account_hold(user_id, context) if _owner.is_owner_account(user_id) else None
+    if _owner.applies(user_id, hold):
+        return _state(
+            is_premium=True, source=_owner.SOURCE_OWNER_LIFETIME,
+            membership_mode=_owner.MODE_OWNER_LIFETIME, flag_mode=mode,
+            account_hold=False, account_status=(hold or {}).get("account_status"),
+            legacy=legacy, canonical=None, identity=identity, identity_row=row,
+        )
+
     if mode == _facade.MODE_OFF:
         # Byte-for-byte current behaviour: legacy decides, canonical untouched.
         return _state(
@@ -368,8 +407,15 @@ REASON_EXPIRED = "EXPIRED"
 REASON_REVOKED = "REVOKED"
 REASON_ACCOUNT_HOLD = "ACCOUNT_HOLD"
 REASON_NO_ENTITLEMENT = "NO_ENTITLEMENT"
+#: Re-exported from ``owner`` so callers have one import for the enum while the
+#: rule itself keeps a single home. Deliberately NOT reported as
+#: ACTIVE_SUBSCRIPTION (there is no subscription behind it, so any screen
+#: reading this would print a renewal date that does not exist) and NOT as
+#: ACTIVE_TRIAL (which would put a countdown on a membership that never ends).
+REASON_OWNER_LIFETIME = _owner.REASON_OWNER_LIFETIME
 
 REASONS = (
+    REASON_OWNER_LIFETIME,
     REASON_ACTIVE_TRIAL, REASON_ACTIVE_SUBSCRIPTION, REASON_ACTIVE_HIGHER_TIER,
     REASON_EXPIRED, REASON_REVOKED, REASON_ACCOUNT_HOLD, REASON_NO_ENTITLEMENT,
 )
@@ -400,6 +446,10 @@ def _reason_for(*, is_premium: bool, source: str, membership_mode: str,
                 identity_row: Optional[dict] = None) -> str:
     """Map a resolved state onto the closed reason enum."""
     mode = str(membership_mode or "")
+    # First, and above the `is_premium` split: owner lifetime is the only mode
+    # whose reason must survive a rename of anything below it.
+    if mode == _owner.MODE_OWNER_LIFETIME:
+        return REASON_OWNER_LIFETIME
     if is_premium:
         if mode == "grandfathered":
             return REASON_ACTIVE_HIGHER_TIER
