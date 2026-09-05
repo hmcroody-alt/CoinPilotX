@@ -79,6 +79,7 @@ OFFICE_FEATURE_ID = "private_office"
 OFFICE_CHILD_IDS: tuple[str, ...] = (
     "private_facts",
     "capital_graph",
+    "private_office.operations",
     "private_briefings",
     "relationship_intelligence",
     "private_shield",

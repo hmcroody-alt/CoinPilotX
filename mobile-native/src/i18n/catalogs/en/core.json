@@ -215,7 +215,10 @@
       "briefing": "Briefing",
       "privateOffice": "Private Office",
       "privateFacts": "Private Facts",
-      "privateOfficeSecurity": "Office Security"
+      "privateOfficeSecurity": "Office Security",
+      "privateOperations": "Operations",
+      "capitalGraph": "Capital Graph",
+      "capitalEntity": "Entity"
     },
     "navSubtitles": {
       "missionControl": "Mission Control",

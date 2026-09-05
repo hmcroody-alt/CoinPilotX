@@ -215,7 +215,10 @@
       "briefing": "简报",
       "privateOffice": "私人办公室",
       "privateFacts": "私人信息",
-      "privateOfficeSecurity": "办公室安全"
+      "privateOfficeSecurity": "办公室安全",
+      "privateOperations": "事务",
+      "capitalGraph": "资本图谱",
+      "capitalEntity": "实体"
     },
     "navSubtitles": {
       "missionControl": "指挥中心",

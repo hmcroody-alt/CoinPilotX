@@ -180,6 +180,21 @@ _FEATURES = (
         ),
     ),
     FeatureSpec(
+        feature_id="private_office.operations",
+        minimum_tier=TIER_PRIVATE,
+        server_enforced=True,
+        # Batch C. The six record primitives (obligations, domain events,
+        # decisions, requests, risks, opportunities): schema, sanctioned
+        # writers (records.create_record/update_record/revise_record — the
+        # only modules permitted to INSERT, enforced by
+        # tests/private_office/test_private_write_boundary.py), the five-gate
+        # reader (retrieval.retrieve_records), the HTTP surface
+        # (services/private_office_routes.py) and the six UNDX list
+        # capabilities. The kill switch below is the way to turn this off.
+        implementation=IMPL_IMPLEMENTED,
+        flag_env="PRIVATE_OPERATIONS_ENABLED",
+    ),
+    FeatureSpec(
         feature_id="private_office.document.extraction",
         minimum_tier=TIER_PRIVATE,
         server_enforced=True,

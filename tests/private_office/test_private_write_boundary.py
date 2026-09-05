@@ -123,6 +123,9 @@ SKIP_DIRS = frozenset({
     ".git", "node_modules", "__pycache__", ".venv", "venv", "env",
     "build", "dist", ".expo", "ios", "android", ".mypy_cache",
     ".pytest_cache", "site-packages",
+    # Nested worktrees are full checkouts of this repo; scanning them reports
+    # the sanctioned writers at a foreign path prefix as boundary violations.
+    ".claude",
 })
 
 _FAILURES: list[str] = []

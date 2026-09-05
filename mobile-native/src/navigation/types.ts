@@ -499,7 +499,10 @@ export type RootStackParamList = {
   // entry, and a param could only ever disagree with that answer while looking
   // authoritative. `title` is the same optional override every titled route has.
   PrivateOffice: { title?: string } | undefined;
-  PrivateFacts: { title?: string } | undefined;
+  PrivateFacts: { title?: string; create?: boolean } | undefined;
+  PrivateOperations: { view?: string; title?: string } | undefined;
+  CapitalGraph: { view?: string; title?: string } | undefined;
+  CapitalEntity: { id: number; view?: string; title?: string };
   PrivateOfficeSecurity: { title?: string } | undefined;
   AccountCenter: { section?: "account" | "security" | "privacy" | "devices"; title?: string } | undefined;
   AccountSettings: { title?: string } | undefined;

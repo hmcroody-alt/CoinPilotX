@@ -215,6 +215,12 @@ NATIVE_ROUTES: dict[str, str] = {
     # and a map that knows one but not the other would describe half a journey.
     "PrivateOffice": "/pulse/private-office",
     "PrivateFacts": "/pulse/private-office/facts",
+    # One parametric screen serves all six record views (obligations, events,
+    # decisions, requests, risks, opportunities), so a capability's literal
+    # route like /pulse/private-office/obligations lands on it with the view
+    # bound. /pulse/private-office/facts is a literal owner above, so the
+    # pattern cannot claim it.
+    "PrivateOperations": "/pulse/private-office/:view",
     "AccountCenter": "/pulse/settings/:section",
     "AccountDevices": "/pulse/settings/devices",
     "AccountHealth": "/pulse/account-health",
@@ -2761,6 +2767,54 @@ _live(
         "upgrade prompt.",
     ),
 )
+
+
+# The Batch C record views. Derived from the spec module in a loop rather than
+# written out six times, for the same reason the registry derives them: the
+# vocabulary is typed once, in ``services.private_office.undx_records_spec``,
+# and these records cannot drift from it. The same structural owner scope as
+# the facts read applies — ``retrieve_records`` puts ``owner_user_id`` in every
+# WHERE clause and refuses an actor that is not the owner, so another member's
+# record is not refused, it is not returned, and the two are indistinguishable.
+def _register_private_record_map_entries() -> None:
+    from services.private_office import undx_records_spec as _po_spec
+
+    for _entry in _po_spec.CAPABILITIES:
+        _live(
+            _entry["capability_id"],
+            product_area="Private Office", resource_type="private_record",
+            native_screen="PrivateOperations",
+            backend_route="GET /api/private-office/records/" + _entry["view"],
+            domain_service="services.private_office.retrieval",
+            domain_operation="retrieve_records",
+            authorization_scope=_SELF, owner_field="owner_user_id",
+            output_schema=(("id", "int"), ("record_type", "str"),
+                           ("title", "str"), ("status", "str"),
+                           ("effective_status", "str"), ("domain", "str"),
+                           ("sensitivity", "str"), ("source_type", "str"),
+                           ("provenance", "dict"), ("created_at", "str"),
+                           ("updated_at", "str")),
+            feature_flag="UNDX_AGENT_READS_ENABLED",
+            evidence=("services/private_office/retrieval.py retrieve_records",
+                      "services/private_office/records.py list_records",
+                      "services/private_office/undx_records_spec.py execute_view",
+                      "tests/private_office/test_private_records_undx_spec.py"),
+            known_limitations=(
+                "UNDX reads through the general intent, which reaches only the "
+                "GENERAL domain at an INTERNAL sensitivity ceiling — narrower "
+                "than the member's own Operations screen. Records outside that "
+                "window are absent rather than summarised, and the result "
+                "carries sensitivity_ceiling so a short list is legible as a "
+                "ceiling rather than an empty office.",
+                "Availability follows services.private_office.feature_matrix: "
+                "private_office.operations reaches PRIVATE and above, and the "
+                "PRIVATE_OPERATIONS_ENABLED kill switch refuses every caller "
+                "as FEATURE_DISABLED when off.",
+            ),
+        )
+
+
+_register_private_record_map_entries()
 
 
 # ---------------------------------------------------------------------------

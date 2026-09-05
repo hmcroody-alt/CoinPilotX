@@ -115,7 +115,11 @@ describe("navigator header titles", () => {
     //
     // 139 + 1: `PrivateOfficeSecurity`, the Office second-lock settings screen.
     // Titled `route.params?.title || t("common:screens.privateOfficeSecurity")`.
-    expect(TITLE_OPTIONS.length).toBe(140);
+    //
+    // 140 + 3: `PrivateOperations`, `CapitalGraph` and `CapitalEntity` — the
+    // Office record views and the Capital Graph pair, each titled
+    // `route.params?.title || t("common:screens....")`.
+    expect(TITLE_OPTIONS.length).toBe(143);
   });
 
   it("has no hardcoded string literal titles", () => {

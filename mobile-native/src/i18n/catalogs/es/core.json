@@ -215,7 +215,10 @@
       "briefing": "Informe",
       "privateOffice": "Oficina privada",
       "privateFacts": "Datos privados",
-      "privateOfficeSecurity": "Seguridad de la oficina"
+      "privateOfficeSecurity": "Seguridad de la oficina",
+      "privateOperations": "Operaciones",
+      "capitalGraph": "Grafo de capital",
+      "capitalEntity": "Entidad"
     },
     "navSubtitles": {
       "missionControl": "Centro de mando",

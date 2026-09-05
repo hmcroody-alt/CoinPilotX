@@ -4266,7 +4266,7 @@
       "loading": "Vérification du contenu de votre bureau…",
       "retry": "Réessayer",
       "open": "Ouvrir",
-      "footnote": "Ce qui apparaît ici est déterminé par votre compte sur le serveur, pas par cette application.",
+      "footnote": "Votre bureau reflète exactement ce que comprend votre adhésion en ce moment.",
       "sections": {
         "available": "Disponible",
         "notYet": "À venir",
@@ -4287,8 +4287,8 @@
       },
       "reason": {
         "AVAILABLE": "Disponible",
-        "PROVIDER_REQUIRED": "Fournisseur requis",
-        "NOT_IMPLEMENTED": "Pas encore développé",
+        "PROVIDER_REQUIRED": "En attente d'un prestataire",
+        "NOT_IMPLEMENTED": "En préparation",
         "TEMPORARILY_DISABLED": "Désactivé temporairement",
         "UPGRADE_REQUIRED": "Mise à niveau requise",
         "UNKNOWN": "Indisponible"
@@ -4325,6 +4325,10 @@
         "humanConcierge": {
           "label": "Conciergerie humaine",
           "hint": "Une personne qui traite vos demandes en votre nom."
+        },
+        "operations": {
+          "label": "Opérations",
+          "hint": "Obligations, décisions, demandes, risques et opportunités que vous suivez."
         }
       },
       "entry": {
@@ -4369,6 +4373,18 @@
         "error": {
           "title": "Une erreur est survenue",
           "body": "Vos dossiers n'ont pas pu être chargés."
+        },
+        "add": {
+          "open": "Ajouter une donnée",
+          "title": "Enregistrer une donnée",
+          "domain": "Domaine",
+          "factType": "Type de donnée",
+          "factTypeHint": "p. ex. numéro de passeport",
+          "valueType": "Type de valeur",
+          "value": "Valeur",
+          "save": "Enregistrer",
+          "cancel": "Annuler",
+          "failed": "Nous n'avons pas pu l'enregistrer pour le moment."
         }
       },
       "domains": {
@@ -4477,6 +4493,201 @@
           "cancel": "Annuler",
           "failed": "Échec de la réinitialisation. Vérifiez votre mot de passe et réessayez."
         }
+      },
+      "operations": {
+        "title": "Opérations",
+        "subtitle": "Obligations, événements, décisions, demandes, risques et opportunités — enregistrés et suivis au même endroit.",
+        "loading": "Chargement de vos enregistrements…",
+        "cancel": "Annuler",
+        "save": "Enregistrer",
+        "move": "Déplacer",
+        "writeFailed": "Cette modification n'a pas été enregistrée.",
+        "empty": {
+          "title": "Rien d'enregistré"
+        },
+        "views": {
+          "obligations": "Obligations",
+          "events": "Événements",
+          "decisions": "Décisions",
+          "requests": "Demandes",
+          "risks": "Risques",
+          "opportunities": "Opportunités"
+        },
+        "add": {
+          "obligations": "Enregistrer une obligation",
+          "events": "Enregistrer un événement",
+          "decisions": "Enregistrer une décision",
+          "requests": "Enregistrer une demande",
+          "risks": "Enregistrer un risque",
+          "opportunities": "Enregistrer une opportunité"
+        },
+        "emptyBody": {
+          "obligations": "Aucune obligation enregistrée pour l'instant.",
+          "events": "Aucun événement enregistré pour l'instant.",
+          "decisions": "Aucune décision enregistrée pour l'instant.",
+          "requests": "Aucune demande enregistrée pour l'instant.",
+          "risks": "Aucun risque enregistré pour l'instant.",
+          "opportunities": "Aucune opportunité enregistrée pour l'instant."
+        },
+        "notEntitled": {
+          "title": "Mise à niveau requise",
+          "body": "Opérations est inclus avec {{tier}}.",
+          "bodyGeneric": "Opérations n'est pas inclus dans votre forfait actuel."
+        },
+        "disabled": {
+          "title": "Indisponible",
+          "body": "Opérations est désactivé pour le moment."
+        },
+        "notImplemented": {
+          "title": "En préparation",
+          "body": "Cette partie de votre bureau est encore en préparation."
+        },
+        "unavailable": {
+          "title": "Indisponible",
+          "body": "Opérations est injoignable. Vos enregistrements sont inchangés."
+        },
+        "error": {
+          "title": "Un problème est survenu",
+          "body": "Vos enregistrements n'ont pas pu être chargés."
+        },
+        "due": "Échéance {{date}}",
+        "occurred": "Survenu le {{date}}",
+        "outcome": "Issue : {{outcome}}",
+        "form": {
+          "title": "Titre",
+          "question": "Question",
+          "kind": "Type",
+          "details": "Détails",
+          "due": "Date d'échéance (AAAA-MM-JJ)"
+        },
+        "status": {
+          "OPEN": "Ouvert",
+          "RESOLVED": "Résolu",
+          "DISMISSED": "Écarté",
+          "RECORDED": "Enregistré",
+          "UNDER_REVIEW": "En examen",
+          "DECIDED": "Décidé",
+          "ABANDONED": "Abandonné",
+          "IN_PROGRESS": "En cours",
+          "WAITING_ON_USER": "En attente de vous",
+          "WAITING_ON_PROVIDER": "En attente du prestataire",
+          "COMPLETED": "Terminé",
+          "CANCELED": "Annulé",
+          "MONITORING": "Sous surveillance",
+          "MITIGATED": "Atténué",
+          "ACCEPTED": "Accepté",
+          "NEW": "Nouveau",
+          "REVIEWING": "En évaluation",
+          "INTERESTED": "Intéressé",
+          "PASSED": "Écartée",
+          "CLOSED": "Clôturée",
+          "OVERDUE": "En retard",
+          "DUE_SOON": "Échéance proche"
+        }
+      },
+      "capital": {
+        "title": "Graphe de capital",
+        "subtitle": "Ce que vous détenez, ce qui le couvre et comment tout se relie — avec le degré de certitude de chaque élément.",
+        "loading": "Chargement de votre graphe…",
+        "views": {
+          "holdings": "Avoirs",
+          "coverage": "Couverture",
+          "structure": "Structure",
+          "documents": "Documents"
+        },
+        "countExact": "{{count}}",
+        "countSoFar": "{{count}} pour l'instant",
+        "factCount": "{{count}} faits enregistrés",
+        "empty": {
+          "title": "Rien d'enregistré"
+        },
+        "emptyBody": {
+          "holdings": "Aucun avoir enregistré pour l'instant.",
+          "coverage": "Aucune couverture enregistrée pour l'instant.",
+          "structure": "Aucune structure enregistrée pour l'instant.",
+          "documents": "Aucun document enregistré pour l'instant."
+        },
+        "denied": {
+          "title": "Non affiché",
+          "body": "Cette question n'a pas reçu de réponse."
+        },
+        "notFound": {
+          "title": "Introuvable",
+          "body": "Aucune entité de ce type dans votre bureau."
+        },
+        "notEntitled": {
+          "title": "Mise à niveau requise",
+          "body": "Le Graphe de capital est inclus avec {{tier}}.",
+          "bodyGeneric": "Le Graphe de capital n'est pas inclus dans votre forfait actuel."
+        },
+        "disabled": {
+          "title": "Indisponible",
+          "body": "Le Graphe de capital est désactivé pour le moment."
+        },
+        "notImplemented": {
+          "title": "En préparation",
+          "body": "Cette partie de votre bureau est encore en préparation."
+        },
+        "unavailable": {
+          "title": "Indisponible",
+          "body": "Votre graphe est injoignable. Vos enregistrements sont inchangés."
+        },
+        "error": {
+          "title": "Un problème est survenu",
+          "body": "Votre graphe n'a pas pu être chargé."
+        },
+        "conflicts": {
+          "title": "Informations contradictoires",
+          "disagree": "Deux sources divergent"
+        },
+        "stale": {
+          "title": "Au-delà de son horizon de fraîcheur",
+          "age": "{{days}} jours"
+        },
+        "truth": {
+          "KNOWN": "Connu",
+          "INFERRED": "Déduit",
+          "ESTIMATED": "Estimé",
+          "STALE": "Périmé",
+          "MISSING": "Manquant",
+          "CONFLICTING": "Contradictoire",
+          "PRO_REVIEW": "À examiner"
+        },
+        "nodeType": {
+          "PERSON": "Personne",
+          "BUSINESS": "Entreprise",
+          "PROPERTY": "Bien immobilier",
+          "INSURANCE_POLICY": "Police d'assurance",
+          "CONTRACT": "Contrat",
+          "DOCUMENT": "Document",
+          "PROFESSIONAL": "Professionnel",
+          "ASSET": "Actif",
+          "LIABILITY": "Passif"
+        },
+        "entity": {
+          "relationships": "Relations",
+          "facts": "Faits enregistrés",
+          "updated": "Mis à jour le {{date}}"
+        },
+        "relationshipsUnavailable": "Les relations n'ont pas pu être chargées pour le moment."
+      },
+      "attention": {
+        "title": "Requiert votre attention",
+        "none": "Rien ne requiert votre attention pour le moment.",
+        "unavailable": "Nous n'avons pas pu vérifier ce qui requiert votre attention pour le moment."
+      },
+      "quick": {
+        "title": "Actions rapides",
+        "record": "Enregistrer quelque chose",
+        "addFact": "Ajouter une donnée"
+      },
+      "valueTypes": {
+        "STRING": "Texte",
+        "NUMBER": "Nombre",
+        "MONEY": "Montant",
+        "PERCENT": "Pourcentage",
+        "DATE": "Date",
+        "BOOLEAN": "Oui ou non"
       }
     },
     "gate": {

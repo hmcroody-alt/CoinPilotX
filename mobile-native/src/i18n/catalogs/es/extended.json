@@ -4266,7 +4266,7 @@
       "loading": "Comprobando qué incluye tu oficina…",
       "retry": "Reintentar",
       "open": "Abrir",
-      "footnote": "Lo que aparece aquí lo decide tu cuenta en el servidor, no esta aplicación.",
+      "footnote": "Tu oficina refleja exactamente lo que incluye tu membresía en este momento.",
       "sections": {
         "available": "Disponible",
         "notYet": "Próximamente",
@@ -4287,8 +4287,8 @@
       },
       "reason": {
         "AVAILABLE": "Disponible",
-        "PROVIDER_REQUIRED": "Requiere proveedor",
-        "NOT_IMPLEMENTED": "Aún sin desarrollar",
+        "PROVIDER_REQUIRED": "A la espera de un proveedor",
+        "NOT_IMPLEMENTED": "En preparación",
         "TEMPORARILY_DISABLED": "Desactivado temporalmente",
         "UPGRADE_REQUIRED": "Requiere mejora de plan",
         "UNKNOWN": "No disponible"
@@ -4325,6 +4325,10 @@
         "humanConcierge": {
           "label": "Conserjería humana",
           "hint": "Una persona que gestiona solicitudes en tu nombre."
+        },
+        "operations": {
+          "label": "Operaciones",
+          "hint": "Obligaciones, decisiones, solicitudes, riesgos y oportunidades que sigues."
         }
       },
       "entry": {
@@ -4369,6 +4373,18 @@
         "error": {
           "title": "Algo salió mal",
           "body": "No se pudieron cargar tus registros."
+        },
+        "add": {
+          "open": "Añadir un dato",
+          "title": "Registrar un dato",
+          "domain": "Ámbito",
+          "factType": "Tipo de dato",
+          "factTypeHint": "p. ej. número de pasaporte",
+          "valueType": "Tipo de valor",
+          "value": "Valor",
+          "save": "Guardar",
+          "cancel": "Cancelar",
+          "failed": "No pudimos guardarlo en este momento."
         }
       },
       "domains": {
@@ -4477,6 +4493,201 @@
           "cancel": "Cancelar",
           "failed": "No se pudo restablecer. Revisa tu contraseña e inténtalo de nuevo."
         }
+      },
+      "operations": {
+        "title": "Operaciones",
+        "subtitle": "Obligaciones, eventos, decisiones, solicitudes, riesgos y oportunidades: registrados y seguidos en un solo lugar.",
+        "loading": "Cargando tus registros…",
+        "cancel": "Cancelar",
+        "save": "Guardar",
+        "move": "Mover",
+        "writeFailed": "Ese cambio no se guardó.",
+        "empty": {
+          "title": "Nada registrado"
+        },
+        "views": {
+          "obligations": "Obligaciones",
+          "events": "Eventos",
+          "decisions": "Decisiones",
+          "requests": "Solicitudes",
+          "risks": "Riesgos",
+          "opportunities": "Oportunidades"
+        },
+        "add": {
+          "obligations": "Registrar una obligación",
+          "events": "Registrar un evento",
+          "decisions": "Registrar una decisión",
+          "requests": "Registrar una solicitud",
+          "risks": "Registrar un riesgo",
+          "opportunities": "Registrar una oportunidad"
+        },
+        "emptyBody": {
+          "obligations": "Aún no hay obligaciones registradas.",
+          "events": "Aún no hay eventos registrados.",
+          "decisions": "Aún no hay decisiones registradas.",
+          "requests": "Aún no hay solicitudes registradas.",
+          "risks": "Aún no hay riesgos registrados.",
+          "opportunities": "Aún no hay oportunidades registradas."
+        },
+        "notEntitled": {
+          "title": "Se requiere una mejora",
+          "body": "Operaciones está incluido con {{tier}}.",
+          "bodyGeneric": "Operaciones no está incluido en tu plan actual."
+        },
+        "disabled": {
+          "title": "No disponible",
+          "body": "Operaciones está desactivado por el momento."
+        },
+        "notImplemented": {
+          "title": "En preparación",
+          "body": "Esta parte de tu oficina todavía se está preparando."
+        },
+        "unavailable": {
+          "title": "No disponible",
+          "body": "No se pudo contactar Operaciones. Tus registros no han cambiado."
+        },
+        "error": {
+          "title": "Algo salió mal",
+          "body": "No se pudieron cargar tus registros."
+        },
+        "due": "Vence {{date}}",
+        "occurred": "Ocurrió {{date}}",
+        "outcome": "Resultado: {{outcome}}",
+        "form": {
+          "title": "Título",
+          "question": "Pregunta",
+          "kind": "Tipo",
+          "details": "Detalles",
+          "due": "Fecha de vencimiento (AAAA-MM-DD)"
+        },
+        "status": {
+          "OPEN": "Abierto",
+          "RESOLVED": "Resuelto",
+          "DISMISSED": "Descartado",
+          "RECORDED": "Registrado",
+          "UNDER_REVIEW": "En revisión",
+          "DECIDED": "Decidido",
+          "ABANDONED": "Abandonado",
+          "IN_PROGRESS": "En curso",
+          "WAITING_ON_USER": "A la espera de ti",
+          "WAITING_ON_PROVIDER": "A la espera del proveedor",
+          "COMPLETED": "Completado",
+          "CANCELED": "Cancelado",
+          "MONITORING": "En seguimiento",
+          "MITIGATED": "Mitigado",
+          "ACCEPTED": "Aceptado",
+          "NEW": "Nuevo",
+          "REVIEWING": "En evaluación",
+          "INTERESTED": "Interesado",
+          "PASSED": "Descartada",
+          "CLOSED": "Cerrada",
+          "OVERDUE": "Vencido",
+          "DUE_SOON": "Vence pronto"
+        }
+      },
+      "capital": {
+        "title": "Grafo de capital",
+        "subtitle": "Lo que posees, lo que lo cubre y cómo se conecta, con el grado de certeza de cada pieza.",
+        "loading": "Cargando tu grafo…",
+        "views": {
+          "holdings": "Patrimonio",
+          "coverage": "Cobertura",
+          "structure": "Estructura",
+          "documents": "Documentos"
+        },
+        "countExact": "{{count}}",
+        "countSoFar": "{{count}} hasta ahora",
+        "factCount": "{{count}} datos registrados",
+        "empty": {
+          "title": "Nada registrado"
+        },
+        "emptyBody": {
+          "holdings": "Aún no hay patrimonio registrado.",
+          "coverage": "Aún no hay cobertura registrada.",
+          "structure": "Aún no hay estructura registrada.",
+          "documents": "Aún no hay documentos registrados."
+        },
+        "denied": {
+          "title": "No mostrado",
+          "body": "Esta pregunta no fue respondida."
+        },
+        "notFound": {
+          "title": "No encontrado",
+          "body": "No existe tal entidad en tu oficina."
+        },
+        "notEntitled": {
+          "title": "Se requiere una mejora",
+          "body": "El Grafo de capital está incluido con {{tier}}.",
+          "bodyGeneric": "El Grafo de capital no está incluido en tu plan actual."
+        },
+        "disabled": {
+          "title": "No disponible",
+          "body": "El Grafo de capital está desactivado por el momento."
+        },
+        "notImplemented": {
+          "title": "En preparación",
+          "body": "Esta parte de tu oficina todavía se está preparando."
+        },
+        "unavailable": {
+          "title": "No disponible",
+          "body": "No se pudo contactar tu grafo. Tus registros no han cambiado."
+        },
+        "error": {
+          "title": "Algo salió mal",
+          "body": "No se pudo cargar tu grafo."
+        },
+        "conflicts": {
+          "title": "Información contradictoria",
+          "disagree": "Dos fuentes discrepan"
+        },
+        "stale": {
+          "title": "Fuera de su horizonte de vigencia",
+          "age": "{{days}} días de antigüedad"
+        },
+        "truth": {
+          "KNOWN": "Conocido",
+          "INFERRED": "Inferido",
+          "ESTIMATED": "Estimado",
+          "STALE": "Desactualizado",
+          "MISSING": "Faltante",
+          "CONFLICTING": "Contradictorio",
+          "PRO_REVIEW": "Requiere revisión"
+        },
+        "nodeType": {
+          "PERSON": "Persona",
+          "BUSINESS": "Negocio",
+          "PROPERTY": "Propiedad",
+          "INSURANCE_POLICY": "Póliza de seguro",
+          "CONTRACT": "Contrato",
+          "DOCUMENT": "Documento",
+          "PROFESSIONAL": "Profesional",
+          "ASSET": "Activo",
+          "LIABILITY": "Pasivo"
+        },
+        "entity": {
+          "relationships": "Relaciones",
+          "facts": "Datos registrados",
+          "updated": "Actualizado {{date}}"
+        },
+        "relationshipsUnavailable": "Las relaciones no se pudieron cargar en este momento."
+      },
+      "attention": {
+        "title": "Requiere tu atención",
+        "none": "Nada requiere tu atención en este momento.",
+        "unavailable": "No pudimos comprobar qué requiere atención en este momento."
+      },
+      "quick": {
+        "title": "Acciones rápidas",
+        "record": "Registrar algo",
+        "addFact": "Añadir un dato"
+      },
+      "valueTypes": {
+        "STRING": "Texto",
+        "NUMBER": "Número",
+        "MONEY": "Importe",
+        "PERCENT": "Porcentaje",
+        "DATE": "Fecha",
+        "BOOLEAN": "Sí o no"
       }
     },
     "gate": {

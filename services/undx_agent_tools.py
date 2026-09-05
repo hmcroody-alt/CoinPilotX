@@ -2690,6 +2690,99 @@ def private_facts_list(user_id: int, arguments: dict[str, Any]) -> ToolResult:
     )
 
 
+def _private_records_executor(capability_id: str) -> Callable[[int, dict[str, Any]], ToolResult]:
+    """One record-view executor, bound to its capability at registration time.
+
+    Six capabilities share this implementation, but the gateway hands an
+    executor only ``(user_id, arguments)`` — nothing at call time says which
+    capability was invoked — so each view binds its own closure rather than
+    sharing a name. The properties are ``private_facts_list``'s: no owner
+    argument exists, the gate is the same ``access.decide`` the screen uses,
+    and the second lock fails closed. The read itself goes through
+    ``undx_records_spec.execute_view`` → ``retrieval.retrieve_records``, whose
+    general-intent policy caps the agent at the GENERAL domain and an INTERNAL
+    ceiling — narrower than the member's own screen, and the result carries
+    ``sensitivity_ceiling`` so a short list is legible as a ceiling rather than
+    an empty office.
+    """
+
+    def _list_records(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+        started = time.perf_counter()
+        from services.private_office import undx_records_spec as records_spec
+        tool = records_spec.tool_name(capability_id)
+        db, access, facts, office, schema, tiers = _private_office()
+
+        owner = int(user_id or 0)
+        if owner <= 0:
+            return _fail(tool, capability_id, "authentication_required",
+                         "UNDX needs you signed in to read your Private Office.",
+                         started=started)
+
+        try:
+            resolved = tiers.resolve_tier(owner)
+        except Exception:  # noqa: BLE001 - a resolver fault is not a denial
+            resolved = {}
+        decision = access.decide(resolved, "private_office.operations")
+        verdict = decision["decision"]
+
+        if verdict == access.UNAVAILABLE:
+            return _fail(tool, capability_id, "entitlement_unavailable",
+                         "UNDX could not confirm your Private Office access just now.",
+                         retryable=True, started=started)
+        if verdict in (access.NOT_IMPLEMENTED, access.FEATURE_DISABLED):
+            return _fail(tool, capability_id, "capability_not_available",
+                         "That part of the Private Office is not available yet.",
+                         started=started)
+        if verdict == access.NOT_ENTITLED:
+            return _fail(tool, capability_id, "not_entitled",
+                         "Your plan does not include the Private Office.",
+                         started=started)
+
+        connection = db.connect()
+        try:
+            cursor = connection.cursor()
+            schema.ensure_private_schema(cursor)
+
+            from services.private_office import security as office_security
+            if not office_security.request_is_unlocked(cursor, owner).get("ok"):
+                return _office_locked_result(tool, capability_id, started)
+
+            result = records_spec.execute_view(
+                cursor, capability_id=capability_id, owner_user_id=owner,
+                arguments=dict(arguments or {}))
+            # The retrieval audit row must survive the read.
+            connection.commit()
+        except Exception:  # noqa: BLE001
+            return _fail(tool, capability_id, "private_store_unavailable",
+                         "UNDX could not read your Private Office just now.",
+                         retryable=True, started=started)
+        finally:
+            connection.close()
+
+        if not result.get("ok"):
+            return _fail(tool, capability_id, "records_denied",
+                         "UNDX could not read that part of your Private Office.",
+                         started=started)
+
+        return ToolResult(
+            ok=True,
+            tool_name=tool,
+            capability_id=capability_id,
+            records=list(result.get("records") or []),
+            data={
+                "count": int(result.get("counts", {}).get("returned") or 0),
+                "truncated": bool(result.get("truncated")),
+                "view": result.get("view") or "",
+                # Named so a caller reading an unexpectedly short list can tell
+                # a ceiling from an empty office rather than guessing.
+                "sensitivity_ceiling": result.get("sensitivity_ceiling") or "",
+            },
+            latency_ms=_timed(started),
+        )
+
+    return _list_records
+
+
 # ---------------------------------------------------------------------------
 # Resolution
 # ---------------------------------------------------------------------------
@@ -2818,6 +2911,19 @@ EXECUTORS: dict[str, Callable[[int, dict[str, Any]], ToolResult]] = {
     "settings_privacy_audience_update": settings_privacy_audience_update,
     "settings_appearance_theme_update": settings_appearance_theme_update,
 }
+
+
+# The six Batch C record-view executors, bound from the spec module so the
+# names here and in the capability registry agree by construction.
+def _register_private_record_executors() -> None:
+    from services.private_office import undx_records_spec as _po_spec
+
+    for _entry in _po_spec.CAPABILITIES:
+        _cid = _entry["capability_id"]
+        EXECUTORS[_po_spec.executor_name(_cid)] = _private_records_executor(_cid)
+
+
+_register_private_record_executors()
 
 
 def resolve(name: str) -> Callable[[int, dict[str, Any]], ToolResult]:

@@ -47,10 +47,12 @@ import {
   UNKNOWN_OVERVIEW,
   getPrivateOfficeOverview
 } from "../api/privateOffice";
+import { PrivateAttention, PrivateRecordView, getPrivateAttention } from "../api/privateRecords";
 import { useTranslation } from "../i18n";
 import { BOTTOM_NAV_CONTENT_CLEARANCE } from "../navigation/BottomNavVisibility";
 import { RootStackParamList } from "../navigation/types";
 import { PrivateOfficeLockGate } from "../privateOffice/PrivateOfficeLockGate";
+import { lockOfficeLocally } from "../privateOffice/officeLock";
 import { colors } from "../theme/colors";
 
 type Props = NativeStackScreenProps<RootStackParamList, "PrivateOffice">;
@@ -63,6 +65,7 @@ type Props = NativeStackScreenProps<RootStackParamList, "PrivateOffice">;
  */
 const COPY_KEYS: Readonly<Record<string, string>> = {
   private_facts: "privateFacts",
+  "private_office.operations": "operations",
   capital_graph: "capitalGraph",
   private_briefings: "privateBriefings",
   relationship_intelligence: "relationshipIntelligence",
@@ -75,17 +78,20 @@ const COPY_KEYS: Readonly<Record<string, string>> = {
 /**
  * Feature id → the screen that actually exists for it.
  *
- * One entry, because one capability is built. A row whose id is absent here is
+ * Only built capabilities appear. A row whose id is absent here is
  * never tappable even if the server said it opens — a missing destination is a
  * client bug, and the honest failure is a row that does not move rather than a
  * tap into a screen that is not registered.
  */
 const DESTINATIONS: Readonly<Record<string, keyof RootStackParamList>> = {
-  private_facts: "PrivateFacts"
+  private_facts: "PrivateFacts",
+  "private_office.operations": "PrivateOperations",
+  capital_graph: "CapitalGraph"
 };
 
 const ICONS: Readonly<Record<string, keyof typeof Ionicons.glyphMap>> = {
   private_facts: "document-text-outline",
+  "private_office.operations": "checkbox-outline",
   capital_graph: "git-network-outline",
   private_briefings: "newspaper-outline",
   relationship_intelligence: "people-outline",
@@ -119,19 +125,26 @@ function PrivateOfficeBody({ navigation }: Props) {
   const [loadState, setLoadState] = useState<LoadState>("LOADING");
   const [refreshing, setRefreshing] = useState(false);
   const [overview, setOverview] = useState<PrivateOfficeOverview>(UNKNOWN_OVERVIEW);
+  const [attention, setAttention] = useState<PrivateAttention | null>(null);
 
   const load = useCallback(async () => {
-    const next = await getPrivateOfficeOverview();
+    const [next, attn] = await Promise.all([getPrivateOfficeOverview(), getPrivateAttention()]);
+    // The grant died between the gate's check and this fetch; drop the local
+    // token so the enclosing gate shows the door instead of a stale office.
+    if (attn.state === "LOCKED") lockOfficeLocally();
     setOverview(next);
+    setAttention(attn);
     setLoadState("LOADED");
   }, []);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const next = await getPrivateOfficeOverview();
+      const [next, attn] = await Promise.all([getPrivateOfficeOverview(), getPrivateAttention()]);
       if (cancelled) return;
+      if (attn.state === "LOCKED") lockOfficeLocally();
       setOverview(next);
+      setAttention(attn);
       setLoadState("LOADED");
     })();
     return () => {
@@ -218,6 +231,21 @@ function PrivateOfficeBody({ navigation }: Props) {
         </View>
       ) : null}
 
+      {loadState === "LOADED" && office.state === "ENTRY_AVAILABLE" && attention ? (
+        <AttentionStrip
+          attention={attention}
+          onOpenView={(view) => navigation.navigate("PrivateOperations", { view })}
+        />
+      ) : null}
+
+      {loadState === "LOADED" && office.state === "ENTRY_AVAILABLE" ? (
+        <QuickActions
+          available={office.available}
+          onRecord={() => navigation.navigate("PrivateOperations")}
+          onAddFact={() => navigation.navigate("PrivateFacts", { create: true })}
+        />
+      ) : null}
+
       {office.available.length ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t("premium:privateOffice.sections.available")}</Text>
@@ -297,6 +325,138 @@ function PrivateOfficeBody({ navigation }: Props) {
   );
 }
 
+/**
+ * What needs the member's attention, from `/api/private-office/attention`.
+ *
+ * READY with nothing in it says so in words: a strip that silently vanishes
+ * would be indistinguishable from "we could not check", and those are
+ * different claims. UNAVAILABLE says "we could not check" — never zeros.
+ * REFUSED renders nothing: the tile list below already explains entitlement,
+ * and repeating the refusal here would say it twice in two vocabularies.
+ */
+function AttentionStrip({
+  attention,
+  onOpenView
+}: {
+  attention: PrivateAttention;
+  onOpenView: (view: PrivateRecordView) => void;
+}) {
+  const { t } = useTranslation();
+
+  if (attention.state === "REFUSED" || attention.state === "LOCKED") return null;
+
+  if (attention.state === "UNAVAILABLE") {
+    return (
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>{t("premium:privateOffice.attention.title")}</Text>
+        <Text style={styles.attentionNote}>{t("premium:privateOffice.attention.unavailable")}</Text>
+      </View>
+    );
+  }
+
+  const counted = (Object.entries(attention.counts) as [PrivateRecordView, number][]).filter(
+    ([, count]) => count > 0
+  );
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>{t("premium:privateOffice.attention.title")}</Text>
+      {counted.length === 0 && attention.dueSoon.length === 0 ? (
+        <Text style={styles.attentionNote}>{t("premium:privateOffice.attention.none")}</Text>
+      ) : null}
+      {counted.length ? (
+        <View style={styles.attentionChips}>
+          {counted.map(([view, count]) => (
+            <Pressable
+              key={view}
+              style={styles.attentionChip}
+              onPress={() => onOpenView(view)}
+              accessibilityRole="button"
+              accessibilityLabel={`${t(`premium:privateOffice.operations.views.${view}`)} ${count}`}
+            >
+              <Text style={styles.attentionCount}>{count}</Text>
+              <Text style={styles.attentionChipText}>
+                {t(`premium:privateOffice.operations.views.${view}`)}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+      {attention.dueSoon.map((record) => (
+        <Pressable
+          key={record.id}
+          style={styles.dueRow}
+          onPress={() => onOpenView("obligations")}
+          accessibilityRole="button"
+          accessibilityLabel={record.title}
+        >
+          <Ionicons name="alarm-outline" size={16} color={colors.warning} />
+          <Text style={styles.dueTitle} numberOfLines={1}>
+            {record.title}
+          </Text>
+          {record.dueAt ? (
+            <Text style={styles.dueDate}>
+              {t("premium:privateOffice.operations.due", { date: record.dueAt })}
+            </Text>
+          ) : null}
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
+/**
+ * Shortcuts into the two write paths. Each appears only when the server said
+ * its capability opens — a quick action into a refusal would be a tile list
+ * that disagrees with itself one section apart.
+ */
+function QuickActions({
+  available,
+  onRecord,
+  onAddFact
+}: {
+  available: PrivateOfficeChild[];
+  onRecord: () => void;
+  onAddFact: () => void;
+}) {
+  const { t } = useTranslation();
+  const opens = (featureId: string) =>
+    available.some((child) => child.featureId === featureId && child.opens);
+  const canRecord = opens("private_office.operations");
+  const canAddFact = opens("private_facts");
+  if (!canRecord && !canAddFact) return null;
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>{t("premium:privateOffice.quick.title")}</Text>
+      <View style={styles.quickRow}>
+        {canRecord ? (
+          <Pressable
+            style={styles.quickButton}
+            onPress={onRecord}
+            accessibilityRole="button"
+            accessibilityLabel={t("premium:privateOffice.quick.record")}
+          >
+            <Ionicons name="create-outline" size={18} color={colors.accentStrong} />
+            <Text style={styles.quickText}>{t("premium:privateOffice.quick.record")}</Text>
+          </Pressable>
+        ) : null}
+        {canAddFact ? (
+          <Pressable
+            style={styles.quickButton}
+            onPress={onAddFact}
+            accessibilityRole="button"
+            accessibilityLabel={t("premium:privateOffice.quick.addFact")}
+          >
+            <Ionicons name="add-circle-outline" size={18} color={colors.accentStrong} />
+            <Text style={styles.quickText}>{t("premium:privateOffice.quick.addFact")}</Text>
+          </Pressable>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
   content: { padding: 18, gap: 16 },
@@ -365,7 +525,48 @@ const styles = StyleSheet.create({
     maxWidth: 110,
     textAlign: "right"
   },
-  footnote: { color: colors.muted, fontSize: 11, lineHeight: 16 }
+  footnote: { color: colors.muted, fontSize: 11, lineHeight: 16 },
+  attentionNote: { color: colors.muted, fontSize: 12, lineHeight: 18 },
+  attentionChips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  attentionChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderWidth: 1
+  },
+  attentionCount: { color: colors.accentStrong, fontSize: 13, fontWeight: "800" },
+  attentionChipText: { color: colors.text, fontSize: 12, fontWeight: "600" },
+  dueRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10
+  },
+  dueTitle: { color: colors.text, fontSize: 13, fontWeight: "600", flex: 1 },
+  dueDate: { color: colors.warning, fontSize: 11, fontWeight: "700" },
+  quickRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  quickButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 999,
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.border,
+    borderWidth: 1
+  },
+  quickText: { color: colors.accentStrong, fontSize: 13, fontWeight: "700" }
 });
 
 export default PrivateOfficeScreen;

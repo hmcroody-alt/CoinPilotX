@@ -118,8 +118,11 @@ def stage_deferral_is_honest() -> None:
     check("the deferral reason is the one the mission named",
           spec.DEFERRAL_REASON == "UNDX_WIRING_DEFERRED_DUE_TO_CONCURRENT_SECURITY_WORK",
           spec.DEFERRAL_REASON)
-    check("the spec module registers nothing at import",
-          spec.WIRING_COMPLETE is False, str(spec.WIRING_COMPLETE))
+    # Flipped from `is False` when the wiring landed. The property the old
+    # check defended — the spec module registers nothing itself — still holds;
+    # registration lives in the three owning files, which derive from the spec.
+    check("the wiring flag reports the registration as real",
+          spec.WIRING_COMPLETE is True, str(spec.WIRING_COMPLETE))
 
     # Imported here rather than at module scope: these three are the files the
     # security mission is editing, and a module-scope import would make this

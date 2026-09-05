@@ -215,7 +215,10 @@
       "briefing": "ブリーフィング",
       "privateOffice": "プライベートオフィス",
       "privateFacts": "プライベート情報",
-      "privateOfficeSecurity": "オフィスのセキュリティ"
+      "privateOfficeSecurity": "オフィスのセキュリティ",
+      "privateOperations": "オペレーション",
+      "capitalGraph": "キャピタルグラフ",
+      "capitalEntity": "エンティティ"
     },
     "navSubtitles": {
       "missionControl": "管制センター",

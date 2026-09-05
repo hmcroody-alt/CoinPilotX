@@ -1,21 +1,20 @@
-"""Batch C — the UNDX surface for the record primitives, declared but not wired.
+"""Batch C — the UNDX surface for the record primitives.
 
-Status: **UNDX_WIRING_DEFERRED_DUE_TO_CONCURRENT_SECURITY_WORK.**
-
-Nothing in this module registers anything. It declares what the six read
-capabilities *will* be, and it provides the one service hook they will call, so
-that when the Private Office security boundary stops moving the wiring is three
-edits in the files that own registration — ``undx_capability_registry``,
-``undx_policy``, ``undx_knowledge_map`` — and not a design conversation.
+Status: **wired.** The deferral (``UNDX_WIRING_DEFERRED_DUE_TO_CONCURRENT_
+SECURITY_WORK``) is over: the six capabilities are registered in
+``undx_capability_registry``, named in ``undx_policy``'s production tool
+registry, described in ``undx_knowledge_map``, and executed through
+``undx_agent_tools``. This module still registers nothing itself — it remains
+the single place the vocabulary lives, and the registration files derive from
+it rather than restating it.
 
 Why a spec module rather than a registration
 --------------------------------------------
 The registry, the policy table and the knowledge map are the authorization
 surface, and they are cross-checked against each other precisely so that a
-capability cannot exist in one and be missing from another. Adding six entries
-to three files that another mission is actively editing is how that cross-check
-gets resolved by whoever merges last. Declaring them here instead costs one
-follow-up commit and cannot produce a half-registered capability.
+capability cannot exist in one and be missing from another. Declaring the
+vocabulary here and deriving the three registrations from it means the surfaces
+agree by construction rather than by review.
 
 The alternative that must not happen is a second route or a second executor
 table "just for now". A temporary parallel surface is a surface nobody gates,
@@ -48,10 +47,12 @@ from __future__ import annotations
 from services.private_office import retrieval as _retrieval
 
 #: Set when the capabilities are registered. Read by the test that keeps this
-#: module honest: while it is False, the suite asserts the capabilities are
-#: *absent* from the registry, so "deferred" cannot quietly become "forgotten"
-#: or "half-done".
-WIRING_COMPLETE = False
+#: module honest: while it was False, the suite asserted the capabilities were
+#: *absent* from the registry, so "deferred" could not quietly become
+#: "forgotten" or "half-done". It is True now, so the same suite asserts they
+#: are present in all three registration surfaces — the flag cannot be flipped
+#: without the registration being real.
+WIRING_COMPLETE = True
 
 DEFERRAL_REASON = "UNDX_WIRING_DEFERRED_DUE_TO_CONCURRENT_SECURITY_WORK"
 
@@ -134,7 +135,6 @@ RISK = "read_only"
 CONFIRMATION = "never"
 PERMISSION = "self_account_only"
 AUDIT_CATEGORY = "private_records_read"
-EXECUTOR = "private_records_list"
 SERVICE_ROUTE = "services.private_office.retrieval.retrieve_records"
 
 
@@ -146,6 +146,17 @@ def tool_name(capability_id: str) -> str:
     """
     head, _, tail = str(capability_id).rpartition(".")
     return "pulsesoc." + head.replace(".", "_") + "." + tail
+
+
+def executor_name(capability_id: str) -> str:
+    """The per-view executor's name in ``undx_agent_tools.EXECUTORS``.
+
+    Six names rather than one shared one, because the gateway hands an executor
+    only ``(user_id, arguments)`` — nothing tells a shared implementation which
+    capability was invoked. Computed here so the registry entry and the
+    executor table cannot spell it differently.
+    """
+    return str(capability_id).replace(".", "_")
 
 
 def capability_for_view(view: str) -> dict | None:
