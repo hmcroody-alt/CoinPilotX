@@ -78,6 +78,7 @@ import {
   getOfficeBiometricUserId,
   isOfficeUnlocked,
   getOfficeLockSnapshot,
+  lockOfficeLocally,
   noteOfficeBackgrounded,
   noteOfficeForegrounded,
   readOfficeBiometricPasscode,
@@ -197,7 +198,28 @@ export function PrivateOfficeLockGate({ children, onDismiss, onRenew }: Props) {
         setDoor("SETUP");
         return;
       }
-      setDoor(isOfficeUnlocked(currentUserId) ? "UNLOCKED" : "LOCKED");
+      // The server is the authority on whether the grant this device just
+      // presented is still live. `/security/status` carries the grant header
+      // like every other Office read and answers `unlocked` only after
+      // `validate_grant` accepted it, so a recheck fired by ordinary
+      // navigation reports the truth instead of re-deriving it.
+      //
+      // This used to read `isOfficeUnlocked()` alone, which is a strictly
+      // weaker question: it asks "do we still hold a token" and never "does
+      // the server still honour it". Both directions of that gap were wrong.
+      // A gate remounting mid-navigation could draw LOCKED over a grant the
+      // server was happy with, and a grant revoked server-side kept drawing
+      // UNLOCKED until the first 423 came back.
+      if (status.unlocked) {
+        setDoor("UNLOCKED");
+        return;
+      }
+      // Reaching here means the server looked and said no — revoked, expired,
+      // passcode rotated, or bound elsewhere. Transport failures never arrive
+      // here; they return above as UNAVAILABLE, so a dead network can never
+      // reach this line and destroy a grant that is still good (Stage 12).
+      if (isOfficeUnlocked(currentUserId)) lockOfficeLocally();
+      setDoor("LOCKED");
     },
     []
   );
@@ -233,12 +255,29 @@ export function PrivateOfficeLockGate({ children, onDismiss, onRenew }: Props) {
     if (door === "LOCKED" && isOfficeUnlocked(userId)) setDoor("UNLOCKED");
   }, [door, lock, userId]);
 
-  // Stage 6 + 20: relock lifecycle and snapshot privacy.
+  // Relock lifecycle and snapshot privacy — two rules keyed off the SAME event
+  // with deliberately different thresholds.
+  //
+  // `appActive` drives the privacy overlay, and it must react to "inactive":
+  // that is the state iOS is in while it renders the app-switcher snapshot, so
+  // covering the subtree any time we are not `active` is what keeps a net worth
+  // out of that screenshot.
+  //
+  // The relock policy must NOT react to "inactive". iOS emits it for the Face
+  // ID sheet, Control Center, a notification banner, a share sheet, and the
+  // app-switcher peek — none of which are the user leaving. With the default
+  // `immediate` timing, treating those as backgrounding cleared the grant
+  // outright, so raising Face ID to unlock could relock the Office before the
+  // unlock finished, and a banner arriving mid-navigation sent the owner back
+  // to the passcode field. Only "background" means the app actually left the
+  // foreground, and it is always delivered on a real backgrounding (iOS passes
+  // through "inactive" first, Android goes straight there), so nothing is lost
+  // by waiting for it.
   useEffect(() => {
     const onChange = (next: AppStateStatus) => {
       setAppActive(next === "active");
       if (next === "active") void noteOfficeForegrounded();
-      else void noteOfficeBackgrounded();
+      else if (next === "background") void noteOfficeBackgrounded();
     };
     const subscription = AppState.addEventListener("change", onChange);
     return () => subscription.remove();
