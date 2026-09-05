@@ -420,6 +420,29 @@ class FieldSpec:
             raise TemplateError(f"non-enum field {self.path} declares options")
         if self.expires_record and self.kind not in DATE_KINDS:
             raise TemplateError(f"{self.path} drives expiration but is not a date")
+        # An expiring field is read by the reminder sweep, which runs without a
+        # member present and therefore without any step-up that could unwrap a
+        # RESTRICTED value. A template that marked one RESTRICTED would produce
+        # a record that silently never reminds anybody — green build, passing
+        # tests, and a passport that expires unannounced. Refusing at
+        # registration is the only place this is visible.
+        if self.expires_record and self.sensitivity == model.SENSITIVITY_RESTRICTED:
+            raise TemplateError(
+                f"{self.path} drives expiration and must not be RESTRICTED"
+            )
+        # A RESTRICTED field's value never reaches a screen without a step-up,
+        # so *something* has to occupy the space where the value would be. With
+        # `MASK_NONE` that something is the value itself: the storage layer
+        # writes `masked_text` from `mask_value`, which returns the input
+        # unchanged for `MASK_NONE`, and the restricted value lands in the one
+        # column every list query reads. The encryption would be intact and
+        # entirely beside the point. Requiring a real strategy here is what makes
+        # "restricted implies masked by default" true of the data rather than of
+        # the intention.
+        if self.sensitivity == model.SENSITIVITY_RESTRICTED and self.mask == MASK_NONE:
+            raise TemplateError(
+                f"{self.path} is RESTRICTED and must declare a mask strategy"
+            )
         if self.max_length > MAX_TEXT_LENGTH:
             raise TemplateError(f"{self.path} max_length exceeds {MAX_TEXT_LENGTH}")
         # ``undx_readable`` defaults to True, which is the right default for the
@@ -1055,14 +1078,25 @@ def _index_of(path: str) -> int:
     return int(match.group(1)) if match else 0
 
 
-def _template_path(path: str) -> str:
+def template_path(path: str) -> str:
     """``holders[3].given_names`` -> ``holders[0].given_names``.
 
     Repeatable sections are declared once at index zero and submitted at any
     index. Collapsing the index is how a submitted path finds its spec, and
-    doing it in one function is how the two places that need it cannot disagree.
+    doing it in one function is how the places that need it cannot disagree.
+
+    Public because the storage layer needs it for the same reason validation
+    does — it has a submitted path in hand and must find the spec that says how
+    sensitive the value is. A second copy of this rule in the writer would be a
+    copy that could drift, and the direction it would drift is a field whose
+    spec was not found and whose sensitivity therefore defaulted.
     """
     return re.sub(r"\[[0-9]+\]", "[0]", path)
+
+
+#: Retained for the two call sites below and for symmetry with the other
+#: internal helpers; :func:`template_path` is the name other modules use.
+_template_path = template_path
 
 
 def validate_payload(

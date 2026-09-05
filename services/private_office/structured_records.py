@@ -100,8 +100,14 @@ database is usable in the path of every mission that touches records.
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import re
+import uuid
+from datetime import datetime, timezone
 
+from services.private_office import audit as _audit
+from services.private_office import field_crypto as _crypto
 from services.private_office import model as _model
 from services.private_office import record_templates as _templates
 from services.private_office import records as _records
@@ -431,6 +437,14 @@ CREATE TABLE IF NOT EXISTS private_record_revisions (
 # docstring: an undo history of a passport number is a second, unprotected copy
 # of the passport number. `changed_paths` names the fields; the current value
 # lives in `private_record_fields` under the protections that belong to it.
+#
+# `private_record_revisions.revision` is a per-record *history sequence* and is
+# deliberately not the same number as the envelope's `revision`, which counts
+# only changes to content. The two diverge the first time a member reveals a
+# masked field: that advances the history — it is the entry a member most needs
+# to see when asking "who has looked at this" — without changing the record, so
+# an envelope counter would have had to either lie or skip. One column meaning
+# two things is how a history stops being trustworthy, so they are two columns.
 
 TABLE_DDL: dict[str, str] = {
     RECORDS_TABLE: RECORDS_TABLE_DDL,
@@ -680,3 +694,1401 @@ def field_value_attributes() -> tuple[str, ...]:
 #: per-template version answer two different questions and neither substitutes
 #: for the other.
 CONTRACT_VERSION = _templates.CONTRACT_VERSION
+
+
+# ---------------------------------------------------------------------------
+# Actors
+# ---------------------------------------------------------------------------
+#: Who is writing. Not decoration: :func:`_check_verification` uses it to decide
+#: whether the claimed verification state is one this actor is allowed to make,
+#: and the whole "never auto-convert extracted data into verified truth" rule
+#: reduces to that one check.
+ACTOR_USER = "user"
+ACTOR_UNDX = "undx"
+ACTOR_EXTRACTION = "extraction"
+ACTOR_PROVIDER = "provider"
+ACTOR_IMPORT = "import"
+ACTOR_SYSTEM = "system"
+
+ACTOR_KINDS: tuple[str, ...] = (
+    ACTOR_USER, ACTOR_UNDX, ACTOR_EXTRACTION, ACTOR_PROVIDER, ACTOR_IMPORT,
+    ACTOR_SYSTEM,
+)
+
+#: The only actor whose assertion of a verified state is accepted. Note that
+#: ``provider`` is *not* here. A provider integration that has genuinely
+#: confirmed a credential should be able to write ``PROVIDER_VERIFIED``, but the
+#: thing that makes it genuine is the attestation it received, not the string it
+#: passed to this function — so that path needs to arrive with the attestation
+#: and does not exist yet. Until it does, the honest state for a
+#: provider-supplied record is one of the needs-review states, and a member
+#: confirms it. Widening this set is the change that would let an integration
+#: bug mark a whole account's records as confirmed.
+HUMAN_ACTORS: frozenset[str] = frozenset({ACTOR_USER})
+
+#: Write outcomes. ``duplicate`` is a refusal to write, not a failure: the
+#: record looked like one the member already has, so the decision goes back to
+#: them rather than being made here in either direction.
+STATUS_CREATED = "created"
+STATUS_EXISTING = "existing"
+STATUS_UPDATED = "updated"
+STATUS_UNCHANGED = "unchanged"
+STATUS_DUPLICATE = "duplicate"
+
+
+class StructuredRecordConflict(RuntimeError):
+    """The record moved under the caller. Optimistic concurrency, not an error.
+
+    Separate from :class:`StructuredRecordRejected` because the correct client
+    response is different: a rejection means "fix what you sent", a conflict
+    means "reload and look at what changed". A client that cannot tell them
+    apart either retries a bad payload forever or silently overwrites somebody's
+    edit, and the second one is how a member's correction disappears.
+    """
+
+
+class StructuredRecordDenied(PermissionError):
+    """A read or reveal the caller is not entitled to.
+
+    Raised without saying whether the record exists. See :func:`_load_envelope`.
+    """
+
+
+# ---------------------------------------------------------------------------
+# Small helpers
+# ---------------------------------------------------------------------------
+_TAG_RE = re.compile(r"^[a-z0-9][a-z0-9_.\-]{0,39}$")
+_KEY_RE = re.compile(r"^[a-f0-9]{48}$")
+_ACTOR_REF_RE = re.compile(r"^[A-Za-z0-9_:.\-]{1,64}$")
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _row_dict(row) -> dict:
+    """One database row as a plain dict, whatever the driver returned."""
+    if row is None:
+        return {}
+    try:
+        return dict(row)
+    except (TypeError, ValueError):  # pragma: no cover - driver without keys()
+        return {}
+
+
+def _text(value: object, cap: int) -> str:
+    return str(value if value is not None else "").strip()[:cap]
+
+
+def _owner(value: object) -> int:
+    owner = int(value or 0)
+    if owner <= 0:
+        raise StructuredRecordRejected("owner_user_id is required")
+    return owner
+
+
+def _tags(value: object) -> str:
+    """Canonical, deduped, sorted, comma-joined tags.
+
+    Anything that is not tag-shaped is dropped rather than truncated, on the
+    same reasoning as ``records.safe_ref``: a tag field with no shape check is
+    the most convenient place in the schema to put a value, and it is one that
+    no masking, no encryption and no step-up covers.
+    """
+    if value is None or value == "":
+        return ""
+    items = str(value).split(",") if isinstance(value, (str, bytes)) else list(value)
+    tags = {t for t in (str(i or "").strip().lower() for i in items) if _TAG_RE.match(t)}
+    return ",".join(sorted(tags)[:MAX_TAGS])
+
+
+def _refs(value: object) -> str:
+    """Comma-joined evidence references. Reuses the existing shape check."""
+    if value is None or value == "":
+        return ""
+    items = str(value).split(",") if isinstance(value, (str, bytes)) else list(value)
+    refs = {_records.safe_ref(item) for item in items}
+    refs.discard("")
+    return ",".join(sorted(refs)[:MAX_EVIDENCE_REFS])
+
+
+def _split(value: object) -> list[str]:
+    return [p for p in str(value or "").split(",") if p]
+
+
+def _actor_kind(value: object) -> str:
+    kind = str(value or ACTOR_USER).strip().lower()
+    if kind not in ACTOR_KINDS:
+        raise StructuredRecordRejected(f"unknown actor kind {value!r}")
+    return kind
+
+
+def record_key(
+    *, owner_user_id: int, template_key: str, idempotency_key: object = "",
+) -> str:
+    """The record's stable public handle.
+
+    Two shapes, one format. With an ``idempotency_key`` the handle is a hash of
+    the owner, the template and that key, so a create replayed after a dropped
+    response finds the row it already wrote instead of writing a second one.
+    Without one it is random.
+
+    Both are 48 hex characters, which matters: a caller cannot tell from the
+    handle which path produced it, so nothing downstream can grow a behaviour
+    that depends on that. And neither shape is derived from field values, so the
+    handle — which appears in URLs, in logs and in the audit table — never
+    carries a fragment of a passport number the way a "slug" would.
+    """
+    owner = _owner(owner_user_id)
+    token = str(idempotency_key or "").strip()
+    if token:
+        material = "\x1f".join(("v1", str(owner), str(template_key or ""), token))
+    else:
+        material = "\x1f".join(("v1", str(owner), uuid.uuid4().hex, _now_iso()))
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()[:48]
+
+
+def _resolve_template(template_key: object, template_version: object = None):
+    template = _templates.get_template(template_key, template_version)
+    if template is None:
+        # Named separately from a validation error because the remedies differ:
+        # an unknown template usually means a client built against a newer or
+        # older manifest, and the fix is to refetch the manifest rather than to
+        # correct a field.
+        raise StructuredRecordRejected(
+            f"unknown record template {str(template_key)[:64]!r}"
+            + (f" at version {template_version}" if template_version else "")
+        )
+    return template
+
+
+def _check_verification(state: str, actor_kind: str) -> str:
+    """The verification state this actor may actually write.
+
+    Refuses rather than downgrades. Silently storing ``INFERRED`` when an
+    extractor asked for ``USER_VERIFIED`` would leave the extractor believing it
+    had done something it had not, and the next version of it would "fix" the
+    discrepancy by writing somewhere else.
+    """
+    verification = normalize_verification(state)
+    if verification is None:
+        raise StructuredRecordRejected(f"unknown verification state {state!r}")
+    if actor_kind not in HUMAN_ACTORS and verification not in MACHINE_WRITABLE_VERIFICATION:
+        raise StructuredRecordRejected(
+            f"a {actor_kind} actor may not write verification state {verification}; "
+            f"use one of {', '.join(sorted(MACHINE_WRITABLE_VERIFICATION))}"
+        )
+    return verification
+
+
+# ---------------------------------------------------------------------------
+# Field projection
+# ---------------------------------------------------------------------------
+def _project_field(
+    value: _templates.FieldValue,
+    *,
+    owner_user_id: int,
+    record_key_value: str,
+    template,
+) -> dict:
+    """One :class:`FieldValue` as the columns of ``private_record_fields``.
+
+    This function is the whole field-level privacy model in one place, which is
+    the point of it existing rather than the writer doing this inline. Three
+    decisions are made here and nowhere else:
+
+    *What a screen may show.* ``masked_text`` is always populated — it equals
+    the value for an unmasked field and the masked form otherwise — so every
+    read path reads one column and no reader has to remember to branch. A reader
+    that branches is a reader that will one day branch wrong, and the wrong
+    branch prints the number.
+
+    *What the index may hold.* ``search_text`` comes from
+    :func:`~services.private_office.record_templates.search_index_text`, which
+    already refuses non-searchable fields and already indexes a masked field on
+    its masked form. Not re-derived here, so there is exactly one answer.
+
+    *Where a RESTRICTED value lives.* In ``cipher_text``, encrypted and bound to
+    this owner, record and path — and nowhere else. ``value_text`` is emptied,
+    and so are ``value_number`` and ``value_date``: an encrypted amount whose
+    magnitude is still sitting in a numeric column is not encrypted, it is
+    merely inconvenient to read. If no key is configured the write is refused
+    outright rather than downgraded, which is the one behaviour that keeps the
+    word "encrypted" honest everywhere else it appears.
+    """
+    spec = template.field_map.get(_templates.template_path(value.path))
+    if spec is None:  # pragma: no cover - validate_payload rejects these first
+        raise StructuredRecordRejected(f"{value.path} is not a field of {template.key}")
+
+    masked = value.mask != _templates.MASK_NONE
+    masked_text = (
+        _templates.mask_value(value.mask, value.kind, value.value_text)
+        if masked else value.value_text
+    )
+    search_text = _templates.search_index_text(value)
+
+    row = {
+        "field_path": value.path,
+        "field_kind": value.kind,
+        "value_type": value.value_type,
+        "value_text": value.value_text,
+        "value_number": value.value_number,
+        "value_date": value.value_date or "",
+        "currency": value.currency or "",
+        "sensitivity": value.sensitivity,
+        "mask": value.mask,
+        "searchable": 1 if value.searchable else 0,
+        "masked_text": masked_text,
+        # Lowercased because every query against this column is a
+        # case-insensitive prefix match, and doing the fold once at write time
+        # is what keeps that query able to use the index it was given.
+        "search_text": search_text.lower(),
+        "is_encrypted": 0,
+        "cipher_text": "",
+        "cipher_key_id": "",
+        "identity_field": 1 if spec.identity else 0,
+        "expires_record": 1 if spec.expires_record else 0,
+        "undx_readable": 1 if (spec.undx_readable and template.undx_readable) else 0,
+    }
+
+    if value.sensitivity == _model.SENSITIVITY_RESTRICTED:
+        if not _crypto.available():
+            raise StructuredRecordRejected(
+                f"{value.path} is a restricted field and no encryption key is "
+                "configured, so it cannot be stored"
+            )
+        try:
+            cipher_text, key_id = _crypto.encrypt(
+                value.value_text,
+                owner_user_id=owner_user_id,
+                record_key=record_key_value,
+                field_path=value.path,
+            )
+        except _crypto.FieldCryptoUnavailable as exc:
+            raise StructuredRecordRejected(
+                f"{value.path} is a restricted field and cannot be stored: {exc}"
+            ) from None
+        row.update({
+            "value_text": "",
+            "value_number": None,
+            "value_date": "",
+            "is_encrypted": 1,
+            "cipher_text": cipher_text,
+            "cipher_key_id": key_id,
+        })
+
+    return row
+
+
+def _summary_text(template, rows: list[dict]) -> str:
+    """The one line a list renders.
+
+    Built only from fields the template already marked ``searchable``, and from
+    their ``masked_text`` rather than their value. That reuses a safety decision
+    somebody already made per field instead of inventing a second one here — and
+    the second one is the one that would be wrong, because it would be made by
+    whoever was writing the list screen.
+
+    A template with no searchable fields gets an empty summary, and the reader
+    falls back to the record's title. ``medical_condition`` is exactly that
+    case: nothing about a diagnosis is safe in a list preview, so nothing is
+    there. That is the correct outcome and it arrives with no special case.
+    """
+    order = {spec.path: i for i, spec in enumerate(template.fields)}
+    parts: list[str] = []
+    for row in sorted(rows, key=lambda r: order.get(
+            _templates.template_path(r["field_path"]), 999)):
+        if not row["searchable"]:
+            continue
+        text = str(row["masked_text"] or "").strip()
+        if text:
+            parts.append(text)
+    return " • ".join(parts)[:MAX_SUMMARY]
+
+
+def _expiry_of(rows: list[dict]) -> str:
+    for row in rows:
+        if row["expires_record"] and row["value_date"]:
+            return row["value_date"]
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# Duplicate detection
+# ---------------------------------------------------------------------------
+def find_duplicates(
+    cur, *, owner_user_id: int, template_key: str, rows: list[dict],
+    exclude_record_id: int = 0,
+) -> list[int]:
+    """Records of the same template whose identity fields all match.
+
+    Matched on ``masked_text``, never on the value — which is both the private
+    answer and the fast one, since it is precisely what
+    ``idx_record_fields_owner_identity`` indexes. Two passports whose numbers
+    differ only beyond the last four digits will look like duplicates and the
+    member will be asked; that is the right way round, because the cost of the
+    question is one tap and the cost of the alternative is either a silent
+    second passport record or a comparison performed against plaintext.
+    """
+    owner = _owner(owner_user_id)
+    identity = {r["field_path"]: str(r["masked_text"] or "") for r in rows
+                if r["identity_field"]}
+    if not identity:
+        return []
+
+    cur.execute(
+        """SELECT record_id, field_path, masked_text FROM private_record_fields
+        WHERE owner_user_id = ? AND template_key = ? AND identity_field = 1""",
+        (owner, str(template_key)),
+    )
+    seen: dict[int, dict[str, str]] = {}
+    for raw in cur.fetchall() or ():
+        row = _row_dict(raw)
+        record_id = int(row.get("record_id") or 0)
+        if record_id == int(exclude_record_id or 0):
+            continue
+        seen.setdefault(record_id, {})[str(row.get("field_path") or "")] = str(
+            row.get("masked_text") or "")
+
+    return sorted(
+        record_id for record_id, fields in seen.items() if fields == identity
+    )
+
+
+# ---------------------------------------------------------------------------
+# History
+# ---------------------------------------------------------------------------
+def _next_history_seq(cur, owner: int, record_id: int) -> int:
+    cur.execute(
+        """SELECT MAX(revision) AS seq FROM private_record_revisions
+        WHERE owner_user_id = ? AND record_id = ?""",
+        (owner, int(record_id)),
+    )
+    row = _row_dict(cur.fetchone())
+    return int(row.get("seq") or 0) + 1
+
+
+def _write_revision(
+    cur, *, owner: int, record_id: int, record_key_value: str, change_type: str,
+    template_key: str, changed_paths: list[str] | tuple[str, ...] = (),
+    template_version_from: int | None = None, template_version_to: int | None = None,
+    status_from: str = "", status_to: str = "", verification_from: str = "",
+    verification_to: str = "", source_type: str = "", reason_code: str = "",
+    actor_user_id: int | None = None, actor_kind: str = "",
+) -> int:
+    """Append one history entry. Paths, never values.
+
+    ``changed_paths`` is capped and sorted. The cap is not a performance
+    measure: an unbounded joined string is a text column that grows without a
+    limit anybody stated, and the shape of thing that ends up holding something
+    other than paths.
+    """
+    change = normalize_change_type(change_type)
+    if change is None:
+        raise StructuredRecordRejected(f"unknown change type {change_type!r}")
+    seq = _next_history_seq(cur, owner, record_id)
+    paths = ",".join(sorted({str(p) for p in changed_paths})[:MAX_CHANGED_PATHS])
+    cur.execute(
+        """INSERT INTO private_record_revisions
+        (owner_user_id, record_id, record_key, revision, change_type,
+         changed_paths, template_key, template_version_from, template_version_to,
+         status_from, status_to, verification_from, verification_to,
+         source_type, reason_code, actor_user_id, actor_kind, audit_event_id,
+         created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            owner, int(record_id), str(record_key_value), seq, change, paths,
+            str(template_key), template_version_from, template_version_to,
+            str(status_from or ""), str(status_to or ""),
+            str(verification_from or ""), str(verification_to or ""),
+            str(source_type or ""), _text(reason_code, 64),
+            int(actor_user_id) if actor_user_id else None, str(actor_kind or ""),
+            None, _now_iso(),
+        ),
+    )
+    return seq
+
+
+# ---------------------------------------------------------------------------
+# Field row IO
+# ---------------------------------------------------------------------------
+_FIELD_COLUMNS: tuple[str, ...] = (
+    "field_path", "field_kind", "value_type", "value_text", "value_number",
+    "value_date", "currency", "sensitivity", "mask", "searchable",
+    "masked_text", "search_text", "is_encrypted", "cipher_text",
+    "cipher_key_id", "identity_field", "expires_record", "undx_readable",
+)
+
+
+def _insert_fields(cur, *, owner: int, record_id: int, record_key_value: str,
+                   template, rows: list[dict], now_iso: str) -> None:
+    columns = ("owner_user_id", "record_id", "record_key", "template_key",
+               "template_version") + _FIELD_COLUMNS + ("created_at", "updated_at")
+    placeholders = ", ".join("?" for _ in columns)
+    for row in rows:
+        params = [owner, int(record_id), record_key_value, template.key,
+                  int(template.version)]
+        params.extend(row[name] for name in _FIELD_COLUMNS)
+        params.extend([now_iso, now_iso])
+        cur.execute(
+            f"INSERT INTO private_record_fields ({', '.join(columns)}) "
+            f"VALUES ({placeholders})",
+            tuple(params),
+        )
+
+
+def _delete_fields(cur, *, owner: int, record_id: int, paths) -> None:
+    for path in paths:
+        cur.execute(
+            """DELETE FROM private_record_fields
+            WHERE owner_user_id = ? AND record_id = ? AND field_path = ?""",
+            (owner, int(record_id), str(path)),
+        )
+
+
+def _load_fields(cur, *, owner: int, record_id: int) -> list[dict]:
+    cur.execute(
+        """SELECT * FROM private_record_fields
+        WHERE owner_user_id = ? AND record_id = ? ORDER BY field_path""",
+        (owner, int(record_id)),
+    )
+    return [_row_dict(r) for r in cur.fetchall() or ()]
+
+
+# ---------------------------------------------------------------------------
+# Envelope IO
+# ---------------------------------------------------------------------------
+def _load_envelope(cur, *, owner: int, record_id: int = 0,
+                   record_key_value: str = "") -> dict:
+    """One envelope, or ``{}``.
+
+    Owner is a predicate here, not a check performed afterwards on a row that
+    was already loaded. The difference matters: an ownership check after the
+    fact is a line somebody can delete while the query still returns the row,
+    and every caller above assumes an empty result means "not yours or not
+    there" without being able to tell which — which is the property Stage 14 of
+    the isolation work asked for.
+    """
+    if record_id:
+        cur.execute(
+            """SELECT * FROM private_structured_records
+            WHERE owner_user_id = ? AND id = ?""",
+            (owner, int(record_id)),
+        )
+    elif record_key_value:
+        cur.execute(
+            """SELECT * FROM private_structured_records
+            WHERE owner_user_id = ? AND record_key = ?""",
+            (owner, str(record_key_value)),
+        )
+    else:
+        raise StructuredRecordRejected("record_id or record_key is required")
+    return _row_dict(cur.fetchone())
+
+
+def _serialize_envelope(row: dict) -> dict:
+    """The envelope as callers see it. No owner id, no internal row ids.
+
+    ``record_key`` *is* exposed, unlike ``records._serialize``, because it is
+    this store's public handle — the thing a client puts in a URL and an
+    idempotent retry re-sends — and it is designed to carry no information (see
+    :func:`record_key`). The integer ``id`` goes out too, because the reveal and
+    history endpoints address a record by it; the owner id never does.
+    """
+    verification = str(row.get("verification_state") or "")
+    return {
+        "id": int(row.get("id") or 0),
+        "record_key": str(row.get("record_key") or ""),
+        "template_key": str(row.get("template_key") or ""),
+        "template_version": int(row.get("template_version") or 1),
+        "contract_version": int(row.get("contract_version") or CONTRACT_VERSION),
+        "schema_key": f"{row.get('template_key')}@{row.get('template_version')}",
+        "domain": str(row.get("domain") or ""),
+        "ia_domain": str(row.get("ia_domain") or ""),
+        "title": str(row.get("title") or ""),
+        "summary": str(row.get("summary_text") or ""),
+        "description": str(row.get("description") or ""),
+        "status": str(row.get("status") or ""),
+        "lifecycle_state": str(row.get("lifecycle_state") or _model.LIFECYCLE_ACTIVE),
+        "sensitivity": str(row.get("sensitivity") or _model.DEFAULT_SENSITIVITY),
+        "verification_state": verification,
+        "verified": is_verified(verification),
+        "needs_review": needs_review(verification),
+        "source_type": str(row.get("source_type") or ""),
+        "source_ref": str(row.get("source_ref") or ""),
+        "evidence_ids": _split(row.get("evidence_ids")),
+        "tags": _split(row.get("tags")),
+        "effective_date": str(row.get("effective_date") or ""),
+        "expires_at": str(row.get("expires_at") or ""),
+        "review_at": str(row.get("review_at") or ""),
+        "revision": int(row.get("revision") or 1),
+        "undx_readable": bool(row.get("undx_readable")),
+        "created_at": str(row.get("created_at") or ""),
+        "updated_at": str(row.get("updated_at") or ""),
+        "archived_at": row.get("archived_at") or None,
+    }
+
+
+def _serialize_field(row: dict) -> dict:
+    """One stored field as a screen may see it.
+
+    ``masked_text`` and only ``masked_text``. There is no branch here that could
+    read ``value_text``, and no argument that could ask it to — a caller wanting
+    the real value calls :func:`reveal_field`, which requires a step-up and
+    writes an audit row. The absence of the branch is the enforcement; a flag
+    like ``include_values=True`` would be one default away from a list endpoint
+    returning every passport number a member has.
+    """
+    masked = str(row.get("mask") or _templates.MASK_NONE) != _templates.MASK_NONE
+    return {
+        "path": str(row.get("field_path") or ""),
+        "kind": str(row.get("field_kind") or ""),
+        "value": str(row.get("masked_text") or ""),
+        "value_date": str(row.get("value_date") or ""),
+        "currency": str(row.get("currency") or ""),
+        "masked": masked,
+        "revealable": masked,
+        "encrypted": bool(row.get("is_encrypted")),
+        "sensitivity": str(row.get("sensitivity") or ""),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Create
+# ---------------------------------------------------------------------------
+def create_record(
+    cur,
+    *,
+    owner_user_id: int,
+    template_key: str,
+    payload: dict,
+    template_version: object = None,
+    title: str = "",
+    description: str = "",
+    office_id: str = "",
+    status: str = "",
+    verification_state: str = "",
+    source_type: str = "",
+    source_ref: str = "",
+    provenance_type: str = "",
+    evidence_ids: object = (),
+    tags: object = (),
+    effective_date: object = "",
+    review_at: object = "",
+    reminder_policy: str = "",
+    idempotency_key: object = "",
+    allow_duplicate: bool = False,
+    actor_user_id: int | None = None,
+    actor_kind: str = ACTOR_USER,
+    purpose: str = "user_request",
+) -> dict:
+    """Write one structured record: envelope, fields and first history entry.
+
+    Returns ``{"status", "record_id", "record", "duplicates", "errors"}``.
+    ``status`` is one of:
+
+    ``created``    a new record.
+    ``existing``   ``idempotency_key`` matched a record already written. The
+                   stored record is returned unchanged — a replayed create does
+                   not become an update, because the two have different
+                   authority and the caller asked for the first one.
+    ``duplicate``  the identity fields match a record the member already has,
+                   and ``allow_duplicate`` was not set. **Nothing was written.**
+                   The decision goes back to the member rather than being made
+                   here, in either direction: silently deduping loses a genuine
+                   second passport, and silently writing produces two records
+                   that will disagree the first time one is corrected.
+
+    Raises :class:`StructuredRecordRejected` for anything incoherent, including
+    a restricted field with no key configured. It does not fall back to storing
+    that field in the clear, and there is no argument that makes it.
+    """
+    owner = _owner(owner_user_id)
+    kind = _actor_kind(actor_kind)
+    template = _resolve_template(template_key, template_version)
+
+    result = _templates.validate_payload(template, payload or {})
+    if not result.ok:
+        return {"status": "invalid", "record_id": 0, "record": None,
+                "duplicates": [], "errors": result.errors_as_list()}
+
+    verification = _check_verification(
+        verification_state or DEFAULT_VERIFICATION, kind)
+    source = normalize_source_type(source_type or _records.SOURCE_USER)
+    if source is None:
+        raise StructuredRecordRejected(f"unknown source type {source_type!r}")
+    provenance = _text(provenance_type, 64)
+    if source in DERIVED_SOURCES and not provenance:
+        # Same rule the fact store enforces, for the same reason: a record that
+        # came from a document or an inference and cannot say so is a record
+        # that will eventually be quoted as if a member had typed it.
+        raise StructuredRecordRejected(
+            f"a record from source {source} must carry a provenance_type")
+
+    record_status = _text(status, 64) or template.default_status
+    if record_status not in template.statuses:
+        raise StructuredRecordRejected(
+            f"{record_status!r} is not a status of {template.key}; "
+            f"expected one of {', '.join(template.statuses)}")
+
+    require_structured_schema(cur)
+
+    key = record_key(owner_user_id=owner, template_key=template.key,
+                     idempotency_key=idempotency_key)
+    if idempotency_key:
+        existing = _load_envelope(cur, owner=owner, record_key_value=key)
+        if existing:
+            return {"status": STATUS_EXISTING, "record_id": int(existing["id"]),
+                    "record": get_record(cur, owner_user_id=owner,
+                                         record_id=int(existing["id"]), audit=False),
+                    "duplicates": [], "errors": []}
+
+    rows = [
+        _project_field(value, owner_user_id=owner, record_key_value=key,
+                       template=template)
+        for value in result.values
+    ]
+
+    duplicates = find_duplicates(
+        cur, owner_user_id=owner, template_key=template.key, rows=rows)
+    if duplicates and not allow_duplicate:
+        return {"status": STATUS_DUPLICATE, "record_id": 0, "record": None,
+                "duplicates": duplicates, "errors": []}
+
+    now_iso = _now_iso()
+    summary = _summary_text(template, rows)
+    record_title = _text(title, MAX_TITLE) or template.display_fallback
+
+    cur.execute(
+        """INSERT INTO private_structured_records
+        (owner_user_id, office_id, record_key, template_key, template_version,
+         contract_version, domain, ia_domain, title, summary_text, description,
+         status, lifecycle_state, sensitivity, verification_state, source_type,
+         source_ref, provenance_type, evidence_ids, graph_node_id,
+         effective_date, expires_at, review_at, tags, reminder_policy,
+         undx_readable, revision, supersedes_id, created_at, updated_at,
+         created_by, updated_by, archived_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            owner, _text(office_id, 64), key, template.key, int(template.version),
+            int(CONTRACT_VERSION), template.domain, template.ia_domain,
+            record_title, summary, _text(description, MAX_DESCRIPTION),
+            record_status, _model.LIFECYCLE_ACTIVE, template.sensitivity,
+            verification, source, _records.safe_ref(source_ref), provenance,
+            _refs(evidence_ids), None,
+            _records._iso(effective_date, default="") or "",
+            _expiry_of(rows),
+            _records._iso(review_at, default="") or "",
+            _tags(tags), _text(reminder_policy, 200),
+            1 if template.undx_readable else 0, 1, None, now_iso, now_iso,
+            _text(kind, MAX_ACTOR), _text(kind, MAX_ACTOR), None,
+        ),
+    )
+
+    # `lastrowid` is None on PostgreSQL for these tables, so the id comes back
+    # through the unique key the row was written with — the same approach
+    # `records._insert` takes, for the same reason.
+    envelope = _load_envelope(cur, owner=owner, record_key_value=key)
+    if not envelope:  # pragma: no cover - insert succeeded but row is absent
+        raise StructuredSchemaMissing("record was written but could not be read back")
+    record_id = int(envelope["id"])
+
+    _insert_fields(cur, owner=owner, record_id=record_id, record_key_value=key,
+                   template=template, rows=rows, now_iso=now_iso)
+
+    _write_revision(
+        cur, owner=owner, record_id=record_id, record_key_value=key,
+        change_type=CHANGE_CREATED, template_key=template.key,
+        changed_paths=[r["field_path"] for r in rows],
+        template_version_to=int(template.version), status_to=record_status,
+        verification_to=verification, source_type=source,
+        actor_user_id=actor_user_id or owner, actor_kind=kind,
+    )
+    _audit.record(
+        cur, actor_user_id=int(actor_user_id or owner), owner_user_id=owner,
+        action=_audit.ACTION_RECORD_CREATE, object_type="private_structured_record",
+        object_id=record_id, purpose=purpose, outcome=_audit.OUTCOME_OK,
+    )
+
+    return {"status": STATUS_CREATED, "record_id": record_id,
+            "record": get_record(cur, owner_user_id=owner, record_id=record_id,
+                                 audit=False),
+            "duplicates": duplicates, "errors": []}
+
+
+# ---------------------------------------------------------------------------
+# Update
+# ---------------------------------------------------------------------------
+def update_record(
+    cur,
+    *,
+    owner_user_id: int,
+    record_id: int,
+    payload: dict | None = None,
+    title: object = None,
+    description: object = None,
+    evidence_ids: object = None,
+    tags: object = None,
+    effective_date: object = None,
+    review_at: object = None,
+    reminder_policy: object = None,
+    verification_state: object = None,
+    status: object = None,
+    expected_revision: object = None,
+    reason_code: str = "",
+    actor_user_id: int | None = None,
+    actor_kind: str = ACTOR_USER,
+    purpose: str = "user_request",
+) -> dict:
+    """Change a record's fields or envelope, in place, with history.
+
+    ``payload`` is a patch, validated with ``partial=True``: a path that is
+    present is replaced, a path that is present and empty is *cleared*, and a
+    path that is absent is untouched. The distinction between the second and
+    third is why the patch is read from the submitted keys rather than from the
+    validated values — a cleared field produces no ``FieldValue``, and a writer
+    that only looked at the values would silently ignore every deletion a member
+    made.
+
+    ``expected_revision`` is optimistic concurrency. When supplied and stale the
+    write is refused with :class:`StructuredRecordConflict` rather than applied,
+    because the alternative is that the later of two people editing the same
+    record wins by accident and the earlier one never learns.
+
+    A verification change is *not* free-form. Moving to a verified state
+    requires a human actor, exactly as it does at create.
+    """
+    owner = _owner(owner_user_id)
+    kind = _actor_kind(actor_kind)
+    require_structured_schema(cur)
+
+    current = _load_envelope(cur, owner=owner, record_id=int(record_id or 0))
+    if not current:
+        raise StructuredRecordDenied("no such record")
+    if current.get("lifecycle_state") == _model.LIFECYCLE_ARCHIVED:
+        raise StructuredRecordRejected(
+            "an archived record cannot be edited; restore it first")
+
+    if expected_revision is not None and str(expected_revision).strip() != "":
+        if int(expected_revision) != int(current.get("revision") or 1):
+            raise StructuredRecordConflict(
+                f"record is at revision {int(current.get('revision') or 1)}, "
+                f"not {int(expected_revision)}")
+
+    template = _resolve_template(current["template_key"], current["template_version"])
+    key = str(current["record_key"])
+    changed: list[str] = []
+    sets: dict[str, object] = {}
+
+    # -- fields -------------------------------------------------------------
+    field_rows: list[dict] = []
+    cleared: list[str] = []
+    written: set[str] = set()
+    if payload:
+        submitted = [str(p).strip() for p in payload if str(p or "").strip()]
+        result = _templates.validate_payload(template, payload, partial=True)
+        if not result.ok:
+            return {"status": "invalid", "record_id": int(record_id),
+                    "record": None, "errors": result.errors_as_list()}
+        field_rows = [
+            _project_field(value, owner_user_id=owner, record_key_value=key,
+                           template=template)
+            for value in result.values
+        ]
+        written = {r["field_path"] for r in field_rows}
+        cleared = [p for p in submitted if p not in written]
+        changed.extend(sorted(written | set(cleared)))
+
+    now_iso = _now_iso()
+    if field_rows or cleared:
+        _delete_fields(cur, owner=owner, record_id=int(record_id),
+                       paths=sorted(written) + cleared)
+        if field_rows:
+            _insert_fields(cur, owner=owner, record_id=int(record_id),
+                           record_key_value=key, template=template,
+                           rows=field_rows, now_iso=now_iso)
+        # Summary and expiry are properties of the whole record, so they are
+        # recomputed from every stored field rather than from the patch. A patch
+        # that clears the expiry date must clear the envelope's `expires_at`,
+        # and a reader that recomputed from the patch alone would leave the old
+        # date in place — a reminder for a document that no longer expires then.
+        stored = _load_fields(cur, owner=owner, record_id=int(record_id))
+        sets["summary_text"] = _summary_text(template, stored)
+        sets["expires_at"] = _expiry_of(stored)
+
+    # -- envelope -----------------------------------------------------------
+    if title is not None:
+        sets["title"] = _text(title, MAX_TITLE) or template.display_fallback
+        changed.append("title")
+    if description is not None:
+        sets["description"] = _text(description, MAX_DESCRIPTION)
+        changed.append("description")
+    if evidence_ids is not None:
+        sets["evidence_ids"] = _refs(evidence_ids)
+        changed.append("evidence_ids")
+    if tags is not None:
+        sets["tags"] = _tags(tags)
+        changed.append("tags")
+    if effective_date is not None:
+        sets["effective_date"] = _records._iso(effective_date, default="") or ""
+        changed.append("effective_date")
+    if review_at is not None:
+        sets["review_at"] = _records._iso(review_at, default="") or ""
+        changed.append("review_at")
+    if reminder_policy is not None:
+        sets["reminder_policy"] = _text(reminder_policy, 200)
+        changed.append("reminder_policy")
+
+    status_to = ""
+    if status is not None:
+        status_to = _text(status, 64)
+        if status_to not in template.statuses:
+            raise StructuredRecordRejected(
+                f"{status_to!r} is not a status of {template.key}")
+        sets["status"] = status_to
+        changed.append("status")
+
+    verification_to = ""
+    if verification_state is not None:
+        verification_to = _check_verification(str(verification_state), kind)
+        sets["verification_state"] = verification_to
+        changed.append("verification_state")
+
+    if not sets:
+        return {"status": STATUS_UNCHANGED, "record_id": int(record_id),
+                "record": get_record(cur, owner_user_id=owner,
+                                     record_id=int(record_id), audit=False),
+                "errors": []}
+
+    revision = int(current.get("revision") or 1) + 1
+    sets["revision"] = revision
+    sets["updated_at"] = now_iso
+    sets["updated_by"] = _text(kind, MAX_ACTOR)
+
+    assignments = ", ".join(f"{name} = ?" for name in sets)
+    cur.execute(
+        f"UPDATE private_structured_records SET {assignments} "
+        "WHERE owner_user_id = ? AND id = ?",
+        tuple(sets.values()) + (owner, int(record_id)),
+    )
+
+    change_type = CHANGE_UPDATED
+    if verification_to and not payload and not status_to:
+        change_type = CHANGE_VERIFICATION_CHANGED
+    elif status_to and not payload and not verification_to:
+        change_type = CHANGE_STATUS_CHANGED
+
+    _write_revision(
+        cur, owner=owner, record_id=int(record_id), record_key_value=key,
+        change_type=change_type, template_key=template.key, changed_paths=changed,
+        template_version_from=int(current["template_version"]),
+        template_version_to=int(current["template_version"]),
+        status_from=str(current.get("status") or "") if status_to else "",
+        status_to=status_to,
+        verification_from=(
+            str(current.get("verification_state") or "") if verification_to else ""),
+        verification_to=verification_to,
+        source_type=str(current.get("source_type") or ""), reason_code=reason_code,
+        actor_user_id=actor_user_id or owner, actor_kind=kind,
+    )
+    _audit.record(
+        cur, actor_user_id=int(actor_user_id or owner), owner_user_id=owner,
+        action=_audit.ACTION_RECORD_UPDATE, object_type="private_structured_record",
+        object_id=int(record_id), purpose=purpose, outcome=_audit.OUTCOME_OK,
+    )
+
+    return {"status": STATUS_UPDATED, "record_id": int(record_id),
+            "record": get_record(cur, owner_user_id=owner, record_id=int(record_id),
+                                 audit=False),
+            "errors": []}
+
+
+def archive_record(
+    cur, *, owner_user_id: int, record_id: int, reason_code: str = "",
+    actor_user_id: int | None = None, actor_kind: str = ACTOR_USER,
+    purpose: str = "user_request",
+) -> dict:
+    """Retire a record without destroying it.
+
+    There is no delete in this module and that is deliberate. A member who
+    archives a passport they have replaced still wants the history, the
+    evidence and the audit trail of who looked at it; a member who wants the
+    data gone is asking for an account-level erasure, which is a different
+    operation with different authority, different scope and a different record
+    of having happened. Offering a per-record delete here would let the second
+    thing be done accidentally while doing the first.
+    """
+    owner = _owner(owner_user_id)
+    kind = _actor_kind(actor_kind)
+    require_structured_schema(cur)
+
+    current = _load_envelope(cur, owner=owner, record_id=int(record_id or 0))
+    if not current:
+        raise StructuredRecordDenied("no such record")
+    if current.get("lifecycle_state") == _model.LIFECYCLE_ARCHIVED:
+        return {"status": STATUS_UNCHANGED, "record_id": int(record_id),
+                "record": _serialize_envelope(current)}
+
+    now_iso = _now_iso()
+    cur.execute(
+        """UPDATE private_structured_records
+        SET lifecycle_state = ?, verification_state = ?, archived_at = ?,
+            revision = ?, updated_at = ?, updated_by = ?
+        WHERE owner_user_id = ? AND id = ?""",
+        (_model.LIFECYCLE_ARCHIVED, VERIFICATION_ARCHIVED, now_iso,
+         int(current.get("revision") or 1) + 1, now_iso, _text(kind, MAX_ACTOR),
+         owner, int(record_id)),
+    )
+    _write_revision(
+        cur, owner=owner, record_id=int(record_id),
+        record_key_value=str(current["record_key"]), change_type=CHANGE_ARCHIVED,
+        template_key=str(current["template_key"]),
+        verification_from=str(current.get("verification_state") or ""),
+        verification_to=VERIFICATION_ARCHIVED, reason_code=reason_code,
+        actor_user_id=actor_user_id or owner, actor_kind=kind,
+    )
+    _audit.record(
+        cur, actor_user_id=int(actor_user_id or owner), owner_user_id=owner,
+        action=_audit.ACTION_RECORD_UPDATE, object_type="private_structured_record",
+        object_id=int(record_id), purpose=purpose, outcome=_audit.OUTCOME_OK,
+    )
+    return {"status": STATUS_UPDATED, "record_id": int(record_id),
+            "record": get_record(cur, owner_user_id=owner, record_id=int(record_id),
+                                 audit=False)}
+
+
+# ---------------------------------------------------------------------------
+# Read
+# ---------------------------------------------------------------------------
+def get_record(
+    cur, *, owner_user_id: int, record_id: int = 0, record_key_value: str = "",
+    audit: bool = True, actor_user_id: int | None = None,
+    purpose: str = "user_request",
+) -> dict | None:
+    """One record with its fields, masked.
+
+    **This function never decrypts anything.** Every field it returns comes from
+    ``masked_text``, which for an unmasked field is the value and for a masked
+    one is the masked form. That is not a policy the function follows, it is the
+    only data it loads a column for — and it is what makes "opening a record
+    does not expose a passport number" true of the code rather than of the
+    caller. :func:`reveal_field` is the one path that decrypts, and it demands a
+    step-up and writes an audit row to do it.
+    """
+    owner = _owner(owner_user_id)
+    require_structured_schema(cur)
+    row = _load_envelope(cur, owner=owner, record_id=int(record_id or 0),
+                         record_key_value=str(record_key_value or ""))
+    if not row:
+        return None
+
+    fields = _load_fields(cur, owner=owner, record_id=int(row["id"]))
+    template = _templates.get_template(row["template_key"], row["template_version"])
+    order = ({spec.path: i for i, spec in enumerate(template.fields)}
+             if template is not None else {})
+    fields.sort(key=lambda r: order.get(
+        _templates.template_path(str(r.get("field_path") or "")), 999))
+
+    out = _serialize_envelope(row)
+    out["fields"] = [_serialize_field(f) for f in fields]
+    # A record written against a template version this process does not have is
+    # readable but not editable, and it says so rather than pretending. The
+    # alternative — rendering it against the nearest version we do have — moves
+    # values under labels that were written for different questions.
+    out["template_known"] = template is not None
+
+    if audit:
+        _audit.record(
+            cur, actor_user_id=int(actor_user_id or owner), owner_user_id=owner,
+            action=_audit.ACTION_RECORD_READ, object_type="private_structured_record",
+            object_id=int(row["id"]), purpose=purpose, outcome=_audit.OUTCOME_OK,
+            result_count=1,
+        )
+    return out
+
+
+def list_records(
+    cur,
+    *,
+    owner_user_id: int,
+    template_key: object = None,
+    ia_domain: object = None,
+    lifecycle_state: object = _model.LIFECYCLE_ACTIVE,
+    verification_state: object = None,
+    needs_review_only: bool = False,
+    expiring_before: object = None,
+    limit: int = DEFAULT_LIMIT,
+    offset: int = 0,
+    actor_user_id: int | None = None,
+    audit: bool = True,
+    purpose: str = "user_request",
+) -> dict:
+    """Envelopes only, owner-scoped, paginated.
+
+    No field values of any kind, masked or otherwise — the list line is the
+    stored ``summary_text``, which was assembled at write time from fields the
+    template had already marked searchable. That is what keeps a list query from
+    having to load a restricted value in order to decide not to show it, and a
+    query that never loads the value is a query that cannot leak it through a
+    log line, an error message or a serializer somebody adds later.
+    """
+    owner = _owner(owner_user_id)
+    require_structured_schema(cur)
+
+    where = ["owner_user_id = ?"]
+    params: list = [owner]
+    if template_key:
+        where.append("template_key = ?")
+        params.append(str(template_key))
+    if ia_domain:
+        where.append("ia_domain = ?")
+        params.append(str(ia_domain))
+    if lifecycle_state:
+        where.append("lifecycle_state = ?")
+        params.append(str(lifecycle_state))
+    if verification_state:
+        state = normalize_verification(verification_state)
+        if state is None:
+            raise StructuredRecordRejected(
+                f"unknown verification state {verification_state!r}")
+        where.append("verification_state = ?")
+        params.append(state)
+    if needs_review_only:
+        placeholders = ", ".join("?" for _ in sorted(NEEDS_REVIEW_STATES))
+        where.append(f"verification_state IN ({placeholders})")
+        params.extend(sorted(NEEDS_REVIEW_STATES))
+    if expiring_before:
+        cutoff = _records._iso(expiring_before, default="")
+        if not cutoff:
+            raise StructuredRecordRejected(
+                f"expiring_before is not a date: {expiring_before!r}")
+        # `expires_at <> ''` keeps records that never expire out of the result
+        # rather than letting the empty string sort below every cutoff, which
+        # would put every permanent record in the "expiring soon" list.
+        where.append("expires_at <> '' AND expires_at <= ?")
+        params.append(cutoff)
+
+    size = max(1, min(int(limit or DEFAULT_LIMIT), MAX_LIMIT))
+    start = max(0, int(offset or 0))
+    cur.execute(
+        f"SELECT * FROM private_structured_records WHERE {' AND '.join(where)} "
+        "ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?",
+        tuple(params) + (size + 1, start),
+    )
+    rows = [_row_dict(r) for r in cur.fetchall() or ()]
+    has_more = len(rows) > size
+    rows = rows[:size]
+
+    if audit:
+        _audit.record(
+            cur, actor_user_id=int(actor_user_id or owner), owner_user_id=owner,
+            action=_audit.ACTION_RECORD_READ, object_type="private_structured_record",
+            purpose=purpose, outcome=_audit.OUTCOME_OK, result_count=len(rows),
+        )
+
+    return {
+        "records": [_serialize_envelope(r) for r in rows],
+        "limit": size,
+        "offset": start,
+        "has_more": has_more,
+    }
+
+
+def search_records(
+    cur, *, owner_user_id: int, query: str, limit: int = DEFAULT_LIMIT,
+    actor_user_id: int | None = None, audit: bool = True,
+    purpose: str = "user_request",
+) -> dict:
+    """Search the field index. Matches masked text, returns masked text.
+
+    The index this reads was populated by
+    :func:`~services.private_office.record_templates.search_index_text`, so a
+    masked field is in it under its masked form and a non-searchable field is
+    not in it at all. That is what makes a suggestion line like
+    ``Passport • United States • ending 1234`` possible with the index never
+    having held the number — and it means a match on ``1234`` is a match on the
+    four digits the member is already shown, not on the value.
+
+    Health records surface here by title and by nothing else, because
+    ``medical_condition`` marks no field searchable. That is deliberate: a
+    search suggestion is rendered in a list, over a member's shoulder, on a
+    lock screen preview, and a diagnosis does not belong in any of them.
+    """
+    owner = _owner(owner_user_id)
+    require_structured_schema(cur)
+    text = str(query or "").strip().lower()
+    if len(text) < 2:
+        # One character matches most of the index, which makes the first
+        # keystroke of every search a full read of every record a member has.
+        return {"results": [], "query": text, "limit": int(limit or DEFAULT_LIMIT)}
+
+    size = max(1, min(int(limit or DEFAULT_LIMIT), MAX_LIMIT))
+    pattern = f"%{text.replace('%', '').replace('_', '')}%"
+
+    cur.execute(
+        """SELECT record_id, field_path, masked_text FROM private_record_fields
+        WHERE owner_user_id = ? AND searchable = 1 AND search_text LIKE ?
+        ORDER BY record_id LIMIT ?""",
+        (owner, pattern, size * 8),
+    )
+    hits: dict[int, list[dict]] = {}
+    for raw in cur.fetchall() or ():
+        row = _row_dict(raw)
+        hits.setdefault(int(row.get("record_id") or 0), []).append({
+            "path": str(row.get("field_path") or ""),
+            "value": str(row.get("masked_text") or ""),
+        })
+
+    cur.execute(
+        """SELECT id, title, summary_text, template_key, template_version,
+                  ia_domain, record_key, expires_at, verification_state,
+                  lifecycle_state
+        FROM private_structured_records
+        WHERE owner_user_id = ? AND (title LIKE ? OR summary_text LIKE ?)
+        ORDER BY updated_at DESC LIMIT ?""",
+        (owner, pattern, pattern, size * 4),
+    )
+    envelopes: dict[int, dict] = {}
+    for raw in cur.fetchall() or ():
+        row = _row_dict(raw)
+        envelopes[int(row.get("id") or 0)] = row
+
+    missing = [rid for rid in hits if rid not in envelopes]
+    for rid in missing[:size * 4]:
+        row = _load_envelope(cur, owner=owner, record_id=rid)
+        if row:
+            envelopes[rid] = row
+
+    results = []
+    for rid, row in envelopes.items():
+        if str(row.get("lifecycle_state") or _model.LIFECYCLE_ACTIVE) != _model.LIFECYCLE_ACTIVE:
+            continue
+        results.append({
+            "record_id": rid,
+            "record_key": str(row.get("record_key") or ""),
+            "template_key": str(row.get("template_key") or ""),
+            "ia_domain": str(row.get("ia_domain") or ""),
+            "title": str(row.get("title") or ""),
+            "summary": str(row.get("summary_text") or ""),
+            "expires_at": str(row.get("expires_at") or ""),
+            "verification_state": str(row.get("verification_state") or ""),
+            "matched": hits.get(rid, [])[:4],
+        })
+    results.sort(key=lambda r: (not r["matched"], r["title"].lower()))
+    results = results[:size]
+
+    if audit:
+        _audit.record(
+            cur, actor_user_id=int(actor_user_id or owner), owner_user_id=owner,
+            action=_audit.ACTION_RECORD_READ, object_type="private_structured_record",
+            purpose=purpose, outcome=_audit.OUTCOME_OK, result_count=len(results),
+        )
+    return {"results": results, "query": text, "limit": size}
+
+
+def expiring_records(
+    cur, *, owner_user_id: int, before: object, limit: int = MAX_LIMIT,
+) -> list[dict]:
+    """Envelopes expiring on or before ``before``. For the reminder sweep.
+
+    No audit row: this runs on a timer with no member present, and an audit
+    table whose dominant content is a background job's reads is one in which the
+    rows that matter are impossible to find.
+    """
+    return list_records(
+        cur, owner_user_id=owner_user_id, expiring_before=before, limit=limit,
+        audit=False,
+    )["records"]
+
+
+def record_history(
+    cur, *, owner_user_id: int, record_id: int, limit: int = MAX_LIMIT,
+) -> list[dict]:
+    """This record's history: what changed, when, by whom. Never what it was."""
+    owner = _owner(owner_user_id)
+    require_structured_schema(cur)
+    if not _load_envelope(cur, owner=owner, record_id=int(record_id or 0)):
+        raise StructuredRecordDenied("no such record")
+    cur.execute(
+        """SELECT * FROM private_record_revisions
+        WHERE owner_user_id = ? AND record_id = ?
+        ORDER BY revision DESC LIMIT ?""",
+        (owner, int(record_id), max(1, min(int(limit or MAX_LIMIT), MAX_LIMIT))),
+    )
+    out = []
+    for raw in cur.fetchall() or ():
+        row = _row_dict(raw)
+        out.append({
+            "sequence": int(row.get("revision") or 0),
+            "change_type": str(row.get("change_type") or ""),
+            "changed_paths": _split(row.get("changed_paths")),
+            "status_from": str(row.get("status_from") or ""),
+            "status_to": str(row.get("status_to") or ""),
+            "verification_from": str(row.get("verification_from") or ""),
+            "verification_to": str(row.get("verification_to") or ""),
+            "reason_code": str(row.get("reason_code") or ""),
+            "actor_kind": str(row.get("actor_kind") or ""),
+            "created_at": str(row.get("created_at") or ""),
+        })
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Reveal
+# ---------------------------------------------------------------------------
+def reveal_field(
+    cur,
+    *,
+    owner_user_id: int,
+    record_id: int,
+    field_path: str,
+    step_up_verified: bool,
+    actor_user_id: int | None = None,
+    purpose: str = "user_request",
+) -> dict:
+    """Return one masked field's real value. The only path that decrypts.
+
+    ``step_up_verified`` is a required keyword with no default, and it is the
+    caller's assertion that a fresh biometric or passcode check just succeeded —
+    the transport layer is the only place that can know it, so it is the only
+    place that can say it. Making it required and defaultless is the point: a
+    parameter with ``= False`` is a parameter somebody omits, and a parameter
+    with ``= True`` is a hole. A caller that has not done the step-up gets a
+    refusal *and* a denial row in the audit table, because an attempt is the
+    single most interesting thing this table can hold.
+
+    Returns ``{"path", "value", "record_id", "revealed_at"}``. The value is in
+    the response and nowhere else: not logged, not in the exception messages
+    below, and never written back to any column.
+    """
+    owner = _owner(owner_user_id)
+    require_structured_schema(cur)
+    actor = int(actor_user_id or owner)
+    path = str(field_path or "").strip()
+
+    if not step_up_verified:
+        _audit.record_denied(
+            cur, actor_user_id=actor, owner_user_id=owner,
+            object_type="private_record_field", object_id=int(record_id or 0),
+            purpose=purpose,
+        )
+        raise StructuredRecordDenied("a fresh step-up is required to reveal this field")
+
+    envelope = _load_envelope(cur, owner=owner, record_id=int(record_id or 0))
+    if not envelope:
+        _audit.record_denied(
+            cur, actor_user_id=actor, owner_user_id=owner,
+            object_type="private_record_field", object_id=int(record_id or 0),
+            purpose=purpose,
+        )
+        raise StructuredRecordDenied("no such record")
+
+    cur.execute(
+        """SELECT * FROM private_record_fields
+        WHERE owner_user_id = ? AND record_id = ? AND field_path = ?""",
+        (owner, int(record_id), path),
+    )
+    row = _row_dict(cur.fetchone())
+    if not row:
+        raise StructuredRecordDenied("no such field")
+
+    if str(row.get("mask") or _templates.MASK_NONE) == _templates.MASK_NONE:
+        # Nothing was hidden, so nothing is revealed and no reveal is recorded.
+        # Logging this as a reveal would fill the one table a member checks to
+        # see who looked at their passport with entries about their city.
+        return {"record_id": int(record_id), "path": path,
+                "value": str(row.get("value_text") or ""), "revealed_at": ""}
+
+    if row.get("is_encrypted"):
+        try:
+            value = _crypto.decrypt(
+                str(row.get("cipher_text") or ""), owner_user_id=owner,
+                record_key=str(row.get("record_key") or ""), field_path=path,
+            )
+        except _crypto.FieldCryptoError:
+            # Deliberately not distinguished from any other decrypt failure —
+            # see `field_crypto.decrypt`. What the member is told is that the
+            # value cannot be read, which is true whether the key was retired,
+            # the ciphertext was tampered with, or the row was moved.
+            LOGGER.error(
+                "PRIVATE_RECORD_REVEAL_UNREADABLE record_id=%s key_id=%s",
+                int(record_id), str(row.get("cipher_key_id") or "")[:32])
+            raise StructuredRecordRejected(
+                "this value cannot be read with the keys this server has") from None
+    else:
+        value = str(row.get("value_text") or "")
+
+    now_iso = _now_iso()
+    _write_revision(
+        cur, owner=owner, record_id=int(record_id),
+        record_key_value=str(envelope["record_key"]), change_type=CHANGE_REVEALED,
+        template_key=str(envelope["template_key"]), changed_paths=[path],
+        actor_user_id=actor, actor_kind=ACTOR_USER,
+    )
+    _audit.record(
+        cur, actor_user_id=actor, owner_user_id=owner,
+        action=_audit.ACTION_RECORD_FIELD_REVEAL,
+        object_type="private_record_field", object_id=int(record_id),
+        purpose=purpose, outcome=_audit.OUTCOME_OK, result_count=1,
+    )
+    return {"record_id": int(record_id), "path": path, "value": value,
+            "revealed_at": now_iso}
+
+
+# ---------------------------------------------------------------------------
+# UNDX projection
+# ---------------------------------------------------------------------------
+def undx_record(cur, *, owner_user_id: int, record_id: int) -> dict | None:
+    """The subset of a record UNDX may read. Four gates, all of them here.
+
+    The template must be readable, the field must be readable, the field must
+    not be masked, and the field must not be encrypted. The third gate is the
+    one that is easy to argue away and must not be: a model handed
+    ``•••• 1234`` will reason about "the passport ending 1234" and put it in a
+    summary that goes to a screen, a notification and a log, which is the leak
+    the mask existed to prevent, laundered through an assistant. So masked
+    fields are dropped entirely rather than passed through masked.
+
+    Returns metadata plus readable fields. It is a projection, not the record:
+    the caller cannot ask this function for more by passing an argument, because
+    there is no argument.
+    """
+    owner = _owner(owner_user_id)
+    require_structured_schema(cur)
+    envelope = _load_envelope(cur, owner=owner, record_id=int(record_id or 0))
+    if not envelope:
+        return None
+    if not envelope.get("undx_readable"):
+        return None
+
+    fields = []
+    for row in _load_fields(cur, owner=owner, record_id=int(record_id)):
+        if not row.get("undx_readable"):
+            continue
+        if str(row.get("mask") or _templates.MASK_NONE) != _templates.MASK_NONE:
+            continue
+        if row.get("is_encrypted"):
+            continue
+        fields.append({
+            "path": str(row.get("field_path") or ""),
+            "kind": str(row.get("field_kind") or ""),
+            "value": str(row.get("value_text") or ""),
+        })
+
+    verification = str(envelope.get("verification_state") or "")
+    return {
+        "record_id": int(envelope["id"]),
+        "template_key": str(envelope.get("template_key") or ""),
+        "title": str(envelope.get("title") or ""),
+        "status": str(envelope.get("status") or ""),
+        "expires_at": str(envelope.get("expires_at") or ""),
+        # Carried, not stripped. An assistant that cannot tell a member's typed
+        # answer from a document extraction nobody has checked will present both
+        # with the same confidence, and the mission's requirement to separate
+        # fact from inference starts with the projection knowing the difference.
+        "verification_state": verification,
+        "verified": is_verified(verification),
+        "needs_review": needs_review(verification),
+        "fields": fields,
+    }
