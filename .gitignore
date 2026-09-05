@@ -27,6 +27,8 @@ backups/
 # are placeholders for data already gone, never source.
 .fuse_hidden*
 storage/messenger_uploads/
+# Private Office uploads are runtime user data, not repository assets.
+instance/private_uploads/
 
 # Runtime user-media upload target — must not be committed (privacy)
 static/uploads/
