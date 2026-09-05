@@ -218,7 +218,12 @@
       "privateOfficeSecurity": "Sécurité du bureau",
       "privateOperations": "Opérations",
       "capitalGraph": "Graphe de capital",
-      "capitalEntity": "Entité"
+      "capitalEntity": "Entité",
+      "privateDocuments": "Intelligence documentaire",
+      "privatePeople": "Intelligence relationnelle",
+      "privateBriefings": "Briefings privés",
+      "privateShield": "Bouclier privé",
+      "privateConcierge": "Conciergerie humaine"
     },
     "navSubtitles": {
       "missionControl": "Centre de pilotage",

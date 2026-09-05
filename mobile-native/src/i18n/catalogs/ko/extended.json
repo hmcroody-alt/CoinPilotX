@@ -4656,6 +4656,192 @@
         "PERCENT": "백분율",
         "DATE": "날짜",
         "BOOLEAN": "예/아니요"
+      },
+      "feature": {
+        "loading": "이 기능을 확인하는 중…",
+        "retry": "다시 시도",
+        "notEntitled": {
+          "title": "업그레이드 필요",
+          "body": "이 기능은 {{tier}}에 포함되어 있습니다.",
+          "bodyGeneric": "이 기능은 현재 플랜에 포함되어 있지 않습니다."
+        },
+        "disabled": {
+          "title": "일시적으로 꺼짐",
+          "body": "이 기능은 현재 꺼져 있습니다. 기록에는 영향이 없습니다."
+        },
+        "notImplemented": {
+          "title": "아직 준비되지 않음",
+          "body": "이 기능은 아직 만들어지지 않았습니다."
+        },
+        "unavailable": {
+          "title": "확인할 수 없었습니다",
+          "body": "지금은 이 기능에 접근할 수 없습니다. 잠시 후 다시 시도해 주세요."
+        },
+        "error": {
+          "title": "문제가 발생했습니다",
+          "body": "불러올 수 없습니다."
+        }
+      },
+      "documents": {
+        "subtitle": "제공한 문서에서 사실을 읽어냅니다. 검토 없이는 아무것도 기록되지 않습니다.",
+        "upload": "문서 업로드",
+        "uploading": "업로드 중…",
+        "duplicate": {
+          "title": "이미 보관 중",
+          "body": "이전에 동일한 파일을 업로드했습니다. 기존 사본이 유지됩니다."
+        },
+        "uploadFailed": "업로드 실패",
+        "reviewFailed": "검토 실패",
+        "empty": {
+          "title": "아직 문서가 없습니다",
+          "body": "업로드한 문서는 읽어낸 내용과 함께 여기에 표시됩니다."
+        },
+        "states": {
+          "EXTRACTED": "읽음",
+          "NO_CLAIMS": "추출할 내용 없음",
+          "PROVIDER_REQUIRED": "제공업체 대기 중",
+          "FAILED": "읽을 수 없음"
+        },
+        "claims": {
+          "title": "제안된 사실",
+          "none": "이 문서에서 제안된 사실이 없습니다.",
+          "accept": "수락",
+          "reject": "거절",
+          "ACCEPTED": "수락됨",
+          "REJECTED": "거절됨"
+        }
+      },
+      "people": {
+        "subtitle": "내 오피스에 기록된 사람들입니다. 누구에 대해서도 외부 조회는 하지 않습니다.",
+        "add": "사람 추가",
+        "addFailed": "추가할 수 없습니다",
+        "form": {
+          "name": "이름",
+          "role": "역할(선택)",
+          "save": "저장",
+          "cancel": "취소"
+        },
+        "empty": {
+          "title": "아직 등록된 사람이 없습니다",
+          "body": "기록한 사람은 내 기록에서의 인용과 함께 여기에 표시됩니다."
+        },
+        "openCommitments_one": "미완료 약속 {{count}}건",
+        "openCommitments_other": "미완료 약속 {{count}}건",
+        "profile": {
+          "facts": "사실",
+          "commitments": "약속",
+          "timeline": "타임라인",
+          "nothing": "이 사람에 대해 아직 기록된 내용이 없습니다."
+        }
+      },
+      "briefings": {
+        "subtitle": "내 기록만으로 구성된 브리핑입니다. 외부에서 추가되는 내용은 없습니다.",
+        "generate": "브리핑 준비",
+        "generating": "준비 중…",
+        "generateFailed": "브리핑을 준비할 수 없습니다",
+        "itemCount_one": "{{count}}개 항목",
+        "itemCount_other": "{{count}}개 항목",
+        "noItems": "이 브리핑은 비어 있습니다 — 기록에 보고할 내용이 없었습니다.",
+        "empty": {
+          "title": "아직 브리핑이 없습니다",
+          "body": "준비하면 그 시점의 기록으로 구성됩니다."
+        },
+        "sections": {
+          "PEOPLE": "사람",
+          "OBLIGATIONS": "의무",
+          "EVENTS": "일정",
+          "DECISIONS": "결정",
+          "REQUESTS": "요청",
+          "RISKS": "위험",
+          "OPPORTUNITIES": "기회"
+        }
+      },
+      "shield": {
+        "subtitle": "내 기록의 노출 여부를 점검합니다. 아래에 명시된 항목만 확인합니다.",
+        "openFindings_one": "미해결 발견 {{count}}건",
+        "openFindings_other": "미해결 발견 {{count}}건",
+        "severity": {
+          "HIGH": "높음",
+          "MEDIUM": "중간",
+          "LOW": "낮음"
+        },
+        "scan": "점검 실행",
+        "scanning": "점검 중…",
+        "scanFailed": "점검을 실행할 수 없습니다",
+        "checksTitle": "점검 항목",
+        "checksHint": "'발견 없음'은 여기에 나열된 점검 범위에서 없다는 뜻이며, 그 이상을 의미하지 않습니다.",
+        "externalTitle": "외부 점검 없음",
+        "externalMonitored": "외부 제공업체가 모니터링 중",
+        "externalNotMonitored": "모니터링 중인 외부 제공업체가 없습니다",
+        "empty": {
+          "title": "미해결 발견이 없습니다",
+          "body": "위에 나열된 점검 범위에서는 아무것도 발견되지 않았습니다. 이 의미는 그것이 전부입니다."
+        },
+        "status": {
+          "OPEN": "미해결",
+          "ACKNOWLEDGED": "확인됨",
+          "RESOLVED": "해결됨",
+          "DISMISSED": "무시됨"
+        },
+        "acknowledge": "확인",
+        "resolve": "해결로 표시",
+        "dismiss": "무시",
+        "updateFailed": "업데이트할 수 없습니다"
+      },
+      "concierge": {
+        "subtitle": "사람이 처리하는 요청 데스크입니다. 여기의 모든 답변은 사람이 직접 작성했습니다.",
+        "newRequest": "새 요청",
+        "submitFailed": "제출할 수 없습니다",
+        "sendFailed": "보낼 수 없습니다",
+        "cancelFailed": "취소할 수 없습니다",
+        "cancelRequest": "이 요청 취소",
+        "empty": {
+          "title": "아직 요청이 없습니다",
+          "body": "제출한 요청은 전체 이력과 함께 여기에 표시됩니다."
+        },
+        "desk": {
+          "staffed_one": "근무 중인 오퍼레이터 {{count}}명",
+          "staffed_other": "근무 중인 오퍼레이터 {{count}}명",
+          "unstaffed": "근무 중인 오퍼레이터가 없습니다"
+        },
+        "form": {
+          "title": "무엇이 필요하신가요?",
+          "description": "세부 내용(선택)",
+          "category": "카테고리",
+          "priority": "우선순위",
+          "submit": "제출",
+          "cancel": "취소"
+        },
+        "categories": {
+          "GENERAL": "일반",
+          "TRAVEL": "여행",
+          "LEGAL": "법률",
+          "FINANCIAL": "재무",
+          "PERSONAL": "개인",
+          "RESEARCH": "리서치",
+          "ADMIN": "행정"
+        },
+        "priorities": {
+          "LOW": "낮음",
+          "NORMAL": "보통",
+          "HIGH": "높음",
+          "URGENT": "긴급"
+        },
+        "statusWords": {
+          "OPEN": "접수됨",
+          "IN_PROGRESS": "진행 중",
+          "WAITING_ON_USER": "회원 응답 대기",
+          "WAITING_ON_PROVIDER": "제공업체 대기",
+          "COMPLETED": "완료됨",
+          "CANCELED": "취소됨"
+        },
+        "thread": {
+          "none": "아직 메시지가 없습니다.",
+          "operator": "오퍼레이터",
+          "you": "나",
+          "placeholder": "메시지 작성…",
+          "send": "보내기"
+        }
       }
     },
     "gate": {

@@ -4657,6 +4657,192 @@
         "PERCENT": "Pousantaj",
         "DATE": "Dat",
         "BOOLEAN": "Wi oswa non"
+      },
+      "feature": {
+        "loading": "N ap verifye fonksyon sa a…",
+        "retry": "Eseye ankò",
+        "notEntitled": {
+          "title": "Ou bezwen yon plan pi wo",
+          "body": "Fonksyon sa a vini ak {{tier}}.",
+          "bodyGeneric": "Plan ou genyen kounye a pa gen fonksyon sa a."
+        },
+        "disabled": {
+          "title": "Fèmen pou kounye a",
+          "body": "Fonksyon sa a fèmen pou kounye a. Dosye ou yo pa afekte."
+        },
+        "notImplemented": {
+          "title": "Poko disponib",
+          "body": "Fonksyon sa a poko bati."
+        },
+        "unavailable": {
+          "title": "Nou pa t ka verifye",
+          "body": "Nou pa t ka rive jwenn fonksyon sa a kounye a. Eseye ankò talè."
+        },
+        "error": {
+          "title": "Yon bagay pa mache",
+          "body": "Sa pa t ka chaje."
+        }
+      },
+      "documents": {
+        "subtitle": "Li enfòmasyon nan dokiman ou bay yo. Anyen pa anrejistre san ou pa revize l.",
+        "upload": "Telechaje yon dokiman",
+        "uploading": "Y ap telechaje…",
+        "duplicate": {
+          "title": "Li deja nan dosye a",
+          "body": "Ou te deja telechaje menm fichye sa a. Kopi ki egziste a rete."
+        },
+        "uploadFailed": "Telechajman an echwe",
+        "reviewFailed": "Revizyon an echwe",
+        "empty": {
+          "title": "Poko gen dokiman",
+          "body": "Dokiman ou telechaje yo ap parèt isit la ak sa ki te li ladan yo."
+        },
+        "states": {
+          "EXTRACTED": "Li fin li",
+          "NO_CLAIMS": "Pa gen anyen pou retire",
+          "PROVIDER_REQUIRED": "N ap tann yon founisè",
+          "FAILED": "Li pa t ka li"
+        },
+        "claims": {
+          "title": "Enfòmasyon yo pwopoze",
+          "none": "Pa gen enfòmasyon ki te pwopoze nan dokiman sa a.",
+          "accept": "Aksepte",
+          "reject": "Refize",
+          "ACCEPTED": "Aksepte",
+          "REJECTED": "Refize"
+        }
+      },
+      "people": {
+        "subtitle": "Moun ki anrejistre nan pwòp biwo ou. Nou pa fè rechèch sou pèsonn.",
+        "add": "Ajoute yon moun",
+        "addFailed": "Nou pa t ka ajoute l",
+        "form": {
+          "name": "Non",
+          "role": "Wòl (si ou vle)",
+          "save": "Anrejistre",
+          "cancel": "Anile"
+        },
+        "empty": {
+          "title": "Poko gen moun",
+          "body": "Moun ou anrejistre yo ap parèt isit la, ak fason pwòp dosye ou yo site yo."
+        },
+        "openCommitments_one": "{{count}} angajman ouvè",
+        "openCommitments_other": "{{count}} angajman ouvè",
+        "profile": {
+          "facts": "Enfòmasyon",
+          "commitments": "Angajman",
+          "timeline": "Kwonoloji",
+          "nothing": "Poko gen anyen ki anrejistre sou moun sa a."
+        }
+      },
+      "briefings": {
+        "subtitle": "Rapò ki fèt ak pwòp dosye ou yo. Anyen pa soti deyò.",
+        "generate": "Prepare yon rapò",
+        "generating": "Y ap prepare…",
+        "generateFailed": "Nou pa t ka prepare yon rapò",
+        "itemCount_one": "{{count}} eleman",
+        "itemCount_other": "{{count}} eleman",
+        "noItems": "Rapò sa a vid — pa t gen anyen nan dosye ou yo pou rapòte.",
+        "empty": {
+          "title": "Poko gen rapò",
+          "body": "Prepare youn epi l ap fèt ak dosye ou yo nan moman sa a."
+        },
+        "sections": {
+          "PEOPLE": "Moun",
+          "OBLIGATIONS": "Obligasyon",
+          "EVENTS": "Evènman",
+          "DECISIONS": "Desizyon",
+          "REQUESTS": "Demann",
+          "RISKS": "Risk",
+          "OPPORTUNITIES": "Opòtinite"
+        }
+      },
+      "shield": {
+        "subtitle": "Verifye pwòp dosye ou yo pou ekspozisyon. Li wè sèlman sa ki nonmen anba a.",
+        "openFindings_one": "{{count}} konsta ouvè",
+        "openFindings_other": "{{count}} konsta ouvè",
+        "severity": {
+          "HIGH": "Wo",
+          "MEDIUM": "Mwayen",
+          "LOW": "Ba"
+        },
+        "scan": "Fè yon verifikasyon",
+        "scanning": "Y ap verifye…",
+        "scanFailed": "Verifikasyon an pa t ka fèt",
+        "checksTitle": "Sa nou verifye",
+        "checksHint": "«Pa gen konsta» vle di pa gen youn nan verifikasyon ki nan lis la — anyen plis.",
+        "externalTitle": "Pa verifye deyò",
+        "externalMonitored": "Yon founisè deyò ap siveye",
+        "externalNotMonitored": "Pa gen okenn founisè deyò k ap siveye",
+        "empty": {
+          "title": "Pa gen konsta ouvè",
+          "body": "Nou pa t jwenn anyen nan verifikasyon ki nan lis anwo a. Se sa sèlman sa vle di."
+        },
+        "status": {
+          "OPEN": "Ouvè",
+          "ACKNOWLEDGED": "Rekonèt",
+          "RESOLVED": "Rezoud",
+          "DISMISSED": "Ekate"
+        },
+        "acknowledge": "Rekonèt",
+        "resolve": "Make kòm rezoud",
+        "dismiss": "Ekate",
+        "updateFailed": "Nou pa t ka mete l ajou"
+      },
+      "concierge": {
+        "subtitle": "Yon biwo pou demann yon moun ap trete. Chak repons isit la se yon moun ki te ekri l.",
+        "newRequest": "Nouvo demann",
+        "submitFailed": "Nou pa t ka soumèt li",
+        "sendFailed": "Mesaj la pa t ka voye",
+        "cancelFailed": "Nou pa t ka anile l",
+        "cancelRequest": "Anile demann sa a",
+        "empty": {
+          "title": "Poko gen demann",
+          "body": "Demann ou soumèt yo ap parèt isit la ak tout istwa yo."
+        },
+        "desk": {
+          "staffed_one": "{{count}} operatè an sèvis",
+          "staffed_other": "{{count}} operatè an sèvis",
+          "unstaffed": "Pa gen okenn operatè an sèvis"
+        },
+        "form": {
+          "title": "Kisa ou bezwen?",
+          "description": "Detay (si ou vle)",
+          "category": "Kategori",
+          "priority": "Priyorite",
+          "submit": "Soumèt",
+          "cancel": "Anile"
+        },
+        "categories": {
+          "GENERAL": "Jeneral",
+          "TRAVEL": "Vwayaj",
+          "LEGAL": "Legal",
+          "FINANCIAL": "Finans",
+          "PERSONAL": "Pèsonèl",
+          "RESEARCH": "Rechèch",
+          "ADMIN": "Demach"
+        },
+        "priorities": {
+          "LOW": "Ba",
+          "NORMAL": "Nòmal",
+          "HIGH": "Wo",
+          "URGENT": "Ijan"
+        },
+        "statusWords": {
+          "OPEN": "Ouvè",
+          "IN_PROGRESS": "An kou",
+          "WAITING_ON_USER": "N ap tann ou",
+          "WAITING_ON_PROVIDER": "N ap tann yon founisè",
+          "COMPLETED": "Fini",
+          "CANCELED": "Anile"
+        },
+        "thread": {
+          "none": "Poko gen mesaj.",
+          "operator": "Operatè",
+          "you": "Ou menm",
+          "placeholder": "Ekri yon mesaj…",
+          "send": "Voye"
+        }
       }
     },
     "gate": {

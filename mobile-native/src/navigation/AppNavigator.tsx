@@ -39,6 +39,11 @@ import { PrivateOperationsScreen } from "../screens/PrivateOperationsScreen";
 import { CapitalGraphScreen } from "../screens/CapitalGraphScreen";
 import { CapitalEntityScreen } from "../screens/CapitalEntityScreen";
 import { PrivateOfficeSecurityScreen } from "../screens/PrivateOfficeSecurityScreen";
+import { PrivateDocumentsScreen } from "../screens/PrivateDocumentsScreen";
+import { PrivatePeopleScreen } from "../screens/PrivatePeopleScreen";
+import { PrivateBriefingsScreen } from "../screens/PrivateBriefingsScreen";
+import { PrivateShieldScreen } from "../screens/PrivateShieldScreen";
+import { PrivateConciergeScreen } from "../screens/PrivateConciergeScreen";
 import { PortfolioScreen } from "../screens/PortfolioScreen";
 import { WatchlistsScreen } from "../screens/WatchlistsScreen";
 import { ActivityRoute } from "../screens/ActivityRoute";
@@ -616,6 +621,11 @@ export function AppNavigator() {
       <Stack.Screen name="CapitalGraph" component={CapitalGraphScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.capitalGraph") })} />
       <Stack.Screen name="CapitalEntity" component={CapitalEntityScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.capitalEntity") })} />
       <Stack.Screen name="PrivateOfficeSecurity" component={PrivateOfficeSecurityScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateOfficeSecurity") })} />
+      <Stack.Screen name="PrivateDocuments" component={PrivateDocumentsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateDocuments") })} />
+      <Stack.Screen name="PrivatePeople" component={PrivatePeopleScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privatePeople") })} />
+      <Stack.Screen name="PrivateBriefings" component={PrivateBriefingsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateBriefings") })} />
+      <Stack.Screen name="PrivateShield" component={PrivateShieldScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateShield") })} />
+      <Stack.Screen name="PrivateConcierge" component={PrivateConciergeScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateConcierge") })} />
       {/* This is the first-frame title only: AssetDetailScreen calls
           `setOptions` on mount and replaces it with the asset's name, which is a
           proper noun and so is deliberately not routed through the catalog. The

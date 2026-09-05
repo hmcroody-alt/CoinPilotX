@@ -4656,6 +4656,192 @@
         "PERCENT": "百分比",
         "DATE": "日期",
         "BOOLEAN": "是或否"
+      },
+      "feature": {
+        "loading": "正在检查此功能…",
+        "retry": "重试",
+        "notEntitled": {
+          "title": "需要升级",
+          "body": "此功能包含在{{tier}}中。",
+          "bodyGeneric": "您当前的方案不包含此功能。"
+        },
+        "disabled": {
+          "title": "暂时关闭",
+          "body": "此功能目前已关闭。您的记录不受影响。"
+        },
+        "notImplemented": {
+          "title": "尚未构建",
+          "body": "此功能尚未构建。"
+        },
+        "unavailable": {
+          "title": "无法查看",
+          "body": "目前无法访问此功能。请稍后重试。"
+        },
+        "error": {
+          "title": "出了点问题",
+          "body": "无法加载。"
+        }
+      },
+      "documents": {
+        "subtitle": "从您提供的文档中读取事实。未经您审核，不会记录任何内容。",
+        "upload": "上传文档",
+        "uploading": "上传中…",
+        "duplicate": {
+          "title": "已在档案中",
+          "body": "您之前上传过完全相同的文件。现有副本已保留。"
+        },
+        "uploadFailed": "上传失败",
+        "reviewFailed": "审核失败",
+        "empty": {
+          "title": "还没有文档",
+          "body": "您上传的文档会连同从中读取的内容一起显示在这里。"
+        },
+        "states": {
+          "EXTRACTED": "已读取",
+          "NO_CLAIMS": "无可提取内容",
+          "PROVIDER_REQUIRED": "等待服务方",
+          "FAILED": "无法读取"
+        },
+        "claims": {
+          "title": "提议的事实",
+          "none": "此文档中没有提议任何事实。",
+          "accept": "接受",
+          "reject": "拒绝",
+          "ACCEPTED": "已接受",
+          "REJECTED": "已拒绝"
+        }
+      },
+      "people": {
+        "subtitle": "您自己办公室中记录的人。不会对任何人进行外部查询。",
+        "add": "添加人员",
+        "addFailed": "无法添加",
+        "form": {
+          "name": "姓名",
+          "role": "角色（可选）",
+          "save": "保存",
+          "cancel": "取消"
+        },
+        "empty": {
+          "title": "还没有人员",
+          "body": "您记录的人会连同您自己记录中的引用一起显示在这里。"
+        },
+        "openCommitments_one": "{{count}}项未完成承诺",
+        "openCommitments_other": "{{count}}项未完成承诺",
+        "profile": {
+          "facts": "事实",
+          "commitments": "承诺",
+          "timeline": "时间线",
+          "nothing": "关于此人还没有任何记录。"
+        }
+      },
+      "briefings": {
+        "subtitle": "由您自己的记录组成的简报。不会从外部添加任何内容。",
+        "generate": "准备一份简报",
+        "generating": "准备中…",
+        "generateFailed": "无法准备简报",
+        "itemCount_one": "{{count}}个条目",
+        "itemCount_other": "{{count}}个条目",
+        "noItems": "此简报为空 — 您的记录中没有可报告的内容。",
+        "empty": {
+          "title": "还没有简报",
+          "body": "准备一份后，它会根据当时的记录组成。"
+        },
+        "sections": {
+          "PEOPLE": "人员",
+          "OBLIGATIONS": "义务",
+          "EVENTS": "事件",
+          "DECISIONS": "决定",
+          "REQUESTS": "请求",
+          "RISKS": "风险",
+          "OPPORTUNITIES": "机会"
+        }
+      },
+      "shield": {
+        "subtitle": "检查您自己记录中的暴露情况。它只查看下方列出的项目。",
+        "openFindings_one": "{{count}}项未解决发现",
+        "openFindings_other": "{{count}}项未解决发现",
+        "severity": {
+          "HIGH": "高",
+          "MEDIUM": "中",
+          "LOW": "低"
+        },
+        "scan": "运行检查",
+        "scanning": "检查中…",
+        "scanFailed": "检查无法运行",
+        "checksTitle": "检查范围",
+        "checksHint": "“无发现”仅表示此处列出的检查范围内没有发现 — 仅此而已。",
+        "externalTitle": "未经外部检查",
+        "externalMonitored": "由外部服务方监控中",
+        "externalNotMonitored": "没有外部服务方在监控",
+        "empty": {
+          "title": "没有未解决的发现",
+          "body": "在上方列出的检查范围内未发现任何问题。这就是它的全部含义。"
+        },
+        "status": {
+          "OPEN": "未解决",
+          "ACKNOWLEDGED": "已确认",
+          "RESOLVED": "已解决",
+          "DISMISSED": "已忽略"
+        },
+        "acknowledge": "确认",
+        "resolve": "标记为已解决",
+        "dismiss": "忽略",
+        "updateFailed": "无法更新"
+      },
+      "concierge": {
+        "subtitle": "由真人处理请求的服务台。这里的每条回复都出自真人之手。",
+        "newRequest": "新请求",
+        "submitFailed": "无法提交",
+        "sendFailed": "无法发送",
+        "cancelFailed": "无法取消",
+        "cancelRequest": "取消此请求",
+        "empty": {
+          "title": "还没有请求",
+          "body": "您提交的请求会连同完整历史显示在这里。"
+        },
+        "desk": {
+          "staffed_one": "{{count}}名操作员在值班",
+          "staffed_other": "{{count}}名操作员在值班",
+          "unstaffed": "目前没有操作员值班"
+        },
+        "form": {
+          "title": "您需要什么？",
+          "description": "详情（可选）",
+          "category": "类别",
+          "priority": "优先级",
+          "submit": "提交",
+          "cancel": "取消"
+        },
+        "categories": {
+          "GENERAL": "一般",
+          "TRAVEL": "旅行",
+          "LEGAL": "法律",
+          "FINANCIAL": "财务",
+          "PERSONAL": "个人",
+          "RESEARCH": "调研",
+          "ADMIN": "行政"
+        },
+        "priorities": {
+          "LOW": "低",
+          "NORMAL": "普通",
+          "HIGH": "高",
+          "URGENT": "紧急"
+        },
+        "statusWords": {
+          "OPEN": "已受理",
+          "IN_PROGRESS": "处理中",
+          "WAITING_ON_USER": "等待您回复",
+          "WAITING_ON_PROVIDER": "等待服务方",
+          "COMPLETED": "已完成",
+          "CANCELED": "已取消"
+        },
+        "thread": {
+          "none": "还没有消息。",
+          "operator": "操作员",
+          "you": "您",
+          "placeholder": "写一条消息…",
+          "send": "发送"
+        }
       }
     },
     "gate": {

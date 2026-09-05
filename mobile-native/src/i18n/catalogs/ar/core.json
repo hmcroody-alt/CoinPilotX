@@ -218,7 +218,12 @@
       "privateOfficeSecurity": "أمان المكتب",
       "privateOperations": "العمليات",
       "capitalGraph": "مخطط رأس المال",
-      "capitalEntity": "الكيان"
+      "capitalEntity": "الكيان",
+      "privateDocuments": "ذكاء المستندات",
+      "privatePeople": "ذكاء العلاقات",
+      "privateBriefings": "الإحاطات الخاصة",
+      "privateShield": "الدرع الخاص",
+      "privateConcierge": "الكونسيرج البشري"
     },
     "navSubtitles": {
       "missionControl": "مركز القيادة",

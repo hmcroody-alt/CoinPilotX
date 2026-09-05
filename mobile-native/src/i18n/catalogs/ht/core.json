@@ -218,7 +218,12 @@
       "privateOfficeSecurity": "Sekirite biwo a",
       "privateOperations": "Operasyon",
       "capitalGraph": "Graf kapital",
-      "capitalEntity": "Antite"
+      "capitalEntity": "Antite",
+      "privateDocuments": "Entèlijans dokiman",
+      "privatePeople": "Entèlijans relasyon",
+      "privateBriefings": "Rapò prive",
+      "privateShield": "Pwoteksyon prive",
+      "privateConcierge": "Konsyèj imen"
     },
     "navSubtitles": {
       "missionControl": "Sant kontwòl",

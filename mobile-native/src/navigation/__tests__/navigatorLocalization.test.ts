@@ -119,7 +119,11 @@ describe("navigator header titles", () => {
     // 140 + 3: `PrivateOperations`, `CapitalGraph` and `CapitalEntity` — the
     // Office record views and the Capital Graph pair, each titled
     // `route.params?.title || t("common:screens....")`.
-    expect(TITLE_OPTIONS.length).toBe(143);
+    //
+    // 143 + 5: `PrivateDocuments`, `PrivatePeople`, `PrivateBriefings`,
+    // `PrivateShield` and `PrivateConcierge` — the five Private Office feature
+    // screens, each titled `route.params?.title || t("common:screens....")`.
+    expect(TITLE_OPTIONS.length).toBe(148);
   });
 
   it("has no hardcoded string literal titles", () => {

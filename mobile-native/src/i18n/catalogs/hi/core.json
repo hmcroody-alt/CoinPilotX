@@ -218,7 +218,12 @@
       "privateOfficeSecurity": "कार्यालय सुरक्षा",
       "privateOperations": "परिचालन",
       "capitalGraph": "पूंजी ग्राफ़",
-      "capitalEntity": "इकाई"
+      "capitalEntity": "इकाई",
+      "privateDocuments": "दस्तावेज़ इंटेलिजेंस",
+      "privatePeople": "संबंध इंटेलिजेंस",
+      "privateBriefings": "निजी ब्रीफ़िंग",
+      "privateShield": "निजी शील्ड",
+      "privateConcierge": "मानव कंसीयज"
     },
     "navSubtitles": {
       "missionControl": "मिशन कंट्रोल",

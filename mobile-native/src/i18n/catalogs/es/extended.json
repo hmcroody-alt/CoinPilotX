@@ -4688,6 +4688,192 @@
         "PERCENT": "Porcentaje",
         "DATE": "Fecha",
         "BOOLEAN": "Sí o no"
+      },
+      "feature": {
+        "loading": "Comprobando esta función…",
+        "retry": "Reintentar",
+        "notEntitled": {
+          "title": "Se requiere una mejora",
+          "body": "Esta función está incluida con {{tier}}.",
+          "bodyGeneric": "Tu plan actual no incluye esta función."
+        },
+        "disabled": {
+          "title": "Desactivada temporalmente",
+          "body": "Esta función está desactivada por ahora. Tus registros no se ven afectados."
+        },
+        "notImplemented": {
+          "title": "Aún no disponible",
+          "body": "Esta función aún no se ha construido."
+        },
+        "unavailable": {
+          "title": "No pudimos comprobarlo",
+          "body": "No se pudo acceder a esta función en este momento. Inténtalo de nuevo en breve."
+        },
+        "error": {
+          "title": "Algo salió mal",
+          "body": "No se pudo cargar."
+        }
+      },
+      "documents": {
+        "subtitle": "Lee datos de los documentos que proporcionas. Nada se registra sin tu revisión.",
+        "upload": "Subir un documento",
+        "uploading": "Subiendo…",
+        "duplicate": {
+          "title": "Ya está archivado",
+          "body": "Ya subiste este mismo archivo antes. Se conserva la copia existente."
+        },
+        "uploadFailed": "La subida falló",
+        "reviewFailed": "La revisión falló",
+        "empty": {
+          "title": "Aún no hay documentos",
+          "body": "Los documentos que subas aparecerán aquí con lo que se leyó de ellos."
+        },
+        "states": {
+          "EXTRACTED": "Leído",
+          "NO_CLAIMS": "Nada que extraer",
+          "PROVIDER_REQUIRED": "A la espera de un proveedor",
+          "FAILED": "No se pudo leer"
+        },
+        "claims": {
+          "title": "Datos propuestos",
+          "none": "No se propusieron datos de este documento.",
+          "accept": "Aceptar",
+          "reject": "Rechazar",
+          "ACCEPTED": "Aceptado",
+          "REJECTED": "Rechazado"
+        }
+      },
+      "people": {
+        "subtitle": "Las personas registradas en tu propia oficina. No se busca información sobre nadie.",
+        "add": "Añadir una persona",
+        "addFailed": "No se pudo añadir",
+        "form": {
+          "name": "Nombre",
+          "role": "Cargo (opcional)",
+          "save": "Guardar",
+          "cancel": "Cancelar"
+        },
+        "empty": {
+          "title": "Aún no hay personas",
+          "body": "Las personas que registres aparecerán aquí, con cómo las citan tus propios registros."
+        },
+        "openCommitments_one": "{{count}} compromiso abierto",
+        "openCommitments_other": "{{count}} compromisos abiertos",
+        "profile": {
+          "facts": "Datos",
+          "commitments": "Compromisos",
+          "timeline": "Cronología",
+          "nothing": "Aún no hay nada registrado sobre esta persona."
+        }
+      },
+      "briefings": {
+        "subtitle": "Informes elaborados a partir de tus propios registros. No se añade nada externo.",
+        "generate": "Preparar un informe",
+        "generating": "Preparando…",
+        "generateFailed": "No se pudo preparar el informe",
+        "itemCount_one": "{{count}} elemento",
+        "itemCount_other": "{{count}} elementos",
+        "noItems": "Este informe está vacío: no había nada que reportar en tus registros.",
+        "empty": {
+          "title": "Aún no hay informes",
+          "body": "Prepara uno y se elaborará con tus registros de ese momento."
+        },
+        "sections": {
+          "PEOPLE": "Personas",
+          "OBLIGATIONS": "Obligaciones",
+          "EVENTS": "Eventos",
+          "DECISIONS": "Decisiones",
+          "REQUESTS": "Solicitudes",
+          "RISKS": "Riesgos",
+          "OPPORTUNITIES": "Oportunidades"
+        }
+      },
+      "shield": {
+        "subtitle": "Revisa tus propios registros en busca de exposición. Solo ve lo que se nombra abajo.",
+        "openFindings_one": "{{count}} hallazgo abierto",
+        "openFindings_other": "{{count}} hallazgos abiertos",
+        "severity": {
+          "HIGH": "Alta",
+          "MEDIUM": "Media",
+          "LOW": "Baja"
+        },
+        "scan": "Ejecutar una revisión",
+        "scanning": "Revisando…",
+        "scanFailed": "La revisión no se pudo ejecutar",
+        "checksTitle": "Qué se revisa",
+        "checksHint": "«Sin hallazgos» significa ninguno en las revisiones listadas aquí, nada más.",
+        "externalTitle": "Sin revisión externa",
+        "externalMonitored": "Supervisado por un proveedor externo",
+        "externalNotMonitored": "Ningún proveedor externo está vigilando",
+        "empty": {
+          "title": "Sin hallazgos abiertos",
+          "body": "No se encontró nada en las revisiones listadas arriba. Eso es todo lo que significa."
+        },
+        "status": {
+          "OPEN": "Abierto",
+          "ACKNOWLEDGED": "Reconocido",
+          "RESOLVED": "Resuelto",
+          "DISMISSED": "Descartado"
+        },
+        "acknowledge": "Reconocer",
+        "resolve": "Marcar como resuelto",
+        "dismiss": "Descartar",
+        "updateFailed": "No se pudo actualizar"
+      },
+      "concierge": {
+        "subtitle": "Un mostrador de solicitudes atendidas por una persona. Cada respuesta aquí la escribió alguien.",
+        "newRequest": "Nueva solicitud",
+        "submitFailed": "No se pudo enviar",
+        "sendFailed": "No se pudo enviar el mensaje",
+        "cancelFailed": "No se pudo cancelar",
+        "cancelRequest": "Cancelar esta solicitud",
+        "empty": {
+          "title": "Aún no hay solicitudes",
+          "body": "Las solicitudes que envíes aparecerán aquí con todo su historial."
+        },
+        "desk": {
+          "staffed_one": "{{count}} operador de guardia",
+          "staffed_other": "{{count}} operadores de guardia",
+          "unstaffed": "No hay ningún operador de guardia"
+        },
+        "form": {
+          "title": "¿Qué necesitas?",
+          "description": "Detalles (opcional)",
+          "category": "Categoría",
+          "priority": "Prioridad",
+          "submit": "Enviar",
+          "cancel": "Cancelar"
+        },
+        "categories": {
+          "GENERAL": "General",
+          "TRAVEL": "Viajes",
+          "LEGAL": "Legal",
+          "FINANCIAL": "Finanzas",
+          "PERSONAL": "Personal",
+          "RESEARCH": "Investigación",
+          "ADMIN": "Gestiones"
+        },
+        "priorities": {
+          "LOW": "Baja",
+          "NORMAL": "Normal",
+          "HIGH": "Alta",
+          "URGENT": "Urgente"
+        },
+        "statusWords": {
+          "OPEN": "Abierta",
+          "IN_PROGRESS": "En curso",
+          "WAITING_ON_USER": "A la espera de ti",
+          "WAITING_ON_PROVIDER": "A la espera de un proveedor",
+          "COMPLETED": "Completada",
+          "CANCELED": "Cancelada"
+        },
+        "thread": {
+          "none": "Aún no hay mensajes.",
+          "operator": "Operador",
+          "you": "Tú",
+          "placeholder": "Escribe un mensaje…",
+          "send": "Enviar"
+        }
       }
     },
     "gate": {

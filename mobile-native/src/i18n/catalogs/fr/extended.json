@@ -4688,6 +4688,192 @@
         "PERCENT": "Pourcentage",
         "DATE": "Date",
         "BOOLEAN": "Oui ou non"
+      },
+      "feature": {
+        "loading": "Vérification de cette fonctionnalité…",
+        "retry": "Réessayer",
+        "notEntitled": {
+          "title": "Mise à niveau requise",
+          "body": "Cette fonctionnalité est incluse avec {{tier}}.",
+          "bodyGeneric": "Votre offre actuelle n'inclut pas cette fonctionnalité."
+        },
+        "disabled": {
+          "title": "Temporairement désactivée",
+          "body": "Cette fonctionnalité est désactivée pour le moment. Vos données ne sont pas affectées."
+        },
+        "notImplemented": {
+          "title": "Pas encore disponible",
+          "body": "Cette fonctionnalité n'a pas encore été construite."
+        },
+        "unavailable": {
+          "title": "Vérification impossible",
+          "body": "Cette fonctionnalité est injoignable pour l'instant. Réessayez sous peu."
+        },
+        "error": {
+          "title": "Un problème est survenu",
+          "body": "Le chargement a échoué."
+        }
+      },
+      "documents": {
+        "subtitle": "Lit des informations dans les documents que vous fournissez. Rien n'est enregistré sans votre validation.",
+        "upload": "Téléverser un document",
+        "uploading": "Téléversement…",
+        "duplicate": {
+          "title": "Déjà classé",
+          "body": "Vous avez déjà téléversé ce fichier. La copie existante est conservée."
+        },
+        "uploadFailed": "Échec du téléversement",
+        "reviewFailed": "Échec de la validation",
+        "empty": {
+          "title": "Aucun document pour l'instant",
+          "body": "Les documents que vous téléversez apparaissent ici avec ce qui en a été lu."
+        },
+        "states": {
+          "EXTRACTED": "Lu",
+          "NO_CLAIMS": "Rien à extraire",
+          "PROVIDER_REQUIRED": "En attente d'un prestataire",
+          "FAILED": "Lecture impossible"
+        },
+        "claims": {
+          "title": "Informations proposées",
+          "none": "Aucune information n'a été proposée à partir de ce document.",
+          "accept": "Accepter",
+          "reject": "Rejeter",
+          "ACCEPTED": "Acceptée",
+          "REJECTED": "Rejetée"
+        }
+      },
+      "people": {
+        "subtitle": "Les personnes consignées dans votre propre bureau. Aucune recherche n'est faite sur quiconque.",
+        "add": "Ajouter une personne",
+        "addFailed": "Ajout impossible",
+        "form": {
+          "name": "Nom",
+          "role": "Rôle (facultatif)",
+          "save": "Enregistrer",
+          "cancel": "Annuler"
+        },
+        "empty": {
+          "title": "Aucune personne pour l'instant",
+          "body": "Les personnes que vous consignez apparaissent ici, avec la façon dont vos propres dossiers les citent."
+        },
+        "openCommitments_one": "{{count}} engagement en cours",
+        "openCommitments_other": "{{count}} engagements en cours",
+        "profile": {
+          "facts": "Informations",
+          "commitments": "Engagements",
+          "timeline": "Chronologie",
+          "nothing": "Rien n'est encore consigné sur cette personne."
+        }
+      },
+      "briefings": {
+        "subtitle": "Des briefings assemblés à partir de vos propres dossiers. Rien n'est ajouté de l'extérieur.",
+        "generate": "Préparer un briefing",
+        "generating": "Préparation…",
+        "generateFailed": "Impossible de préparer un briefing",
+        "itemCount_one": "{{count}} élément",
+        "itemCount_other": "{{count}} éléments",
+        "noItems": "Ce briefing est vide : il n'y avait rien à signaler dans vos dossiers.",
+        "empty": {
+          "title": "Aucun briefing pour l'instant",
+          "body": "Préparez-en un : il sera assemblé à partir de vos dossiers à ce moment-là."
+        },
+        "sections": {
+          "PEOPLE": "Personnes",
+          "OBLIGATIONS": "Obligations",
+          "EVENTS": "Événements",
+          "DECISIONS": "Décisions",
+          "REQUESTS": "Demandes",
+          "RISKS": "Risques",
+          "OPPORTUNITIES": "Opportunités"
+        }
+      },
+      "shield": {
+        "subtitle": "Vérifie vos propres dossiers à la recherche d'exposition. Il ne voit que ce qui est nommé ci-dessous.",
+        "openFindings_one": "{{count}} constat ouvert",
+        "openFindings_other": "{{count}} constats ouverts",
+        "severity": {
+          "HIGH": "Élevée",
+          "MEDIUM": "Moyenne",
+          "LOW": "Faible"
+        },
+        "scan": "Lancer une vérification",
+        "scanning": "Vérification…",
+        "scanFailed": "La vérification n'a pas pu s'exécuter",
+        "checksTitle": "Ce qui est vérifié",
+        "checksHint": "« Aucun constat » signifie aucun dans les vérifications listées ici — rien de plus.",
+        "externalTitle": "Non vérifié en externe",
+        "externalMonitored": "Surveillé par un prestataire externe",
+        "externalNotMonitored": "Aucun prestataire externe ne surveille",
+        "empty": {
+          "title": "Aucun constat ouvert",
+          "body": "Rien n'a été trouvé dans les vérifications listées ci-dessus. C'est tout ce que cela signifie."
+        },
+        "status": {
+          "OPEN": "Ouvert",
+          "ACKNOWLEDGED": "Pris en compte",
+          "RESOLVED": "Résolu",
+          "DISMISSED": "Écarté"
+        },
+        "acknowledge": "Prendre en compte",
+        "resolve": "Marquer comme résolu",
+        "dismiss": "Écarter",
+        "updateFailed": "Mise à jour impossible"
+      },
+      "concierge": {
+        "subtitle": "Un guichet de demandes traitées par une personne. Chaque réponse ici a été écrite par quelqu'un.",
+        "newRequest": "Nouvelle demande",
+        "submitFailed": "Envoi impossible",
+        "sendFailed": "Message non envoyé",
+        "cancelFailed": "Annulation impossible",
+        "cancelRequest": "Annuler cette demande",
+        "empty": {
+          "title": "Aucune demande pour l'instant",
+          "body": "Les demandes que vous soumettez apparaissent ici avec tout leur historique."
+        },
+        "desk": {
+          "staffed_one": "{{count}} opérateur de service",
+          "staffed_other": "{{count}} opérateurs de service",
+          "unstaffed": "Aucun opérateur n'est de service"
+        },
+        "form": {
+          "title": "De quoi avez-vous besoin ?",
+          "description": "Détails (facultatif)",
+          "category": "Catégorie",
+          "priority": "Priorité",
+          "submit": "Envoyer",
+          "cancel": "Annuler"
+        },
+        "categories": {
+          "GENERAL": "Général",
+          "TRAVEL": "Voyages",
+          "LEGAL": "Juridique",
+          "FINANCIAL": "Finances",
+          "PERSONAL": "Personnel",
+          "RESEARCH": "Recherche",
+          "ADMIN": "Démarches"
+        },
+        "priorities": {
+          "LOW": "Faible",
+          "NORMAL": "Normale",
+          "HIGH": "Haute",
+          "URGENT": "Urgente"
+        },
+        "statusWords": {
+          "OPEN": "Ouverte",
+          "IN_PROGRESS": "En cours",
+          "WAITING_ON_USER": "En attente de vous",
+          "WAITING_ON_PROVIDER": "En attente d'un prestataire",
+          "COMPLETED": "Terminée",
+          "CANCELED": "Annulée"
+        },
+        "thread": {
+          "none": "Aucun message pour l'instant.",
+          "operator": "Opérateur",
+          "you": "Vous",
+          "placeholder": "Écrivez un message…",
+          "send": "Envoyer"
+        }
       }
     },
     "gate": {

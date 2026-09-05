@@ -215,6 +215,15 @@ NATIVE_ROUTES: dict[str, str] = {
     # and a map that knows one but not the other would describe half a journey.
     "PrivateOffice": "/pulse/private-office",
     "PrivateFacts": "/pulse/private-office/facts",
+    # The five feature screens. Literal owners, declared in linking.ts ahead of
+    # the PrivateOperations pattern for the same reason they are listed before
+    # it here: a literal path beats the pattern, so a deep link lands on the
+    # feature screen and not on a record view that happens to share the prefix.
+    "PrivateDocuments": "/pulse/private-office/documents",
+    "PrivatePeople": "/pulse/private-office/people",
+    "PrivateBriefings": "/pulse/private-office/briefings",
+    "PrivateShield": "/pulse/private-office/shield",
+    "PrivateConcierge": "/pulse/private-office/concierge",
     # One parametric screen serves all six record views (obligations, events,
     # decisions, requests, risks, opportunities), so a capability's literal
     # route like /pulse/private-office/obligations lands on it with the view
@@ -2866,6 +2875,13 @@ _PRIVATE_FEATURE_EXTRA_LIMITATIONS: dict[str, str] = {
 def _register_private_feature_read_map_entries() -> None:
     from services.private_office import undx_feature_reads_spec as _po_reads
 
+    _screens = {
+        "private.documents.list": "PrivateDocuments",
+        "private.people.list": "PrivatePeople",
+        "private.briefings.list": "PrivateBriefings",
+        "private.shield.posture": "PrivateShield",
+        "private.concierge.desk": "PrivateConcierge",
+    }
     for _entry in _po_reads.CAPABILITIES:
         _cid = _entry["capability_id"]
         _service = "services.private_office." + {
@@ -2891,7 +2907,7 @@ def _register_private_feature_read_map_entries() -> None:
         _live(
             _cid,
             product_area="Private Office", resource_type="private_feature",
-            native_screen="PrivateOffice",
+            native_screen=_screens[_cid],
             backend_route=_entry["backend_route"],
             domain_service=_service,
             domain_operation="undx_feature_reads_spec.execute_capability",

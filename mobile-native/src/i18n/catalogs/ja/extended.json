@@ -4649,6 +4649,192 @@
         "PERCENT": "割合",
         "DATE": "日付",
         "BOOLEAN": "はい・いいえ"
+      },
+      "feature": {
+        "loading": "この機能を確認しています…",
+        "retry": "再試行",
+        "notEntitled": {
+          "title": "アップグレードが必要です",
+          "body": "この機能は{{tier}}に含まれています。",
+          "bodyGeneric": "この機能は現在のプランには含まれていません。"
+        },
+        "disabled": {
+          "title": "一時的に停止中",
+          "body": "この機能は現在オフになっています。記録には影響ありません。"
+        },
+        "notImplemented": {
+          "title": "まだ構築されていません",
+          "body": "この機能はまだ構築されていません。"
+        },
+        "unavailable": {
+          "title": "確認できませんでした",
+          "body": "この機能に今はアクセスできませんでした。しばらくしてからもう一度お試しください。"
+        },
+        "error": {
+          "title": "問題が発生しました",
+          "body": "読み込めませんでした。"
+        }
+      },
+      "documents": {
+        "subtitle": "提供されたドキュメントから事実を読み取ります。確認なしに記録されることはありません。",
+        "upload": "ドキュメントをアップロード",
+        "uploading": "アップロード中…",
+        "duplicate": {
+          "title": "すでに登録済み",
+          "body": "この同じファイルは以前にアップロード済みです。既存のコピーが保持されます。"
+        },
+        "uploadFailed": "アップロードに失敗しました",
+        "reviewFailed": "レビューに失敗しました",
+        "empty": {
+          "title": "ドキュメントはまだありません",
+          "body": "アップロードしたドキュメントは、読み取られた内容とともにここに表示されます。"
+        },
+        "states": {
+          "EXTRACTED": "読み取り済み",
+          "NO_CLAIMS": "抽出できる内容なし",
+          "PROVIDER_REQUIRED": "プロバイダー待ち",
+          "FAILED": "読み取れませんでした"
+        },
+        "claims": {
+          "title": "提案された事実",
+          "none": "このドキュメントから提案された事実はありません。",
+          "accept": "承認",
+          "reject": "却下",
+          "ACCEPTED": "承認済み",
+          "REJECTED": "却下済み"
+        }
+      },
+      "people": {
+        "subtitle": "あなた自身のオフィスに記録された人々です。誰かについて外部で調べることはありません。",
+        "add": "人物を追加",
+        "addFailed": "追加できませんでした",
+        "form": {
+          "name": "名前",
+          "role": "役割（任意）",
+          "save": "保存",
+          "cancel": "キャンセル"
+        },
+        "empty": {
+          "title": "人物はまだありません",
+          "body": "記録した人物は、あなた自身の記録での参照とともにここに表示されます。"
+        },
+        "openCommitments_one": "未完了のコミットメント{{count}}件",
+        "openCommitments_other": "未完了のコミットメント{{count}}件",
+        "profile": {
+          "facts": "事実",
+          "commitments": "コミットメント",
+          "timeline": "タイムライン",
+          "nothing": "この人物についてはまだ何も記録されていません。"
+        }
+      },
+      "briefings": {
+        "subtitle": "あなた自身の記録から組み立てられたブリーフィングです。外部からは何も追加されません。",
+        "generate": "ブリーフィングを準備",
+        "generating": "準備中…",
+        "generateFailed": "ブリーフィングを準備できませんでした",
+        "itemCount_one": "{{count}}項目",
+        "itemCount_other": "{{count}}項目",
+        "noItems": "このブリーフィングは空です — 記録に報告すべき内容がありませんでした。",
+        "empty": {
+          "title": "ブリーフィングはまだありません",
+          "body": "準備すると、その時点の記録から組み立てられます。"
+        },
+        "sections": {
+          "PEOPLE": "人物",
+          "OBLIGATIONS": "義務",
+          "EVENTS": "イベント",
+          "DECISIONS": "決定",
+          "REQUESTS": "リクエスト",
+          "RISKS": "リスク",
+          "OPPORTUNITIES": "機会"
+        }
+      },
+      "shield": {
+        "subtitle": "あなた自身の記録の露出を確認します。下に挙げた項目だけを見ます。",
+        "openFindings_one": "未解決の検出{{count}}件",
+        "openFindings_other": "未解決の検出{{count}}件",
+        "severity": {
+          "HIGH": "高",
+          "MEDIUM": "中",
+          "LOW": "低"
+        },
+        "scan": "チェックを実行",
+        "scanning": "チェック中…",
+        "scanFailed": "チェックを実行できませんでした",
+        "checksTitle": "チェック対象",
+        "checksHint": "「検出なし」は、ここに挙げたチェックの範囲で何もなかったという意味です — それ以上ではありません。",
+        "externalTitle": "外部ではチェックされていません",
+        "externalMonitored": "外部プロバイダーが監視中",
+        "externalNotMonitored": "外部プロバイダーによる監視はありません",
+        "empty": {
+          "title": "未解決の検出はありません",
+          "body": "上に挙げたチェックの範囲では何も見つかりませんでした。この意味はそれ以上でも以下でもありません。"
+        },
+        "status": {
+          "OPEN": "未解決",
+          "ACKNOWLEDGED": "確認済み",
+          "RESOLVED": "解決済み",
+          "DISMISSED": "却下済み"
+        },
+        "acknowledge": "確認",
+        "resolve": "解決済みにする",
+        "dismiss": "却下",
+        "updateFailed": "更新できませんでした"
+      },
+      "concierge": {
+        "subtitle": "人が対応するリクエスト窓口です。ここの返信はすべて人間が書いたものです。",
+        "newRequest": "新しいリクエスト",
+        "submitFailed": "送信できませんでした",
+        "sendFailed": "送信できませんでした",
+        "cancelFailed": "キャンセルできませんでした",
+        "cancelRequest": "このリクエストをキャンセル",
+        "empty": {
+          "title": "リクエストはまだありません",
+          "body": "送信したリクエストは、履歴とともにここに表示されます。"
+        },
+        "desk": {
+          "staffed_one": "対応中のオペレーター{{count}}名",
+          "staffed_other": "対応中のオペレーター{{count}}名",
+          "unstaffed": "現在対応中のオペレーターはいません"
+        },
+        "form": {
+          "title": "何が必要ですか？",
+          "description": "詳細（任意）",
+          "category": "カテゴリ",
+          "priority": "優先度",
+          "submit": "送信",
+          "cancel": "キャンセル"
+        },
+        "categories": {
+          "GENERAL": "一般",
+          "TRAVEL": "旅行",
+          "LEGAL": "法務",
+          "FINANCIAL": "財務",
+          "PERSONAL": "個人",
+          "RESEARCH": "リサーチ",
+          "ADMIN": "事務"
+        },
+        "priorities": {
+          "LOW": "低",
+          "NORMAL": "通常",
+          "HIGH": "高",
+          "URGENT": "緊急"
+        },
+        "statusWords": {
+          "OPEN": "受付済み",
+          "IN_PROGRESS": "対応中",
+          "WAITING_ON_USER": "あなたの返答待ち",
+          "WAITING_ON_PROVIDER": "プロバイダー待ち",
+          "COMPLETED": "完了",
+          "CANCELED": "キャンセル済み"
+        },
+        "thread": {
+          "none": "メッセージはまだありません。",
+          "operator": "オペレーター",
+          "you": "あなた",
+          "placeholder": "メッセージを書く…",
+          "send": "送信"
+        }
       }
     },
     "gate": {

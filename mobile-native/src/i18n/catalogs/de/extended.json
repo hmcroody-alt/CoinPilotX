@@ -4688,6 +4688,192 @@
         "PERCENT": "Prozentsatz",
         "DATE": "Datum",
         "BOOLEAN": "Ja oder Nein"
+      },
+      "feature": {
+        "loading": "Diese Funktion wird geprüft…",
+        "retry": "Erneut versuchen",
+        "notEntitled": {
+          "title": "Upgrade erforderlich",
+          "body": "Diese Funktion ist in {{tier}} enthalten.",
+          "bodyGeneric": "Ihr aktueller Tarif enthält diese Funktion nicht."
+        },
+        "disabled": {
+          "title": "Vorübergehend deaktiviert",
+          "body": "Diese Funktion ist derzeit abgeschaltet. Ihre Aufzeichnungen sind nicht betroffen."
+        },
+        "notImplemented": {
+          "title": "Noch nicht verfügbar",
+          "body": "Diese Funktion wurde noch nicht gebaut."
+        },
+        "unavailable": {
+          "title": "Prüfung nicht möglich",
+          "body": "Diese Funktion war gerade nicht erreichbar. Versuchen Sie es in Kürze erneut."
+        },
+        "error": {
+          "title": "Etwas ist schiefgelaufen",
+          "body": "Dies konnte nicht geladen werden."
+        }
+      },
+      "documents": {
+        "subtitle": "Liest Angaben aus Dokumenten, die Sie bereitstellen. Ohne Ihre Prüfung wird nichts übernommen.",
+        "upload": "Dokument hochladen",
+        "uploading": "Wird hochgeladen…",
+        "duplicate": {
+          "title": "Bereits abgelegt",
+          "body": "Sie haben genau diese Datei schon hochgeladen. Die vorhandene Kopie bleibt erhalten."
+        },
+        "uploadFailed": "Hochladen fehlgeschlagen",
+        "reviewFailed": "Prüfung fehlgeschlagen",
+        "empty": {
+          "title": "Noch keine Dokumente",
+          "body": "Hochgeladene Dokumente erscheinen hier mit dem, was daraus gelesen wurde."
+        },
+        "states": {
+          "EXTRACTED": "Gelesen",
+          "NO_CLAIMS": "Nichts zu entnehmen",
+          "PROVIDER_REQUIRED": "Wartet auf einen Anbieter",
+          "FAILED": "Konnte nicht gelesen werden"
+        },
+        "claims": {
+          "title": "Vorgeschlagene Angaben",
+          "none": "Aus diesem Dokument wurden keine Angaben vorgeschlagen.",
+          "accept": "Übernehmen",
+          "reject": "Ablehnen",
+          "ACCEPTED": "Übernommen",
+          "REJECTED": "Abgelehnt"
+        }
+      },
+      "people": {
+        "subtitle": "Die in Ihrem eigenen Büro erfassten Personen. Über niemanden wird etwas nachgeschlagen.",
+        "add": "Person hinzufügen",
+        "addFailed": "Konnte nicht hinzugefügt werden",
+        "form": {
+          "name": "Name",
+          "role": "Rolle (optional)",
+          "save": "Speichern",
+          "cancel": "Abbrechen"
+        },
+        "empty": {
+          "title": "Noch keine Personen",
+          "body": "Erfasste Personen erscheinen hier — mit der Art, wie Ihre eigenen Aufzeichnungen sie nennen."
+        },
+        "openCommitments_one": "{{count}} offene Verpflichtung",
+        "openCommitments_other": "{{count}} offene Verpflichtungen",
+        "profile": {
+          "facts": "Angaben",
+          "commitments": "Verpflichtungen",
+          "timeline": "Zeitverlauf",
+          "nothing": "Zu dieser Person ist noch nichts erfasst."
+        }
+      },
+      "briefings": {
+        "subtitle": "Briefings, zusammengestellt aus Ihren eigenen Aufzeichnungen. Von außen kommt nichts hinzu.",
+        "generate": "Briefing erstellen",
+        "generating": "Wird erstellt…",
+        "generateFailed": "Briefing konnte nicht erstellt werden",
+        "itemCount_one": "{{count}} Eintrag",
+        "itemCount_other": "{{count}} Einträge",
+        "noItems": "Dieses Briefing ist leer — in Ihren Aufzeichnungen gab es nichts zu berichten.",
+        "empty": {
+          "title": "Noch keine Briefings",
+          "body": "Erstellen Sie eines — es wird aus Ihren Aufzeichnungen dieses Moments zusammengestellt."
+        },
+        "sections": {
+          "PEOPLE": "Personen",
+          "OBLIGATIONS": "Verpflichtungen",
+          "EVENTS": "Termine",
+          "DECISIONS": "Entscheidungen",
+          "REQUESTS": "Anfragen",
+          "RISKS": "Risiken",
+          "OPPORTUNITIES": "Chancen"
+        }
+      },
+      "shield": {
+        "subtitle": "Prüft Ihre eigenen Aufzeichnungen auf Offenlegung. Es sieht nur, was unten benannt ist.",
+        "openFindings_one": "{{count}} offener Befund",
+        "openFindings_other": "{{count}} offene Befunde",
+        "severity": {
+          "HIGH": "Hoch",
+          "MEDIUM": "Mittel",
+          "LOW": "Niedrig"
+        },
+        "scan": "Prüfung ausführen",
+        "scanning": "Wird geprüft…",
+        "scanFailed": "Die Prüfung konnte nicht ausgeführt werden",
+        "checksTitle": "Was geprüft wird",
+        "checksHint": "„Keine Befunde“ heißt: keine in den hier aufgeführten Prüfungen — nicht mehr.",
+        "externalTitle": "Nicht extern geprüft",
+        "externalMonitored": "Von einem externen Anbieter überwacht",
+        "externalNotMonitored": "Kein externer Anbieter überwacht",
+        "empty": {
+          "title": "Keine offenen Befunde",
+          "body": "In den oben aufgeführten Prüfungen wurde nichts gefunden. Mehr bedeutet das nicht."
+        },
+        "status": {
+          "OPEN": "Offen",
+          "ACKNOWLEDGED": "Zur Kenntnis genommen",
+          "RESOLVED": "Behoben",
+          "DISMISSED": "Verworfen"
+        },
+        "acknowledge": "Zur Kenntnis nehmen",
+        "resolve": "Als behoben markieren",
+        "dismiss": "Verwerfen",
+        "updateFailed": "Konnte nicht aktualisiert werden"
+      },
+      "concierge": {
+        "subtitle": "Ein Schalter für Anliegen, die ein Mensch bearbeitet. Jede Antwort hier hat jemand geschrieben.",
+        "newRequest": "Neues Anliegen",
+        "submitFailed": "Konnte nicht übermittelt werden",
+        "sendFailed": "Nachricht konnte nicht gesendet werden",
+        "cancelFailed": "Konnte nicht storniert werden",
+        "cancelRequest": "Dieses Anliegen stornieren",
+        "empty": {
+          "title": "Noch keine Anliegen",
+          "body": "Übermittelte Anliegen erscheinen hier mit ihrem vollständigen Verlauf."
+        },
+        "desk": {
+          "staffed_one": "{{count}} Operator im Dienst",
+          "staffed_other": "{{count}} Operatoren im Dienst",
+          "unstaffed": "Kein Operator im Dienst"
+        },
+        "form": {
+          "title": "Was brauchen Sie?",
+          "description": "Details (optional)",
+          "category": "Kategorie",
+          "priority": "Priorität",
+          "submit": "Übermitteln",
+          "cancel": "Abbrechen"
+        },
+        "categories": {
+          "GENERAL": "Allgemein",
+          "TRAVEL": "Reisen",
+          "LEGAL": "Rechtliches",
+          "FINANCIAL": "Finanzen",
+          "PERSONAL": "Persönliches",
+          "RESEARCH": "Recherche",
+          "ADMIN": "Verwaltung"
+        },
+        "priorities": {
+          "LOW": "Niedrig",
+          "NORMAL": "Normal",
+          "HIGH": "Hoch",
+          "URGENT": "Dringend"
+        },
+        "statusWords": {
+          "OPEN": "Offen",
+          "IN_PROGRESS": "In Bearbeitung",
+          "WAITING_ON_USER": "Wartet auf Sie",
+          "WAITING_ON_PROVIDER": "Wartet auf einen Anbieter",
+          "COMPLETED": "Abgeschlossen",
+          "CANCELED": "Storniert"
+        },
+        "thread": {
+          "none": "Noch keine Nachrichten.",
+          "operator": "Operator",
+          "you": "Sie",
+          "placeholder": "Nachricht schreiben…",
+          "send": "Senden"
+        }
       }
     },
     "gate": {

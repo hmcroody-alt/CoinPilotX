@@ -504,6 +504,11 @@ export type RootStackParamList = {
   CapitalGraph: { view?: string; title?: string } | undefined;
   CapitalEntity: { id: number; view?: string; title?: string };
   PrivateOfficeSecurity: { title?: string } | undefined;
+  PrivateDocuments: { title?: string } | undefined;
+  PrivatePeople: { title?: string } | undefined;
+  PrivateBriefings: { title?: string } | undefined;
+  PrivateShield: { title?: string } | undefined;
+  PrivateConcierge: { title?: string } | undefined;
   AccountCenter: { section?: "account" | "security" | "privacy" | "devices"; title?: string } | undefined;
   AccountSettings: { title?: string } | undefined;
   AccountSecurity: { title?: string } | undefined;
