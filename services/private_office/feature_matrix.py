@@ -195,6 +195,26 @@ _FEATURES = (
         flag_env="PRIVATE_OPERATIONS_ENABLED",
     ),
     FeatureSpec(
+        feature_id="private_office.records",
+        minimum_tier=TIER_PRIVATE,
+        server_enforced=True,
+        # The structured record store: a server-owned versioned template
+        # registry (record_templates), the envelope and typed field projection
+        # (structured_records — the only module permitted to INSERT there,
+        # enforced by tests/private_office/test_private_write_boundary.py),
+        # field-level masking and AES-256-GCM at rest for RESTRICTED
+        # (field_crypto), and the HTTP surface
+        # (services/private_office_structured_records_routes.py).
+        #
+        # A separate row from `private_facts` rather than a reuse of it. They
+        # are two stores with two shapes, and one kill switch over both would
+        # mean that turning off a template problem also takes away every fact a
+        # member has recorded — a blast radius nobody would choose in the
+        # moment they needed the switch.
+        implementation=IMPL_IMPLEMENTED,
+        flag_env="PRIVATE_STRUCTURED_RECORDS_ENABLED",
+    ),
+    FeatureSpec(
         feature_id="private_office.document.extraction",
         minimum_tier=TIER_PRIVATE,
         server_enforced=True,

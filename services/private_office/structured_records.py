@@ -734,6 +734,11 @@ STATUS_EXISTING = "existing"
 STATUS_UPDATED = "updated"
 STATUS_UNCHANGED = "unchanged"
 STATUS_DUPLICATE = "duplicate"
+#: Validation failed. A returned status rather than a raised exception because
+#: the caller needs the per-path errors to render beside the fields that
+#: produced them, and an exception carrying a list of structured errors is an
+#: exception being used as a return value.
+STATUS_INVALID = "invalid"
 
 
 class StructuredRecordConflict(RuntimeError):
@@ -1309,7 +1314,7 @@ def create_record(
 
     result = _templates.validate_payload(template, payload or {})
     if not result.ok:
-        return {"status": "invalid", "record_id": 0, "record": None,
+        return {"status": STATUS_INVALID, "record_id": 0, "record": None,
                 "duplicates": [], "errors": result.errors_as_list()}
 
     verification = _check_verification(
@@ -1489,7 +1494,7 @@ def update_record(
         submitted = [str(p).strip() for p in payload if str(p or "").strip()]
         result = _templates.validate_payload(template, payload, partial=True)
         if not result.ok:
-            return {"status": "invalid", "record_id": int(record_id),
+            return {"status": STATUS_INVALID, "record_id": int(record_id),
                     "record": None, "errors": result.errors_as_list()}
         field_rows = [
             _project_field(value, owner_user_id=owner, record_key_value=key,
@@ -1787,8 +1792,15 @@ def list_records(
             purpose=purpose, outcome=_audit.OUTCOME_OK, result_count=len(rows),
         )
 
+    records = [_serialize_envelope(r) for r in rows]
     return {
-        "records": [_serialize_envelope(r) for r in rows],
+        "records": records,
+        # The size of *this page*, not a total. There is deliberately no total:
+        # answering "how many records do you have" means a second COUNT(*) over
+        # the same predicate on every page turn, and the number it returns is
+        # already stale by the time it renders. `has_more` is what a list needs
+        # to decide whether to keep scrolling.
+        "count": len(records),
         "limit": size,
         "offset": start,
         "has_more": has_more,
@@ -1885,6 +1897,46 @@ def search_records(
             purpose=purpose, outcome=_audit.OUTCOME_OK, result_count=len(results),
         )
     return {"results": results, "query": text, "limit": size}
+
+
+def domain_counts(
+    cur, *, owner_user_id: int,
+    lifecycle_state: object = _model.LIFECYCLE_ACTIVE,
+) -> dict[str, int]:
+    """``{ia_domain: count}`` for one member. Counts rows, reads no values.
+
+    The home screen needs a number under each of thirteen headings, and the
+    honest ways to get it are this or thirteen list calls. Thirteen list calls
+    would load thirteen pages of envelopes to display thirteen integers, and —
+    worse — would each write an audit row, burying the reads that matter under
+    a screen render.
+
+    Domains with no records are absent from the mapping rather than present as
+    zero. The caller renders from the full domain vocabulary and looks each one
+    up, so a domain this store has never heard of still gets a heading, and a
+    domain that lost its last record still shows zero rather than vanishing.
+    """
+    owner = _owner(owner_user_id)
+    require_structured_schema(cur)
+
+    where = ["owner_user_id = ?"]
+    params: list = [owner]
+    if lifecycle_state:
+        where.append("lifecycle_state = ?")
+        params.append(str(lifecycle_state))
+
+    cur.execute(
+        "SELECT ia_domain, COUNT(*) AS n FROM private_structured_records "
+        f"WHERE {' AND '.join(where)} GROUP BY ia_domain",
+        tuple(params),
+    )
+    out: dict[str, int] = {}
+    for raw in cur.fetchall() or ():
+        row = _row_dict(raw)
+        domain = str(row.get("ia_domain") or "")
+        if domain:
+            out[domain] = int(row.get("n") or 0)
+    return out
 
 
 def expiring_records(

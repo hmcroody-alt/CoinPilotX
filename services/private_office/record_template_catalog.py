@@ -102,6 +102,12 @@ IA_DOMAINS: tuple[tuple[str, str, str], ...] = (
     (IA_CUSTOM, "privateOffice.ia.custom", "Custom Records"),
 )
 
+#: Just the keys, for the places that validate a submitted domain rather than
+#: render the list. Derived from :data:`IA_DOMAINS` rather than written out
+#: again, because a hand-maintained second copy is a fourteenth domain waiting
+#: to be accepted by a route and unknown to everything downstream.
+IA_DOMAIN_KEYS: tuple[str, ...] = tuple(key for key, _label, _fallback in IA_DOMAINS)
+
 
 # ---------------------------------------------------------------------------
 # Small builders
@@ -1673,6 +1679,7 @@ LEGACY_RECORD = register(Template(
 
 __all__ = [
     "IA_DOMAINS",
+    "IA_DOMAIN_KEYS",
     "PASSPORT",
     "DRIVERS_LICENCE",
     "NATIONAL_ID",
