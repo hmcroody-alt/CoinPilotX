@@ -2278,7 +2278,12 @@ All on this branch at `ed1e5398` plus the working-tree changes above.
   to its `origin/main` content, the same suite produces **18 failures**. The
   test fails against the old manifest and passes against the new one, so it is
   measuring the manifest and not itself.
-- `scripts/protection/run_protection_suite.py` — 242 passed.
+- `pytest tests/protection` — 242 passed, 14 subtests passed.
+- `scripts/protection/run_protection_suite.py` — 319 checks across 28 suites,
+  passed. The two numbers differ because they count different things: the runner
+  reports each suite's self-declared `PROTECTION_TESTS_RUN`, pytest reports
+  collected test functions. Both are recorded so neither can be quoted as the
+  other.
 - `npm run test:realtime-audio` — 20 suites / 369 tests passed.
 - `npm run test:realtime-audio-architecture` — 22 tests passed.
 - `python3 -m unittest tests.protection.test_realtime_audio_architecture` — 19
