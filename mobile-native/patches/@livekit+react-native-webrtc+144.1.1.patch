@@ -1,0 +1,199 @@
+diff --git a/node_modules/@livekit/react-native-webrtc/ios/RCTWebRTC/VideoCaptureController.m b/node_modules/@livekit/react-native-webrtc/ios/RCTWebRTC/VideoCaptureController.m
+index 8ae5ce1..c1463c6 100644
+--- a/node_modules/@livekit/react-native-webrtc/ios/RCTWebRTC/VideoCaptureController.m
++++ b/node_modules/@livekit/react-native-webrtc/ios/RCTWebRTC/VideoCaptureController.m
+@@ -64,6 +64,14 @@ - (void)startCapture {
+     self.selectedFormat = format;
+ 
+     AVCaptureSession *session = self.capturer.captureSession;
++    // Do NOT let the camera's AVCaptureSession reconfigure the app's shared
++    // AVAudioSession. When this is YES (the default), starting video capture
++    // fires an AVAudioSession interruption ("Stop Now") that tears down and
++    // removes the WebRTC RemoteIO record engine mid-broadcast, leaving the Live
++    // host silent to viewers. The app owns audio-session configuration itself
++    // (registerGlobals autoConfigureAudioSession:false), so the capture session
++    // must leave that session alone.
++    session.automaticallyConfiguresApplicationAudioSession = NO;
+     if (@available(iOS 16.0, *)) {
+         BOOL enable = self.enableMultitaskingCameraAccess;
+         BOOL shouldChange = session.multitaskingCameraAccessEnabled != enable;
+diff --git a/node_modules/@livekit/react-native-webrtc/ios/RCTWebRTC/WebRTCModule+RTCAudioDeviceModule.m b/node_modules/@livekit/react-native-webrtc/ios/RCTWebRTC/WebRTCModule+RTCAudioDeviceModule.m
+index 0eb3d0a..5b0eb6d 100644
+--- a/node_modules/@livekit/react-native-webrtc/ios/RCTWebRTC/WebRTCModule+RTCAudioDeviceModule.m
++++ b/node_modules/@livekit/react-native-webrtc/ios/RCTWebRTC/WebRTCModule+RTCAudioDeviceModule.m
+@@ -3,13 +3,52 @@
+ #import <React/RCTBridge.h>
+ #import <React/RCTBridgeModule.h>
+ 
++#import <os/lock.h>
++
++#import <WebRTC/RTCCallbackLogger.h>
++#import <WebRTC/RTCLogging.h>
++
+ #import "AudioDeviceModuleObserver.h"
+ #import "WebRTCModule.h"
+ 
++// PulseSoc diagnostics: bounded ring buffer for WebRTC's own audio-engine log
++// lines. WebRTC already logs the exact reason an AVAudioEngine start fails
++// ("Failed to start engine: <err>", "No input path.", "ReconfigureEngine:
++// Failed to recover engine state, error: ...") but those lines never reach
++// JS, so a Live broadcast failure surfaces as an unexplained engine=false.
++// This capture forwards ONLY lines matching caller-supplied substrings, so
++// the filter policy lives in JS and no unrelated log traffic is retained.
++// A category cannot add ivars, hence file-static storage.
++static RTCCallbackLogger *pulseSocEngineLogger = nil;
++static NSMutableArray<NSDictionary *> *pulseSocEngineLogEntries = nil;
++static NSArray<NSString *> *pulseSocEngineLogFilters = nil;
++static NSUInteger pulseSocEngineLogCapacity = 200;
++static NSUInteger pulseSocEngineLogDropped = 0;
++// os_unfair_lock, not NSLock: this callback fires on WebRTC's own threads
++// including the audio thread, and os_unfair_lock donates priority so a
++// logging burst cannot invert priority against the render thread.
++static os_unfair_lock pulseSocEngineLogLock = OS_UNFAIR_LOCK_INIT;
++
+ @implementation WebRTCModule (RTCAudioDeviceModule)
+ 
+ #pragma mark - Recording & Playback Control
+ 
++// PulseSoc addition. `startPlayout` sets outputRunning but never outputEnabled,
++// and ModifyEngineState refuses that pair ("Output must be enabled if running").
++// `initPlayout` is the only call that enables the output path, and the stock
++// package does not bridge it, so a participant that subscribes to no remote
++// audio can never bring output up from JS. AVAudioEngine will not run without an
++// enabled output, and with the engine down the INPUT does not deliver buffers
++// either - which is why a Live host published a silent track while the ADM
++// happily reported inputEnabled/inputRunning true.
++//
++// Synchronous so the caller can order it before `startPlayout` without a race,
++// and it returns the raw ADM status instead of rejecting so a diagnostic can
++// never break the broadcast it is describing.
++RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(audioDeviceModuleInitPlayout) {
++    return @([self.audioDeviceModule initPlayout]);
++}
++
+ RCT_EXPORT_METHOD(audioDeviceModuleStartPlayout
+                   : (RCTPromiseResolveBlock)resolve rejecter
+                   : (RCTPromiseRejectBlock)reject) {
+@@ -148,6 +187,122 @@ @implementation WebRTCModule (RTCAudioDeviceModule)
+     return @(self.audioDeviceModule.isEngineRunning);
+ }
+ 
++#pragma mark - PulseSoc Engine Diagnostics
++
++// The three booleans above (isPlaying / isRecording / isEngineRunning) are not
++// sufficient to diagnose a Live broadcast that reports recording=true while
++// engine=false: they collapse the ADM's separate ENABLED and RUNNING state into
++// one bit each. RTCAudioEngineState carries both, plus the init-level flags, so
++// JS can tell "input enabled but not running" (engine never started) apart from
++// "input neither enabled nor running" (engine torn down). Read-only snapshot -
++// this method must never mutate ADM state.
++RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(audioDeviceModuleGetEngineState) {
++    RTCAudioDeviceModule *adm = self.audioDeviceModule;
++    if (adm == nil) {
++        return nil;
++    }
++    RTCAudioEngineState state = adm.engineState;
++    RTCAudioEngineAvailability availability = adm.engineAvailability;
++    return @{
++        @"outputEnabled" : @(state.outputEnabled),
++        @"outputRunning" : @(state.outputRunning),
++        @"inputEnabled" : @(state.inputEnabled),
++        @"inputRunning" : @(state.inputRunning),
++        @"inputMuted" : @(state.inputMuted),
++        @"muteMode" : @((NSInteger)state.muteMode),
++        @"playoutInitialized" : @(adm.isPlayoutInitialized),
++        @"recordingInitialized" : @(adm.isRecordingInitialized),
++        @"playing" : @(adm.isPlaying),
++        @"recording" : @(adm.isRecording),
++        @"engineRunning" : @(adm.isEngineRunning),
++        @"microphoneMuted" : @(adm.isMicrophoneMuted),
++        @"recordingAlwaysPrepared" : @(adm.isRecordingAlwaysPreparedMode),
++        @"manualRendering" : @(adm.isManualRenderingMode),
++        @"inputAvailable" : @(availability.isInputAvailable),
++        @"outputAvailable" : @(availability.isOutputAvailable)
++    };
++}
++
++// filters: substrings a WebRTC log line must contain to be retained. Passing an
++// empty array captures nothing rather than everything - a capture with no filter
++// would retain unrelated log traffic, which this deliberately refuses to do.
++RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(audioDeviceModuleStartEngineLogCapture
++                                       : (NSArray<NSString *> *)filters capacity
++                                       : (NSNumber *)capacity) {
++    os_unfair_lock_lock(&pulseSocEngineLogLock);
++    pulseSocEngineLogFilters = [filters copy] ?: @[];
++    NSInteger requested = capacity.integerValue;
++    pulseSocEngineLogCapacity = (NSUInteger)MAX((NSInteger)16, MIN((NSInteger)1000, requested));
++    pulseSocEngineLogEntries = [NSMutableArray arrayWithCapacity:pulseSocEngineLogCapacity];
++    pulseSocEngineLogDropped = 0;
++    BOOL alreadyRunning = pulseSocEngineLogger != nil;
++    os_unfair_lock_unlock(&pulseSocEngineLogLock);
++
++    // Re-entrant start would stack a second logger onto the same stream and
++    // duplicate every captured line, so an existing capture keeps its logger and
++    // only swaps the filter set above.
++    if (alreadyRunning) {
++        return @(YES);
++    }
++
++    RTCCallbackLogger *logger = [[RTCCallbackLogger alloc] init];
++    logger.severity = RTCLoggingSeverityInfo;
++    [logger startWithMessageAndSeverityHandler:^(NSString *message, RTCLoggingSeverity severity) {
++        if (message.length == 0) {
++            return;
++        }
++        os_unfair_lock_lock(&pulseSocEngineLogLock);
++        NSArray<NSString *> *activeFilters = pulseSocEngineLogFilters;
++        BOOL keep = NO;
++        for (NSString *needle in activeFilters) {
++            if (needle.length > 0 && [message rangeOfString:needle].location != NSNotFound) {
++                keep = YES;
++                break;
++            }
++        }
++        if (keep && pulseSocEngineLogEntries != nil) {
++            if (pulseSocEngineLogEntries.count >= pulseSocEngineLogCapacity) {
++                [pulseSocEngineLogEntries removeObjectAtIndex:0];
++                pulseSocEngineLogDropped += 1;
++            }
++            NSString *trimmed = message.length > 400 ? [message substringToIndex:400] : message;
++            [pulseSocEngineLogEntries addObject:@{
++                @"severity" : @((NSInteger)severity),
++                @"message" : [trimmed stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]
++            }];
++        }
++        os_unfair_lock_unlock(&pulseSocEngineLogLock);
++    }];
++
++    os_unfair_lock_lock(&pulseSocEngineLogLock);
++    pulseSocEngineLogger = logger;
++    os_unfair_lock_unlock(&pulseSocEngineLogLock);
++    return @(YES);
++}
++
++// Returns captured lines and clears the buffer, so a caller that drains after
++// every guard pass cannot re-report the same native error twice.
++RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(audioDeviceModuleDrainEngineLogCapture) {
++    os_unfair_lock_lock(&pulseSocEngineLogLock);
++    NSArray<NSDictionary *> *entries = [pulseSocEngineLogEntries copy] ?: @[];
++    NSUInteger dropped = pulseSocEngineLogDropped;
++    [pulseSocEngineLogEntries removeAllObjects];
++    pulseSocEngineLogDropped = 0;
++    os_unfair_lock_unlock(&pulseSocEngineLogLock);
++    return @{@"entries" : entries, @"dropped" : @(dropped)};
++}
++
++RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(audioDeviceModuleStopEngineLogCapture) {
++    os_unfair_lock_lock(&pulseSocEngineLogLock);
++    RTCCallbackLogger *logger = pulseSocEngineLogger;
++    pulseSocEngineLogger = nil;
++    [pulseSocEngineLogEntries removeAllObjects];
++    pulseSocEngineLogDropped = 0;
++    os_unfair_lock_unlock(&pulseSocEngineLogLock);
++    [logger stop];
++    return @(logger != nil);
++}
++
+ #pragma mark - Advanced Features
+ 
+ RCT_EXPORT_METHOD(audioDeviceModuleSetMuteMode

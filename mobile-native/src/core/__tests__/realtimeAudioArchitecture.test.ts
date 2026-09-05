@@ -49,6 +49,12 @@ type Manifest = {
     must_contain: string[];
     must_not_contain: string[];
   };
+  required_output_enable_discipline: {
+    files: string[];
+    must_contain: string[];
+    patch_files: string[];
+    patch_must_contain: string[];
+  };
   dependency_watch: {
     must_be_exactly_pinned: string[];
     baseline_versions: Record<string, string>;

@@ -76,6 +76,7 @@ const LOG_CAPTURE_CAPACITY = 200;
 
 type WebRTCEngineBridge = {
   audioDeviceModuleGetEngineState?: () => Record<string, unknown> | null;
+  audioDeviceModuleInitPlayout?: () => number;
   audioDeviceModuleStartEngineLogCapture?: (filters: string[], capacity: number) => boolean;
   audioDeviceModuleDrainEngineLogCapture?: () => { entries?: unknown; dropped?: unknown } | null;
   audioDeviceModuleStopEngineLogCapture?: () => boolean;
@@ -132,6 +133,33 @@ export function readNativeAudioEngineState(): NativeAudioEngineState | null {
   };
 }
 
+/**
+ * Enable the ADM's output path.
+ *
+ * This is the missing half of `startPlayout`. `startPlayout` asks for
+ * outputRunning and leaves outputEnabled alone, and `ModifyEngineState` rejects
+ * that pair outright, so on a participant whose output was never enabled the
+ * start can never succeed no matter how many times it is retried.
+ *
+ * Output is normally enabled as a side effect of subscribing to remote audio.
+ * A Live HOST subscribes to nobody, so nothing ever enables it - and because
+ * AVAudioEngine will not run without an enabled output, the engine stays down
+ * and the microphone delivers no buffers. That is the silent broadcast.
+ *
+ * Returns the raw ADM status (0 = success), or null when the bridge is missing
+ * so callers can tell "not attempted" from "attempted and failed".
+ */
+export function initNativePlayout(): number | null {
+  const init = bridge()?.audioDeviceModuleInitPlayout;
+  if (typeof init !== "function") return null;
+  try {
+    const result = Number(init());
+    return Number.isFinite(result) ? result : null;
+  } catch {
+    return null;
+  }
+}
+
 export function startNativeAudioEngineLogCapture(): boolean {
   const start = bridge()?.audioDeviceModuleStartEngineLogCapture;
   if (typeof start !== "function") return false;
@@ -186,7 +214,12 @@ export function describeNativeAudioEngineState(state: NativeAudioEngineState | n
     `nativeOut=${state.outputEnabled ? "en" : "dis"}/${state.outputRunning ? "run" : "stop"};` +
     `nativeInit=play:${state.playoutInitialized},rec:${state.recordingInitialized};` +
     `alwaysPrepared=${state.recordingAlwaysPrepared};muteMode=${state.muteMode};` +
-    `inputMuted=${state.inputMuted};manualRender=${state.manualRendering}`
+    `inputMuted=${state.inputMuted};manualRender=${state.manualRendering};` +
+    // The ADM's own view of what iOS is offering. Collected since the bridge was
+    // added but never rendered, which is why "output is not available" and
+    // "output was never enabled" looked identical in a capture for two rounds of
+    // diagnosis. They need different fixes, so they need different readings.
+    `avail=in:${state.inputAvailable},out:${state.outputAvailable}`
   );
 }
 
@@ -216,8 +249,18 @@ export function summarizeNativeAudioEngineLogs(
  * Capture is enabled (or even initialized) while the engine is not running. The
  * ADM will answer `isRecording === true` here, which is exactly the reading that
  * must never be accepted as a healthy host.
+ *
+ * `inputRunning` is deliberately NOT consulted. It used to be required to be
+ * false, on the reasoning that a running input means real capture that must not
+ * be torn down. That reasoning does not hold once `engineRunning` is false:
+ * AVAudioEngine is stopped, so no buffers are being delivered no matter what the
+ * input flag says, and `inputRunning` is exactly as stale as `inputEnabled`.
+ * Measured on iPhone P3r7or (2026-08-07): a silent Live host reported
+ * `engineRunning=false; inputEnabled=true; inputRunning=true`, which this
+ * predicate answered false for, leaving the only host repair unreachable and the
+ * guard doing no work at all across every pass.
  */
 export function isStaleRecordingWithoutEngine(state: NativeAudioEngineState | null): boolean {
   if (!state) return false;
-  return !state.engineRunning && (state.inputEnabled || state.recordingInitialized) && !state.inputRunning;
+  return !state.engineRunning && (state.inputEnabled || state.recordingInitialized);
 }

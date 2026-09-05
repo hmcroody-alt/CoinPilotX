@@ -226,6 +226,7 @@
       "title": "Tests that encode the verified invariants",
       "why": "Deleting or weakening a test is the quietest way to remove a protection. These files are protected so that doing so requires a declaration.",
       "paths": [
+        "mobile-native/src/live-audio/__tests__/liveHostEngineRepair.test.ts",
         "mobile-native/src/core/__tests__/realtimeAudioEngine.test.ts",
         "mobile-native/src/core/__tests__/audioOwnershipPolicy.test.ts",
         "mobile-native/src/core/__tests__/realtimeAudioStateMachine.test.ts",
@@ -427,6 +428,22 @@
     ],
     "reason": "The retired LiveKit adapters held JavaScript audio leases. Agora session ownership is enforced by its native call/live implementations and their focused regression tests."
   },
+  "required_output_enable_discipline": {
+    "files": [
+      "mobile-native/src/live-audio/liveAudioNative.ts",
+      "mobile-native/src/live-audio/liveAudioEngine.ts"
+    ],
+    "must_contain": [
+      "initNativePlayout"
+    ],
+    "patch_files": [
+      "mobile-native/patches/@livekit+react-native-webrtc+144.1.1.patch"
+    ],
+    "patch_must_contain": [
+      "audioDeviceModuleInitPlayout"
+    ],
+    "reason": "AVAudioEngine will not run without an ENABLED output, and with the engine down the input delivers no buffers either - so a host with output disabled publishes a track carrying no energy while the ADM still reports inputEnabled/inputRunning true. Output is normally enabled as a side effect of subscribing to remote audio; a Live host subscribes to nobody, so only an explicit initPlayout enables it. startPlayout cannot substitute: it asks for outputRunning and leaves outputEnabled alone, a pair ModifyEngineState rejects outright. The native half of this fix is a patch over @livekit/react-native-webrtc, and node_modules is gitignored - so if the bridge is dropped from the patch file the JS keeps compiling, keeps passing type checks, and silently degrades to a no-op, which is why the patch content is asserted here and not merely the call site."
+  },
   "live_startup_trace_contract": {
     "path": "mobile-native/src/live/liveAudioTrace.ts",
     "critical_test": "src/live/__tests__/liveAudioTrace.test.ts",
@@ -486,7 +503,8 @@
       "mobile-native/eas.json",
       "mobile-native/ios/Podfile",
       "mobile-native/ios/Podfile.lock",
-      "mobile-native/patches/react-native+0.81.5.patch"
+      "mobile-native/patches/react-native+0.81.5.patch",
+      "mobile-native/patches/@livekit+react-native-webrtc+144.1.1.patch"
     ],
     "must_be_exactly_pinned": [
       "react-native-agora",

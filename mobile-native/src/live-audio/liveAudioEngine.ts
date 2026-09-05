@@ -9,6 +9,7 @@ import { reportRealtimeAudioInvariant } from "../core/realtimeAudioInvariants";
 import {
   describeNativeAudioEngineState,
   drainNativeAudioEngineLogs,
+  initNativePlayout,
   isStaleRecordingWithoutEngine,
   readNativeAudioEngineState,
   summarizeNativeAudioEngineLogs,
@@ -664,6 +665,35 @@ export async function stabilizeLiveAudioEngine(
       await options.reactivateSession().catch(() => undefined);
     }
 
+    // ENABLE THE OUTPUT PATH BEFORE ANYTHING ELSE.
+    //
+    // AVAudioEngine does not run without an enabled output, and with the engine
+    // down the INPUT delivers no buffers either - the record flags stay true and
+    // describe nothing. So this has to happen before the recorder repair below,
+    // not after it: restarting capture into an engine that cannot run is what
+    // every previous pass did, and it is why they all reported the same state
+    // they started from.
+    //
+    // Output is normally enabled as a side effect of subscribing to remote
+    // audio. A Live HOST subscribes to nobody, so nothing ever enables it, and
+    // `startPlayout` cannot - it sets outputRunning and leaves outputEnabled
+    // alone, which ModifyEngineState rejects. `initPlayout` is the only call
+    // that enables output, and it reached JS only when the bridge below was
+    // added. Measured on P3r7or (2026-08-07): a silent host sat at
+    // `outputEnabled=false; playoutInitialized=false; engineRunning=false` while
+    // publishing a track that carried no energy at all.
+    if (wantPlayout && native && !native.outputEnabled) {
+      const initResult = initNativePlayout();
+      if (initResult !== null && initResult !== 0) {
+        emitRealtimeAudioEvent({
+          name: "audio_engine_playout_init_failed",
+          ...context,
+          failureStage,
+          outcome: `initPlayout=${initResult}`
+        });
+      }
+    }
+
     // THE FAILING STATE. `recording=true` over `engine=false` is the ADM's
     // capture path left ENABLED across a dead AVAudioEngine - the flag outlives
     // the engine, so `isRecording` answers true while nothing is captured and
@@ -677,10 +707,11 @@ export async function stabilizeLiveAudioEngine(
     // the following init-and-start rebuild the engine.
     //
     // The tear-down that must NOT happen is restarting a recorder that is
-    // genuinely capturing. `isStaleRecordingWithoutEngine` is what separates
-    // the two, and it can only be answered by the native bridge: `inputRunning`
-    // true means real capture and is left alone; `inputEnabled` true with
-    // `inputRunning` false is the corpse this branch exists to clear.
+    // genuinely capturing. `engineRunning` is what separates the two, and it can
+    // only be answered by the native bridge. `inputRunning` does NOT separate
+    // them: with AVAudioEngine stopped it is as stale as `inputEnabled`, and
+    // requiring it to be false is what made this branch unreachable on the very
+    // device the incident was reported from.
     const staleRecorder = wantRecording && isStaleRecordingWithoutEngine(native);
 
     // THE SAME STATE, SEEN WITHOUT THE BRIDGE.
@@ -742,7 +773,17 @@ export async function stabilizeLiveAudioEngine(
 
     const afterRecording = inspectLiveAudioEngine(audioDeviceModule);
     if (wantPlayout && (afterRecording.engineRunning === false || afterRecording.playoutRunning === false)) {
-      await audioDeviceModule.startPlayout?.().catch(() => undefined);
+      // Only ask for outputRunning once outputEnabled is actually set, which the
+      // `initPlayout` above is responsible for. Asking for the pair the other way
+      // round is rejected by ModifyEngineState ("Output must be enabled if
+      // running") and was the sole native call of every pass that repaired
+      // nothing. Re-read rather than reuse `native`: init may have just changed
+      // it, and acting on the pre-init reading would skip the start that is now
+      // legal.
+      const output = readNativeAudioEngineState();
+      if (!output || output.outputEnabled || output.playoutInitialized) {
+        await audioDeviceModule.startPlayout?.().catch(() => undefined);
+      }
     }
 
     // RECEIVE-ONLY REPAIR. This is the branch the call path never needed and so
