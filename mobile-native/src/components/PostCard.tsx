@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Animated, Image, Modal, PanResponder, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { Audio, ResizeMode, Video } from "expo-av";
 import * as Haptics from "expo-haptics";
@@ -88,7 +88,17 @@ type PostCardProps = {
   onOpenLive?: (post: PulsePost) => void;
 };
 
-export function PostCard({
+/**
+ * The card body. Exported below wrapped in `React.memo` — see `PostCard`.
+ *
+ * This component reads ~138 `styles.*` entries and mounts a media strip, a
+ * translation subscriber and an emoji picker per row, so re-rendering it for
+ * every feed-level state change (scroll viewability, a badge poll, a composer
+ * keystroke) is the single most expensive thing the Home feed does. The memo is
+ * only load-bearing because the callers pass stable callback identities; see
+ * the `useCallback` block in `HomeScreen`.
+ */
+function PostCardBody({
   post,
   detail,
   busy,
@@ -749,6 +759,15 @@ export function PostCard({
     </Pressable>
   );
 }
+
+/**
+ * Default shallow prop comparison. Every prop is either a primitive, the row's
+ * `post` object (which the feed reducers replace by identity when it changes)
+ * or a callback the caller is expected to keep stable, so shallow equality is
+ * exactly the right test — a custom comparator would only be able to get it
+ * wrong.
+ */
+export const PostCard = memo(PostCardBody);
 
 function clampedMediaAspect(media: PulseMedia) {
   const explicit = Number(media.aspect_ratio || 0);

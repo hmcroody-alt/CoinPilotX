@@ -450,7 +450,18 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     setPosts((current) => current.map((post) => (post.id === postId ? { ...post, ...next } : post)));
   }, []);
 
-  async function handleReact(post: PulsePost, reactionType: string) {
+  /**
+   * Every row handler below is `useCallback`-stable, and the dependency lists
+   * name `guard.run` rather than `guard`.
+   *
+   * That distinction is the whole point. `useSocialActionGuard` returns a fresh
+   * object literal on every render but memoizes the functions inside it, so
+   * depending on `guard` would rebuild each handler on every render and hand
+   * the memoized `PostCard` a new prop identity for every visible row — exactly
+   * the re-render this exists to stop. `guard.run` is a `useCallback` with a
+   * constant dependency list, so it is stable for the life of the screen.
+   */
+  const handleReact = useCallback(async (post: PulsePost, reactionType: string) => {
     const previous = post.viewer_reaction || "";
     const previousCounts = post.reaction_counts || {};
     const removing = previous === reactionType;
@@ -472,7 +483,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
       // explanation, which is indistinguishable from the tap not registering.
       onError: setError
     });
-  }
+  }, [guard.run, updatePost]);
 
   /**
    * Saving is the one social action that is not local to this list.
@@ -485,7 +496,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
    * one of them from a single tap, and keeps the in-flight lock global so two
    * screens showing the same post cannot both mutate it at once.
    */
-  async function handleSave(post: PulsePost) {
+  const handleSave = useCallback(async (post: PulsePost) => {
     const savableId = savablePostId(post);
     // What to ask for is decided from the store, not from this screen's copy of
     // the post: the copy can be several taps out of date if the user saved the
@@ -494,9 +505,9 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     const outcome = await setSaved({ type: "post", id: savableId }, !previousSaved);
     updatePost(post.id, { saved: outcome.saved, is_saved: outcome.saved });
     if (!outcome.ok && outcome.message) setError(outcome.message);
-  }
+  }, [updatePost]);
 
-  async function handleRepost(post: PulsePost) {
+  const handleRepost = useCallback(async (post: PulsePost) => {
     const previousReposted = Boolean(post.reposted);
     const previousCount = Number(post.repost_count || 0);
     const undo = previousReposted;
@@ -522,9 +533,9 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
       onRollback: () => updatePost(post.id, { reposted: previousReposted, repost_count: previousCount }),
       onError: setError
     });
-  }
+  }, [guard.run, updatePost]);
 
-  async function handleShare(post: PulsePost) {
+  const handleShare = useCallback(async (post: PulsePost) => {
     const author = post.author || post.user || {};
     await sharePulseObject({
       kind: "post",
@@ -534,9 +545,9 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
       author: author.display_name || author.name || author.username || post.author_name,
       previewImageUrl: post.thumbnail_url || post.image_url
     }).catch(() => undefined);
-  }
+  }, []);
 
-  async function handleInlineComment(post: PulsePost, body: string) {
+  const handleInlineComment = useCallback(async (post: PulsePost, body: string) => {
     const previousCount = Number(post.comment_count || post.comments_count || 0);
     const previousPreview = post.preview_comments || [];
     await guard.run(actionKey("post_comment", post.id), () => addPostComment(post.id, body), {
@@ -582,9 +593,9 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
       }),
       onError: setError
     });
-  }
+  }, [guard.run, load, updatePost]);
 
-  async function handleFollow(post: PulsePost) {
+  const handleFollow = useCallback(async (post: PulsePost) => {
     const publicId = post.author?.public_player_id || post.author_public_player_id || "";
     const previousFollows = Boolean(post.viewer_follows_author);
     const applyFollowing = (following: boolean) => setPosts((current) =>
@@ -614,9 +625,9 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
       onRollback: () => applyFollowing(previousFollows),
       onError: setError
     });
-  }
+  }, [guard.run]);
 
-  async function handleHide(post: PulsePost) {
+  const handleHide = useCallback(async (post: PulsePost) => {
     await guard.run(actionKey("post_hide", post.id), () => hidePost(post.id), {
       // Removal is applied on confirmation, not optimistically: putting a hidden
       // post back after a failure would look like the feed resurrecting it.
@@ -634,9 +645,9 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
       },
       onError: (message) => setError(message || "Post could not be hidden.")
     });
-  }
+  }, [guard.run]);
 
-  async function handleMute(post: PulsePost) {
+  const handleMute = useCallback(async (post: PulsePost) => {
     const authorId = Number(post.author?.user_id || post.author?.id || 0);
     const publicId = post.author?.public_player_id || post.author_public_player_id || "";
     await guard.run(actionKey("post_mute_author", post.id), () => mutePostAuthor(post), {
@@ -663,13 +674,16 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
       },
       onError: (message) => setError(message || "User could not be muted.")
     });
-  }
+  }, [guard.run]);
 
-  async function handleDelete(post: PulsePost) {
+  const handleDelete = useCallback(async (post: PulsePost) => {
     await guard.run(actionKey("post_delete", post.id), () => deletePost(post.id), {
       onResult: () => {
         setPosts((current) => current.filter((item) => item.id !== post.id));
-        if (activePostId === post.id) setActivePostId(null);
+        // Functional form so the handler does not have to close over
+        // `activePostId`, which changes on every scroll. Same comparison, same
+        // outcome, but the callback identity survives scrolling.
+        setActivePostId((current) => (current === post.id ? null : current));
         invalidateNativeSync(["activity", "notifications"], "home_delete", [
           {
             event_type: "pulse_post_deleted",
@@ -684,9 +698,9 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
       // permission and already-deleted wording that users act on.
       onError: (_message, err) => setError(describeDeleteError(err, "Post"))
     });
-  }
+  }, [guard.run]);
 
-  function selectFeed(feedKey: string) {
+  const selectFeed = useCallback((feedKey: string) => {
     if (feedKey === selectedFeed) return;
     setSelectedFeed(feedKey);
     setPosts([]);
@@ -700,28 +714,143 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
       setSpatialResetNonce((nonce) => nonce + 1);
       setNewSignalsAvailable(false);
     }
-  }
+  }, [selectedFeed, spatialFeed]);
 
-  function refreshHome() {
+  const refreshHome = useCallback(() => {
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
     resetSpatialPosition();
     loadStatuses().catch(() => undefined);
     load("refresh").catch(() => undefined);
     loadAds().catch(() => undefined);
     setDiscoveryRefreshToken((token) => token + 1);
-  }
+  }, [load, loadAds, loadStatuses, resetSpatialPosition]);
 
-  function openHomeRoute(routePath: string) {
+  const openHomeRoute = useCallback((routePath: string) => {
     setDrawerOpen(false);
     openNativeRoute(navigation, routePath);
-  }
+  }, [navigation]);
+
+  const closeDrawer = useCallback(() => setDrawerOpen(false), []);
+  const openDrawer = useCallback(() => setDrawerOpen(true), []);
+  const dismissError = useCallback(() => setError(""), []);
+  const loadMore = useCallback(() => {
+    load("more").catch(() => undefined);
+  }, [load]);
+
+  /*
+   * Header callbacks, hoisted for the same reason as the row callbacks.
+   *
+   * `HomeHeader` owns the composer, so every keystroke in it already re-renders
+   * the header subtree; what it must not do is re-render because the feed
+   * loaded a page or a badge poll landed. That only holds if the ~20 callbacks
+   * below keep their identities across a parent render.
+   */
+  const openSearchTab = useCallback(() => navigation.navigate("Tabs", { screen: "Search" }), [navigation]);
+  const openActivityInbox = useCallback(() => navigation.navigate("ActivityInbox", { title: "Activity Inbox" }), [navigation]);
+  const openProfileTab = useCallback(() => navigation.navigate("Tabs", { screen: "Profile" }), [navigation]);
+  const openUndxTab = useCallback(() => navigation.navigate("Tabs", { screen: "PulseAI" }), [navigation]);
+  const openLiveTab = useCallback(() => navigation.navigate("Tabs", { screen: "Live" }), [navigation]);
+  const openSafetyHub = useCallback(() => navigation.navigate("SafetyHub", { title: "Safety Hub" }), [navigation]);
+  const openMusicScreen = useCallback(() => navigation.navigate("Music", { title: "PulseSoc Music" }), [navigation]);
+  const openRadioLibrary = useCallback(() => openDashboardRoute(navigation, "/pulse/music#pulse-radio"), [navigation]);
+  const openStatusCreator = useCallback(
+    () => navigation.navigate("Tabs", { screen: "Status", params: { openCreator: true } }),
+    [navigation]
+  );
+  const openStatusTab = useCallback(() => navigation.navigate("Tabs", { screen: "Status" }), [navigation]);
+  const openStatusDetail = useCallback(
+    (status: PulseStatus) =>
+      navigation.navigate("StatusDetail", { statusId: status.id, title: status.author?.display_name || "Status" }),
+    [navigation]
+  );
+  const openContentPreview = useCallback((token: string) => navigation.navigate("ContentPreview", { token }), [navigation]);
+
+  const openComposerCamera = useCallback((cameraMode: "photo" | "video" | "reel", composerMode: "post" | "reel" | "status") => {
+    const target = composerMode === "status" ? "status" : composerMode === "reel" ? "reel" : "feed";
+    const routeMode = composerMode === "status" ? "status" : composerMode === "reel" ? "reel" : cameraMode === "video" ? "video" : "photo";
+    navigation.navigate("CameraStudio", {
+      target,
+      mode: routeMode,
+      captureMode: cameraMode === "reel" ? "video" : cameraMode,
+      returnToComposer: true,
+      composerMode,
+      title: composerMode === "reel" ? "Reel Camera" : composerMode === "status" ? "Status Camera" : cameraMode === "video" ? "Video Camera" : "Camera"
+    });
+  }, [navigation]);
+
+  const handleComposerCreated = useCallback((post?: PulsePost) => {
+    if (post) setPosts((current) => [post, ...current.filter((item) => item.id !== post.id)]);
+    invalidateNativeSync(["activity", "notifications"], "home_publish", [
+      {
+        event_type: "post_published",
+        entity_type: "post",
+        entity_id: post?.id || post?.post_id || "pending",
+        invalidates: ["activity", "notifications"],
+        metadata: { source: "native_home_composer" }
+      }
+    ]).catch(() => undefined);
+    load("refresh").catch(() => undefined);
+    loadStatuses().catch(() => undefined);
+  }, [load, loadStatuses]);
+
+  /*
+   * Per-post navigation handlers, hoisted out of `renderFeedRow`.
+   *
+   * Written as `(post) => …` rather than as closures over a captured row, so
+   * one identity serves every row in the list: `renderFeedRow` used to allocate
+   * seven of these per row per render, which made `PostCard`'s prop set
+   * different on every pass and its memo comparison useless.
+   */
+  const handleOpenPost = useCallback((post: PulsePost) => {
+    navigation.navigate("PostDetail", { postId: post.id, title: "Post" });
+  }, [navigation]);
+
+  const handleOpenPostComments = useCallback((post: PulsePost) => {
+    navigation.navigate("PostDetail", { postId: post.id, title: "Comments" });
+  }, [navigation]);
+
+  const handleOpenPostLive = useCallback((post: PulsePost) => {
+    const liveId = Number(post.live?.live_session_id || 0);
+    if (liveId > 0) navigation.navigate("LiveDetail", { liveId, title: post.title || "PulseSoc Live" });
+  }, [navigation]);
+
+  const handlePromote = useCallback((post: PulsePost) => {
+    navigation.navigate("GrowthCenter", { contentType: "post", contentId: post.id, title: "Promote Post" });
+  }, [navigation]);
+
+  const handleReport = useCallback((post: PulsePost) => {
+    navigation.navigate("SafetyHub", {
+      title: "Report",
+      section: "reports",
+      reportType: "post",
+      reportTarget: String(post.id)
+    });
+  }, [navigation]);
+
+  const handleBlock = useCallback((post: PulsePost) => {
+    navigation.navigate("SafetyHub", {
+      title: "Blocked Users",
+      section: "blocks",
+      blockTarget: post.author?.public_player_id || post.author_public_player_id || post.author?.username || post.author_username || ""
+    });
+  }, [navigation]);
+
+  const handleAuthorPress = useCallback((post: PulsePost) => {
+    const params = profileNavigationParams(profileTargetFromPost(post), post.author?.display_name || "Profile");
+    if (params) navigation.navigate("ProfileDetail", params);
+  }, [navigation]);
 
   /**
    * Renders one feed row (post, ad, or suggestion). Shared verbatim between the
    * legacy vertical list and the spatial pager so every post type, action and ad
    * behavior is identical in both modes.
+   *
+   * Memoized so `renderItem` below has a stable identity. Its dependency list
+   * is deliberately long — it names every value a row reads — because the point
+   * is not that this function rarely changes, it is that the props it hands to
+   * the memoized `PostCard` are the same objects from one call to the next.
    */
-  const renderFeedRow = (row: HomeFeedRow) => {
+  const renderFeedRow = useCallback((row: HomeFeedRow) => {
     if (row.type === "discovery") {
       return (
         <DiscoveryRowView
@@ -757,44 +886,59 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
         busy={guard.isItemBusy(item.id)}
         active={activePostId === item.id}
         motionEnabled={ambientMotionEnabled}
-        onOpen={(post) => navigation.navigate("PostDetail", { postId: post.id, title: "Post" })}
-        onOpenLive={(post) => {
-          const liveId = Number(post.live?.live_session_id || 0);
-          if (liveId > 0) navigation.navigate("LiveDetail", { liveId, title: post.title || "PulseSoc Live" });
-        }}
+        onOpen={handleOpenPost}
+        onOpenLive={handleOpenPostLive}
         onReact={handleReact}
         onSave={handleSave}
         onRepost={handleRepost}
-        onPromote={(post) => navigation.navigate("GrowthCenter", { contentType: "post", contentId: post.id, title: "Promote Post" })}
+        onPromote={handlePromote}
         onShare={handleShare}
-        onComment={(post) => navigation.navigate("PostDetail", { postId: post.id, title: "Comments" })}
+        onComment={handleOpenPostComments}
         onSubmitComment={handleInlineComment}
-        onReport={(post) =>
-          navigation.navigate("SafetyHub", {
-            title: "Report",
-            section: "reports",
-            reportType: "post",
-            reportTarget: String(post.id)
-          })
-        }
+        onReport={handleReport}
         onHide={handleHide}
-        onBlock={(post) =>
-          navigation.navigate("SafetyHub", {
-            title: "Blocked Users",
-            section: "blocks",
-            blockTarget: post.author?.public_player_id || post.author_public_player_id || post.author?.username || post.author_username || ""
-          })
-        }
+        onBlock={handleBlock}
         onMute={handleMute}
         onFollow={handleFollow}
         onDelete={isContentOwner(item, currentUserId) ? handleDelete : undefined}
-        onAuthorPress={(post) => {
-          const params = profileNavigationParams(profileTargetFromPost(post), post.author?.display_name || "Profile");
-          if (params) navigation.navigate("ProfileDetail", params);
-        }}
+        onAuthorPress={handleAuthorPress}
       />
     );
-  };
+  }, [
+    activePostId,
+    ambientMotionEnabled,
+    currentUserId,
+    discovery.actions,
+    discovery.joinedGroupSlugs,
+    discovery.pendingFriendKeys,
+    discovery.seeAllFor,
+    guard.isItemBusy,
+    handleAuthorPress,
+    handleBlock,
+    handleDelete,
+    handleFollow,
+    handleHide,
+    handleHideAd,
+    handleInlineComment,
+    handleMute,
+    handleOpenPost,
+    handleOpenPostComments,
+    handleOpenPostLive,
+    handlePromote,
+    handleReact,
+    handleReport,
+    handleRepost,
+    handleSave,
+    handleShare,
+    isFocused,
+    navigation,
+    viewableRowKeys
+  ]);
+
+  const renderFeedItem = useCallback(
+    ({ item: row }: { item: HomeFeedRow }) => renderFeedRow(row),
+    [renderFeedRow]
+  );
 
   return (
     <View style={styles.root}>
@@ -820,7 +964,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
           accessibilityLabel={`${error}. Tap to dismiss.`}
           accessibilityLiveRegion="polite"
           style={styles.actionErrorBanner}
-          onPress={() => setError("")}
+          onPress={dismissError}
         >
           <Text style={styles.actionErrorText}>{error}</Text>
           <Text style={styles.actionErrorDismiss}>Dismiss</Text>
@@ -833,7 +977,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
         contentContainerStyle={[styles.content, { paddingBottom: bottomContentPadding }]}
         data={spatialFeed ? EMPTY_FEED_ROWS : feedRows}
         keyExtractor={(row) => row.key}
-        refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => refreshHome()} />}
+        refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={refreshHome} />}
         ListHeaderComponent={
           <HomeHeader
             feedTabs={FEED_TABS}
@@ -844,10 +988,10 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
             statusError={statusError}
             posts={posts}
             offline={offline}
-            onOpenDrawer={() => setDrawerOpen(true)}
-            onOpenSearch={() => navigation.navigate("Tabs", { screen: "Search" })}
-            onOpenActivity={() => navigation.navigate("ActivityInbox", { title: "Activity Inbox" })}
-            onOpenProfile={() => navigation.navigate("Tabs", { screen: "Profile" })}
+            onOpenDrawer={openDrawer}
+            onOpenSearch={openSearchTab}
+            onOpenActivity={openActivityInbox}
+            onOpenProfile={openProfileTab}
             badges={badges}
             identity={identity}
             initiallyExpandComposer={Boolean(route.params?.openComposer)}
@@ -856,43 +1000,19 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
             shareHandoffNonce={route.params?.shareHandoffNonce || ""}
             onRefresh={refreshHome}
             onSelectFeed={selectFeed}
-            onOpenUndx={() => navigation.navigate("Tabs", { screen: "PulseAI" })}
+            onOpenUndx={openUndxTab}
             ambientMotionEnabled={ambientMotionEnabled}
-            onOpenRadioLibrary={() => openDashboardRoute(navigation, "/pulse/music#pulse-radio")}
-            onOpenLive={() => navigation.navigate("Tabs", { screen: "Live" })}
-            onOpenSafety={() => navigation.navigate("SafetyHub", { title: "Safety Hub" })}
+            onOpenRadioLibrary={openRadioLibrary}
+            onOpenLive={openLiveTab}
+            onOpenSafety={openSafetyHub}
             onOpenRoute={openHomeRoute}
-            onAddStatus={() => navigation.navigate("Tabs", { screen: "Status", params: { openCreator: true } })}
-            onViewStatuses={() => navigation.navigate("Tabs", { screen: "Status" })}
-            onOpenStatus={(status) => navigation.navigate("StatusDetail", { statusId: status.id, title: status.author?.display_name || "Status" })}
-            onOpenCamera={(cameraMode, composerMode) => {
-              const target = composerMode === "status" ? "status" : composerMode === "reel" ? "reel" : "feed";
-              const routeMode = composerMode === "status" ? "status" : composerMode === "reel" ? "reel" : cameraMode === "video" ? "video" : "photo";
-              navigation.navigate("CameraStudio", {
-                target,
-                mode: routeMode,
-                captureMode: cameraMode === "reel" ? "video" : cameraMode,
-                returnToComposer: true,
-                composerMode,
-                title: composerMode === "reel" ? "Reel Camera" : composerMode === "status" ? "Status Camera" : cameraMode === "video" ? "Video Camera" : "Camera"
-              });
-            }}
-            onCreated={(post) => {
-              if (post) setPosts((current) => [post, ...current.filter((item) => item.id !== post.id)]);
-              invalidateNativeSync(["activity", "notifications"], "home_publish", [
-                {
-                  event_type: "post_published",
-                  entity_type: "post",
-                  entity_id: post?.id || post?.post_id || "pending",
-                  invalidates: ["activity", "notifications"],
-                  metadata: { source: "native_home_composer" }
-                }
-              ]).catch(() => undefined);
-              load("refresh").catch(() => undefined);
-              loadStatuses().catch(() => undefined);
-            }}
-            onOpenMusic={() => navigation.navigate("Music", { title: "PulseSoc Music" })}
-            onOpenPreview={(token) => navigation.navigate("ContentPreview", { token })}
+            onAddStatus={openStatusCreator}
+            onViewStatuses={openStatusTab}
+            onOpenStatus={openStatusDetail}
+            onOpenCamera={openComposerCamera}
+            onCreated={handleComposerCreated}
+            onOpenMusic={openMusicScreen}
+            onOpenPreview={openContentPreview}
           />
         }
         ListFooterComponent={
@@ -923,7 +1043,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
                       current[selectedFeed] === nextIndex ? current : { ...current, [selectedFeed]: nextIndex }
                     );
                   }}
-                  onEndReached={() => load("more").catch(() => undefined)}
+                  onEndReached={loadMore}
                   renderPage={(row) => (
                     <ScrollView
                       style={styles.spatialPageScroll}
@@ -951,19 +1071,30 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
         }
         viewabilityConfig={feedViewabilityConfig}
         onViewableItemsChanged={onFeedViewableItemsChanged}
-        renderItem={({ item: row }) => renderFeedRow(row)}
-        onEndReached={() => load("more").catch(() => undefined)}
+        renderItem={renderFeedItem}
+        // Windowing. A feed row is the most expensive cell in the app — a post
+        // card can hold a video, a Live surface, a translation subscriber and
+        // an emoji picker — so the FlatList defaults (21 windows, 10 initial,
+        // no clipping) keep far too much of it mounted. These sit below
+        // ChatScreen's 9 / 18 / 12 / 40, which windows plain text bubbles, and
+        // above ReelsScreen's 3, which windows one full-screen page at a time.
+        windowSize={5}
+        initialNumToRender={4}
+        maxToRenderPerBatch={4}
+        updateCellsBatchingPeriod={50}
+        removeClippedSubviews
+        onEndReached={loadMore}
         onEndReachedThreshold={0.35}
         onScroll={bottomNavScroll.onScroll}
         onScrollBeginDrag={bottomNavScroll.onScrollBeginDrag}
         scrollEventThrottle={bottomNavScroll.scrollEventThrottle}
       />
-      <MasterNavigationDrawer visible={drawerOpen} onClose={() => setDrawerOpen(false)} onOpenRoute={openHomeRoute} />
+      <MasterNavigationDrawer visible={drawerOpen} onClose={closeDrawer} onOpenRoute={openHomeRoute} />
     </View>
   );
 }
 
-function HomeHeader({
+const HomeHeader = memo(function HomeHeader({
   feedTabs,
   selectedFeed,
   statusItems,
@@ -1085,7 +1216,7 @@ function HomeHeader({
       </View>
     </View>
   );
-}
+});
 
 function HomeCommandRail({
   onOpenRoute,
