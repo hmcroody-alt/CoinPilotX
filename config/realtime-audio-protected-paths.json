@@ -89,8 +89,12 @@
         "mobile-native/src/calls/useNativeCallRoom.ts",
         "mobile-native/src/calls/callSignalMedia.ts",
         "mobile-native/src/calls/callKitBridge.ts",
+        "mobile-native/src/calls/callSessionStore.ts",
         "mobile-native/src/screens/CallScreen.tsx"
-      ]
+      ],
+      "path_notes": {
+        "mobile-native/src/calls/callSessionStore.ts": "Holds one of the app's two createAgoraRtcEngine call sites and drives enableAudio, muteLocalAudioStream, setEnableSpeakerphone and enableAudioVolumeIndication for every voice and video call. It was outside categories[].paths until 2026-09-04, so call-audio ownership could be rewritten without a declaration."
+      }
     },
     {
       "id": "authoritative_live_runtime",
@@ -106,11 +110,29 @@
       "title": "Livestream host, guest, and viewer adapter",
       "why": "Host publication, guest publication after approval, viewer playback, and the terminal state when the host ends Live. The viewer path must never acquire the microphone.",
       "paths": [
+        "mobile-native/src/live/useAgoraLiveBroadcastRoom.ts",
         "mobile-native/src/live/useLiveBroadcastRoom.ts",
         "mobile-native/src/live/liveSession.ts",
+        "mobile-native/src/live/liveAudioMatrix.ts",
         "mobile-native/src/screens/LiveHostSessionScreen.tsx",
         "mobile-native/src/screens/LiveScreen.tsx",
         "mobile-native/src/components/reels/ReelLiveViewerSurface.tsx"
+      ],
+      "path_notes": {
+        "mobile-native/src/live/useAgoraLiveBroadcastRoom.ts": "The canonical Live runtime. Holds the app's other createAgoraRtcEngine call site and makes thirteen direct Agora audio-control calls (setClientRole, muteLocalAudioStream, muteAllRemoteAudioStreams, setEnableSpeakerphone, setAudioProfile, adjustRecordingSignalVolume, enableAudioVolumeIndication). Until 2026-09-04 the manifest named only useLiveBroadcastRoom.ts, which the Agora migration reduced to a three-line shim, so the entire Live audio runtime could be rewritten without a declaration.",
+        "mobile-native/src/live/useLiveBroadcastRoom.ts": "Now a re-export shim over useAgoraLiveBroadcastRoom. Deliberately still protected: it is the import point four screens and the architecture test bind to, so changing what it forwards to silently reroutes Live audio.",
+        "mobile-native/src/live/liveAudioMatrix.ts": "Decides who publishes, who subscribes, and who may own the microphone, for every Live role. It holds no Agora import by design, which is exactly why a wrong answer here is invisible in an Agora-focused review."
+      }
+    },
+    {
+      "id": "live_audio_control_flow",
+      "title": "Live's copy of the audio control flow",
+      "why": "Live resolves the audio core to mobile-native/src/live-audio/ while calls resolve to mobile-native/src/core/. The manifest already treats these four modules as core infrastructure -- they are named as allowed owners in six forbidden_apis rules and in import_boundary.modules -- but until 2026-09-04 they were absent from categories[].paths, so the half of the audio core that Live actually executes was the half a change could edit without declaring it.",
+      "paths": [
+        "mobile-native/src/live-audio/liveAudioEngine.ts",
+        "mobile-native/src/live-audio/liveAudioNative.ts",
+        "mobile-native/src/live-audio/liveMicrophonePublisher.ts",
+        "mobile-native/src/live-audio/livePublisherMedia.ts"
       ]
     },
     {

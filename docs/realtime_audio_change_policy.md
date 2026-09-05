@@ -145,3 +145,67 @@ around that gap. The declaration exists because the author is the only one who
 can close it, and the baseline document exists because the record of who closed
 it, on what hardware, is the only thing that makes a rollback decision possible
 later.
+
+## Known gaps (audited 2026-09-04)
+
+Recorded rather than quietly fixed, because each needs a decision this
+consolidation is not the right place to make.
+
+### 1. The forbidden-API vocabulary is LiveKit-era
+
+`forbidden_apis` was written against the LiveKit surface and never followed the
+Agora migration. It is not dead — `localParticipant.setMicrophoneEnabled(`,
+`localParticipant.unpublishTrack(` and `.setSubscribed(` still match, and every
+current match sits inside an allowed owner (`src/core/`, `src/live-audio/`), so
+those rules work as intended against the internal abstraction.
+
+What no marker covers is the **direct Agora engine surface** that the two engine
+owners actually call:
+
+| Agora API | Non-test call sites | Marker |
+|---|---|---|
+| `createAgoraRtcEngine` | `calls/callSessionStore.ts`, `live/useAgoraLiveBroadcastRoom.ts` | none |
+| `joinChannel` / `leaveChannel` | both owners | none |
+| `enableAudio` | both owners | none |
+| `muteLocalAudioStream` | both owners | none |
+| `setEnableSpeakerphone` | both owners | none |
+| `enableAudioVolumeIndication` | both owners | none |
+| `setClientRole` | `useAgoraLiveBroadcastRoom.ts` | none |
+| `updateChannelMediaOptions` | `useAgoraLiveBroadcastRoom.ts` | none |
+| `setAudioProfile` / `setAudioScenario` | `useAgoraLiveBroadcastRoom.ts` | none |
+| `muteAllRemoteAudioStreams` | `useAgoraLiveBroadcastRoom.ts` | none |
+| `adjustRecordingSignalVolume` | `useAgoraLiveBroadcastRoom.ts` | none |
+| `startAudioMixing` | `useAgoraLiveBroadcastRoom.ts` | none |
+
+Nine markers currently match nothing anywhere in `src/`:
+`localParticipant.publishTrack(`, `createLocalAudioTrack(`, `createLocalTracks(`,
+`new LocalAudioTrack(`, `remoteParticipant.setVolume(`, `.setAudioEnabled(`,
+`registerGlobals(`, `setDefaultAudioTrackCaptureOptions(`, `AudioManager.`.
+
+**These must not be reflexively converted into forbidden markers.** Most are
+legitimate owner operations — `joinChannel` inside the file that owns the
+channel is the correct call, not a violation. What these rules encode is *who
+may call it*, not *whether it may be called at all*, so the redesign question is
+which APIs are owner-only and which are forbidden outside the engine entirely.
+One near-miss shows why a naive substring sweep would be worse than the current
+gap: `enableAudio` also appears in `live/liveStreamQuality.ts`, where it is a
+plan **field name**, not an Agora call.
+
+Path gating now covers both engine owners, so a change to them cannot merge
+undeclared regardless. The marker gap affects a different question — whether a
+**third** file could start driving the Agora engine directly. Today nothing
+stops that.
+
+### 2. A declaration is bound to its range only by ordering
+
+Three checks bind a declaration to the change it authorises: it must be touched
+within the range, it must name every changed protected file, and (added
+2026-09-04) it must not have been last written *before* the newest protected
+commit in the range.
+
+None of them inspects the prose. A declaration touched in the same commit as the
+audio change passes on naming alone, and the declaration currently in the repo
+already names files that changed under it later — so "is named" is a permanent
+property of a file, not per-change consent. Binding a declaration to a content
+hash of the protected diff would close this, and that is a redesign rather than
+a consolidation fix.

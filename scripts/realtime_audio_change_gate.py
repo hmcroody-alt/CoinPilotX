@@ -83,6 +83,52 @@ def backend_diff_is_audio_related(base: str, head: str, patterns: Iterable[str])
     return touched
 
 
+def newest_commit_touching(base: str, head: str, paths: list[str]) -> str:
+    """The most recent commit in base..head that touched any of ``paths``."""
+    if not paths:
+        return ""
+    return git("rev-list", "-1", f"{base}..{head}", "--", *paths).strip()
+
+
+def declaration_is_stale_for_range(
+    decl_path: str, hits: list[str], base: str, head: str
+) -> tuple[str, str, str] | None:
+    """Detect a declaration that was written BEFORE the audio change it claims.
+
+    The range check on its own ("was the declaration touched in base..head?") is
+    satisfiable by accident: in a consolidation range of hundreds of commits,
+    almost any declaration edit anywhere in the range passes it. The naming
+    check is stronger but also reusable — the declaration currently in the repo
+    happens to name several protected files, so once a file is named, every
+    later change to it inherits an approval nobody granted.
+
+    So compare positions. If a protected file was last touched by a commit that
+    is a DESCENDANT of the commit that last touched the declaration, the audio
+    change came after its own declaration and cannot be described by it.
+
+    This is a heuristic about ordering, not proof of content, and it is worth
+    being explicit about the residual gap: a declaration touched in the same
+    commit as the audio change still passes on the strength of naming alone,
+    and nothing verifies the prose actually describes the diff. Closing that
+    properly means binding a declaration to a content hash of the protected
+    diff, which is a redesign rather than a consolidation fix. See
+    ``docs/realtime_audio_change_policy.md``.
+    """
+    audio_paths = [h for h in hits if h != BACKEND_FILE]
+    if not audio_paths:
+        return None
+    newest_audio = newest_commit_touching(base, head, audio_paths)
+    newest_decl = newest_commit_touching(base, head, [decl_path])
+    if not newest_audio or not newest_decl or newest_audio == newest_decl:
+        return None
+    # Non-empty means newest_audio is reachable from newest_decl's descendants,
+    # i.e. the audio change landed after the declaration was last written.
+    ahead = git("rev-list", "--count", f"{newest_decl}..{newest_audio}").strip()
+    if ahead and ahead != "0":
+        return (newest_decl, newest_audio, ahead)
+    return None
+
+
 def protected_paths(manifest: dict) -> dict[str, str]:
     """Map every protected path to the category that protects it."""
     mapping: dict[str, str] = {}
@@ -126,6 +172,16 @@ def validate_declaration(manifest: dict, hits: list[str], base: str | None, head
                 f"{spec['path']} exists but was not modified in this change. "
                 "A declaration must describe this change, not a previous one."
             )
+        else:
+            stale = declaration_is_stale_for_range(spec["path"], hits, base, head)
+            if stale:
+                decl_commit, audio_commit, ahead = stale
+                problems.append(
+                    f"{spec['path']} was last updated in {decl_commit[:12]}, but protected "
+                    f"audio paths were changed {ahead} commit(s) later, most recently in "
+                    f"{audio_commit[:12]}. The declaration predates the change it would "
+                    "authorise. Update it to describe this range."
+                )
 
     for section in spec["required_sections"]:
         if section.lower() not in text.lower():
