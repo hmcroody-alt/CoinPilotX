@@ -2747,3 +2747,116 @@ Partial rollback is possible but not advised: reverting only
 leaves the plan describing a module the adapter no longer enables, and the added
 test in `liveStreamQuality.test.ts` would keep passing while the product stayed
 broken. Revert the commit whole.
+
+## Call actions menu addendum — a UI entrypoint, no call surface (2026-09-05)
+
+This addendum declares one protected-file change: `mobile-native/src/screens/CallScreen.tsx`
+gains a native action sheet behind the top-right ••• button.
+
+### Why the change is required
+
+The ••• on an active call called `openCallWebFallback(callId, conversationId)`.
+That is a hand-off to the web client for a call the **native** app is already
+holding an Agora engine for. There is no path by which the web client can serve
+that live session, so the control was a dead end: it either did nothing useful
+or dropped the user out of a call that was still running behind it.
+
+The capability the menu should have been offering — inviting more people to a
+live call — already shipped in `00cfe955`. It was reachable only from the "Add"
+button in the bottom control dock. Nothing was missing but the entrypoint.
+
+### Which feature required it
+
+Discoverability of the existing multi-guest invite flow. **No multi-participant
+calling was built, rebuilt, or modified.** No new invitation API, call session,
+Agora channel, participant model, or engine was created.
+
+### Which protected files changed
+
+| File | Category | Change |
+|---|---|---|
+| `mobile-native/src/screens/CallScreen.tsx` | protected call UI | 17 added / 2 removed lines. One `useState` boolean, one imported component, one `onPress` retargeted from `openCallWebFallback` to `setActionsVisible(true)`, and the new sheet rendered beside the existing `AddParticipantsSheet`. The now-unused `openCallWebFallback` import was dropped. |
+
+Supporting non-protected file: `mobile-native/src/calls/CallActionsSheet.tsx`
+(new). It was deliberately written as a separate, unprotected component so the
+protected screen's diff stays at the wiring. It is a `Modal` with three read-only
+views (menu / participant roster / call details). Tests:
+`mobile-native/src/screens/__tests__/CallScreen.actionsMenu.test.tsx` (new).
+
+### The audio-relevant statements
+
+- **NO** `AVAudioSession` or `Audio.setAudioModeAsync` call is added, anywhere.
+- **NO** new microphone track. **NO** second publication path.
+- **NO** new audio singleton, engine, or owner. **0** new engine owners.
+- **NO** change to ownership arbitration, leases, or the audio profile.
+- **NO** new Agora channel, join, leave, renegotiation, or token request.
+- **0** calls into `react-native-agora` from the new component; it does not
+  import it, directly or transitively.
+- The sheet holds **no** call state. It renders the canonical participant
+  registry (`calls/callParticipants`) that the screen already subscribes to —
+  there is no second participant state model.
+- The only network call it can make is `reportPulseTarget("user", …)`, the
+  existing governed Trust & Safety POST to `/api/pulse/report`. Because that
+  endpoint's `REPORT_TARGET_TYPES` is `{post, comment, media, user}` with no
+  `call` target, "report this call" is not a real action and is not offered.
+  The row appears only when exactly one remote participant makes the subject
+  unambiguous.
+- The duration timer is owned by the screen's existing `setInterval` effect,
+  keyed on `connected` and `session.connectedAtMs`. The sheet receives an
+  already-formatted string. Opening it cannot reset the clock.
+
+### Expected behavior change
+
+Tapping ••• on an active call opens a native sheet instead of attempting a web
+hand-off. "Add people" opens the same `AddParticipantsSheet` the dock's "Add"
+button opens. The dock's "Add" button is **retained** and unchanged.
+`openCallWebFallback` remains exported from `src/api/calls.ts` for other
+surfaces; only this one call site was removed. Audio capture, routing, session
+category, call lifecycle, and livestream behavior are unchanged.
+
+### Regression risk
+
+Low, and confined to presentation. The failure modes worth naming are (a) the
+menu stacking over the invite sheet, and (b) the menu remounting the screen and
+so restarting the timer or the session. Both are covered by tests below. The
+sheet cannot leak an engine because it never holds one.
+
+### Tests run
+
+Run against this exact tree, not quoted from the commit:
+
+- `CallScreen.actionsMenu.test.tsx` — **11 tests, 0 failures.** These include the
+  negative assertions that opening the menu calls none of `hangupCallSession`,
+  `finalizeCallSession`, `clearCallSession`, `ensureCallMediaConnected`, or a
+  second `beginCallSession`; that none of `setMicrophoneEnabled`,
+  `setCameraEnabled`, `setSpeakerEnabled`, `switchCamera`, or
+  `showAudioRoutePicker` is called; that the rendered duration is unchanged
+  across opening the menu; and that `openCallWebFallback` is never called.
+- Mutation check: reverting the ••• handler to `openCallWebFallback` fails
+  **10 of the 11**. The one that still passes is the dock-"Add" regression
+  guard, which is supposed to be insensitive to this change.
+- The remaining suites and gates are recorded in the commit message for the
+  release candidate this addendum belongs to.
+
+### Physical validation required
+
+**Not required for the audio invariants**, and the reason is that this change
+adds no audio surface: the protected diff contains no session, track,
+publication, route, or engine line. The declaration claims no audible
+validation.
+
+What is still owed as ordinary product QA before release, on a real device:
+tap ••• during an active audio call and during an active video call, confirm
+the audio does not glitch or reroute while the sheet is presented, confirm the
+duration keeps counting, and confirm "Add people" reaches the existing picker.
+The three-participant multi-guest matrix owed by the multi-guest addendum above
+is **not** discharged here and remains due — this change did not touch that
+layer.
+
+### Rollback procedure
+
+Revert the single commit. `mobile-native/src/calls/CallActionsSheet.tsx` and its
+test file are new and orphan cleanly; the `CallScreen.tsx` hunk restores the
+previous `openCallWebFallback` call site exactly. Partial rollback is not
+meaningful — reverting only the sheet leaves the screen importing a component
+that no longer exists.
