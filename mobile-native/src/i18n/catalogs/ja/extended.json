@@ -4560,13 +4560,14 @@
         "countSoFar": "これまでに {{count}}",
         "factCount": "記録された事実 {{count}} 件",
         "empty": {
-          "title": "記録はありません"
+          "title": "記録はありません",
+          "openPortfolio": "ポートフォリオを開く"
         },
         "emptyBody": {
-          "holdings": "記録された保有資産はまだありません。",
+          "holdings": "まだ保有資産が記録されていません。ポートフォリオに追加した資産はここに表示され、キャピタルグラフに自動的に接続されます。",
           "coverage": "記録された補償はまだありません。",
           "structure": "記録された構造はまだありません。",
-          "documents": "記録された書類はまだありません。"
+          "documents": "まだ資本関連の書類が接続されていません。"
         },
         "denied": {
           "title": "非表示",
@@ -4650,7 +4651,51 @@
           "unpriced": "{{symbols}} のライブ価格がありません。合計にはその他の保有のみ含まれます。",
           "empty": "ポートフォリオにまだ保有資産がありません。",
           "unavailable": "ポートフォリオを読み込めませんでした。",
-          "basisUnknown": "取得コスト未登録"
+          "basisUnknown": "取得コスト未登録",
+          "pricedValue": "価格判明分のポートフォリオ価値",
+          "valueUnavailable": "価格が判明している保有資産はまだありません",
+          "excludesUnpriced": "価格未取得の保有資産を除外: {{count}}",
+          "pnlLabel": "未実現損益",
+          "pnlUnavailable": "利用不可",
+          "basisLabel": "取得原価",
+          "basisPartial": "{{total}}件中{{known}}件が判明",
+          "holdingsLabel": "保有資産",
+          "allocationTitle": "配分",
+          "allocationPricedOnly": "価格判明分のみ",
+          "excludedFromTotal": "ポートフォリオ合計から除外",
+          "qualityPriced": "価格取得 {{priced}}/{{total}}",
+          "qualityBasis": "原価判明 {{known}}/{{total}}",
+          "unavailableTitle": "ポートフォリオを利用できません",
+          "fresh": {
+            "live": "ライブ",
+            "fresh": "最新",
+            "delayed": "遅延",
+            "stale": "古い",
+            "unavailable": "価格ソースなし"
+          }
+        },
+        "coverage": {
+          "portfolioTitle": "ポートフォリオのカバレッジ",
+          "pricing": "{{total}}件中{{priced}}件の保有資産に価格あり",
+          "basis": "{{total}}件中{{known}}件で取得原価が判明",
+          "factsTitle": "ファクトの検証",
+          "knownShare": "確認済みファクト: {{pct}}",
+          "documentBacked": "書類の裏付けがあるファクト: {{count}}"
+        },
+        "structure": {
+          "relationshipsTitle": "関係",
+          "noRelationships": "まだ関係が記録されていません。"
+        },
+        "relation": {
+          "OWNS": "所有",
+          "ADVISED_BY": "助言者",
+          "COVERED_BY": "補償元",
+          "SECURED_BY": "担保",
+          "GOVERNED_BY": "準拠",
+          "DESCRIBES": "記述"
+        },
+        "documents": {
+          "evidenceTitle": "接続された証跡"
         }
       },
       "attention": {

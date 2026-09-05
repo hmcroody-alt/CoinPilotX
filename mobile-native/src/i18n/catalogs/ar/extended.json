@@ -4791,13 +4791,14 @@
         "countSoFar": "{{count}} حتى الآن",
         "factCount": "{{count}} حقيقة مسجلة",
         "empty": {
-          "title": "لا يوجد شيء مسجل"
+          "title": "لا يوجد شيء مسجل",
+          "openPortfolio": "فتح المحفظة"
         },
         "emptyBody": {
-          "holdings": "لا توجد ممتلكات مسجلة بعد.",
+          "holdings": "لا توجد أصول مسجلة بعد. الأصول التي تضيفها إلى محفظتك ستظهر هنا وستتصل تلقائيًا بمخطط رأس المال الخاص بك.",
           "coverage": "لا توجد تغطية مسجلة بعد.",
           "structure": "لا يوجد هيكل مسجل بعد.",
-          "documents": "لا توجد مستندات مسجلة بعد."
+          "documents": "لا توجد مستندات رأس مال متصلة بعد."
         },
         "denied": {
           "title": "غير معروض",
@@ -4889,7 +4890,51 @@
           "unpriced": "لا يوجد سعر مباشر لـ {{symbols}}. الإجماليات تغطي بقية حيازاتك فقط.",
           "empty": "لا توجد حيازات في محفظتك بعد.",
           "unavailable": "تعذر تحميل محفظتك الآن.",
-          "basisUnknown": "تكلفة الشراء غير مسجلة"
+          "basisUnknown": "تكلفة الشراء غير مسجلة",
+          "pricedValue": "قيمة المحفظة المسعّرة",
+          "valueUnavailable": "لا توجد أصول مسعّرة بعد",
+          "excludesUnpriced": "الأصول غير المسعّرة مستبعدة: {{count}}",
+          "pnlLabel": "الربح غير المحقق",
+          "pnlUnavailable": "غير متاح",
+          "basisLabel": "تكلفة الشراء",
+          "basisPartial": "معروفة لـ {{known}} من {{total}}",
+          "holdingsLabel": "الأصول",
+          "allocationTitle": "التوزيع",
+          "allocationPricedOnly": "الأصول المسعّرة فقط",
+          "excludedFromTotal": "مستبعد من إجمالي المحفظة",
+          "qualityPriced": "مسعّرة {{priced}}/{{total}}",
+          "qualityBasis": "التكلفة معروفة {{known}}/{{total}}",
+          "unavailableTitle": "المحفظة غير متاحة",
+          "fresh": {
+            "live": "مباشر",
+            "fresh": "حديث",
+            "delayed": "متأخر",
+            "stale": "قديم",
+            "unavailable": "لا يوجد مصدر أسعار"
+          }
+        },
+        "coverage": {
+          "portfolioTitle": "تغطية المحفظة",
+          "pricing": "{{priced}} من {{total}} أصلًا مسعّرة",
+          "basis": "{{known}} من {{total}} بتكلفة شراء معروفة",
+          "factsTitle": "التحقق من البيانات",
+          "knownShare": "البيانات المؤكدة: {{pct}}",
+          "documentBacked": "بيانات مدعومة بمستندات: {{count}}"
+        },
+        "structure": {
+          "relationshipsTitle": "العلاقات",
+          "noRelationships": "لا توجد علاقات مسجلة بعد."
+        },
+        "relation": {
+          "OWNS": "يمتلك",
+          "ADVISED_BY": "بمشورة",
+          "COVERED_BY": "مغطى بواسطة",
+          "SECURED_BY": "مضمون بواسطة",
+          "GOVERNED_BY": "خاضع لـ",
+          "DESCRIBES": "يصف"
+        },
+        "documents": {
+          "evidenceTitle": "الأدلة المتصلة"
         }
       },
       "attention": {

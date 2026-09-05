@@ -4599,13 +4599,14 @@
         "countSoFar": "{{count}} até agora",
         "factCount": "{{count}} fatos registrados",
         "empty": {
-          "title": "Nada registrado"
+          "title": "Nada registrado",
+          "openPortfolio": "Abrir carteira"
         },
         "emptyBody": {
-          "holdings": "Nenhum patrimônio registrado ainda.",
+          "holdings": "Ainda não há posições registradas. Os ativos adicionados à sua Carteira aparecerão aqui e serão conectados automaticamente ao seu Grafo de Capital.",
           "coverage": "Nenhuma cobertura registrada ainda.",
           "structure": "Nenhuma estrutura registrada ainda.",
-          "documents": "Nenhum documento registrado ainda."
+          "documents": "Ainda não há documentos de capital conectados."
         },
         "denied": {
           "title": "Não exibido",
@@ -4689,7 +4690,51 @@
           "unpriced": "Sem preço ao vivo para {{symbols}}. Os totais cobrem apenas suas outras posições.",
           "empty": "Ainda não há posições no seu Portfólio.",
           "unavailable": "Não foi possível carregar seu portfólio agora.",
-          "basisUnknown": "Custo de aquisição não registrado"
+          "basisUnknown": "Custo de aquisição não registrado",
+          "pricedValue": "Valor da carteira precificada",
+          "valueUnavailable": "Ainda não há posições precificadas",
+          "excludesUnpriced": "Posições sem preço excluídas: {{count}}",
+          "pnlLabel": "Lucro não realizado",
+          "pnlUnavailable": "Não disponível",
+          "basisLabel": "Custo de aquisição",
+          "basisPartial": "Conhecido para {{known}} de {{total}}",
+          "holdingsLabel": "Posições",
+          "allocationTitle": "Alocação",
+          "allocationPricedOnly": "Somente posições precificadas",
+          "excludedFromTotal": "Excluída do total da carteira",
+          "qualityPriced": "Precificadas {{priced}}/{{total}}",
+          "qualityBasis": "Custo conhecido {{known}}/{{total}}",
+          "unavailableTitle": "Carteira indisponível",
+          "fresh": {
+            "live": "Ao vivo",
+            "fresh": "Recente",
+            "delayed": "Atrasado",
+            "stale": "Desatualizado",
+            "unavailable": "Sem fonte de preços"
+          }
+        },
+        "coverage": {
+          "portfolioTitle": "Cobertura da carteira",
+          "pricing": "{{priced}} de {{total}} posições precificadas",
+          "basis": "{{known}} de {{total}} com custo de aquisição conhecido",
+          "factsTitle": "Verificação de fatos",
+          "knownShare": "Fatos confirmados: {{pct}}",
+          "documentBacked": "Fatos com respaldo documental: {{count}}"
+        },
+        "structure": {
+          "relationshipsTitle": "Relações",
+          "noRelationships": "Ainda não há relações registradas."
+        },
+        "relation": {
+          "OWNS": "Possui",
+          "ADVISED_BY": "Assessorado por",
+          "COVERED_BY": "Coberto por",
+          "SECURED_BY": "Garantido por",
+          "GOVERNED_BY": "Regido por",
+          "DESCRIBES": "Descreve"
+        },
+        "documents": {
+          "evidenceTitle": "Evidências conectadas"
         }
       },
       "attention": {

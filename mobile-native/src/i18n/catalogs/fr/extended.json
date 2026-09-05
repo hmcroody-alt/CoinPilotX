@@ -4599,13 +4599,14 @@
         "countSoFar": "{{count}} pour l'instant",
         "factCount": "{{count}} faits enregistrés",
         "empty": {
-          "title": "Rien d'enregistré"
+          "title": "Rien d'enregistré",
+          "openPortfolio": "Ouvrir le portefeuille"
         },
         "emptyBody": {
-          "holdings": "Aucun avoir enregistré pour l'instant.",
+          "holdings": "Aucune position enregistrée pour l'instant. Les actifs ajoutés à votre Portefeuille apparaîtront ici et seront automatiquement reliés à votre Graphe de Capital.",
           "coverage": "Aucune couverture enregistrée pour l'instant.",
           "structure": "Aucune structure enregistrée pour l'instant.",
-          "documents": "Aucun document enregistré pour l'instant."
+          "documents": "Aucun document de capital relié pour l'instant."
         },
         "denied": {
           "title": "Non affiché",
@@ -4689,7 +4690,51 @@
           "unpriced": "Pas de prix en direct pour {{symbols}}. Les totaux ne couvrent que vos autres positions.",
           "empty": "Aucune position dans votre Portefeuille pour l'instant.",
           "unavailable": "Votre portefeuille n'a pas pu être chargé pour le moment.",
-          "basisUnknown": "Prix de revient non renseigné"
+          "basisUnknown": "Prix de revient non renseigné",
+          "pricedValue": "Valeur du portefeuille valorisé",
+          "valueUnavailable": "Aucune position valorisée pour l'instant",
+          "excludesUnpriced": "Positions sans prix exclues : {{count}}",
+          "pnlLabel": "Plus-value latente",
+          "pnlUnavailable": "Non disponible",
+          "basisLabel": "Prix de revient",
+          "basisPartial": "Connu pour {{known}} sur {{total}}",
+          "holdingsLabel": "Positions",
+          "allocationTitle": "Répartition",
+          "allocationPricedOnly": "Positions valorisées uniquement",
+          "excludedFromTotal": "Exclue du total du portefeuille",
+          "qualityPriced": "Valorisées {{priced}}/{{total}}",
+          "qualityBasis": "Prix de revient connu {{known}}/{{total}}",
+          "unavailableTitle": "Portefeuille indisponible",
+          "fresh": {
+            "live": "En direct",
+            "fresh": "Récent",
+            "delayed": "Différé",
+            "stale": "Obsolète",
+            "unavailable": "Aucun flux de prix"
+          }
+        },
+        "coverage": {
+          "portfolioTitle": "Couverture du portefeuille",
+          "pricing": "{{priced}} positions sur {{total}} valorisées",
+          "basis": "{{known}} sur {{total}} avec prix de revient connu",
+          "factsTitle": "Vérification des faits",
+          "knownShare": "Faits confirmés : {{pct}}",
+          "documentBacked": "Faits étayés par des documents : {{count}}"
+        },
+        "structure": {
+          "relationshipsTitle": "Relations",
+          "noRelationships": "Aucune relation enregistrée pour l'instant."
+        },
+        "relation": {
+          "OWNS": "Possède",
+          "ADVISED_BY": "Conseillé par",
+          "COVERED_BY": "Couvert par",
+          "SECURED_BY": "Garanti par",
+          "GOVERNED_BY": "Régi par",
+          "DESCRIBES": "Décrit"
+        },
+        "documents": {
+          "evidenceTitle": "Preuves reliées"
         }
       },
       "attention": {

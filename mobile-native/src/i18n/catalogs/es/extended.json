@@ -4599,13 +4599,14 @@
         "countSoFar": "{{count}} hasta ahora",
         "factCount": "{{count}} datos registrados",
         "empty": {
-          "title": "Nada registrado"
+          "title": "Nada registrado",
+          "openPortfolio": "Abrir cartera"
         },
         "emptyBody": {
-          "holdings": "Aún no hay patrimonio registrado.",
+          "holdings": "Aún no hay posiciones registradas. Los activos que agregues a tu Cartera aparecerán aquí y se conectarán automáticamente a tu Grafo de Capital.",
           "coverage": "Aún no hay cobertura registrada.",
           "structure": "Aún no hay estructura registrada.",
-          "documents": "Aún no hay documentos registrados."
+          "documents": "Aún no hay documentos de capital conectados."
         },
         "denied": {
           "title": "No mostrado",
@@ -4689,7 +4690,51 @@
           "unpriced": "No hay precio en vivo para {{symbols}}. Los totales solo cubren tus demás posiciones.",
           "empty": "Aún no hay posiciones en tu Portafolio.",
           "unavailable": "No se pudo cargar tu portafolio en este momento.",
-          "basisUnknown": "Costo de adquisición no registrado"
+          "basisUnknown": "Costo de adquisición no registrado",
+          "pricedValue": "Valor de cartera con precio",
+          "valueUnavailable": "Aún no hay posiciones con precio",
+          "excludesUnpriced": "Posiciones sin precio excluidas: {{count}}",
+          "pnlLabel": "Ganancia no realizada",
+          "pnlUnavailable": "No disponible",
+          "basisLabel": "Costo base",
+          "basisPartial": "Conocido para {{known}} de {{total}}",
+          "holdingsLabel": "Posiciones",
+          "allocationTitle": "Distribución",
+          "allocationPricedOnly": "Solo posiciones con precio",
+          "excludedFromTotal": "Excluida del total de la cartera",
+          "qualityPriced": "Con precio {{priced}}/{{total}}",
+          "qualityBasis": "Costo conocido {{known}}/{{total}}",
+          "unavailableTitle": "Cartera no disponible",
+          "fresh": {
+            "live": "En vivo",
+            "fresh": "Reciente",
+            "delayed": "Con retraso",
+            "stale": "Desactualizado",
+            "unavailable": "Sin fuente de precios"
+          }
+        },
+        "coverage": {
+          "portfolioTitle": "Cobertura de la cartera",
+          "pricing": "{{priced}} de {{total}} posiciones con precio",
+          "basis": "{{known}} de {{total}} con costo base conocido",
+          "factsTitle": "Verificación de datos",
+          "knownShare": "Datos confirmados: {{pct}}",
+          "documentBacked": "Datos respaldados por documentos: {{count}}"
+        },
+        "structure": {
+          "relationshipsTitle": "Relaciones",
+          "noRelationships": "Aún no hay relaciones registradas."
+        },
+        "relation": {
+          "OWNS": "Posee",
+          "ADVISED_BY": "Asesorado por",
+          "COVERED_BY": "Cubierto por",
+          "SECURED_BY": "Garantizado por",
+          "GOVERNED_BY": "Regido por",
+          "DESCRIBES": "Describe"
+        },
+        "documents": {
+          "evidenceTitle": "Evidencia conectada"
         }
       },
       "attention": {

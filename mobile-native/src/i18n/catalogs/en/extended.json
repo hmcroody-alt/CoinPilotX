@@ -4599,13 +4599,14 @@
         "countSoFar": "{{count}} so far",
         "factCount": "{{count}} recorded facts",
         "empty": {
-          "title": "Nothing recorded"
+          "title": "Nothing recorded",
+          "openPortfolio": "Open Portfolio"
         },
         "emptyBody": {
-          "holdings": "No holdings recorded yet.",
+          "holdings": "No holdings recorded yet. Assets added to your Portfolio will appear here and automatically connect to your Capital Graph.",
           "coverage": "No coverage recorded yet.",
           "structure": "No structure recorded yet.",
-          "documents": "No documents recorded yet."
+          "documents": "No capital documents connected yet."
         },
         "denied": {
           "title": "Not shown",
@@ -4689,7 +4690,51 @@
           "unpriced": "No live price for {{symbols}}. Totals cover your other holdings only.",
           "empty": "No holdings in your Portfolio yet.",
           "unavailable": "Your portfolio could not be loaded just now.",
-          "basisUnknown": "Cost basis not recorded"
+          "basisUnknown": "Cost basis not recorded",
+          "pricedValue": "Priced portfolio value",
+          "valueUnavailable": "No priced holdings yet",
+          "excludesUnpriced": "Unpriced holdings excluded: {{count}}",
+          "pnlLabel": "Unrealized P&L",
+          "pnlUnavailable": "Not available",
+          "basisLabel": "Cost basis",
+          "basisPartial": "Known for {{known}} of {{total}}",
+          "holdingsLabel": "Holdings",
+          "allocationTitle": "Allocation",
+          "allocationPricedOnly": "Priced holdings only",
+          "excludedFromTotal": "Excluded from portfolio total",
+          "qualityPriced": "Priced {{priced}}/{{total}}",
+          "qualityBasis": "Basis known {{known}}/{{total}}",
+          "unavailableTitle": "Portfolio unavailable",
+          "fresh": {
+            "live": "Live",
+            "fresh": "Fresh",
+            "delayed": "Delayed",
+            "stale": "Stale",
+            "unavailable": "No price feed"
+          }
+        },
+        "coverage": {
+          "portfolioTitle": "Portfolio coverage",
+          "pricing": "{{priced}} of {{total}} holdings priced",
+          "basis": "{{known}} of {{total}} with known cost basis",
+          "factsTitle": "Fact verification",
+          "knownShare": "Facts known: {{pct}}",
+          "documentBacked": "Document-backed facts: {{count}}"
+        },
+        "structure": {
+          "relationshipsTitle": "Relationships",
+          "noRelationships": "No relationships recorded yet."
+        },
+        "relation": {
+          "OWNS": "Owns",
+          "ADVISED_BY": "Advised by",
+          "COVERED_BY": "Covered by",
+          "SECURED_BY": "Secured by",
+          "GOVERNED_BY": "Governed by",
+          "DESCRIBES": "Describes"
+        },
+        "documents": {
+          "evidenceTitle": "Connected evidence"
         }
       },
       "attention": {

@@ -150,17 +150,23 @@ async function unlockDoor(utils: ReturnType<typeof render>) {
   await waitFor(() => expect(queryByText("premium:privateOffice.lock.unlock")).toBeNull());
 }
 
-async function renderScreen() {
+async function renderScreen(view = "holdings") {
   const navigation = { navigate: jest.fn(), goBack: jest.fn(), setOptions: jest.fn() };
   const utils = render(
     <CapitalGraphScreen
-      route={{ key: "c", name: "CapitalGraph", params: { view: "holdings" } } as never}
+      route={{ key: "c", name: "CapitalGraph", params: { view } } as never}
       navigation={navigation as never}
     />
   );
   await unlockDoor(utils);
   return { ...utils, navigation };
 }
+
+/** Locale-stable expectations: the same Intl calls the screen makes. */
+const money = (value: number) =>
+  new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(value);
+const percent = (ratio: number) =>
+  new Intl.NumberFormat(undefined, { style: "percent", maximumFractionDigits: 1 }).format(ratio);
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -270,19 +276,22 @@ describe("CapitalGraphScreen holdings state machine", () => {
     expect(queryByText(FOLIO_EMPTY)).toBeNull();
   });
 
-  it("renders a READY empty portfolio as empty — and only then", async () => {
+  it("renders a READY empty portfolio as the rich empty state — and only then", async () => {
     mockGetPortfolio.mockResolvedValue(readyPortfolio([]));
-    const { getByText, queryByText } = await renderScreen();
+    const { getByText, queryByText, navigation } = await renderScreen();
     await waitFor(() => getByText(EMPTY_TITLE));
-    expect(getByText(FOLIO_EMPTY)).toBeTruthy();
+    expect(getByText("premium:privateOffice.capital.emptyBody.holdings")).toBeTruthy();
     // An empty portfolio is a real answer, not a failure to get one.
     expect(queryByText(FOLIO_UNAVAILABLE)).toBeNull();
     expect(queryByText(RETRY)).toBeNull();
+    // The one governed way to add holdings: the existing Portfolio ledger.
+    fireEvent.press(getByText("premium:privateOffice.capital.empty.openPortfolio"));
+    expect(navigation.navigate).toHaveBeenCalledWith("Portfolio");
   });
 
   it("renders the holdings the server sent, with neither empty nor failure copy", async () => {
-    const { getByText, queryByText } = await renderScreen();
-    await waitFor(() => getByText("BTC"));
+    const { getByText, getAllByText, queryByText } = await renderScreen();
+    await waitFor(() => getAllByText("BTC"));
     expect(getByText("Bitcoin")).toBeTruthy();
     expect(queryByText(EMPTY_TITLE)).toBeNull();
     expect(queryByText(FOLIO_EMPTY)).toBeNull();
@@ -291,12 +300,403 @@ describe("CapitalGraphScreen holdings state machine", () => {
 
   it("re-asks both endpoints on Retry instead of replaying the cached failure", async () => {
     mockGetPortfolio.mockResolvedValue({ state: "ERROR", message: "" });
-    const { getByText } = await renderScreen();
+    const { getByText, getAllByText } = await renderScreen();
     await waitFor(() => getByText(RETRY));
     mockGetPortfolio.mockResolvedValue(readyPortfolio([btcAsset()]));
     fireEvent.press(getByText(RETRY));
-    await waitFor(() => getByText("BTC"));
+    await waitFor(() => getAllByText("BTC"));
     expect(mockGetPortfolio).toHaveBeenCalledTimes(2);
     expect(mockGetGraph).toHaveBeenCalledTimes(2);
+  });
+});
+
+/* --- Stage-two matrix: the dashboard's honesty and the other three tabs --- */
+
+function ethAsset() {
+  return {
+    node_id: 72,
+    symbol: "ETH",
+    name: "Ethereum",
+    quantity: 5,
+    lot_count: 2,
+    cost_basis: 5000,
+    price: 2000,
+    value: 10000,
+    pnl_value: 5000,
+    priced: true,
+    change_24h: -0.4,
+    projected_at: "2026-09-01T00:00:00Z"
+  };
+}
+
+function xrpUnpriced() {
+  return {
+    node_id: 73,
+    symbol: "XRP",
+    name: "Ripple",
+    quantity: 100,
+    lot_count: 1,
+    cost_basis: null,
+    price: null,
+    value: null,
+    pnl_value: null,
+    priced: false,
+    change_24h: null,
+    projected_at: "2026-09-01T00:00:00Z"
+  };
+}
+
+/** A fully priced, fully based portfolio: the server sends real totals. */
+function completePortfolio() {
+  return {
+    state: "READY",
+    portfolio: parseCapitalPortfolio({
+      assets: [btcAsset(), ethAsset()],
+      totals: {
+        value: 40000,
+        cost: 25000,
+        pnl_value: 15000,
+        complete: true,
+        assets: 2,
+        priced: 2,
+        unpriced_symbols: [],
+        basis_known: 2
+      },
+      prices: { source: "live_board", observed_epoch: null, age_seconds: 12, warning: "" },
+      sync: { pending: 0, failed: 0, enabled: true }
+    })
+  };
+}
+
+/** One priced holding, one the market feed could not price. */
+function partialPortfolio() {
+  return {
+    state: "READY",
+    portfolio: parseCapitalPortfolio({
+      assets: [btcAsset(), xrpUnpriced()],
+      totals: {
+        value: null,
+        cost: 20000,
+        pnl_value: null,
+        complete: false,
+        assets: 2,
+        priced: 1,
+        unpriced_symbols: ["XRP"],
+        basis_known: 1
+      },
+      prices: { source: "live_board", observed_epoch: null, age_seconds: 12, warning: "" },
+      sync: { pending: 0, failed: 0, enabled: true }
+    })
+  };
+}
+
+const PT = "premium:privateOffice.capital.portfolio.";
+
+describe("CapitalGraphScreen holdings dashboard", () => {
+  it("shows the server's totals plainly when every holding is priced and based", async () => {
+    mockGetPortfolio.mockResolvedValue(completePortfolio());
+    const { getByText, getAllByText, queryByText } = await renderScreen();
+    await waitFor(() => getByText(money(40000)));
+    expect(getByText(`${PT}totalValue`)).toBeTruthy();
+    expect(queryByText(`${PT}pricedValue`)).toBeNull();
+    expect(getByText(`+${money(15000)}`)).toBeTruthy();
+    expect(getByText(money(25000))).toBeTruthy();
+    expect(getByText(`${PT}fresh.live`)).toBeTruthy();
+    expect(getByText(`${PT}qualityPriced`)).toBeTruthy();
+    expect(getByText(`${PT}qualityBasis`)).toBeTruthy();
+    // Allocation is a ratio of the server's own values: 30k/40k and 10k/40k.
+    expect(getAllByText(percent(0.75)).length).toBeGreaterThan(0);
+    expect(getAllByText(percent(0.25)).length).toBeGreaterThan(0);
+    expect(getByText(`${PT}allocationTitle`)).toBeTruthy();
+  });
+
+  it("labels a partial total as priced-only and never invents the missing prices", async () => {
+    mockGetPortfolio.mockResolvedValue(partialPortfolio());
+    const { getByText, getAllByText, queryByText } = await renderScreen();
+    await waitFor(() => getByText(`${PT}pricedValue`));
+    // The headline number is the priced subtotal, clearly labeled as such.
+    expect(queryByText(`${PT}totalValue`)).toBeNull();
+    expect(getAllByText(money(30000)).length).toBeGreaterThan(0);
+    expect(getByText(`${PT}excludesUnpriced`)).toBeTruthy();
+    expect(getByText(`${PT}unpriced`)).toBeTruthy();
+    // The unpriced row confesses instead of showing a fabricated value.
+    expect(getByText(`${PT}priceUnavailable`)).toBeTruthy();
+    expect(getByText(`${PT}excludedFromTotal`)).toBeTruthy();
+    // Unknown basis stays unknown: no zero-basis P&L anywhere.
+    expect(getAllByText(`${PT}basisUnknown`).length).toBeGreaterThan(0);
+    expect(getAllByText(`${PT}pnlUnavailable`).length).toBeGreaterThan(0);
+    expect(getByText(`${PT}basisPartial`)).toBeTruthy();
+    // Allocation covers priced holdings only and says so.
+    expect(getByText(`${PT}allocationPricedOnly`)).toBeTruthy();
+  });
+
+  it("renders a loss as a signed negative, not dressed up and not hidden", async () => {
+    mockGetPortfolio.mockResolvedValue({
+      state: "READY",
+      portfolio: parseCapitalPortfolio({
+        assets: [{ ...btcAsset(), cost_basis: 35000, pnl_value: -5000 }],
+        totals: {
+          value: 30000,
+          cost: 35000,
+          pnl_value: -5000,
+          complete: true,
+          assets: 1,
+          priced: 1,
+          unpriced_symbols: [],
+          basis_known: 1
+        },
+        prices: { source: "live_board", observed_epoch: null, age_seconds: 12, warning: "" },
+        sync: { pending: 0, failed: 0, enabled: true }
+      })
+    });
+    const { getByText } = await renderScreen();
+    await waitFor(() => getByText(money(-5000)));
+  });
+
+  it("only ever calls the price feed's numbers as fresh as the feed admits", async () => {
+    const aged = completePortfolio();
+    const stale = {
+      state: "READY",
+      portfolio: {
+        ...aged.portfolio,
+        prices: { ...aged.portfolio.prices, ageSeconds: 7200 }
+      }
+    };
+    mockGetPortfolio.mockResolvedValue(stale);
+    const { getByText } = await renderScreen();
+    await waitFor(() => getByText(`${PT}fresh.stale`));
+  });
+
+  it("swallows a second Retry while the first is still in flight", async () => {
+    mockGetPortfolio.mockResolvedValue({ state: "ERROR", message: "" });
+    const { getByText, queryByText } = await renderScreen();
+    await waitFor(() => getByText(RETRY));
+    mockGetGraph.mockReturnValue(new Promise(() => undefined));
+    mockGetPortfolio.mockReturnValue(new Promise(() => undefined));
+    fireEvent.press(getByText(RETRY));
+    // While the pair is in flight the button is gone — replaced by a spinner —
+    // so a second tap has nothing to hit, and the pair fired exactly once.
+    await waitFor(() => expect(queryByText(RETRY)).toBeNull());
+    expect(mockGetGraph).toHaveBeenCalledTimes(2);
+    expect(mockGetPortfolio).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("CapitalGraphScreen coverage, structure and documents tabs", () => {
+  function coverageGraph() {
+    return {
+      state: "READY",
+      graph: parseCapitalGraph(
+        {
+          nodes: [
+            {
+              id: 1,
+              node_type: "ASSET",
+              external_ref: "BTC",
+              lifecycle_state: "ACTIVE",
+              truth: "KNOWN",
+              fact_count: 2
+            }
+          ],
+          edges: [],
+          facts: [
+            {
+              id: 11,
+              fact_type: "portfolio.holding",
+              value: "0.75",
+              value_type: "decimal",
+              domain: "capital",
+              sensitivity: "HIGH",
+              observed_at: "2026-09-01T00:00:00Z",
+              lifecycle_state: "ACTIVE",
+              provenance: {
+                source_type: "upload",
+                source_id: "doc-1",
+                has_source_document: true,
+                provenance_type: "DOCUMENT_EXTRACTED",
+                verification: "SOURCED",
+                observed_at: "2026-09-01T00:00:00Z",
+                confidence: 0.9
+              },
+              freshness: { stale: false, age_days: 4, horizon_days: 365 }
+            },
+            {
+              id: 12,
+              fact_type: "portfolio.cost_basis",
+              value: "20000",
+              value_type: "decimal",
+              domain: "capital",
+              sensitivity: "HIGH",
+              observed_at: "2026-09-01T00:00:00Z",
+              lifecycle_state: "ACTIVE",
+              provenance: {
+                source_type: "manual",
+                source_id: "user",
+                has_source_document: false,
+                provenance_type: "USER_ASSERTED",
+                verification: "SELF_REPORTED",
+                observed_at: "2026-09-01T00:00:00Z",
+                confidence: 0.5
+              },
+              freshness: { stale: false, age_days: 4, horizon_days: 365 }
+            }
+          ],
+          conflicts: [],
+          stale: [],
+          counted: { ASSET: 1 },
+          truth_counts: { KNOWN: 1, ESTIMATED: 1 },
+          complete: true
+        },
+        "coverage"
+      )
+    };
+  }
+
+  it("reports pricing, basis and verification coverage from the real payloads", async () => {
+    mockGetGraph.mockResolvedValue(coverageGraph());
+    mockGetPortfolio.mockResolvedValue(partialPortfolio());
+    const { getByText } = await renderScreen("coverage");
+    await waitFor(() => getByText("premium:privateOffice.capital.coverage.portfolioTitle"));
+    expect(getByText("premium:privateOffice.capital.coverage.pricing")).toBeTruthy();
+    expect(getByText("premium:privateOffice.capital.coverage.basis")).toBeTruthy();
+    expect(getByText("premium:privateOffice.capital.coverage.factsTitle")).toBeTruthy();
+    expect(getByText("premium:privateOffice.capital.coverage.knownShare")).toBeTruthy();
+    expect(getByText("premium:privateOffice.capital.coverage.documentBacked")).toBeTruthy();
+    // A self-reported fact is named as such — never presented as verified.
+    expect(getByText("SOURCED")).toBeTruthy();
+    expect(getByText("SELF_REPORTED")).toBeTruthy();
+  });
+
+  it("keeps the coverage tab's failed portfolio a failure, never an empty claim", async () => {
+    mockGetPortfolio.mockResolvedValue({ state: "ERROR", message: "HTTP 404" });
+    const { getByText, queryByText } = await renderScreen("coverage");
+    await waitFor(() => getByText(`${PT}unavailableTitle`));
+    expect(getByText(FOLIO_UNAVAILABLE)).toBeTruthy();
+    expect(queryByText(EMPTY_TITLE)).toBeNull();
+    expect(queryByText(FOLIO_EMPTY)).toBeNull();
+    expect(getByText(RETRY)).toBeTruthy();
+  });
+
+  it("draws the structure tab from the projected edges, grouped and counted", async () => {
+    mockGetGraph.mockResolvedValue({
+      state: "READY",
+      graph: parseCapitalGraph(
+        {
+          nodes: [
+            {
+              id: 1,
+              node_type: "PERSON",
+              external_ref: "Roody Cherie",
+              lifecycle_state: "ACTIVE",
+              truth: "KNOWN",
+              fact_count: 1
+            },
+            {
+              id: 2,
+              node_type: "ASSET",
+              external_ref: "BTC",
+              lifecycle_state: "ACTIVE",
+              truth: "KNOWN",
+              fact_count: 2
+            }
+          ],
+          edges: [
+            {
+              id: 9,
+              source_node_id: 1,
+              target_node_id: 2,
+              relation_type: "OWNS",
+              lifecycle_state: "ACTIVE",
+              provenance: {
+                source_type: "manual",
+                source_id: "user",
+                has_source_document: false,
+                provenance_type: "USER_ASSERTED",
+                verification: "SELF_REPORTED"
+              }
+            }
+          ],
+          facts: [],
+          conflicts: [],
+          stale: [],
+          counted: { PERSON: 1, ASSET: 1 },
+          truth_counts: { KNOWN: 2 },
+          complete: true
+        },
+        "structure"
+      )
+    });
+    const { getByText } = await renderScreen("structure");
+    await waitFor(() =>
+      getByText("premium:privateOffice.capital.structure.relationshipsTitle")
+    );
+    expect(getByText("OWNS")).toBeTruthy();
+    expect(getByText("Roody Cherie → BTC")).toBeTruthy();
+  });
+
+  it("admits when the structure has nodes but no recorded relationships", async () => {
+    mockGetGraph.mockResolvedValue({
+      state: "READY",
+      graph: parseCapitalGraph(
+        {
+          nodes: [
+            {
+              id: 2,
+              node_type: "ASSET",
+              external_ref: "BTC",
+              lifecycle_state: "ACTIVE",
+              truth: "KNOWN",
+              fact_count: 2
+            }
+          ],
+          edges: [],
+          facts: [],
+          conflicts: [],
+          stale: [],
+          counted: { ASSET: 1 },
+          truth_counts: { KNOWN: 1 },
+          complete: true
+        },
+        "structure"
+      )
+    });
+    const { getByText } = await renderScreen("structure");
+    await waitFor(() =>
+      getByText("premium:privateOffice.capital.structure.noRelationships")
+    );
+  });
+
+  it("lists only evidence that actually exists on the documents tab", async () => {
+    mockGetGraph.mockResolvedValue(coverageGraph());
+    const { getByText, queryByText } = await renderScreen("documents");
+    await waitFor(() => getByText("premium:privateOffice.capital.documents.evidenceTitle"));
+    expect(getByText("portfolio.holding")).toBeTruthy();
+    // Only the document-backed fact is evidence; the self-reported one is not.
+    expect(queryByText("portfolio.cost_basis")).toBeNull();
+  });
+
+  it("keeps the documents empty state governed: its own copy, no Portfolio door", async () => {
+    const { getByText, queryByText } = await renderScreen("documents");
+    await waitFor(() => getByText(EMPTY_TITLE));
+    expect(getByText("premium:privateOffice.capital.emptyBody.documents")).toBeTruthy();
+    expect(queryByText("premium:privateOffice.capital.empty.openPortfolio")).toBeNull();
+  });
+
+  it("keeps one unlock good for all four tabs — no re-prompt, no relock", async () => {
+    const { getByText, getAllByText, queryByText } = await renderScreen();
+    await waitFor(() => getAllByText("BTC"));
+    fireEvent.press(getByText("premium:privateOffice.capital.views.coverage"));
+    await waitFor(() =>
+      getByText("premium:privateOffice.capital.coverage.portfolioTitle")
+    );
+    expect(queryByText("premium:privateOffice.lock.unlock")).toBeNull();
+    fireEvent.press(getByText("premium:privateOffice.capital.views.structure"));
+    await waitFor(() => getByText("premium:privateOffice.capital.emptyBody.structure"));
+    expect(queryByText("premium:privateOffice.lock.unlock")).toBeNull();
+    fireEvent.press(getByText("premium:privateOffice.capital.views.documents"));
+    await waitFor(() => getByText("premium:privateOffice.capital.emptyBody.documents"));
+    expect(queryByText("premium:privateOffice.lock.unlock")).toBeNull();
+    // The portfolio read belongs to holdings and coverage alone.
+    expect(mockGetPortfolio).toHaveBeenCalledTimes(2);
   });
 });
