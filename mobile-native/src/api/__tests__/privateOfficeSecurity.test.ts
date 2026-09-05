@@ -264,3 +264,62 @@ describe("getOfficeSecurityStatus", () => {
     expect((await getOfficeSecurityStatus()).state).toBe("UNAVAILABLE");
   });
 });
+
+describe("the owner's path through the door", () => {
+  /**
+   * The regression for a real screenshot: the canonical owner opened Private
+   * Office and was shown "Membership required — Renew membership".
+   *
+   * Nothing in this file was wrong. The 403 mapping above is correct and stays,
+   * because a genuinely lapsed member SHOULD be offered a renewal. The defect
+   * was one rung on the server's tier ladder: owner lifetime resolved to
+   * PREMIUM while every Office capability needs PRIVATE or above, so the server
+   * sent a 403 and this client faithfully rendered it.
+   *
+   * These two cases pin the shapes the owner now receives, so a future change
+   * that reintroduces the 403 fails here — on the client, in the words the user
+   * actually saw — and not only in the Python matrix.
+   */
+
+  it("sends an owner with no passcode to setup, never to checkout", async () => {
+    // What the server returns once membership passes: a plain 200. There is no
+    // owner-shaped field in this body, and there must not be — the client holds
+    // no opinion about who the owner is, which is why the fix had to be a
+    // server fix. `applyStatus` turns `passcodeSet: false` into the SETUP door.
+    mockPulseApi.mockResolvedValueOnce({
+      passcode_set: false,
+      setup_required: true,
+      cooldown_seconds: 0,
+      biometric_preference: "unset",
+      unlocked: false
+    });
+    const status = await getOfficeSecurityStatus();
+    expect(status).toEqual({
+      state: "READY",
+      passcodeSet: false,
+      setupRequired: true,
+      cooldownSeconds: 0,
+      biometricPreference: "unset",
+      unlocked: false
+    });
+    // The assertion that names the bug: no renew path is reachable from here.
+    expect(status.state).not.toBe("UPGRADE_REQUIRED");
+  });
+
+  it("keeps a locked Office locked without ever calling it a membership problem", async () => {
+    // The other half of the guarantee. Membership passing must not open the
+    // Office — an owner with no valid grant is refused, and the refusal is
+    // LOCKED. A 423 that drifted into UPGRADE_REQUIRED would put the renew
+    // button back on screen while the true instruction was "unlock".
+    for (const setupRequired of [true, false]) {
+      mockPulseApi.mockRejectedValueOnce(
+        apiError(423, {
+          state: "PRIVATE_OFFICE_LOCKED",
+          code: "PRIVATE_OFFICE_LOCKED",
+          setup_required: setupRequired
+        })
+      );
+      expect(await getPrivateFacts()).toEqual({ state: "LOCKED", setupRequired });
+    }
+  });
+});

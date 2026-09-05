@@ -38,7 +38,33 @@ What this module deliberately does NOT do
 * It does not outrank an account hold. A suspended owner is a suspended
   account; see :func:`applies` for how that is enforced without inventing a new
   revocation.
-* It does not confer PRIVATE or PRIVATE_OFFICE. See :func:`confers`.
+* It does not open the Private Office. It confers MEMBERSHIP up to
+  PRIVATE_OFFICE — the answer to "did this member pay for the room" — and the
+  Office door has a second, independent lock that asks a different question.
+  See :func:`confers` and ``private_office_routes._office_lock_gate``.
+
+Membership floor
+----------------
+The floor is PRIVATE_OFFICE, the top of the ladder. It was PREMIUM for exactly
+one commit, and that was wrong for a reason worth recording: the owner tapped
+Private Office and was told "Membership required — renew membership". Being
+asked to buy the product back is not a cosmetic defect, it is the guarantee
+failing in the one place it is most visible.
+
+Raising the floor to the top rung is the honest expression of the rule. The
+alternative considered was a fifth ``OWNER`` tier ranked above PRIVATE_OFFICE;
+it was rejected because every consumer that switches on a known tier — the
+feature matrix, the client tier unions, the availability map — would have to
+learn a rung that grants nothing PRIVATE_OFFICE does not already grant. A floor
+at the existing top rung reaches the same access with no new vocabulary, and
+``source`` still names the authority truthfully as ``owner_lifetime``, so no
+surface mistakes this for a purchased grant.
+
+What the floor does NOT do is enable anything unbuilt. ``feature_matrix``
+resolves implementation BEFORE entitlement, so ``human_concierge``,
+``private_briefings``, ``private_shield`` and the rest report NOT_IMPLEMENTED to
+the owner exactly as they do to everyone else. A tier is not a construction
+crew.
 """
 
 from __future__ import annotations
@@ -64,6 +90,31 @@ MODE_OWNER_LIFETIME = "owner_lifetime"
 #: describes how a GRANT ROW was created, and owner lifetime writes no row. A
 #: standing rule is not a purchase and must not be recorded as one.
 SOURCE_OWNER_LIFETIME = "owner_lifetime"
+
+#: The membership rung owner lifetime guarantees. Named here, in the module that
+#: owns the rule, and imported by the resolver — rather than the resolver
+#: choosing a rung for the owner — so "how high does owner reach" has one answer
+#: and changing it is one edit in the place a reader looks for it.
+#:
+#: The literal is duplicated from ``private_office.tiers.TIER_PRIVATE_OFFICE``
+#: rather than imported, because that module imports this one and a module-level
+#: import back would close the ring at startup.
+#: ``test_premium_owner_lifetime.test_the_floor_constant_names_a_real_rung``
+#: asserts the two are equal, so the duplication cannot drift silently — a
+#: rename that missed this line would otherwise drop the owner to FREE, because
+#: ``tiers.rank`` fails closed on a name it does not recognise.
+FLOOR_TIER = "PRIVATE_OFFICE"
+
+#: The umbrella membership keys at or below the floor — every rung of the ladder
+#: that has a key at all (FREE has none; every authenticated user is already
+#: there). Everything *inside* a tier is a capability governed by the feature
+#: matrix and, for the Office, by the second lock. Granting membership is not the
+#: same as opening a door.
+MEMBERSHIP_KEYS = frozenset({
+    "premium.access",
+    "private.access",
+    "private_office.access",
+})
 
 
 def is_owner_account(user_id: Any) -> bool:
@@ -110,18 +161,28 @@ def applies(user_id: Any, hold: Any = None) -> bool:
 def confers(key: Any) -> bool:
     """Does owner lifetime grant ``key``?
 
-    Exactly the Premium key set — the umbrella ``premium.access`` plus the
-    capabilities a Premium plan confers — and nothing else.
+    The four membership rungs (:data:`MEMBERSHIP_KEYS`) plus the capabilities a
+    Premium plan confers — and nothing else.
 
-    The boundary is the load-bearing part. ``facade.explain`` is called with
-    every entitlement key in the product, including ``private.access`` and
-    ``private_office.access``. A short-circuit that answered True for any key
-    would hand the owner the Private Office silently, through a change whose
-    commit message says "premium". Private tiers are granted by a real grant row
-    or not at all, and this function is what keeps that true.
+    The boundary is still the load-bearing part, it has just moved. ``explain``
+    is called with every entitlement key in the product, so an unscoped
+    short-circuit here would answer True for keys that have nothing to do with
+    membership at all. What this function now says is precise: the owner holds
+    every MEMBERSHIP tier permanently, and holds Premium's capabilities as a
+    consequence of holding Premium.
 
-    Scope is read from the two modules that already define it rather than
-    restated here, so a capability added to a Premium plan is conferred
+    What it still does not say is that the owner may read anything. Membership
+    and access are different questions, and the Private Office is where the
+    difference is visible: ``private_office.access`` answers "this member has the
+    room", and the Office's second lock — a passcode bound to this session and
+    this device, evaluated after and independently of the tier — answers "the
+    person holding the phone just proved they are that member". Owner lifetime
+    settles the first question forever and has no opinion on the second. An owner
+    who has not unlocked gets 423 LOCKED, which is the correct refusal, not the
+    403 "renew your membership" that this change exists to eliminate.
+
+    Capability scope is read from the two modules that already define it rather
+    than restated here, so a capability added to a Premium plan is conferred
     automatically and a key that is not a Premium benefit stays out:
 
     * ``premium.PREMIUM_ACCESS`` + ``premium.PREMIUM_CAPABILITIES`` — the
@@ -141,6 +202,15 @@ def confers(key: Any) -> bool:
     name = str(key or "")
     if not name:
         return False
+
+    # Membership first, and answered from a local constant that needs no import.
+    # This is the half of the rule that is a GUARANTEE, so it must not be able to
+    # fail for an environmental reason: an owner asked to renew their membership
+    # because a module was mid-reload is the exact defect being fixed, and it
+    # would be no less wrong for being intermittent.
+    if name in MEMBERSHIP_KEYS:
+        return True
+
     scope: set = set()
     try:
         from services.business_os.entitlements import premium as _premium
@@ -148,9 +218,10 @@ def confers(key: Any) -> bool:
         scope.update(_premium.PREMIUM_CAPABILITIES)
     except Exception:  # noqa: BLE001
         _log.exception("premium key scope unavailable")
-        # Fail closed on SCOPE. An unknown scope means we cannot tell a Premium
-        # capability from the Private Office, and guessing in that state is how
-        # a tier boundary gets crossed by accident.
+        # Fail closed on CAPABILITY scope. Membership was already settled above;
+        # what is unknown here is whether an arbitrary key is a Premium benefit
+        # or something else entirely, and guessing in that state is how a
+        # capability gets conferred by accident.
         return False
     try:
         from services.business_os.entitlements import facade as _facade

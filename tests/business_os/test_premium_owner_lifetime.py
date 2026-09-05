@@ -24,9 +24,25 @@ A rule that says "always yes" is only safe if its edges are nailed down, so the
 matrix spends as much effort on what owner lifetime must NOT do:
 
 * it must not outrank an account hold or a security suspension;
-* it must not confer PRIVATE or PRIVATE_OFFICE;
 * it must not report itself as a subscription or a trial;
+* it must confer MEMBERSHIP only — the Private Office's second lock is a
+  separate question and stays shut (asserted end to end in
+  ``tests/private_office/test_owner_office_membership.py``);
 * and it must grant nobody at all when the allowlist is empty.
+
+A boundary that moved
+---------------------
+This suite briefly asserted that owner lifetime must NOT confer PRIVATE or
+PRIVATE_OFFICE, and the resolver capped the owner at PREMIUM to satisfy it. That
+was wrong, and the way it was wrong is instructive: the owner opened Private
+Office and was told "Membership required — renew membership". The cap had
+correctly separated membership from access, then enforced the separation in the
+wrong place — at the tier, which decides membership, instead of at the lock,
+which decides access.
+
+So the membership floor is now PRIVATE_OFFICE, and the boundary is asserted
+where it actually lives: the Office lock never reads the tier, so the owner
+reaches the door and still has to open it.
 
 Deliberately NOT asserted here: anything about audio, calls, live or RTC. This
 is an entitlement suite and touches no media path.
@@ -271,31 +287,56 @@ def test_a_held_owner_is_denied_at_the_tier_ladder():
 
 
 # --- 12-15: the tier boundary ----------------------------------------------
-def test_owner_reaches_premium_on_the_ladder_with_no_expiry():
+def test_owner_reaches_the_top_of_the_ladder_with_no_expiry():
     _own(OWNER)
     resolved = tiers.resolve_tier(OWNER)
-    assert resolved["effective_tier"] == tiers.TIER_PREMIUM
+    assert resolved["effective_tier"] == tiers.TIER_PRIVATE_OFFICE
     assert resolved["source"] == own.SOURCE_OWNER_LIFETIME
     assert resolved["expires_at"] is None, "a permanent tier has no countdown"
     assert resolved["resolver_state"] == tiers.RESOLVER_OK
 
 
-def test_owner_lifetime_does_not_confer_private_or_private_office():
-    """The boundary that keeps this a Premium change. ``facade.explain`` is
-    called with every key in the product, so an unscoped short-circuit would
-    hand the owner the Private Office through a commit that says "premium"."""
+def test_the_floor_constant_names_a_real_rung():
+    """``owner.FLOOR_TIER`` duplicates the literal rather than importing it, to
+    break the cycle ``tiers -> owner -> tiers``. This is the assertion that keeps
+    the duplication honest: a rename of the rung that misses ``owner.py`` fails
+    here rather than silently dropping the owner to FREE, which is what
+    ``tiers.rank`` does with a name it does not recognise."""
+    assert own.FLOOR_TIER == tiers.TIER_PRIVATE_OFFICE
+    assert own.FLOOR_TIER in tiers.TIER_RANK
+
+
+def test_owner_lifetime_confers_membership_at_every_rung():
+    """The correction. Owner lifetime answers the MEMBERSHIP question — "has
+    this member got the room" — for all three umbrella keys, so no surface can
+    offer the owner a renewal. It answers nothing about opening the door."""
     _own(OWNER)
-    assert own.confers(prem.PREMIUM_ACCESS) is True
-    for key in ("private.access", "private_office.access"):
+    assert own.MEMBERSHIP_KEYS == {
+        "premium.access", "private.access", "private_office.access"
+    }
+    for key in own.MEMBERSHIP_KEYS:
+        assert own.confers(key) is True, key
+        decision = facade.explain(OWNER, key)
+        assert decision["allowed"] is True, key
+        assert decision["decision_source"] == own.SOURCE_OWNER_LIFETIME, key
+        assert decision["reason"] == own.REASON_OWNER_LIFETIME, key
+
+
+def test_the_scope_check_is_still_a_scope_check():
+    """``confers`` is asked about every key in the product. Widening it to the
+    membership rungs must not have turned it into "always true" — that would
+    hand the owner keys nobody has audited, which is the failure the original
+    narrow scope was guarding against."""
+    _own(OWNER)
+    for key in ("", "chat.send", "ads.manage", "private.facts.list",
+                "private_office.document.extraction", "not.a.real.key"):
         assert own.confers(key) is False, key
-        assert facade.explain(OWNER, key)["decision_source"] != own.SOURCE_OWNER_LIFETIME
 
 
-def test_the_ladder_does_not_lift_the_owner_above_premium():
+def test_the_ladder_lifts_the_owner_to_every_rung():
     _own(OWNER)
-    assert tiers.resolve_tier(OWNER)["effective_tier"] == tiers.TIER_PREMIUM
-    assert tiers.has_tier(OWNER, tiers.TIER_PRIVATE) is False
-    assert tiers.has_tier(OWNER, tiers.TIER_PRIVATE_OFFICE) is False
+    for tier in tiers.TIER_ORDER:
+        assert tiers.has_tier(OWNER, tier) is True, tier
 
 
 def test_the_owner_floor_never_lowers_a_real_higher_grant():

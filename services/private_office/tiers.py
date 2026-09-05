@@ -48,12 +48,22 @@ grant is a bug, and inventing a fallback would be inventing access.
 
 The owner floor
 ---------------
-The owner account holds Premium permanently
-(``business_os.entitlements.owner``). That is a FLOOR at PREMIUM, applied after
-the account hold and after a real umbrella grant has had its say, so it can
-raise the owner off FREE and can neither lower a higher grant nor manufacture
-one. PRIVATE and PRIVATE_OFFICE stay grant-only for the owner exactly as they
-are for everybody else.
+The owner account holds membership permanently, at the top of the ladder
+(``business_os.entitlements.owner``). That is a FLOOR at PRIVATE_OFFICE, applied
+after the account hold and after a real umbrella grant has had its say, so it
+can raise the owner off FREE and can neither lower a higher grant nor be
+mistaken for one — ``source`` reports ``owner_lifetime``, never a purchase.
+
+The rung lives in ``owner.FLOOR_TIER``, not here. This module resolves tiers; it
+does not decide who the owner is or how high they reach, and the one commit in
+which it did chose PREMIUM, one rung below the Office it was gating.
+
+Two things the floor deliberately does not do. It does not open the Private
+Office: that door has a second lock which never reads the tier, so membership
+and unlock stay independent and an owner who has not unlocked still gets 423.
+And it does not build anything: ``feature_matrix`` resolves implementation
+before entitlement, so an unbuilt capability reports NOT_IMPLEMENTED to the
+owner exactly as it does to a subscriber.
 """
 
 from __future__ import annotations
@@ -238,14 +248,28 @@ def resolve_tier(user_id: Any, *, context: Optional[dict] = None,
     # answer, and it is "no". Falling back to a legacy column there would let a
     # stale ``users.lifetime_premium`` flag resurrect access an operator
     # deliberately took away.
-    # 2b. The owner floor.
+    # 2b. The owner floor: the top of the ladder, PRIVATE_OFFICE.
     #
     # Reached only when no umbrella grant won above, so this can RAISE the owner
-    # to PREMIUM and can never lower a real PRIVATE or PRIVATE_OFFICE grant —
-    # those returned at step 2. Nor can it grant them: the floor is PREMIUM by
-    # construction, and the owner reaches the upper tiers the same way anyone
-    # else does, with a grant row. "Owner" is a Premium guarantee, not a skeleton
-    # key for the Private Office.
+    # and can never lower a real grant — those returned at step 2. The rung is
+    # not chosen here; it is ``owner.FLOOR_TIER``, named in the module that owns
+    # the rule, so the resolver reports the floor rather than deciding it.
+    #
+    # It was PREMIUM until the owner tapped Private Office and was told
+    # "Membership required — renew membership". Everything above this line was
+    # correct; the floor was simply one rung too low, and a floor one rung below
+    # the thing being gated denies with full confidence.
+    #
+    # This does NOT open the Office. The tier gate and the Office's second lock
+    # ask different questions on purpose (see
+    # ``private_office_routes._office_lock_gate``): membership asks whether this
+    # member has the room, the lock asks whether the person holding the phone
+    # just proved they are that member. The lock never reads the tier, so no
+    # value written here can weaken it — the owner arriving without a valid
+    # unlock grant still gets 423 LOCKED. Nor does the floor make anything
+    # unbuilt appear: ``feature_matrix`` resolves implementation before
+    # entitlement, so the NOT_IMPLEMENTED features stay NOT_IMPLEMENTED for the
+    # owner too.
     #
     # Placed ahead of the bridge rather than inside it because the bridge only
     # fires when canonical is SILENT. An owner who once held a real
@@ -256,7 +280,10 @@ def resolve_tier(user_id: Any, *, context: Optional[dict] = None,
     if _owner.applies(user_id, hold):
         owner_resolved = {
             "user_id": user_id,
-            "effective_tier": TIER_PREMIUM,
+            "effective_tier": _owner.FLOOR_TIER,
+            # Not SOURCE_PREMIUM_BRIDGE and not a grant provenance: owner
+            # lifetime writes no row, and a surface reading this must not mistake
+            # a standing rule for a purchase.
             "source": _owner.SOURCE_OWNER_LIFETIME,
             "status": STATUS_ACTIVE,
             # No period end, because there is no period. The client renders this
@@ -268,7 +295,7 @@ def resolve_tier(user_id: Any, *, context: Optional[dict] = None,
             "resolver_state": RESOLVER_OK,
         }
         if include_features:
-            owner_resolved["features"] = _features_for(TIER_PREMIUM)
+            owner_resolved["features"] = _features_for(_owner.FLOOR_TIER)
         return owner_resolved
 
     try:

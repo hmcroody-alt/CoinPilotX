@@ -302,12 +302,19 @@ def explain(subject_id: Any, key: str, *, subject_type: str = "user",
     legacy_bool = bool(legacy) if legacy is not None else False
 
     # --- owner lifetime -----------------------------------------------------
-    # Scoped by `owner.confers`, which admits the Premium key set and nothing
-    # else. That scope check is not defensive tidiness: this function is called
-    # with every entitlement key in the product, `private.access` and
-    # `private_office.access` included, and an unscoped short-circuit here would
-    # hand the owner the Private Office through a change whose commit message
-    # says "premium". Private tiers are earned by a grant row or not at all.
+    # Scoped by `owner.confers`, which admits the membership rungs
+    # (`premium.access`, `private.access`, `private_office.access`) plus the
+    # Premium capability set, and nothing else. That scope check is not defensive
+    # tidiness: this function is called with every entitlement key in the
+    # product, and an unscoped short-circuit here would answer True for keys that
+    # have nothing to do with membership.
+    #
+    # `private_office.access` being in scope is the point of this change, not an
+    # oversight in it. It grants MEMBERSHIP — "this member has the room" — and
+    # the Office's second lock, which is evaluated separately and never consults
+    # entitlements at all, still decides whether the room opens. Conflating the
+    # two is what produced an owner being told to renew a membership that cannot
+    # lapse.
     #
     # Evaluated before the MODE_OFF return because `off` is the production
     # default, and a rule that only holds once an operator advances a migration
