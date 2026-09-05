@@ -54,6 +54,7 @@ from services import alert_engine  # noqa: E402
 from services import crypto_alert_conditions as conditions  # noqa: E402
 from services import dashboard_crypto_command_center as command_center  # noqa: E402
 from services import premium_crypto_access  # noqa: E402
+from services import crypto_premium_gate  # noqa: E402
 from services import user_context  # noqa: E402
 
 
@@ -126,6 +127,14 @@ alert_engine.dispatch_alert_event = _fake_dispatch
 # is not what any assertion here is about.
 alert_engine.channel_warnings = lambda user_id, channels: []
 premium_crypto_access.allowed_for_user_id = _fake_allowed
+# Delivery-time premium hard-lock. `evaluate_alert_rule` resolves the owner's
+# entitlement through `crypto_premium_gate`, NOT through the
+# `premium_crypto_access` gate stubbed above -- two modules, two call sites,
+# one policy. Stubbing only the create-time gate left every evaluation in this
+# file denied, so the premium users above could create rules that then never
+# fired. Both gates read the same `_PREMIUM_USERS` set so the free-user cases
+# stay genuinely free.
+crypto_premium_gate.has_crypto_capability = _fake_allowed
 
 
 FAILURES: list[str] = []

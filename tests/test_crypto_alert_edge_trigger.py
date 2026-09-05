@@ -47,6 +47,7 @@ for _key in (
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from services import alert_engine  # noqa: E402
+from tests.support.premium_fixture import grant_premium  # noqa: E402
 from services import user_context  # noqa: E402
 
 
@@ -109,6 +110,10 @@ def _load_rule(rule_id):
 
 def make_rule(condition="above", threshold=61000.0, cooldown=900, symbol="BTC", user_id=9401):
     alert_engine.ensure_alert_schema()
+    # Alert delivery is premium-gated at evaluation time for every rule type.
+    # This suite is about edge-triggering and latching, not entitlement, so the
+    # owner must actually hold Premium or nothing here is ever evaluated.
+    grant_premium(user_id)
     conn = user_context.connect()
     try:
         cur = conn.cursor()

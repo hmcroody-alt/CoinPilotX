@@ -55,6 +55,7 @@ for _key in (
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from services import alert_engine  # noqa: E402
+from tests.support.premium_fixture import ensure_premium_schema, grant_premium  # noqa: E402
 from services import user_context  # noqa: E402
 
 
@@ -202,6 +203,10 @@ def ensure_support_schema():
             "INSERT OR REPLACE INTO users (user_id, email) VALUES (?, ?)",
             (TEST_USER_ID, "alert-persistence@example.test"),
         )
+        # Alert delivery is premium-gated at evaluation time for every rule
+        # type. This suite asserts on rule persistence and lifecycle, so its
+        # owner has to hold Premium for any rule to be evaluated at all.
+        ensure_premium_schema(cur)
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS alert_worker_heartbeat (
@@ -219,6 +224,7 @@ def ensure_support_schema():
         conn.commit()
     finally:
         conn.close()
+    grant_premium(TEST_USER_ID)
 
 
 def own_db(fn):

@@ -48,6 +48,11 @@ _USERS_COLUMNS = (
     ("premium_glow_manual_grant", "INTEGER DEFAULT 0"),
     ("premium_mark_override", "INTEGER DEFAULT 0"),
     ("premium_expires_at", "TEXT"),
+    # Selected by ``_is_premium_user_raw`` since the premium hard-lock made
+    # legacy trial statuses time-bounded. A missing column raises rather than
+    # reading as NULL, and the facade turns that into a silent "not premium".
+    ("trial_end_date", "TEXT"),
+    ("pro_expires_at", "TEXT"),
     ("is_pro", "INTEGER DEFAULT 0"),
     ("plan", "TEXT"),
     ("subscription_plan", "TEXT"),

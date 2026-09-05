@@ -19,6 +19,7 @@ os.environ["PULSESOC_NOTIFICATION_DELIVERY_AUTOPROCESS_ENABLED"] = "0"
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from services import alert_engine, db, pulsesoc_notification_system as notifications  # noqa: E402
+from tests.support.premium_fixture import grant_premium  # noqa: E402
 
 
 def _setup_expo_registration(user_id=77):
@@ -63,6 +64,10 @@ def _setup_expo_registration(user_id=77):
         "push_token": token,
         "endpoint": token,
     })
+    # Alert delivery is premium-gated at evaluation time, for every rule type.
+    # These tests are about Expo/native push routing, not entitlement, so the
+    # owner has to actually hold Premium for a rule to be evaluated at all.
+    grant_premium(user_id)
     return user_id, token
 
 

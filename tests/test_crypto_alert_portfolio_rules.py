@@ -55,6 +55,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from services import alert_engine  # noqa: E402
 from services import dashboard_crypto_command_center as command_center  # noqa: E402
 from services import premium_crypto_access  # noqa: E402
+from services import crypto_premium_gate  # noqa: E402
 from services import user_context  # noqa: E402
 
 
@@ -99,6 +100,10 @@ alert_engine.channel_warnings = lambda user_id, channels: []
 premium_crypto_access.load_user_row = lambda user_id: {"user_id": int(user_id or 0)}
 premium_crypto_access.allowed = lambda row, key: int((row or {}).get("user_id") or 0) in _PREMIUM_USERS
 premium_crypto_access.allowed_for_user_id = lambda user_id, key: int(user_id or 0) in _PREMIUM_USERS
+# Delivery-time premium hard-lock: `evaluate_alert_rule` asks
+# `crypto_premium_gate`, not the `premium_crypto_access` gate stubbed above.
+# Same `_PREMIUM_USERS` set so free users stay genuinely free.
+crypto_premium_gate.has_crypto_capability = lambda user_id, key: int(user_id or 0) in _PREMIUM_USERS
 
 
 def _schema():
