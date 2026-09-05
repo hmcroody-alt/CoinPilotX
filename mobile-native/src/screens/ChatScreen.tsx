@@ -743,6 +743,10 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     const label = payload.body?.trim() || mediaPreviewLabel(payloadType, Boolean(payload.media_url));
     const local = createLocalMessage(conversationId, payload.body || "", payload.message_type || "text", payload.client_message_id);
     local.media_url = payload.media_url;
+    // attachment_ids come from /api/messages/media/init, whose contract is the
+    // FOUNDATION message_attachments table — so this is a foundation media id
+    // and belongs in media_upload_id, not attachment_id.
+    local.media_upload_id = Number(payload.attachment_ids?.[0] || 0) || undefined;
     local.thumbnail_url = payload.thumbnail_url;
     local.file_size = payload.file_size;
     local.duration_seconds = payload.duration_seconds;
@@ -2188,15 +2192,30 @@ function SheetAction({ label, onPress, tone = "default" }: { label: string; onPr
 function MessageMedia({ message }: { message: MessengerMessage }) {
   const [viewerOpen, setViewerOpen] = useState(false);
   const type = (message.message_type || "text").toLowerCase();
-  // The message carries canonical media identity (attachment id). The renderer
-  // gets a short-lived access URL for it. Handing the platform image loader a
-  // protected API path is what made image loads run session refresh on the
-  // server and sign people out; see media/messengerMediaAccess.
-  const mediaAccess = useMessengerMediaAccessUrl(message.attachment_id, String(message.media_url || ""));
+  // The message carries media identity; the renderer gets a short-lived access
+  // URL for it. Handing the platform image loader a protected API path is what
+  // made image loads run session refresh on the server and sign people out; see
+  // media/messengerMediaAccess.
+  //
+  // The identity is handed over labelled rather than as a bare integer. A
+  // Comm-v2 message carries two different ids for one picture, and only
+  // media_upload_id (the foundation message_attachments row) addresses the
+  // access endpoint. attachment_id is passed for completeness and is
+  // deliberately NOT marked as proven foundation media.
+  const mediaIdentity = { mediaUploadId: message.media_upload_id, attachmentId: message.attachment_id };
+  const mediaAccess = useMessengerMediaAccessUrl(mediaIdentity, String(message.media_url || ""));
   const thumbnailAccess = useMessengerMediaAccessUrl(
-    message.attachment_id,
+    mediaIdentity,
     String(message.thumbnail_url || message.media_url || "")
   );
+  const retryThumbnail = thumbnailAccess.retry;
+  const retryMediaUrl = mediaAccess.retry;
+  // One bounded re-grant when the platform loader rejects a URL we handed it —
+  // an expired grant is the ordinary cause. Both are single-shot per identity.
+  const retryMedia = useCallback(() => {
+    retryThumbnail();
+    retryMediaUrl();
+  }, [retryThumbnail, retryMediaUrl]);
   const mediaUrl = absoluteMediaUrl(mediaAccess.url);
   const thumbnailUrl = absoluteMediaUrl(thumbnailAccess.url);
   if ((type === "image" || type === "gif") && mediaAccess.failed && !mediaUrl) {
@@ -2234,7 +2253,7 @@ function MessageMedia({ message }: { message: MessengerMessage }) {
           accessibilityHint="Opens the full-screen viewer"
           onPress={() => setViewerOpen(true)}
         >
-          <Image source={{ uri: thumbnailUrl || mediaUrl }} style={styles.image} resizeMode="cover" />
+          <Image source={{ uri: thumbnailUrl || mediaUrl }} style={styles.image} resizeMode="cover" onError={retryMedia} />
         </Pressable>
         <NativeMediaViewer visible={viewerOpen} items={[viewerItem]} title="Messenger media" onClose={() => setViewerOpen(false)} />
       </>

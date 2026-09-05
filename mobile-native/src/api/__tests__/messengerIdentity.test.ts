@@ -4,7 +4,7 @@ jest.mock("@react-native-async-storage/async-storage", () =>
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { messageKey, mintClientMessageId } from "../messengerOrdering";
-import { createLocalMessage, enqueueMessengerMessage, MessengerMessage } from "../messenger";
+import { createLocalMessage, enqueueMessengerMessage, MessengerMessage, normalizeMessages } from "../messenger";
 import { readFileSync } from "fs";
 import { join } from "path";
 
@@ -136,5 +136,48 @@ describe("every send path carries a stable identity", () => {
   it("PulseShare holds one identity per recipient", () => {
     const share = source("screens/PulseShareScreen.tsx");
     expect(share).toContain("client_message_id:");
+  });
+});
+
+describe("media identity is never guessed from a transport id", () => {
+  it("carries the foundation media id through normalisation, beside attachment_id", () => {
+    // A Comm-v2 attachment payload states both. attachment_id is the
+    // comm_v2 attachment row; media_upload_id is the foundation
+    // message_attachments row, and only the latter addresses
+    // /api/messages/media/<id>/access.
+    const [message] = normalizeMessages(
+      [
+        {
+          message_id: 771,
+          message_type: "image",
+          attachments: [
+            {
+              id: 422,
+              attachment_id: 422,
+              media_upload_id: 33,
+              url: "/api/messages/media/33/download"
+            }
+          ]
+        } as unknown as MessengerMessage
+      ],
+      9
+    );
+    expect(message.attachment_id).toBe(422);
+    expect(message.media_upload_id).toBe(33);
+    expect(message.media_url).toBe("/api/messages/media/33/download");
+  });
+
+  it("the forbidden truthy-integer fallback is gone from the access module", () => {
+    // `Number(attachmentId || 0) || attachmentIdFromMediaUrl(fallbackUrl)` let
+    // any truthy transport id shadow the canonical id in the URL next to it.
+    const media = source("media/messengerMediaAccess.ts");
+    expect(media).not.toMatch(/Number\(attachmentId \|\| 0\)\s*\|\|/);
+    expect(media).toContain("resolveCanonicalMessengerMediaId");
+  });
+
+  it("ChatScreen passes a labelled identity, not a bare attachment integer", () => {
+    const chat = source("screens/ChatScreen.tsx");
+    expect(chat).not.toMatch(/useMessengerMediaAccessUrl\(\s*message\.attachment_id/);
+    expect(chat).toContain("mediaUploadId: message.media_upload_id");
   });
 });

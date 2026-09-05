@@ -25,10 +25,23 @@ jest.mock("../../api/pulseApi", () => ({
 
 import {
   attachmentIdFromMediaUrl,
+  grantMessengerMediaAccess,
   isProtectedMessengerMediaUrl,
   resetMessengerMediaAccess,
+  resolveCanonicalMessengerMediaId,
   resolveMessengerMediaAccessUrl
 } from "../messengerMediaAccess";
+
+class FakeApiError extends Error {
+  status: number;
+  code: string;
+
+  constructor(status: number, code: string) {
+    super(code);
+    this.status = status;
+    this.code = code;
+  }
+}
 
 function grant(attachmentId: number, token = "tok", expiresIn = 900) {
   return {
@@ -76,6 +89,138 @@ describe("media identity vs media access URL", () => {
   it("refuses to request a grant without an attachment id", async () => {
     await expect(resolveMessengerMediaAccessUrl(0)).rejects.toThrow("messenger_media_attachment_required");
     expect(mockPulseApi).not.toHaveBeenCalled();
+  });
+});
+
+describe("canonical media identity", () => {
+  /**
+   * The historical divergence, taken from production rows.
+   *
+   * A Comm-v2 message carries TWO different integers for one picture:
+   * `attachment_id` is the comm_v2 attachment row, `media_upload_id` is the
+   * foundation `message_attachments` row. Only the foundation id addresses
+   * `/api/messages/media/<id>/access`. Historical messages requested ids in the
+   * 422-585 band against `message_attachments` and every one returned 404,
+   * while freshly uploaded foundation attachments worked — because the sender's
+   * upload path happens to produce a message whose two ids agree.
+   *
+   * `Number(attachmentId || 0) || attachmentIdFromMediaUrl(fallbackUrl)` is the
+   * expression that caused it: any truthy transport id shadowed the canonical
+   * id sitting in the URL beside it.
+   */
+  it("prefers the foundation media id over a divergent transport attachment id", async () => {
+    const identity = { attachmentId: 422, mediaUploadId: 33 };
+    const url = "/api/messages/media/33/download";
+
+    const canonical = resolveCanonicalMessengerMediaId(identity, url);
+    expect(canonical.id).toBe(33);
+    expect(canonical.source).toBe("media_upload_id");
+
+    mockPulseApi.mockResolvedValue(grant(33));
+    await grantMessengerMediaAccess(canonical);
+
+    expect(mockPulseApi).toHaveBeenCalledWith("/api/messages/media/33/access", undefined);
+    for (const [path] of mockPulseApi.mock.calls) {
+      expect(path).not.toBe("/api/messages/media/422/access");
+    }
+  });
+
+  it("falls back to the id in the protected URL, never to an unproven attachment id", () => {
+    // Same divergence, but the payload predates media_upload_id. The URL is
+    // still direct evidence: the server mints that path FROM the foundation id.
+    const canonical = resolveCanonicalMessengerMediaId(
+      { attachmentId: 585 },
+      "/api/messages/media/96/download"
+    );
+    expect(canonical.id).toBe(96);
+    expect(canonical.source).toBe("media_url");
+    expect(canonical.alternates).not.toContain(585);
+  });
+
+  it("uses attachment_id only when the caller proves it is a foundation media id", () => {
+    // The sender's own upload: /api/messages/media/init answers with a
+    // foundation id, so that caller may say so explicitly.
+    expect(
+      resolveCanonicalMessengerMediaId({ attachmentId: 901, attachmentIdIsFoundationMedia: true }, "")
+    ).toMatchObject({ id: 901, source: "attachment_id" });
+    // Without that proof the same integer is not an identity at all.
+    expect(resolveCanonicalMessengerMediaId({ attachmentId: 901 }, "")).toMatchObject({
+      id: 0,
+      source: "unresolved"
+    });
+  });
+
+  it("reports unresolved rather than guessing", () => {
+    expect(resolveCanonicalMessengerMediaId(undefined, "https://cdn.example.com/o.jpg").id).toBe(0);
+    expect(resolveCanonicalMessengerMediaId({ mediaUploadId: 0, attachmentId: 0 }, "").id).toBe(0);
+    expect(resolveCanonicalMessengerMediaId({ mediaUploadId: -4 }, "").id).toBe(0);
+  });
+});
+
+describe("bounded recovery", () => {
+  it("re-resolves ONCE to a canonical alternate when the first id is stale", async () => {
+    // media_upload_id is present but stale; the protected URL names a media row
+    // that does exist. One correction, one new grant, no loop.
+    const canonical = resolveCanonicalMessengerMediaId(
+      { mediaUploadId: 41, attachmentId: 422 },
+      "/api/messages/media/33/download"
+    );
+    expect(canonical).toMatchObject({ id: 41, alternates: [33] });
+
+    mockPulseApi
+      .mockRejectedValueOnce(new FakeApiError(404, "attachment_not_found"))
+      .mockResolvedValueOnce(grant(33));
+
+    await expect(grantMessengerMediaAccess(canonical)).resolves.toMatchObject({ attachmentId: 33 });
+    expect(mockPulseApi).toHaveBeenCalledTimes(2);
+    expect(mockPulseApi.mock.calls.map(([path]) => path)).toEqual([
+      "/api/messages/media/41/access",
+      "/api/messages/media/33/access"
+    ]);
+  });
+
+  it("refreshes an expired grant once and retries the same id", async () => {
+    mockPulseApi
+      .mockRejectedValueOnce(new FakeApiError(410, "media_grant_expired"))
+      .mockResolvedValueOnce(grant(33, "fresh"));
+    await expect(grantMessengerMediaAccess({ id: 33, alternates: [] })).resolves.toMatchObject({
+      url: expect.stringContaining("mt=fresh"),
+      attachmentId: 33
+    });
+    expect(mockPulseApi).toHaveBeenCalledTimes(2);
+  });
+
+  it("treats a true 404 on the canonical id as terminal unavailable", async () => {
+    // No alternate to correct to: the media is gone. One request, then stop.
+    mockPulseApi.mockRejectedValue(new FakeApiError(404, "attachment_not_found"));
+    await expect(grantMessengerMediaAccess({ id: 33, alternates: [] })).rejects.toMatchObject({ status: 404 });
+    expect(mockPulseApi).toHaveBeenCalledTimes(1);
+  });
+
+  it("never retries forever: a second failure is the last one", async () => {
+    mockPulseApi.mockRejectedValue(new FakeApiError(404, "attachment_not_found"));
+    await expect(grantMessengerMediaAccess({ id: 41, alternates: [33] })).rejects.toMatchObject({ status: 404 });
+    expect(mockPulseApi).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not re-resolve on a transient network failure", async () => {
+    // Only a missing-media answer is evidence that the IDENTITY was wrong.
+    // Swapping ids on a flaky connection would request the wrong media.
+    mockPulseApi.mockRejectedValue(new Error("network"));
+    await expect(grantMessengerMediaAccess({ id: 41, alternates: [33] })).rejects.toThrow("network");
+    expect(mockPulseApi).toHaveBeenCalledTimes(1);
+  });
+
+  it("recovery still only ever touches the grant route", async () => {
+    // The hard invariant: no refresh, no session restore, no rotation, no
+    // revocation. Whatever goes wrong, this layer speaks to /access and stops.
+    mockPulseApi
+      .mockRejectedValueOnce(new FakeApiError(404, "attachment_not_found"))
+      .mockResolvedValueOnce(grant(33));
+    await grantMessengerMediaAccess({ id: 41, alternates: [33] });
+    for (const [path] of mockPulseApi.mock.calls) {
+      expect(path).toMatch(/^\/api\/messages\/media\/\d+\/access$/);
+    }
   });
 });
 

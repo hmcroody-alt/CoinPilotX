@@ -180,6 +180,10 @@ function fold(existing: MessengerMessage, incoming: MessengerMessage): Messenger
   merged.media_url = incoming.media_url || existing.media_url;
   merged.thumbnail_url = incoming.thumbnail_url || existing.thumbnail_url;
   merged.attachment_id = incoming.attachment_id ?? existing.attachment_id;
+  // The optimistic bubble learns the foundation media id from the upload
+  // response; a Comm-v2 echo that omits it must not erase it, or the bubble
+  // loses the only id the media access endpoint accepts.
+  merged.media_upload_id = incoming.media_upload_id ?? existing.media_upload_id;
   return merged;
 }
 

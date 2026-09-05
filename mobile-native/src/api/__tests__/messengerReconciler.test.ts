@@ -169,6 +169,30 @@ describe("2.13 — every observation permutation resolves to exactly one message
     expect(messages[0].local_status).toBeUndefined();
   });
 
+  it("a Comm-v2 ack that omits media_upload_id does not erase the foundation id", () => {
+    // The two ids are different rows. The optimistic bubble learned the
+    // foundation id from /api/messages/media/init; the echo carries the
+    // transport id and, on older server builds, nothing else. Losing the
+    // foundation id here is what left historical messages asking the media
+    // access endpoint for a transport id and getting 404.
+    const clientId = mintClientMessageId("camera");
+    const local: MessengerMessage = {
+      ...createLocalMessage(CONVERSATION, "", "image", clientId),
+      media_url: "/api/messages/media/33/download",
+      media_upload_id: 33
+    };
+    const ack = serverRow(912, {
+      client_message_id: clientId,
+      message_type: "image",
+      media_url: "/api/messages/media/33/download",
+      attachment_id: 422
+    });
+    const { messages } = drive([[local], [ack]]);
+    expect(messages).toHaveLength(1);
+    expect(messages[0].attachment_id).toBe(422);
+    expect(messages[0].media_upload_id).toBe(33);
+  });
+
   it("an offline queue replay of the original payload does not un-ack the message", () => {
     // The queue holds the payload, not the server's answer. Draining it after the
     // message was already accepted must not push the row back into the pending

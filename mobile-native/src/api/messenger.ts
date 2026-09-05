@@ -101,6 +101,12 @@ export type MessengerMessage = {
   duration_seconds?: number;
   waveform?: number[];
   attachment_id?: number;
+  /**
+   * Foundation `message_attachments` id. Distinct from `attachment_id`, which
+   * for Comm-v2 rows is the transport attachment row id. The media access
+   * endpoint is keyed on THIS one.
+   */
+  media_upload_id?: number;
   attachment_ids?: number[];
   attachments?: Array<Record<string, unknown>>;
   delivery_status?: string;
@@ -1245,6 +1251,10 @@ export function normalizeMessages(items: MessengerMessage[], fallbackConversatio
         duration_seconds: Number(item.duration_seconds || item.duration || attachment?.duration_seconds || attachment?.duration || 0),
         waveform: normalizeVoiceWaveform(item.waveform || attachment?.waveform || attachment?.waveform_json),
         attachment_id: Number(item.attachment_id || attachment?.attachment_id || attachment?.id || 0) || undefined,
+        // Carried separately and never folded into attachment_id: for Comm-v2
+        // the two are different rows, and only this one addresses the media
+        // access endpoint.
+        media_upload_id: Number(item.media_upload_id || attachment?.media_upload_id || 0) || undefined,
         reactions: normalizeReactionCounts(item.reactions),
         viewer_reaction: safeText(item.viewer_reaction) || safeText((item as MessengerMessage & { my_reaction?: string }).my_reaction),
         media_url: safeText(item.media_url) || attachmentValue(item, "url") || attachmentValue(item, "cdn_url") || attachmentValue(item, "playback_url"),
