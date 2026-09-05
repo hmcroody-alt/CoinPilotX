@@ -1297,6 +1297,11 @@ _load_route_pack("private_office_documents", "services.private_office_documents_
 # cited timelines and deterministic briefing preparation, composed from the
 # private graph, fact store and record primitives — no store of its own.
 _load_route_pack("private_office_relationships", "services.private_office_relationships_routes")
+# Private Briefings: the Office's own on-demand engine. Deterministic
+# composition of open records, pending claims, people and facts into a
+# persisted, cited briefing; Ask Why resolution; actions through the
+# canonical record writer. Member-triggered — nothing scheduled or pushed.
+_load_route_pack("private_office_briefings", "services.private_office_briefings_routes")
 
 
 def cancel_scheduled_account_deletion(cur, user_id):

@@ -132,13 +132,19 @@ _FEATURES = (
         feature_id="private_briefings",
         minimum_tier=TIER_PRIVATE,
         server_enforced=True,
-        implementation=IMPL_NOT_IMPLEMENTED,
-        note=(
-            "Reuses the existing Pulse Briefings engine; the Private Office fact "
-            "provider is not written yet. When it lands it ships DISABLED by "
-            "default — enabling it unconditionally would change every existing "
-            "briefing fingerprint and page every user on the first cycle."
-        ),
+        # The earlier note warned that a Private Office fact provider inside
+        # the shared Pulse Briefings engine would change every existing
+        # briefing fingerprint and page every user on the first cycle. The
+        # shipped design sidesteps that entirely: `private_office.briefings`
+        # is a standalone, member-triggered engine — it schedules nothing and
+        # pushes nothing, so no shared fingerprint moves. Composition is
+        # deterministic reads over the member's own open records, pending
+        # document claims, people and facts; every item carries evidence refs
+        # (Ask Why is evidence.resolve_refs); actions created from a briefing
+        # go through records.create_record citing the briefing. Exercised end
+        # to end by tests/private_office/test_private_briefings.py.
+        implementation=IMPL_IMPLEMENTED,
+        flag_env="PRIVATE_BRIEFINGS_ENABLED",
     ),
     FeatureSpec(
         feature_id="private_facts",

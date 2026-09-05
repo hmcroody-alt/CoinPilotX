@@ -300,7 +300,7 @@ def test_unbuilt_features_are_never_entitled_at_any_tier():
     a canary — if one of them is quietly flipped to IMPLEMENTED without a reader
     behind it, this fails by name rather than by count.
     """
-    for feature_id in ("human_concierge", "private_briefings"):
+    for feature_id in ("human_concierge",):
         got = fm.availability(feature_id, tiers.TIER_PRIVATE_OFFICE)
         assert got["availability"] == fm.AVAIL_NOT_IMPLEMENTED, feature_id
         assert not fm.is_entitled(feature_id, tiers.TIER_PRIVATE_OFFICE), feature_id
@@ -383,6 +383,19 @@ def test_relationship_intelligence_is_implemented_with_a_kill_switch():
     assert got["availability"] == fm.AVAIL_ENTITLED
     spec = fm.get("relationship_intelligence")
     assert spec.flag_env == "PRIVATE_RELATIONSHIPS_ENABLED"
+
+
+def test_private_briefings_is_implemented_with_a_kill_switch():
+    """The Office's own briefing engine is built
+    (services/private_office/briefings.py); the matrix must say so. The old
+    fingerprint/paging concern was about a provider inside the shared Pulse
+    engine — the shipped engine is standalone and member-triggered, so no
+    shared fingerprint moves and nothing is ever pushed."""
+    got = fm.availability("private_briefings", tiers.TIER_PRIVATE)
+    assert got["implementation"] == fm.IMPL_IMPLEMENTED
+    assert got["availability"] == fm.AVAIL_ENTITLED
+    spec = fm.get("private_briefings")
+    assert spec.flag_env == "PRIVATE_BRIEFINGS_ENABLED"
 
 
 def test_implemented_feature_respects_tier():
