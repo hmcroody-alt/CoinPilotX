@@ -166,13 +166,18 @@ _FEATURES = (
         feature_id="private_shield",
         minimum_tier=TIER_PRIVATE,
         server_enforced=True,
-        implementation=IMPL_PROVIDER_REQUIRED,
-        note=(
-            "Personal exposure monitoring requires a breach/identity data "
-            "provider that is not integrated. Sentinel does NOT cover this: it "
-            "monitors platform and security intelligence feeds, not personal "
-            "identity exposure."
-        ),
+        # This row was PROVIDER_REQUIRED while "Shield" meant external breach
+        # monitoring. The shipped Shield is the internal half, which needs no
+        # provider: deterministic checks over the member's own Office data
+        # (overdue obligations, contradictory facts, unreviewed claims,
+        # unreadable documents, expired facts) with a member-controlled
+        # findings lifecycle in `private_office.shield`. The external half
+        # keeps its own row below — `private_shield.breach_monitoring` stays
+        # PROVIDER_REQUIRED, and every Shield payload repeats that no external
+        # exposure has been checked. Exercised end to end by
+        # tests/private_office/test_private_shield.py.
+        implementation=IMPL_IMPLEMENTED,
+        flag_env="PRIVATE_SHIELD_ENABLED",
     ),
     FeatureSpec(
         feature_id="private_shield.breach_monitoring",

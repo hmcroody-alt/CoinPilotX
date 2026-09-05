@@ -1302,6 +1302,10 @@ _load_route_pack("private_office_relationships", "services.private_office_relati
 # persisted, cited briefing; Ask Why resolution; actions through the
 # canonical record writer. Member-triggered — nothing scheduled or pushed.
 _load_route_pack("private_office_briefings", "services.private_office_briefings_routes")
+# Private Shield: internal exposure monitoring. Deterministic checks over the
+# member's own Office data with a member-controlled findings lifecycle; every
+# payload states truthfully that external breach monitoring has no provider.
+_load_route_pack("private_office_shield", "services.private_office_shield_routes")
 
 
 def cancel_scheduled_account_deletion(cur, user_id):

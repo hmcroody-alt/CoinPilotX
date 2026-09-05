@@ -83,6 +83,7 @@ OFFICE_CHILD_IDS: tuple[str, ...] = (
     "private_briefings",
     "relationship_intelligence",
     "private_shield",
+    "private_shield.breach_monitoring",
     "private_office.document.extraction",
     "human_concierge",
 )

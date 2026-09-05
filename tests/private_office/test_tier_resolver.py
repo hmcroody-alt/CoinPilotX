@@ -385,6 +385,18 @@ def test_relationship_intelligence_is_implemented_with_a_kill_switch():
     assert spec.flag_env == "PRIVATE_RELATIONSHIPS_ENABLED"
 
 
+def test_private_shield_is_implemented_with_a_kill_switch():
+    """The internal Shield is built (services/private_office/shield.py); the
+    matrix must say so. The external half — breach monitoring — keeps its own
+    PROVIDER_REQUIRED row, pinned by the test above: flipping this row must
+    never imply anything external has been checked."""
+    got = fm.availability("private_shield", tiers.TIER_PRIVATE)
+    assert got["implementation"] == fm.IMPL_IMPLEMENTED
+    assert got["availability"] == fm.AVAIL_ENTITLED
+    spec = fm.get("private_shield")
+    assert spec.flag_env == "PRIVATE_SHIELD_ENABLED"
+
+
 def test_private_briefings_is_implemented_with_a_kill_switch():
     """The Office's own briefing engine is built
     (services/private_office/briefings.py); the matrix must say so. The old
@@ -432,7 +444,8 @@ def test_availability_map_covers_every_declared_feature():
 def test_only_implemented_features_are_listed_as_live():
     live = set(fm.implemented_feature_ids())
     assert "human_concierge" not in live
-    assert "private_shield" not in live
+    # private_shield moved to the live set when the internal engine shipped;
+    # the external half must never follow it without a provider.
     assert "private_shield.breach_monitoring" not in live
     for fid in live:
         assert fm.FEATURES[fid].implementation == fm.IMPL_IMPLEMENTED
