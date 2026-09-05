@@ -104,3 +104,77 @@ record of what was tried is not.
    pointed at localhost, which `Device.isDevice` did not. That is a debug
    configuration and the new suite documents it rather than asserting it away;
    worth a decision if adhoc builds ever ship pointed at a LAN host.
+
+---
+
+# Worktree, stash and scratch sweep — same date
+
+The branch sweep above covers refs. This covers everything work can hide in that
+is *not* a ref: working trees, the stash reflog, and untracked files.
+
+## Worktrees
+
+19 registered; 13 have a directory, 4 are prunable (their directories are gone),
+2 are session-mount paths that no longer resolve.
+
+**Uncommitted source work found: none.** The only dirty worktree,
+`CoinPilotX-founding-path`, has two untracked entries — `mobile-native/ios/Pods`
+and `mobile-native/node_modules`, both empty build-artefact directories.
+
+The 4 prunable registrations are safe to lose: the only one on a branch of
+interest, `release/messenger-idempotency-p0`, is patch-equivalent to HEAD and was
+absorbed by `5bddee2a`. No worktree was removed by this sweep.
+
+## Stashes
+
+Four, all checked by symbol containment against HEAD.
+
+| Stash | Verdict |
+|---|---|
+| `{0}` *wip: premium command center awaiting 10-locale completion* | Fully in HEAD, **including the thing it was waiting for**: `CommandCenterSection`, `COMMAND_MODULES`, `COMMAND_SPACES` and the chip styles are all present, and `premium.commandCenter` resolves to 60 keys in every one of the 11 locales. |
+| `{1}` *undx-v3-pre-integration-preservation-20260719* | Contained bar one file — see below. |
+| `{2}`, `{3}` autostash | Subsets of `{1}`'s working state, same verdict. |
+
+The symbol gaps reported against stashes 1–3 are noise or intent, not loss. They
+fall into two groups: LiveKit endpoints (`api_pulse_live_livekit_token`,
+`api_pulse_livekit_webhook`, `api_livekit_webhook`) deliberately removed by the
+Agora migration, and local variables inside refactored function bodies (`url`,
+`now`, `counts`, `me`, `glow`) that the containment regex cannot distinguish
+from exports.
+
+`mobile-native/ios/PulseSocNative.xcodeproj/project.pbxproj` reads as absent
+because the iOS project was renamed `PulseSocNative` → `PulseSoc`. Same project.
+
+### The one real find
+
+`PulseSocNativeCameraStudioQATests.swift` — a 271-line XCUITest — existed
+nowhere but in the stash reflog, byte-identical across all three stashes, at a
+path the project rename orphaned. Rescued to `qa/ios-uitests/` in `3bbb6bfd`,
+with a README stating what it would cost to run again. Not wired to a target,
+not in CI.
+
+**No stash was dropped.** They remain the record of what the working tree looked
+like at those points.
+
+## Scratch and static
+
+| Check | Result |
+|---|---|
+| Tracked scratch (`.orig`, `.rej`, `.bak`, `~`, `.DS_Store`, `zz*`) | 0 |
+| Untracked files in the integration worktree | 0 |
+| Tracked files over 5 MB | 0 |
+| Root `*.md` also duplicated under `reports/` | 0 |
+| `.fuse_hidden*` tracked | 0 |
+
+Two things were deliberately **not** cleaned:
+
+1. **61 `.fuse_hidden*` files in the shared `~/Desktop/CoinPilotX` checkout.**
+   They are matched by `.gitignore:28`, untracked, and invisible to every gate.
+   They are also, by construction, files some process still holds open — and
+   that checkout is shared with other sessions. Deleting them buys nothing the
+   release cares about and can break a running session.
+2. **~70 mission writeups at the repo root.** These are traceability artefacts,
+   which this consolidation is supposed to be protecting, not deleting. Moving
+   them under `docs/` is a 70-file rename that would land in the same push as
+   the release and make its diff materially harder to read. Filed as a
+   follow-up instead.
