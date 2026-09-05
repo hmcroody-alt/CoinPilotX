@@ -105,6 +105,97 @@ record of what was tried is not.
    configuration and the new suite documents it rather than asserting it away;
    worth a decision if adhoc builds ever ship pointed at a LAN host.
 
+## Independent re-verification by a second method (added at `aba2adbb`)
+
+The sweep above scoped each branch to its own change set from its merge-base.
+That is the right question to ask, but it shares an assumption with itself: if
+the merge-base were computed wrongly, the error would be invisible to a re-run
+of the same method. So the accounting was re-checked with a deliberately
+different and broader query, over **every** ref rather than the 26:
+
+```
+git diff --diff-filter=A --name-only HEAD <ref>     # files the ref has, HEAD lacks
+```
+
+This asks "what files exist on this ref that are not in HEAD at all", which
+ignores merge-bases entirely. It over-reports by construction — it cannot tell a
+file HEAD never received from one HEAD **deliberately deleted** — and that is
+precisely why it is a useful cross-check: every hit must be explained, and an
+unexplained hit would be a real gap.
+
+**105 refs returned a non-empty set. All are explained; the count of
+unexplained files is 0.**
+
+The result that collapses it: the file sets are *shared*, not per-branch. Six
+unrelated branches (`backup/translation-current`, `feat/business-profile-live`,
+`release/undx-nexus-core-v4`, `integration/release-backend-deploy`,
+`codex/undx-translation-release`, `backup/undx-fixes-3456cd73`) return **byte-identical
+46-file sets**, and the larger sets are supersets of it. This is not 105 branches
+holding unique work; it is one ancestral set that HEAD deleted, seen from 105
+vantage points.
+
+Each of the 46 was traced to its deletion commit on the HEAD lineage:
+
+| Files | Deleted by | Nature |
+|---|---|---|
+| 38 | `f93e7ce3 chore(rtc): fire LiveKit` | The Agora migration. LiveKit audit scripts, `static/vendor/livekit-client.umd.js`, the live-studio JS, `test_livestream_contract.py`. |
+| 4 | `f8fa3e6c feat(marketplace/ads): … PulseSoc iOS project rename` | `PulseSocNative/*` entitlements, UITests `Info.plist`, appicon. |
+| 3 | `a770e01d feat(brand): replace PulseSoc logo across platform` | Renamed brand assets. |
+| 1 | `943197f2 feat(premium): add Profile OS subscription entry and control center` | `PremiumScreen.tsx` — see below. |
+
+Three branches absent from the verdict tables above were resolved individually:
+
+- **`codex/undx-v3-preservation-20260719`** — its 36 files are a strict subset of
+  the shared 46. Nothing of its own.
+- **`codex/agora-rtc-migration.lock.moved.5`** — adds exactly one file, the
+  Stripe patch, deliberately deleted by `f6b81781 chore(mobile): delete the
+  orphaned Stripe patch`. (The same single file explains 17 of the 1-file refs.)
+- **`codex/profile-posts-production`** — adds ten. Four are LiveKit by name (the
+  `@livekit+react-native-webrtc` patch, which has no package to patch on HEAD,
+  and three LiveKit token-grant protection tests replaced by
+  `test_agora_token_generation.py` and `test_agora_rtc_provider_contract.py`).
+  Five are the media-quality trio and its tests. One is `ExportOptions-AppStore.plist`.
+
+### Two supersessions that had to be read, not counted
+
+Both look identical to work loss until HEAD's replacement is opened.
+
+**`PremiumScreen.tsx` → `PremiumCenterScreen.tsx`.** The delete and the add are
+in the *same commit*, `943197f2`. HEAD's replacement states the relationship in
+its own header — *"This screen replaces the old sales-only `PremiumScreen`"* —
+and `AppNavigator.tsx:581` still routes the screen named `"Premium"` to it. 380
+lines became 1818.
+
+**`mediaQualityPolicy.ts` / `mediaQualityFlags.ts` / `mediaQualityTelemetry.ts`
+→ `mediaAdaptationController.ts`.** This one is *not* a superset — 1059 lines
+became 505 — so size alone would have read as loss. It is not. The branch
+modules are LiveKit-shaped: `buildRoomQualityOptions()` returns options for
+`new Room({...})`, and their only consumers are `useLiveBroadcastRoom.ts` and
+`useNativeCallRoom.ts`, the Class-D orphans. `f93e7ce3` deleted all three. HEAD's
+replacement is a pure reducer that by its own docstring *"does not touch a Room,
+a track, the audio session, or the microphone"* — deliberately narrower, because
+a second owner of media state is the failure mode the audio policy exists to
+prevent. The shrink is the point.
+
+One live-looking reference survives: `liveSession.ts:72` still names
+`parseMediaQualityFlags`. It is prose inside a comment, not an import, and the
+module it names is gone. Cosmetic, filed below.
+
+### The one item this re-verification adds
+
+`mobile-native/ios/ExportOptions-AppStore.plist` was removed by the iOS project
+rename and **no equivalent was created under the new `PulseSoc/` name** — HEAD
+has no `ExportOptions` file anywhere. This is already known: HEAD's own
+`realtime_audio_change_declaration.md` records both casualties of that rename and
+calls this one *"a release-packaging concern"*. But only the other half — the
+orphaned XCUITest — had reached the follow-up register. The plist is now filed
+there too. Its content is nine lines and recoverable from `f8fa3e6c^`; the cost
+is that an App Store Connect upload has no checked-in export options.
+
+**No verdict above changed.** The re-verification neither found work at risk nor
+overturned a classification; it raised one packaging follow-up and confirmed the
+accounting by a method that could have contradicted it.
+
 ---
 
 # Worktree, stash and scratch sweep — same date
