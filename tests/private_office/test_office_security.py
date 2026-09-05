@@ -351,6 +351,83 @@ class TestSessionFamilyBinding:
         assert with_resolver == without_resolver
 
 
+class TestCookieSessionBinding:
+    """Cookie-authenticated requests must bind to the session's *payload*, not
+    its raw cookie bytes: permanent sessions are re-signed on every response,
+    so raw-byte bindings orphan a grant the instant the unlock response itself
+    rotates the cookie. This is exactly the production failure this class
+    exists to keep dead."""
+
+    @staticmethod
+    def _bindings_with_session(cookie, seed_sid=None):
+        from flask import Flask, session as flask_session
+
+        app = Flask(__name__)
+        app.secret_key = "test-secret"
+        headers = {security.DEVICE_HEADER: "device-1", "Cookie": "session=" + cookie}
+        with app.test_request_context("/", headers=headers):
+            if seed_sid is not None:
+                flask_session[security._COOKIE_SID_KEY] = seed_sid
+            bindings = security.request_bindings()
+            sid = flask_session.get(security._COOKIE_SID_KEY)
+        return bindings, sid
+
+    def test_binding_survives_a_reissued_cookie(self):
+        # Two requests whose raw cookie BYTES differ but whose decoded session
+        # carries the same id — the situation every response creates in prod.
+        (bind_a, _), _ = self._bindings_with_session("signed-at-t0", seed_sid="sid-1")
+        (bind_b, _), _ = self._bindings_with_session("signed-at-t1", seed_sid="sid-1")
+        assert bind_a and bind_a == bind_b
+
+    def test_first_use_mints_an_id_and_the_grant_survives_end_to_end(self):
+        conn, cur = _conn()
+        _fresh_user(cur, conn, USER_A, PASSCODE_A)
+
+        (minted_session, minted_device), sid = self._bindings_with_session("fresh-login")
+        assert sid  # the id was written into the session for the next request
+
+        result = security.verify_and_unlock(
+            cur, USER_A, PASSCODE_A,
+            session_binding=minted_session, device_binding=minted_device,
+        )
+        (later_session, later_device), _ = self._bindings_with_session(
+            "reissued-cookie", seed_sid=sid
+        )
+        verdict = security.validate_grant(
+            cur, USER_A, result["grant_token"],
+            session_binding=later_session, device_binding=later_device,
+        )
+        assert verdict["ok"]
+
+    def test_a_different_login_session_cannot_ride_the_grant(self):
+        conn, cur = _conn()
+        _fresh_user(cur, conn, USER_A, PASSCODE_A)
+
+        (minted_session, minted_device), _ = self._bindings_with_session(
+            "login-1", seed_sid="sid-login-1"
+        )
+        result = security.verify_and_unlock(
+            cur, USER_A, PASSCODE_A,
+            session_binding=minted_session, device_binding=minted_device,
+        )
+        (thief_session, thief_device), _ = self._bindings_with_session(
+            "login-2", seed_sid="sid-login-2"
+        )
+        verdict = security.validate_grant(
+            cur, USER_A, result["grant_token"],
+            session_binding=thief_session, device_binding=thief_device,
+        )
+        assert not verdict["ok"]
+
+    def test_without_session_support_falls_back_to_raw_cookie_hash(self):
+        # No secret key → NullSession refuses writes → the raw-byte fallback,
+        # which can only ever refuse a validation.
+        import hashlib
+
+        binding, _ = _request_bindings_for(cookie="junk-cookie")
+        assert binding == hashlib.sha256(b"junk-cookie").hexdigest()
+
+
 class TestRateLimit:
     def test_escalating_cooldown_then_reset(self):
         conn, cur = _conn()

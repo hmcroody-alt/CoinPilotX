@@ -135,6 +135,34 @@ def register_session_family_resolver(resolver) -> None:
     _SESSION_FAMILY_RESOLVER = resolver
 
 
+_COOKIE_SID_KEY = "po_sid"
+
+
+def _cookie_session_source() -> str:
+    """A stable identity for a cookie-authenticated request, or ``""``.
+
+    The raw cookie *value* cannot be the binding source: sessions are
+    permanent, so Flask re-signs the cookie with a fresh timestamp on every
+    response, and a grant bound to the mint-time cookie bytes is orphaned by
+    the unlock response itself. The decoded session payload is the stable
+    thing — an opaque id is minted into it on first use and rides the cookie
+    for the rest of the login. Logout clears the session and the id (and
+    every grant bound to it) dies with it. Any failure here returns ``""``,
+    which sends the caller to the raw-cookie fallback: unstable, but it can
+    only ever refuse a validation, never pass one.
+    """
+    try:
+        from flask import session as flask_session
+
+        sid = str(flask_session.get(_COOKIE_SID_KEY) or "")
+        if not sid:
+            sid = secrets.token_urlsafe(16)
+            flask_session[_COOKIE_SID_KEY] = sid
+        return "web-session:" + sid
+    except Exception:  # noqa: BLE001 — no session support, no stable id
+        return ""
+
+
 def request_bindings() -> tuple[str, str]:
     """(session_binding, device_binding) for the CURRENT Flask request.
 
@@ -145,10 +173,11 @@ def request_bindings() -> tuple[str, str]:
 
     The session binding hashes the credential family that authenticated this
     request (the mobile bearer's session family when the host resolver knows
-    it, else the raw bearer, else the web session cookie): a grant therefore
-    dies with the session that earned it, and a stolen grant token presented
-    by a different session fails equality. Outside a request context both are
-    empty, which can only ever *fail* a validation, never pass one.
+    it, else the raw bearer, else a stable id carried inside the web session,
+    else the raw cookie): a grant therefore dies with the session that earned
+    it, and a stolen grant token presented by a different session fails
+    equality. Outside a request context both are empty, which can only ever
+    *fail* a validation, never pass one.
     """
     try:
         from flask import has_request_context, request
@@ -168,7 +197,9 @@ def request_bindings() -> tuple[str, str]:
             if family:
                 source = "session-family:" + family
     if not source:
-        source = request.cookies.get("session") or ""
+        raw_cookie = request.cookies.get("session") or ""
+        if raw_cookie:
+            source = _cookie_session_source() or raw_cookie
     session_binding = (
         hashlib.sha256(source.encode("utf-8")).hexdigest() if source else ""
     )
