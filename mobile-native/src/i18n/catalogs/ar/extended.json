@@ -4880,6 +4880,208 @@
         "PERCENT": "نسبة مئوية",
         "DATE": "تاريخ",
         "BOOLEAN": "نعم أو لا"
+      },
+      "feature": {
+        "loading": "جارٍ التحقق من هذه الميزة…",
+        "retry": "إعادة المحاولة",
+        "notEntitled": {
+          "title": "الترقية مطلوبة",
+          "body": "هذه الميزة مشمولة مع {{tier}}.",
+          "bodyGeneric": "خطتك الحالية لا تشمل هذه الميزة."
+        },
+        "disabled": {
+          "title": "متوقفة مؤقتًا",
+          "body": "هذه الميزة متوقفة حاليًا. سجلاتك لم تتأثر."
+        },
+        "notImplemented": {
+          "title": "غير متاحة بعد",
+          "body": "هذه الميزة لم تُبنَ بعد."
+        },
+        "unavailable": {
+          "title": "تعذّر التحقق",
+          "body": "تعذّر الوصول إلى هذه الميزة الآن. حاول مجددًا بعد قليل."
+        },
+        "error": {
+          "title": "حدث خطأ ما",
+          "body": "تعذّر التحميل."
+        }
+      },
+      "documents": {
+        "subtitle": "يقرأ معلومات من المستندات التي تقدّمها. لا يُسجَّل شيء دون مراجعتك.",
+        "upload": "رفع مستند",
+        "uploading": "جارٍ الرفع…",
+        "duplicate": {
+          "title": "محفوظ مسبقًا",
+          "body": "لقد رفعت هذا الملف نفسه من قبل. تم الاحتفاظ بالنسخة الموجودة."
+        },
+        "uploadFailed": "فشل الرفع",
+        "reviewFailed": "فشلت المراجعة",
+        "empty": {
+          "title": "لا مستندات بعد",
+          "body": "المستندات التي ترفعها تظهر هنا مع ما قُرئ منها."
+        },
+        "states": {
+          "EXTRACTED": "تمت القراءة",
+          "NO_CLAIMS": "لا شيء لاستخراجه",
+          "PROVIDER_REQUIRED": "بانتظار مزوّد",
+          "FAILED": "تعذّرت القراءة"
+        },
+        "claims": {
+          "title": "معلومات مقترحة",
+          "none": "لم تُقترح أي معلومات من هذا المستند.",
+          "accept": "قبول",
+          "reject": "رفض",
+          "ACCEPTED": "مقبولة",
+          "REJECTED": "مرفوضة"
+        }
+      },
+      "people": {
+        "subtitle": "الأشخاص المسجَّلون في مكتبك الخاص. لا يُبحث عن معلومات أي شخص.",
+        "add": "إضافة شخص",
+        "addFailed": "تعذّرت الإضافة",
+        "form": {
+          "name": "الاسم",
+          "role": "الدور (اختياري)",
+          "save": "حفظ",
+          "cancel": "إلغاء"
+        },
+        "empty": {
+          "title": "لا أشخاص بعد",
+          "body": "الأشخاص الذين تسجّلهم يظهرون هنا، مع كيفية ذكرهم في سجلاتك."
+        },
+        "openCommitments_one": "{{count}} التزام مفتوح",
+        "openCommitments_other": "{{count}} التزامات مفتوحة",
+        "profile": {
+          "facts": "معلومات",
+          "commitments": "التزامات",
+          "timeline": "التسلسل الزمني",
+          "nothing": "لا يوجد شيء مسجَّل عن هذا الشخص بعد."
+        },
+        "openCommitments_zero": "لا توجد التزامات مفتوحة",
+        "openCommitments_two": "التزامان مفتوحان",
+        "openCommitments_few": "{{count}} التزامات مفتوحة",
+        "openCommitments_many": "{{count}} التزامًا مفتوحًا"
+      },
+      "briefings": {
+        "subtitle": "إحاطات تُجمَع من سجلاتك الخاصة. لا يُضاف شيء من الخارج.",
+        "generate": "إعداد إحاطة",
+        "generating": "جارٍ الإعداد…",
+        "generateFailed": "تعذّر إعداد الإحاطة",
+        "itemCount_one": "{{count}} عنصر",
+        "itemCount_other": "{{count}} عناصر",
+        "noItems": "هذه الإحاطة فارغة — لم يكن في سجلاتك ما يُذكر.",
+        "empty": {
+          "title": "لا إحاطات بعد",
+          "body": "أعِدّ واحدة وستُجمَع من سجلاتك في تلك اللحظة."
+        },
+        "sections": {
+          "PEOPLE": "أشخاص",
+          "OBLIGATIONS": "التزامات",
+          "EVENTS": "أحداث",
+          "DECISIONS": "قرارات",
+          "REQUESTS": "طلبات",
+          "RISKS": "مخاطر",
+          "OPPORTUNITIES": "فرص"
+        },
+        "itemCount_zero": "لا توجد عناصر",
+        "itemCount_two": "عنصران",
+        "itemCount_few": "{{count}} عناصر",
+        "itemCount_many": "{{count}} عنصرًا"
+      },
+      "shield": {
+        "subtitle": "يفحص سجلاتك الخاصة بحثًا عن انكشاف. لا يرى إلا ما هو مذكور أدناه.",
+        "openFindings_one": "{{count}} نتيجة مفتوحة",
+        "openFindings_other": "{{count}} نتائج مفتوحة",
+        "severity": {
+          "HIGH": "مرتفعة",
+          "MEDIUM": "متوسطة",
+          "LOW": "منخفضة"
+        },
+        "scan": "تشغيل فحص",
+        "scanning": "جارٍ الفحص…",
+        "scanFailed": "تعذّر تشغيل الفحص",
+        "checksTitle": "ما الذي يُفحص",
+        "checksHint": "«لا نتائج» تعني لا شيء ضمن الفحوصات المذكورة هنا — لا أكثر.",
+        "externalTitle": "غير مفحوص خارجيًا",
+        "externalMonitored": "يراقبه مزوّد خارجي",
+        "externalNotMonitored": "لا يراقبه أي مزوّد خارجي",
+        "empty": {
+          "title": "لا نتائج مفتوحة",
+          "body": "لم يُعثر على شيء في الفحوصات المذكورة أعلاه. هذا كل ما يعنيه الأمر."
+        },
+        "status": {
+          "OPEN": "مفتوحة",
+          "ACKNOWLEDGED": "تم الاطلاع",
+          "RESOLVED": "معالجة",
+          "DISMISSED": "مستبعدة"
+        },
+        "acknowledge": "الاطلاع",
+        "resolve": "وضع علامة معالجة",
+        "dismiss": "استبعاد",
+        "updateFailed": "تعذّر التحديث",
+        "openFindings_zero": "لا توجد نتائج مفتوحة",
+        "openFindings_two": "نتيجتان مفتوحتان",
+        "openFindings_few": "{{count}} نتائج مفتوحة",
+        "openFindings_many": "{{count}} نتيجة مفتوحة"
+      },
+      "concierge": {
+        "subtitle": "مكتب لطلبات يتولاها إنسان. كل ردّ هنا كتبه شخص.",
+        "newRequest": "طلب جديد",
+        "submitFailed": "تعذّر الإرسال",
+        "sendFailed": "تعذّر إرسال الرسالة",
+        "cancelFailed": "تعذّر الإلغاء",
+        "cancelRequest": "إلغاء هذا الطلب",
+        "empty": {
+          "title": "لا طلبات بعد",
+          "body": "الطلبات التي تقدّمها تظهر هنا مع سجلها الكامل."
+        },
+        "desk": {
+          "staffed_one": "{{count}} مشغّل في الخدمة",
+          "staffed_other": "{{count}} مشغّلين في الخدمة",
+          "unstaffed": "لا يوجد مشغّل في الخدمة",
+          "staffed_zero": "لا يوجد مشغّلون في الخدمة",
+          "staffed_two": "مشغّلان في الخدمة",
+          "staffed_few": "{{count}} مشغّلين في الخدمة",
+          "staffed_many": "{{count}} مشغّلًا في الخدمة"
+        },
+        "form": {
+          "title": "ما الذي تحتاجه؟",
+          "description": "تفاصيل (اختياري)",
+          "category": "الفئة",
+          "priority": "الأولوية",
+          "submit": "إرسال",
+          "cancel": "إلغاء"
+        },
+        "categories": {
+          "GENERAL": "عام",
+          "TRAVEL": "سفر",
+          "LEGAL": "قانوني",
+          "FINANCIAL": "مالي",
+          "PERSONAL": "شخصي",
+          "RESEARCH": "بحث",
+          "ADMIN": "إداري"
+        },
+        "priorities": {
+          "LOW": "منخفضة",
+          "NORMAL": "عادية",
+          "HIGH": "مرتفعة",
+          "URGENT": "عاجلة"
+        },
+        "statusWords": {
+          "OPEN": "مفتوح",
+          "IN_PROGRESS": "قيد التنفيذ",
+          "WAITING_ON_USER": "بانتظارك",
+          "WAITING_ON_PROVIDER": "بانتظار مزوّد",
+          "COMPLETED": "مكتمل",
+          "CANCELED": "ملغى"
+        },
+        "thread": {
+          "none": "لا رسائل بعد.",
+          "operator": "المشغّل",
+          "you": "أنت",
+          "placeholder": "اكتب رسالة…",
+          "send": "إرسال"
+        }
       }
     },
     "gate": {

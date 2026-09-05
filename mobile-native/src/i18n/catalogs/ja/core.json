@@ -218,7 +218,12 @@
       "privateOfficeSecurity": "オフィスのセキュリティ",
       "privateOperations": "オペレーション",
       "capitalGraph": "キャピタルグラフ",
-      "capitalEntity": "エンティティ"
+      "capitalEntity": "エンティティ",
+      "privateDocuments": "ドキュメントインテリジェンス",
+      "privatePeople": "リレーションシップインテリジェンス",
+      "privateBriefings": "プライベートブリーフィング",
+      "privateShield": "プライベートシールド",
+      "privateConcierge": "ヒューマンコンシェルジュ"
     },
     "navSubtitles": {
       "missionControl": "管制センター",

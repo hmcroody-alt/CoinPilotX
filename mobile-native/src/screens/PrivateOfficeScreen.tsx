@@ -86,7 +86,12 @@ const COPY_KEYS: Readonly<Record<string, string>> = {
 const DESTINATIONS: Readonly<Record<string, keyof RootStackParamList>> = {
   private_facts: "PrivateFacts",
   "private_office.operations": "PrivateOperations",
-  capital_graph: "CapitalGraph"
+  capital_graph: "CapitalGraph",
+  "private_office.document.extraction": "PrivateDocuments",
+  relationship_intelligence: "PrivatePeople",
+  private_briefings: "PrivateBriefings",
+  private_shield: "PrivateShield",
+  human_concierge: "PrivateConcierge"
 };
 
 const ICONS: Readonly<Record<string, keyof typeof Ionicons.glyphMap>> = {
