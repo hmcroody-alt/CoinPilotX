@@ -105,8 +105,13 @@ class AuthorizationRecordsAgree(unittest.TestCase):
             all(not surface[cid].policy_confirms for cid in contextual),
             "a contextual capability that does confirm downstream would be new behaviour",
         )
+        # 22 as of the sweep that gave every registered capability a knowledge-map
+        # record: the business campaign verbs, watchlist add/remove, feed hide,
+        # both localization writes, messages/notifications mark-read and the theme
+        # write joined the original seven. All were already contextual in the
+        # registry; what changed is that the surface can now be computed at all.
         self.assertEqual(
-            len(contextual), 7,
+            len(contextual), 22,
             "the set of capabilities whose situational confirmation is flattened away "
             "downstream has changed; decide whether that is intended:\n  "
             + "\n  ".join(contextual),
