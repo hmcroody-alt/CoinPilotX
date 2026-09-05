@@ -170,11 +170,20 @@ class DeclarationIsBoundToTheRange(unittest.TestCase):
     commit it would authorise cannot be describing it.
     """
 
-    # A real range from this repository's history: the declaration was last
-    # touched by 00cfe955, and protected audio paths changed six commits later
-    # in 5c451905 (the multi-guest Live work).
+    # Two real ranges from this repository's history, chosen so both directions
+    # are pinned to fixed commits. A live range (``origin/main..HEAD``) would
+    # make this class fail whenever the working branch has an audio commit
+    # newer than its declaration — which is a true statement about the branch,
+    # but it is the GATE's job to report it in CI, not this test's. Mixing the
+    # two means a stale declaration reads as a broken mechanism.
+    #
+    # Stale direction: the declaration was last touched by 00cfe955, and
+    # protected audio paths changed six commits later in 5c451905.
     DECL_FIRST_BASE = "00cfe955"
     AUDIO_LATER_HEAD = "5c451905"
+    # Fresh direction: 8157d7de is the declaration addendum written to cover the
+    # consolidation range, so within this range no audio commit is newer.
+    DECL_NEWEST_HEAD = "8157d7de"
 
     def test_a_declaration_older_than_the_audio_change_is_rejected(self):
         if not (_commit_exists(self.DECL_FIRST_BASE) and _commit_exists(self.AUDIO_LATER_HEAD)):
@@ -189,10 +198,15 @@ class DeclarationIsBoundToTheRange(unittest.TestCase):
         self.assertEqual(code, 1, "a stale declaration must fail the gate")
 
     def test_ordering_check_does_not_fire_when_the_declaration_is_newest(self):
-        """The complement, so the check cannot pass by always failing."""
-        if not _commit_exists(self.AUDIO_LATER_HEAD):
+        """The complement, so the check cannot pass by always failing.
+
+        Same protected files as the test above, same gate, opposite verdict —
+        the only difference is where the declaration sits in the ordering.
+        """
+        if not (_commit_exists(self.DECL_FIRST_BASE) and _commit_exists(self.DECL_NEWEST_HEAD)):
             self.skipTest("history anchors unavailable in this checkout")
-        _, out = run_gate_range("origin/main", "HEAD")
+        _, out = run_gate_range(f"{self.DECL_FIRST_BASE}^", self.DECL_NEWEST_HEAD)
+        self.assertTrue(out["protected"], "range chosen for the complement has no audio change")
         self.assertFalse(
             any("predates the change it would authorise" in p
                 for p in out["declaration_problems"]),

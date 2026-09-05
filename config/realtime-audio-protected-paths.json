@@ -214,7 +214,8 @@
         "tests/protection/test_realtime_audio_architecture.py",
         "tests/protection/test_agora_token_generation.py",
         "tests/protection/test_agora_rtc_provider_contract.py",
-        "tests/protection/test_agora_direct_live_contract.py"
+        "tests/protection/test_agora_direct_live_contract.py",
+        "tests/protection/test_realtime_audio_gate_coverage.py"
       ]
     },
     {

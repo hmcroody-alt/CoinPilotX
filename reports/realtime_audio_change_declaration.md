@@ -2171,3 +2171,164 @@ Code: revert `5c451905`. The client changes are additive and the server change
 narrows authority, so the revert restores the prior single-host surface. If
 only the encoder ladder is suspect, `publisherVideoProfile` can be pinned to
 its solo rung without touching the audio path.
+
+---
+
+## Protection-coverage addendum — the manifest now sees the Agora runtime (2026-09-04)
+
+The addendum above filed the manifest fix as follow-up and deliberately did not
+do it, on the reasoning that editing the manifest in the same push it fails to
+cover makes the audit trail harder to read. That deferral is reversed here.
+
+The reasoning was right about one push and wrong about every push after it.
+Deferring buys a cleaner trail for this range at the cost of leaving the largest
+real-time audio change in it — 255 lines in an unprotected
+`useAgoraLiveBroadcastRoom.ts` — declared only by voluntary prose, with nothing
+catching the *next* change to that file. Voluntary declaration is not a control;
+it works exactly as long as the person making the change already knows the gap
+exists.
+
+Range: `origin/main..HEAD`, manifest fix in `ed1e5398`.
+
+### Why the change is required
+
+`config/realtime-audio-protected-paths.json` was written during the LiveKit era
+and never followed the Agora migration. Protection is applied by
+`categories[].paths` and nothing else — being named in
+`forbidden_apis.allowed_paths` or `import_boundary.modules` reads like
+protection and is not. Seven files that own live audio had drifted out of the
+gated list, including both `createAgoraRtcEngine` call sites. A change touching
+only those files would have merged with no declaration and no audio validation.
+
+Two of them changed inside this very range and were invisible to the gate until
+the manifest was widened. They are declared in the table below. That is the
+evidence the gap was real rather than theoretical: the fix did not add
+hypothetical coverage, it retroactively surfaced undeclared audio changes that
+were already in the push.
+
+### Which feature required it
+
+No product feature. This is protection and CI only — item 2 of the repository
+consolidation mission. **No RTC or audio runtime behaviour is changed by the
+manifest fix itself: `ed1e5398` touches no file under `mobile-native/src/`.**
+
+### Which protected files changed
+
+Files changed by the manifest fix (`ed1e5398`):
+
+| Path | Category | Change |
+|---|---|---|
+| `config/realtime-audio-protected-paths.json` | `audio_governance` | 16 categories / 51 paths → 17 / 60. Seven Agora-era paths added plus this range's own regression test. **Zero paths removed** — the `useLiveBroadcastRoom.ts` shim stays gated, because four screens still import through it and changing what it forwards to silently reroutes Live audio. |
+| `scripts/realtime_audio_change_gate.py` | `audio_governance` | Adds `newest_commit_touching` and `declaration_is_stale_for_range`, wired into `validate_declaration`. No change to how paths are matched or how exit codes are chosen. |
+| `tests/protection/test_realtime_audio_gate_coverage.py` | `critical_audio_tests` (new file, added to the manifest in this commit) | 11 tests that run the real gate as a subprocess and assert on its exit codes and JSON. |
+
+Newly-gated files that changed **earlier in this range** and are declared here
+because the manifest fix is what made them visible:
+
+| Path | Category | Commit | Already argued in |
+|---|---|---|---|
+| `mobile-native/src/live/useAgoraLiveBroadcastRoom.ts` | `livestream_audio_adapter` | `5c451905` | Repository consolidation addendum — "Echo control follows stage size" |
+| `mobile-native/src/live/liveAudioMatrix.ts` | `livestream_audio_adapter` | `5c451905` | Repository consolidation addendum — "Audio topology is data, not scattered conditionals" |
+| `mobile-native/src/calls/callSessionStore.ts` | `audio_and_video_call_adapter` | `00cfe955` | Multi-guest calls addendum — the module-scoped call engine owner |
+
+No new argument is made for those three; the technical substance is in the
+addenda named above and is not re-litigated. What is new is that they are now
+*gated*, so the next change to any of them stops rather than merges quietly.
+
+The remaining four newly-gated paths —
+`mobile-native/src/live-audio/liveAudioEngine.ts`, `liveAudioNative.ts`,
+`liveMicrophonePublisher.ts`, `livePublisherMedia.ts` — did not change in this
+range. They are added as coverage, not declared as changes.
+
+`docs/realtime_audio_change_policy.md` also changed in `ed1e5398` (the known-gaps
+audit below). It is not in the manifest and is not claimed to be.
+
+### Expected behavior change
+
+CI only. A pull request touching any of the seven newly-gated paths now requires
+a filled declaration, the `audio-critical-change` label, and the recorded
+validation battery. Nothing about the app's audio behaviour changes.
+
+The declaration check gains one condition: a declaration whose newest commit in
+the range is an *ancestor* of the newest protected-audio commit is rejected as
+predating the change it would authorise. This addendum exists because that check
+fired on this very branch and was correct to.
+
+### Regression risk
+
+The risk of a manifest widening is over-triggering — a gate that fires on
+ordinary UI work is one developers learn to route around, which is worse than
+the gap it closed. `GateDoesNotOverTrigger` pins that directly: three UI-only
+files produce `protected: false` and an empty hit list, and a mixed diff flags
+only the audio file.
+
+The ordering check carries a smaller risk of false rejection: a legitimate
+change that updates the declaration first and the audio second, in separate
+commits, is rejected until the declaration is touched again. That is the
+conservative direction — it costs one commit, and the alternative is accepting
+declarations written before the thing they describe.
+
+### Tests run
+
+All on this branch at `ed1e5398` plus the working-tree changes above.
+
+- `python3 -m unittest tests.protection.test_realtime_audio_gate_coverage` — 11
+  tests, 14 subtests, OK.
+- Revert-and-verify: with `config/realtime-audio-protected-paths.json` restored
+  to its `origin/main` content, the same suite produces **18 failures**. The
+  test fails against the old manifest and passes against the new one, so it is
+  measuring the manifest and not itself.
+- `scripts/protection/run_protection_suite.py` — 242 passed.
+- `npm run test:realtime-audio` — 20 suites / 369 tests passed.
+- `npm run test:realtime-audio-architecture` — 22 tests passed.
+- `python3 -m unittest tests.protection.test_realtime_audio_architecture` — 19
+  tests, OK.
+- `pytest tests/protection/test_agora_token_generation.py
+  tests/protection/test_agora_rtc_provider_contract.py` — 13 passed.
+- Manifest validates as JSON; all 60 protected paths exist on disk
+  (`ManifestIntegrity.test_every_protected_path_exists_on_disk`).
+
+### Physical validation required
+
+**None, and this is not a "not required" written to move past a checkbox.**
+The commit changes a JSON path list, a Python CI script, a Markdown document and
+a Python test. No TypeScript, Swift, Objective-C, Java or Kotlin file is touched;
+nothing in `mobile-native/src/` is touched; no file that ships in the app binary
+is touched. There is no code path by which this commit can alter what a device
+does with audio.
+
+The physical validation still owed for the audio changes *inside* this range is
+unchanged and still outstanding — see "Physical validation NOT performed" in the
+addendum above. Widening the manifest does not discharge it.
+
+### Rollback procedure
+
+`git revert ed1e5398` and the follow-up commit. Protection returns to its
+previous coverage; no runtime behaviour moves in either direction. If only the
+ordering check is unwanted, deleting the `else:` branch in `validate_declaration`
+restores the previous declaration semantics and leaves the path coverage in
+place — the two changes are independent.
+
+### Known gaps, recorded not fixed
+
+Written up in full in `docs/realtime_audio_change_policy.md` § "Known gaps".
+
+1. **The forbidden-API vocabulary is LiveKit-era.** Twelve direct Agora audio
+   APIs that the two engine owners actually call — `createAgoraRtcEngine`,
+   `joinChannel`/`leaveChannel`, `enableAudio`, `muteLocalAudioStream`,
+   `setEnableSpeakerphone`, `enableAudioVolumeIndication`, `setClientRole`,
+   `updateChannelMediaOptions`, `setAudioProfile`/`setAudioScenario`,
+   `muteAllRemoteAudioStreams`, `adjustRecordingSignalVolume`,
+   `startAudioMixing` — have no marker, and nine existing markers match nothing
+   in `src/` at all. These were **not** converted into forbidden markers: most
+   are legitimate owner operations, and what the rules encode is *who may call
+   it*, not whether it may be called. `enableAudio` appearing in
+   `live/liveStreamQuality.ts` as a plan field name shows what a naive substring
+   sweep would produce. Path gating now covers both engine owners, so this gap
+   only affects whether a *third* file could start driving the engine directly.
+   A marker-system redesign is filed as follow-up, deliberately outside this
+   consolidation.
+2. **A declaration is bound to its range only by ordering.** Nothing inspects
+   the prose, and a declaration touched in the same commit as the audio change
+   still passes on naming alone. Binding a declaration to a content hash of the
+   protected diff would close it; that is a redesign, not a consolidation fix.
