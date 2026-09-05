@@ -59,11 +59,28 @@ type Props = NativeStackScreenProps<RootStackParamList, "CapitalGraph">;
 
 /**
  * The server's states plus the two the screen adds. LOADING is the window
- * before an answer exists; EMPTY is the server's READY with zero nodes,
+ * before an answer exists; EMPTY is READY-with-nothing (see `settle`),
  * promoted to its own word so it can never be written by the same branch that
  * writes UNAVAILABLE.
  */
 type ScreenState = "LOADING" | "EMPTY" | CapitalGraphResult["state"];
+
+/**
+ * EMPTY is a claim — "nothing recorded" — and on the holdings view two
+ * endpoints must both back it: the graph (READY, zero nodes) and the
+ * portfolio (READY, zero assets). A failed portfolio fetch can never be
+ * dressed as an empty one; if the portfolio call refused or errored, the
+ * screen stays READY and the portfolio panel says exactly what went wrong.
+ */
+function settle(
+  next: CapitalGraphResult,
+  folio: CapitalPortfolioResult | null
+): ScreenState {
+  if (next.state !== "READY") return next.state;
+  if (next.graph.nodes.length > 0) return "READY";
+  if (folio === null) return "EMPTY";
+  return folio.state === "READY" && folio.portfolio.assets.length === 0 ? "EMPTY" : "READY";
+}
 
 export function CapitalGraphScreen(props: Props) {
   return (
@@ -92,10 +109,10 @@ function CapitalGraphBody({ navigation, route }: Props) {
     ]);
     // The server said the grant is dead (revoked elsewhere, expired). Drop the
     // local token so the enclosing gate flips back to the unlock door.
-    if (next.state === "LOCKED") lockOfficeLocally();
+    if (next.state === "LOCKED" || folio?.state === "LOCKED") lockOfficeLocally();
     setResult(next);
     setPortfolio(folio);
-    setState(next.state === "READY" && next.graph.nodes.length === 0 ? "EMPTY" : next.state);
+    setState(settle(next, folio));
   }, []);
 
   useEffect(() => {
@@ -107,10 +124,10 @@ function CapitalGraphBody({ navigation, route }: Props) {
         view === "holdings" ? getCapitalPortfolio() : Promise.resolve(null)
       ]);
       if (cancelled) return;
-      if (next.state === "LOCKED") lockOfficeLocally();
+      if (next.state === "LOCKED" || folio?.state === "LOCKED") lockOfficeLocally();
       setResult(next);
       setPortfolio(folio);
-      setState(next.state === "READY" && next.graph.nodes.length === 0 ? "EMPTY" : next.state);
+      setState(settle(next, folio));
     })();
     return () => {
       cancelled = true;
@@ -177,14 +194,47 @@ function CapitalGraphBody({ navigation, route }: Props) {
   const portfolioPanel = () => {
     if (view !== "holdings" || !portfolio) return null;
     if (portfolio.state !== "READY") {
-      // Whatever went wrong, "could not load" is the honest sentence — never
-      // draw a refusal or an outage as an empty portfolio.
-      return (
+      // Each refusal keeps its own sentence — a tier wall, a denial and an
+      // outage are different facts — and none of them is ever drawn as an
+      // empty portfolio. Retryable failures get a Retry.
+      const failure = (body: string, retry: boolean, caption?: string) => (
         <View style={styles.folioPanel}>
           <Text style={styles.folioTitle}>{pt("title")}</Text>
-          <Text style={styles.panelText}>{pt("unavailable")}</Text>
+          <Text style={styles.panelText}>{body}</Text>
+          {caption ? <Text style={styles.panelCaption}>{caption}</Text> : null}
+          {retry ? (
+            <Pressable style={styles.retry} onPress={onRefresh} accessibilityRole="button">
+              <Text style={styles.retryText}>{t("premium:privateOffice.retry")}</Text>
+            </Pressable>
+          ) : null}
         </View>
       );
+      switch (portfolio.state) {
+        case "DENIED":
+          return failure(
+            t("premium:privateOffice.capital.denied.body"),
+            false,
+            portfolio.reason || undefined
+          );
+        case "NOT_ENTITLED":
+          return failure(
+            portfolio.minimumTier
+              ? t("premium:privateOffice.capital.notEntitled.body", {
+                  tier: portfolio.minimumTier
+                })
+              : t("premium:privateOffice.capital.notEntitled.bodyGeneric"),
+            false
+          );
+        case "FEATURE_DISABLED":
+          return failure(t("premium:privateOffice.capital.disabled.body"), true);
+        case "NOT_IMPLEMENTED":
+          return failure(t("premium:privateOffice.capital.notImplemented.body"), false);
+        case "LOCKED":
+          return failure(t("premium:privateOffice.lock.locked.body"), true);
+        default:
+          // UNAVAILABLE and ERROR: we could not look — say so and offer Retry.
+          return failure(pt("unavailable"), true);
+      }
     }
     const folio = portfolio.portfolio;
     return (

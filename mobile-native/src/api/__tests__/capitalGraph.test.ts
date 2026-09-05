@@ -528,6 +528,24 @@ describe("getCapitalPortfolio", () => {
     mockPulseApi.mockRejectedValueOnce(apiError(403, { state: "FEATURE_DISABLED" }));
     expect(await getCapitalPortfolio()).toEqual({ state: "FEATURE_DISABLED" });
   });
+
+  it("keeps every failed fetch a failure — never READY, never an empty portfolio", async () => {
+    // The deployment-gap shape: the route does not exist yet, so production
+    // answers a bare 404 with no state word. That is a failed read, not an
+    // empty portfolio.
+    mockPulseApi.mockRejectedValueOnce(apiError(404, {}, "no route"));
+    expect(await getCapitalPortfolio()).toEqual({ state: "ERROR", message: "no route" });
+
+    mockPulseApi.mockRejectedValueOnce(apiError(401, {}, "unauthenticated"));
+    expect(await getCapitalPortfolio()).toEqual({ state: "ERROR", message: "unauthenticated" });
+
+    mockPulseApi.mockRejectedValueOnce(apiError(500, {}, "boom"));
+    expect(await getCapitalPortfolio()).toEqual({ state: "ERROR", message: "boom" });
+
+    // A dead network throws something that is not a PulseApiError at all.
+    mockPulseApi.mockRejectedValueOnce(new TypeError("Network request failed"));
+    expect(await getCapitalPortfolio()).toEqual({ state: "ERROR", message: "" });
+  });
 });
 
 describe("createPrivateFact", () => {
