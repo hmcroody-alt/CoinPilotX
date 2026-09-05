@@ -49,8 +49,12 @@
       "why": "Serializes publication per room, verifies it by event rather than by polling, reconciles duplicates, and returns an explicit forbidden outcome for viewers. A second publication path would reintroduce the duplicate-track class of bug.",
       "paths": [
         "mobile-native/src/core/realtimeMicrophonePublisher.ts",
-        "mobile-native/src/live/liveAudioPublisher.ts"
-      ]
+        "mobile-native/src/live/liveAudioPublisher.ts",
+        "mobile-native/src/live/liveMediaOwnership.ts"
+      ],
+      "path_notes": {
+        "mobile-native/src/live/liveMediaOwnership.ts": "Decides who may open whose microphone. The asymmetry it encodes -- a host may mute a guest immediately but may NOT unmute one, only invite them to -- is what stops a host command from turning a guest's phone into a remote listening device. Imports no Agora symbol, which is precisely why a change here survives an Agora-focused review. NOT YET ON THE EXECUTED PATH as of 2026-09-04: its only consumer, LiveModerationSheet.tsx, is not mounted by any screen, consistent with MULTI_GUEST_LIVE_ENABLED defaulting to false. Protected ahead of that wiring on purpose -- the moment the sheet is mounted, a change here becomes a live microphone-consent decision, and that is not a moment anyone will remember to add a gate."
+      }
     },
     {
       "id": "remote_subscription_and_playback_controller",
@@ -114,6 +118,7 @@
         "mobile-native/src/live/useLiveBroadcastRoom.ts",
         "mobile-native/src/live/liveSession.ts",
         "mobile-native/src/live/liveAudioMatrix.ts",
+        "mobile-native/src/live/liveMusicMixing.ts",
         "mobile-native/src/screens/LiveHostSessionScreen.tsx",
         "mobile-native/src/screens/LiveScreen.tsx",
         "mobile-native/src/components/reels/ReelLiveViewerSurface.tsx"
@@ -121,7 +126,8 @@
       "path_notes": {
         "mobile-native/src/live/useAgoraLiveBroadcastRoom.ts": "The canonical Live runtime. Holds the app's other createAgoraRtcEngine call site and makes thirteen direct Agora audio-control calls (setClientRole, muteLocalAudioStream, muteAllRemoteAudioStreams, setEnableSpeakerphone, setAudioProfile, adjustRecordingSignalVolume, enableAudioVolumeIndication). Until 2026-09-04 the manifest named only useLiveBroadcastRoom.ts, which the Agora migration reduced to a three-line shim, so the entire Live audio runtime could be rewritten without a declaration.",
         "mobile-native/src/live/useLiveBroadcastRoom.ts": "Now a re-export shim over useAgoraLiveBroadcastRoom. Deliberately still protected: it is the import point four screens and the architecture test bind to, so changing what it forwards to silently reroutes Live audio.",
-        "mobile-native/src/live/liveAudioMatrix.ts": "Decides who publishes, who subscribes, and who may own the microphone, for every Live role. It holds no Agora import by design, which is exactly why a wrong answer here is invisible in an Agora-focused review."
+        "mobile-native/src/live/liveAudioMatrix.ts": "Decides who publishes, who subscribes, and who may own the microphone, for every Live role. It holds no Agora import by design, which is exactly why a wrong answer here is invisible in an Agora-focused review.",
+        "mobile-native/src/live/liveMusicMixing.ts": "liveMixLevelToAgoraVolume is the argument passed to adjustRecordingSignalVolume -- the MICROPHONE gain, not the music's. A clamp that returns 0 for a level the UI regards as normal silences the host on a live broadcast while every meter in the app still reads healthy. musicRestorationAfterAudioChange is the other half: bringing the first guest on stage moves the audio scenario to the echo-control profile, which reconfigures Agora's audio module underneath in-flight mixing, and this function is what decides that volumes and playback must be reapplied afterwards."
       }
     },
     {
@@ -185,9 +191,35 @@
       "title": "Governed media adaptation policy",
       "why": "The adaptation reducer must never place audio on the degradation ladder.",
       "paths": [
-        "mobile-native/src/core/mediaAdaptationController.ts"
+        "mobile-native/src/core/mediaAdaptationController.ts",
+        "mobile-native/src/live/liveStreamQuality.ts"
       ],
-      "note": "This reducer is pure and cannot own an Agora engine or audio session."
+      "note": "These reducers are pure and cannot own an Agora engine or audio session. They are protected because they decide what the engine is told to do, not because they do it.",
+      "path_notes": {
+        "mobile-native/src/live/liveStreamQuality.ts": "The multi-guest half of the same rule. Holds two invariants a stage of six people depends on: audio is never the thing that degrades, and an audience member initialises no capture at all -- no camera, no microphone, no encoder. publisherVideoProfile is consumed directly by useAgoraLiveBroadcastRoom, so a change here reaches the engine on the next join. The second invariant is a privacy property before it is a performance one."
+      }
+    },
+    {
+      "id": "live_seat_and_identity_authority",
+      "title": "Live seat reconciliation, session lifecycle and participant identity",
+      "why": "A broadcast is one continuous Agora session; guests arriving and leaving are changes within it. These three pure modules decide, between them, when that session is allowed to restart, when it is allowed to end, and which RTC uid belongs to which person. None of them imports an Agora symbol, and each was outside categories[].paths until 2026-09-04 -- so the decisions that destroy an engine, drop a microphone or resolve a duplicate publisher could all be rewritten without a declaration.",
+      "paths": [
+        "mobile-native/src/live/liveSeatReconciliation.ts",
+        "mobile-native/src/live/liveSessionLifecycle.ts",
+        "mobile-native/src/live/liveParticipantRegistry.ts"
+      ],
+      "path_notes": {
+        "mobile-native/src/live/liveSeatReconciliation.ts": "reconcileLiveSeat is the sole gate on the 'rejoin' action, and rejoin is the only outcome that destroys the engine, stops the camera, drops the microphone and restarts the audio session. It is reachable only when the channel or the RTC uid genuinely changed. Widening that comparison -- to the token, say -- makes every routine credential refresh tear down a running broadcast. Consumed directly by useAgoraLiveBroadcastRoom.",
+        "mobile-native/src/live/liveSessionLifecycle.ts": "Separates 'a guest left' from 'the host ended it', holds the grace period that stops a host's tunnel from killing a Live, and reconciles the same person arriving twice. That last one is an audio property: two devices signed in as one participant either steal each other's publication or both publish and echo.",
+        "mobile-native/src/live/liveParticipantRegistry.ts": "Joins the transport-level facts Agora reports (uid, has audio, speaking) to the server-level facts only PulseSoc knows (user, role, stage order). normalizeLiveRole is consumed by useAgoraLiveBroadcastRoom and by the protected liveAudioMatrix, so a wrong role here becomes a wrong publish/subscribe decision. The failure it replaced -- inferring the host from arrival order -- was silent with one publisher and wrong roughly half the time with two."
+      },
+      "not_protected_here": {
+        "mobile-native/src/live/liveStageLayout.ts": "LAYOUT. The one export the engine owner consumes is reduceActiveSpeaker, a smoother over Agora's volume indication that drives a highlight ring. Active speaker is deliberately never a reordering and never a subscription change, so this module cannot alter publishing, subscription or mic ownership. Protecting it would be mechanical.",
+        "mobile-native/src/live/agoraLiveTelemetry.ts": "TELEMETRY. Emit-only; it observes the engine and cannot mutate it. Its real invariant is privacy -- every uid passes through sanitizeLiveTelemetry at one chokepoint -- and that is pinned by liveTelemetryPrivacy.test.ts, not by an audio-regression gate.",
+        "mobile-native/src/live/liveGuestStage.ts": "NON-RTC UI state machine, and currently imported by nothing outside its own suite. The actual publish decision is made by liveAudioMatrix and applied by the engine owner. If this module ever becomes the gate on local capture, it belongs in this category.",
+        "mobile-native/src/live/liveEventContinuity.ts": "NON-RTC UI. Comments, reactions and invites surviving a roster change. No media path.",
+        "mobile-native/src/live/liveStudioReadiness.ts": "NETWORK-QUALITY and pre-flight UI. Reports whether permissions and network look good enough to broadcast; it configures nothing."
+      }
     },
     {
       "id": "critical_audio_tests",
@@ -208,6 +240,13 @@
         "mobile-native/src/live/__tests__/liveAudioTelemetry.test.ts",
         "mobile-native/src/live/__tests__/liveAudioTrace.test.ts",
         "mobile-native/src/live/__tests__/cohostPublishGate.test.ts",
+        "mobile-native/src/live/__tests__/liveSeatReconciliation.test.ts",
+        "mobile-native/src/live/__tests__/liveSessionLifecycle.test.ts",
+        "mobile-native/src/live/__tests__/liveParticipantRegistry.test.ts",
+        "mobile-native/src/live/__tests__/liveStreamQuality.test.ts",
+        "mobile-native/src/live/__tests__/liveMediaOwnership.test.ts",
+        "mobile-native/src/live/__tests__/liveMusicMixing.test.ts",
+        "mobile-native/src/live/__tests__/multiGuestBroadcastScenarios.test.ts",
         "mobile-native/src/live/__tests__/liveSession.test.ts",
         "mobile-native/src/live/__tests__/liveRuntime.test.ts",
         "mobile-native/src/core/__tests__/mediaAdaptationController.test.ts",

@@ -66,6 +66,36 @@ UI_ONLY = (
     "mobile-native/src/screens/BookmarksScreen.tsx",
 )
 
+# The multi-guest decision layer, added to the manifest on 2026-09-04. Every one
+# of these is a pure module with no Agora import, and every one is consulted --
+# directly or one hop away -- by the engine owner before it joins, publishes,
+# re-roles or tears down. That combination is the reason they were invisible:
+# a reviewer grepping for Agora symbols finds nothing in any of them.
+#
+# The category each belongs to is asserted as well as the fact of protection,
+# because a path silently landing in the wrong category still reads as covered
+# while telling a declaration author the wrong thing about what they changed.
+MULTI_GUEST_DECISION_LAYER = {
+    "mobile-native/src/live/liveSeatReconciliation.ts": "live_seat_and_identity_authority",
+    "mobile-native/src/live/liveSessionLifecycle.ts": "live_seat_and_identity_authority",
+    "mobile-native/src/live/liveParticipantRegistry.ts": "live_seat_and_identity_authority",
+    "mobile-native/src/live/liveStreamQuality.ts": "media_adaptation_policy",
+    "mobile-native/src/live/liveMediaOwnership.ts": "microphone_track_and_publication_controller",
+    "mobile-native/src/live/liveMusicMixing.ts": "livestream_audio_adapter",
+}
+
+# Live modules deliberately left unprotected, with the reason each one cannot
+# reach the engine. Asserting these is not symmetry for its own sake: an
+# over-broad manifest is the failure mode that makes the gate routine, and
+# "someone quietly added the whole live/ directory" is exactly how that happens.
+DELIBERATELY_UNPROTECTED_LIVE = (
+    "mobile-native/src/live/liveStageLayout.ts",
+    "mobile-native/src/live/agoraLiveTelemetry.ts",
+    "mobile-native/src/live/liveGuestStage.ts",
+    "mobile-native/src/live/liveEventContinuity.ts",
+    "mobile-native/src/live/liveStudioReadiness.ts",
+)
+
 
 def run_gate(changed: list[str], *, skip_declaration: bool = True):
     """Invoke the real gate with a synthetic changed-file list."""
@@ -125,6 +155,55 @@ class GateSeesCanonicalAgoraPaths(unittest.TestCase):
                 )
 
 
+class GateSeesTheMultiGuestDecisionLayer(unittest.TestCase):
+    """The modules that decide what the engine is told, rather than telling it.
+
+    ``liveAudioMatrix`` was already protected on exactly this reasoning -- it
+    holds no Agora import, which is why a wrong answer there survives review.
+    The multi-guest work added six more modules with the same shape and none of
+    them inherited the protection. The sharpest of them is
+    ``liveSeatReconciliation``: it is the sole gate on the ``rejoin`` action,
+    and ``rejoin`` is the only path that destroys the engine, stops the camera,
+    drops the microphone and restarts the audio session. Widening its endpoint
+    comparison by one field turns every routine token refresh into a teardown of
+    a live broadcast, with no Agora symbol anywhere in the diff.
+    """
+
+    def test_each_decision_module_trips_the_gate_on_its_own(self):
+        for path, expected_category in MULTI_GUEST_DECISION_LAYER.items():
+            with self.subTest(path=path):
+                code, out = run_gate([path])
+                self.assertTrue(
+                    out["protected"],
+                    f"{path} decides Live RTC behaviour but the gate ignores it",
+                )
+                hits = {h["path"]: h["category"] for h in out["hits"]}
+                self.assertEqual(hits.get(path), expected_category)
+                self.assertEqual(code, 0)  # 0 because declaration checking is skipped
+
+    def test_their_suites_cannot_be_weakened_without_a_declaration(self):
+        """Deleting the test is the quietest way to delete the protection.
+
+        These six modules are pure and exhaustively testable without a device,
+        so their suites are the entire runtime evidence that the invariants
+        hold. A diff that removed both the assertion and the module's ability to
+        break would otherwise merge in silence.
+        """
+        suites = [
+            "mobile-native/src/live/__tests__/liveSeatReconciliation.test.ts",
+            "mobile-native/src/live/__tests__/liveSessionLifecycle.test.ts",
+            "mobile-native/src/live/__tests__/liveParticipantRegistry.test.ts",
+            "mobile-native/src/live/__tests__/liveStreamQuality.test.ts",
+            "mobile-native/src/live/__tests__/liveMediaOwnership.test.ts",
+            "mobile-native/src/live/__tests__/liveMusicMixing.test.ts",
+            "mobile-native/src/live/__tests__/multiGuestBroadcastScenarios.test.ts",
+        ]
+        for path in suites:
+            with self.subTest(path=path):
+                _, out = run_gate([path])
+                self.assertTrue(out["protected"], f"{path} can be weakened silently")
+
+
 class GateDoesNotOverTrigger(unittest.TestCase):
     def test_ui_only_change_does_not_demand_an_audio_declaration(self):
         code, out = run_gate(list(UI_ONLY), skip_declaration=False)
@@ -136,6 +215,33 @@ class GateDoesNotOverTrigger(unittest.TestCase):
         _, out = run_gate([*UI_ONLY, CANONICAL_LIVE_RUNTIME])
         hits = {h["path"] for h in out["hits"]}
         self.assertEqual(hits, {CANONICAL_LIVE_RUNTIME})
+
+    def test_live_modules_with_no_engine_reach_stay_unprotected(self):
+        """The boundary drawn in ``live_seat_and_identity_authority``.
+
+        Six modules in ``live/`` were added to the manifest and five of their
+        neighbours deliberately were not, on the single criterion of whether the
+        module can alter engine lifecycle, membership, publication,
+        subscription, mic ownership, audio scenario or role transitions.
+        ``liveStageLayout`` is the closest call and the clearest illustration:
+        the engine owner imports it, but only for ``reduceActiveSpeaker``, which
+        smooths Agora's volume indication into a highlight ring. Active speaker
+        is never a reordering and never a subscription change, so the module
+        cannot move audio.
+
+        Asserting the negative keeps the criterion honest. Without it the
+        cheapest response to any future scare is to add another live/ file, and
+        a manifest that protects everything protects nothing -- it just makes
+        the declaration a formality people learn to fill in without reading.
+        """
+        code, out = run_gate(list(DELIBERATELY_UNPROTECTED_LIVE), skip_declaration=False)
+        self.assertFalse(
+            out["protected"],
+            "a live module with no engine reach is now gated; if that is "
+            "intentional, move it into a category and document why here: "
+            f"{out['hits']}",
+        )
+        self.assertEqual(code, 0)
 
 
 def _commit_exists(rev: str) -> bool:

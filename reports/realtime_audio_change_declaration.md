@@ -2352,3 +2352,121 @@ Written up in full in `docs/realtime_audio_change_policy.md` § "Known gaps".
    the prose, and a declaration touched in the same commit as the audio change
    still passes on naming alone. Binding a declaration to a content hash of the
    protected diff would close it; that is a redesign, not a consolidation fix.
+
+## Protection-coverage addendum 2 — the multi-guest decision layer (2026-09-04)
+
+The addendum above widened the manifest to both `createAgoraRtcEngine` owners
+and stopped there, because that was the gap it had evidence for. This one closes
+the gap it created by stopping there.
+
+`liveAudioMatrix.ts` was added on the reasoning that a module holding no Agora
+import is exactly where a wrong answer survives an Agora-focused review. That
+reasoning generalises, and the multi-guest work had already produced six more
+modules with the same shape — pure, no Agora symbol, consulted by an engine
+owner before it joins, publishes, re-roles or tears down. None of them inherited
+the protection, because the previous pass was looking for Agora call sites and
+by construction these have none.
+
+### Why the change is required
+
+The sharpest case is `liveSeatReconciliation.ts`. `reconcileLiveSeat` is the sole
+gate on the `rejoin` action, and `rejoin` is the only outcome that destroys the
+engine, stops the camera, drops the microphone and restarts the audio session. It
+is reachable only when the channel or the RTC uid genuinely changed — which is
+why no sequence of guests arriving can restart a host's broadcast. Widening that
+comparison by one field, to the token say, turns every routine credential refresh
+into a teardown of a live stream. The diff would contain no Agora symbol, would
+touch no protected path, and would merge with no declaration.
+
+`liveMusicMixing.ts` is the second: `liveMixLevelToAgoraVolume` is the argument
+passed to `adjustRecordingSignalVolume`, which is the *microphone's* gain, not
+the music's. A clamp returning 0 for a level the UI regards as normal silences a
+host mid-broadcast while every meter in the app still reads healthy.
+
+### Which feature required it
+
+No product feature. Protection and CI only — item 7 of the repository
+consolidation mission. **No RTC or audio runtime behaviour changes: this commit
+touches no file under `mobile-native/src/`.**
+
+### Which protected files changed
+
+| File | Category | Change |
+|---|---|---|
+| `config/realtime-audio-protected-paths.json` | `audio_governance` | Six modules added to `categories[].paths`; one new category `live_seat_and_identity_authority`; seven multi-guest suites added to `critical_audio_tests`; five neighbouring live modules recorded in `not_protected_here` with the reason each cannot reach the engine. |
+| `tests/protection/test_realtime_audio_gate_coverage.py` | `critical_audio_tests` | Two classes added, asserting the real gate's verdict on each newly protected path *and* on the five deliberately unprotected ones. |
+| `tests/protection/test_agora_direct_live_contract.py` | `critical_audio_tests` | Five assertions pinning the hook's wiring to the decision layer. |
+
+Newly protected, unchanged in this commit: `liveSeatReconciliation.ts`,
+`liveSessionLifecycle.ts`, `liveParticipantRegistry.ts`, `liveStreamQuality.ts`,
+`liveMediaOwnership.ts`, `liveMusicMixing.ts`.
+
+### Expected behavior change
+
+None at runtime. A change to any of those six files now requires a declaration.
+
+### Regression risk
+
+The material risk is over-protection, not under-protection. A manifest that
+fires on every change in `live/` is one developers learn to route around, and the
+declaration becomes a form people fill in without reading. That is why five
+neighbouring modules were deliberately left out — `liveStageLayout`,
+`agoraLiveTelemetry`, `liveGuestStage`, `liveEventContinuity`,
+`liveStudioReadiness` — and why a test now asserts they stay out.
+`liveStageLayout` is the closest call: the engine owner does import it, but only
+for `reduceActiveSpeaker`, which smooths Agora's volume indication into a
+highlight ring. Active speaker is never a reordering and never a subscription
+change, so it cannot move audio.
+
+`liveMediaOwnership.ts` is protected ahead of its own wiring: its only consumer,
+`LiveModerationSheet.tsx`, is not yet mounted by any screen. That is recorded in
+the manifest note rather than papered over. It is protected now because the day
+the sheet is mounted, a change there becomes a live microphone-consent decision,
+and that is not a day anyone will remember to add a gate.
+
+### Tests run
+
+- `pytest tests/protection/test_realtime_audio_gate_coverage.py` — 14 passed,
+  27 subtests passed. These invoke the real gate as a subprocess.
+- `pytest tests/protection/test_agora_direct_live_contract.py` — 10 passed.
+- Each new source assertion was checked against an in-memory mutation of
+  `useAgoraLiveBroadcastRoom.ts` to confirm it fails when the invariant is
+  broken. A source assertion that cannot fail is worse than none.
+- `jest src/live src/calls src/core/__tests__/realtimeAudio ...` — 45 suites,
+  746 tests, 0 failures.
+- Manifest validates as JSON; all 73 protected paths exist on disk.
+
+### Physical validation required
+
+**None.** No file under `mobile-native/src/`, no native source, no file that
+ships in the app binary. There is no code path by which this commit can alter
+what a device does with audio. The physical validation owed for the audio
+changes *inside* this range is unchanged and still outstanding.
+
+### Known gap, stated rather than papered over
+
+**`useAgoraLiveBroadcastRoom.ts` has no behavioural test and cannot have one
+under the current Jest configuration.** Verified, not assumed: a probe test that
+mocks `react-native-agora` and does nothing but `await import(...)` fails with
+`A dynamic import callback was invoked without --experimental-vm-modules` before
+any assertion runs. The hook resolves the SDK that way in five places.
+
+So the protection this commit adds is real but bounded, and the bound is worth
+stating precisely rather than letting the added test count imply otherwise:
+
+- the **decisions** are provable and now protected — 209 tests across ten suites;
+- the **wiring** is pinned only at source level, by five string-level assertions;
+- the **behaviour** of the hook has no automated coverage at all, and Live audio's
+  real gate remains the physical validation in §7 of
+  `reports/realtime_audio_verified_baseline.md`.
+
+Full accounting, including the finding that 317 of 746 currently-passing native
+audio tests exercise modules unreachable from the app entry point, is in
+`reports/agora_audio_test_relevance_audit.md`.
+
+### Rollback procedure
+
+`git revert` this commit. Protection returns to its previous coverage; no runtime
+behaviour moves in either direction. The manifest change and the two test changes
+are independent — reverting only the manifest leaves the tests failing, which is
+the correct signal, not a broken build to work around.
