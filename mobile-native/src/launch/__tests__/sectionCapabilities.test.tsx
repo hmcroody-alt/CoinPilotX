@@ -1,256 +1,229 @@
 /**
- * Capability-aware section readiness.
+ * The capability layer and the landing that renders it.
  *
- * The layer above this one already tests that a locked module says so and does
- * not navigate. What it could not test is the case where the two facts a row
- * depends on disagree: the readiness audit says READY, and there is nowhere to
- * go. `readinessOf` defaults unregistered ids to READY on purpose — the table is
- * a deny-list, and an allow-list would silently lock every feature nobody
- * remembered to register — so "the audit found nothing wrong" is not the same
- * claim as "this opens something". A module in that gap rendered with a chevron
- * and an accessibility label saying it worked, and did nothing when pressed.
+ * The landing exists to stop a section's gaps from reading as the user's
+ * failure — an absent view count as "nobody looked", an empty reply-rate as
+ * "you never answer". That only holds while three things stay true, and each
+ * one of them fails silently:
  *
- * `resolveSectionCapability` is the conjunction of both facts in one place, and
- * these are the cases that pin it. The ones that matter most are the ones the
- * real registry does not currently contain: an invariant that holds only because
- * of today's data is an invariant that holds until someone adds a row.
+ *   - The two halves agree. States live in `readiness.ts` and labels live in
+ *     `sectionCapabilities.ts`, so a typo in either produces a row that gates
+ *     nothing, or a lock with nothing to show for it. Neither throws.
+ *   - "Available now" is honest. A capability listed as working while its row
+ *     says otherwise is the exact claim this whole mechanism exists to avoid.
+ *   - A finished section never gets a landing. The failure mode there is not a
+ *     bug report, it is a page of text that quietly appears between every
+ *     operator and their work.
  *
- * The registry is spied rather than replaced wholesale, so the tests that read
- * the real one below still read the real one.
+ * Plus the presentational promise the brief makes and the rest of the launch
+ * module already keeps: locked reads as *early*, never as *broken*.
  */
 
 import React from "react";
 import { fireEvent, render } from "@testing-library/react-native";
+import { View } from "react-native";
 
 jest.mock("@expo/vector-icons", () => ({ Ionicons: () => null }));
-
 jest.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 })
 }));
+jest.mock("../../navigation/BottomNavVisibility", () => ({
+  BOTTOM_NAV_CONTENT_CLEARANCE: 0,
+  useBottomNavScrollVisibility: () => ({
+    onScroll: jest.fn(),
+    onScrollBeginDrag: jest.fn(),
+    scrollEventThrottle: 16
+  })
+}));
 
-import * as businessOsApi from "../../api/businessOs";
-import { BUSINESS_OS_SECTION_MODULES, type BusinessOsModule } from "../../api/businessOs";
-import { preloadNamespaces, translate } from "../../i18n/engine";
+import { BUSINESS_OS_SECTIONS, businessOsNavigationArgs, businessOsSection } from "../../api/businessOs";
+import { preloadNamespaces } from "../../i18n/engine";
 import { BusinessOsSectionScreen } from "../../screens/BusinessOsSectionScreen";
-import { businessSubmoduleId, readinessOf } from "../readiness";
 import {
-  capabilityCopyState,
-  resolveSectionCapabilities,
-  resolveSectionCapability,
-  sectionCapabilityLists
+  businessOsSectionCapabilities,
+  businessOsSectionHasLanding,
+  businessOsSectionLists,
+  businessOsSectionOverview
 } from "../sectionCapabilities";
+import { LAUNCH_READINESS, businessModuleId, isLaunchGated, readinessOf } from "../readiness";
+
+/**
+ * The two one-time process costs, paid at module scope rather than by whichever
+ * test runs first. See `screens/__tests__/PageScreen.test.tsx` for the
+ * measurement: RNTL's first `render` in a worker mounts a probe tree to learn
+ * what its queries match, and the first failing assertion pays for Jest's
+ * message machinery. Together they are most of a test's budget on a loaded
+ * machine, and `beforeAll` cannot absorb them because hooks are bounded by the
+ * same timeout the tests are.
+ */
+render(<View />).unmount();
+try {
+  expect(null).toBeTruthy();
+} catch {
+  // The throw is the point; the message is discarded.
+}
 
 beforeAll(async () => {
   await preloadNamespaces("en", ["commerce", "common"]);
 });
 
-const SECTION_KEYS = Object.keys(BUSINESS_OS_SECTION_MODULES);
+const nav = () => ({ navigate: jest.fn() });
 
-/** A registry row, built here so a case can exist that the real registry lacks. */
-function moduleFixture(overrides: Partial<BusinessOsModule> & { key: string }): BusinessOsModule {
-  return {
-    label: "Fixture",
-    blurb: "A capability invented by this test.",
-    icon: "cube-outline",
-    ...overrides
-  };
-}
-
-describe("a capability's verdict", () => {
-  /** Case A — the audit is happy and there is somewhere to go. */
-  it("is available when readiness allows it and it has a destination", () => {
-    const capability = resolveSectionCapability(
-      "customers",
-      moduleFixture({ key: "conversations", route: "BusinessOsMessages", params: { filter: "all" } })
-    );
-
-    expect(capability.availability).toBe("READY");
-    expect(capability.available).toBe(true);
-    // The route is read off the verdict rather than off the module, so a caller
-    // cannot navigate with one it was not granted.
-    expect(capability.route).toBe("BusinessOsMessages");
-    expect(capability.params).toEqual({ filter: "all" });
+describe("the capability registry and the gate agree", () => {
+  it("gives every section an overview", () => {
+    BUSINESS_OS_SECTIONS.forEach((section) => {
+      const overview = businessOsSectionOverview(section.key);
+      expect(overview).toBeTruthy();
+      // The landing's subtitle. A section that arrives without one renders a
+      // heading over two lists and never says what it is for.
+      expect(overview!.purpose.length).toBeGreaterThan(20);
+    });
   });
 
-  /** Case B — the audit is holding it. The row is locked whatever its route says. */
-  it("is unavailable while the audit is holding it, even with a route", () => {
-    expect(readinessOf(businessSubmoduleId("customers", "segments"))).toBe("BUILDING");
-    const capability = resolveSectionCapability(
-      "customers",
-      moduleFixture({ key: "segments", route: "BusinessOsMessages" })
-    );
-
-    // A route does not overrule the audit; the audit is the stricter fact.
-    expect(capability.availability).toBe("BUILDING");
-    expect(capability.available).toBe(false);
-    expect(capability.route).toBeUndefined();
+  it("locks nothing it cannot name", () => {
+    // A `business:x.y` row whose `y` is not a registered capability gates a
+    // module that is never rendered anywhere: invisible, permanent, and
+    // indistinguishable from a capability that simply shipped.
+    Object.keys(LAUNCH_READINESS)
+      .filter((id) => id.startsWith("business:") && id.includes("."))
+      .forEach((id) => {
+        const [sectionKey, capabilityKey] = id.slice("business:".length).split(".");
+        const section = businessOsSection(sectionKey as never);
+        expect(section).toBeTruthy();
+        const keys = businessOsSectionCapabilities(section!.key).map((capability) => capability.key);
+        expect(keys).toContain(capabilityKey);
+      });
   });
 
-  /** Case C — the gap. READY, and nothing behind it. */
-  it("is unavailable when the audit allows it but nothing is wired up", () => {
-    expect(readinessOf(businessSubmoduleId("customers", "conversations"))).toBe("READY");
-    const capability = resolveSectionCapability("customers", moduleFixture({ key: "conversations" }));
-
-    expect(capability.availability).toBe("NO_DESTINATION");
-    expect(capability.available).toBe(false);
-    expect(capability.route).toBeUndefined();
+  it("keeps capability keys unique inside a section", () => {
+    // Duplicates collapse to one gate id, so the second one silently inherits
+    // the first one's state.
+    BUSINESS_OS_SECTIONS.forEach((section) => {
+      const keys = businessOsSectionCapabilities(section.key).map((capability) => capability.key);
+      expect(new Set(keys).size).toBe(keys.length);
+    });
   });
 
-  /**
-   * Case E — an id the readiness table has never heard of.
-   *
-   * The default stays READY, deliberately, and `launchGate.test.tsx` pins that.
-   * What must NOT follow from it is availability: absence from an audit is not
-   * evidence that a screen exists. The destination is what supplies that
-   * evidence, so an unknown id with nowhere to go resolves to the safe state.
-   */
-  it("does not treat an unaudited capability as usable", () => {
-    const id = businessSubmoduleId("sectionNobodyRegistered", "capabilityNobodyRegistered");
-    expect(readinessOf(id)).toBe("READY");
-
-    const capability = resolveSectionCapability(
-      "sectionNobodyRegistered",
-      moduleFixture({ key: "capabilityNobodyRegistered" })
-    );
-
-    expect(capability.id).toBe(id);
-    expect(capability.available).toBe(false);
-    expect(capability.availability).toBe("NO_DESTINATION");
+  it("puts a capability in exactly one list, decided by the gate", () => {
+    BUSINESS_OS_SECTIONS.forEach((section) => {
+      const { available, upcoming } = businessOsSectionLists(section.key);
+      expect(available.length + upcoming.length).toBe(businessOsSectionCapabilities(section.key).length);
+      // "Available now" is a claim about the backend, so it has to be the
+      // gate's claim and not a second opinion held in the copy file.
+      available.forEach((capability) => expect(readinessOf(capability.id)).toBe("READY"));
+      upcoming.forEach((capability) => expect(isLaunchGated(capability.id)).toBe(true));
+    });
   });
 
-  /**
-   * The other half of case E, stated so the deny-list is not quietly narrowed
-   * later: an unaudited capability that DOES open a real screen still opens. The
-   * mission forbids blindly locking a feature that works, and this is the line
-   * between the two — evidence of a destination, not membership of a list.
-   */
-  it("still opens an unaudited capability that has a real destination", () => {
-    const capability = resolveSectionCapability(
-      "sectionNobodyRegistered",
-      moduleFixture({ key: "capabilityNobodyRegistered", route: "BusinessOsMessages" })
-    );
-
-    expect(capability.available).toBe(true);
-    expect(capability.availability).toBe("READY");
-  });
-});
-
-describe("what the user is told", () => {
-  /**
-   * `NO_DESTINATION` is a fourth verdict but not a fourth word. "Coming soon" is
-   * true of it and the product already says it; a badge reading "Not wired up"
-   * would leak the shape of the registry into the operator's language.
-   */
-  it("says coming soon for a capability with nowhere to go, not a new word", () => {
-    expect(capabilityCopyState("NO_DESTINATION")).toBe("COMING_SOON");
-    expect(capabilityCopyState("COMING_SOON")).toBe("COMING_SOON");
-    expect(capabilityCopyState("BUILDING")).toBe("BUILDING");
-    expect(capabilityCopyState("READY")).toBe("READY");
-  });
-
-  it("never reaches for developer language", () => {
-    const forbidden = /broken|not implemented|unimplemented|unavailable|disabled|error|todo|wip|failed/i;
-    (["READY", "BUILDING", "COMING_SOON", "NO_DESTINATION"] as const).forEach((availability) => {
-      const state = capabilityCopyState(availability);
-      if (state === "READY") return;
-      const key = state === "BUILDING" ? "statusBuilding" : "statusComingSoon";
-      expect(translate(`commerce:launch.${key}`)).not.toMatch(forbidden);
+  it("describes every capability in the operator's language, not the developer's", () => {
+    // Same vocabulary rule the Coming Soon copy is held to. These strings are
+    // the ones most likely to drift, because they are written while reading the
+    // code that is missing.
+    const forbidden = /broken|not implemented|unimplemented|unavailable|disabled|endpoint|backend|stub|mock|todo|wip|failed/i;
+    BUSINESS_OS_SECTIONS.forEach((section) => {
+      const overview = businessOsSectionOverview(section.key)!;
+      expect(overview.purpose).not.toMatch(forbidden);
+      overview.capabilities.forEach((capability) => {
+        expect(capability.label.length).toBeGreaterThan(0);
+        expect(capability.blurb.length).toBeGreaterThan(0);
+        expect(capability.label).not.toMatch(forbidden);
+        expect(capability.blurb).not.toMatch(forbidden);
+      });
     });
   });
 });
 
-describe("the lists a landing page renders", () => {
-  /** Case F — a section whose capabilities all resolve as before is unchanged. */
-  it.each(SECTION_KEYS)("keeps every one of %s's capabilities in registry order", (key) => {
-    const capabilities = resolveSectionCapabilities(key);
-    const { available, upcoming } = sectionCapabilityLists(key);
-
-    expect(capabilities.map((capability) => capability.module.key)).toEqual(
-      businessOsApi.businessOsSectionModules(key).map((module) => module.key)
-    );
-    // Every capability lands in exactly one list. A module that fell out of both
-    // would vanish from the roadmap, which is the failure this layer exists to
-    // prevent, and it would still pass a test that only counted the rows shown.
-    expect(available.length + upcoming.length).toBe(capabilities.length);
-    available.forEach((capability) => expect(capability.available).toBe(true));
-    upcoming.forEach((capability) => expect(capability.available).toBe(false));
+describe("which sections get a landing", () => {
+  it("gives one to every section that is missing something", () => {
+    BUSINESS_OS_SECTIONS.forEach((section) => {
+      const { upcoming } = businessOsSectionLists(section.key);
+      expect(businessOsSectionHasLanding(section.key)).toBe(upcoming.length > 0);
+    });
   });
 
-  /**
-   * Cases D, G and H share a mechanism here: this screen has no asynchronous
-   * load, so "section unavailable", "still loading" and "error" all arrive as a
-   * section with no roster. The lists come back empty, which is what the
-   * landing's own fallback sentence is keyed on — never a blank shell.
-   */
-  it("returns nothing at all for a section it has no roster for", () => {
-    expect(resolveSectionCapabilities("sectionNobodyRegistered")).toEqual([]);
-    expect(sectionCapabilityLists("sectionNobodyRegistered")).toEqual({ available: [], upcoming: [] });
+  it("leaves a finished section alone", () => {
+    // Verification is the one section the audit found complete end to end. It
+    // is named rather than derived on purpose: if a gap is ever found in it,
+    // this test should fail and make somebody look, not quietly re-derive.
+    expect(businessOsSectionHasLanding("verification")).toBe(false);
+    expect(isLaunchGated(businessModuleId("verification"))).toBe(false);
   });
 
-  /** Read against the real registry: available and routable are the same set. */
-  it.each(SECTION_KEYS)("hands out a route for exactly %s's available capabilities", (key) => {
-    resolveSectionCapabilities(key).forEach((capability) => {
-      expect(capability.available).toBe(Boolean(capability.route));
+  it("gives one to the sections that have nothing at all yet", () => {
+    // Customers and Team have no screen and no route. Before the launch gate
+    // they were hidden; with only the gate they were a one-line modal. The
+    // landing is what lets a user see what is actually coming.
+    ["customers", "team"].forEach((key) => {
+      expect(businessOsSectionHasLanding(key as never)).toBe(true);
+      expect(businessOsSectionLists(key as never).available).toHaveLength(0);
     });
   });
 });
 
-/**
- * The runtime half. The screen suite already asserts this against the registry
- * as it stands; the case below is the one the registry does not contain, which
- * is precisely the one a static check cannot reach.
- */
-describe("a section landing given a capability with nowhere to go", () => {
-  const ORPHAN = moduleFixture({
-    key: "orphan",
-    label: "Orphan Capability",
-    blurb: "Registered, audited, and pointing at nothing."
+describe("a section landing", () => {
+  it("lists what works and what is coming, and opens the section", () => {
+    const navigation = nav();
+    const view = render(<BusinessOsSectionScreen navigation={navigation} route={{ params: { section: "store" } }} />);
+    const { available, upcoming } = businessOsSectionLists("store");
+    expect(available.length).toBeGreaterThan(0);
+    expect(upcoming.length).toBeGreaterThan(0);
+
+    available.forEach((capability) => expect(view.getByTestId(`capability-${capability.id}`)).toBeTruthy());
+    upcoming.forEach((capability) => expect(view.getByTestId(`capability-${capability.id}`)).toBeTruthy());
+
+    // Store works. The landing explains it and then gets out of the way — the
+    // button dispatches exactly what the registry says the card always did.
+    fireEvent.press(view.getByTestId("business-section-open-store"));
+    const [route, params] = businessOsNavigationArgs(businessOsSection("store")!);
+    expect(navigation.navigate).toHaveBeenCalledWith(route, params);
   });
 
-  beforeEach(() => {
-    jest
-      .spyOn(businessOsApi, "businessOsSectionModules")
-      .mockImplementation((key: string) => (key === "customers" ? [ORPHAN] : []));
-  });
+  it("says a locked capability is coming soon in words, not only in teal", () => {
+    const view = render(<BusinessOsSectionScreen navigation={nav()} route={{ params: { section: "store" } }} />);
+    const [first] = businessOsSectionLists("store").upcoming;
+    const row = view.getByTestId(`capability-${first.id}`);
 
-  afterEach(() => {
-    jest.restoreAllMocks();
-  });
-
-  it("explains itself instead of answering the tap with nothing", () => {
-    const navigation = { navigate: jest.fn(), goBack: jest.fn() };
-    const view = render(
-      <BusinessOsSectionScreen navigation={navigation} route={{ params: { section: "customers" } }} />
-    );
-
-    const id = businessSubmoduleId("customers", "orphan");
-    // It is listed, not hidden: the roadmap survives.
-    const row = view.getByTestId(`launch-module-${id}`);
-    // And it reads as early rather than as working — the state is in the label,
-    // not only in the styling, because that is all a screen reader gets.
-    expect(row.props.accessibilityLabel).toBe("Orphan Capability. Coming soon.");
+    // The state is in the accessibility label because colour is not a channel a
+    // screen reader has and iOS hints are off by default.
+    expect(row.props.accessibilityLabel).toBe(`${first.label}. Coming soon.`);
+    // And it stays a live control. Locked is not disabled — the tap is how a
+    // user finds out what is happening.
     expect(row.props.accessibilityState?.disabled).toBeFalsy();
-
-    fireEvent.press(row);
-
-    // The conjunction is the test. Before this layer the press did neither: no
-    // message, no navigation, no way for the user to tell the tap had landed.
-    expect(view.getByTestId(`coming-soon-${id}`)).toBeTruthy();
-    expect(navigation.navigate).not.toHaveBeenCalled();
   });
 
-  it("puts it under the upcoming heading rather than among the working rows", () => {
-    const view = render(
-      <BusinessOsSectionScreen
-        navigation={{ navigate: jest.fn(), goBack: jest.fn() }}
-        route={{ params: { section: "customers" } }}
-      />
-    );
+  it("answers a tap on a locked capability with the same message every locked card gives", () => {
+    const view = render(<BusinessOsSectionScreen navigation={nav()} route={{ params: { section: "insights" } }} />);
+    const [first] = businessOsSectionLists("insights").upcoming;
 
-    expect(view.getByText(translate("commerce:launch.upcomingTitle"))).toBeTruthy();
-    expect(view.queryByText(translate("commerce:launch.availableTitle"))).toBeNull();
-    // Not the fallback either: the section still has a roster, so the landing
-    // describes it rather than apologising for it.
-    expect(view.queryByText(translate("commerce:launch.sectionFallbackBody"))).toBeNull();
+    fireEvent.press(view.getByTestId(`capability-${first.id}`));
+    expect(view.getByTestId(`coming-soon-${first.id}`)).toBeTruthy();
+    // Named, so the sheet answers "which one?" rather than "something".
+    expect(view.getByText(first.label)).toBeTruthy();
+    expect(view.getByText("COMING SOON")).toBeTruthy();
+  });
+
+  it("offers no way into a section that is still being built", () => {
+    // Events is gated at the section level: its three tabs cannot hold a row.
+    // The button is absent rather than present-and-disabled, for the same
+    // reason a locked tile is not greyed out.
+    const view = render(<BusinessOsSectionScreen navigation={nav()} route={{ params: { section: "events" } }} />);
+    expect(view.queryByTestId("business-section-open-events")).toBeNull();
+    // And the section says which state it is in, in a word, above the lists.
+    expect(view.getByTestId("business-section-status-events").props.children).toBe("Building");
+  });
+
+  it("offers no way into a section that has no screen at all", () => {
+    const view = render(<BusinessOsSectionScreen navigation={nav()} route={{ params: { section: "team" } }} />);
+    expect(view.queryByTestId("business-section-open-team")).toBeNull();
+    businessOsSectionLists("team").upcoming.forEach((capability) => {
+      expect(view.getByTestId(`capability-${capability.id}`)).toBeTruthy();
+    });
+  });
+
+  it("says so plainly when the section does not exist", () => {
+    // A stale deep link or a renamed key. The alternative is an empty page that
+    // looks like a section which loaded and had nothing in it.
+    const view = render(<BusinessOsSectionScreen navigation={nav()} route={{ params: {} }} />);
+    expect(view.getByText("That section is not part of Business OS.")).toBeTruthy();
   });
 });

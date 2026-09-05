@@ -33,20 +33,9 @@ jest.mock("../../screens/EventsManagerScreen", () => ({
   EventsManagerScreen: () => null
 }));
 
-// Same treatment for the creation form the Presence gate stands in front of.
-jest.mock("../../screens/PageCreateScreen", () => ({
-  PageCreateScreen: () => null
-}));
-
-import {
-  BUSINESS_OS_SECTIONS,
-  businessOsHubSections,
-  businessOsLaunchSections,
-  businessOsSectionModules
-} from "../../api/businessOs";
+import { BUSINESS_OS_SECTIONS, businessOsHubSections, businessOsLaunchSections } from "../../api/businessOs";
 import { preloadNamespaces, translate } from "../../i18n/engine";
 import { EventsRoute } from "../../screens/EventsRoute";
-import { PageCreateRoute } from "../../screens/PageCreateRoute";
 import { ComingSoonSheet } from "../ComingSoonSheet";
 import { LaunchTile } from "../LaunchTile";
 import { LOCKED_GLOW_MAX, LOCKED_GLOW_MIN, useLockedMotion } from "../lockedMotion";
@@ -97,31 +86,15 @@ describe("launch readiness table", () => {
     // compile time and take the runtime check with it.
     const sectionKeys = new Set<string>(BUSINESS_OS_SECTIONS.map((section) => section.key));
     GATED_IDS.filter((id) => id.startsWith("business:")).forEach((id) => {
-      const suffix = id.slice("business:".length);
-      // Second-layer ids are `<section>.<module>`. Both halves have to name
-      // something real: a typo in either one gates nothing, because unknown ids
-      // are READY, and neither half fails loudly on its own.
-      if (suffix.includes(".")) {
-        const [sectionKey, moduleKey] = suffix.split(".");
-        expect(sectionKeys.has(sectionKey)).toBe(true);
-        const moduleKeys = businessOsSectionModules(sectionKey).map((module) => module.key);
-        expect(moduleKeys).toContain(moduleKey);
-        return;
-      }
-      expect(sectionKeys.has(suffix)).toBe(true);
+      // `business:store` and `business:store.views` are the same check on the
+      // part before the dot; the capability half is checked against the
+      // registry in the suite below.
+      const [sectionKey] = id.slice("business:".length).split(".");
+      expect(sectionKeys.has(sectionKey)).toBe(true);
     });
-    // Presence's gated entries, each one the audit found: the per-presence
-    // Business OS entry that navigates without a page id, and the three
-    // creation buttons that all open the same unfinished `PageCreate` form.
+    // Presence has one gated action and it is the one the audit found: the
+    // per-presence Business OS entry that navigates without a page id.
     expect(readinessOf(presenceModuleId("businessOs"))).toBe("BUILDING");
-    ["createArtist", "createBusiness", "createNew"].forEach((action) => {
-      expect(isLaunchGated(presenceModuleId(action))).toBe(true);
-    });
-    // The landing page is NOT gated, and that is the whole point of a
-    // progressive unlock: Presence Home lists real pages and its View and
-    // Manage actions work, so it opens. A row here for the hub itself would
-    // turn a partial lock into a wall.
-    expect(readinessOf("presence:hub")).toBe("READY");
   });
 
   it("registers only routes whose module is actually gated", () => {
@@ -264,7 +237,6 @@ describe("the Coming Soon message", () => {
     const keys = [
       "comingSoonTitle",
       "comingSoonBody",
-      "comingSoonBodyPresence",
       "comingSoonAction",
       "statusComingSoon",
       "statusBuilding",
@@ -289,27 +261,6 @@ describe("the deep-link boundary", () => {
     expect(view.getByText("COMING SOON")).toBeTruthy();
 
     // And there is a way out. A gate the user cannot back out of is a trap.
-    fireEvent.press(view.getByTestId("coming-soon-screen-dismiss"));
-    expect(goBack).toHaveBeenCalledTimes(1);
-  });
-
-  /**
-   * Presence creation has three buttons and three OTHER ways in: a
-   * `navigate("PageCreate")` in `PagesHubScreen`, the `pulse/pages/create`
-   * deep link, and navigation state restored after a cold start. Gating only
-   * the buttons would leave the unfinished form reachable by all three.
-   */
-  it("refuses PageCreate however it was reached", () => {
-    const goBack = jest.fn();
-    const view = render(
-      <PageCreateRoute route={{ params: undefined }} navigation={{ navigate: jest.fn(), goBack }} />
-    );
-
-    expect(view.getByTestId("coming-soon-screen-presence:createNew")).toBeTruthy();
-    expect(view.getByText("COMING SOON")).toBeTruthy();
-    // The form itself never mounted — the step header is the tell.
-    expect(view.queryByText("Identity")).toBeNull();
-
     fireEvent.press(view.getByTestId("coming-soon-screen-dismiss"));
     expect(goBack).toHaveBeenCalledTimes(1);
   });

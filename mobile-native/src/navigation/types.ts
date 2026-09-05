@@ -1,5 +1,6 @@
 import { NavigatorScreenParams } from "@react-navigation/native";
 
+import type { BusinessOsSectionKey } from "../api/businessOs";
 import type { MarketplaceListing } from "../api/marketplace";
 import type { MarketplaceFulfillmentKind } from "../api/marketplaceFulfillment";
 
@@ -348,12 +349,11 @@ export type RootStackParamList = {
    */
   BusinessOsEvents: { title?: string } | undefined;
   /**
-   * Landing page for a Business OS section that has no finished screen of its
-   * own. `section` is a `BusinessOsSectionKey`. The screen renders a plain
-   * explanation for any key it has no module list for, so a stale deep link
-   * produces a sentence rather than a blank shell.
+   * A Business OS section's landing layer — its purpose, what it does today and
+   * what is still coming. Pushed instead of the section itself when the section
+   * has locked capabilities; see `launch/sectionCapabilities.ts`.
    */
-  BusinessOsSection: { section?: string; title?: string } | undefined;
+  BusinessOsSection: { section: BusinessOsSectionKey };
   /**
    * The unified Activity feed (the bell in every seller header). Aggregates
    * social / marketplace / orders / ads / payments / system notifications; its

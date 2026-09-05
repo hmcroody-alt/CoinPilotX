@@ -1,137 +1,139 @@
 /**
- * A Business OS section landing page — the first layer of a section that has no
- * finished screen of its own.
+ * A Business OS section's landing layer.
  *
- * WHAT PROBLEM THIS SOLVES
+ * WHAT IT ANSWERS
  *
- * Before this, a section with no backend (Customers, Team) or with a screen that
- * could not hold a row (Events) answered a tap with the Coming Soon message and
- * nothing else. That is a closed door: correct, but it tells the owner nothing
- * about what the section will be, and it makes a tile that looks like every other
- * tile behave like a dead end.
+ * "What can I actually do in here?" — asked of a section that works but is not
+ * finished. The grid tile has room for one line; this has room for the truth:
+ * the section's purpose, everything it does today, and everything it will do,
+ * with the second list marked rather than hidden.
  *
- * This screen is the open door. It states what the section is for, lists the
- * capabilities that already work, and lists the ones still being built as locked
- * rows. The section becomes enterable while the unfinished depth behind it stays
- * shut — which is the whole point of the layer.
+ * WHEN IT APPEARS
  *
- * WHAT IT IS NOT
+ * Only where something is locked. `businessOsSectionHasLanding` decides, and a
+ * section with nothing missing never comes here — its card opens its real
+ * screen exactly as before. A landing in front of a finished feature is a page
+ * of text standing between someone and their work.
  *
- * It is not a second Business OS and it holds no data of its own: every working
- * row here navigates to a screen that already existed, and no row invents a
- * capability. A section whose tile already opens a real screen is deliberately
- * absent from `BUSINESS_OS_SECTION_MODULES` and never reaches this screen — it
- * would be a menu in front of a working feature.
+ * THE SHAPE OF THE PAGE
  *
- * When a module's backend lands, its row comes out of `readiness.ts` and gains a
- * `route`; nothing here changes. When the last locked row in a section opens, the
- * section can be pointed straight at its own screen and this landing retires.
+ * Two lists and, when the section itself is open, one button into it. The
+ * button is absent when the section is gated, because there is nowhere to go —
+ * and it is absent rather than disabled, for the same reason `LaunchTile` does
+ * not grey out: a disabled control says the user did something wrong.
+ *
+ * Locked rows are pressable and open the same Coming Soon message every locked
+ * card in the app opens. One wording, everywhere.
  */
 
-import { Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { businessOsNavigationArgs, businessOsSection, type BusinessOsSectionKey } from "../api/businessOs";
 import { Panel } from "../components/Panel";
 import { Screen } from "../components/Screen";
-import { businessOsSection } from "../api/businessOs";
-import { useTranslation } from "../i18n";
 import { ComingSoonSheet } from "../launch/ComingSoonSheet";
-import { LaunchModuleRow } from "../launch/LaunchModuleRow";
-import { sectionCapabilityLists, type ResolvedCapability } from "../launch/sectionCapabilities";
-import { useLaunchGate } from "../launch/useLaunchGate";
-import type { RootStackParamList } from "../navigation/types";
+import { businessModuleId, isLaunchGated, readinessOf } from "../launch/readiness";
+import { businessOsSectionLists, businessOsSectionOverview, type ResolvedCapability } from "../launch/sectionCapabilities";
+import { useLaunchCopy, useLaunchGate } from "../launch/useLaunchGate";
 import { colors } from "../theme/colors";
+import { presenceTheme } from "../theme/presenceTheme";
 import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = {
-  navigation: { navigate: (...args: any[]) => void; goBack?: () => void };
-  route?: { params?: RootStackParamList["BusinessOsSection"] };
+  navigation: { navigate: (...args: any[]) => void };
+  route?: { params?: { section?: BusinessOsSectionKey } };
 };
 
 export function BusinessOsSectionScreen({ navigation, route }: Props) {
-  const { t } = useTranslation();
   const gate = useLaunchGate();
+  const { badge } = useLaunchCopy();
 
-  const sectionKey = route?.params?.section;
-  const section = sectionKey ? businessOsSection(sectionKey as never) : undefined;
-  /*
-   * The one place this screen asks whether a capability can be used. The split
-   * is not `isLaunchReady` because readiness alone answers a narrower question
-   * than the rows need — see `sectionCapabilities.ts`.
-   */
-  const { available, upcoming } = sectionKey
-    ? sectionCapabilityLists(sectionKey)
-    : { available: [], upcoming: [] };
+  const key = route?.params?.section;
+  const section = key ? businessOsSection(key) : undefined;
+  const overview = key ? businessOsSectionOverview(key) : undefined;
 
-  /*
-   * Reached with a section this screen has no landing for — an unknown key from
-   * a deep link, or a section that has since been given its own screen. Say so
-   * plainly rather than rendering an empty shell that looks like a load failure.
-   */
-  if (!section || available.length + upcoming.length === 0) {
+  // Reached with a section that does not exist — a stale deep link, or a
+  // renamed key. Say so plainly rather than rendering an empty page that looks
+  // like the section is finished and does nothing.
+  if (!key || !section || !overview) {
     return (
-      <Screen title={t("commerce:launch.sectionFallbackTitle")}>
+      <Screen title="Business OS">
         <Panel>
-          <Text style={styles.muted}>{t("commerce:launch.sectionFallbackBody")}</Text>
+          <Text style={styles.muted}>That section is not part of Business OS.</Text>
         </Panel>
       </Screen>
     );
   }
 
-  /*
-   * Every row goes through the gate rather than navigating directly, for the
-   * same reason the hub's tiles do: the conditional IS the navigation, so a row
-   * cannot become live by someone forgetting a check here.
-   *
-   * A capability with nowhere to go passes no callback at all. That is the gate's
-   * documented way of saying "there is nothing to open" — it hands the refusal to
-   * the one place that already decides, instead of the old `if (!module.route)
-   * return;`, which returned from inside the callback after the gate had already
-   * concluded the tap would land somewhere, and so read to the user as a dead tap.
-   */
-  function openModule(capability: ResolvedCapability) {
-    const destination = capability.available ? capability.route : undefined;
-    gate.open(
-      capability.id,
-      capability.module.label,
-      destination ? () => navigation.navigate(destination, capability.params) : undefined
-    );
+  const sectionId = businessModuleId(key);
+  const sectionGated = isLaunchGated(sectionId);
+  const { available, upcoming } = businessOsSectionLists(key);
+  // A gated section has nowhere to send anyone, so it gets no button at all.
+  const canOpen = !sectionGated && Boolean(section.route);
+
+  function openSection() {
+    const [target, params] = businessOsNavigationArgs(section!);
+    navigation.navigate(target, params);
   }
 
   return (
-    <Screen title={section.label} subtitle={section.blurb}>
-      {available.length ? (
+    <Screen title={section.label} subtitle={overview.purpose}>
+      {sectionGated ? (
         <Panel>
-          <Text style={styles.panelTitle}>{t("commerce:launch.availableTitle")}</Text>
-          <Text style={styles.muted}>{t("commerce:launch.availableBody")}</Text>
-          <View style={styles.rows}>
-            {available.map((capability) => (
-              <LaunchModuleRow
-                key={capability.module.key}
-                id={capability.id}
-                label={capability.module.label}
-                blurb={capability.module.blurb}
-                icon={capability.module.icon}
-                availability={capability.availability}
-                onPress={() => openModule(capability)}
-              />
-            ))}
+          <View style={styles.statusRow}>
+            <Ionicons name="sparkles-outline" size={18} color={presenceTheme.teal} />
+            <View style={styles.statusBadge}>
+              <Text style={styles.statusBadgeText} testID={`business-section-status-${key}`}>
+                {badge(readinessOf(sectionId))}
+              </Text>
+            </View>
           </View>
+          <Text style={styles.muted}>
+            {section.label} is being built. Everything it will do is listed below, so you can see it coming rather
+            than find it missing.
+          </Text>
         </Panel>
       ) : null}
 
+      <Panel>
+        <Text style={styles.panelTitle}>Available now</Text>
+        {available.length ? (
+          <View style={styles.list}>
+            {available.map((capability) => (
+              <CapabilityRow key={capability.key} capability={capability} />
+            ))}
+          </View>
+        ) : (
+          // Only reachable for a section with no live capability at all —
+          // Customers, Team, Events. Saying it outright is better than an
+          // empty panel, which reads as a loading failure.
+          <Text style={styles.muted}>Nothing here yet. This section is on its way.</Text>
+        )}
+        {canOpen ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Open ${section.label}`}
+            testID={`business-section-open-${key}`}
+            onPress={openSection}
+            style={styles.primaryButton}
+          >
+            <Text style={styles.primaryButtonText}>Open {section.label}</Text>
+          </Pressable>
+        ) : null}
+      </Panel>
+
       {upcoming.length ? (
         <Panel>
-          <Text style={styles.panelTitle}>{t("commerce:launch.upcomingTitle")}</Text>
-          <Text style={styles.muted}>{t("commerce:launch.upcomingBody")}</Text>
-          <View style={styles.rows}>
+          <Text style={styles.panelTitle}>Coming next</Text>
+          <Text style={styles.muted}>
+            These are on the way. Nothing here shows made-up numbers in the meantime.
+          </Text>
+          <View style={styles.list}>
             {upcoming.map((capability) => (
-              <LaunchModuleRow
-                key={capability.module.key}
-                id={capability.id}
-                label={capability.module.label}
-                blurb={capability.module.blurb}
-                icon={capability.module.icon}
-                availability={capability.availability}
-                onPress={() => openModule(capability)}
+              <CapabilityRow
+                key={capability.key}
+                capability={capability}
+                onPress={() => gate.open(capability.id, capability.label, () => undefined)}
               />
             ))}
           </View>
@@ -143,21 +145,160 @@ export function BusinessOsSectionScreen({ navigation, route }: Props) {
   );
 }
 
+/**
+ * One capability, in either list.
+ *
+ * A locked row takes the teal edge and the word badge from `LaunchTile` and
+ * leaves the drift and the halo behind. Those mark one card among several on a
+ * grid; a dozen of them animating down a list is noise, and the row is already
+ * unambiguous without movement — it says "Coming Soon" in words. Reduce Motion
+ * therefore has nothing to switch off here.
+ */
+function CapabilityRow({ capability, onPress }: { capability: ResolvedCapability; onPress?: () => void }) {
+  const { badge, accessibility } = useLaunchCopy();
+  const locked = capability.state !== "READY";
+  const a11y = accessibility(capability.id, capability.label, capability.blurb);
+
+  const body = (
+    <>
+      <Ionicons
+        name={locked ? "lock-closed-outline" : "checkmark-circle"}
+        size={18}
+        color={locked ? presenceTheme.teal : colors.accent}
+      />
+      <View style={styles.rowBody}>
+        <View style={styles.rowHeading}>
+          <Text style={styles.rowLabel}>{capability.label}</Text>
+          {locked ? (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{badge(capability.state)}</Text>
+            </View>
+          ) : null}
+        </View>
+        <Text style={styles.rowBlurb}>{capability.blurb}</Text>
+      </View>
+    </>
+  );
+
+  // An available capability is a statement, not a control: it describes what
+  // the section already does, and the way to use it is the button above. Only
+  // locked rows are pressable, because only they have an answer to give.
+  if (!locked) {
+    return (
+      <View accessible accessibilityLabel={a11y.accessibilityLabel} style={styles.row} testID={`capability-${capability.id}`}>
+        {body}
+      </View>
+    );
+  }
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={a11y.accessibilityLabel}
+      accessibilityHint={a11y.accessibilityHint}
+      testID={`capability-${capability.id}`}
+      onPress={onPress}
+      style={[styles.row, styles.rowLocked]}
+    >
+      {body}
+    </Pressable>
+  );
+}
+
 const styles = createThemedStyles(() => ({
+  badge: {
+    backgroundColor: presenceTheme.tealSoft,
+    borderColor: presenceTheme.tealBorder,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 8,
+    paddingVertical: 2
+  },
+  badgeText: {
+    color: presenceTheme.teal,
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 0.6
+  },
+  list: {
+    gap: 10,
+    marginTop: 10
+  },
   muted: {
     color: colors.muted,
-    fontSize: 13,
-    lineHeight: 19
+    fontSize: 14,
+    lineHeight: 20
   },
   panelTitle: {
     color: colors.text,
     fontSize: 16,
     fontWeight: "800"
   },
-  rows: {
+  primaryButton: {
+    alignItems: "center",
+    backgroundColor: colors.accent,
+    borderRadius: 12,
+    justifyContent: "center",
+    marginTop: 14,
+    minHeight: 48,
+    paddingHorizontal: 20
+  },
+  primaryButtonText: {
+    color: "#08110f",
+    fontSize: 15,
+    fontWeight: "800"
+  },
+  row: {
+    alignItems: "flex-start",
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.border,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row",
     gap: 10,
-    marginTop: 4
+    padding: 12
+  },
+  rowBlurb: {
+    color: colors.muted,
+    fontSize: 13,
+    lineHeight: 18
+  },
+  rowBody: {
+    flex: 1,
+    gap: 3
+  },
+  rowHeading: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8
+  },
+  rowLabel: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "700"
+  },
+  rowLocked: {
+    borderColor: presenceTheme.tealBorder
+  },
+  statusBadge: {
+    backgroundColor: presenceTheme.tealSoft,
+    borderColor: presenceTheme.tealBorder,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 10,
+    paddingVertical: 3
+  },
+  statusBadgeText: {
+    color: presenceTheme.teal,
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 1
+  },
+  statusRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 8
   }
 }));
-
-export default BusinessOsSectionScreen;

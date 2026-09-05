@@ -42,7 +42,16 @@
  */
 export type ReadinessState = "READY" | "BUILDING" | "COMING_SOON";
 
-/** `business:<sectionKey>` or `presence:<actionKey>`. */
+/**
+ * `business:<sectionKey>`, `business:<sectionKey>.<capabilityKey>`, or
+ * `presence:<actionKey>`.
+ *
+ * The dotted form is the same gate at a finer grain. A section answers "can I
+ * open this?"; a capability answers "is this one thing inside it real yet?".
+ * They are the same table and the same verdict function on purpose — a second
+ * mechanism for the second grain is how the two drift apart and a section ends
+ * up claiming to be ready while listing nothing it can actually do.
+ */
 export type LaunchModuleId = string;
 
 /**
@@ -95,66 +104,170 @@ export const LAUNCH_READINESS: Readonly<Record<LaunchModuleId, ReadinessState>> 
    */
   "presence:businessOs": "BUILDING",
 
-  /*
-   * Presence — the three creation entries.
+  /* ================================================================== *
+   * Capabilities.
    *
-   * "Create Artist Presence", "Create Business Presence" and "+ Create New" all
-   * land on the same `PageCreate` screen and differ only in the `flavor` they
-   * pass. They are three rows rather than one because they are three things a
-   * user can see and tap: the badge and the accessibility label are read per
-   * control, and a single shared id would leave the gate unable to say which
-   * door it just closed.
+   * Below the section grain: the individual things a section promises. A
+   * section can be READY — you can open it, everything it shows is real — and
+   * still be missing pieces a user would reasonably expect. Hiding those
+   * pieces has the same cost the section-level gate was built to remove: the
+   * user cannot see what is coming, and the absence gets filled in by a
+   * plausible-looking zero instead.
    *
-   * BUILDING rather than COMING_SOON: `PageCreateScreen` exists and renders, so
-   * this is a workflow being finished rather than one never started. Both
-   * resolve to the same message for the user; the distinction is what lets a
-   * later reader tell half-built from not-started without re-running the audit.
+   * Every row here came out of a read of the screen and the endpoint behind
+   * it, and says which one is missing. When the data lands, delete the row —
+   * the capability moves from "Coming next" to "Available now" on its
+   * section's landing with no other edit.
    *
-   * The landing page itself is deliberately absent from this table. Presence
-   * Home lists real pages from `listMyPages()` and its View / Manage actions
-   * work, so it stays READY — the gate is on creation, not on the surface.
+   * The labels these ids are shown under live in `sectionCapabilities.ts`,
+   * next to the section registry's own labels in `api/businessOs.ts`, for the
+   * same reason those two are already apart: this file is the audit's verdict,
+   * not the product's copy.
+   * ================================================================== */
+
+  /* --- Business Profile ---------------------------------------------
+   * The profile itself saves and loads against `/api/pulse/business/profile`
+   * and is fully real. What is missing is every *number* about the business
+   * rather than every *fact*: the screen carries NO_DATA placeholders where a
+   * rating, a view count or a response time would go, because no endpoint
+   * produces them.
    */
-  "presence:createArtist": "BUILDING",
-  "presence:createBusiness": "BUILDING",
-  "presence:createNew": "BUILDING",
+  "business:profile.rating": "COMING_SOON",
+  "business:profile.traffic": "COMING_SOON",
+  "business:profile.serviceStats": "COMING_SOON",
+  /* The hours row renders what the profile stored; there is no weekly editor
+   * screen to change it from here. */
+  "business:profile.hoursEditor": "BUILDING",
+  /* `listScheduledLiveEvents` returns public discovery rows, not the ones this
+   * business owns, so the linked-events panel can only be an empty state. */
+  "business:profile.linkedEvents": "BUILDING",
 
-  /* ---------------------------------------------------------------- *
-   * Second layer — modules INSIDE a Business OS section.
-   *
-   * The rows above gate a whole section tile. These gate the modules a
-   * section lists once it is open, which is what lets a section be
-   * enterable while the unfinished depth behind it stays shut. Same table,
-   * same three states, same `readinessOf` — a second layer of gating, not a
-   * second gating system.
-   *
-   * Id shape is `business:<section>.<module>`, so a module id can never
-   * collide with the section id that owns it.
-   * ---------------------------------------------------------------- */
+  /* --- Store ---------------------------------------------------------
+   * Listings, stock and the money already made are live off the seller-store
+   * snapshot. The gaps are all declared in `STORE_MOCK_DATA_GAPS`.
+   */
+  "business:store.views": "COMING_SOON",
+  "business:store.rating": "COMING_SOON",
+  /* Both need `order.ship_by`, which the live order payload does not carry. */
+  "business:store.dispatch": "COMING_SOON",
+  "business:store.shipToday": "COMING_SOON",
+  /* Per-listing pause works; a seller-level storefront status flag does not
+   * exist, so there is nothing to switch. */
+  "business:store.pauseStore": "COMING_SOON",
+  /* Quantity is coerced to 0 upstream, so "not tracked" and "none left" arrive
+   * here as the same value and cannot be told apart. */
+  "business:store.stockTracking": "BUILDING",
 
-  /*
-   * Customers. The section has no backend at all, so both of its modules are
-   * shut. `records` has nothing behind it; `segments` is the one being cut
-   * first, which is the whole reason the two states are kept apart.
+  /* --- Marketplace ---------------------------------------------------
+   * Selling, offers, cart and the buying feed are live. The gaps are declared
+   * in `MARKETPLACE_MOCK_DATA_GAPS`.
+   */
+  "business:marketplace.boost": "COMING_SOON",
+  "business:marketplace.listingStats": "COMING_SOON",
+  "business:marketplace.savedSearches": "COMING_SOON",
+  /* Wants coarse listing coordinates and a radius preference. When it ships it
+   * exposes a distance and never a location. */
+  "business:marketplace.distance": "COMING_SOON",
+  "business:marketplace.ratings": "COMING_SOON",
+  /* A safety feature. It is on this list rather than faked for that reason. */
+  "business:marketplace.meetupSpots": "COMING_SOON",
+  /* Accepting an offer writes no order row, so there is nothing to total. */
+  "business:marketplace.soldRevenue": "BUILDING",
+
+  /* --- Advertising ---------------------------------------------------
+   * Accounts, campaigns, budgets, spend and the wallet are live against
+   * `/api/pulse/ads/*`.
+   */
+  /* The composer exists behind `EXPO_PUBLIC_ADS_POST_MODE` and runs entirely
+   * on mock data — there is no create route on the server. */
+  "business:advertising.composer": "BUILDING",
+  /* The analytics engine accepts neither a business id nor a date range, so
+   * spend cannot be tied back to an order. */
+  "business:advertising.attribution": "COMING_SOON",
+
+  /* --- Orders --------------------------------------------------------
+   * Both sides of the order list, their timelines and the payout link are
+   * live. The gaps are declared in `ORDERS_MOCK_DATA_GAPS`.
+   */
+  /* The actions are drawn and disabled: they run against the order service,
+   * which is not enabled in this build. */
+  "business:orders.fulfilment": "BUILDING",
+  /* `previewShipBy` fabricates a three-day SLA and the UI tags it "Preview".
+   * A real deadline needs `order.ship_by`. */
+  "business:orders.shipBy": "BUILDING",
+  /* The live surface has only paid vs complete; scheduled and handed-off have
+   * no state to read. */
+  "business:orders.pickup": "COMING_SOON",
+  /* The canonical hold exists, but it is on `/api/business-os`, which is dark
+   * in every environment. */
+  "business:orders.escrow": "BUILDING",
+  "business:orders.perOrderPayout": "COMING_SOON",
+  "business:orders.returnWindow": "COMING_SOON",
+
+  /* --- Customers -----------------------------------------------------
+   * The section has no screen and no endpoint at all — see the section row
+   * above. These name what it will be rather than what is missing from it.
    */
   "business:customers.records": "COMING_SOON",
-  "business:customers.segments": "BUILDING",
+  "business:customers.segments": "COMING_SOON",
+  "business:customers.history": "COMING_SOON",
+  "business:customers.notes": "COMING_SOON",
 
-  /*
-   * Team. Page-level roles exist under `/api/pages/*`, but that is the
-   * Presence team — a different subject with a different owner model. Nothing
-   * backs a *business* team yet, so both modules are shut.
+  /* --- Messages ------------------------------------------------------
+   * The inbox, threads, live updates, filters and search are live.
    */
-  "business:team.members": "COMING_SOON",
+  /* `deriveReplyStat` has no source and returns nothing. */
+  "business:messages.replyStats": "BUILDING",
+  "business:messages.savedReplies": "COMING_SOON",
+  /* Stored on the device only, so it says nothing to anyone messaging you. */
+  "business:messages.awayMode": "BUILDING",
+  "business:messages.typing": "COMING_SOON",
+  "business:messages.offerExpiry": "BUILDING",
+
+  /* --- Insights ------------------------------------------------------
+   * Revenue, orders, sources, top performers and export are live off
+   * `GET /api/pulse/insights/seller/summary`. The gaps are declared in
+   * `INSIGHTS_MOCK_DATA_GAPS` and are the same missing measurements the Store
+   * and Profile rows above name.
+   */
+  "business:insights.storeViews": "COMING_SOON",
+  "business:insights.dispatch": "COMING_SOON",
+  "business:insights.replyRate": "COMING_SOON",
+  "business:insights.offersAnswered": "COMING_SOON",
+  "business:insights.adAttribution": "COMING_SOON",
+
+  /* --- Payments ------------------------------------------------------
+   * Balance, payout method, withdrawals, history, ledger and the ad wallet are
+   * live and move real money. Nothing below touches that path.
+   */
+  "business:payments.instant": "COMING_SOON",
+  "business:payments.escrow": "COMING_SOON",
+  "business:payments.statements": "COMING_SOON",
+  "business:payments.taxDocuments": "COMING_SOON",
+
+  /* --- Events --------------------------------------------------------
+   * The section row above explains why all three tabs are structurally empty.
+   * These are the tabs, named so the landing can say which is which.
+   */
+  "business:events.upcoming": "BUILDING",
+  "business:events.past": "BUILDING",
+  "business:events.drafts": "BUILDING",
+  "business:events.create": "COMING_SOON",
+  "business:events.rsvp": "COMING_SOON",
+
+  /* --- Team ----------------------------------------------------------
+   * No screen and no endpoint — see the section row above. Page-level roles
+   * under `/api/pages/*` are the Presence team, a different subject.
+   */
+  "business:team.invites": "COMING_SOON",
   "business:team.roles": "COMING_SOON",
+  "business:team.activity": "COMING_SOON",
 
-  /*
-   * Events. The hosted-events manager is the module that cannot hold a row
-   * (see `business:events` above) — it is the module that is unfinished, not
-   * the section. Live discovery is a real, shipping screen and is deliberately
-   * absent from this table, so the Events section opens with one working
-   * capability and one locked one.
+  /* --- Settings ------------------------------------------------------
+   * Everything the settings hub offers is live; it is simply an account-level
+   * hub. Nothing in `settings/registry.ts` is scoped to a business.
    */
-  "business:events.manager": "BUILDING"
+  "business:settings.businessPreferences": "COMING_SOON"
 });
 
 /**
@@ -170,9 +283,9 @@ export function presenceModuleId(actionKey: string): LaunchModuleId {
   return `presence:${actionKey}`;
 }
 
-/** A module *inside* a Business OS section — `business:<section>.<module>`. */
-export function businessSubmoduleId(sectionKey: string, moduleKey: string): LaunchModuleId {
-  return `business:${sectionKey}.${moduleKey}`;
+/** One capability inside a business section. See `LaunchModuleId`. */
+export function capabilityModuleId(sectionKey: string, capabilityKey: string): LaunchModuleId {
+  return `business:${sectionKey}.${capabilityKey}`;
 }
 
 /** The gate's verdict for a module. Unknown ids are READY — see the header. */
@@ -206,20 +319,7 @@ export function isLaunchGated(id: LaunchModuleId): boolean {
  * route itself cannot tell the two callers apart (which is precisely the bug).
  */
 export const GATED_ROUTES: Readonly<Record<string, LaunchModuleId>> = Object.freeze({
-  BusinessOsEvents: "business:events",
-
-  /*
-   * Presence creation. `PageCreate` qualifies on the rule above: the whole
-   * screen is the gated module, whichever of the three buttons opened it.
-   *
-   * It is registered because the three buttons are not the only way in. There
-   * is a `navigate("PageCreate")` in `PagesHubScreen` (the Manage surface), and
-   * `linking.ts` maps `pulse/pages/create` to it — so a deep link, or
-   * navigation state restored after a cold start, arrives without passing any
-   * of the gated controls. Keyed to `presence:createNew` because that is the
-   * unflavoured entry; the flavoured rows exist for the buttons' own badges.
-   */
-  PageCreate: "presence:createNew"
+  BusinessOsEvents: "business:events"
 });
 
 /** The gate's verdict for a route name. Unregistered routes are READY. */

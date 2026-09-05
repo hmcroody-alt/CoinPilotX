@@ -7,7 +7,6 @@ import {
   BusinessOsSection,
   businessOsLaunchSections,
   businessOsNavigationArgs,
-  businessOsSectionHasLanding,
   formatCents,
   getAdAnalytics,
   listAdAccounts,
@@ -21,6 +20,7 @@ import { registerSyncInvalidation } from "../core/eventSync";
 import { ComingSoonSheet } from "../launch/ComingSoonSheet";
 import { LaunchTile } from "../launch/LaunchTile";
 import { businessModuleId } from "../launch/readiness";
+import { businessOsSectionHasLanding } from "../launch/sectionCapabilities";
 import { useLaunchGate, useLaunchMotionEnabled } from "../launch/useLaunchGate";
 import { useIsFocusedIfNavigated } from "../navigation/useIsFocusedIfNavigated";
 import type { RootStackParamList } from "../navigation/types";
@@ -286,24 +286,29 @@ export function BusinessOsScreen({ navigation, route }: Props) {
   }, [load, routeContext.isOwnProfile]);
 
   /**
-   * Every tile tap opens something. There are three cases and no fourth:
+   * A tile tap has three possible answers, and the section decides which.
    *
-   *   1. The section has a landing page (`BUSINESS_OS_SECTION_MODULES`) — open
-   *      it. This is the progressive-unlock case: the section is enterable, and
-   *      the unfinished modules inside it are what stay locked. Customers, Team
-   *      and Events take this path.
-   *   2. The section is READY — navigate exactly as before. Untouched.
-   *   3. The section is gated with no landing page — the Coming Soon sheet, the
-   *      old behaviour, kept as the backstop for any section registered in
-   *      `readiness.ts` before its landing page exists.
+   * If any part of the section is still being built, the tap opens its landing
+   * layer: what the section is for, what it does today, and what is coming.
+   * That is the answer for most of the grid, including sections that work
+   * perfectly well and are simply not finished — Store has no view count,
+   * Insights cannot measure reply rate. Sending someone straight in and letting
+   * them discover the hole is what this replaces.
    *
-   * Case 1 is checked before the gate on purpose. Asking the gate first would
-   * make a gated section open the sheet and never reach its own landing page,
-   * which is the exact dead end this layer removes.
+   * If everything in the section works, the tap goes through the launch gate
+   * exactly as it did before and lands on the real screen. A landing page in
+   * front of a finished feature is a page of text between someone and their
+   * work, so a finished section never gets one.
+   *
+   * The gate still wraps that direct path. It is unreachable for anything with
+   * a landing, but it is what catches a section that gets gated later without
+   * anybody writing its capabilities down: no landing to show, so it falls back
+   * to the Coming Soon sheet rather than opening a routeless section and
+   * throwing out of `businessOsNavigationArgs`.
    */
   function openSection(section: BusinessOsSection) {
     if (businessOsSectionHasLanding(section.key)) {
-      navigation.navigate("BusinessOsSection", { section: section.key, title: section.label });
+      navigation.navigate("BusinessOsSection", { section: section.key });
       return;
     }
     gate.open(businessModuleId(section.key), section.label, () => {

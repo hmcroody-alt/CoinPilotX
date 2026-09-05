@@ -9,6 +9,7 @@ import { AppState } from "react-native";
 // local state — a second source alongside `UnreadCountStore`, which is how the
 // bell and the seller headers came to disagree. `navigation/__tests__/badgeSources.test.ts`
 // fails if this import comes back.
+import { businessOsSection } from "../api/businessOs";
 import { getMyProfile, PulseProfile } from "../api/profile";
 import { isMember } from "../entitlements/canonicalTier";
 import { useCanonicalTier } from "../entitlements/useCanonicalTier";
@@ -452,13 +453,15 @@ export function AppNavigator() {
         component={EventsRoute}
         options={{ headerShown: false }}
       />
-      {/* Landing page for a Business OS section that has no finished screen of
-          its own (Customers, Team, Events). Keeps the stack header so back is
-          the system control rather than a hand-rolled one. */}
+      {/* A section's landing layer — purpose, what works today, what is coming.
+          Pushed by the Business OS grid in place of the section itself when the
+          section has locked capabilities. */}
       <Stack.Screen
         name="BusinessOsSection"
         component={BusinessOsSectionScreen}
-        options={({ route }) => ({ title: route.params?.title || t("common:screens.businessOs") })}
+        options={({ route }) => ({
+          title: businessOsSection(route.params?.section)?.label || t("common:screens.businessOs")
+        })}
       />
       {/* `ActivityRoute` renders the unified Activity feed reached from every
           seller header's bell. It draws its own navy header (back / Activity /
