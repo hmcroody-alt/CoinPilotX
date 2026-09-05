@@ -36,6 +36,21 @@ import type { LiveRole } from "./liveParticipantRegistry";
 // ---------------------------------------------------------------------------
 
 export type LivePublishPlan = {
+  /**
+   * Enable the Agora video MODULE.
+   *
+   * This is not the camera. In the 4.x SDK, `enableVideo()` is what allows the
+   * client to DECODE remote video as well as encode its own — a client that
+   * never calls it can join, subscribe, and hear audio, but will never get a
+   * first remote video frame. That is precisely the audience viewer's bug
+   * signature: joined, "waiting for host media" forever, Web fallback.
+   *
+   * Capture is a separate act: it begins only with `startPreview()` or a
+   * publication, both of which stay false for the audience below. So this is
+   * true for EVERY client, and Stage 25 keeps its meaning through
+   * `planTouchesCaptureHardware`, which deliberately ignores this field.
+   */
+  enableVideoModule: boolean;
   /** Open the camera. */
   enableVideo: boolean;
   /** Open the microphone. */
@@ -51,6 +66,9 @@ export type LivePublishPlan = {
 };
 
 const AUDIENCE_PLAN: LivePublishPlan = {
+  // The one thing an audience member DOES initialise: the decode path.
+  // Without it the viewer never reaches PLAYING. Not capture hardware.
+  enableVideoModule: true,
   enableVideo: false,
   enableAudio: false,
   startPreview: false,
@@ -84,6 +102,8 @@ export function resolvePublishPlan(input: {
 
   const video = input.videoRequested !== false;
   return {
+    // Every client decodes remote video; publishers additionally capture.
+    enableVideoModule: true,
     enableVideo: video,
     enableAudio: true,
     startPreview: video,

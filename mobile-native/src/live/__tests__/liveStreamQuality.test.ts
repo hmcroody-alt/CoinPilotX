@@ -77,6 +77,23 @@ describe("Stage 25 — an audience member initialises nothing", () => {
     expect(plan.enableDualStream).toBe(false);
   });
 
+  it("enables the video MODULE for every client, audience included", () => {
+    // The P0 this guards: the module is what lets a client DECODE remote
+    // video. An audience plan without it joins, hears audio, and never gets a
+    // first remote video frame — "waiting for host media" forever, then the
+    // Web fallback. The module is not capture hardware, so this coexists with
+    // Stage 25: the same plan must still touch no camera or microphone.
+    for (const role of ROLES) {
+      for (const serverAuthorized of [true, false]) {
+        const plan = resolvePublishPlan({ role, serverAuthorized });
+        expect(plan.enableVideoModule).toBe(true);
+      }
+    }
+    const audience = resolvePublishPlan({ role: "audience", serverAuthorized: true });
+    expect(audience.enableVideoModule).toBe(true);
+    expect(planTouchesCaptureHardware(audience)).toBe(false);
+  });
+
   it("returns a fresh object each time so a caller cannot mutate the shared plan", () => {
     const a = resolvePublishPlan({ role: "audience", serverAuthorized: true });
     a.enableAudio = true;

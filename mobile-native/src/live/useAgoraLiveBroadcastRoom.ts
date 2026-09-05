@@ -227,6 +227,15 @@ export function useAgoraLiveBroadcastRoom() {
     try {
       const agora = await import("react-native-agora");
       const engine = agora.createAgoraRtcEngine(); engineRef.current = engine; engine.initialize({ appId: credentials.appId }); engine.enableAudio();
+      // The video MODULE is not the camera. `enableVideo()` is what lets this
+      // client DECODE remote video — an audience member that skips it joins,
+      // hears audio, and never receives a first remote video frame, which reads
+      // as "native playback unavailable" on every viewer surface. Capture only
+      // begins with `startPreview()`/publication, both still gated below, and
+      // the join options pin `publishCameraTrack:false` for the audience — so
+      // Stage 25 ("an audience member initialises nothing") still holds for
+      // every capture device. See `resolvePublishPlan().enableVideoModule`.
+      engine.enableVideo();
       const publish = Boolean(options.publish && credentials.canPublish);
       // Stage 15/17. The audio topology is decided in `liveAudioMatrix` and only
       // told to the SDK here. `publisherCount: 1` at join time is deliberate: it
@@ -257,7 +266,6 @@ export function useAgoraLiveBroadcastRoom() {
       publishingVideoRef.current = Boolean(publish && options.video !== false);
       encoderStageRef.current = 0;
       if (publishingVideoRef.current) {
-        engine.enableVideo();
         // Stage 24. Join at the solo profile. A host going live is alone on the
         // stage until someone is brought up, and `setStagePublisherCount` steps
         // the ladder down from here as that happens — so a single-host Live is
