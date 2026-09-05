@@ -641,7 +641,21 @@ def _media_for_posts(post_ids):
 
 
 def _music_for_posts(post_ids):
-    """Hydrate creator-safe music attached to feed posts in one query."""
+    """Hydrate creator-safe music attached to feed posts in one query.
+
+    Two join conditions here used to wrap BOTH sides in CAST(... AS TEXT), which
+    makes the indexed side unusable and forces a sequential scan per outer row.
+
+    `pulse_reels.id` and `pulse_content_music.content_id` are both INTEGER, so
+    that cast bought nothing and is simply gone -- the comparison is now native.
+
+    `pulse_content_music.audio_track_id` is genuinely TEXT against an INTEGER
+    `pulse_audio_tracks.id`, so the cast has to stay for correctness. It is made
+    index-usable instead, by the functional index on CAST(id AS TEXT) created
+    alongside the other feed indexes. Casting the other direction
+    (audio_track_id AS INTEGER) was rejected: it would throw on the first
+    non-numeric track id ever written, turning a degraded query into a hard one.
+    """
     if not post_ids:
         return {}
     conn = user_context.connect()
@@ -657,7 +671,7 @@ def _music_for_posts(post_ids):
                    at.duration_seconds AS current_duration_seconds
             FROM pulse_content_music pcm
             JOIN pulse_audio_tracks at ON CAST(at.id AS TEXT)=CAST(pcm.audio_track_id AS TEXT)
-            LEFT JOIN pulse_reels r ON pcm.content_type='reel' AND CAST(r.id AS TEXT)=CAST(pcm.content_id AS TEXT)
+            LEFT JOIN pulse_reels r ON pcm.content_type='reel' AND r.id = pcm.content_id
             WHERE (
                 (pcm.content_type IN ('post','video') AND pcm.content_id IN ({placeholders}))
                 OR (pcm.content_type='reel' AND r.post_id IN ({placeholders}))

@@ -87,12 +87,22 @@ def _make_engine():
             raise RuntimeError("DATABASE_URL is PostgreSQL but SQLAlchemy is not installed.")
         return None
     if IS_POSTGRES:
+        # The pool is per worker process and must cover that worker's thread
+        # count, or threads queue on checkout and then fail on the 3s
+        # `pool_timeout` while the database itself is idle. gunicorn now runs
+        # `--threads 8`, so the steady-state pool matches it and the overflow
+        # absorbs bursts.
+        #
+        # Ceiling check: 4 workers x (8 + 8) = 64 web connections, plus the five
+        # background workers, against a server `max_connections` of 500 that
+        # currently carries 31. The fail-fast 3s timeout is deliberate and kept
+        # — a request that cannot get a connection should shed, not pile up.
         return create_engine(
             ENGINE_URL,
             pool_pre_ping=True,
             pool_recycle=300,
-            pool_size=int(os.getenv("DB_POOL_SIZE", "5")),
-            max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "10")),
+            pool_size=int(os.getenv("DB_POOL_SIZE", "8")),
+            max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "8")),
             pool_timeout=int(os.getenv("DB_POOL_TIMEOUT_SECONDS", "3")),
             connect_args={"connect_timeout": int(os.getenv("DB_CONNECT_TIMEOUT_SECONDS", "3"))},
             future=True,

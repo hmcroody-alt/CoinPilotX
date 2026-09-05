@@ -113,6 +113,12 @@ CALL_TABLES = (
 CALL_INDEXES = (
     "CREATE INDEX IF NOT EXISTS idx_communication_calls_conversation_status ON communication_calls(conversation_id, status)",
     "CREATE INDEX IF NOT EXISTS idx_communication_calls_creator_created ON communication_calls(created_by_user_id, created_at)",
+    # Call polling reads `WHERE status IN (...) ORDER BY id`, which neither index
+    # above can serve — both lead with a different column. The table is only 405
+    # rows, but production had logged 193,080 sequential scans against it for
+    # 69M rows read, because the poll runs on a timer for every client in a call.
+    # `id` trails `status` so the ORDER BY comes out of the index too.
+    "CREATE INDEX IF NOT EXISTS idx_communication_calls_status_id ON communication_calls(status, id)",
     "CREATE INDEX IF NOT EXISTS idx_communication_participants_user_status ON communication_call_participants(user_id, status)",
     "CREATE INDEX IF NOT EXISTS idx_communication_events_call_created ON communication_call_events(call_id, created_at)",
     "CREATE INDEX IF NOT EXISTS idx_communication_quality_call_user ON communication_call_quality_reports(call_id, user_id, created_at)",

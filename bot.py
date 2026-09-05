@@ -267,6 +267,7 @@ from services import (
     portfolio_service,
     predictions_service,
     predictive_ai_engine,
+    schema_guard,
     premium_capability_engine,
     payment_provider,
     stripe_webhook_verification,
@@ -87467,12 +87468,43 @@ def api_pulse_messages_upload():
     }), 200
 
 
+@schema_guard.run_once_per_process
+def _messenger_media_ensure_schema(cur, conn):
+    """Run the messenger-media DDL once per worker, not once per request.
+
+    `ensure_schema` issues six `CREATE TABLE / CREATE INDEX IF NOT EXISTS`
+    statements, and ten routes below open their connection through here -- so
+    every attachment listing, download and thumbnail fetch was re-running the
+    whole batch. On PostgreSQL that is not free: each CREATE takes a ShareLock
+    that conflicts with the RowExclusiveLock the very next INSERT wants, which
+    is the interleaving `services/schema_guard` exists to remove.
+
+    The guard is applied HERE rather than on `ensure_schema` itself. Roughly two
+    dozen other call sites pass `conn=None`, which skips the commit; caching a
+    DDL that was never committed is how a worker convinces itself tables exist
+    that PostgreSQL discarded at connection close. This call site always passes
+    a connection, so it is one of the few where caching is sound -- and the
+    commit is re-checked below rather than assumed.
+    """
+    messenger_media_foundation.ensure_schema(cur, conn)
+    try:
+        conn.commit()
+    except Exception:
+        # `ensure_schema` swallows its own commit failure. Without a durable
+        # commit the DDL is rolled back at close, so returning False keeps the
+        # guard uncached and the next request retries -- while leaving this
+        # request as non-fatal as it was before.
+        logging.warning("MESSENGER_MEDIA_SCHEMA_COMMIT_FAILED", exc_info=True)
+        return False
+    return True
+
+
 def _messenger_media_open_db():
     init_db()
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    messenger_media_foundation.ensure_schema(cur, conn)
+    _messenger_media_ensure_schema(cur, conn)
     return conn, cur
 
 
@@ -114439,6 +114471,14 @@ def _init_db_impl():
         "CREATE INDEX IF NOT EXISTS idx_pulse_posts_public_player ON pulse_posts(public_player_id, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_posts_type_created ON pulse_posts(post_type, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_posts_reels_feed ON pulse_posts(post_type, visibility, moderation_status, status, created_at, id)",
+        # Reposts. `pulse_posts` carries ten indexes but none on
+        # `repost_of_post_id`, and every feed page runs two queries keyed on it
+        # (the repost COUNT for all posts on the page, and the viewer's own
+        # "did I repost this" lookup). That is why a 2,299-row table had
+        # accumulated 156,943 sequential scans reading 351M rows — by far the
+        # largest single source of wasted I/O in the database.
+        "CREATE INDEX IF NOT EXISTS idx_pulse_posts_repost_of ON pulse_posts(repost_of_post_id, deleted_at)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_posts_user_repost ON pulse_posts(user_id, repost_of_post_id)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_reels_category_status ON pulse_reels(category, status, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_reels_status_created ON pulse_reels(status, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_reels_status_score_created ON pulse_reels(status, reel_score, created_at, id)",
@@ -114447,6 +114487,11 @@ def _init_db_impl():
         "CREATE INDEX IF NOT EXISTS idx_pulse_reels_trust_energy ON pulse_reels(safety_score, educational_value, reel_score)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_comments_post_created ON pulse_comments(post_id, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_comments_post_visible_created ON pulse_comments(post_id, deleted_at, moderation_status, created_at)",
+        # `pulse_post_saves` has a UNIQUE(post_id, user_id), which cannot serve
+        # the viewer-state query `WHERE user_id=? AND post_id IN (...)` — a
+        # composite index is only usable from its leading column. Same columns,
+        # opposite order.
+        "CREATE INDEX IF NOT EXISTS idx_pulse_post_saves_user_post ON pulse_post_saves(user_id, post_id)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_reactions_post ON pulse_reactions(post_id)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_reactions_user_post ON pulse_reactions(user_id, post_id)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_follows_follower ON pulse_follows(follower_user_id)",
@@ -114540,6 +114585,38 @@ def _init_db_impl():
     ]
     for statement in index_statements:
         safe_create_index(cur, conn, statement)
+
+    # Expression index, so it cannot go in the list above: `safe_create_index`
+    # parses `ON table(a, b)` and verifies each name is a real column, and
+    # `CAST(id AS TEXT)` is not a column name.
+    #
+    # `pulse_content_music.audio_track_id` is TEXT while `pulse_audio_tracks.id`
+    # is INTEGER, so the feed's music join has to compare them as text. Casting
+    # the indexed side is what made it unindexable: the planner was reading all
+    # 21,012 audio-track rows once per outer row (6,821 scans, 138M rows read).
+    # Indexing the cast itself restores the lookup without changing a single
+    # comparison — measured on production as a 2019.61 -> 7.86 planner cost on
+    # that scan, and 2058 -> 44 for the whole feed-music statement.
+    #
+    # `CAST(id AS TEXT)` is spelled portably: PostgreSQL normalises it to
+    # `((id)::text)`, which is what it also normalises the query's cast to, so
+    # the two match; SQLite accepts the same text as an expression index.
+    try:
+        if migration_table_exists(cur, "pulse_audio_tracks"):
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_pulse_audio_tracks_id_text "
+                "ON pulse_audio_tracks (CAST(id AS TEXT))"
+            )
+            conn.commit()
+    except Exception as exc:
+        # Same posture as safe_create_index: an index is an optimisation, and a
+        # boot must not fail over one. Roll back so the failed statement does
+        # not poison the rest of init_db's transaction on PostgreSQL.
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        logging.info("INDEX_CREATE_SKIPPED statement=idx_pulse_audio_tracks_id_text error=%s", exc)
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS auth_events (
