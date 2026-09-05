@@ -126,10 +126,33 @@ same push as the release and make its diff materially harder to read — and thi
 consolidation exists to *protect* traceability artefacts, not to shuffle them
 under time pressure.
 
-## 10. Smaller items
+## 10. There is no checked-in `ExportOptions.plist` for App Store upload
+
+The iOS project rename (`f8fa3e6c`, `PulseSocNative` → `PulseSoc`) deleted
+`mobile-native/ios/ExportOptions-AppStore.plist` and did not recreate it under
+the new name. HEAD has no `ExportOptions` file anywhere.
+
+This is a sibling of item 7 — the same rename orphaned the XCUITest — and HEAD's
+own `realtime_audio_change_declaration.md` already names both casualties, calling
+this one "a release-packaging concern". It is recorded here because a concern
+noted inside a report about something else is easy to lose.
+
+**Impact:** nothing at runtime; `xcodebuild -exportArchive` for an App Store
+Connect upload has no checked-in options file. The device and simulator builds in
+`reports/release_builds_and_qa_20260904.md` do not use it and were unaffected.
+
+**To discharge:** restore it from `f8fa3e6c^` — nine lines, `destination:
+upload`, `method: app-store-connect`, `signingStyle: automatic`, `teamID:
+87ZC69AGSR`, `uploadSymbols: true` — under `mobile-native/ios/`, and confirm the
+team ID still matches. Deliberately not restored here: it is a release-packaging
+change, and inventing one during a closeout that is not itself doing an App Store
+upload would ship an untested build input.
+
+## 11. Smaller items
 
 | Item | Note |
 |---|---|
+| `liveSession.ts:72` names `parseMediaQualityFlags` in a comment | The module was deleted by `f93e7ce3 chore(rtc): fire LiveKit`. Prose, not an import — nothing breaks, but the comment describes a normalisation step that no longer exists. |
 | `tests/briefings/test_pulse_briefings.py` declares `TopicIndependenceTests` twice (~lines 512, 589) | The second shadows the first, so one class never runs. Real coverage loss, small blast radius. |
 | The idempotency audit script cannot run under `railway run` | It imports `bot`, which refuses to boot without a stable `FLASK_SECRET_KEY` when it detects a deployed environment. The guard is correct; the read-only path should not need the `PULSESOC_ALLOW_EPHEMERAL_SECRET=1` opt-out. |
 | Forbidden-API marker redesign | The current marker scheme is positional and brittle. |
