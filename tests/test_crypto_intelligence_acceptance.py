@@ -19,11 +19,23 @@ So this file asserts the joins:
 
   * **The series has one writer, that writer runs, and it writes before the
     sweep reads.** Three separate ways for time windows to die silently.
-  * **A lapsed subscription does not retroactively break what it sold.** The
-    portfolio settled this policy explicitly (see
-    ``test_the_entitlement_lapsing_does_not_delete_anything``); alerts arrive at
-    the same behaviour by having no evaluation-time gate at all, which is a very
-    different thing from having decided it.
+  * **A lapsed subscription pauses delivery without destroying the rule.** This
+    file used to assert the opposite half of that sentence — that a lapse changed
+    nothing at all, because alerts had no evaluation-time gate. That was never a
+    decision; it was the absence of one, and it meant a lapsed account kept
+    receiving a paid feature. The premium hard-lock supplied the missing
+    decision, and it applies to *every* rule type, basic included.
+
+    The authoritative policy is now one sentence: **the rule is preserved
+    exactly as configured, and delivery is what stops.** The row is not deleted,
+    not soft-deleted, and the member's stored ``status``/``active`` preference is
+    never rewritten by the system — so restoring Premium resumes the existing
+    rule with no re-setup and no recreation. What changes is ``delivery_state``,
+    which the API exposes so a paused rule can never present itself as though it
+    were still watching the market. See
+    ``test_a_rule_survives_a_lapse_paused_not_deleted_and_resumes_on_renewal``,
+    which pins that end to end, and ``alert_engine._set_delivery_state`` for why
+    preference and delivery are deliberately two separate fields.
 
 Run directly (no pytest required):
 
@@ -285,24 +297,33 @@ def test_the_only_writer_is_a_declared_process():
 # --------------------------------------------------------------------------
 # What a lapsed subscription does to what it sold
 # --------------------------------------------------------------------------
-def test_an_advanced_rule_outlives_the_subscription_that_created_it():
-    """The gate is on creating, not on keeping — the portfolio's policy, applied
-    to the thing the portfolio's policy does not cover.
+def test_a_rule_survives_a_lapse_paused_not_deleted_and_resumes_on_renewal():
+    """A lapse PAUSES delivery. It does not delete the rule, and it does not
+    withdraw the member's stored preference.
 
-    ``test_the_entitlement_lapsing_does_not_delete_anything`` settled this for
-    holdings: a lapse keeps what exists and refuses what is new. Alerts land in
-    the same place by a different route — all three entitlement checks sit in
-    ``create_alert_rule`` and none in the evaluation path — and behaviour that
-    is merely *absent* is behaviour nobody chose. Someone tightening the gate
-    would reasonably think adding a check to the sweep was a fix.
+    This supersedes an earlier policy, and the reversal was deliberate. The
+    original contract put every entitlement check in ``create_alert_rule`` and
+    none in the evaluation path, on the reasoning that a rule which stops firing
+    while still displayed as active tells a member they are being watched when
+    they are not — silence being this feature's one failure mode that looks
+    exactly like success.
 
-    It is not, and the reason is not generosity. A rule that stops firing while
-    still displayed as active is a member being told they are being watched
-    when they are not. Silence is this feature's only failure mode that looks
-    exactly like success, so the rule keeps working and the ceiling is applied
-    where the member can see it: the next time they try to make one.
+    The concern was right; the remedy was not. Continuing to deliver a premium
+    feature to a lapsed account is not the only way to avoid lying to someone.
+    The authoritative contract now separates the two facts that the old
+    single-flag model had to conflate:
+
+        status / active   the member's stored preference — only they change it
+        delivery_state    what the system is actually doing right now
+
+    So a lapse pauses ``delivery_state`` and leaves ``status`` untouched, and
+    the pause is *exposed* rather than inferred. The member is not told they are
+    being watched, and they also do not lose the rule or its configuration.
+
+    Proves A-J of the delivery lifecycle contract.
     """
     DISPATCHED.clear()
+    # A. A premium member creates an active rule.
     uid = premium_user()
     rule_id = make_advanced_rule(uid, clause("price", "above", 61_000),
                                  clause("volume_24h", "above", 30_000_000_000))
@@ -312,16 +333,64 @@ def test_an_advanced_rule_outlives_the_subscription_that_created_it():
     set_market(price=60_000, volume_24h=31_000_000_000)
     check("re-armed below the threshold", observe(rule_id).get("triggered"), False)
 
-    # The subscription lapses. Nothing touches the rule.
+    stored = load_rule(rule_id)
+    check("delivering while entitled",
+          alert_engine._public_rule(stored).get("delivery_state"), "delivering")
+    check("not flagged as paused while entitled",
+          alert_engine._public_rule(stored).get("delivery_paused"), False)
+
+    # B. The entitlement expires. Nothing else touches the rule.
     _PREMIUM_USERS.discard(uid)
 
     set_market(price=62_000, volume_24h=31_000_000_000)
-    check("the crossing still fires", observe(rule_id).get("triggered"), True)
-    check("and still notifies", len(DISPATCHED), 1)
+    result = observe(rule_id)
+
+    # E. Evaluation skips with premium_required.
+    check("the crossing does not fire", result.get("triggered"), False)
+    check("evaluation reports premium_required", result.get("status"), "premium_required")
+    check("evaluation reports the skip", result.get("skipped"), True)
+    # F. Zero delivery.
+    check("nothing was dispatched", len(DISPATCHED), 0)
+
+    # C. The rule row still exists. D. Configured state is preserved.
+    lapsed = load_rule(rule_id)
+    check("the rule row still exists", bool(lapsed), True)
+    check("it was not soft-deleted", lapsed.get("deleted_at") or "", "")
+    check("the stored status is untouched", lapsed.get("status") or "active", "active")
+
+    public = alert_engine._public_rule(lapsed)
+    check("the member's active preference is preserved", public.get("active"), 1)
+    # G. The paused state is observable, and distinguishable from delivering.
+    check("delivery is reported paused", public.get("delivery_paused"), True)
+    check("with the reason", public.get("delivery_paused_reason"), "premium_required")
+    check("delivery_state names the pause",
+          public.get("delivery_state"), "premium_required")
+
+    # H. Entitlement is restored.
+    _PREMIUM_USERS.add(uid)
+
+    # I. The SAME rule resumes. J. No recreation was required.
+    set_market(price=60_000, volume_24h=31_000_000_000)
+    check("re-arms below the threshold again", observe(rule_id).get("triggered"), False)
+    set_market(price=62_000, volume_24h=31_000_000_000)
+    resumed = observe(rule_id)
+    check("the same rule fires again", resumed.get("triggered"), True)
+    check("and notifies once", len(DISPATCHED), 1)
+
+    restored = alert_engine._public_rule(load_rule(rule_id))
+    check("delivery_state is back to delivering",
+          restored.get("delivery_state"), "delivering")
+    check("no longer flagged paused", restored.get("delivery_paused"), False)
+    check("it is the same rule id", restored.get("id"), rule_id)
 
 
 def test_a_lapsed_member_cannot_create_another_advanced_rule():
-    """The other half of the same policy: keeping is not creating."""
+    """The other half of the same policy: keeping is not creating.
+
+    Preserving the rules a member already configured is a promise about work
+    they have already done. It is not a standing grant of the paid feature, so
+    the create-time gate stays closed while the entitlement is gone.
+    """
     uid = premium_user()
     make_advanced_rule(uid, clause("price", "above", 10.0))
     _PREMIUM_USERS.discard(uid)
@@ -336,8 +405,19 @@ def test_a_lapsed_member_cannot_create_another_advanced_rule():
 
 
 def test_a_lapsed_member_can_still_create_a_basic_rule():
-    """The prohibition the whole mission is built around: free basic alerts
-    keep working. A lapse returns the member to the free tier, not below it."""
+    """A lapse returns the member to the free tier, not below it — as far as
+    CREATION is concerned. This is a create-time assertion only.
+
+    Careful with the scope here, because the two gates disagree by design and
+    reading this test as "basic alerts keep working" is now wrong. Creation of a
+    basic rule is not gated: ``premium_crypto_access`` guards the advanced
+    capability, so a lapsed member can still build an ordinary price alert and
+    it is stored. Delivery is a separate gate that covers *every* rule type, so
+    that stored rule sits in ``delivery_state='premium_required'`` until Premium
+    returns. Pinning creation and delivery separately is deliberate: collapsing
+    them is how a delivery pause would quietly turn into a creation ban, or a
+    creation allowance into an un-gated dispatch.
+    """
     uid = premium_user()
     make_advanced_rule(uid, clause("price", "above", 10.0))
     _PREMIUM_USERS.discard(uid)

@@ -178,6 +178,11 @@ def _ensure_alert_schema_impl(conn=None):
             ("last_checked_at", "TEXT"),
             ("last_triggered_at", "TEXT"),
             ("trigger_count", "INTEGER DEFAULT 0"),
+            # Whether delivery is actually HAPPENING, which is not the same
+            # question as whether the member left the rule switched on. See
+            # `_set_delivery_state`.
+            ("delivery_state", "TEXT DEFAULT 'delivering'"),
+            ("delivery_state_at", "TEXT"),
             ("source", "TEXT DEFAULT 'user_created'"),
             ("source_ref", "TEXT"),
             ("metadata", "TEXT"),
@@ -886,6 +891,17 @@ def _public_rule(row):
     rule["source_ref"] = rule.get("source_ref") or ""
     rule["deleted_at"] = rule.get("deleted_at") or ""
     rule["active"] = 1 if (rule.get("status") or "active") == "active" else 0
+    # Two separate facts, deliberately not collapsed into one flag:
+    #   active           — the member's stored preference, only they change it
+    #   delivery_state   — whether the system is actually evaluating right now
+    # A client that shows "on/off" from `active` alone will tell a lapsed member
+    # their alerts are running. `delivery_paused` is the flag to render an
+    # explanation from; `delivery_paused_reason` says which explanation.
+    rule["delivery_state"] = rule.get("delivery_state") or DELIVERY_STATE_ACTIVE
+    rule["delivery_paused"] = bool(
+        rule["active"] and rule["delivery_state"] != DELIVERY_STATE_ACTIVE
+    )
+    rule["delivery_paused_reason"] = rule["delivery_state"] if rule["delivery_paused"] else ""
     spec = _json_loads(rule.get("condition_spec"), None)
     # Re-validated on read, not trusted from storage. A spec that no longer
     # validates (a metric retired, a row hand-edited) must fall back to the basic
@@ -2515,13 +2531,24 @@ def _evaluate_advanced_rule(rule):
     user_id = rule.get("user_id")
     rule_id = rule.get("id")
     if not _advanced_alerts_capability(user_id):
+        # Second line of the same gate. `evaluate_alert_rule` already checked
+        # this capability for every rule type before dispatching here, so in the
+        # current call graph this branch is unreachable. It is kept, and kept
+        # IDENTICAL to the outer one, because the failure it guards is silent:
+        # if evaluation is ever re-entered without the outer check, an advanced
+        # rule would pause delivery while still reporting itself as delivering.
+        # Two gates that agree cost nothing; two that disagree cost a lie in the
+        # UI. See `_set_delivery_state`.
         _mark_checked(rule_id)
+        _set_delivery_state(rule, DELIVERY_STATE_PREMIUM_REQUIRED)
         _note_advanced_status(rule, "premium_required")
         return {
             "ok": True,
             "triggered": False,
             "skipped": True,
             "status": "premium_required",
+            "delivery_state": DELIVERY_STATE_PREMIUM_REQUIRED,
+            "delivery_paused": True,
             "message": "Advanced alert skipped: this account no longer has PulseSoc Premium. The rule is kept and will resume when Premium returns.",
         }
     payload = _advanced_payload(rule)
@@ -2708,7 +2735,11 @@ def evaluate_alert_rule(rule):
         # dispatched — but they are NOT deleted or deactivated. The rule row
         # stays exactly as configured, so renewing premium resumes delivery
         # with zero re-setup. Same fail-closed gate the API uses.
+        #
+        # The pause is recorded where the member can see it. `status` still says
+        # what they chose; `delivery_state` says what is actually happening.
         _mark_checked(rule.get("id"), status_message="Premium required for alert delivery.")
+        _set_delivery_state(rule, DELIVERY_STATE_PREMIUM_REQUIRED)
         if _is_advanced_rule(rule):
             # Preserve the advanced rules' observable state contract — their
             # dashboards read advanced_state.last_status.
@@ -2718,8 +2749,13 @@ def evaluate_alert_rule(rule):
             "triggered": False,
             "skipped": True,
             "status": "premium_required",
+            "delivery_state": DELIVERY_STATE_PREMIUM_REQUIRED,
+            "delivery_paused": True,
             "message": "Alert delivery paused: this account no longer has PulseSoc Premium. The rule is kept and will resume when Premium returns.",
         }
+    # Entitlement is present, so delivery resumes on the existing rule with no
+    # recreation. Only writes when the rule was previously paused.
+    _set_delivery_state(rule, DELIVERY_STATE_ACTIVE)
     if _is_advanced_rule(rule):
         # Two surfaces, one table. The mobile crypto API stores its rules as
         # `advanced_conditions` JSON; the web/dashboard path stores its own as
@@ -2991,6 +3027,59 @@ def _evaluate_scoped_rule(rule, symbols, truncated, cap, empty_status, empty_mes
     return {"ok": errors == 0, "triggered": triggered > 0, "triggered_count": triggered,
             "symbols": symbols, "truncated": truncated, "results": results,
             "message": last_error or message, "cap": cap}
+
+
+#: Delivery is running normally.
+DELIVERY_STATE_ACTIVE = "delivering"
+#: The rule is configured active, but the owner lacks the Premium entitlement
+#: delivery requires. The rule is kept exactly as configured.
+DELIVERY_STATE_PREMIUM_REQUIRED = "premium_required"
+
+
+def _set_delivery_state(rule, state):
+    """Record whether delivery is actually happening for ``rule``.
+
+    Two different questions get confused when there is only one flag:
+
+      * ``status``/``active`` is the member's stored PREFERENCE — "I want to be
+        told about this." Only the member changes it.
+      * ``delivery_state`` is what the system is actually DOING right now.
+
+    A premium lapse must not touch the first. If it did, restoring Premium
+    would leave every rule switched off and the member would have to go find
+    and re-enable each one, and we would have silently discarded a preference
+    they never withdrew.
+
+    But leaving only ``active`` visible is the failure the alert acceptance
+    suite has warned about since this feature shipped: a rule that reads as
+    active while nothing is being evaluated tells a member they are being
+    watched when they are not. Silence is this feature's one failure mode that
+    looks exactly like success. So the paused state is recorded and exposed
+    rather than inferred.
+
+    Written only on transition — the worker re-evaluates every active rule on
+    every cycle, and an unconditional UPDATE here would add a write per rule per
+    cycle to say nothing changed.
+    """
+    current = (rule or {}).get("delivery_state") or DELIVERY_STATE_ACTIVE
+    if current == state:
+        return
+    rule_id = (rule or {}).get("id")
+    if not rule_id:
+        return
+    ensure_alert_schema()
+    conn = user_context.connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE alert_rules SET delivery_state=?, delivery_state_at=?, updated_at=? WHERE id=?",
+            (state, _now(), _now(), rule_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    if isinstance(rule, dict):
+        rule["delivery_state"] = state
 
 
 def _mark_checked(rule_id, status_message=""):
