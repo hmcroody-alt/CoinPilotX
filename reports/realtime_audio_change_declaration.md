@@ -1986,3 +1986,188 @@ Server: set `PULSE_GROUP_CALLS_ENABLED=false` (instant, no deploy — the client
 hides every multi-guest affordance and 1:1 continues on the unchanged paths).
 Code: revert the multi-guest commit; the protected-file changes are additive,
 so the revert restores the exact prior 1:1 surface.
+
+## Repository consolidation addendum (2026-09-04)
+
+This addendum exists because the previous one does not cover the range being
+pushed. The gate would not have told us that.
+
+`scripts/realtime_audio_change_gate.py` checks that this file was *modified
+somewhere in the diff range*, not that it *describes* the range. The most
+recent addendum above was written by `00cfe955` (multi-guest calls), and
+`00cfe955` is inside this range — so the gate accepts the range on the strength
+of a declaration that was written before two of the audio-touching commits in
+it even existed. Read the exit code and you would conclude the range is
+declared. It was not. This addendum is written to close that, and the gate's
+behaviour here is recorded as a known weakness rather than left as a trap for
+whoever reads the next green run.
+
+Range: `origin/main..integration/all-work-20260904`.
+
+### Which protected files changed, and by which commit
+
+| Path | Category | Commit |
+|---|---|---|
+| `bot.py` | `backend_token_and_room_policy` (`can_publish`) | `5c451905`, `07907eb0`, `f99a2bf8` |
+| `mobile-native/app.json` | `dependency_watch` | `1cc2dc01` |
+| `mobile-native/src/api/calls.ts` | `backend_token_and_room_policy` | `00cfe955` (declared above) |
+| `mobile-native/src/api/live.ts` | `backend_token_and_room_policy` | `5c451905` |
+| `mobile-native/src/live/liveSession.ts` | `livestream_audio_adapter` | `5c451905` |
+| `mobile-native/src/live/__tests__/liveSession.test.ts` | `critical_audio_tests` | `5c451905` |
+| `mobile-native/src/screens/CallScreen.tsx` | `audio_and_video_call_adapter` | `00cfe955` (declared above) |
+| `mobile-native/src/screens/LiveHostSessionScreen.tsx` | `livestream_audio_adapter` | `5c451905` |
+| `tests/protection/test_agora_token_generation.py` | `critical_audio_tests` | `5c451905` |
+
+`00cfe955`'s two files are already declared in the multi-guest calls addendum
+and are not re-argued here. Everything below concerns `5c451905` and
+`1cc2dc01`.
+
+`07907eb0` and `f99a2bf8` touch `bot.py` for Private Office and premium
+entitlement work. `bot.py` is gated by diff *content*, so those commits pull it
+into the report; neither contains a line matching an audio pattern. The
+audio-relevant `bot.py` change is entirely `5c451905`'s.
+
+### The manifest does not protect the file that owns Live audio
+
+`config/realtime-audio-protected-paths.json` lists
+`mobile-native/src/live/useLiveBroadcastRoom.ts`. That file is now a 36-line
+shim that re-exports `useAgoraLiveBroadcastRoom` — a leftover of the
+LiveKit → Agora migration. The module that actually talks to the SDK,
+`mobile-native/src/live/useAgoraLiveBroadcastRoom.ts`, is **not** in the
+manifest.
+
+`5c451905` changes that unprotected file by 255 lines, and those lines include
+applying an Agora audio scenario mid-broadcast. It is the largest real-time
+audio change in this range and the gate said nothing about it. The manifest is
+protecting the door of a building the audio moved out of.
+
+This addendum declares it voluntarily. Adding
+`useAgoraLiveBroadcastRoom.ts` — and `liveAudioMatrix.ts` — to
+`livestream_audio_adapter` is filed as follow-up work; it is deliberately not
+done inside this consolidation, because editing the manifest in the same push
+that it fails to cover would make the audit trail harder to read, not easier.
+
+### What changed, and why
+
+**Server decides the role; the client can only be told.** `bot.py`'s live token
+mint previously derived `token_role` from the request: `"cohost" if
+is_guest_request`. It now reads the role off the stored `pulse_live_guests` row
+and clamps anything unexpected down to `guest`. A client asking for co-host
+authority gets it only if the host already granted it. This is the difference
+between holding a permission and asking for one, and it is the half of the
+audio matrix that has to live on the server.
+
+**The kill switch now terminates in-flight broadcasts.** With
+`MULTI_GUEST_LIVE_ENABLED` off, guest requests and invites stopped, but a guest
+already on stage could renew a publisher token indefinitely — the one control
+an operator would reach for during an incident did not take anyone off the air.
+The mint now refuses for `is_guest_request` when the flag is off, so an
+in-flight guest's token expires within its TTL and cannot be replaced. The host
+branch is untouched: a single-host Live is unaffected by the flag in either
+position.
+
+**Audio topology is data, not scattered conditionals.**
+`src/live/liveAudioMatrix.ts` (new, unprotected only because it did not exist)
+derives, per role: publish microphone, subscribe to remote audio, local
+playback (always false), and Agora client role. `publishMicrophone` is a
+function of the server-assigned role and the `authorized` flag on the
+credentials — never of a local preference. It imports nothing from Agora;
+`useAgoraLiveBroadcastRoom` remains the single place that tells the SDK
+anything.
+
+**Echo control follows stage size.** The adapter now selects a chatroom echo
+scenario as publishers accumulate, and holds the applied scenario in a ref so an
+unchanged scenario is never re-sent to the SDK — reapplying a scenario
+mid-broadcast is audible.
+
+**Publish ladder replaces a constant encoder.** `liveStreamQuality.ts` sizes the
+video encoder by publisher count. A host alone on stage still publishes
+720x1280 — `test_agora_token_generation.py` was updated to assert that property
+where the ladder now states it, rather than as an inline constant in the
+adapter. Six publishers no longer each upload a resolution nobody subscribes
+to. Video only; no audio profile is on the ladder.
+
+**`liveSession.ts`** gains `rtcUid` and `layoutPosition` on `LiveGuest`, falling
+back to `user_id` when an older backend omits `rtc_uid`. Without a uid the app
+would have to infer remote identity from arrival order, which is wrong the
+moment a second guest joins.
+
+**`LiveHostSessionScreen.tsx`** is roster and capacity UI only: seat counts,
+"stage full", accept-all clamped to available seats, chat merged rather than
+replaced. No `AVAudioSession` call, no track, no publication path.
+
+**`app.json`** is an iOS `buildNumber` bump 21 → 22, aligning the Expo config
+with the native project. It is caught by `dependency_watch`, not by an audio
+category.
+
+### Behaviour change and risk
+
+`MULTI_GUEST_LIVE_ENABLED` **defaults to `true`**, and `.env.example:710` sets
+it true. This is not the calls mission's posture: `PULSE_GROUP_CALLS_ENABLED`
+defaults off, so that change shipped dark. This one does not. Multi-guest Live
+is live on deploy unless the variable is explicitly set false in the Railway
+environment. Anyone treating this range as "flagged off by default" because the
+previous addendum said so would be wrong.
+
+Risk is moderate and concentrated in Live publishing. The audio-bearing paths
+are the token role decision, the echo scenario application, and the audio
+matrix. Single-host Live is designed to be untouched in both flag positions,
+and that is asserted in tests — but see the physical validation section: it is
+not asserted on a device.
+
+### Tests run
+
+All on `integration/all-work-20260904` at `26f6ffe7`.
+
+- `npm run test:realtime-audio-critical` — 11 suites / 191 tests passed.
+- `npm run test:realtime-audio` — 20 suites / **369 tests passed**. The previous
+  addendum recorded 309/310 here with `liveSession.test.ts` failing, attributed
+  to uncommitted foreign changes from the multi-guest Live mission. Those
+  changes are now committed alongside their own tests, and the failure is gone.
+  Consolidation fixed it; nothing was patched over.
+- `npm run test:realtime-audio-architecture` — 22 tests passed.
+- `python3 -m unittest tests.protection.test_realtime_audio_architecture` — 19
+  tests, OK.
+- `pytest tests/protection/test_agora_token_generation.py
+  tests/protection/test_agora_rtc_provider_contract.py` — 13 passed.
+- New multi-guest Live suites (`liveAudioMatrix`, `liveEchoControlWiring`,
+  `liveMediaOwnership`, `multiGuestBroadcastScenarios`, `liveStreamQuality`,
+  `liveParticipantRegistry`) — 6 suites / 141 tests passed.
+- `npx tsc --noEmit` — exit 0. `npm run i18n:validate` — OK, 11 locales.
+- Full jest — 343 suites / 5724 tests passed, 0 failures.
+
+Ownership invariants re-checked by grep on the integrated tree and unchanged
+from `origin/main`: two `createAgoraRtcEngine` call sites
+(`calls/callSessionStore.ts`, `live/useAgoraLiveBroadcastRoom.ts`), the calls
+`setAudioModeAsync` slot still `callSignalMedia.ts`, expo-av legacy allowlist
+not extended.
+
+Not run: `npx expo prebuild --platform ios --no-install` and an EAS build. The
+native project is already generated in this checkout and `app.json`'s only
+change is a build number that was set to match it.
+
+### Physical validation NOT performed
+
+No device test was run for this range. Nothing below has been heard.
+
+Required before release, with a real audience path and at least three devices:
+host alone (single-host Live must be audibly unchanged); host + one guest, both
+directions; host + two guests, full matrix host↔A, host↔B, A↔B; a guest leaving
+while the others continue; the host muting and unmuting a guest; and
+`MULTI_GUEST_LIVE_ENABLED=false` set mid-broadcast, where the guest must drop
+off the air within the token TTL while the host keeps broadcasting.
+
+Carrying forward the discipline of the addendum above: a stage that renders
+three tiles is not evidence that three people can hear each other, and 369
+green tests are not evidence that any of them produced a sound.
+
+### Rollback
+
+Server, no deploy: `MULTI_GUEST_LIVE_ENABLED=false` stops new guests and, now,
+takes existing ones off the air within the token TTL. `LIVE_GUEST_REQUESTS_ENABLED=false`
+is the narrower control — invite-only, multi-guest still on.
+
+Code: revert `5c451905`. The client changes are additive and the server change
+narrows authority, so the revert restores the prior single-host surface. If
+only the encoder ladder is suspect, `publisherVideoProfile` can be pinned to
+its solo rung without touching the audio path.
