@@ -20,6 +20,21 @@
  * The envelope carries READ context only. Nothing in it grants the assistant
  * authority to change alerts or watchlists — those writes still travel the
  * governed capability gateway with confirmation intact.
+ *
+ * ## Dismissal is a message to the server, not a change of mind about a label
+ *
+ * Because the server *persists* the envelope per conversation, forgetting it
+ * here is not enough to stop it steering "it". Before this module tracked a
+ * pending clear, dismissing the chip removed the words from the screen and left
+ * the assistant still resolving "how is it doing?" to the coin the member had
+ * just said they were finished with — the exact failure of a chip that is
+ * decoration rather than state. `clearMarketContext` now arms a one-shot flag
+ * that rides the next send as `ui_context.market_context_cleared`, and the
+ * server drops its stored copy on arrival.
+ *
+ * `buildUndxSendContext` is the single place the two facts — "here is a fresh
+ * envelope" and "the member ended the topic" — are turned into request fields,
+ * so the chip and the request can never disagree about which of them is true.
  */
 
 const SYMBOL_PATTERN = /^[A-Z0-9]{1,12}$/;
@@ -47,6 +62,15 @@ export type MarketContextEnvelope = {
 export type MarketContextInput = {
   source: MarketContextEnvelope["source"];
   symbol: string;
+  /**
+   * The provider's canonical asset id when the screen has one ("bitcoin").
+   * Symbols collide across chains and listings, so the id is the identity and
+   * the symbol is a label. When a screen cannot supply it the envelope falls
+   * back to the lowercased symbol and the server upgrades it against the
+   * canonical market board — see `sanitize_market_context`. The client's guess
+   * is never the last word on identity.
+   */
+  assetId?: string | null;
   name?: string | null;
   rank?: number | null;
   price?: number | null;
@@ -77,7 +101,7 @@ export function buildMarketContextEnvelope(input: MarketContextInput): MarketCon
     source: input.source,
     context_type: "asset_focus",
     asset: {
-      id: symbol.toLowerCase(),
+      id: String(input.assetId || "").trim().toLowerCase().slice(0, 60) || symbol.toLowerCase(),
       symbol,
       name: String(input.name || symbol).slice(0, 80),
       rank: finite(input.rank)
@@ -103,13 +127,29 @@ type ParkedContext = { envelope: MarketContextEnvelope; parkedAt: number; sent: 
 
 let parked: ParkedContext | null = null;
 
+/**
+ * Set when the member dismisses the chip while the server may still be holding
+ * an envelope for this conversation. Cleared once a send has carried the news.
+ * A pending clear outlives a failed send on purpose: the topic is over whether
+ * or not the network agreed, and the alternative is a context the member
+ * believes they ended.
+ */
+let pendingClear = false;
+
 function expired(entry: ParkedContext | null): boolean {
   return !entry || Date.now() - entry.parkedAt > CLIENT_CONTEXT_TTL_MS;
 }
 
-/** Park an envelope for the next assistant send. Replaces any previous one. */
+/**
+ * Park an envelope for the next assistant send. Replaces any previous one.
+ *
+ * A new asset also cancels a pending clear: the member has told us what "it"
+ * means more recently than they told us it meant nothing, and sending both
+ * would ask the server to drop the envelope arriving in the same request.
+ */
 export function parkMarketContext(envelope: MarketContextEnvelope | null): void {
   parked = envelope ? { envelope, parkedAt: Date.now(), sent: false } : null;
+  if (envelope) pendingClear = false;
 }
 
 /**
@@ -133,7 +173,54 @@ export function peekMarketContext(): MarketContextEnvelope | null {
   return parked ? parked.envelope : null;
 }
 
-/** Chip dismissed, or the member navigated somewhere that ends the topic. */
+/**
+ * Chip dismissed, or the member navigated somewhere that ends the topic.
+ *
+ * Arms the pending clear as well as forgetting the local envelope, because the
+ * server keeps its own copy across turns and would otherwise go on resolving
+ * "it" to an asset the member has visibly finished with.
+ */
 export function clearMarketContext(): void {
   parked = null;
+  pendingClear = true;
+}
+
+/**
+ * True once, if the server needs telling that the topic ended.
+ *
+ * Consume-once for the same reason the envelope is: the server acts on arrival,
+ * and repeating the instruction on every later turn would keep deleting a
+ * context the member may since have replaced from another screen.
+ */
+export function takeMarketContextClearForSend(): boolean {
+  if (!pendingClear) return false;
+  pendingClear = false;
+  return true;
+}
+
+/**
+ * The market fields for one outgoing assistant request.
+ *
+ * Stage 3's single source of truth, expressed as code: the chip renders
+ * `peekMarketContext()` and the request carries whatever this returns, and both
+ * read the same parked state. There is deliberately no way to attach an
+ * envelope to a request without it being the one the chip is showing, and no
+ * way to dismiss the chip without the next request saying so.
+ *
+ * Returns an empty object on an ordinary turn, so a message that neither starts
+ * nor ends a topic costs nothing and leaves the server's stored context alone.
+ */
+export function buildUndxSendContext(): {
+  market_context?: MarketContextEnvelope;
+  market_context_cleared?: true;
+} {
+  const envelope = takeMarketContextForSend();
+  if (envelope) return { market_context: envelope };
+  return takeMarketContextClearForSend() ? { market_context_cleared: true } : {};
+}
+
+/** Test seam only: forget both the envelope and any pending clear. */
+export function resetMarketContextForTests(): void {
+  parked = null;
+  pendingClear = false;
 }

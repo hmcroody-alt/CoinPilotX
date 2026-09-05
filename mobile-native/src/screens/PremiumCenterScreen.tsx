@@ -41,8 +41,8 @@ import { useIsFocused } from "@react-navigation/native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator, AppState, type AppStateStatus, Platform, Pressable,
-  RefreshControl, ScrollView, StyleSheet, Text, View
+  ActivityIndicator, AppState, type AppStateStatus, type LayoutChangeEvent,
+  Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View
 } from "react-native";
 import {
   getPremiumCenter,
@@ -59,7 +59,8 @@ import {
   getPrivateOfficeOverview,
   type PrivateOfficeProductState
 } from "../api/privateOffice";
-import { loadCanonicalTier, resetCanonicalTier } from "../entitlements/useCanonicalTier";
+import { tierSatisfies } from "../entitlements/canonicalTier";
+import { loadCanonicalTier, resetCanonicalTier, useCanonicalTier } from "../entitlements/useCanonicalTier";
 import { useFormatters, useTranslation } from "../i18n";
 import { RootStackParamList } from "../navigation/types";
 import { openDashboardRoute } from "../navigation/dashboardRouting";
@@ -397,6 +398,30 @@ export function PremiumCenterScreen({ route, navigation }: Props) {
     await load("refresh");
   }, [busy, load, t]);
 
+  /**
+   * Where a locked crypto row sends the member.
+   *
+   * This screen *is* the reactivation experience — the plans a lapsed member can
+   * buy and the restore/manage actions for one whose receipt lives on another
+   * device both already render above. Navigating away to a second paywall would
+   * mean two selling surfaces to keep in agreement, so the locked row scrolls to
+   * the one that is already here instead. The offset is measured rather than
+   * guessed because the block above it changes height: a member with a lapsed
+   * subscription gets a billing row that a never-subscribed visitor does not.
+   *
+   * The fallback is the top of the screen, not a no-op. If layout has not been
+   * measured yet the member still moves toward the plans rather than tapping a
+   * row that appears to do nothing.
+   */
+  const scrollRef = useRef<ScrollView>(null);
+  const upgradeOffset = useRef(0);
+  const onUpgradeOffset = useCallback((event: LayoutChangeEvent) => {
+    upgradeOffset.current = event.nativeEvent.layout.y;
+  }, []);
+  const onUpgrade = useCallback(() => {
+    scrollRef.current?.scrollTo({ y: Math.max(upgradeOffset.current - 12, 0), animated: true });
+  }, []);
+
   const onManage = useCallback(async () => {
     trackPremium("premium_manage_opened", { mode: experience });
     const opened = await openManageSubscriptions();
@@ -435,6 +460,7 @@ export function PremiumCenterScreen({ route, navigation }: Props) {
 
   return (
     <ScrollView
+      ref={scrollRef}
       style={styles.screen}
       contentContainerStyle={styles.content}
       refreshControl={
@@ -467,36 +493,43 @@ export function PremiumCenterScreen({ route, navigation }: Props) {
         />
       ) : null}
 
-      {sells ? (
-        <PlansSection
-          offers={offers}
-          loading={offersLoading}
-          plan={plan}
-          onPlan={choosePlan}
-          busy={busy === "purchasing"}
-          disabled={Boolean(busy)}
-          onPurchase={onPurchase}
-          onRetry={loadOffers}
-          expired={experience === "expired"}
-        />
-      ) : null}
-
       {/*
-        Directly under the plans, not at the foot of the screen. Restore is the
-        remedy for the member who already paid — on this device or another — and
-        burying it below the benefits list is how someone ends up buying a
-        second subscription. Apple expects it discoverable too.
+        Plans and actions are measured together as one block: this pair is the
+        whole answer to "how do I get access back", and which half applies
+        depends on why the member lapsed. A locked crypto row scrolls here.
       */}
-      <ActionsSection
-        experience={experience}
-        busy={busy}
-        onManage={onManage}
-        onRestore={onRestore}
-      />
+      <View onLayout={onUpgradeOffset}>
+        {sells ? (
+          <PlansSection
+            offers={offers}
+            loading={offersLoading}
+            plan={plan}
+            onPlan={choosePlan}
+            busy={busy === "purchasing"}
+            disabled={Boolean(busy)}
+            onPurchase={onPurchase}
+            onRetry={loadOffers}
+            expired={experience === "expired"}
+          />
+        ) : null}
+
+        {/*
+          Directly under the plans, not at the foot of the screen. Restore is the
+          remedy for the member who already paid — on this device or another — and
+          burying it below the benefits list is how someone ends up buying a
+          second subscription. Apple expects it discoverable too.
+        */}
+        <ActionsSection
+          experience={experience}
+          busy={busy}
+          onManage={onManage}
+          onRestore={onRestore}
+        />
+      </View>
 
       <BenefitsSection benefits={center?.benefits || []} held={Boolean(center?.membership.is_premium)} />
 
-      <CryptoIntelligenceSection navigation={navigation} />
+      <CryptoIntelligenceSection navigation={navigation} onUpgrade={onUpgrade} />
 
       <PrivateOfficeEntrySection navigation={navigation} />
 
@@ -1129,76 +1162,183 @@ function NotYetSection({ items }: { items: Array<{ key: string; label: string; s
 /**
  * The premium crypto capabilities, named on the surface that sells them.
  *
- * Presentation only: both existing plans already unlock every capability
- * listed here, so this section introduces no product, no SKU and no gate.
- * Copy lives in the `discovery:crypto` catalog namespace alongside the crypto
- * screens it describes — deliberately not under `premium:`, whose copy rules
- * exist for billing claims this section never makes.
+ * This section used to be presentation only, on the premise that "both existing
+ * plans already unlock every capability listed here". That premise silently
+ * assumed the reader still had a plan. A member whose Premium had lapsed was
+ * shown five rows with five forward chevrons — an invitation into capabilities
+ * the server would then refuse — so the screen that exists to tell you what your
+ * membership is was the one place that could not tell you it had ended.
  *
- * Crypto rows use the dashboard's route resolver and existing screens:
- * AlertManagement, Portfolio and Watchlists. Their clients, account state and
- * entitlement checks are shared unchanged; Premium owns no crypto data logic.
+ * The rows now render from the same canonical answer every other gate reads
+ * (`useCanonicalTier` → `tierSatisfies`), which is the server's resolver and
+ * nothing else: not `is_premium` off this screen's own payload, not a stored
+ * subscription row, not "was a member once". A locked row wears a closed lock
+ * instead of a chevron and its tap goes to the plans above rather than into the
+ * feature — the tap always does something, and what it does is honest.
+ *
+ * Deliberately not the whole story: the lock here is presentation. The capability
+ * itself is held server-side (`services.crypto_premium_gate`), the destination
+ * screens each mount `PremiumFeatureGate`, and the UNDX crypto tools resolve
+ * entitlement before they execute. This row cannot be the only thing standing
+ * between a lapsed member and a premium read, and it isn't.
+ *
+ * Copy lives in the `discovery:crypto` catalog namespace alongside the crypto
+ * screens it describes; the locked note reuses `premium:gate.lockedBody`, the
+ * same sentence the feature screens' own upsell shows, so the two surfaces
+ * cannot drift into describing different products.
  */
 type CryptoIntelligenceFeature = {
   key: "alerts" | "portfolio" | "watchlists" | "undx" | "marketPulse";
   icon: keyof typeof Ionicons.glyphMap;
   go?: (navigation: Props["navigation"]) => void;
+  /**
+   * Whether an inactive membership closes this row.
+   *
+   * Not every row in a Premium section is a Premium capability, and a padlock
+   * on something a free member can already use is the same lie as a chevron on
+   * something they cannot. So the flag is per row and mirrors what the server
+   * actually refuses: the destinations marked `true` sit behind
+   * `premium.crypto.intelligence` and render nothing without it, while the one
+   * marked `false` is free up to a ceiling and owns its own upsell at the point
+   * the ceiling bites.
+   */
+  premium: boolean;
 };
 
 const CRYPTO_INTELLIGENCE_FEATURES: readonly CryptoIntelligenceFeature[] = [
-  { key: "alerts", icon: "pulse-outline", go: (nav) => openDashboardRoute(nav, "/dashboard/crypto/alerts") },
-  { key: "portfolio", icon: "pie-chart-outline", go: (nav) => openDashboardRoute(nav, "/pulse/portfolio") },
+  { key: "alerts", premium: true, icon: "pulse-outline", go: (nav) => openDashboardRoute(nav, "/dashboard/crypto/alerts") },
+  // The one row here that is not a Premium capability. `PortfolioScreen` gives
+  // free and Premium members the identical valuation, prices and rows; Premium
+  // only lifts a three-holding ceiling, and the server refuses the fourth add
+  // rather than the screen. Locking this row would take away something a lapsed
+  // member still has, and hide holdings they entered themselves.
+  { key: "portfolio", premium: false, icon: "pie-chart-outline", go: (nav) => openDashboardRoute(nav, "/pulse/portfolio") },
   // Watchlists ships as `WatchlistsScreen` and is the thing alerts point at, so
   // leaving it off this list made the section describe a workflow it could not
   // start: a member could reach alerts and portfolio from here, but had to know
   // to go elsewhere for the lists those alerts watch.
-  { key: "watchlists", icon: "list-outline", go: (nav) => openDashboardRoute(nav, "/dashboard/crypto/watchlists") },
+  { key: "watchlists", premium: true, icon: "list-outline", go: (nav) => openDashboardRoute(nav, "/dashboard/crypto/watchlists") },
   // `UndxCapabilities` renders the server-authoritative capability registry, and
   // the crypto domain is registered in it — so this row advertises only what
   // UNDX can actually do right now, and can never claim a capability the server
   // has not published. The Command Center below opens the same destination.
-  { key: "undx", icon: "sparkles-outline", go: (nav) => nav.navigate("UndxCapabilities") },
+  // Locked with the rest when the membership lapses, and the lock is honest
+  // even though the destination is a general registry: what this row names is
+  // UNDX *crypto* intelligence, and that is refused server-side by
+  // `services/crypto_premium_gate` in both the tool path and the grounding
+  // path. The registry screen itself stays open to direct navigation on
+  // purpose — general UNDX is not what expired here.
+  { key: "undx", premium: true, icon: "sparkles-outline", go: (nav) => nav.navigate("UndxCapabilities") },
   // Market Pulse is the one row here that opens live market data rather than a
   // member's own saved state, so it navigates directly instead of through the
   // dashboard resolver: there is no legacy web spelling of this screen to
   // reconcile, and routing a brand-new native screen through a string matcher
   // would only invent a way for it to miss. The screen it opens reads the same
   // canonical market service the rest of the product already polls.
-  { key: "marketPulse", icon: "stats-chart-outline", go: (nav) => nav.navigate("MarketPulse") }
+  { key: "marketPulse", premium: true, icon: "stats-chart-outline", go: (nav) => nav.navigate("MarketPulse") }
 ];
 
-export function CryptoIntelligenceSection({ navigation }: { navigation: Props["navigation"] }) {
+export function CryptoIntelligenceSection({
+  navigation, onUpgrade
+}: { navigation: Props["navigation"]; onUpgrade: () => void }) {
   const { t } = useTranslation();
+  const answer = useCanonicalTier();
+
+  // Re-ask on foreground for the same reason `PremiumFeatureGate` does: an
+  // expiry that happened while the app was backgrounded has to be discovered
+  // when it comes back, not on the next cold start. The first read is already
+  // `useCanonicalTier`'s job, so only the return trip is added here, and it
+  // joins the same shared in-flight request every other gate uses.
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") void loadCanonicalTier();
+    });
+    return () => subscription.remove();
+  }, []);
+
+  // Only a *resolved* "no" locks a row. An unavailable answer is not a denial —
+  // showing a paying member a padlock because a request failed is the failure
+  // `canonicalTier` exists to prevent — so during an outage the rows stay
+  // navigable and the destination's own gate renders the honest
+  // "we couldn't confirm your membership" panel instead.
+  const lapsed = answer.state === "resolved" && !tierSatisfies(answer, "PREMIUM");
+
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>{t("discovery:crypto.intelligence.heading")}</Text>
-      <Text style={styles.note}>{t("discovery:crypto.intelligence.subhead")}</Text>
+      {/* The standing subhead says these tools are "included with every plan",
+          which is true of a plan and false of a lapsed one. Swapping the whole
+          note is what keeps the heading from contradicting the padlocks under
+          it. */}
+      <Text style={styles.note}>
+        {lapsed ? t("premium:gate.lockedBody") : t("discovery:crypto.intelligence.subhead")}
+      </Text>
       {CRYPTO_INTELLIGENCE_FEATURES.map((feature) => (
-        <CryptoIntelligenceRow key={feature.key} feature={feature} navigation={navigation} />
+        <CryptoIntelligenceRow
+          key={feature.key}
+          feature={feature}
+          navigation={navigation}
+          locked={lapsed && feature.premium}
+          onUpgrade={onUpgrade}
+        />
       ))}
     </View>
   );
 }
 
 function CryptoIntelligenceRow({
-  feature, navigation
-}: { feature: CryptoIntelligenceFeature; navigation: Props["navigation"] }) {
+  feature, navigation, locked, onUpgrade
+}: {
+  feature: CryptoIntelligenceFeature;
+  navigation: Props["navigation"];
+  locked: boolean;
+  onUpgrade: () => void;
+}) {
   const { t } = useTranslation();
   const label = t(`discovery:crypto.intelligence.${feature.key}.label`);
   const hint = t(`discovery:crypto.intelligence.${feature.key}.hint`);
 
   const body = (
     <>
-      <Ionicons name={feature.icon} size={18} color={premiumTheme.gold} />
+      <Ionicons
+        name={locked ? "lock-closed" : feature.icon}
+        size={18}
+        color={locked ? colors.muted : premiumTheme.gold}
+      />
       <View style={styles.benefitBody}>
         <View style={styles.benefitHead}>
-          <Text style={styles.benefitLabel} numberOfLines={2}>{label}</Text>
-          {feature.go ? <Ionicons name="chevron-forward" size={14} color={colors.muted} /> : null}
+          <Text
+            style={[styles.benefitLabel, locked && styles.benefitLabelIdle]}
+            numberOfLines={2}
+          >
+            {label}
+          </Text>
+          {/* A forward chevron is a promise that the tap opens the thing named
+              beside it. Locked, that promise is false, so the affordance is the
+              lock — the row is still pressable, but it says where it goes. */}
+          {feature.go && !locked ? (
+            <Ionicons name="chevron-forward" size={14} color={colors.muted} />
+          ) : null}
         </View>
         <Text style={styles.note} numberOfLines={3}>{hint}</Text>
       </View>
     </>
   );
+
+  if (locked) {
+    return (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityState={{ disabled: true }}
+        accessibilityHint={t("premium:gate.lockedBody")}
+        style={({ pressed }) => [styles.benefitRow, pressed && styles.pressed]}
+        onPress={onUpgrade}
+      >
+        {body}
+      </Pressable>
+    );
+  }
 
   if (feature.go) {
     const go = feature.go;

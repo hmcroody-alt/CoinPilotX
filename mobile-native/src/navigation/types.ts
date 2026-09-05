@@ -115,6 +115,14 @@ export type RootStackParamList = {
     presence?: string;
     openControlCenter?: boolean;
     undxTaskId?: string;
+    /**
+     * Where a contextual "Ask UNDX" drill-in came from, consulted only when the
+     * stack has lost the originating entry. Narrow on purpose: route state is
+     * not a place to accept an arbitrary navigation instruction, and a context
+     * handoff describes a subject, never an authority to reach a screen.
+     * See `src/undx/undxChatTarget.ts`.
+     */
+    undxReturn?: { screen: "AssetDetail"; params: { symbol: string; name?: string; title?: string } };
   };
   NewChat: { initialQuery?: string; targetUserId?: number; title?: string } | undefined;
   PulseShare: {

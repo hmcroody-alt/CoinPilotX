@@ -95,6 +95,7 @@ import {
 } from "../api/watchlists";
 import { alertConditionLabel, alertStatusLabel } from "../api/alerts";
 import { buildMarketContextEnvelope, parkMarketContext } from "../undx/marketContext";
+import { assetReturnTarget, undxChatTarget } from "../undx/undxChatTarget";
 import { AssetIntelligencePanel } from "../components/crypto/AssetIntelligencePanel";
 import { AssetPriceChart } from "../components/crypto/AssetSparkline";
 import { Panel } from "../components/Panel";
@@ -304,6 +305,13 @@ function AssetDetailScreenBody({ route, navigation }: Props) {
    * read as a fact. Parking the envelope and navigating is synchronous and
    * cannot fail on network: the member is never blocked from reaching UNDX
    * because a context payload had a bad day.
+   *
+   * The navigation is a `push` onto this stack, not a jump to the PulseAI tab.
+   * Tapping the tab route from here would have popped this screen off the stack
+   * on the way — and the tab screen is itself a redirect that replaces itself
+   * with `Chat` — so the member arrived in UNDX with an empty stack behind them
+   * and no working way back. Pushing keeps this screen underneath, which is
+   * what makes Back mean "the coin I was reading about".
    */
   function onAskUndx() {
     parkMarketContext(
@@ -323,7 +331,10 @@ function AssetDetailScreenBody({ route, navigation }: Props) {
         alertCount: alerts.length
       })
     );
-    navigation.navigate("Tabs", { screen: "PulseAI" });
+    navigation.push(
+      "Chat",
+      undxChatTarget({ returnTo: assetReturnTarget({ symbol, name: asset?.name }) || undefined })
+    );
   }
 
   if (loading && !detail) {
