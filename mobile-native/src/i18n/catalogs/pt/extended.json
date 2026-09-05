@@ -4669,7 +4669,28 @@
           "facts": "Fatos registrados",
           "updated": "Atualizado em {{date}}"
         },
-        "relationshipsUnavailable": "As relações não puderam ser carregadas agora."
+        "relationshipsUnavailable": "As relações não puderam ser carregadas agora.",
+        "portfolio": {
+          "title": "Portfólio",
+          "subtitle": "Seu portfólio do PulseSoc, espelhado no seu grafo. Edite as posições no Portfólio — as mudanças chegam aqui automaticamente.",
+          "totalValue": "Valor total",
+          "partial": "{{priced}} de {{total}} posições com preço",
+          "lots_one": "{{count}} lote",
+          "lots_other": "{{count}} lotes",
+          "priceUnavailable": "Preço indisponível",
+          "manualSource": "Manual · do seu Portfólio",
+          "updatedSeconds": "Preços atualizados há {{count}} s",
+          "updatedMinutes": "Preços atualizados há {{count}} min",
+          "updatedStale": "Os preços podem estar desatualizados",
+          "sourceUnavailable": "Os preços ao vivo não estão conectados no momento",
+          "syncPending_one": "{{count}} alteração do portfólio sincronizando…",
+          "syncPending_other": "{{count}} alterações do portfólio sincronizando…",
+          "syncFailed": "Uma sincronização recente falhou — exibindo a última atualização bem-sucedida.",
+          "unpriced": "Sem preço ao vivo para {{symbols}}. Os totais cobrem apenas suas outras posições.",
+          "empty": "Ainda não há posições no seu Portfólio.",
+          "unavailable": "Não foi possível carregar seu portfólio agora.",
+          "basisUnknown": "Custo de aquisição não registrado"
+        }
       },
       "attention": {
         "title": "Precisa da sua atenção",

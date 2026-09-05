@@ -4669,7 +4669,28 @@
           "facts": "Faits enregistrés",
           "updated": "Mis à jour le {{date}}"
         },
-        "relationshipsUnavailable": "Les relations n'ont pas pu être chargées pour le moment."
+        "relationshipsUnavailable": "Les relations n'ont pas pu être chargées pour le moment.",
+        "portfolio": {
+          "title": "Portefeuille",
+          "subtitle": "Votre portefeuille PulseSoc, reflété dans votre graphe. Modifiez vos positions dans Portefeuille : les changements arrivent ici automatiquement.",
+          "totalValue": "Valeur totale",
+          "partial": "{{priced}} sur {{total}} positions avec prix",
+          "lots_one": "{{count}} lot",
+          "lots_other": "{{count}} lots",
+          "priceUnavailable": "Prix indisponible",
+          "manualSource": "Manuel · depuis votre Portefeuille",
+          "updatedSeconds": "Prix mis à jour il y a {{count}} s",
+          "updatedMinutes": "Prix mis à jour il y a {{count}} min",
+          "updatedStale": "Les prix sont peut-être obsolètes",
+          "sourceUnavailable": "Les prix en direct ne sont pas connectés pour le moment",
+          "syncPending_one": "{{count}} modification du portefeuille en cours de synchronisation…",
+          "syncPending_other": "{{count}} modifications du portefeuille en cours de synchronisation…",
+          "syncFailed": "Une synchronisation récente a échoué — affichage de la dernière mise à jour réussie.",
+          "unpriced": "Pas de prix en direct pour {{symbols}}. Les totaux ne couvrent que vos autres positions.",
+          "empty": "Aucune position dans votre Portefeuille pour l'instant.",
+          "unavailable": "Votre portefeuille n'a pas pu être chargé pour le moment.",
+          "basisUnknown": "Prix de revient non renseigné"
+        }
       },
       "attention": {
         "title": "Requiert votre attention",

@@ -221,6 +221,9 @@ NATIVE_ROUTES: dict[str, str] = {
     # bound. /pulse/private-office/facts is a literal owner above, so the
     # pattern cannot claim it.
     "PrivateOperations": "/pulse/private-office/:view",
+    # The Capital Graph is a literal owner like /facts above: linking.ts binds
+    # CapitalGraph to this exact path, so the :view pattern cannot claim it.
+    "CapitalGraph": "/pulse/private-office/capital-graph",
     "AccountCenter": "/pulse/settings/:section",
     "AccountDevices": "/pulse/settings/devices",
     "AccountHealth": "/pulse/account-health",
@@ -2815,6 +2818,53 @@ def _register_private_record_map_entries() -> None:
 
 
 _register_private_record_map_entries()
+
+
+# The Capital Graph's Portfolio projection. Derived from its spec module so
+# the capability id, tool name and output allowlist here cannot drift from the
+# registry or the executor. Same structural owner scope: ``portfolio_view``
+# takes owner and actor and refuses an actor that is not the owner, and the
+# capability declares zero fields, so there is nothing to widen.
+def _register_private_capital_map_entry() -> None:
+    from services.private_office import undx_capital_spec as _cap_spec
+
+    _live(
+        _cap_spec.CAPABILITY_ID,
+        product_area="Private Office", resource_type="capital_portfolio",
+        native_screen="CapitalGraph",
+        backend_route="GET /api/private-office/capital-graph/portfolio",
+        domain_service="services.private_office.portfolio_projection",
+        domain_operation="portfolio_view",
+        authorization_scope=_SELF, owner_field="owner_user_id",
+        output_schema=(("symbol", "str"), ("name", "str"),
+                       ("quantity", "float"), ("lot_count", "int"),
+                       ("cost_basis", "float"), ("price", "float"),
+                       ("value", "float"), ("pnl_value", "float"),
+                       ("priced", "bool"), ("change_24h", "float"),
+                       ("projected_at", "str"), ("evidence", "dict")),
+        feature_flag="UNDX_AGENT_READS_ENABLED",
+        evidence=("services/private_office/portfolio_projection.py portfolio_view",
+                  "services/private_office/undx_capital_spec.py execute",
+                  "services/undx_agent_tools.py private_capital_portfolio",
+                  "tests/private_office/test_capital_undx_capability.py"),
+        known_limitations=(
+            "Read only, no advice, no execution: the result reports recorded "
+            "holdings and what the market said, with the price feed's own "
+            "freshness attached. There is no companion write and no argument "
+            "surface — edits happen in Portfolio, on the member's own screen.",
+            "totals.value is null unless every holding was priced by a live "
+            "quote; the agent must relay that refusal (e.g. '1 of 2 holdings "
+            "priced') rather than fill in a total. Unpriced symbols are named "
+            "in totals.unpriced_symbols.",
+            "Availability follows services.private_office.feature_matrix: "
+            "capital_graph reaches PRIVATE and above, and the "
+            "CAPITAL_GRAPH_ENABLED kill switch refuses every caller as "
+            "FEATURE_DISABLED when off.",
+        ),
+    )
+
+
+_register_private_capital_map_entry()
 
 
 # ---------------------------------------------------------------------------

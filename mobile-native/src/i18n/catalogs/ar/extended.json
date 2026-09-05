@@ -4861,7 +4861,36 @@
           "facts": "الحقائق المسجلة",
           "updated": "آخر تحديث {{date}}"
         },
-        "relationshipsUnavailable": "تعذر تحميل العلاقات في الوقت الحالي."
+        "relationshipsUnavailable": "تعذر تحميل العلاقات في الوقت الحالي.",
+        "portfolio": {
+          "title": "المحفظة",
+          "subtitle": "محفظتك في PulseSoc، منعكسة في مخططك. عدّل حيازاتك في المحفظة — التغييرات تصل إلى هنا تلقائيًا.",
+          "totalValue": "القيمة الإجمالية",
+          "partial": "{{priced}} من {{total}} من الحيازات لها سعر",
+          "lots_zero": "لا دفعات",
+          "lots_one": "دفعة واحدة",
+          "lots_two": "دفعتان",
+          "lots_few": "{{count}} دفعات",
+          "lots_many": "{{count}} دفعة",
+          "lots_other": "{{count}} دفعة",
+          "priceUnavailable": "السعر غير متاح",
+          "manualSource": "يدوي · من محفظتك",
+          "updatedSeconds": "تم تحديث الأسعار قبل {{count}} ث",
+          "updatedMinutes": "تم تحديث الأسعار قبل {{count}} د",
+          "updatedStale": "قد تكون الأسعار قديمة",
+          "sourceUnavailable": "الأسعار المباشرة غير متصلة حاليًا",
+          "syncPending_zero": "لا توجد تغييرات قيد المزامنة",
+          "syncPending_one": "جارٍ مزامنة تغيير واحد في المحفظة…",
+          "syncPending_two": "جارٍ مزامنة تغييرين في المحفظة…",
+          "syncPending_few": "جارٍ مزامنة {{count}} تغييرات في المحفظة…",
+          "syncPending_many": "جارٍ مزامنة {{count}} تغييرًا في المحفظة…",
+          "syncPending_other": "جارٍ مزامنة {{count}} تغيير في المحفظة…",
+          "syncFailed": "فشلت مزامنة حديثة — يُعرض آخر تحديث ناجح.",
+          "unpriced": "لا يوجد سعر مباشر لـ {{symbols}}. الإجماليات تغطي بقية حيازاتك فقط.",
+          "empty": "لا توجد حيازات في محفظتك بعد.",
+          "unavailable": "تعذر تحميل محفظتك الآن.",
+          "basisUnknown": "تكلفة الشراء غير مسجلة"
+        }
       },
       "attention": {
         "title": "يتطلب انتباهك",

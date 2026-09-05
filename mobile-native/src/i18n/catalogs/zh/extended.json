@@ -4637,7 +4637,28 @@
           "facts": "已记录事实",
           "updated": "更新于 {{date}}"
         },
-        "relationshipsUnavailable": "目前无法加载关系。"
+        "relationshipsUnavailable": "目前无法加载关系。",
+        "portfolio": {
+          "title": "投资组合",
+          "subtitle": "您的 PulseSoc 投资组合已映射到图谱中。请在投资组合中编辑持仓——变更会自动同步到这里。",
+          "totalValue": "总价值",
+          "partial": "{{total}} 项持仓中有 {{priced}} 项已有价格",
+          "lots_one": "{{count}} 笔买入",
+          "lots_other": "{{count}} 笔买入",
+          "priceUnavailable": "价格不可用",
+          "manualSource": "手动 · 来自您的投资组合",
+          "updatedSeconds": "价格于 {{count}} 秒前更新",
+          "updatedMinutes": "价格于 {{count}} 分钟前更新",
+          "updatedStale": "价格可能已过时",
+          "sourceUnavailable": "实时价格当前未连接",
+          "syncPending_one": "{{count}} 项投资组合变更正在同步…",
+          "syncPending_other": "{{count}} 项投资组合变更正在同步…",
+          "syncFailed": "最近一次同步失败——当前显示为上次成功更新的数据。",
+          "unpriced": "{{symbols}} 暂无实时价格。总计仅包含您的其他持仓。",
+          "empty": "您的投资组合中还没有持仓。",
+          "unavailable": "暂时无法加载您的投资组合。",
+          "basisUnknown": "未记录成本价"
+        }
       },
       "attention": {
         "title": "需要您关注",

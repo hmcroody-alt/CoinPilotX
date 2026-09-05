@@ -151,6 +151,71 @@ export type CapitalEntityResult =
   | { state: "LOCKED"; setupRequired: boolean }
   | { state: "ERROR"; message: string };
 
+/**
+ * One projected holding. `quantity`, `costBasis`, `price`, `value` and
+ * `pnlValue` are `null` when unknown — a holding without a live quote has no
+ * value, not a value of zero, mirroring the server's `_value_holding` rule.
+ */
+export type CapitalPortfolioAsset = {
+  nodeId: number;
+  symbol: string;
+  name: string;
+  quantity: number | null;
+  lotCount: number;
+  costBasis: number | null;
+  price: number | null;
+  value: number | null;
+  pnlValue: number | null;
+  priced: boolean;
+  change24h: number | null;
+  /** When the member's ledger last asserted this holding. */
+  projectedAt: string;
+};
+
+export type CapitalPortfolioTotals = {
+  /** Only present while every asset is priced; otherwise null, never partial. */
+  value: number | null;
+  cost: number | null;
+  pnlValue: number | null;
+  complete: boolean;
+  assets: number;
+  priced: number;
+  unpricedSymbols: string[];
+  basisKnown: number;
+};
+
+/** The price feed's own account of itself — used to label freshness honestly. */
+export type CapitalPortfolioPrices = {
+  source: string;
+  observedEpoch: number | null;
+  ageSeconds: number | null;
+  warning: string;
+};
+
+/** How far behind the ledger the projection may be. */
+export type CapitalPortfolioSync = {
+  pending: number;
+  failed: number;
+  enabled: boolean;
+};
+
+export type CapitalPortfolio = {
+  assets: CapitalPortfolioAsset[];
+  totals: CapitalPortfolioTotals;
+  prices: CapitalPortfolioPrices;
+  sync: CapitalPortfolioSync;
+};
+
+export type CapitalPortfolioResult =
+  | { state: "READY"; portfolio: CapitalPortfolio }
+  | { state: "DENIED"; reason: string }
+  | { state: "NOT_ENTITLED"; minimumTier: string }
+  | { state: "FEATURE_DISABLED" }
+  | { state: "NOT_IMPLEMENTED" }
+  | { state: "UNAVAILABLE" }
+  | { state: "LOCKED"; setupRequired: boolean }
+  | { state: "ERROR"; message: string };
+
 export type CapitalRelationshipsResult =
   | { state: "READY"; entity: CapitalNode; relationships: CapitalRelationship[]; complete: boolean }
   | { state: "NOT_FOUND" }
@@ -290,6 +355,63 @@ export function parseCapitalGraph(raw: unknown, view: CapitalView): CapitalGraph
   };
 }
 
+function asMaybeNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function parsePortfolioAsset(raw: unknown): CapitalPortfolioAsset {
+  const row = asRecord(raw);
+  return {
+    nodeId: asId(row.node_id),
+    symbol: asText(row.symbol),
+    name: asText(row.name),
+    quantity: asMaybeNumber(row.quantity),
+    lotCount: asId(row.lot_count),
+    costBasis: asMaybeNumber(row.cost_basis),
+    price: asMaybeNumber(row.price),
+    value: asMaybeNumber(row.value),
+    pnlValue: asMaybeNumber(row.pnl_value),
+    priced: row.priced === true,
+    change24h: asMaybeNumber(row.change_24h),
+    projectedAt: asText(row.projected_at)
+  };
+}
+
+export function parseCapitalPortfolio(raw: unknown): CapitalPortfolio {
+  const row = asRecord(raw);
+  const totals = asRecord(row.totals);
+  const prices = asRecord(row.prices);
+  const sync = asRecord(row.sync);
+  return {
+    assets: (Array.isArray(row.assets) ? row.assets : []).map(parsePortfolioAsset),
+    totals: {
+      value: asMaybeNumber(totals.value),
+      cost: asMaybeNumber(totals.cost),
+      pnlValue: asMaybeNumber(totals.pnl_value),
+      // Read, never derived: only the server knows whether every asset priced.
+      complete: totals.complete === true,
+      assets: asId(totals.assets),
+      priced: asId(totals.priced),
+      unpricedSymbols: (Array.isArray(totals.unpriced_symbols)
+        ? totals.unpriced_symbols
+        : []
+      ).map(asText),
+      basisKnown: asId(totals.basis_known)
+    },
+    prices: {
+      source: asText(prices.source),
+      observedEpoch: asMaybeNumber(prices.observed_epoch),
+      ageSeconds: asMaybeNumber(prices.age_seconds),
+      warning: asText(prices.warning)
+    },
+    sync: {
+      pending: asId(sync.pending),
+      failed: asId(sync.failed),
+      enabled: sync.enabled === true
+    }
+  };
+}
+
 /* --- refusals ----------------------------------------------------------- */
 
 type Refusal =
@@ -346,6 +468,34 @@ export async function getCapitalGraph(view: CapitalView): Promise<CapitalGraphRe
       const details = asRecord(error.details);
       if (asText(details.state).trim().toUpperCase() === "DENIED") {
         return { state: "DENIED", reason: asText(details.reason) };
+      }
+    }
+    return refusal(error);
+  }
+}
+
+export const CAPITAL_PORTFOLIO_PATH = "/api/private-office/capital-graph/portfolio";
+
+/**
+ * The Portfolio node: projected holdings priced live at read time.
+ *
+ * The server never stores a price and never totals an incomplete set, so
+ * `totals.value === null` with `complete: false` means "we will not pretend" —
+ * render the per-asset rows and say which symbols went unpriced.
+ */
+export async function getCapitalPortfolio(): Promise<CapitalPortfolioResult> {
+  try {
+    const body = asRecord(
+      await pulseApi<unknown>(CAPITAL_PORTFOLIO_PATH, {
+        headers: await officeRequestHeaders()
+      })
+    );
+    return { state: "READY", portfolio: parseCapitalPortfolio(body.portfolio) };
+  } catch (error) {
+    if (error instanceof PulseApiError && error.status === 403) {
+      const details = asRecord(error.details);
+      if (asText(details.state).trim().toUpperCase() === "DENIED") {
+        return { state: "DENIED", reason: asText(asRecord(details.reason).reason) };
       }
     }
     return refusal(error);

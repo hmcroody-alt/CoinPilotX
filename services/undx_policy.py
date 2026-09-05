@@ -80,6 +80,9 @@ PRODUCTION_TOOL_REGISTRY: dict[str, dict[str, Any]] = {
     "pulsesoc.private_requests.list": {"method": None, "route": "services.private_office.retrieval.retrieve_records", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
     "pulsesoc.private_risks.list": {"method": None, "route": "services.private_office.retrieval.retrieve_records", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
     "pulsesoc.private_opportunities.list": {"method": None, "route": "services.private_office.retrieval.retrieve_records", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
+    # The Capital Graph's Portfolio projection. Zero-argument read of the
+    # caller's own projected holdings; same structural owner scope.
+    "pulsesoc.private_capital.portfolio": {"method": None, "route": "services.private_office.portfolio_projection.portfolio_view", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
     "pulsesoc.crypto_alerts.list": {"method": None, "route": "services.alert_engine.list_alert_rules", "risk": "read_only", "confirmation": False, "canonical_key": "alert_id"},
     "pulsesoc.crypto_alerts.get": {"method": None, "route": "services.alert_engine.get_alert_rule", "risk": "read_only", "confirmation": False, "canonical_key": "alert_id"},
     "pulsesoc.crypto_alerts.pause": {"method": None, "route": "services.alert_engine.pause_alert", "risk": "medium", "confirmation": False, "canonical_key": "alert_id", "verification_route": "services.alert_engine.get_alert_rule"},

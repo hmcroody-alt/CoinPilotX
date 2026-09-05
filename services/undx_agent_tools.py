@@ -2783,6 +2783,91 @@ def _private_records_executor(capability_id: str) -> Callable[[int, dict[str, An
     return _list_records
 
 
+def private_capital_portfolio(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    """Read the caller's own projected Portfolio holdings, priced live.
+
+    ``private_facts_list``'s properties hold here, plus two of its own:
+
+    **No arguments at all.** The capability declares zero fields, so there is
+    nothing a model could widen — no owner, no symbol filter that might later
+    grow into a cross-account lookup. ``arguments`` is accepted and ignored.
+
+    **Honest numbers or none.** ``totals.value`` arrives ``null`` whenever any
+    holding lacks a live quote; this executor relays that refusal untouched.
+    The agent may say "1 of 2 holdings priced", never invent the missing total.
+    """
+    started = time.perf_counter()
+    from services.private_office import undx_capital_spec as capital_spec
+    tool = capital_spec.tool_name(capital_spec.CAPABILITY_ID)
+    capability = capital_spec.CAPABILITY_ID
+    db, access, facts, office, schema, tiers = _private_office()
+
+    owner = int(user_id or 0)
+    if owner <= 0:
+        return _fail(tool, capability, "authentication_required",
+                     "UNDX needs you signed in to read your Private Office.",
+                     started=started)
+
+    try:
+        resolved = tiers.resolve_tier(owner)
+    except Exception:  # noqa: BLE001 - a resolver fault is not a denial
+        resolved = {}
+    decision = access.decide(resolved, capital_spec.FEATURE_ID)
+    verdict = decision["decision"]
+
+    if verdict == access.UNAVAILABLE:
+        return _fail(tool, capability, "entitlement_unavailable",
+                     "UNDX could not confirm your Private Office access just now.",
+                     retryable=True, started=started)
+    if verdict in (access.NOT_IMPLEMENTED, access.FEATURE_DISABLED):
+        return _fail(tool, capability, "capability_not_available",
+                     "The Capital Graph is not available yet.", started=started)
+    if verdict == access.NOT_ENTITLED:
+        return _fail(tool, capability, "not_entitled",
+                     "Your plan does not include the Private Office.",
+                     started=started)
+
+    connection = db.connect()
+    try:
+        cursor = connection.cursor()
+        schema.ensure_private_schema(cursor)
+
+        from services.private_office import security as office_security
+        if not office_security.request_is_unlocked(cursor, owner).get("ok"):
+            return _office_locked_result(tool, capability, started)
+
+        result = capital_spec.execute(cursor, owner_user_id=owner)
+        # The outbox sweep and audit rows must survive the read.
+        connection.commit()
+    except Exception:  # noqa: BLE001
+        return _fail(tool, capability, "private_store_unavailable",
+                     "UNDX could not read your Private Office just now.",
+                     retryable=True, started=started)
+    finally:
+        connection.close()
+
+    if not result.get("ok"):
+        return _fail(tool, capability, "records_denied",
+                     "UNDX could not read your Capital Graph.",
+                     started=started)
+
+    return ToolResult(
+        ok=True,
+        tool_name=tool,
+        capability_id=capability,
+        records=list(result.get("records") or []),
+        data={
+            "count": int(result.get("counts", {}).get("returned") or 0),
+            # Relayed whole: ``totals.value`` is null unless every holding was
+            # priced live, and the agent must repeat that refusal, not fill it.
+            "totals": result.get("totals") or {},
+            "prices": result.get("prices") or {},
+            "sync": result.get("sync") or {},
+        },
+        latency_ms=_timed(started),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Resolution
 # ---------------------------------------------------------------------------
@@ -2924,6 +3009,17 @@ def _register_private_record_executors() -> None:
 
 
 _register_private_record_executors()
+
+
+# The Capital Graph read, bound from its spec module for the same reason: the
+# name here and the name the registry derives are the same function call.
+def _register_private_capital_executor() -> None:
+    from services.private_office import undx_capital_spec as _cap_spec
+
+    EXECUTORS[_cap_spec.executor_name(_cap_spec.CAPABILITY_ID)] = private_capital_portfolio
+
+
+_register_private_capital_executor()
 
 
 def resolve(name: str) -> Callable[[int, dict[str, Any]], ToolResult]:

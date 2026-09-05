@@ -38,8 +38,10 @@ import { PulseApiError } from "../pulseApi";
 import {
   CAPITAL_ENTITY_PATH,
   CAPITAL_GRAPH_PATH,
+  CAPITAL_PORTFOLIO_PATH,
   getCapitalEntity,
   getCapitalGraph,
+  getCapitalPortfolio,
   getCapitalRelationships,
   parseCapitalEdge,
   parseCapitalNode
@@ -380,6 +382,151 @@ describe("getCapitalRelationships", () => {
   it("keeps the 404 state word as NOT_FOUND", async () => {
     mockPulseApi.mockRejectedValueOnce(apiError(404, { state: "NOT_FOUND" }));
     expect(await getCapitalRelationships(999, "holdings")).toEqual({ state: "NOT_FOUND" });
+  });
+});
+
+/** A wire body exactly as the portfolio route answers it. */
+function rawPortfolioBody(overrides: Record<string, unknown> = {}) {
+  return {
+    ok: true,
+    portfolio: {
+      ok: true,
+      assets: [
+        {
+          node_id: 41,
+          symbol: "BTC",
+          name: "Bitcoin",
+          quantity: 0.75,
+          lot_count: 2,
+          cost_basis: 25000,
+          price: 60000,
+          value: 45000,
+          pnl_value: 20000,
+          priced: true,
+          change_24h: 1.2,
+          projected_at: "2026-09-01T00:00:00Z",
+          freshness: { stale: false, age_days: 4, horizon_days: 365 },
+          evidence: { fact_ids: [901, 902], provenance: { provenance_type: "USER_ASSERTED" } }
+        },
+        {
+          node_id: 42,
+          symbol: "XYZ",
+          name: "XYZ",
+          quantity: 10,
+          lot_count: 1,
+          cost_basis: null,
+          price: null,
+          value: null,
+          pnl_value: null,
+          priced: false,
+          change_24h: null,
+          projected_at: "2026-09-02T00:00:00Z",
+          freshness: null,
+          evidence: { fact_ids: [903], provenance: null }
+        }
+      ],
+      totals: {
+        value: null,
+        cost: 25000,
+        pnl_value: null,
+        complete: false,
+        assets: 2,
+        priced: 1,
+        unpriced_symbols: ["XYZ"],
+        basis_known: 1
+      },
+      prices: { source: "coingecko", observed_epoch: 1756700000, age_seconds: 42, warning: "" },
+      sync: { pending: 0, failed: 0, enabled: true, swept: 0 },
+      ...overrides
+    }
+  };
+}
+
+describe("getCapitalPortfolio", () => {
+  it("parses a READY envelope — unpriced holdings carry null, never zero", async () => {
+    mockPulseApi.mockResolvedValueOnce(rawPortfolioBody());
+    const result = await getCapitalPortfolio();
+    if (result.state !== "READY") throw new Error(`expected READY, got ${result.state}`);
+
+    expect(result.portfolio.assets).toEqual([
+      {
+        nodeId: 41,
+        symbol: "BTC",
+        name: "Bitcoin",
+        quantity: 0.75,
+        lotCount: 2,
+        costBasis: 25000,
+        price: 60000,
+        value: 45000,
+        pnlValue: 20000,
+        priced: true,
+        change24h: 1.2,
+        projectedAt: "2026-09-01T00:00:00Z"
+      },
+      {
+        nodeId: 42,
+        symbol: "XYZ",
+        name: "XYZ",
+        quantity: 10,
+        lotCount: 1,
+        // A holding without a live quote has no value — null, not 0.
+        costBasis: null,
+        price: null,
+        value: null,
+        pnlValue: null,
+        priced: false,
+        change24h: null,
+        projectedAt: "2026-09-02T00:00:00Z"
+      }
+    ]);
+    expect(result.portfolio.prices).toEqual({
+      source: "coingecko",
+      observedEpoch: 1756700000,
+      ageSeconds: 42,
+      warning: ""
+    });
+    expect(result.portfolio.sync).toEqual({ pending: 0, failed: 0, enabled: true });
+    expect(lastRequest().path).toBe(CAPITAL_PORTFOLIO_PATH);
+    expect((lastRequest().options.headers as Record<string, string>)[OFFICE_DEVICE_HEADER]).toBeTruthy();
+  });
+
+  it("never derives a total — an incomplete set keeps value null even though rows exist", async () => {
+    mockPulseApi.mockResolvedValueOnce(rawPortfolioBody());
+    const result = await getCapitalPortfolio();
+    if (result.state !== "READY") throw new Error(`expected READY, got ${result.state}`);
+    // One asset is priced at 45000, but the server refused to total a set with
+    // an unpriced member — the client must not sum what the server would not.
+    expect(result.portfolio.totals).toEqual({
+      value: null,
+      cost: 25000,
+      pnlValue: null,
+      complete: false,
+      assets: 2,
+      priced: 1,
+      unpricedSymbols: ["XYZ"],
+      basisKnown: 1
+    });
+  });
+
+  it("keeps the owner-only refusal as DENIED with the server's reason word", async () => {
+    mockPulseApi.mockRejectedValueOnce(
+      apiError(403, { state: "denied", reason: { reason: "actor_is_not_owner" } })
+    );
+    expect(await getCapitalPortfolio()).toEqual({
+      state: "DENIED",
+      reason: "actor_is_not_owner"
+    });
+  });
+
+  it("maps the shared refusals like every other Office call", async () => {
+    mockPulseApi.mockRejectedValueOnce(apiError(423, { setup_required: true }));
+    expect(await getCapitalPortfolio()).toEqual({ state: "LOCKED", setupRequired: true });
+
+    mockPulseApi.mockRejectedValueOnce(apiError(503, {}));
+    expect(await getCapitalPortfolio()).toEqual({ state: "UNAVAILABLE" });
+
+    mockPulseApi.mockRejectedValueOnce(apiError(403, { state: "FEATURE_DISABLED" }));
+    expect(await getCapitalPortfolio()).toEqual({ state: "FEATURE_DISABLED" });
   });
 });
 

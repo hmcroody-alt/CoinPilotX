@@ -128,7 +128,7 @@ DENIAL_VOCAB = frozenset({
 
 #: Writer outcomes, from ``facts`` and ``graph``.
 WRITE_OUTCOME_VOCAB = frozenset({
-    "written", "refreshed", "rejected", "created", "existing",
+    "written", "refreshed", "rejected", "created", "existing", "superseded",
 })
 
 #: Schema bootstrap outcomes, from ``schema``. Stage 35's three states.

@@ -77,10 +77,14 @@ AUTHORIZATION_SURFACE: tuple[tuple[Any, ...], ...] = (
     ('premium.entitlements', 'read_only', 'never', 'self_account_only', 'self_account_only', False, True, False, '', (), 'UNDX_AGENT_READS_ENABLED'),
     ('premium.status', 'read_only', 'never', 'self_account_only', 'self_account_only', False, True, False, '', (), 'UNDX_AGENT_READS_ENABLED'),
     ('presence.privacy.status', 'read_only', 'never', 'self_account_only', 'self_account_only', False, True, False, '', (), 'UNDX_AGENT_READS_ENABLED'),
-    # Private Office. Seven owner-scoped reads and no writes: the facts read and
-    # the six Batch C record views. Owner scope is structural (no field names an
-    # account), the second lock applies inside the executor, and the record
-    # views read through retrieval's general intent at an INTERNAL ceiling.
+    # Private Office. Eight owner-scoped reads and no writes: the facts read,
+    # the six Batch C record views, and the Capital Graph portfolio projection.
+    # Owner scope is structural (no field names an account), the second lock
+    # applies inside the executor, and the record views read through
+    # retrieval's general intent at an INTERNAL ceiling. The capital read
+    # declares zero fields — nothing can widen it — and relays totals.value as
+    # null whenever any holding lacks a live quote.
+    ('private.capital.portfolio', 'read_only', 'never', 'self_account_only', 'self_account_only', False, True, False, '', (), 'UNDX_AGENT_READS_ENABLED'),
     ('private.decisions.list', 'read_only', 'never', 'self_account_only', 'self_account_only', False, True, False, '', (), 'UNDX_AGENT_READS_ENABLED'),
     ('private.events.list', 'read_only', 'never', 'self_account_only', 'self_account_only', False, True, False, '', (), 'UNDX_AGENT_READS_ENABLED'),
     ('private.facts.list', 'read_only', 'never', 'self_account_only', 'self_account_only', False, True, False, '', (), 'UNDX_AGENT_READS_ENABLED'),

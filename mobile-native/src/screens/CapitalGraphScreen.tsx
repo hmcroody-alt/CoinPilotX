@@ -41,9 +41,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   CAPITAL_VIEWS,
   CapitalGraphResult,
+  CapitalPortfolio,
+  CapitalPortfolioResult,
   CapitalView,
   asCapitalView,
-  getCapitalGraph
+  getCapitalGraph,
+  getCapitalPortfolio
 } from "../api/capitalGraph";
 import { useTranslation } from "../i18n";
 import { BOTTOM_NAV_CONTENT_CLEARANCE } from "../navigation/BottomNavVisibility";
@@ -79,14 +82,19 @@ function CapitalGraphBody({ navigation, route }: Props) {
   const [view, setView] = useState<CapitalView>(asCapitalView(route.params?.view) ?? "holdings");
   const [state, setState] = useState<ScreenState>("LOADING");
   const [result, setResult] = useState<CapitalGraphResult | null>(null);
+  const [portfolio, setPortfolio] = useState<CapitalPortfolioResult | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async (wanted: CapitalView) => {
-    const next = await getCapitalGraph(wanted);
+    const [next, folio] = await Promise.all([
+      getCapitalGraph(wanted),
+      wanted === "holdings" ? getCapitalPortfolio() : Promise.resolve(null)
+    ]);
     // The server said the grant is dead (revoked elsewhere, expired). Drop the
     // local token so the enclosing gate flips back to the unlock door.
     if (next.state === "LOCKED") lockOfficeLocally();
     setResult(next);
+    setPortfolio(folio);
     setState(next.state === "READY" && next.graph.nodes.length === 0 ? "EMPTY" : next.state);
   }, []);
 
@@ -94,10 +102,14 @@ function CapitalGraphBody({ navigation, route }: Props) {
     let cancelled = false;
     setState("LOADING");
     (async () => {
-      const next = await getCapitalGraph(view);
+      const [next, folio] = await Promise.all([
+        getCapitalGraph(view),
+        view === "holdings" ? getCapitalPortfolio() : Promise.resolve(null)
+      ]);
       if (cancelled) return;
       if (next.state === "LOCKED") lockOfficeLocally();
       setResult(next);
+      setPortfolio(folio);
       setState(next.state === "READY" && next.graph.nodes.length === 0 ? "EMPTY" : next.state);
     })();
     return () => {
@@ -130,6 +142,144 @@ function CapitalGraphBody({ navigation, route }: Props) {
       : truth === "STALE" || truth === "ESTIMATED"
         ? styles.truthWarning
         : null;
+
+  const pt = (key: string, options?: Record<string, unknown>) =>
+    t(`premium:privateOffice.capital.portfolio.${key}`, options);
+
+  const money = (amount: number) =>
+    new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(amount);
+
+  const amount = (quantity: number) =>
+    quantity.toLocaleString(undefined, { maximumFractionDigits: 8 });
+
+  /**
+   * The price feed's own confession, verbatim thresholds: under 90s it is
+   * recent enough to phrase in seconds, under an hour in minutes, beyond that
+   * only "may be out of date" — never "Live" on stale numbers.
+   */
+  const freshnessLabel = (folio: CapitalPortfolio) => {
+    if (folio.prices.source === "unavailable") return pt("sourceUnavailable");
+    const age = folio.prices.ageSeconds;
+    if (age === null) return pt("updatedStale");
+    if (age < 90) return pt("updatedSeconds", { count: Math.max(0, Math.round(age)) });
+    if (age < 3600) return pt("updatedMinutes", { count: Math.round(age / 60) });
+    return pt("updatedStale");
+  };
+
+  /**
+   * The Portfolio block is the one place money appears on this screen. That is
+   * not a breach of the "no totals" doctrine above: the graph refuses to total
+   * mixed truth states, while this panel is a separate server-computed Decimal
+   * contract that only sends a total when every holding is priced
+   * (`totals.complete`). The client never adds numbers — it either shows the
+   * server's total or explains which symbols kept it from existing.
+   */
+  const portfolioPanel = () => {
+    if (view !== "holdings" || !portfolio) return null;
+    if (portfolio.state !== "READY") {
+      // Whatever went wrong, "could not load" is the honest sentence — never
+      // draw a refusal or an outage as an empty portfolio.
+      return (
+        <View style={styles.folioPanel}>
+          <Text style={styles.folioTitle}>{pt("title")}</Text>
+          <Text style={styles.panelText}>{pt("unavailable")}</Text>
+        </View>
+      );
+    }
+    const folio = portfolio.portfolio;
+    return (
+      <View style={styles.folioPanel}>
+        <View style={styles.folioHead}>
+          <Text style={styles.folioTitle}>{pt("title")}</Text>
+          <Text style={styles.folioFreshness}>{freshnessLabel(folio)}</Text>
+        </View>
+        <Text style={styles.panelCaption}>{pt("subtitle")}</Text>
+
+        {folio.assets.length === 0 ? (
+          <Text style={styles.panelText}>{pt("empty")}</Text>
+        ) : (
+          <>
+            {folio.totals.complete && folio.totals.value !== null ? (
+              <View style={styles.folioTotals}>
+                <Text style={styles.folioTotalLabel}>{pt("totalValue")}</Text>
+                <Text style={styles.folioTotalValue}>{money(folio.totals.value)}</Text>
+                {folio.totals.pnlValue !== null ? (
+                  <Text
+                    style={[
+                      styles.folioPnl,
+                      folio.totals.pnlValue >= 0 ? styles.folioPnlUp : styles.folioPnlDown
+                    ]}
+                  >
+                    {`${folio.totals.pnlValue >= 0 ? "+" : ""}${money(folio.totals.pnlValue)}`}
+                  </Text>
+                ) : null}
+              </View>
+            ) : (
+              <View style={styles.folioTotals}>
+                <Text style={styles.folioPartial}>
+                  {pt("partial", { priced: folio.totals.priced, total: folio.totals.assets })}
+                </Text>
+                {folio.totals.unpricedSymbols.length ? (
+                  <Text style={styles.folioWarn}>
+                    {pt("unpriced", { symbols: folio.totals.unpricedSymbols.join(", ") })}
+                  </Text>
+                ) : null}
+              </View>
+            )}
+
+            {folio.assets.map((asset) => (
+              <Pressable
+                key={asset.nodeId}
+                style={styles.folioRow}
+                onPress={() => navigation.navigate("CapitalEntity", { id: asset.nodeId, view })}
+                accessibilityRole="button"
+                accessibilityLabel={asset.symbol}
+              >
+                <View style={styles.folioRowLeft}>
+                  <Text style={styles.folioSymbol}>{asset.symbol}</Text>
+                  {asset.name && asset.name !== asset.symbol ? (
+                    <Text style={styles.folioName}>{asset.name}</Text>
+                  ) : null}
+                  <Text style={styles.folioMeta}>
+                    {asset.quantity !== null ? `${amount(asset.quantity)} · ` : ""}
+                    {pt("lots", { count: asset.lotCount })}
+                  </Text>
+                  <Text style={styles.folioSource}>{pt("manualSource")}</Text>
+                </View>
+                <View style={styles.folioRowRight}>
+                  {asset.value !== null ? (
+                    <Text style={styles.folioValue}>{money(asset.value)}</Text>
+                  ) : (
+                    <Text style={styles.folioWarn}>{pt("priceUnavailable")}</Text>
+                  )}
+                  {asset.price !== null ? (
+                    <Text style={styles.folioMeta}>{money(asset.price)}</Text>
+                  ) : null}
+                  {asset.pnlValue !== null ? (
+                    <Text
+                      style={[
+                        styles.folioPnlSmall,
+                        asset.pnlValue >= 0 ? styles.folioPnlUp : styles.folioPnlDown
+                      ]}
+                    >
+                      {`${asset.pnlValue >= 0 ? "+" : ""}${money(asset.pnlValue)}`}
+                    </Text>
+                  ) : asset.costBasis === null ? (
+                    <Text style={styles.folioMeta}>{pt("basisUnknown")}</Text>
+                  ) : null}
+                </View>
+              </Pressable>
+            ))}
+          </>
+        )}
+
+        {folio.sync.pending > 0 ? (
+          <Text style={styles.folioSync}>{pt("syncPending", { count: folio.sync.pending })}</Text>
+        ) : null}
+        {folio.sync.failed > 0 ? <Text style={styles.folioWarn}>{pt("syncFailed")}</Text> : null}
+      </View>
+    );
+  };
 
   const notice = (
     icon: keyof typeof Ionicons.glyphMap,
@@ -194,6 +344,8 @@ function CapitalGraphBody({ navigation, route }: Props) {
           <Text style={styles.panelText}>{t("premium:privateOffice.capital.loading")}</Text>
         </View>
       ) : null}
+
+      {state === "READY" || state === "EMPTY" ? portfolioPanel() : null}
 
       {state === "EMPTY"
         ? notice(
@@ -480,6 +632,48 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: 10
   },
+  folioPanel: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 16,
+    gap: 10
+  },
+  folioHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10
+  },
+  folioTitle: { color: colors.text, fontSize: 16, fontWeight: "800" },
+  folioFreshness: { color: colors.muted, fontSize: 10, fontWeight: "700", flexShrink: 1 },
+  folioTotals: { gap: 2 },
+  folioTotalLabel: { color: colors.muted, fontSize: 10, fontWeight: "800", letterSpacing: 0.8 },
+  folioTotalValue: { color: colors.text, fontSize: 24, fontWeight: "800" },
+  folioPartial: { color: colors.text, fontSize: 14, fontWeight: "700" },
+  folioPnl: { fontSize: 13, fontWeight: "700" },
+  folioPnlSmall: { fontSize: 11, fontWeight: "700" },
+  folioPnlUp: { color: colors.accent },
+  folioPnlDown: { color: colors.danger },
+  folioWarn: { color: colors.warning, fontSize: 11, lineHeight: 16 },
+  folioRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 10,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.border
+  },
+  folioRowLeft: { gap: 2, flexShrink: 1 },
+  folioRowRight: { gap: 2, alignItems: "flex-end" },
+  folioSymbol: { color: colors.text, fontSize: 15, fontWeight: "800" },
+  folioName: { color: colors.muted, fontSize: 12 },
+  folioMeta: { color: colors.muted, fontSize: 11 },
+  folioSource: { color: colors.muted, fontSize: 10, fontStyle: "italic" },
+  folioValue: { color: colors.text, fontSize: 15, fontWeight: "700" },
+  folioSync: { color: colors.accentStrong, fontSize: 11, fontWeight: "700" },
   nodeName: { color: colors.text, fontSize: 15, fontWeight: "700", flexShrink: 1 },
   truthMark: { color: colors.muted, fontSize: 10, fontWeight: "800", letterSpacing: 0.8 },
   truthDanger: { color: colors.danger },

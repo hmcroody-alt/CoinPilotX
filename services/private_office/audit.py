@@ -55,6 +55,7 @@ LOGGER = logging.getLogger("private_office.audit")
 # free text cannot be queried — "show me every denied access" only works if
 # every denial spells the action the same way.
 ACTION_FACT_CREATE = "PRIVATE_FACT_CREATE"
+ACTION_FACT_SUPERSEDE = "PRIVATE_FACT_SUPERSEDE"
 ACTION_FACT_READ = "PRIVATE_FACT_READ"
 ACTION_GRAPH_WRITE = "PRIVATE_GRAPH_WRITE"
 ACTION_GRAPH_READ = "PRIVATE_GRAPH_READ"
@@ -103,6 +104,7 @@ ACTION_CONCIERGE_MESSAGE = "PRIVATE_CONCIERGE_MESSAGE"
 
 ACTIONS: tuple[str, ...] = (
     ACTION_FACT_CREATE,
+    ACTION_FACT_SUPERSEDE,
     ACTION_FACT_READ,
     ACTION_GRAPH_WRITE,
     ACTION_GRAPH_READ,

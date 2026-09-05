@@ -4669,7 +4669,28 @@
           "facts": "Recorded facts",
           "updated": "Updated {{date}}"
         },
-        "relationshipsUnavailable": "Relationships could not be loaded right now."
+        "relationshipsUnavailable": "Relationships could not be loaded right now.",
+        "portfolio": {
+          "title": "Portfolio",
+          "subtitle": "Your PulseSoc Portfolio, mirrored into your graph. Edit holdings in Portfolio — changes flow here automatically.",
+          "totalValue": "Total value",
+          "partial": "{{priced}} of {{total}} holdings priced",
+          "lots_one": "{{count}} lot",
+          "lots_other": "{{count}} lots",
+          "priceUnavailable": "Price unavailable",
+          "manualSource": "Manual · from your Portfolio",
+          "updatedSeconds": "Prices updated {{count}}s ago",
+          "updatedMinutes": "Prices updated {{count}}m ago",
+          "updatedStale": "Prices may be out of date",
+          "sourceUnavailable": "Live prices are not connected right now",
+          "syncPending_one": "{{count}} portfolio change syncing…",
+          "syncPending_other": "{{count}} portfolio changes syncing…",
+          "syncFailed": "A recent sync failed — shown as of the last good update.",
+          "unpriced": "No live price for {{symbols}}. Totals cover your other holdings only.",
+          "empty": "No holdings in your Portfolio yet.",
+          "unavailable": "Your portfolio could not be loaded just now.",
+          "basisUnknown": "Cost basis not recorded"
+        }
       },
       "attention": {
         "title": "Needs attention",

@@ -4630,7 +4630,28 @@
           "facts": "記録された事実",
           "updated": "更新日 {{date}}"
         },
-        "relationshipsUnavailable": "関係を読み込めませんでした。"
+        "relationshipsUnavailable": "関係を読み込めませんでした。",
+        "portfolio": {
+          "title": "ポートフォリオ",
+          "subtitle": "PulseSoc のポートフォリオがグラフに反映されます。保有資産の編集はポートフォリオで — 変更は自動的にここへ反映されます。",
+          "totalValue": "合計評価額",
+          "partial": "{{total}} 件中 {{priced}} 件の保有に価格あり",
+          "lots_one": "{{count}} 件のロット",
+          "lots_other": "{{count}} 件のロット",
+          "priceUnavailable": "価格を取得できません",
+          "manualSource": "手動 · ポートフォリオから",
+          "updatedSeconds": "価格は {{count}} 秒前に更新",
+          "updatedMinutes": "価格は {{count}} 分前に更新",
+          "updatedStale": "価格が古い可能性があります",
+          "sourceUnavailable": "ライブ価格は現在接続されていません",
+          "syncPending_one": "{{count}} 件のポートフォリオ変更を同期中…",
+          "syncPending_other": "{{count}} 件のポートフォリオ変更を同期中…",
+          "syncFailed": "直近の同期に失敗しました — 最後に成功した更新時点の内容を表示しています。",
+          "unpriced": "{{symbols}} のライブ価格がありません。合計にはその他の保有のみ含まれます。",
+          "empty": "ポートフォリオにまだ保有資産がありません。",
+          "unavailable": "ポートフォリオを読み込めませんでした。",
+          "basisUnknown": "取得コスト未登録"
+        }
       },
       "attention": {
         "title": "要対応",

@@ -78,6 +78,7 @@ from services.private_office import facts as po_facts
 from services.private_office import feature_matrix as po_matrix
 from services.private_office import model as po_model
 from services.private_office import office as po_office
+from services.private_office import portfolio_projection as po_portfolio
 from services.private_office import records as po_records
 from services.private_office import retrieval as po_retrieval
 from services.private_office import schema as po_schema
@@ -651,6 +652,54 @@ def api_private_office_capital_graph():
 
     return _no_store({"ok": True, "capital_graph": payload,
                       "views": list(po_capital.VIEWS)})
+
+
+@private_office_blueprint.route(
+    "/api/private-office/capital-graph/portfolio", methods=["GET"])
+def api_private_office_capital_portfolio():
+    """The Portfolio node of the Capital Graph: projected holdings, priced live.
+
+    A read of the *projection*, not of the Portfolio tables — the evidence ids
+    in each asset row point at the private facts the number came from, and the
+    ``sync`` block says how far behind the ledger the projection may be. The
+    lazy sweep inside ``portfolio_view`` settles any pending outbox rows first,
+    so this endpoint is also the correctness backstop for a missed post-commit
+    kick. Prices are fetched at read time and never stored; ``prices`` carries
+    the provider's own observation time so the client can label freshness
+    instead of claiming "Live".
+    """
+    user = _current_user()
+    if not user:
+        return _no_store({"ok": False, "message": "Login required."}, 401)
+
+    resolved = _resolve_for(user)
+    refusal = _gate(resolved, CAPITAL_FEATURE_ID)
+    if refusal:
+        return refusal
+    locked = _office_lock_gate(user)
+    if locked:
+        return locked
+
+    try:
+        payload = _with_cursor(
+            lambda cur: po_portfolio.portfolio_view(
+                cur,
+                owner_user_id=user["user_id"],
+                actor_user_id=user["user_id"],
+            )
+        )
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("PRIVATE_OFFICE_CAPITAL_PORTFOLIO_READ_FAILED")
+        return _capital_failure()
+
+    if not payload.get("ok"):
+        return _no_store(
+            {"ok": False, "state": "denied",
+             "reason": payload.get("denied") or {}},
+            403,
+        )
+
+    return _no_store({"ok": True, "portfolio": payload})
 
 
 @private_office_blueprint.route(

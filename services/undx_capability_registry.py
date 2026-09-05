@@ -1218,6 +1218,35 @@ def _register_private_record_capabilities() -> None:
 
 _register_private_record_capabilities()
 
+
+# The Capital Graph's Portfolio projection — one read, zero arguments. Derived
+# from ``services.private_office.undx_capital_spec`` for the same reason the
+# record views derive from theirs: the vocabulary is typed once and every
+# surface agrees by construction. A schema with no fields is the strongest
+# possible statement that nothing can widen it — there is no argument to carry
+# another account, another ledger, or a request for advice.
+def _register_private_capital_capability() -> None:
+    from services.private_office import undx_capital_spec as _cap_spec
+
+    _register(CapabilitySpec(
+        capability_id=_cap_spec.CAPABILITY_ID,
+        description=_cap_spec.SPEC["description"],
+        intents=tuple(_cap_spec.SPEC["intents"]),
+        risk=RiskLevel.READ_ONLY,
+        confirmation=ConfirmationPolicy.NEVER,
+        tool_name=_cap_spec.tool_name(_cap_spec.CAPABILITY_ID),
+        permission=PermissionScope.SELF_ACCOUNT_ONLY,
+        fields=(),
+        executor=_cap_spec.executor_name(_cap_spec.CAPABILITY_ID),
+        verifier="",
+        native_route=_cap_spec.SPEC["native_route"],
+        result_card=CardType.SEARCH_RESULTS,
+        audit_category=_cap_spec.AUDIT_CATEGORY,
+    ))
+
+
+_register_private_capital_capability()
+
 for _capability, _intent, _saved, _executor, _verifier, _undo in (
     ("reels.save", "save reel", True, "reels_save", "reel_saved_value", "reels.unsave"),
     ("reels.unsave", "unsave reel", False, "reels_unsave", "reel_saved_value", "reels.save"),

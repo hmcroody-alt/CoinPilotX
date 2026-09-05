@@ -4638,7 +4638,28 @@
           "facts": "Fè anrejistre",
           "updated": "Mete ajou {{date}}"
         },
-        "relationshipsUnavailable": "Relasyon yo pa t ka chaje kounye a."
+        "relationshipsUnavailable": "Relasyon yo pa t ka chaje kounye a.",
+        "portfolio": {
+          "title": "Pòtfèy",
+          "subtitle": "Pòtfèy PulseSoc ou a, reflete nan graf ou. Modifye sa ou genyen yo nan Pòtfèy — chanjman yo rive isit la otomatikman.",
+          "totalValue": "Valè total",
+          "partial": "{{priced}} sou {{total}} pozisyon gen pri",
+          "lots_one": "{{count}} lo",
+          "lots_other": "{{count}} lo",
+          "priceUnavailable": "Pri a pa disponib",
+          "manualSource": "Manyèl · soti nan Pòtfèy ou",
+          "updatedSeconds": "Pri yo mete ajou sa gen {{count}} segonn",
+          "updatedMinutes": "Pri yo mete ajou sa gen {{count}} minit",
+          "updatedStale": "Pri yo ka pa ajou",
+          "sourceUnavailable": "Pri an dirèk yo pa konekte kounye a",
+          "syncPending_one": "{{count}} chanjman pòtfèy ap senkronize…",
+          "syncPending_other": "{{count}} chanjman pòtfèy ap senkronize…",
+          "syncFailed": "Yon senkronizasyon fèk echwe — nou montre dènye mizajou ki te reyisi a.",
+          "unpriced": "Pa gen pri an dirèk pou {{symbols}}. Total yo kouvri sèlman lòt pozisyon ou yo.",
+          "empty": "Poko gen anyen nan Pòtfèy ou.",
+          "unavailable": "Nou pa t ka chaje pòtfèy ou kounye a.",
+          "basisUnknown": "Pri acha a pa anrejistre"
+        }
       },
       "attention": {
         "title": "Bezwen atansyon ou",

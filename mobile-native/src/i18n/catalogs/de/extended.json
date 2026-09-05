@@ -4669,7 +4669,28 @@
           "facts": "Erfasste Fakten",
           "updated": "Aktualisiert am {{date}}"
         },
-        "relationshipsUnavailable": "Beziehungen konnten gerade nicht geladen werden."
+        "relationshipsUnavailable": "Beziehungen konnten gerade nicht geladen werden.",
+        "portfolio": {
+          "title": "Portfolio",
+          "subtitle": "Ihr PulseSoc-Portfolio, gespiegelt in Ihren Graphen. Bearbeiten Sie Bestände im Portfolio — Änderungen fließen automatisch hierher.",
+          "totalValue": "Gesamtwert",
+          "partial": "{{priced}} von {{total}} Positionen mit Preis",
+          "lots_one": "{{count}} Posten",
+          "lots_other": "{{count}} Posten",
+          "priceUnavailable": "Preis nicht verfügbar",
+          "manualSource": "Manuell · aus Ihrem Portfolio",
+          "updatedSeconds": "Preise vor {{count}} s aktualisiert",
+          "updatedMinutes": "Preise vor {{count}} min aktualisiert",
+          "updatedStale": "Preise sind möglicherweise veraltet",
+          "sourceUnavailable": "Live-Preise sind derzeit nicht verbunden",
+          "syncPending_one": "{{count}} Portfolio-Änderung wird synchronisiert…",
+          "syncPending_other": "{{count}} Portfolio-Änderungen werden synchronisiert…",
+          "syncFailed": "Eine kürzliche Synchronisierung ist fehlgeschlagen — Stand der letzten erfolgreichen Aktualisierung.",
+          "unpriced": "Kein Live-Preis für {{symbols}}. Summen umfassen nur Ihre übrigen Bestände.",
+          "empty": "Noch keine Bestände in Ihrem Portfolio.",
+          "unavailable": "Ihr Portfolio konnte gerade nicht geladen werden.",
+          "basisUnknown": "Einstandswert nicht erfasst"
+        }
       },
       "attention": {
         "title": "Erfordert Ihre Aufmerksamkeit",
