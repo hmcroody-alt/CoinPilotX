@@ -350,6 +350,21 @@ export const linking: LinkingOptions<RootStackParamList> = {
       PrivateOffice: "pulse/private-office",
       PrivateFacts: "pulse/private-office/facts",
       PrivateOfficeSecurity: "pulse/private-office/security",
+      // Declared after the literal paths above so "facts" and "security" keep
+      // their own screens; the pattern claims the six record views.
+      PrivateOperations: {
+        path: "pulse/private-office/:view",
+        parse: {
+          view: String
+        }
+      },
+      CapitalGraph: "pulse/private-office/capital-graph",
+      CapitalEntity: {
+        path: "pulse/private-office/capital-graph/:id",
+        parse: {
+          id: Number
+        }
+      },
       AccountCenter: {
         path: "pulse/settings/:section",
         parse: {

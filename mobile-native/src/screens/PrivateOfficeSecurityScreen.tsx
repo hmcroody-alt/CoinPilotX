@@ -50,6 +50,7 @@ import {
   relockMinutes,
   setOfficeRelockTiming
 } from "../privateOffice/officeLock";
+import { useAuth } from "../session/auth";
 import { getBiometricCapability } from "../session/biometricAuth";
 import { getSessionEnvelope } from "../session/sessionStore";
 import { colors } from "../theme/colors";
@@ -66,6 +67,10 @@ function digitsOnly(value: string): string {
 function SecuritySettings() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
+  const { authState } = useAuth();
+  // The envelope is absent for a cookie-authenticated member; the auth
+  // context still knows who is signed in. Same fallback as the lock gate.
+  const authUserId = Number(authState.user?.user_id ?? 0);
 
   const [userId, setUserId] = useState(0);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
@@ -95,7 +100,7 @@ function SecuritySettings() {
         getOfficeRelockTiming()
       ]);
       if (cancelled) return;
-      const currentUserId = envelope?.userId ?? 0;
+      const currentUserId = envelope?.userId ?? authUserId;
       setUserId(currentUserId);
       setBiometricAvailable(capability.available);
       setBiometricKind(
@@ -107,7 +112,7 @@ function SecuritySettings() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authUserId]);
 
   const biometricLabel =
     biometricKind === "touchId"

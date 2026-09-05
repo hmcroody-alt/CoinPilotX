@@ -4454,7 +4454,7 @@
       "loading": "نتحقق مما يتضمنه مكتبك…",
       "retry": "إعادة المحاولة",
       "open": "فتح",
-      "footnote": "ما يظهر هنا يحدده حسابك على الخادم، لا هذا التطبيق.",
+      "footnote": "يعكس مكتبك تمامًا ما تتضمنه عضويتك في الوقت الحالي.",
       "sections": {
         "available": "متاح",
         "notYet": "قريبًا",
@@ -4475,8 +4475,8 @@
       },
       "reason": {
         "AVAILABLE": "متاح",
-        "PROVIDER_REQUIRED": "يتطلب مزوّدًا",
-        "NOT_IMPLEMENTED": "لم يُبنَ بعد",
+        "PROVIDER_REQUIRED": "بانتظار مزوّد",
+        "NOT_IMPLEMENTED": "قيد الإعداد",
         "TEMPORARILY_DISABLED": "معطّل مؤقتًا",
         "UPGRADE_REQUIRED": "يتطلب ترقية",
         "UNKNOWN": "غير متاح"
@@ -4513,6 +4513,10 @@
         "humanConcierge": {
           "label": "مساعد شخصي بشري",
           "hint": "شخص يتولى طلباتك نيابة عنك."
+        },
+        "operations": {
+          "label": "العمليات",
+          "hint": "الالتزامات والقرارات والطلبات والمخاطر والفرص التي تتابعها."
         }
       },
       "entry": {
@@ -4557,6 +4561,18 @@
         "error": {
           "title": "حدث خطأ ما",
           "body": "تعذّر تحميل سجلاتك."
+        },
+        "add": {
+          "open": "إضافة معلومة",
+          "title": "تسجيل معلومة",
+          "domain": "المجال",
+          "factType": "نوع المعلومة",
+          "factTypeHint": "مثال: رقم جواز السفر",
+          "valueType": "نوع القيمة",
+          "value": "القيمة",
+          "save": "حفظ",
+          "cancel": "إلغاء",
+          "failed": "تعذّر علينا الحفظ الآن."
         }
       },
       "domains": {
@@ -4669,6 +4685,201 @@
           "cancel": "إلغاء",
           "failed": "فشلت إعادة التعيين. تحقّق من كلمة المرور وحاول مرة أخرى."
         }
+      },
+      "operations": {
+        "title": "العمليات",
+        "subtitle": "الالتزامات والأحداث والقرارات والطلبات والمخاطر والفرص — مسجلة ومتابعة في مكان واحد.",
+        "loading": "جارٍ تحميل سجلاتك…",
+        "cancel": "إلغاء",
+        "save": "حفظ",
+        "move": "نقل",
+        "writeFailed": "لم يتم حفظ هذا التغيير.",
+        "empty": {
+          "title": "لا يوجد شيء مسجل"
+        },
+        "views": {
+          "obligations": "الالتزامات",
+          "events": "الأحداث",
+          "decisions": "القرارات",
+          "requests": "الطلبات",
+          "risks": "المخاطر",
+          "opportunities": "الفرص"
+        },
+        "add": {
+          "obligations": "تسجيل التزام",
+          "events": "تسجيل حدث",
+          "decisions": "تسجيل قرار",
+          "requests": "تسجيل طلب",
+          "risks": "تسجيل خطر",
+          "opportunities": "تسجيل فرصة"
+        },
+        "emptyBody": {
+          "obligations": "لا توجد التزامات مسجلة بعد.",
+          "events": "لا توجد أحداث مسجلة بعد.",
+          "decisions": "لا توجد قرارات مسجلة بعد.",
+          "requests": "لا توجد طلبات مسجلة بعد.",
+          "risks": "لا توجد مخاطر مسجلة بعد.",
+          "opportunities": "لا توجد فرص مسجلة بعد."
+        },
+        "notEntitled": {
+          "title": "الترقية مطلوبة",
+          "body": "العمليات متضمنة مع {{tier}}.",
+          "bodyGeneric": "العمليات غير متضمنة في خطتك الحالية."
+        },
+        "disabled": {
+          "title": "غير متاح",
+          "body": "العمليات متوقفة حاليًا."
+        },
+        "notImplemented": {
+          "title": "قيد الإعداد",
+          "body": "هذا الجزء من مكتبك لا يزال قيد الإعداد."
+        },
+        "unavailable": {
+          "title": "غير متاح",
+          "body": "تعذر الوصول إلى العمليات. سجلاتك لم تتغير."
+        },
+        "error": {
+          "title": "حدث خطأ ما",
+          "body": "تعذر تحميل سجلاتك."
+        },
+        "due": "الاستحقاق {{date}}",
+        "occurred": "وقع في {{date}}",
+        "outcome": "النتيجة: {{outcome}}",
+        "form": {
+          "title": "العنوان",
+          "question": "السؤال",
+          "kind": "النوع",
+          "details": "التفاصيل",
+          "due": "تاريخ الاستحقاق (YYYY-MM-DD)"
+        },
+        "status": {
+          "OPEN": "مفتوح",
+          "RESOLVED": "تمت التسوية",
+          "DISMISSED": "مستبعد",
+          "RECORDED": "مسجل",
+          "UNDER_REVIEW": "قيد المراجعة",
+          "DECIDED": "تم البت",
+          "ABANDONED": "متروك",
+          "IN_PROGRESS": "قيد التنفيذ",
+          "WAITING_ON_USER": "بانتظارك",
+          "WAITING_ON_PROVIDER": "بانتظار المزوّد",
+          "COMPLETED": "مكتمل",
+          "CANCELED": "ملغى",
+          "MONITORING": "قيد المتابعة",
+          "MITIGATED": "تم التخفيف",
+          "ACCEPTED": "مقبول",
+          "NEW": "جديد",
+          "REVIEWING": "قيد التقييم",
+          "INTERESTED": "مهتم",
+          "PASSED": "مستبعدة",
+          "CLOSED": "مغلقة",
+          "OVERDUE": "متأخر",
+          "DUE_SOON": "يستحق قريبًا"
+        }
+      },
+      "capital": {
+        "title": "مخطط رأس المال",
+        "subtitle": "ما تملكه وما يغطيه وكيف يترابط — مع مدى موثوقية كل جزء.",
+        "loading": "جارٍ تحميل مخططك…",
+        "views": {
+          "holdings": "الممتلكات",
+          "coverage": "التغطية",
+          "structure": "الهيكل",
+          "documents": "المستندات"
+        },
+        "countExact": "{{count}}",
+        "countSoFar": "{{count}} حتى الآن",
+        "factCount": "{{count}} حقيقة مسجلة",
+        "empty": {
+          "title": "لا يوجد شيء مسجل"
+        },
+        "emptyBody": {
+          "holdings": "لا توجد ممتلكات مسجلة بعد.",
+          "coverage": "لا توجد تغطية مسجلة بعد.",
+          "structure": "لا يوجد هيكل مسجل بعد.",
+          "documents": "لا توجد مستندات مسجلة بعد."
+        },
+        "denied": {
+          "title": "غير معروض",
+          "body": "لم تتم الإجابة عن هذا السؤال."
+        },
+        "notFound": {
+          "title": "غير موجود",
+          "body": "لا يوجد كيان بهذا الاسم في مكتبك."
+        },
+        "notEntitled": {
+          "title": "الترقية مطلوبة",
+          "body": "مخطط رأس المال متضمن مع {{tier}}.",
+          "bodyGeneric": "مخطط رأس المال غير متضمن في خطتك الحالية."
+        },
+        "disabled": {
+          "title": "غير متاح",
+          "body": "مخطط رأس المال متوقف حاليًا."
+        },
+        "notImplemented": {
+          "title": "قيد الإعداد",
+          "body": "هذا الجزء من مكتبك لا يزال قيد الإعداد."
+        },
+        "unavailable": {
+          "title": "غير متاح",
+          "body": "تعذر الوصول إلى مخططك. سجلاتك لم تتغير."
+        },
+        "error": {
+          "title": "حدث خطأ ما",
+          "body": "تعذر تحميل مخططك."
+        },
+        "conflicts": {
+          "title": "معلومات متضاربة",
+          "disagree": "مصدران متعارضان"
+        },
+        "stale": {
+          "title": "تجاوز أفق الحداثة",
+          "age": "{{days}} يومًا"
+        },
+        "truth": {
+          "KNOWN": "معروف",
+          "INFERRED": "مستنتج",
+          "ESTIMATED": "مقدّر",
+          "STALE": "قديم",
+          "MISSING": "مفقود",
+          "CONFLICTING": "متضارب",
+          "PRO_REVIEW": "بحاجة إلى مراجعة"
+        },
+        "nodeType": {
+          "PERSON": "شخص",
+          "BUSINESS": "شركة",
+          "PROPERTY": "عقار",
+          "INSURANCE_POLICY": "وثيقة تأمين",
+          "CONTRACT": "عقد",
+          "DOCUMENT": "مستند",
+          "PROFESSIONAL": "مختص",
+          "ASSET": "أصل",
+          "LIABILITY": "التزام مالي"
+        },
+        "entity": {
+          "relationships": "العلاقات",
+          "facts": "الحقائق المسجلة",
+          "updated": "آخر تحديث {{date}}"
+        },
+        "relationshipsUnavailable": "تعذر تحميل العلاقات في الوقت الحالي."
+      },
+      "attention": {
+        "title": "يتطلب انتباهك",
+        "none": "لا شيء يتطلب انتباهك الآن.",
+        "unavailable": "تعذّر علينا التحقق مما يتطلب انتباهك الآن."
+      },
+      "quick": {
+        "title": "إجراءات سريعة",
+        "record": "تسجيل شيء ما",
+        "addFact": "إضافة معلومة"
+      },
+      "valueTypes": {
+        "STRING": "نص",
+        "NUMBER": "رقم",
+        "MONEY": "مبلغ",
+        "PERCENT": "نسبة مئوية",
+        "DATE": "تاريخ",
+        "BOOLEAN": "نعم أو لا"
       }
     },
     "gate": {

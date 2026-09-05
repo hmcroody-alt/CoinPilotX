@@ -215,7 +215,10 @@
       "briefing": "موجز",
       "privateOffice": "المكتب الخاص",
       "privateFacts": "المعلومات الخاصة",
-      "privateOfficeSecurity": "أمان المكتب"
+      "privateOfficeSecurity": "أمان المكتب",
+      "privateOperations": "العمليات",
+      "capitalGraph": "مخطط رأس المال",
+      "capitalEntity": "الكيان"
     },
     "navSubtitles": {
       "missionControl": "مركز القيادة",

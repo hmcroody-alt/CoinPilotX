@@ -4266,7 +4266,7 @@
       "loading": "Wir prüfen, was Ihr Büro umfasst…",
       "retry": "Erneut versuchen",
       "open": "Öffnen",
-      "footnote": "Was hier erscheint, entscheidet Ihr Konto auf dem Server, nicht diese App.",
+      "footnote": "Ihr Büro zeigt genau das, was Ihre Mitgliedschaft derzeit umfasst.",
       "sections": {
         "available": "Verfügbar",
         "notYet": "Kommt später",
@@ -4287,8 +4287,8 @@
       },
       "reason": {
         "AVAILABLE": "Verfügbar",
-        "PROVIDER_REQUIRED": "Anbieter erforderlich",
-        "NOT_IMPLEMENTED": "Noch nicht gebaut",
+        "PROVIDER_REQUIRED": "Wartet auf einen Anbieter",
+        "NOT_IMPLEMENTED": "In Vorbereitung",
         "TEMPORARILY_DISABLED": "Vorübergehend aus",
         "UPGRADE_REQUIRED": "Upgrade erforderlich",
         "UNKNOWN": "Nicht verfügbar"
@@ -4325,6 +4325,10 @@
         "humanConcierge": {
           "label": "Persönlicher Concierge",
           "hint": "Ein Mensch, der Anliegen in Ihrem Namen erledigt."
+        },
+        "operations": {
+          "label": "Vorgänge",
+          "hint": "Verpflichtungen, Entscheidungen, Anfragen, Risiken und Chancen, die Sie verfolgen."
         }
       },
       "entry": {
@@ -4369,6 +4373,18 @@
         "error": {
           "title": "Etwas ist schiefgelaufen",
           "body": "Ihre Einträge konnten nicht geladen werden."
+        },
+        "add": {
+          "open": "Fakt hinzufügen",
+          "title": "Einen Fakt festhalten",
+          "domain": "Bereich",
+          "factType": "Faktentyp",
+          "factTypeHint": "z. B. Passnummer",
+          "valueType": "Werttyp",
+          "value": "Wert",
+          "save": "Speichern",
+          "cancel": "Abbrechen",
+          "failed": "Wir konnten das gerade nicht speichern."
         }
       },
       "domains": {
@@ -4477,6 +4493,201 @@
           "cancel": "Abbrechen",
           "failed": "Zurücksetzen fehlgeschlagen. Prüfe dein Passwort und versuche es erneut."
         }
+      },
+      "operations": {
+        "title": "Vorgänge",
+        "subtitle": "Verpflichtungen, Ereignisse, Entscheidungen, Anfragen, Risiken und Chancen — an einem Ort erfasst und verfolgt.",
+        "loading": "Ihre Einträge werden geladen …",
+        "cancel": "Abbrechen",
+        "save": "Speichern",
+        "move": "Verschieben",
+        "writeFailed": "Diese Änderung wurde nicht gespeichert.",
+        "empty": {
+          "title": "Nichts erfasst"
+        },
+        "views": {
+          "obligations": "Verpflichtungen",
+          "events": "Ereignisse",
+          "decisions": "Entscheidungen",
+          "requests": "Anfragen",
+          "risks": "Risiken",
+          "opportunities": "Chancen"
+        },
+        "add": {
+          "obligations": "Verpflichtung erfassen",
+          "events": "Ereignis erfassen",
+          "decisions": "Entscheidung erfassen",
+          "requests": "Anfrage erfassen",
+          "risks": "Risiko erfassen",
+          "opportunities": "Chance erfassen"
+        },
+        "emptyBody": {
+          "obligations": "Noch keine Verpflichtungen erfasst.",
+          "events": "Noch keine Ereignisse erfasst.",
+          "decisions": "Noch keine Entscheidungen erfasst.",
+          "requests": "Noch keine Anfragen erfasst.",
+          "risks": "Noch keine Risiken erfasst.",
+          "opportunities": "Noch keine Chancen erfasst."
+        },
+        "notEntitled": {
+          "title": "Upgrade erforderlich",
+          "body": "Vorgänge ist in {{tier}} enthalten.",
+          "bodyGeneric": "Vorgänge ist in Ihrem aktuellen Tarif nicht enthalten."
+        },
+        "disabled": {
+          "title": "Nicht verfügbar",
+          "body": "Vorgänge ist derzeit abgeschaltet."
+        },
+        "notImplemented": {
+          "title": "In Vorbereitung",
+          "body": "Dieser Teil Ihres Büros wird noch vorbereitet."
+        },
+        "unavailable": {
+          "title": "Nicht erreichbar",
+          "body": "Vorgänge ist nicht erreichbar. Ihre Einträge sind unverändert."
+        },
+        "error": {
+          "title": "Etwas ist schiefgelaufen",
+          "body": "Ihre Einträge konnten nicht geladen werden."
+        },
+        "due": "Fällig am {{date}}",
+        "occurred": "Eingetreten am {{date}}",
+        "outcome": "Ergebnis: {{outcome}}",
+        "form": {
+          "title": "Titel",
+          "question": "Frage",
+          "kind": "Art",
+          "details": "Details",
+          "due": "Fälligkeitsdatum (JJJJ-MM-TT)"
+        },
+        "status": {
+          "OPEN": "Offen",
+          "RESOLVED": "Erledigt",
+          "DISMISSED": "Verworfen",
+          "RECORDED": "Erfasst",
+          "UNDER_REVIEW": "In Prüfung",
+          "DECIDED": "Entschieden",
+          "ABANDONED": "Aufgegeben",
+          "IN_PROGRESS": "In Arbeit",
+          "WAITING_ON_USER": "Wartet auf Sie",
+          "WAITING_ON_PROVIDER": "Wartet auf den Anbieter",
+          "COMPLETED": "Abgeschlossen",
+          "CANCELED": "Storniert",
+          "MONITORING": "Unter Beobachtung",
+          "MITIGATED": "Entschärft",
+          "ACCEPTED": "Akzeptiert",
+          "NEW": "Neu",
+          "REVIEWING": "In Bewertung",
+          "INTERESTED": "Interessiert",
+          "PASSED": "Verworfen",
+          "CLOSED": "Geschlossen",
+          "OVERDUE": "Überfällig",
+          "DUE_SOON": "Bald fällig"
+        }
+      },
+      "capital": {
+        "title": "Kapitalgraph",
+        "subtitle": "Was Sie halten, was es absichert und wie alles zusammenhängt — samt der Verlässlichkeit jedes Teils.",
+        "loading": "Ihr Graph wird geladen …",
+        "views": {
+          "holdings": "Bestände",
+          "coverage": "Absicherung",
+          "structure": "Struktur",
+          "documents": "Dokumente"
+        },
+        "countExact": "{{count}}",
+        "countSoFar": "{{count}} bisher",
+        "factCount": "{{count}} erfasste Fakten",
+        "empty": {
+          "title": "Nichts erfasst"
+        },
+        "emptyBody": {
+          "holdings": "Noch keine Bestände erfasst.",
+          "coverage": "Noch keine Absicherung erfasst.",
+          "structure": "Noch keine Struktur erfasst.",
+          "documents": "Noch keine Dokumente erfasst."
+        },
+        "denied": {
+          "title": "Nicht angezeigt",
+          "body": "Diese Frage wurde nicht beantwortet."
+        },
+        "notFound": {
+          "title": "Nicht gefunden",
+          "body": "Es gibt keine solche Entität in Ihrem Büro."
+        },
+        "notEntitled": {
+          "title": "Upgrade erforderlich",
+          "body": "Der Kapitalgraph ist in {{tier}} enthalten.",
+          "bodyGeneric": "Der Kapitalgraph ist in Ihrem aktuellen Tarif nicht enthalten."
+        },
+        "disabled": {
+          "title": "Nicht verfügbar",
+          "body": "Der Kapitalgraph ist derzeit abgeschaltet."
+        },
+        "notImplemented": {
+          "title": "In Vorbereitung",
+          "body": "Dieser Teil Ihres Büros wird noch vorbereitet."
+        },
+        "unavailable": {
+          "title": "Nicht erreichbar",
+          "body": "Ihr Graph ist nicht erreichbar. Ihre Einträge sind unverändert."
+        },
+        "error": {
+          "title": "Etwas ist schiefgelaufen",
+          "body": "Ihr Graph konnte nicht geladen werden."
+        },
+        "conflicts": {
+          "title": "Widersprüchliche Angaben",
+          "disagree": "Zwei Quellen widersprechen sich"
+        },
+        "stale": {
+          "title": "Über dem Aktualitätshorizont",
+          "age": "{{days}} Tage alt"
+        },
+        "truth": {
+          "KNOWN": "Bekannt",
+          "INFERRED": "Abgeleitet",
+          "ESTIMATED": "Geschätzt",
+          "STALE": "Veraltet",
+          "MISSING": "Fehlt",
+          "CONFLICTING": "Widersprüchlich",
+          "PRO_REVIEW": "Prüfung nötig"
+        },
+        "nodeType": {
+          "PERSON": "Person",
+          "BUSINESS": "Unternehmen",
+          "PROPERTY": "Immobilie",
+          "INSURANCE_POLICY": "Versicherungspolice",
+          "CONTRACT": "Vertrag",
+          "DOCUMENT": "Dokument",
+          "PROFESSIONAL": "Fachperson",
+          "ASSET": "Vermögenswert",
+          "LIABILITY": "Verbindlichkeit"
+        },
+        "entity": {
+          "relationships": "Beziehungen",
+          "facts": "Erfasste Fakten",
+          "updated": "Aktualisiert am {{date}}"
+        },
+        "relationshipsUnavailable": "Beziehungen konnten gerade nicht geladen werden."
+      },
+      "attention": {
+        "title": "Erfordert Ihre Aufmerksamkeit",
+        "none": "Derzeit erfordert nichts Ihre Aufmerksamkeit.",
+        "unavailable": "Wir konnten gerade nicht prüfen, was Ihre Aufmerksamkeit erfordert."
+      },
+      "quick": {
+        "title": "Schnellaktionen",
+        "record": "Etwas festhalten",
+        "addFact": "Fakt hinzufügen"
+      },
+      "valueTypes": {
+        "STRING": "Text",
+        "NUMBER": "Zahl",
+        "MONEY": "Betrag",
+        "PERCENT": "Prozentsatz",
+        "DATE": "Datum",
+        "BOOLEAN": "Ja oder Nein"
       }
     },
     "gate": {

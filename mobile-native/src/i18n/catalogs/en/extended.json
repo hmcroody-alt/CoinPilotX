@@ -4266,7 +4266,7 @@
       "loading": "Checking what your office includes…",
       "retry": "Retry",
       "open": "Open",
-      "footnote": "What appears here is decided by your account on the server, not by this app.",
+      "footnote": "Your office reflects exactly what your membership includes right now.",
       "sections": {
         "available": "Available",
         "notYet": "Coming later",
@@ -4287,8 +4287,8 @@
       },
       "reason": {
         "AVAILABLE": "Available",
-        "PROVIDER_REQUIRED": "Provider required",
-        "NOT_IMPLEMENTED": "Not built yet",
+        "PROVIDER_REQUIRED": "Awaiting a provider",
+        "NOT_IMPLEMENTED": "In preparation",
         "TEMPORARILY_DISABLED": "Temporarily off",
         "UPGRADE_REQUIRED": "Upgrade required",
         "UNKNOWN": "Unavailable"
@@ -4325,6 +4325,10 @@
         "humanConcierge": {
           "label": "Human Concierge",
           "hint": "A person who handles requests on your behalf."
+        },
+        "operations": {
+          "label": "Operations",
+          "hint": "Obligations, decisions, requests, risks and opportunities you track."
         }
       },
       "entry": {
@@ -4369,6 +4373,18 @@
         "error": {
           "title": "Something went wrong",
           "body": "Your records could not be loaded."
+        },
+        "add": {
+          "open": "Add a fact",
+          "title": "Record a fact",
+          "domain": "Domain",
+          "factType": "Fact type",
+          "factTypeHint": "e.g. passport number",
+          "valueType": "Value type",
+          "value": "Value",
+          "save": "Save",
+          "cancel": "Cancel",
+          "failed": "We could not save that just now."
         }
       },
       "domains": {
@@ -4477,6 +4493,201 @@
           "cancel": "Cancel",
           "failed": "Reset failed. Check your password and try again."
         }
+      },
+      "operations": {
+        "title": "Operations",
+        "subtitle": "Obligations, events, decisions, requests, risks and opportunities — recorded and tracked in one place.",
+        "loading": "Loading your records…",
+        "cancel": "Cancel",
+        "save": "Save",
+        "move": "Move",
+        "writeFailed": "That change was not saved.",
+        "empty": {
+          "title": "Nothing recorded"
+        },
+        "views": {
+          "obligations": "Obligations",
+          "events": "Events",
+          "decisions": "Decisions",
+          "requests": "Requests",
+          "risks": "Risks",
+          "opportunities": "Opportunities"
+        },
+        "add": {
+          "obligations": "Record an obligation",
+          "events": "Record an event",
+          "decisions": "Record a decision",
+          "requests": "Record a request",
+          "risks": "Record a risk",
+          "opportunities": "Record an opportunity"
+        },
+        "emptyBody": {
+          "obligations": "No obligations recorded yet.",
+          "events": "No events recorded yet.",
+          "decisions": "No decisions recorded yet.",
+          "requests": "No requests recorded yet.",
+          "risks": "No risks recorded yet.",
+          "opportunities": "No opportunities recorded yet."
+        },
+        "notEntitled": {
+          "title": "Upgrade required",
+          "body": "Operations is included with {{tier}}.",
+          "bodyGeneric": "Operations is not included in your current plan."
+        },
+        "disabled": {
+          "title": "Not available",
+          "body": "Operations is switched off right now."
+        },
+        "notImplemented": {
+          "title": "In preparation",
+          "body": "This part of your office is still being prepared."
+        },
+        "unavailable": {
+          "title": "Unavailable",
+          "body": "Operations could not be reached. Your records are unchanged."
+        },
+        "error": {
+          "title": "Something went wrong",
+          "body": "Your records could not be loaded."
+        },
+        "due": "Due {{date}}",
+        "occurred": "Occurred {{date}}",
+        "outcome": "Outcome: {{outcome}}",
+        "form": {
+          "title": "Title",
+          "question": "Question",
+          "kind": "Type",
+          "details": "Details",
+          "due": "Due date (YYYY-MM-DD)"
+        },
+        "status": {
+          "OPEN": "Open",
+          "RESOLVED": "Resolved",
+          "DISMISSED": "Dismissed",
+          "RECORDED": "Recorded",
+          "UNDER_REVIEW": "Under review",
+          "DECIDED": "Decided",
+          "ABANDONED": "Abandoned",
+          "IN_PROGRESS": "In progress",
+          "WAITING_ON_USER": "Waiting on you",
+          "WAITING_ON_PROVIDER": "Waiting on provider",
+          "COMPLETED": "Completed",
+          "CANCELED": "Canceled",
+          "MONITORING": "Monitoring",
+          "MITIGATED": "Mitigated",
+          "ACCEPTED": "Accepted",
+          "NEW": "New",
+          "REVIEWING": "Reviewing",
+          "INTERESTED": "Interested",
+          "PASSED": "Passed",
+          "CLOSED": "Closed",
+          "OVERDUE": "Overdue",
+          "DUE_SOON": "Due soon"
+        }
+      },
+      "capital": {
+        "title": "Capital Graph",
+        "subtitle": "What you hold, what covers it, and how it connects — with how well each piece is known.",
+        "loading": "Loading your graph…",
+        "views": {
+          "holdings": "Holdings",
+          "coverage": "Coverage",
+          "structure": "Structure",
+          "documents": "Documents"
+        },
+        "countExact": "{{count}}",
+        "countSoFar": "{{count}} so far",
+        "factCount": "{{count}} recorded facts",
+        "empty": {
+          "title": "Nothing recorded"
+        },
+        "emptyBody": {
+          "holdings": "No holdings recorded yet.",
+          "coverage": "No coverage recorded yet.",
+          "structure": "No structure recorded yet.",
+          "documents": "No documents recorded yet."
+        },
+        "denied": {
+          "title": "Not shown",
+          "body": "This question was not answered."
+        },
+        "notFound": {
+          "title": "Not found",
+          "body": "There is no such entity in your office."
+        },
+        "notEntitled": {
+          "title": "Upgrade required",
+          "body": "Capital Graph is included with {{tier}}.",
+          "bodyGeneric": "Capital Graph is not included in your current plan."
+        },
+        "disabled": {
+          "title": "Not available",
+          "body": "Capital Graph is switched off right now."
+        },
+        "notImplemented": {
+          "title": "In preparation",
+          "body": "This part of your office is still being prepared."
+        },
+        "unavailable": {
+          "title": "Unavailable",
+          "body": "Your graph could not be reached. Your records are unchanged."
+        },
+        "error": {
+          "title": "Something went wrong",
+          "body": "Your graph could not be loaded."
+        },
+        "conflicts": {
+          "title": "Conflicting information",
+          "disagree": "Two sources disagree"
+        },
+        "stale": {
+          "title": "Past its freshness horizon",
+          "age": "{{days}} days old"
+        },
+        "truth": {
+          "KNOWN": "Known",
+          "INFERRED": "Inferred",
+          "ESTIMATED": "Estimated",
+          "STALE": "Stale",
+          "MISSING": "Missing",
+          "CONFLICTING": "Conflicting",
+          "PRO_REVIEW": "Needs review"
+        },
+        "nodeType": {
+          "PERSON": "Person",
+          "BUSINESS": "Business",
+          "PROPERTY": "Property",
+          "INSURANCE_POLICY": "Insurance policy",
+          "CONTRACT": "Contract",
+          "DOCUMENT": "Document",
+          "PROFESSIONAL": "Professional",
+          "ASSET": "Asset",
+          "LIABILITY": "Liability"
+        },
+        "entity": {
+          "relationships": "Relationships",
+          "facts": "Recorded facts",
+          "updated": "Updated {{date}}"
+        },
+        "relationshipsUnavailable": "Relationships could not be loaded right now."
+      },
+      "attention": {
+        "title": "Needs attention",
+        "none": "Nothing needs your attention right now.",
+        "unavailable": "We could not check what needs attention just now."
+      },
+      "quick": {
+        "title": "Quick actions",
+        "record": "Record something",
+        "addFact": "Add a fact"
+      },
+      "valueTypes": {
+        "STRING": "Text",
+        "NUMBER": "Number",
+        "MONEY": "Amount",
+        "PERCENT": "Percentage",
+        "DATE": "Date",
+        "BOOLEAN": "Yes or no"
       }
     },
     "gate": {

@@ -85,6 +85,22 @@ ACTION_RECORD_UPDATE = "PRIVATE_RECORD_UPDATE"
 ACTION_RECORD_REVISE = "PRIVATE_RECORD_REVISE"
 ACTION_RECORD_READ = "PRIVATE_RECORD_READ"
 
+# Capability-completion vocabulary — documents, briefings, shield, concierge.
+# Same shape as Batch C: one small set of verbs per capability with the
+# specifics carried in `object_type`/`object_id`, not a verb per screen.
+# CLAIM_REVIEWED covers accept and reject alike (the outcome column holds
+# which); a review is one act with two outcomes, not two acts.
+ACTION_DOCUMENT_CREATE = "PRIVATE_DOCUMENT_CREATE"
+ACTION_DOCUMENT_READ = "PRIVATE_DOCUMENT_READ"
+ACTION_DOCUMENT_DELETE = "PRIVATE_DOCUMENT_DELETE"
+ACTION_CLAIM_REVIEWED = "PRIVATE_DOCUMENT_CLAIM_REVIEWED"
+ACTION_BRIEFING_GENERATED = "PRIVATE_BRIEFING_GENERATED"
+ACTION_BRIEFING_READ = "PRIVATE_BRIEFING_READ"
+ACTION_SHIELD_SCAN = "PRIVATE_SHIELD_SCAN"
+ACTION_SHIELD_READ = "PRIVATE_SHIELD_READ"
+ACTION_SHIELD_FINDING_UPDATE = "PRIVATE_SHIELD_FINDING_UPDATE"
+ACTION_CONCIERGE_MESSAGE = "PRIVATE_CONCIERGE_MESSAGE"
+
 ACTIONS: tuple[str, ...] = (
     ACTION_FACT_CREATE,
     ACTION_FACT_READ,
@@ -105,6 +121,16 @@ ACTIONS: tuple[str, ...] = (
     ACTION_RECORD_UPDATE,
     ACTION_RECORD_REVISE,
     ACTION_RECORD_READ,
+    ACTION_DOCUMENT_CREATE,
+    ACTION_DOCUMENT_READ,
+    ACTION_DOCUMENT_DELETE,
+    ACTION_CLAIM_REVIEWED,
+    ACTION_BRIEFING_GENERATED,
+    ACTION_BRIEFING_READ,
+    ACTION_SHIELD_SCAN,
+    ACTION_SHIELD_READ,
+    ACTION_SHIELD_FINDING_UPDATE,
+    ACTION_CONCIERGE_MESSAGE,
 )
 
 OUTCOME_OK = "ok"
@@ -129,6 +155,9 @@ PURPOSES: frozenset[str] = frozenset(
         "owner_export",
         "admin_review",
         "system_maintenance",
+        "document_processing",
+        "shield_monitoring",
+        "concierge_service",
         "other",
     }
 )

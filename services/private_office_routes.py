@@ -39,6 +39,15 @@ first real Private Office capability.
     worth is a feature this surface declines to have rather than one it has not
     got round to.
 
+``GET /api/private-office/records/<view>``
+``POST /api/private-office/records/<view>``
+``POST /api/private-office/records/<view>/<id>/status``
+``GET /api/private-office/attention``
+    Operations: the six record primitives (obligations, events, decisions,
+    requests, risks, opportunities) and the "what needs me" summary the Office
+    Home renders. All owner-scoped by shape; writes go through the canonical
+    ``records`` writers only.
+
 There is deliberately no POST that grants a tier. Granting is an entitlement
 operation and belongs to the existing admin entitlement paths; adding one here
 would create a second granting authority, which is precisely the drift the
@@ -55,6 +64,7 @@ that hid the button would still be talking to an endpoint that says no.
 
 from __future__ import annotations
 
+import datetime as _dt
 import logging
 
 from flask import Blueprint, jsonify, request
@@ -68,6 +78,8 @@ from services.private_office import facts as po_facts
 from services.private_office import feature_matrix as po_matrix
 from services.private_office import model as po_model
 from services.private_office import office as po_office
+from services.private_office import records as po_records
+from services.private_office import retrieval as po_retrieval
 from services.private_office import schema as po_schema
 from services.private_office import security as po_security
 from services.private_office import status as po_status
@@ -746,6 +758,332 @@ def api_private_office_entity_relationships(node_id):
             "relationships": payload["relationships"],
             "view": payload["view"],
             "complete": payload["complete"],
+        }
+    )
+
+
+# --- Operations: the six record primitives -----------------------------------
+#
+# Four routes over the Batch C record store, all owner-scoped by shape: the
+# owner is the session and there is no parameter to name anyone else. Reads go
+# through ``records.list_records`` — the owner-scoped reader in the one module
+# permitted to name these tables — rather than ``retrieval.retrieve_records``,
+# because the retrieval intents are deliberately narrow context windows for
+# agents, and a member looking at their own screen is not a context window: an
+# intent ceiling that hid the member's own financial obligations from their own
+# Operations list would be enforcing a rule written for a different caller.
+# Writes go through ``records.create_record`` / ``records.update_record``,
+# which audit themselves; the list route audits here, as the facts route does.
+
+OPERATIONS_FEATURE_ID = "private_office.operations"
+
+#: One page of records. The store bounds harder (records.MAX_LIMIT); the route
+#: states its own ceiling so the contract is readable from the endpoint.
+MAX_RECORDS_PAGE = 100
+
+#: Body fields a member may supply when creating a record. Allowlist, not
+#: passthrough: ``source_type`` is fixed at USER below and ``provenance_type``
+#: is absent entirely, for the same reason the fact POST pins USER_ASSERTED —
+#: a client that could name its own provenance could label its own typing
+#: verified. ``relevance_score`` is also absent: that column is only ever what
+#: a named source supplied, and the member's own enthusiasm is not a score.
+_RECORD_BODY_FIELDS: tuple[str, ...] = (
+    "title", "summary", "description", "domain", "sensitivity", "status",
+    "obligation_type", "due_at", "amount", "currency",
+    "event_type", "occurred_at",
+    "question", "assumptions", "deadline_at", "outcome",
+    "category", "priority", "confidentiality",
+    "risk_type", "severity", "coverage_state", "review_required",
+    "opportunity_type",
+)
+
+
+def _record_view(view: str):
+    """(record_type, refusal). An unknown view is a 404 that names the real
+    ones — a client asking for a view this server has never heard of has a bug,
+    and quietly serving a different collection would hide it."""
+    wanted = str(view or "").strip().lower()
+    record_type = po_retrieval.RECORD_VIEWS.get(wanted)
+    if not record_type:
+        return None, _no_store(
+            {"ok": False, "message": "Unknown view.",
+             "views": sorted(po_retrieval.RECORD_VIEWS)},
+            404,
+        )
+    return record_type, None
+
+
+def _operations_entry():
+    """Auth + tier gate + second lock shared by every operations route."""
+    user = _current_user()
+    if not user:
+        return None, _no_store({"ok": False, "message": "Login required."}, 401)
+    resolved = _resolve_for(user)
+    refusal = _gate(resolved, OPERATIONS_FEATURE_ID)
+    if refusal:
+        return None, refusal
+    locked = _office_lock_gate(user)
+    if locked:
+        return None, locked
+    return user, None
+
+
+@private_office_blueprint.route(
+    "/api/private-office/records/<view>", methods=["GET"])
+def api_private_office_records(view):
+    """One view's records for the signed-in member, newest first."""
+    user, refusal = _operations_entry()
+    if refusal:
+        return refusal
+    record_type, bad_view = _record_view(view)
+    if bad_view:
+        return bad_view
+
+    statuses = (request.args.get("status") or "").strip() or None
+
+    try:
+        limit = int(request.args.get("limit") or MAX_RECORDS_PAGE)
+    except (TypeError, ValueError):
+        limit = MAX_RECORDS_PAGE
+    limit = max(1, min(limit, MAX_RECORDS_PAGE))
+
+    try:
+        before_id = int(request.args.get("before_id") or 0)
+    except (TypeError, ValueError):
+        before_id = 0
+
+    def work(cur):
+        rows = po_records.list_records(
+            cur,
+            record_type=record_type,
+            owner_user_id=user["user_id"],
+            statuses=statuses,
+            limit=limit,
+            before_id=max(0, before_id),
+        )
+        open_count = po_records.count_open(
+            cur, record_type=record_type, owner_user_id=user["user_id"]
+        )
+        po_audit.record(
+            cur,
+            actor_user_id=user["user_id"],
+            owner_user_id=user["user_id"],
+            action=po_audit.ACTION_RECORD_READ,
+            object_type="RECORD_VIEW",
+            object_id=str(view).strip().lower(),
+            purpose="user_request",
+            result_count=len(rows),
+        )
+        return rows, open_count
+
+    try:
+        rows, open_count = _with_cursor(work)
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("PRIVATE_OFFICE_RECORDS_READ_FAILED")
+        return _no_store(
+            {"ok": False, "state": "unavailable",
+             "message": "We could not load your information just now."},
+            503,
+        )
+
+    return _no_store(
+        {
+            "ok": True,
+            "view": str(view).strip().lower(),
+            "records": rows,
+            "count": len(rows),
+            "open_count": open_count,
+            "limit": limit,
+            "statuses": list(po_records.SPECS[record_type]["statuses"]),
+        }
+    )
+
+
+@private_office_blueprint.route(
+    "/api/private-office/records/<view>", methods=["POST"])
+def api_private_office_create_record(view):
+    """The member records one obligation, event, decision, request, risk or
+    opportunity of their own. Owner from the session; source pinned to USER."""
+    user, refusal = _operations_entry()
+    if refusal:
+        return refusal
+    record_type, bad_view = _record_view(view)
+    if bad_view:
+        return bad_view
+
+    body = request.get_json(silent=True) or {}
+    if not isinstance(body, dict):
+        return _no_store({"ok": False, "message": "Invalid request body."}, 400)
+
+    fields = {
+        name: body[name]
+        for name in _RECORD_BODY_FIELDS
+        if name in body and body[name] is not None
+    }
+    fields["source_type"] = po_records.SOURCE_USER
+
+    def work(cur):
+        return po_records.create_record(
+            cur,
+            record_type=record_type,
+            owner_user_id=user["user_id"],
+            actor_user_id=user["user_id"],
+            purpose="user_request",
+            **fields,
+        )
+
+    try:
+        written = _with_cursor(work)
+    except po_records.PrivateRecordRejected as exc:
+        # The writer's rejections are validation, not failure, and its reason
+        # is written for a person; a generic "invalid input" would leave the
+        # member unable to fix it.
+        return _no_store({"ok": False, "message": str(exc)}, 400)
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("PRIVATE_OFFICE_RECORD_WRITE_FAILED")
+        return _no_store(
+            {"ok": False, "state": "unavailable",
+             "message": "We could not save that just now."},
+            503,
+        )
+
+    return _no_store(
+        {
+            "ok": True,
+            "status": written.get("status"),
+            "record_id": written.get("record_id"),
+            "record": written.get("record"),
+            "view": str(view).strip().lower(),
+        },
+        201,
+    )
+
+
+@private_office_blueprint.route(
+    "/api/private-office/records/<view>/<int:record_id>/status",
+    methods=["POST"])
+def api_private_office_record_status(view, record_id):
+    """Move one record's status (and, for a decision, its outcome).
+
+    Deliberately as narrow as ``records.update_record`` beneath it: the
+    substance of a record is not reachable from this endpoint, so the decision
+    log's history cannot be rewritten from a phone.
+    """
+    user, refusal = _operations_entry()
+    if refusal:
+        return refusal
+    record_type, bad_view = _record_view(view)
+    if bad_view:
+        return bad_view
+
+    body = request.get_json(silent=True) or {}
+    if not isinstance(body, dict) or not str(body.get("status") or "").strip():
+        return _no_store(
+            {"ok": False, "message": "A status is required.",
+             "statuses": list(po_records.SPECS[record_type]["statuses"])},
+            400,
+        )
+
+    fields: dict = {"status": body["status"]}
+    if str(body.get("outcome") or "").strip():
+        fields["outcome"] = body["outcome"]
+
+    def work(cur):
+        return po_records.update_record(
+            cur,
+            record_type=record_type,
+            owner_user_id=user["user_id"],
+            record_id=int(record_id),
+            actor_user_id=user["user_id"],
+            purpose="user_request",
+            **fields,
+        )
+
+    try:
+        outcome = _with_cursor(work)
+    except po_records.PrivateRecordRejected as exc:
+        return _no_store({"ok": False, "message": str(exc)}, 400)
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("PRIVATE_OFFICE_RECORD_UPDATE_FAILED")
+        return _no_store(
+            {"ok": False, "state": "unavailable",
+             "message": "We could not save that just now."},
+            503,
+        )
+
+    if outcome.get("status") == "absent":
+        # Same answer for "not yours" and "never existed" — the store already
+        # collapsed the two, and this route must not reinflate the difference.
+        return _no_store({"ok": False, "message": "Not found."}, 404)
+
+    return _no_store(
+        {
+            "ok": True,
+            "status": outcome.get("status"),
+            "record": outcome.get("record"),
+            "view": str(view).strip().lower(),
+        }
+    )
+
+
+@private_office_blueprint.route("/api/private-office/attention", methods=["GET"])
+def api_private_office_attention():
+    """What needs the member's eyes: open counts per view, and the obligations
+    due soonest. One call, so the Office Home cannot render counts and a
+    due-soon list that disagree about the same store."""
+    user, refusal = _operations_entry()
+    if refusal:
+        return refusal
+
+    horizon = (
+        _dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(days=14)
+    ).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    def work(cur):
+        counts = {
+            view: po_records.count_open(
+                cur, record_type=record_type, owner_user_id=user["user_id"]
+            )
+            for view, record_type in po_retrieval.RECORD_VIEWS.items()
+        }
+        due_soon = po_records.list_records(
+            cur,
+            record_type=po_records.TYPE_OBLIGATION,
+            owner_user_id=user["user_id"],
+            statuses=("OPEN",),
+            due_before=horizon,
+            limit=5,
+        )
+        po_audit.record(
+            cur,
+            actor_user_id=user["user_id"],
+            owner_user_id=user["user_id"],
+            action=po_audit.ACTION_RECORD_READ,
+            object_type="RECORD_VIEW",
+            object_id="attention",
+            purpose="user_request",
+            result_count=len(due_soon),
+        )
+        return counts, due_soon
+
+    try:
+        counts, due_soon = _with_cursor(work)
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("PRIVATE_OFFICE_ATTENTION_FAILED")
+        # An unreadable store is not a quiet one. Refusing beats rendering
+        # confident zeros over real obligations.
+        return _no_store(
+            {"ok": False, "state": "unavailable",
+             "message": "We could not load your information just now."},
+            503,
+        )
+
+    return _no_store(
+        {
+            "ok": True,
+            "counts": counts,
+            "due_soon": due_soon,
+            "due_horizon": horizon,
         }
     )
 

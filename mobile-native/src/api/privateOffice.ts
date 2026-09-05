@@ -374,6 +374,99 @@ export async function getPrivateFacts(domain?: string): Promise<PrivateFactsResu
   }
 }
 
+/* --- writes: the member records a fact ----------------------------------- */
+
+/**
+ * The two vocabularies a creation form has to offer before any data exists.
+ * They mirror `services/private_office/model.py`; the server re-validates and
+ * rejects anything it does not recognise, so a drift here fails loudly rather
+ * than storing a mislabeled fact.
+ */
+export const FACT_DOMAINS = [
+  "GENERAL",
+  "FINANCIAL",
+  "LEGAL",
+  "HEALTH",
+  "FAMILY",
+  "IDENTITY",
+  "SECURITY"
+] as const;
+
+export const FACT_VALUE_TYPES = [
+  "STRING",
+  "NUMBER",
+  "MONEY",
+  "PERCENT",
+  "DATE",
+  "BOOLEAN"
+] as const;
+
+export type PrivateFactDraft = {
+  domain: string;
+  factType: string;
+  value: string;
+  valueType: string;
+  sensitivity?: string;
+};
+
+export type PrivateFactWriteResult =
+  | { state: "SAVED"; status: string; factId: string }
+  /** The writer's own validation, verbatim — it is written for a person. */
+  | { state: "REJECTED"; message: string }
+  | { state: "NOT_ENTITLED"; minimumTier: string }
+  | { state: "FEATURE_DISABLED" }
+  | { state: "NOT_IMPLEMENTED" }
+  | { state: "UNAVAILABLE" }
+  | { state: "LOCKED"; setupRequired: boolean }
+  | { state: "ERROR"; message: string };
+
+/**
+ * Record one fact through `POST /api/private-office/facts`.
+ *
+ * The owner comes from the session and provenance is fixed server-side at
+ * USER_ASSERTED — there is nothing this client could send to claim otherwise,
+ * and no field here pretends there is.
+ */
+export async function createPrivateFact(draft: PrivateFactDraft): Promise<PrivateFactWriteResult> {
+  try {
+    const body = asRecord(
+      await pulseApi<unknown>(PRIVATE_OFFICE_FACTS_PATH, {
+        method: "POST",
+        headers: await officeRequestHeaders(),
+        body: JSON.stringify({
+          domain: draft.domain,
+          fact_type: draft.factType,
+          value: draft.value,
+          value_type: draft.valueType,
+          ...(draft.sensitivity ? { sensitivity: draft.sensitivity } : {})
+        })
+      })
+    );
+    return { state: "SAVED", status: asText(body.status), factId: asText(body.fact_id) };
+  } catch (error) {
+    if (!(error instanceof PulseApiError)) {
+      return { state: "ERROR", message: "" };
+    }
+    const details = asRecord(error.details);
+    const serverState = asText(details.state).trim().toUpperCase();
+    if (serverState === "PRIVATE_OFFICE_LOCKED" || error.status === 423) {
+      return { state: "LOCKED", setupRequired: details.setup_required === true };
+    }
+    if (serverState === "NOT_ENTITLED") {
+      return { state: "NOT_ENTITLED", minimumTier: asText(details.minimum_tier) };
+    }
+    if (serverState === "FEATURE_DISABLED") return { state: "FEATURE_DISABLED" };
+    if (serverState === "NOT_IMPLEMENTED") return { state: "NOT_IMPLEMENTED" };
+    if (serverState === "UNAVAILABLE" || error.status === 503 || error.status === 504) {
+      return { state: "UNAVAILABLE" };
+    }
+    if (error.status === 400) {
+      return { state: "REJECTED", message: asText(details.message) || error.message || "" };
+    }
+    return { state: "ERROR", message: error.message || "" };
+  }
+}
+
 /* --- second lock: security API ------------------------------------------- */
 
 export const PRIVATE_OFFICE_SECURITY_PATH = "/api/private-office/security";

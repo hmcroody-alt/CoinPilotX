@@ -1288,6 +1288,15 @@ _load_route_pack("pulse_market_pulse", "services.market_pulse_routes")
 # stays with the existing admin entitlement paths. A write in this pack would
 # be a second granting authority.
 _load_route_pack("private_office", "services.private_office_routes")
+# Document Intelligence: the Private Office vault. Uploads, deterministic
+# text extraction into PROPOSED claims, member review into the canonical
+# fact writer, and owner-only content streaming. Gates are imported from the
+# pack above — one implementation of the refusal translation.
+_load_route_pack("private_office_documents", "services.private_office_documents_routes")
+# Relationship Intelligence: the Private Office's people. Directory, profiles,
+# cited timelines and deterministic briefing preparation, composed from the
+# private graph, fact store and record primitives — no store of its own.
+_load_route_pack("private_office_relationships", "services.private_office_relationships_routes")
 
 
 def cancel_scheduled_account_deletion(cur, user_id):
@@ -30472,6 +30481,53 @@ def issue_mobile_security_tokens(user, payload=None, *, rotate_from=""):
         "refresh_token_expires_in": MOBILE_REFRESH_TOKEN_TTL_SECONDS,
         "device_hash": context["device_hash"][:16],
     }
+
+
+def private_office_session_family_for_bearer(access_token):
+    """Stable session identity behind a rotating mobile bearer, or "".
+
+    The Office unlock grant is bound to the session that earned it. Binding to
+    a hash of the raw bearer meant the binding died every ~15 minutes when the
+    access token rotated, relocking the Office mid-use. The session family id
+    survives rotation and is revoked with the sign-in, which is exactly the
+    lifetime the grant is supposed to share.
+    """
+    token = str(access_token or "")
+    if not token:
+        return ""
+    cache_attr = "_office_session_family_" + mobile_token_hash(token)[:16]
+    if has_request_context():
+        cached = g.get(cache_attr)
+        if cached is not None:
+            return cached
+    family = ""
+    try:
+        conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+        try:
+            cur.execute(
+                """
+                SELECT session_family_id FROM mobile_security_sessions
+                WHERE access_token_hash=? AND status='active' AND COALESCE(revoked_at,'')=''
+                LIMIT 1
+                """,
+                (mobile_token_hash(token),),
+            )
+            row = cur.fetchone()
+            family = str(dict(row).get("session_family_id") or "") if row else ""
+        finally:
+            conn.close()
+    except Exception:
+        family = ""
+    if has_request_context():
+        setattr(g, cache_attr, family)
+    return family
+
+
+try:
+    from services.private_office import security as _office_grant_security
+    _office_grant_security.register_session_family_resolver(private_office_session_family_for_bearer)
+except Exception:
+    logging.info("PRIVATE_OFFICE_SESSION_FAMILY_RESOLVER_UNREGISTERED")
 
 
 def rotate_mobile_refresh_token(refresh_token, payload=None):

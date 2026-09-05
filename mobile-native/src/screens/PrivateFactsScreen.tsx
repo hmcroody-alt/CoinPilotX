@@ -44,11 +44,19 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { PrivateFact, PrivateFactsResult, getPrivateFacts } from "../api/privateOffice";
+import {
+  FACT_DOMAINS,
+  FACT_VALUE_TYPES,
+  PrivateFact,
+  PrivateFactsResult,
+  createPrivateFact,
+  getPrivateFacts
+} from "../api/privateOffice";
 import { useTranslation } from "../i18n";
 import { BOTTOM_NAV_CONTENT_CLEARANCE } from "../navigation/BottomNavVisibility";
 import { RootStackParamList } from "../navigation/types";
@@ -112,13 +120,22 @@ export function PrivateFactsScreen(props: Props) {
   );
 }
 
-function PrivateFactsBody(_props: Props) {
+function PrivateFactsBody({ route }: Props) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const [state, setState] = useState<ScreenState>("LOADING");
   const [result, setResult] = useState<PrivateFactsResult | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [inspecting, setInspecting] = useState<PrivateFact | null>(null);
+  const [composing, setComposing] = useState(route.params?.create === true);
+  const [draftDomain, setDraftDomain] = useState<string>(FACT_DOMAINS[0]);
+  const [draftValueType, setDraftValueType] = useState<string>(FACT_VALUE_TYPES[0]);
+  const [draftFactType, setDraftFactType] = useState("");
+  const [draftValue, setDraftValue] = useState("");
+  const [saving, setSaving] = useState(false);
+  // The writer's rejection, verbatim — it names the invariant the member can
+  // actually fix. A generic "invalid input" here would leave them guessing.
+  const [writeError, setWriteError] = useState("");
 
   const load = useCallback(async () => {
     const next = await getPrivateFacts();
@@ -156,6 +173,48 @@ function PrivateFactsBody(_props: Props) {
     }
   }, [load]);
 
+  const closeCompose = useCallback(() => {
+    setComposing(false);
+    setWriteError("");
+  }, []);
+
+  const save = useCallback(async () => {
+    // The token spelling the server validates as-written: the form label is
+    // free text, so the client builds the one canonical spelling from it.
+    const factType = draftFactType.trim().toLowerCase().replace(/\s+/g, "_");
+    const value = draftValue.trim();
+    if (!factType || !value) return;
+    setSaving(true);
+    setWriteError("");
+    try {
+      const written = await createPrivateFact({
+        domain: draftDomain,
+        factType,
+        value,
+        valueType: draftValueType
+      });
+      if (written.state === "SAVED") {
+        setComposing(false);
+        setDraftFactType("");
+        setDraftValue("");
+        await load();
+        return;
+      }
+      if (written.state === "LOCKED") {
+        lockOfficeLocally();
+        setComposing(false);
+        return;
+      }
+      if (written.state === "REJECTED" && written.message) {
+        setWriteError(written.message);
+        return;
+      }
+      setWriteError(t("premium:privateOffice.facts.add.failed"));
+    } finally {
+      setSaving(false);
+    }
+  }, [draftDomain, draftFactType, draftValue, draftValueType, load, t]);
+
   const groups = useMemo(
     () => (result && result.state === "READY" ? groupByDomain(result.facts) : []),
     [result]
@@ -191,6 +250,18 @@ function PrivateFactsBody(_props: Props) {
         <Text style={styles.title}>{t("premium:privateOffice.features.privateFacts.label")}</Text>
         <Text style={styles.subtitle}>{t("premium:privateOffice.facts.subtitle")}</Text>
       </View>
+
+      {state === "READY" || state === "EMPTY" ? (
+        <Pressable
+          style={styles.addButton}
+          onPress={() => setComposing(true)}
+          accessibilityRole="button"
+          accessibilityLabel={t("premium:privateOffice.facts.add.open")}
+        >
+          <Ionicons name="add-circle-outline" size={18} color={colors.accentStrong} />
+          <Text style={styles.addButtonText}>{t("premium:privateOffice.facts.add.open")}</Text>
+        </Pressable>
+      ) : null}
 
       {state === "LOADING" ? (
         <View style={styles.panel} accessibilityRole="progressbar">
@@ -311,6 +382,98 @@ function PrivateFactsBody(_props: Props) {
             </View>
           ))
         : null}
+
+      <Modal visible={composing} transparent animationType="slide" onRequestClose={closeCompose}>
+        <Pressable style={styles.sheetBackdrop} onPress={closeCompose}>
+          <Pressable style={styles.sheet} onPress={() => undefined}>
+            <Text style={styles.sheetTitle}>{t("premium:privateOffice.facts.add.title")}</Text>
+
+            <Text style={styles.fieldLabel}>{t("premium:privateOffice.facts.add.domain")}</Text>
+            <View style={styles.chipRow}>
+              {FACT_DOMAINS.map((domain) => (
+                <Pressable
+                  key={domain}
+                  style={[styles.chip, draftDomain === domain ? styles.chipActive : null]}
+                  onPress={() => setDraftDomain(domain)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: draftDomain === domain }}
+                >
+                  <Text
+                    style={[styles.chipText, draftDomain === domain ? styles.chipTextActive : null]}
+                  >
+                    {t(`premium:privateOffice.domains.${domain}`)}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <Text style={styles.fieldLabel}>{t("premium:privateOffice.facts.add.factType")}</Text>
+            <TextInput
+              style={styles.input}
+              value={draftFactType}
+              onChangeText={setDraftFactType}
+              placeholder={t("premium:privateOffice.facts.add.factTypeHint")}
+              placeholderTextColor={colors.disabled}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+
+            <Text style={styles.fieldLabel}>{t("premium:privateOffice.facts.add.valueType")}</Text>
+            <View style={styles.chipRow}>
+              {FACT_VALUE_TYPES.map((valueType) => (
+                <Pressable
+                  key={valueType}
+                  style={[styles.chip, draftValueType === valueType ? styles.chipActive : null]}
+                  onPress={() => setDraftValueType(valueType)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: draftValueType === valueType }}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      draftValueType === valueType ? styles.chipTextActive : null
+                    ]}
+                  >
+                    {t(`premium:privateOffice.valueTypes.${valueType}`)}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <Text style={styles.fieldLabel}>{t("premium:privateOffice.facts.add.value")}</Text>
+            <TextInput
+              style={styles.input}
+              value={draftValue}
+              onChangeText={setDraftValue}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+
+            {writeError ? <Text style={styles.writeError}>{writeError}</Text> : null}
+
+            <View style={styles.sheetActions}>
+              <Pressable style={styles.retry} onPress={closeCompose} accessibilityRole="button">
+                <Text style={styles.retryText}>{t("premium:privateOffice.facts.add.cancel")}</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.saveButton,
+                  saving || !draftFactType.trim() || !draftValue.trim() ? styles.saveDisabled : null
+                ]}
+                onPress={save}
+                disabled={saving || !draftFactType.trim() || !draftValue.trim()}
+                accessibilityRole="button"
+              >
+                {saving ? (
+                  <ActivityIndicator color={colors.background} size="small" />
+                ) : (
+                  <Text style={styles.saveText}>{t("premium:privateOffice.facts.add.save")}</Text>
+                )}
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <Modal
         visible={inspecting !== null}
@@ -439,7 +602,56 @@ const styles = StyleSheet.create({
   sheetLine: { flexDirection: "row", justifyContent: "space-between", gap: 12 },
   sheetLabel: { color: colors.muted, fontSize: 12 },
   sheetLineValue: { color: colors.text, fontSize: 12, fontWeight: "600", flexShrink: 1, textAlign: "right" },
-  sheetNote: { color: colors.muted, fontSize: 11, lineHeight: 16 }
+  sheetNote: { color: colors.muted, fontSize: 11, lineHeight: 16 },
+  addButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    alignSelf: "flex-start",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.border,
+    borderWidth: 1
+  },
+  addButtonText: { color: colors.accentStrong, fontSize: 13, fontWeight: "700" },
+  fieldLabel: { color: colors.muted, fontSize: 11, fontWeight: "800", letterSpacing: 1 },
+  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  chip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderColor: colors.border,
+    borderWidth: 1,
+    backgroundColor: colors.surface
+  },
+  chipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+  chipText: { color: colors.muted, fontSize: 12, fontWeight: "700" },
+  chipTextActive: { color: colors.background },
+  input: {
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: colors.text,
+    fontSize: 14,
+    backgroundColor: colors.surface
+  },
+  writeError: { color: colors.danger, fontSize: 12, lineHeight: 17 },
+  sheetActions: { flexDirection: "row", justifyContent: "flex-end", gap: 10, marginTop: 4 },
+  saveButton: {
+    marginTop: 6,
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: colors.accent,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  saveDisabled: { opacity: 0.5 },
+  saveText: { color: colors.background, fontSize: 13, fontWeight: "800" }
 });
 
 export default PrivateFactsScreen;

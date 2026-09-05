@@ -50,7 +50,10 @@ import {
   ActivityIndicator,
   AppState,
   AppStateStatus,
+  Keyboard,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -69,6 +72,7 @@ import {
   unlockOffice
 } from "../api/privateOffice";
 import { useTranslation } from "../i18n";
+import { useAuth } from "../session/auth";
 import { getBiometricCapability } from "../session/biometricAuth";
 import { getSessionEnvelope } from "../session/sessionStore";
 import { colors } from "../theme/colors";
@@ -124,7 +128,13 @@ function digitsOnly(value: string): string {
 
 export function PrivateOfficeLockGate({ children, onDismiss, onRenew }: Props) {
   const { t } = useTranslation();
+  const { authState } = useAuth();
   const lock = useSyncExternalStore(subscribeOfficeLock, getOfficeLockSnapshot);
+  // The envelope disappears when the bearer session dies, but the member can
+  // still be signed in via the web cookie — the auth context knows who they
+  // are either way. Without this fallback, reconcileOfficeOwner(0) relocks
+  // the Office on every gate mount for a cookie-authenticated member.
+  const authUserId = Number(authState.user?.user_id ?? 0);
 
   const [door, setDoor] = useState<GateDoor>("CHECKING");
   const [userId, setUserId] = useState(0);
@@ -227,7 +237,7 @@ export function PrivateOfficeLockGate({ children, onDismiss, onRenew }: Props) {
   const check = useCallback(async () => {
     setDoor("CHECKING");
     const envelope = await getSessionEnvelope();
-    const currentUserId = envelope?.userId ?? 0;
+    const currentUserId = envelope?.userId ?? authUserId;
     if (mounted.current) setUserId(currentUserId);
     reconcileOfficeOwner(currentUserId);
     const [status, armedFor, capability] = await Promise.all([
@@ -241,7 +251,7 @@ export function PrivateOfficeLockGate({ children, onDismiss, onRenew }: Props) {
       capability.kind === "faceId" || capability.kind === "touchId" ? capability.kind : "none"
     );
     applyStatus(status, currentUserId);
-  }, [applyStatus]);
+  }, [applyStatus, authUserId]);
 
   useEffect(() => {
     void check();
@@ -741,7 +751,17 @@ export function PrivateOfficeLockGate({ children, onDismiss, onRenew }: Props) {
         animationType="slide"
         onRequestClose={() => setResetOpen(false)}
       >
-        <View style={styles.sheetBackdrop}>
+        <KeyboardAvoidingView
+          style={styles.sheetBackdrop}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
+          {/* The number-pad has no Done key on iOS; tapping above the sheet is
+              the only way to lower the keyboard and reach the buttons. */}
+          <Pressable
+            style={styles.sheetBackdropDismiss}
+            onPress={() => Keyboard.dismiss()}
+            accessible={false}
+          />
           <View style={styles.sheet}>
             <Text style={styles.sheetTitle}>{t("premium:privateOffice.lock.reset.title")}</Text>
             <Text style={styles.panelText}>{t("premium:privateOffice.lock.reset.body")}</Text>
@@ -814,7 +834,7 @@ export function PrivateOfficeLockGate({ children, onDismiss, onRenew }: Props) {
               <Text style={styles.linkText}>{t("premium:privateOffice.lock.reset.cancel")}</Text>
             </Pressable>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {privacyOverlay}
@@ -898,6 +918,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.6)",
     justifyContent: "flex-end"
   },
+  sheetBackdropDismiss: { flex: 1 },
   sheet: {
     backgroundColor: colors.surfaceRaised,
     borderTopLeftRadius: 20,

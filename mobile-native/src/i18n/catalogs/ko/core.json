@@ -215,7 +215,10 @@
       "briefing": "브리핑",
       "privateOffice": "프라이빗 오피스",
       "privateFacts": "비공개 정보",
-      "privateOfficeSecurity": "오피스 보안"
+      "privateOfficeSecurity": "오피스 보안",
+      "privateOperations": "오퍼레이션",
+      "capitalGraph": "캐피털 그래프",
+      "capitalEntity": "엔티티"
     },
     "navSubtitles": {
       "missionControl": "관제 센터",

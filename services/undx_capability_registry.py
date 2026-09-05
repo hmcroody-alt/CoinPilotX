@@ -1179,6 +1179,45 @@ _register(CapabilitySpec(
     audit_category="private_facts_read",
 ))
 
+
+# The Batch C record views — obligations, events, decisions, requests, risks,
+# opportunities. Derived from the spec module rather than restated, so the six
+# entries here, the six policy-table names and the six executors agree by
+# construction: the vocabulary is typed exactly once, in
+# ``services.private_office.undx_records_spec``. Read-only for the same reason
+# ``private.facts.list`` is — a record written by an agent from a conversation
+# has a model's paraphrase as its provenance, and an obligation is worse than a
+# fact in that respect because it carries a date somebody may act on.
+def _register_private_record_capabilities() -> None:
+    from services.private_office import undx_records_spec as _po_spec
+
+    for _entry in _po_spec.CAPABILITIES:
+        _cid = _entry["capability_id"]
+        _register(CapabilitySpec(
+            capability_id=_cid,
+            description=_entry["description"],
+            intents=tuple(_entry["intents"]),
+            risk=RiskLevel.READ_ONLY,
+            confirmation=ConfirmationPolicy.NEVER,
+            tool_name=_po_spec.tool_name(_cid),
+            # No field names an account, so the scope is structural: the only
+            # owner any of these can reach is the caller.
+            permission=PermissionScope.SELF_ACCOUNT_ONLY,
+            fields=(
+                FieldSpec("status", "str", required=False, max_length=32, default=""),
+                FieldSpec("limit", "int", required=False, minimum=1,
+                          maximum=_po_spec.MAX_LIMIT, default=_po_spec.DEFAULT_LIMIT),
+            ),
+            executor=_po_spec.executor_name(_cid),
+            verifier="",
+            native_route=_entry["native_route"],
+            result_card=CardType.SEARCH_RESULTS,
+            audit_category=_po_spec.AUDIT_CATEGORY,
+        ))
+
+
+_register_private_record_capabilities()
+
 for _capability, _intent, _saved, _executor, _verifier, _undo in (
     ("reels.save", "save reel", True, "reels_save", "reel_saved_value", "reels.unsave"),
     ("reels.unsave", "unsave reel", False, "reels_unsave", "reel_saved_value", "reels.save"),

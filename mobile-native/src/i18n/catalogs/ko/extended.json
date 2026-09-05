@@ -4234,7 +4234,7 @@
       "loading": "오피스 구성을 확인하는 중…",
       "retry": "다시 시도",
       "open": "열기",
-      "footnote": "여기에 표시되는 항목은 이 앱이 아니라 서버의 계정이 결정합니다.",
+      "footnote": "오피스에는 현재 멤버십에 포함된 내용이 그대로 표시됩니다.",
       "sections": {
         "available": "이용 가능",
         "notYet": "추후 제공",
@@ -4255,8 +4255,8 @@
       },
       "reason": {
         "AVAILABLE": "이용 가능",
-        "PROVIDER_REQUIRED": "제공업체 필요",
-        "NOT_IMPLEMENTED": "아직 미구현",
+        "PROVIDER_REQUIRED": "제공자 대기 중",
+        "NOT_IMPLEMENTED": "준비 중",
         "TEMPORARILY_DISABLED": "일시 중지",
         "UPGRADE_REQUIRED": "업그레이드 필요",
         "UNKNOWN": "이용 불가"
@@ -4293,6 +4293,10 @@
         "humanConcierge": {
           "label": "휴먼 컨시어지",
           "hint": "담당자가 회원님을 대신해 요청을 처리합니다."
+        },
+        "operations": {
+          "label": "오퍼레이션",
+          "hint": "추적 중인 의무, 결정, 요청, 리스크, 기회."
         }
       },
       "entry": {
@@ -4337,6 +4341,18 @@
         "error": {
           "title": "문제가 발생했습니다",
           "body": "기록을 불러오지 못했습니다."
+        },
+        "add": {
+          "open": "팩트 추가",
+          "title": "팩트 기록",
+          "domain": "영역",
+          "factType": "팩트 유형",
+          "factTypeHint": "예: 여권 번호",
+          "valueType": "값 유형",
+          "value": "값",
+          "save": "저장",
+          "cancel": "취소",
+          "failed": "지금은 저장할 수 없었습니다."
         }
       },
       "domains": {
@@ -4445,6 +4461,201 @@
           "cancel": "취소",
           "failed": "재설정에 실패했습니다. 비밀번호를 확인하고 다시 시도하세요."
         }
+      },
+      "operations": {
+        "title": "오퍼레이션",
+        "subtitle": "의무, 이벤트, 결정, 요청, 리스크, 기회를 한곳에서 기록하고 추적합니다.",
+        "loading": "기록을 불러오는 중…",
+        "cancel": "취소",
+        "save": "저장",
+        "move": "변경",
+        "writeFailed": "변경 사항이 저장되지 않았습니다.",
+        "empty": {
+          "title": "기록 없음"
+        },
+        "views": {
+          "obligations": "의무",
+          "events": "이벤트",
+          "decisions": "결정",
+          "requests": "요청",
+          "risks": "리스크",
+          "opportunities": "기회"
+        },
+        "add": {
+          "obligations": "의무 기록",
+          "events": "이벤트 기록",
+          "decisions": "결정 기록",
+          "requests": "요청 기록",
+          "risks": "리스크 기록",
+          "opportunities": "기회 기록"
+        },
+        "emptyBody": {
+          "obligations": "아직 기록된 의무가 없습니다.",
+          "events": "아직 기록된 이벤트가 없습니다.",
+          "decisions": "아직 기록된 결정이 없습니다.",
+          "requests": "아직 기록된 요청이 없습니다.",
+          "risks": "아직 기록된 리스크가 없습니다.",
+          "opportunities": "아직 기록된 기회가 없습니다."
+        },
+        "notEntitled": {
+          "title": "업그레이드 필요",
+          "body": "오퍼레이션은 {{tier}}에 포함되어 있습니다.",
+          "bodyGeneric": "오퍼레이션은 현재 플랜에 포함되어 있지 않습니다."
+        },
+        "disabled": {
+          "title": "이용 불가",
+          "body": "오퍼레이션이 현재 중지되어 있습니다."
+        },
+        "notImplemented": {
+          "title": "준비 중",
+          "body": "오피스의 이 부분은 아직 준비 중입니다."
+        },
+        "unavailable": {
+          "title": "연결할 수 없음",
+          "body": "오퍼레이션에 연결할 수 없습니다. 기록은 변경되지 않았습니다."
+        },
+        "error": {
+          "title": "문제가 발생했습니다",
+          "body": "기록을 불러올 수 없습니다."
+        },
+        "due": "기한 {{date}}",
+        "occurred": "발생일 {{date}}",
+        "outcome": "결과: {{outcome}}",
+        "form": {
+          "title": "제목",
+          "question": "질문",
+          "kind": "유형",
+          "details": "세부 정보",
+          "due": "기한 (YYYY-MM-DD)"
+        },
+        "status": {
+          "OPEN": "진행 전",
+          "RESOLVED": "해결됨",
+          "DISMISSED": "기각됨",
+          "RECORDED": "기록됨",
+          "UNDER_REVIEW": "검토 중",
+          "DECIDED": "결정됨",
+          "ABANDONED": "중단됨",
+          "IN_PROGRESS": "진행 중",
+          "WAITING_ON_USER": "회원 응답 대기",
+          "WAITING_ON_PROVIDER": "제공자 대기",
+          "COMPLETED": "완료",
+          "CANCELED": "취소됨",
+          "MONITORING": "모니터링 중",
+          "MITIGATED": "완화됨",
+          "ACCEPTED": "수용됨",
+          "NEW": "신규",
+          "REVIEWING": "평가 중",
+          "INTERESTED": "관심 있음",
+          "PASSED": "보류",
+          "CLOSED": "종료",
+          "OVERDUE": "기한 초과",
+          "DUE_SOON": "기한 임박"
+        }
+      },
+      "capital": {
+        "title": "캐피털 그래프",
+        "subtitle": "보유한 것, 이를 보장하는 것, 그리고 그 연결 — 각 요소의 확실성과 함께.",
+        "loading": "그래프를 불러오는 중…",
+        "views": {
+          "holdings": "보유 자산",
+          "coverage": "보장",
+          "structure": "구조",
+          "documents": "문서"
+        },
+        "countExact": "{{count}}",
+        "countSoFar": "지금까지 {{count}}",
+        "factCount": "기록된 사실 {{count}}건",
+        "empty": {
+          "title": "기록 없음"
+        },
+        "emptyBody": {
+          "holdings": "아직 기록된 보유 자산이 없습니다.",
+          "coverage": "아직 기록된 보장이 없습니다.",
+          "structure": "아직 기록된 구조가 없습니다.",
+          "documents": "아직 기록된 문서가 없습니다."
+        },
+        "denied": {
+          "title": "표시되지 않음",
+          "body": "이 질문에는 답변되지 않았습니다."
+        },
+        "notFound": {
+          "title": "찾을 수 없음",
+          "body": "오피스에 해당 항목이 없습니다."
+        },
+        "notEntitled": {
+          "title": "업그레이드 필요",
+          "body": "캐피털 그래프는 {{tier}}에 포함되어 있습니다.",
+          "bodyGeneric": "캐피털 그래프는 현재 플랜에 포함되어 있지 않습니다."
+        },
+        "disabled": {
+          "title": "이용 불가",
+          "body": "캐피털 그래프가 현재 중지되어 있습니다."
+        },
+        "notImplemented": {
+          "title": "준비 중",
+          "body": "오피스의 이 부분은 아직 준비 중입니다."
+        },
+        "unavailable": {
+          "title": "연결할 수 없음",
+          "body": "그래프에 연결할 수 없습니다. 기록은 변경되지 않았습니다."
+        },
+        "error": {
+          "title": "문제가 발생했습니다",
+          "body": "그래프를 불러올 수 없습니다."
+        },
+        "conflicts": {
+          "title": "상충하는 정보",
+          "disagree": "두 출처가 일치하지 않습니다"
+        },
+        "stale": {
+          "title": "최신성 기한 경과",
+          "age": "{{days}}일 경과"
+        },
+        "truth": {
+          "KNOWN": "확인됨",
+          "INFERRED": "추론됨",
+          "ESTIMATED": "추정치",
+          "STALE": "오래됨",
+          "MISSING": "누락",
+          "CONFLICTING": "상충",
+          "PRO_REVIEW": "검토 필요"
+        },
+        "nodeType": {
+          "PERSON": "인물",
+          "BUSINESS": "사업체",
+          "PROPERTY": "부동산",
+          "INSURANCE_POLICY": "보험 증권",
+          "CONTRACT": "계약",
+          "DOCUMENT": "문서",
+          "PROFESSIONAL": "전문가",
+          "ASSET": "자산",
+          "LIABILITY": "부채"
+        },
+        "entity": {
+          "relationships": "관계",
+          "facts": "기록된 사실",
+          "updated": "업데이트 {{date}}"
+        },
+        "relationshipsUnavailable": "지금은 관계를 불러올 수 없습니다."
+      },
+      "attention": {
+        "title": "주의가 필요한 항목",
+        "none": "지금은 주의가 필요한 항목이 없습니다.",
+        "unavailable": "주의가 필요한 항목을 지금 확인할 수 없었습니다."
+      },
+      "quick": {
+        "title": "빠른 작업",
+        "record": "기록하기",
+        "addFact": "팩트 추가"
+      },
+      "valueTypes": {
+        "STRING": "텍스트",
+        "NUMBER": "숫자",
+        "MONEY": "금액",
+        "PERCENT": "백분율",
+        "DATE": "날짜",
+        "BOOLEAN": "예/아니요"
       }
     },
     "gate": {

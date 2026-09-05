@@ -77,6 +77,17 @@ AUTHORIZATION_SURFACE: tuple[tuple[Any, ...], ...] = (
     ('premium.entitlements', 'read_only', 'never', 'self_account_only', 'self_account_only', False, True, False, '', (), 'UNDX_AGENT_READS_ENABLED'),
     ('premium.status', 'read_only', 'never', 'self_account_only', 'self_account_only', False, True, False, '', (), 'UNDX_AGENT_READS_ENABLED'),
     ('presence.privacy.status', 'read_only', 'never', 'self_account_only', 'self_account_only', False, True, False, '', (), 'UNDX_AGENT_READS_ENABLED'),
+    # Private Office. Seven owner-scoped reads and no writes: the facts read and
+    # the six Batch C record views. Owner scope is structural (no field names an
+    # account), the second lock applies inside the executor, and the record
+    # views read through retrieval's general intent at an INTERNAL ceiling.
+    ('private.decisions.list', 'read_only', 'never', 'self_account_only', 'self_account_only', False, True, False, '', (), 'UNDX_AGENT_READS_ENABLED'),
+    ('private.events.list', 'read_only', 'never', 'self_account_only', 'self_account_only', False, True, False, '', (), 'UNDX_AGENT_READS_ENABLED'),
+    ('private.facts.list', 'read_only', 'never', 'self_account_only', 'self_account_only', False, True, False, '', (), 'UNDX_AGENT_READS_ENABLED'),
+    ('private.obligations.list', 'read_only', 'never', 'self_account_only', 'self_account_only', False, True, False, '', (), 'UNDX_AGENT_READS_ENABLED'),
+    ('private.opportunities.list', 'read_only', 'never', 'self_account_only', 'self_account_only', False, True, False, '', (), 'UNDX_AGENT_READS_ENABLED'),
+    ('private.requests.list', 'read_only', 'never', 'self_account_only', 'self_account_only', False, True, False, '', (), 'UNDX_AGENT_READS_ENABLED'),
+    ('private.risks.list', 'read_only', 'never', 'self_account_only', 'self_account_only', False, True, False, '', (), 'UNDX_AGENT_READS_ENABLED'),
     ('profile.activity.summary', 'read_only', 'never', 'self_account_only', 'self_account_only', False, True, False, '', (), 'UNDX_AGENT_READS_ENABLED'),
     ('profile.get', 'read_only', 'never', 'self_account_only', 'self_account_only', False, True, False, '', (), 'UNDX_AGENT_READS_ENABLED'),
     ('profile.preferences.update', 'reversible_write', 'contextual', 'self_account_only', 'self_account_only', True, True, False, 'profile_preference_value', ('preferred_language',), 'UNDX_AGENT_READS_ENABLED'),

@@ -117,94 +117,49 @@ def token_hash(token: str) -> str:
 GRANT_HEADER = "X-Office-Grant"
 DEVICE_HEADER = "X-Office-Device"
 
-
-#: Namespace on the session binding. A binding is only ever compared against
-#: another binding produced by this module, but the prefix makes the *source*
-#: legible in a dump and guarantees a value derived one way can never collide
-#: with one derived another way if a second source is ever added.
-_SESSION_BINDING_NAMESPACE = "msf1"
-
-#: Per-request memo key. Mint and validate can both run inside one request
-#: (unlock, then a lock-gated read in the same round trip is not possible, but
-#: ``request_is_unlocked`` and ``_office_lock_gate`` can both fire). Resolving
-#: once means they cannot disagree and the lookup costs one query per request.
-_BINDING_CACHE_ATTR = "_private_office_session_binding"
+_SESSION_FAMILY_RESOLVER = None
 
 
-def _session_family_id(access_token: str, refresh_token: str) -> str:
-    """The mobile session FAMILY behind this request's credentials, or ``""``.
+def register_session_family_resolver(resolver) -> None:
+    """Install the host app's bearer-token → session-family lookup.
 
-    Why the family and not the credential itself
-    --------------------------------------------
-    Both credentials this app authenticates with are *designed to rotate*. The
-    access token lives 15 minutes and the client refreshes it automatically;
-    the persistent refresh cookie is replaced on every rotation. The family id
-    is the one identifier that is minted once at sign-in, carried forward
-    across every rotation (``issue_mobile_security_tokens`` copies it from the
-    row it rotates), and stamped dead at logout, refresh-token reuse, device
-    mismatch or account restriction. That is exactly the lifetime an unlock
-    grant is supposed to have.
-
-    Both credentials resolve to the SAME family, which is the property that
-    matters most here: the native client attaches its bearer only while the
-    access token is comfortably unexpired and falls back to the cookie
-    otherwise, so a binding computed from whichever one happened to be present
-    would flip mid-session. This cannot.
-
-    ``rotated`` rows are accepted alongside ``active`` ones. This is identity,
-    not authentication — the caller has already been authenticated by
-    ``require_account`` — and refusing a token that was rotated a moment ago
-    would relock the Office for the duration of a refresh. ``revoked`` rows are
-    excluded, which is what makes logout revoke the grant.
+    The mobile access token rotates every ~15 minutes by design. Hashing the
+    raw bearer into the session binding therefore orphaned the member's
+    standing unlock grant at every rotation, relocking the Office mid-use.
+    The host registers a resolver mapping a bearer to its stable session
+    family id, which lives exactly as long as the sign-in itself — logout,
+    revocation and password change still kill the binding; a routine token
+    refresh no longer does. Pass ``None`` to uninstall (tests).
     """
-    if not access_token and not refresh_token:
-        return ""
-    try:
-        import bot as _bot
-        from services import db as _db
-    except Exception:  # noqa: BLE001
-        return ""
-    sql = (
-        "SELECT session_family_id FROM mobile_security_sessions "
-        "WHERE {column} = ? AND status IN ('active','rotated') "
-        "AND COALESCE(revoked_at,'') = '' LIMIT 1"
-    )
-    conn = None
-    try:
-        conn = _db.connect()
-        cur = conn.cursor()
-        for column, credential in (
-            ("access_token_hash", access_token),
-            ("refresh_token_hash", refresh_token),
-        ):
-            if not credential:
-                continue
-            cur.execute(sql.format(column=column), (_bot.mobile_token_hash(credential),))
-            family = _first_column(cur.fetchone())
-            if family:
-                return family
-    except Exception:  # noqa: BLE001 — an unreadable session table is no binding
-        LOGGER.exception("PRIVATE_OFFICE_SESSION_FAMILY_LOOKUP_FAILED")
-    finally:
-        if conn is not None:
-            try:
-                conn.close()
-            except Exception:  # noqa: BLE001
-                pass
-    return ""
+    global _SESSION_FAMILY_RESOLVER
+    _SESSION_FAMILY_RESOLVER = resolver
 
 
-def _first_column(row) -> str:
-    """The single selected column, whatever row shape the driver returned."""
-    if row is None:
-        return ""
+_COOKIE_SID_KEY = "po_sid"
+
+
+def _cookie_session_source() -> str:
+    """A stable identity for a cookie-authenticated request, or ``""``.
+
+    The raw cookie *value* cannot be the binding source: sessions are
+    permanent, so Flask re-signs the cookie with a fresh timestamp on every
+    response, and a grant bound to the mint-time cookie bytes is orphaned by
+    the unlock response itself. The decoded session payload is the stable
+    thing — an opaque id is minted into it on first use and rides the cookie
+    for the rest of the login. Logout clears the session and the id (and
+    every grant bound to it) dies with it. Any failure here returns ``""``,
+    which sends the caller to the raw-cookie fallback: unstable, but it can
+    only ever refuse a validation, never pass one.
+    """
     try:
-        return str(dict(row)["session_family_id"] or "")
-    except (TypeError, ValueError, KeyError, IndexError):
-        pass
-    try:
-        return str(tuple(row)[0] or "")
-    except (TypeError, ValueError, IndexError):
+        from flask import session as flask_session
+
+        sid = str(flask_session.get(_COOKIE_SID_KEY) or "")
+        if not sid:
+            sid = secrets.token_urlsafe(16)
+            flask_session[_COOKIE_SID_KEY] = sid
+        return "web-session:" + sid
+    except Exception:  # noqa: BLE001 — no session support, no stable id
         return ""
 
 
@@ -216,65 +171,39 @@ def request_bindings() -> tuple[str, str]:
     later checked with — two extractors would eventually disagree and the
     disagreement would present as random lockouts.
 
-    The session binding identifies the **login session**, not the credential
-    carrying it. That distinction is the whole of this function's history: it
-    used to hash the bearer token, else the ``session`` cookie, and both of
-    those rotate by design. Flask is configured with
-    ``SESSION_REFRESH_EACH_REQUEST`` and permanent sessions, so the signed
-    session cookie is re-issued with a fresh timestamp on *every response* and
-    the native client merges each ``Set-Cookie`` back into its jar; the access
-    token rotates every 15 minutes, which is also the default grant TTL. A
-    grant bound to either was therefore stale almost immediately — twelve
-    consecutive unlocks by one member on one device produced twelve different
-    bindings, and every read after an unlock came back 423. The member
-    experienced that as "the passcode did not take".
-
-    What the binding still guarantees is unchanged: a grant dies with the
-    session that earned it (logout, refresh-token reuse, device mismatch and
-    account restriction all revoke the family), and a grant lifted from one
-    session cannot be replayed by another. Outside a request context both
-    halves are empty, which can only ever *fail* a validation, never pass one.
-
-    A request with no resolvable mobile session — there is no web Private
-    Office surface, so in practice this is a non-browser caller — gets an empty
-    session binding, matching only other empty ones. That is the pre-existing
-    "empty-vs-empty" case, and such a request is still held by the owner check,
-    the device binding, the grant's own secrecy and the TTL.
+    The session binding hashes the credential family that authenticated this
+    request (the mobile bearer's session family when the host resolver knows
+    it, else the raw bearer, else a stable id carried inside the web session,
+    else the raw cookie): a grant therefore dies with the session that earned
+    it, and a stolen grant token presented by a different session fails
+    equality. Outside a request context both are empty, which can only ever
+    *fail* a validation, never pass one.
     """
     try:
-        from flask import g, has_request_context, request
+        from flask import has_request_context, request
     except Exception:  # noqa: BLE001 — no flask, no request, no binding
         return "", ""
     if not has_request_context():
         return "", ""
-
-    device_binding = (request.headers.get(DEVICE_HEADER) or "").strip()[:128]
-
-    cached = getattr(g, _BINDING_CACHE_ATTR, None)
-    if cached is not None:
-        return cached, device_binding
-
-    access_token = ""
+    source = ""
     auth_header = (request.headers.get("Authorization") or "").strip()
     if auth_header.lower().startswith("bearer "):
-        access_token = auth_header.split(" ", 1)[1].strip()
-    refresh_token = ""
-    try:
-        import bot as _bot
-        refresh_token = request.cookies.get(_bot.PERSISTENT_SESSION_COOKIE) or ""
-    except Exception:  # noqa: BLE001
-        refresh_token = ""
-
-    family = _session_family_id(access_token, refresh_token)
+        source = auth_header.split(" ", 1)[1].strip()
+        if source and _SESSION_FAMILY_RESOLVER is not None:
+            try:
+                family = str(_SESSION_FAMILY_RESOLVER(source) or "")
+            except Exception:  # noqa: BLE001 — a resolver failure must never widen access
+                family = ""
+            if family:
+                source = "session-family:" + family
+    if not source:
+        raw_cookie = request.cookies.get("session") or ""
+        if raw_cookie:
+            source = _cookie_session_source() or raw_cookie
     session_binding = (
-        hashlib.sha256(f"{_SESSION_BINDING_NAMESPACE}:{family}".encode("utf-8")).hexdigest()
-        if family
-        else ""
+        hashlib.sha256(source.encode("utf-8")).hexdigest() if source else ""
     )
-    try:
-        setattr(g, _BINDING_CACHE_ATTR, session_binding)
-    except Exception:  # noqa: BLE001
-        pass
+    device_binding = (request.headers.get(DEVICE_HEADER) or "").strip()[:128]
     return session_binding, device_binding
 
 

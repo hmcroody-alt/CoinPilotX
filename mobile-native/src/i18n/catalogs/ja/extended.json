@@ -4227,7 +4227,7 @@
       "loading": "オフィスの内容を確認しています…",
       "retry": "再試行",
       "open": "開く",
-      "footnote": "ここに表示される内容は、このアプリではなくサーバー上のアカウントが決めています。",
+      "footnote": "オフィスには、現在のメンバーシップに含まれる内容がそのまま表示されます。",
       "sections": {
         "available": "利用可能",
         "notYet": "今後提供予定",
@@ -4248,8 +4248,8 @@
       },
       "reason": {
         "AVAILABLE": "利用可能",
-        "PROVIDER_REQUIRED": "提供元が必要",
-        "NOT_IMPLEMENTED": "未実装",
+        "PROVIDER_REQUIRED": "プロバイダー待ち",
+        "NOT_IMPLEMENTED": "準備中",
         "TEMPORARILY_DISABLED": "一時停止中",
         "UPGRADE_REQUIRED": "アップグレードが必要",
         "UNKNOWN": "利用できません"
@@ -4286,6 +4286,10 @@
         "humanConcierge": {
           "label": "ヒューマンコンシェルジュ",
           "hint": "担当者があなたに代わって依頼を処理します。"
+        },
+        "operations": {
+          "label": "オペレーション",
+          "hint": "追跡している義務・決定・リクエスト・リスク・機会。"
         }
       },
       "entry": {
@@ -4330,6 +4334,18 @@
         "error": {
           "title": "問題が発生しました",
           "body": "記録を読み込めませんでした。"
+        },
+        "add": {
+          "open": "ファクトを追加",
+          "title": "ファクトを記録",
+          "domain": "分野",
+          "factType": "ファクトの種類",
+          "factTypeHint": "例: パスポート番号",
+          "valueType": "値の種類",
+          "value": "値",
+          "save": "保存",
+          "cancel": "キャンセル",
+          "failed": "現在保存できませんでした。"
         }
       },
       "domains": {
@@ -4438,6 +4454,201 @@
           "cancel": "キャンセル",
           "failed": "リセットに失敗しました。パスワードを確認してもう一度お試しください。"
         }
+      },
+      "operations": {
+        "title": "オペレーション",
+        "subtitle": "義務・イベント・決定・リクエスト・リスク・機会を一か所で記録し、追跡します。",
+        "loading": "記録を読み込んでいます…",
+        "cancel": "キャンセル",
+        "save": "保存",
+        "move": "変更",
+        "writeFailed": "この変更は保存されませんでした。",
+        "empty": {
+          "title": "記録はありません"
+        },
+        "views": {
+          "obligations": "義務",
+          "events": "イベント",
+          "decisions": "決定",
+          "requests": "リクエスト",
+          "risks": "リスク",
+          "opportunities": "機会"
+        },
+        "add": {
+          "obligations": "義務を記録",
+          "events": "イベントを記録",
+          "decisions": "決定を記録",
+          "requests": "リクエストを記録",
+          "risks": "リスクを記録",
+          "opportunities": "機会を記録"
+        },
+        "emptyBody": {
+          "obligations": "記録された義務はまだありません。",
+          "events": "記録されたイベントはまだありません。",
+          "decisions": "記録された決定はまだありません。",
+          "requests": "記録されたリクエストはまだありません。",
+          "risks": "記録されたリスクはまだありません。",
+          "opportunities": "記録された機会はまだありません。"
+        },
+        "notEntitled": {
+          "title": "アップグレードが必要です",
+          "body": "オペレーションは {{tier}} に含まれています。",
+          "bodyGeneric": "オペレーションは現在のプランに含まれていません。"
+        },
+        "disabled": {
+          "title": "利用できません",
+          "body": "オペレーションは現在停止しています。"
+        },
+        "notImplemented": {
+          "title": "準備中",
+          "body": "オフィスのこの部分はまだ準備中です。"
+        },
+        "unavailable": {
+          "title": "接続できません",
+          "body": "オペレーションに接続できませんでした。記録は変更されていません。"
+        },
+        "error": {
+          "title": "問題が発生しました",
+          "body": "記録を読み込めませんでした。"
+        },
+        "due": "期限 {{date}}",
+        "occurred": "発生日 {{date}}",
+        "outcome": "結果: {{outcome}}",
+        "form": {
+          "title": "タイトル",
+          "question": "質問",
+          "kind": "種類",
+          "details": "詳細",
+          "due": "期限日 (YYYY-MM-DD)"
+        },
+        "status": {
+          "OPEN": "オープン",
+          "RESOLVED": "解決済み",
+          "DISMISSED": "却下",
+          "RECORDED": "記録済み",
+          "UNDER_REVIEW": "審査中",
+          "DECIDED": "決定済み",
+          "ABANDONED": "取り下げ",
+          "IN_PROGRESS": "進行中",
+          "WAITING_ON_USER": "あなたの対応待ち",
+          "WAITING_ON_PROVIDER": "プロバイダー待ち",
+          "COMPLETED": "完了",
+          "CANCELED": "キャンセル",
+          "MONITORING": "監視中",
+          "MITIGATED": "軽減済み",
+          "ACCEPTED": "受容",
+          "NEW": "新規",
+          "REVIEWING": "検討中",
+          "INTERESTED": "関心あり",
+          "PASSED": "見送り",
+          "CLOSED": "クローズ",
+          "OVERDUE": "期限超過",
+          "DUE_SOON": "期限間近"
+        }
+      },
+      "capital": {
+        "title": "キャピタルグラフ",
+        "subtitle": "保有するもの、それを守るもの、そのつながり — 各要素の確からしさとともに。",
+        "loading": "グラフを読み込んでいます…",
+        "views": {
+          "holdings": "保有資産",
+          "coverage": "補償",
+          "structure": "構造",
+          "documents": "書類"
+        },
+        "countExact": "{{count}}",
+        "countSoFar": "これまでに {{count}}",
+        "factCount": "記録された事実 {{count}} 件",
+        "empty": {
+          "title": "記録はありません"
+        },
+        "emptyBody": {
+          "holdings": "記録された保有資産はまだありません。",
+          "coverage": "記録された補償はまだありません。",
+          "structure": "記録された構造はまだありません。",
+          "documents": "記録された書類はまだありません。"
+        },
+        "denied": {
+          "title": "非表示",
+          "body": "この質問には回答されませんでした。"
+        },
+        "notFound": {
+          "title": "見つかりません",
+          "body": "オフィスにその項目はありません。"
+        },
+        "notEntitled": {
+          "title": "アップグレードが必要です",
+          "body": "キャピタルグラフは {{tier}} に含まれています。",
+          "bodyGeneric": "キャピタルグラフは現在のプランに含まれていません。"
+        },
+        "disabled": {
+          "title": "利用できません",
+          "body": "キャピタルグラフは現在停止しています。"
+        },
+        "notImplemented": {
+          "title": "準備中",
+          "body": "オフィスのこの部分はまだ準備中です。"
+        },
+        "unavailable": {
+          "title": "接続できません",
+          "body": "グラフに接続できませんでした。記録は変更されていません。"
+        },
+        "error": {
+          "title": "問題が発生しました",
+          "body": "グラフを読み込めませんでした。"
+        },
+        "conflicts": {
+          "title": "矛盾する情報",
+          "disagree": "複数の情報源が食い違っています"
+        },
+        "stale": {
+          "title": "鮮度の期限切れ",
+          "age": "{{days}} 日経過"
+        },
+        "truth": {
+          "KNOWN": "確認済み",
+          "INFERRED": "推定(推論)",
+          "ESTIMATED": "概算",
+          "STALE": "古い",
+          "MISSING": "未記録",
+          "CONFLICTING": "矛盾",
+          "PRO_REVIEW": "要確認"
+        },
+        "nodeType": {
+          "PERSON": "人物",
+          "BUSINESS": "事業",
+          "PROPERTY": "不動産",
+          "INSURANCE_POLICY": "保険契約",
+          "CONTRACT": "契約",
+          "DOCUMENT": "書類",
+          "PROFESSIONAL": "専門家",
+          "ASSET": "資産",
+          "LIABILITY": "負債"
+        },
+        "entity": {
+          "relationships": "関係",
+          "facts": "記録された事実",
+          "updated": "更新日 {{date}}"
+        },
+        "relationshipsUnavailable": "関係を読み込めませんでした。"
+      },
+      "attention": {
+        "title": "要対応",
+        "none": "現在、対応が必要なものはありません。",
+        "unavailable": "対応が必要な項目を現在確認できませんでした。"
+      },
+      "quick": {
+        "title": "クイック操作",
+        "record": "記録する",
+        "addFact": "ファクトを追加"
+      },
+      "valueTypes": {
+        "STRING": "テキスト",
+        "NUMBER": "数値",
+        "MONEY": "金額",
+        "PERCENT": "割合",
+        "DATE": "日付",
+        "BOOLEAN": "はい・いいえ"
       }
     },
     "gate": {

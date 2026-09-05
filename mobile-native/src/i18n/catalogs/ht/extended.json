@@ -4235,7 +4235,7 @@
       "loading": "N ap tcheke sa biwo w la genyen…",
       "retry": "Eseye ankò",
       "open": "Louvri",
-      "footnote": "Sa ki parèt la a se kont ou sou sèvè a ki deside l, se pa aplikasyon sa a.",
+      "footnote": "Biwo ou reflete egzakteman sa manm ou an genyen kounye a.",
       "sections": {
         "available": "Disponib",
         "notYet": "K ap vini pita",
@@ -4256,8 +4256,8 @@
       },
       "reason": {
         "AVAILABLE": "Disponib",
-        "PROVIDER_REQUIRED": "Bezwen yon founisè",
-        "NOT_IMPLEMENTED": "Poko bati",
+        "PROVIDER_REQUIRED": "Ap tann yon founisè",
+        "NOT_IMPLEMENTED": "Nan preparasyon",
         "TEMPORARILY_DISABLED": "Fèmen tanporèman",
         "UPGRADE_REQUIRED": "Ou bezwen monte plan",
         "UNKNOWN": "Pa disponib"
@@ -4294,6 +4294,10 @@
         "humanConcierge": {
           "label": "Konsyèj imen",
           "hint": "Yon moun ki okipe demann yo pou ou."
+        },
+        "operations": {
+          "label": "Operasyon",
+          "hint": "Obligasyon, desizyon, demann, risk ak opòtinite w ap swiv."
         }
       },
       "entry": {
@@ -4338,6 +4342,18 @@
         "error": {
           "title": "Yon bagay pa mache",
           "body": "Nou pa t ka chaje dosye w yo."
+        },
+        "add": {
+          "open": "Ajoute yon enfòmasyon",
+          "title": "Anrejistre yon enfòmasyon",
+          "domain": "Domèn",
+          "factType": "Kalite enfòmasyon",
+          "factTypeHint": "egz.: nimewo paspò",
+          "valueType": "Kalite valè",
+          "value": "Valè",
+          "save": "Anrejistre",
+          "cancel": "Anile",
+          "failed": "Nou pa t ka anrejistre sa kounye a."
         }
       },
       "domains": {
@@ -4446,6 +4462,201 @@
           "cancel": "Anile",
           "failed": "Reyinisyalizasyon an echwe. Verifye modpas ou epi eseye ankò."
         }
+      },
+      "operations": {
+        "title": "Operasyon",
+        "subtitle": "Obligasyon, evènman, desizyon, demann, risk ak opòtinite — anrejistre epi swiv nan yon sèl kote.",
+        "loading": "N ap chaje dosye ou yo…",
+        "cancel": "Anile",
+        "save": "Anrejistre",
+        "move": "Deplase",
+        "writeFailed": "Chanjman sa a pa t anrejistre.",
+        "empty": {
+          "title": "Anyen pa anrejistre"
+        },
+        "views": {
+          "obligations": "Obligasyon",
+          "events": "Evènman",
+          "decisions": "Desizyon",
+          "requests": "Demann",
+          "risks": "Risk",
+          "opportunities": "Opòtinite"
+        },
+        "add": {
+          "obligations": "Anrejistre yon obligasyon",
+          "events": "Anrejistre yon evènman",
+          "decisions": "Anrejistre yon desizyon",
+          "requests": "Anrejistre yon demann",
+          "risks": "Anrejistre yon risk",
+          "opportunities": "Anrejistre yon opòtinite"
+        },
+        "emptyBody": {
+          "obligations": "Poko gen okenn obligasyon anrejistre.",
+          "events": "Poko gen okenn evènman anrejistre.",
+          "decisions": "Poko gen okenn desizyon anrejistre.",
+          "requests": "Poko gen okenn demann anrejistre.",
+          "risks": "Poko gen okenn risk anrejistre.",
+          "opportunities": "Poko gen okenn opòtinite anrejistre."
+        },
+        "notEntitled": {
+          "title": "Ou bezwen yon plan pi wo",
+          "body": "Operasyon enkli avèk {{tier}}.",
+          "bodyGeneric": "Operasyon pa enkli nan plan ou genyen kounye a."
+        },
+        "disabled": {
+          "title": "Pa disponib",
+          "body": "Operasyon fèmen pou kounye a."
+        },
+        "notImplemented": {
+          "title": "Nan preparasyon",
+          "body": "Pati sa a nan biwo ou toujou ap prepare."
+        },
+        "unavailable": {
+          "title": "Pa disponib",
+          "body": "Nou pa t ka jwenn Operasyon. Dosye ou yo pa chanje."
+        },
+        "error": {
+          "title": "Yon bagay pa mache",
+          "body": "Nou pa t ka chaje dosye ou yo."
+        },
+        "due": "Delè {{date}}",
+        "occurred": "Rive {{date}}",
+        "outcome": "Rezilta: {{outcome}}",
+        "form": {
+          "title": "Tit",
+          "question": "Kesyon",
+          "kind": "Kalite",
+          "details": "Detay",
+          "due": "Dat limit (AAAA-MM-JJ)"
+        },
+        "status": {
+          "OPEN": "Ouvè",
+          "RESOLVED": "Rezoud",
+          "DISMISSED": "Rejte",
+          "RECORDED": "Anrejistre",
+          "UNDER_REVIEW": "Anba revizyon",
+          "DECIDED": "Deside",
+          "ABANDONED": "Abandone",
+          "IN_PROGRESS": "Ap fèt",
+          "WAITING_ON_USER": "Ap tann ou",
+          "WAITING_ON_PROVIDER": "Ap tann founisè a",
+          "COMPLETED": "Fini",
+          "CANCELED": "Anile",
+          "MONITORING": "Ap swiv",
+          "MITIGATED": "Diminye",
+          "ACCEPTED": "Aksepte",
+          "NEW": "Nouvo",
+          "REVIEWING": "Ap evalye",
+          "INTERESTED": "Enterese",
+          "PASSED": "Kite pase",
+          "CLOSED": "Fèmen",
+          "OVERDUE": "An reta",
+          "DUE_SOON": "Prèt pou rive"
+        }
+      },
+      "capital": {
+        "title": "Graf kapital",
+        "subtitle": "Sa ou genyen, sa ki kouvri li, ak kijan tout bagay konekte — ak jan yo konnen chak moso byen.",
+        "loading": "N ap chaje graf ou a…",
+        "views": {
+          "holdings": "Byen yo",
+          "coverage": "Kouvèti",
+          "structure": "Estrikti",
+          "documents": "Dokiman"
+        },
+        "countExact": "{{count}}",
+        "countSoFar": "{{count}} jiskaprezan",
+        "factCount": "{{count}} fè anrejistre",
+        "empty": {
+          "title": "Anyen pa anrejistre"
+        },
+        "emptyBody": {
+          "holdings": "Poko gen okenn byen anrejistre.",
+          "coverage": "Poko gen okenn kouvèti anrejistre.",
+          "structure": "Poko gen okenn estrikti anrejistre.",
+          "documents": "Poko gen okenn dokiman anrejistre."
+        },
+        "denied": {
+          "title": "Pa parèt",
+          "body": "Kesyon sa a pa t jwenn repons."
+        },
+        "notFound": {
+          "title": "Pa jwenn",
+          "body": "Pa gen okenn antite konsa nan biwo ou."
+        },
+        "notEntitled": {
+          "title": "Ou bezwen yon plan pi wo",
+          "body": "Graf kapital enkli avèk {{tier}}.",
+          "bodyGeneric": "Graf kapital pa enkli nan plan ou genyen kounye a."
+        },
+        "disabled": {
+          "title": "Pa disponib",
+          "body": "Graf kapital fèmen pou kounye a."
+        },
+        "notImplemented": {
+          "title": "Nan preparasyon",
+          "body": "Pati sa a nan biwo ou toujou ap prepare."
+        },
+        "unavailable": {
+          "title": "Pa disponib",
+          "body": "Nou pa t ka jwenn graf ou a. Dosye ou yo pa chanje."
+        },
+        "error": {
+          "title": "Yon bagay pa mache",
+          "body": "Nou pa t ka chaje graf ou a."
+        },
+        "conflicts": {
+          "title": "Enfòmasyon ki kontredi",
+          "disagree": "De sous pa dakò"
+        },
+        "stale": {
+          "title": "Depase orizon freshè li",
+          "age": "{{days}} jou"
+        },
+        "truth": {
+          "KNOWN": "Konnen",
+          "INFERRED": "Dedwi",
+          "ESTIMATED": "Estime",
+          "STALE": "Demode",
+          "MISSING": "Manke",
+          "CONFLICTING": "Kontradiktwa",
+          "PRO_REVIEW": "Bezwen revizyon"
+        },
+        "nodeType": {
+          "PERSON": "Moun",
+          "BUSINESS": "Biznis",
+          "PROPERTY": "Pwopriyete",
+          "INSURANCE_POLICY": "Polis asirans",
+          "CONTRACT": "Kontra",
+          "DOCUMENT": "Dokiman",
+          "PROFESSIONAL": "Pwofesyonèl",
+          "ASSET": "Byen",
+          "LIABILITY": "Dèt"
+        },
+        "entity": {
+          "relationships": "Relasyon",
+          "facts": "Fè anrejistre",
+          "updated": "Mete ajou {{date}}"
+        },
+        "relationshipsUnavailable": "Relasyon yo pa t ka chaje kounye a."
+      },
+      "attention": {
+        "title": "Bezwen atansyon ou",
+        "none": "Anyen pa bezwen atansyon ou kounye a.",
+        "unavailable": "Nou pa t ka verifye sa ki bezwen atansyon kounye a."
+      },
+      "quick": {
+        "title": "Aksyon rapid",
+        "record": "Anrejistre yon bagay",
+        "addFact": "Ajoute yon enfòmasyon"
+      },
+      "valueTypes": {
+        "STRING": "Tèks",
+        "NUMBER": "Nimewo",
+        "MONEY": "Montan",
+        "PERCENT": "Pousantaj",
+        "DATE": "Dat",
+        "BOOLEAN": "Wi oswa non"
       }
     },
     "gate": {

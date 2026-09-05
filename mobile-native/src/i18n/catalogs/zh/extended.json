@@ -4234,7 +4234,7 @@
       "loading": "正在确认你的办公室包含哪些内容…",
       "retry": "重试",
       "open": "打开",
-      "footnote": "这里显示的内容由服务器上的账户决定，而不是由本应用决定。",
+      "footnote": "您的办公室如实反映您当前会员资格所包含的内容。",
       "sections": {
         "available": "可用",
         "notYet": "稍后推出",
@@ -4255,8 +4255,8 @@
       },
       "reason": {
         "AVAILABLE": "可用",
-        "PROVIDER_REQUIRED": "需要服务提供方",
-        "NOT_IMPLEMENTED": "尚未构建",
+        "PROVIDER_REQUIRED": "等待服务方",
+        "NOT_IMPLEMENTED": "准备中",
         "TEMPORARILY_DISABLED": "暂时关闭",
         "UPGRADE_REQUIRED": "需要升级",
         "UNKNOWN": "不可用"
@@ -4293,6 +4293,10 @@
         "humanConcierge": {
           "label": "真人管家",
           "hint": "由专人代你处理请求。"
+        },
+        "operations": {
+          "label": "事务",
+          "hint": "您跟踪的义务、决定、请求、风险和机会。"
         }
       },
       "entry": {
@@ -4337,6 +4341,18 @@
         "error": {
           "title": "出了点问题",
           "body": "无法加载你的记录。"
+        },
+        "add": {
+          "open": "添加事实",
+          "title": "记录一条事实",
+          "domain": "领域",
+          "factType": "事实类型",
+          "factTypeHint": "例如：护照号码",
+          "valueType": "值类型",
+          "value": "值",
+          "save": "保存",
+          "cancel": "取消",
+          "failed": "目前无法保存。"
         }
       },
       "domains": {
@@ -4445,6 +4461,201 @@
           "cancel": "取消",
           "failed": "重置失败。请检查密码后重试。"
         }
+      },
+      "operations": {
+        "title": "事务",
+        "subtitle": "义务、事件、决定、请求、风险和机会——在一处记录和跟踪。",
+        "loading": "正在加载您的记录…",
+        "cancel": "取消",
+        "save": "保存",
+        "move": "变更",
+        "writeFailed": "此更改未保存。",
+        "empty": {
+          "title": "暂无记录"
+        },
+        "views": {
+          "obligations": "义务",
+          "events": "事件",
+          "decisions": "决定",
+          "requests": "请求",
+          "risks": "风险",
+          "opportunities": "机会"
+        },
+        "add": {
+          "obligations": "记录义务",
+          "events": "记录事件",
+          "decisions": "记录决定",
+          "requests": "记录请求",
+          "risks": "记录风险",
+          "opportunities": "记录机会"
+        },
+        "emptyBody": {
+          "obligations": "尚未记录任何义务。",
+          "events": "尚未记录任何事件。",
+          "decisions": "尚未记录任何决定。",
+          "requests": "尚未记录任何请求。",
+          "risks": "尚未记录任何风险。",
+          "opportunities": "尚未记录任何机会。"
+        },
+        "notEntitled": {
+          "title": "需要升级",
+          "body": "事务包含在 {{tier}} 中。",
+          "bodyGeneric": "事务不包含在您当前的方案中。"
+        },
+        "disabled": {
+          "title": "不可用",
+          "body": "事务目前已停用。"
+        },
+        "notImplemented": {
+          "title": "准备中",
+          "body": "您办公室的这一部分仍在准备中。"
+        },
+        "unavailable": {
+          "title": "无法连接",
+          "body": "无法连接到事务。您的记录未发生变化。"
+        },
+        "error": {
+          "title": "出了点问题",
+          "body": "无法加载您的记录。"
+        },
+        "due": "到期 {{date}}",
+        "occurred": "发生于 {{date}}",
+        "outcome": "结果：{{outcome}}",
+        "form": {
+          "title": "标题",
+          "question": "问题",
+          "kind": "类型",
+          "details": "详情",
+          "due": "到期日期 (YYYY-MM-DD)"
+        },
+        "status": {
+          "OPEN": "进行中",
+          "RESOLVED": "已解决",
+          "DISMISSED": "已忽略",
+          "RECORDED": "已记录",
+          "UNDER_REVIEW": "审核中",
+          "DECIDED": "已决定",
+          "ABANDONED": "已放弃",
+          "IN_PROGRESS": "处理中",
+          "WAITING_ON_USER": "等待您",
+          "WAITING_ON_PROVIDER": "等待服务方",
+          "COMPLETED": "已完成",
+          "CANCELED": "已取消",
+          "MONITORING": "监控中",
+          "MITIGATED": "已缓解",
+          "ACCEPTED": "已接受",
+          "NEW": "新",
+          "REVIEWING": "评估中",
+          "INTERESTED": "有意向",
+          "PASSED": "已放弃",
+          "CLOSED": "已关闭",
+          "OVERDUE": "已逾期",
+          "DUE_SOON": "即将到期"
+        }
+      },
+      "capital": {
+        "title": "资本图谱",
+        "subtitle": "您拥有什么、什么在保障它、彼此如何关联——以及每一项的可信程度。",
+        "loading": "正在加载您的图谱…",
+        "views": {
+          "holdings": "持有",
+          "coverage": "保障",
+          "structure": "结构",
+          "documents": "文件"
+        },
+        "countExact": "{{count}}",
+        "countSoFar": "目前 {{count}}",
+        "factCount": "{{count}} 条已记录事实",
+        "empty": {
+          "title": "暂无记录"
+        },
+        "emptyBody": {
+          "holdings": "尚未记录任何持有。",
+          "coverage": "尚未记录任何保障。",
+          "structure": "尚未记录任何结构。",
+          "documents": "尚未记录任何文件。"
+        },
+        "denied": {
+          "title": "未显示",
+          "body": "此问题未被回答。"
+        },
+        "notFound": {
+          "title": "未找到",
+          "body": "您的办公室中没有此实体。"
+        },
+        "notEntitled": {
+          "title": "需要升级",
+          "body": "资本图谱包含在 {{tier}} 中。",
+          "bodyGeneric": "资本图谱不包含在您当前的方案中。"
+        },
+        "disabled": {
+          "title": "不可用",
+          "body": "资本图谱目前已停用。"
+        },
+        "notImplemented": {
+          "title": "准备中",
+          "body": "您办公室的这一部分仍在准备中。"
+        },
+        "unavailable": {
+          "title": "无法连接",
+          "body": "无法连接到您的图谱。您的记录未发生变化。"
+        },
+        "error": {
+          "title": "出了点问题",
+          "body": "无法加载您的图谱。"
+        },
+        "conflicts": {
+          "title": "相互矛盾的信息",
+          "disagree": "两个来源不一致"
+        },
+        "stale": {
+          "title": "已超出时效范围",
+          "age": "已 {{days}} 天"
+        },
+        "truth": {
+          "KNOWN": "已确认",
+          "INFERRED": "推断",
+          "ESTIMATED": "估算",
+          "STALE": "过时",
+          "MISSING": "缺失",
+          "CONFLICTING": "矛盾",
+          "PRO_REVIEW": "需复核"
+        },
+        "nodeType": {
+          "PERSON": "个人",
+          "BUSINESS": "企业",
+          "PROPERTY": "房产",
+          "INSURANCE_POLICY": "保险单",
+          "CONTRACT": "合同",
+          "DOCUMENT": "文件",
+          "PROFESSIONAL": "专业人士",
+          "ASSET": "资产",
+          "LIABILITY": "负债"
+        },
+        "entity": {
+          "relationships": "关系",
+          "facts": "已记录事实",
+          "updated": "更新于 {{date}}"
+        },
+        "relationshipsUnavailable": "目前无法加载关系。"
+      },
+      "attention": {
+        "title": "需要您关注",
+        "none": "目前没有需要您关注的事项。",
+        "unavailable": "目前无法检查哪些事项需要关注。"
+      },
+      "quick": {
+        "title": "快捷操作",
+        "record": "记录事项",
+        "addFact": "添加事实"
+      },
+      "valueTypes": {
+        "STRING": "文本",
+        "NUMBER": "数字",
+        "MONEY": "金额",
+        "PERCENT": "百分比",
+        "DATE": "日期",
+        "BOOLEAN": "是或否"
       }
     },
     "gate": {

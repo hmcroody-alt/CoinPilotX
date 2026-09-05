@@ -215,7 +215,10 @@
       "briefing": "ब्रीफ़िंग",
       "privateOffice": "निजी कार्यालय",
       "privateFacts": "निजी जानकारी",
-      "privateOfficeSecurity": "कार्यालय सुरक्षा"
+      "privateOfficeSecurity": "कार्यालय सुरक्षा",
+      "privateOperations": "परिचालन",
+      "capitalGraph": "पूंजी ग्राफ़",
+      "capitalEntity": "इकाई"
     },
     "navSubtitles": {
       "missionControl": "मिशन कंट्रोल",

@@ -180,22 +180,51 @@ _FEATURES = (
         ),
     ),
     FeatureSpec(
+        feature_id="private_office.operations",
+        minimum_tier=TIER_PRIVATE,
+        server_enforced=True,
+        # Batch C. The six record primitives (obligations, domain events,
+        # decisions, requests, risks, opportunities): schema, sanctioned
+        # writers (records.create_record/update_record/revise_record — the
+        # only modules permitted to INSERT, enforced by
+        # tests/private_office/test_private_write_boundary.py), the five-gate
+        # reader (retrieval.retrieve_records), the HTTP surface
+        # (services/private_office_routes.py) and the six UNDX list
+        # capabilities. The kill switch below is the way to turn this off.
+        implementation=IMPL_IMPLEMENTED,
+        flag_env="PRIVATE_OPERATIONS_ENABLED",
+    ),
+    FeatureSpec(
         feature_id="private_office.document.extraction",
         minimum_tier=TIER_PRIVATE,
         server_enforced=True,
-        implementation=IMPL_PROVIDER_REQUIRED,
-        note=(
-            "No OCR/PDF text-extraction library or service is present in the "
-            "repo. Document metadata and ownership are in scope; extraction is "
-            "not, and must not be declared implemented."
-        ),
+        # The vault, deterministic text extraction (txt/md/csv/json →
+        # PROPOSED claims), member review into the canonical fact writer, and
+        # owner-only content streaming are implemented
+        # (services/private_office/documents.py +
+        # services/private_office_documents_routes.py). OCR/PDF extraction
+        # still requires a provider that is not integrated — that truth now
+        # lives per-document in extraction_state=PROVIDER_REQUIRED and in the
+        # payload's provider_status, where a screen can render it honestly,
+        # rather than gating the whole capability. The kill switch below is
+        # the way to turn this off.
+        implementation=IMPL_IMPLEMENTED,
+        flag_env="PRIVATE_DOCUMENTS_ENABLED",
     ),
     FeatureSpec(
         feature_id="relationship_intelligence",
         minimum_tier=TIER_PRIVATE,
         server_enforced=True,
-        implementation=IMPL_NOT_IMPLEMENTED,
-        note="Depends on the private graph substrate, which is not written yet.",
+        # People are PERSON nodes in the private graph with identity held as
+        # USER_ASSERTED facts; commitments are the OBLIGATION/REQUEST records
+        # citing the person's node ref; profiles, timelines and briefings are
+        # deterministic compositions of those rows, every line carrying an
+        # evidence ref (services/private_office/relationships.py +
+        # services/private_office_relationships_routes.py). No inference layer
+        # and no external provider exist in this feature, so there is no
+        # provider gap to disclose. The kill switch below turns it off.
+        implementation=IMPL_IMPLEMENTED,
+        flag_env="PRIVATE_RELATIONSHIPS_ENABLED",
     ),
 
     # PRIVATE_OFFICE --------------------------------------------------------
