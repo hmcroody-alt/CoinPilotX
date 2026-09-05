@@ -167,6 +167,35 @@ RECORD_STATUS_VOCAB = frozenset({
     "COMPLETED", "CANCELED", "PASSED", "CLOSED",
 })
 
+#: Private Meetings (mission §49). Note what these vocabularies structurally
+#: cannot express: a meeting title, a chat line, a channel name, a token, a
+#: meeting code, or who was in the room. A meeting metric may say that *a*
+#: meeting started and ended for *a* reason — lifecycle words chosen by
+#: ``meetings.py``, never anything a member typed.
+MEETING_TRANSITION_VOCAB = frozenset({
+    "created", "started", "ended", "cancelled", "failed",
+})
+
+#: Why a meeting reached a terminal state, restated from ``meetings``. The
+#: caller passes the raw ``end_reason`` column value straight through because
+#: membership is the filter: a crafted or free-text reason collapses to
+#: ``other`` instead of being echoed into a log line. ``not_ended`` is the
+#: explicit non-terminal marker so a "created"/"started" event never has to
+#: fake a reason.
+MEETING_END_REASON_VOCAB = frozenset({
+    "not_ended", "ended_by_host", "cancelled_by_host", "never_started",
+    "start_timed_out", "max_duration", "host_disconnected", "call_expired",
+    "empty_timeout",
+})
+
+#: The only two ways a join can succeed. Refusals (locked, full, blocked,
+#: over) raise before any emit and are already counted by the audit trail the
+#: member controls — a platform metric on *who gets refused* would be a
+#: surveillance number, not a health number.
+MEETING_JOIN_OUTCOME_VOCAB = frozenset({"admitted", "waiting_room"})
+
+MEETING_ROLE_VOCAB = frozenset({"HOST", "CO_HOST", "PARTICIPANT"})
+
 
 # ---------------------------------------------------------------------------
 # The events
@@ -180,6 +209,9 @@ EVENT_SCHEMA_STATE = "private_office.schema_state"
 EVENT_RECORD_WRITE = "private_office.record_write"
 EVENT_RECORD_CLOSED = "private_office.record_closed"
 EVENT_RECORDS_RETRIEVED = "private_office.records_retrieved"
+EVENT_MEETING_LIFECYCLE = "private_office.meeting_lifecycle"
+EVENT_MEETING_JOIN = "private_office.meeting_join"
+EVENT_MEETING_SWEEP = "private_office.meeting_sweep"
 
 #: ``event name -> {field name -> (kind, vocabulary or None)}``.
 #:
@@ -258,6 +290,30 @@ EVENTS: dict[str, dict[str, tuple[str, frozenset[str] | None]]] = {
         "record_type": (KIND_ENUM, RECORD_TYPE_VOCAB),
         "status": (KIND_ENUM, RECORD_STATUS_VOCAB),
         "domain": (KIND_ENUM, DOMAIN_VOCAB),
+    },
+    # Private Meetings. Deliberately absent: the meeting id, the meeting code,
+    # the channel name, the call id, any user id, the title, and anything from
+    # meeting chat. A meeting is the single most content-dense object the
+    # Private Office holds — the metric answers "do meetings start, end
+    # honestly, and get swept?" and nothing else (§49: no meeting content,
+    # tokens, or channel names in telemetry).
+    EVENT_MEETING_LIFECYCLE: {
+        "transition": (KIND_ENUM, MEETING_TRANSITION_VOCAB),
+        "end_reason": (KIND_ENUM, MEETING_END_REASON_VOCAB),
+        "scheduled": (KIND_FLAG, None),
+        "waiting_room": (KIND_FLAG, None),
+        "participant_count": (KIND_COUNT, None),
+    },
+    EVENT_MEETING_JOIN: {
+        "outcome": (KIND_ENUM, MEETING_JOIN_OUTCOME_VOCAB),
+        "role": (KIND_ENUM, MEETING_ROLE_VOCAB),
+        # Reconnect vs first join — the number that tells "the app rejoins the
+        # same logical participant" (§38) apart from churn, without naming
+        # anyone.
+        "returning": (KIND_FLAG, None),
+    },
+    EVENT_MEETING_SWEEP: {
+        "swept_count": (KIND_COUNT, None),
     },
     EVENT_RECORDS_RETRIEVED: {
         "record_type": (KIND_ENUM, RECORD_TYPE_VOCAB),

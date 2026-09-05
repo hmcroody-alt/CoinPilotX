@@ -198,6 +198,58 @@ def _retrieval_section() -> dict:
     }
 
 
+def _meetings_section(cur, *, include_counts: bool) -> dict:
+    """Private Meetings volume and kill-switch state — aggregates only.
+
+    Imported lazily because ``meetings`` pulls in the communications engine,
+    which a liveness probe should not pay for and this surface must not fail
+    on. An import or schema failure is reported as "could not probe"
+    (``implementation: NOT_READY``, counts ``None``) — never as zero, per the
+    Stage 176B rule the module docstring opens with. ``enabled`` is the
+    PRIVATE_MEETINGS_ENABLED kill switch (fail-closed, default off), so an
+    operator can tell "dark on purpose" apart from "broken" — the exact
+    distinction the entitlement section makes for the resolver.
+    """
+    section: dict = {
+        "implementation": IMPL_NOT_READY,
+        "enabled": None,
+        "counts": {},
+        "counts_included": False,
+    }
+    try:
+        from services.private_office import meetings as _meetings
+    except Exception:  # noqa: BLE001
+        _log.exception("PRIVATE_HEALTH_MEETINGS_IMPORT_FAILED")
+        return section
+    section["enabled"] = bool(_meetings.meetings_enabled())
+    tables = {
+        "meetings": _meetings.MEETINGS_TABLE,
+        "participants": _meetings.PARTICIPANTS_TABLE,
+        "invites": _meetings.INVITES_TABLE,
+        "messages": _meetings.MESSAGES_TABLE,
+        "recordings": _meetings.RECORDINGS_TABLE,
+        "artifacts": _meetings.MEETING_ARTIFACT_TABLE,
+    }
+    section["counts"] = {name: None for name in tables}
+    if cur is None:
+        return section
+    try:
+        # Same posture as `_schema_section`: an idempotent IF NOT EXISTS
+        # ensure, used as a probe. Without it, counting on a database the
+        # meetings routes have never touched would log six failures and
+        # (on PostgreSQL) abort the shared transaction.
+        _meetings.ensure_meetings_schema(cur)
+    except Exception:  # noqa: BLE001
+        _log.exception("PRIVATE_HEALTH_MEETINGS_SCHEMA_PROBE_FAILED")
+        return section
+    section["implementation"] = IMPL_LIVE
+    if include_counts:
+        for name, table in tables.items():
+            section["counts"][name] = _count(cur, table)
+        section["counts_included"] = True
+    return section
+
+
 def _telemetry_section() -> dict:
     """Stage 38 — is the event table itself sound?
 
@@ -267,6 +319,8 @@ def private_office_health(
     ) if cur is not None else _substrate_section(
         None, schema_usable=False, include_counts=False)
 
+    meetings_section = _meetings_section(cur, include_counts=include_counts)
+
     if conn is not None:
         try:
             conn.close()
@@ -295,6 +349,7 @@ def private_office_health(
                           telemetry_section["spec_sound"]),
         "schema": schema_section,
         "substrate": substrate,
+        "meetings": meetings_section,
         "retrieval": _retrieval_section(),
         "telemetry": telemetry_section,
         # The feature census, so a reader can see at a glance how much of the

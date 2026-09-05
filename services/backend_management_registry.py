@@ -226,6 +226,24 @@ FEATURES = FEATURES + (
 )
 
 
+# Private Office. Deliberately the narrowest entry in this file: Private
+# Meetings is admin-VISIBLE (aggregate counts via the Private Office health
+# surface, measured route readiness below) but not admin-MANAGEABLE — there is
+# no admin surface that can open a member's meeting, list its participants, or
+# read its chat, and `manageable_from_backend` is False so nobody builds one to
+# turn a dashboard tile green. The declared route is the member-facing surface
+# itself, which `verify_features()` measures against the live URL map (mission
+# §73: readiness is measured, not typed). The audit table is the communications
+# engine's call-event trail — the admin-reachable record that a room call
+# existed and ended; the per-action `private_audit_events` trail is member-
+# private by design and is not declared as an admin target. Status is
+# "partial", not "active": PRIVATE_MEETINGS_ENABLED fails closed (default OFF),
+# so the surface is dark until an operator turns it on.
+FEATURES = FEATURES + (
+    BackendFeature("network.private_meetings", "Private Meetings", "network", "/api/private-office/meetings", "admin", "system.view", "partial", "Communications", "private_office.meetings", "communication_call_events", "critical", False, False, "Zoom-class multi-guest meetings on the canonical Agora call engine; PulseSoc owns admission, roles, waiting room, lock, and lifecycle, and tokens are server-minted per user+meeting+uid. Fail-closed behind PRIVATE_MEETINGS_ENABLED plus the Private Office second lock. Admin visibility is aggregate-only; meeting content, participants, chat, tokens, and channel names never reach admin surfaces."),
+)
+
+
 MODULE_OPERATING_BLUEPRINTS: dict[str, dict[str, Any]] = {
     "account": {
         "surface": "/admin/account-command",
