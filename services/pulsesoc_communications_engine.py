@@ -21,7 +21,7 @@ from urllib.parse import urlparse, urlunparse
 from typing import Any
 
 from pulse_communications_v2 import service as comm_service
-from services import live_participants, pulsesoc_notification_system
+from services import live_participants, pulsesoc_notification_system, schema_guard
 
 
 CALL_TABLES = (
@@ -331,7 +331,7 @@ def _base64url(data: bytes) -> str:
 
 def _open_db():
     conn, cur = comm_service._open_db()
-    ensure_schema(cur)
+    _ensure_call_schema(cur, conn)
     return conn, cur
 
 
@@ -444,6 +444,35 @@ def ensure_schema(cur: Any) -> None:
     _ensure_compat_columns(cur)
     for sql in CALL_INDEXES:
         cur.execute(sql)
+
+
+@schema_guard.run_once_per_process
+def _ensure_call_schema(cur: Any, conn: Any) -> bool:
+    """Run the call DDL once per worker, not once per request.
+
+    `ensure_schema` issues eleven CREATEs plus the compat `ALTER`s, and `_open_db`
+    is the single entry point for all 22 of this module's database functions —
+    including the polled ones. On PostgreSQL each CREATE takes a ShareLock that
+    conflicts with the RowExclusiveLock the write moments later wants, so two
+    workers interleaving (write, DDL) against (DDL, write) is a lock cycle. At
+    4 workers x 8 threads that window is wide.
+
+    The guard is applied here rather than on `ensure_schema` itself because
+    `ensure_schema` takes no connection and so cannot commit. Most callers of
+    `_open_db` only read, and PostgreSQL discards uncommitted DDL at connection
+    close — caching a guard around DDL that was never committed is how a worker
+    convinces itself that tables exist which it then never finds.
+    """
+    ensure_schema(cur)
+    try:
+        conn.commit()
+    except Exception:
+        # Without a durable commit the DDL dies at close, so leave the guard
+        # uncached and let the next request retry. The request itself carries on
+        # exactly as unguarded code would have.
+        logging.warning("CALL_SCHEMA_COMMIT_FAILED", exc_info=True)
+        return False
+    return True
 
 
 def rtc_provider() -> str:

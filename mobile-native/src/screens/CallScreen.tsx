@@ -17,7 +17,6 @@ import {
   acceptCall,
   declineCall,
   markRingSeen,
-  openCallWebFallback,
   PulseCall,
   PulseCallParticipant,
   PulseCallType,
@@ -27,6 +26,7 @@ import {
 } from "../api/calls";
 import { useNativeCallRoom } from "../calls/useNativeCallRoom";
 import { AddParticipantsSheet } from "../calls/AddParticipantsSheet";
+import { CallActionsSheet } from "../calls/CallActionsSheet";
 import { loadCallCapabilities, maxParticipantsFor, useCallCapabilities } from "../calls/callCapabilities";
 import { connectedParticipants, ringingParticipants, useCallParticipants } from "../calls/callParticipants";
 import {
@@ -81,6 +81,10 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const participants = useCallParticipants();
   const capabilities = useCallCapabilities();
   const [addSheetVisible, setAddSheetVisible] = useState(false);
+  // The ••• menu is presentation only. It reads state this screen already has
+  // and, for "Add people", opens the AddParticipantsSheet below — the same one
+  // the dock's "Add" button opens. It owns no media and no call state.
+  const [actionsVisible, setActionsVisible] = useState(false);
   const insets = useSafeAreaInsets();
   const reducedMotion = useLogiNexusReducedMotion();
   const glow = useRef(new Animated.Value(0)).current;
@@ -388,7 +392,7 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
               <Text style={styles.status}>{statusLabel}{connected ? ` · ${formatDuration(elapsedSeconds)}` : ""}</Text>
             </View>
           </View>
-          <CircleButton label="Call options" icon="ellipsis-horizontal" onPress={() => openCallWebFallback(callId || undefined, params.conversationId)} />
+          <CircleButton label="Call options" icon="ellipsis-horizontal" onPress={() => setActionsVisible(true)} />
         </View>
 
         {agoraVideo && AgoraVideoViewComponent && room.localUid ? (
@@ -461,6 +465,17 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
           </Pressable>
         </View>
       ) : null}
+
+      <CallActionsSheet
+        visible={actionsVisible}
+        callType={callType}
+        participants={participants}
+        durationLabel={connected ? formatDuration(elapsedSeconds) : ""}
+        connected={connected}
+        canAddParticipants={canAddParticipants}
+        onAddPeople={() => setAddSheetVisible(true)}
+        onClose={() => setActionsVisible(false)}
+      />
 
       <AddParticipantsSheet
         visible={addSheetVisible}

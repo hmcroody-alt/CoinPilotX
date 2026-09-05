@@ -334,6 +334,73 @@ class ChatHealthDdlTest(_HotPathTest):
         self.assertEqual(self.cur.fetchone()[0], 26, "traces must still be written")
 
 
+class TransactionalDdlCursor(TransactionalDdlConnection):
+    """As above, plus the empty introspection result `_ensure_compat_columns` reads.
+
+    It asks `PRAGMA table_info` which table columns already exist; an empty answer
+    means "table unknown here", which skips the compat ALTERs and leaves the
+    CREATE path — the part this double exists to observe — untouched.
+    """
+
+    def fetchall(self):
+        return []
+
+
+class CallDdlTest(_HotPathTest):
+    """Call polling: `_open_db` is how every call route reaches the database."""
+
+    def test_repeat_opens_issue_no_further_ddl(self):
+        from services import pulsesoc_communications_engine as call_engine
+
+        call_engine._ensure_call_schema(self.cur, self.conn)
+        self.assertTrue(self.cur.ddl, "expected the first open to create tables")
+        self.cur.ddl.clear()
+
+        for _ in range(25):
+            call_engine._ensure_call_schema(self.cur, self.conn)
+
+        self.assertEqual(
+            self.cur.ddl, [],
+            "polling a call must never issue DDL; the ShareLock each CREATE takes "
+            "is what deadlocks against a concurrent worker's INSERT")
+
+    def test_the_tables_survive_a_caller_that_only_reads(self):
+        """`_open_db`'s read-only callers have no reason to commit, so the DDL must.
+
+        Otherwise PostgreSQL discards it at close while the guard has already
+        recorded success, and the worker spends the rest of its life certain that
+        tables exist which it will never find.
+        """
+        from services import pulsesoc_communications_engine as call_engine
+
+        catalogue = set()
+        conn = TransactionalDdlCursor(catalogue)
+        self.assertTrue(call_engine._ensure_call_schema(conn, conn))
+        conn.close()
+
+        self.assertIn(
+            "communication_calls", catalogue,
+            "the call tables must be committed by the DDL itself")
+
+    def test_a_failed_commit_is_retried_rather_than_cached(self):
+        from services import pulsesoc_communications_engine as call_engine
+
+        class Uncommittable(TransactionalDdlCursor):
+            def commit(self):
+                raise sqlite3.OperationalError("no commit for you")
+
+        catalogue = set()
+        failing = Uncommittable(catalogue)
+        self.assertFalse(
+            call_engine._ensure_call_schema(failing, failing),
+            "an uncommitted DDL pass must report failure so it stays uncached")
+        failing.close()
+
+        retry = TransactionalDdlCursor(catalogue)
+        self.assertTrue(call_engine._ensure_call_schema(retry, retry))
+        self.assertIn("communication_calls", catalogue)
+
+
 class GuardedHotPathsTest(unittest.TestCase):
     """The audited hot call sites must stay guarded.
 
@@ -359,6 +426,7 @@ class GuardedHotPathsTest(unittest.TestCase):
         ("services.pulsesoc_growth_engine", "ensure_schema"),
         ("services.pulse_settings_routes", "ensure_settings_schema"),
         ("services.pulse_region_preferences", "ensure_schema"),
+        ("services.pulsesoc_communications_engine", "_ensure_call_schema"),
     ]
 
     def test_every_audited_hot_call_site_is_guarded(self):
