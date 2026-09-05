@@ -51,12 +51,33 @@ PASSCODE_A2 = "371049"
 PASSCODE_B = "605827"
 
 
+_SHARED = None
+
+
 def _conn():
-    conn = db.connect()
-    cur = conn.cursor()
-    schema.ensure_private_schema(cur)
-    conn.commit()
-    return conn, cur
+    """One connection for the whole module, reused by every test.
+
+    This used to open a fresh `db.connect()` per test and never close it. Around
+    twenty-five live connections then accumulated against the same SQLite file,
+    and as soon as one of them was left holding a write, every later write in
+    the file blocked for the full busy timeout and then raised
+    "database is locked". It presented as six or seven failures that moved
+    around between runs and a seventy-second suite — a flaky security test,
+    which is worth nothing: it cannot fail honestly and it trains you to ignore
+    it.
+
+    A single connection is safe here because no test needs two of them (each
+    calls `_conn()` exactly once) and `_fresh_user` already resets the rows it
+    depends on, so tests stay order-independent.
+    """
+    global _SHARED
+    if _SHARED is None:
+        conn = db.connect()
+        cur = conn.cursor()
+        schema.ensure_private_schema(cur)
+        conn.commit()
+        _SHARED = (conn, cur)
+    return _SHARED
 
 
 def _fresh_user(cur, conn, user_id: int, passcode: str) -> None:
