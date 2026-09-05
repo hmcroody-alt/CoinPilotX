@@ -2817,6 +2817,98 @@ def _register_private_record_map_entries() -> None:
 _register_private_record_map_entries()
 
 
+# The five shipped feature reads. Derived from the spec module in a loop for
+# the same construction-not-review reason; only the output schema is stated
+# here, because each engine projects a different shape. ``native_screen`` is
+# the Private Office hub, which truthfully lists all five features today —
+# repoint each entry at its own screen when that screen ships, not before.
+_PRIVATE_FEATURE_OUTPUT_SCHEMAS: dict[str, tuple[tuple[str, str], ...]] = {
+    "private.documents.list": (
+        ("id", "int"), ("title", "str"), ("original_name", "str"),
+        ("extension", "str"), ("mime_type", "str"), ("size_bytes", "int"),
+        ("extraction_state", "str"), ("extraction_note", "str"),
+        ("domain", "str"), ("sensitivity", "str"),
+        ("created_at", "str"), ("updated_at", "str")),
+    "private.people.list": (
+        ("node_id", "int"), ("ref", "str"), ("name", "str"), ("role", "str"),
+        ("domain", "str"), ("sensitivity", "str"), ("created_at", "str"),
+        ("open_commitments", "int"), ("connections", "int")),
+    "private.briefings.list": (
+        ("id", "int"), ("ref", "str"), ("title", "str"),
+        ("generated_at", "str"), ("item_count", "int"), ("evidence", "list")),
+    "private.shield.posture": (
+        ("id", "int"), ("ref", "str"), ("kind", "str"), ("severity", "str"),
+        ("title", "str"), ("detail", "str"), ("status", "str"),
+        ("first_seen_at", "str"), ("last_seen_at", "str"),
+        ("evidence", "list")),
+    "private.concierge.desk": (
+        ("id", "int"), ("record_type", "str"), ("title", "str"),
+        ("status", "str"), ("category", "str"), ("priority", "str"),
+        ("description", "str"), ("completed_at", "str"),
+        ("created_at", "str"), ("updated_at", "str")),
+}
+
+_PRIVATE_FEATURE_EXTRA_LIMITATIONS: dict[str, str] = {
+    "private.shield.posture": (
+        "The posture's `external` block names what no provider has checked — "
+        "dark-web, credential-dump and external breach monitoring are "
+        "PROVIDER_REQUIRED and unmonitored. An answer built from this read "
+        "must not present the absence of findings as external safety."),
+    "private.concierge.desk": (
+        "The `desk` block carries staffing truth: `staffed` is False whenever "
+        "the operator roster is empty, and an unstaffed desk means no human "
+        "has seen the member's requests. An answer built from this read must "
+        "not imply a human is working a request unless an OPERATOR message "
+        "or the staffed flag says so."),
+}
+
+
+def _register_private_feature_read_map_entries() -> None:
+    from services.private_office import undx_feature_reads_spec as _po_reads
+
+    for _entry in _po_reads.CAPABILITIES:
+        _cid = _entry["capability_id"]
+        _service = "services.private_office." + {
+            "private.documents.list": "documents",
+            "private.people.list": "relationships",
+            "private.briefings.list": "briefings",
+            "private.shield.posture": "shield",
+            "private.concierge.desk": "concierge",
+        }[_cid]
+        limitations = [
+            "Read-only by design: uploading a document, adding a person, "
+            "generating a briefing, acknowledging a finding and filing a "
+            "concierge request all stay deliberate acts on the member's own "
+            "screen. UNDX has no write path to any of the five.",
+            "Availability follows services.private_office.feature_matrix: "
+            f"the {_entry['feature_id']} gate and the {_entry['flag_env']} "
+            "kill switch refuse this read exactly when they refuse the "
+            "member's own screen.",
+        ]
+        extra = _PRIVATE_FEATURE_EXTRA_LIMITATIONS.get(_cid)
+        if extra:
+            limitations.append(extra)
+        _live(
+            _cid,
+            product_area="Private Office", resource_type="private_feature",
+            native_screen="PrivateOffice",
+            backend_route=_entry["backend_route"],
+            domain_service=_service,
+            domain_operation="undx_feature_reads_spec.execute_capability",
+            authorization_scope=_SELF, owner_field="owner_user_id",
+            output_schema=_PRIVATE_FEATURE_OUTPUT_SCHEMAS[_cid],
+            feature_flag="UNDX_AGENT_READS_ENABLED",
+            evidence=(_service.replace(".", "/") + ".py",
+                      "services/private_office/undx_feature_reads_spec.py execute_capability",
+                      "services/undx_agent_tools.py _private_feature_read_executor",
+                      "tests/private_office/test_private_feature_undx_reads.py"),
+            known_limitations=tuple(limitations),
+        )
+
+
+_register_private_feature_read_map_entries()
+
+
 # ---------------------------------------------------------------------------
 # Indexes
 # ---------------------------------------------------------------------------

@@ -2783,6 +2783,98 @@ def _private_records_executor(capability_id: str) -> Callable[[int, dict[str, An
     return _list_records
 
 
+def _private_feature_read_executor(capability_id: str) -> Callable[[int, dict[str, Any]], ToolResult]:
+    """One feature-read executor, bound to its capability at registration time.
+
+    The five shipped Private Office features — documents, people, briefings,
+    shield, concierge — each get a read and only a read. The shape is
+    ``_private_records_executor``'s, with one deliberate difference: the gate
+    runs on the capability's *own* feature id from the spec, so the documents
+    read refuses when document intelligence is dark rather than when some
+    sibling is, and each kill switch turns off exactly the reads it names.
+    """
+
+    def _read_feature(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+        started = time.perf_counter()
+        from services.private_office import undx_feature_reads_spec as reads_spec
+        tool = reads_spec.tool_name(capability_id)
+        spec_entry = reads_spec.spec_for(capability_id)
+        db, access, facts, office, schema, tiers = _private_office()
+
+        owner = int(user_id or 0)
+        if owner <= 0:
+            return _fail(tool, capability_id, "authentication_required",
+                         "UNDX needs you signed in to read your Private Office.",
+                         started=started)
+
+        try:
+            resolved = tiers.resolve_tier(owner)
+        except Exception:  # noqa: BLE001 - a resolver fault is not a denial
+            resolved = {}
+        decision = access.decide(resolved, spec_entry["feature_id"])
+        verdict = decision["decision"]
+
+        if verdict == access.UNAVAILABLE:
+            return _fail(tool, capability_id, "entitlement_unavailable",
+                         "UNDX could not confirm your Private Office access just now.",
+                         retryable=True, started=started)
+        if verdict in (access.NOT_IMPLEMENTED, access.FEATURE_DISABLED):
+            return _fail(tool, capability_id, "capability_not_available",
+                         "That part of the Private Office is not available yet.",
+                         started=started)
+        if verdict == access.NOT_ENTITLED:
+            return _fail(tool, capability_id, "not_entitled",
+                         "Your plan does not include the Private Office.",
+                         started=started)
+
+        connection = db.connect()
+        try:
+            cursor = connection.cursor()
+            schema.ensure_private_schema(cursor)
+
+            from services.private_office import security as office_security
+            if not office_security.request_is_unlocked(cursor, owner).get("ok"):
+                return _office_locked_result(tool, capability_id, started)
+
+            result = reads_spec.execute_capability(
+                cursor, capability_id=capability_id, owner_user_id=owner,
+                arguments=dict(arguments or {}))
+            # The audit row must survive the read.
+            connection.commit()
+        except Exception:  # noqa: BLE001
+            return _fail(tool, capability_id, "private_store_unavailable",
+                         "UNDX could not read your Private Office just now.",
+                         retryable=True, started=started)
+        finally:
+            connection.close()
+
+        if not result.get("ok"):
+            return _fail(tool, capability_id, "records_denied",
+                         "UNDX could not read that part of your Private Office.",
+                         started=started)
+
+        data: dict[str, Any] = {
+            "count": int(result.get("counts", {}).get("returned") or 0),
+        }
+        # Feature-specific truth blocks ride along unrenamed: `desk` carries
+        # the concierge staffing status, `posture` carries the shield's
+        # external-coverage honesty. Flattened into data so the model reads
+        # them beside the records rather than having to know to dig.
+        for key, value in (result.get("extras") or {}).items():
+            data[key] = value
+
+        return ToolResult(
+            ok=True,
+            tool_name=tool,
+            capability_id=capability_id,
+            records=list(result.get("records") or []),
+            data=data,
+            latency_ms=_timed(started),
+        )
+
+    return _read_feature
+
+
 # ---------------------------------------------------------------------------
 # Resolution
 # ---------------------------------------------------------------------------
@@ -2924,6 +3016,18 @@ def _register_private_record_executors() -> None:
 
 
 _register_private_record_executors()
+
+
+# The five feature reads, bound from their spec module for the same reason.
+def _register_private_feature_read_executors() -> None:
+    from services.private_office import undx_feature_reads_spec as _po_reads
+
+    for _entry in _po_reads.CAPABILITIES:
+        _cid = _entry["capability_id"]
+        EXECUTORS[_po_reads.executor_name(_cid)] = _private_feature_read_executor(_cid)
+
+
+_register_private_feature_read_executors()
 
 
 def resolve(name: str) -> Callable[[int, dict[str, Any]], ToolResult]:

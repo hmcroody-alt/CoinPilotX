@@ -80,6 +80,13 @@ PRODUCTION_TOOL_REGISTRY: dict[str, dict[str, Any]] = {
     "pulsesoc.private_requests.list": {"method": None, "route": "services.private_office.retrieval.retrieve_records", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
     "pulsesoc.private_risks.list": {"method": None, "route": "services.private_office.retrieval.retrieve_records", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
     "pulsesoc.private_opportunities.list": {"method": None, "route": "services.private_office.retrieval.retrieve_records", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
+    # The five shipped feature reads, one per engine, each behind its own
+    # feature gate. Same structural owner scope: no field names an account.
+    "pulsesoc.private_documents.list": {"method": None, "route": "services.private_office.documents.list_documents", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
+    "pulsesoc.private_people.list": {"method": None, "route": "services.private_office.relationships.directory", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
+    "pulsesoc.private_briefings.list": {"method": None, "route": "services.private_office.briefings.list_briefings", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
+    "pulsesoc.private_shield.posture": {"method": None, "route": "services.private_office.shield.posture", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
+    "pulsesoc.private_concierge.desk": {"method": None, "route": "services.private_office.concierge.list_requests", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
     "pulsesoc.crypto_alerts.list": {"method": None, "route": "services.alert_engine.list_alert_rules", "risk": "read_only", "confirmation": False, "canonical_key": "alert_id"},
     "pulsesoc.crypto_alerts.get": {"method": None, "route": "services.alert_engine.get_alert_rule", "risk": "read_only", "confirmation": False, "canonical_key": "alert_id"},
     "pulsesoc.crypto_alerts.pause": {"method": None, "route": "services.alert_engine.pause_alert", "risk": "medium", "confirmation": False, "canonical_key": "alert_id", "verification_route": "services.alert_engine.get_alert_rule"},

@@ -1218,6 +1218,44 @@ def _register_private_record_capabilities() -> None:
 
 _register_private_record_capabilities()
 
+
+# The five shipped feature reads — documents, people, briefings, shield
+# posture, concierge desk. Derived from
+# ``services.private_office.undx_feature_reads_spec`` exactly as Batch C
+# derives from its spec, and read-only for a stronger reason than provenance
+# alone: several of the writes behind these features have consequences —
+# a briefing generation does bulk reads, a concierge request summons a human —
+# that must stay deliberate acts on the member's own screen.
+def _register_private_feature_read_capabilities() -> None:
+    from services.private_office import undx_feature_reads_spec as _po_reads
+
+    for _entry in _po_reads.CAPABILITIES:
+        _cid = _entry["capability_id"]
+        _register(CapabilitySpec(
+            capability_id=_cid,
+            description=_entry["description"],
+            intents=tuple(_entry["intents"]),
+            risk=RiskLevel.READ_ONLY,
+            confirmation=ConfirmationPolicy.NEVER,
+            tool_name=_po_reads.tool_name(_cid),
+            # No field names an account, so the scope is structural: the only
+            # owner any of these can reach is the caller.
+            permission=PermissionScope.SELF_ACCOUNT_ONLY,
+            fields=(
+                FieldSpec("limit", "int", required=False, minimum=1,
+                          maximum=_po_reads.MAX_LIMIT,
+                          default=_po_reads.DEFAULT_LIMIT),
+            ),
+            executor=_po_reads.executor_name(_cid),
+            verifier="",
+            native_route=_entry["native_route"],
+            result_card=CardType.SEARCH_RESULTS,
+            audit_category=_po_reads.AUDIT_CATEGORY,
+        ))
+
+
+_register_private_feature_read_capabilities()
+
 for _capability, _intent, _saved, _executor, _verifier, _undo in (
     ("reels.save", "save reel", True, "reels_save", "reel_saved_value", "reels.unsave"),
     ("reels.unsave", "unsave reel", False, "reels_unsave", "reel_saved_value", "reels.save"),
