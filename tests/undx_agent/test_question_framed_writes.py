@@ -178,7 +178,14 @@ class TheRefusalSaysSomethingUseful(unittest.TestCase):
         guard tried to offer reads too, and the offer was unreachable by construction —
         the case it was written for never arrives.
         """
-        with_reads = (self.say("tell me about unfollow user 42").card or {})
+        # "my followers" is what puts a read on offer. The utterance used to be
+        # "tell me about unfollow user 42": the reads it carried arrived through
+        # the term "user", and the sweep that gave every registered capability a
+        # knowledge-map record pushed "user" over the common-term ceiling —
+        # correctly, it is now in more than a quarter of records. The branch
+        # under test is unchanged; the sentence that reaches it needed a cue
+        # that is still informative.
+        with_reads = (self.say("tell me about unfollow user 42 and my followers").card or {})
         self.assertEqual("clarification_required", with_reads.get("status"))
         self.assertTrue(with_reads.get("inspect_with"))
         self.assertNotIn("declined_capability_id", with_reads)

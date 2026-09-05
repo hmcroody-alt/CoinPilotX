@@ -3915,7 +3915,13 @@ def _planned_capability(text: str, *, user_id: int, brain_focus: Any = None,
     spec = get(result.capability_id)
     if spec is None:
         return None
-    focus_ids = getattr(brain_focus, "capability_ids", None) if (
+    # Deferred capabilities count as inside the focus: deferral is attention's
+    # capability budget doing the cutting, not a relevance judgment, and the veto
+    # here is about relevance. ``goals._reads_in`` already treats deferred the same
+    # way, and ``Area.reachable`` counts it. Vetoing on the budget would make the
+    # budget authoritative, which is what "restrictive only" forswears.
+    focus_ids = (tuple(getattr(brain_focus, "capability_ids", ()) or ())
+                 + tuple(getattr(brain_focus, "deferred", ()) or ())) if (
         brain_focus is not None and getattr(brain_focus, "ok", False)) else None
     if focus_ids and result.capability_id not in focus_ids:
         logger.info("undx_planner_outside_focus correlation_id=%s capability_id=%s",
@@ -4065,10 +4071,15 @@ def handle(
         )
         # Attention is relevance, never authority.  Its only influence here is
         # restrictive: a selection outside the bounded focus is not dispatched.
+        # "Outside the focus" means outside its relevance judgment — a capability
+        # the budget deferred is still one attention found relevant, and dropping
+        # it here would let the capability ceiling, which shrinks as the map
+        # grows, silently veto reads it never judged irrelevant.
         focus_rejected_selection = bool(
             selected_id and brain_focus is not None and brain_focus.ok
                 and brain_focus.capability_ids
                 and selected_id not in brain_focus.capability_ids
+                and selected_id not in brain_focus.deferred
         )
         if focus_rejected_selection:
             selected_id = ""

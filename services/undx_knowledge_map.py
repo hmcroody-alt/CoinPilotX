@@ -208,6 +208,10 @@ NATIVE_ROUTES: dict[str, str] = {
     # path that reaches it. Declared here so a crypto record can land the member on
     # their holdings rather than on the nearest screen that happened to exist.
     "Portfolio": "/pulse/portfolio",
+    # Declared in linking.ts alongside Portfolio and for the same reason: the
+    # market board and the watchlist are where a crypto answer or receipt lands.
+    "MarketPulse": "/pulse/crypto",
+    "Watchlists": "/pulse/watchlists",
     # Private Office. Both screens are registered in AppNavigator.tsx and given
     # these paths in linking.ts; they are declared here so `private.facts.list`
     # can name a destination the member can actually open. The umbrella screen is
@@ -1103,8 +1107,8 @@ _mapped(
     result_card_type=CardType.CONTENT_RESULT,
     implementation_status=_PARTIAL,
     evidence=(
-        "bot.py:37507 /api/pulse/status/rail",
-        "bot.py:36982 /pulse/status renders a page",
+        "bot.py:41731 /api/pulse/status/rail",
+        "bot.py:41206 /pulse/status renders a page",
     ),
     known_limitations=(
         "The only JSON status endpoint is the rail, which returns the viewer's "
@@ -1123,7 +1127,7 @@ _mapped(
     authorization_scope=_MEMBER, target_field="status_id",
     implementation_status=_NO_SERVICE,
     evidence=(
-        "bot.py:34019 /pulse/status/<status_id> renders a page",
+        "bot.py:38072 /pulse/status/<status_id> renders a page",
     ),
     known_limitations=(
         "No JSON read of a single status exists; that route renders HTML. Status visibility is "
@@ -1381,7 +1385,7 @@ _mapped(
     authorization_scope=_SELF, owner_field="user_id", target_field="reel_id",
     undo_capability_id="saved.reel.set",
     implementation_status=_NO_SERVICE,
-    evidence=("bot.py:79440 reel save handler",),
+    evidence=("bot.py:83910 reel save handler",),
     known_limitations=(_SAVED_TOGGLE,),
     toggle_semantics=True,
 )
@@ -1396,7 +1400,7 @@ _mapped(
     authorization_scope=_SELF, owner_field="user_id", target_field="listing_id",
     undo_capability_id="saved.listing.set",
     implementation_status=_NO_SERVICE,
-    evidence=("bot.py:84614 marketplace save handler",),
+    evidence=("bot.py:91012 marketplace save handler",),
     known_limitations=(_SAVED_TOGGLE,),
     toggle_semantics=True,
 )
@@ -1551,7 +1555,7 @@ _mapped(
     authorization_scope=_OTHER, owner_field="user_id", target_field="request_id",
     result_card_type=CardType.RELATIONSHIP_CHANGE_RECEIPT,
     implementation_status=_NO_SERVICE,
-    evidence=("bot.py:80901 friend accept handler",),
+    evidence=("bot.py:85749 friend accept handler",),
     known_limitations=("Guards on `AND status = 'pending'`, which is correct, but the "
                        "update is inline in the handler.",),
 )
@@ -1566,7 +1570,7 @@ _mapped(
     authorization_scope=_UNSCOPED, owner_field="user_id", target_field="request_id",
     result_card_type=CardType.RELATIONSHIP_CHANGE_RECEIPT,
     implementation_status=_PARTIAL,
-    evidence=("bot.py:80938 friend decline handler", "bot.py:80901 accept, for contrast"),
+    evidence=("bot.py:85786 friend decline handler", "bot.py:85749 accept, for contrast"),
     known_limitations=(
         "Decline omits the `AND status = 'pending'` guard that accept has, so it "
         "will transition a request that is already accepted or already declined. "
@@ -1900,7 +1904,7 @@ _mapped(
     output_schema=(("live_id", "int"), ("host_id", "int"), ("title", "str")),
     implementation_status=_NO_SERVICE,
     evidence=(
-        "bot.py:43443 /pulse/live renders a page",
+        "bot.py:47750 /pulse/live renders a page",
     ),
     known_limitations=(
         "No JSON listing of live sessions exists. The route behind the Live screen renders a "
@@ -2096,7 +2100,7 @@ _mapped(
     authorization_scope=_SELF, owner_field="user_id",
     implementation_status=_NO_SERVICE,
     evidence=(
-        "bot.py:10071 /dashboard/account/health renders a web dashboard page",
+        "bot.py:10479 /dashboard/account/health renders a web dashboard page",
     ),
     known_limitations=(
         "Account health exists only as a rendered page on the web dashboard. Nothing returns it "
@@ -2478,8 +2482,8 @@ _mapped(
     authorization_scope=_SELF, owner_field="user_id",
     implementation_status=_NO_SERVICE,
     evidence=(
-        "bot.py:9800 /dashboard/creator renders a page",
-        "bot.py:7069 /api/dashboard/creator/state is the nearest JSON",
+        "bot.py:10208 /dashboard/creator renders a page",
+        "bot.py:7339 /api/dashboard/creator/state is the nearest JSON",
     ),
     known_limitations=(
         "The creator surface is a web dashboard. /api/dashboard/creator/state "
@@ -2815,6 +2819,484 @@ def _register_private_record_map_entries() -> None:
 
 
 _register_private_record_map_entries()
+
+
+# ===========================================================================
+# Registered capabilities the map had not yet caught up with
+# ===========================================================================
+#
+# Every record below names a capability the registry and the production policy
+# ledger already declare. The map is the third of the three authorization
+# records, and ``authorization_surface()`` refuses a registered capability the
+# map does not describe — so a missing record here is not a documentation gap,
+# it is a boundary nobody agreed on. Operational fields (risk, confirmation,
+# verifier, route, undo) come from the ``CapabilitySpec`` via ``_live``; what
+# this file contributes is the scoping truth read from the services themselves.
+
+# --- Business OS advertising -----------------------------------------------
+
+_live(
+    "business.campaign.pause",
+    product_area="Advertising", resource_type="ad_campaign",
+    native_screen="UndxActionCenter",
+    backend_route="POST /api/pulse/ads/campaigns/<campaign_id>/action",
+    domain_service="services.business_os.advertising.operations",
+    domain_operation="pause_campaign",
+    authorization_scope=_SELF, owner_field="advertiser_user_id",
+    output_schema=(("campaign_id", "str"), ("operational_status", "str")),
+    feature_flag="UNDX_AGENT_WRITES_ENABLED",
+    evidence=("services/business_os/advertising/operations.py:pause_campaign",
+              "services/undx_agent_tools.py:business_campaign_pause",
+              "services/undx_verification.py:campaign_operational_status"),
+    known_limitations=(
+        "Ownership is decided by the operational view: the campaign is loaded "
+        "with the caller's id in the query, so a stranger's campaign id reads "
+        "as absent rather than as refused.",
+    ),
+)
+_live(
+    "business.campaign.resume",
+    product_area="Advertising", resource_type="ad_campaign",
+    native_screen="UndxActionCenter",
+    backend_route="POST /api/pulse/ads/campaigns/<campaign_id>/action",
+    domain_service="services.business_os.advertising.operations",
+    domain_operation="resume_campaign",
+    authorization_scope=_SELF, owner_field="advertiser_user_id",
+    output_schema=(("campaign_id", "str"), ("operational_status", "str")),
+    feature_flag="UNDX_AGENT_WRITES_ENABLED",
+    evidence=("services/business_os/advertising/operations.py:resume_campaign",
+              "services/undx_agent_tools.py:business_campaign_resume",
+              "services/undx_verification.py:campaign_operational_status"),
+    known_limitations=(
+        "Resuming re-enters active, so resume_campaign re-runs the full "
+        "activation gate — a suspended advertiser or released funding refuses "
+        "there, and spend restarts the moment the gate passes. The pause verb "
+        "is the cheap direction; this one commits money again.",
+    ),
+)
+_live(
+    "business.profile.update",
+    product_area="Business tools", resource_type="business_profile",
+    native_screen="UndxActionCenter",
+    backend_route="POST /api/pulse/ads/accounts/<account_id>/profile",
+    domain_service="services.business_os.profile.api",
+    domain_operation="update_profile",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("field", "str"), ("value", "str"), ("changed", "bool")),
+    feature_flag="UNDX_AGENT_WRITES_ENABLED",
+    evidence=("services/business_os/profile/api.py:update_profile",
+              "services/undx_agent_tools.py:business_profile_update",
+              "services/undx_verification.py:business_profile_field_value"),
+    known_limitations=(
+        "Public the moment it saves — a buyer reads this text — which is why "
+        "the registry marks it consequential with confirmation ALWAYS.",
+        "No undo: update_profile does not return the text it replaced, so the "
+        "previous value survives only in the audit trail.",
+    ),
+)
+
+# --- Crypto: alerts activity, market board, portfolio, watchlist ------------
+
+_live(
+    "crypto.alerts.activity",
+    product_area="Crypto alerts", resource_type="alert_rule",
+    native_screen="CryptoAlertManagement",
+    backend_route="POST /api/pulse-ai/message",
+    domain_service="services.alert_engine", domain_operation="list_alert_events",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("alert_count", "int"), ("truncated", "bool"),
+                   ("trigger_history", "dict")),
+    feature_flag="UNDX_AGENT_READS_ENABLED",
+    evidence=("services/alert_engine.py:list_alert_rules",
+              "services/alert_engine.py:list_alert_events",
+              "services/undx_agent_tools.py:crypto_alerts_activity"),
+    known_limitations=(
+        "Trigger history is a premium detail: without CAP_CRYPTO_ADVANCED_ALERTS "
+        "the answer still lists the rules but reports the history as unavailable "
+        "rather than empty.",
+    ),
+)
+_live(
+    "crypto.market.quote",
+    product_area="Crypto market", resource_type="market_quote",
+    native_screen="MarketPulse",
+    backend_route="POST /api/pulse-ai/message",
+    domain_service="services.market_context", domain_operation="quote",
+    authorization_scope=_PUBLIC, owner_field="",
+    output_schema=(("symbol", "str"), ("resolved_via", "str"), ("freshness", "dict")),
+    feature_flag="UNDX_AGENT_READS_ENABLED",
+    evidence=("services/market_context.py:quote",
+              "services/undx_agent_tools.py:crypto_market_quote"),
+    known_limitations=(
+        "Public market data with no ownership question, but the capability is "
+        "premium-gated: CAP_CRYPTO_INTELLIGENCE is checked before the read.",
+        "Served from the shared CoinGecko-backed cache the dashboard polls, so "
+        "freshness is disclosed in the payload rather than promised.",
+    ),
+)
+_live(
+    "crypto.market.history",
+    product_area="Crypto market", resource_type="market_history",
+    native_screen="MarketPulse",
+    backend_route="POST /api/pulse-ai/message",
+    domain_service="services.market_context", domain_operation="history_pack",
+    authorization_scope=_PUBLIC, owner_field="",
+    output_schema=(("symbol", "str"), ("range_key", "str"), ("resolved_via", "str")),
+    feature_flag="UNDX_AGENT_READS_ENABLED",
+    evidence=("services/market_context.py:history_pack",
+              "services/market_context.py:normalize_range",
+              "services/undx_agent_tools.py:crypto_market_history"),
+    known_limitations=(
+        "Premium-gated by CAP_CRYPTO_INTELLIGENCE. An unrecognised range falls "
+        "back to 24H rather than failing, and an unavailable range is reported "
+        "with the provider's own warning.",
+    ),
+)
+_live(
+    "crypto.market.compare",
+    product_area="Crypto market", resource_type="market_quote",
+    native_screen="MarketPulse",
+    backend_route="POST /api/pulse-ai/message",
+    domain_service="services.market_context", domain_operation="quote",
+    authorization_scope=_PUBLIC, owner_field="",
+    output_schema=(("symbol", "str"), ("versus", "str"), ("resolved_via", "str"),
+                   ("freshness", "dict")),
+    feature_flag="UNDX_AGENT_READS_ENABLED",
+    evidence=("services/market_context.py:quote",
+              "services/undx_agent_tools.py:crypto_market_compare"),
+    known_limitations=(
+        "Two quotes from the same cache, compared side by side; premium-gated "
+        "by CAP_CRYPTO_INTELLIGENCE like the other market reads.",
+    ),
+)
+_live(
+    "crypto.market.overview",
+    product_area="Crypto market", resource_type="market_overview",
+    native_screen="MarketPulse",
+    backend_route="POST /api/pulse-ai/message",
+    domain_service="services.market_context", domain_operation="overview",
+    authorization_scope=_PUBLIC, owner_field="",
+    output_schema=(("available", "bool"), ("metrics", "dict")),
+    feature_flag="UNDX_AGENT_READS_ENABLED",
+    evidence=("services/market_context.py:overview",
+              "services/undx_agent_tools.py:crypto_market_overview"),
+    known_limitations=(
+        "Global market metrics, no per-user state; premium-gated by "
+        "CAP_CRYPTO_INTELLIGENCE.",
+    ),
+)
+_live(
+    "crypto.market.observations",
+    product_area="Crypto market", resource_type="market_observation",
+    native_screen="IntelligenceCenter",
+    backend_route="POST /api/pulse-ai/message",
+    domain_service="services.market_observations", domain_operation="get_observations",
+    authorization_scope=_PUBLIC, owner_field="",
+    output_schema=(("points", "list"), ("period", "str"), ("point_count", "int")),
+    feature_flag="UNDX_AGENT_READS_ENABLED",
+    evidence=("services/market_observations.py:get_observations",
+              "services/undx_agent_tools.py:crypto_market_observations"),
+    known_limitations=(
+        "The executor probes _OBSERVATION_READERS for a series reader by name; "
+        "get_observations is the only candidate the module defines, so it is "
+        "the operation in fact as well as on this record.",
+    ),
+)
+_live(
+    "crypto.portfolio.history",
+    product_area="Crypto portfolio", resource_type="crypto_holding",
+    native_screen="IntelligenceCenter",
+    backend_route="POST /api/pulse-ai/message",
+    domain_service="services.portfolio_intelligence",
+    domain_operation="get_portfolio_history",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("points", "list"), ("period", "str"), ("point_count", "int")),
+    feature_flag="UNDX_AGENT_READS_ENABLED",
+    evidence=("services/portfolio_intelligence.py:get_portfolio_history",
+              "services/undx_agent_tools.py:crypto_portfolio_history"),
+    known_limitations=(
+        "Premium-gated by CAP_CRYPTO_PORTFOLIO; the series is the caller's own "
+        "valuation history, scoped by their id in the query.",
+    ),
+)
+_live(
+    "crypto.portfolio.holdings.list",
+    product_area="Crypto portfolio", resource_type="crypto_holding",
+    native_screen="Portfolio",
+    backend_route="POST /api/pulse-ai/message",
+    domain_service="services.portfolio_service", domain_operation="list_portfolio_items",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("count", "int"), ("items", "list")),
+    feature_flag="UNDX_AGENT_READS_ENABLED",
+    evidence=("services/portfolio_service.py:list_portfolio_items",
+              "services/undx_agent_tools.py:crypto_portfolio_holdings_list"),
+)
+_live(
+    "crypto.portfolio.holding.add",
+    product_area="Crypto portfolio", resource_type="crypto_holding",
+    native_screen="Portfolio",
+    backend_route="POST /api/pulse-ai/message",
+    domain_service="services.portfolio_service", domain_operation="add_portfolio_item",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("symbol", "str"), ("amount", "float"),
+                   ("average_buy_price", "float")),
+    feature_flag="UNDX_AGENT_WRITES_ENABLED",
+    evidence=("services/portfolio_service.py:add_portfolio_item",
+              "services/undx_agent_tools.py:crypto_portfolio_holding_add",
+              "services/undx_verification.py:crypto_holding_exists"),
+    known_limitations=(
+        "A ledger of what the member says they hold, not a custody system: no "
+        "money moves through any of the portfolio verbs.",
+    ),
+)
+_live(
+    "crypto.portfolio.holding.update",
+    product_area="Crypto portfolio", resource_type="crypto_holding",
+    native_screen="Portfolio",
+    backend_route="POST /api/pulse-ai/message",
+    domain_service="services.portfolio_service", domain_operation="update_portfolio_item",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("item_id", "int"), ("amount", "float"),
+                   ("average_buy_price", "float")),
+    feature_flag="UNDX_AGENT_WRITES_ENABLED",
+    evidence=("services/portfolio_service.py:update_portfolio_item",
+              "services/portfolio_service.py:get_portfolio_item",
+              "services/undx_agent_tools.py:crypto_portfolio_holding_update",
+              "services/undx_verification.py:crypto_holding_values"),
+    known_limitations=(
+        "The row is fetched with the caller's id before the write, so an item "
+        "id belonging to someone else reads as absent rather than as theirs.",
+    ),
+)
+_live(
+    "crypto.portfolio.holding.delete",
+    product_area="Crypto portfolio", resource_type="crypto_holding",
+    native_screen="Portfolio",
+    backend_route="POST /api/pulse-ai/message",
+    domain_service="services.portfolio_service", domain_operation="delete_portfolio_item",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("item_id", "int"),),
+    feature_flag="UNDX_AGENT_WRITES_ENABLED",
+    evidence=("services/portfolio_service.py:delete_portfolio_item",
+              "services/portfolio_service.py:get_portfolio_item",
+              "services/undx_agent_tools.py:crypto_portfolio_holding_delete",
+              "services/undx_verification.py:crypto_holding_deleted"),
+    known_limitations=(
+        "Consequential because the notes and cost basis on the row go with it; "
+        "re-adding the symbol does not restore them, which is why no undo is "
+        "declared.",
+    ),
+)
+_live(
+    "crypto.watchlist.list",
+    product_area="Crypto portfolio", resource_type="watchlist_item",
+    native_screen="Watchlists",
+    backend_route="GET /api/crypto/watchlists",
+    domain_service="services.portfolio_service", domain_operation="watchlist_symbols",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("count", "int"), ("symbols", "list")),
+    feature_flag="UNDX_AGENT_READS_ENABLED",
+    evidence=("services/portfolio_service.py:watchlist_symbols",
+              "services/undx_agent_tools.py:crypto_watchlist_list"),
+)
+_live(
+    "crypto.watchlist.add",
+    product_area="Crypto portfolio", resource_type="watchlist_item",
+    native_screen="Watchlists",
+    backend_route="POST /api/crypto/watchlists/<watchlist_id>/assets",
+    domain_service="services.portfolio_service", domain_operation="add_watchlist_item",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("symbol", "str"),),
+    feature_flag="UNDX_AGENT_WRITES_ENABLED",
+    evidence=("services/portfolio_service.py:add_watchlist_item",
+              "services/undx_agent_tools.py:crypto_watchlist_add",
+              "services/undx_verification.py:crypto_watchlist_contains"),
+)
+_live(
+    "crypto.watchlist.remove",
+    product_area="Crypto portfolio", resource_type="watchlist_item",
+    native_screen="Watchlists",
+    backend_route="DELETE /api/crypto/watchlists/<watchlist_id>/assets/<asset_id>",
+    domain_service="services.portfolio_service", domain_operation="delete_watchlist_item",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("symbol", "str"),),
+    feature_flag="UNDX_AGENT_WRITES_ENABLED",
+    evidence=("services/portfolio_service.py:delete_watchlist_item",
+              "services/portfolio_service.py:watchlist_item_id",
+              "services/undx_agent_tools.py:crypto_watchlist_remove",
+              "services/undx_verification.py:crypto_watchlist_contains"),
+    known_limitations=(
+        "The symbol is resolved to the caller's own row id before the delete, "
+        "so removal cannot be pointed at another account's list.",
+    ),
+)
+
+# --- Feed, messaging, notifications -----------------------------------------
+
+_live(
+    "feed.posts.hide",
+    product_area="Feed posts", resource_type="post",
+    native_screen="PostDetail",
+    backend_route="POST /api/pulse/posts/<post_id>/hide",
+    domain_service="services.pulse_feed_engine", domain_operation="hide_post",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("post_id", "int"), ("hidden", "bool")),
+    feature_flag="UNDX_AGENT_WRITES_ENABLED",
+    evidence=("services/pulse_feed_engine.py:hide_post",
+              "services/undx_agent_tools.py:feed_post_hide",
+              "services/undx_verification.py:feed_post_hidden_value"),
+    known_limitations=(
+        "Viewer-scoped by construction: the hide row is keyed on (viewer, "
+        "post), nothing about the post changes, and hiding one's own post is "
+        "refused. A preference, not a moderation action.",
+    ),
+)
+_live(
+    "messages.mark_read",
+    product_area="Messages", resource_type="conversation",
+    native_screen="Chat",
+    backend_route="POST /api/business-os/messages/threads/<conversation_id>/read",
+    domain_service="pulse_communications_v2.service", domain_operation="mark_read",
+    authorization_scope=_MEMBER, owner_field="user_id",
+    output_schema=(("conversation_id", "int"), ("unread_count", "int"),
+                   ("last_read_message_id", "int")),
+    feature_flag="UNDX_AGENT_WRITES_ENABLED",
+    evidence=("pulse_communications_v2/service.py:mark_read",
+              "services/undx_agent_tools.py:messages_mark_read",
+              "services/undx_verification.py:conversation_read_state"),
+    known_limitations=(
+        "Membership-scoped: _conversation_access collapses 'no such "
+        "conversation' and 'not yours' into the same 404, and this record "
+        "keeps that property rather than inventing a more specific error.",
+    ),
+)
+_live(
+    "notifications.mark_read",
+    product_area="Notifications", resource_type="notification",
+    native_screen="Notifications",
+    backend_route="POST /api/pulse/notifications/read",
+    domain_service="services.pulsesoc_notification_system", domain_operation="mark_read",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("notification_id", "int"), ("unread_count", "int")),
+    feature_flag="UNDX_AGENT_WRITES_ENABLED",
+    evidence=("services/pulsesoc_notification_system.py:mark_read",
+              "services/pulsesoc_notification_system.py:get_notification",
+              "services/undx_agent_tools.py:notifications_mark_read",
+              "services/undx_verification.py:notification_read_state"),
+    known_limitations=(
+        "No undo: the notification system has no mark-unread verb, so a read "
+        "notification stays read. The blast radius is one row's status field.",
+    ),
+)
+_live(
+    "notifications.mark_all_read",
+    product_area="Notifications", resource_type="notification",
+    native_screen="Notifications",
+    backend_route="POST /api/pulse/notifications/read-all",
+    domain_service="services.pulsesoc_notification_system",
+    domain_operation="mark_all_read",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("category", "str"), ("updated", "int"), ("unread_count", "int")),
+    feature_flag="UNDX_AGENT_WRITES_ENABLED",
+    evidence=("services/pulsesoc_notification_system.py:mark_all_read",
+              "services/undx_agent_tools.py:notifications_mark_all_read",
+              "services/undx_verification.py:notifications_unread_count"),
+    known_limitations=(
+        "Confirmation is ALWAYS because the sweep has no undo: nothing records "
+        "which notifications were unread before it ran.",
+    ),
+)
+
+# --- Preferences: localization, presence, settings ---------------------------
+
+_live(
+    "localization.region.update",
+    product_area="Localization", resource_type="region_preference",
+    native_screen="AccountCenter",
+    backend_route="PATCH /api/account/region-preferences",
+    domain_service="services.pulse_region_preferences",
+    domain_operation="update_preferences",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("setting", "str"), ("value", "str")),
+    feature_flag="UNDX_AGENT_WRITES_ENABLED",
+    evidence=("services/pulse_region_preferences.py:update_preferences",
+              "services/undx_agent_tools.py:localization_region_update",
+              "services/undx_verification.py:region_preference_value"),
+    known_limitations=(
+        "undo_capability_id is empty because this capability is its own "
+        "inverse: reversal is another update naming the previous value, and "
+        "nothing records what that previous value was.",
+    ),
+)
+_live(
+    "localization.translation.update",
+    product_area="Localization", resource_type="translation_preference",
+    native_screen="AccountCenter",
+    backend_route="PUT /api/pulse/translations/preference",
+    domain_service="services.content_translation", domain_operation="set_preference",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("target_language", "str"), ("policy", "str")),
+    feature_flag="UNDX_AGENT_WRITES_ENABLED",
+    evidence=("services/content_translation.py:set_preference",
+              "services/undx_agent_tools.py:localization_translation_update",
+              "services/undx_verification.py:translation_preference_value"),
+    known_limitations=(
+        "undo_capability_id is empty because this capability is its own "
+        "inverse: reversal is another update naming the previous value, and "
+        "nothing records what that previous value was.",
+    ),
+)
+_live(
+    "presence.privacy.update",
+    product_area="Presence", resource_type="presence_preference",
+    native_screen="AccountCenter",
+    backend_route="POST /api/pulse-ai/message",
+    domain_service="services.presence_service", domain_operation="set_privacy",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("setting", "str"), ("enabled", "bool")),
+    feature_flag="UNDX_AGENT_WRITES_ENABLED",
+    evidence=("services/presence_service.py:set_privacy",
+              "services/undx_agent_tools.py:presence_privacy_update",
+              "services/undx_verification.py:presence_privacy_value"),
+    known_limitations=(
+        "Sets a desired state rather than toggling, so a retry after a timeout "
+        "lands on the same value instead of undoing the first call.",
+    ),
+)
+_live(
+    "settings.appearance.theme.update",
+    product_area="Appearance settings", resource_type="user_preference",
+    native_screen="AccountCenter",
+    backend_route="PATCH /api/pulse/mobile/settings",
+    domain_service="services.pulse_settings_routes", domain_operation="save_preferences",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("group", "str"), ("theme", "str")),
+    feature_flag="UNDX_AGENT_WRITES_ENABLED",
+    evidence=("services/pulse_settings_routes.py:save_preferences",
+              "services/undx_agent_tools.py:settings_appearance_theme_update",
+              "services/undx_verification.py:settings_preference_value"),
+    known_limitations=(
+        "Runs the same load-merge-save path as the member's own settings "
+        "write, so normalisation and revision checking are shared, not copied.",
+    ),
+)
+_live(
+    "settings.privacy.audience.update",
+    product_area="Privacy settings", resource_type="user_preference",
+    native_screen="AccountCenter",
+    backend_route="PATCH /api/pulse/mobile/settings",
+    domain_service="services.pulse_settings_routes", domain_operation="save_preferences",
+    authorization_scope=_SELF, owner_field="user_id",
+    output_schema=(("group", "str"), ("setting", "str"), ("audience", "str")),
+    feature_flag="UNDX_AGENT_WRITES_ENABLED",
+    evidence=("services/pulse_settings_routes.py:save_preferences",
+              "services/undx_agent_tools.py:settings_privacy_audience_update",
+              "services/undx_verification.py:settings_preference_value"),
+    known_limitations=(
+        "Who can see the member's content changes the moment this saves, which "
+        "is why the registry marks it consequential with confirmation ALWAYS.",
+    ),
+)
 
 
 # ---------------------------------------------------------------------------
