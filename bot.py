@@ -1288,6 +1288,14 @@ _load_route_pack("pulse_market_pulse", "services.market_pulse_routes")
 # stays with the existing admin entitlement paths. A write in this pack would
 # be a second granting authority.
 _load_route_pack("private_office", "services.private_office_routes")
+# The structured record store: server-owned versioned templates, the typed
+# field projection, masked reads and the step-up reveal. Separate from the pack
+# above because it is a separate matrix row with its own kill switch — a
+# template problem must not be able to take the fact store down with it.
+_load_route_pack(
+    "private_office_structured_records",
+    "services.private_office_structured_records_routes",
+)
 # Document Intelligence: the Private Office vault. Uploads, deterministic
 # text extraction into PROPOSED claims, member review into the canonical
 # fact writer, and owner-only content streaming. Gates are imported from the

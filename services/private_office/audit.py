@@ -85,6 +85,12 @@ ACTION_RECORD_CREATE = "PRIVATE_RECORD_CREATE"
 ACTION_RECORD_UPDATE = "PRIVATE_RECORD_UPDATE"
 ACTION_RECORD_REVISE = "PRIVATE_RECORD_REVISE"
 ACTION_RECORD_READ = "PRIVATE_RECORD_READ"
+#: A masked field's real value was handed to somebody. This is the single most
+#: consequential row this table holds — every other record action moves metadata
+#: around, and this one is the moment a passport number left storage — so it is
+#: its own action rather than a ``PRIVATE_RECORD_READ`` with a different purpose
+#: string. "Show me every reveal" must be an equality filter, not a heuristic.
+ACTION_RECORD_FIELD_REVEAL = "PRIVATE_RECORD_FIELD_REVEAL"
 
 # Capability-completion vocabulary — documents, briefings, shield, concierge.
 # Same shape as Batch C: one small set of verbs per capability with the
@@ -127,6 +133,7 @@ ACTIONS: tuple[str, ...] = (
     ACTION_RECORD_UPDATE,
     ACTION_RECORD_REVISE,
     ACTION_RECORD_READ,
+    ACTION_RECORD_FIELD_REVEAL,
     ACTION_DOCUMENT_CREATE,
     ACTION_DOCUMENT_READ,
     ACTION_DOCUMENT_DELETE,

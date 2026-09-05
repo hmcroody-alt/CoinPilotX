@@ -690,6 +690,76 @@ def set_biometric_preference(cur, user_id: int, enabled: bool) -> dict:
     return {"ok": True, "biometric_preference": value}
 
 
+# ---------------------------------------------------------------------------
+# Step-up — the second proof, for reads the first proof should not buy
+# ---------------------------------------------------------------------------
+
+def verify_step_up(cur, user_id: int, passcode: str) -> dict:
+    """Re-prove the passcode for one action. Mints nothing.
+
+    An unlock grant answers "this member opened their Office within the last
+    fifteen minutes". That is the right question for reading a masked list and
+    the wrong question for handing over a passport number, because the two
+    differ in what a stolen grant is worth: an attacker holding one gets the
+    same masked screens the member sees, and must not also get the values
+    behind them.
+
+    So this is deliberately *not* a token. There is no reveal grant to steal,
+    replay, or forget to expire — the proof exists only for the request that
+    carried it, and the next reveal proves again. That is also why it does not
+    call :func:`verify_and_unlock`: succeeding there would mint a grant, and a
+    step-up that quietly extends the session it was supposed to interrupt is
+    the failure this function is shaped to avoid.
+
+    It shares the one thing that must be shared: the failure counter and its
+    escalating cooldown. Guessing at a reveal is guessing at the passcode, and
+    a second unmetered guessing surface beside the metered one would make the
+    rate limit on the first decorative.
+
+    Biometry does not appear here. ``biometric_preference`` is a client-side
+    convenience — the device decides whether to ask for a face before it asks
+    for a passcode — and treating it as a server-side proof would mean trusting
+    a client's claim to have checked, which is not a proof at all.
+    """
+    owner = int(user_id or 0)
+    row = _security_row(cur, owner) if owner > 0 else None
+    if row is None:
+        return {"ok": False, "error": ERR_NOT_SET}
+
+    wait = _cooldown_remaining(row)
+    if wait > 0:
+        _audit.record(
+            cur, actor_user_id=owner, owner_user_id=owner,
+            action=_audit.ACTION_OFFICE_UNLOCK_FAILED, object_type="OFFICE_STEP_UP",
+            purpose="user_request", outcome=_audit.OUTCOME_DENIED,
+        )
+        return {"ok": False, "error": ERR_COOLDOWN, "retry_after_seconds": wait}
+
+    if not auth_service.verify_password(row.get("passcode_hash"), passcode):
+        retry_after = _register_failure(cur, row)
+        _audit.record(
+            cur, actor_user_id=owner, owner_user_id=owner,
+            action=_audit.ACTION_OFFICE_UNLOCK_FAILED, object_type="OFFICE_STEP_UP",
+            purpose="user_request", outcome=_audit.OUTCOME_DENIED,
+        )
+        result = {"ok": False, "error": ERR_WRONG_PASSCODE}
+        if retry_after:
+            result["error"] = ERR_COOLDOWN
+            result["retry_after_seconds"] = retry_after
+        return result
+
+    cur.execute(
+        f"UPDATE {_schema.SECURITY_TABLE} "
+        "SET failed_attempt_count = 0, locked_until = '' WHERE user_id = ?",
+        (owner,),
+    )
+    # No success audit row here on purpose. The caller is about to write
+    # PRIVATE_RECORD_FIELD_REVEAL, which names the record and the field; a
+    # second row saying only "a step-up succeeded" would add a line to the
+    # history that the member cannot connect to anything they did.
+    return {"ok": True}
+
+
 __all__ = [
     "SCOPE", "HASH_VERSION", "MIN_PASSCODE_LENGTH",
     "FREE_ATTEMPTS", "COOLDOWN_STEPS_SECONDS",
@@ -697,7 +767,7 @@ __all__ = [
     "ERR_COOLDOWN", "ERR_LOCKED", "ERR_REVERIFY",
     "passcode_policy", "security_state", "create_passcode",
     "register_external_failure",
-    "verify_and_unlock", "validate_grant", "revoke_grants",
+    "verify_and_unlock", "validate_grant", "verify_step_up", "revoke_grants",
     "on_account_security_event", "change_passcode", "reset_passcode",
     "set_biometric_preference", "grant_ttl_seconds", "token_hash",
 ]
