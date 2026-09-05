@@ -1293,6 +1293,10 @@ _load_route_pack("private_office", "services.private_office_routes")
 # fact writer, and owner-only content streaming. Gates are imported from the
 # pack above — one implementation of the refusal translation.
 _load_route_pack("private_office_documents", "services.private_office_documents_routes")
+# Relationship Intelligence: the Private Office's people. Directory, profiles,
+# cited timelines and deterministic briefing preparation, composed from the
+# private graph, fact store and record primitives — no store of its own.
+_load_route_pack("private_office_relationships", "services.private_office_relationships_routes")
 
 
 def cancel_scheduled_account_deletion(cur, user_id):

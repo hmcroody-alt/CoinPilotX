@@ -215,8 +215,16 @@ _FEATURES = (
         feature_id="relationship_intelligence",
         minimum_tier=TIER_PRIVATE,
         server_enforced=True,
-        implementation=IMPL_NOT_IMPLEMENTED,
-        note="Depends on the private graph substrate, which is not written yet.",
+        # People are PERSON nodes in the private graph with identity held as
+        # USER_ASSERTED facts; commitments are the OBLIGATION/REQUEST records
+        # citing the person's node ref; profiles, timelines and briefings are
+        # deterministic compositions of those rows, every line carrying an
+        # evidence ref (services/private_office/relationships.py +
+        # services/private_office_relationships_routes.py). No inference layer
+        # and no external provider exist in this feature, so there is no
+        # provider gap to disclose. The kill switch below turns it off.
+        implementation=IMPL_IMPLEMENTED,
+        flag_env="PRIVATE_RELATIONSHIPS_ENABLED",
     ),
 
     # PRIVATE_OFFICE --------------------------------------------------------

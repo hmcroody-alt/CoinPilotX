@@ -300,8 +300,7 @@ def test_unbuilt_features_are_never_entitled_at_any_tier():
     a canary — if one of them is quietly flipped to IMPLEMENTED without a reader
     behind it, this fails by name rather than by count.
     """
-    for feature_id in ("human_concierge", "relationship_intelligence",
-                       "private_briefings"):
+    for feature_id in ("human_concierge", "private_briefings"):
         got = fm.availability(feature_id, tiers.TIER_PRIVATE_OFFICE)
         assert got["availability"] == fm.AVAIL_NOT_IMPLEMENTED, feature_id
         assert not fm.is_entitled(feature_id, tiers.TIER_PRIVATE_OFFICE), feature_id
@@ -372,6 +371,18 @@ def test_document_extraction_is_implemented_with_a_kill_switch():
     assert got["availability"] == fm.AVAIL_ENTITLED
     spec = fm.get("private_office.document.extraction")
     assert spec.flag_env == "PRIVATE_DOCUMENTS_ENABLED"
+
+
+def test_relationship_intelligence_is_implemented_with_a_kill_switch():
+    """People, profiles, cited timelines and briefing preparation are built
+    (services/private_office/relationships.py); the matrix must say so. There
+    is no provider anywhere in the feature — it composes the member's own
+    rows — so unlike documents there is no per-item provider gap to carry."""
+    got = fm.availability("relationship_intelligence", tiers.TIER_PRIVATE)
+    assert got["implementation"] == fm.IMPL_IMPLEMENTED
+    assert got["availability"] == fm.AVAIL_ENTITLED
+    spec = fm.get("relationship_intelligence")
+    assert spec.flag_env == "PRIVATE_RELATIONSHIPS_ENABLED"
 
 
 def test_implemented_feature_respects_tier():
