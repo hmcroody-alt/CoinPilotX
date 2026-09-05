@@ -243,11 +243,19 @@ _FEATURES = (
         feature_id="human_concierge",
         minimum_tier=TIER_PRIVATE_OFFICE,
         server_enforced=True,
-        implementation=IMPL_NOT_IMPLEMENTED,
-        note=(
-            "Requires a staffed human operations process, not just code. Must "
-            "not be exposed as a tappable surface until that process exists."
-        ),
+        # The old note said "requires a staffed human operations process, not
+        # just code" — that stays true, and the code now carries it instead of
+        # hiding behind it. The desk software is real (submission, thread,
+        # lifecycle on the REQUEST primitive, roster-gated operator console in
+        # `private_office.concierge`), and staffing is what it actually is: a
+        # runtime operational fact, read from the PRIVATE_CONCIERGE_OPERATOR_IDS
+        # roster and repeated as `desk.staffed` on every payload. When the
+        # roster is empty the surface says no human has seen the request — and
+        # no code path can generate an operator reply, so an unstaffed desk
+        # can never impersonate a staffed one. Exercised end to end by
+        # tests/private_office/test_private_concierge.py.
+        implementation=IMPL_IMPLEMENTED,
+        flag_env="PRIVATE_CONCIERGE_ENABLED",
     ),
 )
 

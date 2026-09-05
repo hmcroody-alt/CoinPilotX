@@ -166,9 +166,13 @@ def _resolver_health() -> dict:
         checks["private_office_satisfies_premium"] = _tiers.tier_satisfies(
             _tiers.TIER_PRIVATE_OFFICE, _tiers.TIER_PREMIUM
         )
-        # An unbuilt feature must never read ENTITLED, even at the top tier.
-        checks["unbuilt_never_entitled"] = not _fm.is_entitled(
-            "human_concierge", _tiers.TIER_PRIVATE_OFFICE
+        # No unbuilt feature may ever read ENTITLED, even at the top tier.
+        # Derived from the matrix rather than naming a feature, so shipping
+        # an engine can never make this probe stale.
+        checks["unbuilt_never_entitled"] = all(
+            not _fm.is_entitled(spec.feature_id, _tiers.TIER_PRIVATE_OFFICE)
+            for spec in _fm.FEATURES.values()
+            if spec.implementation != _fm.IMPL_IMPLEMENTED
         )
         checks["provider_required_never_entitled"] = not _fm.is_entitled(
             "private_shield.breach_monitoring", _tiers.TIER_PRIVATE_OFFICE

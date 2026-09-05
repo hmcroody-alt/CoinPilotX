@@ -1306,6 +1306,11 @@ _load_route_pack("private_office_briefings", "services.private_office_briefings_
 # member's own Office data with a member-controlled findings lifecycle; every
 # payload states truthfully that external breach monitoring has no provider.
 _load_route_pack("private_office_shield", "services.private_office_shield_routes")
+# Human Concierge: a real request desk on the REQUEST primitive. Member
+# submission/thread/cancel plus a roster-gated operator console; staffing
+# truth (PRIVATE_CONCIERGE_OPERATOR_IDS) rides on every payload and no code
+# path can generate an operator reply.
+_load_route_pack("private_office_concierge", "services.private_office_concierge_routes")
 
 
 def cancel_scheduled_account_deletion(cur, user_id):

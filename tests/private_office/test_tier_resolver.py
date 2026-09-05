@@ -296,11 +296,11 @@ def test_unbuilt_features_are_never_entitled_at_any_tier():
     ``capital_graph`` was in this list until Batch B built it. It was removed
     from the *fixture*, not from the *property*: the property is asserted below
     against every row the matrix itself declares unbuilt, which is the form that
-    cannot go stale the next time something ships. The three named here stay as
-    a canary — if one of them is quietly flipped to IMPLEMENTED without a reader
+    cannot go stale the next time something ships. The row named here stays as
+    a canary — if it is quietly flipped to IMPLEMENTED without a provider
     behind it, this fails by name rather than by count.
     """
-    for feature_id in ("human_concierge",):
+    for feature_id in ("private_shield.breach_monitoring",):
         got = fm.availability(feature_id, tiers.TIER_PRIVATE_OFFICE)
         assert got["availability"] == fm.AVAIL_NOT_IMPLEMENTED, feature_id
         assert not fm.is_entitled(feature_id, tiers.TIER_PRIVATE_OFFICE), feature_id
@@ -410,6 +410,22 @@ def test_private_briefings_is_implemented_with_a_kill_switch():
     assert spec.flag_env == "PRIVATE_BRIEFINGS_ENABLED"
 
 
+def test_human_concierge_is_implemented_with_a_kill_switch():
+    """The desk software is built (services/private_office/concierge.py) and
+    gated at the top of the ladder. The old note's concern — a staffed human
+    process — did not vanish: it moved into the runtime roster
+    (PRIVATE_CONCIERGE_OPERATOR_IDS), which every payload reports as
+    `desk.staffed`, and no code path can generate an operator reply."""
+    got = fm.availability("human_concierge", tiers.TIER_PRIVATE_OFFICE)
+    assert got["implementation"] == fm.IMPL_IMPLEMENTED
+    assert got["availability"] == fm.AVAIL_ENTITLED
+    below = fm.availability("human_concierge", tiers.TIER_PRIVATE)
+    assert below["availability"] == fm.AVAIL_NOT_ENTITLED
+    assert below["minimum_tier"] == tiers.TIER_PRIVATE_OFFICE
+    spec = fm.get("human_concierge")
+    assert spec.flag_env == "PRIVATE_CONCIERGE_ENABLED"
+
+
 def test_implemented_feature_respects_tier():
     assert fm.availability("advanced_undx", tiers.TIER_FREE)["availability"] == \
         fm.AVAIL_NOT_ENTITLED
@@ -443,9 +459,9 @@ def test_availability_map_covers_every_declared_feature():
 
 def test_only_implemented_features_are_listed_as_live():
     live = set(fm.implemented_feature_ids())
-    assert "human_concierge" not in live
-    # private_shield moved to the live set when the internal engine shipped;
-    # the external half must never follow it without a provider.
+    # human_concierge and private_shield moved to the live set when their
+    # engines shipped; the external breach-monitoring half must never follow
+    # without a provider.
     assert "private_shield.breach_monitoring" not in live
     for fid in live:
         assert fm.FEATURES[fid].implementation == fm.IMPL_IMPLEMENTED

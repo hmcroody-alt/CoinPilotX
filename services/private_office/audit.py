@@ -100,6 +100,10 @@ ACTION_SHIELD_SCAN = "PRIVATE_SHIELD_SCAN"
 ACTION_SHIELD_READ = "PRIVATE_SHIELD_READ"
 ACTION_SHIELD_FINDING_UPDATE = "PRIVATE_SHIELD_FINDING_UPDATE"
 ACTION_CONCIERGE_MESSAGE = "PRIVATE_CONCIERGE_MESSAGE"
+# Concierge reads get their own verb because they are the one place in the
+# Office where actor and owner routinely differ: an operator reading a
+# member's request queue must be findable as exactly that.
+ACTION_CONCIERGE_READ = "PRIVATE_CONCIERGE_READ"
 
 ACTIONS: tuple[str, ...] = (
     ACTION_FACT_CREATE,
@@ -131,6 +135,7 @@ ACTIONS: tuple[str, ...] = (
     ACTION_SHIELD_READ,
     ACTION_SHIELD_FINDING_UPDATE,
     ACTION_CONCIERGE_MESSAGE,
+    ACTION_CONCIERGE_READ,
 )
 
 OUTCOME_OK = "ok"
