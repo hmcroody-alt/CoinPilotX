@@ -2613,3 +2613,137 @@ is what makes them due.
 
 Nothing to roll back — this addendum is prose. The code it describes is reverted
 by reverting `5c451905`, as recorded above.
+
+---
+
+## Audience video addendum — enabling the Agora video module for playback (2026-09-04)
+
+### Why the change is required
+
+A viewer joining an Agora Live joined successfully, heard the host, and never
+received a first remote video frame. The surface reported "waiting for host
+media" indefinitely and then fell back to the Web player.
+
+The cause is a single missing pre-join call. In the Agora 4.x SDK
+`enableVideo()` enables the video **module**, which governs the client's ability
+to *decode* remote video as well as to encode its own. The previous code called
+it only inside `if (publishingVideoRef.current)` — that is, only for a client
+that was about to publish a camera. An audience member therefore ran with the
+video module off, subscribed to a remote video stream the engine had no decoder
+path for, and waited forever. The audio path was unaffected, which is exactly why
+the bug presented as "I can hear them but I can't see them."
+
+### Which feature required it
+
+Agora Live audience playback — the viewer side of a single-host broadcast, which
+is the configuration that ships today with `MULTI_GUEST_LIVE_ENABLED=false`.
+
+### Which protected files changed
+
+| File | Category | Change |
+|---|---|---|
+| `mobile-native/src/live/useAgoraLiveBroadcastRoom.ts` | `livestream_audio_adapter` | `engine.enableVideo()` moved out of the publisher branch to an unconditional pre-join call (**+10, −1**) |
+| `mobile-native/src/live/liveStreamQuality.ts` | `media_adaptation_policy` | new `LivePublishPlan.enableVideoModule` field, `true` on every plan including `AUDIENCE_PLAN` (**+20, −0**) |
+| `mobile-native/src/live/__tests__/liveStreamQuality.test.ts` | `critical_audio_tests` | one added case under "Stage 25 — an audience member initialises nothing" (**+17, −0**) |
+
+A fourth file, `mobile-native/src/live/__tests__/viewerRemoteVideoModule.test.ts`
+(new, 67 lines), is part of the same commit but is not a protected path; it is
+named here for completeness because it is the test that pins the fix.
+
+### Expected behavior change
+
+**Video:** an audience client now decodes remote video and reaches a first frame.
+That is the whole intended effect.
+
+**Audio: none.** Stated against the three things this declaration exists to
+protect:
+
+- **No AVAudioSession work.** This commit contains no `setCategory`, no
+  `setActive`, no `Audio.setAudioModeAsync`, and adds no native audio code.
+- **No second microphone track and no new publication path.** `enableVideo()`
+  is not capture. Capture begins only at `startPreview()` or publication, both
+  still inside `if (publishingVideoRef.current)` and unchanged, and the audience
+  join options still pin `publishMicrophoneTrack: false` and
+  `publishCameraTrack: false`. The Stage 25 invariant — *an audience member
+  initialises nothing* — is preserved literally, which is why
+  `planTouchesCaptureHardware` deliberately ignores `enableVideoModule` and why
+  the added test asserts both facts on the same plan object.
+- **No audio-routing change.** Every client joins with
+  `channelProfile: ChannelProfileLiveBroadcasting`, before and after this commit.
+  Under that profile Agora's default route is the speakerphone irrespective of
+  the video module, so the route a viewer gets today is the route it got
+  yesterday. The only explicit route control in this file,
+  `setSpeakerEnabled → setEnableSpeakerphone`, is untouched.
+
+**One real ordering change, named rather than glossed.** For a *publisher*,
+`enableVideo()` previously ran at line 269, after `setAudioProfile` and
+`enableAudioVolumeIndication`; it now runs at line 238, before them. Both are
+pre-join calls, so the join-time configuration is identical in content. The
+ordering is also the safer of the two: the audio profile and scenario are now
+applied last, so if either call could clobber the other, audio wins rather than
+loses. For an audience member there is no ordering question — the call did not
+previously exist on that path.
+
+### Regression risk
+
+Low, and asymmetric between the two client roles.
+
+- **Audience:** near zero. Enabling a decoder on a client that publishes nothing
+  cannot move audio it does not produce. The risk that remains is resource
+  rather than behaviour — the video module allocates a decoder, so a viewer on
+  old hardware does more work than before. That is the cost of showing the
+  stream, and `setRemoteSubscribeFallbackOption(StreamFallbackOptionAudioOnly)`
+  at line 260 is already in place to drop to audio under pressure.
+- **Publisher:** the ordering change above, which is the only way this commit
+  can touch a microphone at all, and it does so by moving an unrelated call
+  earlier rather than by changing any audio argument.
+
+The claim that video-encoder changes cannot move audio is held mechanically by
+`test_the_encoder_ladder_is_driven_by_the_stage_size_module` and the
+`liveAudioMatrix` suites, both of which were run below.
+
+### Tests run
+
+Run against this exact tree (`51ed4572`), not quoted from the commit:
+
+- Critical audio suites — **11 suites, 191 tests, 0 failures.**
+- Full `mobile-native/src/live` audio suite — **20 suites, 369 tests, 0 failures.**
+- Native architecture guard — **22 tests.**
+- `tests/protection/test_realtime_audio_architecture.py` — **19 tests, OK.**
+- `tests/protection/test_agora_token_generation.py` and
+  `test_agora_rtc_provider_contract.py` — **13 passed.**
+- TypeScript — `npx tsc --noEmit`, **exit 0.**
+- i18n — 11 locales, 100%, 4358 keys.
+
+### Physical validation required
+
+**Outstanding.** No static check can prove a frame arrived or that audio kept
+its route, and this is the specific matrix this change owes:
+
+1. Host goes live on a device; a second device joins as **audience**. Confirm
+   the viewer reaches a first video frame natively, with no Web fallback — the
+   fix itself.
+2. On that same viewer, confirm the host is still **audible**, and that audio
+   comes from the expected route (speakerphone by default under the live
+   profile).
+3. Toggle the viewer's speaker/earpiece control and confirm the route still
+   moves.
+4. Host side: start a broadcast and confirm the microphone still publishes and
+   the host's own audio profile is unchanged — this is what the `setAudioProfile`
+   ordering move puts at stake.
+5. Incoming call over an active Live, to confirm interruption/restore behaviour
+   is unmoved.
+
+This addendum does not discharge the multi-guest matrix owed by the addendum
+above; that remains due when `MULTI_GUEST_LIVE_ENABLED` is turned on.
+
+### Rollback procedure
+
+`git revert b623e1f5`. The change is self-contained in one commit and has no
+schema, config, or manifest component. Reverting restores the previous behaviour
+exactly — including the audience playback bug, which is the trade being made.
+Partial rollback is possible but not advised: reverting only
+`useAgoraLiveBroadcastRoom.ts` while keeping `enableVideoModule` in the plan
+leaves the plan describing a module the adapter no longer enables, and the added
+test in `liveStreamQuality.test.ts` would keep passing while the product stayed
+broken. Revert the commit whole.
