@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 
 
 PREMIUM_STAR = "premium_verified_star"
@@ -28,20 +28,48 @@ def _future(value):
     return parsed > now
 
 
-# Grace window applied before a stale 'active' status is treated as lapsed.
-# Covers a briefly delayed or retried provider webhook without leaving premium
-# alive forever when the webhook never arrives.
-_STALE_EXPIRY_GRACE = timedelta(days=3)
+# Expiry is evaluated at the boundary: ``expiry <= now`` is expired, full stop.
+#
+# This used to carry a blanket three-day grace window, on the theory that a
+# provider webhook might be late and shouldn't cost a paying member their
+# benefits. The theory was sound; the implementation granted three free days of
+# Premium to every genuinely lapsed account, because an implicit window cannot
+# tell "webhook is late" from "subscription actually ended". A late webhook is
+# already covered without guessing: a member with a live entitlement row is
+# admitted by ``has_entitlement`` before these columns are ever consulted, and a
+# deliberate extension is recorded explicitly as ``grace_until`` on the
+# canonical grant, where ``entitlements.service._grant_phase`` honours it. The
+# only population an implicit window protected was accounts with no live
+# entitlement and a period end already in the past — which is precisely the set
+# that must lose access.
+def period_ended(value, now=None):
+    """True when an expiry timestamp is present and at or before ``now``.
 
-
-def _clearly_expired(value):
-    """True when an expiry timestamp is present and past by more than the
-    grace window. Missing/unparseable values return False (no opinion)."""
+    Missing or unparseable values return False — no recorded end means no
+    evidence of expiry, and the caller's status word stays authoritative. Only
+    a timestamp we can actually read is allowed to revoke anything.
+    """
     parsed = _parse_dt(value)
     if not parsed:
         return False
-    now = datetime.now(parsed.tzinfo) if parsed.tzinfo else datetime.now()
-    return parsed + _STALE_EXPIRY_GRACE < now
+    if now is None:
+        now = datetime.now(parsed.tzinfo) if parsed.tzinfo else datetime.now()
+    return parsed <= now
+
+
+def row_period_ended(row, now=None):
+    """``period_ended`` over the expiry columns a user row may carry.
+
+    One definition, shared by the identity columns (authority C) and the legacy
+    reader (authority A), so the badge a member sees and the access they get
+    cannot disagree about what time it is.
+    """
+    row = row or {}
+    for field in ("premium_expires_at", "subscription_expires_at", "pro_expires_at"):
+        raw = row.get(field)
+        if raw:
+            return period_ended(raw, now)
+    return False
 
 
 def _owner_user_ids():
@@ -89,15 +117,36 @@ def has_active_premium(row):
         return True
     plan = str(row.get("plan") or row.get("subscription_plan") or "").lower()
     status = str(row.get("premium_status") or row.get("subscription_status") or "").lower()
+    expiry = row.get("premium_expires_at") or row.get("pro_expires_at") or row.get("subscription_expires_at")
+    # A trial is Premium while its window is open, and nothing once it closes.
+    # This branch used to be missing entirely: ``premium_status='trial'`` fell
+    # through to a final check that only recognised 'active'/'trialing', so a
+    # member inside a live trial had access (the legacy reader honours the
+    # trial) and no badge. Same row, two answers — the divergence this whole
+    # recovery is about, in the other direction.
+    #
+    # Fails closed: a trial status with no readable end confers nothing, because
+    # an unbounded trial is a lifetime grant nobody approved.
+    if status in {"trial", "trialing"}:
+        for field in ("trial_end_date", "premium_expires_at",
+                      "pro_expires_at", "subscription_expires_at"):
+            if row.get(field):
+                return _future(row.get(field))
+        return False
+    # CANCELLED IS NOT EXPIRED. Turning off auto-renew ends the *renewal*, not
+    # the period already paid for. A member who cancels on day 2 of a monthly
+    # term keeps Premium until day 30 — that is what they bought, and revoking
+    # it early is a refund we never issued. Only the clock ends the term.
+    if status in {"canceled", "cancelled"} and _future(expiry):
+        return True
     if status in {"expired", "canceled", "cancelled", "past_due", "unpaid", "inactive"}:
         return False
-    expiry = row.get("premium_expires_at") or row.get("pro_expires_at") or row.get("subscription_expires_at")
     if _future(expiry):
         return True
     # Expiry cross-check: a status frozen at 'active' by a missed provider
-    # webhook must not keep premium alive once the recorded period end is
-    # clearly in the past (beyond the grace window).
-    if status in {"active", "trialing"} and _clearly_expired(expiry):
+    # webhook must not keep premium alive past the recorded period end. The
+    # clock decides, not the status word, and it decides at the boundary.
+    if status in {"active", "trialing"} and period_ended(expiry):
         return False
     return status in {"active", "trialing"} and (bool(int(row.get("is_pro") or row.get("pro_active") or 0)) or plan in {"pro", "premium"})
 

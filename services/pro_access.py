@@ -1,9 +1,6 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 
-# Grace window before a stale 'active' subscription status is treated as
-# lapsed. Covers a delayed/retried provider webhook; beyond it, a recorded
-# period end in the past wins over the frozen status column.
-_STALE_EXPIRY_GRACE = timedelta(days=3)
+from services.premium_identity_engine import period_ended as _period_ended
 
 
 def _parse_datetime(value):
@@ -31,14 +28,21 @@ def _future(value):
     return parsed > now
 
 
-def _clearly_expired(row):
-    """True when the row's recorded period end is past by more than the grace
-    window. No expiry recorded -> False (status remains authoritative)."""
-    expires_at = _parse_datetime(row.get("pro_expires_at") or row.get("subscription_expires_at"))
-    if not expires_at:
-        return False
-    now = datetime.now(expires_at.tzinfo) if expires_at.tzinfo else datetime.now()
-    return expires_at + _STALE_EXPIRY_GRACE < now
+def _expired(row):
+    """True when the row's recorded period end is at or before now.
+
+    Uses the one shared clock rule in ``premium_identity_engine`` rather than a
+    third copy of it. This carried a three-day implicit grace window; see the
+    note on ``period_ended`` for why an implicit window could not tell a late
+    webhook from a lapsed subscription and so extended both.
+
+    No expiry recorded -> False (the status column remains authoritative).
+    """
+    return (
+        _period_ended(row.get("pro_expires_at"))
+        if row.get("pro_expires_at")
+        else _period_ended(row.get("subscription_expires_at"))
+    )
 
 
 def _trial_not_expired(row):
@@ -60,8 +64,8 @@ def pro_access_type(row):
     trial_status = (row.get("trial_status") or "").lower()
     if plan == "pro" and status == "active":
         # Expiry cross-check: 'active' frozen by a missed webhook must not
-        # outlive a clearly-past period end (beyond the grace window).
-        if _clearly_expired(row):
+        # outlive the recorded period end.
+        if _expired(row):
             return "none"
         return "paid"
     if trial_status == "active" and _future(row.get("trial_end_date")):

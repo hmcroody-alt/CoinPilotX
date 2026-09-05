@@ -53,6 +53,10 @@ _USERS_COLUMNS = (
     # reading as NULL, and the facade turns that into a silent "not premium".
     ("trial_end_date", "TEXT"),
     ("pro_expires_at", "TEXT"),
+    # Added when the clock cross-check widened that SELECT to the full set of
+    # recorded ends, so the same "raises rather than reads as NULL" hazard now
+    # covers this column too.
+    ("subscription_expires_at", "TEXT"),
     ("is_pro", "INTEGER DEFAULT 0"),
     ("plan", "TEXT"),
     ("subscription_plan", "TEXT"),
@@ -203,7 +207,21 @@ def test_env_allowlist_grants_owner_by_user_id_only():
 # EXP-001 ----------------------------------------------------------------------
 def test_stale_active_status_with_past_expiry_is_not_premium():
     """A missed webhook leaves status='active' forever; the recorded period end
-    must win once it is clearly past (beyond the 3-day grace window)."""
+    must win once it is past.
+
+    This test used to assert a blanket three-day grace window, on the theory
+    that a late provider webhook should not cost a paying member their
+    benefits. The theory was right and the mechanism was wrong: an implicit
+    window cannot tell "webhook is late" from "subscription actually ended", so
+    it handed three free days of Premium to every genuinely lapsed account.
+
+    Late webhooks are still covered, but explicitly rather than by guessing.
+    A member with a live canonical entitlement is admitted by
+    ``has_entitlement`` before these columns are ever read, and a real provider
+    grace period is recorded as ``grace_until`` on the grant — written from
+    Apple's and Google's own grace signals and honoured by
+    ``entitlements.service`` — which is evidence, not an assumption.
+    """
     stale = {
         "subscription_status": "active",
         "is_pro": 1,
@@ -212,13 +230,19 @@ def test_stale_active_status_with_past_expiry_is_not_premium():
     }
     assert pie.has_active_premium(stale) is False
 
-    # Inside the grace window the status still wins (webhook may be late).
+    # Yesterday is past. There is no implicit window in which a recorded end
+    # still reads as active.
     recent = (datetime.now() - timedelta(days=1)).isoformat(timespec="seconds")
-    in_grace = dict(stale, premium_expires_at=recent)
-    assert pie.has_active_premium(in_grace) is True
+    assert pie.has_active_premium(dict(stale, premium_expires_at=recent)) is False
 
-    # No expiry recorded on the row -> status remains authoritative (we cannot
-    # cross-check what is not there; only central helpers were changed).
+    # The boundary is exact: one second out is out, one second in is in.
+    just_past = (datetime.now() - timedelta(seconds=1)).isoformat(timespec="seconds")
+    just_future = (datetime.now() + timedelta(minutes=5)).isoformat(timespec="seconds")
+    assert pie.has_active_premium(dict(stale, premium_expires_at=just_past)) is False
+    assert pie.has_active_premium(dict(stale, premium_expires_at=just_future)) is True
+
+    # No expiry recorded on the row -> status remains authoritative. Silence is
+    # not evidence of expiry, so an indefinite manual/admin grant survives.
     no_expiry = {"subscription_status": "active", "is_pro": 1, "plan": "premium"}
     assert pie.has_active_premium(no_expiry) is True
 
@@ -230,10 +254,18 @@ def test_pro_access_paid_requires_unexpired_period_end():
     assert pro_access.pro_access_type(stale) == "none"
     assert pro_access.has_pro_access(stale) is False
 
+    # Same rule as EXP-001, on the pro ladder: a recorded end in the past ends
+    # access, with no implicit window. Previously this asserted "paid".
     recent = (datetime.now() - timedelta(days=1)).isoformat(timespec="seconds")
     assert pro_access.pro_access_type(
         {"plan": "pro", "subscription_status": "active",
-         "subscription_expires_at": recent}) == "paid"
+         "subscription_expires_at": recent}) == "none"
+    # An unexpired end is still paid — the clock revokes, it does not deny.
+    ahead = (datetime.now() + timedelta(days=1)).isoformat(timespec="seconds")
+    assert pro_access.pro_access_type(
+        {"plan": "pro", "subscription_status": "active",
+         "subscription_expires_at": ahead}) == "paid"
+    # And a row with no recorded end at all keeps its status.
     assert pro_access.pro_access_type(
         {"plan": "pro", "subscription_status": "active"}) == "paid"
 

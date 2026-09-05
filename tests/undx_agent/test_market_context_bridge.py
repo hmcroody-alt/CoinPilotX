@@ -105,6 +105,85 @@ class EnvelopeSanitization(unittest.TestCase):
         self.assertEqual(ctx["source"], "market_pulse")
         self.assertEqual(ctx["chart"]["selected_range"], "24H")
 
+    def test_asset_id_is_resolved_here_not_accepted_from_the_client(self):
+        """The screens have no canonical id to send, so the board supplies it.
+
+        The mobile quote shape carries a symbol and a name and no id, so the
+        best a client could offer is ``symbol.lower()`` — "btc", which is not
+        what the price layer calls Bitcoin. Resolving against the same board
+        that answers for prices makes the id deterministic and consistent with
+        the thing that will later be asked for one.
+        """
+        m = self._module()
+        with mock.patch.object(m, "_board_assets", return_value=BOARD):
+            ctx = m.sanitize_market_context(envelope("BTC"))
+            self.assertEqual(ctx["asset"]["id"], "bitcoin")
+            self.assertEqual(ctx["asset"]["symbol"], "BTC")
+            # A client claiming otherwise does not get to rename the asset.
+            liar = m.sanitize_market_context(
+                envelope("BTC", asset={"symbol": "BTC", "name": "Bitcoin", "id": "ethereum"}))
+            self.assertEqual(liar["asset"]["id"], "bitcoin")
+
+    def test_identity_does_not_depend_on_the_board_window(self):
+        """A major outside the top-N display window still gets its provider id.
+
+        The board is bounded (``market_rows("all", 80)``), so "listed right
+        now" and "canonical" are different properties. ZEC is deliberately
+        absent from the BOARD fixture: if identity leaned only on the board,
+        this would come back "zec" — a lowercased ticker labelled as an id,
+        which is exactly the collision the id exists to prevent.
+        """
+        m = self._module()
+        with mock.patch.object(m, "_board_assets", return_value=BOARD):
+            asset = m.sanitize_market_context(envelope("ZEC"))["asset"]
+        self.assertEqual(asset["id"], "zcash")
+        self.assertEqual(asset["id_resolution"], "canonical")
+
+    def test_unlisted_symbol_keeps_a_usable_id_but_is_marked_unresolved(self):
+        # symbol.lower() remains a workable lookup key, but it is never
+        # presented as canonical — downstream must be able to tell "bitcoin"
+        # from a guess shaped like an id.
+        m = self._module()
+        with mock.patch.object(m, "_board_assets", return_value=BOARD):
+            asset = m.sanitize_market_context(envelope("XYZ"))["asset"]
+        self.assertEqual(asset["id"], "xyz")
+        self.assertEqual(asset["id_resolution"], "unresolved")
+
+    def test_a_claimed_id_the_server_cannot_verify_is_recorded_as_a_claim(self):
+        m = self._module()
+        with mock.patch.object(m, "_board_assets", return_value=BOARD):
+            asset = m.sanitize_market_context(
+                envelope("XYZ", asset={"symbol": "XYZ", "id": "xyz-network"}))["asset"]
+        self.assertEqual(asset["id"], "xyz-network")
+        self.assertEqual(asset["id_resolution"], "claimed")
+
+    def test_board_outage_does_not_degrade_a_major_asset_identity(self):
+        # The majors table is static, so "the board is down" must not turn
+        # Bitcoin into "btc" — that id would 404 on every /coins/{id} call.
+        m = self._module()
+        with mock.patch.object(m.market_pulse, "market_rows", side_effect=RuntimeError("down")):
+            asset = m.sanitize_market_context(envelope("BTC"))["asset"]
+        self.assertEqual(asset["id"], "bitcoin")
+        self.assertEqual(asset["id_resolution"], "canonical")
+
+    def test_board_outage_degrades_an_unknown_symbol_honestly(self):
+        m = self._module()
+        with mock.patch.object(m.market_pulse, "market_rows", side_effect=RuntimeError("down")):
+            asset = m.sanitize_market_context(envelope("XYZ"))["asset"]
+        self.assertEqual(asset["id"], "xyz")
+        self.assertEqual(asset["id_resolution"], "unresolved")
+
+    def test_coinbase_fallback_ticker_ids_are_not_canonised(self):
+        # During Coinbase fallback the board's id field carries a lowercased
+        # *ticker*. For a non-major that id equals symbol.lower() and must not
+        # be labelled canonical; it is indistinguishable from a guess.
+        m = self._module()
+        fallback_board = [{"id": "xyz", "symbol": "XYZ", "name": "XYZ Coin"}]
+        with mock.patch.object(m, "_board_assets", return_value=fallback_board):
+            asset = m.sanitize_market_context(envelope("XYZ"))["asset"]
+        self.assertEqual(asset["id"], "xyz")
+        self.assertEqual(asset["id_resolution"], "unresolved")
+
 
 class EnvelopePersistence(unittest.TestCase):
     """Replacement on a new asset, survival across plain turns, honest expiry."""
@@ -128,6 +207,35 @@ class EnvelopePersistence(unittest.TestCase):
         self.assertEqual(active["asset"]["symbol"], "ETH")
         self.assertEqual(combined[self.m.CONTEXT_KEY]["asset"]["symbol"], "ETH")
         self.assertEqual(combined["screen"], "chat")
+
+    def test_dismissal_drops_the_stored_context_not_just_this_turn(self):
+        """The chip is state, so dismissing it has to reach the state.
+
+        Before the clear rode the request, tapping X removed the words from the
+        screen and left this side still resolving "how is it doing?" to the coin
+        the member had just said they were finished with — a chip that was
+        decoration rather than a control.
+        """
+        stored = aged(self.m.sanitize_market_context(envelope("ETH")), seconds=60)
+        combined, active = self.m.merge_for_persist({"screen": "chat"}, None, stored, cleared=True)
+        self.assertIsNone(active)
+        self.assertNotIn(self.m.CONTEXT_KEY, combined)
+        # The rest of the hint context is untouched: a dismissal ends a subject,
+        # it is not a licence to reset anything else about the conversation.
+        self.assertEqual(combined["screen"], "chat")
+
+    def test_a_dismissal_that_arrives_with_a_new_asset_is_a_replacement(self):
+        # Leaving Ethereum's screen for Solana's can produce both signals on one
+        # send. The member's newest intent is the new topic, not an empty one.
+        stored = aged(self.m.sanitize_market_context(envelope("ETH")), seconds=60)
+        incoming = self.m.sanitize_market_context(envelope("SOL"))
+        _, active = self.m.merge_for_persist({}, incoming, stored, cleared=True)
+        self.assertEqual(active["asset"]["symbol"], "SOL")
+
+    def test_dismissal_with_nothing_stored_is_a_harmless_no_op(self):
+        combined, active = self.m.merge_for_persist({}, None, None, cleared=True)
+        self.assertIsNone(active)
+        self.assertNotIn(self.m.CONTEXT_KEY, combined)
 
     def test_expired_stored_context_is_dropped_not_reused(self):
         stored = aged(self.m.sanitize_market_context(envelope("ETH")),
@@ -196,12 +304,38 @@ class Coreference(unittest.TestCase):
         self.assertEqual(self.m.resolve_range("what was the high?", None), "24H")
 
 
+def grant_crypto_premium(case: unittest.TestCase) -> None:
+    """Hold ``premium.crypto.intelligence`` open for the duration of one test.
+
+    The crypto executors and ``grounding_block`` are gated on the canonical
+    resolver, and that gate fails CLOSED — correctly. But this fixture's SQLite
+    schema has no ``premium_entitlements`` table, so the resolver raises, the
+    gate reads the raise as "not entitled", and every test below refuses before
+    reaching the behaviour it was written to check.
+
+    What is under test in this file is identity resolution, coreference and
+    grounding — never entitlement. The entitlement axis has its own exhaustive
+    home in ``tests/crypto_premium/test_premium_expiry_crypto_lock.py``, which
+    walks all fourteen states against these same executors. Pinning the gate
+    open here keeps the two concerns from silently standing in for each other:
+    a regression in the lock fails there loudly, instead of turning this file
+    green for the wrong reason.
+    """
+    from services import crypto_premium_gate
+
+    patcher = mock.patch.object(crypto_premium_gate, "has_crypto_capability",
+                                return_value=True)
+    patcher.start()
+    case.addCleanup(patcher.stop)
+
+
 class Grounding(unittest.TestCase):
     """Grounded or honestly absent — never fabricated, never the company-metric path."""
 
     def setUp(self):
         self.fx = AgentFixture().start()
         self.addCleanup(self.fx.stop)
+        grant_crypto_premium(self)
         from services import undx_market_context
 
         self.m = undx_market_context
@@ -318,6 +452,7 @@ class AgentExecutors(unittest.TestCase):
     def setUp(self):
         self.fx = AgentFixture().start()
         self.addCleanup(self.fx.stop)
+        grant_crypto_premium(self)
         from services import undx_agent_tools, undx_market_context
 
         self.tools = undx_agent_tools

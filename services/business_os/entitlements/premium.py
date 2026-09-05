@@ -156,11 +156,30 @@ def legacy_founder(user_id: Any) -> Optional[bool]:
 
 
 # --- identity columns (authority C) -----------------------------------------
+# This tuple is not a convenience list — it is the input to
+# ``has_active_premium``, and any column it omits is a column that reader sees
+# as NULL. That is how the trial divergence happened: the reader's trial branch
+# consults trial_end_date, pro_expires_at and subscription_expires_at, none of
+# which were selected here, so a member inside an open trial had the door opened
+# by the access authority and the badge withheld by this one. Same row, two
+# answers. If a column is added to a branch of has_active_premium, it belongs
+# here in the same change.
+# Kept as a flat literal on purpose: tests/test_users_schema_columns_sql.py
+# parses this assignment with ``ast`` and checks every name against the real
+# ``users`` DDL. Building it from concatenated tuples turns the node into a
+# BinOp the guard cannot read, and the guard silently stops covering this list.
 _USER_COLUMNS = (
     "premium_status", "subscription_status", "lifetime_premium",
     "premium_glow_manual_grant", "premium_mark_override", "premium_expires_at",
     "is_pro", "plan", "subscription_plan",
+    "trial_end_date", "pro_expires_at", "subscription_expires_at",
 )
+
+#: The columns added for the trial/expiry branches. Split out so a schema that
+#: predates them can be retried without them rather than losing every column.
+_EXPIRY_COLUMNS = ("trial_end_date", "pro_expires_at", "subscription_expires_at")
+
+_BASE_USER_COLUMNS = tuple(c for c in _USER_COLUMNS if c not in _EXPIRY_COLUMNS)
 
 # founder_number/founder_status are not columns on ``users``; they live on
 # founder_memberships, whose ``status`` the rest of the codebase aliases to
@@ -171,33 +190,48 @@ _FOUNDER_COLUMNS = ("founder_number", "founder_status")
 _IDENTITY_COLUMNS = _USER_COLUMNS + _FOUNDER_COLUMNS
 
 
+def _select_identity(user_id: Any, columns: tuple) -> Any:
+    conn = db.connect()
+    try:
+        cur = conn.execute(
+            f"SELECT {', '.join('u.' + c for c in columns)}, "
+            "fm.founder_number AS founder_number, "
+            "fm.status AS founder_status "
+            "FROM users u "
+            "LEFT JOIN founder_memberships fm "
+            "ON fm.user_id = u.user_id AND fm.status = 'active' "
+            "WHERE u.user_id = ? LIMIT 1",
+            (int(user_id),),
+        )
+        return cur.fetchone()
+    finally:
+        conn.close()
+
+
 def identity_row(user_id: Any) -> dict:
     """Read the premium-bearing columns on ``users``. Empty dict when absent."""
+    columns = _USER_COLUMNS
     try:
-        conn = db.connect()
-        try:
-            cur = conn.execute(
-                f"SELECT {', '.join('u.' + c for c in _USER_COLUMNS)}, "
-                "fm.founder_number AS founder_number, "
-                "fm.status AS founder_status "
-                "FROM users u "
-                "LEFT JOIN founder_memberships fm "
-                "ON fm.user_id = u.user_id AND fm.status = 'active' "
-                "WHERE u.user_id = ? LIMIT 1",
-                (int(user_id),),
-            )
-            row = cur.fetchone()
-        finally:
-            conn.close()
+        row = _select_identity(user_id, columns)
     except Exception:  # noqa: BLE001 — missing columns on older schemas
-        _log.debug("identity columns unavailable for user=%s", user_id)
-        return {}
+        # Degrade one field, not the whole answer. A single absent expiry column
+        # used to take the entire SELECT down, and returning {} here does not
+        # mean "not premium" — it means authority C abstains, which drops a real
+        # badge for every member on that schema. Retrying without the expiry
+        # columns keeps the answer this function gave before they were added.
+        try:
+            columns = _BASE_USER_COLUMNS
+            row = _select_identity(user_id, columns)
+        except Exception:  # noqa: BLE001
+            _log.debug("identity columns unavailable for user=%s", user_id)
+            return {}
     if row is None:
         return {}
+    keys = columns + _FOUNDER_COLUMNS
     try:
-        return {k: row[k] for k in _IDENTITY_COLUMNS}
+        return {k: row[k] for k in keys}
     except (TypeError, IndexError, KeyError):
-        return dict(zip(_IDENTITY_COLUMNS, tuple(row)))
+        return dict(zip(keys, tuple(row)))
 
 
 def identity_premium(user_id: Any, row: Optional[dict] = None) -> Optional[bool]:
@@ -268,14 +302,17 @@ def resolve(user_id: Any, *, subject_type: str = "user",
     mode = _facade.get_mode()
     legacy = legacy_premium(user_id)
     legacy_bool = bool(legacy) if legacy is not None else False
-    identity = identity_premium(user_id)
+    # Read once and reuse: identity_premium() would otherwise re-query, and the
+    # denial reason has to be derived from the SAME row the answer came from.
+    row = identity_row(user_id)
+    identity = identity_premium(user_id, row=row) if row else None
 
     if mode == _facade.MODE_OFF:
         # Byte-for-byte current behaviour: legacy decides, canonical untouched.
         return _state(
             is_premium=legacy_bool, source="legacy", membership_mode="legacy",
             flag_mode=mode, account_hold=False, account_status=None,
-            legacy=legacy, canonical=None, identity=identity,
+            legacy=legacy, canonical=None, identity=identity, identity_row=row,
         )
 
     hold = _facade.account_hold(user_id, context)
@@ -289,7 +326,7 @@ def resolve(user_id: Any, *, subject_type: str = "user",
             flag_mode=mode, account_hold=hold["on_hold"],
             account_status=hold["account_status"], legacy=legacy,
             canonical=None if canonical_silent else canonical_allowed,
-            identity=identity,
+            identity=identity, identity_row=row,
         )
 
     # MODE_CANONICAL
@@ -299,7 +336,7 @@ def resolve(user_id: Any, *, subject_type: str = "user",
             membership_mode=hold["reason"], flag_mode=mode, account_hold=True,
             account_status=hold["account_status"], legacy=legacy,
             canonical=None if canonical_silent else canonical_allowed,
-            identity=identity,
+            identity=identity, identity_row=row,
         )
     if canonical_silent:
         if legacy is not None:
@@ -308,25 +345,89 @@ def resolve(user_id: Any, *, subject_type: str = "user",
             is_premium=legacy_bool, source="legacy_fallback",
             membership_mode="legacy_fallback", flag_mode=mode,
             account_hold=False, account_status=hold["account_status"],
-            legacy=legacy, canonical=None, identity=identity,
+            legacy=legacy, canonical=None, identity=identity, identity_row=row,
         )
     return _state(
         is_premium=canonical_allowed, source="canonical_grant",
         membership_mode=canonical_mode(user_id, subject_type=subject_type),
         flag_mode=mode, account_hold=False,
         account_status=hold["account_status"], legacy=legacy,
-        canonical=canonical_allowed, identity=identity,
+        canonical=canonical_allowed, identity=identity, identity_row=row,
     )
+
+
+# --- observability vocabulary ------------------------------------------------
+# A closed enum, safe to log and to ship to a client. Every value describes WHY
+# the resolver answered as it did, and none of them can carry a receipt, a
+# transaction identifier, a token, or any billing payload — the reason is a
+# label, never a copy of the evidence.
+REASON_ACTIVE_TRIAL = "ACTIVE_TRIAL"
+REASON_ACTIVE_SUBSCRIPTION = "ACTIVE_SUBSCRIPTION"
+REASON_ACTIVE_HIGHER_TIER = "ACTIVE_HIGHER_TIER"
+REASON_EXPIRED = "EXPIRED"
+REASON_REVOKED = "REVOKED"
+REASON_ACCOUNT_HOLD = "ACCOUNT_HOLD"
+REASON_NO_ENTITLEMENT = "NO_ENTITLEMENT"
+
+REASONS = (
+    REASON_ACTIVE_TRIAL, REASON_ACTIVE_SUBSCRIPTION, REASON_ACTIVE_HIGHER_TIER,
+    REASON_EXPIRED, REASON_REVOKED, REASON_ACCOUNT_HOLD, REASON_NO_ENTITLEMENT,
+)
+
+
+def legacy_denial_reason(row: Optional[dict]) -> str:
+    """Why a legacy-column denial happened: EXPIRED vs NO_ENTITLEMENT.
+
+    The legacy reader returns a bare boolean, so the reason has to be recovered
+    from the same columns it read. A recorded period end that has passed is
+    evidence of expiry; no recorded end at all is evidence of nothing ever
+    having been granted. Anything ambiguous reports NO_ENTITLEMENT rather than
+    guessing EXPIRED — a label is only useful if it is never confidently wrong.
+    """
+    row = row or {}
+    try:
+        from services import premium_identity_engine as _pie
+        for col in ("premium_expires_at", "subscription_expires_at", "pro_expires_at"):
+            if row.get(col):
+                return (REASON_EXPIRED if _pie.period_ended(row.get(col))
+                        else REASON_NO_ENTITLEMENT)
+    except Exception:  # noqa: BLE001 — a label must never break resolution
+        _log.debug("legacy denial reason unavailable")
+    return REASON_NO_ENTITLEMENT
+
+
+def _reason_for(*, is_premium: bool, source: str, membership_mode: str,
+                identity_row: Optional[dict] = None) -> str:
+    """Map a resolved state onto the closed reason enum."""
+    mode = str(membership_mode or "")
+    if is_premium:
+        if mode == "grandfathered":
+            return REASON_ACTIVE_HIGHER_TIER
+        if mode == "trial":
+            return REASON_ACTIVE_TRIAL
+        return REASON_ACTIVE_SUBSCRIPTION
+    if source == "account_hold":
+        return REASON_ACCOUNT_HOLD
+    if mode == "revoked":
+        return REASON_REVOKED
+    if mode == "suspended":
+        return REASON_ACCOUNT_HOLD
+    if mode in ("legacy", "legacy_fallback"):
+        return legacy_denial_reason(identity_row)
+    return REASON_NO_ENTITLEMENT
 
 
 def _state(*, is_premium: bool, source: str, membership_mode: str,
            flag_mode: str, account_hold: bool, account_status,
            legacy: Optional[bool], canonical: Optional[bool],
-           identity: Optional[bool]) -> dict:
+           identity: Optional[bool], identity_row: Optional[dict] = None) -> dict:
     answers = [a for a in (legacy, canonical, identity) if a is not None]
     return {
         "is_premium": bool(is_premium),
         "source": source,
+        "reason": _reason_for(is_premium=bool(is_premium), source=source,
+                              membership_mode=membership_mode,
+                              identity_row=identity_row),
         "membership_mode": membership_mode,
         "flag_mode": flag_mode,
         "account_hold": bool(account_hold),

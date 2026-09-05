@@ -38,7 +38,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-from services import market_data, market_pulse
+from services import coingecko_client, market_data, market_pulse
 
 LOGGER = logging.getLogger(__name__)
 
@@ -129,6 +129,51 @@ def _text(value: Any, limit: int = 120) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _canonical_asset_id(symbol: str, claimed: Any) -> tuple[str, str]:
+    """The provider's id for this symbol, plus how honestly it was obtained.
+
+    Identity has to be resolved somewhere, and the client is the wrong place:
+    the asset screens are built from a quote shape that carries a symbol and a
+    name but no id, so the best a caller could offer is ``symbol.lower()`` —
+    "btc", which is not what the market layer calls Bitcoin. Every downstream
+    lookup then either misses or falls back to string matching on a display
+    name, which is exactly the collision the id exists to prevent.
+
+    Resolution must not depend on where an asset happens to sit in a display
+    window, so the ladder is:
+
+    1. ``coingecko_client.COIN_IDS`` — the durable majors table. It survives a
+       board outage and the Coinbase fallback (whose rows carry a lowercased
+       *ticker* in the id field, precisely the wrong value to canonise).
+    2. The live board — correct for anything currently listed, but bounded by
+       the board window, so it is a second source and never the only one. A
+       board id that merely equals the lowercased ticker is not accepted as
+       canonical: during provider fallback that is a ticker wearing an id's
+       clothes, and indistinguishable from one.
+    3. A claimed id that differs from the lowercased ticker — the client knew
+       something we could not resolve; recorded as ``claimed``, not canonical.
+    4. ``symbol.lower()`` — a usable key, but explicitly ``unresolved``: it is
+       never labelled canonical, so downstream consumers can tell "bitcoin"
+       from a guess shaped like an id.
+
+    Returns ``(asset_id, resolution)`` where resolution is one of
+    ``"canonical"``, ``"claimed"``, ``"unresolved"``.
+    """
+    table_id = coingecko_client.coin_id(symbol)
+    if table_id:
+        return table_id, "canonical"
+    for asset in _board_assets():
+        if str(asset.get("symbol") or "").upper() == symbol:
+            resolved = _text(asset.get("id"), 60).lower()
+            if resolved and resolved != symbol.lower():
+                return resolved, "canonical"
+            break
+    claimed_id = _text(claimed, 60).lower()
+    if claimed_id and claimed_id != symbol.lower():
+        return claimed_id, "claimed"
+    return symbol.lower(), "unresolved"
+
+
 def sanitize_market_context(value: Any) -> dict[str, Any] | None:
     """Validate one client envelope, or return None if it has no asset identity.
 
@@ -147,8 +192,14 @@ def sanitize_market_context(value: Any) -> dict[str, Any] | None:
     symbol = _text(asset_raw.get("symbol"), 12).upper()
     if not symbol or not _SYMBOL_RE.match(symbol):
         return None
+    asset_id, id_resolution = _canonical_asset_id(symbol, asset_raw.get("id"))
     asset = {
-        "id": _text(asset_raw.get("id"), 60).lower() or symbol.lower(),
+        "id": asset_id,
+        # How the id was obtained, so nothing downstream mistakes a lowercased
+        # ticker fallback for a provider id. "canonical" ids came from the
+        # majors table or an unambiguous board row; anything else is honest
+        # about being a claim or a guess.
+        "id_resolution": id_resolution,
         "symbol": symbol,
         "name": _text(asset_raw.get("name"), 80) or symbol,
         "rank": _int(asset_raw.get("rank")),
@@ -244,7 +295,8 @@ def load_stored(cur, user_id: int, conversation_id: int) -> dict[str, Any] | Non
 
 
 def merge_for_persist(ui_context: dict[str, Any], incoming: dict[str, Any] | None,
-                      stored: dict[str, Any] | None) -> tuple[dict[str, Any], dict[str, Any] | None]:
+                      stored: dict[str, Any] | None,
+                      cleared: bool = False) -> tuple[dict[str, Any], dict[str, Any] | None]:
     """Combine hint context with the market envelope; return (to_persist, active).
 
     A fresh envelope *replaces* the stored one unconditionally — opening
@@ -252,7 +304,17 @@ def merge_for_persist(ui_context: dict[str, Any], incoming: dict[str, Any] | Non
     fighting over "it" (mission stage 20). A message that carries no envelope
     *preserves* the stored one, so the context survives ordinary turns and
     re-renders rather than evaporating on the first follow-up question.
+
+    ``cleared`` is the member having dismissed the chip. It drops the stored
+    envelope rather than merely declining to return it, because the context
+    lives here and a client that forgets locally would leave this side still
+    resolving "it" to an asset the person has visibly finished with. A send that
+    is both a dismissal and a fresh handoff is a new topic replacing an old one,
+    so the incoming envelope still wins; the clear only ever removes what the
+    member was actually looking at when they pressed it.
     """
+    if cleared and not incoming:
+        return dict(ui_context or {}), None
     if incoming:
         active: dict[str, Any] | None = stamp(dict(incoming))
     elif stored and not is_expired(stored):
@@ -480,6 +542,35 @@ def overlay(user_id: int, symbol: str) -> dict[str, Any]:
 # Grounding block for the conversational path
 # ---------------------------------------------------------------------------
 
+#: What the model is told when the member's Premium is not active. It carries no
+#: price, no history, no overview and no account overlay — the whole point is
+#: that the locked reply cannot contain the thing being sold. It is a knowledge
+#: item rather than a ``None`` because silence would make UNDX act as though
+#: crypto did not exist, and the honest answer is "this needs Premium".
+_LOCKED_INSTRUCTIONS = (
+    "This member's PulseSoc Premium is not active, so Premium crypto "
+    "intelligence is locked. No live price, history, market overview or "
+    "watchlist/alert context is available for this reply. Say plainly that "
+    "crypto intelligence needs an active Premium membership and point to "
+    "Premium. Never state, estimate or recall a figure — including from "
+    "earlier in this conversation."
+)
+
+
+def _premium_crypto_active(user_id: int) -> bool:
+    """The canonical server-side answer, via the one gate every other crypto
+    surface already uses (``services.crypto_premium_gate``). No local premium
+    flag, no cached client claim, no "was a subscriber once" — the resolver is
+    the only authority. Fails CLOSED: if the gate cannot be reached the
+    capability is treated as locked, matching ``has_crypto_capability`` itself.
+    """
+    try:
+        from services import crypto_premium_gate as gate
+
+        return bool(gate.has_crypto_capability(int(user_id), gate.CAP_CRYPTO_INTELLIGENCE))
+    except Exception:  # noqa: BLE001 — never fail open
+        return False
+
 
 def grounding_block(user_id: int, body: str, context: dict[str, Any] | None) -> dict[str, Any] | None:
     """A knowledge item that grounds crypto claims in the canonical live layer.
@@ -496,6 +587,26 @@ def grounding_block(user_id: int, body: str, context: dict[str, Any] | None) -> 
     market_wide = any(word in lowered for word in _MARKET_WIDE_WORDS)
     if not target and not market_wide:
         return None
+    # Entitlement is resolved only once the turn is known to be a crypto turn.
+    # Above this line nothing has been read and nothing is gated, which is what
+    # keeps general UNDX exactly as it was: "Hello" never reaches the resolver.
+    #
+    # Below it, the context has already told us WHICH asset the person means —
+    # and that is all it is allowed to do. A parked ``crypto_asset`` envelope
+    # names a subject; it does not confer the membership, so the check happens
+    # after resolution and before a single figure is read.
+    if not _premium_crypto_active(user_id):
+        return {
+            "id": 0,
+            "title": "Live crypto market context",
+            "category": "crypto_market",
+            "body": json.dumps(
+                {"instructions": _LOCKED_INSTRUCTIONS,
+                 "premium_required": True,
+                 "capability": "premium.crypto.intelligence"},
+                separators=(",", ":"),
+            ),
+        }
     payload: dict[str, Any] = {"instructions": (
         "Live crypto market context from PulseSoc's canonical market feed "
         "(CoinGecko-backed, shared cache). Treat these figures as the verified "
