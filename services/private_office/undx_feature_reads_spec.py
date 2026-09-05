@@ -39,10 +39,9 @@ DEFAULT_LIMIT = 10
 #: One capability per feature. The vocabulary the three registration surfaces
 #: derive from — typed exactly once.
 #:
-#: ``native_route`` is the Private Office hub for all five, because the hub is
-#: the only screen that exists today and the knowledge map refuses a deep link
-#: with no screen behind it. Repoint each at its own screen when that screen
-#: ships — the map's screen table will hold you to it.
+#: ``native_route`` names each feature's own screen; the five are literal
+#: routes in linking.ts and declared in the knowledge map's screen table, which
+#: refuses a deep link with no screen behind it.
 CAPABILITIES: tuple[dict, ...] = (
     {
         "capability_id": "private.documents.list",
@@ -50,7 +49,7 @@ CAPABILITIES: tuple[dict, ...] = (
         "description": "List the authenticated member's own private documents and their extraction state",
         "intents": ("my documents", "what did i upload", "my private files",
                     "status of my document", "what was extracted"),
-        "native_route": "/pulse/private-office",
+        "native_route": "/pulse/private-office/documents",
         "backend_route": "GET /api/private-office/documents",
         "flag_env": "PRIVATE_DOCUMENTS_ENABLED",
         "audit_action": _audit.ACTION_DOCUMENT_READ,
@@ -63,7 +62,7 @@ CAPABILITIES: tuple[dict, ...] = (
         "intents": ("my people", "who is in my private office",
                     "my relationship directory", "who do i owe something to",
                     "my contacts in the office"),
-        "native_route": "/pulse/private-office",
+        "native_route": "/pulse/private-office/people",
         "backend_route": "GET /api/private-office/relationships",
         "flag_env": "PRIVATE_RELATIONSHIPS_ENABLED",
         "audit_action": _audit.ACTION_GRAPH_READ,
@@ -75,7 +74,7 @@ CAPABILITIES: tuple[dict, ...] = (
         "description": "List the member's own private briefings, newest first",
         "intents": ("my briefings", "my latest briefing", "brief me",
                     "what did my office prepare", "my morning briefing"),
-        "native_route": "/pulse/private-office",
+        "native_route": "/pulse/private-office/briefings",
         "backend_route": "GET /api/private-office/briefings",
         "flag_env": "PRIVATE_BRIEFINGS_ENABLED",
         "audit_action": _audit.ACTION_BRIEFING_READ,
@@ -90,7 +89,7 @@ CAPABILITIES: tuple[dict, ...] = (
         "description": "Report the member's own Private Shield posture: open findings and what has not been checked",
         "intents": ("my shield", "am i exposed", "my open findings",
                     "what has my shield found", "my security posture"),
-        "native_route": "/pulse/private-office",
+        "native_route": "/pulse/private-office/shield",
         "backend_route": "GET /api/private-office/shield",
         "flag_env": "PRIVATE_SHIELD_ENABLED",
         "audit_action": _audit.ACTION_SHIELD_READ,
@@ -102,7 +101,7 @@ CAPABILITIES: tuple[dict, ...] = (
         "description": "Show the member's own concierge desk: staffing status and their requests",
         "intents": ("my concierge", "my concierge requests", "is anyone on my request",
                     "status of my concierge request", "what is my office handling"),
-        "native_route": "/pulse/private-office",
+        "native_route": "/pulse/private-office/concierge",
         "backend_route": "GET /api/private-office/concierge",
         "flag_env": "PRIVATE_CONCIERGE_ENABLED",
         "audit_action": _audit.ACTION_CONCIERGE_READ,

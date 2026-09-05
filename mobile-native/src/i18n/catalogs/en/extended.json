@@ -4688,6 +4688,192 @@
         "PERCENT": "Percentage",
         "DATE": "Date",
         "BOOLEAN": "Yes or no"
+      },
+      "feature": {
+        "loading": "Checking this feature…",
+        "retry": "Retry",
+        "notEntitled": {
+          "title": "Upgrade required",
+          "body": "This feature is included with {{tier}}.",
+          "bodyGeneric": "This feature is not included in your current plan."
+        },
+        "disabled": {
+          "title": "Temporarily off",
+          "body": "This feature is switched off right now. Your records are unaffected."
+        },
+        "notImplemented": {
+          "title": "Not built yet",
+          "body": "This feature has not been built yet."
+        },
+        "unavailable": {
+          "title": "We could not look",
+          "body": "This feature could not be reached just now. Try again shortly."
+        },
+        "error": {
+          "title": "Something went wrong",
+          "body": "This could not be loaded."
+        }
+      },
+      "documents": {
+        "subtitle": "Reads facts out of documents you provide. Nothing is recorded without your review.",
+        "upload": "Upload a document",
+        "uploading": "Uploading…",
+        "duplicate": {
+          "title": "Already on file",
+          "body": "You uploaded this exact file before. The existing copy is kept."
+        },
+        "uploadFailed": "Upload failed",
+        "reviewFailed": "Review failed",
+        "empty": {
+          "title": "No documents yet",
+          "body": "Documents you upload appear here with what was read from them."
+        },
+        "states": {
+          "EXTRACTED": "Read",
+          "NO_CLAIMS": "Nothing to extract",
+          "PROVIDER_REQUIRED": "Awaiting a provider",
+          "FAILED": "Could not be read"
+        },
+        "claims": {
+          "title": "Proposed facts",
+          "none": "No facts were proposed from this document.",
+          "accept": "Accept",
+          "reject": "Reject",
+          "ACCEPTED": "Accepted",
+          "REJECTED": "Rejected"
+        }
+      },
+      "people": {
+        "subtitle": "The people recorded in your own office. Nothing is looked up about anyone.",
+        "add": "Add a person",
+        "addFailed": "Could not add",
+        "form": {
+          "name": "Name",
+          "role": "Role (optional)",
+          "save": "Save",
+          "cancel": "Cancel"
+        },
+        "empty": {
+          "title": "No people yet",
+          "body": "People you record appear here, with how your own records cite them."
+        },
+        "openCommitments_one": "{{count}} open commitment",
+        "openCommitments_other": "{{count}} open commitments",
+        "profile": {
+          "facts": "Facts",
+          "commitments": "Commitments",
+          "timeline": "Timeline",
+          "nothing": "Nothing recorded about this person yet."
+        }
+      },
+      "briefings": {
+        "subtitle": "Briefings assembled from your own records. Nothing is added from outside.",
+        "generate": "Prepare a briefing",
+        "generating": "Preparing…",
+        "generateFailed": "Could not prepare a briefing",
+        "itemCount_one": "{{count}} item",
+        "itemCount_other": "{{count}} items",
+        "noItems": "This briefing is empty — there was nothing in your records to report.",
+        "empty": {
+          "title": "No briefings yet",
+          "body": "Prepare one and it is assembled from your records at that moment."
+        },
+        "sections": {
+          "PEOPLE": "People",
+          "OBLIGATIONS": "Obligations",
+          "EVENTS": "Events",
+          "DECISIONS": "Decisions",
+          "REQUESTS": "Requests",
+          "RISKS": "Risks",
+          "OPPORTUNITIES": "Opportunities"
+        }
+      },
+      "shield": {
+        "subtitle": "Checks your own records for exposure. It sees only what it names below.",
+        "openFindings_one": "{{count}} open finding",
+        "openFindings_other": "{{count}} open findings",
+        "severity": {
+          "HIGH": "High",
+          "MEDIUM": "Medium",
+          "LOW": "Low"
+        },
+        "scan": "Run a check",
+        "scanning": "Checking…",
+        "scanFailed": "The check could not run",
+        "checksTitle": "What is checked",
+        "checksHint": "“No findings” means none in the checks listed here — nothing more.",
+        "externalTitle": "Not checked externally",
+        "externalMonitored": "Monitored by an outside provider",
+        "externalNotMonitored": "No outside provider is watching",
+        "empty": {
+          "title": "No open findings",
+          "body": "Nothing was found in the checks listed above. That is the full extent of what this means."
+        },
+        "status": {
+          "OPEN": "Open",
+          "ACKNOWLEDGED": "Acknowledged",
+          "RESOLVED": "Resolved",
+          "DISMISSED": "Dismissed"
+        },
+        "acknowledge": "Acknowledge",
+        "resolve": "Mark resolved",
+        "dismiss": "Dismiss",
+        "updateFailed": "Could not update"
+      },
+      "concierge": {
+        "subtitle": "A desk for requests handled by a person. Every reply here was written by someone.",
+        "newRequest": "New request",
+        "submitFailed": "Could not submit",
+        "sendFailed": "Could not send",
+        "cancelFailed": "Could not cancel",
+        "cancelRequest": "Cancel this request",
+        "empty": {
+          "title": "No requests yet",
+          "body": "Requests you submit appear here with their full history."
+        },
+        "desk": {
+          "staffed_one": "{{count}} operator on duty",
+          "staffed_other": "{{count}} operators on duty",
+          "unstaffed": "No operator is on duty"
+        },
+        "form": {
+          "title": "What do you need?",
+          "description": "Details (optional)",
+          "category": "Category",
+          "priority": "Priority",
+          "submit": "Submit",
+          "cancel": "Cancel"
+        },
+        "categories": {
+          "GENERAL": "General",
+          "TRAVEL": "Travel",
+          "LEGAL": "Legal",
+          "FINANCIAL": "Financial",
+          "PERSONAL": "Personal",
+          "RESEARCH": "Research",
+          "ADMIN": "Admin"
+        },
+        "priorities": {
+          "LOW": "Low",
+          "NORMAL": "Normal",
+          "HIGH": "High",
+          "URGENT": "Urgent"
+        },
+        "statusWords": {
+          "OPEN": "Open",
+          "IN_PROGRESS": "In progress",
+          "WAITING_ON_USER": "Waiting on you",
+          "WAITING_ON_PROVIDER": "Waiting on a provider",
+          "COMPLETED": "Completed",
+          "CANCELED": "Canceled"
+        },
+        "thread": {
+          "none": "No messages yet.",
+          "operator": "Operator",
+          "you": "You",
+          "placeholder": "Write a message…",
+          "send": "Send"
+        }
       }
     },
     "gate": {

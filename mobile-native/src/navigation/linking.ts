@@ -350,8 +350,13 @@ export const linking: LinkingOptions<RootStackParamList> = {
       PrivateOffice: "pulse/private-office",
       PrivateFacts: "pulse/private-office/facts",
       PrivateOfficeSecurity: "pulse/private-office/security",
-      // Declared after the literal paths above so "facts" and "security" keep
-      // their own screens; the pattern claims the six record views.
+      PrivateDocuments: "pulse/private-office/documents",
+      PrivatePeople: "pulse/private-office/people",
+      PrivateBriefings: "pulse/private-office/briefings",
+      PrivateShield: "pulse/private-office/shield",
+      PrivateConcierge: "pulse/private-office/concierge",
+      // Declared after the literal paths above so the named feature screens
+      // keep their own routes; the pattern claims the six record views.
       PrivateOperations: {
         path: "pulse/private-office/:view",
         parse: {

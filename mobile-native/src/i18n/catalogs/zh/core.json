@@ -218,7 +218,12 @@
       "privateOfficeSecurity": "办公室安全",
       "privateOperations": "事务",
       "capitalGraph": "资本图谱",
-      "capitalEntity": "实体"
+      "capitalEntity": "实体",
+      "privateDocuments": "文档智能",
+      "privatePeople": "关系智能",
+      "privateBriefings": "私人简报",
+      "privateShield": "私人护盾",
+      "privateConcierge": "真人礼宾"
     },
     "navSubtitles": {
       "missionControl": "指挥中心",

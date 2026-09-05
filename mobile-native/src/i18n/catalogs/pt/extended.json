@@ -4688,6 +4688,192 @@
         "PERCENT": "Percentual",
         "DATE": "Data",
         "BOOLEAN": "Sim ou não"
+      },
+      "feature": {
+        "loading": "Verificando este recurso…",
+        "retry": "Tentar novamente",
+        "notEntitled": {
+          "title": "Upgrade necessário",
+          "body": "Este recurso está incluído com {{tier}}.",
+          "bodyGeneric": "Seu plano atual não inclui este recurso."
+        },
+        "disabled": {
+          "title": "Temporariamente desativado",
+          "body": "Este recurso está desativado no momento. Seus registros não são afetados."
+        },
+        "notImplemented": {
+          "title": "Ainda não disponível",
+          "body": "Este recurso ainda não foi construído."
+        },
+        "unavailable": {
+          "title": "Não foi possível verificar",
+          "body": "Este recurso não pôde ser acessado agora. Tente novamente em breve."
+        },
+        "error": {
+          "title": "Algo deu errado",
+          "body": "Não foi possível carregar."
+        }
+      },
+      "documents": {
+        "subtitle": "Lê informações dos documentos que você fornece. Nada é registrado sem a sua revisão.",
+        "upload": "Enviar um documento",
+        "uploading": "Enviando…",
+        "duplicate": {
+          "title": "Já está arquivado",
+          "body": "Você já enviou este mesmo arquivo antes. A cópia existente foi mantida."
+        },
+        "uploadFailed": "Falha no envio",
+        "reviewFailed": "Falha na revisão",
+        "empty": {
+          "title": "Nenhum documento ainda",
+          "body": "Os documentos que você enviar aparecem aqui com o que foi lido deles."
+        },
+        "states": {
+          "EXTRACTED": "Lido",
+          "NO_CLAIMS": "Nada a extrair",
+          "PROVIDER_REQUIRED": "Aguardando um provedor",
+          "FAILED": "Não foi possível ler"
+        },
+        "claims": {
+          "title": "Informações propostas",
+          "none": "Nenhuma informação foi proposta a partir deste documento.",
+          "accept": "Aceitar",
+          "reject": "Rejeitar",
+          "ACCEPTED": "Aceita",
+          "REJECTED": "Rejeitada"
+        }
+      },
+      "people": {
+        "subtitle": "As pessoas registradas no seu próprio escritório. Nada é pesquisado sobre ninguém.",
+        "add": "Adicionar uma pessoa",
+        "addFailed": "Não foi possível adicionar",
+        "form": {
+          "name": "Nome",
+          "role": "Função (opcional)",
+          "save": "Salvar",
+          "cancel": "Cancelar"
+        },
+        "empty": {
+          "title": "Nenhuma pessoa ainda",
+          "body": "As pessoas que você registrar aparecem aqui, com a forma como seus próprios registros as citam."
+        },
+        "openCommitments_one": "{{count}} compromisso em aberto",
+        "openCommitments_other": "{{count}} compromissos em aberto",
+        "profile": {
+          "facts": "Informações",
+          "commitments": "Compromissos",
+          "timeline": "Linha do tempo",
+          "nothing": "Nada registrado sobre esta pessoa ainda."
+        }
+      },
+      "briefings": {
+        "subtitle": "Briefings montados a partir dos seus próprios registros. Nada é adicionado de fora.",
+        "generate": "Preparar um briefing",
+        "generating": "Preparando…",
+        "generateFailed": "Não foi possível preparar um briefing",
+        "itemCount_one": "{{count}} item",
+        "itemCount_other": "{{count}} itens",
+        "noItems": "Este briefing está vazio — não havia nada nos seus registros para relatar.",
+        "empty": {
+          "title": "Nenhum briefing ainda",
+          "body": "Prepare um e ele será montado com seus registros daquele momento."
+        },
+        "sections": {
+          "PEOPLE": "Pessoas",
+          "OBLIGATIONS": "Obrigações",
+          "EVENTS": "Eventos",
+          "DECISIONS": "Decisões",
+          "REQUESTS": "Solicitações",
+          "RISKS": "Riscos",
+          "OPPORTUNITIES": "Oportunidades"
+        }
+      },
+      "shield": {
+        "subtitle": "Verifica exposição nos seus próprios registros. Ele vê apenas o que está nomeado abaixo.",
+        "openFindings_one": "{{count}} constatação em aberto",
+        "openFindings_other": "{{count}} constatações em aberto",
+        "severity": {
+          "HIGH": "Alta",
+          "MEDIUM": "Média",
+          "LOW": "Baixa"
+        },
+        "scan": "Executar uma verificação",
+        "scanning": "Verificando…",
+        "scanFailed": "A verificação não pôde ser executada",
+        "checksTitle": "O que é verificado",
+        "checksHint": "«Nenhuma constatação» significa nenhuma nas verificações listadas aqui — nada mais.",
+        "externalTitle": "Sem verificação externa",
+        "externalMonitored": "Monitorado por um provedor externo",
+        "externalNotMonitored": "Nenhum provedor externo está monitorando",
+        "empty": {
+          "title": "Nenhuma constatação em aberto",
+          "body": "Nada foi encontrado nas verificações listadas acima. Isso é tudo o que significa."
+        },
+        "status": {
+          "OPEN": "Aberta",
+          "ACKNOWLEDGED": "Reconhecida",
+          "RESOLVED": "Resolvida",
+          "DISMISSED": "Descartada"
+        },
+        "acknowledge": "Reconhecer",
+        "resolve": "Marcar como resolvida",
+        "dismiss": "Descartar",
+        "updateFailed": "Não foi possível atualizar"
+      },
+      "concierge": {
+        "subtitle": "Um balcão de solicitações atendidas por uma pessoa. Cada resposta aqui foi escrita por alguém.",
+        "newRequest": "Nova solicitação",
+        "submitFailed": "Não foi possível enviar",
+        "sendFailed": "Não foi possível enviar a mensagem",
+        "cancelFailed": "Não foi possível cancelar",
+        "cancelRequest": "Cancelar esta solicitação",
+        "empty": {
+          "title": "Nenhuma solicitação ainda",
+          "body": "As solicitações que você enviar aparecem aqui com todo o histórico."
+        },
+        "desk": {
+          "staffed_one": "{{count}} operador de plantão",
+          "staffed_other": "{{count}} operadores de plantão",
+          "unstaffed": "Nenhum operador de plantão"
+        },
+        "form": {
+          "title": "Do que você precisa?",
+          "description": "Detalhes (opcional)",
+          "category": "Categoria",
+          "priority": "Prioridade",
+          "submit": "Enviar",
+          "cancel": "Cancelar"
+        },
+        "categories": {
+          "GENERAL": "Geral",
+          "TRAVEL": "Viagens",
+          "LEGAL": "Jurídico",
+          "FINANCIAL": "Financeiro",
+          "PERSONAL": "Pessoal",
+          "RESEARCH": "Pesquisa",
+          "ADMIN": "Administrativo"
+        },
+        "priorities": {
+          "LOW": "Baixa",
+          "NORMAL": "Normal",
+          "HIGH": "Alta",
+          "URGENT": "Urgente"
+        },
+        "statusWords": {
+          "OPEN": "Aberta",
+          "IN_PROGRESS": "Em andamento",
+          "WAITING_ON_USER": "Aguardando você",
+          "WAITING_ON_PROVIDER": "Aguardando um provedor",
+          "COMPLETED": "Concluída",
+          "CANCELED": "Cancelada"
+        },
+        "thread": {
+          "none": "Nenhuma mensagem ainda.",
+          "operator": "Operador",
+          "you": "Você",
+          "placeholder": "Escreva uma mensagem…",
+          "send": "Enviar"
+        }
       }
     },
     "gate": {
