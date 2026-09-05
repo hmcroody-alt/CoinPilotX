@@ -28,6 +28,48 @@ from services import schema_guard
 from services.pulse_briefings import crypto_provider, engine, facts, summarizer
 
 
+_PREMIUM_GATE_PATCH = None
+
+
+def setUpModule():
+    """Give every briefing owner in this file the Premium entitlement.
+
+    ``evaluate_user_briefing`` gained a generation-time Premium hard-lock:
+    briefings are a Premium tile, so a lapsed member stops receiving NEW ones.
+    The gate fails CLOSED by design — a resolver outage must pause generation
+    rather than generate for a possibly-lapsed member — which means "this
+    account lapsed" and "this process cannot resolve entitlements at all" are
+    deliberately indistinguishable to the caller.
+
+    This suite is the second case. It never sets ``DATABASE_URL``; every test
+    hand-builds a ``:memory:`` database and passes the connection in. The gate
+    resolves server-authoritatively through ``services.db``, so it does not read
+    that connection at all, and a real entitlement row could not be granted into
+    it — writing one through ``services.db`` would land in the developer's
+    actual database instead. So the flow tests below were asserting against a
+    gate they were never written to exercise.
+
+    Patching it here rather than granting is safe specifically because the real
+    resolution is covered elsewhere and is NOT the thing this file tests:
+    ``tests/crypto_premium/test_premium_delivery_stop.py`` drives
+    ``_premium_briefings_allowed`` through the live gate in both directions, and
+    pins that a blocked briefing writes nothing and deletes nothing. That suite
+    owns the entitlement question; this one owns CLAIM -> GATHER -> SCORE ->
+    SUPPRESS -> SUMMARIZE -> SEND -> SETTLE. Stubbing the gate in the flow suite
+    therefore removes no coverage — it restores the flow coverage the gate had
+    masked.
+    """
+    global _PREMIUM_GATE_PATCH
+    _PREMIUM_GATE_PATCH = mock.patch.object(
+        engine, "_premium_briefings_allowed", return_value=True)
+    _PREMIUM_GATE_PATCH.start()
+
+
+def tearDownModule():
+    if _PREMIUM_GATE_PATCH is not None:
+        _PREMIUM_GATE_PATCH.stop()
+
+
 def _iso(dt: datetime) -> str:
     return dt.isoformat(timespec="seconds").replace("+00:00", "Z")
 
