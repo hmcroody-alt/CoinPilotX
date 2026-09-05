@@ -217,7 +217,10 @@ PRODUCTION_TOOL_REGISTRY: dict[str, dict[str, Any]] = {
     "pulsesoc.localization.region.update": {"method": None, "route": "services.pulse_region_preferences.update_preferences", "risk": "medium", "confirmation": False, "canonical_key": "user_id", "verification_route": "services.pulse_region_preferences.get_preferences"},
     "pulsesoc.localization.translation.update": {"method": None, "route": "services.content_translation.set_preference", "risk": "medium", "confirmation": False, "canonical_key": "user_id", "verification_route": "services.content_translation.get_preference"},
     "pulsesoc.settings.privacy.audience.update": {"method": None, "route": "services.pulse_settings_routes.save_preferences", "risk": "high", "confirmation": True, "canonical_key": "user_id", "verification_route": "services.pulse_settings_routes.load_preferences"},
-    "pulsesoc.settings.appearance.theme.update": {"method": None, "route": "services.pulse_settings_routes.save_preferences", "risk": "low", "confirmation": False, "canonical_key": "user_id", "verification_route": "services.pulse_settings_routes.load_preferences"},
+    # "medium", not "low": this writes through save_preferences exactly like the
+    # privacy entry above it, and "low" maps to read-only in the surface check —
+    # a write recorded as a read is the disagreement, not a smaller risk.
+    "pulsesoc.settings.appearance.theme.update": {"method": None, "route": "services.pulse_settings_routes.save_preferences", "risk": "medium", "confirmation": False, "canonical_key": "user_id", "verification_route": "services.pulse_settings_routes.load_preferences"},
     # Action surface expansion. Same in-process convention again. Note that every
     # ``verification_route`` here names a reader in a different module from the
     # writer beside it — the feed engine writes the hide and the feed engine reads

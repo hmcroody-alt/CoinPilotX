@@ -792,9 +792,16 @@ class KnowledgeMapTests(unittest.TestCase):
         # result back through a directed block_state — the symmetric is_blocked that
         # would have reported success for a block that never landed is no longer on
         # the path. The defect was fixed, not reclassified.
+        #
+        # messages.mark_read is the seventh, and it is the odd one out: it did not
+        # graduate on this list, it was already registered and wired — executor
+        # messages_mark_read, verifier conversation_read_state — before the map had
+        # a record for it. The sweep that gave every registered capability a
+        # knowledge-map record made it visible here for the first time. Nothing was
+        # softened; a write the planner could already reach is now on the books.
         assert {row["capability_id"] for row in ready_writes} == {
             "saved.post.set", "social.follow", "social.unfollow", "messages.send",
-            "profile.block", "profile.unblock",
+            "profile.block", "profile.unblock", "messages.mark_read",
         }, (
             "unexpected write graduated in a stage target area: "
             f"{ready_writes}"
