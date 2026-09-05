@@ -28,6 +28,7 @@ def main() -> int:
     call_screen = read("mobile-native/src/screens/CallScreen.tsx")
     calls_api = read("mobile-native/src/api/calls.ts")
     call_hook = read("mobile-native/src/calls/useNativeCallRoom.ts")
+    audio_engine = read("mobile-native/src/core/realtimeAudioEngine.ts")
     linking = read("mobile-native/src/navigation/linking.ts")
     notification_routing = read("mobile-native/src/navigation/notificationRouting.ts")
     qa_report = read("reports/pulsesoc_native_calls_qa.md")
@@ -68,7 +69,7 @@ def main() -> int:
 
     require(call_hook, 'Platform.OS === "web"', "LiveKit unsupported web guard")
     require(call_hook, "Native LiveKit calls require an installed iOS or Android build.", "web fallback message")
-    require(call_hook, "AudioSession.selectAudioOutput", "native speaker route")
+    require(audio_engine, "selectAudioOutput", "native speaker route")
     require(call_hook, "RoomEvent.Reconnecting", "provider reconnect handling")
     require(linking, 'path: "pulse/calls/:callId?"', "calls deep-link path")
     require(notification_routing, "call_id", "message call notification support")
