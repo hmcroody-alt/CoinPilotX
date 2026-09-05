@@ -48,6 +48,7 @@ import {
 import { mediaDisplayUrl } from "../api/feed";
 import { sellerStoreName } from "../api/sellerIdentity";
 import { registerSyncInvalidation } from "../core/eventSync";
+import { useTranslation } from "../i18n";
 import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
 import { RootStackParamList } from "../navigation/types";
 import { observeSavedStates, peekSaveState, useSavedState } from "../social/savedStore";
@@ -72,6 +73,7 @@ const SORT_TABS: { key: SortKey; label: string }[] = [
 ];
 
 export function MarketplaceScreen({ route, navigation }: Props) {
+  const { t } = useTranslation();
   // Bottom-dock coupling: drives hide-on-scroll-down / reveal-on-scroll-up and
   // reserves the matching clearance so the last row never sits under the dock.
   const dock = useBottomNavSurface();
@@ -124,7 +126,7 @@ export function MarketplaceScreen({ route, navigation }: Props) {
         setOffline(true);
         openInitialListing(cached);
       } else {
-        setError(loadError instanceof Error ? loadError.message : "Marketplace could not load.");
+        setError(loadError instanceof Error ? loadError.message : t("commerce:marketplace.loadFailed"));
       }
     } finally {
       setLoading(false);
@@ -343,6 +345,7 @@ function ProductCard({ listing, busy, onOpen, onSave, onAddToCart }: {
   onSave: (listing: MarketplaceListing) => void;
   onAddToCart: (listing: MarketplaceListing) => void;
 }) {
+  const { t } = useTranslation();
   const cover = listing.media?.[0] ? mediaDisplayUrl(listing.media[0]) : "";
   // Read from the shared store, not from the payload: a listing saved on the
   // product page or the Saved screen shows as saved here without a refetch.

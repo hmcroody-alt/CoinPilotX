@@ -18,6 +18,7 @@ import {
   verifyPhone
 } from "../api/account";
 import { Panel } from "../components/Panel";
+import { useTranslation } from "../i18n";
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
@@ -34,56 +35,64 @@ type Props =
 
 type AccountSection = "account" | "security" | "privacy" | "devices";
 
+/**
+ * `label` holds a catalog key, not display text — it is resolved with `t` at
+ * render time so the tab strip re-labels itself the moment the language
+ * changes, instead of freezing whatever language was active when this module
+ * loaded.
+ */
 const sections: { key: AccountSection; label: string }[] = [
-  { key: "account", label: "Account" },
-  { key: "security", label: "Security" },
-  { key: "privacy", label: "Privacy" },
-  { key: "devices", label: "Devices" }
+  { key: "account", label: "settings:accountCenter.sections.account" },
+  { key: "security", label: "settings:accountCenter.sections.security" },
+  { key: "privacy", label: "settings:accountCenter.sections.privacy" },
+  { key: "devices", label: "settings:accountCenter.sections.devices" }
 ];
 
+/** Same contract as `sections`: `label` is a catalog key, `value` is API data. */
 const settingOptions: Record<string, { label: string; value: string }[]> = {
   profile_visibility: [
-    { label: "Public", value: "public" },
-    { label: "Private", value: "private" }
+    { label: "settings:accountCenter.options.public", value: "public" },
+    { label: "settings:accountCenter.options.private", value: "private" }
   ],
   message_requests: [
-    { label: "Everyone", value: "everyone" },
-    { label: "Followers", value: "followers" },
-    { label: "None", value: "none" }
+    { label: "settings:accountCenter.options.everyone", value: "everyone" },
+    { label: "settings:accountCenter.options.followers", value: "followers" },
+    { label: "settings:accountCenter.options.none", value: "none" }
   ],
   notifications_enabled: [
-    { label: "Enabled", value: "true" },
-    { label: "Disabled", value: "false" }
+    { label: "settings:accountCenter.options.enabled", value: "true" },
+    { label: "settings:accountCenter.options.disabled", value: "false" }
   ],
   status_replies: [
-    { label: "Everyone", value: "everyone" },
-    { label: "Followers", value: "followers" },
-    { label: "None", value: "none" }
+    { label: "settings:accountCenter.options.everyone", value: "everyone" },
+    { label: "settings:accountCenter.options.followers", value: "followers" },
+    { label: "settings:accountCenter.options.none", value: "none" }
   ],
   ads_personalization: [
-    { label: "Allowed", value: "true" },
-    { label: "Off", value: "false" }
+    { label: "settings:accountCenter.options.allowed", value: "true" },
+    { label: "settings:accountCenter.options.off", value: "false" }
   ],
   sci_fi_intensity: [
-    { label: "Low", value: "low" },
-    { label: "Medium", value: "medium" },
-    { label: "High", value: "high" }
+    { label: "settings:accountCenter.options.low", value: "low" },
+    { label: "settings:accountCenter.options.medium", value: "medium" },
+    { label: "settings:accountCenter.options.high", value: "high" }
   ],
   reduced_motion: [
-    { label: "System", value: "system" },
-    { label: "Reduce", value: "true" },
-    { label: "Full motion", value: "false" }
+    { label: "settings:accountCenter.options.system", value: "system" },
+    { label: "settings:accountCenter.options.reduce", value: "true" },
+    { label: "settings:accountCenter.options.fullMotion", value: "false" }
   ],
   language: [
-    { label: "English", value: "en" },
-    { label: "Spanish", value: "es" },
-    { label: "French", value: "fr" },
-    { label: "Haitian Creole", value: "ht" },
-    { label: "Portuguese", value: "pt" }
+    { label: "settings:accountCenter.options.english", value: "en" },
+    { label: "settings:accountCenter.options.spanish", value: "es" },
+    { label: "settings:accountCenter.options.french", value: "fr" },
+    { label: "settings:accountCenter.options.haitianCreole", value: "ht" },
+    { label: "settings:accountCenter.options.portuguese", value: "pt" }
   ]
 };
 
 export function AccountCenterScreen({ route, navigation }: Props) {
+  const { t } = useTranslation();
   const initialSection = normalizeSection(route.name, routeSectionParam(route.params));
   const [section, setSection] = useState<AccountSection>(initialSection);
   const [state, setState] = useState<AccountState | null>(null);
@@ -95,7 +104,7 @@ export function AccountCenterScreen({ route, navigation }: Props) {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
-  const title = useMemo(() => sectionTitle(section), [section]);
+  const title = useMemo(() => t(sectionTitleKey(section)), [section, t]);
 
   const load = useCallback(async (mode: "initial" | "refresh" = "initial") => {
     setError("");
@@ -114,12 +123,12 @@ export function AccountCenterScreen({ route, navigation }: Props) {
         setDraftSettings(cached.settings);
         setOffline(true);
       }
-      setError(loadError instanceof Error ? loadError.message : "Account Center could not load.");
+      setError(loadError instanceof Error ? loadError.message : t("settings:accountCenter.loadError"));
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     setSection(normalizeSection(route.name, routeSectionParam(route.params)));
@@ -141,12 +150,12 @@ export function AccountCenterScreen({ route, navigation }: Props) {
       const result = await action();
       if (options.codes && "recovery_codes" in result) {
         const codes = Array.isArray(result.recovery_codes) ? result.recovery_codes.join("\n") : "";
-        Alert.alert("Recovery codes", codes || result.message || "Recovery codes generated.");
+        Alert.alert(t("settings:accountCenter.recoveryCodesAlertTitle"), codes || result.message || t("settings:accountCenter.recoveryCodesAlertBody"));
       }
-      setNotice(result.message || "Account security updated.");
+      setNotice(result.message || t("settings:accountCenter.securityUpdated"));
       if (options.refresh !== false) await load("refresh");
     } catch (actionError) {
-      setError(actionError instanceof Error ? actionError.message : "Action could not be completed.");
+      setError(actionError instanceof Error ? actionError.message : t("settings:accountCenter.actionError"));
     } finally {
       setBusy("");
     }
@@ -160,19 +169,19 @@ export function AccountCenterScreen({ route, navigation }: Props) {
       const result = await updateAccountSettings(draftSettings);
       setDraftSettings(result.settings || draftSettings);
       await load("refresh");
-      setNotice(result.message || "Settings saved.");
+      setNotice(result.message || t("settings:accountCenter.settingsSaved"));
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Settings could not be saved.");
+      setError(saveError instanceof Error ? saveError.message : t("settings:accountCenter.settingsSaveError"));
     } finally {
       setBusy("");
     }
   }
 
   function confirmTrustedDeviceRemoval(deviceId: number) {
-    Alert.alert("Remove trusted device?", "This device will need to authenticate again before sensitive account actions.", [
-      { text: "Cancel", style: "cancel" },
+    Alert.alert(t("settings:accountCenter.removeDeviceTitle"), t("settings:accountCenter.removeDeviceBody"), [
+      { text: t("settings:accountCenter.cancel"), style: "cancel" },
       {
-        text: "Remove",
+        text: t("settings:accountCenter.remove"),
         style: "destructive",
         onPress: () => runAction(`remove-device:${deviceId}`, () => removeTrustedDevice(deviceId))
       }
@@ -183,7 +192,7 @@ export function AccountCenterScreen({ route, navigation }: Props) {
     Alert.alert("Sign out other sessions?", "PulseSoc will sign you out on every other device.", [
       { text: "Cancel", style: "cancel" },
       {
-        text: "Revoke",
+        text: t("settings:accountCenter.revoke"),
         style: "destructive",
         onPress: () => runAction("revoke-sessions", revokeAllSessions)
       }
@@ -194,7 +203,7 @@ export function AccountCenterScreen({ route, navigation }: Props) {
     return (
       <View style={styles.center}>
         <ActivityIndicator color={colors.accent} />
-        <Text style={styles.centerText}>Loading Account Center</Text>
+        <Text style={styles.centerText}>{t("settings:accountCenter.loading")}</Text>
       </View>
     );
   }
@@ -206,7 +215,7 @@ export function AccountCenterScreen({ route, navigation }: Props) {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load("refresh").catch(() => undefined)} tintColor={colors.accent} />}
     >
       <View style={styles.header}>
-        <Text style={styles.eyebrow}>PulseSoc identity core</Text>
+        <Text style={styles.eyebrow}>{t("settings:accountCenter.eyebrow")}</Text>
         <Text style={styles.title}>{title}</Text>
         <Text style={styles.subtitle}>
           {offline ? "Showing the last trusted snapshot. Pull to reconnect." : "Your account, security, privacy, and device settings."}
@@ -221,7 +230,7 @@ export function AccountCenterScreen({ route, navigation }: Props) {
             style={[styles.sectionTab, section === item.key && styles.sectionTabActive]}
             onPress={() => setSection(item.key)}
           >
-            <Text style={[styles.sectionTabText, section === item.key && styles.sectionTabTextActive]}>{item.label}</Text>
+            <Text style={[styles.sectionTabText, section === item.key && styles.sectionTabTextActive]}>{t(item.label)}</Text>
           </Pressable>
         ))}
       </View>
@@ -287,31 +296,32 @@ function AccountSectionView({
   onSave: () => void;
   onOpenWeb: (path?: string) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <>
       <Panel>
-        <Text style={styles.panelTitle}>Account status</Text>
+        <Text style={styles.panelTitle}>{t("settings:accountCenter.account.statusTitle")}</Text>
         <View style={styles.metricGrid}>
-          <Metric label="Plan" value={state?.status.access_label || state?.status.subscription_plan || "Free"} />
-          <Metric label="Language" value={(state?.status.preferred_language || state?.status.language || "en").toUpperCase()} />
-          <Metric label="Telegram" value={state?.status.telegram_linked ? "Linked" : "Not linked"} />
+          <Metric label={t("settings:accountCenter.account.plan")} value={state?.status.access_label || state?.status.subscription_plan || t("settings:accountCenter.account.planFallback")} />
+          <Metric label={t("settings:accountCenter.account.language")} value={(state?.status.preferred_language || state?.status.language || "en").toUpperCase()} />
+          <Metric label={t("settings:accountCenter.account.telegram")} value={state?.status.telegram_linked ? t("settings:accountCenter.account.telegramLinked") : t("settings:accountCenter.account.telegramNotLinked")} />
         </View>
       </Panel>
 
       <Panel>
-        <Text style={styles.panelTitle}>Experience controls</Text>
-        <SettingChoice label="Motion" settingKey="reduced_motion" value={draftSettings.reduced_motion} onChange={onDraftChange} />
-        <SettingChoice label="Visual intensity" settingKey="sci_fi_intensity" value={draftSettings.sci_fi_intensity} onChange={onDraftChange} />
-        <SettingChoice label="Language" settingKey="language" value={draftSettings.language} onChange={onDraftChange} />
-        <ActionButton label={busy === "save-settings" ? "Saving" : "Save account settings"} disabled={busy === "save-settings"} onPress={onSave} />
+        <Text style={styles.panelTitle}>{t("settings:accountCenter.account.experienceTitle")}</Text>
+        <SettingChoice label={t("settings:accountCenter.account.motion")} settingKey="reduced_motion" value={draftSettings.reduced_motion} onChange={onDraftChange} />
+        <SettingChoice label={t("settings:accountCenter.account.visualIntensity")} settingKey="sci_fi_intensity" value={draftSettings.sci_fi_intensity} onChange={onDraftChange} />
+        <SettingChoice label={t("settings:accountCenter.account.language")} settingKey="language" value={draftSettings.language} onChange={onDraftChange} />
+        <ActionButton label={busy === "save-settings" ? t("settings:accountCenter.saving") : t("settings:accountCenter.account.saveSettings")} disabled={busy === "save-settings"} onPress={onSave} />
       </Panel>
 
       <Panel>
         <Text style={styles.panelTitle}>Credentials and data</Text>
         <Text style={styles.muted}>Password changes, account export, and account deletion happen on the PulseSoc website, where we can ask you to confirm it is really you.</Text>
         <View style={styles.buttonGrid}>
-          <ActionButton label="Password and email" variant="secondary" onPress={() => onOpenWeb("/account/settings")} />
-          <ActionButton label="Delete account" variant="danger" onPress={() => onOpenWeb("/account/delete")} />
+          <ActionButton label={t("settings:accountCenter.account.passwordAndEmail")} variant="secondary" onPress={() => onOpenWeb("/account/settings")} />
+          <ActionButton label={t("settings:accountCenter.account.deleteAccount")} variant="danger" onPress={() => onOpenWeb("/account/delete")} />
         </View>
       </Panel>
     </>
@@ -341,6 +351,7 @@ function SecuritySectionView({
   onRevokeSessions: () => void;
   onOpenWeb: (path?: string) => void;
 }) {
+  const { t } = useTranslation();
   const security = state?.security || {};
   const score = Math.max(0, Math.min(100, Number(security.score || 0)));
   return (
@@ -348,8 +359,8 @@ function SecuritySectionView({
       <Panel>
         <View style={styles.scoreRow}>
           <View>
-            <Text style={styles.panelTitle}>Security score</Text>
-            <Text style={styles.muted}>{security.label || "PulseSoc protection"} · {security.trust_level || "standard"}</Text>
+            <Text style={styles.panelTitle}>{t("settings:accountCenter.security.scoreTitle")}</Text>
+            <Text style={styles.muted}>{security.label || t("settings:accountCenter.security.labelFallback")} · {security.trust_level || t("settings:accountCenter.security.trustLevelFallback")}</Text>
           </View>
           <Text style={styles.scoreText}>{score}</Text>
         </View>
@@ -359,40 +370,40 @@ function SecuritySectionView({
       </Panel>
 
       <Panel>
-        <Text style={styles.panelTitle}>Verification</Text>
-        <SecurityRow title="Email" detail={security.email || "Not added"} state={security.email_verified ? "Verified" : "Not verified"} onPress={onVerifyEmail} button="Verify email" busy={busy === "verify-email"} />
-        <SecurityRow title="Phone" detail={security.phone || "Not added"} state={security.phone_verified ? "Verified" : "Not verified"} onPress={onVerifyPhone} button="Verify phone" busy={busy === "verify-phone"} />
+        <Text style={styles.panelTitle}>{t("settings:accountCenter.security.verificationTitle")}</Text>
+        <SecurityRow title={t("settings:accountCenter.security.email")} detail={security.email || t("settings:accountCenter.security.notAdded")} state={security.email_verified ? t("settings:accountCenter.security.verified") : t("settings:accountCenter.security.notVerified")} onPress={onVerifyEmail} button={t("settings:accountCenter.security.verifyEmail")} busy={busy === "verify-email"} />
+        <SecurityRow title={t("settings:accountCenter.security.phone")} detail={security.phone || t("settings:accountCenter.security.notAdded")} state={security.phone_verified ? t("settings:accountCenter.security.verified") : t("settings:accountCenter.security.notVerified")} onPress={onVerifyPhone} button={t("settings:accountCenter.security.verifyPhone")} busy={busy === "verify-phone"} />
       </Panel>
 
       <Panel>
-        <Text style={styles.panelTitle}>Sensitive-action protection</Text>
+        <Text style={styles.panelTitle}>{t("settings:accountCenter.security.sensitiveTitle")}</Text>
         <SecurityRow
-          title="Two-factor"
-          detail={security.two_factor_enabled ? "Enabled for sensitive actions" : "Not enabled"}
-          state={security.two_factor_enabled ? "Enabled" : "Available"}
+          title={t("settings:accountCenter.security.twoFactor")}
+          detail={security.two_factor_enabled ? t("settings:accountCenter.security.twoFactorDetailOn") : t("settings:accountCenter.security.twoFactorDetailOff")}
+          state={security.two_factor_enabled ? t("settings:accountCenter.security.twoFactorStateOn") : t("settings:accountCenter.security.twoFactorStateOff")}
           onPress={security.two_factor_enabled ? onDisableTwoFactor : onEnableTwoFactor}
-          button={security.two_factor_enabled ? "Disable 2FA" : "Enable 2FA"}
+          button={security.two_factor_enabled ? t("settings:accountCenter.security.disableTwoFactor") : t("settings:accountCenter.security.enableTwoFactor")}
           busy={busy === "enable-2fa" || busy === "disable-2fa"}
         />
         <SecurityRow
-          title="Recovery codes"
-          detail={security.recovery_codes_ready ? "Recovery codes generated" : "Generate codes and save them once."}
-          state={security.recovery_codes_ready ? "Saved" : "Needed"}
+          title={t("settings:accountCenter.security.recoveryCodes")}
+          detail={security.recovery_codes_ready ? t("settings:accountCenter.security.recoveryCodesDetailReady") : t("settings:accountCenter.security.recoveryCodesDetailNeeded")}
+          state={security.recovery_codes_ready ? t("settings:accountCenter.security.recoveryCodesStateReady") : t("settings:accountCenter.security.recoveryCodesStateNeeded")}
           onPress={onGenerateRecoveryCodes}
-          button="Generate codes"
+          button={t("settings:accountCenter.security.generateCodes")}
           busy={busy === "recovery-codes"}
         />
         <View style={styles.buttonGrid}>
-          <ActionButton label="Reauthenticate" variant="secondary" disabled={busy === "reauthenticate"} onPress={onReauthenticate} />
-          <ActionButton label="Sign out other sessions" variant="danger" disabled={busy === "revoke-sessions"} onPress={onRevokeSessions} />
+          <ActionButton label={t("settings:accountCenter.security.reauthenticate")} variant="secondary" disabled={busy === "reauthenticate"} onPress={onReauthenticate} />
+          <ActionButton label={t("settings:accountCenter.security.revokeSessions")} variant="danger" disabled={busy === "revoke-sessions"} onPress={onRevokeSessions} />
         </View>
       </Panel>
 
       <Panel>
-        <Text style={styles.panelTitle}>Security history</Text>
+        <Text style={styles.panelTitle}>{t("settings:accountCenter.security.historyTitle")}</Text>
         {(state?.securityEvents || []).slice(0, 6).map((event) => (
           <View key={event.id} style={styles.eventRow}>
-            <Text style={styles.eventTitle}>{humanize(event.event_type)}</Text>
+            <Text style={styles.eventTitle}>{humanize(event.event_type, t("settings:accountCenter.security.eventFallback"))}</Text>
             <Text style={styles.muted}>{event.device_label || "PulseSoc"} · {formatShortTime(event.created_at)}</Text>
           </View>
         ))}
@@ -416,15 +427,16 @@ function PrivacySectionView({
   onSave: () => void;
   onOpenWeb: (path?: string) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <>
       <Panel>
-        <Text style={styles.panelTitle}>Privacy controls</Text>
-        <SettingChoice label="Profile visibility" settingKey="profile_visibility" value={draftSettings.profile_visibility} onChange={onDraftChange} />
-        <SettingChoice label="Message requests" settingKey="message_requests" value={draftSettings.message_requests} onChange={onDraftChange} />
-        <SettingChoice label="Status replies" settingKey="status_replies" value={draftSettings.status_replies} onChange={onDraftChange} />
-        <SettingChoice label="Ads personalization" settingKey="ads_personalization" value={draftSettings.ads_personalization} onChange={onDraftChange} />
-        <ActionButton label={busy === "save-settings" ? "Saving" : "Save privacy settings"} disabled={busy === "save-settings"} onPress={onSave} />
+        <Text style={styles.panelTitle}>{t("settings:accountCenter.privacy.controlsTitle")}</Text>
+        <SettingChoice label={t("settings:accountCenter.privacy.profileVisibility")} settingKey="profile_visibility" value={draftSettings.profile_visibility} onChange={onDraftChange} />
+        <SettingChoice label={t("settings:accountCenter.privacy.messageRequests")} settingKey="message_requests" value={draftSettings.message_requests} onChange={onDraftChange} />
+        <SettingChoice label={t("settings:accountCenter.privacy.statusReplies")} settingKey="status_replies" value={draftSettings.status_replies} onChange={onDraftChange} />
+        <SettingChoice label={t("settings:accountCenter.privacy.adsPersonalization")} settingKey="ads_personalization" value={draftSettings.ads_personalization} onChange={onDraftChange} />
+        <ActionButton label={busy === "save-settings" ? t("settings:accountCenter.saving") : t("settings:accountCenter.privacy.saveSettings")} disabled={busy === "save-settings"} onPress={onSave} />
       </Panel>
 
       <Panel>
@@ -434,9 +446,9 @@ function PrivacySectionView({
       </Panel>
 
       <Panel>
-        <Text style={styles.panelTitle}>Data controls</Text>
-        <Text style={styles.muted}>Data export, deletion, privacy policy, and retention details stay connected to the existing protected web Privacy Center.</Text>
-        <ActionButton label="Open Privacy Center" variant="secondary" onPress={() => onOpenWeb("/privacy-center")} />
+        <Text style={styles.panelTitle}>{t("settings:accountCenter.privacy.dataTitle")}</Text>
+        <Text style={styles.muted}>{t("settings:accountCenter.privacy.dataBody")}</Text>
+        <ActionButton label={t("settings:accountCenter.privacy.openPrivacyCenter")} variant="secondary" onPress={() => onOpenWeb("/privacy-center")} />
       </Panel>
     </>
   );
@@ -453,25 +465,30 @@ function DevicesSectionView({
   onRemove: (deviceId: number) => void;
   onOpenWeb: (path?: string) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <>
       <Panel>
-        <Text style={styles.panelTitle}>Sessions and devices</Text>
+        <Text style={styles.panelTitle}>{t("settings:accountCenter.devices.sessionsTitle")}</Text>
         <View style={styles.metricGrid}>
-          <Metric label="Trusted devices" value={String(state?.security.trusted_devices_count ?? state?.trustedDevices.length ?? 0)} />
-          <Metric label="Active sessions" value={String(state?.security.active_sessions_count ?? 0)} />
-          <Metric label="Suspicious alerts" value={String(state?.security.suspicious_alerts ?? 0)} />
+          <Metric label={t("settings:accountCenter.devices.trustedDevices")} value={String(state?.security.trusted_devices_count ?? state?.trustedDevices.length ?? 0)} />
+          <Metric label={t("settings:accountCenter.devices.activeSessions")} value={String(state?.security.active_sessions_count ?? 0)} />
+          <Metric label={t("settings:accountCenter.devices.suspiciousAlerts")} value={String(state?.security.suspicious_alerts ?? 0)} />
         </View>
       </Panel>
       <Panel>
-        <Text style={styles.panelTitle}>Trusted devices</Text>
+        <Text style={styles.panelTitle}>{t("settings:accountCenter.devices.trustedDevicesTitle")}</Text>
         {(state?.trustedDevices || []).map((device) => (
           <View key={device.id} style={styles.deviceRow}>
             <View style={styles.deviceCopy}>
-              <Text style={styles.deviceTitle}>{device.device_label || "Trusted device"}</Text>
-              <Text style={styles.muted}>Last seen {formatShortTime(device.last_seen_at || device.created_at) || "unknown"}</Text>
+              <Text style={styles.deviceTitle}>{device.device_label || t("settings:accountCenter.devices.deviceFallback")}</Text>
+              <Text style={styles.muted}>
+                {t("settings:accountCenter.devices.lastSeen", {
+                  time: formatShortTime(device.last_seen_at || device.created_at) || t("settings:accountCenter.devices.lastSeenUnknown")
+                })}
+              </Text>
             </View>
-            <ActionButton label={busy === `remove-device:${device.id}` ? "Removing" : "Remove"} variant="danger" disabled={busy === `remove-device:${device.id}`} onPress={() => onRemove(device.id)} />
+            <ActionButton label={busy === `remove-device:${device.id}` ? t("settings:accountCenter.removing") : t("settings:accountCenter.remove")} variant="danger" disabled={busy === `remove-device:${device.id}`} onPress={() => onRemove(device.id)} />
           </View>
         ))}
         {!state?.trustedDevices.length ? <Text style={styles.muted}>You have no trusted devices yet. Devices you sign in on and approve appear here.</Text> : null}
@@ -492,6 +509,7 @@ function SettingChoice({
   value?: string;
   onChange: (key: string, value: string) => void;
 }) {
+  const { t } = useTranslation();
   const options = settingOptions[settingKey] || [];
   return (
     <View style={styles.choiceBlock}>
@@ -504,7 +522,7 @@ function SettingChoice({
             style={[styles.choicePill, value === option.value && styles.choicePillActive]}
             onPress={() => onChange(settingKey, option.value)}
           >
-            <Text style={[styles.choiceText, value === option.value && styles.choiceTextActive]}>{option.label}</Text>
+            <Text style={[styles.choiceText, value === option.value && styles.choiceTextActive]}>{t(option.label)}</Text>
           </Pressable>
         ))}
       </View>
@@ -527,6 +545,7 @@ function SecurityRow({
   busy: boolean;
   onPress: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <View style={styles.securityRow}>
       <View style={styles.securityCopy}>
@@ -535,7 +554,7 @@ function SecurityRow({
       </View>
       <View style={styles.securityAction}>
         <Text style={styles.statusPill}>{state}</Text>
-        <ActionButton label={busy ? "Working" : button} disabled={busy} variant="secondary" onPress={onPress} />
+        <ActionButton label={busy ? t("settings:accountCenter.working") : button} disabled={busy} variant="secondary" onPress={onPress} />
       </View>
     </View>
   );
@@ -586,15 +605,17 @@ function routeSectionParam(params: Props["route"]["params"]): AccountSection | u
   return undefined;
 }
 
-function sectionTitle(section: AccountSection) {
-  if (section === "security") return "Security Center";
-  if (section === "privacy") return "Privacy Center";
-  if (section === "devices") return "Sessions and Devices";
-  return "Account Center";
+/** Returns a catalog key; the caller resolves it so the header follows the language. */
+function sectionTitleKey(section: AccountSection) {
+  if (section === "security") return "settings:accountCenter.titles.security";
+  if (section === "privacy") return "settings:accountCenter.titles.privacy";
+  if (section === "devices") return "settings:accountCenter.titles.devices";
+  return "settings:accountCenter.titles.account";
 }
 
-function humanize(value?: string) {
-  return String(value || "Security event").replace(/_/g, " ").replace(/\b\w/g, (match) => match.toUpperCase());
+/** `fallback` is already-translated copy, so this stays usable outside React. */
+function humanize(value: string | undefined, fallback: string) {
+  return String(value || fallback).replace(/_/g, " ").replace(/\b\w/g, (match) => match.toUpperCase());
 }
 
 const styles = createThemedStyles(() => ({

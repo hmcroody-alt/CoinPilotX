@@ -82,6 +82,7 @@ import {
   toggleVoicePlayback,
   VoicePlaybackSnapshot
 } from "../core/voiceMessagePlayback";
+import { translate, useTranslation } from "../i18n";
 import { RootStackParamList } from "../navigation/types";
 import { openNativeRoute } from "../navigation/nativeRouteActions";
 import { presenceActivityText } from "../api/presence";
@@ -300,6 +301,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const conversationId = route.params.conversationId;
   const assistantConversation = conversationId === PULSE_AI_CONVERSATION_ID;
   const insets = useSafeAreaInsets();
+  const { t } = useTranslation();
   const { authState } = useAuth();
   const selfUserId = Number(authState.user?.user_id || 0);
   const [messages, setMessages] = useState<MessengerMessage[]>([]);
@@ -421,7 +423,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     } catch {
       setStatusMessage("This result could not be opened. Try again from the PulseSoc website.");
     }
-  }, [navigation]);
+  }, [navigation, t]);
 
   useEffect(() => () => {
     stopVoiceMessagePlayback("conversation_closed").catch(() => undefined);
@@ -477,17 +479,17 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const showVoiceCapture = Boolean(recording) || qaChatState === "voice-recording";
   const headerStatus = error
     ? hasMessages
-      ? "Reconnecting"
-      : "Messages unavailable"
+      ? t("messaging:chat.headerReconnecting")
+      : t("messaging:chat.headerUnavailable")
     : usingCachedMessages
-      ? "Cached history"
-      : "Live channel";
+      ? t("messaging:chat.headerCachedHistory")
+      : t("messaging:chat.headerLiveChannel");
   // Presence beats connection state, and live presence beats the navigation
   // snapshot. When the server has told us nothing about the peer we show
   // connection status instead of guessing.
   const presenceSubtitle = peerPresenceSubtitle(peerPresence);
   const headerSubtitle = assistantConversation
-    ? typing || (error ? "Service reconnecting" : usingCachedMessages ? "Cached history" : "Always available · PulseSoc Intelligence")
+    ? typing || (error ? t("messaging:chat.assistantReconnecting") : usingCachedMessages ? t("messaging:chat.headerCachedHistory") : t("messaging:chat.assistantAlwaysAvailable"))
     : typing || presenceSubtitle || headerStatus;
   const peerIsOnline = Boolean(peerPresence?.online);
 
@@ -545,17 +547,17 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         setMessages(cached);
         setUsingCachedMessages(true);
         setError("");
-        setStatusMessage("Showing cached messages while PulseSoc reconnects.");
+        setStatusMessage(t("messaging:chat.showingCached"));
       } else {
         setUsingCachedMessages(false);
-        setError(loadError instanceof Error ? loadError.message : "Messages could not load.");
+        setError(loadError instanceof Error ? loadError.message : t("messaging:chat.loadFailed"));
       }
     } finally {
       setInitialFetchComplete(true);
       setRefreshing(false);
       setLoading(false);
     }
-  }, [assistantConversation, conversationId, selfUserId]);
+  }, [assistantConversation, conversationId, selfUserId, t]);
 
   const retryLoad = useCallback(async () => {
     const roomId = route.params.roomId;
@@ -589,11 +591,11 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         setMessages((current) => mergeMessages(data.messages || [], current));
       }
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Older messages could not load.");
+      setError(loadError instanceof Error ? loadError.message : t("messaging:chat.loadOlderFailed"));
     } finally {
       setLoadingOlder(false);
     }
-  }, [assistantConversation, conversationId, loadingOlder, mergeMessages, oldestMessageId]);
+  }, [assistantConversation, conversationId, loadingOlder, mergeMessages, oldestMessageId, t]);
 
   const sync = useCallback(async () => {
     if (appState.current !== "active") return;
@@ -610,7 +612,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         setError("");
         setStatusMessage("");
       } catch {
-        if (messages.length) setStatusMessage("UNDX reconnecting. Conversation history remains visible.");
+        if (messages.length) setStatusMessage(t("messaging:chat.undxReconnecting"));
       }
       return;
     }
@@ -624,7 +626,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     try {
       const queued = await drainMessengerQueue(conversationId);
       if (queued.length) {
-        setStatusMessage("Messages reconnected.");
+        setStatusMessage(t("messaging:chat.messagesReconnected"));
         setMessages((current) => {
           const reconciled = mergeMessages(current, queued);
           cacheMessages(conversationId, reconciled).catch(() => undefined);
@@ -650,9 +652,9 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       // A failed sync means we no longer know whether the peer is online, so we
       // drop the claim rather than keep displaying a stale one.
       setPeerPresence(null);
-      if (messages.length) setStatusMessage("Realtime reconnecting. Message history remains visible.");
+      if (messages.length) setStatusMessage(t("messaging:chat.realtimeReconnecting"));
     }
-  }, [assistantConversation, conversationId, mergeMessages, messages.length, newestMessageId, selfUserId]);
+  }, [assistantConversation, conversationId, mergeMessages, messages.length, newestMessageId, selfUserId, t]);
 
   const notifyTyping = useCallback((value: string) => {
     setDraft(value);
@@ -695,8 +697,8 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       if (!body) return "failed" as const;
       const local = createLocalMessage(conversationId, body, "text", payload.client_message_id);
       setMessages((current) => mergeMessages(current, [local]));
-      setTyping("UNDX is typing");
-      setStatusMessage("UNDX is thinking...");
+      setTyping(t("messaging:chat.undxTyping"));
+      setStatusMessage(t("messaging:chat.undxThinking"));
       try {
         // Market Pulse → UNDX bridge. Two things can be true of one send, and
         // exactly one module decides which: the envelope parked by an asset
@@ -731,11 +733,11 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
           ...local,
           delivery_status: "failed",
           local_status: "failed",
-          local_error: sendError instanceof Error ? sendError.message : "UNDX could not respond."
+          local_error: sendError instanceof Error ? sendError.message : t("messaging:chat.undxNoResponse")
         }]);
         setMessages(failedMessages);
         await cacheMessages(conversationId, failedMessages);
-        setStatusMessage(sendError instanceof Error ? sendError.message : "UNDX is temporarily unavailable.");
+        setStatusMessage(sendError instanceof Error ? sendError.message : t("messaging:chat.undxUnavailable"));
         throw sendError;
       }
     }
@@ -855,7 +857,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
 
   const react = useCallback(async (message: MessengerMessage, reactionType = "pulse") => {
     if (message.id <= 0) {
-      setStatusMessage("Pending messages can be reacted to after the server accepts them.");
+      setStatusMessage(t("messaging:chat.reactPending"));
       return;
     }
     const previous = message.reactions || {};
@@ -876,14 +878,14 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       );
     } catch (reactionError) {
       setMessages((current) => current.map((item) => item.id === message.id ? { ...item, reactions: previous, viewer_reaction: message.viewer_reaction } : item));
-      setStatusMessage(reactionError instanceof Error ? reactionError.message : "Reaction failed.");
+      setStatusMessage(reactionError instanceof Error ? reactionError.message : t("messaging:chat.reactionFailed"));
     }
-  }, []);
+  }, [t]);
 
   const removeMessage = useCallback(async (message: MessengerMessage, scope: "self" | "everyone" = "self") => {
     if (message.id <= 0) {
       setMessages((current) => current.filter((item) => item.id !== message.id));
-      setStatusMessage("Local pending message removed.");
+      setStatusMessage(t("messaging:chat.pendingRemoved"));
       return;
     }
     try {
@@ -895,24 +897,24 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
             : item
         )
       );
-      setStatusMessage(scope === "everyone" ? "Message deletion requested." : "Message hidden from this device.");
+      setStatusMessage(scope === "everyone" ? t("messaging:chat.deleteRequested") : t("messaging:chat.deleteHidden"));
     } catch (deleteError) {
-      setStatusMessage(deleteError instanceof Error ? deleteError.message : "Delete failed.");
+      setStatusMessage(deleteError instanceof Error ? deleteError.message : t("messaging:chat.deleteFailed"));
     }
-  }, []);
+  }, [t]);
 
   const report = useCallback(async (message: MessengerMessage) => {
     if (message.id <= 0) {
-      setStatusMessage("Pending messages cannot be reported until the server accepts them.");
+      setStatusMessage(t("messaging:chat.reportPending"));
       return;
     }
     try {
       const result = await reportMessage(message.id, "Reported from the PulseSoc app");
       setStatusMessage(result.message || "Message report sent to Trust & Safety.");
     } catch (reportError) {
-      setStatusMessage(reportError instanceof Error ? reportError.message : "Report failed.");
+      setStatusMessage(reportError instanceof Error ? reportError.message : t("messaging:chat.reportFailed"));
     }
-  }, []);
+  }, [t]);
 
   const uploadAndSend = useCallback(async (input: { uri: string; name: string; mimeType: string; sizeBytes?: number; voice?: boolean; durationSeconds?: number }) => {
     if (assistantConversation) {
@@ -921,7 +923,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     }
     if (uploading) return;
     setUploading(true);
-    setStatusMessage(input.voice ? "Sending voice message…" : "Uploading attachment…");
+    setStatusMessage(input.voice ? t("messaging:chat.sendingVoice") : t("messaging:chat.uploadingAttachment"));
     reportPresenceActivity(input.voice ? "sending_files" : "uploading_media", String(conversationId)).catch(() => undefined);
     try {
       const uploaded = await uploadMessengerMedia({
@@ -935,7 +937,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       });
       const attachmentId = Number(uploaded.attachment_id || 0);
       if (!attachmentId) {
-        throw new Error("PulseSoc did not return a durable Messenger attachment. Please retry.");
+        throw new Error(t("messaging:chat.attachmentNotDurable"));
       }
       const delivery = await sendPayload({
         body: input.voice ? "" : input.name,
@@ -949,27 +951,27 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       setStatusMessage(
         delivery === "queued"
           ? input.voice
-            ? "Voice message queued. It will send when realtime reconnects."
-            : "Attachment queued. It will send when realtime reconnects."
+            ? t("messaging:chat.voiceQueued")
+            : t("messaging:chat.attachmentQueued")
           : input.voice
-            ? "Voice message sent."
-            : "Attachment sent."
+            ? t("messaging:chat.voiceSent")
+            : t("messaging:chat.attachmentSent")
       );
     } catch (uploadError) {
-      const message = uploadError instanceof Error ? uploadError.message : "Attachment could not be sent.";
+      const message = uploadError instanceof Error ? uploadError.message : t("messaging:chat.attachmentSendFailed");
       setStatusMessage(message);
-      Alert.alert(input.voice ? "Voice message failed" : "Attachment failed", message);
+      Alert.alert(input.voice ? t("messaging:chat.voiceFailedTitle") : t("messaging:chat.attachmentFailedTitle"), message);
     } finally {
       setUploading(false);
       reportPresenceActivity("idle", "").catch(() => undefined);
     }
-  }, [assistantConversation, conversationId, sendPayload, uploading]);
+  }, [assistantConversation, conversationId, sendPayload, t, uploading]);
 
   const attachImage = useCallback(async () => {
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert("Photos unavailable", "Allow photo access in Settings to share an image.");
+        Alert.alert(t("messaging:chat.photosUnavailableTitle"), t("messaging:chat.photosUnavailableBody"));
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -987,17 +989,17 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         sizeBytes: asset.fileSize || 0
       });
     } catch (imageError) {
-      const message = imageError instanceof Error ? imageError.message : "The image picker could not open.";
+      const message = imageError instanceof Error ? imageError.message : t("messaging:chat.imagePickerFailed");
       setStatusMessage(message);
-      Alert.alert("Image sharing unavailable", message);
+      Alert.alert(t("messaging:chat.imageSharingUnavailableTitle"), message);
     }
-  }, [uploadAndSend]);
+  }, [t, uploadAndSend]);
 
   const attachVideo = useCallback(async () => {
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert("Videos unavailable", "Allow photo access in Settings to share a video.");
+        Alert.alert(t("messaging:chat.videosUnavailableTitle"), t("messaging:chat.videosUnavailableBody"));
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -1015,11 +1017,11 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         sizeBytes: asset.fileSize || 0
       });
     } catch (videoError) {
-      const message = videoError instanceof Error ? videoError.message : "The video picker could not open.";
+      const message = videoError instanceof Error ? videoError.message : t("messaging:chat.videoPickerFailed");
       setStatusMessage(message);
-      Alert.alert("Video sharing unavailable", message);
+      Alert.alert(t("messaging:chat.videoSharingUnavailableTitle"), message);
     }
-  }, [uploadAndSend]);
+  }, [t, uploadAndSend]);
 
   const attachFile = useCallback(async () => {
     try {
@@ -1036,11 +1038,11 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         sizeBytes: asset.size || 0
       });
     } catch (fileError) {
-      const message = fileError instanceof Error ? fileError.message : "The file picker could not open.";
+      const message = fileError instanceof Error ? fileError.message : t("messaging:chat.filePickerFailed");
       setStatusMessage(message);
-      Alert.alert("File sharing unavailable", message);
+      Alert.alert(t("messaging:chat.fileSharingUnavailableTitle"), message);
     }
-  }, [uploadAndSend]);
+  }, [t, uploadAndSend]);
 
   const toggleVoiceRecording = useCallback(async () => {
     try {
@@ -1054,7 +1056,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         const durationSeconds = Math.max(1, Math.round(Number(stopped.durationMillis || Date.now() - recordingStartedAt) / 1000));
         setRecordingElapsed(0);
         setRecordingLevels(Array.from({ length: 24 }, () => 0.14));
-        if (!uri) throw new Error("The recording did not produce an audio file.");
+        if (!uri) throw new Error(t("messaging:chat.recordingNoFile"));
         await uploadAndSend({
           uri,
           name: `pulsesoc-voice-${Date.now()}.m4a`,
@@ -1066,7 +1068,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       }
       const permission = await Audio.requestPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert("Microphone unavailable", "Allow microphone access in Settings to send a voice message.");
+        Alert.alert(t("messaging:chat.microphoneUnavailableTitle"), t("messaging:chat.microphoneUnavailableBody"));
         return;
       }
       await Audio.setAudioModeAsync({
@@ -1116,17 +1118,17 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       );
       setRecording(started.recording);
       setRecordingStartedAt(Date.now());
-      setStatusMessage("Recording voice message… tap the microphone again to send.");
+      setStatusMessage(t("messaging:chat.recordingStarted"));
       reportPresenceActivity("recording_voice", String(conversationId)).catch(() => undefined);
     } catch (recordingError) {
       setRecording(null);
       reportPresenceActivity("idle", "").catch(() => undefined);
       await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true }).catch(() => undefined);
-      const message = recordingError instanceof Error ? recordingError.message : "Voice recording could not start.";
+      const message = recordingError instanceof Error ? recordingError.message : t("messaging:chat.recordingFailed");
       setStatusMessage(message);
-      Alert.alert("Voice message unavailable", message);
+      Alert.alert(t("messaging:chat.voiceUnavailableTitle"), message);
     }
-  }, [recording, recordingStartedAt, uploadAndSend]);
+  }, [recording, recordingStartedAt, t, uploadAndSend]);
 
   const cancelVoiceRecording = useCallback(async () => {
     const activeRecording = recording;
@@ -1145,10 +1147,10 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     } finally {
       setRecordingElapsed(0);
       setRecordingLevels(Array.from({ length: 24 }, () => 0.14));
-      setStatusMessage("Voice recording discarded.");
+      setStatusMessage(t("messaging:chat.recordingDiscarded"));
       await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true }).catch(() => undefined);
     }
-  }, [recording]);
+  }, [recording, t]);
 
   useEffect(() => {
     let mounted = true;
@@ -1200,9 +1202,9 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
             <View style={styles.threadStatusRow}><LiveStatusDot warning={Boolean(error)} /><Text style={styles.threadSubtitle} numberOfLines={1}>{headerSubtitle}</Text></View>
           </View>
           <View style={styles.callActions}>
-            {!assistantConversation ? <SignalIconButton accessibilityLabel="Start audio call" icon="call-outline" onPress={() => navigation.navigate("Call", { conversationId, callType: "audio", direction: "outgoing", title: threadTitle })} /> : null}
-            {!assistantConversation ? <SignalIconButton accessibilityLabel="Start video call" icon="videocam-outline" tone="intelligence" onPress={() => navigation.navigate("Call", { conversationId, callType: "video", direction: "outgoing", title: threadTitle })} /> : null}
-            <SignalIconButton accessibilityLabel="Open conversation controls" icon="ellipsis-vertical" onPress={() => setControlCenterOpen(true)} />
+            {!assistantConversation ? <SignalIconButton accessibilityLabel={t("messaging:chat.a11yStartAudioCall")} icon="call-outline" onPress={() => navigation.navigate("Call", { conversationId, callType: "audio", direction: "outgoing", title: threadTitle })} /> : null}
+            {!assistantConversation ? <SignalIconButton accessibilityLabel={t("messaging:chat.a11yStartVideoCall")} icon="videocam-outline" tone="intelligence" onPress={() => navigation.navigate("Call", { conversationId, callType: "video", direction: "outgoing", title: threadTitle })} /> : null}
+            <SignalIconButton accessibilityLabel={t("messaging:chat.a11yOpenControls")} icon="ellipsis-vertical" onPress={() => setControlCenterOpen(true)} />
           </View>
         </View>
       </View>
@@ -1212,7 +1214,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         </Pressable>
       ) : null}
       {showInitialLoading ? (
-        <LogiNexusStatePanel state="loading" title="Opening chat" body="Loading conversation history from the server." loading style={styles.loadingPanel} />
+        <LogiNexusStatePanel state="loading" title={t("messaging:chat.openingTitle")} body={t("messaging:chat.openingBody")} loading style={styles.loadingPanel} />
       ) : showFatalError ? (
         <LogiNexusStatePanel state="error" title="Messages could not load" body={error || "PulseSoc could not load this conversation. Tap retry to reconnect to the canonical message history."} style={styles.loadingPanel}>
           <Pressable accessibilityRole="button" accessibilityLabel="Retry loading messages" style={styles.retryStateButton} onPress={() => retryLoad()}>
@@ -1238,8 +1240,8 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
           refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load({ refresh: true })} />}
           onEndReached={loadOlder}
           onEndReachedThreshold={0.2}
-          ListFooterComponent={loadingOlder ? <Text style={styles.loadingOlder}>Loading older messages...</Text> : null}
-          ListEmptyComponent={showEmptyConversation ? <LogiNexusStatePanel state="empty" title={assistantConversation ? "UNDX is ready" : "No messages yet"} body={assistantConversation ? "Message UNDX to start the conversation." : "Messages in this chat will appear here."} style={styles.emptyMessages} /> : null}
+          ListFooterComponent={loadingOlder ? <Text style={styles.loadingOlder}>{t("messaging:chat.loadingOlder")}</Text> : null}
+          ListEmptyComponent={showEmptyConversation ? <LogiNexusStatePanel state="empty" title={assistantConversation ? t("messaging:chat.undxReadyTitle") : t("errors:empty.messages")} body={assistantConversation ? t("messaging:chat.undxReadyBody") : t("messaging:chat.emptyThreadBody")} style={styles.emptyMessages} /> : null}
           renderItem={({ item }) => (
             <MessageBubble
               message={item}
@@ -1812,8 +1814,8 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       <PulseCommandPanel style={[styles.composer, { paddingBottom: keyboardVisible ? 8 : Math.max(insets.bottom, 8) }, keyboardVisible && styles.composerKeyboard]}>
         <View pointerEvents="none" style={styles.composerSignalLine} />
         <View style={styles.composerMetaRow}>
-          <View style={styles.composerMetaIdentity}><LiveStatusDot warning={Boolean(error)} /><Text style={styles.composerKicker}>PULSE LINK</Text></View>
-          <Text style={[styles.composerState, showVoiceCapture && styles.composerStateRecording]}>{showVoiceCapture ? "RECORDING" : uploading ? "SENDING MEDIA" : error ? "RECONNECTING" : assistantConversation ? "UNDX · READY" : "SECURE · READY"}</Text>
+          <View style={styles.composerMetaIdentity}><LiveStatusDot warning={Boolean(error)} /><Text style={styles.composerKicker}>{t("messaging:chat.composerKicker")}</Text></View>
+          <Text style={[styles.composerState, showVoiceCapture && styles.composerStateRecording]}>{showVoiceCapture ? t("messaging:chat.stateRecording") : uploading ? t("messaging:chat.stateSendingMedia") : error ? t("messaging:chat.stateReconnecting") : assistantConversation ? t("messaging:chat.stateUndxReady") : t("messaging:chat.stateSecureReady")}</Text>
         </View>
         {assistantConversation && marketChip ? (
           <View style={styles.marketContextChip}>
@@ -1843,18 +1845,18 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
           </View>
         ) : null}
         {statusMessage && !keyboardVisible ? (
-          <Pressable accessibilityRole="button" accessibilityLabel="Dismiss message status" style={styles.statusBanner} onPress={() => setStatusMessage("")}>
+          <Pressable accessibilityRole="button" accessibilityLabel={t("messaging:chat.a11yDismissStatus")} style={styles.statusBanner} onPress={() => setStatusMessage("")}>
             <Text style={styles.statusBannerText}>{statusMessage}</Text>
           </Pressable>
         ) : null}
         {replyTo ? (
           <View style={styles.replyComposer}>
             <View style={styles.replyCopy}>
-              <Text style={styles.replyTitle}>Replying to {replyTo.is_mine ? "your message" : replyTo.sender_display_name || "sender"}</Text>
+              <Text style={styles.replyTitle}>{t("messaging:chat.replyingTo", { name: replyTo.is_mine ? t("messaging:chat.yourMessage") : replyTo.sender_display_name || t("messaging:chat.unknownSender") })}</Text>
               <Text style={styles.replyPreview} numberOfLines={1}>{messagePreview(replyTo)}</Text>
             </View>
-            <Pressable accessibilityRole="button" accessibilityLabel="Cancel reply" style={styles.replyCancel} onPress={() => setReplyTo(null)}>
-              <Text style={styles.replyCancelText}>Cancel</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel={t("messaging:chat.a11yCancelReply")} style={styles.replyCancel} onPress={() => setReplyTo(null)}>
+              <Text style={styles.replyCancelText}>{t("common:actions.cancel")}</Text>
             </Pressable>
           </View>
         ) : null}
@@ -1871,12 +1873,12 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
           <TextInput
             multiline
             autoFocus={qaChatState === "keyboard" || qaChatState === "reply-keyboard"}
-            placeholder={assistantConversation ? "Message UNDX…" : "Message"}
+            placeholder={assistantConversation ? t("messaging:chat.composerPlaceholderUndx") : t("messaging:chat.composerPlaceholder")}
             placeholderTextColor={colors.muted}
             style={styles.input}
             value={draft}
             onChangeText={notifyTyping}
-            accessibilityLabel={assistantConversation ? "Message UNDX composer" : "Message composer"}
+            accessibilityLabel={assistantConversation ? t("messaging:chat.a11yComposerUndx") : t("messaging:chat.a11yComposer")}
           />
           <SignalIconButton accessibilityLabel="Add emoji" icon="happy-outline" size={42} onPress={() => setEmojiPickerOpen(true)} />
           <SignalIconButton accessibilityLabel={assistantConversation ? "UNDX voice messages unavailable" : "Record voice message"} icon="mic-outline" disabled={uploading || assistantConversation} size={42} onPress={() => assistantConversation ? setStatusMessage("UNDX cannot receive voice messages yet.") : toggleVoiceRecording().catch(() => undefined)} />
@@ -1929,7 +1931,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         }}
         onSafety={() => {
           setSelectedMessage(null);
-          navigation.navigate("SafetyHub", { section: "blocks", title: "Safety Hub" });
+          navigation.navigate("SafetyHub", { section: "blocks", title: t("common:screens.safetyHub") });
         }}
       />
       <AttachmentActionSheet
@@ -1945,7 +1947,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       <ConversationControlCenter
         visible={controlCenterOpen}
         conversationId={conversationId}
-        title={assistantConversation ? PULSE_AI_DISPLAY_NAME : route.params.title || "Conversation"}
+        title={assistantConversation ? PULSE_AI_DISPLAY_NAME : route.params.title || t("messaging:chat.defaultConversationTitle")}
         messages={messages}
         connected={!error}
         activityStatus={peerPresenceControlLabel(peerPresence)}
@@ -1962,7 +1964,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         } : undefined}
         onOpenSafety={(section) => {
           setControlCenterOpen(false);
-          navigation.navigate("SafetyHub", { section, title: section === "reports" ? "Report Conversation" : "Blocked Users" });
+          navigation.navigate("SafetyHub", { section, title: section === "reports" ? t("messaging:chat.reportConversationTitle") : t("messaging:chat.blockedUsersTitle") });
         }}
       />
       </LogiNexusScreenShell>
@@ -1971,14 +1973,15 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
 }
 
 function VoiceCaptureDock({ elapsed, levels, disabled, onCancel, onSend }: { elapsed: number; levels: number[]; disabled: boolean; onCancel: () => void; onSend: () => void }) {
+  const { t } = useTranslation();
   return (
-    <View accessibilityLabel={`Recording voice message. ${formatDuration(elapsed)}`} style={styles.voiceCaptureDock}>
-      <Pressable accessibilityRole="button" accessibilityLabel="Discard voice recording" disabled={disabled} style={({ pressed }) => [styles.voiceCaptureCancel, pressed && styles.pressed]} onPress={onCancel}>
+    <View accessibilityLabel={t("messaging:chat.a11yRecordingVoice", { duration: formatDuration(elapsed) })} style={styles.voiceCaptureDock}>
+      <Pressable accessibilityRole="button" accessibilityLabel={t("messaging:chat.a11yDiscardRecording")} disabled={disabled} style={({ pressed }) => [styles.voiceCaptureCancel, pressed && styles.pressed]} onPress={onCancel}>
         <Ionicons name="trash-outline" size={20} color="#ff6685" />
       </Pressable>
       <View style={styles.voiceCaptureBody}>
         <View style={styles.voiceCaptureHeader}>
-          <View style={styles.voiceCaptureLive}><View style={styles.voiceCaptureLiveDot} /><Text style={styles.voiceCaptureKicker}>LIVE VOICE PULSE</Text></View>
+          <View style={styles.voiceCaptureLive}><View style={styles.voiceCaptureLiveDot} /><Text style={styles.voiceCaptureKicker}>{t("messaging:chat.liveVoiceKicker")}</Text></View>
           <Text style={styles.voiceCaptureTime}>{formatDuration(elapsed)}</Text>
         </View>
         <View pointerEvents="none" style={styles.voiceCaptureWaveform}>
@@ -1994,7 +1997,7 @@ function VoiceCaptureDock({ elapsed, levels, disabled, onCancel, onSend }: { ela
           ))}
         </View>
       </View>
-      <Pressable accessibilityRole="button" accessibilityLabel="Stop and send voice message" disabled={disabled} style={({ pressed }) => [styles.voiceCaptureSend, pressed && styles.pressed, disabled && styles.disabled]} onPress={onSend}>
+      <Pressable accessibilityRole="button" accessibilityLabel={t("messaging:chat.a11yStopSendVoice")} disabled={disabled} style={({ pressed }) => [styles.voiceCaptureSend, pressed && styles.pressed, disabled && styles.disabled]} onPress={onSend}>
         <Ionicons name="send" size={21} color="#03120f" />
       </Pressable>
     </View>
@@ -2002,19 +2005,20 @@ function VoiceCaptureDock({ elapsed, levels, disabled, onCancel, onSend }: { ela
 }
 
 function AttachmentActionSheet({ visible, recording, onClose, onImage, onVideo, onCamera, onFile, onVoice }: { visible: boolean; recording: boolean; onClose: () => void; onImage: () => void; onVideo: () => void; onCamera: () => void; onFile: () => void; onVoice: () => void }) {
+  const { t } = useTranslation();
   return (
     <Modal transparent animationType="slide" visible={visible} onRequestClose={onClose}>
-      <Pressable accessibilityRole="button" accessibilityLabel="Close attachment sheet" style={styles.sheetBackdrop} onPress={onClose}>
+      <Pressable accessibilityRole="button" accessibilityLabel={t("messaging:chat.a11yCloseAttachmentSheet")} style={styles.sheetBackdrop} onPress={onClose}>
         <PulseCommandPanel style={styles.attachmentSheet}>
           <View style={styles.sheetHandle} />
-          <Text style={styles.sheetTitle}>Add attachment</Text>
-          <Text style={styles.sheetPreview}>Share through PulseSoc’s secure media channel.</Text>
+          <Text style={styles.sheetTitle}>{t("messaging:chat.attachmentSheetTitle")}</Text>
+          <Text style={styles.sheetPreview}>{t("messaging:chat.attachmentSheetBody")}</Text>
           <View style={styles.sheetGrid}>
-            <MediaSheetAction icon="images-outline" label="Photo" detail="Optimized image" onPress={onImage} />
-            <MediaSheetAction icon="videocam-outline" label="Video" detail="Up to 2 minutes" tone="intelligence" onPress={onVideo} />
-            <MediaSheetAction icon="camera-outline" label="Camera" detail="Capture now" onPress={onCamera} />
-            <MediaSheetAction icon="document-text-outline" label="Document" detail="Secure file" tone="intelligence" onPress={onFile} />
-            <MediaSheetAction icon={recording ? "stop" : "mic-outline"} label={recording ? "Stop & send" : "Voice note"} detail={recording ? "Recording now" : "Fast audio message"} tone={recording ? "danger" : "signal"} onPress={onVoice} />
+            <MediaSheetAction icon="images-outline" label={t("messaging:chat.attachPhoto")} detail={t("messaging:chat.attachPhotoDetail")} onPress={onImage} />
+            <MediaSheetAction icon="videocam-outline" label={t("messaging:chat.attachVideo")} detail={t("messaging:chat.attachVideoDetail")} tone="intelligence" onPress={onVideo} />
+            <MediaSheetAction icon="camera-outline" label={t("messaging:chat.attachCamera")} detail={t("messaging:chat.attachCameraDetail")} onPress={onCamera} />
+            <MediaSheetAction icon="document-text-outline" label={t("messaging:chat.attachDocument")} detail={t("messaging:chat.attachDocumentDetail")} tone="intelligence" onPress={onFile} />
+            <MediaSheetAction icon={recording ? "stop" : "mic-outline"} label={recording ? t("messaging:chat.attachStopSend") : t("messaging:chat.attachVoiceNote")} detail={recording ? t("messaging:chat.attachRecordingNow") : t("messaging:chat.attachVoiceNoteDetail")} tone={recording ? "danger" : "signal"} onPress={onVoice} />
           </View>
         </PulseCommandPanel>
       </Pressable>
@@ -2044,19 +2048,20 @@ function MessageBubble({
   onReact: () => void;
   onLongPress: () => void;
 }) {
+  const { t } = useTranslation();
   const mine = Boolean(message.is_mine);
   const status = message.local_status || message.delivery_status || "sent";
   const deleted = Boolean(message.deleted_at || status === "deleted");
   const moderated = Boolean(message.moderated_at || message.moderation_state);
-  const body = deleted ? "This message was deleted." : moderated ? "This message is unavailable after safety review." : displayMessageBody(message);
+  const body = deleted ? t("messaging:chat.deletedMessageBody") : moderated ? t("messaging:chat.moderatedMessageBody") : displayMessageBody(message);
   const voiceMessage = isVoiceLikeMessage(message);
   return (
     <View style={[styles.bubbleWrap, mine ? styles.mineWrap : styles.theirWrap]} accessible={!voiceMessage} accessibilityLabel={messageAccessibilityLabel(message)}>
       <Pressable onLongPress={onLongPress} style={[styles.bubble, mine ? styles.mineBubble : styles.theirBubble, moderated && styles.moderatedBubble]}>
-        {!mine ? <Text style={styles.senderLabel}>{message.sender_display_name || (message.sender_trust_state === "intelligence" ? "UNDX" : "PulseSoc member")}</Text> : null}
+        {!mine ? <Text style={styles.senderLabel}>{message.sender_display_name || (message.sender_trust_state === "intelligence" ? "UNDX" : t("common:identity.member"))}</Text> : null}
         {message.reply_preview ? (
           <View style={styles.replyBlock}>
-            <Text style={styles.replyTitle}>Reply</Text>
+            <Text style={styles.replyTitle}>{t("common:actions.reply")}</Text>
             <Text style={styles.replyPreview} numberOfLines={2}>{message.reply_preview}</Text>
           </View>
         ) : null}
@@ -2081,16 +2086,16 @@ function MessageBubble({
             />
           )
         ) : null}
-        {message.forwarded ? <Text style={styles.forwarded}>Forwarded signal</Text> : null}
+        {message.forwarded ? <Text style={styles.forwarded}>{t("messaging:chat.forwardedSignal")}</Text> : null}
         <View style={styles.metaRow}>
           <Text style={styles.meta}>{formatShortTime(message.created_at)}</Text>
-          {message.edited_at ? <Text style={styles.meta}>Edited</Text> : null}
+          {message.edited_at ? <Text style={styles.meta}>{t("messaging:chat.editedLabel")}</Text> : null}
           {mine ? <Text style={styles.meta}>{messageDeliveryLabel(status, message.seen_at)}</Text> : null}
         </View>
         <ReactionRow reactions={message.reactions} viewerReaction={message.viewer_reaction} onReact={onReact} />
         {status === "failed" ? (
           <Pressable style={styles.retry} onPress={onRetry}>
-            <Text style={styles.retryText}>Retry failed send</Text>
+            <Text style={styles.retryText}>{t("messaging:chat.retryFailedSend")}</Text>
           </Pressable>
         ) : null}
       </Pressable>
@@ -2099,12 +2104,13 @@ function MessageBubble({
 }
 
 function ReactionRow({ reactions, viewerReaction, onReact }: { reactions?: Record<string, number>; viewerReaction?: string; onReact: () => void }) {
+  const { t } = useTranslation();
   const entries = Object.entries(reactions || {}).filter(([, count]) => Number(count || 0) > 0).slice(0, 4);
   if (!entries.length && !viewerReaction) return null;
   return (
     <View style={styles.reactionRow}>
       {entries.map(([reaction, count]) => (
-        <Pressable key={reaction} accessibilityRole="button" accessibilityLabel={`React ${reaction}`} style={[styles.reactionPill, viewerReaction === reaction && styles.reactionActive]} onPress={onReact}>
+        <Pressable key={reaction} accessibilityRole="button" accessibilityLabel={t("messaging:chat.a11yReact", { reaction })} style={[styles.reactionPill, viewerReaction === reaction && styles.reactionActive]} onPress={onReact}>
           <Text style={styles.reactionText}>{reactionIcon(reaction)} {count}</Text>
         </Pressable>
       ))}
@@ -2133,6 +2139,7 @@ function MessageActionSheet({
   onReport: (message: MessengerMessage) => void;
   onSafety: () => void;
 }) {
+  const { t } = useTranslation();
   if (!message) return null;
   const actions = messageActionRules(message);
   const canReact = actions.find((action) => action.key === "react")?.available;
@@ -2141,7 +2148,7 @@ function MessageActionSheet({
     <Modal transparent animationType="fade" visible onRequestClose={onClose}>
       <Pressable style={styles.sheetBackdrop} onPress={onClose}>
         <PulseCommandPanel style={styles.sheet}>
-          <Text style={styles.sheetTitle}>Message controls</Text>
+          <Text style={styles.sheetTitle}>{t("messaging:chat.messageControlsTitle")}</Text>
           <Text style={styles.sheetPreview} numberOfLines={2}>{messagePreview(message)}</Text>
           {canReact ? (
             <View style={styles.reactionChoices}>
@@ -2167,12 +2174,12 @@ function MessageActionSheet({
             </View>
           ) : null}
           <View style={styles.sheetGrid}>
-            {actionIsAvailable("reply") ? <SheetAction label="Reply" onPress={() => onReply(message)} /> : null}
-            {actionIsAvailable("retry") ? <SheetAction label="Retry" tone="warning" onPress={() => onRetry(message)} /> : null}
-            {actionIsAvailable("report") ? <SheetAction label="Report" tone="warning" onPress={() => onReport(message)} /> : null}
-            {actionIsAvailable("safety") ? <SheetAction label="Mute / Block" tone="safety" onPress={onSafety} /> : null}
-            {actionIsAvailable("deleteSelf") ? <SheetAction label="Delete for me" tone="danger" onPress={() => onDelete(message, "self")} /> : null}
-            {actionIsAvailable("deleteEveryone") ? <SheetAction label="Delete for everyone" tone="danger" onPress={() => onDelete(message, "everyone")} /> : null}
+            {actionIsAvailable("reply") ? <SheetAction label={t("common:actions.reply")} onPress={() => onReply(message)} /> : null}
+            {actionIsAvailable("retry") ? <SheetAction label={t("messaging:chat.retry")} tone="warning" onPress={() => onRetry(message)} /> : null}
+            {actionIsAvailable("report") ? <SheetAction label={t("common:actions.report")} tone="warning" onPress={() => onReport(message)} /> : null}
+            {actionIsAvailable("safety") ? <SheetAction label={t("messaging:chat.muteBlock")} tone="safety" onPress={onSafety} /> : null}
+            {actionIsAvailable("deleteSelf") ? <SheetAction label={t("messaging:chat.deleteForMe")} tone="danger" onPress={() => onDelete(message, "self")} /> : null}
+            {actionIsAvailable("deleteEveryone") ? <SheetAction label={t("messaging:chat.deleteForEveryone")} tone="danger" onPress={() => onDelete(message, "everyone")} /> : null}
           </View>
         </PulseCommandPanel>
       </Pressable>
@@ -2190,6 +2197,7 @@ function SheetAction({ label, onPress, tone = "default" }: { label: string; onPr
 }
 
 function MessageMedia({ message }: { message: MessengerMessage }) {
+  const { t } = useTranslation();
   const [viewerOpen, setViewerOpen] = useState(false);
   const type = (message.message_type || "text").toLowerCase();
   // The message carries media identity; the renderer gets a short-lived access
@@ -2228,9 +2236,9 @@ function MessageMedia({ message }: { message: MessengerMessage }) {
   }
   if (isVoiceType(type) && !mediaUrl) {
     return (
-      <View accessible accessibilityRole="text" accessibilityLabel={`${messageAccessibilityLabel(message)}. Voice message unavailable.`} style={styles.voiceUnavailable}>
+      <View accessible accessibilityRole="text" accessibilityLabel={t("messaging:chat.a11yVoiceUnavailable", { label: messageAccessibilityLabel(message) })} style={styles.voiceUnavailable}>
         <Ionicons name="alert-circle-outline" size={18} color={colors.danger} />
-        <Text style={styles.voiceUnavailableText}>Voice message unavailable</Text>
+        <Text style={styles.voiceUnavailableText}>{t("messaging:chat.voiceUnavailable")}</Text>
       </View>
     );
   }
@@ -2240,7 +2248,7 @@ function MessageMedia({ message }: { message: MessengerMessage }) {
     kind: type === "video" ? "video" : type === "image" || type === "gif" ? "image" : "file",
     url: mediaUrl,
     thumbnailUrl,
-    title: type === "video" ? "Video attachment" : type === "image" || type === "gif" ? "Image attachment" : "Messenger attachment",
+    title: type === "video" ? t("messaging:chat.videoAttachment") : type === "image" || type === "gif" ? t("messaging:chat.imageAttachment") : t("messaging:chat.messengerAttachment"),
     subtitle: message.body || messageDeliveryLabel(message.local_status || message.delivery_status || "sent", message.seen_at),
     sourceUrl: mediaUrl
   };
@@ -2249,13 +2257,15 @@ function MessageMedia({ message }: { message: MessengerMessage }) {
       <>
         <Pressable
           accessibilityRole="imagebutton"
-          accessibilityLabel={`${messageAccessibilityLabel(message)}. ${type === "gif" ? "GIF" : "Image"} attachment.`}
-          accessibilityHint="Opens the full-screen viewer"
+          accessibilityLabel={type === "gif"
+            ? t("messaging:chat.a11yGifAttachment", { label: messageAccessibilityLabel(message) })
+            : t("messaging:chat.a11yImageAttachment", { label: messageAccessibilityLabel(message) })}
+          accessibilityHint={t("messaging:chat.a11yOpensViewer")}
           onPress={() => setViewerOpen(true)}
         >
           <Image source={{ uri: thumbnailUrl || mediaUrl }} style={styles.image} resizeMode="cover" onError={retryMedia} />
         </Pressable>
-        <NativeMediaViewer visible={viewerOpen} items={[viewerItem]} title="Messenger media" onClose={() => setViewerOpen(false)} />
+        <NativeMediaViewer visible={viewerOpen} items={[viewerItem]} title={t("messaging:chat.mediaViewerTitle")} onClose={() => setViewerOpen(false)} />
       </>
     );
   }
@@ -2264,14 +2274,15 @@ function MessageMedia({ message }: { message: MessengerMessage }) {
   }
   return (
     <Pressable style={styles.attachment} onPress={() => (type === "video" ? setViewerOpen(true) : undefined)}>
-      <Text style={styles.attachmentTitle}>{type === "video" ? "Video attachment" : "File attachment"}</Text>
-      <Text style={styles.attachmentMeta}>{type === "video" ? "Open viewer" : formatFileSize(message.file_size)}</Text>
-      <NativeMediaViewer visible={viewerOpen} items={[viewerItem]} title="Messenger media" onClose={() => setViewerOpen(false)} />
+      <Text style={styles.attachmentTitle}>{type === "video" ? t("messaging:chat.videoAttachment") : t("messaging:chat.fileAttachment")}</Text>
+      <Text style={styles.attachmentMeta}>{type === "video" ? t("messaging:chat.openViewer") : formatFileSize(message.file_size)}</Text>
+      <NativeMediaViewer visible={viewerOpen} items={[viewerItem]} title={t("messaging:chat.mediaViewerTitle")} onClose={() => setViewerOpen(false)} />
     </Pressable>
   );
 }
 
 const VoiceMessageCard = memo(function VoiceMessageCard({ message, url }: { message: MessengerMessage; url: string }) {
+  const { t } = useTranslation();
   const messageId = String(message.message_id || message.id);
   const metadataDurationMillis = Math.max(0, Number(message.duration_seconds || message.duration || 0) * 1000);
   const [snapshot, setSnapshot] = useState<VoicePlaybackSnapshot>({
@@ -2294,7 +2305,7 @@ const VoiceMessageCard = memo(function VoiceMessageCard({ message, url }: { mess
   const toggle = () => (failed ? retryVoicePlayback(request) : toggleVoicePlayback(request));
   const changeRate = async () => {
     const next = await cycleVoicePlaybackRate(messageId);
-    AccessibilityInfo.announceForAccessibility(`Playback speed ${next} times`);
+    AccessibilityInfo.announceForAccessibility(t("messaging:chat.a11yPlaybackSpeed", { rate: next }));
   };
   return (
     <View style={styles.voiceCard}>
@@ -2302,7 +2313,7 @@ const VoiceMessageCard = memo(function VoiceMessageCard({ message, url }: { mess
       <View style={styles.voiceControls}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={failed ? "Retry voice message" : playing ? "Pause voice message" : "Play voice message"}
+          accessibilityLabel={failed ? t("messaging:chat.a11yRetryVoice") : playing ? t("messaging:chat.a11yPauseVoice") : t("messaging:chat.a11yPlayVoice")}
           accessibilityState={{ busy: loading }}
           hitSlop={4}
           style={({ pressed }) => [styles.voicePlay, failed && styles.voicePlayError, pressed && styles.voicePressed]}
@@ -2312,15 +2323,15 @@ const VoiceMessageCard = memo(function VoiceMessageCard({ message, url }: { mess
         </Pressable>
         <Pressable
           accessibilityRole="adjustable"
-          accessibilityLabel="Voice message progress"
-          accessibilityValue={{ min: 0, max: Math.max(1, Math.round(durationMillis / 1000)), now: Math.round(snapshot.positionMillis / 1000), text: `${formatDuration(snapshot.positionMillis / 1000)} of ${formatDuration(durationMillis / 1000)}` }}
-          accessibilityActions={[{ name: "increment", label: "Forward 5 seconds" }, { name: "decrement", label: "Back 5 seconds" }]}
+          accessibilityLabel={t("messaging:chat.a11yVoiceProgress")}
+          accessibilityValue={{ min: 0, max: Math.max(1, Math.round(durationMillis / 1000)), now: Math.round(snapshot.positionMillis / 1000), text: t("messaging:chat.voiceProgressValue", { position: formatDuration(snapshot.positionMillis / 1000), duration: formatDuration(durationMillis / 1000) }) }}
+          accessibilityActions={[{ name: "increment", label: t("messaging:chat.a11yForwardFive") }, { name: "decrement", label: t("messaging:chat.a11yBackFive") }]}
           style={styles.voiceTimeline}
           onAccessibilityAction={(event) => seekVoicePlaybackBy(messageId, event.nativeEvent.actionName === "increment" ? 5000 : -5000).catch(() => undefined)}
           onLayout={(event) => { timelineWidth.current = Math.max(1, event.nativeEvent.layout.width); }}
           onPress={(event) => seekVoicePlayback(messageId, event.nativeEvent.locationX / timelineWidth.current).catch(() => undefined)}
         >
-          {failed ? <Text numberOfLines={1} style={styles.voiceError}>Couldn’t play · Retry</Text> : (
+          {failed ? <Text numberOfLines={1} style={styles.voiceError}>{t("messaging:chat.voicePlaybackFailed")}</Text> : (
             <View style={styles.waveform}>
               {waveform.map((level, index) => (
                 <View key={index} style={[styles.waveBar, index % 4 === 2 && styles.waveBarPurple, index / waveform.length <= progress ? styles.waveBarPlayed : styles.waveBarPending, { height: 7 + level * 14 }]} />
@@ -2328,8 +2339,8 @@ const VoiceMessageCard = memo(function VoiceMessageCard({ message, url }: { mess
             </View>
           )}
         </Pressable>
-        <Text accessibilityLabel={`Duration ${formatDuration(durationMillis / 1000)}`} style={styles.voiceDuration}>{formatDuration(durationMillis / 1000)}</Text>
-        <Pressable accessibilityRole="button" accessibilityLabel={`Playback speed ${snapshot.rate} times`} hitSlop={5} style={({ pressed }) => [styles.voiceRate, pressed && styles.voicePressed]} onPress={() => changeRate().catch(() => undefined)}>
+        <Text accessibilityLabel={t("messaging:chat.a11yVoiceDuration", { duration: formatDuration(durationMillis / 1000) })} style={styles.voiceDuration}>{formatDuration(durationMillis / 1000)}</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel={t("messaging:chat.a11yPlaybackSpeed", { rate: snapshot.rate })} hitSlop={5} style={({ pressed }) => [styles.voiceRate, pressed && styles.voicePressed]} onPress={() => changeRate().catch(() => undefined)}>
           <Text style={styles.voiceRateText}>{snapshot.rate}x</Text>
         </Pressable>
       </View>
@@ -2367,11 +2378,11 @@ function displayMessageBody(message: MessengerMessage) {
 }
 
 function mediaPreviewLabel(type: string, hasMedia: boolean) {
-  if (isVoiceType(type)) return "Voice message";
-  if (type === "image" || type === "gif") return "Photo";
-  if (type === "video") return "Video";
-  if (type === "file" || type === "document") return "File attachment";
-  return hasMedia ? "Attachment" : "Message";
+  if (isVoiceType(type)) return translate("messaging:chat.attachVoice");
+  if (type === "image" || type === "gif") return translate("messaging:chat.attachPhoto");
+  if (type === "video") return translate("messaging:chat.attachVideo");
+  if (type === "file" || type === "document") return translate("messaging:chat.fileAttachment");
+  return hasMedia ? translate("messaging:chat.previewAttachment") : translate("messaging:chat.previewMessage");
 }
 
 type PeerPresence = {
@@ -2435,9 +2446,9 @@ function peerPresenceSubtitle(presence: PeerPresence | null) {
     // Two copies of this vocabulary is how Messenger and Live end up calling
     // the same state different things.
     const activity = presenceActivityText(presence.activity);
-    return activity ? `${activity} · Direct` : "Online · Direct";
+    return activity ? translate("messaging:chat.presenceActivityDirect", { activity }) : translate("messaging:chat.presenceOnlineDirect");
   }
-  return presence.last_seen_text || "Offline";
+  return presence.last_seen_text || translate("messaging:chat.presenceOffline");
 }
 
 /**
@@ -2449,9 +2460,9 @@ function peerPresenceSubtitle(presence: PeerPresence | null) {
 function peerPresenceControlLabel(presence: PeerPresence | null) {
   if (!presence) return "";
   if (presence.online) {
-    return presenceActivityText(presence.activity) || "Online";
+    return presenceActivityText(presence.activity) || translate("messaging:chat.presenceOnline");
   }
-  return presence.last_seen_text || "Offline";
+  return presence.last_seen_text || translate("messaging:chat.presenceOffline");
 }
 
 function absoluteMediaUrl(value?: string) {

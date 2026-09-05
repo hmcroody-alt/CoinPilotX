@@ -22,6 +22,7 @@ import {
   updateConversationControlSetting
 } from "../api/messenger";
 import { PULSE_AI_CONVERSATION_ID, PULSE_AI_DISPLAY_NAME } from "../api/messenger";
+import { translate, useTranslation } from "../i18n";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { formatFileSize } from "../utils/format";
@@ -93,34 +94,39 @@ type RowSpec = {
 };
 type DetailPanel = { title: string; subtitle?: string; lines?: string[]; kind?: "search" };
 
-const SECTION_META: Array<{ key: Section; label: string; icon: string; subtitle: string }> = [
-  { key: "conversation", label: "Conversation", icon: "💬", subtitle: "Info, members, media and search." },
-  { key: "notifications", label: "Notifications", icon: "🔔", subtitle: "Alerts, sounds, previews and badges." },
-  { key: "appearance", label: "Appearance", icon: "🖌", subtitle: "Themes, colors, density and motion." },
-  { key: "privacy", label: "Privacy", icon: "🔒", subtitle: "Visibility and private conversation behavior." },
-  { key: "media", label: "Media", icon: "🖼", subtitle: "Downloads, uploads, links and files." },
-  { key: "security", label: "Security", icon: "🛡", subtitle: "Safety, reports, sessions and trust." },
-  { key: "productivity", label: "Productivity", icon: "✓", subtitle: "Pins, archive, reminders and tasks." },
-  { key: "storage", label: "Storage", icon: "◉", subtitle: "Conversation size, media and cache." },
-  { key: "accessibility", label: "Accessibility", icon: "♿", subtitle: "Display, motion, audio and haptics." },
-  { key: "danger", label: "Danger Zone", icon: "!", subtitle: "Destructive actions require confirmation." }
-];
+// Section metadata is a function (not a module constant) so the copy is resolved
+// against the active locale on every render instead of being frozen at the
+// bundle-import moment, which happens before the i18n catalogs are loaded.
+function sectionMeta(): Array<{ key: Section; label: string; icon: string; subtitle: string }> {
+  return [
+    { key: "conversation", label: translate("messaging:controls.sections.conversation.label"), icon: "💬", subtitle: translate("messaging:controls.sections.conversation.subtitle") },
+    { key: "notifications", label: translate("messaging:controls.sections.notifications.label"), icon: "🔔", subtitle: translate("messaging:controls.sections.notifications.subtitle") },
+    { key: "appearance", label: translate("messaging:controls.sections.appearance.label"), icon: "🖌", subtitle: translate("messaging:controls.sections.appearance.subtitle") },
+    { key: "privacy", label: translate("messaging:controls.sections.privacy.label"), icon: "🔒", subtitle: translate("messaging:controls.sections.privacy.subtitle") },
+    { key: "media", label: translate("messaging:controls.sections.media.label"), icon: "🖼", subtitle: translate("messaging:controls.sections.media.subtitle") },
+    { key: "security", label: translate("messaging:controls.sections.security.label"), icon: "🛡", subtitle: translate("messaging:controls.sections.security.subtitle") },
+    { key: "productivity", label: translate("messaging:controls.sections.productivity.label"), icon: "✓", subtitle: translate("messaging:controls.sections.productivity.subtitle") },
+    { key: "storage", label: translate("messaging:controls.sections.storage.label"), icon: "◉", subtitle: translate("messaging:controls.sections.storage.subtitle") },
+    { key: "accessibility", label: translate("messaging:controls.sections.accessibility.label"), icon: "♿", subtitle: translate("messaging:controls.sections.accessibility.subtitle") },
+    { key: "danger", label: translate("messaging:controls.sections.danger.label"), icon: "!", subtitle: translate("messaging:controls.sections.danger.subtitle") }
+  ];
+}
 
+// The second tuple slot holds a catalog key rather than English copy; it is
+// resolved by `optionLabel` at render time. The first slot stays the wire value.
 const OPTIONS: Record<string, SelectOption[]> = {
-  mute_choice: [["off", "Off"], ["1_hour", "1 hour"], ["8_hours", "8 hours"], ["today", "Today"], ["1_week", "1 week"], ["forever", "Forever"]],
-  sound: [["pulse_beam", "Pulse Beam"], ["soft_orbit", "Soft Orbit"], ["deep_signal", "Deep Signal"], ["crystal_ping", "Crystal Ping"], ["silent", "Silent"]],
-  theme: [["dark_galaxy", "Dark Galaxy"], ["pulse_green", "Pulse Green"], ["deep_space", "Deep Space"], ["nebula", "Nebula"], ["cyber_night", "Cyber Night"], ["solar_flame", "Solar Flame"], ["ocean_signal", "Ocean Signal"], ["royal_purple", "Royal Purple"], ["haiti_night", "Haiti Night"], ["creator_gold", "Creator Gold"]],
-  wallpaper: [["deep_space", "Deep Space"], ["neon_planet", "Neon Planet"], ["galaxy_grid", "Galaxy Grid"], ["pulse_horizon", "Pulse Horizon"], ["alien_city", "Alien City"], ["cosmic_ocean", "Cosmic Ocean"], ["aurora_signal", "Aurora Signal"], ["dark_nebula", "Dark Nebula"], ["star_tunnel", "Star Tunnel"], ["minimal_black", "Minimal Black"]],
-  bubble_color: [["cyan", "Cyan"], ["purple", "Purple"], ["rose", "Rose"], ["orange", "Orange"], ["green", "Green"], ["gold", "Gold"], ["blue", "Blue"]],
-  font_size: [["small", "Small"], ["medium", "Medium"], ["large", "Large"], ["extra_large", "Extra Large"]],
-  density: [["compact", "Compact"], ["balanced", "Balanced"], ["relaxed", "Relaxed"]],
-  animation_level: [["full", "Full"], ["balanced", "Balanced"], ["reduced", "Reduced"], ["off", "Off"]],
-  upload_quality: [["standard", "Standard"], ["high", "High"], ["original", "Original"]],
-  disappearing_messages: [["off", "Off"], ["24_hours", "24 hours"], ["7_days", "7 days"], ["30_days", "30 days"]],
-  reminder: [["off", "Off"], ["today", "Today"], ["tomorrow", "Tomorrow"], ["next_week", "Next week"]]
+  mute_choice: [["off", "messaging:controls.options.muteChoice.off"], ["1_hour", "messaging:controls.options.muteChoice.hour1"], ["8_hours", "messaging:controls.options.muteChoice.hours8"], ["today", "messaging:controls.options.muteChoice.today"], ["1_week", "messaging:controls.options.muteChoice.week1"], ["forever", "messaging:controls.options.muteChoice.forever"]],
+  sound: [["pulse_beam", "messaging:controls.options.sound.pulseBeam"], ["soft_orbit", "messaging:controls.options.sound.softOrbit"], ["deep_signal", "messaging:controls.options.sound.deepSignal"], ["crystal_ping", "messaging:controls.options.sound.crystalPing"], ["silent", "messaging:controls.options.sound.silent"]],
+  theme: [["dark_galaxy", "messaging:controls.options.theme.darkGalaxy"], ["pulse_green", "messaging:controls.options.theme.pulseGreen"], ["deep_space", "messaging:controls.options.theme.deepSpace"], ["nebula", "messaging:controls.options.theme.nebula"], ["cyber_night", "messaging:controls.options.theme.cyberNight"], ["solar_flame", "messaging:controls.options.theme.solarFlame"], ["ocean_signal", "messaging:controls.options.theme.oceanSignal"], ["royal_purple", "messaging:controls.options.theme.royalPurple"], ["haiti_night", "messaging:controls.options.theme.haitiNight"], ["creator_gold", "messaging:controls.options.theme.creatorGold"]],
+  wallpaper: [["deep_space", "messaging:controls.options.wallpaper.deepSpace"], ["neon_planet", "messaging:controls.options.wallpaper.neonPlanet"], ["galaxy_grid", "messaging:controls.options.wallpaper.galaxyGrid"], ["pulse_horizon", "messaging:controls.options.wallpaper.pulseHorizon"], ["alien_city", "messaging:controls.options.wallpaper.alienCity"], ["cosmic_ocean", "messaging:controls.options.wallpaper.cosmicOcean"], ["aurora_signal", "messaging:controls.options.wallpaper.auroraSignal"], ["dark_nebula", "messaging:controls.options.wallpaper.darkNebula"], ["star_tunnel", "messaging:controls.options.wallpaper.starTunnel"], ["minimal_black", "messaging:controls.options.wallpaper.minimalBlack"]],
+  bubble_color: [["cyan", "messaging:controls.options.bubbleColor.cyan"], ["purple", "messaging:controls.options.bubbleColor.purple"], ["rose", "messaging:controls.options.bubbleColor.rose"], ["orange", "messaging:controls.options.bubbleColor.orange"], ["green", "messaging:controls.options.bubbleColor.green"], ["gold", "messaging:controls.options.bubbleColor.gold"], ["blue", "messaging:controls.options.bubbleColor.blue"]],
+  font_size: [["small", "messaging:controls.options.fontSize.small"], ["medium", "messaging:controls.options.fontSize.medium"], ["large", "messaging:controls.options.fontSize.large"], ["extra_large", "messaging:controls.options.fontSize.extraLarge"]],
+  density: [["compact", "messaging:controls.options.density.compact"], ["balanced", "messaging:controls.options.density.balanced"], ["relaxed", "messaging:controls.options.density.relaxed"]],
+  animation_level: [["full", "messaging:controls.options.animationLevel.full"], ["balanced", "messaging:controls.options.animationLevel.balanced"], ["reduced", "messaging:controls.options.animationLevel.reduced"], ["off", "messaging:controls.options.animationLevel.off"]],
+  upload_quality: [["standard", "messaging:controls.options.uploadQuality.standard"], ["high", "messaging:controls.options.uploadQuality.high"], ["original", "messaging:controls.options.uploadQuality.original"]],
+  disappearing_messages: [["off", "messaging:controls.options.disappearing.off"], ["24_hours", "messaging:controls.options.disappearing.hours24"], ["7_days", "messaging:controls.options.disappearing.days7"], ["30_days", "messaging:controls.options.disappearing.days30"]],
+  reminder: [["off", "messaging:controls.options.reminder.off"], ["today", "messaging:controls.options.reminder.today"], ["tomorrow", "messaging:controls.options.reminder.tomorrow"], ["next_week", "messaging:controls.options.reminder.nextWeek"]]
 };
-
-const OFFLINE_REASON = "Connect to PulseSoc to sync this control.";
 
 function createAssistantControlData(messageCount: number, connected: boolean): ConversationControlData {
   return {
@@ -166,9 +172,9 @@ function createAssistantControlData(messageCount: number, connected: boolean): C
       storage_used_bytes: 0,
       unread: 0,
       members: 2,
-      connection: connected ? "Connected" : "Reconnecting",
-      security_label: "PulseSoc intelligence conversation",
-      activity_status: "Always available",
+      connection: connected ? translate("messaging:controls.connectionConnected") : translate("messaging:controls.connectionReconnecting"),
+      security_label: translate("messaging:controls.assistantSecurityLabel"),
+      activity_status: translate("messaging:controls.assistantActivityStatus"),
       muted: false,
       pinned: true
     },
@@ -192,6 +198,7 @@ function createAssistantControlData(messageCount: number, connected: boolean): C
 }
 
 export function ConversationControlCenter({ visible, conversationId, title, messages, connected = true, activityStatus = "", assistantConversation = false, onClose, onOpenSafety, onStartCall }: Props) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<Section[]>(["conversation"]);
   const [notice, setNotice] = useState("");
@@ -223,11 +230,11 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
       setControlData(next);
       setNotice("");
     } catch (error) {
-      setNotice(errorMessage(error, "Conversation controls could not load."));
+      setNotice(errorMessage(error, t("messaging:controls.loadFailed")));
     } finally {
       setLoading(false);
     }
-  }, [assistantConversation, connected, conversationId, messages.length, visible]);
+  }, [assistantConversation, connected, conversationId, messages.length, t, visible]);
 
   useEffect(() => {
     if (!visible) return;
@@ -248,8 +255,8 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
     storage_used_bytes: Number(controlData?.stats?.storage_used_bytes || localMediaBytes || 0),
     unread: Number(controlData?.stats?.unread || localUnread || 0),
     members: Number(controlData?.stats?.members || conversation?.member_count || localParticipantCount || 0),
-    connection: String(controlData?.stats?.connection || (connected ? "Connected" : "Reconnecting")),
-    security_label: String(controlData?.stats?.security_label || "Protected channel"),
+    connection: String(controlData?.stats?.connection || (connected ? t("messaging:controls.connectionConnected") : t("messaging:controls.connectionReconnecting"))),
+    security_label: String(controlData?.stats?.security_label || t("messaging:controls.protectedChannel")),
     // Only the server may say someone is online. This previously fell back to
     // `connected ? "Online" : "Reconnecting"`, which reported *our own* socket
     // health as the other person's presence -- so anyone with a working network
@@ -260,7 +267,7 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
     activity_status: String(activityStatus || controlData?.stats?.activity_status || ""),
     muted: Boolean(controlData?.stats?.muted || conversation?.muted),
     pinned: Boolean(controlData?.stats?.pinned || conversation?.pinned)
-  }), [activityStatus, connected, controlData?.stats, conversation?.member_count, conversation?.muted, conversation?.pinned, files.length, images.length, localMediaBytes, localParticipantCount, localUnread, media.length, messages.length, videos.length, voices.length]);
+  }), [activityStatus, connected, controlData?.stats, conversation?.member_count, conversation?.muted, conversation?.pinned, files.length, images.length, localMediaBytes, localParticipantCount, localUnread, media.length, messages.length, t, videos.length, voices.length]);
   const settings = controlData?.settings || {};
   const capabilities = controlData?.capabilities || conversation?.capabilities || {};
   const isGroup = Boolean(conversation?.is_group || ["group", "room", "community_channel"].includes(String(conversation?.conversation_type || "").toLowerCase()));
@@ -276,24 +283,24 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
     connected,
     audioCallAvailable: Boolean(onStartCall),
     videoCallAvailable: Boolean(onStartCall)
-  }), [can, connected, isGroup, onStartCall, settings, stats]);
+  }), [can, connected, isGroup, onStartCall, settings, stats, t]);
   const normalizedQuery = query.trim().toLowerCase();
-  const sections = SECTION_META.map((section) => ({ ...section, rows: rows[section.key].filter((row) => !normalizedQuery || `${section.label} ${section.subtitle} ${row.label} ${row.detail || ""} ${row.value || ""}`.toLowerCase().includes(normalizedQuery)) }))
+  const sections = sectionMeta().map((section) => ({ ...section, rows: rows[section.key].filter((row) => !normalizedQuery || `${section.label} ${section.subtitle} ${row.label} ${row.detail || ""} ${row.value || ""}`.toLowerCase().includes(normalizedQuery)) }))
     .filter((section) => !normalizedQuery || section.rows.length > 0);
   const statusText = assistantConversation
-    ? "Always available · PulseSoc Intelligence"
+    ? t("messaging:controls.statusAssistant")
     : conversation?.conversation_type === "direct"
-    ? `${stats.activity_status || "Presence unavailable"} · Direct Conversation`
-    : `${stats.members || "Unknown"} members · ${conversation?.conversation_type || "Conversation"}`;
+    ? t("messaging:controls.statusDirect", { presence: stats.activity_status || t("messaging:controls.presenceUnavailable") })
+    : t("messaging:controls.statusGroup", { members: stats.members || t("messaging:controls.membersUnknown"), type: conversation?.conversation_type || t("messaging:controls.conversationTypeFallback") });
 
   async function loadMembers() {
     setSavingKey("members");
     try {
       const members = await listConversationMembers(conversationId);
-      setDetail({ title: "Members", subtitle: `${members.length} participant${members.length === 1 ? "" : "s"}`, lines: members.map(memberLine) });
+      setDetail({ title: t("messaging:controls.detail.membersTitle"), subtitle: t("messaging:controls.detail.participantCount", { count: members.length }), lines: members.map(memberLine) });
       setNotice("");
     } catch (error) {
-      setNotice(errorMessage(error, "Members could not load."));
+      setNotice(errorMessage(error, t("messaging:controls.membersLoadFailed")));
     } finally {
       setSavingKey("");
     }
@@ -305,13 +312,13 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
       const data = await listConversationControlMedia(conversationId, kind, kind === "files" ? 100 : 60);
       const items = data.items || [];
       setDetail({
-        title: kind === "files" ? "Shared Files" : "Shared Media",
-        subtitle: `${items.length} item${items.length === 1 ? "" : "s"}`,
+        title: kind === "files" ? t("messaging:controls.detail.sharedFilesTitle") : t("messaging:controls.detail.sharedMediaTitle"),
+        subtitle: t("messaging:controls.detail.itemCount", { count: items.length }),
         lines: items.map(mediaLine)
       });
       setNotice("");
     } catch (error) {
-      setNotice(errorMessage(error, "Shared media could not load."));
+      setNotice(errorMessage(error, t("messaging:controls.sharedMediaLoadFailed")));
     } finally {
       setSavingKey("");
     }
@@ -323,13 +330,13 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
       const data = await listConversationControlLinks(conversationId);
       const items = data.items || [];
       setDetail({
-        title: "Shared Links",
-        subtitle: `${items.length} link${items.length === 1 ? "" : "s"}`,
-        lines: items.map((item) => `${String(item.domain || "Link")} · ${String(item.url || "")}`)
+        title: t("messaging:controls.detail.sharedLinksTitle"),
+        subtitle: t("messaging:controls.detail.linkCount", { count: items.length }),
+        lines: items.map((item) => `${String(item.domain || t("messaging:controls.detail.linkFallback"))} · ${String(item.url || "")}`)
       });
       setNotice("");
     } catch (error) {
-      setNotice(errorMessage(error, "Shared links could not load."));
+      setNotice(errorMessage(error, t("messaging:controls.sharedLinksLoadFailed")));
     } finally {
       setSavingKey("");
     }
@@ -341,13 +348,13 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
       const data = await listConversationPinnedMessages(conversationId);
       const items = data.items || [];
       setDetail({
-        title: "Pinned Messages",
-        subtitle: `${items.length} pinned`,
-        lines: items.map((message) => `${message.sender_display_name || "Pulse member"}: ${message.body || `[${message.message_type || "attachment"}]`}`)
+        title: t("messaging:controls.detail.pinnedTitle"),
+        subtitle: t("messaging:controls.detail.pinnedCount", { count: items.length }),
+        lines: items.map((message) => `${message.sender_display_name || t("messaging:controls.pulseMember")}: ${message.body || `[${message.message_type || t("messaging:controls.attachmentFallback")}]`}`)
       });
       setNotice("");
     } catch (error) {
-      setNotice(errorMessage(error, "Pinned messages could not load."));
+      setNotice(errorMessage(error, t("messaging:controls.pinnedLoadFailed")));
     } finally {
       setSavingKey("");
     }
@@ -356,7 +363,7 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
   async function runSearch() {
     const clean = chatSearch.trim();
     if (!clean) {
-      setNotice("Enter a phrase to search this conversation.");
+      setNotice(t("messaging:controls.searchNeedsPhrase"));
       return;
     }
     setChatSearchLoading(true);
@@ -367,24 +374,24 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
           return haystack.includes(clean.toLowerCase());
         });
         setDetail({
-          title: "Search Chat",
-          subtitle: `${results.length} local result${results.length === 1 ? "" : "s"} for “${clean}”`,
+          title: t("messaging:controls.detail.searchTitle"),
+          subtitle: t("messaging:controls.detail.localResultCount", { count: results.length, query: clean }),
           kind: "search",
-          lines: results.map((message) => `${message.is_mine ? "You" : PULSE_AI_DISPLAY_NAME}: ${message.body || message.content || message.text || "[message]"}`)
+          lines: results.map((message) => `${message.is_mine ? t("messaging:controls.you") : PULSE_AI_DISPLAY_NAME}: ${message.body || message.content || message.text || t("messaging:controls.messageFallback")}`)
         });
         setNotice("");
         return;
       }
       const results = await searchConversationMessages(conversationId, clean);
       setDetail({
-        title: "Search Chat",
-        subtitle: `${results.length} result${results.length === 1 ? "" : "s"} for “${clean}”`,
+        title: t("messaging:controls.detail.searchTitle"),
+        subtitle: t("messaging:controls.detail.resultCount", { count: results.length, query: clean }),
         kind: "search",
-        lines: results.map((message) => `${message.sender_display_name || (message.is_mine ? "You" : "Pulse member")}: ${message.body || `[${message.message_type || "attachment"}]`}`)
+        lines: results.map((message) => `${message.sender_display_name || (message.is_mine ? t("messaging:controls.you") : t("messaging:controls.pulseMember"))}: ${message.body || `[${message.message_type || t("messaging:controls.attachmentFallback")}]`}`)
       });
       setNotice("");
     } catch (error) {
-      setNotice(errorMessage(error, "Search could not run."));
+      setNotice(errorMessage(error, t("messaging:controls.searchFailed")));
     } finally {
       setChatSearchLoading(false);
     }
@@ -398,7 +405,7 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
         exported_at: new Date().toISOString(),
         messages: messages.map((message) => ({
           id: message.id,
-          sender: message.is_mine ? "You" : PULSE_AI_DISPLAY_NAME,
+          sender: message.is_mine ? t("messaging:controls.you") : PULSE_AI_DISPLAY_NAME,
           body: message.body || message.content || message.text || "",
           created_at: message.created_at
         }))
@@ -414,7 +421,7 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
       await Share.share({ title: data.filename || `${title} export`, message: payload || "No export data returned." });
       setNotice("Conversation export opened in the share sheet.");
     } catch (error) {
-      setNotice(errorMessage(error, "Conversation export could not open."));
+      setNotice(errorMessage(error, t("messaging:controls.exportFailed")));
     } finally {
       setSavingKey("");
     }
@@ -422,13 +429,13 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
 
   async function clearLocalCache() {
     await AsyncStorage.removeItem(`pulsesoc.native.messenger.v2.messages.${conversationId}`);
-    setNotice("Local cache cleared. Server messages and remote media were not deleted.");
+    setNotice(t("messaging:controls.cacheCleared"));
   }
 
   async function saveSetting(row: RowSpec, nextValue: boolean | string) {
     if (!row.setting) return;
     if (assistantConversation) {
-      setNotice("UNDX uses the shared Messenger composer. These per-chat settings stay with production human and group conversations.");
+      setNotice(t("messaging:controls.assistantSettingsUnsupported"));
       return;
     }
     const key = `${row.setting.section}.${row.setting.key}`;
@@ -436,9 +443,9 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
     try {
       const data = await updateConversationControlSetting(conversationId, row.setting.section, row.setting.key, nextValue);
       setControlData((current) => ({ ...(current || {}), ...data, settings: data.settings || current?.settings }));
-      setNotice(`${row.label} saved.`);
+      setNotice(t("messaging:controls.settingSaved", { label: row.label }));
     } catch (error) {
-      setNotice(errorMessage(error, `${row.label} could not be saved.`));
+      setNotice(errorMessage(error, t("messaging:controls.settingSaveFailed", { label: row.label })));
     } finally {
       setSavingKey("");
     }
@@ -454,9 +461,9 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
       setSavingKey(action);
       try {
         const data = await runConversationControlAction(conversationId, action, body.trim());
-        setNotice(data.message || `${label} saved.`);
+        setNotice(data.message || t("messaging:controls.settingSaved", { label }));
       } catch (error) {
-        setNotice(errorMessage(error, `${label} could not be saved.`));
+        setNotice(errorMessage(error, t("messaging:controls.settingSaveFailed", { label })));
       } finally {
         setSavingKey("");
       }
@@ -465,18 +472,18 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
 
   async function executeAction(row: RowSpec) {
     if (row.disabled) {
-      setNotice(row.disabledReason || `${row.label} is unavailable in this conversation.`);
+      setNotice(row.disabledReason || t("messaging:controls.rowUnavailable", { label: row.label }));
       return;
     }
     if (!connected && row.action !== "clear-cache" && row.action !== "search-chat") {
-      setNotice(OFFLINE_REASON);
+      setNotice(t("messaging:controls.offlineReason"));
       return;
     }
     const run = async () => {
       switch (row.action) {
         case "members":
           if (assistantConversation) {
-            setDetail({ title: "Participants", subtitle: "PulseSoc intelligence chat", lines: ["You", "UNDX · PulseSoc Intelligence"] });
+            setDetail({ title: t("messaging:controls.detail.participantsTitle"), subtitle: t("messaging:controls.detail.assistantChatSubtitle"), lines: [t("messaging:controls.you"), t("messaging:controls.assistantParticipant")] });
             return;
           }
           return loadMembers();
@@ -497,96 +504,96 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
             const links = messages
               .map((message) => message.body || message.content || message.text || "")
               .flatMap((body) => body.match(/https?:\/\/\S+/g) || []);
-            setDetail({ title: "Shared Links", subtitle: `${links.length} local link${links.length === 1 ? "" : "s"}`, lines: links });
+            setDetail({ title: t("messaging:controls.detail.sharedLinksTitle"), subtitle: t("messaging:controls.detail.localLinkCount", { count: links.length }), lines: links });
             return;
           }
           return loadLinks();
         case "pinned-messages":
           return loadPinnedMessages();
         case "search-chat":
-          setDetail({ title: "Search Chat", subtitle: "Search only messages this account can access.", kind: "search", lines: [] });
+          setDetail({ title: t("messaging:controls.detail.searchTitle"), subtitle: t("messaging:controls.detail.searchSubtitle"), kind: "search", lines: [] });
           return;
         case "message-stats":
-          setDetail({ title: "Message Stats", subtitle: "Live counts from this conversation.", lines: statsLines(stats) });
+          setDetail({ title: t("messaging:controls.detail.statsTitle"), subtitle: t("messaging:controls.detail.statsSubtitle"), lines: statsLines(stats) });
           return;
         case "storage":
           setOpen((current) => Array.from(new Set([...current, "storage"])));
-          setDetail({ title: "Media Storage", subtitle: "Server attachment metadata for this conversation.", lines: statsLines(stats).filter((line) => /Media|Photos|Videos|Voice|Files|Storage/i.test(line)) });
+          setDetail({ title: t("messaging:controls.detail.storageTitle"), subtitle: t("messaging:controls.detail.storageSubtitle"), lines: storageStatsLines(stats) });
           return;
         case "export-chat":
           return exportChat();
         case "start-audio-call":
           if (!onStartCall) {
-            setNotice("Audio calls are not enabled for this conversation.");
+            setNotice(t("messaging:controls.audioCallsDisabled"));
             return;
           }
           onClose();
           return onStartCall("audio");
         case "start-video-call":
           if (!onStartCall) {
-            setNotice("Video calls are not enabled for this conversation.");
+            setNotice(t("messaging:controls.videoCallsDisabled"));
             return;
           }
           onClose();
           return onStartCall("video");
         case "mute": {
           if (assistantConversation) {
-            setNotice("UNDX remains pinned and available in Messenger.");
+            setNotice(t("messaging:controls.assistantMuteUnsupported"));
             return;
           }
           setSavingKey("mute");
           const data = await muteConversation(conversationId);
-          setNotice(data.message || (data.muted ? "Conversation muted." : "Conversation unmuted."));
+          setNotice(data.message || (data.muted ? t("messaging:controls.conversationMuted") : t("messaging:controls.conversationUnmuted")));
           await refreshControlCenter();
           setSavingKey("");
           return;
         }
         case "pin": {
           if (assistantConversation) {
-            setNotice("UNDX is pinned in Messenger.");
+            setNotice(t("messaging:controls.assistantPinned"));
             return;
           }
           setSavingKey("pin");
           const data = await pinConversation(conversationId, !stats.pinned);
-          setNotice(data.message || (data.pinned ? "Conversation pinned." : "Conversation unpinned."));
+          setNotice(data.message || (data.pinned ? t("messaging:controls.conversationPinned") : t("messaging:controls.conversationUnpinned")));
           await refreshControlCenter();
           setSavingKey("");
           return;
         }
         case "archive": {
           if (assistantConversation) {
-            setNotice("UNDX cannot be archived because it is the canonical PulseSoc intelligence conversation.");
+            setNotice(t("messaging:controls.assistantArchiveUnsupported"));
             return;
           }
           setSavingKey("archive");
           const data = await archiveConversation(conversationId);
-          setNotice(data.message || "Conversation archived.");
+          setNotice(data.message || t("messaging:controls.conversationArchived"));
           setSavingKey("");
           onClose();
           return;
         }
         case "mark-unread": {
           if (assistantConversation) {
-            setNotice("UNDX unread state is managed by the assistant conversation history.");
+            setNotice(t("messaging:controls.assistantUnreadUnsupported"));
             return;
           }
           setSavingKey("mark-unread");
           const data = await markConversationUnread(conversationId);
-          setNotice(data.message || "Conversation marked unread.");
+          setNotice(data.message || t("messaging:controls.conversationMarkedUnread"));
           await refreshControlCenter();
           setSavingKey("");
           return;
         }
         case "clear-cache":
-          return Alert.alert("Clear local media cache?", "This removes cached conversation data from this device. It does not delete server messages or remote media.", [{ text: "Cancel", style: "cancel" }, { text: "Clear cache", style: "destructive", onPress: () => clearLocalCache().catch(() => setNotice("Local cache could not be cleared.")) }]);
+          return Alert.alert(t("messaging:controls.clearCacheTitle"), t("messaging:controls.clearCacheBody"), [{ text: t("common:actions.cancel"), style: "cancel" }, { text: t("messaging:controls.clearCacheConfirm"), style: "destructive", onPress: () => clearLocalCache().catch(() => setNotice(t("messaging:controls.cacheClearFailed"))) }]);
         case "security-status":
           setDetail({
-            title: "Security Status",
+            title: t("messaging:controls.detail.securityTitle"),
             subtitle: stats.security_label,
             lines: [
-              "Authenticated PulseSoc access and participant checks are enforced by the server.",
-              "Deleted messages and hidden media are excluded from server control-center lists.",
-              "True end-to-end encryption is not claimed for this conversation."
+              t("messaging:controls.detail.securityLine1"),
+              t("messaging:controls.detail.securityLine2"),
+              t("messaging:controls.detail.securityLine3")
             ]
           });
           return;
@@ -601,9 +608,9 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
           setSavingKey(row.action);
           try {
             const data = await runConversationControlAction(conversationId, row.action);
-            setNotice(data.message || "Safety action sent.");
+            setNotice(data.message || t("messaging:controls.safetyActionSent"));
           } catch (error) {
-            setNotice(errorMessage(error, "Safety action could not complete."));
+            setNotice(errorMessage(error, t("messaging:controls.safetyActionFailed")));
           } finally {
             setSavingKey("");
           }
@@ -615,7 +622,7 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
         case "reset-settings": {
           setSavingKey(row.action);
           const data = await runConversationControlAction(conversationId, row.action);
-          setNotice(data.message || "Conversation action completed.");
+          setNotice(data.message || t("messaging:controls.actionCompleted"));
           if (row.action === "reset-settings") await refreshControlCenter();
           if (row.action === "delete-conversation" || row.action === "leave-group") onClose();
           setSavingKey("");
@@ -626,18 +633,18 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
           return promptServerAction(row.action);
         case "unavailable":
         default:
-          setNotice(row.disabledReason || `${row.label} is not enabled for this conversation.`);
+          setNotice(row.disabledReason || t("messaging:controls.rowNotEnabled", { label: row.label }));
       }
     };
     if (row.dangerConfirm) {
-      Alert.alert(row.label, row.dangerConfirm, [{ text: "Cancel", style: "cancel" }, { text: row.destructive ? "Continue" : "Confirm", style: row.destructive ? "destructive" : "default", onPress: () => run().catch((error) => { setSavingKey(""); setNotice(errorMessage(error, `${row.label} could not complete.`)); }) }]);
+      Alert.alert(row.label, row.dangerConfirm, [{ text: t("common:actions.cancel"), style: "cancel" }, { text: row.destructive ? t("common:actions.continue") : t("common:actions.confirm"), style: row.destructive ? "destructive" : "default", onPress: () => run().catch((error) => { setSavingKey(""); setNotice(errorMessage(error, t("messaging:controls.rowFailed", { label: row.label }))); }) }]);
       return;
     }
     try {
       await run();
     } catch (error) {
       setSavingKey("");
-      setNotice(errorMessage(error, `${row.label} could not complete.`));
+      setNotice(errorMessage(error, t("messaging:controls.rowFailed", { label: row.label })));
     }
   }
 
@@ -648,9 +655,9 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
           <View style={styles.handle} />
           <View style={styles.header}>
             <View style={styles.gear}><Text style={styles.gearText}>⚙</Text></View>
-            <View style={styles.headerCopy}><Text style={styles.title}>Conversation Control Center</Text><Text style={styles.subtitle}>Production Messenger controls for this chat.</Text></View>
-            <Pressable accessibilityRole="button" accessibilityLabel="Refresh Conversation Control Center" style={styles.headerButton} onPress={refreshControlCenter} disabled={loading}><Text style={styles.headerButtonText}>↻</Text></Pressable>
-            <Pressable accessibilityRole="button" accessibilityLabel="Close Conversation Control Center" style={styles.close} onPress={onClose}><Text style={styles.closeText}>×</Text></Pressable>
+            <View style={styles.headerCopy}><Text style={styles.title}>{t("messaging:controls.title")}</Text><Text style={styles.subtitle}>{t("messaging:controls.subtitle")}</Text></View>
+            <Pressable accessibilityRole="button" accessibilityLabel={t("messaging:controls.a11yRefresh")} style={styles.headerButton} onPress={refreshControlCenter} disabled={loading}><Text style={styles.headerButtonText}>↻</Text></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel={t("messaging:controls.a11yClose")} style={styles.close} onPress={onClose}><Text style={styles.closeText}>×</Text></Pressable>
           </View>
           <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" stickyHeaderIndices={[1]}>
             <View style={styles.dashboard}>
@@ -668,22 +675,22 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
                 <Quick label="Members" icon="♟" disabled={!can("members")} onPress={() => executeAction({ label: "Members", icon: "♟", action: "members", disabled: !can("members"), disabledReason: "Members are not available for this conversation." })} />
               </View>
               <View style={styles.actionGrid}>
-                <Quick label="Audio Call" icon="☎" disabled={!can("voice_call") || !onStartCall} onPress={() => executeAction({ label: "Audio Call", icon: "☎", action: "start-audio-call", disabled: !can("voice_call") || !onStartCall, disabledReason: "Audio calls are not enabled for this conversation." })} />
-                <Quick label="Video Call" icon="▣" disabled={!can("video_call") || !onStartCall} onPress={() => executeAction({ label: "Video Call", icon: "▣", action: "start-video-call", disabled: !can("video_call") || !onStartCall, disabledReason: "Video calls are not enabled for this conversation." })} />
-                <Quick label={stats.muted ? "Unmute" : "Mute"} icon="🔕" busy={savingKey === "mute"} disabled={!can("mute")} onPress={() => executeAction({ label: stats.muted ? "Unmute Conversation" : "Mute Conversation", icon: "🔕", action: "mute", disabled: !can("mute"), disabledReason: "Mute is not enabled for this conversation." })} />
-                <Quick label={stats.pinned ? "Unpin" : "Pin"} icon="📌" busy={savingKey === "pin"} disabled={!can("pin")} onPress={() => executeAction({ label: stats.pinned ? "Unpin Conversation" : "Pin Conversation", icon: "📌", action: "pin", disabled: !can("pin"), disabledReason: "Pin is not enabled for this conversation." })} />
-                <Quick label="Archive" icon="▤" busy={savingKey === "archive"} disabled={!can("archive")} onPress={() => executeAction({ label: "Archive Conversation", icon: "▤", action: "archive", dangerConfirm: "Archive this conversation from your inbox?", disabled: !can("archive"), disabledReason: "Archive is not enabled for this conversation." })} />
+                <Quick label={t("messaging:controls.quick.audioCall")} icon="☎" disabled={!can("voice_call") || !onStartCall} onPress={() => executeAction({ label: t("messaging:controls.quick.audioCall"), icon: "☎", action: "start-audio-call", disabled: !can("voice_call") || !onStartCall, disabledReason: t("messaging:controls.audioCallsDisabled") })} />
+                <Quick label={t("messaging:controls.quick.videoCall")} icon="▣" disabled={!can("video_call") || !onStartCall} onPress={() => executeAction({ label: t("messaging:controls.quick.videoCall"), icon: "▣", action: "start-video-call", disabled: !can("video_call") || !onStartCall, disabledReason: t("messaging:controls.videoCallsDisabled") })} />
+                <Quick label={stats.muted ? t("messaging:inbox.unmute") : t("messaging:inbox.mute")} icon="🔕" busy={savingKey === "mute"} disabled={!can("mute")} onPress={() => executeAction({ label: stats.muted ? t("messaging:controls.rows.unmuteConversation") : t("messaging:controls.rows.muteConversation"), icon: "🔕", action: "mute", disabled: !can("mute"), disabledReason: t("messaging:controls.quickReasons.mute") })} />
+                <Quick label={stats.pinned ? t("messaging:controls.quick.unpin") : t("messaging:controls.quick.pin")} icon="📌" busy={savingKey === "pin"} disabled={!can("pin")} onPress={() => executeAction({ label: stats.pinned ? t("messaging:controls.rows.unpinConversation") : t("messaging:controls.rows.pinConversation"), icon: "📌", action: "pin", disabled: !can("pin"), disabledReason: t("messaging:controls.quickReasons.pin") })} />
+                <Quick label={t("messaging:inbox.archive")} icon="▤" busy={savingKey === "archive"} disabled={!can("archive")} onPress={() => executeAction({ label: t("messaging:controls.rows.archiveConversation"), icon: "▤", action: "archive", dangerConfirm: t("messaging:controls.confirm.archiveInbox"), disabled: !can("archive"), disabledReason: t("messaging:controls.quickReasons.archive") })} />
               </View>
               <View style={styles.metrics}>
-                <DashboardMetric label="Protection" value={stats.security_label} />
-                <DashboardMetric label="Members" value={stats.members ? String(stats.members) : "Unavailable"} />
-                <DashboardMetric label="Media Files" value={String(stats.media_files)} />
-                <DashboardMetric label="Known Storage" value={formatFileSize(stats.storage_used_bytes)} />
-                <DashboardMetric label="Unread" value={String(stats.unread)} />
-                <DashboardMetric label="Connection" value={stats.connection} />
+                <DashboardMetric label={t("messaging:controls.metrics.protection")} value={stats.security_label} />
+                <DashboardMetric label={t("messaging:controls.metrics.members")} value={stats.members ? String(stats.members) : t("messaging:controls.unavailable")} />
+                <DashboardMetric label={t("messaging:controls.metrics.mediaFiles")} value={String(stats.media_files)} />
+                <DashboardMetric label={t("messaging:controls.metrics.knownStorage")} value={formatFileSize(stats.storage_used_bytes)} />
+                <DashboardMetric label={t("messaging:controls.metrics.unread")} value={String(stats.unread)} />
+                <DashboardMetric label={t("messaging:controls.metrics.connection")} value={stats.connection} />
               </View>
             </View>
-            <View style={styles.searchWrap}><Text style={styles.searchIcon}>⌕</Text><TextInput accessibilityLabel="Search conversation settings" value={query} onChangeText={setQuery} placeholder="Search settings..." placeholderTextColor={colors.muted} style={styles.search} /></View>
+            <View style={styles.searchWrap}><Text style={styles.searchIcon}>⌕</Text><TextInput accessibilityLabel={t("messaging:controls.a11ySearchSettings")} value={query} onChangeText={setQuery} placeholder={t("messaging:controls.searchSettingsPlaceholder")} placeholderTextColor={colors.muted} style={styles.search} /></View>
             {detail ? <DetailPanelView detail={detail} chatSearch={chatSearch} onChatSearchChange={setChatSearch} chatSearchLoading={chatSearchLoading} onRunSearch={runSearch} onClose={() => setDetail(null)} /> : null}
             {sections.length ? sections.map((section) => {
               const expanded = normalizedQuery ? true : open.includes(section.key);
@@ -700,8 +707,8 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
                   onPress={() => executeAction(row)}
                 />) : null}
               </View>;
-            }) : <Text style={styles.empty}>No settings match “{query}”.</Text>}
-            {notice ? <Pressable accessibilityRole="button" accessibilityLabel="Dismiss notice" onPress={() => setNotice("")}><Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text></Pressable> : null}
+            }) : <Text style={styles.empty}>{t("messaging:controls.noSettingsMatch", { query })}</Text>}
+            {notice ? <Pressable accessibilityRole="button" accessibilityLabel={t("messaging:controls.a11yDismissNotice")} onPress={() => setNotice("")}><Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text></Pressable> : null}
           </ScrollView>
         </PulseCommandPanel>
       </View>
@@ -719,7 +726,7 @@ function buildRows(input: {
   videoCallAvailable: boolean;
 }): Record<Section, RowSpec[]> {
   const { stats, isGroup, can, connected, audioCallAvailable, videoCallAvailable } = input;
-  const unavailable = (reason: string): Pick<RowSpec, "disabled" | "disabledReason"> => ({ disabled: true, disabledReason: connected ? reason : OFFLINE_REASON });
+  const unavailable = (reason: string): Pick<RowSpec, "disabled" | "disabledReason"> => ({ disabled: true, disabledReason: connected ? reason : translate("messaging:controls.offlineReason") });
   return {
     conversation: [
       action("View Members", "👥", "members", `${stats.members || "Unknown"} server-visible participant${stats.members === 1 ? "" : "s"}`, !can("members") ? unavailable("Members are not available for this conversation.") : undefined),
@@ -731,44 +738,44 @@ function buildRows(input: {
       action("Export Chat", "⇧", "export-chat", "Exports only the messages you can see that have not been deleted.", !can("export_chat") ? unavailable("Export is not enabled for this conversation.") : undefined, "Export this conversation using the share sheet?")
     ],
     notifications: [
-      setting("Mute Conversation", "🔕", "notifications", "mute_choice", "select", "Syncs to the production mute preference.", OPTIONS.mute_choice),
-      setting("Notification Sound", "♪", "notifications", "sound", "select", "Server-backed per-chat sound preference.", OPTIONS.sound),
-      setting("Show on Lock Screen", "▣", "notifications", "lock_screen", "toggle", "Server-backed notification visibility."),
-      setting("Show Message Preview", "◉", "notifications", "message_preview", "toggle", "Synced with privacy preview setting."),
-      setting("Mention Notifications", "@", "notifications", "mentions", "toggle", "Server-backed mention alerts."),
-      setting("Reaction Notifications", "✦", "notifications", "reactions", "toggle", "Server-backed reaction alerts."),
-      setting("Typing Notifications", "…", "notifications", "typing", "toggle", "Server-backed typing alerts."),
-      setting("Read Receipt Notifications", "✓", "notifications", "read_receipts", "toggle", "Synced with read receipt privacy.")
+      setting(translate("messaging:controls.rows.muteConversation"), "🔕", "notifications", "mute_choice", "select", translate("messaging:controls.details.muteChoice"), OPTIONS.mute_choice),
+      setting(translate("messaging:controls.rows.notificationSound"), "♪", "notifications", "sound", "select", translate("messaging:controls.details.sound"), OPTIONS.sound),
+      setting(translate("messaging:controls.rows.lockScreen"), "▣", "notifications", "lock_screen", "toggle", translate("messaging:controls.details.lockScreen")),
+      setting(translate("messaging:controls.rows.messagePreview"), "◉", "notifications", "message_preview", "toggle", translate("messaging:controls.details.messagePreviewNotifications")),
+      setting(translate("messaging:controls.rows.mentionNotifications"), "@", "notifications", "mentions", "toggle", translate("messaging:controls.details.mentions")),
+      setting(translate("messaging:controls.rows.reactionNotifications"), "✦", "notifications", "reactions", "toggle", translate("messaging:controls.details.reactions")),
+      setting(translate("messaging:controls.rows.typingNotifications"), "…", "notifications", "typing", "toggle", translate("messaging:controls.details.typingNotifications")),
+      setting(translate("messaging:controls.rows.readReceiptNotifications"), "✓", "notifications", "read_receipts", "toggle", translate("messaging:controls.details.readReceiptNotifications"))
     ],
     appearance: [
-      setting("Theme", "◌", "appearance", "theme", "select", "Server-backed chat theme.", OPTIONS.theme),
-      setting("Wallpaper", "▧", "appearance", "wallpaper", "select", "Server-backed chat wallpaper.", OPTIONS.wallpaper),
-      setting("Bubble Color", "●", "appearance", "bubble_color", "select", "Server-backed bubble color.", OPTIONS.bubble_color),
-      setting("Font Size", "Aa", "appearance", "font_size", "select", "Server-backed text density.", OPTIONS.font_size),
-      setting("Chat Density", "↕", "appearance", "density", "select", "Server-backed layout density.", OPTIONS.density),
-      setting("Animation Level", "✺", "appearance", "animation_level", "select", "Server-backed animation preference.", OPTIONS.animation_level),
-      setting("Reduce Particles", "·", "appearance", "reduce_particles", "toggle", "Server-backed motion preference."),
-      setting("High Contrast", "◐", "appearance", "high_contrast", "toggle", "Server-backed contrast preference.")
+      setting(translate("messaging:controls.rows.theme"), "◌", "appearance", "theme", "select", translate("messaging:controls.details.theme"), OPTIONS.theme),
+      setting(translate("messaging:controls.rows.wallpaper"), "▧", "appearance", "wallpaper", "select", translate("messaging:controls.details.wallpaper"), OPTIONS.wallpaper),
+      setting(translate("messaging:controls.rows.bubbleColor"), "●", "appearance", "bubble_color", "select", translate("messaging:controls.details.bubbleColor"), OPTIONS.bubble_color),
+      setting(translate("messaging:controls.rows.fontSize"), "Aa", "appearance", "font_size", "select", translate("messaging:controls.details.fontSize"), OPTIONS.font_size),
+      setting(translate("messaging:controls.rows.chatDensity"), "↕", "appearance", "density", "select", translate("messaging:controls.details.density"), OPTIONS.density),
+      setting(translate("messaging:controls.rows.animationLevel"), "✺", "appearance", "animation_level", "select", translate("messaging:controls.details.animationLevel"), OPTIONS.animation_level),
+      setting(translate("messaging:controls.rows.reduceParticles"), "·", "appearance", "reduce_particles", "toggle", translate("messaging:controls.details.reduceParticles")),
+      setting(translate("messaging:controls.rows.highContrast"), "◐", "appearance", "high_contrast", "toggle", translate("messaging:controls.details.highContrastAppearance"))
     ],
     privacy: [
-      setting("Read Receipts", "✓✓", "privacy", "read_receipts", "toggle", "Synced with PulseSoc privacy settings."),
-      setting("Typing Indicator", "…", "privacy", "typing_indicator", "toggle", "Server-backed typing visibility."),
-      setting("Online Status", "●", "privacy", "online_status", "toggle", "Server-backed presence visibility."),
-      setting("Last Seen", "◷", "privacy", "last_seen", "toggle", "Server-backed last-seen visibility."),
-      setting("Show Message Preview", "◉", "privacy", "message_preview", "toggle", "Synced with notification preview setting."),
-      setting("Disappearing Messages", "⌛", "privacy", "disappearing_messages", "select", "Server-backed retention preference.", OPTIONS.disappearing_messages),
-      setting("Privacy Lock", "▣", "privacy", "privacy_lock", "toggle", "Stored only when the server accepts this setting."),
-      setting("Hidden Conversation", "◌", "privacy", "hidden_conversation", "toggle", "Stored only when the server accepts this setting.")
+      setting(translate("messaging:controls.rows.readReceipts"), "✓✓", "privacy", "read_receipts", "toggle", translate("messaging:controls.details.readReceipts")),
+      setting(translate("messaging:controls.rows.typingIndicator"), "…", "privacy", "typing_indicator", "toggle", translate("messaging:controls.details.typingIndicator")),
+      setting(translate("messaging:controls.rows.onlineStatus"), "●", "privacy", "online_status", "toggle", translate("messaging:controls.details.onlineStatus")),
+      setting(translate("messaging:controls.rows.lastSeen"), "◷", "privacy", "last_seen", "toggle", translate("messaging:controls.details.lastSeen")),
+      setting(translate("messaging:controls.rows.messagePreview"), "◉", "privacy", "message_preview", "toggle", translate("messaging:controls.details.messagePreviewPrivacy")),
+      setting(translate("messaging:controls.rows.disappearingMessages"), "⌛", "privacy", "disappearing_messages", "select", translate("messaging:controls.details.disappearingMessages"), OPTIONS.disappearing_messages),
+      setting(translate("messaging:controls.rows.privacyLock"), "▣", "privacy", "privacy_lock", "toggle", translate("messaging:controls.details.serverOptional")),
+      setting(translate("messaging:controls.rows.hiddenConversation"), "◌", "privacy", "hidden_conversation", "toggle", translate("messaging:controls.details.serverOptional"))
     ],
     media: [
-      setting("Auto Download Photos", "▧", "media", "auto_download_photos", "toggle", "Server-backed media download preference."),
-      setting("Auto Download Videos", "▶", "media", "auto_download_videos", "toggle", "Server-backed video download preference."),
-      setting("Auto Download Voice Messages", "🎙", "media", "auto_download_voice", "toggle", "Server-backed voice download preference."),
-      setting("Upload Quality", "HD", "media", "upload_quality", "select", "Server-backed upload preference.", OPTIONS.upload_quality),
-      setting("Auto Save Camera Photos", "◎", "media", "auto_save_camera", "toggle", "Server-backed camera save preference."),
-      action("Clear Media Cache", "⌫", "clear-cache", "Local cache only; server messages remain.", undefined, "Clear local cache for this conversation?"),
-      action("Shared Links", "↗", "shared-links", `${stats.links} detected link${stats.links === 1 ? "" : "s"}`),
-      action("Shared Files", "▤", "shared-files", `${stats.files} file${stats.files === 1 ? "" : "s"}`)
+      setting(translate("messaging:controls.rows.autoDownloadPhotos"), "▧", "media", "auto_download_photos", "toggle", translate("messaging:controls.details.autoDownloadPhotos")),
+      setting(translate("messaging:controls.rows.autoDownloadVideos"), "▶", "media", "auto_download_videos", "toggle", translate("messaging:controls.details.autoDownloadVideos")),
+      setting(translate("messaging:controls.rows.autoDownloadVoice"), "🎙", "media", "auto_download_voice", "toggle", translate("messaging:controls.details.autoDownloadVoice")),
+      setting(translate("messaging:controls.rows.uploadQuality"), "HD", "media", "upload_quality", "select", translate("messaging:controls.details.uploadQuality"), OPTIONS.upload_quality),
+      setting(translate("messaging:controls.rows.autoSaveCamera"), "◎", "media", "auto_save_camera", "toggle", translate("messaging:controls.details.autoSaveCamera")),
+      action(translate("messaging:controls.rows.clearMediaCache"), "⌫", "clear-cache", translate("messaging:controls.details.clearMediaCache"), undefined, translate("messaging:controls.confirm.clearCache")),
+      action(translate("messaging:controls.rows.sharedLinks"), "↗", "shared-links", translate("messaging:controls.details.detectedLinks", { count: stats.links })),
+      action(translate("messaging:controls.rows.sharedFiles"), "▤", "shared-files", translate("messaging:controls.details.fileCount", { count: stats.files }))
     ],
     security: [
       action("Encryption Status", "🛡", "security-status", stats.security_label),
@@ -789,31 +796,31 @@ function buildRows(input: {
       action("Create Task", "☑", "create-task", "Applies to this conversation right away.")
     ],
     storage: [
-      valueRow("Conversation Size", "◉", formatFileSize(stats.storage_used_bytes), "Known server attachment bytes."),
-      valueRow("Photos", "▧", String(stats.photos), "Server-visible photos."),
-      valueRow("Videos", "▶", String(stats.videos), "Server-visible videos."),
-      valueRow("Voice Messages", "🎙", String(stats.voice), "Server-visible voice messages."),
-      valueRow("Files", "▤", String(stats.files), "Server-visible files."),
-      action("Links", "↗", "shared-links", `${stats.links} detected link${stats.links === 1 ? "" : "s"}`),
-      action("Clear Cache", "⌫", "clear-cache", "Local cache only; no remote deletion.", undefined, "Clear local cache for this conversation?")
+      valueRow(translate("messaging:controls.rows.conversationSize"), "◉", formatFileSize(stats.storage_used_bytes), translate("messaging:controls.details.conversationSize")),
+      valueRow(translate("messaging:controls.rows.photos"), "▧", String(stats.photos), translate("messaging:controls.details.photos")),
+      valueRow(translate("messaging:controls.rows.videos"), "▶", String(stats.videos), translate("messaging:controls.details.videos")),
+      valueRow(translate("messaging:controls.rows.voiceMessages"), "🎙", String(stats.voice), translate("messaging:controls.details.voiceMessages")),
+      valueRow(translate("messaging:controls.rows.files"), "▤", String(stats.files), translate("messaging:controls.details.files")),
+      action(translate("messaging:controls.rows.links"), "↗", "shared-links", translate("messaging:controls.details.detectedLinks", { count: stats.links })),
+      action(translate("messaging:controls.rows.clearCache"), "⌫", "clear-cache", translate("messaging:controls.details.clearCache"), undefined, translate("messaging:controls.confirm.clearCache"))
     ],
     accessibility: [
-      setting("Large Text", "Aa", "accessibility", "large_text", "toggle", "Server-backed accessibility preference."),
-      setting("Reduce Motion", "↘", "accessibility", "reduce_motion", "toggle", "Server-backed accessibility preference."),
-      setting("High Contrast", "◐", "accessibility", "high_contrast", "toggle", "Server-backed accessibility preference."),
-      setting("Voice Reader", "🔊", "accessibility", "voice_reader", "toggle", "Server-backed accessibility preference."),
-      setting("Speech to Text", "🎙", "accessibility", "speech_to_text", "toggle", "Server-backed accessibility preference."),
-      setting("Text to Speech", "Aa", "accessibility", "text_to_speech", "toggle", "Server-backed accessibility preference."),
-      setting("Haptic Feedback", "✦", "accessibility", "haptic_feedback", "toggle", "Server-backed haptic preference.")
+      setting(translate("messaging:controls.rows.largeText"), "Aa", "accessibility", "large_text", "toggle", translate("messaging:controls.details.accessibility")),
+      setting(translate("messaging:controls.rows.reduceMotion"), "↘", "accessibility", "reduce_motion", "toggle", translate("messaging:controls.details.accessibility")),
+      setting(translate("messaging:controls.rows.highContrast"), "◐", "accessibility", "high_contrast", "toggle", translate("messaging:controls.details.accessibility")),
+      setting(translate("messaging:controls.rows.voiceReader"), "🔊", "accessibility", "voice_reader", "toggle", translate("messaging:controls.details.accessibility")),
+      setting(translate("messaging:controls.rows.speechToText"), "🎙", "accessibility", "speech_to_text", "toggle", translate("messaging:controls.details.accessibility")),
+      setting(translate("messaging:controls.rows.textToSpeech"), "Aa", "accessibility", "text_to_speech", "toggle", translate("messaging:controls.details.accessibility")),
+      setting(translate("messaging:controls.rows.hapticFeedback"), "✦", "accessibility", "haptic_feedback", "toggle", translate("messaging:controls.details.haptic"))
     ],
     danger: [
-      danger("Clear Conversation", "⌫", "clear-conversation", "Clear this conversation from your view? Other members keep their messages."),
-      danger("Delete Conversation", "×", "delete-conversation", "Remove this conversation from your inbox? Other members keep their messages."),
-      danger("Leave Group", "⇠", "leave-group", "Leave this group conversation?", isGroup ? undefined : unavailable("Leave Group is available only in group conversations.")),
-      danger("Block User", "⊘", "block-user", "Block this member?", (!can("block") || isGroup) ? unavailable("Block is available from direct conversations only.") : undefined),
-      danger("Report Spam", "!", "report-conversation", "Send this conversation to moderation review?", !can("report") ? unavailable("Reporting is not enabled for this conversation.") : undefined),
-      danger("Delete Media", "⌧", "delete-media", "Hide shared media from your view in this conversation."),
-      danger("Reset Conversation Settings", "↺", "reset-settings", "Reset this conversation's controls to defaults.")
+      danger(translate("messaging:controls.rows.clearConversation"), "⌫", "clear-conversation", translate("messaging:controls.confirm.clearConversation")),
+      danger(translate("messaging:controls.rows.deleteConversation"), "×", "delete-conversation", translate("messaging:controls.confirm.deleteConversation")),
+      danger(translate("messaging:controls.rows.leaveGroup"), "⇠", "leave-group", translate("messaging:controls.confirm.leaveGroup"), isGroup ? undefined : unavailable(translate("messaging:controls.reasons.leaveGroup"))),
+      danger(translate("messaging:controls.rows.blockUser"), "⊘", "block-user", translate("messaging:controls.confirm.block"), (!can("block") || isGroup) ? unavailable(translate("messaging:controls.reasons.block")) : undefined),
+      danger(translate("messaging:controls.rows.reportSpam"), "!", "report-conversation", translate("messaging:controls.confirm.report"), !can("report") ? unavailable(translate("messaging:controls.reasons.report")) : undefined),
+      danger(translate("messaging:controls.rows.deleteMedia"), "⌧", "delete-media", translate("messaging:controls.confirm.deleteMedia")),
+      danger(translate("messaging:controls.rows.resetSettings"), "↺", "reset-settings", translate("messaging:controls.confirm.resetSettings"))
     ]
   };
 }
@@ -830,9 +837,9 @@ function statsFallback() {
     storage_used_bytes: 0,
     unread: 0,
     members: 0,
-    connection: "Unavailable",
-    security_label: "Protected channel",
-    activity_status: "Unavailable",
+    connection: translate("messaging:controls.unavailable"),
+    security_label: translate("messaging:controls.protectedChannel"),
+    activity_status: translate("messaging:controls.unavailable"),
     muted: false,
     pinned: false
   };
@@ -843,7 +850,7 @@ function action(label: string, icon: string, controlAction: ControlAction, detai
 }
 
 function danger(label: string, icon: string, controlAction: ControlAction, confirm: string, availability?: Pick<RowSpec, "disabled" | "disabledReason">): RowSpec {
-  return { ...action(label, icon, controlAction, "Server-confirmed destructive action.", availability, confirm), danger: true, destructive: true };
+  return { ...action(label, icon, controlAction, translate("messaging:controls.details.destructive"), availability, confirm), danger: true, destructive: true };
 }
 
 function setting(label: string, icon: string, section: Section, key: string, kind: "toggle" | "select", detail: string, options?: SelectOption[]): RowSpec {
@@ -871,34 +878,49 @@ function nextSelectValue(setting: SettingSpec, current: unknown) {
 
 function optionLabel(setting: SettingSpec, current: unknown) {
   const value = String(current ?? "");
-  return setting.options?.find(([item]) => item === value)?.[1] || humanize(value || "Unset");
+  const optionKey = setting.options?.find(([item]) => item === value)?.[1];
+  return optionKey ? translate(optionKey) : humanize(value) || translate("messaging:controls.unsetOption");
 }
 
 function memberLine(member: ConversationControlMember) {
   const role = member.role ? ` · ${humanize(member.role)}` : "";
   const presence = member.presence ? ` · ${humanize(member.presence)}` : "";
-  return `${member.display_name || "Pulse member"}${role}${presence}`;
+  return `${member.display_name || translate("messaging:controls.pulseMember")}${role}${presence}`;
 }
 
 function mediaLine(item: ConversationControlMediaItem) {
   const size = formatFileSize(Number(item.file_size_bytes || 0));
   const type = humanize(item.media_type || item.mime_type || "file");
-  const sender = item.sender_display_name || "Pulse member";
+  const sender = item.sender_display_name || translate("messaging:controls.pulseMember");
   return `${type} · ${size} · ${sender}${item.body_preview ? ` · ${item.body_preview}` : ""}`;
 }
 
 function statsLines(stats: ReturnType<typeof statsFallback>) {
   return [
-    `Messages: ${stats.messages}`,
-    `Media files: ${stats.media_files}`,
-    `Photos: ${stats.photos}`,
-    `Videos: ${stats.videos}`,
-    `Voice messages: ${stats.voice}`,
-    `Files: ${stats.files}`,
-    `Links: ${stats.links}`,
-    `Storage: ${formatFileSize(stats.storage_used_bytes)}`,
-    `Unread: ${stats.unread}`,
-    `Connection: ${stats.connection}`
+    translate("messaging:controls.stats.messages", { value: stats.messages }),
+    translate("messaging:controls.stats.mediaFiles", { value: stats.media_files }),
+    translate("messaging:controls.stats.photos", { value: stats.photos }),
+    translate("messaging:controls.stats.videos", { value: stats.videos }),
+    translate("messaging:controls.stats.voiceMessages", { value: stats.voice }),
+    translate("messaging:controls.stats.files", { value: stats.files }),
+    translate("messaging:controls.stats.links", { value: stats.links }),
+    translate("messaging:controls.stats.storage", { value: formatFileSize(stats.storage_used_bytes) }),
+    translate("messaging:controls.stats.unread", { value: stats.unread }),
+    translate("messaging:controls.stats.connection", { value: stats.connection })
+  ];
+}
+
+// The storage detail panel previously re-filtered `statsLines` with an English
+// regex, which stopped matching as soon as the copy was translated. The subset
+// is now produced directly so it stays correct in every locale.
+function storageStatsLines(stats: ReturnType<typeof statsFallback>) {
+  return [
+    translate("messaging:controls.stats.mediaFiles", { value: stats.media_files }),
+    translate("messaging:controls.stats.photos", { value: stats.photos }),
+    translate("messaging:controls.stats.videos", { value: stats.videos }),
+    translate("messaging:controls.stats.voiceMessages", { value: stats.voice }),
+    translate("messaging:controls.stats.files", { value: stats.files }),
+    translate("messaging:controls.stats.storage", { value: formatFileSize(stats.storage_used_bytes) })
   ];
 }
 
@@ -923,16 +945,18 @@ function DashboardMetric({ label, value }: { label: string; value: string }) {
 }
 
 function DetailPanelView({ detail, chatSearch, onChatSearchChange, chatSearchLoading, onRunSearch, onClose }: { detail: DetailPanel; chatSearch: string; onChatSearchChange: (value: string) => void; chatSearchLoading: boolean; onRunSearch: () => void; onClose: () => void }) {
+  const { t } = useTranslation();
   return (
     <View style={styles.detailPanel}>
-      <View style={styles.detailHeader}><View><Text style={styles.detailTitle}>{detail.title}</Text>{detail.subtitle ? <Text style={styles.detailSubtitle}>{detail.subtitle}</Text> : null}</View><Pressable accessibilityRole="button" accessibilityLabel={`Close ${detail.title}`} onPress={onClose}><Text style={styles.detailClose}>×</Text></Pressable></View>
-      {detail.kind === "search" ? <View style={styles.chatSearchRow}><TextInput accessibilityLabel="Search this conversation" placeholder="Search this chat..." placeholderTextColor={colors.muted} value={chatSearch} onChangeText={onChatSearchChange} style={styles.chatSearchInput} onSubmitEditing={onRunSearch} /><Pressable accessibilityRole="button" accessibilityLabel="Run conversation search" style={styles.chatSearchButton} onPress={onRunSearch} disabled={chatSearchLoading}>{chatSearchLoading ? <ActivityIndicator color="#001118" /> : <Text style={styles.chatSearchButtonText}>Search</Text>}</Pressable></View> : null}
-      {detail.lines?.length ? detail.lines.slice(0, 80).map((line, index) => <Text key={`${detail.title}-${index}`} style={styles.detailLine}>{line}</Text>) : <Text style={styles.detailEmpty}>No items returned by the server.</Text>}
+      <View style={styles.detailHeader}><View><Text style={styles.detailTitle}>{detail.title}</Text>{detail.subtitle ? <Text style={styles.detailSubtitle}>{detail.subtitle}</Text> : null}</View><Pressable accessibilityRole="button" accessibilityLabel={t("messaging:controls.a11yClosePanel", { title: detail.title })} onPress={onClose}><Text style={styles.detailClose}>×</Text></Pressable></View>
+      {detail.kind === "search" ? <View style={styles.chatSearchRow}><TextInput accessibilityLabel={t("messaging:controls.a11ySearchConversation")} placeholder={t("messaging:controls.searchChatPlaceholder")} placeholderTextColor={colors.muted} value={chatSearch} onChangeText={onChatSearchChange} style={styles.chatSearchInput} onSubmitEditing={onRunSearch} /><Pressable accessibilityRole="button" accessibilityLabel={t("messaging:controls.a11yRunSearch")} style={styles.chatSearchButton} onPress={onRunSearch} disabled={chatSearchLoading}>{chatSearchLoading ? <ActivityIndicator color="#001118" /> : <Text style={styles.chatSearchButtonText}>{t("common:actions.search")}</Text>}</Pressable></View> : null}
+      {detail.lines?.length ? detail.lines.slice(0, 80).map((line, index) => <Text key={`${detail.title}-${index}`} style={styles.detailLine}>{line}</Text>) : <Text style={styles.detailEmpty}>{t("messaging:controls.detail.noItems")}</Text>}
     </View>
   );
 }
 
 function SettingRow({ row, settings, saving, onSaveSetting, onPress }: { row: RowSpec; settings: ConversationControlSettings; saving: boolean; onSaveSetting: (row: RowSpec, value: boolean | string) => void; onPress: () => void }) {
+  const { t } = useTranslation();
   const current = row.setting ? readSetting(settings, row.setting) : undefined;
   const isToggle = row.setting?.kind === "toggle";
   const isSelect = row.setting?.kind === "select";
@@ -949,9 +973,9 @@ function SettingRow({ row, settings, saving, onSaveSetting, onPress }: { row: Ro
       <Text style={styles.rowIcon}>{row.icon}</Text>
       <View style={styles.rowCopy}>
         <Text style={[styles.rowLabel, row.danger && styles.dangerText]}>{row.label}</Text>
-        <Text style={styles.rowDetail} numberOfLines={2}>{row.disabled ? row.disabledReason || "Unavailable for this conversation." : row.detail || "Production-backed control."}</Text>
+        <Text style={styles.rowDetail} numberOfLines={2}>{row.disabled ? row.disabledReason || t("messaging:controls.rowUnavailableFallback") : row.detail || t("messaging:controls.rowDetailFallback")}</Text>
       </View>
-      {saving ? <ActivityIndicator color={colors.accent} /> : isToggle ? <Switch value={Boolean(current)} onValueChange={(value) => onSaveSetting(row, value)} disabled={row.disabled} trackColor={{ false: "#183044", true: "#118e79" }} thumbColor={current ? colors.accent : "#cfe0f5"} /> : rightValue ? <Text style={styles.rowValue}>{rightValue}</Text> : <Text style={styles.chevron}>{row.disabled ? "Unavailable" : "›"}</Text>}
+      {saving ? <ActivityIndicator color={colors.accent} /> : isToggle ? <Switch value={Boolean(current)} onValueChange={(value) => onSaveSetting(row, value)} disabled={row.disabled} trackColor={{ false: "#183044", true: "#118e79" }} thumbColor={current ? colors.accent : "#cfe0f5"} /> : rightValue ? <Text style={styles.rowValue}>{rightValue}</Text> : <Text style={styles.chevron}>{row.disabled ? t("messaging:controls.unavailable") : "›"}</Text>}
     </Pressable>
   );
 }

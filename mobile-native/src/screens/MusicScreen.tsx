@@ -43,6 +43,7 @@ import {
   togglePulseRadioShuffle
 } from "../core/pulseRadio";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
+import { useTranslation } from "../i18n";
 import { RootStackParamList } from "../navigation/types";
 import { PRIVATE_CONTENT_MESSAGE, resolveRouteProfileContext } from "../profile/profileContext";
 import { useAuth } from "../session/auth";
@@ -64,10 +65,15 @@ type UploadDraft = {
   rightsConfirmed: boolean;
 };
 
+/**
+ * `label` holds a catalog key, not display text — it is resolved with `t` at
+ * render time so the lane chips re-label themselves the moment the language
+ * changes, instead of freezing whatever language was active at module load.
+ */
 const lanes: Array<{ key: PulseMusicLane; label: string }> = [
-  { key: "", label: "Best match" },
-  { key: "trending", label: "Trending" },
-  { key: "new", label: "New releases" }
+  { key: "", label: "discovery:music.laneBestMatch" },
+  { key: "trending", label: "discovery:music.laneTrending" },
+  { key: "new", label: "discovery:music.laneNewReleases" }
 ];
 
 const emptyDraft: UploadDraft = {
@@ -150,22 +156,22 @@ export function MusicScreen({ route, navigation }: Props) {
       try {
         const result = await searchPulseMusic({ query, genre, language, mood, lane, limit: 40 });
         setTracks(result.tracks);
-        if (!result.tracks.length) setMessage("No approved tracks matched this search.");
+        if (!result.tracks.length) setMessage(t("discovery:music.noMatches"));
       } catch (error) {
         const cached = await loadCachedPulseMusicSnapshot();
         if (cached.length) {
           setTracks(cached);
           setOffline(true);
-          setMessage("Showing cached PulseSoc Music. Reconnect to upload or refresh the pool.");
+          setMessage(t("discovery:music.offlineNotice"));
         } else {
-          setMessage(error instanceof Error ? error.message : "PulseSoc Music could not load.");
+          setMessage(error instanceof Error ? error.message : t("discovery:music.loadError"));
         }
       } finally {
         setLoading(false);
         setRefreshing(false);
       }
     },
-    [genre, language, lane, mood, query]
+    [genre, language, lane, mood, query, t]
   );
 
   useEffect(() => {
@@ -237,17 +243,17 @@ export function MusicScreen({ route, navigation }: Props) {
     }
     const url = track.previewUrl || track.audioUrl;
     if (!url) {
-      setMessage("Preview is not available for this track yet.");
+      setMessage(t("discovery:music.previewUnavailable"));
       return;
     }
     await stopPreview();
     const granted = await claimMediaPlayback({ id: PREVIEW_OWNER, kind: "music_preview", pause: () => stopPreview(), stop: () => stopPreview() });
     if (!granted) {
-      setMessage("Another media surface is active. Pause it before previewing music.");
+      setMessage(t("discovery:music.previewBlocked"));
       return;
     }
     setBusyTrackId(track.id);
-    setMessage(`Previewing ${track.title}.`);
+    setMessage(t("discovery:music.previewing", { title: track.title }));
     try {
       await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true, staysActiveInBackground: false });
       const created = await Audio.Sound.createAsync({ uri: url }, { shouldPlay: true, volume: 0.82 }, (status) => {
@@ -258,7 +264,7 @@ export function MusicScreen({ route, navigation }: Props) {
       await recordPulseMusicEvent(track.id, "play", "native_music_library").catch(() => undefined);
     } catch (error) {
       await releaseMediaPlayback(PREVIEW_OWNER).catch(() => undefined);
-      setMessage(error instanceof Error ? error.message : "Preview could not play.");
+      setMessage(error instanceof Error ? error.message : t("discovery:music.previewFailed"));
     } finally {
       setBusyTrackId("");
     }
@@ -270,9 +276,9 @@ export function MusicScreen({ route, navigation }: Props) {
     try {
       await recordPulseMusicEvent(track.id, "save", "native_music_library");
       setTracks((current) => current.map((item) => (item.id === track.id ? { ...item, saveCount: item.saveCount + 1 } : item)));
-      setMessage("Song saved to your PulseSoc sounds.");
+      setMessage(t("discovery:music.saveSuccess"));
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Song could not be saved.");
+      setMessage(error instanceof Error ? error.message : t("discovery:music.saveFailed"));
     } finally {
       setBusyTrackId("");
     }
@@ -284,25 +290,25 @@ export function MusicScreen({ route, navigation }: Props) {
     try {
       await recordPulseMusicEvent(track.id, "share", "native_music_library").catch(() => undefined);
       await Share.share({ title: track.title, message: `${track.title} · ${track.artist}\n${pulseMusicWebUrl(track.id)}` });
-      setMessage("Music share opened.");
+      setMessage(t("discovery:music.shareOpened"));
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Share could not open.");
+      setMessage(error instanceof Error ? error.message : t("discovery:music.shareFailed"));
     } finally {
       setBusyTrackId("");
     }
   }
 
   async function reportTrack(track: PulseMusicTrack) {
-    Alert.alert("Report music", `Send ${track.title} to PulseSoc safety review?`, [
-      { text: "Cancel", style: "cancel" },
+    Alert.alert(t("discovery:music.reportTitle"), t("discovery:music.reportBody", { title: track.title }), [
+      { text: t("discovery:music.reportCancel"), style: "cancel" },
       {
-        text: "Report",
+        text: t("discovery:music.reportConfirm"),
         style: "destructive",
         onPress: () => {
           setBusyTrackId(track.id);
           reportPulseMusic(track.id)
-            .then(() => setMessage("Song report sent for review."))
-            .catch((error) => setMessage(error instanceof Error ? error.message : "Report could not be sent."))
+            .then(() => setMessage(t("discovery:music.reportSent")))
+            .catch((error) => setMessage(error instanceof Error ? error.message : t("discovery:music.reportFailed")))
             .finally(() => setBusyTrackId(""));
         }
       }
@@ -312,7 +318,15 @@ export function MusicScreen({ route, navigation }: Props) {
   async function useTrack(track: PulseMusicTrack, surface: "reel" | "video" | "status" | "post") {
     const composerSurface = surface === "video" ? "post" : surface;
     await selectPulseMusicForSurface(track, composerSurface);
-    setMessage(`Selected ${track.title} for ${composerSurface === "post" ? "the feed composer" : composerSurface}.`);
+    // One key per complete sentence: the surface name is part of the sentence,
+    // not a fragment to splice into it.
+    const selectedKey =
+      composerSurface === "post"
+        ? "discovery:music.selectedForFeedComposer"
+        : composerSurface === "reel"
+          ? "discovery:music.selectedForReel"
+          : "discovery:music.selectedForStatus";
+    setMessage(t(selectedKey, { title: track.title }));
     navigation.navigate("Tabs", { screen: "Home", params: { openComposer: true, composerMode: composerSurface } });
   }
 
@@ -334,7 +348,7 @@ export function MusicScreen({ route, navigation }: Props) {
       },
       title: current.title || titleFromFilename(asset.name || "")
     }));
-    setMessage("Audio file selected.");
+    setMessage(t("discovery:music.audioSelected"));
   }
 
   async function pickCover() {
@@ -354,13 +368,13 @@ export function MusicScreen({ route, navigation }: Props) {
         size: asset.size || 0
       }
     }));
-    setMessage("Cover artwork selected.");
+    setMessage(t("discovery:music.coverSelected"));
   }
 
   async function uploadDraft() {
     if (!draft.audio || uploading) return;
     setUploading(true);
-    setMessage("Uploading song for rights review…");
+    setMessage(t("discovery:music.uploadingMessage"));
     try {
       const result = await uploadPulseMusic({
         audio: draft.audio,
@@ -374,11 +388,11 @@ export function MusicScreen({ route, navigation }: Props) {
         tags: draft.tags,
         rightsConfirmed: draft.rightsConfirmed
       });
-      setMessage(result.message || "Song uploaded for admin review.");
+      setMessage(result.message || t("discovery:music.uploadSuccess"));
       setDraft({ ...emptyDraft, artist: uploaderName });
       await load("refresh");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Music upload failed.");
+      setMessage(error instanceof Error ? error.message : t("discovery:music.uploadFailed"));
     } finally {
       setUploading(false);
     }
@@ -398,7 +412,7 @@ export function MusicScreen({ route, navigation }: Props) {
     return (
       <View style={styles.center}>
         <ActivityIndicator color={colors.accent} />
-        <Text style={styles.centerText}>Loading PulseSoc Music</Text>
+        <Text style={styles.centerText}>{t("discovery:music.loadingTitle")}</Text>
       </View>
     );
   }
@@ -415,23 +429,21 @@ export function MusicScreen({ route, navigation }: Props) {
           <View style={styles.header}>
             <View style={styles.hero}>
               <View style={styles.heroCopy}>
-                <Text style={styles.kicker}>PulseSoc Music</Text>
-                <Text style={styles.title}>Artist-uploaded music for Reels, Videos, and Status.</Text>
-                <Text style={styles.subtitle}>
-                  Upload, discover, preview, report, and attach rights-confirmed music to PulseSoc content.
-                </Text>
+                <Text style={styles.kicker}>{t("discovery:music.heroKicker")}</Text>
+                <Text style={styles.title}>{t("discovery:music.heroTitle")}</Text>
+                <Text style={styles.subtitle}>{t("discovery:music.heroSubtitle")}</Text>
               </View>
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={radio.status === "playing" ? "Pause PulseSoc Radio" : radio.userWantsPlayback && radio.interruptedBy ? "Keep PulseSoc Radio paused" : "Play PulseSoc Radio"}
                 accessibilityHint={radio.userWantsPlayback && radio.interruptedBy ? "Prevents PulseSoc Radio from resuming after active audio ends." : "PulseSoc Radio keeps playing as you move around the app."}
                 style={styles.radioCard}
-                onPress={() => togglePulseRadio().catch((error) => setMessage(error instanceof Error ? error.message : "Pulse Radio could not start."))}
+                onPress={() => togglePulseRadio().catch((error) => setMessage(error instanceof Error ? error.message : t("discovery:music.radioStartFailed")))}
               >
                 <Text style={styles.radioIcon}>{radio.status === "playing" ? "Ⅱ" : radio.status === "connecting" || radio.status === "buffering" ? "…" : "▶"}</Text>
                 <View style={styles.radioCopy}>
-                  <Text style={styles.radioTitle}>Pulse Radio</Text>
-                  <Text style={styles.radioBody} numberOfLines={2}>{radio.message || "Approved music pool"}</Text>
+                  <Text style={styles.radioTitle}>{t("discovery:music.radioTitle")}</Text>
+                  <Text style={styles.radioBody} numberOfLines={2}>{radio.message || t("discovery:music.radioBodyFallback")}</Text>
                   <Waveform waveform={radio.track ? [0.18, 0.38, 0.66, 0.42, 0.72, 0.5, 0.3, 0.58] : [0.12, 0.22, 0.3, 0.18, 0.28, 0.2]} active={radio.status === "playing" || radio.status === "buffering"} />
                 </View>
               </Pressable>
@@ -440,7 +452,7 @@ export function MusicScreen({ route, navigation }: Props) {
                 <View style={styles.radioControls}>
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel="Previous track"
+                    accessibilityLabel={t("discovery:music.previousTrackLabel")}
                     testID="music-radio-previous"
                     style={styles.radioControlButton}
                     onPress={() => playPreviousTrack().catch(() => undefined)}
@@ -449,7 +461,7 @@ export function MusicScreen({ route, navigation }: Props) {
                   </Pressable>
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel="Seek backward 15 seconds"
+                    accessibilityLabel={t("discovery:music.seekBackwardLabel")}
                     testID="music-radio-seek-back"
                     style={styles.radioControlButton}
                     onPress={() => seekPulseRadioBy(-15000).catch(() => undefined)}
@@ -458,7 +470,7 @@ export function MusicScreen({ route, navigation }: Props) {
                   </Pressable>
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel="Seek forward 15 seconds"
+                    accessibilityLabel={t("discovery:music.seekForwardLabel")}
                     testID="music-radio-seek-forward"
                     style={styles.radioControlButton}
                     onPress={() => seekPulseRadioBy(15000).catch(() => undefined)}
@@ -467,7 +479,7 @@ export function MusicScreen({ route, navigation }: Props) {
                   </Pressable>
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel="Next track"
+                    accessibilityLabel={t("discovery:music.nextTrackLabel")}
                     testID="music-radio-next"
                     style={styles.radioControlButton}
                     onPress={() => playNextTrack().catch(() => undefined)}
@@ -476,7 +488,7 @@ export function MusicScreen({ route, navigation }: Props) {
                   </Pressable>
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel={radio.shuffle ? "Disable shuffle" : "Enable shuffle"}
+                    accessibilityLabel={radio.shuffle ? t("discovery:music.disableShuffleLabel") : t("discovery:music.enableShuffleLabel")}
                     testID="music-radio-shuffle"
                     style={[styles.radioControlButton, radio.shuffle && styles.radioControlButtonActive]}
                     onPress={() => togglePulseRadioShuffle()}
@@ -485,7 +497,13 @@ export function MusicScreen({ route, navigation }: Props) {
                   </Pressable>
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel={radio.repeatMode === "one" ? "Repeat one track" : radio.repeatMode === "queue" ? "Repeat queue" : "Repeat off"}
+                    accessibilityLabel={
+                      radio.repeatMode === "one"
+                        ? t("discovery:music.repeatOneLabel")
+                        : radio.repeatMode === "queue"
+                          ? t("discovery:music.repeatQueueLabel")
+                          : t("discovery:music.repeatOffLabel")
+                    }
                     testID="music-radio-repeat"
                     style={[styles.radioControlButton, radio.repeatMode !== "off" && styles.radioControlButtonActive]}
                     onPress={() => cyclePulseRadioRepeatMode()}
@@ -498,13 +516,13 @@ export function MusicScreen({ route, navigation }: Props) {
                   </Pressable>
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel="View and manage queue"
+                    accessibilityLabel={t("discovery:music.openQueueLabel")}
                     testID="music-radio-open-queue"
                     style={[styles.radioControlButton, styles.radioControlButtonWide]}
-                    onPress={() => navigation.navigate("PulseQueue", { title: "Queue" })}
+                    onPress={() => navigation.navigate("PulseQueue", { title: t("discovery:music.queueLabel") })}
                   >
                     <Ionicons name="list" size={16} color={colors.text} />
-                    <Text style={styles.radioControlLabel}>Queue</Text>
+                    <Text style={styles.radioControlLabel}>{t("discovery:music.queueLabel")}</Text>
                   </Pressable>
                 </View>
               ) : null}
@@ -513,57 +531,57 @@ export function MusicScreen({ route, navigation }: Props) {
             <View style={styles.uploadPanel}>
               <View style={styles.panelHeader}>
                 <View>
-                  <Text style={styles.panelKicker}>Music Upload Portal</Text>
-                  <Text style={styles.panelTitle}>Upload for Review</Text>
+                  <Text style={styles.panelKicker}>{t("discovery:music.uploadKicker")}</Text>
+                  <Text style={styles.panelTitle}>{t("discovery:music.uploadForReview")}</Text>
                 </View>
-                <Text style={[styles.statusPill, uploadReadyHint && styles.statusPillReady]}>{uploadReadyHint ? "Ready" : "Server verified"}</Text>
+                <Text style={[styles.statusPill, uploadReadyHint && styles.statusPillReady]}>{uploadReadyHint ? t("discovery:music.statusReady") : t("discovery:music.statusServerVerified")}</Text>
               </View>
-              <Text style={styles.muted}>Supported: MP3, WAV, M4A, AAC. Uploaded songs require rights review before public use.</Text>
+              <Text style={styles.muted}>{t("discovery:music.uploadSupported")}</Text>
               <View style={styles.fileRow}>
-                <Pressable accessibilityRole="button" accessibilityLabel="Choose audio file" style={styles.fileButton} disabled={uploading} onPress={() => pickAudio().catch((error) => setMessage(error instanceof Error ? error.message : "Audio picker failed."))}>
-                  <Text style={styles.fileButtonTitle}>Audio file</Text>
-                  <Text style={styles.fileButtonMeta} numberOfLines={1}>{draft.audio?.name || "Choose MP3, WAV, M4A, or AAC"}</Text>
+                <Pressable accessibilityRole="button" accessibilityLabel={t("discovery:music.chooseAudioLabel")} style={styles.fileButton} disabled={uploading} onPress={() => pickAudio().catch((error) => setMessage(error instanceof Error ? error.message : t("discovery:music.audioPickerFailed")))}>
+                  <Text style={styles.fileButtonTitle}>{t("discovery:music.audioFileTitle")}</Text>
+                  <Text style={styles.fileButtonMeta} numberOfLines={1}>{draft.audio?.name || t("discovery:music.audioFileHint")}</Text>
                 </Pressable>
-                <Pressable accessibilityRole="button" accessibilityLabel="Choose cover artwork" style={styles.fileButton} disabled={uploading} onPress={() => pickCover().catch((error) => setMessage(error instanceof Error ? error.message : "Cover picker failed."))}>
-                  <Text style={styles.fileButtonTitle}>Cover artwork</Text>
-                  <Text style={styles.fileButtonMeta} numberOfLines={1}>{draft.cover?.name || "Optional JPG, PNG, WEBP"}</Text>
+                <Pressable accessibilityRole="button" accessibilityLabel={t("discovery:music.chooseCoverLabel")} style={styles.fileButton} disabled={uploading} onPress={() => pickCover().catch((error) => setMessage(error instanceof Error ? error.message : t("discovery:music.coverPickerFailed")))}>
+                  <Text style={styles.fileButtonTitle}>{t("discovery:music.coverArtworkTitle")}</Text>
+                  <Text style={styles.fileButtonMeta} numberOfLines={1}>{draft.cover?.name || t("discovery:music.coverArtworkHint")}</Text>
                 </Pressable>
               </View>
-              <TextInput style={styles.input} value={draft.title} onChangeText={(title) => setDraft((current) => ({ ...current, title }))} placeholder="Song title" placeholderTextColor={colors.muted} editable={!uploading} />
-              <TextInput style={styles.input} value={draft.artist} onChangeText={(artist) => setDraft((current) => ({ ...current, artist }))} placeholder="Artist name" placeholderTextColor={colors.muted} editable={!uploading} />
+              <TextInput style={styles.input} value={draft.title} onChangeText={(title) => setDraft((current) => ({ ...current, title }))} placeholder={t("discovery:music.songTitlePlaceholder")} placeholderTextColor={colors.muted} editable={!uploading} />
+              <TextInput style={styles.input} value={draft.artist} onChangeText={(artist) => setDraft((current) => ({ ...current, artist }))} placeholder={t("discovery:music.artistNamePlaceholder")} placeholderTextColor={colors.muted} editable={!uploading} />
               <View style={styles.inputGrid}>
-                <TextInput style={[styles.input, styles.gridInput]} value={draft.genre} onChangeText={(genre) => setDraft((current) => ({ ...current, genre }))} placeholder="Genre" placeholderTextColor={colors.muted} editable={!uploading} />
-                <TextInput style={[styles.input, styles.gridInput]} value={draft.language} onChangeText={(nextLanguage) => setDraft((current) => ({ ...current, language: nextLanguage }))} placeholder="Language" placeholderTextColor={colors.muted} editable={!uploading} />
-                <TextInput style={[styles.input, styles.gridInput]} value={draft.mood} onChangeText={(nextMood) => setDraft((current) => ({ ...current, mood: nextMood }))} placeholder="Mood" placeholderTextColor={colors.muted} editable={!uploading} />
+                <TextInput style={[styles.input, styles.gridInput]} value={draft.genre} onChangeText={(genre) => setDraft((current) => ({ ...current, genre }))} placeholder={t("discovery:music.genrePlaceholder")} placeholderTextColor={colors.muted} editable={!uploading} />
+                <TextInput style={[styles.input, styles.gridInput]} value={draft.language} onChangeText={(nextLanguage) => setDraft((current) => ({ ...current, language: nextLanguage }))} placeholder={t("discovery:music.languagePlaceholder")} placeholderTextColor={colors.muted} editable={!uploading} />
+                <TextInput style={[styles.input, styles.gridInput]} value={draft.mood} onChangeText={(nextMood) => setDraft((current) => ({ ...current, mood: nextMood }))} placeholder={t("discovery:music.moodPlaceholder")} placeholderTextColor={colors.muted} editable={!uploading} />
               </View>
-              <TextInput style={[styles.input, styles.textArea]} value={draft.description} onChangeText={(description) => setDraft((current) => ({ ...current, description }))} placeholder="Description" placeholderTextColor={colors.muted} multiline editable={!uploading} />
-              <TextInput style={styles.input} value={draft.tags} onChangeText={(tags) => setDraft((current) => ({ ...current, tags }))} placeholder="#drill #kompa #lofi" placeholderTextColor={colors.muted} editable={!uploading} />
+              <TextInput style={[styles.input, styles.textArea]} value={draft.description} onChangeText={(description) => setDraft((current) => ({ ...current, description }))} placeholder={t("discovery:music.descriptionPlaceholder")} placeholderTextColor={colors.muted} multiline editable={!uploading} />
+              <TextInput style={styles.input} value={draft.tags} onChangeText={(tags) => setDraft((current) => ({ ...current, tags }))} placeholder={t("discovery:music.tagsPlaceholder")} placeholderTextColor={colors.muted} editable={!uploading} />
               <View style={styles.rightsRow}>
                 <Switch value={draft.rightsConfirmed} onValueChange={(rightsConfirmed) => setDraft((current) => ({ ...current, rightsConfirmed }))} disabled={uploading} thumbColor={draft.rightsConfirmed ? colors.accent : colors.muted} trackColor={{ false: colors.border, true: colors.signalDim }} />
-                <Text style={styles.rightsText}>I confirm that I own this music or have the legal right to upload it.</Text>
+                <Text style={styles.rightsText}>{t("discovery:music.rightsConfirmation")}</Text>
               </View>
-              <Pressable accessibilityRole="button" accessibilityLabel="Upload music for review" style={[styles.uploadButton, (!draft.audio || uploading) && styles.disabled]} disabled={!draft.audio || uploading} onPress={uploadDraft}>
-                {uploading ? <ActivityIndicator color={colors.background} /> : <Text style={styles.uploadButtonText}>Upload for Review</Text>}
+              <Pressable accessibilityRole="button" accessibilityLabel={t("discovery:music.uploadButtonLabel")} style={[styles.uploadButton, (!draft.audio || uploading) && styles.disabled]} disabled={!draft.audio || uploading} onPress={uploadDraft}>
+                {uploading ? <ActivityIndicator color={colors.background} /> : <Text style={styles.uploadButtonText}>{t("discovery:music.uploadForReview")}</Text>}
               </Pressable>
             </View>
 
             <View style={styles.searchPanel}>
-              <Text style={styles.panelKicker}>Music Library</Text>
+              <Text style={styles.panelKicker}>{t("discovery:music.libraryKicker")}</Text>
               <View style={styles.searchRow}>
-                <TextInput style={styles.searchInput} value={query} onChangeText={setQuery} placeholder="Search artist or song title" placeholderTextColor={colors.muted} returnKeyType="search" onSubmitEditing={() => load("search").catch(() => undefined)} />
-                <Pressable accessibilityRole="button" accessibilityLabel="Search music" style={styles.searchButton} onPress={() => load("search").catch(() => undefined)}>
-                  <Text style={styles.searchButtonText}>Search</Text>
+                <TextInput style={styles.searchInput} value={query} onChangeText={setQuery} placeholder={t("discovery:music.searchPlaceholder")} placeholderTextColor={colors.muted} returnKeyType="search" onSubmitEditing={() => load("search").catch(() => undefined)} />
+                <Pressable accessibilityRole="button" accessibilityLabel={t("discovery:music.searchLabel")} style={styles.searchButton} onPress={() => load("search").catch(() => undefined)}>
+                  <Text style={styles.searchButtonText}>{t("discovery:music.searchButton")}</Text>
                 </Pressable>
               </View>
               <View style={styles.inputGrid}>
-                <TextInput style={[styles.input, styles.gridInput]} value={genre} onChangeText={setGenre} placeholder="Genre" placeholderTextColor={colors.muted} />
-                <TextInput style={[styles.input, styles.gridInput]} value={language} onChangeText={setLanguage} placeholder="Language" placeholderTextColor={colors.muted} />
-                <TextInput style={[styles.input, styles.gridInput]} value={mood} onChangeText={setMood} placeholder="Mood" placeholderTextColor={colors.muted} />
+                <TextInput style={[styles.input, styles.gridInput]} value={genre} onChangeText={setGenre} placeholder={t("discovery:music.genrePlaceholder")} placeholderTextColor={colors.muted} />
+                <TextInput style={[styles.input, styles.gridInput]} value={language} onChangeText={setLanguage} placeholder={t("discovery:music.languagePlaceholder")} placeholderTextColor={colors.muted} />
+                <TextInput style={[styles.input, styles.gridInput]} value={mood} onChangeText={setMood} placeholder={t("discovery:music.moodPlaceholder")} placeholderTextColor={colors.muted} />
               </View>
               <View style={styles.laneRow}>
                 {lanes.map((item) => (
                   <Pressable key={item.key || "best"} style={[styles.laneChip, lane === item.key && styles.laneChipActive]} onPress={() => setLane(item.key)} accessibilityRole="button" accessibilityState={{ selected: lane === item.key }}>
-                    <Text style={[styles.laneText, lane === item.key && styles.laneTextActive]}>{item.label}</Text>
+                    <Text style={[styles.laneText, lane === item.key && styles.laneTextActive]}>{t(item.label)}</Text>
                   </Pressable>
                 ))}
               </View>
@@ -574,8 +592,8 @@ export function MusicScreen({ route, navigation }: Props) {
         }
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>No tracks found</Text>
-            <Text style={styles.emptyText}>Approved PulseSoc Music will appear here after review.</Text>
+            <Text style={styles.emptyTitle}>{t("discovery:music.emptyTitle")}</Text>
+            <Text style={styles.emptyText}>{t("discovery:music.emptyBody")}</Text>
           </View>
         }
         renderItem={({ item }) => (
@@ -617,6 +635,7 @@ function TrackCard({
   onReport: (track: PulseMusicTrack) => void | Promise<void>;
   onUse: (track: PulseMusicTrack, surface: "reel" | "video" | "status" | "post") => void | Promise<void>;
 }) {
+  const { t } = useTranslation();
   return (
     <View style={[styles.trackCard, highlighted && styles.trackCardHighlighted]}>
       <View style={styles.trackTop}>
@@ -627,19 +646,27 @@ function TrackCard({
           <Text style={styles.trackTitle} numberOfLines={1}>{track.title}</Text>
           <Text style={styles.trackMeta} numberOfLines={1}>{track.artist} · {track.genre} · {track.language} · {track.mood}</Text>
           <Waveform waveform={track.waveform} active={previewing} />
-          <Text style={styles.trackStats}>{track.playCount} plays · {track.usageCount} uses · trend {track.trendScore}</Text>
+          <Text style={styles.trackStats}>
+            {t("discovery:music.trackStats", {
+              plays: track.playCount,
+              uses: track.usageCount,
+              // Kept as a string: the trend score is a server-side float, and
+              // running it through number formatting would round it.
+              trend: String(track.trendScore)
+            })}
+          </Text>
         </View>
       </View>
       <View style={styles.actionRow}>
-        <ActionButton label={previewing ? "Stop" : "Preview"} disabled={busy} onPress={() => onPreview(track)} />
-        <ActionButton label="Save" disabled={busy} onPress={() => onSave(track)} />
-        <ActionButton label="Share" disabled={busy} onPress={() => onShare(track)} />
-        <ActionButton label="Report" disabled={busy} warning onPress={() => onReport(track)} />
+        <ActionButton label={previewing ? t("discovery:music.actionStop") : t("discovery:music.actionPreview")} disabled={busy} onPress={() => onPreview(track)} />
+        <ActionButton label={t("discovery:music.actionSave")} disabled={busy} onPress={() => onSave(track)} />
+        <ActionButton label={t("discovery:music.actionShare")} disabled={busy} onPress={() => onShare(track)} />
+        <ActionButton label={t("discovery:music.actionReport")} disabled={busy} warning onPress={() => onReport(track)} />
       </View>
       <View style={styles.useRow}>
-        <ActionButton label="Use in Reel" primary onPress={() => onUse(track, "reel")} />
-        <ActionButton label="Use in Video" onPress={() => onUse(track, "video")} />
-        <ActionButton label="Use in Status" onPress={() => onUse(track, "status")} />
+        <ActionButton label={t("discovery:music.useInReel")} primary onPress={() => onUse(track, "reel")} />
+        <ActionButton label={t("discovery:music.useInVideo")} onPress={() => onUse(track, "video")} />
+        <ActionButton label={t("discovery:music.useInStatus")} onPress={() => onUse(track, "status")} />
       </View>
     </View>
   );

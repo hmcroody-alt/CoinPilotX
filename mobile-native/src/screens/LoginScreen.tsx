@@ -19,6 +19,7 @@ import {
   BiometricCapability
 } from "../session/biometricAuth";
 import { listRememberedAccounts } from "../session/rememberedAccounts";
+import { translate, useTranslation } from "../i18n";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { AuthStackParamList } from "../navigation/types";
@@ -45,6 +46,7 @@ const LIVING_MESSAGES = [
 
 export function LoginScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<AuthStackParamList>>();
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const { setAuthState } = useAuth();
   const formRef = useRef<ManualLoginFormHandle>(null);
@@ -131,15 +133,15 @@ export function LoginScreen() {
     if (enabled) {
       setBiometricEnabled(true);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
-      Alert.alert(`${label} enabled`, `Next time, tap ${label} on the sign-in screen to unlock PulseSoc.`);
+      Alert.alert(t("auth:signIn.biometricEnabledTitle", { method: label }), t("auth:signIn.biometricEnabledBody", { method: label }));
       return;
     }
     Alert.alert(
-      `${label} not enabled`,
-      "We couldn't confirm your biometrics. You can try again from Settings anytime — your password sign-in still works.",
-      [{ text: "OK", style: "cancel" }]
+      t("auth:signIn.biometricNotEnabledTitle", { method: label }),
+      t("auth:signIn.biometricNotEnabledBody"),
+      [{ text: t("common:actions.ok"), style: "cancel" }]
     );
-  }, []);
+  }, [t]);
 
   const submitManualSignIn = useCallback(async () => {
     if (submitting) return;
@@ -150,23 +152,23 @@ export function LoginScreen() {
       const trimmedIdentifier = identifier.trim();
       const authState = await signIn(trimmedIdentifier, password);
       if (authState.status !== "signedIn" || !authState.user) {
-        setFormError("That email/username or password doesn't match our records.");
+        setFormError(t("errors:auth.identifierMismatch"));
         return;
       }
       setAuthState(authState);
       if (biometricCapability?.available && !biometricEnabled) {
         const userId = authState.user.user_id;
-        const kindLabel = biometricCapability.kind === "faceId" ? "Face ID" : "biometric sign-in";
+        const kindLabel = biometricCapability.kind === "faceId" ? t("auth:signIn.faceId") : t("auth:signIn.biometricSignInLower");
         setTimeout(() => {
           Alert.alert(
-            biometricCapability.kind === "faceId" ? "Enable Face ID?" : "Enable biometric sign-in?",
-            `Unlock PulseSoc faster next time without typing your password. You can turn ${kindLabel} off anytime in Settings. PulseSoc never receives or stores your face.`,
+            biometricCapability.kind === "faceId" ? t("auth:signIn.enableFaceIdTitle") : t("auth:signIn.enableBiometricTitle"),
+            t("auth:signIn.enableBiometricBody", { method: kindLabel }),
             [
-              { text: "Not now", style: "cancel" },
+              { text: t("common:actions.notNow"), style: "cancel" },
               {
-                text: "Enable",
+                text: t("common:actions.enable"),
                 onPress: () => {
-                  void enableBiometricsForUser(userId, biometricCapability.kind === "faceId" ? "Face ID" : "Biometric sign-in");
+                  void enableBiometricsForUser(userId, biometricCapability.kind === "faceId" ? t("auth:signIn.faceId") : t("auth:signIn.biometricSignIn"));
                 }
               }
             ]
@@ -178,20 +180,20 @@ export function LoginScreen() {
     } finally {
       setSubmitting(false);
     }
-  }, [identifier, password, submitting, setAuthState, biometricCapability, biometricEnabled, enableBiometricsForUser]);
+  }, [identifier, password, submitting, setAuthState, biometricCapability, biometricEnabled, enableBiometricsForUser, t]);
 
   const handleBiometricPress = useCallback(async () => {
     if (biometricState === "loading") return;
 
     // Hardware exists but no face/finger is enrolled in iOS yet — guide to setup.
     if (biometricCapability && !biometricCapability.available && biometricCapability.reason === "not_enrolled") {
-      const word = biometricCapability.kind === "touchId" ? "Touch ID" : "Face ID";
+      const word = biometricCapability.kind === "touchId" ? t("auth:signIn.touchId") : t("auth:signIn.faceId");
       Alert.alert(
-        `Set up ${word}`,
-        `${word} isn't enrolled on this device yet. Open Settings › Face ID & Passcode to set it up, then come back to sign in.`,
+        t("auth:signIn.setUpBiometricTitle", { method: word }),
+        t("auth:signIn.notEnrolledBody", { method: word }),
         [
-          { text: "Not now", style: "cancel" },
-          { text: "Open Settings", onPress: () => Linking.openSettings().catch(() => undefined) }
+          { text: t("common:actions.notNow"), style: "cancel" },
+          { text: t("auth:signIn.openSettings"), onPress: () => Linking.openSettings().catch(() => undefined) }
         ]
       );
       return;
@@ -199,11 +201,11 @@ export function LoginScreen() {
 
     // Enrolled in iOS, but this account hasn't turned on biometric sign-in yet.
     if (!biometricEnabled) {
-      const word = biometricCapability?.kind === "touchId" ? "Touch ID" : "Face ID";
+      const word = biometricCapability?.kind === "touchId" ? t("auth:signIn.touchId") : t("auth:signIn.faceId");
       Alert.alert(
-        `Turn on ${word}`,
-        `Sign in with your password once, then tap Enable to unlock PulseSoc with ${word} next time.`,
-        [{ text: "OK", onPress: () => formRef.current?.focusIdentifier() }]
+        t("auth:signIn.turnOnBiometricTitle", { method: word }),
+        t("auth:signIn.turnOnBiometricBody", { method: word }),
+        [{ text: t("common:actions.ok"), onPress: () => formRef.current?.focusIdentifier() }]
       );
       return;
     }
@@ -224,30 +226,35 @@ export function LoginScreen() {
     setTimeout(() => setBiometricState("idle"), 1200);
     if (result.outcome === "cancelled") return;
     if (result.outcome === "lockout") {
-      Alert.alert("Biometric unlock locked", "Too many attempts. Use your device passcode or sign in manually.");
+      Alert.alert(t("auth:signIn.biometricLockedTitle"), t("auth:signIn.biometricLockedBody"));
       return;
     }
     if (result.outcome === "session_invalid" || result.outcome === "no_enrolled_account") {
       setBiometricEnabled(false);
-      Alert.alert("Sign in required", "Your saved sign-in needs to be refreshed. Please sign in with your password.");
+      Alert.alert(t("auth:signIn.signInRequiredTitle"), t("auth:signIn.signInRequiredBody"));
       formRef.current?.focusIdentifier();
       return;
     }
     if (result.outcome === "not_available") return;
-    Alert.alert("Biometric sign-in failed", "We couldn't verify you. Please try again or sign in manually.");
-  }, [biometricState, biometricCapability, biometricEnabled, setAuthState]);
+    Alert.alert(t("auth:signIn.biometricFailedTitle"), t("auth:signIn.biometricFailedBody"));
+  }, [biometricState, biometricCapability, biometricEnabled, setAuthState, t]);
 
-  const kindWord = biometricCapability?.kind === "touchId" ? "Touch ID" : biometricCapability?.kind === "iris" ? "biometrics" : "Face ID";
+  const kindWord =
+    biometricCapability?.kind === "touchId"
+      ? t("auth:signIn.touchId")
+      : biometricCapability?.kind === "iris"
+        ? t("auth:signIn.biometrics")
+        : t("auth:signIn.faceId");
   // Show the affordance whenever the device physically supports biometrics; the
   // label + tap behavior adapt to whether it still needs OS setup, PulseSoc
   // enrollment, or is ready to unlock.
   const showBiometricButton = Boolean(biometricCapability?.hasHardware);
   const biometricButtonLabel =
     biometricCapability && !biometricCapability.available && biometricCapability.reason === "not_enrolled"
-      ? `Set up ${kindWord}`
+      ? t("auth:signIn.setUpBiometricTitle", { method: kindWord })
       : !biometricEnabled
-        ? `Enable ${kindWord}`
-        : `Sign in with ${kindWord}`;
+        ? t("auth:signIn.enableBiometricLabel", { method: kindWord })
+        : t("auth:signIn.signInWithBiometric", { method: kindWord });
   const welcomeName = cachedUser?.display_name || cachedUser?.full_name || cachedUser?.username;
 
   const openGate = useCallback(() => {
@@ -408,14 +415,14 @@ export function LoginScreen() {
 function describeLoginError(error: unknown): string {
   if (error instanceof PulseApiError) {
     if (error.code === "request_unreachable" || error.status === 503) {
-      return "PulseSoc could not be reached. Check your connection and try again.";
+      return translate("errors:auth.unreachable");
     }
-    if (error.status === 429) return "Too many attempts. Please wait a moment and try again.";
-    if (error.status === 401 || error.status === 403) return "That email/username or password doesn't match our records.";
-    if (error.status >= 500) return "PulseSoc is having trouble right now. Please try again shortly.";
-    return error.message || "Unable to sign in.";
+    if (error.status === 429) return translate("errors:auth.tooManyAttempts");
+    if (error.status === 401 || error.status === 403) return translate("errors:auth.identifierMismatch");
+    if (error.status >= 500) return translate("errors:auth.serverTrouble");
+    return error.message || translate("errors:auth.unableToSignIn");
   }
-  return error instanceof Error ? error.message : "Unable to sign in.";
+  return error instanceof Error ? error.message : translate("errors:auth.unableToSignIn");
 }
 
 const styles = createThemedStyles(() => ({

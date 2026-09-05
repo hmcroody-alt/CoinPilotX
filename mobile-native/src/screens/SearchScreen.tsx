@@ -24,6 +24,7 @@ import {
   SEARCH_GROUPS
 } from "../api/search";
 import { profileNavigationParams, resolveProfileTarget } from "../api/profileTarget";
+import { useTranslation } from "../i18n";
 import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
 import { routeNotificationTarget } from "../navigation/notificationRouting";
 import { RootStackParamList } from "../navigation/types";
@@ -69,24 +70,30 @@ type Props = Partial<NativeStackScreenProps<RootStackParamList, "Search">>;
 
 type DiscoveryTab = "all" | "people" | "posts" | "reels" | "status" | "marketplace" | "communities" | "events" | "learning" | "trending" | "hashtags";
 
+/**
+ * `label` holds a catalog key, not display text — it is resolved with `t` at
+ * render time so the strip re-labels itself the moment the language changes,
+ * instead of freezing whatever language was active when this module loaded.
+ */
 const DISCOVERY_TABS: Array<{ key: DiscoveryTab; label: string; groups: PulseSearchGroupKey[] }> = [
-  { key: "all", label: "All", groups: SEARCH_GROUPS.map((group) => group.key) },
-  { key: "people", label: "People", groups: ["creators"] },
-  { key: "posts", label: "Posts", groups: ["posts", "comments"] },
-  { key: "reels", label: "Reels", groups: ["reels", "videos"] },
-  { key: "status", label: "Status", groups: ["statuses"] },
-  { key: "marketplace", label: "Marketplace", groups: ["marketplace"] },
-  { key: "communities", label: "Communities", groups: ["groups", "rooms"] },
-  { key: "events", label: "Events", groups: [] },
-  { key: "learning", label: "Learning", groups: [] },
-  { key: "trending", label: "Trending", groups: [] },
-  { key: "hashtags", label: "Hashtags", groups: [] }
+  { key: "all", label: "discovery:search.tabAll", groups: SEARCH_GROUPS.map((group) => group.key) },
+  { key: "people", label: "discovery:search.tabPeople", groups: ["creators"] },
+  { key: "posts", label: "discovery:search.tabPosts", groups: ["posts", "comments"] },
+  { key: "reels", label: "discovery:search.tabReels", groups: ["reels", "videos"] },
+  { key: "status", label: "discovery:search.tabStatus", groups: ["statuses"] },
+  { key: "marketplace", label: "discovery:search.tabMarketplace", groups: ["marketplace"] },
+  { key: "communities", label: "discovery:search.tabCommunities", groups: ["groups", "rooms"] },
+  { key: "events", label: "discovery:search.tabEvents", groups: [] },
+  { key: "learning", label: "discovery:search.tabLearning", groups: [] },
+  { key: "trending", label: "discovery:search.tabTrending", groups: [] },
+  { key: "hashtags", label: "discovery:search.tabHashtags", groups: [] }
 ];
 
 export function SearchScreen({ route, navigation }: Props) {
   // Bottom-dock coupling: drives hide-on-scroll-down / reveal-on-scroll-up and
   // reserves the matching clearance so the last row never sits under the dock.
   const dock = useBottomNavSurface();
+  const { t } = useTranslation();
   const initialQuery = String(route?.params?.query || "");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [query, setQuery] = useState(initialQuery);
@@ -144,7 +151,7 @@ export function SearchScreen({ route, navigation }: Props) {
         setTrending(cached.trending || defaultTrendingSearches());
         setOffline(true);
       } else {
-        setError(searchError instanceof Error ? searchError.message : "PulseSoc search could not load.");
+        setError(searchError instanceof Error ? searchError.message : t("discovery:search.loadError"));
       }
     } finally {
       setLoading(false);
@@ -169,7 +176,7 @@ export function SearchScreen({ route, navigation }: Props) {
       return;
     }
     const profileTarget = isProfileResult(item) ? resolveProfileTarget({ ...item, source: "search" }) : null;
-    const params = profileNavigationParams(profileTarget, item.title || "Profile");
+    const params = profileNavigationParams(profileTarget, item.title || t("common:screens.profile"));
     if (params && navigation) {
       navigation.navigate("ProfileDetail", params);
       return;
@@ -183,15 +190,15 @@ export function SearchScreen({ route, navigation }: Props) {
   return (
     <View style={styles.root}>
       <View style={styles.header}>
-        <Text style={styles.title}>Search</Text>
+        <Text style={styles.title}>{t("discovery:search.title")}</Text>
         <Text style={styles.subtitle}>
-          {offline ? "Showing saved results" : "Find PulseSoc people, posts, reels, status, listings, rooms, and signals."}
+          {offline ? t("discovery:search.offlineSubtitle") : t("discovery:search.subtitle")}
         </Text>
         <TextInput
           style={styles.searchInput}
           value={query}
           onChangeText={setQuery}
-          placeholder="Search PulseSoc"
+          placeholder={t("discovery:search.placeholder")}
           placeholderTextColor={colors.muted}
           returnKeyType="search"
           autoCorrect={false}
@@ -200,7 +207,7 @@ export function SearchScreen({ route, navigation }: Props) {
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabRow}>
           {DISCOVERY_TABS.map((tab) => (
             <Pressable key={tab.key} style={[styles.tab, activeTab === tab.key ? styles.tabActive : undefined]} onPress={() => setActiveTab(tab.key)}>
-              <Text style={[styles.tabText, activeTab === tab.key ? styles.tabTextActive : undefined]}>{tab.label}</Text>
+              <Text style={[styles.tabText, activeTab === tab.key ? styles.tabTextActive : undefined]}>{t(tab.label)}</Text>
             </Pressable>
           ))}
         </ScrollView>
@@ -211,8 +218,13 @@ export function SearchScreen({ route, navigation }: Props) {
         <ScrollView contentContainerStyle={styles.starter}>
           {activeTab === "events" ? <EventsGatewayShortcut onPress={() => routeNotificationTarget("/pulse/events").catch(() => undefined)} /> : null}
           {activeTab === "learning" ? <LearningGatewayShortcut onPress={() => routeNotificationTarget("/pulse/courses").catch(() => undefined)} /> : null}
-          <ChipSection title="Recent searches" emptyText="Your searches will appear here." items={recent} onPress={applyChip} />
-          <ChipSection title="Suggested searches" items={trending} onPress={applyChip} />
+          <ChipSection
+            title={t("discovery:search.recentSearches")}
+            emptyText={t("discovery:search.recentSearchesEmpty")}
+            items={recent}
+            onPress={applyChip}
+          />
+          <ChipSection title={t("discovery:search.suggestedSearches")} items={trending} onPress={applyChip} />
         </ScrollView>
       ) : (
         <FlatList
@@ -225,7 +237,7 @@ export function SearchScreen({ route, navigation }: Props) {
             loading && !visibleResults.length ? (
               <View style={styles.loadingRow}>
                 <ActivityIndicator color={colors.accent} />
-                <Text style={styles.loadingText}>Searching PulseSoc</Text>
+                <Text style={styles.loadingText}>{t("discovery:search.searchingPulse")}</Text>
               </View>
             ) : (
               <Text style={styles.resultCount}>{unsupportedTab ? "Coming soon" : `${totalResults} results`}</Text>
@@ -253,6 +265,7 @@ export function SearchScreen({ route, navigation }: Props) {
 }
 
 function EventsGatewayShortcut({ onPress }: { onPress: () => void }) {
+  const { t } = useTranslation();
   return (
     <Pressable style={styles.eventsGateway} onPress={onPress}>
       <Text style={styles.eventsGatewayKicker}>Shortcut</Text>
@@ -263,6 +276,7 @@ function EventsGatewayShortcut({ onPress }: { onPress: () => void }) {
 }
 
 function LearningGatewayShortcut({ onPress }: { onPress: () => void }) {
+  const { t } = useTranslation();
   return (
     <Pressable style={styles.eventsGateway} onPress={onPress}>
       <Text style={styles.eventsGatewayKicker}>Shortcut</Text>
@@ -273,6 +287,7 @@ function LearningGatewayShortcut({ onPress }: { onPress: () => void }) {
 }
 
 function ChipSection({ title, items, emptyText, onPress }: { title: string; items: string[]; emptyText?: string; onPress: (value: string) => void }) {
+  const { t } = useTranslation();
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>{title}</Text>
@@ -285,20 +300,21 @@ function ChipSection({ title, items, emptyText, onPress }: { title: string; item
           ))}
         </View>
       ) : (
-        <Text style={styles.emptyText}>{emptyText || "Suggestions will appear here."}</Text>
+        <Text style={styles.emptyText}>{emptyText || t("discovery:search.suggestionsEmpty")}</Text>
       )}
     </View>
   );
 }
 
 function SearchResultCard({ item, onPress }: { item: PulseSearchResult; onPress: (item: PulseSearchResult) => void }) {
+  const { t } = useTranslation();
   const letter = String(item.type || item.title || "P").slice(0, 1).toUpperCase();
   const target = searchSaveTarget(item);
   return (
     <Pressable style={styles.card} onPress={() => onPress(item)}>
       {item.avatar_url ? <Image source={{ uri: item.avatar_url }} style={styles.avatar} /> : <View style={styles.resultMark}><Text style={styles.resultMarkText}>{letter}</Text></View>}
       <View style={styles.cardBody}>
-        <Text style={styles.cardTitle} numberOfLines={1}>{item.title || "PulseSoc result"}</Text>
+        <Text style={styles.cardTitle} numberOfLines={1}>{item.title || t("discovery:search.resultFallbackTitle")}</Text>
         <Text style={styles.cardDescription} numberOfLines={2}>{item.description || item.meta || "PulseSoc"}</Text>
         <Text style={styles.cardMeta} numberOfLines={1}>{item.meta || item.type || "PulseSoc"}</Text>
       </View>

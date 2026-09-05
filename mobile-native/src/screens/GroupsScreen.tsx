@@ -127,7 +127,7 @@ export function GroupsScreen({ route, navigation }: Props) {
         setRooms(cached.rooms || []);
         setOffline(true);
       } else {
-        setError(loadError instanceof Error ? loadError.message : "Groups could not load.");
+        setError(loadError instanceof Error ? loadError.message : t("social:groups.loadError"));
       }
     } finally {
       setLoading(false);
@@ -144,7 +144,7 @@ export function GroupsScreen({ route, navigation }: Props) {
     } catch (detailError) {
       const cached = await loadCachedGroupDetail(group.slug);
       if (cached?.group) setSelected(cached.group);
-      else setError(detailError instanceof Error ? detailError.message : "Group detail could not load.");
+      else setError(detailError instanceof Error ? detailError.message : t("social:groups.detailLoadError"));
     }
   }
 
@@ -184,7 +184,7 @@ export function GroupsScreen({ route, navigation }: Props) {
       });
       if (selected?.slug === group.slug) setSelected((current) => current ? { ...current, joined: nextJoined, member_count: Number(action.member_count ?? current.member_count ?? 0) } : current);
     } catch (joinError) {
-      setError(joinError instanceof Error ? joinError.message : "Membership action failed.");
+      setError(joinError instanceof Error ? joinError.message : t("social:groups.membershipActionFailed"));
     } finally {
       setBusyKey("");
     }
@@ -195,10 +195,10 @@ export function GroupsScreen({ route, navigation }: Props) {
     setError("");
     try {
       const result = await openGroupChat(group.slug);
-      if (result.conversation_id && navigation) navigation.navigate("Chat", { conversationId: result.conversation_id, title: `${group.name} Chat` });
-      else setError(result.message || "Group chat is not available yet.");
+      if (result.conversation_id && navigation) navigation.navigate("Chat", { conversationId: result.conversation_id, title: t("social:groups.chatTitle", { name: group.name }) });
+      else setError(result.message || t("social:groups.chatUnavailable"));
     } catch (chatError) {
-      setError(chatError instanceof Error ? chatError.message : "Group chat could not be opened.");
+      setError(chatError instanceof Error ? chatError.message : t("social:groups.chatOpenError"));
     } finally {
       setBusyKey("");
     }
@@ -208,9 +208,9 @@ export function GroupsScreen({ route, navigation }: Props) {
     setBusyKey(`report-${group.slug}`);
     try {
       const result = await reportGroup(group.slug, "Needs review");
-      setError(result.message || "Group report sent.");
+      setError(result.message || t("social:groups.reportSent"));
     } catch (reportError) {
-      setError(reportError instanceof Error ? reportError.message : "Group report failed.");
+      setError(reportError instanceof Error ? reportError.message : t("social:groups.reportFailed"));
     } finally {
       setBusyKey("");
     }
@@ -228,7 +228,7 @@ export function GroupsScreen({ route, navigation }: Props) {
       if (conversationId && navigation) navigation.navigate("Chat", { conversationId, roomId, title: room.title || room.name });
       else setError("Room chat is not available yet.");
     } catch (roomError) {
-      setError(roomError instanceof Error ? roomError.message : "Room could not be opened.");
+      setError(roomError instanceof Error ? roomError.message : t("social:groups.roomOpenError"));
     } finally {
       setBusyKey("");
     }
@@ -298,7 +298,7 @@ export function GroupsScreen({ route, navigation }: Props) {
   if (loading && !groups.length) {
     return (
       <View style={styles.root}>
-        <LogiNexusStatePanel state="loading" title="Loading community channels" body="Synchronizing groups, rooms, and permissions." loading style={styles.statePanel} />
+        <LogiNexusStatePanel state="loading" title={t("social:groups.loadingTitle")} body={t("social:groups.loadingBody")} loading style={styles.statePanel} />
       </View>
     );
   }
@@ -317,11 +317,11 @@ export function GroupsScreen({ route, navigation }: Props) {
         ListHeaderComponent={
           <View style={styles.header}>
             <PulseCommandHeader
-              title="Groups & Rooms"
-              subtitle={offline ? "Showing saved communities from local cache." : "Community channels, rooms, and moderated group spaces."}
-              status={offline ? "Cached" : "Live sync"}
+              title={t("social:groups.title")}
+              subtitle={offline ? t("social:groups.offlineSubtitle") : t("social:groups.subtitle")}
+              status={offline ? t("social:groups.statusCached") : t("social:groups.statusLiveSync")}
               tone={offline ? "warning" : "safety"}
-              actions={navigation ? <PulseCommandAction compact label="Safety" tone="safety" onPress={() => navigation.navigate("SafetyHub", { section: "reports", title: "Safety Hub" })} /> : null}
+              actions={navigation ? <PulseCommandAction compact label={t("social:groups.safetyAction")} tone="safety" onPress={() => navigation.navigate("SafetyHub", { section: "reports", title: t("social:groups.safetyHubTitle") })} /> : null}
             />
             <PulseCommandSearch value={query} onChangeText={setQuery} placeholder="Search communities and rooms" />
             <View style={styles.actionRow}>
@@ -337,7 +337,7 @@ export function GroupsScreen({ route, navigation }: Props) {
                 ))}
               </ScrollView>
             ) : null}
-            <Text style={styles.sectionTitle}>Rooms</Text>
+            <Text style={styles.sectionTitle}>{t("social:groups.roomsSection")}</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.roomRow}>
               {rooms.map((room) => (
                 <RoomCard key={room.id} room={room} busy={busyKey === `room-${room.id}`} onOpen={openRoomDetail} />
@@ -367,7 +367,7 @@ export function GroupsScreen({ route, navigation }: Props) {
         )}
         onEndReached={() => load("more").catch(() => undefined)}
         onEndReachedThreshold={0.35}
-        ListFooterComponent={loadingMore ? <Text style={styles.footer}>Loading more community signals...</Text> : null}
+        ListFooterComponent={loadingMore ? <Text style={styles.footer}>{t("social:groups.loadingMore")}</Text> : null}
       />
       {selected ? (
         <GroupDetail
@@ -480,6 +480,7 @@ function GroupCard({ group, busy, onOpen, onJoin, onChat, onReport }: {
   onChat: (group: PulseGroup) => void;
   onReport: (group: PulseGroup) => void;
 }) {
+  const { t } = useTranslation();
   const actions = groupActionRules(group);
   const actionIsAvailable = (key: ReturnType<typeof groupActionRules>[number]["key"]) => actions.find((action) => action.key === key)?.available;
   return (
@@ -496,15 +497,15 @@ function GroupCard({ group, busy, onOpen, onJoin, onChat, onReport }: {
         </View>
         <View style={styles.actionRow}>
           {actionIsAvailable("join") || actionIsAvailable("leave") ? (
-            <Pressable accessibilityRole="button" accessibilityLabel={actions[0]?.accessibilityLabel || "Membership action"} style={styles.smallButton} disabled={busy} onPress={() => onJoin(group)}>
-              <Text style={styles.smallButtonText}>{actions[0]?.label || (group.joined ? "Leave" : "Join")}</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel={actions[0]?.accessibilityLabel || t("social:groups.membershipActionLabel")} style={styles.smallButton} disabled={busy} onPress={() => onJoin(group)}>
+              <Text style={styles.smallButtonText}>{actions[0]?.label || (group.joined ? t("social:groups.leave") : t("social:groups.join"))}</Text>
             </Pressable>
           ) : null}
-          {actionIsAvailable("openChat") ? <Pressable accessibilityRole="button" accessibilityLabel={`Open chat for ${groupDisplayTitle(group)}`} style={styles.smallButton} disabled={busy} onPress={() => onChat(group)}>
-            <Text style={styles.smallButtonText}>Chat</Text>
+          {actionIsAvailable("openChat") ? <Pressable accessibilityRole="button" accessibilityLabel={t("social:groups.openChatLabel", { group: groupDisplayTitle(group) })} style={styles.smallButton} disabled={busy} onPress={() => onChat(group)}>
+            <Text style={styles.smallButtonText}>{t("social:groups.chat")}</Text>
           </Pressable> : null}
-          {actionIsAvailable("reportGroup") ? <Pressable accessibilityRole="button" accessibilityLabel={`Report ${groupDisplayTitle(group)}`} style={styles.smallButton} disabled={busy} onPress={() => onReport(group)}>
-            <Text style={styles.smallButtonText}>Report</Text>
+          {actionIsAvailable("reportGroup") ? <Pressable accessibilityRole="button" accessibilityLabel={t("social:groups.reportLabel", { group: groupDisplayTitle(group) })} style={styles.smallButton} disabled={busy} onPress={() => onReport(group)}>
+            <Text style={styles.smallButtonText}>{t("social:groups.report")}</Text>
           </Pressable> : null}
         </View>
       </View>
@@ -513,6 +514,7 @@ function GroupCard({ group, busy, onOpen, onJoin, onChat, onReport }: {
 }
 
 function RoomCard({ room, busy, onOpen }: { room: PulseRoom; busy?: boolean; onOpen: (room: PulseRoom) => void }) {
+  const { t } = useTranslation();
   const primaryAction = roomActionRules(room).find((action) => action.key === "openRoom");
   return (
     <Pressable style={styles.roomCard} accessibilityRole="button" accessibilityLabel={roomAccessibilityLabel(room)} disabled={busy} onPress={() => onOpen(room)}>
@@ -523,7 +525,7 @@ function RoomCard({ room, busy, onOpen }: { room: PulseRoom; busy?: boolean; onO
           <Text key={badge} style={styles.pill}>{badge}</Text>
         ))}
       </View>
-      <Text style={styles.cardMeta}>{primaryAction?.label || "Open Room"}</Text>
+      <Text style={styles.cardMeta}>{primaryAction?.label || t("social:groups.openRoom")}</Text>
     </Pressable>
   );
 }
@@ -539,6 +541,7 @@ function GroupDetail({ group, busyKey, onClose, onJoin, onChat, onReport, onDele
   onArchive: (group: PulseGroup) => void;
   onMemberAction: (group: PulseGroup, member: PulseGroupMember, action: "promote" | "demote" | "removeMember") => void;
 }) {
+  const { t } = useTranslation();
   const sections: GroupDetailSection[] = ["overview", "members", "invitations", "media", "files", "links", "settings"];
   const [section, setSection] = useState<GroupDetailSection>("overview");
   const groupActions = groupActionRules(group);
@@ -549,10 +552,10 @@ function GroupDetail({ group, busyKey, onClose, onJoin, onChat, onReport, onDele
         <View style={styles.detailHeader}>
           <View style={styles.detailTitleWrap}>
             <Text style={styles.title} numberOfLines={1}>{groupDisplayTitle(group)}</Text>
-            <Text style={styles.subtitle}>{Number(group.member_count || 0)} members · {group.group_type || "public"} · {groupRoleLabel(group)}</Text>
+            <Text style={styles.subtitle}>{t("social:groups.detailSubtitle", { count: Number(group.member_count || 0), type: group.group_type || t("social:groups.values.public"), role: groupRoleLabel(group) })}</Text>
           </View>
-          <Pressable accessibilityRole="button" accessibilityLabel={`Close ${groupDisplayTitle(group)} detail`} style={styles.smallButton} onPress={onClose}>
-            <Text style={styles.smallButtonText}>Close</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel={t("social:groups.closeDetailLabel", { title: groupDisplayTitle(group) })} style={styles.smallButton} onPress={onClose}>
+            <Text style={styles.smallButtonText}>{t("social:groups.close")}</Text>
           </Pressable>
         </View>
         <ScrollView contentContainerStyle={styles.detailContent}>
@@ -566,19 +569,19 @@ function GroupDetail({ group, busyKey, onClose, onJoin, onChat, onReport, onDele
                 style={[styles.sectionChip, section === item && styles.sectionChipActive]}
                 onPress={() => setSection(item)}
               >
-                <Text style={[styles.sectionChipText, section === item && styles.sectionChipTextActive]}>{groupDetailSectionLabel(item)}</Text>
+                <Text style={[styles.sectionChipText, section === item && styles.sectionChipTextActive]}>{t(groupDetailSectionLabelKey(item))}</Text>
               </Pressable>
             ))}
           </ScrollView>
           <View style={styles.actionRow}>
             {actionIsAvailable("join") || actionIsAvailable("leave") ? <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busyKey) }} style={styles.primaryButton} disabled={Boolean(busyKey)} onPress={() => onJoin(group)}>
-              <Text style={styles.primaryText}>{groupActions[0]?.label || (group.joined ? "Leave" : "Join")}</Text>
+              <Text style={styles.primaryText}>{groupActions[0]?.label || (group.joined ? t("social:groups.leave") : t("social:groups.join"))}</Text>
             </Pressable> : null}
             {actionIsAvailable("openChat") ? <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busyKey) }} style={styles.smallButton} disabled={Boolean(busyKey)} onPress={() => onChat(group)}>
-              <Text style={styles.smallButtonText}>Open Chat</Text>
+              <Text style={styles.smallButtonText}>{t("social:groups.openChat")}</Text>
             </Pressable> : null}
             {actionIsAvailable("reportGroup") ? <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busyKey) }} style={styles.smallButton} disabled={Boolean(busyKey)} onPress={() => onReport(group)}>
-              <Text style={styles.smallButtonText}>Report</Text>
+              <Text style={styles.smallButtonText}>{t("social:groups.report")}</Text>
             </Pressable> : null}
           </View>
           <GroupDetailSectionView group={group} section={section} onDelete={onDelete} onArchive={onArchive} onMemberAction={onMemberAction} />
@@ -590,15 +593,20 @@ function GroupDetail({ group, busyKey, onClose, onJoin, onChat, onReport, onDele
 
 type GroupDetailSection = "overview" | "members" | "invitations" | "media" | "files" | "links" | "settings";
 
-function groupDetailSectionLabel(section: GroupDetailSection) {
+/**
+ * Returns a catalog key rather than display text, so the rail re-labels itself
+ * when the language changes instead of freezing the language that was active
+ * when this module loaded.
+ */
+function groupDetailSectionLabelKey(section: GroupDetailSection) {
   return {
-    overview: "Overview",
-    members: "Members",
-    invitations: "Invitations",
-    media: "Media",
-    files: "Files",
-    links: "Links",
-    settings: "Settings"
+    overview: "social:groups.sections.overview",
+    members: "social:groups.sections.members",
+    invitations: "social:groups.sections.invitations",
+    media: "social:groups.sections.media",
+    files: "social:groups.sections.files",
+    links: "social:groups.sections.links",
+    settings: "social:groups.sections.settings"
   }[section];
 }
 
@@ -613,24 +621,25 @@ function GroupDetailSectionView({ group, section, onDelete, onArchive, onMemberA
 }
 
 function GroupOverview({ group }: { group: PulseGroup }) {
+  const { t } = useTranslation();
   return (
     <View>
-      <Text style={styles.sectionTitle}>Overview</Text>
+      <Text style={styles.sectionTitle}>{t("social:groups.sections.overview")}</Text>
       <Text style={styles.cardText}>{groupSummary(group)}</Text>
       <View style={styles.metricGrid}>
-        <Metric label="Members" value={String(Number(group.member_count || 0))} />
-        <Metric label="Posts" value={String(Number(group.post_count || 0))} />
-        <Metric label="Role" value={groupRoleLabel(group)} />
-        <Metric label="Notify" value={groupNotificationLabel(group)} />
+        <Metric label={t("social:groups.metrics.members")} value={String(Number(group.member_count || 0))} />
+        <Metric label={t("social:groups.metrics.posts")} value={String(Number(group.post_count || 0))} />
+        <Metric label={t("social:groups.metrics.role")} value={groupRoleLabel(group)} />
+        <Metric label={t("social:groups.metrics.notify")} value={groupNotificationLabel(group)} />
       </View>
-      {group.owner_name ? <Text style={styles.cardMeta}>Owner: {group.owner_name}</Text> : null}
+      {group.owner_name ? <Text style={styles.cardMeta}>{t("social:groups.ownerLine", { name: group.owner_name })}</Text> : null}
       {group.rules ? (
         <View style={styles.rulesBox}>
-          <Text style={styles.sectionTitle}>Rules</Text>
+          <Text style={styles.sectionTitle}>{t("social:groups.rulesHeading")}</Text>
           <Text style={styles.cardText}>{group.rules}</Text>
         </View>
       ) : (
-        <BoundaryPanel title="Rules unavailable" body="The current group contract did not return rules for this community." />
+        <BoundaryPanel title={t("social:groups.rulesUnavailableTitle")} body={t("social:groups.rulesUnavailableBody")} />
       )}
       <Text style={styles.sectionTitle}>Community Feed</Text>
       {(group.posts || []).length ? group.posts?.map((post) => <GroupPostCard key={post.id} post={post} />) : <Text style={styles.emptyText}>This group has no posts yet. Be the first to share something with the community.</Text>}
@@ -674,15 +683,16 @@ function GroupMemberRow({ group, member, onMemberAction }: { group: PulseGroup; 
 }
 
 function GroupInvitations({ group }: { group: PulseGroup }) {
+  const { t } = useTranslation();
   const invitations = group.invitations || [];
   const requests = group.membership_requests || [];
   return (
     <View>
-      <Text style={styles.sectionTitle}>Invitations</Text>
+      <Text style={styles.sectionTitle}>{t("social:groups.sections.invitations")}</Text>
       {invitations.length ? invitations.map((invite) => <GroupInvitationRow key={invite.id} invitation={invite} />) : (
         <BoundaryPanel title="No pending invitations exposed" body="Invitations you send appear here while they are waiting to be accepted." />
       )}
-      <Text style={styles.sectionTitle}>Membership Requests</Text>
+      <Text style={styles.sectionTitle}>{t("social:groups.membershipRequestsHeading")}</Text>
       {requests.length ? requests.map((invite) => <GroupInvitationRow key={invite.id} invitation={invite} request />) : (
         <Text style={styles.emptyText}>No one is waiting to join right now.</Text>
       )}
@@ -691,15 +701,20 @@ function GroupInvitations({ group }: { group: PulseGroup }) {
 }
 
 function GroupInvitationRow({ invitation, request }: { invitation: PulseGroupInvitation; request?: boolean }) {
+  const { t } = useTranslation();
   return (
     <View style={styles.memberRow} accessibilityLabel={groupInvitationAccessibilityLabel(invitation)}>
       <Avatar name={invitation.display_name} uri={invitation.avatar_url} />
       <View style={styles.memberMain}>
         <Text style={styles.cardTitle} numberOfLines={1}>{invitation.display_name}</Text>
-        <Text style={styles.cardText} numberOfLines={1}>{request ? "Request" : "Invite"} · {groupInvitationStateLabel(invitation)} · {groupMemberRoleLabel(invitation.role)}</Text>
+        <Text style={styles.cardText} numberOfLines={1}>{t("social:groups.invitationMeta", {
+          kind: request ? t("social:groups.invitationKindRequest") : t("social:groups.invitationKindInvite"),
+          state: groupInvitationStateLabel(invitation),
+          role: groupMemberRoleLabel(invitation.role)
+        })}</Text>
         <View style={styles.actionRow}>
-          <Pressable accessibilityRole="button" style={styles.inlineAction}><Text style={styles.inlineActionText}>{request ? "Approve boundary" : "Pending"}</Text></Pressable>
-          <Pressable accessibilityRole="button" style={[styles.inlineAction, styles.inlineDanger]}><Text style={styles.inlineActionText}>{request ? "Reject boundary" : "Cancel boundary"}</Text></Pressable>
+          <Pressable accessibilityRole="button" style={styles.inlineAction}><Text style={styles.inlineActionText}>{request ? t("social:groups.approveBoundary") : t("social:groups.pending")}</Text></Pressable>
+          <Pressable accessibilityRole="button" style={[styles.inlineAction, styles.inlineDanger]}><Text style={styles.inlineActionText}>{request ? t("social:groups.rejectBoundary") : t("social:groups.cancelBoundary")}</Text></Pressable>
         </View>
       </View>
     </View>
@@ -716,6 +731,7 @@ function GroupAssets({ title, assets, emptyTitle, emptyBody }: { title: string; 
 }
 
 function GroupAssetCard({ asset }: { asset: PulseGroupAsset }) {
+  const { t } = useTranslation();
   return (
     <View style={styles.assetCard}>
       {asset.thumbnail_url || asset.url ? (
@@ -726,7 +742,7 @@ function GroupAssetCard({ asset }: { asset: PulseGroupAsset }) {
       <View style={styles.cardBody}>
         <Text style={styles.cardType}>{groupAssetCategoryLabel(asset)}</Text>
         <Text style={styles.cardTitle} numberOfLines={2}>{asset.title}</Text>
-        <Text style={styles.cardText} numberOfLines={2}>{asset.url ? "NativeMediaViewer handoff ready where the media contract provides a safe URL." : "No safe media URL returned."}</Text>
+        <Text style={styles.cardText} numberOfLines={2}>{asset.url ? t("social:groups.assets.handoffReady") : t("social:groups.assets.noUrl")}</Text>
       </View>
     </View>
   );
@@ -736,12 +752,12 @@ function GroupSettings({ group, onDelete, onArchive }: { group: PulseGroup; onDe
   const actions = groupActionRules(group);
   return (
     <View>
-      <Text style={styles.sectionTitle}>Settings and Safety</Text>
+      <Text style={styles.sectionTitle}>{t("social:groups.settingsHeading")}</Text>
       <View style={styles.metricGrid}>
-        <Metric label="Privacy" value={group.privacy || group.group_type || "public"} />
-        <Metric label="Trust" value={group.trust_level || "standard"} />
-        <Metric label="Status" value={group.status || "active"} />
-        <Metric label="Manage" value={group.can_manage ? "allowed" : "member"} />
+        <Metric label={t("social:groups.metrics.privacy")} value={group.privacy || group.group_type || t("social:groups.values.public")} />
+        <Metric label={t("social:groups.metrics.trust")} value={group.trust_level || t("social:groups.values.standard")} />
+        <Metric label={t("social:groups.metrics.status")} value={group.status || t("social:groups.values.active")} />
+        <Metric label={t("social:groups.metrics.manage")} value={group.can_manage ? t("social:groups.values.allowed") : t("social:groups.values.member")} />
       </View>
       {actions.map((action) => (
         <View key={action.key} style={styles.permissionRow}>
@@ -763,6 +779,7 @@ function RoomDetail({ room, busyKey, onClose, onOpen, onReport, onLifecycle }: {
   onReport: (room: PulseRoom) => void;
   onLifecycle: (room: PulseRoom, action: "archive" | "delete") => void;
 }) {
+  const { t } = useTranslation();
   const [section, setSection] = useState<RoomDetailSection>("overview");
   const sections: RoomDetailSection[] = ["overview", "participants", "activity", "provider"];
   const actions = roomActionRules(room);
@@ -773,17 +790,17 @@ function RoomDetail({ room, busyKey, onClose, onOpen, onReport, onLifecycle }: {
         <View style={styles.detailHeader}>
           <View style={styles.detailTitleWrap}>
             <Text style={styles.title} numberOfLines={1}>{roomDisplayTitle(room)}</Text>
-            <Text style={styles.subtitle}>{roomProviderStateLabel(room)} · {Number(room.online_count || 0)} active · {room.current_user_role || "participant boundary"}</Text>
+            <Text style={styles.subtitle}>{t("social:groups.roomDetailSubtitle", { state: roomProviderStateLabel(room), active: Number(room.online_count || 0), role: room.current_user_role || t("social:groups.values.participantBoundary") })}</Text>
           </View>
-          <Pressable accessibilityRole="button" accessibilityLabel={`Close ${roomDisplayTitle(room)} detail`} style={styles.smallButton} onPress={onClose}>
-            <Text style={styles.smallButtonText}>Close</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel={t("social:groups.closeDetailLabel", { title: roomDisplayTitle(room) })} style={styles.smallButton} onPress={onClose}>
+            <Text style={styles.smallButtonText}>{t("social:groups.close")}</Text>
           </Pressable>
         </View>
         <ScrollView contentContainerStyle={styles.detailContent}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.sectionRail}>
             {sections.map((item) => (
               <Pressable key={item} accessibilityRole="tab" accessibilityState={{ selected: section === item }} style={[styles.sectionChip, section === item && styles.sectionChipActive]} onPress={() => setSection(item)}>
-                <Text style={[styles.sectionChipText, section === item && styles.sectionChipTextActive]}>{roomDetailSectionLabel(item)}</Text>
+                <Text style={[styles.sectionChipText, section === item && styles.sectionChipTextActive]}>{t(roomDetailSectionLabelKey(item))}</Text>
               </Pressable>
             ))}
           </ScrollView>
@@ -797,7 +814,7 @@ function RoomDetail({ room, busyKey, onClose, onOpen, onReport, onLifecycle }: {
               <View style={styles.boundaryPill}><Text style={styles.boundaryPillText}>{roomProviderStateLabel(room)}</Text></View>
             ) : null}
             <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busyKey) }} style={styles.smallButton} disabled={Boolean(busyKey)} onPress={() => onReport(room)}>
-              <Text style={styles.smallButtonText}>Report</Text>
+              <Text style={styles.smallButtonText}>{t("social:groups.report")}</Text>
             </Pressable>
             {room.can_manage ? <Pressable accessibilityRole="button" style={styles.smallButton} disabled={Boolean(busyKey)} onPress={() => onLifecycle(room, "archive")}><Text style={styles.smallButtonText}>End Room</Text></Pressable> : null}
             {room.current_user_role === "owner" ? <Pressable accessibilityRole="button" style={[styles.smallButton, styles.dangerButton]} disabled={Boolean(busyKey)} onPress={() => Alert.alert("Delete room?", "This permanently removes the room from active community discovery.", [{ text: "Cancel", style: "cancel" }, { text: "Delete", style: "destructive", onPress: () => onLifecycle(room, "delete") }])}><Text style={styles.smallButtonText}>Delete</Text></Pressable> : null}
@@ -811,39 +828,42 @@ function RoomDetail({ room, busyKey, onClose, onOpen, onReport, onLifecycle }: {
 
 type RoomDetailSection = "overview" | "participants" | "activity" | "provider";
 
-function roomDetailSectionLabel(section: RoomDetailSection) {
+/** Catalog keys, resolved at render time — see `groupDetailSectionLabelKey`. */
+function roomDetailSectionLabelKey(section: RoomDetailSection) {
   return {
-    overview: "Overview",
-    participants: "Participants",
-    activity: "Activity",
-    provider: "Provider"
+    overview: "social:groups.roomSections.overview",
+    participants: "social:groups.roomSections.participants",
+    activity: "social:groups.roomSections.activity",
+    provider: "social:groups.roomSections.provider"
   }[section];
 }
 
 function RoomDetailSectionView({ room, section }: { room: PulseRoom; section: RoomDetailSection }) {
+  const { t } = useTranslation();
   if (section === "participants") return <RoomParticipants room={room} />;
   if (section === "activity") return <RoomActivity room={room} />;
   if (section === "provider") return <RoomProviderBoundary room={room} />;
   return (
     <View>
-      <Text style={styles.sectionTitle}>Room Overview</Text>
+      <Text style={styles.sectionTitle}>{t("social:groups.roomOverviewHeading")}</Text>
       <Text style={styles.cardText}>{roomSummary(room)}</Text>
       <View style={styles.metricGrid}>
-        <Metric label="Active" value={String(Number(room.online_count || 0))} />
-        <Metric label="Unread" value={String(Number(room.unread_count || 0))} />
-        <Metric label="Privacy" value={room.privacy || "member"} />
-        <Metric label="State" value={roomProviderStateLabel(room)} />
+        <Metric label={t("social:groups.metrics.active")} value={String(Number(room.online_count || 0))} />
+        <Metric label={t("social:groups.metrics.unread")} value={String(Number(room.unread_count || 0))} />
+        <Metric label={t("social:groups.metrics.privacy")} value={room.privacy || t("social:groups.values.member")} />
+        <Metric label={t("social:groups.metrics.state")} value={roomProviderStateLabel(room)} />
       </View>
-      {room.pinned_notice ? <BoundaryPanel title="Pinned notice" body={room.pinned_notice} /> : null}
+      {room.pinned_notice ? <BoundaryPanel title={t("social:groups.pinnedNoticeTitle")} body={room.pinned_notice} /> : null}
     </View>
   );
 }
 
 function RoomParticipants({ room }: { room: PulseRoom }) {
+  const { t } = useTranslation();
   const participants = room.participants || [];
   return (
     <View>
-      <Text style={styles.sectionTitle}>Participants and Presence</Text>
+      <Text style={styles.sectionTitle}>{t("social:groups.participantsHeading")}</Text>
       {participants.length ? participants.map((participant) => <RoomParticipantRow key={participant.id} participant={participant} />) : (
         <BoundaryPanel title="Live presence boundary" body="You can see how many people are active in this room. Who they are, their roles, and their connection status are not available yet." />
       )}
@@ -864,18 +884,20 @@ function RoomParticipantRow({ participant }: { participant: PulseRoomParticipant
 }
 
 function RoomActivity({ room }: { room: PulseRoom }) {
+  const { t } = useTranslation();
   const activity = room.activity || [];
   return (
     <View>
-      <Text style={styles.sectionTitle}>Room Activity</Text>
+      <Text style={styles.sectionTitle}>{t("social:groups.roomActivityHeading")}</Text>
       {activity.length ? activity.map((asset) => <GroupAssetCard key={asset.id} asset={asset} />) : (
-        <BoundaryPanel title="No persistent room activity returned" body="This room currently exposes summary data. Messages, shared media, announcements, and participant events remain tied to the existing chat/provider contracts." />
+        <BoundaryPanel title={t("social:groups.roomActivityEmptyTitle")} body={t("social:groups.roomActivityEmptyBody")} />
       )}
     </View>
   );
 }
 
 function RoomProviderBoundary({ room }: { room: PulseRoom }) {
+  const { t } = useTranslation();
   return (
     <View>
       <Text style={styles.sectionTitle}>Live Media</Text>
@@ -884,10 +906,10 @@ function RoomProviderBoundary({ room }: { room: PulseRoom }) {
         body={room.partial ? "Live audio and video cannot run in the Simulator. You can still open this room and check how it looks and which permissions it asks for; the microphone, camera, Bluetooth, and calls with other people need a real device." : "This room can open through the existing Pulse Command chat contract. Live media features remain provider and physical-device gated where applicable."}
       />
       <View style={styles.metricGrid}>
-        <Metric label="Provider" value={room.provider || "PulseSoc"} />
-        <Metric label="Room type" value={room.room_type || "room"} />
-        <Metric label="Role" value={room.current_user_role || "member"} />
-        <Metric label="Conversation" value={room.conversation_id ? "available" : "join required"} />
+        <Metric label={t("social:groups.metrics.provider")} value={room.provider || "PulseSoc"} />
+        <Metric label={t("social:groups.metrics.roomType")} value={room.room_type || t("social:groups.values.room")} />
+        <Metric label={t("social:groups.metrics.role")} value={room.current_user_role || t("social:groups.values.member")} />
+        <Metric label={t("social:groups.metrics.conversation")} value={room.conversation_id ? t("social:groups.values.available") : t("social:groups.values.joinRequired")} />
       </View>
     </View>
   );
@@ -916,12 +938,14 @@ function Avatar({ name, uri }: { name: string; uri?: string }) {
 }
 
 function GroupPostCard({ post }: { post: PulseGroupPost }) {
+  const { t } = useTranslation();
+  const metaParams = { author: post.author_name || t("social:groups.postAuthorFallback"), time: formatShortTime(post.created_at) };
   return (
     <View style={styles.postCard}>
-      <Text style={styles.cardType}>{post.pinned ? "Pinned · " : ""}{post.author_name || "PulseSoc Member"} · {formatShortTime(post.created_at)}</Text>
+      <Text style={styles.cardType}>{post.pinned ? t("social:groups.postMetaPinned", metaParams) : t("social:groups.postMeta", metaParams)}</Text>
       {post.title ? <Text style={styles.cardTitle}>{post.title}</Text> : null}
-      <Text style={styles.cardText}>{post.body || "Group update"}</Text>
-      {post.media_url ? <Text style={styles.cardMeta}>Media attached</Text> : null}
+      <Text style={styles.cardText}>{post.body || t("social:groups.postBodyFallback")}</Text>
+      {post.media_url ? <Text style={styles.cardMeta}>{t("social:groups.mediaAttached")}</Text> : null}
     </View>
   );
 }

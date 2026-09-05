@@ -97,6 +97,14 @@ const TIME_OPTIONS: string[] = Array.from({ length: 48 }, (_, index) => {
   return `${hours}:${minutes}`;
 });
 
+/** The API value doubles as the button label, so the label is keyed separately. */
+const PRODUCT_TYPE_KEYS: Record<(typeof productTypes)[number], string> = {
+  digital: "commerce:marketplace.productTypeDigital",
+  course: "commerce:marketplace.productTypeCourse",
+  service: "commerce:marketplace.productTypeService",
+  physical: "commerce:marketplace.productTypePhysical"
+};
+
 export function SellerListingComposerScreen({ navigation }: Props) {
   const { t } = useTranslation();
   const formatters = useFormatters();

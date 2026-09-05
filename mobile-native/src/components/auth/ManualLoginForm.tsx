@@ -27,6 +27,7 @@ export const ManualLoginForm = forwardRef<
   { identifier, password, onChangeIdentifier, onChangePassword, onSubmit, submitting, identifierError, passwordError, formError },
   ref
 ) {
+  const { t } = useTranslation();
   const identifierRef = useRef<TextInput>(null);
   const passwordRef = useRef<TextInput>(null);
 
@@ -40,7 +41,7 @@ export const ManualLoginForm = forwardRef<
     <View style={styles.root}>
       <SecureTextField
         ref={identifierRef}
-        label="Email or username"
+        label={t("auth:signIn.emailOrUsernameLabel")}
         iconName="mail-outline"
         autoCapitalize="none"
         autoComplete="username"
@@ -55,7 +56,7 @@ export const ManualLoginForm = forwardRef<
       />
       <SecureTextField
         ref={passwordRef}
-        label="Password"
+        label={t("auth:signIn.passwordLabel")}
         iconName="lock-closed-outline"
         autoComplete="current-password"
         returnKeyType="go"
@@ -73,7 +74,7 @@ export const ManualLoginForm = forwardRef<
       ) : null}
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Sign in"
+        accessibilityLabel={t("auth:signIn.submit")}
         accessibilityState={{ disabled: !canSubmit, busy: submitting }}
         disabled={!canSubmit}
         testID="login-submit"

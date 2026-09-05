@@ -8,6 +8,7 @@ import {
   updateNotificationPreferences
 } from "../api/notifications";
 import { getPushPermissionState, registerPushDevice } from "../api/push";
+import { useTranslation } from "../i18n";
 import { colors } from "../theme/colors";
 import { createThemedStyles } from "../theme/themedStyles";
 
@@ -19,6 +20,7 @@ const FALLBACK_CATEGORIES = [
 const CHANNELS = ["in_app", "push", "email", "sms"] as const;
 
 export function NotificationPreferencesScreen() {
+  const { t } = useTranslation();
   const [preferences, setPreferences] = useState<NotificationPreferences>({});
   const [categories, setCategories] = useState<string[]>(FALLBACK_CATEGORIES);
   const [quietHours, setQuietHours] = useState(false);
@@ -26,7 +28,7 @@ export function NotificationPreferencesScreen() {
   const [vibration, setVibration] = useState(true);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState("");
-  const [pushStatus, setPushStatus] = useState("Checking push permission...");
+  const [pushStatus, setPushStatus] = useState(() => t("discovery:notifications.preferences.checkingPermission"));
 
   async function load() {
     try {
@@ -40,16 +42,23 @@ export function NotificationPreferencesScreen() {
       setSound(experience.enable_notification_sound !== false);
       setVibration(experience.enable_notification_vibration !== false);
       setPushStatus(permission.message);
-      setStatus("Preferences loaded.");
+      setStatus(t("discovery:notifications.preferences.loaded"));
     } catch (error) {
       setPreferences(seedPreferences({}, FALLBACK_CATEGORIES));
-      setStatus(error instanceof Error ? error.message : "Notification preferences could not load.");
+      setStatus(error instanceof Error ? error.message : t("discovery:notifications.preferences.loadError"));
     }
   }
 
   async function enablePush() {
     const result = await registerPushDevice();
-    setStatus(String(result.message || (result.ok === false ? "Push was not enabled." : "Push registration sent.")));
+    setStatus(
+      String(
+        result.message ||
+          (result.ok === false
+            ? t("discovery:notifications.preferences.pushNotEnabled")
+            : t("discovery:notifications.preferences.pushRegistrationSent"))
+      )
+    );
     const permission = await getPushPermissionState();
     setPushStatus(permission.message);
   }
@@ -64,9 +73,12 @@ export function NotificationPreferencesScreen() {
         enable_notification_vibration: vibration,
         notification_sound_type: sound ? "soft" : "silent"
       });
-      setStatus("Notification preferences saved.");
+      setStatus(t("discovery:notifications.preferences.saved"));
     } catch (error) {
-      Alert.alert("Preferences not saved", error instanceof Error ? error.message : "Notification preferences were not saved.");
+      Alert.alert(
+        t("discovery:notifications.preferences.saveFailedTitle"),
+        error instanceof Error ? error.message : t("discovery:notifications.preferences.saveFailedBody")
+      );
     } finally {
       setSaving(false);
     }
@@ -97,17 +109,17 @@ export function NotificationPreferencesScreen() {
         <Text style={styles.muted}>Turn on push to get PulseSoc notifications on this device.</Text>
         <Text style={styles.status}>{pushStatus}</Text>
         <Pressable style={styles.button} onPress={enablePush}>
-          <Text style={styles.buttonText}>Enable push</Text>
+          <Text style={styles.buttonText}>{t("discovery:notifications.preferences.enablePush")}</Text>
         </Pressable>
       </View>
       <View style={styles.panel}>
-        <Text style={styles.panelTitle}>Experience</Text>
-        <ToggleRow label="Quiet hours" value={quietHours} onValueChange={setQuietHours} />
-        <ToggleRow label="Sound" value={sound} onValueChange={setSound} />
-        <ToggleRow label="Vibration" value={vibration} onValueChange={setVibration} />
+        <Text style={styles.panelTitle}>{t("discovery:notifications.preferences.experience")}</Text>
+        <ToggleRow label={t("discovery:notifications.preferences.quietHours")} value={quietHours} onValueChange={setQuietHours} />
+        <ToggleRow label={t("discovery:notifications.preferences.sound")} value={sound} onValueChange={setSound} />
+        <ToggleRow label={t("discovery:notifications.preferences.vibration")} value={vibration} onValueChange={setVibration} />
       </View>
       <View style={styles.panel}>
-        <Text style={styles.panelTitle}>Categories</Text>
+        <Text style={styles.panelTitle}>{t("discovery:notifications.preferences.categories")}</Text>
         {categories.map((category) => (
           <View key={category} style={styles.categoryBlock}>
             <Text style={styles.categoryTitle}>{categoryLabel(category)}</Text>
@@ -116,7 +128,7 @@ export function NotificationPreferencesScreen() {
                 <ToggleRow
                   compact
                   key={`${category}-${channel}`}
-                  label={channel.replace("_", " ")}
+                  label={t(`discovery:notifications.preferences.channels.${channel}`)}
                   value={Boolean(preferences[category]?.[channel]) || isRequiredSecurityChannel(category, channel)}
                   disabled={isRequiredSecurityChannel(category, channel)}
                   onValueChange={(value) => toggle(category, channel, value)}
@@ -127,7 +139,9 @@ export function NotificationPreferencesScreen() {
         ))}
       </View>
       <Pressable disabled={saving} style={[styles.button, saving && styles.disabled]} onPress={save}>
-        <Text style={styles.buttonText}>{saving ? "Saving..." : "Save preferences"}</Text>
+        <Text style={styles.buttonText}>
+          {saving ? t("discovery:notifications.preferences.saving") : t("discovery:notifications.preferences.save")}
+        </Text>
       </Pressable>
       {status ? <Text style={styles.status}>{status}</Text> : null}
     </ScrollView>

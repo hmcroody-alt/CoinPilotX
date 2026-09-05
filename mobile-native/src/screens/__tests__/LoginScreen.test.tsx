@@ -62,6 +62,7 @@ import {
   isBiometricEnabledForCurrentSession
 } from "../../session/biometricAuth";
 import { LoginScreen } from "../LoginScreen";
+import { activateLocale } from "../../i18n/engine";
 
 const mockedSignIn = signIn as jest.Mock;
 const mockedAuthenticateWithBiometrics = authenticateWithBiometrics as jest.Mock;
