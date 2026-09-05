@@ -50,7 +50,10 @@ import {
   ActivityIndicator,
   AppState,
   AppStateStatus,
+  Keyboard,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -702,7 +705,17 @@ export function PrivateOfficeLockGate({ children, onDismiss, onRenew }: Props) {
         animationType="slide"
         onRequestClose={() => setResetOpen(false)}
       >
-        <View style={styles.sheetBackdrop}>
+        <KeyboardAvoidingView
+          style={styles.sheetBackdrop}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
+          {/* The number-pad has no Done key on iOS; tapping above the sheet is
+              the only way to lower the keyboard and reach the buttons. */}
+          <Pressable
+            style={styles.sheetBackdropDismiss}
+            onPress={() => Keyboard.dismiss()}
+            accessible={false}
+          />
           <View style={styles.sheet}>
             <Text style={styles.sheetTitle}>{t("premium:privateOffice.lock.reset.title")}</Text>
             <Text style={styles.panelText}>{t("premium:privateOffice.lock.reset.body")}</Text>
@@ -775,7 +788,7 @@ export function PrivateOfficeLockGate({ children, onDismiss, onRenew }: Props) {
               <Text style={styles.linkText}>{t("premium:privateOffice.lock.reset.cancel")}</Text>
             </Pressable>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {privacyOverlay}
@@ -859,6 +872,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.6)",
     justifyContent: "flex-end"
   },
+  sheetBackdropDismiss: { flex: 1 },
   sheet: {
     backgroundColor: colors.surfaceRaised,
     borderTopLeftRadius: 20,
