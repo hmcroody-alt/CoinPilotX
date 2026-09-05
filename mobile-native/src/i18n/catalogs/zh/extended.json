@@ -4567,13 +4567,14 @@
         "countSoFar": "目前 {{count}}",
         "factCount": "{{count}} 条已记录事实",
         "empty": {
-          "title": "暂无记录"
+          "title": "暂无记录",
+          "openPortfolio": "打开投资组合"
         },
         "emptyBody": {
-          "holdings": "尚未记录任何持有。",
+          "holdings": "尚未记录任何持仓。添加到投资组合的资产将显示在这里,并自动连接到您的资本图谱。",
           "coverage": "尚未记录任何保障。",
           "structure": "尚未记录任何结构。",
-          "documents": "尚未记录任何文件。"
+          "documents": "尚未连接任何资本文件。"
         },
         "denied": {
           "title": "未显示",
@@ -4637,7 +4638,72 @@
           "facts": "已记录事实",
           "updated": "更新于 {{date}}"
         },
-        "relationshipsUnavailable": "目前无法加载关系。"
+        "relationshipsUnavailable": "目前无法加载关系。",
+        "portfolio": {
+          "title": "投资组合",
+          "subtitle": "您的 PulseSoc 投资组合已映射到图谱中。请在投资组合中编辑持仓——变更会自动同步到这里。",
+          "totalValue": "总价值",
+          "partial": "{{total}} 项持仓中有 {{priced}} 项已有价格",
+          "lots_one": "{{count}} 笔买入",
+          "lots_other": "{{count}} 笔买入",
+          "priceUnavailable": "价格不可用",
+          "manualSource": "手动 · 来自您的投资组合",
+          "updatedSeconds": "价格于 {{count}} 秒前更新",
+          "updatedMinutes": "价格于 {{count}} 分钟前更新",
+          "updatedStale": "价格可能已过时",
+          "sourceUnavailable": "实时价格当前未连接",
+          "syncPending_one": "{{count}} 项投资组合变更正在同步…",
+          "syncPending_other": "{{count}} 项投资组合变更正在同步…",
+          "syncFailed": "最近一次同步失败——当前显示为上次成功更新的数据。",
+          "unpriced": "{{symbols}} 暂无实时价格。总计仅包含您的其他持仓。",
+          "empty": "您的投资组合中还没有持仓。",
+          "unavailable": "暂时无法加载您的投资组合。",
+          "basisUnknown": "未记录成本价",
+          "pricedValue": "已定价投资组合价值",
+          "valueUnavailable": "暂无已定价的持仓",
+          "excludesUnpriced": "未定价持仓已排除:{{count}}",
+          "pnlLabel": "未实现盈亏",
+          "pnlUnavailable": "不可用",
+          "basisLabel": "成本基础",
+          "basisPartial": "{{total}} 项中 {{known}} 项已知",
+          "holdingsLabel": "持仓",
+          "allocationTitle": "资产配置",
+          "allocationPricedOnly": "仅含已定价持仓",
+          "excludedFromTotal": "已从投资组合总额中排除",
+          "qualityPriced": "已定价 {{priced}}/{{total}}",
+          "qualityBasis": "成本已知 {{known}}/{{total}}",
+          "unavailableTitle": "投资组合不可用",
+          "fresh": {
+            "live": "实时",
+            "fresh": "最新",
+            "delayed": "延迟",
+            "stale": "过期",
+            "unavailable": "无价格来源"
+          }
+        },
+        "coverage": {
+          "portfolioTitle": "投资组合覆盖率",
+          "pricing": "{{total}} 项持仓中 {{priced}} 项已定价",
+          "basis": "{{total}} 项中 {{known}} 项成本基础已知",
+          "factsTitle": "事实核验",
+          "knownShare": "已确认的事实:{{pct}}",
+          "documentBacked": "有文件支持的事实:{{count}}"
+        },
+        "structure": {
+          "relationshipsTitle": "关系",
+          "noRelationships": "尚未记录任何关系。"
+        },
+        "relation": {
+          "OWNS": "拥有",
+          "ADVISED_BY": "顾问",
+          "COVERED_BY": "承保方",
+          "SECURED_BY": "担保方",
+          "GOVERNED_BY": "管辖依据",
+          "DESCRIBES": "描述"
+        },
+        "documents": {
+          "evidenceTitle": "已连接的证据"
+        }
       },
       "attention": {
         "title": "需要您关注",

@@ -230,6 +230,9 @@ NATIVE_ROUTES: dict[str, str] = {
     # bound. /pulse/private-office/facts is a literal owner above, so the
     # pattern cannot claim it.
     "PrivateOperations": "/pulse/private-office/:view",
+    # The Capital Graph is a literal owner like /facts above: linking.ts binds
+    # CapitalGraph to this exact path, so the :view pattern cannot claim it.
+    "CapitalGraph": "/pulse/private-office/capital-graph",
     "AccountCenter": "/pulse/settings/:section",
     "AccountDevices": "/pulse/settings/devices",
     "AccountHealth": "/pulse/account-health",

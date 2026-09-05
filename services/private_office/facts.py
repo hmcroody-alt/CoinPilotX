@@ -543,6 +543,71 @@ def _record_fact(
             "sensitivity": resolved_sensitivity, "domain": resolved_domain}
 
 
+def supersede_facts(
+    cur,
+    *,
+    owner_user_id: int,
+    subject_type: str,
+    subject_id: object,
+    fact_type: str,
+    keep_fact_id: int = 0,
+    actor_user_id: int | None = None,
+    purpose: str = "system_maintenance",
+) -> int:
+    """Mark prior ACTIVE facts of one (subject, fact_type) SUPERSEDED.
+
+    This exists for *projections* — readings of an external system of record
+    that this store mirrors. When the Portfolio says a quantity changed, the
+    old quantity is not a second opinion to weigh against the new one; it is
+    the previous state of the same ledger, and leaving both ACTIVE would hand
+    the contradiction engine a conflict that is really just time passing.
+
+    It is deliberately narrow: one owner, one subject, one fact type, and the
+    row named by ``keep_fact_id`` survives. It cannot cross a subject or a
+    type, so a projector cannot bulk-retire facts other writers recorded about
+    other matters. Within one (subject, fact_type) it *does* retire rows from
+    other sources — that is the point: the projection's fact type is its own
+    namespace (e.g. ``portfolio.quantity``), and nothing else writes into it.
+
+    Returns the number of rows superseded. Rejects rather than guessing when
+    the scope is malformed, same as :func:`record_fact`.
+    """
+    owner = int(owner_user_id or 0)
+    if owner <= 0:
+        raise PrivateFactRejected("owner_user_id is required")
+    subject_kind = str(subject_type or "").strip().upper()[:32]
+    subject = str(subject_id if subject_id is not None else "").strip()[:MAX_SUBJECT_ID]
+    kind = str(fact_type or "").strip()
+    if not subject_kind or not subject or not _FACT_TYPE_RE.match(kind):
+        raise PrivateFactRejected("supersede scope must name a subject and fact_type")
+
+    _schema.require_private_schema(cur)
+
+    now_iso = _now_iso()
+    cur.execute(
+        f"UPDATE {_schema.FACTS_TABLE} "
+        f"SET lifecycle_state = ?, valid_to = COALESCE(valid_to, ?), updated_at = ? "
+        f"WHERE owner_user_id = ? AND subject_type = ? AND subject_id = ? "
+        f"AND fact_type = ? AND lifecycle_state = ? AND id != ?",
+        (_model.LIFECYCLE_SUPERSEDED, now_iso, now_iso, owner, subject_kind,
+         subject, kind[:MAX_FACT_TYPE], _model.LIFECYCLE_ACTIVE,
+         int(keep_fact_id or 0)),
+    )
+    changed = cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+    if changed:
+        _audit.record(
+            cur, actor_user_id=int(actor_user_id or owner), owner_user_id=owner,
+            action=_audit.ACTION_FACT_SUPERSEDE, object_type=subject_kind,
+            object_id=subject, purpose=purpose, outcome=_audit.OUTCOME_OK,
+            result_count=changed,
+        )
+        _telemetry.emit(
+            _telemetry.EVENT_FACT_WRITE, outcome="superseded",
+            domain=None, sensitivity=None, provenance_type=None,
+            superseded=True)
+    return changed
+
+
 # ---------------------------------------------------------------------------
 # Read
 # ---------------------------------------------------------------------------

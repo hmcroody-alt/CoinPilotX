@@ -4568,13 +4568,14 @@
         "countSoFar": "{{count}} jiskaprezan",
         "factCount": "{{count}} fè anrejistre",
         "empty": {
-          "title": "Anyen pa anrejistre"
+          "title": "Anyen pa anrejistre",
+          "openPortfolio": "Ouvri pòtfèy la"
         },
         "emptyBody": {
-          "holdings": "Poko gen okenn byen anrejistre.",
+          "holdings": "Poko gen avwa ki anrejistre. Avwa ou ajoute nan Pòtfèy ou ap parèt isit la epi yo ap konekte otomatikman ak Graf Kapital ou.",
           "coverage": "Poko gen okenn kouvèti anrejistre.",
           "structure": "Poko gen okenn estrikti anrejistre.",
-          "documents": "Poko gen okenn dokiman anrejistre."
+          "documents": "Poko gen dokiman kapital ki konekte."
         },
         "denied": {
           "title": "Pa parèt",
@@ -4638,7 +4639,72 @@
           "facts": "Fè anrejistre",
           "updated": "Mete ajou {{date}}"
         },
-        "relationshipsUnavailable": "Relasyon yo pa t ka chaje kounye a."
+        "relationshipsUnavailable": "Relasyon yo pa t ka chaje kounye a.",
+        "portfolio": {
+          "title": "Pòtfèy",
+          "subtitle": "Pòtfèy PulseSoc ou a, reflete nan graf ou. Modifye sa ou genyen yo nan Pòtfèy — chanjman yo rive isit la otomatikman.",
+          "totalValue": "Valè total",
+          "partial": "{{priced}} sou {{total}} pozisyon gen pri",
+          "lots_one": "{{count}} lo",
+          "lots_other": "{{count}} lo",
+          "priceUnavailable": "Pri a pa disponib",
+          "manualSource": "Manyèl · soti nan Pòtfèy ou",
+          "updatedSeconds": "Pri yo mete ajou sa gen {{count}} segonn",
+          "updatedMinutes": "Pri yo mete ajou sa gen {{count}} minit",
+          "updatedStale": "Pri yo ka pa ajou",
+          "sourceUnavailable": "Pri an dirèk yo pa konekte kounye a",
+          "syncPending_one": "{{count}} chanjman pòtfèy ap senkronize…",
+          "syncPending_other": "{{count}} chanjman pòtfèy ap senkronize…",
+          "syncFailed": "Yon senkronizasyon fèk echwe — nou montre dènye mizajou ki te reyisi a.",
+          "unpriced": "Pa gen pri an dirèk pou {{symbols}}. Total yo kouvri sèlman lòt pozisyon ou yo.",
+          "empty": "Poko gen anyen nan Pòtfèy ou.",
+          "unavailable": "Nou pa t ka chaje pòtfèy ou kounye a.",
+          "basisUnknown": "Pri acha a pa anrejistre",
+          "pricedValue": "Valè pòtfèy ki gen pri",
+          "valueUnavailable": "Poko gen avwa ki gen pri",
+          "excludesUnpriced": "Avwa san pri yo pa ladan: {{count}}",
+          "pnlLabel": "Pwofi ki poko reyalize",
+          "pnlUnavailable": "Pa disponib",
+          "basisLabel": "Pri acha",
+          "basisPartial": "Konnen pou {{known}} sou {{total}}",
+          "holdingsLabel": "Avwa",
+          "allocationTitle": "Repatisyon",
+          "allocationPricedOnly": "Sèlman avwa ki gen pri",
+          "excludedFromTotal": "Pa konte nan total pòtfèy la",
+          "qualityPriced": "Gen pri {{priced}}/{{total}}",
+          "qualityBasis": "Pri acha konnen {{known}}/{{total}}",
+          "unavailableTitle": "Pòtfèy pa disponib",
+          "fresh": {
+            "live": "An dirèk",
+            "fresh": "Fre",
+            "delayed": "An reta",
+            "stale": "Demode",
+            "unavailable": "Pa gen sous pri"
+          }
+        },
+        "coverage": {
+          "portfolioTitle": "Kouvèti pòtfèy",
+          "pricing": "{{priced}} sou {{total}} avwa gen pri",
+          "basis": "{{known}} sou {{total}} gen pri acha konnen",
+          "factsTitle": "Verifikasyon enfòmasyon",
+          "knownShare": "Enfòmasyon konfime: {{pct}}",
+          "documentBacked": "Enfòmasyon ki gen dokiman: {{count}}"
+        },
+        "structure": {
+          "relationshipsTitle": "Relasyon",
+          "noRelationships": "Poko gen relasyon ki anrejistre."
+        },
+        "relation": {
+          "OWNS": "Posede",
+          "ADVISED_BY": "Konseye pa",
+          "COVERED_BY": "Kouvri pa",
+          "SECURED_BY": "Garanti pa",
+          "GOVERNED_BY": "Dirije pa",
+          "DESCRIBES": "Dekri"
+        },
+        "documents": {
+          "evidenceTitle": "Prèv ki konekte"
+        }
       },
       "attention": {
         "title": "Bezwen atansyon ou",

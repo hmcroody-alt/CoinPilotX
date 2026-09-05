@@ -4599,13 +4599,14 @@
         "countSoFar": "अब तक {{count}}",
         "factCount": "{{count}} दर्ज तथ्य",
         "empty": {
-          "title": "कुछ दर्ज नहीं"
+          "title": "कुछ दर्ज नहीं",
+          "openPortfolio": "पोर्टफोलियो खोलें"
         },
         "emptyBody": {
-          "holdings": "अभी तक कोई संपत्ति दर्ज नहीं है।",
+          "holdings": "अभी तक कोई होल्डिंग दर्ज नहीं है। आपके पोर्टफोलियो में जोड़ी गई संपत्तियाँ यहाँ दिखाई देंगी और अपने आप आपके कैपिटल ग्राफ़ से जुड़ जाएँगी।",
           "coverage": "अभी तक कोई कवरेज दर्ज नहीं है।",
           "structure": "अभी तक कोई संरचना दर्ज नहीं है।",
-          "documents": "अभी तक कोई दस्तावेज़ दर्ज नहीं है।"
+          "documents": "अभी तक कोई कैपिटल दस्तावेज़ जुड़ा नहीं है।"
         },
         "denied": {
           "title": "नहीं दिखाया गया",
@@ -4669,7 +4670,72 @@
           "facts": "दर्ज तथ्य",
           "updated": "अद्यतन {{date}}"
         },
-        "relationshipsUnavailable": "संबंध अभी लोड नहीं हो सके।"
+        "relationshipsUnavailable": "संबंध अभी लोड नहीं हो सके।",
+        "portfolio": {
+          "title": "पोर्टफोलियो",
+          "subtitle": "आपका PulseSoc पोर्टफोलियो, आपके ग्राफ़ में प्रतिबिंबित। होल्डिंग्स पोर्टफोलियो में संपादित करें — बदलाव अपने आप यहाँ पहुँच जाते हैं।",
+          "totalValue": "कुल मूल्य",
+          "partial": "{{total}} में से {{priced}} होल्डिंग्स की कीमत उपलब्ध",
+          "lots_one": "{{count}} लॉट",
+          "lots_other": "{{count}} लॉट",
+          "priceUnavailable": "कीमत उपलब्ध नहीं",
+          "manualSource": "मैनुअल · आपके पोर्टफोलियो से",
+          "updatedSeconds": "कीमतें {{count}} सेकंड पहले अपडेट हुईं",
+          "updatedMinutes": "कीमतें {{count}} मिनट पहले अपडेट हुईं",
+          "updatedStale": "कीमतें पुरानी हो सकती हैं",
+          "sourceUnavailable": "लाइव कीमतें अभी कनेक्ट नहीं हैं",
+          "syncPending_one": "पोर्टफोलियो का {{count}} बदलाव सिंक हो रहा है…",
+          "syncPending_other": "पोर्टफोलियो के {{count}} बदलाव सिंक हो रहे हैं…",
+          "syncFailed": "हाल की एक सिंक विफल रही — अंतिम सफल अपडेट के अनुसार दिखाया गया है।",
+          "unpriced": "{{symbols}} के लिए लाइव कीमत नहीं है। कुल में केवल आपकी बाकी होल्डिंग्स शामिल हैं।",
+          "empty": "आपके पोर्टफोलियो में अभी कोई होल्डिंग नहीं है।",
+          "unavailable": "आपका पोर्टफोलियो अभी लोड नहीं हो सका।",
+          "basisUnknown": "लागत मूल्य दर्ज नहीं है",
+          "pricedValue": "मूल्यांकित पोर्टफोलियो मूल्य",
+          "valueUnavailable": "अभी तक कोई मूल्यांकित होल्डिंग नहीं",
+          "excludesUnpriced": "बिना मूल्य वाली होल्डिंग शामिल नहीं: {{count}}",
+          "pnlLabel": "अवास्तविक लाभ",
+          "pnlUnavailable": "उपलब्ध नहीं",
+          "basisLabel": "लागत आधार",
+          "basisPartial": "{{total}} में से {{known}} के लिए ज्ञात",
+          "holdingsLabel": "होल्डिंग्स",
+          "allocationTitle": "आवंटन",
+          "allocationPricedOnly": "केवल मूल्यांकित होल्डिंग्स",
+          "excludedFromTotal": "पोर्टफोलियो कुल से बाहर",
+          "qualityPriced": "मूल्यांकित {{priced}}/{{total}}",
+          "qualityBasis": "लागत ज्ञात {{known}}/{{total}}",
+          "unavailableTitle": "पोर्टफोलियो अनुपलब्ध",
+          "fresh": {
+            "live": "लाइव",
+            "fresh": "ताज़ा",
+            "delayed": "विलंबित",
+            "stale": "पुराना",
+            "unavailable": "कोई मूल्य स्रोत नहीं"
+          }
+        },
+        "coverage": {
+          "portfolioTitle": "पोर्टफोलियो कवरेज",
+          "pricing": "{{total}} में से {{priced}} होल्डिंग्स मूल्यांकित",
+          "basis": "{{total}} में से {{known}} की लागत ज्ञात",
+          "factsTitle": "तथ्य सत्यापन",
+          "knownShare": "पुष्ट तथ्य: {{pct}}",
+          "documentBacked": "दस्तावेज़-समर्थित तथ्य: {{count}}"
+        },
+        "structure": {
+          "relationshipsTitle": "संबंध",
+          "noRelationships": "अभी तक कोई संबंध दर्ज नहीं है।"
+        },
+        "relation": {
+          "OWNS": "स्वामी है",
+          "ADVISED_BY": "सलाहकार",
+          "COVERED_BY": "कवर किया गया",
+          "SECURED_BY": "सुरक्षित किया गया",
+          "GOVERNED_BY": "शासित",
+          "DESCRIBES": "वर्णन करता है"
+        },
+        "documents": {
+          "evidenceTitle": "जुड़े हुए प्रमाण"
+        }
       },
       "attention": {
         "title": "आपके ध्यान की ज़रूरत",

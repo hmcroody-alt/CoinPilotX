@@ -1,7 +1,8 @@
 import json
+import logging
 from datetime import datetime
 
-from . import market_data, pro_access, user_context
+from . import market_data, portfolio_events, pro_access, user_context
 
 SAFETY = "Portfolio tracker is educational only. CoinPlotXAI Inc. does not hold funds or provide financial advice."
 
@@ -54,6 +55,24 @@ def _row_dict(row):
 
 def _rows(cur):
     return [dict(row) for row in cur.fetchall()]
+
+
+def _kick_projection(user_id):
+    """Best-effort post-commit nudge to the Capital Graph projector.
+
+    The durable leg is the outbox row already committed alongside the
+    mutation; this call only makes the graph feel live. Any failure here is
+    logged and absorbed — the projection converges on its next read.
+    """
+    if not portfolio_events.projection_enabled():
+        return
+    try:
+        from services.private_office import portfolio_projection
+
+        portfolio_projection.process_pending(user_id)
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger("portfolio_service").info(
+            "PORTFOLIO_PROJECTION_KICK_FAILED user=%s error=%s", user_id, exc)
 
 
 def get_live_price(symbol):
@@ -182,9 +201,13 @@ def add_portfolio_item(user_id, symbol, coin_name="", amount=0, average_buy_pric
         """,
         (user_id, symbol, coin_name or symbol, amount, average_buy_price, notes[:500], _now(), _now()),
     )
+    portfolio_events.enqueue(
+        cur, user_id=user_id, event_type=portfolio_events.EVENT_HOLDING_ADDED,
+        symbol=symbol)
     conn.commit()
     conn.close()
     log_activity(user_id, "portfolio_item_added", symbol, {"amount": amount})
+    _kick_projection(user_id)
     return {"ok": True, "message": "Holding added."}
 
 
@@ -210,11 +233,17 @@ def update_portfolio_item(user_id, item_id, data):
     conn = user_context.connect()
     cur = conn.cursor()
     cur.execute(f"UPDATE portfolio_items SET {', '.join(fields)} WHERE id=? AND user_id=?", values)
-    conn.commit()
     changed = cur.rowcount
+    if changed:
+        portfolio_events.enqueue(
+            cur, user_id=user_id,
+            event_type=portfolio_events.EVENT_HOLDING_UPDATED,
+            item_id=int(item_id or 0))
+    conn.commit()
     conn.close()
     if changed:
         log_activity(user_id, "portfolio_item_updated", str(item_id), {})
+        _kick_projection(user_id)
     return {"ok": bool(changed), "message": "Holding updated." if changed else "Holding not found."}
 
 
@@ -222,11 +251,17 @@ def delete_portfolio_item(user_id, item_id):
     conn = user_context.connect()
     cur = conn.cursor()
     cur.execute("DELETE FROM portfolio_items WHERE id=? AND user_id=?", (item_id, user_id))
-    conn.commit()
     changed = cur.rowcount
+    if changed:
+        portfolio_events.enqueue(
+            cur, user_id=user_id,
+            event_type=portfolio_events.EVENT_HOLDING_REMOVED,
+            item_id=int(item_id or 0))
+    conn.commit()
     conn.close()
     if changed:
         log_activity(user_id, "portfolio_item_deleted", str(item_id), {})
+        _kick_projection(user_id)
     return {"ok": bool(changed), "message": "Holding deleted." if changed else "Holding not found."}
 
 

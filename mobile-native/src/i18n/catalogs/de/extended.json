@@ -4599,13 +4599,14 @@
         "countSoFar": "{{count}} bisher",
         "factCount": "{{count}} erfasste Fakten",
         "empty": {
-          "title": "Nichts erfasst"
+          "title": "Nichts erfasst",
+          "openPortfolio": "Portfolio öffnen"
         },
         "emptyBody": {
-          "holdings": "Noch keine Bestände erfasst.",
+          "holdings": "Noch keine Positionen erfasst. In deinem Portfolio hinzugefügte Werte erscheinen hier und werden automatisch mit deinem Kapitalgraphen verbunden.",
           "coverage": "Noch keine Absicherung erfasst.",
           "structure": "Noch keine Struktur erfasst.",
-          "documents": "Noch keine Dokumente erfasst."
+          "documents": "Noch keine Kapitaldokumente verbunden."
         },
         "denied": {
           "title": "Nicht angezeigt",
@@ -4669,7 +4670,72 @@
           "facts": "Erfasste Fakten",
           "updated": "Aktualisiert am {{date}}"
         },
-        "relationshipsUnavailable": "Beziehungen konnten gerade nicht geladen werden."
+        "relationshipsUnavailable": "Beziehungen konnten gerade nicht geladen werden.",
+        "portfolio": {
+          "title": "Portfolio",
+          "subtitle": "Ihr PulseSoc-Portfolio, gespiegelt in Ihren Graphen. Bearbeiten Sie Bestände im Portfolio — Änderungen fließen automatisch hierher.",
+          "totalValue": "Gesamtwert",
+          "partial": "{{priced}} von {{total}} Positionen mit Preis",
+          "lots_one": "{{count}} Posten",
+          "lots_other": "{{count}} Posten",
+          "priceUnavailable": "Preis nicht verfügbar",
+          "manualSource": "Manuell · aus Ihrem Portfolio",
+          "updatedSeconds": "Preise vor {{count}} s aktualisiert",
+          "updatedMinutes": "Preise vor {{count}} min aktualisiert",
+          "updatedStale": "Preise sind möglicherweise veraltet",
+          "sourceUnavailable": "Live-Preise sind derzeit nicht verbunden",
+          "syncPending_one": "{{count}} Portfolio-Änderung wird synchronisiert…",
+          "syncPending_other": "{{count}} Portfolio-Änderungen werden synchronisiert…",
+          "syncFailed": "Eine kürzliche Synchronisierung ist fehlgeschlagen — Stand der letzten erfolgreichen Aktualisierung.",
+          "unpriced": "Kein Live-Preis für {{symbols}}. Summen umfassen nur Ihre übrigen Bestände.",
+          "empty": "Noch keine Bestände in Ihrem Portfolio.",
+          "unavailable": "Ihr Portfolio konnte gerade nicht geladen werden.",
+          "basisUnknown": "Einstandswert nicht erfasst",
+          "pricedValue": "Bewerteter Portfoliowert",
+          "valueUnavailable": "Noch keine bewerteten Positionen",
+          "excludesUnpriced": "Positionen ohne Preis ausgeschlossen: {{count}}",
+          "pnlLabel": "Unrealisierter Gewinn",
+          "pnlUnavailable": "Nicht verfügbar",
+          "basisLabel": "Einstandskosten",
+          "basisPartial": "Bekannt für {{known}} von {{total}}",
+          "holdingsLabel": "Positionen",
+          "allocationTitle": "Aufteilung",
+          "allocationPricedOnly": "Nur bewertete Positionen",
+          "excludedFromTotal": "Vom Portfoliogesamtwert ausgeschlossen",
+          "qualityPriced": "Bewertet {{priced}}/{{total}}",
+          "qualityBasis": "Einstand bekannt {{known}}/{{total}}",
+          "unavailableTitle": "Portfolio nicht verfügbar",
+          "fresh": {
+            "live": "Live",
+            "fresh": "Aktuell",
+            "delayed": "Verzögert",
+            "stale": "Veraltet",
+            "unavailable": "Keine Preisquelle"
+          }
+        },
+        "coverage": {
+          "portfolioTitle": "Portfolioabdeckung",
+          "pricing": "{{priced}} von {{total}} Positionen bewertet",
+          "basis": "{{known}} von {{total}} mit bekannten Einstandskosten",
+          "factsTitle": "Faktenprüfung",
+          "knownShare": "Bestätigte Fakten: {{pct}}",
+          "documentBacked": "Durch Dokumente belegte Fakten: {{count}}"
+        },
+        "structure": {
+          "relationshipsTitle": "Beziehungen",
+          "noRelationships": "Noch keine Beziehungen erfasst."
+        },
+        "relation": {
+          "OWNS": "Besitzt",
+          "ADVISED_BY": "Beraten von",
+          "COVERED_BY": "Abgedeckt durch",
+          "SECURED_BY": "Besichert durch",
+          "GOVERNED_BY": "Geregelt durch",
+          "DESCRIBES": "Beschreibt"
+        },
+        "documents": {
+          "evidenceTitle": "Verbundene Nachweise"
+        }
       },
       "attention": {
         "title": "Erfordert Ihre Aufmerksamkeit",
