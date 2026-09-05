@@ -78,6 +78,12 @@ class FeatureSpec:
     #: Env var that can force the feature off at runtime. When set, the value
     #: must be a truthy string for the feature to stay enabled.
     flag_env: Optional[str] = None
+    #: What an ABSENT flag_env means. The historical rows treat absent as
+    #: "not overridden -> enabled". Features whose mission mandates fail-closed
+    #: rollout (Private Meetings, §54: default FALSE) set this to False so a
+    #: fresh deploy without the env var ships the feature OFF, and only an
+    #: explicit truthy value turns it on.
+    flag_default_on: bool = True
 
     def __post_init__(self) -> None:
         if self.minimum_tier not in TIER_RANK:
@@ -243,6 +249,63 @@ _FEATURES = (
         flag_env="PRIVATE_DOCUMENTS_ENABLED",
     ),
     FeatureSpec(
+        feature_id="private_meetings",
+        minimum_tier=TIER_PRIVATE,
+        server_enforced=True,
+        # Zoom-class multi-guest meetings on the canonical Agora transport.
+        # PulseSoc (services/private_office/meetings.py) is the meeting
+        # authority: lifecycle, waiting room, lock, roles, invites, chat —
+        # Agora is transport only, and admission is expressed structurally as
+        # the communication_call_participants row the engine's token mint
+        # requires, so a waiting-room occupant cannot obtain a token from any
+        # client. Exercised end to end by
+        # tests/private_office/test_private_meetings.py.
+        implementation=IMPL_IMPLEMENTED,
+        flag_env="PRIVATE_MEETINGS_ENABLED",
+        # Mission §54: default FALSE. A deploy without the env var has no
+        # meetings surface; only PRIVATE_MEETINGS_ENABLED=1 opens it.
+        flag_default_on=False,
+    ),
+    FeatureSpec(
+        feature_id="private_meetings.recording",
+        minimum_tier=TIER_PRIVATE,
+        server_enforced=True,
+        # Governed recording METADATA lifecycle only (requested/active/
+        # completed/failed with a visible indicator). A REQUESTED recording
+        # that never went active closes as FAILED — the surface never claims
+        # media that was not captured. Media capture itself still requires the
+        # provider-side pipeline, which is why this has its own kill switch on
+        # top of the meetings switch.
+        implementation=IMPL_IMPLEMENTED,
+        flag_env="PRIVATE_MEETINGS_RECORDING_ENABLED",
+        flag_default_on=False,
+    ),
+    FeatureSpec(
+        feature_id="private_meetings.transcription",
+        minimum_tier=TIER_PRIVATE,
+        server_enforced=True,
+        implementation=IMPL_PROVIDER_REQUIRED,
+        note=(
+            "No transcription/captions provider is integrated. This must never "
+            "render fabricated captions or a synthesized transcript: an AI "
+            "summary presented as 'what was said' when nothing transcribed the "
+            "audio is a fabricated record of a private meeting."
+        ),
+    ),
+    FeatureSpec(
+        feature_id="private_meetings.screen_share",
+        minimum_tier=TIER_PRIVATE,
+        server_enforced=True,
+        implementation=IMPL_NOT_IMPLEMENTED,
+        note=(
+            "Screen share requires a third governed Agora publication path "
+            "(iOS ReplayKit broadcast extension). The platform's engine-owner "
+            "invariant caps sanctioned owners at the two existing call/live "
+            "paths, so this ships only after that owner is designed and "
+            "governed — escalated in the mission report, not silently stubbed."
+        ),
+    ),
+    FeatureSpec(
         feature_id="relationship_intelligence",
         minimum_tier=TIER_PRIVATE,
         server_enforced=True,
@@ -295,12 +358,14 @@ def get(feature_id: str) -> Optional[FeatureSpec]:
 
 
 def _flag_enabled(spec: FeatureSpec) -> bool:
-    """Runtime kill switch. Absent env var means 'not overridden' -> enabled."""
+    """Runtime kill switch. An absent env var resolves to the row's declared
+    default: 'not overridden -> enabled' for the historical rows, OFF for
+    fail-closed rollouts that set ``flag_default_on=False``."""
     if not spec.flag_env:
         return True
     raw = (os.getenv(spec.flag_env, "") or "").strip().lower()
     if raw == "":
-        return True
+        return bool(spec.flag_default_on)
     return raw in ("1", "true", "on", "yes")
 
 

@@ -1319,6 +1319,12 @@ _load_route_pack("private_office_shield", "services.private_office_shield_routes
 # truth (PRIVATE_CONCIERGE_OPERATOR_IDS) rides on every payload and no code
 # path can generate an operator reply.
 _load_route_pack("private_office_concierge", "services.private_office_concierge_routes")
+# Private Meetings: Zoom-class multi-guest meetings where PulseSoc is the
+# authority (lifecycle, waiting room, lock, roles, invites, chat, recording
+# metadata) and Agora is transport only, reached through the canonical
+# communications engine's room-scope calls. Fail-closed behind
+# PRIVATE_MEETINGS_ENABLED (default OFF) plus the Office second lock.
+_load_route_pack("private_office_meetings", "services.private_office_meetings_routes")
 
 
 def cancel_scheduled_account_deletion(cur, user_id):
