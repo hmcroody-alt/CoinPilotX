@@ -190,6 +190,78 @@ class WrongShapeTest(_IndexCase):
         )
 
 
+class PostgresOnlyIndexStateTest(_IndexCase):
+    """`indisvalid` and `indisready` are states SQLite cannot be made to produce.
+
+    A unique index left behind by a failed `CREATE INDEX CONCURRENTLY` is present
+    in the catalog, correctly named, correctly shaped -- and enforcing nothing.
+    PostgreSQL is the only database here that can be in that state, and the
+    SQLite inspector reports `valid` and `ready` as constant `True` because an
+    index either exists in its schema or does not. So every test above would keep
+    passing if those two clauses were dropped from the shape check, which is
+    exactly the kind of hole this consolidation is meant to close. These drive
+    the inspection result directly, since no local database can produce one.
+    """
+
+    def _correct(self, **overrides):
+        shape = {
+            "present": True,
+            "unique": True,
+            "valid": True,
+            "ready": True,
+            "columns": service.MESSAGE_IDEMPOTENCY_COLUMNS,
+            "predicate": service._normalise_predicate(service.MESSAGE_IDEMPOTENCY_PREDICATE),
+        }
+        shape.update(overrides)
+        return shape
+
+    def _installer_sees(self, shape):
+        original = service._inspect_message_idempotency_index
+        service._inspect_message_idempotency_index = lambda cur, conn: shape
+        try:
+            return service._ensure_message_idempotency_index(self.cur, self.conn)
+        finally:
+            service._inspect_message_idempotency_index = original
+
+    def test_the_control_shape_is_healthy(self):
+        # Without this the two cases below could pass because the fixture is
+        # wrong rather than because the check works.
+        self.assertTrue(service._index_shape_is_correct(self._correct()))
+        self.assertEqual(
+            self._installer_sees(self._correct())["state"],
+            service.IDEMPOTENCY_INDEX_ALREADY_PRESENT,
+        )
+
+    def test_an_invalid_index_is_not_healthy(self):
+        self.assertFalse(service._index_shape_is_correct(self._correct(valid=False)))
+        status = self._installer_sees(self._correct(valid=False))
+        self.assertEqual(status["state"], service.IDEMPOTENCY_INDEX_INSTALL_ERROR)
+        self.assertFalse(status["hard_uniqueness_active"])
+        self.assertEqual(status["error_class"], "IndexShapeMismatch")
+
+    def test_an_index_that_is_not_ready_is_not_healthy(self):
+        self.assertFalse(service._index_shape_is_correct(self._correct(ready=False)))
+        status = self._installer_sees(self._correct(ready=False))
+        self.assertEqual(status["state"], service.IDEMPOTENCY_INDEX_INSTALL_ERROR)
+        self.assertFalse(status["hard_uniqueness_active"])
+
+    def test_a_missing_index_is_not_mistaken_for_a_malformed_one(self):
+        """`None` means absent, and absent is a different branch from malformed.
+
+        Collapsing the two would turn every first boot on a clean database into a
+        permanent INSTALL_ERROR that no amount of restarting could clear. The
+        error class is the tell: reaching `IndexVerificationFailed` proves the
+        installer went through the duplicate preflight and the CREATE before the
+        (permanently stubbed) read-back failed it, rather than short-circuiting
+        on `IndexShapeMismatch` the way a malformed index does.
+        """
+        self.assertFalse(service._index_shape_is_correct(None))
+        status = self._installer_sees(None)
+        self.assertEqual(status["state"], service.IDEMPOTENCY_INDEX_INSTALL_ERROR)
+        self.assertEqual(status["error_class"], "IndexVerificationFailed")
+        self.assertFalse(status["hard_uniqueness_active"])
+
+
 class HealthSnapshotTest(_IndexCase):
     """The installer's answer has to survive somewhere a human can read it."""
 
