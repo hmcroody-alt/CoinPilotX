@@ -12,8 +12,10 @@ Defends the three fixes shipped for App Store review readiness:
    permanent premium to any account whose display name matched the owner's —
    spoofable by renaming. It is now an env allowlist of user ids.
 3. **Expiry cross-check.** ``subscription_status='active'`` frozen by a missed
-   webhook no longer keeps premium alive once the recorded period end is
-   clearly past (3-day grace window).
+   webhook no longer keeps premium alive once the recorded period end has
+   passed. The recorded period end is the only authority: there is no blanket
+   grace window. A real provider grace period arrives as ``grace_until`` on the
+   grant and is honoured there — see ``test_stale_active_status_with_past_expiry``.
 """
 
 import os
