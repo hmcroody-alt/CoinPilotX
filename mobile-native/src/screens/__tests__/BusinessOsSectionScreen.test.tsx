@@ -41,7 +41,7 @@ const SECTION_KEYS = Object.keys(BUSINESS_OS_SECTION_MODULES);
 function renderSection(section?: string) {
   const navigation = { navigate: jest.fn(), goBack: jest.fn() };
   const view = render(
-    <BusinessOsSectionScreen navigation={navigation} route={{ params: { section } }} />
+    <BusinessOsSectionScreen navigation={navigation} route={{ params: { section: section as any } }} />
   );
   return { ...view, navigation };
 }

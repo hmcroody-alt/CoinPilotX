@@ -137,6 +137,7 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
   const startedAtRef = useRef<number>(0);
   const endedRef = useRef(false);
   const publishConfirmKeyRef = useRef("");
+  const [publishConfirmAttempt, setPublishConfirmAttempt] = useState(0);
   const reactionRef = useRef<ReactionLayerHandle>(null);
   const composerLift = useRef(new Animated.Value(0)).current;
   const inlineInputRef = useRef<TextInput>(null);

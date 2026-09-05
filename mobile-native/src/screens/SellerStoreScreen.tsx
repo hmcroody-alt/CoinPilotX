@@ -25,6 +25,7 @@ import { SellerStorePanel, sellerStoreHeading, sellerStoreShowsPanel } from "../
 import { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
 import { createThemedStyles } from "../theme/themedStyles";
+import { Formatters, useFormatters, useTranslation } from "../i18n";
 
 type Props = {
   route?: { params?: RootStackParamList["SellerStore"] };
@@ -556,6 +557,11 @@ function statusLabel(listing: MarketplaceListing) {
   return key.replace(/_/g, " ");
 }
 
+function statusLabelKey(key: string): string | null {
+  const supported = ["live", "pending", "out_of_stock", "removed", "rejected", "paused", "sold", "draft"];
+  return supported.includes(key) ? `commerce:marketplace.status.${key}` : null;
+}
+
 function StatusPill({ listing }: { listing: MarketplaceListing }) {
   const { t } = useTranslation();
   const key = statusKey(listing);
@@ -599,9 +605,11 @@ function ListingRow({ listing, onOpen }: { listing: MarketplaceListing; onOpen: 
  * `fmt.currency` rather than `toFixed(2)` plus a currency code: the symbol, its
  * position and the digit grouping all belong to the active locale.
  */
-function formatMoney(cents: number, currency: string, fmt: Formatters) {
+function formatMoney(cents: number, currency: string, fmt?: Formatters) {
   const amount = Number(cents || 0) / 100;
-  return fmt.currency(amount, { currency: String(currency || "USD").toUpperCase() });
+  return fmt
+    ? fmt.currency(amount, { currency: String(currency || "USD").toUpperCase() })
+    : `${String(currency || "USD").toUpperCase()} ${amount.toFixed(2)}`;
 }
 
 const styles = createThemedStyles(() => ({

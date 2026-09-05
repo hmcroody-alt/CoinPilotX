@@ -60,6 +60,14 @@ export type ResolvedCapability = SectionCapability & {
   state: ReadinessState;
 };
 
+/** Compatibility shape consumed by the reusable module row. */
+export type CapabilityAvailability = ReadinessState;
+
+/** Capabilities already carry the canonical gate verdict; no second mapping. */
+export function capabilityCopyState(state: CapabilityAvailability): ReadinessState {
+  return state;
+}
+
 /**
  * Ordered so that reading a section's list top to bottom describes the job,
  * not the screen layout. The split into available and upcoming happens at

@@ -249,8 +249,8 @@ describe("livestream audio flag exclusivity", () => {
       // The stable and experimental paths are mutually exclusive by
       // construction: a single resolver returns one name. There is no input
       // that yields both, and none that yields neither.
-      expect(["v1_legacy", "v2_isolated"]).toContain(path);
-      expect(path === "v2_isolated").toBe(isLiveAudioV2Enabled(source as any));
+      expect(["legacy_fallback", "shared_governed"]).toContain(path);
+      expect(path === "shared_governed").toBe(isLiveAudioV2Enabled(source as any));
     });
   });
 

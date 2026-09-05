@@ -55,5 +55,5 @@ export function resolveLiveAudioPathForSession(
   source: LiveAudioFlagSource | null | undefined,
   publish: boolean
 ): LiveAudioPathName {
-  return isLiveAudioV2EnabledForSession(source, publish) ? "v2_isolated" : "v1_legacy";
+  return isLiveAudioV2EnabledForSession(source, publish) ? "shared_governed" : "legacy_fallback";
 }

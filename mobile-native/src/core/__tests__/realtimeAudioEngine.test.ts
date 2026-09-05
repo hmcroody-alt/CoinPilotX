@@ -3,7 +3,6 @@ import { NativeModules } from "react-native";
 import { setRealtimeAudioTelemetrySink } from "../realtimeAudioTelemetry";
 import {
   activateRealtimeAudioSession,
-  applyRemoteAudioEnabled,
   enableRealtimeRecordingAlwaysPrepared,
   getActiveRealtimeAudioOwner,
   getActiveRealtimeMicrophoneOwner,
@@ -300,9 +299,6 @@ describe("realtimeAudioEngine canonical audio ownership", () => {
       playout: true,
       recording: true,
       settleMs: 0,
-      audioSession,
-      mode: "live_host",
-      speaker: true
     })).resolves.toEqual({
       engineRunning: true,
       playoutRunning: true,

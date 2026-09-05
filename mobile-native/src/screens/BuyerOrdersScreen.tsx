@@ -46,6 +46,19 @@ const STATUS_KEYS: Record<string, string> = {
   failed: "commerce:orders.statusFailed"
 };
 
+const STATUS_COPY: Record<string, string> = {
+  pending: "Pending", paid: "Paid", processing: "Processing", shipped: "Shipped",
+  delivered: "Delivered", cancelled: "Cancelled", refunded: "Refunded", failed: "Failed"
+};
+
+const formatDate = (value: string | number | Date | null | undefined) =>
+  value ? formatAbsoluteDate(value) : "—";
+
+const formatOrderMoney = (order: BuyerOrder) => {
+  const amount = Number(order.amount_cents ?? order.gross_amount_cents ?? 0) / 100;
+  return `${String(order.currency || "USD").toUpperCase()} ${amount.toFixed(2)}`;
+};
+
 /**
  * List tabs, derived from `status_group` — a filter over data the server
  * already sends, never a new claim about an order. "Returns" is the one tab
@@ -306,6 +319,7 @@ function OrderDetail({
   onListing: () => void;
   onSeller: () => void;
 }) {
+  const { t } = useTranslation();
   const canOpenListing = Number(order.marketplace_listing_id || order.item_id || order.listing?.id || 0) > 0;
   // Same gate the returns route enforces: marketplace physical/product
   // purchases with a real transaction row. Everything else keeps the

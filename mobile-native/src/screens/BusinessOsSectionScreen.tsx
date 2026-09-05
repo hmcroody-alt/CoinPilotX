@@ -157,7 +157,7 @@ export function BusinessOsSectionScreen({ navigation, route }: Props) {
 function CapabilityRow({ capability, onPress }: { capability: ResolvedCapability; onPress?: () => void }) {
   const { badge, accessibility } = useLaunchCopy();
   const locked = capability.state !== "READY";
-  const a11y = accessibility(capability.id, capability.label, capability.blurb);
+  const a11y = accessibility(capability.state, capability.label, capability.blurb);
 
   const body = (
     <>

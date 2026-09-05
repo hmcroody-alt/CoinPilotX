@@ -16,6 +16,7 @@ import {
   View
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useTranslation } from "../i18n";
 import {
   archiveGroup,
   createGroup,
@@ -81,6 +82,7 @@ import { createThemedStyles } from "../theme/themedStyles";
 type Props = Partial<NativeStackScreenProps<RootStackParamList, "GroupDetail">>;
 
 export function GroupsScreen({ route, navigation }: Props) {
+  const { t } = useTranslation();
   // Bottom-dock coupling: drives hide-on-scroll-down / reveal-on-scroll-up and
   // reserves the matching clearance so the last row never sits under the dock.
   const dock = useBottomNavSurface();
@@ -749,6 +751,7 @@ function GroupAssetCard({ asset }: { asset: PulseGroupAsset }) {
 }
 
 function GroupSettings({ group, onDelete, onArchive }: { group: PulseGroup; onDelete: (group: PulseGroup) => void; onArchive: (group: PulseGroup) => void }) {
+  const { t } = useTranslation();
   const actions = groupActionRules(group);
   return (
     <View>

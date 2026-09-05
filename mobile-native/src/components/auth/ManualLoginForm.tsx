@@ -5,6 +5,7 @@ import { colors } from "../../theme/colors";
 import { logiNexus } from "../../theme/logiNexus";
 import { SecureTextField } from "./SecureTextField";
 import { createThemedStyles } from "../../theme/themedStyles";
+import { useTranslation } from "../../i18n";
 
 export type ManualLoginFormHandle = {
   focusIdentifier: () => void;

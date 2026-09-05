@@ -92,6 +92,7 @@ const emptyDraft: UploadDraft = {
 const PREVIEW_OWNER = "native-music-preview";
 
 export function MusicScreen({ route, navigation }: Props) {
+  const { t } = useTranslation();
   const { authState } = useAuth();
   // Wrong-subject guard: this screen is viewer-scoped (uploads, "your" radio,
   // getMyProfile). Reached with another profile's route params it must refuse

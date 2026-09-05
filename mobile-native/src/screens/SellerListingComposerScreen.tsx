@@ -97,6 +97,8 @@ const TIME_OPTIONS: string[] = Array.from({ length: 48 }, (_, index) => {
   return `${hours}:${minutes}`;
 });
 
+const productTypes = ["digital", "course", "service", "physical"] as const;
+
 /** The API value doubles as the button label, so the label is keyed separately. */
 const PRODUCT_TYPE_KEYS: Record<(typeof productTypes)[number], string> = {
   digital: "commerce:marketplace.productTypeDigital",

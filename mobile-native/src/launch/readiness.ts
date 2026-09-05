@@ -288,6 +288,9 @@ export function capabilityModuleId(sectionKey: string, capabilityKey: string): L
   return `business:${sectionKey}.${capabilityKey}`;
 }
 
+/** @deprecated Use `capabilityModuleId`; retained for existing deep-link tests. */
+export const businessSubmoduleId = capabilityModuleId;
+
 /** The gate's verdict for a module. Unknown ids are READY — see the header. */
 export function readinessOf(id: LaunchModuleId): ReadinessState {
   return LAUNCH_READINESS[id] ?? "READY";
