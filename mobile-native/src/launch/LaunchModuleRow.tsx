@@ -26,7 +26,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
 import { presenceTheme } from "../theme/presenceTheme";
 import { createThemedStyles } from "../theme/themedStyles";
-import { readinessOf, type LaunchModuleId } from "./readiness";
+import { capabilityCopyState, type CapabilityAvailability } from "./sectionCapabilities";
+import type { LaunchModuleId } from "./readiness";
 import { useLaunchCopy } from "./useLaunchGate";
 
 export function LaunchModuleRow({
@@ -34,19 +35,30 @@ export function LaunchModuleRow({
   label,
   blurb,
   icon,
+  availability,
   onPress
 }: {
   id: LaunchModuleId;
   label: string;
   blurb: string;
   icon: string;
+  /**
+   * The verdict, passed in rather than derived from `id`.
+   *
+   * The row used to call `readinessOf(id)` itself, which made it a second
+   * opinion on a question its parent had already answered — and the two differ
+   * exactly where it matters, for a capability that is READY with nowhere to go.
+   * That row drew a chevron and no badge while its tap did nothing. See
+   * `sectionCapabilities.ts`.
+   */
+  availability: CapabilityAvailability;
   /** Always the gate, never a direct navigate. See `useLaunchGate`. */
   onPress: () => void;
 }) {
-  const state = readinessOf(id);
+  const state = capabilityCopyState(availability);
   const locked = state !== "READY";
   const { badge, accessibility } = useLaunchCopy();
-  const a11y = accessibility(id, label, blurb);
+  const a11y = accessibility(state, label, blurb);
 
   return (
     <Pressable

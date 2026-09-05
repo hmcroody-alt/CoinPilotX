@@ -55,7 +55,7 @@ export function LaunchTile({
     enabled: motionEnabled && locked
   });
 
-  const a11y = accessibility(id, label, blurb);
+  const a11y = accessibility(state, label, blurb);
 
   return (
     <Animated.View style={[styles.wrap, locked ? motion.cardStyle : null]}>

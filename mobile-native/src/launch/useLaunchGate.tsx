@@ -20,7 +20,7 @@ import { useTranslation } from "../i18n";
 import { useTheme } from "../theme/ThemeContext";
 import { useLogiNexusReducedMotion as useOsReducedMotion } from "../theme/logiNexusMotion";
 import type { ComingSoonTarget } from "./ComingSoonSheet";
-import { isLaunchReady, readinessOf, type LaunchModuleId, type ReadinessState } from "./readiness";
+import { isLaunchReady, type LaunchModuleId, type ReadinessState } from "./readiness";
 
 export function useLaunchGate() {
   const [target, setTarget] = useState<ComingSoonTarget | null>(null);
@@ -29,9 +29,16 @@ export function useLaunchGate() {
    * `bodyKey` overrides only the sheet's second sentence — see
    * `ComingSoonTarget.bodyKey`. Omit it and every gated module gets the one
    * shared wording, which is still the right answer for almost all of them.
+   *
+   * `run` is optional, and an absent one is a refusal rather than a no-op. That
+   * is the caller's way of saying "the gate would allow this, and there is
+   * nowhere to send them" — a routeless module in a section landing, say. The
+   * alternative shape, a `run` that returns early when it finds no destination,
+   * hides the refusal inside the callback where the gate cannot see it and the
+   * user gets a dead tap. See `sectionCapabilities.ts`.
    */
-  const open = useCallback((id: LaunchModuleId, label: string, run: () => void, bodyKey?: string) => {
-    if (isLaunchReady(id)) {
+  const open = useCallback((id: LaunchModuleId, label: string, run?: () => void, bodyKey?: string) => {
+    if (run && isLaunchReady(id)) {
       run();
       return;
     }
@@ -68,9 +75,16 @@ export function useLaunchCopy() {
     [t]
   );
 
+  /**
+   * Takes the state rather than looking it up, because every caller already has
+   * one in hand — they compute it to decide whether to draw a lock and which
+   * badge to show. Looking it up again here made this the second opinion on the
+   * same question, and a second opinion is only ever noticed when it differs.
+   * It matters for a row whose state is not `readinessOf(id)` alone: a
+   * capability with no destination is locked while its id reads READY.
+   */
   const accessibility = useCallback(
-    (id: LaunchModuleId, label: string, blurb?: string) => {
-      const state = readinessOf(id);
+    (state: ReadinessState, label: string, blurb?: string) => {
       if (state === "READY") {
         return { accessibilityLabel: blurb ? `${label}. ${blurb}` : label, accessibilityHint: undefined };
       }

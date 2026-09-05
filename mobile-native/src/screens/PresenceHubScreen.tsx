@@ -418,7 +418,7 @@ function PresenceAction({
   const locked = state !== "READY";
   const { badge, accessibility } = useLaunchCopy();
   const motion = useLockedMotion({ index, active: screenActive, enabled: motionEnabled && locked });
-  const a11y = accessibility(id, label);
+  const a11y = accessibility(state, label);
 
   return (
     <Animated.View style={locked ? motion.cardStyle : undefined}>
@@ -493,7 +493,7 @@ function PresenceCreateButton({
   const locked = state !== "READY";
   const { badge, accessibility } = useLaunchCopy();
   const motion = useLockedMotion({ index, active: screenActive, enabled: motionEnabled && locked });
-  const a11y = accessibility(id, moduleName || label);
+  const a11y = accessibility(state, moduleName || label);
 
   return (
     <Animated.View style={locked ? motion.cardStyle : undefined}>

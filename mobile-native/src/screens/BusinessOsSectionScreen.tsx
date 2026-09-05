@@ -31,15 +31,11 @@
 import { Text, View } from "react-native";
 import { Panel } from "../components/Panel";
 import { Screen } from "../components/Screen";
-import {
-  businessOsSection,
-  businessOsSectionModules,
-  type BusinessOsModule
-} from "../api/businessOs";
+import { businessOsSection } from "../api/businessOs";
 import { useTranslation } from "../i18n";
 import { ComingSoonSheet } from "../launch/ComingSoonSheet";
 import { LaunchModuleRow } from "../launch/LaunchModuleRow";
-import { businessSubmoduleId, isLaunchReady } from "../launch/readiness";
+import { sectionCapabilityLists, type ResolvedCapability } from "../launch/sectionCapabilities";
 import { useLaunchGate } from "../launch/useLaunchGate";
 import type { RootStackParamList } from "../navigation/types";
 import { colors } from "../theme/colors";
@@ -56,14 +52,21 @@ export function BusinessOsSectionScreen({ navigation, route }: Props) {
 
   const sectionKey = route?.params?.section;
   const section = sectionKey ? businessOsSection(sectionKey as never) : undefined;
-  const modules = sectionKey ? businessOsSectionModules(sectionKey) : [];
+  /*
+   * The one place this screen asks whether a capability can be used. The split
+   * is not `isLaunchReady` because readiness alone answers a narrower question
+   * than the rows need — see `sectionCapabilities.ts`.
+   */
+  const { available, upcoming } = sectionKey
+    ? sectionCapabilityLists(sectionKey)
+    : { available: [], upcoming: [] };
 
   /*
    * Reached with a section this screen has no landing for — an unknown key from
    * a deep link, or a section that has since been given its own screen. Say so
    * plainly rather than rendering an empty shell that looks like a load failure.
    */
-  if (!section || modules.length === 0) {
+  if (!section || available.length + upcoming.length === 0) {
     return (
       <Screen title={t("commerce:launch.sectionFallbackTitle")}>
         <Panel>
@@ -73,22 +76,24 @@ export function BusinessOsSectionScreen({ navigation, route }: Props) {
     );
   }
 
-  const available = modules.filter((module) => isLaunchReady(submoduleId(sectionKey!, module)));
-  const upcoming = modules.filter((module) => !isLaunchReady(submoduleId(sectionKey!, module)));
-
   /*
    * Every row goes through the gate rather than navigating directly, for the
    * same reason the hub's tiles do: the conditional IS the navigation, so a row
-   * cannot become live by someone forgetting a check here. A READY module always
-   * has a route — `businessOs.ts` is what guarantees that pairing — so the
-   * callback can navigate without re-testing readiness.
+   * cannot become live by someone forgetting a check here.
+   *
+   * A capability with nowhere to go passes no callback at all. That is the gate's
+   * documented way of saying "there is nothing to open" — it hands the refusal to
+   * the one place that already decides, instead of the old `if (!module.route)
+   * return;`, which returned from inside the callback after the gate had already
+   * concluded the tap would land somewhere, and so read to the user as a dead tap.
    */
-  function openModule(module: BusinessOsModule) {
-    const id = submoduleId(sectionKey!, module);
-    gate.open(id, module.label, () => {
-      if (!module.route) return;
-      navigation.navigate(module.route, module.params);
-    });
+  function openModule(capability: ResolvedCapability) {
+    const destination = capability.available ? capability.route : undefined;
+    gate.open(
+      capability.id,
+      capability.module.label,
+      destination ? () => navigation.navigate(destination, capability.params) : undefined
+    );
   }
 
   return (
@@ -98,14 +103,15 @@ export function BusinessOsSectionScreen({ navigation, route }: Props) {
           <Text style={styles.panelTitle}>{t("commerce:launch.availableTitle")}</Text>
           <Text style={styles.muted}>{t("commerce:launch.availableBody")}</Text>
           <View style={styles.rows}>
-            {available.map((module) => (
+            {available.map((capability) => (
               <LaunchModuleRow
-                key={module.key}
-                id={submoduleId(sectionKey!, module)}
-                label={module.label}
-                blurb={module.blurb}
-                icon={module.icon}
-                onPress={() => openModule(module)}
+                key={capability.module.key}
+                id={capability.id}
+                label={capability.module.label}
+                blurb={capability.module.blurb}
+                icon={capability.module.icon}
+                availability={capability.availability}
+                onPress={() => openModule(capability)}
               />
             ))}
           </View>
@@ -117,14 +123,15 @@ export function BusinessOsSectionScreen({ navigation, route }: Props) {
           <Text style={styles.panelTitle}>{t("commerce:launch.upcomingTitle")}</Text>
           <Text style={styles.muted}>{t("commerce:launch.upcomingBody")}</Text>
           <View style={styles.rows}>
-            {upcoming.map((module) => (
+            {upcoming.map((capability) => (
               <LaunchModuleRow
-                key={module.key}
-                id={submoduleId(sectionKey!, module)}
-                label={module.label}
-                blurb={module.blurb}
-                icon={module.icon}
-                onPress={() => openModule(module)}
+                key={capability.module.key}
+                id={capability.id}
+                label={capability.module.label}
+                blurb={capability.module.blurb}
+                icon={capability.module.icon}
+                availability={capability.availability}
+                onPress={() => openModule(capability)}
               />
             ))}
           </View>
@@ -134,10 +141,6 @@ export function BusinessOsSectionScreen({ navigation, route }: Props) {
       <ComingSoonSheet target={gate.target} onDismiss={gate.dismiss} />
     </Screen>
   );
-}
-
-function submoduleId(sectionKey: string, module: BusinessOsModule) {
-  return businessSubmoduleId(sectionKey, module.key);
 }
 
 const styles = createThemedStyles(() => ({
