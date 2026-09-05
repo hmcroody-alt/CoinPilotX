@@ -711,6 +711,43 @@ def stage_telemetry_carries_no_member_data():
           listed["denied"] == "" and len(listed["records"]) >= 1,
           f"denied={listed['denied']!r} count={len(listed['records'])}")
 
+    # And the three meeting events, through the real meetings module rather
+    # than a fixture. Scheduled meetings only: creation, a waiting-room join,
+    # a cancellation, and the zombie sweep all run without an RTC transport,
+    # so the metrics fire from exactly the code production runs. The title is
+    # a planted secret — a meeting title is the most likely string to be
+    # "helpfully" added to a lifecycle metric one day.
+    from datetime import datetime, timedelta, timezone
+    from services.private_office import meetings
+
+    os.environ["PRIVATE_MEETINGS_ENABLED"] = "1"
+    try:
+        future = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat(
+            timespec="seconds")
+        stale = (datetime.now(timezone.utc) - timedelta(hours=30)).isoformat(
+            timespec="seconds")
+        created = meetings.create_meeting(
+            cur, owner_user_id=USER_A, title=f"Estate review at {SECRETS[0]}",
+            scheduled_start_at=future, waiting_room_enabled=True)
+        check("a meeting was created through the canonical writer",
+              created.get("status") == "SCHEDULED", str(created.get("status")))
+        held = meetings.join_meeting(
+            cur, user_id=USER_B, meeting_ref=created["public_id"])
+        check("the join was held in the waiting room, so its metric fired",
+              (held.get("me") or {}).get("state") == "WAITING_ROOM",
+              str((held.get("me") or {}).get("state")))
+        meetings.cancel_meeting(
+            cur, actor_user_id=USER_A, meeting_ref=created["public_id"],
+            reason=f"moved to {SECRETS[0]}")
+        zombie = meetings.create_meeting(
+            cur, owner_user_id=USER_A, title=f"Call {SECRETS[2]}",
+            scheduled_start_at=stale, waiting_room_enabled=False)
+        swept = meetings.sweep_meetings(cur)
+        check("the stale meeting was swept, so the sweep metric fired",
+              swept >= 1 and bool(zombie.get("public_id")), str(swept))
+    finally:
+        os.environ.pop("PRIVATE_MEETINGS_ENABLED", None)
+
     conn.commit()
     conn.close()
 
@@ -837,6 +874,11 @@ def main() -> int:
         if os.path.exists(path):
             os.remove(path)
     schema.reset_schema_cache()
+    # Same reason, other schema: when the whole directory runs in one pytest
+    # process, `test_private_meetings.py` has already marked the meetings
+    # schema as ensured — against ITS temp database, not this one.
+    from services.private_office import meetings as _meetings
+    _meetings.reset_meetings_schema_cache()
     telemetry.emit = _recording_emit
     try:
         stage_worker_safe_bootstrap()

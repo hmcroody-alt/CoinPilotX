@@ -45,6 +45,7 @@ from typing import Any
 from pulse_communications_v2 import service as comm_service
 from services import pulsesoc_communications_engine as call_engine
 from services.private_office import audit
+from services.private_office import telemetry as _telemetry
 
 LOGGER = logging.getLogger("private_office.meetings")
 
@@ -741,6 +742,10 @@ def create_meeting(cur, *, owner_user_id: int, title: str = "",
         state=P_ADMITTED, invited_by=owner, admitted_by=owner)
     _audit(cur, actor=owner, owner=owner, action=audit.ACTION_MEETING_CREATE,
            meeting_id=int(meeting["id"]))
+    _telemetry.emit(_telemetry.EVENT_MEETING_LIFECYCLE, transition="created",
+                    end_reason="not_ended", scheduled=bool(scheduled),
+                    waiting_room=bool(waiting_room_enabled),
+                    participant_count=1)
     if instant:
         return start_meeting(cur, actor_user_id=owner, meeting_ref=public_id)
     return _project_meeting(cur, meeting, viewer_user_id=owner)
@@ -788,6 +793,11 @@ def start_meeting(cur, *, actor_user_id: int, meeting_ref: object) -> dict:
     _ensure_call_participant(cur, int(call["id"]), owner, host=True)
     _audit(cur, actor=actor, owner=owner, action=audit.ACTION_MEETING_START,
            meeting_id=int(meeting["id"]))
+    _telemetry.emit(_telemetry.EVENT_MEETING_LIFECYCLE, transition="started",
+                    end_reason="not_ended",
+                    scheduled=bool(meeting.get("scheduled_start_at")),
+                    waiting_room=bool(int(meeting.get("waiting_room_enabled") or 0)),
+                    participant_count=_present_count(cur, int(meeting["id"])))
     return _project_meeting(cur, meeting, viewer_user_id=actor)
 
 
@@ -810,6 +820,14 @@ def cancel_meeting(cur, *, actor_user_id: int, meeting_ref: object,
         (INVITE_REVOKED, _now_iso(), int(meeting["id"]), INVITE_PENDING))
     _audit(cur, actor=actor, owner=actor, action=audit.ACTION_MEETING_CANCEL,
            meeting_id=int(meeting["id"]))
+    # `reason` goes through vocabulary membership in telemetry — a caller-
+    # supplied string that is not a known lifecycle word becomes "other",
+    # never a log line.
+    _telemetry.emit(_telemetry.EVENT_MEETING_LIFECYCLE, transition="cancelled",
+                    end_reason=reason,
+                    scheduled=bool(meeting.get("scheduled_start_at")),
+                    waiting_room=bool(int(meeting.get("waiting_room_enabled") or 0)),
+                    participant_count=0)
     return _project_meeting(cur, meeting, viewer_user_id=actor)
 
 
@@ -878,6 +896,12 @@ def join_meeting(cur, *, user_id: int, meeting_ref: object) -> dict:
            meeting_id=meeting_id,
            outcome=audit.OUTCOME_OK if participant.get("state") in ADMITTED_STATES
            else "held")
+    _telemetry.emit(
+        _telemetry.EVENT_MEETING_JOIN,
+        outcome="admitted" if participant.get("state") in ADMITTED_STATES
+        else "waiting_room",
+        role=str(participant.get("role") or ""),
+        returning=is_returning)
     return _project_meeting(cur, _meeting_by_ref(cur, meeting["public_id"]),
                             viewer_user_id=joiner)
 
@@ -1077,6 +1101,7 @@ def _finalize_meeting(cur, meeting: dict, *, actor: int, reason: str) -> dict:
         f"UPDATE {PARTICIPANTS_TABLE} SET state=?, left_at=?, updated_at=? "
         f"WHERE meeting_id=? AND state IN ({placeholders})",
         (P_LEFT, now, now, int(meeting["id"]), *states))
+    departed = max(0, int(getattr(cur, "rowcount", 0) or 0))
     # Waiting-room occupants simply expire — they were never in.
     cur.execute(
         f"UPDATE {PARTICIPANTS_TABLE} SET state=?, updated_at=? "
@@ -1087,6 +1112,13 @@ def _finalize_meeting(cur, meeting: dict, *, actor: int, reason: str) -> dict:
                          else REC_FAILED)
     _audit(cur, actor=actor, owner=int(meeting["owner_user_id"]),
            action=audit.ACTION_MEETING_END, meeting_id=int(meeting["id"]))
+    _telemetry.emit(
+        _telemetry.EVENT_MEETING_LIFECYCLE,
+        transition="ended" if meeting.get("status") == ST_ENDED else "failed",
+        end_reason=reason,
+        scheduled=bool(meeting.get("scheduled_start_at")),
+        waiting_room=bool(int(meeting.get("waiting_room_enabled") or 0)),
+        participant_count=departed)
     return _project_meeting(cur, meeting, viewer_user_id=actor)
 
 
@@ -1709,6 +1741,12 @@ def sweep_meetings(cur, *, now: datetime | None = None) -> int:
                         cur, meeting, ST_CANCELLED,
                         extra_sql=", ended_at=?, end_reason=?",
                         extra_params=(_now_iso(), "never_started"))
+                    _telemetry.emit(
+                        _telemetry.EVENT_MEETING_LIFECYCLE,
+                        transition="cancelled", end_reason="never_started",
+                        scheduled=True,
+                        waiting_room=bool(int(meeting.get("waiting_room_enabled") or 0)),
+                        participant_count=0)
                     swept += 1
                 continue
             if status == ST_STARTING:
@@ -1762,4 +1800,8 @@ def sweep_meetings(cur, *, now: datetime | None = None) -> int:
         except PrivateMeetingRejected as exc:
             LOGGER.warning("PRIVATE_MEETING_SWEEP_SKIP meeting=%s error=%s",
                            meeting.get("public_id"), exc)
+    if swept:
+        # Only when something moved: the sweep rides list/get requests, and a
+        # per-request "swept 0" line is noise that buries the real signal.
+        _telemetry.emit(_telemetry.EVENT_MEETING_SWEEP, swept_count=swept)
     return swept
