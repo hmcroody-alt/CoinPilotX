@@ -650,6 +650,17 @@ def crypto_market_observations(user_id: int, arguments: dict[str, Any]) -> ToolR
 # "it" is, and that envelope is stored server-side per account. Resolution
 # never guesses — no symbol and no context is an honest ask-back, not a
 # default to Bitcoin.
+#
+# Entitlement first, context second. These reads are the agent-path twins of
+# the ``/api/crypto/market-pulse``, asset-detail, asset-history and market-board
+# routes, every one of which bot.py gates on ``premium.crypto.intelligence``.
+# Leaving the agent path open would have meant an expired member could not open
+# Market Pulse but could still ask UNDX for the same numbers.
+#
+# The gate runs BEFORE ``_resolve_market_symbol`` on purpose. The parked market
+# context says WHICH coin the person means; it is not a grant. Checking it first
+# would have let a context envelope — parked while the membership was still
+# live, and outliving it — decide entitlement.
 
 
 def _market_context():
@@ -676,6 +687,10 @@ _NO_SYMBOL_MESSAGE = ("Tell me which coin you mean — for example \"price of BT
 def crypto_market_quote(user_id: int, arguments: dict[str, Any]) -> ToolResult:
     started = time.perf_counter()
     tool, capability = "pulsesoc.crypto_market.quote", "crypto.market.quote"
+    denial = _premium_denial(user_id, "CAP_CRYPTO_INTELLIGENCE",
+                             tool=tool, capability=capability, started=started)
+    if denial is not None:
+        return denial
     symbol, via = _resolve_market_symbol(user_id, arguments)
     if not symbol:
         return _fail(tool, capability, "missing_arguments", _NO_SYMBOL_MESSAGE, started=started)
@@ -702,6 +717,10 @@ def crypto_market_quote(user_id: int, arguments: dict[str, Any]) -> ToolResult:
 def crypto_market_history(user_id: int, arguments: dict[str, Any]) -> ToolResult:
     started = time.perf_counter()
     tool, capability = "pulsesoc.crypto_market.history", "crypto.market.history"
+    denial = _premium_denial(user_id, "CAP_CRYPTO_INTELLIGENCE",
+                             tool=tool, capability=capability, started=started)
+    if denial is not None:
+        return denial
     symbol, via = _resolve_market_symbol(user_id, arguments)
     if not symbol:
         return _fail(tool, capability, "missing_arguments", _NO_SYMBOL_MESSAGE, started=started)
@@ -729,6 +748,10 @@ def crypto_market_history(user_id: int, arguments: dict[str, Any]) -> ToolResult
 def crypto_market_compare(user_id: int, arguments: dict[str, Any]) -> ToolResult:
     started = time.perf_counter()
     tool, capability = "pulsesoc.crypto_market.compare", "crypto.market.compare"
+    denial = _premium_denial(user_id, "CAP_CRYPTO_INTELLIGENCE",
+                             tool=tool, capability=capability, started=started)
+    if denial is not None:
+        return denial
     symbol, via = _resolve_market_symbol(user_id, arguments)
     versus = clean(arguments.get("versus"), 24).upper()
     if not symbol or not versus:
@@ -764,6 +787,10 @@ def crypto_market_compare(user_id: int, arguments: dict[str, Any]) -> ToolResult
 def crypto_market_overview(user_id: int, arguments: dict[str, Any]) -> ToolResult:
     started = time.perf_counter()
     tool, capability = "pulsesoc.crypto_market.overview", "crypto.market.overview"
+    denial = _premium_denial(user_id, "CAP_CRYPTO_INTELLIGENCE",
+                             tool=tool, capability=capability, started=started)
+    if denial is not None:
+        return denial
     try:
         metrics = _market_context().overview()
     except Exception:
