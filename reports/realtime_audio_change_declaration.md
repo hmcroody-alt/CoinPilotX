@@ -2109,6 +2109,21 @@ is live on deploy unless the variable is explicitly set false in the Railway
 environment. Anyone treating this range as "flagged off by default" because the
 previous addendum said so would be wrong.
 
+> **Superseded later in this same range.** The paragraph above described the
+> state at `5c451905` and is left standing because it is what made the problem
+> visible. `services/live_participants.py` now defaults the flag to `False` and
+> `.env.example` sets it false, so multi-guest Live is dark on deploy and an
+> operator turns it on with one environment variable and no deploy. The three
+> flag states are pinned in `tests/test_live_participants.py::FeatureFlagTests`,
+> including that explicit-false and absent are indistinguishable — which is what
+> makes the rollback text below still true. `MULTI_GUEST_LIVE_ENABLED=false`
+> remains the kill switch; it now matches the default rather than departing
+> from it.
+>
+> This does not discharge any physical validation. It changes who has to ask
+> for the feature before the validation happens. The device matrix in
+> `MULTI_GUEST_LIVE_DEVICE_ACCEPTANCE.md` is still entirely NOT OBSERVED.
+
 Risk is moderate and concentrated in Live publishing. The audio-bearing paths
 are the token role decision, the echo scenario application, and the audio
 matrix. Single-host Live is designed to be untouched in both flag positions,

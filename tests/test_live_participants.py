@@ -144,12 +144,67 @@ class StageCapacityTests(unittest.TestCase):
 
 
 class FeatureFlagTests(unittest.TestCase):
-    def test_defaults_are_on(self):
+    """The three states of the master switch, pinned separately.
+
+    A single "defaults are on" assertion could not distinguish the two ways a
+    flag reads as enabled: because the environment says so, or because nobody
+    said anything. That distinction is the whole content of a rollout decision,
+    so each state gets its own test and its own name.
+    """
+
+    def test_absent_means_off_so_multi_guest_does_not_ship_by_omission(self):
+        """The default is the deployment posture for every environment that has
+        not been told otherwise — which is all of them until someone acts.
+
+        This is the assertion that changed. It previously read ``assertTrue``,
+        and that made a deploy the enabling action for a feature whose audio has
+        never been validated on a device. Nothing here is a claim that
+        multi-guest is broken; it is a claim about who should have to opt in.
+        """
         with mock.patch.dict(os.environ, {}, clear=False):
             os.environ.pop("MULTI_GUEST_LIVE_ENABLED", None)
             os.environ.pop("LIVE_GUEST_REQUESTS_ENABLED", None)
+            self.assertFalse(lp.multi_guest_enabled())
+            self.assertFalse(
+                lp.guest_requests_enabled(),
+                "guest requests must follow the master switch when neither is set",
+            )
+
+    def test_explicit_true_turns_it_on_without_a_deploy(self):
+        """The opposite direction, so the default cannot be mistaken for the
+        feature being removed. Setting the variable is the whole activation
+        procedure — no code change, no deploy."""
+        with mock.patch.dict(os.environ, {"MULTI_GUEST_LIVE_ENABLED": "true"}):
+            os.environ.pop("LIVE_GUEST_REQUESTS_ENABLED", None)
             self.assertTrue(lp.multi_guest_enabled())
             self.assertTrue(lp.guest_requests_enabled())
+
+    def test_explicit_false_is_indistinguishable_from_absent(self):
+        """An operator who sets it false during an incident and an environment
+        that never set it must land in the same state. If these ever diverge,
+        the kill switch means something different from the default and the
+        rollback instructions in the audio declaration stop being true."""
+        with mock.patch.dict(os.environ, {"MULTI_GUEST_LIVE_ENABLED": "false"}):
+            explicit_off = (lp.multi_guest_enabled(), lp.guest_requests_enabled())
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("MULTI_GUEST_LIVE_ENABLED", None)
+            absent = (lp.multi_guest_enabled(), lp.guest_requests_enabled())
+        self.assertEqual(explicit_off, absent)
+        self.assertEqual(explicit_off, (False, False))
+
+    def test_single_host_live_is_not_conditional_on_the_flag(self):
+        """The reason defaulting off is safe at all: capacity is reported by a
+        separate function, and the host's own publisher slot is not a guest
+        slot. If turning multi-guest off ever took the host off the air, this
+        default would be a production outage rather than a conservative
+        rollout."""
+        with mock.patch.dict(os.environ, {"MULTI_GUEST_LIVE_ENABLED": "false", "LIVE_MAX_GUESTS": "4"}):
+            self.assertFalse(lp.multi_guest_enabled())
+            capacity = lp.stage_capacity(0)
+            self.assertGreaterEqual(
+                capacity["max_publishers"], 1, "the host must always have a publisher slot"
+            )
+            self.assertFalse(capacity["stage_full"])
 
     def test_master_switch_disables_guest_requests_too(self):
         with mock.patch.dict(os.environ, {"MULTI_GUEST_LIVE_ENABLED": "false", "LIVE_GUEST_REQUESTS_ENABLED": "true"}):

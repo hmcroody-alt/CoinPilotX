@@ -31,7 +31,7 @@ passed.
 | Full audio suite | `cd mobile-native && npm run test:realtime-audio` |
 | Architecture boundary (native) | `cd mobile-native && npm run test:realtime-audio-architecture` |
 | Architecture boundary (backend) | `python3 -m unittest tests.protection.test_realtime_audio_architecture -v` |
-| Backend token and room policy | `python3 -m unittest tests.protection.test_call_livekit_token_grants tests.protection.test_livestream_audio_token_grants tests.protection.test_livekit_webhook_route_owner -v` |
+| Backend token and room policy | `python3 -m pytest -q tests/protection/test_agora_token_generation.py tests/protection/test_agora_rtc_provider_contract.py tests/protection/test_agora_direct_live_contract.py tests/protection/test_live_guest_authorization.py` |
 | Full native suite | `cd mobile-native && npm test` |
 | TypeScript | `cd mobile-native && npm run typecheck` |
 | Native build | `cd mobile-native && npx expo prebuild --platform ios --no-install`, or an EAS build |
@@ -45,7 +45,9 @@ you are actually shipping:
 - App version and iOS build number from `mobile-native/app.json`.
 - The SHA embedded in the built binary, if the build embeds one.
 - Backend deployment identifier and the backend commit it was built from.
-- LiveKit environment (which project/URL the build points at).
+- Agora environment: the App ID the build points at, and whether the backend is
+  minting tokens with the matching certificate. A build pointed at the wrong
+  App ID fails in a way that looks like a permissions bug, not a config one.
 
 If any of these is unknown, write **NOT RECORDED**. Do not write a plausible
 value; the whole purpose of the record is that a later rollback decision can

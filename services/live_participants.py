@@ -320,9 +320,27 @@ def multi_guest_enabled() -> bool:
     With this off the Live path must behave exactly as it did before this work:
     a single host publishing to an audience. Nothing about single-host Live is
     conditional on this flag being on.
+
+    **Defaults off.** It defaulted on until this commit, which meant multi-guest
+    Live went live on deploy unless somebody remembered to set the variable
+    false in the Railway environment — an opt-out for a feature whose physical
+    audio validation has not been performed. The sibling flag
+    ``PULSE_GROUP_CALLS_ENABLED`` defaults off for the same reason, and having
+    the two disagree was an accident of authorship, not a decision.
+
+    Defaulting off is also the honest posture for a flag whose failure mode is
+    audible. A multi-guest stage cannot be proven working by tests: 369 green
+    audio tests say nothing about whether three people heard each other. Until
+    that validation is recorded in
+    ``reports/realtime_audio_verified_baseline.md``, the deployment that gets
+    the feature should be the one that asked for it.
+
+    Turning it on is a single environment variable and needs no deploy, so the
+    cost of the conservative default is one operator action; the cost of the
+    permissive default is a silent rollout to production.
     """
 
-    return _env_flag("MULTI_GUEST_LIVE_ENABLED", True)
+    return _env_flag("MULTI_GUEST_LIVE_ENABLED", False)
 
 
 def guest_requests_enabled() -> bool:

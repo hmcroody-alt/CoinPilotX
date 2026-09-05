@@ -92,11 +92,18 @@ enforced by the architecture tests; all of them are review-blocking.
 - **Screen-level `AVAudioSession` setup.** The device has one audio session. A
   screen that configures it can silence a call that is already running.
 - **A new unmanaged microphone track.** Publication must be serialized per room
-  and confirmed by event. A direct `createLocalAudioTrack` races the publisher
-  and produces two microphone tracks — heard as an echo or as silence depending
-  on which one the server keeps.
-- **A new feature-specific LiveKit publication path.** There is one publisher.
-  A second one cannot see the first one's in-flight state.
+  and confirmed by event. A microphone enabled outside the publisher races it
+  and produces two capture paths — heard as an echo or as silence depending on
+  which one the server keeps.
+- **A new feature-specific publication path.** There is one publisher per
+  surface: `calls/callSessionStore.ts` for calls,
+  `live/useAgoraLiveBroadcastRoom.ts` for Live. A second one cannot see the
+  first one's in-flight state.
+- **A third file calling the Agora engine directly.** The rule is not that
+  `createAgoraRtcEngine`, `joinChannel` or `muteLocalAudioStream` are forbidden
+  — inside the two owners above they are the correct calls. The rule is that
+  nothing else may make them. See "Known gaps" below: this one is enforced by
+  path gating, not yet by a marker.
 - **A new global audio singleton.** Two coordinators are worse than one bad one,
   because the failure depends on ordering and is not reproducible.
 - **Bypassing ownership arbitration.** `resetRealtimeAudioOwnership` skips
