@@ -4420,6 +4420,11 @@
           "title": "Seguridad de la oficina no disponible",
           "body": "No pudimos contactar con el servidor para comprobar el bloqueo. Inténtalo de nuevo."
         },
+        "upgrade": {
+          "title": "Se requiere membresía",
+          "body": "La Oficina Privada forma parte de la membresía premium y la tuya no está activa en este momento. Renuévala para volver a abrirla.",
+          "action": "Renovar membresía"
+        },
         "setup": {
           "intro": {
             "title": "Añade un segundo candado",

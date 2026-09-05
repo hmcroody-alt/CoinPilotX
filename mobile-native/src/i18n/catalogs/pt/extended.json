@@ -4420,6 +4420,11 @@
           "title": "Segurança do escritório indisponível",
           "body": "Não foi possível contatar o servidor para verificar o bloqueio. Tente novamente."
         },
+        "upgrade": {
+          "title": "Assinatura necessária",
+          "body": "O Escritório Privado faz parte da assinatura premium e a sua não está ativa no momento. Renove para abri-lo novamente.",
+          "action": "Renovar assinatura"
+        },
         "setup": {
           "intro": {
             "title": "Adicione uma segunda tranca",

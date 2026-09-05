@@ -4420,6 +4420,11 @@
           "title": "Office security unavailable",
           "body": "We couldn't reach the server to check the Office lock. Try again."
         },
+        "upgrade": {
+          "title": "Membership required",
+          "body": "Private Office is part of premium membership, and yours isn't active right now. Renew to open it again.",
+          "action": "Renew membership"
+        },
         "setup": {
           "intro": {
             "title": "Add a second lock",

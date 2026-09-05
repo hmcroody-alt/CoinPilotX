@@ -293,4 +293,36 @@ describe("PrivateOfficeScreen", () => {
     await waitFor(() => getByText("premium:privateOffice.features.privateFacts.label"));
     expect(mockGetOverview).toHaveBeenCalledTimes(2);
   });
+
+  // A lapsed membership reaches the server perfectly well; the server simply
+  // says no. This mounts without `renderScreen`, which exists to get past the
+  // passcode door — a member whose membership has expired never sees that door.
+  it("offers a way to renew, not a retry, when the membership has lapsed", async () => {
+    mockOfficeStatus.mockResolvedValue({
+      state: "UPGRADE_REQUIRED",
+      passcodeSet: false,
+      setupRequired: false,
+      cooldownSeconds: 0,
+      biometricPreference: "unset",
+      unlocked: false
+    });
+    const navigation = { navigate: jest.fn(), goBack: jest.fn(), setOptions: jest.fn() };
+    const { getByText, queryByText } = render(
+      <PrivateOfficeScreen
+        route={{ key: "o", name: "PrivateOffice", params: {} } as never}
+        navigation={navigation as never}
+      />
+    );
+
+    await waitFor(() => getByText("premium:privateOffice.lock.upgrade.title"));
+    // The whole point of the fix: the member is told the real reason, not that
+    // the app could not reach a server it reached and got an answer from.
+    expect(queryByText("premium:privateOffice.lock.unavailable.title")).toBeNull();
+
+    fireEvent.press(getByText("premium:privateOffice.lock.upgrade.action"));
+    expect(navigation.navigate).toHaveBeenCalledWith("Premium");
+
+    // And the office itself stays shut: a renew prompt is still a closed door.
+    expect(queryByText("premium:privateOffice.features.privateFacts.label")).toBeNull();
+  });
 });

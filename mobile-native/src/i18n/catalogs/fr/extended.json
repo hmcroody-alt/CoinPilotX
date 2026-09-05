@@ -4420,6 +4420,11 @@
           "title": "Sécurité du bureau indisponible",
           "body": "Impossible de joindre le serveur pour vérifier le verrou. Réessayez."
         },
+        "upgrade": {
+          "title": "Abonnement requis",
+          "body": "Le Bureau privé fait partie de l'abonnement premium, et le vôtre n'est pas actif actuellement. Renouvelez-le pour y accéder à nouveau.",
+          "action": "Renouveler l'abonnement"
+        },
         "setup": {
           "intro": {
             "title": "Ajouter un second verrou",

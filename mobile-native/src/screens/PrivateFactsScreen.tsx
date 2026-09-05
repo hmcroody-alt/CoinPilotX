@@ -103,7 +103,10 @@ function groupByDomain(facts: PrivateFact[]): DomainGroup[] {
  */
 export function PrivateFactsScreen(props: Props) {
   return (
-    <PrivateOfficeLockGate onDismiss={() => props.navigation.goBack()}>
+    <PrivateOfficeLockGate
+      onDismiss={() => props.navigation.goBack()}
+      onRenew={() => props.navigation.navigate("Premium")}
+    >
       <PrivateFactsBody {...props} />
     </PrivateOfficeLockGate>
   );

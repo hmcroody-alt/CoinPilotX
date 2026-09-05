@@ -104,7 +104,10 @@ type LoadState = "LOADING" | "LOADED";
  */
 export function PrivateOfficeScreen(props: Props) {
   return (
-    <PrivateOfficeLockGate onDismiss={() => props.navigation.goBack()}>
+    <PrivateOfficeLockGate
+      onDismiss={() => props.navigation.goBack()}
+      onRenew={() => props.navigation.navigate("Premium")}
+    >
       <PrivateOfficeBody {...props} />
     </PrivateOfficeLockGate>
   );

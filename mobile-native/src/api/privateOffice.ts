@@ -379,7 +379,19 @@ export async function getPrivateFacts(domain?: string): Promise<PrivateFactsResu
 export const PRIVATE_OFFICE_SECURITY_PATH = "/api/private-office/security";
 
 export type OfficeSecurityStatus = {
-  state: "READY" | "UNAVAILABLE";
+  /**
+   * `UPGRADE_REQUIRED` is deliberately distinct from `UNAVAILABLE`.
+   *
+   * `_gate` in `services/private_office_routes.py` answers 403 for "a real
+   * capability out of reach" and 503 for "we could not look", and its own
+   * comment explains why those must not share a shape: the person most likely
+   * to hit a degraded resolve is the person who paid. This client used to
+   * collapse both into `UNAVAILABLE`, which threw the distinction away on
+   * arrival and told a member whose subscription had lapsed that the network
+   * was down. The server said "renew"; the screen said "we couldn't reach the
+   * server". Keep these two apart.
+   */
+  state: "READY" | "UNAVAILABLE" | "UPGRADE_REQUIRED";
   passcodeSet: boolean;
   setupRequired: boolean;
   /** Seconds until another attempt is allowed. 0 when not cooling down. */
@@ -449,9 +461,15 @@ export async function getOfficeSecurityStatus(): Promise<OfficeSecurityStatus> {
         preference === "enabled" || preference === "disabled" ? preference : "unset",
       unlocked: body.unlocked === true
     };
-  } catch {
+  } catch (error) {
+    // A 403 is not a failure to reach the server -- it is the server's answer.
+    // `_gate` returns it only for a real capability the member's tier does not
+    // reach, having already spent 503 on "we could not look" and 404 on "there
+    // is nothing to sell". Reading `status` here is what lets the gate offer a
+    // renew path instead of a retry button that can never succeed.
+    const upgradeRequired = error instanceof PulseApiError && error.status === 403;
     return {
-      state: "UNAVAILABLE",
+      state: upgradeRequired ? "UPGRADE_REQUIRED" : "UNAVAILABLE",
       passcodeSet: false,
       setupRequired: false,
       cooldownSeconds: 0,

@@ -4389,6 +4389,11 @@
           "title": "Sekirite biwo a pa disponib",
           "body": "Nou pa t ka jwenn sèvè a pou verifye kadna a. Eseye ankò."
         },
+        "upgrade": {
+          "title": "Ou bezwen yon abònman",
+          "body": "Biwo Prive a fè pati abònman premium lan, e pa w la pa aktif kounye a. Renouvle l pou w ka louvri l ankò.",
+          "action": "Renouvle abònman an"
+        },
         "setup": {
           "intro": {
             "title": "Ajoute yon dezyèm kadna",

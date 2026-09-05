@@ -221,7 +221,7 @@ describe("getOfficeSecurityStatus", () => {
     });
   });
 
-  it("never throws — any failure becomes UNAVAILABLE with everything false", async () => {
+  it("never throws — a failure to reach the server becomes UNAVAILABLE", async () => {
     mockPulseApi.mockRejectedValueOnce(new Error("network down"));
     expect(await getOfficeSecurityStatus()).toEqual({
       state: "UNAVAILABLE",
@@ -231,5 +231,36 @@ describe("getOfficeSecurityStatus", () => {
       biometricPreference: "unset",
       unlocked: false
     });
+  });
+
+  it("keeps a 403 apart from UNAVAILABLE, because it is an answer and not a silence", async () => {
+    // `_gate` spends three codes on three different truths: 503 for "we could
+    // not look", 404 for "there is nothing to sell yet", and 403 only for a
+    // real capability out of reach. Collapsing the 403 into UNAVAILABLE is what
+    // once told a member whose membership had lapsed that the network was down,
+    // under a "Try again" button that could never succeed.
+    mockPulseApi.mockRejectedValueOnce(apiError(403, { state: "NOT_ENTITLED" }));
+    expect(await getOfficeSecurityStatus()).toEqual({
+      state: "UPGRADE_REQUIRED",
+      passcodeSet: false,
+      setupRequired: false,
+      cooldownSeconds: 0,
+      biometricPreference: "unset",
+      unlocked: false
+    });
+  });
+
+  it("leaves the server's other refusals on the UNAVAILABLE path", async () => {
+    // 503 is the degraded resolve the gate warns about, and it is exactly the
+    // case where retrying IS the right offer. It must not drift into an upgrade
+    // prompt: billing a member for an outage would be the mirror of the bug.
+    mockPulseApi.mockRejectedValueOnce(apiError(503, {}));
+    expect((await getOfficeSecurityStatus()).state).toBe("UNAVAILABLE");
+
+    mockPulseApi.mockRejectedValueOnce(apiError(500, {}, "boom"));
+    expect((await getOfficeSecurityStatus()).state).toBe("UNAVAILABLE");
+
+    mockPulseApi.mockRejectedValueOnce(apiError(401, {}));
+    expect((await getOfficeSecurityStatus()).state).toBe("UNAVAILABLE");
   });
 });

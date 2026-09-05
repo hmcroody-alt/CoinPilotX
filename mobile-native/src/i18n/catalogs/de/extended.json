@@ -4420,6 +4420,11 @@
           "title": "Büro-Sicherheit nicht verfügbar",
           "body": "Der Server zur Prüfung der Sperre war nicht erreichbar. Versuche es erneut."
         },
+        "upgrade": {
+          "title": "Mitgliedschaft erforderlich",
+          "body": "Das Private Office ist Teil der Premium-Mitgliedschaft, und deine ist derzeit nicht aktiv. Erneuere sie, um es wieder zu öffnen.",
+          "action": "Mitgliedschaft erneuern"
+        },
         "setup": {
           "intro": {
             "title": "Zweites Schloss hinzufügen",

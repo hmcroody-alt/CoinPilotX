@@ -11,9 +11,15 @@
  * (Stage 1), the unlock screen (Stage 23), or the content itself. A build with
  * this file deleted still leaks nothing; it just shows worse errors.
  *
- * ## The four doors
+ * ## The doors
  *
  *   CHECKING     status request in flight; neutral splash, no content behind it
+ *   UNAVAILABLE  we could not look — a 503 or a dead network. Retry is honest
+ *                here, because retrying is the thing that might work.
+ *   UPGRADE_REQ  we looked, and the answer was no: the membership does not
+ *                reach the Office. Offers renewal, never a retry — see the
+ *                note on `GateDoor` for why this must not share a door with
+ *                UNAVAILABLE.
  *   SETUP        no passcode exists yet — the 4-step first-entry flow.
  *                "Not now" exits the Office entirely (Stage 1: the lock is not
  *                optional; entering without one is).
@@ -83,7 +89,19 @@ import {
 const MIN_PASSCODE_DIGITS = 6;
 const PASSCODE_MAX_LENGTH = 12;
 
-type GateDoor = "CHECKING" | "UNAVAILABLE" | "SETUP" | "LOCKED" | "UNLOCKED";
+/**
+ * `UPGRADE_REQUIRED` is a separate door from `UNAVAILABLE` on purpose. A lapsed
+ * membership and an unreachable server need different sentences and different
+ * buttons: retrying a 403 can never succeed, and offering "Try again" to
+ * someone whose subscription expired is a dead end that hides the real reason.
+ */
+type GateDoor =
+  | "CHECKING"
+  | "UNAVAILABLE"
+  | "UPGRADE_REQUIRED"
+  | "SETUP"
+  | "LOCKED"
+  | "UNLOCKED";
 
 type SetupStep = "INTRO" | "CREATE" | "CONFIRM" | "BIOMETRIC";
 
@@ -91,13 +109,19 @@ type Props = {
   children: ReactNode;
   /** "Not now" on first-entry setup. Screens pass `navigation.goBack`. */
   onDismiss?: () => void;
+  /**
+   * Where "Renew membership" goes when the server refuses with 403. Optional:
+   * without it the upgrade door still states the real reason, it just omits
+   * the button rather than rendering one that goes nowhere.
+   */
+  onRenew?: () => void;
 };
 
 function digitsOnly(value: string): string {
   return value.replace(/[^0-9]/g, "").slice(0, PASSCODE_MAX_LENGTH);
 }
 
-export function PrivateOfficeLockGate({ children, onDismiss }: Props) {
+export function PrivateOfficeLockGate({ children, onDismiss, onRenew }: Props) {
   const { t } = useTranslation();
   const lock = useSyncExternalStore(subscribeOfficeLock, getOfficeLockSnapshot);
 
@@ -160,6 +184,10 @@ export function PrivateOfficeLockGate({ children, onDismiss }: Props) {
     (status: OfficeSecurityStatus, currentUserId: number) => {
       if (!mounted.current) return;
       setCooldown(status.cooldownSeconds);
+      if (status.state === "UPGRADE_REQUIRED") {
+        setDoor("UPGRADE_REQUIRED");
+        return;
+      }
       if (status.state === "UNAVAILABLE") {
         setDoor("UNAVAILABLE");
         return;
@@ -428,6 +456,28 @@ export function PrivateOfficeLockGate({ children, onDismiss }: Props) {
             <Pressable style={styles.retry} onPress={() => void check()} accessibilityRole="button">
               <Text style={styles.retryText}>{t("premium:privateOffice.retry")}</Text>
             </Pressable>
+          </View>
+        ) : null}
+
+        {door === "UPGRADE_REQUIRED" ? (
+          <View style={styles.panel}>
+            <Ionicons name="lock-closed-outline" size={26} color={colors.accent} />
+            <Text style={styles.panelTitle}>{t("premium:privateOffice.lock.upgrade.title")}</Text>
+            <Text style={styles.panelText}>{t("premium:privateOffice.lock.upgrade.body")}</Text>
+            {onRenew ? (
+              <Pressable style={styles.primaryButton} onPress={onRenew} accessibilityRole="button">
+                <Text style={styles.primaryButtonText}>
+                  {t("premium:privateOffice.lock.upgrade.action")}
+                </Text>
+              </Pressable>
+            ) : null}
+            {onDismiss ? (
+              <Pressable style={styles.linkButton} onPress={onDismiss} accessibilityRole="button">
+                <Text style={styles.linkText}>
+                  {t("premium:privateOffice.lock.setup.intro.notNow")}
+                </Text>
+              </Pressable>
+            ) : null}
           </View>
         ) : null}
 

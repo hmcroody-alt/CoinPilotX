@@ -417,7 +417,10 @@ function SecuritySettings() {
 
 export function PrivateOfficeSecurityScreen({ navigation }: Props) {
   return (
-    <PrivateOfficeLockGate onDismiss={() => navigation.goBack()}>
+    <PrivateOfficeLockGate
+      onDismiss={() => navigation.goBack()}
+      onRenew={() => navigation.navigate("Premium")}
+    >
       <SecuritySettings />
     </PrivateOfficeLockGate>
   );
