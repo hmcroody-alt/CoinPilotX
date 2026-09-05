@@ -9,14 +9,17 @@
  */
 
 export type LiveAudioFlagSource = {
+  audioSharedPathEnabled?: unknown;
   audioV2Enabled?: unknown;
   /** Emergency publisher gate. Missing is OFF, even when general V2 is on. */
   publisherAudioV2Enabled?: unknown;
 };
 
+export const LIVE_AUDIO_SHARED_PATH_FLAG_KEY = "audioSharedPathEnabled";
 export const LIVE_AUDIO_V2_FLAG_KEY = "audioV2Enabled";
 
 export function isLiveAudioV2Enabled(source: LiveAudioFlagSource | null | undefined): boolean {
+  if (source?.audioSharedPathEnabled !== undefined) return source.audioSharedPathEnabled === true;
   return source?.audioV2Enabled === true;
 }
 
@@ -42,10 +45,10 @@ export function normalizeLiveAudioV2Flag(raw: unknown): boolean {
   return raw === true;
 }
 
-export type LiveAudioPathName = "v2_isolated" | "v1_legacy";
+export type LiveAudioPathName = "shared_governed" | "legacy_fallback";
 
 export function resolveLiveAudioPath(source: LiveAudioFlagSource | null | undefined): LiveAudioPathName {
-  return isLiveAudioV2Enabled(source) ? "v2_isolated" : "v1_legacy";
+  return isLiveAudioV2Enabled(source) ? "shared_governed" : "legacy_fallback";
 }
 
 export function resolveLiveAudioPathForSession(

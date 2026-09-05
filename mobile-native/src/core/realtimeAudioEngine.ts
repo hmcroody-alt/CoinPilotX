@@ -161,6 +161,16 @@ export function getActiveRealtimeMicrophoneOwner(): RealtimeAudioOwner | null {
   return owner?.publishesMicrophone ? owner : null;
 }
 
+/** True only while this exact generation still owns the canonical audio session. */
+export function isRealtimeAudioLeaseActive(lease: RealtimeAudioLease | null | undefined): boolean {
+  if (!lease || !activeRealtimeAudioOwner) return false;
+  return (
+    activeRealtimeAudioOwner.ownerId === lease.ownerId &&
+    activeRealtimeAudioOwner.leaseId === lease.leaseId &&
+    activeRealtimeAudioOwner.mode === lease.mode
+  );
+}
+
 export function modePublishesMicrophone(mode: RealtimeAudioMode): boolean {
   return ["audio_call", "video_call", "live_host", "live_guest", "voice_message"].includes(mode);
 }

@@ -74,7 +74,7 @@ describe("role normalisation", () => {
 
 describe("event construction", () => {
   it("defaults to the legacy path, so an unlabelled event is never miscredited to V2", () => {
-    expect(buildLiveAudioEvent({ name: "live_audio_path_selected" }).path).toBe("v1_legacy");
+    expect(buildLiveAudioEvent({ name: "live_audio_path_selected" }).path).toBe("legacy_fallback");
   });
 
   it("omits absent optional fields instead of emitting undefined", () => {
@@ -85,7 +85,7 @@ describe("event construction", () => {
   it("carries publish measurements through", () => {
     const event = buildLiveAudioEvent({
       name: "live_audio_publish_settled",
-      path: "v2_isolated",
+      path: "shared_governed",
       role: "host",
       room: "pulse-live-7",
       outcome: "published",
@@ -130,7 +130,7 @@ describe("emission", () => {
   it("forwards the built event to the configured sink", () => {
     const seen: any[] = [];
     setLiveAudioTelemetrySink((event) => seen.push(event));
-    emitLiveAudioEvent({ name: "live_audio_route_reapplied", path: "v2_isolated", reason: "oldDeviceUnavailable" });
+    emitLiveAudioEvent({ name: "live_audio_route_reapplied", path: "shared_governed", reason: "oldDeviceUnavailable" });
     expect(seen).toHaveLength(1);
     expect(seen[0].name).toBe("live_audio_route_reapplied");
     expect(seen[0].reason).toBe("oldDeviceUnavailable");

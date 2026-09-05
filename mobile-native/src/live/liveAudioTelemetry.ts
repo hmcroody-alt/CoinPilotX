@@ -37,7 +37,7 @@ export type LiveAudioEventName =
 
 export type LiveAudioEvent = {
   name: LiveAudioEventName;
-  path: "v2_isolated" | "v1_legacy";
+  path: "shared_governed" | "legacy_fallback";
   role: "host" | "guest" | "cohost" | "viewer" | "unknown";
   roomHash: string;
   attempt?: number;
@@ -101,7 +101,7 @@ function finiteNumber(value: unknown): number | undefined {
 
 export type LiveAudioEventInput = {
   name: LiveAudioEventName;
-  path?: "v2_isolated" | "v1_legacy";
+  path?: "shared_governed" | "legacy_fallback";
   role?: unknown;
   room?: unknown;
   attempt?: unknown;
@@ -120,7 +120,7 @@ export type LiveAudioEventInput = {
 export function buildLiveAudioEvent(input: LiveAudioEventInput): LiveAudioEvent {
   const event: LiveAudioEvent = {
     name: input.name,
-    path: input.path === "v2_isolated" ? "v2_isolated" : "v1_legacy",
+    path: input.path === "shared_governed" ? "shared_governed" : "legacy_fallback",
     role: normalizeRole(input.role),
     roomHash: hashIdentifier(input.room)
   };

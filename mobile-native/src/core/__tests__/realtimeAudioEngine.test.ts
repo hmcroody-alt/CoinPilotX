@@ -19,6 +19,7 @@ import {
   selectRealtimeAudioOutput,
   stabilizeRealtimeAudioEngine
 } from "../realtimeAudioEngine";
+import { applyRemoteAudioEnabled } from "../realtimeRemoteAudioController";
 
 function sdkTrack() {
   const calls: boolean[] = [];
@@ -289,11 +290,19 @@ describe("realtimeAudioEngine canonical audio ownership", () => {
         recordingRunning = true;
       })
     };
+    const audioSession = {
+      setAppleAudioConfiguration: jest.fn().mockResolvedValue(undefined),
+      configureAudio: jest.fn().mockResolvedValue(undefined),
+      startAudioSession: jest.fn().mockResolvedValue(undefined)
+    };
 
     await expect(stabilizeRealtimeAudioEngine(audioDeviceModule, {
       playout: true,
       recording: true,
-      settleMs: 0
+      settleMs: 0,
+      audioSession,
+      mode: "live_host",
+      speaker: true
     })).resolves.toEqual({
       engineRunning: true,
       playoutRunning: true,
@@ -303,6 +312,11 @@ describe("realtimeAudioEngine canonical audio ownership", () => {
     expect(audioDeviceModule.startLocalRecording).toHaveBeenCalledTimes(1);
     expect(audioDeviceModule.startRecording).not.toHaveBeenCalled();
     expect(audioDeviceModule.startPlayout).toHaveBeenCalledTimes(1);
+    expect(audioSession.setAppleAudioConfiguration).toHaveBeenCalledWith(
+      expect.objectContaining({ audioCategory: "playAndRecord", audioMode: "videoChat" })
+    );
+    expect(audioSession.configureAudio).toHaveBeenCalledWith({ ios: { defaultOutput: "speaker" } });
+    expect(audioSession.startAudioSession).toHaveBeenCalledTimes(1);
   });
 
   it("re-establishes the audio session before restarting the ADM when the engine is stopped", async () => {

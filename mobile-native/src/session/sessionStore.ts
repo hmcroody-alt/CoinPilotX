@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Device from "expo-device";
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 import { PULSE_API_BASE_URL } from "../api/config";
@@ -300,6 +301,17 @@ export async function setCachedSessionUser(user: unknown) {
 
 function isLocalQaSession() {
   return /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(PULSE_API_BASE_URL);
+}
+
+/**
+ * Simulator builds are not provisioned and iOS may reject Keychain access with
+ * errSecMissingEntitlement (-34018), even though the same target is correctly
+ * entitled when signed for a physical device. Keep QA usable by falling back
+ * only in an iOS Simulator (or against the explicitly local QA backend).
+ * Physical-device sessions never persist credentials outside SecureStore.
+ */
+function allowsInsecureQaStorageFallback() {
+  return isLocalQaSession() || (Platform.OS === "ios" && !Device.isDevice);
 }
 
 async function getSecureValue(key: string) {

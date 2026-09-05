@@ -571,3 +571,229 @@ The protected audio-only call initialization path was not changed. The shared gu
 The second physical failure is diagnosed and its responsible initialization layer is repaired, tested, pushed, and installed. A post-`b252a255` physical host/viewer attempt has not yet been observed, and viewer audibility has not yet been heard. Therefore the truthful status remains:
 
 **Implementation and deployment-to-device: PASS. Physical audible acceptance: NO-GO pending the next observed host/viewer retry.**
+
+## 18. Single governed audio path migration — 2026-08-02
+
+### Starting evidence and precise Live divergence
+
+The owner-reported physical baseline for this migration is audio calls audible in both directions, video-call audio audible in both directions, and Live connected but inaudible to viewers. Those call/video results are accepted as supplied test evidence, not as personally observed Codex evidence.
+
+The static and automated trace found one remaining architectural divergence: calls and video could use `realtimeMicrophonePublisher`, but Live could still select the polling/toggle-based legacy microphone path. Remote subscription and track enablement were also feature-hook concerns instead of one multi-speaker controller. That allowed the passing call lifecycle and the failing Live lifecycle to drift even though both used the same AVAudioSession coordinator.
+
+### Governed architecture
+
+The resulting execution path is:
+
+```text
+AudioCallAdapter / VideoCallAdapter / LivestreamAdapter
+    -> realtimeAudioMediaPath
+       - connected-room invariant
+       - feature and server-authorized role
+       - current generation-scoped audio lease
+       - mutually exclusive shared or legacy room path
+    -> realtimeMicrophonePublisher
+       - one in-flight publication
+       - event-confirmed publication
+       - duplicate reconciliation
+    -> realtimeRemoteAudioController
+       - all remote publications
+       - host plus approved guests
+       - subscribe once
+       - shared playback enablement
+    -> realtimeAudioEngine
+       - AVAudioSession, ownership, route, recovery, cleanup
+```
+
+Room types, tokens, signaling, participant roles, and termination remain feature-specific. The shared engine cannot elevate a viewer: a Live viewer has subscribe permission only, never receives a publishing mode, and the governed publisher rejects missing, stale, wrong-mode, or unauthorized leases before touching the microphone.
+
+The room-path guard records either `shared_governed` or `legacy_fallback` for each LiveKit room and rejects any attempt to activate the other path in the same room. Rollback therefore requires a fresh token/room connection and cannot run both microphone paths simultaneously.
+
+### Feature configuration and rollback
+
+New canonical variable names reuse the existing server rollout decision rather than creating a second flag system:
+
+- `REALTIME_AUDIO_CALLS_SHARED_PATH`
+- `REALTIME_VIDEO_CALLS_SHARED_PATH`
+- `REALTIME_LIVE_SHARED_PATH`
+
+The existing V2 names remain backward-compatible aliases. If a canonical variable is present, it is authoritative, including `false`; tests prove a legacy `true` cannot override the canonical kill switch. Platform, QA allowlist, sticky percentage, trace, and fallback controls remain unchanged.
+
+### Automated evidence
+
+| Check | Result |
+|---|---:|
+| Full native suite | 116 suites / 1,912 tests PASS |
+| Native TypeScript typecheck | PASS |
+| Governed media-path tests | 6/6 PASS |
+| Focused call, video, Live, engine, publisher, remote controller suites | 74/74 PASS |
+| Realtime architecture protection | 6/6 PASS |
+| Call token/shared-path contract | 5/5 PASS |
+| Live host/guest/viewer token and rollout contract | PASS |
+| Affected Python compilation | PASS |
+| `git diff --check` | PASS |
+
+The architecture audit now fails if feature code directly activates/deactivates AVAudioSession, creates/publishes/unpublishes microphone tracks, manages remote subscriptions, or enables remote audio tracks outside the approved shared controllers.
+
+### Commits and files
+
+- `d14e11b1` — `refactor(realtime-audio): expose governed shared media path`
+- `d50c4f92` — `fix(live-audio): migrate host viewer and guests to shared engine`
+
+Primary new files:
+
+- `mobile-native/src/core/realtimeAudioMediaPath.ts`
+- `mobile-native/src/core/realtimeRemoteAudioController.ts`
+- `mobile-native/src/core/__tests__/realtimeAudioMediaPath.test.ts`
+- `mobile-native/src/core/__tests__/realtimeRemoteAudioController.test.ts`
+
+The protected call/video hook received only narrow routing changes: it now supplies its existing lease and role to the shared publisher and imports the shared remote controller. Camera, call signaling, room type, and user controls are unchanged.
+
+### Physical and rollout status
+
+The governed code has not yet completed a new two-participant physical session. At this report stage:
+
+| Gate | Status |
+|---|---|
+| Audio-call audible baseline | Owner-reported PASS; post-migration physical regression NOT YET OBSERVED |
+| Video-call audible baseline | Owner-reported PASS; post-migration physical regression NOT YET OBSERVED |
+| Live viewer hears host | NOT YET OBSERVED |
+| Live viewer hears approved guest | NOT YET OBSERVED |
+| Second Live without restart | NOT YET OBSERVED |
+| Mixed call -> video -> Live -> call | NOT YET OBSERVED |
+| Unauthorized viewer publication | Automated PASS |
+| Shared/legacy collision rejection | Automated PASS |
+
+Final migration judgment at code-commit time: **PARTIAL / NO-GO for broad rollout**. The permanent shared architecture is implemented and automated gates pass, but Live audible success and protected call/video regression must be heard with separate real participants before the shared Live flag is expanded beyond controlled QA.
+
+## 19. Physical Live follow-up and exact governed-path alignment — 2026-08-02
+
+### Latest physical evidence
+
+The owner reported a new physical sequence after the governed-path deployment:
+
+- audio-call audio: audible in both directions (PASS reported by owner);
+- video-call audio: audible in both directions (PASS reported by owner);
+- livestream host audio: not audible to the viewer (FAIL reported by owner).
+
+The supplied native failure screen also exposed the exact fail-closed condition: `The native real-time audio engine did not remain active.` This is physical failure evidence, not a simulator inference. Codex has not yet personally heard a successful post-repair Live host/viewer session, so Live remains NO-GO.
+
+### Remaining divergences found
+
+Two Live-only transitions remained after the first shared-path migration:
+
+1. Video calls used their local-media order directly, while Live still owned a separate `initializeLivePublisherMedia` wrapper. That wrapper could drift in its microphone reassert/republish ordering after camera startup.
+2. When LiveKit had accepted the host but had not yet observed a stable camera track, `/native-publish` returned a retryable body as HTTP 409 with `ok: false`. The canonical native API correctly throws non-success responses, so the host screen's retry branch could never consume `retry_after_ms`. Its former timer also cleared a ref without changing React state, so it did not schedule another request deterministically.
+
+### Repair in `37c5b70c`
+
+- Added `initializeRealtimePublisherMedia` to the governed media layer and routed both video calls and Live hosts through it.
+- The shared transition publishes the microphone once, starts the feature-owned camera, reasserts the existing microphone publication, and republishes through the same controller only if camera startup removed it.
+- Removed the Live-only publisher initializer.
+- Extended the canonical iOS engine recovery so a stopped ADM first reasserts the same call-grade `playAndRecord` / `videoChat` AudioSession, then initializes recording and playout. It does not stop the active session or rotate/steal its ownership lease.
+- Video-call recovery now supplies the same session/mode inputs as Live, making the lower-level recovery path identical while preserving separate rooms, roles, camera controls, and signaling.
+- Changed the expected track-convergence response to HTTP 202 with `ready: false`, retained server verification, and added a bounded native retry loop. Egress still cannot start until the backend independently observes stable host video.
+- Updated the architecture gate so both call/video and Live adapters must use the canonical local-media transition.
+
+### Validation after repair
+
+| Check | Result |
+|---|---:|
+| Focused engine, media-path, call, Live, and API suites | 5 suites / 44 tests PASS |
+| Full native suite | 120 suites / 2,015 tests PASS |
+| Native TypeScript typecheck | PASS |
+| Realtime architecture protection | 7/7 PASS |
+| Call token/shared-path contract | 5/5 PASS |
+| Live host/guest/viewer token and rollout contract | PASS |
+| LiveKit webhook-owner contract | PASS |
+| LiveKit egress waiting-state route audit | PASS |
+| Native calls audit | PASS |
+| Native Live guest/audio repair audit | PASS |
+| Live echo-prevention audit | PASS |
+| Python compilation | PASS |
+| `git diff --check` | PASS |
+
+### Current gate
+
+Commit `37c5b70c` contains the code and automated evidence above. A signed build containing the eventual report commit still needs to be built and installed, and the owner/Codex still needs to observe a viewer audibly hearing the host. Protected audio-call and video-call physical regressions must then be repeated.
+
+**Judgment: PARTIAL implementation; NO-GO for broad Live rollout until the post-install physical host/viewer and mixed-session gates pass.**
+
+## 20. Exact-SHA deployment and device installation — 2026-08-02
+
+The governed Live repair and its evidence are pushed on `codex/governed-realtime-audio` at
+`79d9830235602eaca700564dd62696862a4b0add`. `git ls-remote` matched the local SHA before deployment.
+
+### Production
+
+- Railway service: `CoinPilotX` in `production`.
+- Active deployment: `7eea99d8-ff9e-4565-86ff-9fb10d5ff24b` (`SUCCESS`).
+- Authoritative CLI deployment message: `deploy 79d9830235602eaca700564dd62696862a4b0add governed Live audio recovery QA-only`.
+- Image digest: `sha256:5ed5a0a2dae852b562989da32ec225ed08fd7d7c98e452bbaf9af71ff128c5a3`.
+- Worker startup completed and `GET /health` returned HTTP 200.
+- Rollout is constrained to the two configured QA user IDs: `REALTIME_LIVE_SHARED_PATH=true`,
+  `LIVESTREAM_AUDIO_V2_QA_ONLY=true`, `LIVESTREAM_AUDIO_V2_PERCENT=0`, and the legacy fallback remains enabled.
+- A Railway variable update briefly rebuilt GitHub `main` instead of retaining the CLI source. Deployment metadata exposed the mismatch; it was immediately superseded by the exact-SHA CLI deployment above. No stale-SHA deployment is being accepted as validation evidence.
+
+### Simulator and physical installation
+
+| Target | Evidence | Result |
+|---|---|---|
+| iPhone 17 Pro Max simulator, iOS 26.5 (`E859950D-B187-4897-B389-05447C5AD796`) | Release app `1.0.1 (9)` installed with embedded `PulseSocGitSHA=79d9830235602eaca700564dd62696862a4b0add` | BUILD/INSTALL/LAUNCH PASS; functional startup blocked by the existing unsigned-simulator Keychain entitlement error |
+| Paired iPhone 16 Pro `P3r7or` (`F45E640F-6D02-514E-877C-B764E8D6818F`) | Apple Development-signed Release app `1.0.1 (9)` installed and launched; signature and entitlements verified | BUILD/INSTALL/LAUNCH PASS |
+| Physical app to production | `GET /api/pulse/live-now` returned HTTP 200 from deployment `7eea99d8-ff9e-4565-86ff-9fb10d5ff24b`; correlation ID `J7H3kSOiTO-t9dIAjq4OvQ` | CONNECTIVITY PASS |
+
+The physical app was launched directly to `pulsesoc://pulse/live/studio` after the exact-SHA worker became healthy.
+Installation and server connectivity do not prove audible media. A separate real viewer still must audibly hear the host,
+then protected audio-call/video-call and mixed-session regressions must be repeated.
+
+**Final status for this evidence update: PARTIAL / NO-GO. The repaired code, server, simulator, and physical host device are aligned on the current SHA; the remaining gate is observed post-repair Live audibility.**
+
+## 21. Idle-playout host startup correction — 2026-08-02
+
+### New physical evidence
+
+The owner supplied a new iPhone 16 Pro screenshot at 07:03 PDT showing the signed native Live host path fail closed with:
+
+```text
+Broadcast could not start
+The native real-time audio engine did not remain active.
+```
+
+The previously installed build required all three native booleans to be true at host startup: engine, microphone recording, and playout. That is valid for bidirectional calls and approved Live guests, but not for a host starting an empty Live room. A host has no remote audio publication to play until an approved guest joins, so idle playout is not a valid prerequisite for publishing the host microphone.
+
+### Responsible divergence and repair
+
+`stabilizeLivePublisherAudio` was the remaining feature-policy divergence. It called the same governed engine as audio and video calls, but always passed `playout: true`. The repair preserves the shared engine and changes only Live role policy:
+
+- Live host startup requires the native engine and microphone recording to remain active.
+- Live host startup does not fail because remote playout is idle before any guest exists.
+- The remote-track subscription callback immediately re-runs the same guard with playout required.
+- Approved guests continue to require recording and playout from startup.
+- Viewers continue to require playout and are still prohibited from acquiring microphone ownership.
+- Audio-call and video-call adapters are unchanged.
+
+No old media path was re-enabled, no permission was widened, and the shared publication/subscription controllers remain authoritative.
+
+### Validation
+
+| Check | Result |
+|---|---:|
+| Host empty-room regression | PASS: `engine=true`, `recording=true`, `playout=false` accepted |
+| Host after guest subscription | PASS: playout required and restored |
+| Approved guest bidirectional requirement | PASS |
+| Viewer playback-only requirement | PASS |
+| Focused Live/engine suites | 2 suites / 21 tests PASS |
+| Full native suite | 126 suites / 2,110 tests PASS |
+| Native TypeScript typecheck | PASS |
+| Realtime architecture protection | 7/7 PASS |
+| Live token/rollout contract | PASS |
+| Native call audit | PASS |
+| Native Live guest/audio audit | PASS |
+| Live echo-prevention audit | PASS |
+| `git diff --check` | PASS |
+
+Separately, the simulator startup failure was traced to iOS Simulator Keychain error `-34018` in an ad-hoc Release build. The session store now uses AsyncStorage only for iOS Simulator or the existing local-QA backend mode; physical iPhones remain fail-closed on SecureStore. A freshly installed iPhone 17 Pro Max simulator build reached the authenticated PulseSoc dashboard instead of the generic startup failure screen.
+
+### Gate
+
+Implementation and automated validation are **PASS**. The new signed physical build must still be installed and the owner must retry the Live host/viewer test. Audible Live, guest, second-session, and mixed call/video/Live behavior remain **NO-GO** until directly observed; the supplied audio-call and video-call PASS results remain owner-observed evidence.

@@ -623,11 +623,22 @@ def _env_enabled(name: str, default: bool = False) -> bool:
     return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _env_enabled_with_legacy(primary: str, legacy: str, default: bool = False) -> bool:
+    """Read a renamed rollout flag without creating a second decision system."""
+    if os.getenv(primary) is not None:
+        return _env_enabled(primary, default)
+    return _env_enabled(legacy, default)
+
+
 def _realtime_audio_v2_status(call_type: str) -> dict[str, bool]:
     platform_enabled = _env_enabled("REALTIME_AUDIO_PLATFORM_V2_ENABLED", False)
-    feature_flag = "REALTIME_VIDEO_CALLS_V2_ENABLED" if str(call_type).strip().lower() == "video" else "REALTIME_AUDIO_CALLS_V2_ENABLED"
+    is_video = str(call_type).strip().lower() == "video"
+    shared_flag = "REALTIME_VIDEO_CALLS_SHARED_PATH" if is_video else "REALTIME_AUDIO_CALLS_SHARED_PATH"
+    legacy_flag = "REALTIME_VIDEO_CALLS_V2_ENABLED" if is_video else "REALTIME_AUDIO_CALLS_V2_ENABLED"
+    enabled = platform_enabled and _env_enabled_with_legacy(shared_flag, legacy_flag, False)
     return {
-        "realtime_audio_v2_enabled": platform_enabled and _env_enabled(feature_flag, False),
+        "realtime_audio_shared_path_enabled": enabled,
+        "realtime_audio_v2_enabled": enabled,
         "realtime_audio_v2_fallback_enabled": _env_enabled("REALTIME_AUDIO_V2_FALLBACK_ENABLED", True),
     }
 

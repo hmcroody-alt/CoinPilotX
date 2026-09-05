@@ -48969,7 +48969,7 @@ def pulse_live_audio_v2_env_flag(name, default=""):
 
 
 def pulse_live_audio_v2_enabled(user_id=0, *, is_qa=False):
-    """Server-authoritative rollout gate for the isolated livestream audio route.
+    """Server-authoritative rollout gate for the governed shared Live audio path.
 
     The decision is made here and shipped to the client on the Agora token
     response it already fetches for every broadcast, so flipping
@@ -48977,11 +48977,13 @@ def pulse_live_audio_v2_enabled(user_id=0, *, is_qa=False):
     next token fetch runs the legacy path, with no app release and no client
     override. Default is OFF - an unset or malformed env var disables V2.
 
-    LIVESTREAM_AUDIO_V2_ENABLED   master switch, default off
+    REALTIME_LIVE_SHARED_PATH     canonical master switch, default off
+    LIVESTREAM_AUDIO_V2_ENABLED   backward-compatible alias
     LIVESTREAM_AUDIO_V2_QA_ONLY   when on, only QA accounts get V2
     LIVESTREAM_AUDIO_V2_PERCENT   0-100 sticky percentage rollout
     """
-    master = pulse_live_audio_v2_env_flag("LIVESTREAM_AUDIO_V2_ENABLED")
+    master_name = "REALTIME_LIVE_SHARED_PATH" if os.getenv("REALTIME_LIVE_SHARED_PATH") is not None else "LIVESTREAM_AUDIO_V2_ENABLED"
+    master = pulse_live_audio_v2_env_flag(master_name)
     if master not in {"1", "true", "yes", "on"}:
         return False
     try:

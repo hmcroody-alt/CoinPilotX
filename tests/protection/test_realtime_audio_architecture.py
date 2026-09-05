@@ -310,6 +310,39 @@ class DependencyLockTests(unittest.TestCase):
             # renamed script would make the CI workflow fail open.
             self.assertIn(key, scripts, f"package.json is missing the {key} script named by the manifest")
 
+    def test_remote_subscription_and_track_playback_stay_in_shared_controller(self) -> None:
+        forbidden = (".setSubscribed(", "track.setEnabled(")
+        violations = []
+        for path in _source_files():
+            if "__tests__" in path.parts or path in APPROVED_PLATFORM_FILES:
+                continue
+            text = path.read_text(encoding="utf-8")
+            for marker in forbidden:
+                if marker in text:
+                    violations.append(f"{path.relative_to(ROOT)} uses {marker}")
+        self.assertFalse(violations, "Remote realtime audio bypassed the shared controller:\n" + "\n".join(violations))
+
+    def test_live_shared_path_is_governed_and_mutually_exclusive(self) -> None:
+        text = (NATIVE / "live" / "useLiveBroadcastRoom.ts").read_text(encoding="utf-8")
+        self.assertIn("startPublishingAudio", text)
+        self.assertIn("startReceivingAudio", text)
+        self.assertIn("claimRealtimeAudioPath", text)
+        self.assertIn("releaseRealtimeAudioPath", text)
+        self.assertNotIn("publishLiveMicrophone(room", text)
+
+    def test_calls_and_live_share_remote_audio_controller(self) -> None:
+        calls = (NATIVE / "calls" / "useNativeCallRoom.ts").read_text(encoding="utf-8")
+        live = (NATIVE / "live" / "useLiveBroadcastRoom.ts").read_text(encoding="utf-8")
+        self.assertIn('from "../core/realtimeRemoteAudioController"', calls)
+        self.assertIn('from "../core/realtimeAudioMediaPath"', live)
+
+    def test_video_calls_and_live_share_the_local_media_transition(self) -> None:
+        for relative in ("calls/useNativeCallRoom.ts", "live/useLiveBroadcastRoom.ts"):
+            text = (NATIVE / relative).read_text(encoding="utf-8")
+            self.assertIn("initializeRealtimePublisherMedia", text)
+        live = (NATIVE / "live" / "useLiveBroadcastRoom.ts").read_text(encoding="utf-8")
+        self.assertNotIn("initializeLivePublisherMedia", live)
+
 
 if __name__ == "__main__":
     unittest.main()
