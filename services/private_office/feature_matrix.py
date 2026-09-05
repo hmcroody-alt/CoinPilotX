@@ -198,12 +198,18 @@ _FEATURES = (
         feature_id="private_office.document.extraction",
         minimum_tier=TIER_PRIVATE,
         server_enforced=True,
-        implementation=IMPL_PROVIDER_REQUIRED,
-        note=(
-            "No OCR/PDF text-extraction library or service is present in the "
-            "repo. Document metadata and ownership are in scope; extraction is "
-            "not, and must not be declared implemented."
-        ),
+        # The vault, deterministic text extraction (txt/md/csv/json →
+        # PROPOSED claims), member review into the canonical fact writer, and
+        # owner-only content streaming are implemented
+        # (services/private_office/documents.py +
+        # services/private_office_documents_routes.py). OCR/PDF extraction
+        # still requires a provider that is not integrated — that truth now
+        # lives per-document in extraction_state=PROVIDER_REQUIRED and in the
+        # payload's provider_status, where a screen can render it honestly,
+        # rather than gating the whole capability. The kill switch below is
+        # the way to turn this off.
+        implementation=IMPL_IMPLEMENTED,
+        flag_env="PRIVATE_DOCUMENTS_ENABLED",
     ),
     FeatureSpec(
         feature_id="relationship_intelligence",

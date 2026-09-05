@@ -361,11 +361,17 @@ def test_breach_monitoring_is_provider_required_and_never_entitled():
     assert "provider" in got["note"].lower() or "no breach" in got["note"].lower()
 
 
-def test_document_extraction_is_provider_required():
-    """Stage 18. No OCR library exists in the repo; the matrix must say so."""
+def test_document_extraction_is_implemented_with_a_kill_switch():
+    """The vault, deterministic text extraction and claim review are built
+    (services/private_office/documents.py); the matrix must say so, and the
+    OCR gap must live per-document in extraction_state — still no OCR library
+    in the repo, so the *capability* row flipping does not license a clean
+    screen for a PDF. test_private_documents.py holds that edge."""
     got = fm.availability("private_office.document.extraction", tiers.TIER_PRIVATE)
-    assert got["implementation"] == fm.IMPL_PROVIDER_REQUIRED
-    assert got["availability"] == fm.AVAIL_NOT_IMPLEMENTED
+    assert got["implementation"] == fm.IMPL_IMPLEMENTED
+    assert got["availability"] == fm.AVAIL_ENTITLED
+    spec = fm.get("private_office.document.extraction")
+    assert spec.flag_env == "PRIVATE_DOCUMENTS_ENABLED"
 
 
 def test_implemented_feature_respects_tier():

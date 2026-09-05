@@ -1288,6 +1288,11 @@ _load_route_pack("pulse_market_pulse", "services.market_pulse_routes")
 # stays with the existing admin entitlement paths. A write in this pack would
 # be a second granting authority.
 _load_route_pack("private_office", "services.private_office_routes")
+# Document Intelligence: the Private Office vault. Uploads, deterministic
+# text extraction into PROPOSED claims, member review into the canonical
+# fact writer, and owner-only content streaming. Gates are imported from the
+# pack above — one implementation of the refusal translation.
+_load_route_pack("private_office_documents", "services.private_office_documents_routes")
 
 
 def cancel_scheduled_account_deletion(cur, user_id):
