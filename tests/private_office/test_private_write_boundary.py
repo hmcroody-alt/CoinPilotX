@@ -62,6 +62,16 @@ WRITER_MODULES = frozenset({
     # owner-scoping and provenance rules — is exactly the duplication this guard
     # exists to prevent, moved inside the package where the guard would bless it.
     "records.py",
+    # Batch D. `structured_records` owns the DDL and the row writers for the
+    # structured record envelope, its typed field projection and its history.
+    # It is trusted with writes for the same reason `facts.py` is: the
+    # protections that make a field row safe — the RESTRICTED value going to
+    # `cipher_text` rather than `value_text`, `search_text` staying empty for a
+    # field the template says may not be indexed, `masked_text` being the only
+    # thing a list query reads — live in the writer, not in the table. A direct
+    # INSERT would produce a structurally valid row with a passport number in a
+    # searchable plaintext column.
+    "structured_records.py",
 })
 
 PRIVATE_TABLES = (
@@ -80,6 +90,15 @@ PRIVATE_TABLES = (
     "private_requests",
     "private_risks",
     "private_opportunities",
+    # Batch D — the structured record store. `private_record_fields` is the one
+    # table in this list where a single unguarded INSERT is directly a
+    # disclosure rather than a loss of provenance: the row carries its own
+    # `sensitivity`, `mask` and `searchable` flags, and a writer that sets them
+    # from the request instead of from the server-owned template can mark a
+    # passport number CONFIDENTIAL, unmasked and indexable in one statement.
+    "private_structured_records",
+    "private_record_fields",
+    "private_record_revisions",
 )
 
 # The schema module exports these; interpolating one into a write statement is
@@ -355,6 +374,24 @@ _MUST_CATCH = {
         'cur.execute(f"CREATE TABLE IF NOT EXISTS {private_table_for(kind)} (id INTEGER)")',
     "the records resolver interpolated into an index":
         'cur.execute(f"CREATE INDEX IF NOT EXISTS idx_x ON {private_table_for(kind)}(owner_user_id)")',
+    # Batch D. The first two are the offence the field table exists to make
+    # visible: a caller deciding for itself that a value is safe to store in
+    # plaintext, or safe to index. Both produce a row the database is happy
+    # with and the template would have refused.
+    "a field insert that puts a value in the plaintext column":
+        'cur.execute("INSERT INTO private_record_fields (value_text) VALUES (?)", (number,))',
+    "a field update that would make a masked field searchable":
+        'cur.execute("UPDATE private_record_fields SET searchable = 1 WHERE id = ?", (1,))',
+    "an envelope insert":
+        'cur.execute("INSERT INTO private_structured_records (owner_user_id) VALUES (?)", (1,))',
+    "an envelope update that would claim verification":
+        'cur.execute("update private_structured_records set verification_state = ?", ("USER_VERIFIED",))',
+    "a revision delete that would erase history":
+        'cur.execute("DELETE FROM private_record_revisions WHERE record_id = 1")',
+    "a rival create table for the field projection":
+        'cur.execute("CREATE TABLE IF NOT EXISTS private_record_fields (id INTEGER)")',
+    "a rival index on the field projection":
+        'cur.execute("CREATE INDEX IF NOT EXISTS idx_f ON private_record_fields (owner_user_id)")',
 }
 
 _MUST_IGNORE = {
