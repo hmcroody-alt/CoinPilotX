@@ -63,8 +63,9 @@ import { APP_VERSION, PULSE_API_BASE_URL } from "../api/config";
 import { PULSESOC_QA_MESSENGER_FIXTURES } from "../api/config";
 import { recoverRoomConversation } from "../community/roomConversationRecovery";
 import { buildUndxUiContext, UndxUiContext } from "../undx/undxContext";
-import { clearMarketContext, peekMarketContext, takeMarketContextForSend } from "../undx/marketContext";
+import { buildUndxSendContext, clearMarketContext, peekMarketContext } from "../undx/marketContext";
 import { choiceRowsOf, describeTransition, readTapOutcome, toActionCard, UndxTapOutcome } from "../undx/actionCards";
+import { goBackFromUndxChat } from "../undx/undxChatTarget";
 import { NativeMediaViewer, NativeMediaViewerItem } from "../components/NativeMediaViewer";
 import { useMessengerMediaAccessUrl } from "../media/messengerMediaAccess";
 import { ConversationControlCenter } from "../components/ConversationControlCenter";
@@ -328,10 +329,26 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   // The market-context chip: an asset screen just handed off, and the member
-  // should see — and be able to end — what "it" currently means. Dismissing
-  // clears the parked envelope too, so an unsent context never rides along
-  // after the member said no to it.
+  // should see — and be able to end — what "it" currently means. The chip is a
+  // render of the parked envelope and nothing else, and the request is built
+  // from that same envelope by `buildUndxSendContext`, so what the member reads
+  // and what the assistant is told cannot come apart. Dismissing does not just
+  // hide the words: it arms a clear that the next send carries to the server,
+  // which is holding its own copy and would otherwise keep resolving "it".
   const [marketChip, setMarketChip] = useState(assistantConversation ? peekMarketContext() : null);
+  // Where a contextual "Ask UNDX" came from. The drill-in pushes this screen on
+  // top of the asset screen, so `goBack()` normally does the right thing on its
+  // own; this is the answer for the cases where the stack cannot answer — a
+  // deep link, a restored session, a future caller that resets. It is read
+  // only as a fallback, never in preference to the real stack, because the
+  // stack knows about screens the member visited in between and this does not.
+  const undxReturn = route.params.undxReturn;
+  // The rule itself lives in `goBackFromUndxChat` (real stack first, recorded
+  // origin second, dashboard as the guaranteed floor) so the rendered
+  // navigation regression test exercises exactly what this screen runs.
+  const goBackFromChat = useCallback(() => {
+    goBackFromUndxChat(navigation, undxReturn);
+  }, [navigation, undxReturn]);
   const [controlCenterOpen, setControlCenterOpen] = useState(false);
   const [undxComponents, setUndxComponents] = useState<UndxResponseComponent[]>([]);
   const [undxActionBusy, setUndxActionBusy] = useState(false);
@@ -681,17 +698,22 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       setTyping("UNDX is typing");
       setStatusMessage("UNDX is thinking...");
       try {
-        // Market Pulse → UNDX bridge: the envelope parked by an asset screen
-        // rides along on the first send only. The server persists it per
+        // Market Pulse → UNDX bridge. Two things can be true of one send, and
+        // exactly one module decides which: the envelope parked by an asset
+        // screen rides along on the first send only (the server persists it per
         // conversation, so later turns inherit it without a resend — and a
-        // resend would falsely re-stamp a minutes-old snapshot as fresh.
-        const marketContext = takeMarketContextForSend();
+        // resend would falsely re-stamp a minutes-old snapshot as fresh), or
+        // the member dismissed the chip and the request carries the news that
+        // the topic is over. The second case matters because the server holds
+        // its own copy: forgetting the envelope on this device alone would
+        // leave "how is it doing?" still resolving to a coin the member said
+        // they were finished with.
         const data = await sendPulseAiMessage({
           body,
           client_message_id: local.client_message_id,
           ui_context: {
             ...(await collectUndxUiContext(navigation, conversationId, route.params.undxTaskId)),
-            ...(marketContext ? { market_context: marketContext } : {})
+            ...buildUndxSendContext()
           }
         });
         const nextMessages = data.messages || [];
@@ -1167,7 +1189,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       <GalacticAtmosphere variant="messages" testID="messages-galactic-atmosphere" />
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 10) }]}>
         <View style={styles.threadHeader}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Back to conversations" style={styles.backButton} onPress={() => navigation.goBack()}><Text style={styles.backButtonText}>‹</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel={undxReturn ? `Back to ${undxReturn.params.name || undxReturn.params.symbol}` : "Back to conversations"} style={styles.backButton} onPress={goBackFromChat}><Text style={styles.backButtonText}>‹</Text></Pressable>
           <PulseCommandAvatar label={assistantConversation ? PULSE_AI_DISPLAY_NAME : route.params.title || "Chat"} imageUrl={assistantConversation ? undefined : route.params.avatarUrl} active={assistantConversation || peerIsOnline} size={48} tone={assistantConversation ? "intelligence" : "default"} />
           <View style={styles.threadIdentity}>
             <Text style={styles.threadTitle} numberOfLines={1}>{threadTitle}</Text>
@@ -1791,12 +1813,21 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         </View>
         {assistantConversation && marketChip ? (
           <View style={styles.marketContextChip}>
-            <Text style={styles.marketContextChipText} numberOfLines={1}>
+            {/* Read aloud with a comma rather than the interpunct, which most
+                screen readers announce as "middle dot" or skip entirely — the
+                separator is a visual device and the name and ticker are the
+                content. `numberOfLines` truncates the sighted label on a long
+                name; the spoken one is never truncated. */}
+            <Text
+              accessibilityLabel={`Discussing ${marketChip.asset.name}, ${marketChip.asset.symbol}`}
+              style={styles.marketContextChipText}
+              numberOfLines={1}
+            >
               Discussing {marketChip.asset.name} · {marketChip.asset.symbol}
             </Text>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={`Stop discussing ${marketChip.asset.symbol}`}
+              accessibilityLabel={`Stop discussing ${marketChip.asset.name}`}
               hitSlop={8}
               onPress={() => {
                 clearMarketContext();

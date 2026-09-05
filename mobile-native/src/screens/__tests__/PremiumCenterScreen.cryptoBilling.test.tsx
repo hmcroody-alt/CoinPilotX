@@ -38,7 +38,7 @@ describe("Premium Crypto Intelligence rows", () => {
   ];
 
   it("renders exactly the five required entries", () => {
-    const { getByText } = render(<CryptoIntelligenceSection navigation={nav()} />);
+    const { getByText } = render(<CryptoIntelligenceSection navigation={nav()} onUpgrade={jest.fn()} />);
     for (const [key] of EXPECTED) {
       expect(getByText(`discovery:crypto.intelligence.${key}.label`)).toBeTruthy();
       expect(getByText(`discovery:crypto.intelligence.${key}.hint`)).toBeTruthy();
@@ -47,7 +47,7 @@ describe("Premium Crypto Intelligence rows", () => {
 
   it.each(EXPECTED)("%s opens the canonical %s screen — no dead rows, no duplicates", (key, routeName, params) => {
     const navigation = nav();
-    const { getByLabelText } = render(<CryptoIntelligenceSection navigation={navigation} />);
+    const { getByLabelText } = render(<CryptoIntelligenceSection navigation={navigation} onUpgrade={jest.fn()} />);
     fireEvent.press(getByLabelText(`discovery:crypto.intelligence.${key}.label`));
     const navigate = (navigation as { navigate: jest.Mock }).navigate;
     expect(navigate).toHaveBeenCalledTimes(1);
@@ -56,7 +56,7 @@ describe("Premium Crypto Intelligence rows", () => {
 
   it("routes the five rows to five distinct destinations", () => {
     const navigation = nav();
-    const { getByLabelText } = render(<CryptoIntelligenceSection navigation={navigation} />);
+    const { getByLabelText } = render(<CryptoIntelligenceSection navigation={navigation} onUpgrade={jest.fn()} />);
     for (const [key] of EXPECTED) {
       fireEvent.press(getByLabelText(`discovery:crypto.intelligence.${key}.label`));
     }

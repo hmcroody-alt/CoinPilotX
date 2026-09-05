@@ -30,7 +30,7 @@ describe("Crypto intelligence — the roster", () => {
   it("offers every crypto surface that actually ships, watchlists included", () => {
     const navigation = nav();
     const { getByText } = render(
-      <CryptoIntelligenceSection navigation={navigation as never} />
+      <CryptoIntelligenceSection navigation={navigation as never} onUpgrade={jest.fn()} />
     );
     for (const key of ["alerts", "portfolio", "watchlists", "undx", "marketPulse"]) {
       expect(getByText(`discovery:crypto.intelligence.${key}.label`)).toBeTruthy();
@@ -55,7 +55,7 @@ describe("Crypto intelligence — where the rows go", () => {
   ])("sends %s to its own screen", (key, route, params) => {
     const navigation = nav();
     const { getByLabelText } = render(
-      <CryptoIntelligenceSection navigation={navigation as never} />
+      <CryptoIntelligenceSection navigation={navigation as never} onUpgrade={jest.fn()} />
     );
     fireEvent.press(getByLabelText(`discovery:crypto.intelligence.${key}.label`));
     expect(navigation.navigate.mock.calls).toEqual([params ? [route, params] : [route]]);
@@ -72,7 +72,9 @@ describe("Premium reuses the dashboard system", () => {
     const dashboard = nav();
     const premium = nav();
     openDashboardRoute(dashboard, path);
-    const { getByLabelText } = render(<CryptoIntelligenceSection navigation={premium as never} />);
+    const { getByLabelText } = render(
+      <CryptoIntelligenceSection navigation={premium as never} onUpgrade={jest.fn()} />
+    );
     fireEvent.press(getByLabelText(`discovery:crypto.intelligence.${key}.label`));
     expect(premium.navigate.mock.calls).toEqual(dashboard.navigate.mock.calls);
     expect(premium.navigate).toHaveBeenCalledTimes(1);

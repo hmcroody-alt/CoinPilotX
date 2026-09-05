@@ -936,13 +936,21 @@ def send_message(user_id: int, payload: dict | None = None) -> dict:
         # because it is nested and typed. A fresh envelope replaces the stored
         # one (a new asset screen must own "it"); a message without one keeps
         # the stored envelope alive, so the context survives ordinary turns.
+        # A dismissal is a client instruction about this conversation's own
+        # context and nothing else — it removes a subject, it cannot reach any
+        # other state — so it is taken at face value the way the envelope is.
         raw_ui_context = payload.get("ui_context") if isinstance(payload.get("ui_context"), dict) else {}
         incoming_market = undx_market_context.sanitize_market_context(raw_ui_context.get("market_context"))
+        market_cleared = bool(raw_ui_context.get("market_context_cleared"))
         stored_market = undx_market_context.load_stored(cur, int(user_id), int(conversation["id"]))
         persisted_context, market_context = undx_market_context.merge_for_persist(
-            ui_context, incoming_market, stored_market,
+            ui_context, incoming_market, stored_market, cleared=market_cleared,
         )
-        if persisted_context:
+        # The write has to happen on the clear path even when nothing is left to
+        # persist, or the stored envelope simply outlives the dismissal: an
+        # empty `persisted_context` means "there is no context now", which is a
+        # fact worth recording, not a reason to leave yesterday's row standing.
+        if persisted_context or (market_cleared and stored_market):
             cur.execute(
                 """INSERT INTO pulse_ai_client_contexts (user_id, conversation_id, context_json, updated_at)
                 VALUES (?, ?, ?, ?)

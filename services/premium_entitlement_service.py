@@ -961,17 +961,47 @@ def _is_premium_user_raw(user_id: int) -> bool:
         return True
     conn = db_service.connect()
     cur = conn.cursor()
-    cur.execute("SELECT premium_status, subscription_status, lifetime_premium, premium_glow_manual_grant, trial_end_date, pro_expires_at FROM users WHERE user_id=? LIMIT 1", (int(user_id or 0),))
+    cur.execute(
+        "SELECT premium_status, subscription_status, lifetime_premium, "
+        "premium_glow_manual_grant, trial_end_date, pro_expires_at, "
+        "premium_expires_at, subscription_expires_at "
+        "FROM users WHERE user_id=? LIMIT 1",
+        (int(user_id or 0),),
+    )
     row = dict(cur.fetchone() or {})
     conn.close()
     if int(row.get("lifetime_premium") or 0) or int(row.get("premium_glow_manual_grant") or 0):
         return True
     premium_status = str(row.get("premium_status") or "").lower()
     subscription_status = str(row.get("subscription_status") or "").lower()
-    if premium_status in {"active", "founder", "lifetime"}:
+    # Perpetual by construction: founder and lifetime grants have no period end,
+    # so there is no clock to consult. Everything below them does.
+    if premium_status in {"founder", "lifetime"}:
         return True
-    if subscription_status == "active":
-        return True
+    # THE CLOCK OUTRANKS THE STATUS WORD.
+    #
+    # These two branches used to return True on the word "active" alone, never
+    # reading an expiry column — the columns were not even selected. Under the
+    # production default (BUSINESS_OS_ENTITLEMENTS=off) this function IS the
+    # access authority, so a member whose subscription lapsed but whose users
+    # row was never swept kept every Premium benefit forever, while the Premium
+    # Center — which reads the same columns through premium_identity_engine,
+    # and that helper DOES check expiry — truthfully displayed "Expired". One
+    # set of columns, two readers, two answers: the member saw the honest label
+    # and kept the access anyway.
+    #
+    # There is now one shared clock rule (premium_identity_engine.row_period_ended)
+    # rather than a third reimplementation of it here. A row with no recorded
+    # end is unchanged: an indefinite admin/manual grant is not evidence of
+    # expiry and must not be revoked by silence.
+    if premium_status == "active" or subscription_status == "active":
+        return not _period_ended(row)
+    # CANCELLED IS NOT EXPIRED. Auto-renew off ends the renewal, not the term
+    # already paid for. Access runs to the recorded period end and stops there.
+    # (Members whose cancellation left a live entitlement row were already
+    # admitted above; this covers the ones who exist only as user columns.)
+    if premium_status in {"canceled", "cancelled"} or subscription_status in {"canceled", "cancelled"}:
+        return _has_recorded_end(row) and not _period_ended(row)
     # Trial statuses are TIME-BOUNDED: they only count while the recorded trial
     # window is still open. Historically these statuses were honoured with no
     # expiry check, so a 7-day trial silently became a lifetime grant for any
@@ -980,6 +1010,36 @@ def _is_premium_user_raw(user_id: int) -> bool:
     if premium_status == "trial" or subscription_status == "trialing":
         return _trial_window_open(row)
     return False
+
+
+_PERIOD_END_COLUMNS = ("premium_expires_at", "subscription_expires_at", "pro_expires_at")
+
+
+def _has_recorded_end(row: dict) -> bool:
+    """Does the row carry a period end at all?
+
+    Distinguishes "cancelled, term runs to a known date" from "cancelled, no
+    date recorded". The second is not evidence of a remaining paid period, and
+    treating it as one would grant unbounded Premium to every cancelled row.
+    """
+    return any((row or {}).get(col) for col in _PERIOD_END_COLUMNS)
+
+
+def _period_ended(row: dict) -> bool:
+    """Has the recorded subscription period end passed? Shared clock rule.
+
+    Delegates to ``premium_identity_engine.row_period_ended`` so authority A
+    (this module) and authority C (the identity columns behind the badge) cannot
+    drift apart on the one question that matters. Fails OPEN on import trouble —
+    this is a revocation check, and a broken import must not silently strip
+    Premium from every paying member on the platform.
+    """
+    try:
+        from services import premium_identity_engine as _pie
+    except Exception:  # noqa: BLE001
+        _log.exception("identity engine unavailable; expiry not cross-checked")
+        return False
+    return bool(_pie.row_period_ended(row))
 
 
 def _trial_window_open(row: dict) -> bool:
