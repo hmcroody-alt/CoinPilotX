@@ -4935,9 +4935,9 @@
         "durationMinutes_one": "{{count}} 分钟",
         "durationMinutes_other": "{{count}} 分钟",
         "presets": {
-          "in15m": "15 分钟后",
-          "in1h": "1 小时后",
-          "tomorrowMorning": "明天 9:00"
+          "in15m": "{{minutes}} 分钟后",
+          "in1h": "{{hours}} 小时后",
+          "tomorrowMorning": "明天 {{time}}"
         },
         "buckets": {
           "live": "正在进行",

@@ -86,12 +86,34 @@ function refusalPanelState(refusal: MeetingRefusal): FeatureRefusalState | "LOCK
 }
 
 /** Schedule presets — honest fixed choices instead of a broken date field. */
+const PRESET_MINUTES = 15;
+const PRESET_HOURS = 1;
+const PRESET_TOMORROW_HOUR = 9;
+
+/**
+ * Label numbers are interpolated from the SAME constants that compute the
+ * start time (premium copy ships no literal digits — premiumCopy.test.ts),
+ * so a chip can never promise a time the preset does not schedule.
+ */
+const PRESET_LABEL_ARGS: Record<
+  "in15m" | "in1h" | "tomorrowMorning",
+  Record<string, unknown>
+> = {
+  in15m: { minutes: PRESET_MINUTES },
+  in1h: { hours: PRESET_HOURS },
+  tomorrowMorning: { time: `${PRESET_TOMORROW_HOUR}:00` }
+};
+
 function presetStartAt(preset: "in15m" | "in1h" | "tomorrowMorning"): string {
   const now = new Date();
-  if (preset === "in15m") return new Date(now.getTime() + 15 * 60000).toISOString();
-  if (preset === "in1h") return new Date(now.getTime() + 60 * 60000).toISOString();
+  if (preset === "in15m") {
+    return new Date(now.getTime() + PRESET_MINUTES * 60000).toISOString();
+  }
+  if (preset === "in1h") {
+    return new Date(now.getTime() + PRESET_HOURS * 3600000).toISOString();
+  }
   const tomorrow = new Date(now.getTime() + 24 * 3600000);
-  tomorrow.setHours(9, 0, 0, 0);
+  tomorrow.setHours(PRESET_TOMORROW_HOUR, 0, 0, 0);
   return tomorrow.toISOString();
 }
 
@@ -379,12 +401,18 @@ function PrivateMeetingsBody({ navigation }: Props) {
                       onPress={() => setSchedulePreset(preset)}
                       accessibilityRole="button"
                       accessibilityState={{ selected: schedulePreset === preset }}
-                      accessibilityLabel={t(`premium:privateOffice.meetings.presets.${preset}`)}
+                      accessibilityLabel={t(
+                        `premium:privateOffice.meetings.presets.${preset}`,
+                        PRESET_LABEL_ARGS[preset]
+                      )}
                     >
                       <Text
                         style={[styles.chipText, schedulePreset === preset && styles.chipTextActive]}
                       >
-                        {t(`premium:privateOffice.meetings.presets.${preset}`)}
+                        {t(
+                          `premium:privateOffice.meetings.presets.${preset}`,
+                          PRESET_LABEL_ARGS[preset]
+                        )}
                       </Text>
                     </Pressable>
                   ))}

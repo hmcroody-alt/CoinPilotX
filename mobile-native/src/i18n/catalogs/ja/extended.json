@@ -4928,9 +4928,9 @@
         "durationMinutes_one": "{{count}}分",
         "durationMinutes_other": "{{count}}分",
         "presets": {
-          "in15m": "15分後",
-          "in1h": "1時間後",
-          "tomorrowMorning": "明日 9:00"
+          "in15m": "{{minutes}}分後",
+          "in1h": "{{hours}}時間後",
+          "tomorrowMorning": "明日 {{time}}"
         },
         "buckets": {
           "live": "開催中",

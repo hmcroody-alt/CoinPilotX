@@ -4967,9 +4967,9 @@
         "durationMinutes_one": "{{count}} मिनट",
         "durationMinutes_other": "{{count}} मिनट",
         "presets": {
-          "in15m": "15 मिनट में",
-          "in1h": "1 घंटे में",
-          "tomorrowMorning": "कल सुबह 9:00 बजे"
+          "in15m": "{{minutes}} मिनट में",
+          "in1h": "{{hours}} घंटे में",
+          "tomorrowMorning": "कल सुबह {{time}} बजे"
         },
         "buckets": {
           "live": "अभी चल रही",

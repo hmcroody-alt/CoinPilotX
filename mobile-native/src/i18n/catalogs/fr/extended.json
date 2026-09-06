@@ -4967,9 +4967,9 @@
         "durationMinutes_one": "{{count}} minute",
         "durationMinutes_other": "{{count}} minutes",
         "presets": {
-          "in15m": "Dans 15 minutes",
-          "in1h": "Dans 1 heure",
-          "tomorrowMorning": "Demain à 9h00"
+          "in15m": "Dans {{minutes}} minutes",
+          "in1h": "Dans {{hours}} heure",
+          "tomorrowMorning": "Demain à {{time}}"
         },
         "buckets": {
           "live": "En cours",
