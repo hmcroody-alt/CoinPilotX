@@ -804,6 +804,35 @@ def stage_telemetry_carries_no_member_data():
               settled.get("status") == "applied", str(settled.get("status")))
     del right
 
+    # And the citation and staleness metrics, driven through the canonical
+    # writer and the real sweep for the same reason as everything above. The
+    # evidence reference and locator are both secrets: this payload carries a
+    # kind, a domain and two counts, and a later edit tempted to make the
+    # dashboard "traceable" by adding the ref would be caught below.
+    cited = facts.record_fact(
+        cur, owner_user_id=USER_A, subject_type=retrieval.SUBJECT_TYPE_NODE,
+        subject_id="913", fact_type="policy_number", value=SECRETS[1],
+        value_type=model.VALUE_STRING,
+        provenance_type=model.PROVENANCE_USER_ASSERTED,
+        domain=model.DOMAIN_FINANCIAL,
+        observed_at="2024-01-01T00:00:00+00:00")
+    linked = facts.attach_evidence(
+        cur, owner_user_id=USER_A, fact_id=int(cited["fact_id"]),
+        evidence_type=model.EVIDENCE_DOCUMENT,
+        evidence_ref=f"doc:{SECRETS[1]}", locator=f"page 4 of {SECRETS[0]}")
+    check("attaching evidence fired its metric through the canonical writer",
+          linked.get("status") == "attached" and linked.get("live_evidence") == 1,
+          f"status={linked.get('status')!r} live={linked.get('live_evidence')!r}")
+    facts.detach_evidence(
+        cur, owner_user_id=USER_A, fact_id=int(cited["fact_id"]),
+        evidence_type=model.EVIDENCE_DOCUMENT,
+        evidence_ref=f"doc:{SECRETS[1]}", locator=f"page 4 of {SECRETS[0]}")
+
+    swept_facts = facts.sweep_stale_facts(cur, owner_user_id=USER_A)
+    check("the staleness sweep fired its metric with both halves",
+          swept_facts["scanned"] >= 1,
+          f"scanned={swept_facts['scanned']} flagged={swept_facts['flagged']}")
+
     conn.commit()
     conn.close()
 

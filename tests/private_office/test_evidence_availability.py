@@ -22,10 +22,12 @@ What these tests defend
 * **"I could not look" is not "there is nothing there."** A missing table
   resolves ``UNKNOWN``, not ``NOT_FOUND``.
 
-The database here is a hand-built SQLite with only the columns the resolver
-reads. That is deliberate: these tests are about the resolver's contract, and
-building them on the full schema would make them pass or fail for reasons that
-belong to other modules.
+The document and finding tables here are hand-built with only the columns the
+resolver reads: those two are outside the private-office package, and building
+them fully would make these tests pass or fail for reasons that belong to other
+modules. ``private_facts`` is the exception — it is a guarded private table, so
+it is created by ``schema`` and populated through ``facts``, the only modules
+allowed to write it.
 """
 
 import os
@@ -36,6 +38,9 @@ import unittest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 from services.private_office import evidence  # noqa: E402
+from services.private_office import facts  # noqa: E402
+from services.private_office import model  # noqa: E402
+from services.private_office import schema as _schema  # noqa: E402
 
 
 OWNER = 4001
@@ -53,13 +58,7 @@ def _build(conn: sqlite3.Connection) -> None:
             title TEXT NOT NULL DEFAULT '',
             lifecycle_state TEXT NOT NULL DEFAULT 'ACTIVE')"""
     )
-    cur.execute(
-        """CREATE TABLE private_facts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            owner_user_id INTEGER NOT NULL,
-            fact_type TEXT NOT NULL DEFAULT '',
-            lifecycle_state TEXT NOT NULL DEFAULT 'ACTIVE')"""
-    )
+    _schema.ensure_private_schema(cur)
     cur.execute(
         """CREATE TABLE private_shield_findings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -332,13 +331,26 @@ class ResolverProbeHonesty(unittest.TestCase):
     def test_mixed_kinds_resolve_independently(self):
         doc_id = _doc(self.conn, OWNER, "Deed")
         cur = self.cur
-        cur.execute(
-            "INSERT INTO private_facts (owner_user_id, fact_type, lifecycle_state) "
-            "VALUES (?,?,?)",
-            (OWNER, "preferred_airline", "SUPERSEDED"),
+        recorded = facts.record_fact(
+            cur,
+            owner_user_id=OWNER,
+            subject_type="NODE",
+            subject_id="1",
+            fact_type="preferred_airline",
+            value="KL",
+            value_type=model.VALUE_STRING,
+            provenance_type=model.PROVENANCE_USER_ASSERTED,
+            domain=model.DOMAIN_GENERAL,
+        )
+        fact_id = int(recorded["fact_id"])
+        facts.supersede_facts(
+            cur,
+            owner_user_id=OWNER,
+            subject_type="NODE",
+            subject_id="1",
+            fact_type="preferred_airline",
         )
         self.conn.commit()
-        fact_id = int(cur.lastrowid)
 
         out = evidence.resolve_refs(
             cur, OWNER,
