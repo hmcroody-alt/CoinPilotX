@@ -87,6 +87,7 @@ LOGGER = logging.getLogger("private_office.schema")
 FACTS_TABLE = "private_facts"
 FACT_HISTORY_TABLE = "private_fact_history"
 FACT_CONFLICTS_TABLE = "private_fact_conflicts"
+FACT_EVIDENCE_TABLE = "private_fact_evidence"
 NODES_TABLE = "private_graph_nodes"
 EDGES_TABLE = "private_graph_edges"
 AUDIT_TABLE = "private_audit_events"
@@ -94,8 +95,8 @@ SECURITY_TABLE = "private_office_security"
 GRANTS_TABLE = "private_office_unlock_grants"
 
 TABLES: tuple[str, ...] = (
-    FACTS_TABLE, FACT_HISTORY_TABLE, FACT_CONFLICTS_TABLE, NODES_TABLE,
-    EDGES_TABLE, AUDIT_TABLE, SECURITY_TABLE, GRANTS_TABLE,
+    FACTS_TABLE, FACT_HISTORY_TABLE, FACT_CONFLICTS_TABLE, FACT_EVIDENCE_TABLE,
+    NODES_TABLE, EDGES_TABLE, AUDIT_TABLE, SECURITY_TABLE, GRANTS_TABLE,
 )
 
 STATUS_READY = "ready"
@@ -412,10 +413,62 @@ CREATE TABLE IF NOT EXISTS {FACT_CONFLICTS_TABLE} (
 # zero — the writer refuses any actor that is not the owner — and a column that
 # can only ever hold one value is a cheap way to notice the day it holds two.
 
+# ---------------------------------------------------------------------------
+# Evidence — the thing a reviewer can actually be shown
+# ---------------------------------------------------------------------------
+# A fact's `provenance_ref` says where it came from and is fixed when it is
+# written. This table says what has since been produced in support of it, which
+# is a different question with a different lifetime: a fact taken from a meeting
+# note in March and backed by the signed schedule in June has one origin and one
+# piece of evidence, and a store with only the first column cannot say so
+# without overwriting the truth about where the fact actually came from.
+#
+# One row per (fact, kind, reference, locator). `locator` is part of the key
+# rather than an attribute because "page 4 of the schedule" and "page 11 of the
+# schedule" are two distinct citations of one document, and collapsing them
+# would make the second attachment look like a duplicate of the first and be
+# silently dropped.
+#
+# Detachment is a soft delete — `detached_at` set, row kept. That is not
+# squeamishness about DELETE. Attaching evidence promotes a fact to
+# EVIDENCE_SUPPORTED and detaching it demotes the fact to NEEDS_REVIEW, so a
+# detached row is the only surviving explanation for why a fact that used to be
+# well-supported suddenly needs looking at. Hard-deleting it would leave the
+# demotion in the fact's history with its cause erased.
+#
+# What is NOT here: the fact's value, the document's title, the member's note
+# about why this supports that. `evidence_ref` is an identifier resolved through
+# the owning package's own reader, under the same owner predicate as everything
+# else, so a reader who is not entitled to the document does not learn its name
+# from a citation.
+FACT_EVIDENCE_TABLE_DDL = f"""
+CREATE TABLE IF NOT EXISTS {FACT_EVIDENCE_TABLE} (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_user_id INTEGER NOT NULL,
+    fact_id INTEGER NOT NULL,
+    evidence_type TEXT NOT NULL,
+    evidence_ref TEXT NOT NULL DEFAULT '',
+    locator TEXT NOT NULL DEFAULT '',
+    attached_by_actor_type TEXT NOT NULL DEFAULT '',
+    attached_by_actor_id INTEGER NOT NULL DEFAULT 0,
+    attached_at TEXT NOT NULL,
+    detached_at TEXT NOT NULL DEFAULT '',
+    detached_by_actor_type TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(owner_user_id, fact_id, evidence_type, evidence_ref, locator)
+)
+"""
+
+# `detached_at` is empty-for-absent rather than NULL, matching every other
+# optional timestamp in this package, so `detached_at = ''` is the live
+# predicate and no reader has to remember which columns are three-valued.
+
 TABLE_DDL: dict[str, str] = {
     FACTS_TABLE: FACTS_TABLE_DDL,
     FACT_HISTORY_TABLE: FACT_HISTORY_TABLE_DDL,
     FACT_CONFLICTS_TABLE: FACT_CONFLICTS_TABLE_DDL,
+    FACT_EVIDENCE_TABLE: FACT_EVIDENCE_TABLE_DDL,
     NODES_TABLE: NODES_TABLE_DDL,
     EDGES_TABLE: EDGES_TABLE_DDL,
     AUDIT_TABLE: AUDIT_TABLE_DDL,
@@ -444,6 +497,7 @@ TABLE_ADDED_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
     ),
     FACT_HISTORY_TABLE: (),
     FACT_CONFLICTS_TABLE: (),
+    FACT_EVIDENCE_TABLE: (),
     NODES_TABLE: (),
     EDGES_TABLE: (),
     AUDIT_TABLE: (),
@@ -481,6 +535,16 @@ REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
     FACT_CONFLICTS_TABLE: (
         "owner_user_id", "conflict_id", "resolution", "winning_fact_id",
         "resolved_at",
+    ),
+    # `detached_at` is required alongside the identity columns because it is the
+    # live predicate. A deployment whose evidence table came up without it would
+    # read every detached citation as still supporting its fact, which is the
+    # one failure here that produces a *more* confident-looking store rather
+    # than a visibly broken one — facts sitting at EVIDENCE_SUPPORTED on the
+    # strength of documents the member deliberately took away.
+    FACT_EVIDENCE_TABLE: (
+        "owner_user_id", "fact_id", "evidence_type", "evidence_ref",
+        "attached_at", "detached_at",
     ),
     NODES_TABLE: (
         "owner_user_id", "node_key", "node_type", "lifecycle_state",
@@ -540,6 +604,13 @@ INDEX_DDL: tuple[str, ...] = (
     # incidental to a constraint someone could later relax.
     f"CREATE INDEX IF NOT EXISTS idx_private_fact_conflicts_owner "
     f"ON {FACT_CONFLICTS_TABLE} (owner_user_id, conflict_id)",
+    # The evidence read is always "what supports this fact, right now", so the
+    # live predicate is in the index rather than applied after it. Without
+    # `detached_at` here, a fact whose evidence has been attached and removed
+    # repeatedly makes the reader walk every historical citation to find the
+    # handful that still count.
+    f"CREATE INDEX IF NOT EXISTS idx_private_fact_evidence_fact "
+    f"ON {FACT_EVIDENCE_TABLE} (owner_user_id, fact_id, detached_at)",
     f"CREATE INDEX IF NOT EXISTS idx_private_nodes_type "
     f"ON {NODES_TABLE} (owner_user_id, node_type, lifecycle_state)",
     f"CREATE INDEX IF NOT EXISTS idx_private_edges_source "

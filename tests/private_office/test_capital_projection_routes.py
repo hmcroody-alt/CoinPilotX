@@ -77,6 +77,7 @@ from services.private_office import capital_graph  # noqa: E402
 from services.private_office import capital_overview as overview_mod  # noqa: E402
 from services.private_office import cash_flow as cash_flow_mod  # noqa: E402
 from services.private_office import feature_matrix  # noqa: E402
+from services.private_office import integrity as integrity_mod  # noqa: E402
 from services.private_office import obligation_projection as obligations  # noqa: E402
 from services.private_office import portfolio_projection as portfolio  # noqa: E402
 from services.private_office import records  # noqa: E402
@@ -90,14 +91,17 @@ OVERVIEW_PATH = "/api/private-office/capital-graph/overview"
 OBLIGATIONS_PATH = "/api/private-office/capital-graph/obligations"
 EXPOSURE_PATH = "/api/private-office/capital-graph/exposure"
 CASH_FLOW_PATH = "/api/private-office/capital-graph/cash-flow"
-PATHS = (OVERVIEW_PATH, OBLIGATIONS_PATH, EXPOSURE_PATH, CASH_FLOW_PATH)
+INTEGRITY_PATH = "/api/private-office/capital-graph/integrity"
+PATHS = (OVERVIEW_PATH, OBLIGATIONS_PATH, EXPOSURE_PATH, CASH_FLOW_PATH,
+         INTEGRITY_PATH)
 
 #: The payload key each route wraps its data in. Used to assert that a refusal
 #: carries no data key at all, rather than an empty one.
 DATA_KEY = {OVERVIEW_PATH: "overview",
             OBLIGATIONS_PATH: "obligations",
             EXPOSURE_PATH: "exposure",
-            CASH_FLOW_PATH: "cash_flow"}
+            CASH_FLOW_PATH: "cash_flow",
+            INTEGRITY_PATH: "integrity"}
 
 _FAILURES: list[str] = []
 
@@ -411,6 +415,42 @@ def stage_reads_when_live():
               "obligations_seen", 0),
           (len(flow.get("schedule") or []), flow_totals.get("obligations_seen")))
 
+    integrity_resp = client.get(INTEGRITY_PATH)
+    ig_body = integrity_resp.get_json() or {}
+    check("integrity answers 200", integrity_resp.status_code == 200,
+          f"{integrity_resp.status_code} {ig_body}")
+    report = ig_body.get("integrity") or {}
+    for block in ("healthy", "findings", "checks", "examined", "totals",
+                  "basis"):
+        check(f"integrity carries {block}", block in report, sorted(report))
+    check("integrity names every check it knows how to run",
+          set(report.get("checks") or {}) == set(integrity_mod.CHECKS),
+          sorted(report.get("checks") or {}))
+    check("integrity says in the payload that it repairs nothing",
+          "diagnostic only" in str(
+              (report.get("basis") or {}).get("repair", "")).lower(),
+          (report.get("basis") or {}).get("repair"))
+    # A clean report over a store that was never scanned is the failure this
+    # surface exists to prevent, so the counts must ride with the verdict.
+    check("integrity states how much it examined",
+          set(report.get("examined") or {}) >= {"nodes", "edges"},
+          report.get("examined"))
+    ig_totals = report.get("totals") or {}
+    for field in ("findings", "invariant_violations", "checks_run",
+                  "checks_total", "inconclusive", "truncated", "complete"):
+        check(f"integrity totals state {field}", field in ig_totals, ig_totals)
+    check("a healthy verdict means every check ran",
+          report.get("healthy") is not True
+          or ig_totals.get("checks_run") == ig_totals.get("checks_total"),
+          (report.get("healthy"), ig_totals))
+    check("integrity is never cached",
+          "no-store" in integrity_resp.headers.get("Cache-Control", ""))
+    # Read-only by shape as well as by promise: the route accepts GET and
+    # nothing else, so there is no verb a client could reach a repair through.
+    for verb in ("post", "put", "delete", "patch"):
+        code = getattr(client, verb)(INTEGRITY_PATH).status_code
+        check(f"integrity refuses {verb.upper()}", code == 405, code)
+
 
 def stage_no_invented_total():
     """A field spelled like a net worth is read as one. None may exist."""
@@ -479,6 +519,7 @@ def stage_failure_is_not_emptiness():
         (EXPOSURE_PATH, overview_mod, "overview"),
         (OBLIGATIONS_PATH, obligations, "liabilities_view"),
         (CASH_FLOW_PATH, cash_flow_mod, "schedule"),
+        (INTEGRITY_PATH, integrity_mod, "diagnose"),
     )
     for path, module, attr in targets:
         original = getattr(module, attr)

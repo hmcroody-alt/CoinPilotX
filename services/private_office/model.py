@@ -291,6 +291,68 @@ TERMINAL_VERIFICATION: frozenset[str] = frozenset(
 )
 
 # ---------------------------------------------------------------------------
+# Evidence (Private Facts, Section 16 — what makes EVIDENCE_SUPPORTED reachable)
+# ---------------------------------------------------------------------------
+# `VERIFICATION_EVIDENCE_SUPPORTED` ranks at 70: above a member's own
+# confirmation, below a system of record. That gap is the whole reason the state
+# exists. A member saying "yes, that's right" is an opinion, however sincere; a
+# member saying "yes, and here is the policy schedule it came from" is an
+# opinion plus something a third party can go and look at. The second is
+# genuinely stronger and it is genuinely not the bank's own answer, so it needs
+# its own rung.
+#
+# The rung was unreachable until now. Nothing set the state, and there was
+# nowhere to put the thing being pointed at — `ProvenanceRef` records the
+# *origin* of a fact and is fixed at write time, which is a different question
+# from "what has since been produced in support of it". A fact created from a
+# meeting note and later backed by the signed document has one origin and one
+# piece of evidence, and a schema that stores only the first cannot say so.
+#
+# The vocabulary is closed and deliberately short. Every entry names a thing
+# that already exists somewhere in this product and can be opened: a private
+# document, a meeting the member attended, a structured record, a provider
+# statement, or an external artefact the member described. There is no "other"
+# and no free-text kind, because the value of this list is that a reviewer can
+# be shown *the actual item*, and a kind nobody can resolve to an item is a
+# citation that cannot be followed — which is worse than no citation, since it
+# still buys the fact a promotion to rank 70.
+EVIDENCE_DOCUMENT = "DOCUMENT"
+EVIDENCE_MEETING = "MEETING"
+EVIDENCE_RECORD = "RECORD"
+EVIDENCE_STATEMENT = "STATEMENT"
+EVIDENCE_EXTERNAL = "EXTERNAL"
+
+EVIDENCE_TYPES: tuple[str, ...] = (
+    EVIDENCE_DOCUMENT,
+    EVIDENCE_MEETING,
+    EVIDENCE_RECORD,
+    EVIDENCE_STATEMENT,
+    EVIDENCE_EXTERNAL,
+)
+
+#: Evidence kinds that resolve to something inside this member's own office, so
+#: a reviewer can be handed the item itself rather than a description of it.
+#: `EXTERNAL` is excluded because it is the member's word for something the
+#: product cannot open — still worth recording, still not the same claim.
+RESOLVABLE_EVIDENCE: frozenset[str] = frozenset(
+    {EVIDENCE_DOCUMENT, EVIDENCE_MEETING, EVIDENCE_RECORD}
+)
+
+
+def normalize_evidence_type(value: object) -> str:
+    """Canonical evidence kind, or ``""`` for anything unrecognised.
+
+    Empty rather than a fallback member, and the callers treat empty as a
+    refusal. A default kind here would let a typo attach evidence of a type
+    nobody chose and still promote the fact to EVIDENCE_SUPPORTED — the
+    promotion being the part that matters, and the part that must never happen
+    by accident.
+    """
+    name = str(value or "").strip().upper()
+    return name if name in EVIDENCE_TYPES else ""
+
+
+# ---------------------------------------------------------------------------
 # Value types (Stage 6 `typed_value`)
 # ---------------------------------------------------------------------------
 # `typed_value` is stored as text alongside a discriminator, and numerically

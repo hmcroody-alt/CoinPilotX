@@ -137,6 +137,12 @@ FACT_OPERATION_VOCAB = frozenset({
     # disagreements nobody is settling, and that is invisible if both arrive as
     # "a fact changed state".
     "flag_conflict", "resolve",
+    # Evidence and review. `attach_evidence` and `detach_evidence` are a matched
+    # pair whose *ratio* is the signal — a store where the second is catching up
+    # with the first is one where support is being dismantled as fast as it is
+    # added — and `flag_review` is the machine-driven third, which is why it must
+    # not be counted with either.
+    "attach_evidence", "detach_evidence", "flag_review",
 })
 
 #: Who performed a fact operation, as a *class* rather than an identity. The
@@ -213,6 +219,27 @@ CONFLICT_RESOLUTION_VOCAB = frozenset({"winner_chosen", "dismissed"})
 #: signal before a member noticed would be this ratio moving.
 CONFLICT_DISPOSITION_VOCAB = frozenset({"dispute", "supersede", "none"})
 
+#: The kind of thing a fact was cited against. Mirrors ``model.EVIDENCE_TYPES``
+#: and is safe to publish for the same reason domains are: every member is a
+#: policy name this package chose, and none of them is an identifier of the
+#: particular document. What it buys is the one question worth asking about a
+#: sourcing effort — whether the evidence being attached is material this
+#: product can open and re-show, or ``external``, which is the member's word for
+#: something nobody can check. A store whose support is mostly external is
+#: sourced in name only.
+EVIDENCE_TYPE_VOCAB = frozenset({
+    "document", "meeting", "record", "statement", "external",
+})
+
+#: Why a fact was put in front of the member. `stale` is the passage of time,
+#: `evidence_removed` is a demotion caused by somebody detaching support, and
+#: `owner_request` is a member asking to look at something again. Kept apart
+#: because a queue made of the first is a store that needs refreshing and a
+#: queue made of the second is a store that is being taken apart.
+REVIEW_REASON_VOCAB = frozenset({
+    "stale", "evidence_removed", "owner_request",
+})
+
 #: The six Batch C record primitives. A closed vocabulary for the same reason
 #: intents are: this is a policy name chosen by the package, never anything a
 #: member typed, so it is safe to publish and an unrecognised one collapses to
@@ -285,6 +312,16 @@ EVENT_CONFLICT_DETECTED = "private_office.conflict_detected"
 #: reporting a growing pile of disagreements with no way to see any of them
 #: being closed.
 EVENT_CONFLICT_RESOLVED = "private_office.conflict_resolved"
+#: Evidence was attached to or removed from a fact. One event with a direction
+#: rather than two, because the pair is only meaningful as a ratio and splitting
+#: it across two event names makes the ratio something a dashboard has to
+#: reassemble.
+EVENT_EVIDENCE_LINKED = "private_office.evidence_linked"
+#: A staleness sweep ran. Reports what it scanned as well as what it flagged,
+#: because the failure this package exists to prevent is a sweep that reports
+#: zero flags when it could not read the table — a shape indistinguishable from
+#: a store in perfect health if only the flag count is published.
+EVENT_REVIEW_SWEEP = "private_office.review_sweep"
 EVENT_SCHEMA_STATE = "private_office.schema_state"
 EVENT_RECORD_WRITE = "private_office.record_write"
 EVENT_RECORD_CLOSED = "private_office.record_closed"
@@ -378,6 +415,38 @@ EVENTS: dict[str, dict[str, tuple[str, frozenset[str] | None]]] = {
         # evidence arrived — but a rate that climbs means the detector is
         # producing conflicts people cannot decide once.
         "resettled": (KIND_FLAG, None),
+    },
+    EVENT_EVIDENCE_LINKED: {
+        "evidence_type": (KIND_ENUM, EVIDENCE_TYPE_VOCAB),
+        "actor_type": (KIND_ENUM, ACTOR_TYPE_VOCAB),
+        "domain": (KIND_ENUM, DOMAIN_VOCAB),
+        # True for an attachment, false for a detachment. A flag rather than an
+        # enum because there are exactly two directions and there will not be a
+        # third; an enum here would invite one.
+        "attached": (KIND_FLAG, None),
+        # Whether the fact's verification state moved as a result. Attaching
+        # evidence to a DISPUTED fact records the citation and deliberately
+        # leaves the member's own judgement alone, so attachments that promote
+        # and attachments that do not are different events wearing one name, and
+        # this is what tells them apart. A build where this went uniformly false
+        # would be a build where EVIDENCE_SUPPORTED had quietly died again.
+        "promoted": (KIND_FLAG, None),
+        # How many live citations the fact has after this change. The number
+        # that matters on a detachment: going to zero is what demotes the fact,
+        # and a detachment that left support behind is a different event from
+        # one that took the last of it away.
+        "live_evidence": (KIND_COUNT, None),
+    },
+    EVENT_REVIEW_SWEEP: {
+        "reason": (KIND_ENUM, REVIEW_REASON_VOCAB),
+        "actor_type": (KIND_ENUM, ACTOR_TYPE_VOCAB),
+        # Both halves, always. `scanned` without `flagged` cannot show a sweep
+        # that is finding nothing because there is nothing wrong; `flagged`
+        # without `scanned` cannot distinguish that from a sweep that read no
+        # rows at all. This package was written out of an incident where those
+        # two situations reported the same numbers.
+        "scanned": (KIND_COUNT, None),
+        "flagged": (KIND_COUNT, None),
     },
     EVENT_SCHEMA_STATE: {
         "state": (KIND_ENUM, SCHEMA_STATE_VOCAB),
@@ -599,6 +668,8 @@ __all__ = [
     "EVENT_CONTEXT_DENIED",
     "EVENT_CONFLICT_DETECTED",
     "EVENT_CONFLICT_RESOLVED",
+    "EVENT_EVIDENCE_LINKED",
+    "EVENT_REVIEW_SWEEP",
     "EVENT_SCHEMA_STATE",
     "FORBIDDEN_FIELDS",
     "OTHER",

@@ -89,6 +89,7 @@ from services.private_office import capital_overview as po_capital_overview
 from services.private_office import cash_flow as po_cash_flow
 from services.private_office import facts as po_facts
 from services.private_office import feature_matrix as po_matrix
+from services.private_office import integrity as po_integrity
 from services.private_office import model as po_model
 from services.private_office import obligation_projection as po_obligations
 from services.private_office import office as po_office
@@ -909,6 +910,54 @@ def api_private_office_capital_cash_flow():
         )
 
     return _no_store({"ok": True, "cash_flow": payload})
+
+
+@private_office_blueprint.route(
+    "/api/private-office/capital-graph/integrity", methods=["GET"])
+def api_private_office_capital_integrity():
+    """Structural faults in the member's own capital rows. Read-only.
+
+    GET, and only GET, because this endpoint fixes nothing: ``basis.repair``
+    says so in the payload, and no writer is reachable from the module behind
+    it. A repair belongs to a route somebody decided to call, not to the one
+    that reports the problem.
+
+    ``healthy`` is False whenever a check could not run, not only when a fault
+    was found — a diagnostic that reports success over a check it skipped is
+    worse than one that does not run at all.
+    """
+    user = _current_user()
+    if not user:
+        return _no_store({"ok": False, "message": "Login required."}, 401)
+
+    resolved = _resolve_for(user)
+    refusal = _gate(resolved, CAPITAL_FEATURE_ID)
+    if refusal:
+        return refusal
+    locked = _office_lock_gate(user)
+    if locked:
+        return locked
+
+    try:
+        payload = _with_cursor(
+            lambda cur: po_integrity.diagnose(
+                cur,
+                owner_user_id=user["user_id"],
+                actor_user_id=user["user_id"],
+            )
+        )
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("PRIVATE_OFFICE_CAPITAL_INTEGRITY_READ_FAILED")
+        return _capital_failure()
+
+    if not payload.get("ok"):
+        return _no_store(
+            {"ok": False, "state": "denied",
+             "reason": payload.get("denied") or {}},
+            403,
+        )
+
+    return _no_store({"ok": True, "integrity": payload})
 
 
 @private_office_blueprint.route(
