@@ -35,9 +35,8 @@ def import_bot_with_temp_db():
     os.environ["TELEGRAM_BOT_TOKEN"] = ""
     os.environ["SKIP_TELEGRAM"] = "1"
     os.environ["BREVO_EMAIL_ENABLED"] = "false"
-    os.environ["LIVEKIT_URL"] = "wss://livekit.audit.invalid"
-    os.environ["LIVEKIT_API_KEY"] = "audit_key"
-    os.environ["LIVEKIT_API_SECRET"] = "audit_secret"
+    os.environ["AGORA_APP_ID"] = "audit_app_id"
+    os.environ["AGORA_APP_CERTIFICATE"] = "audit_certificate"
     bot = importlib.import_module("bot")
     if hasattr(bot, "push_service"):
         bot.push_service._async_push_enabled = lambda: False
@@ -199,14 +198,14 @@ def run_call_flow(bot, caller_id: int, callee_id: int, failures: list[str]) -> N
         conn.close()
     require_event(sync_events(client, callee_id, failures), "call_missed", failures)
 
-    original_token = calls._generate_livekit_token
-    calls._generate_livekit_token = lambda *args, **kwargs: {"ok": False, "status": "token_failed", "message": "audit token failure"}
+    original_token = calls._generate_agora_token
+    calls._generate_agora_token = lambda *args, **kwargs: calls._err("audit token failure", 503, "agora_token_failed", provider="agora")
     try:
         failed_conversation_id = seed_comm_v2_conversation(bot, caller_id, callee_id)
         failed = calls.start_call(caller_id, {"conversation_id": failed_conversation_id, "call_type": "audio"})
         require(failed.get("ok") is False, f"call failure fixture should fail token generation: {failed}", failures)
     finally:
-        calls._generate_livekit_token = original_token
+        calls._generate_agora_token = original_token
     require_event(sync_events(client, caller_id, failures), "call_failed", failures)
 
 
