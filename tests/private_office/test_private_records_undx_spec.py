@@ -580,12 +580,15 @@ def stage_lifecycle_parity() -> None:
 
     # No new write reached the agent surface. The lifecycle work added writers
     # to ``records.py``; none of them may be reachable from the spec module,
-    # and the capability set must still be exactly the six reads.
+    # and the capability set must still be exactly the typed reads — eight
+    # since tasks and projects joined the original six views. The count is
+    # asserted rather than derived on purpose: a capability that turns up here
+    # without someone editing this line is one nobody decided to expose.
     body = inspect.getsource(spec)
     for writer in ("create_record", "update_record", "revise_record"):
         check(f"the agent surface cannot reach {writer}", writer not in body)
-    check("the capability set is still the six reads",
-          len(spec.CAPABILITIES) == 6, str(len(spec.CAPABILITIES)))
+    check("the capability set is still the typed reads and nothing else",
+          len(spec.CAPABILITIES) == 8, str(len(spec.CAPABILITIES)))
     check("no capability describes an overview or an aggregate",
           not any("overview" in entry["capability_id"] or
                   "attention" in entry["capability_id"]

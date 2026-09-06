@@ -580,6 +580,8 @@ VIEW_DECISIONS = "decisions"
 VIEW_REQUESTS = "requests"
 VIEW_RISKS = "risks"
 VIEW_OPPORTUNITIES = "opportunities"
+VIEW_TASKS = "tasks"
+VIEW_PROJECTS = "projects"
 
 #: View name -> record type. The view names are the public vocabulary; the
 #: table names appear nowhere in this mapping and nowhere in the result, which
@@ -591,6 +593,8 @@ RECORD_VIEWS: dict[str, str] = {
     VIEW_REQUESTS: _records.TYPE_REQUEST,
     VIEW_RISKS: _records.TYPE_RISK,
     VIEW_OPPORTUNITIES: _records.TYPE_OPPORTUNITY,
+    VIEW_TASKS: _records.TYPE_TASK,
+    VIEW_PROJECTS: _records.TYPE_PROJECT,
 }
 
 DENIED_UNKNOWN_VIEW = "unknown_view"

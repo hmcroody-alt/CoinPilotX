@@ -521,9 +521,17 @@ def stage_shape_rejections() -> None:
         target_type=records.TYPE_OBLIGATION, target_id=ob))
     check("an event cannot depend on anything", refused, message)
 
+    # Derived, not spelled out. This slot once held a literal "TASK", which
+    # stopped testing anything the day TASK became a real record type — the
+    # refusal quietly turned into a not-found and the assertion had to be
+    # rewritten. Asking the registry keeps the sentinel unknown by
+    # construction, so adding a type can never hollow this check out.
+    no_such_type = "NOT_A_RECORD_TYPE"
+    assert no_such_type not in records.SPECS
+
     refused, message = _rejects(lambda: records.link_records(
         cur, owner_user_id=USER_A,
-        source_type="TASK", source_id=ob,
+        source_type=no_such_type, source_id=ob,
         target_type=records.TYPE_OBLIGATION, target_id=ob))
     check("an unknown record type is refused", refused, message)
     check("the unknown-type message is a shape error",
@@ -549,7 +557,7 @@ def stage_shape_rejections() -> None:
     # available while buying no extra safety.
     _, unknown = _rejects(lambda: records.link_records(
         cur, owner_user_id=USER_A,
-        source_type="TASK", source_id=ob,
+        source_type=no_such_type, source_id=ob,
         target_type=records.TYPE_OBLIGATION, target_id=ob))
     check("a shape error is not flattened into not-found",
           "no such" not in unknown.lower(), unknown)

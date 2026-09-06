@@ -3114,6 +3114,18 @@ def _register_private_record_executors() -> None:
 _register_private_record_executors()
 
 
+# The Capital Graph read, registered under its derived name so the registry
+# entry and this table cannot spell it differently.
+def _register_private_capital_executor() -> None:
+    from services.private_office import undx_capital_spec as _po_capital
+
+    EXECUTORS[_po_capital.executor_name(_po_capital.CAPABILITY_ID)] = (
+        private_capital_portfolio)
+
+
+_register_private_capital_executor()
+
+
 # The five feature reads, bound from their spec module for the same reason.
 def _register_private_feature_read_executors() -> None:
     from services.private_office import undx_feature_reads_spec as _po_reads

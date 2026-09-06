@@ -147,10 +147,13 @@ TYPE_DECISION = "DECISION"
 TYPE_REQUEST = "REQUEST"
 TYPE_RISK = "RISK"
 TYPE_OPPORTUNITY = "OPPORTUNITY"
+TYPE_TASK = "TASK"
+TYPE_PROJECT = "PROJECT"
 
 RECORD_TYPES: tuple[str, ...] = (
     TYPE_OBLIGATION, TYPE_EVENT, TYPE_DECISION,
     TYPE_REQUEST, TYPE_RISK, TYPE_OPPORTUNITY,
+    TYPE_TASK, TYPE_PROJECT,
 )
 
 #: Where a record came from. ``USER`` and ``SYSTEM`` are origins in their own
@@ -317,10 +320,17 @@ SPECS: dict[str, dict] = {
             ("amount_text", "TEXT NOT NULL DEFAULT ''", "internal", False),
             ("amount_number", "REAL", "internal", False),
             ("currency", "TEXT NOT NULL DEFAULT ''", "currency", False),
+            ("priority", "TEXT NOT NULL DEFAULT 'NORMAL'", "enum", False),
         ),
         "required": ("title", "obligation_type"),
         "identity": ("obligation_type", "title", "due_at"),
         "indexes": ("due_at",),
+        "enums": {"priority": PRIORITIES},
+        "transitions": {
+            "OPEN": ("RESOLVED", "DISMISSED"),
+            "RESOLVED": ("OPEN", "DISMISSED"),
+            "DISMISSED": ("OPEN", "RESOLVED"),
+        },
     },
     TYPE_EVENT: {
         # `private_domain_events`, not `private_events`. The user's Batch C note
@@ -343,6 +353,9 @@ SPECS: dict[str, dict] = {
         "required": ("event_type",),
         "identity": ("event_type", "occurred_at", "title"),
         "indexes": ("occurred_at",),
+        # An event is a statement that something happened. It has no lifecycle
+        # to speak of, so its transition matrix is empty: RECORDED goes nowhere.
+        "transitions": {"RECORDED": ()},
     },
     TYPE_DECISION: {
         "table": "private_decisions",
@@ -357,6 +370,7 @@ SPECS: dict[str, dict] = {
             ("assumptions", "TEXT NOT NULL DEFAULT ''", "text", False),
             ("deadline_at", "TEXT", "timestamp", False),
             ("outcome", "TEXT NOT NULL DEFAULT ''", "text", False),
+            ("priority", "TEXT NOT NULL DEFAULT 'NORMAL'", "enum", False),
         ),
         "required": ("question",),
         # Identity is the question alone. Two rows asking the same thing are one
@@ -364,6 +378,13 @@ SPECS: dict[str, dict] = {
         # revision is for.
         "identity": ("question",),
         "indexes": ("deadline_at",),
+        "enums": {"priority": PRIORITIES},
+        "transitions": {
+            "OPEN": ("UNDER_REVIEW", "DECIDED", "ABANDONED"),
+            "UNDER_REVIEW": ("OPEN", "DECIDED", "ABANDONED"),
+            "DECIDED": ("OPEN", "ABANDONED"),
+            "ABANDONED": ("OPEN", "DECIDED"),
+        },
     },
     TYPE_REQUEST: {
         "table": "private_requests",
@@ -389,6 +410,14 @@ SPECS: dict[str, dict] = {
         "identity": ("category", "title"),
         "indexes": ("deadline_at",),
         "enums": {"priority": PRIORITIES, "confidentiality": CONFIDENTIALITIES},
+        "transitions": {
+            "OPEN": ("IN_PROGRESS", "WAITING_ON_USER", "WAITING_ON_PROVIDER", "COMPLETED", "CANCELED"),
+            "IN_PROGRESS": ("OPEN", "WAITING_ON_USER", "WAITING_ON_PROVIDER", "COMPLETED", "CANCELED"),
+            "WAITING_ON_USER": ("OPEN", "IN_PROGRESS", "WAITING_ON_PROVIDER", "COMPLETED", "CANCELED"),
+            "WAITING_ON_PROVIDER": ("OPEN", "IN_PROGRESS", "WAITING_ON_USER", "COMPLETED", "CANCELED"),
+            "COMPLETED": ("OPEN", "CANCELED"),
+            "CANCELED": ("OPEN", "COMPLETED"),
+        },
     },
     TYPE_RISK: {
         "table": "private_risks",
@@ -403,11 +432,24 @@ SPECS: dict[str, dict] = {
             ("severity", "TEXT NOT NULL DEFAULT 'UNKNOWN'", "enum", False),
             ("coverage_state", "TEXT NOT NULL DEFAULT 'UNKNOWN'", "enum", False),
             ("review_required", "INTEGER NOT NULL DEFAULT 0", "flag", False),
+            ("priority", "TEXT NOT NULL DEFAULT 'NORMAL'", "enum", False),
         ),
         "required": ("risk_type", "summary"),
         "identity": ("risk_type", "summary"),
         "indexes": ("severity",),
-        "enums": {"severity": SEVERITIES, "coverage_state": COVERAGE_STATES},
+        "enums": {
+            "severity": SEVERITIES,
+            "coverage_state": COVERAGE_STATES,
+            "priority": PRIORITIES,
+        },
+        "transitions": {
+            "OPEN": ("MONITORING", "MITIGATED", "ACCEPTED", "RESOLVED", "DISMISSED"),
+            "MONITORING": ("OPEN", "MITIGATED", "ACCEPTED", "RESOLVED", "DISMISSED"),
+            "MITIGATED": ("OPEN", "MONITORING", "ACCEPTED", "RESOLVED", "DISMISSED"),
+            "ACCEPTED": ("OPEN", "MONITORING", "MITIGATED", "RESOLVED", "DISMISSED"),
+            "RESOLVED": ("OPEN", "DISMISSED"),
+            "DISMISSED": ("OPEN", "RESOLVED"),
+        },
     },
     TYPE_OPPORTUNITY: {
         "table": "private_opportunities",
@@ -425,10 +467,110 @@ SPECS: dict[str, dict] = {
             # and stops there. Anything stronger is investment advice, which
             # this platform does not autonomously give.
             ("relevance_score", "REAL", "score", False),
+            ("priority", "TEXT NOT NULL DEFAULT 'NORMAL'", "enum", False),
         ),
         "required": ("title", "opportunity_type"),
         "identity": ("opportunity_type", "title"),
         "indexes": (),
+        "enums": {"priority": PRIORITIES},
+        "transitions": {
+            "NEW": ("REVIEWING", "INTERESTED", "PASSED", "CLOSED"),
+            "REVIEWING": ("NEW", "INTERESTED", "PASSED", "CLOSED"),
+            "INTERESTED": ("NEW", "REVIEWING", "PASSED", "CLOSED"),
+            "PASSED": ("NEW", "REVIEWING", "CLOSED"),
+            "CLOSED": ("NEW", "REVIEWING", "PASSED"),
+        },
+    },
+    TYPE_TASK: {
+        "table": "private_tasks",
+        "statuses": (
+            "DRAFT", "OPEN", "PLANNED", "IN_PROGRESS", "WAITING", "BLOCKED",
+            "AWAITING_APPROVAL", "COMPLETED", "CANCELLED", "DEFERRED", "EXPIRED",
+        ),
+        "default_status": "OPEN",
+        "closing": ("COMPLETED", "CANCELLED", "EXPIRED"),
+        "closed_as": "completed_at",
+        "summary_as": "summary",
+        "audit_object": "TASK",
+        "extra": (
+            ("task_type", "TEXT NOT NULL DEFAULT ''", "token", False),
+            ("priority", "TEXT NOT NULL DEFAULT 'NORMAL'", "enum", False),
+            ("due_at", "TEXT", "timestamp", False),
+            # A task may belong to a project; the reference is an id, validated
+            # like every other id, and dangling is a diagnostic finding, not a
+            # write-time error — the project may legitimately be created after
+            # the tasks it will collect.
+            ("project_ref", "TEXT NOT NULL DEFAULT ''", "ref", False),
+        ),
+        "required": ("title",),
+        "identity": ("task_type", "title", "due_at"),
+        "indexes": ("due_at",),
+        "enums": {"priority": PRIORITIES},
+        "transitions": {
+            "DRAFT": ("OPEN", "PLANNED", "CANCELLED"),
+            "OPEN": ("PLANNED", "IN_PROGRESS", "WAITING", "BLOCKED",
+                     "AWAITING_APPROVAL", "COMPLETED", "CANCELLED",
+                     "DEFERRED", "EXPIRED"),
+            "PLANNED": ("OPEN", "IN_PROGRESS", "WAITING", "BLOCKED",
+                        "AWAITING_APPROVAL", "COMPLETED", "CANCELLED",
+                        "DEFERRED", "EXPIRED"),
+            "IN_PROGRESS": ("OPEN", "PLANNED", "WAITING", "BLOCKED",
+                            "AWAITING_APPROVAL", "COMPLETED", "CANCELLED",
+                            "DEFERRED", "EXPIRED"),
+            "WAITING": ("OPEN", "PLANNED", "IN_PROGRESS", "BLOCKED",
+                        "AWAITING_APPROVAL", "COMPLETED", "CANCELLED",
+                        "DEFERRED", "EXPIRED"),
+            "BLOCKED": ("OPEN", "PLANNED", "IN_PROGRESS", "WAITING",
+                        "AWAITING_APPROVAL", "COMPLETED", "CANCELLED",
+                        "DEFERRED", "EXPIRED"),
+            "AWAITING_APPROVAL": ("OPEN", "PLANNED", "IN_PROGRESS", "WAITING",
+                                  "BLOCKED", "COMPLETED", "CANCELLED",
+                                  "DEFERRED", "EXPIRED"),
+            "DEFERRED": ("OPEN", "PLANNED", "IN_PROGRESS", "CANCELLED", "EXPIRED"),
+            "COMPLETED": ("OPEN", "CANCELLED"),
+            "CANCELLED": ("OPEN", "COMPLETED"),
+            "EXPIRED": ("OPEN", "CANCELLED"),
+        },
+    },
+    TYPE_PROJECT: {
+        "table": "private_projects",
+        "statuses": (
+            "DRAFT", "PLANNED", "OPEN", "IN_PROGRESS", "WAITING", "BLOCKED",
+            "AWAITING_APPROVAL", "COMPLETED", "CANCELLED", "DEFERRED",
+        ),
+        "default_status": "OPEN",
+        "closing": ("COMPLETED", "CANCELLED"),
+        "closed_as": "completed_at",
+        "summary_as": "summary",
+        "audit_object": "PROJECT",
+        "extra": (
+            ("project_type", "TEXT NOT NULL DEFAULT ''", "token", False),
+            ("priority", "TEXT NOT NULL DEFAULT 'NORMAL'", "enum", False),
+            ("due_at", "TEXT", "timestamp", False),
+            ("outcome", "TEXT NOT NULL DEFAULT ''", "text", False),
+        ),
+        "required": ("title",),
+        "identity": ("project_type", "title"),
+        "indexes": ("due_at",),
+        "enums": {"priority": PRIORITIES},
+        "transitions": {
+            "DRAFT": ("PLANNED", "OPEN", "CANCELLED"),
+            "PLANNED": ("DRAFT", "OPEN", "IN_PROGRESS", "WAITING", "BLOCKED",
+                        "AWAITING_APPROVAL", "COMPLETED", "CANCELLED", "DEFERRED"),
+            "OPEN": ("PLANNED", "IN_PROGRESS", "WAITING", "BLOCKED",
+                     "AWAITING_APPROVAL", "COMPLETED", "CANCELLED", "DEFERRED"),
+            "IN_PROGRESS": ("PLANNED", "OPEN", "WAITING", "BLOCKED",
+                            "AWAITING_APPROVAL", "COMPLETED", "CANCELLED", "DEFERRED"),
+            "WAITING": ("PLANNED", "OPEN", "IN_PROGRESS", "BLOCKED",
+                        "AWAITING_APPROVAL", "COMPLETED", "CANCELLED", "DEFERRED"),
+            "BLOCKED": ("PLANNED", "OPEN", "IN_PROGRESS", "WAITING",
+                        "AWAITING_APPROVAL", "COMPLETED", "CANCELLED", "DEFERRED"),
+            "AWAITING_APPROVAL": ("PLANNED", "OPEN", "IN_PROGRESS", "WAITING",
+                                  "BLOCKED", "COMPLETED", "CANCELLED", "DEFERRED"),
+            "DEFERRED": ("PLANNED", "OPEN", "IN_PROGRESS", "CANCELLED"),
+            "COMPLETED": ("OPEN", "CANCELLED"),
+            "CANCELLED": ("OPEN", "COMPLETED"),
+        },
     },
 }
 
@@ -686,7 +828,7 @@ def reset_records_schema_cache() -> None:
 
 
 def ensure_records_schema(cur, *, force: bool = False) -> dict:
-    """Create the six tables and their indexes. Never raises.
+    """Create the record tables and their indexes, and evolve them. Never raises.
 
     Same three-outcome contract as ``schema.ensure_private_schema`` — ``ready``,
     ``missing``, ``error`` — and the same rule about caching: only success is
@@ -740,6 +882,36 @@ def ensure_records_schema(cur, *, force: bool = False) -> dict:
             return {"status": "error", "tables": [], "missing": [],
                     "error": f"{spec['table']}: {str(exc)[:400]}", "cached": False}
         absent = [name for name in _column_names(spec) if name not in present]
+        if absent and present:
+            # The table exists but predates a column the spec now declares.
+            # Evolve it in place: `ADD COLUMN` with a constant default is the
+            # one ALTER both engines accept identically, and every column this
+            # module declares carries one. Without this, adding a column to a
+            # spec would turn every existing deployment's ensure into
+            # "missing", and `require_records_schema` would turn that into an
+            # outage on the first write after deploy.
+            ddl_by_name = dict(_columns(spec))
+            for name in absent:
+                try:
+                    cur.execute(
+                        f"ALTER TABLE {spec['table']} ADD COLUMN {name} {ddl_by_name[name]}")
+                    LOGGER.info(
+                        "PRIVATE_RECORDS_COLUMN_ADDED table=%s column=%s",
+                        spec["table"], name)
+                except Exception as exc:
+                    # The re-introspection below is the judge; a failure here
+                    # (concurrent worker won the race, engine quirk) is only
+                    # fatal if the column is still absent afterwards.
+                    LOGGER.warning(
+                        "PRIVATE_RECORDS_COLUMN_ADD_FAILED table=%s column=%s error=%s",
+                        spec["table"], name, exc)
+            try:
+                present = db_module.get_table_columns(cur, spec["table"])
+            except Exception as exc:
+                LOGGER.exception("PRIVATE_RECORDS_ENSURE_FAILED table=%s", spec["table"])
+                return {"status": "error", "tables": [], "missing": [],
+                        "error": f"{spec['table']}: {str(exc)[:400]}", "cached": False}
+            absent = [name for name in _column_names(spec) if name not in present]
         if absent or not present:
             missing.append(f"{spec['table']}:{','.join(absent) or 'absent'}")
 
@@ -882,6 +1054,25 @@ def _enum(value: object, allowed: tuple[str, ...], field: str, default: str) -> 
         raise PrivateRecordRejected(
             f"{field} must be one of {', '.join(allowed)}: {value!r}")
     return text
+
+
+_DDL_DEFAULT_RE = re.compile(r"DEFAULT\s+'([^']*)'", re.IGNORECASE)
+
+
+def _enum_default(ddl: str, allowed: tuple[str, ...]) -> str:
+    """The value an omitted enum field takes: the one the column DDL declares.
+
+    Read out of the DDL rather than written down a second time, because two
+    copies of a default is one desynchronisation waiting to be found in
+    production. (It had already happened once: ``PRIORITIES[0]`` is ``LOW``
+    while the declared column default is ``NORMAL``, so an omitted priority
+    stored a different value than the schema promised.) Falls back to
+    ``allowed[0]`` for a column whose DDL declares nothing.
+    """
+    match = _DDL_DEFAULT_RE.search(ddl)
+    if match and match.group(1) in allowed:
+        return match.group(1)
+    return allowed[0]
 
 
 def _score(value: object) -> float | None:
@@ -1098,7 +1289,7 @@ def _prepare(record_type: str, spec: dict, fields: dict, *, revision: int) -> di
         else fields.get("related_document_id"))
 
     enums = spec.get("enums") or {}
-    for name, _ddl, kind, required in spec["extra"]:
+    for name, ddl, kind, required in spec["extra"]:
         raw = fields.get(name)
         if kind == "token":
             values[name] = _token(raw, name, required=required)
@@ -1109,7 +1300,7 @@ def _prepare(record_type: str, spec: dict, fields: dict, *, revision: int) -> di
             values[name] = resolved
         elif kind == "enum":
             allowed = enums[name]
-            values[name] = _enum(raw, allowed, name, allowed[0])
+            values[name] = _enum(raw, allowed, name, _enum_default(ddl, allowed))
         elif kind == "flag":
             values[name] = 1 if raw else 0
         elif kind == "score":
@@ -1425,7 +1616,7 @@ def check_transition(
 #: rewritten decision log.
 UPDATABLE: tuple[str, ...] = (
     "status", "outcome", "assigned_provider_id", "severity",
-    "coverage_state", "review_required", "priority",
+    "coverage_state", "review_required", "priority", "project_ref",
 )
 
 
@@ -1516,16 +1707,16 @@ def update_record(
                 assignments.append("closed_at = ?")
                 params.append(None)
 
-    extra_kinds = {name: kind_ for name, _ddl, kind_, _req in spec["extra"]}
+    extra_cols = {name: (kind_, ddl) for name, ddl, kind_, _req in spec["extra"]}
     for name, value in fields.items():
         if name == "status":
             continue
-        if name not in extra_kinds:
+        if name not in extra_cols:
             raise PrivateRecordRejected(f"{name} does not exist on {kind}")
-        column_kind = extra_kinds[name]
+        column_kind, column_ddl = extra_cols[name]
         if column_kind == "enum":
             allowed = enums[name]
-            resolved: object = _enum(value, allowed, name, allowed[0])
+            resolved: object = _enum(value, allowed, name, _enum_default(column_ddl, allowed))
         elif column_kind == "flag":
             resolved = 1 if value else 0
         elif column_kind == "ref":

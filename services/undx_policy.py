@@ -80,6 +80,8 @@ PRODUCTION_TOOL_REGISTRY: dict[str, dict[str, Any]] = {
     "pulsesoc.private_requests.list": {"method": None, "route": "services.private_office.retrieval.retrieve_records", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
     "pulsesoc.private_risks.list": {"method": None, "route": "services.private_office.retrieval.retrieve_records", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
     "pulsesoc.private_opportunities.list": {"method": None, "route": "services.private_office.retrieval.retrieve_records", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
+    "pulsesoc.private_tasks.list": {"method": None, "route": "services.private_office.retrieval.retrieve_records", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
+    "pulsesoc.private_projects.list": {"method": None, "route": "services.private_office.retrieval.retrieve_records", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
     # The shipped feature reads, each behind its own feature gate. Same
     # structural owner scope: no field names an account. Document intelligence
     # carries two — the file list and the cited facts drawn from those files —

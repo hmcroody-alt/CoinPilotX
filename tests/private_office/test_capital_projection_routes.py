@@ -226,7 +226,12 @@ def setup_environment() -> None:
                 "VALUES (?, ?, 1)", (uid, "active"))
         cur = conn.cursor()
         schema.ensure_private_schema(cur, force=True)
-        portfolio_events.ensure_outbox_schema(cur)
+        # Forced for the same reason the line above it is: both modules cache
+        # "schema is ready" in a module global, and this file opens its own
+        # temporary database. Unforced, an earlier test in the same process
+        # leaves the flag set and the DDL is skipped against a database that
+        # has never seen it — which passes alone and fails in a suite run.
+        portfolio_events.ensure_outbox_schema(cur, force=True)
         cur.execute(
             "CREATE TABLE IF NOT EXISTS portfolio_items ("
             "id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, "
