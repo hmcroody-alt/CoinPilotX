@@ -4602,7 +4602,8 @@
           "obligations": "부채",
           "overview": "개요",
           "structure": "구조",
-          "cash_flow": "지출"
+          "cash_flow": "지출",
+          "exposure": "집중도"
         },
         "countExact": "{{count}}",
         "countSoFar": "지금까지 {{count}}",
@@ -4833,16 +4834,9 @@
           "bucketMissing": "보고되지 않음",
           "bucketUndeclared": "설명되지 않은 구간",
           "bucketBefore": "{{to}}일 이내",
+          "bucketDueNow": "지금 만기이거나 이미 연체",
           "bucketAfter": "{{from}}일 초과",
           "bucketBetween": "{{from}}~{{to}}일",
-          "bucket": {
-            "overdue": "이미 연체",
-            "due_30": "30일 이내",
-            "due_90": "31~90일",
-            "due_180": "91~180일",
-            "due_365": "181~365일",
-            "beyond_365": "1년 이후"
-          },
           "excludedTitle": "어느 구간에도 들어가지 않음",
           "excludedBody": "이 채무들은 실재합니다. 위치를 정하는 데 필요한 정보가 기록되지 않아 위 어느 구간에도 들어가지 않았습니다.",
           "undated": "만기일 기록 없음",
@@ -4858,6 +4852,55 @@
           "syncTitle": "투영",
           "projectedLabel": "기록에서 재구성",
           "skippedLabel": "건너뜀"
+        },
+        "exposure": {
+          "basisTitle": "순위의 기준",
+          "complete": "완전",
+          "partial": "부분",
+          "withheld": "미기재",
+          "noBasis": "순위를 매길 총액이 없습니다",
+          "basis": {
+            "priced_asset_value": "가격이 있는 자산의 가치",
+            "quantified_liability_amount": "금액이 확인된 부채 총액"
+          },
+          "pricedOf": "{{total}}개 중 {{priced}}개에 가격 있음",
+          "pricingCoverage": "가격 반영 범위",
+          "dimensionCount": "{{total}}개 중 {{known}}개",
+          "pricingUnknown": "가격 반영 범위를 산정할 수 없습니다",
+          "blindSpotTitle": "이 순위에 없는 항목",
+          "blindSpotBody": "이 보유 자산에는 가격이 없어 순위의 맨 아래가 아니라 순위 자체에서 빠져 있습니다. 그중 어느 것이든 맨 위 항목보다 클 수 있습니다.",
+          "unpricedUnnamed": "가격도 이름도 없음",
+          "pricesUnavailable": "실시간 가격을 읽지 못해 이 순위는 최신이 아닙니다.",
+          "readAt": "조회 시각",
+          "assetsTitle": "가격이 있는 자금의 위치",
+          "shareUnknown": "비중 미기재",
+          "sharesOfPriced": "비중은 위의 가격 반영 총액 기준이며, 기록된 전체 기준이 아닙니다.",
+          "unrankedTail": "가격은 있으나 순위에 없음",
+          "basisMismatch": "순위에 든 수와 들지 않은 수의 합이 가격이 있는 보유 수와 맞지 않습니다. 이 순위는 위에 표시된 총액 기준이 아닐 수 있습니다.",
+          "rankedMismatch": "서버가 알린 순위 개수가 실제로 보낸 행 수와 다릅니다.",
+          "noHoldings": "기록된 보유가 없어 순위를 매길 것이 없습니다. 이는 아무것도 소유하지 않았다는 뜻이 아닙니다.",
+          "nonePriced": "보유는 기록되어 있으나 가격이 있는 것이 없어 순위를 매길 수 없습니다.",
+          "pricedButUnrankable": "가격이 있는 보유를 더해도 순위의 기준이 될 총액이 되지 않습니다.",
+          "liabilitiesTitle": "금액이 확인된 부채의 위치",
+          "liabilitiesGrouped": "채권자별이 아니라 채무 종류별로 묶었습니다.",
+          "noLiabilities": "기록된 채무가 없습니다. 이는 빚이 없다는 뜻이 아닙니다.",
+          "noneQuantified": "금액이 기록된 채무가 없어 순위를 매길 수 없습니다.",
+          "quantifiedOf": "{{total}}건 중 {{done}}건의 채무에 금액 있음",
+          "excludedTitle": "이 순위에서 제외됨",
+          "excludedUnquantified": "금액 기록 없음",
+          "excludedForeignCurrency": "다른 통화",
+          "excludedUnspecifiedCurrency": "통화 미기재",
+          "otherCurrencies": "통화별로 제외된 금액",
+          "liabilitiesTruncated": "채무 목록이 잘렸으므로 순위에 든 것보다 많을 수 있습니다.",
+          "unmeasuredTitle": "이 탭이 측정하지 않는 것",
+          "unmeasuredBody": "기록에 없는 항목이므로 여기서는 '이상 없음'이 아니라 '알 수 없음'입니다. 이 침묵은 안전하다는 신호가 아닙니다.",
+          "unmeasured": {
+            "counterparty": "거래상대방 집중도",
+            "custodian": "수탁기관 및 거래장소 집중도",
+            "geography": "지역 집중도",
+            "sector": "업종 집중도",
+            "assetCurrency": "자산 자체의 통화"
+          }
         }
       },
       "attention": {

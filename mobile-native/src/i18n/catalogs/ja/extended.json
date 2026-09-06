@@ -4595,7 +4595,8 @@
           "obligations": "債務",
           "overview": "概要",
           "structure": "構造",
-          "cash_flow": "支出予定"
+          "cash_flow": "支出予定",
+          "exposure": "集中度"
         },
         "countExact": "{{count}}",
         "countSoFar": "これまでに {{count}}",
@@ -4826,16 +4827,9 @@
           "bucketMissing": "報告なし",
           "bucketUndeclared": "期間の説明なし",
           "bucketBefore": "{{to}}日以内",
+          "bucketDueNow": "支払期限が到来済み",
           "bucketAfter": "{{from}}日を超える",
           "bucketBetween": "{{from}}〜{{to}}日",
-          "bucket": {
-            "overdue": "期日超過",
-            "due_30": "30日以内",
-            "due_90": "31〜90日",
-            "due_180": "91〜180日",
-            "due_365": "181〜365日",
-            "beyond_365": "1年より先"
-          },
           "excludedTitle": "どの期間にも入らないもの",
           "excludedBody": "これらの債務は実在します。位置づけに必要な情報が記録されていないため、上のどの期間にも入っていません。",
           "undated": "支払期日の記録なし",
@@ -4851,6 +4845,55 @@
           "syncTitle": "投影",
           "projectedLabel": "記録から再構成",
           "skippedLabel": "対象外"
+        },
+        "exposure": {
+          "basisTitle": "順位付けの基準",
+          "complete": "完全",
+          "partial": "部分的",
+          "withheld": "記載なし",
+          "noBasis": "順位付けの分母となる合計がありません",
+          "basis": {
+            "priced_asset_value": "価格の付いた資産の評価額",
+            "quantified_liability_amount": "金額が判明している負債の合計"
+          },
+          "pricedOf": "{{total}}件中{{priced}}件に価格あり",
+          "pricingCoverage": "価格の網羅率",
+          "dimensionCount": "{{total}}件中{{known}}件",
+          "pricingUnknown": "価格の網羅率は算出できません",
+          "blindSpotTitle": "この順位に含まれないもの",
+          "blindSpotBody": "これらの保有には価格がないため、最下位ではなく順位そのものから外れています。いずれも先頭の行より大きい可能性があります。",
+          "unpricedUnnamed": "価格も名称もないもの",
+          "pricesUnavailable": "リアルタイム価格を取得できなかったため、この順位は最新ではありません。",
+          "readAt": "取得時刻",
+          "assetsTitle": "価格の付いた資金の所在",
+          "shareUnknown": "比率の記載なし",
+          "sharesOfPriced": "比率は上記の「価格の付いた合計」に対するもので、記録されたすべてに対するものではありません。",
+          "unrankedTail": "価格はあるが順位に含まれないもの",
+          "basisMismatch": "順位付け済みと未順位の件数の合計が、価格の付いた保有件数と一致しません。この順位は上に示した合計に対するものではない可能性があります。",
+          "rankedMismatch": "サーバーの順位件数が、送信された行数と一致しません。",
+          "noHoldings": "保有の記録がないため順位付けできません。これは「何も所有していない」とは異なります。",
+          "nonePriced": "保有は記録されていますが、いずれにも価格がないため順位付けできません。",
+          "pricedButUnrankable": "価格の付いた保有を合計しても、順位付けの分母になりません。",
+          "liabilitiesTitle": "金額が判明している負債の所在",
+          "liabilitiesGrouped": "債権者別ではなく、債務の種類別にまとめています。",
+          "noLiabilities": "債務の記録はありません。これは「何も負っていない」とは異なります。",
+          "noneQuantified": "金額が記録された債務がないため、順位付けできません。",
+          "quantifiedOf": "{{total}}件中{{done}}件の債務に金額あり",
+          "excludedTitle": "この順位から除外されたもの",
+          "excludedUnquantified": "金額の記録なし",
+          "excludedForeignCurrency": "別の通貨",
+          "excludedUnspecifiedCurrency": "通貨の記載なし",
+          "otherCurrencies": "通貨別に除外した分",
+          "liabilitiesTruncated": "債務の一覧は打ち切られているため、順位付けされた以上に存在する可能性があります。",
+          "unmeasuredTitle": "このタブが測っていないもの",
+          "unmeasuredBody": "記録に存在しないため、ここでは「問題なし」ではなく「不明」です。この沈黙は安全の保証ではありません。",
+          "unmeasured": {
+            "counterparty": "取引相手ごとの集中",
+            "custodian": "保管先・取引場所ごとの集中",
+            "geography": "地域的な集中",
+            "sector": "業種の集中",
+            "assetCurrency": "資産そのものの通貨"
+          }
         }
       },
       "attention": {

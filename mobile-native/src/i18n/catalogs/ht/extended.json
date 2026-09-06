@@ -4603,7 +4603,8 @@
           "obligations": "Obligasyon",
           "overview": "Apèsi",
           "structure": "Estrikti",
-          "cash_flow": "Depans"
+          "cash_flow": "Depans",
+          "exposure": "Konsantrasyon"
         },
         "countExact": "{{count}}",
         "countSoFar": "{{count}} jiskaprezan",
@@ -4834,16 +4835,9 @@
           "bucketMissing": "Pa rapòte",
           "bucketUndeclared": "Peryòd la pa dekri",
           "bucketBefore": "Jiska {{to}} jou",
+          "bucketDueNow": "Dwe kounye a oswa deja an reta",
           "bucketAfter": "Plis pase {{from}} jou",
           "bucketBetween": "{{from}}–{{to}} jou",
-          "bucket": {
-            "overdue": "Deja an reta",
-            "due_30": "Nan 30 jou",
-            "due_90": "31–90 jou",
-            "due_180": "91–180 jou",
-            "due_365": "181–365 jou",
-            "beyond_365": "Pi lwen pase yon ane"
-          },
           "excludedTitle": "Deyò tout peryòd",
           "excludedBody": "Obligasyon sa yo reyèl. Yo pa nan okenn peryòd anwo a paske sa ki nesesè pou plase yo pa te anrejistre.",
           "undated": "Pa gen dat echeyans anrejistre",
@@ -4859,6 +4853,55 @@
           "syncTitle": "Pwojeksyon",
           "projectedLabel": "Rebati apati dosye yo",
           "skippedLabel": "Sote"
+        },
+        "exposure": {
+          "basisTitle": "Baz klasman an",
+          "complete": "Konplè",
+          "partial": "Pasyèl",
+          "withheld": "Pa endike",
+          "noBasis": "Pa gen total pou klase sou li",
+          "basis": {
+            "priced_asset_value": "Valè byen ki gen pri",
+            "quantified_liability_amount": "Montan dèt ki gen chif"
+          },
+          "pricedOf": "{{priced}} sou {{total}} plasman gen pri",
+          "pricingCoverage": "Kouvèti pri yo",
+          "dimensionCount": "{{known}} sou {{total}}",
+          "pricingUnknown": "Kouvèti pri yo pa ka kalkile",
+          "blindSpotTitle": "Pa nan klasman sa a",
+          "blindSpotBody": "Plasman sa yo pa gen pri, konsa yo absan nan klasman an olye pou yo dènye. Nenpòt nan yo ta ka pi gwo pase premye liy lan.",
+          "unpricedUnnamed": "San pri e san non",
+          "pricesUnavailable": "Nou pa t kapab li pri dirèk yo, konsa klasman sa a pa ajou.",
+          "readAt": "Li nan",
+          "assetsTitle": "Kote lajan ki gen pri a ye",
+          "shareUnknown": "Pòsyon pa endike",
+          "sharesOfPriced": "Pòsyon yo se sou total ki gen pri anwo a, pa sou tout sa ki anrejistre.",
+          "unrankedTail": "Gen pri men pa klase",
+          "basisMismatch": "Kantite ki klase ak sa ki pa klase pa bay kantite plasman ki gen pri a, konsa klasman sa a ka pa sou total ki montre anwo a.",
+          "rankedMismatch": "Kantite sèvè a di li klase pa matche ak liy li voye yo.",
+          "noHoldings": "Pa gen plasman anrejistre, konsa pa gen anyen pou klase. Sa pa menm bagay ak pa posede anyen.",
+          "nonePriced": "Gen plasman anrejistre men okenn pa gen pri, konsa pa gen klasman ki posib.",
+          "pricedButUnrankable": "Plasman ki gen pri yo pa fè yon total pou klase sou li.",
+          "liabilitiesTitle": "Kote dèt ki gen chif la ye",
+          "liabilitiesGrouped": "Gwoupe pa kalite obligasyon, pa pa kreyansye.",
+          "noLiabilities": "Pa gen obligasyon anrejistre. Sa pa menm bagay ak pa dwe anyen.",
+          "noneQuantified": "Okenn obligasyon pa gen yon montan anrejistre, konsa okenn pa ka klase.",
+          "quantifiedOf": "{{done}} sou {{total}} obligasyon gen chif",
+          "excludedTitle": "Kite deyò klasman sa a",
+          "excludedUnquantified": "Pa gen montan anrejistre",
+          "excludedForeignCurrency": "Yon lòt lajan",
+          "excludedUnspecifiedCurrency": "Pa gen lajan endike",
+          "otherCurrencies": "Mete sou kote, pa lajan",
+          "liabilitiesTruncated": "Lis obligasyon yo te koupe, konsa ka gen plis pase sa ki klase yo.",
+          "unmeasuredTitle": "Sa ong sa a pa mezire",
+          "unmeasuredBody": "Anyen nan dosye a pa anrejistre sa yo, konsa yo absan isit la, yo pa klè. Silans yo pa vle di tout bagay anfòm.",
+          "unmeasured": {
+            "counterparty": "Konsantrasyon pa kontrepati",
+            "custodian": "Konsantrasyon pa gadyen ak plas echanj",
+            "geography": "Konsantrasyon jeyografik",
+            "sector": "Konsantrasyon pa sektè",
+            "assetCurrency": "Lajan byen yo tèt yo"
+          }
         }
       },
       "attention": {

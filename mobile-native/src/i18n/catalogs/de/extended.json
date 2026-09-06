@@ -4634,7 +4634,8 @@
           "obligations": "Verpflichtungen",
           "overview": "Überblick",
           "structure": "Struktur",
-          "cash_flow": "Abflüsse"
+          "cash_flow": "Abflüsse",
+          "exposure": "Konzentration"
         },
         "countExact": "{{count}}",
         "countSoFar": "{{count}} bisher",
@@ -4865,16 +4866,9 @@
           "bucketMissing": "Nicht gemeldet",
           "bucketUndeclared": "Zeitraum nicht beschrieben",
           "bucketBefore": "Bis zu {{to}} Tage",
+          "bucketDueNow": "Jetzt fällig oder überfällig",
           "bucketAfter": "Mehr als {{from}} Tage",
           "bucketBetween": "{{from}}–{{to}} Tage",
-          "bucket": {
-            "overdue": "Bereits überfällig",
-            "due_30": "Innerhalb von 30 Tagen",
-            "due_90": "31–90 Tage",
-            "due_180": "91–180 Tage",
-            "due_365": "181–365 Tage",
-            "beyond_365": "Später als ein Jahr"
-          },
           "excludedTitle": "In keinem Zeitraum enthalten",
           "excludedBody": "Diese Verpflichtungen bestehen tatsächlich. Sie stehen in keinem Zeitraum, weil etwas fehlt, das zu ihrer Einordnung nötig wäre.",
           "undated": "Kein Fälligkeitsdatum erfasst",
@@ -4890,6 +4884,55 @@
           "syncTitle": "Projektion",
           "projectedLabel": "Aus Aufzeichnungen neu aufgebaut",
           "skippedLabel": "Übersprungen"
+        },
+        "exposure": {
+          "basisTitle": "Grundlage der Rangfolge",
+          "complete": "Vollständig",
+          "partial": "Teilweise",
+          "withheld": "Nicht angegeben",
+          "noBasis": "Keine Gesamtsumme als Bezugsgröße",
+          "basis": {
+            "priced_asset_value": "Wert der bepreisten Vermögenswerte",
+            "quantified_liability_amount": "Betrag der bezifferten Verbindlichkeiten"
+          },
+          "pricedOf": "{{priced}} von {{total}} Positionen bepreist",
+          "pricingCoverage": "Preisabdeckung",
+          "dimensionCount": "{{known}} von {{total}}",
+          "pricingUnknown": "Die Preisabdeckung lässt sich nicht bewerten",
+          "blindSpotTitle": "Nicht in dieser Rangfolge",
+          "blindSpotBody": "Diese Positionen haben keinen Preis und fehlen daher in der Rangfolge, statt am Ende zu stehen. Jede davon könnte größer sein als die oberste Zeile.",
+          "unpricedUnnamed": "Ohne Preis und ohne Namen",
+          "pricesUnavailable": "Live-Preise konnten nicht gelesen werden, diese Rangfolge ist daher nicht aktuell.",
+          "readAt": "Gelesen am",
+          "assetsTitle": "Wo das bepreiste Geld liegt",
+          "shareUnknown": "Anteil nicht angegeben",
+          "sharesOfPriced": "Die Anteile beziehen sich auf die bepreiste Summe oben, nicht auf alles Erfasste.",
+          "unrankedTail": "Bepreist, aber nicht eingeordnet",
+          "basisMismatch": "Eingeordnete und nicht eingeordnete Zählungen ergeben nicht die Zahl der bepreisten Positionen; diese Rangfolge bezieht sich möglicherweise nicht auf die oben gezeigte Summe.",
+          "rankedMismatch": "Die Zählung des Servers stimmt nicht mit den gesendeten Zeilen überein.",
+          "noHoldings": "Es sind keine Positionen erfasst, also gibt es nichts einzuordnen. Das ist nicht dasselbe wie nichts zu besitzen.",
+          "nonePriced": "Positionen sind erfasst, aber keine hat einen Preis; eine Rangfolge ist nicht möglich.",
+          "pricedButUnrankable": "Die bepreisten Positionen ergeben keine Summe, gegen die sich einordnen ließe.",
+          "liabilitiesTitle": "Wo die bezifferten Schulden liegen",
+          "liabilitiesGrouped": "Nach Art der Verpflichtung gruppiert, nicht nach Gläubiger.",
+          "noLiabilities": "Es sind keine Verpflichtungen erfasst. Das ist nicht dasselbe wie nichts zu schulden.",
+          "noneQuantified": "Keine Verpflichtung hat einen erfassten Betrag, daher lässt sich keine einordnen.",
+          "quantifiedOf": "{{done}} von {{total}} Verpflichtungen beziffert",
+          "excludedTitle": "Aus dieser Rangfolge ausgenommen",
+          "excludedUnquantified": "Kein Betrag erfasst",
+          "excludedForeignCurrency": "Andere Währung",
+          "excludedUnspecifiedCurrency": "Keine Währung angegeben",
+          "otherCurrencies": "Zurückgestellt, nach Währung",
+          "liabilitiesTruncated": "Die Liste der Verpflichtungen wurde gekappt; es kann mehr geben als eingeordnet wurden.",
+          "unmeasuredTitle": "Was dieser Tab nicht misst",
+          "unmeasuredBody": "Nichts in den Unterlagen erfasst dies, es fehlt hier also, statt unbedenklich zu sein. Dieses Schweigen ist keine Entwarnung.",
+          "unmeasured": {
+            "counterparty": "Konzentration nach Gegenpartei",
+            "custodian": "Konzentration nach Verwahrer und Handelsplatz",
+            "geography": "Geografische Konzentration",
+            "sector": "Branchenkonzentration",
+            "assetCurrency": "Währung der Vermögenswerte selbst"
+          }
         }
       },
       "attention": {

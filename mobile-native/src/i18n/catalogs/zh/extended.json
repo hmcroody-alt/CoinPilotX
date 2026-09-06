@@ -4602,7 +4602,8 @@
           "obligations": "负债",
           "overview": "概览",
           "structure": "结构",
-          "cash_flow": "支出"
+          "cash_flow": "支出",
+          "exposure": "集中度"
         },
         "countExact": "{{count}}",
         "countSoFar": "目前 {{count}}",
@@ -4833,16 +4834,9 @@
           "bucketMissing": "未提供",
           "bucketUndeclared": "未说明的区间",
           "bucketBefore": "{{to}} 天以内",
+          "bucketDueNow": "现已到期或已逾期",
           "bucketAfter": "超过 {{from}} 天",
           "bucketBetween": "{{from}}–{{to}} 天",
-          "bucket": {
-            "overdue": "已逾期",
-            "due_30": "30 天内",
-            "due_90": "31–90 天",
-            "due_180": "91–180 天",
-            "due_365": "181–365 天",
-            "beyond_365": "一年以后"
-          },
           "excludedTitle": "不属于任何区间",
           "excludedBody": "这些负债真实存在。因为缺少定位所需的信息，它们没有出现在上面任何区间中。",
           "undated": "未记录到期日",
@@ -4858,6 +4852,55 @@
           "syncTitle": "投影",
           "projectedLabel": "根据记录重建",
           "skippedLabel": "已跳过"
+        },
+        "exposure": {
+          "basisTitle": "排序依据",
+          "complete": "完整",
+          "partial": "部分",
+          "withheld": "未说明",
+          "noBasis": "没有可供排序的总额",
+          "basis": {
+            "priced_asset_value": "有报价资产的价值",
+            "quantified_liability_amount": "已确定金额的负债总额"
+          },
+          "pricedOf": "{{total}} 项持仓中有 {{priced}} 项有报价",
+          "pricingCoverage": "报价覆盖率",
+          "dimensionCount": "{{total}} 项中的 {{known}} 项",
+          "pricingUnknown": "报价覆盖率无法评分",
+          "blindSpotTitle": "不在此排序中",
+          "blindSpotBody": "这些持仓没有报价，因此是从排序中缺席，而不是排在末位。其中任何一项都可能大于排在首位的那一行。",
+          "unpricedUnnamed": "既无报价也无名称",
+          "pricesUnavailable": "无法读取实时价格，因此此排序并非最新。",
+          "readAt": "读取时间",
+          "assetsTitle": "有报价的资金分布",
+          "sharesOfPriced": "占比是相对于上方的有报价总额，而非全部已记录内容。",
+          "shareUnknown": "占比未说明",
+          "unrankedTail": "有报价但未纳入排序",
+          "basisMismatch": "已排序与未排序的数量之和与有报价的持仓数不符，此排序可能并非基于上方显示的总额。",
+          "rankedMismatch": "服务器给出的排序数量与其发送的行数不符。",
+          "noHoldings": "没有已记录的持仓，因此无从排序。这与一无所有并不相同。",
+          "nonePriced": "有已记录的持仓，但都没有报价，因此无法排序。",
+          "pricedButUnrankable": "有报价的持仓合计不足以构成可供排序的总额。",
+          "liabilitiesTitle": "已确定金额的债务分布",
+          "liabilitiesGrouped": "按债务类型归类，而非按债权人。",
+          "noLiabilities": "没有已记录的债务。这与不欠任何债务并不相同。",
+          "noneQuantified": "没有任何债务记录了金额，因此无法排序。",
+          "quantifiedOf": "{{total}} 项债务中有 {{done}} 项已确定金额",
+          "excludedTitle": "已排除在此排序之外",
+          "excludedUnquantified": "未记录金额",
+          "excludedForeignCurrency": "其他币种",
+          "excludedUnspecifiedCurrency": "未说明币种",
+          "otherCurrencies": "按币种单列的部分",
+          "liabilitiesTruncated": "债务清单已被截断，实际数量可能多于已排序的部分。",
+          "unmeasuredTitle": "此标签页未测量的内容",
+          "unmeasuredBody": "档案中没有相关记录，因此这里是「未知」而非「无风险」。这种沉默不等于安全。",
+          "unmeasured": {
+            "counterparty": "交易对手集中度",
+            "custodian": "托管方与交易场所集中度",
+            "geography": "地域集中度",
+            "sector": "行业集中度",
+            "assetCurrency": "资产本身的币种"
+          }
         }
       },
       "attention": {

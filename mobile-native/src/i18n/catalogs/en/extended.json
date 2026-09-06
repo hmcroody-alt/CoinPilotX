@@ -4634,7 +4634,8 @@
           "obligations": "Obligations",
           "overview": "Overview",
           "structure": "Structure",
-          "cash_flow": "Outflows"
+          "cash_flow": "Outflows",
+          "exposure": "Concentration"
         },
         "countExact": "{{count}}",
         "countSoFar": "{{count}} so far",
@@ -4865,16 +4866,9 @@
           "bucketMissing": "Not reported",
           "bucketUndeclared": "Window not described",
           "bucketBefore": "Up to {{to}} days",
+          "bucketDueNow": "Due now or already overdue",
           "bucketAfter": "More than {{from}} days",
           "bucketBetween": "{{from}}–{{to}} days",
-          "bucket": {
-            "overdue": "Already overdue",
-            "due_30": "Within 30 days",
-            "due_90": "31–90 days",
-            "due_180": "91–180 days",
-            "due_365": "181–365 days",
-            "beyond_365": "Beyond a year"
-          },
           "excludedTitle": "Left out of every window",
           "excludedBody": "These obligations are real. They sit in no window above because something needed to place them was never recorded.",
           "undated": "No due date recorded",
@@ -4890,6 +4884,55 @@
           "syncTitle": "Projection",
           "projectedLabel": "Rebuilt from records",
           "skippedLabel": "Skipped"
+        },
+        "exposure": {
+          "basisTitle": "Ranking basis",
+          "complete": "Complete",
+          "partial": "Partial",
+          "withheld": "Not stated",
+          "noBasis": "No total to rank against",
+          "basis": {
+            "priced_asset_value": "Priced asset value",
+            "quantified_liability_amount": "Quantified liability amount"
+          },
+          "pricedOf": "{{priced}} of {{total}} holdings priced",
+          "pricingCoverage": "Pricing coverage",
+          "dimensionCount": "{{known}} of {{total}}",
+          "pricingUnknown": "Pricing coverage cannot be scored",
+          "blindSpotTitle": "Not in this ranking",
+          "blindSpotBody": "These holdings have no price, so they are absent from the ranking rather than last in it. Any of them could be larger than the row at the top.",
+          "unpricedUnnamed": "Unpriced and unnamed",
+          "pricesUnavailable": "Live prices could not be read, so this ranking is not current.",
+          "readAt": "Read at",
+          "assetsTitle": "Where the priced money is",
+          "shareUnknown": "Share not stated",
+          "sharesOfPriced": "Shares are of the priced total above, not of everything recorded.",
+          "unrankedTail": "Priced but not ranked",
+          "basisMismatch": "The ranked and unranked counts do not add up to the number of priced holdings, so this ranking may not be over the total shown above it.",
+          "rankedMismatch": "The server's ranked count does not match the rows it sent.",
+          "noHoldings": "No holdings are recorded, so there is nothing to rank. That is not the same as owning nothing.",
+          "nonePriced": "Holdings are recorded but none of them has a price, so no ranking is possible.",
+          "pricedButUnrankable": "The priced holdings do not add up to a total that can be ranked against.",
+          "liabilitiesTitle": "Where the quantified debt is",
+          "liabilitiesGrouped": "Grouped by kind of obligation, not by creditor.",
+          "noLiabilities": "No obligations are recorded. That is not the same as owing nothing.",
+          "noneQuantified": "No obligation has a recorded amount, so none can be ranked.",
+          "quantifiedOf": "{{done}} of {{total}} obligations quantified",
+          "excludedTitle": "Left out of this ranking",
+          "excludedUnquantified": "No amount recorded",
+          "excludedForeignCurrency": "Another currency",
+          "excludedUnspecifiedCurrency": "No currency stated",
+          "otherCurrencies": "Set aside, by currency",
+          "liabilitiesTruncated": "The obligation list was capped, so more may exist than were ranked.",
+          "unmeasuredTitle": "What this tab does not measure",
+          "unmeasuredBody": "Nothing on file records these, so they are absent here rather than clear. Their silence is not an all-clear.",
+          "unmeasured": {
+            "counterparty": "Counterparty concentration",
+            "custodian": "Custodian and venue concentration",
+            "geography": "Geographic concentration",
+            "sector": "Sector concentration",
+            "assetCurrency": "Currency of the assets themselves"
+          }
         }
       },
       "attention": {

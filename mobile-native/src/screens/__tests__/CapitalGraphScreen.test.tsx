@@ -41,6 +41,7 @@ const mockGetGraph = jest.fn();
 const mockGetPortfolio = jest.fn();
 const mockGetOverview = jest.fn();
 const mockGetCashFlow = jest.fn();
+const mockGetExposure = jest.fn();
 const mockGetObligations = jest.fn();
 const mockOfficeStatus = jest.fn();
 const mockUnlockOffice = jest.fn();
@@ -54,6 +55,7 @@ jest.mock("../../api/capitalGraph", () => ({
   getCapitalPortfolio: (...args: unknown[]) => mockGetPortfolio(...args),
   getCapitalOverview: (...args: unknown[]) => mockGetOverview(...args),
   getCapitalCashFlow: (...args: unknown[]) => mockGetCashFlow(...args),
+  getCapitalExposure: (...args: unknown[]) => mockGetExposure(...args),
   getCapitalObligations: (...args: unknown[]) => mockGetObligations(...args)
 }));
 
@@ -79,6 +81,7 @@ jest.mock("../../session/sessionStore", () => ({
 
 import {
   parseCapitalCashFlow,
+  parseCapitalExposure,
   parseCapitalGraph,
   parseCapitalObligations,
   parseCapitalOverview,
@@ -414,6 +417,99 @@ function readyCashFlow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/**
+ * An exposure payload exactly as `/capital-graph/exposure` emits it — which is
+ * to say a strict projection of the overview read, run through the real parser.
+ *
+ * The default is the case that makes the tab worth having: eleven holdings, of
+ * which only four have a price. The ranking is therefore over 4/11 of the
+ * member's positions, and the top row's 61% is 61% *of that quarter*. A fixture
+ * where everything was priced would let a screen that printed the share without
+ * its denominator pass every assertion in this block.
+ *
+ * The figures are deliberately unlike every other fixture here — the overview's
+ * 812450.25/240000, the obligations' 137500, the cash flow's 335350 — so a
+ * number on screen can only have come from this read. `generated_at` differs
+ * from the overview's for the same reason.
+ */
+function readyExposure(overrides: Record<string, unknown> = {}) {
+  return {
+    state: "READY",
+    exposure: parseCapitalExposure({
+      concentrations: {
+        // The server's order and the server's shares. They sum to the
+        // asset_total below, as the real `_concentrations` guarantees.
+        assets: [
+          { key: "SOL", label: "Solana", value: 401200, share: 401200 / 655300 },
+          { key: "ADA", label: "Cardano", value: 150100, share: 150100 / 655300 },
+          { key: "DOT", label: "Polkadot", value: 78000, share: 78000 / 655300 },
+          { key: "LINK", label: "Chainlink", value: 26000, share: 26000 / 655300 }
+        ],
+        asset_basis: "priced_asset_value",
+        asset_total: 655300,
+        assets_ranked: 4,
+        assets_unranked_tail: 0,
+        // Kinds, not creditors: this is what the server groups by.
+        liabilities: [
+          { key: "MORTGAGE", label: "Mortgage", value: 71900, share: 71900 / 96400 },
+          { key: "CARD", label: "Card", value: 24500, share: 24500 / 96400 }
+        ],
+        liability_basis: "quantified_liability_amount",
+        liability_total: 96400,
+        currency: "USD"
+      },
+      assets: {
+        priced_value: 655300,
+        currency: "USD",
+        count: 11,
+        priced: 4,
+        // Seven have no price and the projection could only name three of
+        // them, so the screen has to account for four it cannot list.
+        unpriced: 7,
+        unpriced_symbols: ["XMR", "ZEC", "FIL"],
+        basis_known: 2,
+        known_cost: 401000,
+        complete: false
+      },
+      liabilities: {
+        known_amount: 96400,
+        currency: "USD",
+        count: 6,
+        quantified: 4,
+        unquantified: 2,
+        foreign_currency: 1,
+        unspecified_currency: 1,
+        by_currency: {
+          USD: { amount: 96400, count: 3 },
+          CHF: { amount: 41250, count: 1 },
+          // An amount the server holds but cannot label. Printing it in any
+          // currency would invent the one fact that is missing.
+          UNSPECIFIED: { amount: 8300, count: 1 }
+        },
+        complete: false,
+        truncated: false
+      },
+      coverage: {
+        dimensions: {
+          pricing: { known: 4, countable: 11, ratio: 4 / 11 },
+          evidence: { known: 0, countable: 0, ratio: null }
+        },
+        score: 0.31,
+        scored_dimensions: ["pricing"],
+        formula: "mean(scored_dimensions)"
+      },
+      prices: {
+        source: "live_market_board",
+        observed_epoch: 1788000000,
+        age_seconds: 30,
+        warning: ""
+      },
+      generated_at: "2026-09-06T12:34:56+00:00",
+      ...overrides
+    })
+  };
+}
+
 async function unlockDoor(utils: ReturnType<typeof render>) {
   const { getByLabelText, getByText, queryByText } = utils;
   if (isOfficeUnlocked()) return;
@@ -445,6 +541,9 @@ const money = (value: number) =>
   new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(value);
 const percent = (ratio: number) =>
   new Intl.NumberFormat(undefined, { style: "percent", maximumFractionDigits: 1 }).format(ratio);
+/** Same, for the currencies that are not the screen's default. */
+const moneyIn = (value: number, currency: string) =>
+  new Intl.NumberFormat(undefined, { style: "currency", currency }).format(value);
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -453,6 +552,7 @@ beforeEach(() => {
   mockGetPortfolio.mockResolvedValue(readyPortfolio([btcAsset()]));
   mockGetOverview.mockResolvedValue(readyOverview());
   mockGetCashFlow.mockResolvedValue(readyCashFlow());
+  mockGetExposure.mockResolvedValue(readyExposure());
   mockGetObligations.mockResolvedValue(readyObligations());
   // The status probe answers from the grant, as the real endpoint does: the
   // server that just accepted the passcode reports `unlocked: true` on the
@@ -1745,9 +1845,14 @@ describe("CapitalGraphScreen cash flow tab", () => {
     const { getAllByText, getByText } = await renderScreen("cash_flow");
     await waitFor(() => getByText(`${CF}.title`));
 
-    // The window is still drawn under its own name — dropping the row would
-    // make the schedule look like it had five windows all along.
-    getByText("due_90");
+    // The window is still drawn — dropping the row would make the schedule
+    // look like it had five windows all along. It is headed by the server's
+    // range like every other window, so what proves it is still there is the
+    // count: six windows above the schedule and three schedule rows below,
+    // not five and three.
+    expect(
+      getAllByText(new RegExp(`^${CF}\\.(bucketDueNow|bucketBetween|bucketAfter)$`))
+    ).toHaveLength(9);
     // Named twice on that row: once where the amount goes, once where the
     // count goes. Neither may quietly become 0.
     expect(getAllByText(`${CF}.bucketMissing`)).toHaveLength(2);
@@ -1789,32 +1894,41 @@ describe("CapitalGraphScreen cash flow tab", () => {
     // with no lower bound and one with no upper bound are not the same fact,
     // and rendering `from_days: null` as 0 would put "already overdue" and
     // "due within a month" on the same footing.
-    getByText(`${CF}.bucketBefore`);
-    getByText(`${CF}.bucketAfter`);
-    expect(getAllByText(`${CF}.bucketBetween`)).toHaveLength(4);
+    //
+    // The server closes `overdue` at exactly 0, which is a window rather than
+    // a boundary worth printing, so it gets words instead of "up to 0 days".
+    // `bucketBefore` is therefore reserved for a server that moves that edge
+    // off zero, and must not appear against this payload.
+    expect(queryByText(`${CF}.bucketBefore`)).toBeNull();
     // Every window here is declared, so none may be labelled as one this
     // build cannot describe.
     expect(queryByText(`${CF}.bucketUndeclared`)).toBeNull();
-    // The six names the server declared, drawn in the server's order rather
-    // than in whatever order `Object.keys` happened to yield. The three that
-    // follow are the schedule rows, each labelled with the bucket the server
-    // assigned it — the same name in both places, so a member can match a row
-    // to the window it was counted in.
+    // Every window on the tab, in render order: the six the server declared,
+    // in the server's order rather than whatever `Object.keys` yielded, then
+    // the three schedule rows. A row is labelled with the *window* it was
+    // counted in and not the server's internal key, and it is the same
+    // sentence in both places, so a member can match a row to its window.
+    // Nothing here is a name this build hardcoded: every one of these is
+    // derived from `from_days`/`to_days` on the wire.
     expect(
-      getAllByText(/^(overdue|due_30|due_90|due_180|due_365|beyond_365)$/).map(
-        (node) => node.props.children
-      )
+      getAllByText(
+        new RegExp(`^${CF}\\.(bucketDueNow|bucketBetween|bucketAfter)$`)
+      ).map((node) => node.props.children)
     ).toEqual([
-      "overdue",
-      "due_30",
-      "due_90",
-      "due_180",
-      "due_365",
-      "beyond_365",
-      "overdue",
-      "due_30",
-      "beyond_365"
+      `${CF}.bucketDueNow`,
+      `${CF}.bucketBetween`,
+      `${CF}.bucketBetween`,
+      `${CF}.bucketBetween`,
+      `${CF}.bucketBetween`,
+      `${CF}.bucketAfter`,
+      `${CF}.bucketDueNow`,
+      `${CF}.bucketBetween`,
+      `${CF}.bucketAfter`
     ]);
+    // And the server's internal keys are not shown as though they were
+    // windows: they appear only where there is no window to show.
+    expect(queryByText("due_90")).toBeNull();
+    expect(queryByText("beyond_365")).toBeNull();
   });
 
   it("counts what could not be placed instead of dropping it from the tab", async () => {
@@ -2117,6 +2231,643 @@ describe("CapitalGraphScreen cash flow tab", () => {
   it("relocks the office when the cash-flow read says the grant is dead", async () => {
     mockGetCashFlow.mockResolvedValue({ state: "LOCKED", setupRequired: false });
     const { getByText } = await renderScreen("cash_flow");
+
+    await waitFor(() => getByText("premium:privateOffice.lock.unlock"));
+    expect(isOfficeUnlocked()).toBe(false);
+  });
+});
+
+/* --- Stage-three: the exposure tab, and the denominator under every share --- */
+
+/**
+ * A concentration percentage is only as honest as what it is a percentage of.
+ *
+ * The failure this block exists to make impossible is a ranking that reads as
+ * a ranking of everything the member owns. The server ranks only holdings that
+ * have a price; on the default fixture that is four of eleven. "61% in Solana"
+ * is therefore 61% of a quarter of the positions on file, and the seven
+ * unpriced ones are not small — they are *invisible*, and any of them could
+ * outweigh the row at the top.
+ *
+ * So the contract pinned here is: the priced total, its coverage and the
+ * holdings excluded from it are drawn above the ranking; the caption naming the
+ * basis is unconditional; the server's shares are printed and never recomputed;
+ * the two counts of the priced set are cross-checked out loud; and the
+ * dimensions this surface has no data for at all are named in every state.
+ */
+const EX = "premium:privateOffice.capital.exposure";
+
+describe("CapitalGraphScreen exposure tab", () => {
+  it("asks the exposure endpoint, and never the overview or the graph", async () => {
+    const { getByText } = await renderScreen("exposure");
+    await waitFor(() => getByText(`${EX}.basisTitle`));
+
+    expect(mockGetExposure).toHaveBeenCalledTimes(1);
+    // The server derives exposure from the same read it answers /overview
+    // with. Deriving it *here* from overview state we already hold would let a
+    // healthy overview vouch for an exposure read that never happened.
+    expect(mockGetOverview).not.toHaveBeenCalled();
+    expect(mockGetGraph).not.toHaveBeenCalled();
+    expect(mockGetPortfolio).not.toHaveBeenCalled();
+  });
+
+  it("leads with the denominator and names what the server called it", async () => {
+    const { getByText } = await renderScreen("exposure");
+    await waitFor(() => getByText(`${EX}.basisTitle`));
+
+    getByText(money(655300));
+    // The server's token for the basis, rendered rather than paraphrased, so a
+    // basis this client has no translation for is still shown to the member.
+    getByText("priced_asset_value");
+    getByText(`${EX}.pricedOf`);
+  });
+
+  it("says the shares are of the priced total even when nothing is missing", async () => {
+    // The healthiest payload there is: every holding priced, portfolio
+    // complete. The caption is not a warning — it is what the number means —
+    // so it must survive the case where there is nothing to warn about.
+    mockGetExposure.mockResolvedValue(
+      readyExposure({
+        assets: {
+          priced_value: 655300,
+          currency: "USD",
+          count: 4,
+          priced: 4,
+          unpriced: 0,
+          unpriced_symbols: [],
+          basis_known: 4,
+          known_cost: 401000,
+          complete: true
+        }
+      })
+    );
+    const { getByText, queryByText } = await renderScreen("exposure");
+    await waitFor(() => getByText(`${EX}.assetsTitle`));
+
+    getByText(`${EX}.sharesOfPriced`);
+    getByText(`${EX}.complete`);
+    // Nothing was excluded, so the blind-spot card has nothing to say.
+    expect(queryByText(`${EX}.blindSpotTitle`)).toBeNull();
+  });
+
+  it("names the holdings the ranking cannot see, on the same card as the ranking", async () => {
+    const { getByText } = await renderScreen("exposure");
+    await waitFor(() => getByText(`${EX}.basisTitle`));
+
+    getByText(`${EX}.blindSpotTitle`);
+    getByText(`${EX}.blindSpotBody`);
+    // An unpriced holding is absent from the ranking, not last in it, so
+    // "which ones" is the question this card exists to answer.
+    getByText("XMR");
+    getByText("ZEC");
+    getByText("FIL");
+  });
+
+  it("accounts for the unpriced holdings it could not name", async () => {
+    const { getByText } = await renderScreen("exposure");
+    await waitFor(() => getByText(`${EX}.blindSpotTitle`));
+    // Seven unpriced, three named: the other four are stated rather than
+    // letting the list imply it is complete.
+    getByText(`${EX}.unpricedUnnamed`);
+
+    mockGetExposure.mockResolvedValue(
+      readyExposure({
+        assets: {
+          priced_value: 655300,
+          currency: "USD",
+          count: 7,
+          priced: 4,
+          unpriced: 3,
+          unpriced_symbols: ["XMR", "ZEC", "FIL"],
+          basis_known: 2,
+          known_cost: 401000,
+          complete: false
+        }
+      })
+    );
+    const named = await renderScreen("exposure");
+    await waitFor(() => named.getByText(`${EX}.blindSpotTitle`));
+    expect(named.queryByText(`${EX}.unpricedUnnamed`)).toBeNull();
+  });
+
+  it("withholds the basis figure rather than printing a currency the server did not name", async () => {
+    mockGetExposure.mockResolvedValue(
+      readyExposure({
+        concentrations: {
+          assets: [{ key: "SOL", label: "Solana", value: 401200, share: null }],
+          asset_basis: "priced_asset_value",
+          asset_total: 655300,
+          assets_ranked: 1,
+          assets_unranked_tail: 3,
+          liabilities: [],
+          liability_basis: "quantified_liability_amount",
+          liability_total: 96400,
+          // The server withholds the code when it refused to reduce a mixed
+          // set to one figure. Defaulting to USD here would relabel a
+          // withheld total as dollars.
+          currency: ""
+        }
+      })
+    );
+    const { getByText, getAllByText, queryByText } = await renderScreen("exposure");
+    await waitFor(() => getByText(`${EX}.noBasis`));
+
+    expect(getAllByText(`${EX}.withheld`).length).toBeGreaterThan(0);
+    expect(queryByText(money(655300))).toBeNull();
+    // And no row may print its value either.
+    expect(queryByText(money(401200))).toBeNull();
+    // A share with no total to divide by is not computed on this side.
+    getByText(`${EX}.shareUnknown`);
+  });
+
+  it("prints the server's pricing ratio, and says so when the server withheld it", async () => {
+    const withRatio = await renderScreen("exposure");
+    await waitFor(() => withRatio.getByText(`${EX}.pricingCoverage`));
+    withRatio.getByText(percent(4 / 11));
+    expect(withRatio.queryByText(`${EX}.pricingUnknown`)).toBeNull();
+
+    mockGetExposure.mockResolvedValue(
+      readyExposure({
+        coverage: {
+          // known and countable still arrive; the ratio does not. Dividing
+          // them here would publish a number the server declined to.
+          dimensions: { pricing: { known: 4, countable: 11, ratio: null } },
+          score: null,
+          scored_dimensions: [],
+          formula: "mean(scored_dimensions)"
+        }
+      })
+    );
+    const withheld = await renderScreen("exposure");
+    await waitFor(() => withheld.getByText(`${EX}.pricingUnknown`));
+    expect(withheld.queryByText(percent(4 / 11))).toBeNull();
+  });
+
+  it("treats an absent pricing dimension as unknown, never as full coverage", async () => {
+    mockGetExposure.mockResolvedValue(
+      readyExposure({
+        coverage: {
+          dimensions: { evidence: { known: 0, countable: 0, ratio: null } },
+          score: null,
+          scored_dimensions: [],
+          formula: "mean(scored_dimensions)"
+        }
+      })
+    );
+    const { getByText, queryByText } = await renderScreen("exposure");
+    await waitFor(() => getByText(`${EX}.pricingUnknown`));
+    expect(queryByText(percent(1))).toBeNull();
+    expect(queryByText(percent(0))).toBeNull();
+  });
+
+  it("draws the ranking in the server's order, with the server's own shares", async () => {
+    const { getByText, getAllByText } = await renderScreen("exposure");
+    await waitFor(() => getByText(`${EX}.assetsTitle`));
+
+    const labels = getAllByText(/^(Solana|Cardano|Polkadot|Chainlink)$/).map(
+      (node) => node.props.children
+    );
+    expect(labels).toEqual(["Solana", "Cardano", "Polkadot", "Chainlink"]);
+
+    getByText(money(401200));
+    getByText(money(150100));
+    getByText(money(78000));
+    getByText(money(26000));
+    getByText(percent(401200 / 655300));
+    getByText(percent(26000 / 655300));
+  });
+
+  it("leaves a share the server withheld unstated, without touching the others", async () => {
+    mockGetExposure.mockResolvedValue(
+      readyExposure({
+        concentrations: {
+          assets: [
+            { key: "SOL", label: "Solana", value: 401200, share: 401200 / 655300 },
+            // The server had a value but no share for this one.
+            { key: "ADA", label: "Cardano", value: 150100, share: null }
+          ],
+          asset_basis: "priced_asset_value",
+          asset_total: 655300,
+          assets_ranked: 2,
+          assets_unranked_tail: 2,
+          liabilities: [],
+          liability_basis: "quantified_liability_amount",
+          liability_total: 96400,
+          currency: "USD"
+        }
+      })
+    );
+    const { getByText, queryByText } = await renderScreen("exposure");
+    await waitFor(() => getByText(`${EX}.assetsTitle`));
+
+    getByText(percent(401200 / 655300));
+    getByText(`${EX}.shareUnknown`);
+    // The value is still the server's; only the share was missing.
+    getByText(money(150100));
+    expect(queryByText(percent(150100 / 655300))).toBeNull();
+  });
+
+  it("says how many priced holdings it did not rank, and stays quiet when it ranked them all", async () => {
+    const all = await renderScreen("exposure");
+    await waitFor(() => all.getByText(`${EX}.assetsTitle`));
+    expect(all.queryByText(`${EX}.unrankedTail`)).toBeNull();
+
+    mockGetExposure.mockResolvedValue(
+      readyExposure({
+        assets: {
+          priced_value: 655300,
+          currency: "USD",
+          count: 17,
+          priced: 10,
+          unpriced: 7,
+          unpriced_symbols: ["XMR", "ZEC", "FIL"],
+          basis_known: 2,
+          known_cost: 401000,
+          complete: false
+        },
+        concentrations: {
+          assets: [{ key: "SOL", label: "Solana", value: 401200, share: 401200 / 655300 }],
+          asset_basis: "priced_asset_value",
+          asset_total: 655300,
+          assets_ranked: 1,
+          assets_unranked_tail: 9,
+          liabilities: [],
+          liability_basis: "quantified_liability_amount",
+          liability_total: 96400,
+          currency: "USD"
+        }
+      })
+    );
+    const capped = await renderScreen("exposure");
+    await waitFor(() => capped.getByText(`${EX}.unrankedTail`));
+    // 1 ranked + 9 tail = 10 priced: the invariant still holds, so no shout.
+    expect(capped.queryByText(`${EX}.basisMismatch`)).toBeNull();
+  });
+
+  it("shouts when the ranked and unranked counts do not add up to the priced count", async () => {
+    const healthy = await renderScreen("exposure");
+    await waitFor(() => healthy.getByText(`${EX}.assetsTitle`));
+    expect(healthy.queryByText(`${EX}.basisMismatch`)).toBeNull();
+
+    mockGetExposure.mockResolvedValue(
+      readyExposure({
+        // 4 ranked + 0 tail, but the assets block says 9 have a price. One of
+        // the two is wrong, so the ranking is not over the printed total.
+        assets: {
+          priced_value: 655300,
+          currency: "USD",
+          count: 11,
+          priced: 9,
+          unpriced: 2,
+          unpriced_symbols: [],
+          basis_known: 2,
+          known_cost: 401000,
+          complete: false
+        }
+      })
+    );
+    const broken = await renderScreen("exposure");
+    await waitFor(() => broken.getByText(`${EX}.basisMismatch`));
+  });
+
+  it("shouts when the server's ranked count does not match the rows it sent", async () => {
+    const healthy = await renderScreen("exposure");
+    await waitFor(() => healthy.getByText(`${EX}.assetsTitle`));
+    expect(healthy.queryByText(`${EX}.rankedMismatch`)).toBeNull();
+
+    mockGetExposure.mockResolvedValue(
+      readyExposure({
+        concentrations: {
+          assets: [{ key: "SOL", label: "Solana", value: 401200, share: 401200 / 655300 }],
+          asset_basis: "priced_asset_value",
+          asset_total: 655300,
+          // Claims four, sent one.
+          assets_ranked: 4,
+          assets_unranked_tail: 0,
+          liabilities: [],
+          liability_basis: "quantified_liability_amount",
+          liability_total: 96400,
+          currency: "USD"
+        }
+      })
+    );
+    const broken = await renderScreen("exposure");
+    await waitFor(() => broken.getByText(`${EX}.rankedMismatch`));
+  });
+
+  it("keeps three different silences apart when there is no ranking to draw", async () => {
+    const nothing = {
+      assets: [],
+      asset_basis: "priced_asset_value",
+      asset_total: 0,
+      assets_ranked: 0,
+      assets_unranked_tail: 0,
+      liabilities: [],
+      liability_basis: "quantified_liability_amount",
+      liability_total: 0,
+      currency: "USD"
+    };
+    const block = (count: number, priced: number) => ({
+      priced_value: 0,
+      currency: "USD",
+      count,
+      priced,
+      unpriced: count - priced,
+      unpriced_symbols: [],
+      basis_known: 0,
+      known_cost: null,
+      complete: false
+    });
+
+    // Nothing on file at all. Not "you own nothing".
+    mockGetExposure.mockResolvedValue(
+      readyExposure({ concentrations: nothing, assets: block(0, 0) })
+    );
+    const none = await renderScreen("exposure");
+    await waitFor(() => none.getByText(`${EX}.noHoldings`));
+    expect(none.queryByText(`${EX}.nonePriced`)).toBeNull();
+    expect(none.queryByText(`${EX}.pricedButUnrankable`)).toBeNull();
+
+    // Holdings exist; no price could be found for any of them.
+    mockGetExposure.mockResolvedValue(
+      readyExposure({ concentrations: nothing, assets: block(3, 0) })
+    );
+    const unpriced = await renderScreen("exposure");
+    await waitFor(() => unpriced.getByText(`${EX}.nonePriced`));
+    expect(unpriced.queryByText(`${EX}.noHoldings`)).toBeNull();
+    expect(unpriced.queryByText(`${EX}.pricedButUnrankable`)).toBeNull();
+
+    // Priced, but the prices do not add up to anything to rank against.
+    mockGetExposure.mockResolvedValue(
+      readyExposure({ concentrations: nothing, assets: block(3, 3) })
+    );
+    const unrankable = await renderScreen("exposure");
+    await waitFor(() => unrankable.getByText(`${EX}.pricedButUnrankable`));
+    expect(unrankable.queryByText(`${EX}.noHoldings`)).toBeNull();
+    expect(unrankable.queryByText(`${EX}.nonePriced`)).toBeNull();
+  });
+
+  it("says the debt rows are kinds rather than creditors", async () => {
+    const { getByText } = await renderScreen("exposure");
+    await waitFor(() => getByText(`${EX}.liabilitiesTitle`));
+
+    getByText(`${EX}.liabilitiesGrouped`);
+    getByText("quantified_liability_amount");
+    getByText("Mortgage");
+    getByText("Card");
+    getByText(money(96400));
+    getByText(percent(71900 / 96400));
+  });
+
+  it("names only the exclusions that happened", async () => {
+    const { getByText, queryByText } = await renderScreen("exposure");
+    await waitFor(() => getByText(`${EX}.excludedTitle`));
+    getByText(`${EX}.excludedUnquantified`);
+    getByText(`${EX}.excludedForeignCurrency`);
+    getByText(`${EX}.excludedUnspecifiedCurrency`);
+
+    mockGetExposure.mockResolvedValue(
+      readyExposure({
+        liabilities: {
+          known_amount: 96400,
+          currency: "USD",
+          count: 4,
+          quantified: 4,
+          unquantified: 0,
+          foreign_currency: 0,
+          unspecified_currency: 0,
+          by_currency: { USD: { amount: 96400, count: 4 } },
+          complete: true,
+          truncated: false
+        }
+      })
+    );
+    const clean = await renderScreen("exposure");
+    await waitFor(() => clean.getByText(`${EX}.liabilitiesTitle`));
+    // A row reading "no amount recorded: none" is noise; its absence says the
+    // same thing quieter. But the *title* going too is the real assertion.
+    expect(clean.queryByText(`${EX}.excludedTitle`)).toBeNull();
+    expect(clean.queryByText(`${EX}.excludedUnquantified`)).toBeNull();
+    expect(clean.queryByText(`${EX}.otherCurrencies`)).toBeNull();
+  });
+
+  it("gives the magnitude of what was set aside, not just the count", async () => {
+    const { getByText } = await renderScreen("exposure");
+    await waitFor(() => getByText(`${EX}.otherCurrencies`));
+
+    // Naming "1 excluded, another currency" while withholding how much is a
+    // count masquerading as a disclosure.
+    getByText("CHF");
+    getByText(moneyIn(41250, "CHF"));
+    // The base currency is already the headline; repeating it here would
+    // double-count it as something set aside.
+    expect(getByText(money(96400))).toBeTruthy();
+  });
+
+  it("falls back to a count when the server could not name the currency", async () => {
+    const { getByText, queryByText } = await renderScreen("exposure");
+    await waitFor(() => getByText(`${EX}.otherCurrencies`));
+
+    getByText("UNSPECIFIED");
+    // The amount is real but its currency is not. Printing 8,300 in dollars
+    // would invent the single fact that is missing, so the row says how many
+    // instead of how much.
+    expect(queryByText(money(8300))).toBeNull();
+    expect(queryByText("8300")).toBeNull();
+    expect(queryByText("8,300")).toBeNull();
+  });
+
+  it("keeps an empty liability ranking apart from having no obligations at all", async () => {
+    const noRows = {
+      assets: [{ key: "SOL", label: "Solana", value: 401200, share: 401200 / 655300 }],
+      asset_basis: "priced_asset_value",
+      asset_total: 655300,
+      assets_ranked: 1,
+      assets_unranked_tail: 3,
+      liabilities: [],
+      liability_basis: "quantified_liability_amount",
+      liability_total: 0,
+      currency: "USD"
+    };
+
+    mockGetExposure.mockResolvedValue(
+      readyExposure({
+        concentrations: noRows,
+        liabilities: {
+          known_amount: 0,
+          currency: "USD",
+          count: 0,
+          quantified: 0,
+          unquantified: 0,
+          foreign_currency: 0,
+          unspecified_currency: 0,
+          by_currency: {},
+          complete: true,
+          truncated: false
+        }
+      })
+    );
+    const none = await renderScreen("exposure");
+    await waitFor(() => none.getByText(`${EX}.noLiabilities`));
+    expect(none.queryByText(`${EX}.noneQuantified`)).toBeNull();
+
+    mockGetExposure.mockResolvedValue(
+      readyExposure({
+        concentrations: noRows,
+        liabilities: {
+          known_amount: 0,
+          currency: "USD",
+          // Three obligations are on file; none of them has an amount, so
+          // none can be ranked. That is not "no debt".
+          count: 3,
+          quantified: 0,
+          unquantified: 3,
+          foreign_currency: 0,
+          unspecified_currency: 0,
+          by_currency: {},
+          complete: false,
+          truncated: false
+        }
+      })
+    );
+    const unquantified = await renderScreen("exposure");
+    await waitFor(() => unquantified.getByText(`${EX}.noneQuantified`));
+    expect(unquantified.queryByText(`${EX}.noLiabilities`)).toBeNull();
+  });
+
+  it("admits the obligation list was capped", async () => {
+    const uncapped = await renderScreen("exposure");
+    await waitFor(() => uncapped.getByText(`${EX}.liabilitiesTitle`));
+    expect(uncapped.queryByText(`${EX}.liabilitiesTruncated`)).toBeNull();
+
+    mockGetExposure.mockResolvedValue(
+      readyExposure({
+        liabilities: {
+          known_amount: 96400,
+          currency: "USD",
+          count: 6,
+          quantified: 4,
+          unquantified: 2,
+          foreign_currency: 0,
+          unspecified_currency: 0,
+          by_currency: { USD: { amount: 96400, count: 4 } },
+          complete: false,
+          truncated: true
+        }
+      })
+    );
+    const capped = await renderScreen("exposure");
+    await waitFor(() => capped.getByText(`${EX}.liabilitiesTruncated`));
+  });
+
+  it("names what it cannot measure at all, on the healthiest payload there is", async () => {
+    mockGetExposure.mockResolvedValue(
+      readyExposure({
+        assets: {
+          priced_value: 655300,
+          currency: "USD",
+          count: 4,
+          priced: 4,
+          unpriced: 0,
+          unpriced_symbols: [],
+          basis_known: 4,
+          known_cost: 401000,
+          complete: true
+        },
+        liabilities: {
+          known_amount: 96400,
+          currency: "USD",
+          count: 4,
+          quantified: 4,
+          unquantified: 0,
+          foreign_currency: 0,
+          unspecified_currency: 0,
+          by_currency: { USD: { amount: 96400, count: 4 } },
+          complete: true,
+          truncated: false
+        }
+      })
+    );
+    const { getByText } = await renderScreen("exposure");
+    await waitFor(() => getByText(`${EX}.assetsTitle`));
+
+    // Nothing on file records these, so silence here would read as an
+    // all-clear on exactly the risks the word "exposure" promises.
+    getByText(`${EX}.unmeasuredTitle`);
+    getByText(`${EX}.unmeasuredBody`);
+    getByText(`${EX}.unmeasured.counterparty`);
+    getByText(`${EX}.unmeasured.custodian`);
+    getByText(`${EX}.unmeasured.geography`);
+    getByText(`${EX}.unmeasured.sector`);
+    getByText(`${EX}.unmeasured.assetCurrency`);
+  });
+
+  it("dates the ranking from its own read, not from the overview's", async () => {
+    const { getByText, queryByText } = await renderScreen("exposure");
+    await waitFor(() => getByText(`${EX}.readAt`));
+
+    getByText("2026-09-06T12:34:56+00:00");
+    // The overview fixture's instant. Exposure is a separate request and must
+    // never borrow another tab's timestamp.
+    expect(queryByText("2026-09-06T12:00:00+00:00")).toBeNull();
+  });
+
+  it("flags a price outage beside the ranking, and prints the server's warning verbatim", async () => {
+    const live = await renderScreen("exposure");
+    await waitFor(() => live.getByText(`${EX}.basisTitle`));
+    expect(live.queryByText(`${EX}.pricesUnavailable`)).toBeNull();
+
+    mockGetExposure.mockResolvedValue(
+      readyExposure({
+        prices: {
+          source: "unavailable",
+          observed_epoch: null,
+          age_seconds: null,
+          warning: "The market board did not answer; values are last-known, not current."
+        }
+      })
+    );
+    const stale = await renderScreen("exposure");
+    await waitFor(() => stale.getByText(`${EX}.pricesUnavailable`));
+    // Policy prose written for a person. A paraphrase here would drift.
+    stale.getByText("The market board did not answer; values are last-known, not current.");
+  });
+
+  it("stops drawing the ranking once the member leaves the tab", async () => {
+    const { getByText, queryByText } = await renderScreen("exposure");
+    await waitFor(() => getByText(`${EX}.assetsTitle`));
+    getByText(money(655300));
+
+    // The parsed answer survives the switch so returning is instant. Painting
+    // it under the Obligations heading would not be.
+    fireEvent.press(getByText("premium:privateOffice.capital.views.obligations"));
+    await waitFor(() => getByText("premium:privateOffice.capital.obligations.title"));
+    expect(queryByText(`${EX}.assetsTitle`)).toBeNull();
+    expect(queryByText(money(655300))).toBeNull();
+    expect(queryByText("Solana")).toBeNull();
+    expect(queryByText(`${EX}.unmeasuredTitle`)).toBeNull();
+  });
+
+  it("keeps a failed exposure read a failure, never a ranking of nothing", async () => {
+    mockGetExposure.mockResolvedValue({ state: "UNAVAILABLE" });
+    const outage = await renderScreen("exposure");
+    await waitFor(() => outage.getByText("premium:privateOffice.capital.unavailable.body"));
+    expect(outage.queryByText(`${EX}.assetsTitle`)).toBeNull();
+    expect(outage.queryByText(`${EX}.noHoldings`)).toBeNull();
+    expect(outage.queryByText(EMPTY_TITLE)).toBeNull();
+    expect(outage.getByText(RETRY)).toBeTruthy();
+
+    mockGetExposure.mockResolvedValue({ state: "DENIED", reason: "actor_is_not_owner" });
+    const denied = await renderScreen("exposure");
+    await waitFor(() => denied.getByText("premium:privateOffice.capital.denied.body"));
+    denied.getByText("actor_is_not_owner");
+    expect(denied.queryByText(`${EX}.assetsTitle`)).toBeNull();
+    expect(denied.queryByText(RETRY)).toBeNull();
+  });
+
+  it("relocks the office when the exposure read says the grant is dead", async () => {
+    mockGetExposure.mockResolvedValue({ state: "LOCKED", setupRequired: false });
+    const { getByText } = await renderScreen("exposure");
 
     await waitFor(() => getByText("premium:privateOffice.lock.unlock"));
     expect(isOfficeUnlocked()).toBe(false);

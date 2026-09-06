@@ -4634,7 +4634,8 @@
           "obligations": "Obrigações",
           "overview": "Resumo",
           "structure": "Estrutura",
-          "cash_flow": "Saídas"
+          "cash_flow": "Saídas",
+          "exposure": "Concentração"
         },
         "countExact": "{{count}}",
         "countSoFar": "{{count}} até agora",
@@ -4865,16 +4866,9 @@
           "bucketMissing": "Sem dados",
           "bucketUndeclared": "Período não descrito",
           "bucketBefore": "Até {{to}} dias",
+          "bucketDueNow": "Vence agora ou já está vencido",
           "bucketAfter": "Mais de {{from}} dias",
           "bucketBetween": "{{from}}–{{to}} dias",
-          "bucket": {
-            "overdue": "Já vencidas",
-            "due_30": "Em 30 dias",
-            "due_90": "De 31 a 90 dias",
-            "due_180": "De 91 a 180 dias",
-            "due_365": "De 181 a 365 dias",
-            "beyond_365": "Para além de um ano"
-          },
           "excludedTitle": "Fora de todos os períodos",
           "excludedBody": "Estas obrigações são reais. Não aparecem em nenhum período porque falta algo necessário para as situar.",
           "undated": "Sem data de vencimento registada",
@@ -4890,6 +4884,55 @@
           "syncTitle": "Projeção",
           "projectedLabel": "Reconstruído a partir dos registos",
           "skippedLabel": "Ignoradas"
+        },
+        "exposure": {
+          "basisTitle": "Base da classificação",
+          "complete": "Completo",
+          "partial": "Parcial",
+          "withheld": "Não informado",
+          "noBasis": "Sem total para classificar",
+          "basis": {
+            "priced_asset_value": "Valor dos ativos precificados",
+            "quantified_liability_amount": "Montante dos passivos quantificados"
+          },
+          "pricedOf": "{{priced}} de {{total}} posições precificadas",
+          "pricingCoverage": "Cobertura de preços",
+          "dimensionCount": "{{known}} de {{total}}",
+          "pricingUnknown": "A cobertura de preços não pode ser pontuada",
+          "blindSpotTitle": "Fora desta classificação",
+          "blindSpotBody": "Estas posições não têm preço, portanto estão ausentes da classificação, não em último lugar. Qualquer uma delas pode ser maior que a primeira linha.",
+          "unpricedUnnamed": "Sem preço e sem nome",
+          "pricesUnavailable": "Não foi possível ler os preços ao vivo, então esta classificação não está atualizada.",
+          "readAt": "Lido em",
+          "assetsTitle": "Onde está o dinheiro precificado",
+          "shareUnknown": "Percentual não informado",
+          "sharesOfPriced": "Os percentuais são do total precificado acima, não de tudo o que está registrado.",
+          "unrankedTail": "Precificado, mas não classificado",
+          "basisMismatch": "As contagens classificadas e não classificadas não somam o número de posições precificadas, então esta classificação pode não corresponder ao total mostrado acima.",
+          "rankedMismatch": "A contagem de classificados do servidor não corresponde às linhas enviadas.",
+          "noHoldings": "Nenhuma posição está registrada, então não há o que classificar. Isso não é o mesmo que não possuir nada.",
+          "nonePriced": "Há posições registradas, mas nenhuma tem preço, então nenhuma classificação é possível.",
+          "pricedButUnrankable": "As posições precificadas não somam um total contra o qual classificar.",
+          "liabilitiesTitle": "Onde está a dívida quantificada",
+          "liabilitiesGrouped": "Agrupado por tipo de obrigação, não por credor.",
+          "noLiabilities": "Nenhuma obrigação está registrada. Isso não é o mesmo que não dever nada.",
+          "noneQuantified": "Nenhuma obrigação tem valor registrado, então nenhuma pode ser classificada.",
+          "quantifiedOf": "{{done}} de {{total}} obrigações quantificadas",
+          "excludedTitle": "Fora desta classificação",
+          "excludedUnquantified": "Sem valor registrado",
+          "excludedForeignCurrency": "Outra moeda",
+          "excludedUnspecifiedCurrency": "Sem moeda informada",
+          "otherCurrencies": "Reservado, por moeda",
+          "liabilitiesTruncated": "A lista de obrigações foi limitada, então podem existir mais do que as classificadas.",
+          "unmeasuredTitle": "O que esta aba não mede",
+          "unmeasuredBody": "Nada no arquivo registra isso, então está ausente aqui, não liberado. Este silêncio não é um sinal de tudo certo.",
+          "unmeasured": {
+            "counterparty": "Concentração por contraparte",
+            "custodian": "Concentração por custodiante e plataforma",
+            "geography": "Concentração geográfica",
+            "sector": "Concentração setorial",
+            "assetCurrency": "Moeda dos próprios ativos"
+          }
         }
       },
       "attention": {

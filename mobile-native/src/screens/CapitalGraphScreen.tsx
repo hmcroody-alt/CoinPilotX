@@ -47,6 +47,9 @@ import {
   CAPITAL_VIEWS,
   CapitalCashFlow,
   CapitalCashFlowResult,
+  CapitalConcentration,
+  CapitalExposure,
+  CapitalExposureResult,
   CapitalGraph,
   CapitalGraphResult,
   CapitalObligations,
@@ -58,6 +61,7 @@ import {
   CapitalView,
   asCapitalView,
   getCapitalCashFlow,
+  getCapitalExposure,
   getCapitalGraph,
   getCapitalObligations,
   getCapitalOverview,
@@ -90,7 +94,7 @@ type ScreenState = "LOADING" | "EMPTY" | CapitalGraphResult["state"];
  * careless refactor away, so the tab type is widened here and narrowed back to
  * a real view before anything is fetched.
  */
-const CAPITAL_PANELS = ["overview", "cash_flow", "obligations"] as const;
+const CAPITAL_PANELS = ["overview", "exposure", "cash_flow", "obligations"] as const;
 
 /** A tab served by its own endpoint rather than by `view=`. */
 type CapitalPanel = (typeof CAPITAL_PANELS)[number];
@@ -99,8 +103,14 @@ type CapitalPanel = (typeof CAPITAL_PANELS)[number];
  * Cash Flow sits beside Obligations rather than next to Overview: it is the
  * same recorded debts on a timeline, and a member comparing "what is owed" with
  * "when it falls due" should not have to cross the graph views to do it.
+ *
+ * Exposure sits immediately after Overview for the same reason in the other
+ * direction: the server computes both from one read, and Exposure's whole job
+ * is to name the denominator under Overview's headline. Putting the graph views
+ * between them would invite the member to read a concentration share as a share
+ * of everything they own rather than of the priced subset it is actually of.
  */
-const CAPITAL_TABS = ["overview", ...CAPITAL_VIEWS, "cash_flow", "obligations"] as const;
+const CAPITAL_TABS = ["overview", "exposure", ...CAPITAL_VIEWS, "cash_flow", "obligations"] as const;
 
 type CapitalTab = (typeof CAPITAL_TABS)[number];
 
@@ -136,10 +146,17 @@ const readPanel = async (
   which: CapitalPanel
 ): Promise<
   | { panel: "overview"; result: CapitalOverviewResult }
+  | { panel: "exposure"; result: CapitalExposureResult }
   | { panel: "cash_flow"; result: CapitalCashFlowResult }
   | { panel: "obligations"; result: CapitalObligationsResult }
 > => {
   if (which === "overview") return { panel: "overview", result: await getCapitalOverview() };
+  // Its own request, even though the server derives it from the same read the
+  // overview endpoint answers with. Reusing overview state we already hold
+  // would let a healthy overview vouch for an exposure read that never
+  // happened, and would date the ranking from a different instant than the
+  // `generatedAt` printed under it.
+  if (which === "exposure") return { panel: "exposure", result: await getCapitalExposure() };
   if (which === "cash_flow") return { panel: "cash_flow", result: await getCapitalCashFlow() };
   return { panel: "obligations", result: await getCapitalObligations() };
 };
@@ -196,6 +213,8 @@ function CapitalGraphBody({ navigation, route }: Props) {
     useState<CapitalObligationsResult | null>(null);
   const [cashFlowState, setCashFlowState] = useState<ScreenState>("LOADING");
   const [cashFlowResult, setCashFlowResult] = useState<CapitalCashFlowResult | null>(null);
+  const [exposureState, setExposureState] = useState<ScreenState>("LOADING");
+  const [exposureResult, setExposureResult] = useState<CapitalExposureResult | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   // One request pair at a time: a second Retry tap while the first is still in
   // flight would race two setState pairs and double-hit the server.
@@ -217,6 +236,7 @@ function CapitalGraphBody({ navigation, route }: Props) {
   const applyPanel = useCallback(
     (read:
       | { panel: "overview"; result: CapitalOverviewResult }
+      | { panel: "exposure"; result: CapitalExposureResult }
       | { panel: "cash_flow"; result: CapitalCashFlowResult }
       | { panel: "obligations"; result: CapitalObligationsResult }) => {
       // The server said the grant is dead (revoked elsewhere, expired). Drop
@@ -230,6 +250,15 @@ function CapitalGraphBody({ navigation, route }: Props) {
         // as zero owed — which is a different sentence from "we found nothing
         // to show you".
         setOverviewState(read.result.state);
+        return;
+      }
+      if (read.panel === "exposure") {
+        // Also read straight through, and here EMPTY would be the worst of the
+        // four: a member whose holdings are all unpriced has a ranking of
+        // nothing, which is "we cannot see where your money is", not "your
+        // money is nowhere".
+        setExposureResult(read.result);
+        setExposureState(read.result.state);
         return;
       }
       if (read.panel === "cash_flow") {
@@ -277,6 +306,7 @@ function CapitalGraphBody({ navigation, route }: Props) {
     // Only the active tab's state is reset. Blanking the others would make a
     // return to an already-loaded tab flash LOADING over an answer we hold.
     if (panel === "overview") setOverviewState("LOADING");
+    else if (panel === "exposure") setExposureState("LOADING");
     else if (panel === "cash_flow") setCashFlowState("LOADING");
     else if (panel === "obligations") setObligationsState("LOADING");
     else setState("LOADING");
@@ -326,19 +356,27 @@ function CapitalGraphBody({ navigation, route }: Props) {
    * direction.
    */
   const panelRead: {
-    result: CapitalOverviewResult | CapitalCashFlowResult | CapitalObligationsResult | null;
+    result:
+      | CapitalOverviewResult
+      | CapitalExposureResult
+      | CapitalCashFlowResult
+      | CapitalObligationsResult
+      | null;
     state: ScreenState;
   } | null =
     panel === "overview"
       ? { result: overviewResult, state: overviewState }
-      : panel === "cash_flow"
-        ? { result: cashFlowResult, state: cashFlowState }
-        : panel === "obligations"
-          ? { result: obligationsResult, state: obligationsState }
-          : null;
+      : panel === "exposure"
+        ? { result: exposureResult, state: exposureState }
+        : panel === "cash_flow"
+          ? { result: cashFlowResult, state: cashFlowState }
+          : panel === "obligations"
+            ? { result: obligationsResult, state: obligationsState }
+            : null;
 
   const active:
     | CapitalOverviewResult
+    | CapitalExposureResult
     | CapitalCashFlowResult
     | CapitalObligationsResult
     | CapitalGraphResult
@@ -355,6 +393,8 @@ function CapitalGraphBody({ navigation, route }: Props) {
       : null;
   const cashFlow =
     cashFlowResult && cashFlowResult.state === "READY" ? cashFlowResult.cashFlow : null;
+  const exposure =
+    exposureResult && exposureResult.state === "READY" ? exposureResult.exposure : null;
 
   const ot = (key: string, options?: Record<string, unknown>) =>
     t(`premium:privateOffice.capital.overview.${key}`, options);
@@ -364,6 +404,9 @@ function CapitalGraphBody({ navigation, route }: Props) {
 
   const ft = (key: string, options?: Record<string, unknown>) =>
     t(`premium:privateOffice.capital.cashFlow.${key}`, options);
+
+  const xt = (key: string, options?: Record<string, unknown>) =>
+    t(`premium:privateOffice.capital.exposure.${key}`, options);
 
   const nodeTypeLabel = (token: string) =>
     t(`premium:privateOffice.capital.nodeType.${token}`, { defaultValue: token });
@@ -734,6 +777,47 @@ function CapitalGraphBody({ navigation, route }: Props) {
     );
   };
 
+  /**
+   * One concentration list, drawn the same way wherever it appears.
+   *
+   * Overview and Exposure render the *same server rows* — the exposure route is
+   * a projection of the overview read, not a second computation — so they must
+   * not have two renderers that could drift apart and show the member two
+   * different orderings of one fact. The only thing that varies is the sentence
+   * used when a share is unavailable, so that is a parameter.
+   */
+  const concentrationRows = (
+    slices: readonly CapitalConcentration[],
+    total: number | null,
+    currency: string,
+    unknownShare: string
+  ) =>
+    slices.map((slice, index) => {
+      const value = moneyIn(slice.value, currency);
+      return (
+        <View key={slice.key} style={styles.allocationRow}>
+          <View
+            style={[
+              styles.allocationSwatch,
+              { backgroundColor: ALLOCATION_PALETTE[index % ALLOCATION_PALETTE.length] }
+            ]}
+          />
+          <Text style={styles.allocationSymbol} numberOfLines={1}>
+            {slice.label || slice.key}
+          </Text>
+          {value !== null ? <Text style={styles.folioMeta}>{value}</Text> : null}
+          {/* `share` is the server's ratio. It is null when there was no
+              total to divide by, and a computed stand-in would be a number
+              the server declined to publish. */}
+          {slice.share !== null && total !== null ? (
+            <Text style={styles.allocationShare}>{percent(slice.share)}</Text>
+          ) : (
+            <Text style={styles.statMuted}>{unknownShare}</Text>
+          )}
+        </View>
+      );
+    });
+
   /** The whole holdings dashboard, or the failure card when the read failed. */
   /**
    * The Overview tab: net position, what it excludes, coverage, concentration
@@ -778,37 +862,6 @@ function CapitalGraphBody({ navigation, route }: Props) {
     const scored = data.coverage.scoredDimensions;
     const assetTotal = data.concentrations.assetTotal;
     const liabilityTotal = data.concentrations.liabilityTotal;
-
-    const concentrationRows = (
-      slices: typeof data.concentrations.assets,
-      total: number | null,
-      currency: string
-    ) =>
-      slices.map((slice, index) => {
-        const value = moneyIn(slice.value, currency);
-        return (
-          <View key={slice.key} style={styles.allocationRow}>
-            <View
-              style={[
-                styles.allocationSwatch,
-                { backgroundColor: ALLOCATION_PALETTE[index % ALLOCATION_PALETTE.length] }
-              ]}
-            />
-            <Text style={styles.allocationSymbol} numberOfLines={1}>
-              {slice.label || slice.key}
-            </Text>
-            {value !== null ? <Text style={styles.folioMeta}>{value}</Text> : null}
-            {/* `share` is the server's ratio. It is null when there was no
-                total to divide by, and a computed stand-in would be a number
-                the server declined to publish. */}
-            {slice.share !== null && total !== null ? (
-              <Text style={styles.allocationShare}>{percent(slice.share)}</Text>
-            ) : (
-              <Text style={styles.statMuted}>{ot("shareUnknown")}</Text>
-            )}
-          </View>
-        );
-      });
 
     return (
       <>
@@ -971,7 +1024,8 @@ function CapitalGraphBody({ navigation, route }: Props) {
             {concentrationRows(
               data.concentrations.assets,
               assetTotal,
-              data.concentrations.currency
+              data.concentrations.currency,
+              ot("shareUnknown")
             )}
             {data.concentrations.assetsUnrankedTail > 0 ? (
               <Text style={styles.panelCaption}>{ot("concentrationUnranked")}</Text>
@@ -985,7 +1039,8 @@ function CapitalGraphBody({ navigation, route }: Props) {
             {concentrationRows(
               data.concentrations.liabilities,
               liabilityTotal,
-              data.concentrations.currency
+              data.concentrations.currency,
+              ot("shareUnknown")
             )}
           </View>
         ) : null}
@@ -1009,6 +1064,298 @@ function CapitalGraphBody({ navigation, route }: Props) {
             ) : null}
           </View>
         ) : null}
+      </>
+    );
+  };
+
+  /**
+   * The Exposure tab: where the money is, and — first — what the share is a
+   * share *of*.
+   *
+   * ## The denominator is the headline
+   *
+   * Overview leads with a figure and treats concentration as a footnote. This
+   * tab inverts that, because a concentration percentage is only as honest as
+   * its denominator: "60% in one holding" computed over a priced subset that is
+   * three of your eleven holdings is a *weaker* claim than the same number over
+   * all eleven, and nothing in the digits distinguishes them. So the priced
+   * total, its coverage, and the holdings it could not see are drawn above the
+   * ranking, not below it, and the caption naming the basis is unconditional —
+   * it is as true of a complete picture as of a partial one.
+   *
+   * ## An unpriced holding is not a small holding
+   *
+   * The server ranks only rows that have a value. A holding with no price is
+   * absent from the ranking entirely — not last in it — so any of the excluded
+   * symbols could outweigh the row printed at the top. They are named, by
+   * symbol, on the same card as the ranking rather than left to the Overview's
+   * review list, because "which of my holdings is this ranking blind to" is an
+   * exposure question and nowhere else answers it.
+   *
+   * ## Two counts of the same thing must agree
+   *
+   * `assets.priced` and `assetsRanked + assetsUnrankedTail` are the same
+   * quantity arriving through different halves of the payload, and the server
+   * derives both from one list. They cannot disagree unless something changed
+   * between them — so rather than picking one and hoping, the screen checks and
+   * says so out loud. Same for `assetsRanked` against the number of rows
+   * actually sent. A silent client that trusted the prettier number would print
+   * a ranking over a total it is not a ranking of.
+   *
+   * ## What this tab cannot see is part of what it reports
+   *
+   * The server's concentration builder omits counterparty, custodian and
+   * geographic exposure on purpose: nothing in the projections records them,
+   * and a chart assembled from fields that do not exist is the most convincing
+   * kind of wrong. A screen called "Exposure" that stayed silent about this
+   * would let the omission read as an all-clear, so the omission is a panel.
+   */
+  const exposurePanels = (data: CapitalExposure) => {
+    const con = data.concentrations;
+    const assetTotal = moneyIn(con.assetTotal, con.currency);
+    const liabilityTotal = moneyIn(con.liabilityTotal, con.currency);
+    // Read, never assumed present: the server omits nothing today, but a
+    // dimension that vanished would otherwise render as a confident zero.
+    const pricing = data.coverage.dimensions.pricing ?? null;
+
+    const rankedAndTail = con.assetsRanked + con.assetsUnrankedTail;
+    const basisAgrees = rankedAndTail === data.assets.priced;
+    const rowsAgree = con.assetsRanked === con.assets.length;
+
+    // Symbols the server could name, versus how many it counted. The list is
+    // whatever the projection carried; when it is shorter than the count, the
+    // difference is stated rather than quietly implying these are all of them.
+    const unnamedUnpriced = Math.max(0, data.assets.unpriced - data.assets.unpricedSymbols.length);
+
+    // Only exclusions that happened. A row reading "no amount: none" is noise.
+    const excluded = (
+      [
+        ["excludedUnquantified", data.liabilities.unquantified],
+        ["excludedForeignCurrency", data.liabilities.foreignCurrency],
+        ["excludedUnspecifiedCurrency", data.liabilities.unspecifiedCurrency]
+      ] as const
+    ).filter(([, count]) => count > 0);
+
+    // The magnitudes behind those counts. Naming what was set aside without
+    // saying how much is a count masquerading as a disclosure.
+    const otherCurrencies = Object.entries(data.liabilities.byCurrency).filter(
+      ([code]) => code !== data.liabilities.currency
+    );
+
+    return (
+      <>
+        <View style={styles.folioPanel}>
+          <View style={styles.folioHead}>
+            <Text style={styles.folioTitle}>{xt("basisTitle")}</Text>
+            <Text
+              style={[
+                styles.freshTier,
+                { color: data.assets.complete ? colors.accent : colors.warning }
+              ]}
+            >
+              {data.assets.complete ? xt("complete") : xt("partial")}
+            </Text>
+          </View>
+
+          <View style={styles.folioTotals}>
+            {assetTotal !== null ? (
+              <Text style={styles.folioTotalValue}>{assetTotal}</Text>
+            ) : (
+              <>
+                <Text style={styles.folioPartial}>{xt("withheld")}</Text>
+                <Text style={styles.folioWarn}>{xt("noBasis")}</Text>
+              </>
+            )}
+            {/* The server's own name for what that figure is, translated where
+                we know the token and shown raw where we do not — a basis we
+                cannot name is still a basis the member should see. */}
+            <Text style={styles.panelCaption}>
+              {xt(`basis.${con.assetBasis}`, { defaultValue: con.assetBasis })}
+            </Text>
+          </View>
+
+          {/* Drawn whether or not anything is missing. "This covers the priced
+              holdings" is not a warning, it is what the number means. */}
+          <Text style={styles.statCaption}>
+            {xt("pricedOf", { priced: data.assets.priced, total: data.assets.count })}
+          </Text>
+
+          {pricing !== null && pricing.ratio !== null ? (
+            <View style={styles.coverageRow}>
+              <Text style={styles.coverageLabel}>{xt("pricingCoverage")}</Text>
+              <Text style={styles.coverageCount}>
+                {xt("dimensionCount", { known: pricing.known, total: pricing.countable })}
+              </Text>
+              <Text style={styles.allocationShare}>{percent(pricing.ratio)}</Text>
+            </View>
+          ) : (
+            <Text style={styles.statMuted}>{xt("pricingUnknown")}</Text>
+          )}
+
+          {data.assets.unpriced > 0 ? (
+            <View style={styles.warnPanel}>
+              <View style={styles.warnHead}>
+                <Ionicons name="eye-off-outline" size={16} color={colors.warning} />
+                <Text style={styles.warnTitle}>{xt("blindSpotTitle")}</Text>
+              </View>
+              <Text style={styles.conflictReason}>{xt("blindSpotBody")}</Text>
+              {data.assets.unpricedSymbols.length ? (
+                <View style={styles.reasonList}>
+                  {data.assets.unpricedSymbols.map((symbol) => (
+                    <Text key={symbol} style={styles.reasonRow}>
+                      {symbol}
+                    </Text>
+                  ))}
+                </View>
+              ) : null}
+              {unnamedUnpriced > 0 ? (
+                <View style={styles.excludedRow}>
+                  <Text style={styles.coverageLabel}>{xt("unpricedUnnamed")}</Text>
+                  <Text style={styles.coverageCount}>{countText(unnamedUnpriced)}</Text>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+
+          {/* Prices are the basis of the basis. An outage does not make the
+              ranking wrong, it makes it old, and those are different words. */}
+          {data.prices.source === "unavailable" ? (
+            <Text style={styles.folioWarn}>{xt("pricesUnavailable")}</Text>
+          ) : null}
+          {data.prices.warning ? (
+            <Text style={styles.panelCaption}>{data.prices.warning}</Text>
+          ) : null}
+
+          {/* Which read this is. Exposure is fetched separately from Overview,
+              so the two tabs can legitimately carry different instants. */}
+          {data.generatedAt ? (
+            <View style={styles.excludedRow}>
+              <Text style={styles.coverageLabel}>{xt("readAt")}</Text>
+              <Text style={styles.coverageCount}>{data.generatedAt}</Text>
+            </View>
+          ) : null}
+        </View>
+
+        {con.assets.length ? (
+          <View style={styles.folioPanel}>
+            <Text style={styles.folioTitle}>{xt("assetsTitle")}</Text>
+            {concentrationRows(con.assets, con.assetTotal, con.currency, xt("shareUnknown"))}
+            {/* Unconditional. The share is of the priced total in every case,
+                and a caption that appeared only when something was missing
+                would let a complete-looking payload imply "of everything". */}
+            <Text style={styles.panelCaption}>{xt("sharesOfPriced")}</Text>
+            {con.assetsUnrankedTail > 0 ? (
+              <View style={styles.excludedRow}>
+                <Text style={styles.coverageLabel}>{xt("unrankedTail")}</Text>
+                <Text style={styles.coverageCount}>{countText(con.assetsUnrankedTail)}</Text>
+              </View>
+            ) : null}
+            {/* Invariant breaks. Neither can happen against a server that is
+                behaving; both would silently misdescribe the ranking if they
+                did, so they are shouted rather than logged. */}
+            {basisAgrees ? null : (
+              <Text style={styles.folioWarn}>{xt("basisMismatch")}</Text>
+            )}
+            {rowsAgree ? null : <Text style={styles.folioWarn}>{xt("rankedMismatch")}</Text>}
+          </View>
+        ) : (
+          <View style={styles.folioPanel}>
+            <Text style={styles.folioTitle}>{xt("assetsTitle")}</Text>
+            {/* Three different silences. "You have recorded nothing", "we could
+                not price any of it" and "it is priced at nothing" are not the
+                same sentence, and an empty chart would say none of them. */}
+            <Text style={styles.folioWarn}>
+              {data.assets.count === 0
+                ? xt("noHoldings")
+                : data.assets.priced === 0
+                  ? xt("nonePriced")
+                  : xt("pricedButUnrankable")}
+            </Text>
+          </View>
+        )}
+
+        <View style={styles.folioPanel}>
+          <View style={styles.folioHead}>
+            <Text style={styles.folioTitle}>{xt("liabilitiesTitle")}</Text>
+            {liabilityTotal !== null ? (
+              <Text style={styles.folioTitle}>{liabilityTotal}</Text>
+            ) : (
+              <Text style={styles.statMuted}>{xt("withheld")}</Text>
+            )}
+          </View>
+          <Text style={styles.panelCaption}>
+            {xt(`basis.${con.liabilityBasis}`, { defaultValue: con.liabilityBasis })}
+          </Text>
+          {/* The rows are kinds, not obligations. Without this the member reads
+              a debt class as a single creditor. */}
+          <Text style={styles.statCaption}>{xt("liabilitiesGrouped")}</Text>
+
+          {con.liabilities.length ? (
+            concentrationRows(con.liabilities, con.liabilityTotal, con.currency, xt("shareUnknown"))
+          ) : (
+            <Text style={styles.folioWarn}>
+              {data.liabilities.count === 0 ? xt("noLiabilities") : xt("noneQuantified")}
+            </Text>
+          )}
+
+          <Text style={styles.statCaption}>
+            {xt("quantifiedOf", {
+              done: data.liabilities.quantified,
+              total: data.liabilities.count
+            })}
+          </Text>
+
+          {excluded.length ? (
+            <View style={styles.reasonList}>
+              <Text style={styles.statLabel}>{xt("excludedTitle")}</Text>
+              {excluded.map(([token, count]) => (
+                <View key={token} style={styles.excludedRow}>
+                  <Text style={styles.coverageLabel}>{xt(token)}</Text>
+                  <Text style={styles.coverageCount}>{countText(count)}</Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
+          {otherCurrencies.length ? (
+            <View style={styles.reasonList}>
+              <Text style={styles.statLabel}>{xt("otherCurrencies")}</Text>
+              {otherCurrencies.map(([code, bucket]) => {
+                const value = moneyIn(bucket.amount, code);
+                return (
+                  <View key={code} style={styles.excludedRow}>
+                    <Text style={styles.coverageLabel}>{code}</Text>
+                    {/* An amount when there is one; otherwise the count, which
+                        is the weaker claim and is labelled as a count. */}
+                    <Text style={styles.coverageCount}>
+                      {value !== null ? value : countText(bucket.count)}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          ) : null}
+
+          {data.liabilities.truncated ? (
+            <Text style={styles.folioWarn}>{xt("liabilitiesTruncated")}</Text>
+          ) : null}
+        </View>
+
+        {/* Always drawn, in every state, including the healthiest one. */}
+        <View style={styles.warnPanel}>
+          <View style={styles.warnHead}>
+            <Ionicons name="help-circle-outline" size={16} color={colors.warning} />
+            <Text style={styles.warnTitle}>{xt("unmeasuredTitle")}</Text>
+          </View>
+          <Text style={styles.conflictReason}>{xt("unmeasuredBody")}</Text>
+          <View style={styles.reasonList}>
+            {["counterparty", "custodian", "geography", "sector", "assetCurrency"].map((token) => (
+              <Text key={token} style={styles.reasonRow}>
+                {xt(`unmeasured.${token}`)}
+              </Text>
+            ))}
+          </View>
+        </View>
       </>
     );
   };
@@ -1293,17 +1640,37 @@ function CapitalGraphBody({ navigation, route }: Props) {
       .map((name) => ({ name, fromDays: null, toDays: null, declared: false }));
     const buckets = [...declared, ...undeclared];
 
-    const bucketLabel = (name: string) =>
-      t(`premium:privateOffice.capital.cashFlow.bucket.${name}`, { defaultValue: name });
-
-    /** The window in the server's own numbers, so an unfamiliar name is still readable. */
-    const bucketRange = (entry: (typeof buckets)[number]) => {
-      if (!entry.declared) return ft("bucketUndeclared");
+    /**
+     * The window, in the server's own numbers, and the only place this row
+     * states one.
+     *
+     * There is deliberately no translated name per bucket. A label like
+     * "31–90 days" is a second statement of a boundary the server already
+     * sent, hardcoded into this build — and the two disagreed: the server
+     * calls `due_90` the window `(30, 90]` while the shipped label said 31.
+     * Worse, a build that names the edge goes on naming it after the server
+     * moves it, so the row would show the old window above the new one. The
+     * name the server uses for the bucket is an identifier, not a window, and
+     * it is shown only where there is no window to show instead.
+     */
+    const bucketWindow = (entry: (typeof buckets)[number]) => {
       if (entry.fromDays === null && entry.toDays === null) return null;
+      // The server's "already due" edge in words rather than as "up to 0
+      // days". Conditioned on the value the server sent, so a server that
+      // moves this edge off zero gets the numeric sentence instead.
+      if (entry.fromDays === null && entry.toDays === 0) return ft("bucketDueNow");
       if (entry.fromDays === null) return ft("bucketBefore", { to: entry.toDays });
       if (entry.toDays === null) return ft("bucketAfter", { from: entry.fromDays });
       return ft("bucketBetween", { from: entry.fromDays, to: entry.toDays });
     };
+
+    // The same sentence the bucket panel shows, so a member can match a
+    // schedule row to the window it was counted in. Two renderers here would
+    // let the row and the window it belongs to describe themselves
+    // differently. Falls back to the server's raw key when the row names a
+    // bucket the basis never declared — which is what the panel shows too.
+    const windowByName = new Map(buckets.map((entry) => [entry.name, bucketWindow(entry)]));
+    const rowWindow = (name: string) => windowByName.get(name) ?? name;
 
     const excludedRows: [string, number][] = [
       ["undated", data.excluded.undated],
@@ -1406,12 +1773,14 @@ function CapitalGraphBody({ navigation, route }: Props) {
           <Text style={styles.folioTitle}>{ft("bucketsTitle")}</Text>
           {buckets.map((entry) => {
             const bucket = data.buckets[entry.name];
-            const range = bucketRange(entry);
+            const windowLabel = bucketWindow(entry);
             return (
               <View key={entry.name} style={styles.obligationRow}>
                 <View style={styles.obligationHead}>
+                  {/* The window when the server described one; otherwise the
+                      server's raw key, which is all we honestly have. */}
                   <Text style={styles.folioSymbol} numberOfLines={1}>
-                    {bucketLabel(entry.name)}
+                    {windowLabel ?? entry.name}
                   </Text>
                   {bucket === undefined ? (
                     // Declared but not reported. Not zero: the server named
@@ -1428,7 +1797,11 @@ function CapitalGraphBody({ navigation, route }: Props) {
                     <Text style={styles.folioWarn}>{ft("notSummable")}</Text>
                   )}
                 </View>
-                {range !== null ? <Text style={styles.folioMeta}>{range}</Text> : null}
+                {/* A window this build cannot place on the member's timeline,
+                    said plainly rather than given an invented range. */}
+                {entry.declared ? null : (
+                  <Text style={styles.folioMeta}>{ft("bucketUndeclared")}</Text>
+                )}
                 <View style={styles.coverageRow}>
                   <Text style={styles.coverageLabel}>{ft("bucketCountLabel")}</Text>
                   <Text style={styles.coverageCount}>
@@ -1477,7 +1850,7 @@ function CapitalGraphBody({ navigation, route }: Props) {
                       <Text style={styles.folioWarn}>{ft("unspecifiedCurrency")}</Text>
                     )}
                   </View>
-                  <Text style={styles.folioMeta}>{bucketLabel(row.bucket)}</Text>
+                  <Text style={styles.folioMeta}>{rowWindow(row.bucket)}</Text>
                   <View style={styles.coverageRow}>
                     <Text style={styles.coverageLabel}>{ft("dueLabel")}</Text>
                     {row.dueAt ? (
@@ -1776,6 +2149,7 @@ function CapitalGraphBody({ navigation, route }: Props) {
           would paint the net position over Obligations — or the obligation
           totals over the net position. */}
       {panel === "overview" && shown === "READY" && overview ? overviewPanels(overview) : null}
+      {panel === "exposure" && shown === "READY" && exposure ? exposurePanels(exposure) : null}
       {panel === "cash_flow" && shown === "READY" && cashFlow ? cashFlowPanels(cashFlow) : null}
       {panel === "obligations" && shown === "READY" && obligations
         ? obligationsPanels(obligations)

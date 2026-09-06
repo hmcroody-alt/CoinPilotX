@@ -4826,7 +4826,8 @@
           "obligations": "الالتزامات",
           "overview": "نظرة عامة",
           "structure": "الهيكل",
-          "cash_flow": "التدفقات الخارجة"
+          "cash_flow": "التدفقات الخارجة",
+          "exposure": "التركّز"
         },
         "countExact": "{{count}}",
         "countSoFar": "{{count}} حتى الآن",
@@ -5065,16 +5066,9 @@
           "bucketMissing": "غير مُبلَّغ عنه",
           "bucketUndeclared": "فترة غير موصوفة",
           "bucketBefore": "حتى {{to}} يومًا",
+          "bucketDueNow": "مستحق الآن أو متأخر",
           "bucketAfter": "أكثر من {{from}} يومًا",
           "bucketBetween": "{{from}}–{{to}} يومًا",
-          "bucket": {
-            "overdue": "متأخرة بالفعل",
-            "due_30": "خلال 30 يومًا",
-            "due_90": "من 31 إلى 90 يومًا",
-            "due_180": "من 91 إلى 180 يومًا",
-            "due_365": "من 181 إلى 365 يومًا",
-            "beyond_365": "بعد أكثر من سنة"
-          },
           "excludedTitle": "خارج كل الفترات",
           "excludedBody": "هذه الالتزامات حقيقية. لا تظهر في أي فترة أعلاه لأن ما يلزم لتحديد موضعها لم يُسجَّل.",
           "undated": "لا يوجد تاريخ استحقاق مسجّل",
@@ -5090,6 +5084,55 @@
           "syncTitle": "الإسقاط",
           "projectedLabel": "أُعيد بناؤها من السجلات",
           "skippedLabel": "متجاوَزة"
+        },
+        "exposure": {
+          "basisTitle": "أساس الترتيب",
+          "complete": "مكتمل",
+          "partial": "جزئي",
+          "withheld": "غير مذكور",
+          "noBasis": "لا يوجد إجمالي للترتيب عليه",
+          "basis": {
+            "priced_asset_value": "قيمة الأصول المسعّرة",
+            "quantified_liability_amount": "مبلغ الالتزامات المحددة"
+          },
+          "pricedOf": "{{priced}} من {{total}} حيازة مسعّرة",
+          "pricingCoverage": "تغطية التسعير",
+          "dimensionCount": "{{known}} من {{total}}",
+          "pricingUnknown": "لا يمكن تقييم تغطية التسعير",
+          "blindSpotTitle": "خارج هذا الترتيب",
+          "blindSpotBody": "هذه الحيازات بلا سعر، لذا فهي غائبة عن الترتيب لا في آخره. أي منها قد يفوق الصف الأول.",
+          "unpricedUnnamed": "بلا سعر وبلا اسم",
+          "pricesUnavailable": "تعذّرت قراءة الأسعار الحية، لذا هذا الترتيب ليس حديثاً.",
+          "readAt": "قُرئ في",
+          "assetsTitle": "أين المال المسعّر",
+          "shareUnknown": "النسبة غير مذكورة",
+          "sharesOfPriced": "النسب من الإجمالي المسعّر أعلاه، لا من كل ما هو مسجّل.",
+          "unrankedTail": "مسعّرة لكن غير مرتّبة",
+          "basisMismatch": "عدد المرتَّب وغير المرتَّب لا يساوي عدد الحيازات المسعّرة، لذا قد لا يكون هذا الترتيب على الإجمالي المعروض أعلاه.",
+          "rankedMismatch": "عدد المرتَّب لدى الخادم لا يطابق الصفوف التي أرسلها.",
+          "noHoldings": "لا توجد حيازات مسجّلة، فلا شيء لترتيبه. وهذا ليس كعدم امتلاك شيء.",
+          "nonePriced": "توجد حيازات مسجّلة لكن لا سعر لأي منها، فلا ترتيب ممكن.",
+          "pricedButUnrankable": "الحيازات المسعّرة لا تكوّن إجمالياً يمكن الترتيب عليه.",
+          "liabilitiesTitle": "أين الدَّين المحدد",
+          "liabilitiesGrouped": "مجمّع حسب نوع الالتزام، لا حسب الدائن.",
+          "noLiabilities": "لا توجد التزامات مسجّلة. وهذا ليس كعدم وجود دَين.",
+          "noneQuantified": "لا التزام له مبلغ مسجّل، فلا يمكن ترتيب أي منها.",
+          "quantifiedOf": "{{done}} من {{total}} التزاماً محدداً",
+          "excludedTitle": "مستبعد من هذا الترتيب",
+          "excludedUnquantified": "لا مبلغ مسجّل",
+          "excludedForeignCurrency": "عملة أخرى",
+          "excludedUnspecifiedCurrency": "لا عملة مذكورة",
+          "otherCurrencies": "مُنحّى جانباً، حسب العملة",
+          "liabilitiesTruncated": "قائمة الالتزامات مقتطعة، فقد يوجد أكثر مما رُتّب.",
+          "unmeasuredTitle": "ما لا تقيسه هذه العلامة",
+          "unmeasuredBody": "لا شيء في السجل يوثّق هذه، فهي غائبة هنا لا خالية من المخاطر. صمتها ليس طمأنة.",
+          "unmeasured": {
+            "counterparty": "التركّز حسب الطرف المقابل",
+            "custodian": "التركّز حسب الحافظ ومكان التداول",
+            "geography": "التركّز الجغرافي",
+            "sector": "التركّز القطاعي",
+            "assetCurrency": "عملة الأصول نفسها"
+          }
         }
       },
       "attention": {
