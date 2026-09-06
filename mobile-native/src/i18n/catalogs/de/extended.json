@@ -5048,6 +5048,22 @@
             "provider_required": "Benötigt einen Anbieter, der nicht eingerichtet ist.",
             "flag_disabled": "Vom Server abgeschaltet.",
             "notInThisVersion": "In dieser App-Version noch nicht verfügbar."
+          },
+          "intelligence": {
+            "title": "Meeting-Zusammenfassung",
+            "noTranscript": "Für dieses Meeting existiert kein Transkript. Alles unten sind vom Server aufgezeichnete Ereignisse — nichts beschreibt, was gesprochen wurde.",
+            "factsHeading": "Vom Server aufgezeichnet",
+            "draftHeading": "Entwurf der Zusammenfassung",
+            "draftHint": "Vor dem Speichern prüfen und bearbeiten. Nichts wird automatisch gespeichert.",
+            "titleLabel": "Titel",
+            "save": "Im Office speichern",
+            "savedHeading": "Deine gespeicherten Notizen",
+            "noneSaved": "Noch nichts gespeichert.",
+            "provenance": {
+              "SYSTEM_FACT": "Server-Fakt",
+              "USER_CONFIRMED": "Von dir bestätigt",
+              "TRANSCRIPT_DERIVED": "Aus dem Transkript"
+            }
           }
         },
         "summary": {

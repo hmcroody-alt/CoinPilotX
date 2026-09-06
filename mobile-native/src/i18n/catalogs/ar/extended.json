@@ -5268,6 +5268,22 @@
             "provider_required": "يحتاج إلى مزوّد لم يتم إعداده.",
             "flag_disabled": "أوقفه الخادم.",
             "notInThisVersion": "غير متاح في هذا الإصدار من التطبيق بعد."
+          },
+          "intelligence": {
+            "title": "ملخص الاجتماع",
+            "noTranscript": "لا يوجد نص مكتوب لهذا الاجتماع. كل ما يلي أحداث سجّلها الخادم — لا شيء يصف ما قيل بصوت مسموع.",
+            "factsHeading": "سجّله الخادم",
+            "draftHeading": "مسودة الملخص",
+            "draftHint": "راجعها وعدّلها قبل الحفظ. لا يُحفظ أي شيء تلقائيًا.",
+            "titleLabel": "العنوان",
+            "save": "حفظ في المكتب",
+            "savedHeading": "ملاحظاتك المحفوظة",
+            "noneSaved": "لم يُحفظ شيء بعد.",
+            "provenance": {
+              "SYSTEM_FACT": "حقيقة من الخادم",
+              "USER_CONFIRMED": "أكّدتها بنفسك",
+              "TRANSCRIPT_DERIVED": "من النص المكتوب"
+            }
           }
         },
         "summary": {

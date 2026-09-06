@@ -20,6 +20,7 @@ import { officeRequestHeaders } from "../officeLock";
 import {
   MeetingArtifact,
   MeetingBuckets,
+  MeetingIntelligence,
   MeetingMessage,
   MeetingParticipant,
   MeetingRecording,
@@ -350,4 +351,18 @@ export async function listMeetingArtifacts(ref: string, limit = 20): Promise<Mee
     `${BASE}/${encodeURIComponent(ref)}/artifacts?limit=${limit}`
   );
   return data.artifacts || [];
+}
+
+/**
+ * Server-computed meeting intelligence (§32-36). Deterministic SYSTEM_FACT
+ * lines only — the server has no model call on this path, so nothing here can
+ * describe what was said, only what happened. The returned draft is a
+ * proposal: saving it goes through saveMeetingArtifact with USER_CONFIRMED
+ * provenance after the human has reviewed it.
+ */
+export async function getMeetingIntelligence(ref: string): Promise<MeetingIntelligence> {
+  const data = await call<{ intelligence: MeetingIntelligence }>(
+    `${BASE}/${encodeURIComponent(ref)}/intelligence`
+  );
+  return data.intelligence;
 }

@@ -5009,6 +5009,22 @@
             "provider_required": "未設定のプロバイダーが必要です。",
             "flag_disabled": "サーバー側で無効になっています。",
             "notInThisVersion": "このバージョンのアプリではまだ利用できません。"
+          },
+          "intelligence": {
+            "title": "ミーティングの概要",
+            "noTranscript": "このミーティングの文字起こしは存在しません。以下はすべてサーバーが記録したイベントであり、発言内容を示すものではありません。",
+            "factsHeading": "サーバーの記録",
+            "draftHeading": "概要の下書き",
+            "draftHint": "保存する前に確認・編集してください。自動では何も保存されません。",
+            "titleLabel": "タイトル",
+            "save": "オフィスに保存",
+            "savedHeading": "保存したメモ",
+            "noneSaved": "まだ何も保存されていません。",
+            "provenance": {
+              "SYSTEM_FACT": "サーバーの事実",
+              "USER_CONFIRMED": "あなたが確認済み",
+              "TRANSCRIPT_DERIVED": "文字起こしから"
+            }
           }
         },
         "summary": {

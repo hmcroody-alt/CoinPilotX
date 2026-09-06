@@ -4961,6 +4961,22 @@
             "provider_required": "Needs a provider that is not set up.",
             "flag_disabled": "Switched off by the server.",
             "notInThisVersion": "Not available in this app version yet."
+          },
+          "intelligence": {
+            "title": "Meeting summary",
+            "noTranscript": "No transcript exists for this meeting. Everything below is a server-recorded event — nothing describes what was said out loud.",
+            "factsHeading": "Recorded by the server",
+            "draftHeading": "Draft summary",
+            "draftHint": "Review and edit before saving. Nothing is saved automatically.",
+            "titleLabel": "Title",
+            "save": "Save to office",
+            "savedHeading": "Your saved notes",
+            "noneSaved": "Nothing saved yet.",
+            "provenance": {
+              "SYSTEM_FACT": "Server fact",
+              "USER_CONFIRMED": "Confirmed by you",
+              "TRANSCRIPT_DERIVED": "From transcript"
+            }
           }
         },
         "summary": {

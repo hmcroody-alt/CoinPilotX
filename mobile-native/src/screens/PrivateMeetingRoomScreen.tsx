@@ -54,8 +54,11 @@ import { PrivateOfficeLockGate } from "../privateOffice/PrivateOfficeLockGate";
 import {
   admitParticipant,
   denyParticipant,
+  getMeetingIntelligence,
+  listMeetingArtifacts,
   listMeetingMessages,
   removeParticipant,
+  saveMeetingArtifact,
   sendMeetingMessage,
   setMeetingLocked,
   setParticipantRole,
@@ -91,7 +94,9 @@ import {
   withdrawFromWaitingRoom
 } from "../privateOffice/meetings/meetingSession";
 import {
+  MeetingArtifact,
   MeetingCapability,
+  MeetingIntelligence,
   MeetingMessage,
   MeetingParticipant,
   MODERATOR_ROLES,
@@ -127,6 +132,7 @@ function PrivateMeetingRoomBody({ route, navigation }: Props) {
   const [panelVisible, setPanelVisible] = useState(false);
   const [chatVisible, setChatVisible] = useState(false);
   const [moreVisible, setMoreVisible] = useState(false);
+  const [intelVisible, setIntelVisible] = useState(false);
   const [reactionsVisible, setReactionsVisible] = useState(false);
   const [busy, setBusy] = useState("");
   const [messages, setMessages] = useState<MeetingMessage[]>([]);
@@ -706,6 +712,16 @@ function PrivateMeetingRoomBody({ route, navigation }: Props) {
         }
         onFlipCamera={() => switchCallCamera().catch(() => undefined)}
         onToggleRecording={() => toggleRecording().catch(() => undefined)}
+        onOpenIntelligence={() => {
+          setMoreVisible(false);
+          setIntelVisible(true);
+        }}
+      />
+
+      <IntelligencePanel
+        visible={intelVisible}
+        onClose={() => setIntelVisible(false)}
+        meetingRef={meetingRef}
       />
 
       <ParticipantsPanel
@@ -985,7 +1001,8 @@ function MoreSheet({
   speakerEnabled,
   onToggleSpeaker,
   onFlipCamera,
-  onToggleRecording
+  onToggleRecording,
+  onOpenIntelligence
 }: {
   visible: boolean;
   onClose: () => void;
@@ -996,6 +1013,7 @@ function MoreSheet({
   onToggleSpeaker: () => void;
   onFlipCamera: () => void;
   onToggleRecording: () => void;
+  onOpenIntelligence: () => void;
 }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
@@ -1028,6 +1046,11 @@ function MoreSheet({
             icon="camera-reverse-outline"
             label={t("premium:privateOffice.meetings.room.flip")}
             onPress={onFlipCamera}
+          />
+          <MoreRow
+            icon="sparkles-outline"
+            label={t("premium:privateOffice.meetings.room.intelligence.title")}
+            onPress={onOpenIntelligence}
           />
           {amModerator && recording?.available ? (
             <MoreRow
@@ -1083,6 +1106,190 @@ function capabilityReason(
   return text && text !== key
     ? text
     : t("premium:privateOffice.meetings.room.capability.not_implemented");
+}
+
+/**
+ * §32-36 — meeting intelligence with provenance, no fabrication.
+ *
+ * Every fact shown here came from the server's deterministic projection
+ * (SYSTEM_FACT — recorded events, never speech). The draft is a proposal:
+ * the human edits it and explicitly saves, and the save is tagged
+ * USER_CONFIRMED because that is what it now is. The app never sends
+ * TRANSCRIPT_DERIVED — the server refuses it anyway while no transcript
+ * exists (409 transcript_unavailable).
+ */
+function IntelligencePanel({
+  visible,
+  onClose,
+  meetingRef
+}: {
+  visible: boolean;
+  onClose: () => void;
+  meetingRef: string;
+}) {
+  const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [intel, setIntel] = useState<MeetingIntelligence | null>(null);
+  const [artifacts, setArtifacts] = useState<MeetingArtifact[]>([]);
+  const [draftTitle, setDraftTitle] = useState("");
+  const [draftContent, setDraftContent] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!visible || !meetingRef) return;
+    let cancelled = false;
+    setLoading(true);
+    setFailed(false);
+    Promise.all([getMeetingIntelligence(meetingRef), listMeetingArtifacts(meetingRef)])
+      .then(([nextIntel, nextArtifacts]) => {
+        if (cancelled) return;
+        setIntel(nextIntel);
+        setArtifacts(nextArtifacts);
+        setDraftTitle(nextIntel.draft.title);
+        setDraftContent(nextIntel.draft.content);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, meetingRef]);
+
+  const save = useCallback(async () => {
+    if (!intel || saving) return;
+    const title = draftTitle.trim();
+    const content = draftContent.trim();
+    if (!title || !content) return;
+    setSaving(true);
+    try {
+      // Governed save-to-office: human reviewed → USER_CONFIRMED, never
+      // TRANSCRIPT_DERIVED (there is no transcript to derive from).
+      const saved = await saveMeetingArtifact(meetingRef, {
+        artifactType: intel.draft.artifact_type,
+        provenance: "USER_CONFIRMED",
+        title,
+        content
+      });
+      setArtifacts((prev) => [saved, ...prev]);
+    } catch {
+      Alert.alert(
+        t("premium:privateOffice.meetings.room.actionFailed"),
+        t("premium:privateOffice.feature.error.body")
+      );
+    } finally {
+      setSaving(false);
+    }
+  }, [intel, saving, draftTitle, draftContent, meetingRef, t]);
+
+  const intelT = (key: string) =>
+    t(`premium:privateOffice.meetings.room.intelligence.${key}`);
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        style={styles.panelBackdrop}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <Pressable style={styles.panelDismiss} onPress={onClose} accessibilityRole="button" />
+        <View style={[styles.panel, { paddingBottom: Math.max(insets.bottom, 14) }]}>
+          <View style={styles.panelHead}>
+            <Text style={styles.panelTitle}>{intelT("title")}</Text>
+            <Pressable
+              onPress={onClose}
+              accessibilityRole="button"
+              accessibilityLabel={t("common:actions.close")}
+            >
+              <Ionicons name="close" size={20} color={colors.muted} />
+            </Pressable>
+          </View>
+          {loading ? (
+            <ActivityIndicator color={colors.accentStrong} style={styles.intelSpinner} />
+          ) : failed || !intel ? (
+            <Text style={styles.chatEmpty}>
+              {t("premium:privateOffice.feature.error.body")}
+            </Text>
+          ) : (
+            <ScrollView style={styles.intelScroll} keyboardShouldPersistTaps="handled">
+              {!intel.limitations.transcript_available ? (
+                <View style={styles.intelNote} accessibilityRole="text">
+                  <Ionicons name="information-circle-outline" size={16} color={colors.muted} />
+                  <Text style={styles.intelNoteText}>{intelT("noTranscript")}</Text>
+                </View>
+              ) : null}
+
+              <Text style={styles.intelHeading}>{intelT("factsHeading")}</Text>
+              {intel.facts.map((fact, index) => (
+                <View key={`${fact.kind}-${index}`} style={styles.intelFact}>
+                  <Text style={styles.intelFactText}>{fact.text}</Text>
+                  <Text style={styles.intelBadge}>
+                    {intelT(`provenance.${fact.provenance}`)}
+                  </Text>
+                </View>
+              ))}
+
+              <Text style={styles.intelHeading}>{intelT("draftHeading")}</Text>
+              <Text style={styles.intelHint}>{intelT("draftHint")}</Text>
+              <TextInput
+                style={styles.intelTitleInput}
+                value={draftTitle}
+                onChangeText={setDraftTitle}
+                accessibilityLabel={intelT("titleLabel")}
+                placeholder={intelT("titleLabel")}
+                placeholderTextColor={colors.muted}
+              />
+              <TextInput
+                style={styles.intelContentInput}
+                value={draftContent}
+                onChangeText={setDraftContent}
+                multiline
+                accessibilityLabel={intelT("draftHeading")}
+              />
+              <Pressable
+                style={[
+                  styles.intelSave,
+                  (!draftTitle.trim() || !draftContent.trim() || saving) &&
+                    styles.intelSaveDisabled
+                ]}
+                onPress={save}
+                disabled={!draftTitle.trim() || !draftContent.trim() || saving}
+                accessibilityRole="button"
+                accessibilityLabel={intelT("save")}
+              >
+                {saving ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.intelSaveText}>{intelT("save")}</Text>
+                )}
+              </Pressable>
+
+              <Text style={styles.intelHeading}>{intelT("savedHeading")}</Text>
+              {artifacts.length ? (
+                artifacts.map((artifact) => (
+                  <View key={artifact.id} style={styles.intelFact}>
+                    <Text style={styles.intelFactTitle}>{artifact.title}</Text>
+                    <Text style={styles.intelFactText} numberOfLines={4}>
+                      {artifact.content}
+                    </Text>
+                    <Text style={styles.intelBadge}>
+                      {intelT(`provenance.${artifact.provenance}`)}
+                    </Text>
+                  </View>
+                ))
+              ) : (
+                <Text style={styles.chatEmpty}>{intelT("noneSaved")}</Text>
+              )}
+            </ScrollView>
+          )}
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
 }
 
 function MoreRow({
@@ -1605,5 +1812,83 @@ const styles = StyleSheet.create({
   },
   panelActionText: { color: colors.accentStrong, fontSize: 12, fontWeight: "700" },
   panelActionGhost: { paddingHorizontal: 8, paddingVertical: 7 },
-  panelActionGhostText: { color: colors.muted, fontSize: 12, fontWeight: "600" }
+  panelActionGhostText: { color: colors.muted, fontSize: 12, fontWeight: "600" },
+  intelSpinner: { paddingVertical: 32 },
+  intelScroll: { flexGrow: 0 },
+  intelNote: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 11,
+    marginBottom: 4
+  },
+  intelNoteText: { flex: 1, color: colors.muted, fontSize: 12, lineHeight: 17 },
+  intelHeading: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    marginTop: 12,
+    marginBottom: 6
+  },
+  intelHint: { color: colors.muted, fontSize: 12, lineHeight: 17, marginBottom: 8 },
+  intelFact: {
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 6,
+    gap: 4
+  },
+  intelFactTitle: { color: colors.text, fontSize: 13, fontWeight: "700" },
+  intelFactText: { color: colors.text, fontSize: 13, lineHeight: 18 },
+  intelBadge: {
+    alignSelf: "flex-start",
+    color: colors.accent,
+    fontSize: 10,
+    fontWeight: "700",
+    textTransform: "uppercase"
+  },
+  intelTitleInput: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "600",
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginBottom: 8
+  },
+  intelContentInput: {
+    color: colors.text,
+    fontSize: 13,
+    lineHeight: 18,
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingTop: 9,
+    paddingBottom: 9,
+    minHeight: 90,
+    maxHeight: 180,
+    textAlignVertical: "top",
+    marginBottom: 10
+  },
+  intelSave: {
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.accentStrong,
+    borderRadius: 999,
+    paddingVertical: 11
+  },
+  intelSaveDisabled: { opacity: 0.45 },
+  intelSaveText: { color: "#fff", fontSize: 14, fontWeight: "700" }
 });

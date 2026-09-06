@@ -5048,6 +5048,22 @@
             "provider_required": "Necesita un proveedor que no está configurado.",
             "flag_disabled": "Desactivado por el servidor.",
             "notInThisVersion": "Aún no disponible en esta versión de la app."
+          },
+          "intelligence": {
+            "title": "Resumen de la reunión",
+            "noTranscript": "No existe transcripción de esta reunión. Todo lo siguiente son eventos registrados por el servidor: nada describe lo que se dijo en voz alta.",
+            "factsHeading": "Registrado por el servidor",
+            "draftHeading": "Borrador del resumen",
+            "draftHint": "Revísalo y edítalo antes de guardar. Nada se guarda automáticamente.",
+            "titleLabel": "Título",
+            "save": "Guardar en la oficina",
+            "savedHeading": "Tus notas guardadas",
+            "noneSaved": "Aún no hay nada guardado.",
+            "provenance": {
+              "SYSTEM_FACT": "Dato del servidor",
+              "USER_CONFIRMED": "Confirmado por ti",
+              "TRANSCRIPT_DERIVED": "De la transcripción"
+            }
           }
         },
         "summary": {
