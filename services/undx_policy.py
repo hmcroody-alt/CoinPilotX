@@ -87,6 +87,11 @@ PRODUCTION_TOOL_REGISTRY: dict[str, dict[str, Any]] = {
     "pulsesoc.private_briefings.list": {"method": None, "route": "services.private_office.briefings.list_briefings", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
     "pulsesoc.private_shield.posture": {"method": None, "route": "services.private_office.shield.posture", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
     "pulsesoc.private_concierge.desk": {"method": None, "route": "services.private_office.concierge.list_requests", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
+    # The Capital Graph portfolio read — the projection view, not the ledger
+    # tables. Prices at read time and refuses to total an unpriced set; the
+    # agent relays that refusal rather than filling it in. Same structural
+    # owner scope as the other Private Office reads: no field names an account.
+    "pulsesoc.private_capital.portfolio": {"method": None, "route": "services.private_office.portfolio_projection.portfolio_view", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
     "pulsesoc.crypto_alerts.list": {"method": None, "route": "services.alert_engine.list_alert_rules", "risk": "read_only", "confirmation": False, "canonical_key": "alert_id"},
     "pulsesoc.crypto_alerts.get": {"method": None, "route": "services.alert_engine.get_alert_rule", "risk": "read_only", "confirmation": False, "canonical_key": "alert_id"},
     "pulsesoc.crypto_alerts.pause": {"method": None, "route": "services.alert_engine.pause_alert", "risk": "medium", "confirmation": False, "canonical_key": "alert_id", "verification_route": "services.alert_engine.get_alert_rule"},

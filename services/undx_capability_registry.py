@@ -1256,6 +1256,40 @@ def _register_private_feature_read_capabilities() -> None:
 
 _register_private_feature_read_capabilities()
 
+
+# The Capital Graph portfolio read. One capability, zero fields: the strongest
+# possible statement that nothing an agent says can widen the read. Everything
+# else — description, intents, tool name, executor name, native route, audit
+# category — derives from ``undx_capital_spec`` so the registry, the policy
+# ledger, the knowledge map and the executor table agree by construction.
+# Read-only for the same reason the fact and record reads are, plus one more:
+# the projection's totals refuse to sum an unpriced set, and a write surface
+# here would be a place for an agent to "fix" that refusal.
+def _register_private_capital_capability() -> None:
+    from services.private_office import undx_capital_spec as _po_capital
+
+    _cid = _po_capital.CAPABILITY_ID
+    _register(CapabilitySpec(
+        capability_id=_cid,
+        description=_po_capital.SPEC["description"],
+        intents=tuple(_po_capital.SPEC["intents"]),
+        risk=RiskLevel.READ_ONLY,
+        confirmation=ConfirmationPolicy.NEVER,
+        tool_name=_po_capital.tool_name(_cid),
+        # No field names an account, so the scope is structural: the only
+        # portfolio this capability can reach is the caller's own.
+        permission=PermissionScope.SELF_ACCOUNT_ONLY,
+        fields=(),
+        executor=_po_capital.executor_name(_cid),
+        verifier="",
+        native_route=_po_capital.SPEC["native_route"],
+        result_card=CardType.SEARCH_RESULTS,
+        audit_category=_po_capital.AUDIT_CATEGORY,
+    ))
+
+
+_register_private_capital_capability()
+
 for _capability, _intent, _saved, _executor, _verifier, _undo in (
     ("reels.save", "save reel", True, "reels_save", "reel_saved_value", "reels.unsave"),
     ("reels.unsave", "unsave reel", False, "reels_unsave", "reel_saved_value", "reels.save"),

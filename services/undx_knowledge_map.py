@@ -2932,6 +2932,55 @@ def _register_private_feature_read_map_entries() -> None:
 _register_private_feature_read_map_entries()
 
 
+# The Capital Graph portfolio read. One record, derived from
+# ``undx_capital_spec`` like the feature reads derive from theirs, with the
+# limitations the answer layer must repeat: the null-total contract (an
+# unpriced set totals to null with the unpriced symbols named — the model
+# relays that refusal, it does not fill it in), and the hard boundary that
+# this surface offers no advice and no execution of any kind.
+def _register_private_capital_map_entry() -> None:
+    from services.private_office import undx_capital_spec as _po_capital
+
+    _live(
+        _po_capital.CAPABILITY_ID,
+        product_area="Private Office", resource_type="private_feature",
+        native_screen="CapitalGraph",
+        backend_route="GET /api/private-office/capital-graph/portfolio",
+        domain_service="services.private_office.portfolio_projection",
+        domain_operation="portfolio_view",
+        authorization_scope=_SELF, owner_field="owner_user_id",
+        output_schema=(
+            ("symbol", "str"), ("name", "str"), ("quantity", "float"),
+            ("lot_count", "int"), ("cost_basis", "float"), ("price", "float"),
+            ("value", "float"), ("pnl_value", "float"), ("priced", "bool"),
+            ("change_24h", "float"), ("projected_at", "str"),
+            ("evidence", "dict")),
+        feature_flag="UNDX_AGENT_READS_ENABLED",
+        evidence=("services/private_office/portfolio_projection.py",
+                  "services/private_office/undx_capital_spec.py execute",
+                  "services/undx_agent_tools.py private_capital_portfolio",
+                  "tests/private_office/test_capital_undx_capability.py"),
+        known_limitations=(
+            "Honest numbers or none: `totals.value` is null unless every "
+            "holding was priced by a live quote, `unpriced_symbols` names the "
+            "gaps, and `cost_basis` is null when any lot's basis is unknown. "
+            "An answer built from this read must relay the null, never "
+            "substitute a partial sum or a zero.",
+            "Read-only by design, with no advice and no execution: holdings "
+            "are edited in Portfolio on the member's own screen, and this "
+            "surface never recommends, ranks, forecasts, buys, sells or "
+            "moves anything. Availability follows the capital_graph gate and "
+            "the member's own second lock, which fails closed.",
+            "Prices are fetched at read time and never stored; `prices` "
+            "carries the provider's own observation age so an answer can "
+            "label freshness instead of claiming live.",
+        ),
+    )
+
+
+_register_private_capital_map_entry()
+
+
 # ---------------------------------------------------------------------------
 # Indexes
 # ---------------------------------------------------------------------------
