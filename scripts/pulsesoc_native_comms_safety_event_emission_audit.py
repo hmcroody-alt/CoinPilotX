@@ -207,7 +207,10 @@ def run_call_flow(bot, caller_id: int, callee_id: int, failures: list[str]) -> N
     require_event(sync_events(client, callee_id, failures), "call_missed", failures)
 
     original_token = calls._generate_agora_token
-    calls._generate_agora_token = lambda *args, **kwargs: {"ok": False, "status": "token_failed", "message": "audit token failure"}
+    # `_err`, not a hand-rolled dict: this is the shape the real token path
+    # returns when it fails, and a fixture that invents its own would let the
+    # audit pass against a response production never emits.
+    calls._generate_agora_token = lambda *args, **kwargs: calls._err("audit token failure", 503, "agora_token_failed", provider="agora")
     try:
         failed_conversation_id = seed_comm_v2_conversation(bot, caller_id, callee_id)
         failed = calls.start_call(caller_id, {"conversation_id": failed_conversation_id, "call_type": "audio"})
