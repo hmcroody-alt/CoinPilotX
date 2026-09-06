@@ -223,7 +223,8 @@
       "privatePeople": "Relationship Intelligence",
       "privateBriefings": "Private Briefings",
       "privateShield": "Private Shield",
-      "privateConcierge": "Human Concierge"
+      "privateConcierge": "Human Concierge",
+      "privateMeetings": "Private Meetings"
     },
     "navSubtitles": {
       "missionControl": "Mission Control",

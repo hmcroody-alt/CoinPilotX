@@ -4329,6 +4329,10 @@
         "operations": {
           "label": "Opérations",
           "hint": "Obligations, décisions, demandes, risques et opportunités que vous suivez."
+        },
+        "privateMeetings": {
+          "label": "Réunions Privées",
+          "hint": "Réunions sécurisées avec salle d'attente et contrôles de l'hôte."
         }
       },
       "entry": {
@@ -4939,6 +4943,106 @@
           "you": "Vous",
           "placeholder": "Écrivez un message…",
           "send": "Envoyer"
+        }
+      },
+      "meetings": {
+        "subtitle": "Réunions sécurisées sur votre ligne privée. La salle d'attente et les contrôles de l'hôte sont appliqués par le serveur, pas par l'écran.",
+        "instant": "Démarrer une réunion instantanée",
+        "starting": "Démarrage…",
+        "instantFailed": "Impossible de démarrer une réunion",
+        "joinTitle": "Rejoindre avec un code ou un ID de réunion",
+        "joinPlaceholder": "Code ou ID de réunion",
+        "join": "Rejoindre",
+        "joinFailed": "Impossible de rejoindre",
+        "scheduleTitle": "Planifier une réunion",
+        "scheduleTitleField": "Titre (facultatif)",
+        "schedule": "Planifier",
+        "scheduleFailed": "Impossible de planifier",
+        "startFailed": "Impossible de démarrer",
+        "cancelFailed": "Impossible d'annuler",
+        "start": "Démarrer",
+        "cancel": "Annuler",
+        "untitled": "Réunion",
+        "liveNow": "En direct",
+        "durationMinutes_one": "{{count}} minute",
+        "durationMinutes_other": "{{count}} minutes",
+        "presets": {
+          "in15m": "Dans 15 minutes",
+          "in1h": "Dans 1 heure",
+          "tomorrowMorning": "Demain à 9h00"
+        },
+        "buckets": {
+          "live": "En cours",
+          "upcoming": "À venir",
+          "recent": "Récentes"
+        },
+        "empty": {
+          "title": "Aucune réunion pour l'instant",
+          "body": "Démarrez une réunion instantanée ou planifiez-en une. Les réunions que vous organisez ou rejoignez apparaissent ici."
+        },
+        "refusals": {
+          "feature_disabled": "Les réunions sont désactivées pour le moment.",
+          "office_locked": "Votre bureau est verrouillé. Déverrouillez-le pour continuer.",
+          "not_found": "Cette réunion est introuvable.",
+          "not_admitted": "Vous n'avez pas été admis à cette réunion.",
+          "meeting_locked": "Cette réunion est verrouillée par l'hôte.",
+          "meeting_over": "Cette réunion est terminée.",
+          "not_live": "Cette réunion n'a pas encore commencé.",
+          "blocked": "Vous ne pouvez pas rejoindre cette réunion.",
+          "forbidden": "Vous n'avez pas accès à cette réunion.",
+          "invalid": "Cette demande n'a pas pu être comprise.",
+          "unavailable": "Les réunions sont injoignables pour le moment."
+        },
+        "room": {
+          "joining": "Connexion à la réunion…",
+          "connecting": "Connexion…",
+          "reconnecting": "Reconnexion…",
+          "waitingBody": "Vous êtes dans la salle d'attente. L'hôte vous laissera entrer.",
+          "notStartedBody": "Cette réunion n'a pas encore commencé.",
+          "withdraw": "Quitter la salle d'attente",
+          "you": "Vous",
+          "member": "Membre {{id}}",
+          "host": "Hôte",
+          "coHost": "Co-hôte",
+          "recording": "Enregistrement",
+          "locked": "Verrouillée",
+          "participants": "Participants",
+          "inRoomSection": "Dans la réunion",
+          "waitingSection": "Salle d'attente",
+          "admit": "Admettre",
+          "deny": "Refuser",
+          "remove": "Retirer de la réunion",
+          "makeCoHost": "Nommer co-hôte",
+          "removeCoHost": "Retirer le rôle de co-hôte",
+          "lock": "Verrouiller la réunion",
+          "unlock": "Déverrouiller la réunion",
+          "inviteCode": "Code : {{code}}",
+          "mute": "Couper le micro",
+          "unmute": "Activer le micro",
+          "cameraOn": "Activer la caméra",
+          "cameraOff": "Désactiver la caméra",
+          "speaker": "Haut-parleur",
+          "flip": "Retourner la caméra",
+          "leave": "Quitter",
+          "leaveTitle": "Quitter cette réunion ?",
+          "leaveBodyModerator": "Vous pouvez partir seul, ou terminer la réunion pour tout le monde.",
+          "leaveMeeting": "Quitter la réunion",
+          "endForEveryone": "Terminer pour tous",
+          "endFailed": "Impossible de terminer la réunion",
+          "actionFailed": "Impossible de terminer cette action"
+        },
+        "summary": {
+          "title": "Réunion terminée",
+          "back": "Retour aux réunions",
+          "reasons": {
+            "left": "Vous avez quitté la réunion.",
+            "removed": "Vous n'êtes plus dans cette réunion.",
+            "ended": "La réunion est terminée.",
+            "ended_by_host": "Vous avez terminé la réunion pour tout le monde.",
+            "call_ended": "La connexion s'est interrompue, vous avez donc été déconnecté de la réunion.",
+            "feature_disabled": "Les réunions ont été désactivées pendant que vous étiez connecté.",
+            "generic": "La réunion est terminée."
+          }
         }
       }
     },

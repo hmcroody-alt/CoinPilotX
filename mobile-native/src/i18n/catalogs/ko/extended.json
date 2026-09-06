@@ -4297,6 +4297,10 @@
         "operations": {
           "label": "오퍼레이션",
           "hint": "추적 중인 의무, 결정, 요청, 리스크, 기회."
+        },
+        "privateMeetings": {
+          "label": "프라이빗 회의",
+          "hint": "대기실과 호스트 제어 기능을 갖춘 안전한 회의."
         }
       },
       "entry": {
@@ -4907,6 +4911,106 @@
           "you": "나",
           "placeholder": "메시지 작성…",
           "send": "보내기"
+        }
+      },
+      "meetings": {
+        "subtitle": "프라이빗 회선에서의 안전한 회의. 대기실과 호스트 제어는 화면이 아닌 서버가 적용합니다.",
+        "instant": "즉석 회의 시작",
+        "starting": "시작하는 중…",
+        "instantFailed": "회의를 시작할 수 없습니다",
+        "joinTitle": "코드 또는 회의 ID로 참여",
+        "joinPlaceholder": "코드 또는 회의 ID",
+        "join": "참여",
+        "joinFailed": "참여할 수 없습니다",
+        "scheduleTitle": "회의 예약",
+        "scheduleTitleField": "제목 (선택 사항)",
+        "schedule": "예약",
+        "scheduleFailed": "예약할 수 없습니다",
+        "startFailed": "시작할 수 없습니다",
+        "cancelFailed": "취소할 수 없습니다",
+        "start": "시작",
+        "cancel": "취소",
+        "untitled": "회의",
+        "liveNow": "지금 진행 중",
+        "durationMinutes_one": "{{count}}분",
+        "durationMinutes_other": "{{count}}분",
+        "presets": {
+          "in15m": "15분 후",
+          "in1h": "1시간 후",
+          "tomorrowMorning": "내일 오전 9:00"
+        },
+        "buckets": {
+          "live": "진행 중",
+          "upcoming": "예정",
+          "recent": "최근"
+        },
+        "empty": {
+          "title": "아직 회의가 없습니다",
+          "body": "즉석 회의를 시작하거나 회의를 예약하세요. 주최하거나 참여한 회의가 여기에 표시됩니다."
+        },
+        "refusals": {
+          "feature_disabled": "회의 기능이 현재 꺼져 있습니다.",
+          "office_locked": "오피스가 잠겨 있습니다. 계속하려면 잠금을 해제하세요.",
+          "not_found": "해당 회의를 찾을 수 없습니다.",
+          "not_admitted": "이 회의에 입장이 허용되지 않았습니다.",
+          "meeting_locked": "호스트가 이 회의를 잠갔습니다.",
+          "meeting_over": "이 회의는 종료되었습니다.",
+          "not_live": "이 회의는 아직 시작되지 않았습니다.",
+          "blocked": "이 회의에 참여할 수 없습니다.",
+          "forbidden": "이 회의에 접근할 권한이 없습니다.",
+          "invalid": "해당 요청을 이해할 수 없습니다.",
+          "unavailable": "지금은 회의에 연결할 수 없습니다."
+        },
+        "room": {
+          "joining": "참여하는 중…",
+          "connecting": "연결하는 중…",
+          "reconnecting": "다시 연결하는 중…",
+          "waitingBody": "대기실에 있습니다. 호스트가 입장을 허용할 것입니다.",
+          "notStartedBody": "이 회의는 아직 시작되지 않았습니다.",
+          "withdraw": "대기실 나가기",
+          "you": "나",
+          "member": "멤버 {{id}}",
+          "host": "호스트",
+          "coHost": "공동 호스트",
+          "recording": "녹화 중",
+          "locked": "잠김",
+          "participants": "참가자",
+          "inRoomSection": "회의 중",
+          "waitingSection": "대기실",
+          "admit": "입장 허용",
+          "deny": "거부",
+          "remove": "회의에서 내보내기",
+          "makeCoHost": "공동 호스트로 지정",
+          "removeCoHost": "공동 호스트 역할 해제",
+          "lock": "회의 잠금",
+          "unlock": "회의 잠금 해제",
+          "inviteCode": "코드: {{code}}",
+          "mute": "음소거",
+          "unmute": "음소거 해제",
+          "cameraOn": "카메라 켜기",
+          "cameraOff": "카메라 끄기",
+          "speaker": "스피커",
+          "flip": "카메라 전환",
+          "leave": "나가기",
+          "leaveTitle": "이 회의에서 나가시겠습니까?",
+          "leaveBodyModerator": "혼자 나가거나 모두를 위해 회의를 종료할 수 있습니다.",
+          "leaveMeeting": "회의 나가기",
+          "endForEveryone": "모두를 위해 종료",
+          "endFailed": "회의를 종료할 수 없습니다",
+          "actionFailed": "작업을 완료할 수 없습니다"
+        },
+        "summary": {
+          "title": "회의 종료됨",
+          "back": "회의 목록으로 돌아가기",
+          "reasons": {
+            "left": "회의에서 나갔습니다.",
+            "removed": "더 이상 이 회의에 참여하고 있지 않습니다.",
+            "ended": "회의가 종료되었습니다.",
+            "ended_by_host": "모두를 위해 회의를 종료했습니다.",
+            "call_ended": "연결이 종료되어 회의에서 나가게 되었습니다.",
+            "feature_disabled": "연결 중에 회의 기능이 꺼졌습니다.",
+            "generic": "회의가 끝났습니다."
+          }
         }
       }
     },

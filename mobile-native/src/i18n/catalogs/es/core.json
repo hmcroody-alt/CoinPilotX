@@ -223,7 +223,8 @@
       "privatePeople": "Inteligencia de relaciones",
       "privateBriefings": "Informes privados",
       "privateShield": "Escudo privado",
-      "privateConcierge": "Conserjería humana"
+      "privateConcierge": "Conserjería humana",
+      "privateMeetings": "Reuniones Privadas"
     },
     "navSubtitles": {
       "missionControl": "Centro de mando",

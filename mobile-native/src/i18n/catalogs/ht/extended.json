@@ -4298,6 +4298,10 @@
         "operations": {
           "label": "Operasyon",
           "hint": "Obligasyon, desizyon, demann, risk ak opòtinite w ap swiv."
+        },
+        "privateMeetings": {
+          "label": "Reyinyon Prive",
+          "hint": "Reyinyon an sekirite ak yon sal datant ak kontwòl pou moun k ap resevwa a."
         }
       },
       "entry": {
@@ -4908,6 +4912,106 @@
           "you": "Ou menm",
           "placeholder": "Ekri yon mesaj…",
           "send": "Voye"
+        }
+      },
+      "meetings": {
+        "subtitle": "Reyinyon an sekirite sou liy prive ou a. Se sèvè a ki fè respekte sal datant lan ak kontwòl animatè a, se pa ekran an.",
+        "instant": "Kòmanse yon reyinyon touswit",
+        "starting": "Y ap kòmanse…",
+        "instantFailed": "Nou pa t ka kòmanse yon reyinyon",
+        "joinTitle": "Antre ak yon kòd oswa yon ID reyinyon",
+        "joinPlaceholder": "Kòd oswa ID reyinyon",
+        "join": "Antre",
+        "joinFailed": "Nou pa t ka antre",
+        "scheduleTitle": "Pwograme yon reyinyon",
+        "scheduleTitleField": "Tit (si ou vle)",
+        "schedule": "Pwograme",
+        "scheduleFailed": "Nou pa t ka pwograme",
+        "startFailed": "Nou pa t ka kòmanse",
+        "cancelFailed": "Nou pa t ka anile",
+        "start": "Kòmanse",
+        "cancel": "Anile",
+        "untitled": "Reyinyon",
+        "liveNow": "An dirèk kounye a",
+        "durationMinutes_one": "{{count}} minit",
+        "durationMinutes_other": "{{count}} minit",
+        "presets": {
+          "in15m": "Nan 15 minit",
+          "in1h": "Nan 1 èdtan",
+          "tomorrowMorning": "Demen 9:00"
+        },
+        "buckets": {
+          "live": "K ap fèt kounye a",
+          "upcoming": "K ap vini",
+          "recent": "Resan"
+        },
+        "empty": {
+          "title": "Poko gen reyinyon",
+          "body": "Kòmanse yon reyinyon touswit oswa pwograme youn. Reyinyon ou òganize oswa ou antre ladan yo parèt isit la."
+        },
+        "refusals": {
+          "feature_disabled": "Reyinyon yo fèmen pou kounye a.",
+          "office_locked": "Biwo ou a bloke. Debloke li pou kontinye.",
+          "not_found": "Nou pa t jwenn reyinyon sa a.",
+          "not_admitted": "Ou poko admèt nan reyinyon sa a.",
+          "meeting_locked": "Animatè a bloke reyinyon sa a.",
+          "meeting_over": "Reyinyon sa a fini.",
+          "not_live": "Reyinyon sa a poko kòmanse.",
+          "blocked": "Ou pa ka antre nan reyinyon sa a.",
+          "forbidden": "Ou pa gen aksè nan reyinyon sa a.",
+          "invalid": "Nou pa t ka konprann demann sa a.",
+          "unavailable": "Nou pa t ka jwenn reyinyon yo kounye a."
+        },
+        "room": {
+          "joining": "Y ap antre…",
+          "connecting": "Y ap konekte…",
+          "reconnecting": "Y ap rekonekte…",
+          "waitingBody": "Ou nan sal datant lan. Animatè a ap kite ou antre.",
+          "notStartedBody": "Reyinyon sa a poko kòmanse.",
+          "withdraw": "Kite sal datant lan",
+          "you": "Ou menm",
+          "member": "Manm {{id}}",
+          "host": "Animatè",
+          "coHost": "Ko-animatè",
+          "recording": "Anrejistreman",
+          "locked": "Bloke",
+          "participants": "Patisipan yo",
+          "inRoomSection": "Nan reyinyon an",
+          "waitingSection": "Sal datant",
+          "admit": "Admèt",
+          "deny": "Refize",
+          "remove": "Retire nan reyinyon an",
+          "makeCoHost": "Fè li ko-animatè",
+          "removeCoHost": "Retire wòl ko-animatè a",
+          "lock": "Bloke reyinyon an",
+          "unlock": "Debloke reyinyon an",
+          "inviteCode": "Kòd: {{code}}",
+          "mute": "Fèmen mikwo",
+          "unmute": "Louvri mikwo",
+          "cameraOn": "Limen kamera",
+          "cameraOff": "Etenn kamera",
+          "speaker": "Wopalè",
+          "flip": "Vire kamera",
+          "leave": "Kite",
+          "leaveTitle": "Kite reyinyon sa a?",
+          "leaveBodyModerator": "Ou ka kite pou kont ou, oswa fini reyinyon an pou tout moun.",
+          "leaveMeeting": "Kite reyinyon an",
+          "endForEveryone": "Fini pou tout moun",
+          "endFailed": "Nou pa t ka fini reyinyon an",
+          "actionFailed": "Nou pa t ka fè sa"
+        },
+        "summary": {
+          "title": "Reyinyon fini",
+          "back": "Tounen nan reyinyon yo",
+          "reasons": {
+            "left": "Ou kite reyinyon an.",
+            "removed": "Ou pa nan reyinyon sa a ankò.",
+            "ended": "Reyinyon an fini.",
+            "ended_by_host": "Ou fini reyinyon an pou tout moun.",
+            "call_ended": "Koneksyon an fini, kidonk ou soti nan reyinyon an.",
+            "feature_disabled": "Reyinyon yo te fèmen pandan ou te konekte.",
+            "generic": "Reyinyon an fini."
+          }
         }
       }
     },

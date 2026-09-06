@@ -4290,6 +4290,10 @@
         "operations": {
           "label": "オペレーション",
           "hint": "追跡している義務・決定・リクエスト・リスク・機会。"
+        },
+        "privateMeetings": {
+          "label": "プライベートミーティング",
+          "hint": "待機室とホスト管理機能を備えた安全なミーティング。"
         }
       },
       "entry": {
@@ -4900,6 +4904,106 @@
           "you": "あなた",
           "placeholder": "メッセージを書く…",
           "send": "送信"
+        }
+      },
+      "meetings": {
+        "subtitle": "プライベート回線での安全なミーティング。待機室とホスト管理は画面ではなくサーバーが実施します。",
+        "instant": "今すぐミーティングを開始",
+        "starting": "開始しています…",
+        "instantFailed": "ミーティングを開始できませんでした",
+        "joinTitle": "コードまたはミーティングIDで参加",
+        "joinPlaceholder": "コードまたはミーティングID",
+        "join": "参加",
+        "joinFailed": "参加できませんでした",
+        "scheduleTitle": "ミーティングを予約",
+        "scheduleTitleField": "タイトル（任意）",
+        "schedule": "予約",
+        "scheduleFailed": "予約できませんでした",
+        "startFailed": "開始できませんでした",
+        "cancelFailed": "キャンセルできませんでした",
+        "start": "開始",
+        "cancel": "キャンセル",
+        "untitled": "ミーティング",
+        "liveNow": "開催中",
+        "durationMinutes_one": "{{count}}分",
+        "durationMinutes_other": "{{count}}分",
+        "presets": {
+          "in15m": "15分後",
+          "in1h": "1時間後",
+          "tomorrowMorning": "明日 9:00"
+        },
+        "buckets": {
+          "live": "開催中",
+          "upcoming": "今後の予定",
+          "recent": "最近"
+        },
+        "empty": {
+          "title": "まだミーティングはありません",
+          "body": "今すぐミーティングを開始するか、予約してください。主催または参加したミーティングがここに表示されます。"
+        },
+        "refusals": {
+          "feature_disabled": "ミーティングは現在オフになっています。",
+          "office_locked": "オフィスがロックされています。続けるにはロックを解除してください。",
+          "not_found": "そのミーティングは見つかりませんでした。",
+          "not_admitted": "このミーティングへの入室が許可されていません。",
+          "meeting_locked": "このミーティングはホストによってロックされています。",
+          "meeting_over": "このミーティングは終了しました。",
+          "not_live": "このミーティングはまだ始まっていません。",
+          "blocked": "このミーティングには参加できません。",
+          "forbidden": "このミーティングへのアクセス権がありません。",
+          "invalid": "そのリクエストを処理できませんでした。",
+          "unavailable": "現在ミーティングに接続できません。"
+        },
+        "room": {
+          "joining": "参加しています…",
+          "connecting": "接続しています…",
+          "reconnecting": "再接続しています…",
+          "waitingBody": "待機室にいます。ホストが入室を許可します。",
+          "notStartedBody": "このミーティングはまだ始まっていません。",
+          "withdraw": "待機室から退出",
+          "you": "あなた",
+          "member": "メンバー {{id}}",
+          "host": "ホスト",
+          "coHost": "共同ホスト",
+          "recording": "録画中",
+          "locked": "ロック中",
+          "participants": "参加者",
+          "inRoomSection": "ミーティング内",
+          "waitingSection": "待機室",
+          "admit": "入室を許可",
+          "deny": "拒否",
+          "remove": "ミーティングから削除",
+          "makeCoHost": "共同ホストにする",
+          "removeCoHost": "共同ホストの役割を解除",
+          "lock": "ミーティングをロック",
+          "unlock": "ミーティングのロックを解除",
+          "inviteCode": "コード: {{code}}",
+          "mute": "ミュート",
+          "unmute": "ミュート解除",
+          "cameraOn": "カメラをオンにする",
+          "cameraOff": "カメラをオフにする",
+          "speaker": "スピーカー",
+          "flip": "カメラを切り替え",
+          "leave": "退出",
+          "leaveTitle": "このミーティングから退出しますか？",
+          "leaveBodyModerator": "自分だけ退出するか、全員のためにミーティングを終了できます。",
+          "leaveMeeting": "ミーティングから退出",
+          "endForEveryone": "全員のために終了",
+          "endFailed": "ミーティングを終了できませんでした",
+          "actionFailed": "操作を完了できませんでした"
+        },
+        "summary": {
+          "title": "ミーティング終了",
+          "back": "ミーティング一覧に戻る",
+          "reasons": {
+            "left": "ミーティングから退出しました。",
+            "removed": "このミーティングにはもう参加していません。",
+            "ended": "ミーティングは終了しました。",
+            "ended_by_host": "全員のためにミーティングを終了しました。",
+            "call_ended": "接続が終了したため、ミーティングから退出しました。",
+            "feature_disabled": "接続中にミーティング機能がオフになりました。",
+            "generic": "ミーティングは終了しました。"
+          }
         }
       }
     },

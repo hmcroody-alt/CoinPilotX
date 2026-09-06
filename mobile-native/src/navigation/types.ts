@@ -509,6 +509,8 @@ export type RootStackParamList = {
   PrivateBriefings: { title?: string } | undefined;
   PrivateShield: { title?: string } | undefined;
   PrivateConcierge: { title?: string } | undefined;
+  PrivateMeetings: { title?: string } | undefined;
+  PrivateMeetingRoom: { ref?: string; title?: string } | undefined;
   AccountCenter: { section?: "account" | "security" | "privacy" | "devices"; title?: string } | undefined;
   AccountSettings: { title?: string } | undefined;
   AccountSecurity: { title?: string } | undefined;
