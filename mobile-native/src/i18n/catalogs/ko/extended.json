@@ -4935,9 +4935,9 @@
         "durationMinutes_one": "{{count}}분",
         "durationMinutes_other": "{{count}}분",
         "presets": {
-          "in15m": "15분 후",
-          "in1h": "1시간 후",
-          "tomorrowMorning": "내일 오전 9:00"
+          "in15m": "{{minutes}}분 후",
+          "in1h": "{{hours}}시간 후",
+          "tomorrowMorning": "내일 오전 {{time}}"
         },
         "buckets": {
           "live": "진행 중",

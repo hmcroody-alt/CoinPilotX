@@ -4936,9 +4936,9 @@
         "durationMinutes_one": "{{count}} minit",
         "durationMinutes_other": "{{count}} minit",
         "presets": {
-          "in15m": "Nan 15 minit",
-          "in1h": "Nan 1 èdtan",
-          "tomorrowMorning": "Demen 9:00"
+          "in15m": "Nan {{minutes}} minit",
+          "in1h": "Nan {{hours}} èdtan",
+          "tomorrowMorning": "Demen {{time}}"
         },
         "buckets": {
           "live": "K ap fèt kounye a",

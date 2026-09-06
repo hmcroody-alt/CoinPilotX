@@ -5187,9 +5187,9 @@
         "durationMinutes_many": "{{count}} دقيقة",
         "durationMinutes_other": "{{count}} دقيقة",
         "presets": {
-          "in15m": "بعد 15 دقيقة",
-          "in1h": "بعد ساعة",
-          "tomorrowMorning": "غدًا الساعة 9:00"
+          "in15m": "بعد {{minutes}} دقيقة",
+          "in1h": "بعد {{hours}} ساعة",
+          "tomorrowMorning": "غدًا الساعة {{time}}"
         },
         "buckets": {
           "live": "يحدث الآن",
