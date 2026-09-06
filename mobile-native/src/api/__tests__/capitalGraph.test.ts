@@ -36,14 +36,20 @@ jest.mock("expo-secure-store", () => ({
 
 import { PulseApiError } from "../pulseApi";
 import {
+  CAPITAL_CASH_FLOW_PATH,
   CAPITAL_ENTITY_PATH,
   CAPITAL_EXPOSURE_PATH,
   CAPITAL_GRAPH_PATH,
+  CAPITAL_INTEGRITY_PATH,
+  CAPITAL_OBLIGATIONS_PATH,
   CAPITAL_OVERVIEW_PATH,
   CAPITAL_PORTFOLIO_PATH,
+  getCapitalCashFlow,
   getCapitalEntity,
   getCapitalExposure,
   getCapitalGraph,
+  getCapitalIntegrity,
+  getCapitalObligations,
   getCapitalOverview,
   getCapitalPortfolio,
   getCapitalRelationships,
@@ -1030,5 +1036,603 @@ describe("getCapitalExposure", () => {
 
     mockPulseApi.mockRejectedValueOnce(apiError(503, {}));
     expect(await getCapitalExposure()).toEqual({ state: "UNAVAILABLE" });
+  });
+});
+
+/**
+ * Obligations, cash flow and integrity.
+ *
+ * Each of these three routes publishes a figure next to the reason it may be
+ * partial, and in each the partiality field is the one that can lie by
+ * omission. The cases below are built from the server modules directly
+ * (`obligation_projection.py`, `cash_flow.py`, `integrity.py`) so a renamed
+ * key fails here rather than silently nulling a screen.
+ */
+
+function rawLiabilityRow(overrides: Record<string, unknown> = {}) {
+  return {
+    node_id: 31,
+    root_id: 7,
+    title: "Mortgage — 14 Elm Row",
+    kind: "MORTGAGE",
+    amount: 240000,
+    currency: "USD",
+    quantified: true,
+    due_at: "2031-06-01T00:00:00Z",
+    projected_at: "2026-08-01T00:00:00Z",
+    freshness: { stale: false, age_days: 36, horizon_days: 365 },
+    evidence: {
+      fact_ids: [901, 902],
+      provenance: {
+        source_type: "DOCUMENT",
+        source_id: "doc-4",
+        has_source_document: true,
+        provenance_type: "DOCUMENT_EXTRACTED",
+        verification: "VERIFIED"
+      }
+    },
+    ...overrides
+  };
+}
+
+function rawObligationsBody(totals: Record<string, unknown> = {}, rows?: unknown[]) {
+  return {
+    ok: true,
+    obligations: {
+      liabilities: rows ?? [rawLiabilityRow()],
+      totals: {
+        known_amount: 240000,
+        currency: "USD",
+        by_currency: { USD: { amount: 240000, count: 1 } },
+        currencies: ["USD"],
+        count: 1,
+        quantified: 1,
+        unquantified: 0,
+        unspecified_currency: 0,
+        complete: true,
+        truncated: false,
+        limit: 500,
+        ...totals
+      },
+      sync: { projected: true, obligations: 1, retired: 0, skipped: 0 }
+    }
+  };
+}
+
+describe("getCapitalObligations", () => {
+  it("parses a READY envelope, evidence and freshness included", async () => {
+    mockPulseApi.mockResolvedValueOnce(rawObligationsBody());
+    const result = await getCapitalObligations();
+    if (result.state !== "READY") throw new Error(`expected READY, got ${result.state}`);
+
+    expect(result.obligations.liabilities).toEqual([
+      {
+        nodeId: 31,
+        rootId: 7,
+        title: "Mortgage — 14 Elm Row",
+        kind: "MORTGAGE",
+        amount: 240000,
+        currency: "USD",
+        quantified: true,
+        dueAt: "2031-06-01T00:00:00Z",
+        projectedAt: "2026-08-01T00:00:00Z",
+        freshness: { stale: false, ageDays: 36, horizonDays: 365 },
+        evidence: {
+          factIds: [901, 902],
+          provenance: {
+            sourceType: "DOCUMENT",
+            sourceId: "doc-4",
+            hasSourceDocument: true,
+            provenanceType: "DOCUMENT_EXTRACTED",
+            verification: "VERIFIED"
+          }
+        }
+      }
+    ]);
+    expect(result.obligations.totals.knownAmount).toBe(240000);
+    expect(result.obligations.totals.limit).toBe(500);
+    expect(result.obligations.sync).toEqual({
+      projected: true,
+      obligations: 1,
+      retired: 0,
+      skipped: 0
+    });
+    expect(lastRequest().path).toBe(CAPITAL_OBLIGATIONS_PATH);
+  });
+
+  it("keeps an unsummable multi-currency total null, never zero", async () => {
+    // `liabilities_view` publishes known_amount only when one currency answers
+    // for every row. Two currencies means "no rate, no sum" — not "owes 0".
+    mockPulseApi.mockResolvedValueOnce(
+      rawObligationsBody({
+        known_amount: null,
+        currency: "",
+        by_currency: {
+          USD: { amount: 240000, count: 1 },
+          GBP: { amount: 88000, count: 1 }
+        },
+        currencies: ["GBP", "USD"],
+        count: 2,
+        quantified: 2,
+        complete: false
+      })
+    );
+    const result = await getCapitalObligations();
+    if (result.state !== "READY") throw new Error("expected READY");
+
+    expect(result.obligations.totals.knownAmount).toBeNull();
+    expect(result.obligations.totals.knownAmount).not.toBe(0);
+    expect(result.obligations.totals.currency).toBe("");
+    expect(result.obligations.totals.currencies).toEqual(["GBP", "USD"]);
+    expect(result.obligations.totals.complete).toBe(false);
+    // Both magnitudes remain legible even though neither may be summed.
+    expect(result.obligations.totals.byCurrency.GBP.amount).toBe(88000);
+  });
+
+  it("keeps an unquantified obligation null and does not infer `quantified`", async () => {
+    mockPulseApi.mockResolvedValueOnce(
+      rawObligationsBody({ known_amount: null, unquantified: 1, quantified: 0, complete: false }, [
+        rawLiabilityRow({ amount: null, quantified: false, currency: "" })
+      ])
+    );
+    const result = await getCapitalObligations();
+    if (result.state !== "READY") throw new Error("expected READY");
+
+    const row = result.obligations.liabilities[0];
+    expect(row.amount).toBeNull();
+    expect(row.amount).not.toBe(0);
+    expect(row.quantified).toBe(false);
+    expect(result.obligations.totals.unquantified).toBe(1);
+  });
+
+  it("reads `quantified` from the wire instead of inferring it from `amount`", async () => {
+    // The two agree today. Reading rather than deriving is what makes a future
+    // divergence — a contract change, a serializer bug — visible here instead
+    // of being papered over by a client that recomputes the server's answer.
+    mockPulseApi.mockResolvedValueOnce(
+      rawObligationsBody({}, [rawLiabilityRow({ amount: 5000, quantified: false })])
+    );
+    const disagreeing = await getCapitalObligations();
+    if (disagreeing.state !== "READY") throw new Error("expected READY");
+    expect(disagreeing.obligations.liabilities[0].amount).toBe(5000);
+    expect(disagreeing.obligations.liabilities[0].quantified).toBe(false);
+
+    mockPulseApi.mockResolvedValueOnce(
+      rawObligationsBody({}, [rawLiabilityRow({ amount: null, quantified: true })])
+    );
+    const other = await getCapitalObligations();
+    if (other.state !== "READY") throw new Error("expected READY");
+    expect(other.obligations.liabilities[0].amount).toBeNull();
+    expect(other.obligations.liabilities[0].quantified).toBe(true);
+  });
+
+  it("keeps a missing due date null rather than an empty string date", async () => {
+    mockPulseApi.mockResolvedValueOnce(
+      rawObligationsBody({}, [rawLiabilityRow({ due_at: null, freshness: null })])
+    );
+    const result = await getCapitalObligations();
+    if (result.state !== "READY") throw new Error("expected READY");
+    expect(result.obligations.liabilities[0].dueAt).toBeNull();
+    expect(result.obligations.liabilities[0].freshness).toBeNull();
+  });
+
+  it("maps the shared refusals", async () => {
+    mockPulseApi.mockRejectedValueOnce(
+      apiError(403, { state: "DENIED", reason: { reason: "actor_is_not_owner" } })
+    );
+    expect(await getCapitalObligations()).toEqual({
+      state: "DENIED",
+      reason: "actor_is_not_owner"
+    });
+
+    mockPulseApi.mockRejectedValueOnce(apiError(423, { setup_required: true }));
+    expect(await getCapitalObligations()).toEqual({ state: "LOCKED", setupRequired: true });
+
+    mockPulseApi.mockRejectedValueOnce(apiError(503, {}));
+    expect(await getCapitalObligations()).toEqual({ state: "UNAVAILABLE" });
+  });
+});
+
+function rawCashFlowBody(overrides: Record<string, unknown> = {}) {
+  return {
+    ok: true,
+    cash_flow: {
+      generated_at: "2026-09-06T12:00:00+00:00",
+      schedule: [
+        {
+          node_id: 31,
+          root_id: 7,
+          title: "Mortgage — 14 Elm Row",
+          kind: "MORTGAGE",
+          amount: 240000,
+          currency: "USD",
+          due_at: "2026-10-01T00:00:00Z",
+          days_until: 25,
+          overdue: false,
+          bucket: "next_90_days",
+          evidence: { fact_ids: [901], provenance: null }
+        }
+      ],
+      buckets: {
+        overdue: { amount: 0, count: 0 },
+        next_30_days: { amount: 0, count: 0 },
+        next_90_days: { amount: 240000, count: 1 }
+      },
+      totals: {
+        currency: "USD",
+        scheduled_amount: 240000,
+        scheduled_count: 1,
+        obligations_seen: 3,
+        truncated: false,
+        complete: false,
+        excluded_count: 2,
+        mixed_currency_rows: 0
+      },
+      excluded: { undated: 1, unquantified: 1, undated_and_unquantified: 0 },
+      basis: {
+        inflows: "Outflows only. PulseSoc records no income, so nothing here is netted.",
+        recurrence: "No recurrence is inferred.",
+        buckets: [
+          { name: "overdue", from_days: null, to_days: 0 },
+          { name: "next_30_days", from_days: 0, to_days: 30 },
+          { name: "next_90_days", from_days: 30, to_days: 90 }
+        ]
+      },
+      sync: { projected: true, obligations: 3, retired: 0, skipped: 0 },
+      ...overrides
+    }
+  };
+}
+
+describe("getCapitalCashFlow", () => {
+  it("parses a READY envelope with buckets, exclusions and basis", async () => {
+    mockPulseApi.mockResolvedValueOnce(rawCashFlowBody());
+    const result = await getCapitalCashFlow();
+    if (result.state !== "READY") throw new Error(`expected READY, got ${result.state}`);
+
+    expect(result.cashFlow.buckets.next_90_days).toEqual({ amount: 240000, count: 1 });
+    expect(result.cashFlow.schedule[0]).toEqual({
+      nodeId: 31,
+      rootId: 7,
+      title: "Mortgage — 14 Elm Row",
+      kind: "MORTGAGE",
+      amount: 240000,
+      currency: "USD",
+      dueAt: "2026-10-01T00:00:00Z",
+      daysUntil: 25,
+      overdue: false,
+      bucket: "next_90_days",
+      evidence: { factIds: [901], provenance: null }
+    });
+    expect(result.cashFlow.excluded).toEqual({
+      undated: 1,
+      unquantified: 1,
+      undatedAndUnquantified: 0
+    });
+    expect(result.cashFlow.totals.excludedCount).toBe(2);
+    expect(result.cashFlow.totals.complete).toBe(false);
+    expect(lastRequest().path).toBe(CAPITAL_CASH_FLOW_PATH);
+  });
+
+  it("carries the outflows-only basis verbatim — the screen must not imply a balance", async () => {
+    mockPulseApi.mockResolvedValueOnce(rawCashFlowBody());
+    const result = await getCapitalCashFlow();
+    if (result.state !== "READY") throw new Error("expected READY");
+
+    // PulseSoc has no income ledger. A "cash flow" screen that drops this
+    // sentence is describing outflows while implying a net figure.
+    expect(result.cashFlow.basis.inflows).toBe(
+      "Outflows only. PulseSoc records no income, so nothing here is netted."
+    );
+    expect(result.cashFlow.basis.recurrence).toBe("No recurrence is inferred.");
+    expect(result.cashFlow.basis.buckets[0]).toEqual({
+      name: "overdue",
+      fromDays: null,
+      toDays: 0
+    });
+  });
+
+  it("keeps an unsummable bucket null, so no chart draws it as a zero bar", async () => {
+    mockPulseApi.mockResolvedValueOnce(
+      rawCashFlowBody({
+        buckets: {
+          overdue: { amount: null, count: 0 },
+          next_30_days: { amount: null, count: 2 }
+        },
+        totals: {
+          currency: "",
+          scheduled_amount: null,
+          scheduled_count: 2,
+          obligations_seen: 2,
+          truncated: false,
+          complete: false,
+          excluded_count: 0,
+          mixed_currency_rows: 0
+        }
+      })
+    );
+    const result = await getCapitalCashFlow();
+    if (result.state !== "READY") throw new Error("expected READY");
+
+    expect(result.cashFlow.totals.scheduledAmount).toBeNull();
+    expect(result.cashFlow.buckets.next_30_days.amount).toBeNull();
+    // The count is still real — 2 things fall due, we just cannot total them.
+    expect(result.cashFlow.buckets.next_30_days.count).toBe(2);
+    expect(result.cashFlow.buckets.overdue.amount).toBeNull();
+  });
+
+  it("distinguishes 'due today' from 'no due date'", async () => {
+    mockPulseApi.mockResolvedValueOnce(
+      rawCashFlowBody({
+        schedule: [
+          {
+            node_id: 31,
+            root_id: 7,
+            title: "Due today",
+            kind: "TAX",
+            amount: 100,
+            currency: "USD",
+            due_at: "2026-09-06T00:00:00Z",
+            days_until: 0,
+            overdue: true,
+            bucket: "overdue",
+            evidence: { fact_ids: [], provenance: null }
+          },
+          {
+            node_id: 32,
+            root_id: 8,
+            title: "No date on file",
+            kind: "LOAN",
+            amount: 100,
+            currency: "USD",
+            due_at: null,
+            days_until: null,
+            overdue: false,
+            bucket: "",
+            evidence: { fact_ids: [], provenance: null }
+          }
+        ]
+      })
+    );
+    const result = await getCapitalCashFlow();
+    if (result.state !== "READY") throw new Error("expected READY");
+
+    expect(result.cashFlow.schedule[0].daysUntil).toBe(0);
+    expect(result.cashFlow.schedule[0].overdue).toBe(true);
+    expect(result.cashFlow.schedule[1].daysUntil).toBeNull();
+    expect(result.cashFlow.schedule[1].dueAt).toBeNull();
+  });
+
+  it("surfaces mixedCurrencyRows so a broken invariant is visible, not swallowed", async () => {
+    mockPulseApi.mockResolvedValueOnce(rawCashFlowBody());
+    const clean = await getCapitalCashFlow();
+    if (clean.state !== "READY") throw new Error("expected READY");
+    expect(clean.cashFlow.totals.mixedCurrencyRows).toBe(0);
+
+    mockPulseApi.mockResolvedValueOnce(
+      rawCashFlowBody({
+        totals: {
+          currency: "USD",
+          scheduled_amount: 240000,
+          scheduled_count: 1,
+          obligations_seen: 3,
+          truncated: false,
+          complete: false,
+          excluded_count: 2,
+          mixed_currency_rows: 3
+        }
+      })
+    );
+    const broken = await getCapitalCashFlow();
+    if (broken.state !== "READY") throw new Error("expected READY");
+    expect(broken.cashFlow.totals.mixedCurrencyRows).toBe(3);
+  });
+
+  it("maps the shared refusals", async () => {
+    mockPulseApi.mockRejectedValueOnce(
+      apiError(403, { state: "DENIED", reason: { reason: "actor_is_not_owner" } })
+    );
+    expect(await getCapitalCashFlow()).toEqual({
+      state: "DENIED",
+      reason: "actor_is_not_owner"
+    });
+
+    mockPulseApi.mockRejectedValueOnce(apiError(423, { setup_required: false }));
+    expect(await getCapitalCashFlow()).toEqual({ state: "LOCKED", setupRequired: false });
+
+    mockPulseApi.mockRejectedValueOnce(apiError(503, {}));
+    expect(await getCapitalCashFlow()).toEqual({ state: "UNAVAILABLE" });
+  });
+});
+
+function rawIntegrityBody(overrides: Record<string, unknown> = {}) {
+  return {
+    ok: true,
+    integrity: {
+      healthy: true,
+      findings: [],
+      checks: {
+        cross_owner_edges: "clean",
+        orphan_edges: "clean",
+        duplicate_node_identity: "clean",
+        unknown_vocabulary: "clean",
+        edges_into_retired_nodes: "clean",
+        portfolio_projection_drift: "clean"
+      },
+      examined: { edges: 120, nodes: 64 },
+      totals: {
+        findings: 0,
+        invariant_violations: 0,
+        checks_run: 6,
+        checks_total: 6,
+        inconclusive: [],
+        truncated: false,
+        complete: true
+      },
+      basis: {
+        repair: "This endpoint repairs nothing.",
+        scope: "The caller's own rows only.",
+        checks: [
+          "cross_owner_edges",
+          "orphan_edges",
+          "duplicate_node_identity",
+          "unknown_vocabulary",
+          "edges_into_retired_nodes",
+          "portfolio_projection_drift"
+        ]
+      },
+      ...overrides
+    }
+  };
+}
+
+describe("getCapitalIntegrity", () => {
+  it("parses a clean READY envelope", async () => {
+    mockPulseApi.mockResolvedValueOnce(rawIntegrityBody());
+    const result = await getCapitalIntegrity();
+    if (result.state !== "READY") throw new Error(`expected READY, got ${result.state}`);
+
+    expect(result.integrity.healthy).toBe(true);
+    expect(result.integrity.findings).toEqual([]);
+    expect(result.integrity.examined).toEqual({ edges: 120, nodes: 64 });
+    expect(result.integrity.totals.checksRun).toBe(6);
+    expect(result.integrity.basis.repair).toBe("This endpoint repairs nothing.");
+    expect(lastRequest().path).toBe(CAPITAL_INTEGRITY_PATH);
+  });
+
+  it("does NOT call a store healthy when a check could not run", async () => {
+    // The load-bearing case. Zero findings plus one skipped check is
+    // unexamined, not healthy, and the server already decided that — the
+    // client must read the flag rather than count the findings array.
+    mockPulseApi.mockResolvedValueOnce(
+      rawIntegrityBody({
+        healthy: false,
+        findings: [],
+        checks: {
+          cross_owner_edges: "clean",
+          portfolio_projection_drift: "inconclusive"
+        },
+        totals: {
+          findings: 0,
+          invariant_violations: 0,
+          checks_run: 5,
+          checks_total: 6,
+          inconclusive: ["portfolio_projection_drift"],
+          truncated: false,
+          complete: false
+        }
+      })
+    );
+    const result = await getCapitalIntegrity();
+    if (result.state !== "READY") throw new Error("expected READY");
+
+    expect(result.integrity.findings).toHaveLength(0);
+    expect(result.integrity.healthy).toBe(false);
+    expect(result.integrity.totals.inconclusive).toEqual(["portfolio_projection_drift"]);
+    expect(result.integrity.totals.complete).toBe(false);
+    expect(result.integrity.checks.portfolio_projection_drift).toBe("inconclusive");
+  });
+
+  it("keeps `healthy` tri-state — an unsaid answer is null, not false", async () => {
+    mockPulseApi.mockResolvedValueOnce(rawIntegrityBody({ healthy: null }));
+    const withheld = await getCapitalIntegrity();
+    if (withheld.state !== "READY") throw new Error("expected READY");
+    expect(withheld.integrity.healthy).toBeNull();
+
+    // A truthy non-boolean must not be promoted into a clean bill of health.
+    mockPulseApi.mockResolvedValueOnce(rawIntegrityBody({ healthy: "yes" }));
+    const bogus = await getCapitalIntegrity();
+    if (bogus.state !== "READY") throw new Error("expected READY");
+    expect(bogus.integrity.healthy).toBeNull();
+    expect(bogus.integrity.healthy).not.toBe(true);
+  });
+
+  it("carries findings with their severity, and counts invariants separately", async () => {
+    mockPulseApi.mockResolvedValueOnce(
+      rawIntegrityBody({
+        healthy: false,
+        findings: [
+          {
+            check: "cross_owner_edges",
+            subject: "edge",
+            subject_id: "edge:44",
+            detail: "edge joins a node owned by another member",
+            severity: "invariant"
+          },
+          {
+            check: "portfolio_projection_drift",
+            subject: "node",
+            subject_id: "node:12",
+            detail: "projected amount differs from the ledger",
+            severity: "drift"
+          }
+        ],
+        totals: {
+          findings: 2,
+          invariant_violations: 1,
+          checks_run: 6,
+          checks_total: 6,
+          inconclusive: [],
+          truncated: false,
+          complete: true
+        }
+      })
+    );
+    const result = await getCapitalIntegrity();
+    if (result.state !== "READY") throw new Error("expected READY");
+
+    expect(result.integrity.healthy).toBe(false);
+    expect(result.integrity.findings.map((f) => f.severity)).toEqual(["invariant", "drift"]);
+    expect(result.integrity.findings[0].subjectId).toBe("edge:44");
+    expect(result.integrity.totals.invariantViolations).toBe(1);
+  });
+
+  it("reports totals.findings from the wire even when the list was truncated", async () => {
+    mockPulseApi.mockResolvedValueOnce(
+      rawIntegrityBody({
+        healthy: false,
+        findings: [
+          {
+            check: "orphan_edges",
+            subject: "edge",
+            subject_id: "edge:1",
+            detail: "dangling",
+            severity: "invariant"
+          }
+        ],
+        totals: {
+          findings: 500,
+          invariant_violations: 500,
+          checks_run: 6,
+          checks_total: 6,
+          inconclusive: [],
+          truncated: true,
+          complete: false
+        }
+      })
+    );
+    const result = await getCapitalIntegrity();
+    if (result.state !== "READY") throw new Error("expected READY");
+
+    expect(result.integrity.findings).toHaveLength(1);
+    expect(result.integrity.totals.findings).toBe(500);
+    expect(result.integrity.totals.truncated).toBe(true);
+    expect(result.integrity.totals.complete).toBe(false);
+  });
+
+  it("maps the shared refusals", async () => {
+    mockPulseApi.mockRejectedValueOnce(
+      apiError(403, { state: "DENIED", reason: { reason: "actor_is_not_owner" } })
+    );
+    expect(await getCapitalIntegrity()).toEqual({
+      state: "DENIED",
+      reason: "actor_is_not_owner"
+    });
+
+    mockPulseApi.mockRejectedValueOnce(apiError(423, { setup_required: true }));
+    expect(await getCapitalIntegrity()).toEqual({ state: "LOCKED", setupRequired: true });
+
+    mockPulseApi.mockRejectedValueOnce(apiError(503, {}));
+    expect(await getCapitalIntegrity()).toEqual({ state: "UNAVAILABLE" });
   });
 });

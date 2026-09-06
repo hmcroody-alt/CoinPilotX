@@ -440,6 +440,27 @@ function refusal(error: unknown): Refusal {
   return { state: "ERROR", message: error.message || "" };
 }
 
+/**
+ * The owner-scoped capital reads add one arm to the shared refusals.
+ *
+ * Every route behind `_office_lock_gate` answers a failed owner check with
+ * `403 {state: "denied", reason: {...}}`, which is a different fact from an
+ * entitlement refusal or an outage: the question was understood and refused.
+ * It must stay distinguishable so the screen can say so rather than draw an
+ * empty balance sheet.
+ */
+type CapitalRefusal = Refusal | { state: "DENIED"; reason: string };
+
+function capitalRefusal(error: unknown): CapitalRefusal {
+  if (error instanceof PulseApiError && error.status === 403) {
+    const details = asRecord(error.details);
+    if (asText(details.state).trim().toUpperCase() === "DENIED") {
+      return { state: "DENIED", reason: asText(asRecord(details.reason).reason) };
+    }
+  }
+  return refusal(error);
+}
+
 /** 404 on the entity routes: absent and foreign arrive identically. */
 function isNotFound(error: unknown): boolean {
   return (
@@ -879,13 +900,7 @@ export async function getCapitalOverview(): Promise<CapitalOverviewResult> {
     );
     return { state: "READY", overview: parseCapitalOverview(body.overview) };
   } catch (error) {
-    if (error instanceof PulseApiError && error.status === 403) {
-      const details = asRecord(error.details);
-      if (asText(details.state).trim().toUpperCase() === "DENIED") {
-        return { state: "DENIED", reason: asText(asRecord(details.reason).reason) };
-      }
-    }
-    return refusal(error);
+    return capitalRefusal(error);
   }
 }
 
@@ -899,13 +914,7 @@ export async function getCapitalExposure(): Promise<CapitalExposureResult> {
     );
     return { state: "READY", exposure: parseCapitalExposure(body.exposure) };
   } catch (error) {
-    if (error instanceof PulseApiError && error.status === 403) {
-      const details = asRecord(error.details);
-      if (asText(details.state).trim().toUpperCase() === "DENIED") {
-        return { state: "DENIED", reason: asText(asRecord(details.reason).reason) };
-      }
-    }
-    return refusal(error);
+    return capitalRefusal(error);
   }
 }
 
@@ -930,5 +939,474 @@ export async function getCapitalRelationships(
   } catch (error) {
     if (isNotFound(error)) return { state: "NOT_FOUND" };
     return refusal(error);
+  }
+}
+
+/* --- obligations, cash flow, integrity ---------------------------------- */
+
+/**
+ * The last three capital-graph reads the app could not reach.
+ *
+ * All three answer with a figure *and* the reason that figure may be partial,
+ * and in all three the partiality flag is the load-bearing field:
+ *
+ *   - `obligations.totals.known_amount` is null whenever more than one
+ *     currency is present, because there is no FX rate to sum across and the
+ *     server will not invent one. `currency` is "" in that case. A client that
+ *     read null as 0 would report a debt-free member.
+ *   - `cash_flow.buckets[].amount` is null for the same reason, per bucket.
+ *     `basis.inflows` states that nothing has been netted against earnings —
+ *     PulseSoc has no income ledger — and a screen labelled "cash flow" that
+ *     omits it is describing outflows while implying a balance.
+ *   - `integrity.healthy` is false when a check could not run, not only when a
+ *     fault was found, and is null when the read was refused. Deriving it from
+ *     `findings.length` would report a clean bill of health over a scan that
+ *     never happened. It is read, never computed.
+ */
+
+/** Provenance as the fact store stamps it; wider than the edge variant. */
+export type CapitalEvidence = {
+  factIds: number[];
+  provenance: CapitalEdgeProvenance | null;
+};
+
+export type CapitalLiabilityRow = {
+  nodeId: number;
+  rootId: number;
+  title: string;
+  kind: string;
+  /** null when the record store never stated one — never 0. */
+  amount: number | null;
+  currency: string;
+  quantified: boolean;
+  dueAt: string | null;
+  projectedAt: string | null;
+  freshness: CapitalFreshness | null;
+  evidence: CapitalEvidence;
+};
+
+export type CapitalFreshness = {
+  stale: boolean;
+  ageDays: number | null;
+  horizonDays: number | null;
+};
+
+export type CapitalObligationTotals = {
+  /**
+   * Populated only when a single currency answers for every quantified row.
+   * null means "not summable", which is not the same as zero owed.
+   */
+  knownAmount: number | null;
+  currency: string;
+  byCurrency: Record<string, CapitalCurrencyBucket>;
+  currencies: string[];
+  count: number;
+  quantified: number;
+  unquantified: number;
+  unspecifiedCurrency: number;
+  complete: boolean;
+  truncated: boolean;
+  limit: number;
+};
+
+export type CapitalProjectionSync = {
+  projected: boolean;
+  obligations: number;
+  retired: number;
+  skipped: number;
+};
+
+export type CapitalObligations = {
+  liabilities: CapitalLiabilityRow[];
+  totals: CapitalObligationTotals;
+  sync: CapitalProjectionSync;
+};
+
+export type CapitalCashFlowRow = {
+  nodeId: number;
+  rootId: number;
+  title: string;
+  kind: string;
+  amount: number | null;
+  currency: string;
+  dueAt: string | null;
+  daysUntil: number | null;
+  overdue: boolean;
+  bucket: string;
+  evidence: CapitalEvidence;
+};
+
+/** One time bucket. `amount` is null when there is no single currency to sum. */
+export type CapitalCashFlowBucket = {
+  amount: number | null;
+  count: number;
+};
+
+export type CapitalCashFlowTotals = {
+  currency: string;
+  /** null, not 0, when nothing could be summed. */
+  scheduledAmount: number | null;
+  scheduledCount: number;
+  obligationsSeen: number;
+  truncated: boolean;
+  complete: boolean;
+  excludedCount: number;
+  /**
+   * A published invariant that must always be 0. The server exposes it rather
+   * than asserting it privately so that a break in the single-currency
+   * contract is visible here too.
+   */
+  mixedCurrencyRows: number;
+};
+
+export type CapitalCashFlowExcluded = {
+  undated: number;
+  unquantified: number;
+  undatedAndUnquantified: number;
+};
+
+export type CapitalCashFlowBucketDefinition = {
+  name: string;
+  fromDays: number | null;
+  toDays: number | null;
+};
+
+export type CapitalCashFlowBasis = {
+  /** States that these are outflows only. Render it; do not paraphrase it. */
+  inflows: string;
+  recurrence: string;
+  buckets: CapitalCashFlowBucketDefinition[];
+};
+
+export type CapitalCashFlow = {
+  generatedAt: string;
+  schedule: CapitalCashFlowRow[];
+  buckets: Record<string, CapitalCashFlowBucket>;
+  totals: CapitalCashFlowTotals;
+  excluded: CapitalCashFlowExcluded;
+  basis: CapitalCashFlowBasis;
+  sync: CapitalProjectionSync;
+};
+
+export type CapitalIntegrityFinding = {
+  check: string;
+  subject: string;
+  subjectId: string;
+  detail: string;
+  /** "invariant" is a structural violation; "drift" is a divergence. */
+  severity: string;
+};
+
+export type CapitalIntegrityTotals = {
+  findings: number;
+  invariantViolations: number;
+  checksRun: number;
+  checksTotal: number;
+  /** Named checks that could not run. Non-empty forces `healthy` false. */
+  inconclusive: string[];
+  truncated: boolean;
+  complete: boolean;
+};
+
+export type CapitalIntegrityBasis = {
+  /** The endpoint repairs nothing, and says so. */
+  repair: string;
+  scope: string;
+  checks: string[];
+};
+
+export type CapitalIntegrity = {
+  /**
+   * true only when every check ran and every check was clean.
+   *
+   * null when the answer was withheld. Never derive this from `findings` —
+   * zero findings over a check that never ran is unexamined, not healthy.
+   */
+  healthy: boolean | null;
+  findings: CapitalIntegrityFinding[];
+  /** Per-check state: "clean" | "findings" | "inconclusive". */
+  checks: Record<string, string>;
+  examined: { edges: number; nodes: number };
+  totals: CapitalIntegrityTotals;
+  basis: CapitalIntegrityBasis;
+};
+
+export type CapitalObligationsResult =
+  | { state: "READY"; obligations: CapitalObligations }
+  | { state: "DENIED"; reason: string }
+  | { state: "NOT_ENTITLED"; minimumTier: string }
+  | { state: "FEATURE_DISABLED" }
+  | { state: "NOT_IMPLEMENTED" }
+  | { state: "UNAVAILABLE" }
+  | { state: "LOCKED"; setupRequired: boolean }
+  | { state: "ERROR"; message: string };
+
+export type CapitalCashFlowResult =
+  | { state: "READY"; cashFlow: CapitalCashFlow }
+  | { state: "DENIED"; reason: string }
+  | { state: "NOT_ENTITLED"; minimumTier: string }
+  | { state: "FEATURE_DISABLED" }
+  | { state: "NOT_IMPLEMENTED" }
+  | { state: "UNAVAILABLE" }
+  | { state: "LOCKED"; setupRequired: boolean }
+  | { state: "ERROR"; message: string };
+
+export type CapitalIntegrityResult =
+  | { state: "READY"; integrity: CapitalIntegrity }
+  | { state: "DENIED"; reason: string }
+  | { state: "NOT_ENTITLED"; minimumTier: string }
+  | { state: "FEATURE_DISABLED" }
+  | { state: "NOT_IMPLEMENTED" }
+  | { state: "UNAVAILABLE" }
+  | { state: "LOCKED"; setupRequired: boolean }
+  | { state: "ERROR"; message: string };
+
+function parseFreshness(raw: unknown): CapitalFreshness | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const row = raw as Record<string, unknown>;
+  return {
+    stale: row.stale === true,
+    ageDays: asMaybeNumber(row.age_days),
+    horizonDays: asMaybeNumber(row.horizon_days)
+  };
+}
+
+function parseEvidence(raw: unknown): CapitalEvidence {
+  const row = asRecord(raw);
+  const provenance = row.provenance;
+  return {
+    factIds: (Array.isArray(row.fact_ids) ? row.fact_ids : []).map(asId),
+    // Absent provenance stays null: "we did not record where this came from"
+    // must not render as an empty-but-present source.
+    provenance:
+      provenance && typeof provenance === "object" && !Array.isArray(provenance)
+        ? parseProvenance(provenance)
+        : null
+  };
+}
+
+function parseLiabilityRow(raw: unknown): CapitalLiabilityRow {
+  const row = asRecord(raw);
+  return {
+    nodeId: asId(row.node_id),
+    rootId: asId(row.root_id),
+    title: asText(row.title),
+    kind: asText(row.kind),
+    amount: asMaybeNumber(row.amount),
+    currency: asText(row.currency),
+    // Read from the wire. Deriving it from `amount !== null` would let a
+    // parser bug and a genuine absence look identical.
+    quantified: row.quantified === true,
+    dueAt: asMaybeText(row.due_at),
+    projectedAt: asMaybeText(row.projected_at),
+    freshness: parseFreshness(row.freshness),
+    evidence: parseEvidence(row.evidence)
+  };
+}
+
+function asMaybeText(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function parseObligationTotals(raw: unknown): CapitalObligationTotals {
+  const row = asRecord(raw);
+  return {
+    knownAmount: asMaybeNumber(row.known_amount),
+    currency: asText(row.currency),
+    byCurrency: parseCurrencyBuckets(row.by_currency),
+    currencies: (Array.isArray(row.currencies) ? row.currencies : []).map(asText),
+    count: asId(row.count),
+    quantified: asId(row.quantified),
+    unquantified: asId(row.unquantified),
+    unspecifiedCurrency: asId(row.unspecified_currency),
+    complete: row.complete === true,
+    truncated: row.truncated === true,
+    limit: asId(row.limit)
+  };
+}
+
+function parseProjectionSync(raw: unknown): CapitalProjectionSync {
+  const row = asRecord(raw);
+  return {
+    projected: row.projected === true,
+    obligations: asId(row.obligations),
+    retired: asId(row.retired),
+    skipped: asId(row.skipped)
+  };
+}
+
+export function parseCapitalObligations(raw: unknown): CapitalObligations {
+  const row = asRecord(raw);
+  return {
+    liabilities: (Array.isArray(row.liabilities) ? row.liabilities : []).map(parseLiabilityRow),
+    totals: parseObligationTotals(row.totals),
+    sync: parseProjectionSync(row.sync)
+  };
+}
+
+function parseCashFlowRow(raw: unknown): CapitalCashFlowRow {
+  const row = asRecord(raw);
+  return {
+    nodeId: asId(row.node_id),
+    rootId: asId(row.root_id),
+    title: asText(row.title),
+    kind: asText(row.kind),
+    amount: asMaybeNumber(row.amount),
+    currency: asText(row.currency),
+    dueAt: asMaybeText(row.due_at),
+    // null rather than 0: "due today" and "we do not know when" are not the
+    // same row on a timeline.
+    daysUntil: asMaybeNumber(row.days_until),
+    overdue: row.overdue === true,
+    bucket: asText(row.bucket),
+    evidence: parseEvidence(row.evidence)
+  };
+}
+
+function parseCashFlowBuckets(raw: unknown): Record<string, CapitalCashFlowBucket> {
+  const rows = asRecord(raw);
+  const buckets: Record<string, CapitalCashFlowBucket> = {};
+  for (const name of Object.keys(rows)) {
+    const bucket = asRecord(rows[name]);
+    buckets[name] = { amount: asMaybeNumber(bucket.amount), count: asId(bucket.count) };
+  }
+  return buckets;
+}
+
+function parseCashFlowTotals(raw: unknown): CapitalCashFlowTotals {
+  const row = asRecord(raw);
+  return {
+    currency: asText(row.currency),
+    scheduledAmount: asMaybeNumber(row.scheduled_amount),
+    scheduledCount: asId(row.scheduled_count),
+    obligationsSeen: asId(row.obligations_seen),
+    truncated: row.truncated === true,
+    complete: row.complete === true,
+    excludedCount: asId(row.excluded_count),
+    mixedCurrencyRows: asId(row.mixed_currency_rows)
+  };
+}
+
+function parseCashFlowBasis(raw: unknown): CapitalCashFlowBasis {
+  const row = asRecord(raw);
+  return {
+    inflows: asText(row.inflows),
+    recurrence: asText(row.recurrence),
+    buckets: (Array.isArray(row.buckets) ? row.buckets : []).map((entry) => {
+      const bucket = asRecord(entry);
+      return {
+        name: asText(bucket.name),
+        fromDays: asMaybeNumber(bucket.from_days),
+        toDays: asMaybeNumber(bucket.to_days)
+      };
+    })
+  };
+}
+
+export function parseCapitalCashFlow(raw: unknown): CapitalCashFlow {
+  const row = asRecord(raw);
+  const excluded = asRecord(row.excluded);
+  return {
+    generatedAt: asText(row.generated_at),
+    schedule: (Array.isArray(row.schedule) ? row.schedule : []).map(parseCashFlowRow),
+    buckets: parseCashFlowBuckets(row.buckets),
+    totals: parseCashFlowTotals(row.totals),
+    excluded: {
+      undated: asId(excluded.undated),
+      unquantified: asId(excluded.unquantified),
+      undatedAndUnquantified: asId(excluded.undated_and_unquantified)
+    },
+    basis: parseCashFlowBasis(row.basis),
+    sync: parseProjectionSync(row.sync)
+  };
+}
+
+function parseIntegrityFinding(raw: unknown): CapitalIntegrityFinding {
+  const row = asRecord(raw);
+  return {
+    check: asText(row.check),
+    subject: asText(row.subject),
+    subjectId: asText(row.subject_id),
+    severity: asText(row.severity),
+    detail: asText(row.detail)
+  };
+}
+
+export function parseCapitalIntegrity(raw: unknown): CapitalIntegrity {
+  const row = asRecord(raw);
+  const totals = asRecord(row.totals);
+  const basis = asRecord(row.basis);
+  const examined = asRecord(row.examined);
+  const checks: Record<string, string> = {};
+  const rawChecks = asRecord(row.checks);
+  for (const name of Object.keys(rawChecks)) checks[name] = asText(rawChecks[name]);
+  return {
+    // Strictly tri-state. Anything that is not a literal boolean is "the
+    // server did not say", which must not collapse into "not healthy" or,
+    // far worse, into "healthy".
+    healthy: typeof row.healthy === "boolean" ? row.healthy : null,
+    findings: (Array.isArray(row.findings) ? row.findings : []).map(parseIntegrityFinding),
+    checks,
+    examined: { edges: asId(examined.edges), nodes: asId(examined.nodes) },
+    totals: {
+      findings: asId(totals.findings),
+      invariantViolations: asId(totals.invariant_violations),
+      checksRun: asId(totals.checks_run),
+      checksTotal: asId(totals.checks_total),
+      inconclusive: (Array.isArray(totals.inconclusive) ? totals.inconclusive : []).map(asText),
+      truncated: totals.truncated === true,
+      complete: totals.complete === true
+    },
+    basis: {
+      repair: asText(basis.repair),
+      scope: asText(basis.scope),
+      checks: (Array.isArray(basis.checks) ? basis.checks : []).map(asText)
+    }
+  };
+}
+
+export const CAPITAL_OBLIGATIONS_PATH = "/api/private-office/capital-graph/obligations";
+export const CAPITAL_CASH_FLOW_PATH = "/api/private-office/capital-graph/cash-flow";
+export const CAPITAL_INTEGRITY_PATH = "/api/private-office/capital-graph/integrity";
+
+/** Projected liabilities, summed only where a single currency allows it. */
+export async function getCapitalObligations(): Promise<CapitalObligationsResult> {
+  try {
+    const body = asRecord(
+      await pulseApi<unknown>(CAPITAL_OBLIGATIONS_PATH, {
+        headers: await officeRequestHeaders()
+      })
+    );
+    return { state: "READY", obligations: parseCapitalObligations(body.obligations) };
+  } catch (error) {
+    return capitalRefusal(error);
+  }
+}
+
+/** When recorded obligations fall due. Outflows only — see `basis.inflows`. */
+export async function getCapitalCashFlow(): Promise<CapitalCashFlowResult> {
+  try {
+    const body = asRecord(
+      await pulseApi<unknown>(CAPITAL_CASH_FLOW_PATH, {
+        headers: await officeRequestHeaders()
+      })
+    );
+    return { state: "READY", cashFlow: parseCapitalCashFlow(body.cash_flow) };
+  } catch (error) {
+    return capitalRefusal(error);
+  }
+}
+
+/** Read-only structural diagnostics. Repairs nothing; see `basis.repair`. */
+export async function getCapitalIntegrity(): Promise<CapitalIntegrityResult> {
+  try {
+    const body = asRecord(
+      await pulseApi<unknown>(CAPITAL_INTEGRITY_PATH, {
+        headers: await officeRequestHeaders()
+      })
+    );
+    return { state: "READY", integrity: parseCapitalIntegrity(body.integrity) };
+  } catch (error) {
+    return capitalRefusal(error);
   }
 }
