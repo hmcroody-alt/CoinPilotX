@@ -748,6 +748,26 @@ def stage_telemetry_carries_no_member_data():
     finally:
         os.environ.pop("PRIVATE_MEETINGS_ENABLED", None)
 
+    # And the fact lifecycle, driven through the canonical writer for the same
+    # reason as the meetings above. This metric carries a from-state and a
+    # to-state, which is exactly the shape a later edit would be tempted to
+    # "enrich" with the fact's value or type to make a dashboard readable — so
+    # the fact is planted with a secret and its value given to the payload
+    # inspection below to catch.
+    lifecycle = facts.record_fact(
+        cur, owner_user_id=USER_A, subject_type=retrieval.SUBJECT_TYPE_NODE,
+        subject_id="911", fact_type="preferred_bank", value=SECRETS[0],
+        value_type=model.VALUE_STRING,
+        provenance_type=model.PROVENANCE_USER_ASSERTED,
+        domain=model.DOMAIN_FINANCIAL)
+    confirmed = facts.confirm_fact(
+        cur, owner_user_id=USER_A, fact_id=lifecycle["fact_id"])
+    check("a fact lifecycle transition fired its metric through the writer",
+          confirmed.get("status") == "applied", str(confirmed.get("status")))
+    facts.dispute_fact(
+        cur, owner_user_id=USER_A, fact_id=lifecycle["fact_id"],
+        reason_code="OBSERVABILITY_PROBE")
+
     conn.commit()
     conn.close()
 

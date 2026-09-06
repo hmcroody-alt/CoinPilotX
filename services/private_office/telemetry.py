@@ -99,6 +99,55 @@ SENSITIVITY_VOCAB = frozenset({
 PROVENANCE_VOCAB = frozenset({
     "VERIFIED", "PROVIDER_ASSERTED", "DOCUMENT_EXTRACTED", "USER_ASSERTED",
     "INFERRED", "ESTIMATED", "STALE", "CONFLICTING",
+    # Ledger-core additions. These have to be listed or ``sanitize`` collapses
+    # each of them to ``other``, and a provenance distribution in which a third
+    # of the writes are ``other`` measures nothing. They pass the publishability
+    # test for the same reason the original eight do: each names a *class of
+    # source*, which is a shape, not a secret.
+    "SYSTEM_OBSERVED", "MEETING_DERIVED", "HUMAN_CONFIRMED", "UNDX_PROPOSED",
+    "LEGACY_UNKNOWN",
+})
+
+#: Verification state — a separate axis from provenance, restated here for the
+#: same reason every other vocabulary is restated: telemetry does not import
+#: ``model``, so adding a state there does not silently make it emittable.
+#: Drift between the two is caught by the vocabulary parity test rather than by
+#: a dashboard quietly filling with ``other``.
+VERIFICATION_VOCAB = frozenset({
+    "UNVERIFIED", "USER_CONFIRMED", "EVIDENCE_SUPPORTED", "VERIFIED",
+    "PROVIDER_VERIFIED", "NEEDS_REVIEW", "CONFLICTING", "DISPUTED",
+    "SUPERSEDED", "EXPIRED", "REVOKED", "LEGACY_UNKNOWN",
+})
+
+#: Lifecycle disposition of a fact row.
+LIFECYCLE_VOCAB = frozenset({
+    "ACTIVE", "SUPERSEDED", "ARCHIVED", "EXPIRED", "REVOKED",
+})
+
+#: The lifecycle operations the canonical writer exposes. Names the *operation*
+#: only — never its subject, its key, or its value. "A fact was revoked" is a
+#: process-health number; "which fact" is content.
+FACT_OPERATION_VOCAB = frozenset({
+    "create", "refresh", "confirm", "revise", "dispute", "archive", "revoke",
+    "expire", "supersede",
+})
+
+#: Who performed a fact operation, as a *class* rather than an identity. The
+#: distinction that matters for governance is human-versus-machine: a ledger in
+#: which most confirmations came from UNDX is a different ledger from one in
+#: which most came from the owner, and no user id is needed to see that.
+ACTOR_TYPE_VOCAB = frozenset({
+    "owner", "system", "provider", "undx", "document", "unknown",
+})
+
+#: Outcomes of a lifecycle operation. ``unchanged`` is listed separately from
+#: ``applied`` on purpose: confirming a fact that was already confirmed is not a
+#: failure, but counting it as an application would make a review queue look
+#: like it was being worked when the same row is being re-confirmed. ``refused``
+#: covers a transition the state machine forbids — out of a terminal state, for
+#: instance — and is a distinct signal from ``rejected`` input validation.
+LIFECYCLE_OUTCOME_VOCAB = frozenset({
+    "applied", "unchanged", "refused", "rejected", "not_found",
 })
 
 NODE_TYPE_VOCAB = frozenset({
@@ -201,6 +250,12 @@ MEETING_ROLE_VOCAB = frozenset({"HOST", "CO_HOST", "PARTICIPANT"})
 # The events
 # ---------------------------------------------------------------------------
 EVENT_FACT_WRITE = "private_office.fact_write"
+#: Every non-create mutation of a fact's standing: confirm, revise, dispute,
+#: archive, revoke, expire, supersede. Separate from ``fact_write`` because the
+#: two answer different questions — ``fact_write`` measures intake, this
+#: measures whether anything is ever *checked* after intake, which is the
+#: difference between a truth ledger and an append-only pile.
+EVENT_FACT_LIFECYCLE = "private_office.fact_lifecycle"
 EVENT_GRAPH_WRITE = "private_office.graph_write"
 EVENT_CONTEXT_RETRIEVED = "private_office.context_retrieved"
 EVENT_CONTEXT_DENIED = "private_office.context_denied"
@@ -229,7 +284,24 @@ EVENTS: dict[str, dict[str, tuple[str, frozenset[str] | None]]] = {
         "domain": (KIND_ENUM, DOMAIN_VOCAB),
         "sensitivity": (KIND_ENUM, SENSITIVITY_VOCAB),
         "provenance_type": (KIND_ENUM, PROVENANCE_VOCAB),
+        "verification_state": (KIND_ENUM, VERIFICATION_VOCAB),
         "superseded": (KIND_FLAG, None),
+    },
+    EVENT_FACT_LIFECYCLE: {
+        "operation": (KIND_ENUM, FACT_OPERATION_VOCAB),
+        "outcome": (KIND_ENUM, LIFECYCLE_OUTCOME_VOCAB),
+        "actor_type": (KIND_ENUM, ACTOR_TYPE_VOCAB),
+        "domain": (KIND_ENUM, DOMAIN_VOCAB),
+        "sensitivity": (KIND_ENUM, SENSITIVITY_VOCAB),
+        "provenance_type": (KIND_ENUM, PROVENANCE_VOCAB),
+        # Both ends of the transition. One without the other is unreadable: a
+        # count of facts entering DISPUTED does not say whether they came from
+        # VERIFIED (a regression worth alerting on) or from NEEDS_REVIEW (the
+        # queue working as designed).
+        "from_state": (KIND_ENUM, VERIFICATION_VOCAB),
+        "to_state": (KIND_ENUM, VERIFICATION_VOCAB),
+        "lifecycle_state": (KIND_ENUM, LIFECYCLE_VOCAB),
+        "chained": (KIND_FLAG, None),
     },
     EVENT_GRAPH_WRITE: {
         "outcome": (KIND_ENUM, WRITE_OUTCOME_VOCAB),

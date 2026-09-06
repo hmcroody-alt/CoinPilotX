@@ -123,13 +123,43 @@ PROVENANCE_ESTIMATED = "ESTIMATED"
 PROVENANCE_STALE = "STALE"
 PROVENANCE_CONFLICTING = "CONFLICTING"
 
+# Added in the Private Facts ledger-core work. Each one names a *source* that
+# the original eight could only approximate, and approximating provenance is how
+# a fact ends up better-credentialled than its origin deserves.
+#
+#   SYSTEM_OBSERVED   PulseSoc itself watched this happen (a payment settled, a
+#                     document was uploaded). Not a provider read-back, but not
+#                     a human claim either — the system is the witness.
+#   MEETING_DERIVED   Extracted from a meeting record. Weaker than a document
+#                     because a transcript is a record of what was *said*.
+#   HUMAN_CONFIRMED   A person affirmed an existing assertion. Deliberately
+#                     ranked below PROVIDER_ASSERTED: confirmation raises the
+#                     *verification state*, it does not turn a claim into a
+#                     system of record. Verification and provenance are separate
+#                     axes and this is the line where they are kept separate.
+#   UNDX_PROPOSED     A model proposed it. Ranks with INFERRED at most, and a
+#                     proposal is never durable fact until a human accepts it.
+#   LEGACY_UNKNOWN    Written before provenance was recorded. Section 118: a row
+#                     whose origin is unknown must say so. Relabelling it
+#                     USER_ASSERTED would be inventing a witness.
+PROVENANCE_SYSTEM_OBSERVED = "SYSTEM_OBSERVED"
+PROVENANCE_MEETING_DERIVED = "MEETING_DERIVED"
+PROVENANCE_HUMAN_CONFIRMED = "HUMAN_CONFIRMED"
+PROVENANCE_UNDX_PROPOSED = "UNDX_PROPOSED"
+PROVENANCE_LEGACY_UNKNOWN = "LEGACY_UNKNOWN"
+
 PROVENANCE_TYPES: tuple[str, ...] = (
     PROVENANCE_VERIFIED,
     PROVENANCE_PROVIDER_ASSERTED,
     PROVENANCE_DOCUMENT_EXTRACTED,
+    PROVENANCE_SYSTEM_OBSERVED,
+    PROVENANCE_HUMAN_CONFIRMED,
     PROVENANCE_USER_ASSERTED,
+    PROVENANCE_MEETING_DERIVED,
     PROVENANCE_INFERRED,
+    PROVENANCE_UNDX_PROPOSED,
     PROVENANCE_ESTIMATED,
+    PROVENANCE_LEGACY_UNKNOWN,
     PROVENANCE_STALE,
     PROVENANCE_CONFLICTING,
 )
@@ -142,9 +172,17 @@ PROVENANCE_STRENGTH: dict[str, int] = {
     PROVENANCE_VERIFIED: 100,
     PROVENANCE_PROVIDER_ASSERTED: 80,
     PROVENANCE_DOCUMENT_EXTRACTED: 60,
+    PROVENANCE_SYSTEM_OBSERVED: 55,
+    PROVENANCE_HUMAN_CONFIRMED: 50,
     PROVENANCE_USER_ASSERTED: 40,
+    PROVENANCE_MEETING_DERIVED: 30,
     PROVENANCE_INFERRED: 20,
+    PROVENANCE_UNDX_PROPOSED: 15,
     PROVENANCE_ESTIMATED: 10,
+    # Unknown origin ranks *below* an estimate. An estimate at least names the
+    # method that produced it; a legacy row names nothing, so it must never win
+    # a contradiction against a fact that can account for itself.
+    PROVENANCE_LEGACY_UNKNOWN: 5,
     PROVENANCE_STALE: 0,
     PROVENANCE_CONFLICTING: 0,
 }
@@ -155,6 +193,101 @@ PROVENANCE_STRENGTH: dict[str, int] = {
 #: them resolve a disagreement.
 DEGRADED_PROVENANCE: frozenset[str] = frozenset(
     {PROVENANCE_STALE, PROVENANCE_CONFLICTING}
+)
+
+# ---------------------------------------------------------------------------
+# Verification state (Private Facts, Section 16)
+# ---------------------------------------------------------------------------
+# Provenance answers "where did this come from". Verification answers "what has
+# since been done about it". Those are different questions and the original
+# schema answered them in one column, which is why VERIFIED, STALE and
+# CONFLICTING all ended up filed as though they were *sources*.
+#
+# Keeping them fused has a specific cost: once a fact is confirmed by its owner
+# there is nowhere to record that without overwriting the memory of where the
+# fact came from. The confirmation destroys the provenance. Separating the axes
+# means a USER_ASSERTED fact can be USER_CONFIRMED and still remember that a
+# person, not a bank, is the underlying source.
+#
+# Note that SUPERSEDED, EXPIRED and REVOKED appear both here and in
+# `LIFECYCLE_STATES`. That is intentional rather than duplication: lifecycle
+# governs whether the row is *returned*, verification governs whether it is
+# *believed*, and a reader that only has one of the two cannot tell a fact that
+# was replaced by a better one from a fact that was withdrawn as false.
+VERIFICATION_UNVERIFIED = "UNVERIFIED"
+VERIFICATION_USER_CONFIRMED = "USER_CONFIRMED"
+VERIFICATION_EVIDENCE_SUPPORTED = "EVIDENCE_SUPPORTED"
+VERIFICATION_VERIFIED = "VERIFIED"
+VERIFICATION_PROVIDER_VERIFIED = "PROVIDER_VERIFIED"
+VERIFICATION_NEEDS_REVIEW = "NEEDS_REVIEW"
+VERIFICATION_CONFLICTING = "CONFLICTING"
+VERIFICATION_DISPUTED = "DISPUTED"
+VERIFICATION_SUPERSEDED = "SUPERSEDED"
+VERIFICATION_EXPIRED = "EXPIRED"
+VERIFICATION_REVOKED = "REVOKED"
+#: Rows written before this column existed. Section 118 forbids backfilling them
+#: to anything that asserts a check that never happened.
+VERIFICATION_LEGACY_UNKNOWN = "LEGACY_UNKNOWN"
+
+VERIFICATION_STATES: tuple[str, ...] = (
+    VERIFICATION_UNVERIFIED,
+    VERIFICATION_USER_CONFIRMED,
+    VERIFICATION_EVIDENCE_SUPPORTED,
+    VERIFICATION_VERIFIED,
+    VERIFICATION_PROVIDER_VERIFIED,
+    VERIFICATION_NEEDS_REVIEW,
+    VERIFICATION_CONFLICTING,
+    VERIFICATION_DISPUTED,
+    VERIFICATION_SUPERSEDED,
+    VERIFICATION_EXPIRED,
+    VERIFICATION_REVOKED,
+    VERIFICATION_LEGACY_UNKNOWN,
+)
+
+#: New facts start here. Not UNVERIFIED-as-a-synonym-for-untrusted — it means
+#: precisely "nothing has been done to check this yet", which is the honest
+#: state of every fact at the instant it is written.
+DEFAULT_VERIFICATION_STATE = VERIFICATION_UNVERIFIED
+
+#: How much a verification state adds to a fact's standing. Deliberately a
+#: *separate* scale from `PROVENANCE_STRENGTH` rather than a multiplier: a
+#: confirmed guess is still a guess, and multiplying would let confirmation
+#: manufacture authority the source never had.
+VERIFICATION_RANK: dict[str, int] = {
+    VERIFICATION_PROVIDER_VERIFIED: 100,
+    VERIFICATION_VERIFIED: 90,
+    VERIFICATION_EVIDENCE_SUPPORTED: 70,
+    VERIFICATION_USER_CONFIRMED: 50,
+    VERIFICATION_UNVERIFIED: 20,
+    VERIFICATION_LEGACY_UNKNOWN: 10,
+    VERIFICATION_NEEDS_REVIEW: 0,
+    VERIFICATION_CONFLICTING: 0,
+    VERIFICATION_DISPUTED: 0,
+    VERIFICATION_SUPERSEDED: 0,
+    VERIFICATION_EXPIRED: 0,
+    VERIFICATION_REVOKED: 0,
+}
+
+#: States in which a fact must not be quoted as current truth. A briefing, an
+#: UNDX answer or a projection that cites one of these is asserting something
+#: the ledger does not stand behind.
+UNTRUSTWORTHY_VERIFICATION: frozenset[str] = frozenset(
+    {
+        VERIFICATION_NEEDS_REVIEW,
+        VERIFICATION_CONFLICTING,
+        VERIFICATION_DISPUTED,
+        VERIFICATION_SUPERSEDED,
+        VERIFICATION_EXPIRED,
+        VERIFICATION_REVOKED,
+    }
+)
+
+#: Terminal states. A revoked fact is not disputable and an expired fact is not
+#: confirmable — reviving either means writing a new fact that supersedes it,
+#: which is what leaves a trail. Transitioning out of these in place would erase
+#: the reason the fact stopped being true.
+TERMINAL_VERIFICATION: frozenset[str] = frozenset(
+    {VERIFICATION_REVOKED, VERIFICATION_SUPERSEDED}
 )
 
 # ---------------------------------------------------------------------------
@@ -234,11 +367,33 @@ NODE_TYPES: tuple[str, ...] = (
 LIFECYCLE_ACTIVE = "ACTIVE"
 LIFECYCLE_SUPERSEDED = "SUPERSEDED"
 LIFECYCLE_ARCHIVED = "ARCHIVED"
+#: A fact whose stated validity window has closed. Distinct from ARCHIVED (the
+#: owner put it away) and from SUPERSEDED (something replaced it): an expired
+#: fact was true and simply stopped being current, with nothing taking its
+#: place. Collapsing the three would lose the reason, and the reason is what a
+#: reader needs to know whether to go looking for a replacement.
+LIFECYCLE_EXPIRED = "EXPIRED"
+#: Withdrawn as never-having-been-true. The row is retained — deleting it is how
+#: an audit trail acquires a hole — but it must never be read as an assertion.
+LIFECYCLE_REVOKED = "REVOKED"
 
 LIFECYCLE_STATES: tuple[str, ...] = (
     LIFECYCLE_ACTIVE,
     LIFECYCLE_SUPERSEDED,
     LIFECYCLE_ARCHIVED,
+    LIFECYCLE_EXPIRED,
+    LIFECYCLE_REVOKED,
+)
+
+#: Lifecycle states that keep a fact out of "what is true now" reads. ACTIVE is
+#: the only state that does not.
+INACTIVE_LIFECYCLE: frozenset[str] = frozenset(
+    {
+        LIFECYCLE_SUPERSEDED,
+        LIFECYCLE_ARCHIVED,
+        LIFECYCLE_EXPIRED,
+        LIFECYCLE_REVOKED,
+    }
 )
 
 # ---------------------------------------------------------------------------
@@ -356,6 +511,84 @@ def normalize_relation(value: object) -> str | None:
 def normalize_lifecycle(value: object) -> str | None:
     """Canonical lifecycle state, or ``None``."""
     return _canonical(value, LIFECYCLE_STATES)
+
+
+def normalize_verification_state(value: object) -> str | None:
+    """Canonical verification state, or ``None``.
+
+    ``None`` rather than ``DEFAULT_VERIFICATION_STATE`` on a miss, for the same
+    reason the other normalizers refuse to default: silently converting an
+    unrecognised state to UNVERIFIED would turn a typo in a confirmation path
+    into a downgrade nobody asked for, and the caller would never learn its
+    write did the opposite of what it meant.
+    """
+    return _canonical(value, VERIFICATION_STATES)
+
+
+def verification_rank(value: object) -> int:
+    """Standing of a verification state; ``0`` for anything unrecognised.
+
+    Zero is the safe unknown here: it is the same rank as DISPUTED, so an
+    unrecognised state can never win an argument against a state the system
+    understands.
+    """
+    state = normalize_verification_state(value)
+    if state is None:
+        return 0
+    return VERIFICATION_RANK.get(state, 0)
+
+
+def verification_is_trustworthy(value: object) -> bool:
+    """Is anything known to be *wrong* with a fact in this state?
+
+    Deliberately the weaker of the two predicates. It is true of a plain
+    assertion nobody has checked, because "unexamined" is not the same as
+    "doubtful" and hiding every unverified fact would empty the Office. Use
+    :func:`verification_is_affirmed` for the stronger question.
+
+    Fail-closed on an unrecognised state.
+    """
+    state = normalize_verification_state(value)
+    if state is None:
+        return False
+    return state not in UNTRUSTWORTHY_VERIFICATION
+
+
+def verification_is_affirmed(value: object) -> bool:
+    """Has anything actually checked this fact?
+
+    The stricter half of the pair: did a person, a document, or a system of
+    record affirm it. The distinction is the point of the verification axis —
+    a store that cannot tell an unexamined claim from a confirmed one has a
+    column, not a ledger.
+
+    The threshold is ``USER_CONFIRMED``, so ``UNVERIFIED`` and
+    ``LEGACY_UNKNOWN`` are excluded, as is every untrustworthy state (each of
+    which ranks zero). Fail-closed on an unrecognised state.
+    """
+    state = normalize_verification_state(value)
+    if state is None:
+        return False
+    return VERIFICATION_RANK.get(state, 0) >= VERIFICATION_RANK[
+        VERIFICATION_USER_CONFIRMED]
+
+
+def verification_is_terminal(value: object) -> bool:
+    """Is this state one that may not be transitioned out of in place?"""
+    state = normalize_verification_state(value)
+    if state is None:
+        return False
+    return state in TERMINAL_VERIFICATION
+
+
+def lifecycle_is_active(value: object) -> bool:
+    """Does this lifecycle state belong in a "what is true now" read?
+
+    Fail-closed: an unrecognised lifecycle is not active, because showing a row
+    whose disposition the code cannot name is how an archived fact reappears in
+    a briefing.
+    """
+    return normalize_lifecycle(value) == LIFECYCLE_ACTIVE
 
 
 def relation_permits(relation: object, source_type: object, target_type: object) -> bool:

@@ -85,6 +85,7 @@ import logging
 LOGGER = logging.getLogger("private_office.schema")
 
 FACTS_TABLE = "private_facts"
+FACT_HISTORY_TABLE = "private_fact_history"
 NODES_TABLE = "private_graph_nodes"
 EDGES_TABLE = "private_graph_edges"
 AUDIT_TABLE = "private_audit_events"
@@ -92,7 +93,7 @@ SECURITY_TABLE = "private_office_security"
 GRANTS_TABLE = "private_office_unlock_grants"
 
 TABLES: tuple[str, ...] = (
-    FACTS_TABLE, NODES_TABLE, EDGES_TABLE, AUDIT_TABLE,
+    FACTS_TABLE, FACT_HISTORY_TABLE, NODES_TABLE, EDGES_TABLE, AUDIT_TABLE,
     SECURITY_TABLE, GRANTS_TABLE,
 )
 
@@ -139,9 +140,87 @@ CREATE TABLE IF NOT EXISTS {FACTS_TABLE} (
     domain TEXT NOT NULL,
     lifecycle_state TEXT NOT NULL DEFAULT 'ACTIVE',
     conflict_id TEXT NOT NULL DEFAULT '',
+    verification_state TEXT NOT NULL DEFAULT '',
+    last_verified_at TEXT NOT NULL DEFAULT '',
+    expires_at TEXT NOT NULL DEFAULT '',
+    supersedes_id INTEGER NOT NULL DEFAULT 0,
+    superseded_by_id INTEGER NOT NULL DEFAULT 0,
+    created_by_actor_type TEXT NOT NULL DEFAULT '',
+    created_by_actor_id INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     UNIQUE(owner_user_id, fact_key)
+)
+"""
+
+# ---------------------------------------------------------------------------
+# The ledger-core columns, and why each default is what it is
+# ---------------------------------------------------------------------------
+# `verification_state` defaults to the empty string rather than to
+# 'UNVERIFIED', and the difference matters more than it looks. A fresh table and
+# a migrated table must end up in the *same* state, and `ADD COLUMN ... DEFAULT
+# 'UNVERIFIED'` would stamp every pre-existing row with a claim about a check
+# that never happened — which Section 118 forbids. So the column's default means
+# "nobody has said", the backfill turns "nobody has said" into the explicit
+# LEGACY_UNKNOWN, and the writer always supplies a real state. On a fresh
+# database the backfill matches nothing and the divergence never exists.
+#
+# `last_verified_at` and `expires_at` are empty-string-for-absent rather than
+# NULL, matching `locked_until` and `revoked_at` in this same file. The reason is
+# portability of the comparison: `WHERE expires_at != '' AND expires_at <= ?`
+# behaves identically on SQLite and PostgreSQL, whereas three-valued NULL logic
+# has bitten this package before in the `valid_to` comparisons.
+#
+# `supersedes_id` / `superseded_by_id` are 0-for-absent integers and are
+# deliberately NOT foreign keys. A chain link must survive the row it points at
+# being archived, and a FK with a cascade would delete history to preserve
+# referential tidiness — the exact trade this package refuses everywhere else.
+# The writer is responsible for keeping both ends of a link consistent and for
+# refusing a cycle; the columns only carry the result.
+#
+# `created_by_actor_type` / `created_by_actor_id` answer "who put this here",
+# which the audit table can also answer but only by scan. Denormalising it onto
+# the row is what makes "show me everything UNDX proposed" a query rather than a
+# join across an audit log with its own retention window.
+
+# ---------------------------------------------------------------------------
+# Fact history — the durable record of what happened to a fact
+# ---------------------------------------------------------------------------
+# Note what this table does not have: a value column, an old_value, a new_value,
+# or a free-text note. That is not an oversight and it is not the audit table's
+# no-content rule copied by reflex — it is a consequence of how supersession
+# works here. A fact is never edited in place; a revision writes a *new row* and
+# links it, so the previous value is still a row in `private_facts` with its own
+# provenance, its own validity window and its own sensitivity label. Putting the
+# old value here as well would create a second copy of private content in a
+# table with different access paths and no sensitivity column to govern it.
+#
+# What history carries instead is the *shape* of the change: which operation,
+# which states it moved between, who did it, and when. Combined with the
+# retained rows, that is enough to reconstruct the whole story of a fact —
+# "confirmed by the owner in March, disputed in June when the bank disagreed,
+# superseded in July by fact 4471" — without the timeline itself becoming a
+# place secrets accumulate.
+#
+# `reason_code` is a closed vocabulary owned by the writer, never anything a
+# member typed. A free-text reason field is how "member said the valuation was
+# wrong because the surveyor from 14 Oakfield..." ends up in a history table.
+FACT_HISTORY_TABLE_DDL = f"""
+CREATE TABLE IF NOT EXISTS {FACT_HISTORY_TABLE} (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_user_id INTEGER NOT NULL,
+    fact_id INTEGER NOT NULL,
+    operation TEXT NOT NULL,
+    from_verification_state TEXT NOT NULL DEFAULT '',
+    to_verification_state TEXT NOT NULL DEFAULT '',
+    from_lifecycle_state TEXT NOT NULL DEFAULT '',
+    to_lifecycle_state TEXT NOT NULL DEFAULT '',
+    provenance_type TEXT NOT NULL DEFAULT '',
+    related_fact_id INTEGER NOT NULL DEFAULT 0,
+    actor_user_id INTEGER NOT NULL DEFAULT 0,
+    actor_type TEXT NOT NULL DEFAULT '',
+    reason_code TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
 )
 """
 
@@ -280,6 +359,7 @@ CREATE TABLE IF NOT EXISTS {GRANTS_TABLE} (
 
 TABLE_DDL: dict[str, str] = {
     FACTS_TABLE: FACTS_TABLE_DDL,
+    FACT_HISTORY_TABLE: FACT_HISTORY_TABLE_DDL,
     NODES_TABLE: NODES_TABLE_DDL,
     EDGES_TABLE: EDGES_TABLE_DDL,
     AUDIT_TABLE: AUDIT_TABLE_DDL,
@@ -287,11 +367,26 @@ TABLE_DDL: dict[str, str] = {
     GRANTS_TABLE: GRANTS_TABLE_DDL,
 }
 
-#: Columns added after the first release. Empty today; the loop exists so the
-#: first person who needs a column does not have to invent the mechanism, and
-#: so `ensure` is already the place it goes rather than a route handler.
+#: Columns added after the first release. `services.db` rewrites these into
+#: `ADD COLUMN IF NOT EXISTS` on PostgreSQL and `ensure` skips any column
+#: already present on SQLite, so re-running is a no-op on both engines. Every
+#: entry must carry a default: an existing table has rows, and `NOT NULL` with
+#: no default fails on the first one.
+#:
+#: The defaults here are all "absent" markers, never plausible-looking values.
+#: A migration that invents a value is indistinguishable, one release later,
+#: from a member having supplied it.
 TABLE_ADDED_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
-    FACTS_TABLE: (),
+    FACTS_TABLE: (
+        ("verification_state", "TEXT NOT NULL DEFAULT ''"),
+        ("last_verified_at", "TEXT NOT NULL DEFAULT ''"),
+        ("expires_at", "TEXT NOT NULL DEFAULT ''"),
+        ("supersedes_id", "INTEGER NOT NULL DEFAULT 0"),
+        ("superseded_by_id", "INTEGER NOT NULL DEFAULT 0"),
+        ("created_by_actor_type", "TEXT NOT NULL DEFAULT ''"),
+        ("created_by_actor_id", "INTEGER NOT NULL DEFAULT 0"),
+    ),
+    FACT_HISTORY_TABLE: (),
     NODES_TABLE: (),
     EDGES_TABLE: (),
     AUDIT_TABLE: (),
@@ -306,6 +401,19 @@ REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
         "owner_user_id", "fact_key", "subject_type", "subject_id", "fact_type",
         "value_type", "typed_value", "provenance_type", "observed_at",
         "valid_from", "sensitivity", "domain", "lifecycle_state",
+        # Ledger core. These are listed as *required*, not merely added, on
+        # purpose: a reader that cannot see `verification_state` cannot tell a
+        # confirmed fact from a disputed one, and would render both as plain
+        # truth. Reporting the schema as `missing` in that situation is the
+        # honest outcome — the alternative is a Private Facts screen that looks
+        # fully working while silently omitting the one axis it was rebuilt to
+        # show. `ensure` adds these itself, so the only way to reach `missing`
+        # is a database the process genuinely cannot alter.
+        "verification_state", "supersedes_id", "superseded_by_id",
+        "last_verified_at", "expires_at",
+    ),
+    FACT_HISTORY_TABLE: (
+        "owner_user_id", "fact_id", "operation", "created_at",
     ),
     NODES_TABLE: (
         "owner_user_id", "node_key", "node_type", "lifecycle_state",
@@ -342,6 +450,23 @@ INDEX_DDL: tuple[str, ...] = (
     f"ON {FACTS_TABLE} (owner_user_id, fact_type, lifecycle_state)",
     f"CREATE INDEX IF NOT EXISTS idx_private_facts_domain "
     f"ON {FACTS_TABLE} (owner_user_id, domain, sensitivity)",
+    # The review queue's query: "which of my facts need looking at". Without
+    # this it is a full scan of the member's facts on every open of the screen
+    # whose whole purpose is to be opened often.
+    f"CREATE INDEX IF NOT EXISTS idx_private_facts_verification "
+    f"ON {FACTS_TABLE} (owner_user_id, verification_state, lifecycle_state)",
+    # Expiry sweeps and "what lapses soon" reminders. Rows with no expiry carry
+    # '' and sort together at one end, so the scan for a date range never has
+    # to touch them.
+    f"CREATE INDEX IF NOT EXISTS idx_private_facts_expiry "
+    f"ON {FACTS_TABLE} (owner_user_id, expires_at)",
+    # Walking a supersession chain backwards — "what did this replace" — is the
+    # question the fact-detail screen asks, and it asks it per row.
+    f"CREATE INDEX IF NOT EXISTS idx_private_facts_chain "
+    f"ON {FACTS_TABLE} (owner_user_id, supersedes_id)",
+    # History is read one fact at a time, newest first.
+    f"CREATE INDEX IF NOT EXISTS idx_private_fact_history_fact "
+    f"ON {FACT_HISTORY_TABLE} (owner_user_id, fact_id, created_at)",
     f"CREATE INDEX IF NOT EXISTS idx_private_nodes_type "
     f"ON {NODES_TABLE} (owner_user_id, node_type, lifecycle_state)",
     f"CREATE INDEX IF NOT EXISTS idx_private_edges_source "
@@ -482,6 +607,50 @@ def _result(status: str, *, present=None, missing=None, added=None,
     }
 
 
+#: What a fact row's verification state is set to when the column was added
+#: underneath it. Restated as a literal rather than imported from ``model``
+#: because ``schema`` is the bottom of this package's dependency order and
+#: importing upward to write DDL would invert it. ``test_private_schema``
+#: asserts the two agree.
+LEGACY_VERIFICATION_STATE = "LEGACY_UNKNOWN"
+
+
+def _backfill_verification_state(cur, present: dict[str, set[str]]) -> int:
+    """Give pre-existing fact rows an honest verification state.
+
+    Section 118: a row written before verification was recorded must say that
+    its verification is unknown. It must not be relabelled UNVERIFIED, which
+    would assert that the fact was looked at and found unchecked, and it must
+    certainly not be relabelled VERIFIED because its provenance happened to say
+    so — provenance and verification are the two axes this work exists to pull
+    apart, and collapsing them during the migration would defeat the migration.
+
+    Idempotent by construction: the predicate is ``verification_state = ''``,
+    which no writer ever produces, so a second run matches nothing. Never
+    raises — a backfill that cannot run leaves rows in the empty state, and the
+    read path treats empty as LEGACY_UNKNOWN for exactly that reason.
+
+    Returns the number of rows updated, or ``-1`` if the backfill could not be
+    attempted. Zero and "could not look" are different answers and this package
+    does not report them as the same number.
+    """
+    if "verification_state" not in present.get(FACTS_TABLE, set()):
+        return -1
+    try:
+        cur.execute(
+            f"UPDATE {FACTS_TABLE} SET verification_state = ? "
+            f"WHERE verification_state = ''",
+            (LEGACY_VERIFICATION_STATE,),
+        )
+    except Exception as exc:
+        LOGGER.warning("PRIVATE_FACT_BACKFILL_FAILED error=%s", exc)
+        return -1
+    count = int(getattr(cur, "rowcount", 0) or 0)
+    if count > 0:
+        LOGGER.info("PRIVATE_FACT_BACKFILL_APPLIED rows=%s", count)
+    return count
+
+
 def ensure_private_schema(cur, *, force: bool = False) -> dict:
     """Create the Private Office tables, columns and indexes. Never raises.
 
@@ -496,10 +665,12 @@ def ensure_private_schema(cur, *, force: bool = False) -> dict:
     ``force`` bypasses the process cache, for tests and for any caller with
     reason to believe the tables changed underneath it.
 
-    On cost: after the first success this is a dictionary read. Before it, four
-    ``CREATE TABLE IF NOT EXISTS``, four introspections and seven
-    ``CREATE INDEX IF NOT EXISTS`` — cheap enough to leave in a worker's path
-    rather than only at boot, which is the property Stage 34 actually asks for.
+    On cost: after the first success this is a dictionary read. Before it, one
+    ``CREATE TABLE IF NOT EXISTS`` and one introspection per table, the
+    ``CREATE INDEX IF NOT EXISTS`` statements, and one backfill ``UPDATE`` whose
+    predicate matches nothing on an already-migrated database — cheap enough to
+    leave in a worker's path rather than only at boot, which is the property
+    Stage 34 actually asks for.
     """
     global _SCHEMA_READY
     if _SCHEMA_READY and not force:
@@ -556,6 +727,13 @@ def ensure_private_schema(cur, *, force: bool = False) -> dict:
                 LOGGER.exception("PRIVATE_SCHEMA_ENSURE_FAILED stage=verify table=%s", table)
                 return _result(STATUS_ERROR, added=added, error=f"{table}: {str(exc)[:400]}")
 
+    # After the re-introspection, never before it: on a migrating database the
+    # column does not exist in `present` until the ALTERs above have run and
+    # been re-read, and a backfill that skipped because it consulted a stale
+    # snapshot would leave every legacy row in the empty state while reporting
+    # a clean `ready`.
+    backfilled = _backfill_verification_state(cur, present)
+
     gaps = missing_columns(present)
     if gaps:
         LOGGER.error(
@@ -567,9 +745,10 @@ def ensure_private_schema(cur, *, force: bool = False) -> dict:
 
     _SCHEMA_READY = True
     LOGGER.info(
-        "PRIVATE_SCHEMA_READY tables=%s added=%s",
+        "PRIVATE_SCHEMA_READY tables=%s added=%s backfilled=%s",
         ",".join(f"{t}({len(present[t])})" for t in TABLES),
         ",".join(added) or "-",
+        backfilled if backfilled >= 0 else "unavailable",
     )
     return _result(STATUS_READY, present=present, added=added)
 

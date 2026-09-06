@@ -57,6 +57,30 @@ LOGGER = logging.getLogger("private_office.audit")
 ACTION_FACT_CREATE = "PRIVATE_FACT_CREATE"
 ACTION_FACT_SUPERSEDE = "PRIVATE_FACT_SUPERSEDE"
 ACTION_FACT_READ = "PRIVATE_FACT_READ"
+# Ledger-core vocabulary — one verb per durable fact operation rather than a
+# single PRIVATE_FACT_UPDATE with a free-text discriminator. `action` is queried
+# by equality, so "show me everything the owner confirmed" and "show me
+# everything that was revoked" have to be filters, not string parsing over a
+# details column. Confirm and dispute in particular are the two halves of the
+# review loop and collapsing them would make the loop unmeasurable.
+ACTION_FACT_CONFIRM = "PRIVATE_FACT_CONFIRM"
+ACTION_FACT_REVISE = "PRIVATE_FACT_REVISE"
+ACTION_FACT_DISPUTE = "PRIVATE_FACT_DISPUTE"
+ACTION_FACT_ARCHIVE = "PRIVATE_FACT_ARCHIVE"
+#: Withdrawal of the belief itself, not merely filing it away. Separate from
+#: ARCHIVE because archive means "no longer shown" and revoke means "was never
+#: safe to rely on" — the second is a signal about the *source*, and a source
+#: whose facts keep getting revoked is a finding.
+ACTION_FACT_REVOKE = "PRIVATE_FACT_REVOKE"
+#: The system retired a fact because its validity window closed. Distinct from
+#: every other verb here in that no human did it; folding it into ARCHIVE would
+#: make the sweep indistinguishable from owner action.
+ACTION_FACT_EXPIRE = "PRIVATE_FACT_EXPIRE"
+ACTION_FACT_HISTORY_READ = "PRIVATE_FACT_HISTORY_READ"
+#: A detected conflict was settled. Pairs with ACTION_CONFLICT_DETECTED below —
+#: detection without resolution is an open question, and only having the first
+#: verb makes the backlog impossible to measure.
+ACTION_CONFLICT_RESOLVED = "PRIVATE_CONFLICT_RESOLVED"
 ACTION_GRAPH_WRITE = "PRIVATE_GRAPH_WRITE"
 ACTION_GRAPH_READ = "PRIVATE_GRAPH_READ"
 ACTION_CONTEXT_RETRIEVED = "PRIVATE_CONTEXT_RETRIEVED"
@@ -85,6 +109,20 @@ ACTION_RECORD_CREATE = "PRIVATE_RECORD_CREATE"
 ACTION_RECORD_UPDATE = "PRIVATE_RECORD_UPDATE"
 ACTION_RECORD_REVISE = "PRIVATE_RECORD_REVISE"
 ACTION_RECORD_READ = "PRIVATE_RECORD_READ"
+#: A closed record was deliberately returned to its working state. Separate from
+#: ``PRIVATE_RECORD_UPDATE`` because it is the one status move that discards a
+#: closure stamp: the ``resolved_at`` on an obligation, the ``completed_at`` on a
+#: request. "Which of my closed matters were reopened, by whom, and when" has to
+#: be an equality filter over one action, not a reconstruction from update rows
+#: that do not carry the old status.
+ACTION_RECORD_REOPEN = "PRIVATE_RECORD_REOPEN"
+#: A status move the type's transition contract forbids. Written on the refusal
+#: path, with ``OUTCOME_DENIED``, because a rejected transition is a fact about
+#: how the record was *nearly* changed and it is the only trace of an attempt
+#: that left no row behind. A store that logs only successful writes cannot tell
+#: a quiet system from one where something is repeatedly trying to force a
+#: resolved obligation back open.
+ACTION_RECORD_TRANSITION_DENIED = "PRIVATE_RECORD_TRANSITION_DENIED"
 #: A masked field's real value was handed to somebody. This is the single most
 #: consequential row this table holds — every other record action moves metadata
 #: around, and this one is the moment a passport number left storage — so it is
@@ -140,6 +178,14 @@ ACTIONS: tuple[str, ...] = (
     ACTION_FACT_CREATE,
     ACTION_FACT_SUPERSEDE,
     ACTION_FACT_READ,
+    ACTION_FACT_CONFIRM,
+    ACTION_FACT_REVISE,
+    ACTION_FACT_DISPUTE,
+    ACTION_FACT_ARCHIVE,
+    ACTION_FACT_REVOKE,
+    ACTION_FACT_EXPIRE,
+    ACTION_FACT_HISTORY_READ,
+    ACTION_CONFLICT_RESOLVED,
     ACTION_GRAPH_WRITE,
     ACTION_GRAPH_READ,
     ACTION_CONTEXT_RETRIEVED,
@@ -157,6 +203,8 @@ ACTIONS: tuple[str, ...] = (
     ACTION_RECORD_UPDATE,
     ACTION_RECORD_REVISE,
     ACTION_RECORD_READ,
+    ACTION_RECORD_REOPEN,
+    ACTION_RECORD_TRANSITION_DENIED,
     ACTION_RECORD_FIELD_REVEAL,
     ACTION_DOCUMENT_CREATE,
     ACTION_DOCUMENT_READ,
@@ -320,3 +368,87 @@ def record_denied(
         purpose=purpose,
         outcome=OUTCOME_DENIED,
     )
+
+
+#: The write actions over the six record primitives, in the order a reader would
+#: want them explained. ``READ`` and ``FIELD_REVEAL`` are excluded on purpose: an
+#: activity feed is what happened *to* the member's affairs, and folding in every
+#: time something was looked at would bury six real changes under six hundred
+#: views. Who looked is a different question with a different surface.
+RECORD_ACTIVITY_ACTIONS: tuple[str, ...] = (
+    ACTION_RECORD_CREATE,
+    ACTION_RECORD_UPDATE,
+    ACTION_RECORD_REVISE,
+    ACTION_RECORD_REOPEN,
+)
+
+MAX_ACTIVITY_ROWS = 200
+
+
+def recent_record_activity(
+    cur,
+    *,
+    owner_user_id: int,
+    limit: int = 25,
+    actions: tuple[str, ...] = RECORD_ACTIVITY_ACTIONS,
+) -> list[dict]:
+    """What has actually happened to this owner's records, newest first.
+
+    Read from the audit trail rather than reconstructed from the records
+    themselves. The difference is not cosmetic: a current row carries
+    ``updated_at``, which says a change happened but not what kind, and it
+    carries nothing at all about a change that was later superseded. Ordering
+    rows by ``updated_at`` produces a feed that calls every event "updated" and
+    silently drops the history that made the record interesting.
+
+    What this deliberately does *not* claim: which status an update moved the
+    record *to*. The audit table stores metadata only — no detail column, by
+    design — so the row records that a status changed, not that it changed to
+    COMPLETED. Inferring the target from the record's present status would be
+    exactly the reconstruction this function exists to avoid, and would relabel
+    every historical change with today's outcome.
+
+    Owner-scoped, bounded, and never raises: a failure to read the trail returns
+    an empty list, because activity is context beside the numbers rather than
+    one of them. The caller distinguishes "no activity" from "counts failed" on
+    the counts, which do raise.
+    """
+    owner = int(owner_user_id or 0)
+    if owner <= 0:
+        return []
+    wanted = tuple(a for a in actions if a in ACTIONS)
+    if not wanted:
+        return []
+    bounded = max(1, min(int(limit or 25), MAX_ACTIVITY_ROWS))
+    try:
+        cur.execute(
+            f"SELECT action, object_type, object_id, actor_user_id, outcome, "
+            f"created_at FROM {_schema.AUDIT_TABLE} "
+            f"WHERE owner_user_id = ? AND action IN "
+            f"({', '.join('?' for _ in wanted)}) "
+            f"ORDER BY id DESC LIMIT {bounded}",
+            tuple([owner] + list(wanted)),
+        )
+        rows = cur.fetchall() or []
+    except Exception as exc:  # noqa: BLE001
+        LOGGER.warning("PRIVATE_AUDIT_ACTIVITY_READ_FAILED error=%s", exc)
+        return []
+
+    out: list[dict] = []
+    for row in rows:
+        data = dict(row) if hasattr(row, "keys") else {
+            "action": row[0], "object_type": row[1], "object_id": row[2],
+            "actor_user_id": row[3], "outcome": row[4], "created_at": row[5],
+        }
+        out.append({
+            "action": str(data.get("action") or ""),
+            "record_type": str(data.get("object_type") or ""),
+            "record_id": str(data.get("object_id") or ""),
+            # Who, as self-or-other. The actor id itself is not returned: the
+            # owner already knows their own id, and a provider's id is somebody
+            # else's identifier travelling on the member's wire.
+            "by_owner": int(data.get("actor_user_id") or 0) == owner,
+            "outcome": str(data.get("outcome") or ""),
+            "at": str(data.get("created_at") or ""),
+        })
+    return out
