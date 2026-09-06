@@ -1219,6 +1219,35 @@ def _register_private_record_capabilities() -> None:
 _register_private_record_capabilities()
 
 
+# The Capital Graph portfolio projection. Derived from its spec module for the
+# same construction-not-review reason as the record views. Zero fields is the
+# registration's strongest statement: nothing a model authors can widen this
+# read, and the view itself refuses to total an incomplete set — a null total
+# with named unpriced symbols, never a guessed one.
+def _register_private_capital_capability() -> None:
+    from services.private_office import undx_capital_spec as _po_capital
+
+    _cid = _po_capital.CAPABILITY_ID
+    _register(CapabilitySpec(
+        capability_id=_cid,
+        description=_po_capital.SPEC["description"],
+        intents=tuple(_po_capital.SPEC["intents"]),
+        risk=RiskLevel.READ_ONLY,
+        confirmation=ConfirmationPolicy.NEVER,
+        tool_name=_po_capital.tool_name(_cid),
+        permission=PermissionScope.SELF_ACCOUNT_ONLY,
+        fields=(),
+        executor=_po_capital.executor_name(_cid),
+        verifier="",
+        native_route=_po_capital.SPEC["native_route"],
+        result_card=CardType.SEARCH_RESULTS,
+        audit_category=_po_capital.AUDIT_CATEGORY,
+    ))
+
+
+_register_private_capital_capability()
+
+
 # The five shipped feature reads — documents, people, briefings, shield
 # posture, concierge desk. Derived from
 # ``services.private_office.undx_feature_reads_spec`` exactly as Batch C

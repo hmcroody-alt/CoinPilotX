@@ -80,6 +80,11 @@ PRODUCTION_TOOL_REGISTRY: dict[str, dict[str, Any]] = {
     "pulsesoc.private_requests.list": {"method": None, "route": "services.private_office.retrieval.retrieve_records", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
     "pulsesoc.private_risks.list": {"method": None, "route": "services.private_office.retrieval.retrieve_records", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
     "pulsesoc.private_opportunities.list": {"method": None, "route": "services.private_office.retrieval.retrieve_records", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
+    "pulsesoc.private_tasks.list": {"method": None, "route": "services.private_office.retrieval.retrieve_records", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
+    "pulsesoc.private_projects.list": {"method": None, "route": "services.private_office.retrieval.retrieve_records", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
+    # Capital Graph portfolio projection. Read-only, zero fields, and the
+    # sanctioned view refuses to total an incomplete set rather than guessing.
+    "pulsesoc.private_capital.portfolio": {"method": None, "route": "services.private_office.portfolio_projection.portfolio_view", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
     # The five shipped feature reads, one per engine, each behind its own
     # feature gate. Same structural owner scope: no field names an account.
     "pulsesoc.private_documents.list": {"method": None, "route": "services.private_office.documents.list_documents", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},

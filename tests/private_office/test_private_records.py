@@ -132,7 +132,8 @@ def stage_schema() -> None:
     # table with `private_audit_events` would make the access log writable by
     # the feature that records life events.
     tables = [records.private_table_for(t) for t in records.RECORD_TYPES]
-    check("the six primitives have six distinct tables", len(set(tables)) == 6, str(tables))
+    check("every primitive has its own distinct table",
+          len(set(tables)) == len(records.RECORD_TYPES), str(tables))
     check("the domain event table is not the audit table",
           records.private_table_for(records.TYPE_EVENT) != schema.AUDIT_TABLE)
 
@@ -560,6 +561,9 @@ def stage_isolation() -> None:
             records.TYPE_RISK: {"risk_type": "A_RISK", "summary": "A's risk."},
             records.TYPE_OPPORTUNITY: {"title": "A's opportunity",
                                        "opportunity_type": "INVESTMENT"},
+            records.TYPE_TASK: {"title": "A's task", "task_type": "ERRAND"},
+            records.TYPE_PROJECT: {"title": "A's project",
+                                   "project_type": "RELOCATION"},
         }[record_type]
         created = records.create_record(
             cur, record_type=record_type, owner_user_id=USER_A, **fields)
