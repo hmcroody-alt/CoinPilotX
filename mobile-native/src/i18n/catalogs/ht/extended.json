@@ -5017,6 +5017,22 @@
             "provider_required": "Li bezwen yon founisè ki poko konfigire.",
             "flag_disabled": "Sèvè a fèmen li.",
             "notInThisVersion": "Poko disponib nan vèsyon app sa a."
+          },
+          "intelligence": {
+            "title": "Rezime reyinyon an",
+            "noTranscript": "Pa gen okenn transkripsyon pou reyinyon sa a. Tout sa ki anba a se evènman sèvè a anrejistre — anyen pa dekri sa yo te di awotvwa.",
+            "factsHeading": "Sèvè a anrejistre",
+            "draftHeading": "Bouyon rezime",
+            "draftHint": "Revize epi modifye anvan ou sove. Anyen pa sove otomatikman.",
+            "titleLabel": "Tit",
+            "save": "Sove nan biwo a",
+            "savedHeading": "Nòt ou sove yo",
+            "noneSaved": "Poko gen anyen ki sove.",
+            "provenance": {
+              "SYSTEM_FACT": "Fè sèvè",
+              "USER_CONFIRMED": "Ou konfime li",
+              "TRANSCRIPT_DERIVED": "Soti nan transkripsyon"
+            }
           }
         },
         "summary": {

@@ -608,5 +608,28 @@ def api_private_meetings_artifact_list(meeting_ref: str):
     return po_http._no_store({"ok": True, "artifacts": rows})
 
 
+@private_office_meetings_blueprint.route(
+    "/api/private-office/meetings/<meeting_ref>/intelligence", methods=["GET"])
+def api_private_meetings_intelligence(meeting_ref: str):
+    """Deterministic meeting intelligence (mission §32-36). Server-computed
+    SYSTEM_FACT lines only — no model call, so this endpoint cannot fabricate.
+    The returned draft requires explicit human confirmation; saving it goes
+    back through the artifacts POST with USER_CONFIRMED provenance."""
+    user, refusal = _entry()
+    if refusal:
+        return refusal
+
+    def work(cur):
+        return po_meetings.build_intelligence(
+            cur, user_id=user["user_id"], meeting_ref=meeting_ref)
+
+    payload, err = _run(work, log_tag="PRIVATE_MEETINGS_INTEL_FAILED",
+                        fail_message="We could not build the meeting summary "
+                                     "just now.")
+    if err:
+        return err
+    return po_http._no_store({"ok": True, "intelligence": payload})
+
+
 def register(app) -> None:
     app.register_blueprint(private_office_meetings_blueprint)

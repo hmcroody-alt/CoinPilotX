@@ -132,21 +132,59 @@ export type MeetingRecording = {
   stopped_at: string;
 };
 
+/**
+ * Provenance is the backend's vocabulary, verbatim. TRANSCRIPT_DERIVED is
+ * structurally refused server-side (409 transcript_unavailable) while no
+ * transcription provider exists — the app never sends it.
+ */
 export type MeetingArtifactProvenance =
-  | "HUMAN_NOTE"
-  | "AI_SUMMARY"
-  | "AI_ACTION_ITEMS"
-  | "TRANSCRIPT_DERIVED";
+  | "TRANSCRIPT_DERIVED"
+  | "USER_CONFIRMED"
+  | "SYSTEM_FACT";
+
+export type MeetingArtifactType =
+  | "SUMMARY"
+  | "DECISION"
+  | "ACTION"
+  | "OBLIGATION"
+  | "RISK"
+  | "NOTE";
 
 export type MeetingArtifact = {
   id: number;
+  meeting_id: number;
   artifact_type: string;
   provenance: MeetingArtifactProvenance;
   title: string;
   content: string;
   evidence_refs: string;
-  created_by_user_id: number;
+  saved_record_id: number;
   created_at: string;
+};
+
+/** One server-computed fact. Always SYSTEM_FACT — the server has no LLM path. */
+export type MeetingIntelligenceFact = {
+  kind: string;
+  text: string;
+  provenance: MeetingArtifactProvenance;
+};
+
+export type MeetingIntelligence = {
+  meeting_ref: string;
+  generated_at: string;
+  facts: MeetingIntelligenceFact[];
+  limitations: {
+    transcript_available: boolean;
+    note: string;
+  };
+  draft: {
+    artifact_type: MeetingArtifactType;
+    title: string;
+    content: string;
+    /** Always true — the server never auto-saves; a human must confirm. */
+    requires_confirmation: boolean;
+    save_provenance: MeetingArtifactProvenance;
+  };
 };
 
 /** Coarse, screen-facing refusal classes mapped from backend responses. */

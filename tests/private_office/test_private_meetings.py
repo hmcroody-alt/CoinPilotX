@@ -614,6 +614,91 @@ def test_transcript_derived_artifacts_refused_user_confirmed_saved(cur):
         cur, user_id=HOST, meeting_ref=m["public_id"])) == 1
 
 
+def test_intelligence_is_deterministic_system_facts_only(cur):
+    """§32-36: every fact SYSTEM_FACT, transcript truthfully absent, draft
+    requires human confirmation and saves as USER_CONFIRMED."""
+    m = _instant(cur)
+    meetings.post_message(cur, user_id=HOST, meeting_ref=m["public_id"],
+                          body="hello")
+    meetings.post_message(cur, user_id=HOST, meeting_ref=m["public_id"],
+                          body="👍", kind=meetings.KIND_REACTION)
+    intel = meetings.build_intelligence(
+        cur, user_id=HOST, meeting_ref=m["public_id"])
+    assert intel["meeting_ref"] == m["public_id"]
+    assert intel["facts"], "facts must not be empty for a live meeting"
+    assert all(f["provenance"] == meetings.PROV_SYSTEM for f in intel["facts"])
+    chat = [f for f in intel["facts"] if f["kind"] == "chat"]
+    assert chat and "1 chat message(s)" in chat[0]["text"]
+    assert "1 reaction(s)" in chat[0]["text"]
+    # Truthful limitation: no transcript exists anywhere in this codebase.
+    assert intel["limitations"]["transcript_available"] is False
+    assert "No transcript exists" in intel["limitations"]["note"]
+    # The draft is a proposal, never an auto-save.
+    draft = intel["draft"]
+    assert draft["requires_confirmation"] is True
+    assert draft["save_provenance"] == meetings.PROV_USER
+    assert draft["artifact_type"] == "SUMMARY"
+    cur.execute(f"SELECT COUNT(*) AS n FROM {meetings.MEETING_ARTIFACT_TABLE}")
+    assert int(cur.fetchone()["n"]) == 0
+    # Governed save-to-office: the reviewed draft lands as USER_CONFIRMED…
+    saved = meetings.save_artifact(
+        cur, user_id=HOST, meeting_ref=m["public_id"],
+        artifact_type=draft["artifact_type"], provenance=draft["save_provenance"],
+        title=draft["title"], content=draft["content"])
+    assert saved["provenance"] == meetings.PROV_USER
+    # …and the fabrication path stays shut even for the server's own draft.
+    _reject(lambda: meetings.save_artifact(
+        cur, user_id=HOST, meeting_ref=m["public_id"],
+        artifact_type=draft["artifact_type"],
+        provenance=meetings.PROV_TRANSCRIPT,
+        title=draft["title"], content=draft["content"]),
+        status=409, code="transcript_unavailable")
+
+
+def test_intelligence_is_participant_gated(cur):
+    m = _instant(cur)
+    _reject(lambda: meetings.build_intelligence(
+        cur, user_id=STRANGER, meeting_ref=m["public_id"]),
+        status=403, code="not_admitted")
+    # A waiting-room occupant is not in the meeting yet.
+    meetings.join_meeting(cur, user_id=GUEST, meeting_ref=m["meeting_code"])
+    _reject(lambda: meetings.build_intelligence(
+        cur, user_id=GUEST, meeting_ref=m["public_id"]),
+        status=403, code="not_admitted")
+    meetings.admit_participant(
+        cur, actor_user_id=HOST, meeting_ref=m["public_id"], user_id=GUEST)
+    # Attendance counts joined_at truthfully: admitted-but-not-joined is 0.
+    intel = meetings.build_intelligence(
+        cur, user_id=GUEST, meeting_ref=m["public_id"])
+    attendance = [f for f in intel["facts"] if f["kind"] == "attendance"]
+    assert attendance and "0 of 2" in attendance[0]["text"]
+    meetings.mark_joined(cur, user_id=HOST, meeting_ref=m["public_id"])
+    meetings.mark_joined(cur, user_id=GUEST, meeting_ref=m["public_id"])
+    intel = meetings.build_intelligence(
+        cur, user_id=GUEST, meeting_ref=m["public_id"])
+    attendance = [f for f in intel["facts"] if f["kind"] == "attendance"]
+    assert "2 of 2" in attendance[0]["text"]
+
+
+def test_intelligence_recording_and_timing_facts(cur, monkeypatch):
+    monkeypatch.setenv("PRIVATE_MEETINGS_RECORDING_ENABLED", "1")
+    m = _instant(cur)
+    rec = meetings.start_recording(
+        cur, actor_user_id=HOST, meeting_ref=m["public_id"])
+    meetings.mark_recording_active(
+        cur, meeting_ref=m["public_id"], recording_id=rec["id"])
+    meetings.stop_recording(cur, actor_user_id=HOST, meeting_ref=m["public_id"])
+    meetings.end_meeting(cur, actor_user_id=HOST, meeting_ref=m["public_id"])
+    intel = meetings.build_intelligence(
+        cur, user_id=HOST, meeting_ref=m["public_id"])
+    kinds = {f["kind"] for f in intel["facts"]}
+    assert {"status", "timing", "attendance", "chat", "recording"} <= kinds
+    recording = [f for f in intel["facts"] if f["kind"] == "recording"]
+    assert "COMPLETED" in recording[0]["text"]
+    timing = " ".join(f["text"] for f in intel["facts"] if f["kind"] == "timing")
+    assert "Ended at" in timing and "Duration:" in timing
+
+
 # ---------------------------------------------------------------------------
 # Isolation, invites, audit hygiene
 # ---------------------------------------------------------------------------

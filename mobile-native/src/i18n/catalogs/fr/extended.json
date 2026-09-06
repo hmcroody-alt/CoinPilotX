@@ -5048,6 +5048,22 @@
             "provider_required": "Nécessite un fournisseur qui n'est pas configuré.",
             "flag_disabled": "Désactivé par le serveur.",
             "notInThisVersion": "Pas encore disponible dans cette version de l'app."
+          },
+          "intelligence": {
+            "title": "Résumé de la réunion",
+            "noTranscript": "Aucune transcription n'existe pour cette réunion. Tout ce qui suit est un événement enregistré par le serveur — rien ne décrit ce qui a été dit à voix haute.",
+            "factsHeading": "Enregistré par le serveur",
+            "draftHeading": "Brouillon du résumé",
+            "draftHint": "Relisez et modifiez avant d'enregistrer. Rien n'est enregistré automatiquement.",
+            "titleLabel": "Titre",
+            "save": "Enregistrer dans le bureau",
+            "savedHeading": "Vos notes enregistrées",
+            "noneSaved": "Rien d'enregistré pour le moment.",
+            "provenance": {
+              "SYSTEM_FACT": "Fait serveur",
+              "USER_CONFIRMED": "Confirmé par vous",
+              "TRANSCRIPT_DERIVED": "De la transcription"
+            }
           }
         },
         "summary": {

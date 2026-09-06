@@ -592,6 +592,28 @@ def stage_artifacts():
     check("artifacts are owner-scoped — the guest sees none of the host's",
           resp.status_code == 200 and rows == [], str(rows))
 
+    # Intelligence (§32-36): deterministic SYSTEM_FACT lines, truthful
+    # limitations, and a draft that demands human confirmation.
+    _as(HOST)
+    resp = client.get(f"/api/private-office/meetings/{ref}/intelligence")
+    intel = (resp.get_json() or {}).get("intelligence") or {}
+    facts = intel.get("facts") or []
+    check("intelligence returns facts", resp.status_code == 200 and bool(facts),
+          f"{resp.status_code} {len(facts)}")
+    check("every intelligence fact is SYSTEM_FACT — no fabrication path",
+          all(f.get("provenance") == "SYSTEM_FACT" for f in facts),
+          str({f.get("provenance") for f in facts}))
+    limitations = intel.get("limitations") or {}
+    check("intelligence admits there is no transcript",
+          limitations.get("transcript_available") is False
+          and "No transcript" in str(limitations.get("note")),
+          str(limitations))
+    draft = intel.get("draft") or {}
+    check("the draft requires human confirmation and saves USER_CONFIRMED",
+          draft.get("requires_confirmation") is True
+          and draft.get("save_provenance") == "USER_CONFIRMED",
+          str(draft.get("save_provenance")))
+
 
 # ---------------------------------------------------------------------------
 # Presence + end for everyone

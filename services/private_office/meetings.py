@@ -1546,6 +1546,119 @@ def list_artifacts(cur, *, user_id: int, meeting_ref: object,
     return [_project_artifact(_row(item)) for item in cur.fetchall()]
 
 
+def build_intelligence(cur, *, user_id: int, meeting_ref: object) -> dict:
+    """Deterministic meeting intelligence (mission §32-36).
+
+    Every fact below is computed from stored rows and tagged SYSTEM_FACT.
+    There is no model call anywhere on this path, so fabrication is
+    structurally impossible: nothing here can describe what was *said* in the
+    meeting — only what the server recorded *happening*. The draft is never
+    auto-saved; saving goes through save_artifact() with USER_CONFIRMED
+    provenance after a human reviewed and (optionally) edited it, and
+    TRANSCRIPT_DERIVED remains refused while no transcript exists.
+    """
+    _require_enabled()
+    ensure_meetings_schema(cur)
+    meeting = _require_meeting(cur, meeting_ref)
+    viewer = int(user_id or 0)
+    participant = _participant_row(cur, int(meeting["id"]), viewer)
+    if not participant or participant.get("state") in {P_REMOVED, P_BLOCKED,
+                                                       P_WAITING_ROOM}:
+        raise PrivateMeetingRejected(
+            "Only meeting participants can view meeting intelligence.",
+            status=403, code="not_admitted")
+    meeting_id = int(meeting["id"])
+    facts: list[dict] = []
+
+    def _fact(kind: str, text: str) -> None:
+        facts.append({"kind": kind, "text": text, "provenance": PROV_SYSTEM})
+
+    title = str(meeting.get("title") or "")
+    _fact("status", f'Meeting "{title}" is {meeting.get("status") or ""}.')
+    started = str(meeting.get("started_at") or "")
+    ended = str(meeting.get("ended_at") or "")
+    if started:
+        _fact("timing", f"Started at {started}.")
+    if ended:
+        reason = str(meeting.get("end_reason") or "")
+        suffix = f" (reason: {reason})." if reason else "."
+        _fact("timing", f"Ended at {ended}{suffix}")
+    start_dt = _parse_iso(started)
+    end_dt = _parse_iso(ended)
+    if start_dt and end_dt and end_dt >= start_dt:
+        minutes = int((end_dt - start_dt).total_seconds() // 60)
+        _fact("timing", f"Duration: {minutes} minute(s).")
+
+    cur.execute(
+        f"SELECT * FROM {PARTICIPANTS_TABLE} WHERE meeting_id=? "
+        f"ORDER BY id ASC LIMIT 100", (meeting_id,))
+    roster = [_row(item) for item in cur.fetchall()]
+    attended = [row for row in roster if str(row.get("joined_at") or "")]
+    _fact("attendance",
+          f"{len(attended)} of {len(roster)} invited participant(s) joined.")
+    for row in attended:
+        left = str(row.get("left_at") or "")
+        suffix = f", left at {left}." if left else "."
+        _fact("attendance",
+              f"User {int(row.get('user_id') or 0)} ({row.get('role')}) "
+              f"joined at {row.get('joined_at')}{suffix}")
+
+    counts: dict[str, int] = {}
+    senders = 0
+    for kind in (KIND_TEXT, KIND_REACTION):
+        cur.execute(
+            f"SELECT COUNT(*) AS n FROM {MESSAGES_TABLE} "
+            f"WHERE meeting_id=? AND kind=?", (meeting_id, kind))
+        counts[kind] = int(_row(cur.fetchone()).get("n") or 0)
+    cur.execute(
+        f"SELECT COUNT(DISTINCT sender_user_id) AS n FROM {MESSAGES_TABLE} "
+        f"WHERE meeting_id=? AND kind=?", (meeting_id, KIND_TEXT))
+    senders = int(_row(cur.fetchone()).get("n") or 0)
+    _fact("chat",
+          f"{counts[KIND_TEXT]} chat message(s) from {senders} sender(s); "
+          f"{counts[KIND_REACTION]} reaction(s).")
+
+    cur.execute(
+        f"SELECT * FROM {RECORDINGS_TABLE} WHERE meeting_id=? "
+        f"ORDER BY id ASC LIMIT 20", (meeting_id,))
+    recordings = [_row(item) for item in cur.fetchall()]
+    if recordings:
+        for rec in recordings:
+            stopped = str(rec.get("stopped_at") or "")
+            suffix = f" until {stopped}." if stopped else "."
+            _fact("recording",
+                  f"Recording #{int(rec.get('id') or 0)} "
+                  f"({rec.get('status') or ''}) started by user "
+                  f"{int(rec.get('started_by_user_id') or 0)} at "
+                  f"{rec.get('started_at')}{suffix}")
+    else:
+        _fact("recording", "No recording was made.")
+
+    transcript_available = transcription_configured()
+    limitations = {
+        "transcript_available": transcript_available,
+        "note": ("" if transcript_available else
+                 "No transcript exists for this meeting — transcription is "
+                 "not configured. Nothing below describes what was said out "
+                 "loud; every fact is a server-recorded event."),
+    }
+    draft_content = "\n".join(f"- {item['text']}" for item in facts)
+    draft = {
+        "artifact_type": "SUMMARY",
+        "title": _clip(f"Summary: {title}", MAX_TITLE_CHARS),
+        "content": draft_content[:MAX_ARTIFACT_CONTENT_CHARS],
+        "requires_confirmation": True,
+        "save_provenance": PROV_USER,
+    }
+    return {
+        "meeting_ref": str(meeting.get("public_id") or ""),
+        "generated_at": _now_iso(),
+        "facts": facts,
+        "limitations": limitations,
+        "draft": draft,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Projections + reads
 # ---------------------------------------------------------------------------

@@ -5016,6 +5016,22 @@
             "provider_required": "需要尚未配置的服务提供方。",
             "flag_disabled": "已被服务器关闭。",
             "notInThisVersion": "此版本应用暂不支持。"
+          },
+          "intelligence": {
+            "title": "会议摘要",
+            "noTranscript": "本次会议不存在文字记录。以下全部是服务器记录的事件——没有任何内容描述口头说了什么。",
+            "factsHeading": "服务器记录",
+            "draftHeading": "摘要草稿",
+            "draftHint": "保存前请检查并编辑。不会自动保存任何内容。",
+            "titleLabel": "标题",
+            "save": "保存到办公室",
+            "savedHeading": "你保存的笔记",
+            "noneSaved": "还没有保存任何内容。",
+            "provenance": {
+              "SYSTEM_FACT": "服务器事实",
+              "USER_CONFIRMED": "由你确认",
+              "TRANSCRIPT_DERIVED": "来自文字记录"
+            }
           }
         },
         "summary": {
