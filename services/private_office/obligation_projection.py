@@ -419,6 +419,160 @@ def sweep(cur, *, user_id: int) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Read — the liabilities side of the capital picture
+# ---------------------------------------------------------------------------
+#: How many projected liabilities one read may return. Bounded for the same
+#: reason every other private read is: an unbounded read of a member's
+#: obligations is an export waiting for one caller to forget a limit. The read
+#: reports ``truncated`` rather than silently showing a prefix, because a
+#: summary built on a prefix is a smaller number presented as the whole.
+MAX_LIABILITY_ROWS = 200
+
+#: An amount with no currency cannot be added to anything. It is not converted,
+#: not assumed, and not dropped — it is counted here and disclosed, so a caller
+#: can say "plus one obligation in an unstated currency" instead of quietly
+#: leaving it out of a total that claims to be complete.
+CURRENCY_UNSPECIFIED = "UNSPECIFIED"
+
+
+def _fact_of(rows: list[dict], fact_type: str) -> dict | None:
+    return next((row for row in rows if row.get("fact_type") == fact_type), None)
+
+
+def liabilities_view(cur, *, owner_user_id: int, actor_user_id: int) -> dict:
+    """The projected liabilities, summed only where they are actually known.
+
+    Owner-only, like every other capital read: a caller who is not the owner
+    gets the denied shape rather than a thinner list, because a thinner list
+    is an answer and the denial is the truth.
+
+    Three honesty rules are load-bearing here and each has a mutation test:
+
+    * **Unknown is not zero.** An obligation the record store has no amount
+      for projects no amount fact (:func:`project_user`), so ``amount`` is
+      ``None`` here and the row lands in ``unquantified`` — never in a sum as
+      a zero. A member with one unquantified mortgage must not be shown
+      liabilities of $0.
+    * **Mixed currencies are not silently added.** Amounts are grouped by
+      their own currency and ``known_amount`` is populated only when exactly
+      one real currency is present. There is no FX here; an approved rate
+      source with a timestamp would be a separate decision.
+    * **A prefix is not the whole.** ``complete`` is False whenever the read
+      was truncated or any obligation is unquantified, and callers must not
+      present the sum as a total while it is False.
+
+    Sweeps before reading (the record store has no outbox), so the view
+    reflects record changes whose projection pass has not run yet.
+    """
+    owner = int(owner_user_id or 0)
+    actor = int(actor_user_id or 0)
+    if owner <= 0 or actor != owner:
+        _audit.record_denied(
+            cur, actor_user_id=actor, owner_user_id=owner,
+            object_type="LIABILITY_VIEW", purpose="user_request",
+        )
+        return {"ok": False, "denied": {"reason": "actor_is_not_owner"},
+                "liabilities": [], "totals": {}, "sync": {}}
+
+    sweep_result = sweep(cur, user_id=owner)
+
+    nodes = [
+        node for node in _projected_liability_nodes(cur, owner=owner).values()
+        if str(node.get("lifecycle_state") or "") == _model.LIFECYCLE_ACTIVE
+    ]
+    nodes.sort(key=lambda row: int(row.get("id") or 0))
+    truncated = len(nodes) > MAX_LIABILITY_ROWS
+    nodes = nodes[:MAX_LIABILITY_ROWS]
+
+    liabilities: list[dict] = []
+    by_currency: dict[str, dict] = {}
+    unquantified = 0
+
+    for node in nodes:
+        node_id = int(node["id"])
+        rows = _facts.list_facts(
+            cur, owner_user_id=owner, subject_type=_facts.SUBJECT_NODE,
+            subject_id=node_id, fact_types=list(PROJECTED_FACT_TYPES),
+            domains=[_model.DOMAIN_FINANCIAL],
+            sensitivity_ceiling=_model.SENSITIVITY_CONFIDENTIAL, limit=20,
+        )
+        title_fact = _fact_of(rows, FACT_TITLE)
+        kind_fact = _fact_of(rows, FACT_KIND)
+        amount_fact = _fact_of(rows, FACT_AMOUNT)
+        currency_fact = _fact_of(rows, FACT_CURRENCY)
+        due_fact = _fact_of(rows, FACT_DUE_AT)
+
+        raw_amount = (amount_fact or {}).get("value_number")
+        amount = float(raw_amount) if raw_amount is not None else None
+        currency = str((currency_fact or {}).get("value") or "").strip().upper()
+
+        if amount is None:
+            unquantified += 1
+        else:
+            key = currency or CURRENCY_UNSPECIFIED
+            bucket = by_currency.setdefault(key, {"amount": 0.0, "count": 0})
+            bucket["amount"] += amount
+            bucket["count"] += 1
+
+        ref = str(node.get("external_ref") or "")
+        liabilities.append({
+            "node_id": node_id,
+            "root_id": int(ref[len(LIABILITY_REF_PREFIX):] or 0)
+            if ref.startswith(LIABILITY_REF_PREFIX) else 0,
+            "title": str((title_fact or {}).get("value") or ""),
+            "kind": str((kind_fact or {}).get("value") or ""),
+            # None, never 0.0 — the read side must be able to see the absence.
+            "amount": amount,
+            "currency": currency,
+            "quantified": amount is not None,
+            "due_at": (due_fact or {}).get("value") or None,
+            "projected_at": (title_fact or {}).get("observed_at"),
+            "freshness": (title_fact or {}).get("freshness"),
+            "evidence": {
+                "fact_ids": [int(row["id"]) for row in rows],
+                "provenance": (title_fact or {}).get("provenance"),
+            },
+        })
+
+    real_currencies = sorted(
+        name for name in by_currency if name != CURRENCY_UNSPECIFIED
+    )
+    unspecified = by_currency.get(CURRENCY_UNSPECIFIED, {"amount": 0.0, "count": 0})
+    single = (len(real_currencies) == 1 and not unspecified["count"])
+    complete = (not truncated and not unquantified and not unspecified["count"]
+                and len(real_currencies) <= 1)
+
+    return {
+        "ok": True,
+        "liabilities": liabilities,
+        "totals": {
+            # Populated only when one currency answers for every quantified
+            # row. Named "known" because that is all it is: the sum of what is
+            # known, over a set that `complete` says whether to trust as whole.
+            "known_amount": (by_currency[real_currencies[0]]["amount"]
+                             if single else None),
+            "currency": real_currencies[0] if single else "",
+            "by_currency": {name: dict(bucket)
+                            for name, bucket in sorted(by_currency.items())},
+            "currencies": real_currencies,
+            "count": len(liabilities),
+            "quantified": len(liabilities) - unquantified,
+            "unquantified": unquantified,
+            "unspecified_currency": unspecified["count"],
+            "complete": complete,
+            "truncated": truncated,
+            "limit": MAX_LIABILITY_ROWS,
+        },
+        "sync": {
+            "projected": bool(sweep_result.get("ok")),
+            "obligations": int(sweep_result.get("obligations") or 0),
+            "retired": int(sweep_result.get("retired") or 0),
+            "skipped": int(sweep_result.get("skipped") or 0),
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
 # Reconciliation — prove the mirror matches the record store, and repair it
 # ---------------------------------------------------------------------------
 def reconcile(cur, *, user_id: int, repair: bool = False) -> dict:
