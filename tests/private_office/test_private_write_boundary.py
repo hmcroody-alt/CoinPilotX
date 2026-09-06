@@ -164,6 +164,15 @@ DAMAGE_FIXTURES: dict[str, int] = {
     # can speak to, because neither is a property of the module.
     os.path.join("tests", "private_office",
                  "test_private_facts_read_routes.py"): 1,
+    # Two, and they are the whole point of the suite they sit in. The integrity
+    # sweep looks for states the writers *cannot produce* — a supersession
+    # cycle, a pointer to an absent row, a row still filed ACTIVE after being
+    # corrected, a verified badge with nothing under it. If any of those could
+    # be created through the package the writer would have a hole in it, so the
+    # only way to test the detector is to damage the table directly: one generic
+    # UPDATE helper, plus the unparseable citation `link_evidence` rejects by
+    # design.
+    os.path.join("tests", "private_office", "test_private_integrity.py"): 2,
 }
 
 _TARGET = "(?:" + "|".join(PRIVATE_TABLES + TABLE_CONSTANTS) + ")"

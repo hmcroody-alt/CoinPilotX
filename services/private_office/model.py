@@ -556,6 +556,82 @@ REVIEW_WEIGHT: dict[str, int] = {
 }
 
 # ---------------------------------------------------------------------------
+# Integrity findings
+# ---------------------------------------------------------------------------
+# What a structural sweep of the store can find. Distinct from `REVIEW_REASONS`
+# in a way worth stating plainly, because the two lists look similar and answer
+# different questions.
+#
+# A review reason is about the *content* of a fact: it is old, it is contested,
+# nobody has checked it. Those are things a member decides about, and every one
+# of them can be true of a perfectly well-formed store.
+#
+# An integrity finding is about the *store itself* being in a state its own
+# writer cannot produce. A supersession cycle is not a fact the member should
+# reconsider — it is a shape that means some walk of the chain will return the
+# wrong answer. Mixing the two would put "you should look at this again" and
+# "this database is lying to you" in one queue with one weight scale, and the
+# second would be triaged behind the first for the rest of time.
+#
+# Everything here is therefore expected to have a count of zero on a healthy
+# store, which is the strongest thing that can be said about a diagnostic: a
+# non-zero count is *always* worth explaining, and never routine.
+INTEGRITY_ACTIVE_WITH_SUCCESSOR = "ACTIVE_WITH_SUCCESSOR"
+INTEGRITY_SUPERSESSION_CYCLE = "SUPERSESSION_CYCLE"
+INTEGRITY_VERIFIED_WITHOUT_EVIDENCE = "VERIFIED_WITHOUT_EVIDENCE"
+INTEGRITY_VERIFIED_EVIDENCE_UNRESOLVABLE = "VERIFIED_EVIDENCE_UNRESOLVABLE"
+INTEGRITY_SUPERSESSION_DANGLING = "SUPERSESSION_DANGLING"
+INTEGRITY_SUPERSESSION_ASYMMETRIC = "SUPERSESSION_ASYMMETRIC"
+INTEGRITY_SUPERSEDED_WITHOUT_SUCCESSOR = "SUPERSEDED_WITHOUT_SUCCESSOR"
+INTEGRITY_PROVENANCE_ORPHANED = "PROVENANCE_ORPHANED"
+INTEGRITY_PROVENANCE_UNREADABLE = "PROVENANCE_UNREADABLE"
+INTEGRITY_DUPLICATE_VALUE = "DUPLICATE_VALUE"
+
+INTEGRITY_FINDINGS: tuple[str, ...] = (
+    INTEGRITY_ACTIVE_WITH_SUCCESSOR,
+    INTEGRITY_SUPERSESSION_CYCLE,
+    INTEGRITY_VERIFIED_WITHOUT_EVIDENCE,
+    INTEGRITY_VERIFIED_EVIDENCE_UNRESOLVABLE,
+    INTEGRITY_SUPERSESSION_DANGLING,
+    INTEGRITY_SUPERSESSION_ASYMMETRIC,
+    INTEGRITY_SUPERSEDED_WITHOUT_SUCCESSOR,
+    INTEGRITY_PROVENANCE_ORPHANED,
+    INTEGRITY_PROVENANCE_UNREADABLE,
+    INTEGRITY_DUPLICATE_VALUE,
+)
+
+#: Severity per finding, ordered by *what the store does wrong while the finding
+#: stands*, not by how hard it looks to fix.
+#:
+#: ACTIVE_WITH_SUCCESSOR leads, above even a cycle. A cycle makes a chain walk
+#: return a truncated answer, which is visibly wrong; an ACTIVE row that already
+#: has a successor is invisibly wrong — it is a value the member corrected,
+#: still filed as current, still eligible for every read and every projection.
+#: The correction happened and the store kept quoting the old number anyway.
+#:
+#: VERIFIED_WITHOUT_EVIDENCE sits above the structural link findings because it
+#: is the one that reaches the member as a *claim*. A broken pointer degrades a
+#: history view; a badge with nothing under it is an assertion the store cannot
+#: substantiate, rendered as though it could.
+#:
+#: DUPLICATE_VALUE ranks last and deliberately so. See `integrity.py` for why
+#: the honest definition of a duplicate here is narrow: two rows agreeing from
+#: two different sources are corroboration, and a sweep that reported those as
+#: duplicates would be advising the member to delete their second source.
+INTEGRITY_SEVERITY: dict[str, int] = {
+    INTEGRITY_ACTIVE_WITH_SUCCESSOR: 100,
+    INTEGRITY_SUPERSESSION_CYCLE: 90,
+    INTEGRITY_VERIFIED_WITHOUT_EVIDENCE: 80,
+    INTEGRITY_VERIFIED_EVIDENCE_UNRESOLVABLE: 70,
+    INTEGRITY_SUPERSESSION_DANGLING: 60,
+    INTEGRITY_SUPERSESSION_ASYMMETRIC: 50,
+    INTEGRITY_SUPERSEDED_WITHOUT_SUCCESSOR: 40,
+    INTEGRITY_PROVENANCE_ORPHANED: 30,
+    INTEGRITY_PROVENANCE_UNREADABLE: 20,
+    INTEGRITY_DUPLICATE_VALUE: 10,
+}
+
+# ---------------------------------------------------------------------------
 # Value types (Stage 6 `typed_value`)
 # ---------------------------------------------------------------------------
 # `typed_value` is stored as text alongside a discriminator, and numerically
@@ -757,6 +833,11 @@ def normalize_review_reason(value: object) -> str | None:
     return _canonical(value, REVIEW_REASONS)
 
 
+def normalize_integrity_finding(value: object) -> str | None:
+    """Canonical integrity finding kind, or ``None``."""
+    return _canonical(value, INTEGRITY_FINDINGS)
+
+
 def normalize_evidence_relation(value: object) -> str | None:
     """Canonical evidence relation, or ``None``."""
     return _canonical(value, EVIDENCE_RELATIONS)
@@ -898,3 +979,14 @@ def review_weight(value: object) -> int:
 def resolution_closes(value: object) -> bool:
     """Does this outcome end the conflict? Unknown is False."""
     return (normalize_resolution(value) or "") in RESOLUTION_CLOSES
+
+
+def integrity_severity(value: object) -> int:
+    """Severity of an integrity finding. Unknown ranks at zero.
+
+    Zero for the same reason :func:`review_weight` uses zero: a finding kind
+    this module cannot name came from something that is itself broken, and
+    letting it sort to the top would put the least trustworthy diagnostic in
+    front of the most serious real one.
+    """
+    return INTEGRITY_SEVERITY.get(normalize_integrity_finding(value) or "", 0)

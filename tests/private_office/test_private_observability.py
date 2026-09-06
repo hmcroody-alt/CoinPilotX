@@ -69,6 +69,7 @@ from services.private_office import health  # noqa: E402
 from services.private_office import model  # noqa: E402
 from services.private_office import records  # noqa: E402
 from services.private_office import retrieval  # noqa: E402
+from services.private_office import integrity  # noqa: E402
 from services.private_office import review  # noqa: E402
 from services.private_office import schema  # noqa: E402
 from services.private_office import telemetry  # noqa: E402
@@ -556,6 +557,41 @@ def stage_health_surface():
           not any(key in degraded["review"]
                   for key in ("total", "items", "queue", "by_reason")),
           str(sorted(degraded["review"])))
+
+    # The integrity sweep publishes on the same terms, with one addition. Its
+    # ordering is the product too, so the severities are published for the same
+    # reason the review weights are. But it is also the one surface in the
+    # package that can come back having been *unable to look* — a pointer past
+    # the scan window, an evidence table it could not read — and an operator
+    # watching findings rise needs to distinguish "the store got worse" from
+    # "the sweep started seeing more of it". That is only answerable if the
+    # reasons are enumerable from outside, so the vocabulary is asserted whole
+    # rather than by sample.
+    check("the integrity vocabulary is published, severities included",
+          degraded["integrity"]["severity"] == dict(model.INTEGRITY_SEVERITY)
+          and degraded["integrity"]["findings"] == list(model.INTEGRITY_FINDINGS),
+          str(degraded["integrity"].get("findings")))
+    check("every way the sweep can fail to look is named",
+          degraded["integrity"]["uncheckable_reasons"]
+          == list(integrity.UNCHECKABLE_REASONS),
+          str(degraded["integrity"].get("uncheckable_reasons")))
+    check("the integrity bounds are published alongside review's",
+          degraded["integrity"]["bounds"]["max_scan"]
+          == integrity.MAX_INTEGRITY_SCAN
+          and degraded["integrity"]["bounds"]["max_findings"]
+          == integrity.MAX_INTEGRITY_FINDINGS
+          and degraded["integrity"]["bounds"]["max_link_probe"]
+          == integrity.MAX_LINK_PROBE,
+          str(degraded["integrity"]["bounds"]))
+    # The disclosure risk here is sharper than the review queue's. A count of
+    # integrity findings is a count of the ways one member's store is damaged,
+    # and publishing it would hand out a map of which accounts are in a bad
+    # state to anyone who can read a health page.
+    check("and the integrity section counts nobody's damage",
+          not any(key in degraded["integrity"]
+                  for key in ("counts", "total_findings", "findings_by_kind",
+                              "scanned", "uncheckable")),
+          str(sorted(degraded["integrity"])))
 
     # A count that fails is None, never 0 — the rule, checked at the seam.
     class _CountsExplode:

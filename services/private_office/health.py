@@ -54,6 +54,7 @@ from datetime import datetime, timezone
 from services import db as _db
 from services.private_office import facts as _facts
 from services.private_office import feature_matrix as _fm
+from services.private_office import integrity as _integrity
 from services.private_office import model as _model
 from services.private_office import read_model as _read_model
 from services.private_office import retrieval as _retrieval
@@ -272,6 +273,45 @@ def _read_model_section() -> dict:
     }
 
 
+def _integrity_section() -> dict:
+    """What a structural sweep can find, how far it looks, and what it cannot.
+
+    Answered from code, like the three sections above, and for the sharpest
+    version of the same reason. The other sections decline to report real
+    numbers because doing so would mean picking an owner. Here it would be worse
+    than a disclosure: a count of integrity findings is a count of ways one
+    member's store is damaged, and an operational endpoint that published it
+    would be handing out a map of exactly which accounts are in a bad state to
+    whoever can read a health page.
+
+    The finding vocabulary and its severities are published for the reason the
+    review weights are: the ordering is the product. A sweep that puts something
+    unexpected at the top has to be answerable without reading the source.
+
+    ``uncheckable_reasons`` is the part that does not have a precedent above,
+    and it is the most useful line here. Every other bound in this file limits
+    how much was *done*; these name the ways the sweep can come back having been
+    unable to look at something — a pointer past the scan window, an evidence
+    table it could not read. An operator who sees findings rise needs to be able
+    to ask whether the store got worse or the sweep merely started seeing more
+    of it, and that question is only answerable if the reasons are enumerable
+    from outside.
+    """
+    return {
+        "implementation": IMPL_LIVE,
+        "findings": list(_model.INTEGRITY_FINDINGS),
+        "severity": dict(_model.INTEGRITY_SEVERITY),
+        "uncheckable_reasons": list(_integrity.UNCHECKABLE_REASONS),
+        "bounds": {
+            "max_scan": _integrity.MAX_INTEGRITY_SCAN,
+            "max_findings": _integrity.MAX_INTEGRITY_FINDINGS,
+            "max_link_probe": _integrity.MAX_LINK_PROBE,
+            "max_evidence_links": _integrity.MAX_EVIDENCE_LINKS,
+            "max_evidence_refs": _integrity.MAX_EVIDENCE_REFS,
+        },
+    }
+
+
 def _telemetry_section() -> dict:
     """Stage 38 — is the event table itself sound?
 
@@ -372,6 +412,7 @@ def private_office_health(
         "retrieval": _retrieval_section(),
         "review": _review_section(),
         "read_model": _read_model_section(),
+        "integrity": _integrity_section(),
         "telemetry": telemetry_section,
         # The feature census, so a reader can see at a glance how much of the
         # Private Office is actually built versus entitled. `status` owns this;

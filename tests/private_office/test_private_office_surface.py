@@ -385,6 +385,8 @@ def stage_every_vocabulary_normalizes_to_itself():
         ("NODE_TYPES", model.NODE_TYPES, model.normalize_node_type),
         ("RELATION_TYPES", model.RELATION_TYPES, model.normalize_relation),
         ("LIFECYCLE_STATES", model.LIFECYCLE_STATES, model.normalize_lifecycle),
+        ("INTEGRITY_FINDINGS", model.INTEGRITY_FINDINGS,
+         model.normalize_integrity_finding),
     )
     for name, values, normalizer in pairs:
         broken = [v for v in values if normalizer(v) != v]
