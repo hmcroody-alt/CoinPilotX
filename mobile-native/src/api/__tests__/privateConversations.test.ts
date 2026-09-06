@@ -51,6 +51,7 @@ import {
   getPrivateConversationCapabilities,
   getPrivateConversationMessages,
   linkPrivateConversation,
+  listConversationsForTarget,
   listPrivateConversations,
   markPrivateConversationRead,
   parsePrivateConversationCapabilities,
@@ -223,6 +224,37 @@ describe("refusals stay refusals", () => {
     expect(result.state).toBe(expected);
     // The load-bearing half: no branch of this function returns rows.
     expect((result as { conversations?: unknown[] }).conversations).toBeUndefined();
+  });
+
+  it.each([
+    [402, "NOT_ENTITLED", { state: "NOT_ENTITLED", minimum_tier: "elite" }],
+    [403, "FEATURE_DISABLED", { state: "FEATURE_DISABLED" }],
+    [404, "NOT_IMPLEMENTED", { state: "NOT_IMPLEMENTED" }],
+    [423, "LOCKED", { state: "LOCKED", setup_required: false }],
+    [503, "UNAVAILABLE", { state: "UNAVAILABLE" }]
+  ])(
+    "turns HTTP %s from the reverse lookup into %s, never 'not discussed anywhere'",
+    async (status, expected, details) => {
+      // The whole reason this route exists rather than a client-side scan: a
+      // document screen may only say "no linked conversations" off a successful
+      // read. Any refusal that came back shaped like an empty list would put
+      // that sentence under a failed fetch.
+      mockPulseApi.mockRejectedValue(wireError(status, { ok: false, ...details }));
+      const result = await listConversationsForTarget("DOCUMENT", 42);
+      expect(result.state).toBe(expected);
+      expect((result as { conversations?: unknown[] }).conversations).toBeUndefined();
+      expect((result as { count?: number }).count).toBeUndefined();
+    }
+  );
+
+  it("reports a genuinely unlinked object as an empty READY, not a refusal", async () => {
+    // The other half of the same rule. "Nothing is linked here" is a real
+    // answer and must survive as one, or every document grows a permanent
+    // error state.
+    mockPulseApi.mockResolvedValue({ ok: true, conversations: [], capabilities: {} });
+    const result = await listConversationsForTarget("DOCUMENT", 999);
+    expect(result).toMatchObject({ state: "READY", count: 0 });
+    expect((result as { conversations: unknown[] }).conversations).toEqual([]);
   });
 
   it("keeps a locked office locked even when the body says otherwise", async () => {
@@ -420,6 +452,28 @@ describe("the routes it actually calls", () => {
     expect(paths).toContain(`${PRIVATE_CONVERSATIONS_PATH}?scope=GROUP`);
     // No second alias. One route family, as the foundation map settled.
     expect(paths.some((path) => path.includes("/api/pulse/"))).toBe(false);
+  });
+
+  it("asks the server for the reverse lookup instead of scanning the list", async () => {
+    mockPulseApi.mockResolvedValue({ ok: true, conversations: [], capabilities: {} });
+    await listConversationsForTarget("DOCUMENT", 42);
+
+    const [path] = mockPulseApi.mock.calls[0];
+    expect(String(path)).toBe(`${PRIVATE_CONVERSATIONS_PATH}/links/DOCUMENT/42`);
+    // Exactly one request. A client that answered this by paging the member's
+    // conversation list would show up here as several — and would be capped, so
+    // it could report "not discussed anywhere" about a thread it never fetched.
+    expect(mockPulseApi).toHaveBeenCalledTimes(1);
+  });
+
+  it("escapes a target id that would otherwise reshape the path", async () => {
+    // Record ids are opaque and some domains put slashes in them. The server
+    // route takes `<path:target_id>` for that reason; the client must not let
+    // one climb into a different route.
+    mockPulseApi.mockResolvedValue({ ok: true, conversations: [], capabilities: {} });
+    await listConversationsForTarget("RECORD", "2024/Q3");
+    const [path] = mockPulseApi.mock.calls[0];
+    expect(String(path)).toBe(`${PRIVATE_CONVERSATIONS_PATH}/links/RECORD/2024%2FQ3`);
   });
 
   it("uses DELETE to unlink rather than a second endpoint", async () => {

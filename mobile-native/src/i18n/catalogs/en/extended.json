@@ -5182,6 +5182,12 @@
             "title": "Not an Office conversation",
             "body": "This thread has no Private Office classification. It is still available in Messenger."
           }
+        },
+        "untitled": "Untitled conversation",
+        "linked": {
+          "title": "DISCUSSED IN",
+          "unavailable": "We could not check this for linked conversations.",
+          "none": "Not referenced in any conversation you are part of."
         }
       }
     },

@@ -25,6 +25,11 @@
 ``DELETE /api/private-office/conversations/<ref>/links``
     The three operations that are genuinely this package's own.
 
+``GET    /api/private-office/conversations/links/<link_type>/<target_id>``
+    The reverse of the two link routes: which of the member's threads reference
+    a given document, record, fact or meeting. Filtered by conversation
+    membership, never by the link table alone — see ``list_for_target``.
+
 ``GET    /api/private-office/conversations/capabilities``
     What this subsystem can and cannot do, including the flat statement that
     nothing here is end-to-end encrypted.
@@ -455,6 +460,65 @@ def api_private_office_conversation_unlink(ref):
         return _unavailable("We could not remove that link just now.")
 
     return po_http._no_store({"ok": True, "links": links})
+
+
+# ---------------------------------------------------------------------------
+# The reverse direction
+# ---------------------------------------------------------------------------
+
+@private_office_conversations_blueprint.route(
+    f"{BASE}/links/<link_type>/<path:target_id>", methods=["GET"])
+def api_private_office_conversations_for_target(link_type, target_id):
+    """Which of the member's threads reference one object.
+
+    Sits under this blueprint rather than under documents or records because the
+    answer is about conversations: it is filtered by conversation membership,
+    audited as a conversation read, and gated by the conversations feature flag.
+    A copy of it living in the documents pack would be a second place that
+    decides who may see a thread.
+
+    ``target_id`` takes ``path:`` because record and document identifiers are
+    opaque strings that already contain slashes in some domains. The value is
+    still run through the same ``safe_object_id`` shape check as a write, so a
+    permissive converter does not become a permissive validator.
+
+    A member with no linked threads gets ``200`` and an empty list. The refusal
+    codes are the ones the rest of this surface uses, so the client's existing
+    tagged union covers this route without a new branch — and an empty list here
+    can only ever mean "nothing is linked", never "the read failed".
+    """
+    user, refusal = _entry()
+    if refusal:
+        return refusal
+
+    try:
+        limit = int(request.args.get("limit") or po_conversations.DEFAULT_LIST_LIMIT)
+    except (TypeError, ValueError):
+        limit = po_conversations.DEFAULT_LIST_LIMIT
+
+    def work(cur):
+        return po_conversations.list_for_target(
+            cur,
+            actor_user_id=user["user_id"],
+            link_type=link_type,
+            target_id=target_id,
+            limit=limit,
+        )
+
+    try:
+        listed = po_http._with_cursor(work)
+    except po_conversations.PrivateConversationRejected as exc:
+        return _rejected(exc)
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("PRIVATE_CONVERSATIONS_FOR_TARGET_FAILED")
+        return _unavailable("We could not check that for linked conversations.")
+
+    return po_http._no_store({
+        "ok": True,
+        "conversations": listed["items"],
+        "count": listed["count"],
+        "capabilities": po_conversations.capability_states(),
+    })
 
 
 def register(app) -> None:

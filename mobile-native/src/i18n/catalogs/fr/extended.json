@@ -5182,6 +5182,12 @@
             "title": "Pas une conversation du bureau",
             "body": "Ce fil n’a aucun classement Bureau privé. Il reste disponible dans Messages."
           }
+        },
+        "untitled": "Conversation sans titre",
+        "linked": {
+          "title": "ABORDÉ DANS",
+          "unavailable": "Nous n'avons pas pu vérifier les conversations liées.",
+          "none": "Aucune conversation dont vous faites partie n'y fait référence."
         }
       }
     },

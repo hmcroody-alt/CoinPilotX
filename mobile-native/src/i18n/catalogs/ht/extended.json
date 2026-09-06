@@ -5151,6 +5151,12 @@
             "title": "Se pa yon konvèsasyon biwo",
             "body": "Konvèsasyon sa a pa gen klasifikasyon Biwo prive. Li toujou disponib nan Mesaj."
           }
+        },
+        "untitled": "Konvèsasyon san tit",
+        "linked": {
+          "title": "PALE DE LI NAN",
+          "unavailable": "Nou pa t kapab tcheke konvèsasyon ki lye yo.",
+          "none": "Li pa mansyone nan okenn konvèsasyon ou ladan."
         }
       }
     },

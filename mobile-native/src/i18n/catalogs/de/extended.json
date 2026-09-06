@@ -5182,6 +5182,12 @@
             "title": "Keine Büro-Unterhaltung",
             "body": "Dieser Thread hat keine Private-Office-Klassifizierung. Er ist weiterhin in den Nachrichten verfügbar."
           }
+        },
+        "untitled": "Unbenannte Unterhaltung",
+        "linked": {
+          "title": "BESPROCHEN IN",
+          "unavailable": "Wir konnten nicht nach verknüpften Unterhaltungen suchen.",
+          "none": "In keiner Unterhaltung erwähnt, an der du beteiligt bist."
         }
       }
     },

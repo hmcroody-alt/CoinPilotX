@@ -292,6 +292,44 @@ export async function listPrivateConversations(
   }
 }
 
+/**
+ * Which of the member's Office threads reference one object.
+ *
+ * The reverse of `linkPrivateConversation`, and the read a document, record,
+ * fact or meeting screen makes to show "discussed in N conversations".
+ *
+ * It is a server round trip rather than a filter over `listPrivateConversations`
+ * on purpose. That list is capped, so scanning it locally would answer "not
+ * discussed anywhere" whenever the linking thread sat past the cap — an empty
+ * state asserted from data the client never had. Only the server, which
+ * intersects the link rows with the member's own visible set, can say "none"
+ * truthfully.
+ */
+export async function listConversationsForTarget(
+  linkType: PrivateConversationLinkType,
+  targetId: string | number
+): Promise<PrivateConversationListResult> {
+  try {
+    const body = asRecordObject(
+      await pulseApi<unknown>(
+        `${PRIVATE_CONVERSATIONS_PATH}/links/${encodeURIComponent(
+          linkType
+        )}/${encodeURIComponent(String(targetId))}`,
+        { headers: await officeRequestHeaders() }
+      )
+    );
+    const conversations = asList(body.conversations).map(parseSummary);
+    return {
+      state: "READY",
+      conversations,
+      count: conversations.length,
+      capabilities: parsePrivateConversationCapabilities(body.capabilities)
+    };
+  } catch (error) {
+    return privateFeatureRefusal(error);
+  }
+}
+
 export type PrivateConversationCapabilitiesResult =
   | { state: "READY"; capabilities: PrivateConversationCapabilities }
   | PrivateFeatureRefusal;

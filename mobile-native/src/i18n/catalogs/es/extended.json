@@ -5182,6 +5182,12 @@
             "title": "No es una conversación de la oficina",
             "body": "Este hilo no tiene clasificación de Oficina privada. Sigue disponible en Mensajes."
           }
+        },
+        "untitled": "Conversación sin título",
+        "linked": {
+          "title": "SE HABLA DE ESTO EN",
+          "unavailable": "No pudimos comprobar si hay conversaciones vinculadas.",
+          "none": "No se menciona en ninguna conversación de la que formes parte."
         }
       }
     },

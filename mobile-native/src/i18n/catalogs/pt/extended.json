@@ -5182,6 +5182,12 @@
             "title": "Não é uma conversa do escritório",
             "body": "Este tópico não tem classificação de Escritório privado. Continua disponível nas Mensagens."
           }
+        },
+        "untitled": "Conversa sem título",
+        "linked": {
+          "title": "DISCUTIDO EM",
+          "unavailable": "Não foi possível verificar se há conversas vinculadas.",
+          "none": "Não é mencionado em nenhuma conversa da qual você participa."
         }
       }
     },
