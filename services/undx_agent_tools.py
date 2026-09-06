@@ -2786,12 +2786,21 @@ def _private_records_executor(capability_id: str) -> Callable[[int, dict[str, An
 def _private_feature_read_executor(capability_id: str) -> Callable[[int, dict[str, Any]], ToolResult]:
     """One feature-read executor, bound to its capability at registration time.
 
-    The five shipped Private Office features — documents, people, briefings,
-    shield, concierge — each get a read and only a read. The shape is
+    The shipped Private Office features — documents, people, briefings,
+    shield, concierge — each get reads and only reads. The shape is
     ``_private_records_executor``'s, with one deliberate difference: the gate
     runs on the capability's *own* feature id from the spec, so the documents
     read refuses when document intelligence is dark rather than when some
     sibling is, and each kill switch turns off exactly the reads it names.
+
+    A feature may declare more than one read — document intelligence declares
+    two, the file list and the cited facts — and they share a feature id, so
+    the gating above is unaffected: one switch, both reads.
+
+    A capability that returns ``ok: False`` becomes a failure here rather than
+    an empty success, deliberately. A withheld read reported as zero records
+    would have the model tell the member their vault is empty, which is a false
+    statement about their own store made in PulseSoc's voice.
     """
 
     def _read_feature(user_id: int, arguments: dict[str, Any]) -> ToolResult:

@@ -764,16 +764,16 @@ Merging §13 with this addendum, and ordering by what blocks what:
 
 | Rank | Gap | Note |
 |---|---|---|
-| 1 | **A1 — document facts unreachable via `retrieve()`** | New. A shipped defect. Blocks every retrieval-backed answer; must precede capability work |
-| 2 | #1 — no PDF/OCR capability | Unchanged. A decision, not a task |
-| 3 | #2 — no prompt-injection defence for document text | Unchanged. Theoretical until a capability returns content; load-bearing the instant one does |
-| 4 | #8 **as revised** — no document *reasoning* capability | Registration exists; **extend `undx_feature_reads_spec.py`**, do not create a registry |
-| 5 | #5 — synchronous extraction only; no `PROCESSING` state | Unchanged. OCR cannot run in-request |
-| 6 | #6 — 404 / unmapped statuses collapse into `FeatureEmptyPanel` | Unchanged. The error-never-empty rule |
-| 7 | A-b / A-c — reprocessing not idempotent, count wrong | Prerequisites for re-extraction, therefore for #1 |
-| 8 | #9 — no Operation proposal state | Unchanged |
-| 9 | #10 — no entity resolution | Unchanged; must default to *proposing* a match |
-| 10 | A-a, A-d, #11, #12, A-e, A-f | Medium/low |
+| ~~1~~ | ~~**A1 — document facts unreachable via `retrieve()`**~~ | **Closed** by `d2f80fdd`. See A11 |
+| ~~3~~ | ~~#2 — no prompt-injection defence for document text~~ | **Closed as data**, not as prose. See A11 |
+| ~~4~~ | ~~#8 **as revised** — no document *reasoning* capability~~ | **Closed as a *citation* read.** See A11 for why "reasoning" was the wrong word |
+| 1 | #1 — no PDF/OCR capability | Unchanged, and now the top of the list. A decision, not a task |
+| 2 | #5 — synchronous extraction only; no `PROCESSING` state | Unchanged. OCR cannot run in-request |
+| 3 | #6 — 404 / unmapped statuses collapse into `FeatureEmptyPanel` | Unchanged. The error-never-empty rule |
+| 4 | A-b / A-c — reprocessing not idempotent, count wrong | Prerequisites for re-extraction, therefore for #1 |
+| 5 | #9 — no Operation proposal state | Unchanged |
+| 6 | #10 — no entity resolution | Unchanged; must default to *proposing* a match |
+| 7 | A-a, A-d, #11, #12, A-e, A-f | Medium/low |
 | — | #3 | Partly satisfied — see A2 |
 | — | #4 | **Struck** — closed by `89251ec3` |
 | — | #7 | **Reduced** — evidence layer already supports page locators |
@@ -812,3 +812,112 @@ facts it already produces have to be reachable by the thing that would answer th
 
 **RTC hard lock held: zero Agora / audio / video / livestream files were read or modified
 in producing this addendum.**
+
+---
+
+## A11 — WHAT WAS BUILT AFTER THE MAP (execution record)
+
+A9 said "nothing was run." That is no longer true, and this section is the correction.
+Three ranked gaps are closed. Each entry states what changed, what proves it, and — where
+it matters more — what was deliberately *not* done.
+
+### A1 — document facts unreachable via `retrieve()` — CLOSED (`d2f80fdd`)
+
+`review_claim()` wrote accepted facts with `subject_type=OWNER`. `retrieval.retrieve()`
+seeds graph nodes and then fetches facts by `subject_type=NODE` plus those node ids, so
+every fact Document Intelligence had ever produced was invisible to the only gated read
+path in the Office. The fix creates the DOCUMENT node first and subjects the fact to it,
+and propagates the document's `sensitivity` onto both node and fact so a RESTRICTED
+document cannot be declassified on its way into the graph.
+
+Proof: `stage_fact_reachability` in `tests/private_office/test_private_documents.py` —
+15 checks, including a real `retrieve()` round trip rather than a flat table scan. The
+stage was **falsified before being believed**: reverting the subject fix produces 4
+targeted failures, removing the sensitivity propagation produces 3.
+
+**Not done, on purpose:** existing `OWNER`-subject rows were not backfilled. `fact_key` is
+a SHA-256 over eight fields *including* `subject_type` and `subject_id`, so rewriting the
+subject changes the fact's identity and risks colliding with
+`UNIQUE(owner_user_id, fact_key)`. Any backfill is a migration with a collision policy,
+not an `UPDATE`. Blast radius is still unmeasured (A9 stands).
+
+### #8 — no document capability — CLOSED, but as *citation*, not *reasoning*
+
+The gap was worded "no document **reasoning** capability." That wording is now rejected.
+A capability that reasoned over documents would put a parser's reading where the member's
+review belongs, which the mission brief forbids in its own terms ("never convert AI
+inference into truth"). What shipped instead is `private.documents.facts`: every record is
+a claim **the member already reviewed and accepted**, handed back with the document and
+locator it came from. There is no inference step and deliberately nowhere to add one.
+
+Document intelligence therefore now carries *two* reads — the file list and the cited
+facts. This retires the old one-row-per-feature shape in `undx_feature_reads_spec.py`,
+which was a property of the first five capabilities rather than a rule worth keeping. Both
+reads share one `feature_id` and one kill switch, so gating is unaffected: darkening
+document intelligence darkens both and no sibling.
+
+Registered across all five surfaces, each deriving from the one spec: registry, policy
+table (`undx_policy.PRODUCTION_TOOL_REGISTRY`), knowledge map, executor table, HTTP route.
+Two hardcoded dictionaries in `undx_knowledge_map.py` keyed by capability id were deleted
+in the process — they raised a `KeyError` at import time from an unrelated module the
+moment a capability was added, which is what a duplication that claims to be a derivation
+does when you finally test it.
+
+Reused rather than rebuilt: `office.project_fact` (the canonical projection — a hand-rolled
+one read a `value` column that does not exist; the column is `typed_value`, so every record
+would have rendered blank while looking healthy), `evidence.resolve_refs` (batched,
+owner-predicate-in-WHERE availability), and `retrieval.retrieve` (sensitivity ceiling,
+domain-join policy, audit).
+
+### #2 — no prompt-injection defence for document text — CLOSED as data
+
+The existing defence was prose in a system prompt. Prose is not a boundary for text the
+model reads as *data*. Two mechanisms replace it:
+
+- **`CONTENT_BOUNDARY` travels with the payload**, not with the prompt, so a summariser, a
+  cache or a retry cannot separate the rule from the content it governs.
+- **`injection_signals()` names instruction-shaped patterns and never edits the value.**
+  Rewriting a member's own fact to make it "safer" would be a false statement about what
+  their document says, and the member is the one person entitled to see it verbatim.
+
+The test asserts the *verbatim* half explicitly, because a test that only checked "the
+signal fires" would pass just as happily against an implementation that sanitised the
+member's document out from under them.
+
+A third mechanism was needed for citations to be followable at all. `office.project_fact`
+drops `locator` by design — it is "the field most likely to become a path into private
+storage." That decision was **not overridden**. Instead `safe_locator()` validates against
+the grammar the extractor actually emits (`line=2`, `page=4;section=3.1`), and anything
+else is dropped exactly as before and reported as `locator_withheld: true` — stated, not
+inferred from an empty string, because a screen showing "no locator" for a pointer that was
+*withheld* is making a different claim.
+
+### Withheld is not empty — enforced at three layers
+
+A read capped by the sensitivity ceiling returns nothing. Reported as an empty result, that
+becomes "you have nothing on file" — a false statement about the member's own store, made
+in PulseSoc's voice. So the refusal is passed through, unflattened, at the service
+(`denied`), the route (`state: "withheld"`, never 200-ok), and the capability
+(`ok: False`). The executor turns it into a failure rather than an empty success for the
+same reason.
+
+### Verification
+
+| What | Result |
+|---|---|
+| `tests/private_office/` | **45/45 files pass**, each in its own process (they set their own temp `DATABASE_URL` at import) |
+| `tests/undx_agent/` | 16 failures — **byte-identical to the same suite at the baseline commit**; all pre-existing, none in Private Office |
+| Mutation testing | 6 mutants introduced across `documents.py` and the route; every one was caught. Two initial mutants were *no-ops* because guards overlapped — that gap was itself a finding, and two new test cases now isolate the ref-kind and ref-parse guards |
+
+The most instructive mutant: deleting the `parsed[0] != "document"` check made a
+`briefing:5` provenance ref render as `document_id: 5` — a citation pointing at a document
+that was never the source.
+
+### Still open, unchanged
+
+Gap #1 (no PDF/OCR capability) is now rank 1 and remains **a decision, not a task** — no
+provider has been chosen. `PROCESSING` state, document versioning, the native UI for cited
+facts, i18n and physical-device acceptance are untouched.
+
+**RTC hard lock held: zero Agora / audio / video / livestream files were read or modified.**
+**Nothing was pushed.**

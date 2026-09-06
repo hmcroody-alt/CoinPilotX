@@ -101,7 +101,7 @@ def stage_registered_everywhere() -> None:
     from services import undx_knowledge_map as knowledge
     from services import undx_policy as policy
 
-    check("five capabilities are declared", len(spec.CAPABILITIES) == 5,
+    check("six capabilities are declared", len(spec.CAPABILITIES) == 6,
           str(len(spec.CAPABILITIES)))
     ids = [entry["capability_id"] for entry in spec.CAPABILITIES]
     check("no capability id is declared twice", len(set(ids)) == len(ids), str(ids))
@@ -163,9 +163,22 @@ def stage_specs_are_sound() -> None:
               entry["backend_route"].startswith("GET /api/private-office/"),
               entry["backend_route"])
 
-    features = [entry["feature_id"] for entry in spec.CAPABILITIES]
-    check("each capability gates a different feature",
-          len(set(features)) == len(features), str(features))
+    # A feature may declare more than one read — document intelligence declares
+    # two — but capabilities sharing a feature must share its kill switch, or
+    # darkening the feature would leave one of its reads still answering. That
+    # is the property the old "one capability per feature" check was really
+    # protecting, now asserted directly instead of via a proxy that also
+    # forbade a second read.
+    by_feature: dict[str, list[dict]] = {}
+    for entry in spec.CAPABILITIES:
+        by_feature.setdefault(entry["feature_id"], []).append(entry)
+    for feature_id, entries in by_feature.items():
+        flags = {entry["flag_env"] for entry in entries}
+        check(f"every read of {feature_id} is behind one kill switch",
+              len(flags) == 1, str(flags))
+        routes = [entry["backend_route"] for entry in entries]
+        check(f"reads of {feature_id} name distinct routes",
+              len(set(routes)) == len(routes), str(routes))
 
 
 def stage_read_only_vocabulary() -> None:

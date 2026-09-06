@@ -91,6 +91,7 @@ INTENT_PROPERTY_PORTFOLIO = "property_portfolio"
 INTENT_INSURANCE_COVERAGE = "insurance_coverage"
 INTENT_BUSINESS_STRUCTURE = "business_structure"
 INTENT_LEGAL_DOCUMENTS = "legal_documents"
+INTENT_DOCUMENT_EVIDENCE = "document_evidence"
 INTENT_HEALTH_CONTEXT = "health_context"
 INTENT_IDENTITY_CONTEXT = "identity_context"
 INTENT_GENERAL = "general"
@@ -123,6 +124,25 @@ INTENTS: dict[str, dict[str, Any]] = {
     INTENT_LEGAL_DOCUMENTS: {
         "relations": (_model.RELATION_GOVERNED_BY, _model.RELATION_DESCRIBES),
         "domains": (_model.DOMAIN_GENERAL, _model.DOMAIN_LEGAL),
+        "sensitivity_ceiling": _model.SENSITIVITY_CONFIDENTIAL,
+    },
+    # "What do my documents say, and where does each answer come from?" The
+    # domains are wider than `legal_documents` because a member's documents are
+    # not all legal — an insurance schedule and a brokerage statement are
+    # FINANCIAL, and reading them under a legal intent would be a lie about
+    # what was asked for. The isolated domains are still excluded, so a health
+    # or identity document's facts are unreachable here by construction rather
+    # than by the caller remembering to exclude them.
+    #
+    # The relations matter less than the seeds: this intent is entered by
+    # seeding DOCUMENT nodes, and it walks outward only to what a document
+    # describes or governs. It is capped at CONFIDENTIAL like its neighbours,
+    # which is what keeps a RESTRICTED document's contents out of a model
+    # prompt without anyone having to remember to withhold it.
+    INTENT_DOCUMENT_EVIDENCE: {
+        "relations": (_model.RELATION_DESCRIBES, _model.RELATION_GOVERNED_BY),
+        "domains": (_model.DOMAIN_GENERAL, _model.DOMAIN_FINANCIAL,
+                    _model.DOMAIN_LEGAL),
         "sensitivity_ceiling": _model.SENSITIVITY_CONFIDENTIAL,
     },
     # Health context is walkable but narrow, and it cannot reach financial or

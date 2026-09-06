@@ -11,6 +11,14 @@
     deduplicated by content hash, stored privately, and processed eagerly —
     the response already says what extraction found or why it could not look.
 
+``GET  /api/private-office/documents/facts``
+    The answer to "where did this fact come from?" — every accepted fact drawn
+    from the member's documents, each with the document and locator it came
+    from. Nothing here is inferred: each record is a claim the member reviewed
+    and accepted. Read through the gated retrieval path, so the sensitivity
+    ceiling and the domain-join policy apply, and the payload carries a content
+    boundary because its consumer is frequently a model.
+
 ``GET  /api/private-office/documents/<id>``
     One document with its claims, PROPOSED first.
 
@@ -177,6 +185,57 @@ def api_private_office_documents_upload():
         },
         "claims": claims,
     }, 201)
+
+
+@private_office_documents_blueprint.route(
+    "/api/private-office/documents/facts", methods=["GET"])
+def api_private_office_document_facts():
+    """Accepted document facts with their citations.
+
+    Declared before the ``<int:document_id>`` rule for readability only — the
+    int converter cannot match ``facts``, so the two cannot collide whichever
+    order Flask happens to try them in.
+    """
+    user, refusal = _entry()
+    if refusal:
+        return refusal
+
+    try:
+        limit = int(request.args.get("limit") or 25)
+    except (TypeError, ValueError):
+        # A junk limit is a client bug, not a reason to refuse a member their
+        # own facts. Fall back rather than 400.
+        limit = 25
+
+    def work(cur):
+        return po_documents.list_document_facts(
+            cur, owner_user_id=user["user_id"], limit=limit,
+            actor_user_id=user["user_id"])
+
+    try:
+        outcome = po_http._with_cursor(work)
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("PRIVATE_DOCUMENT_FACTS_FAILED")
+        return po_http._no_store(
+            {"ok": False, "state": "unavailable",
+             "message": "We could not load your document facts just now."}, 503)
+
+    # A refusal is not an empty vault. The two must not render the same, or a
+    # policy that withheld everything reads to the member as "you have nothing".
+    if outcome.get("denied"):
+        return po_http._no_store({
+            "ok": False, "state": "withheld", "denied": outcome["denied"],
+            "facts": [], "counts": outcome["counts"],
+            "message": "Some of your document facts are outside what this view may show.",
+        }, 200)
+
+    return po_http._no_store({
+        "ok": True,
+        "state": "ready",
+        "facts": outcome["records"],
+        "counts": outcome["counts"],
+        "content_boundary": outcome["boundary"],
+    })
 
 
 @private_office_documents_blueprint.route(

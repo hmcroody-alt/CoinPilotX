@@ -1,4 +1,4 @@
-"""The UNDX surface for the five shipped Private Office features.
+"""The UNDX surface over the shipped Private Office features.
 
 Documents, people, briefings, shield and the concierge desk each already have
 a member-facing engine and an HTTP surface. This module gives the agent a
@@ -8,9 +8,18 @@ this vocabulary the same way the Batch C record views derive from
 ``undx_records_spec``. The reasoning is unchanged: three registration surfaces
 that agree by construction cannot drift apart by review.
 
+Document intelligence carries two reads rather than one. "What did I upload?"
+and "what did those uploads say, and where does each answer come from?" are
+different questions with different payloads, and one read serving both would
+have to either put fact values in a file list or leave the citations
+unreachable. They share a feature id and a kill switch, so the pairing costs
+nothing in gating: darkening document intelligence darkens both and no
+sibling. What it does cost is the old one-row-per-feature invariant, which was
+a property of the first five capabilities rather than a rule worth keeping.
+
 What the specs commit to
 ------------------------
-* **Read only, all five.** UNDX may look at the Office; it may not act on it.
+* **Read only, every one.** UNDX may look at the Office; it may not act on it.
   Uploading a document, adding a person, generating a briefing, acknowledging
   a finding and filing a concierge request all stay deliberate acts on the
   member's own screen — every one of those writes has provenance and several
@@ -36,12 +45,17 @@ from services.private_office import audit as _audit
 MAX_LIMIT = 25
 DEFAULT_LIMIT = 10
 
-#: One capability per feature. The vocabulary the three registration surfaces
-#: derive from — typed exactly once.
+#: The vocabulary every registration surface derives from — typed exactly once.
+#: At least one capability per feature; document intelligence has two.
 #:
-#: ``native_route`` names each feature's own screen; the five are literal
-#: routes in linking.ts and declared in the knowledge map's screen table, which
-#: refuses a deep link with no screen behind it.
+#: ``native_route`` names each feature's own screen; they are literal routes in
+#: linking.ts and declared in the knowledge map's screen table, which refuses a
+#: deep link with no screen behind it. ``native_screen`` and ``service_module``
+#: live here for the same reason everything else does: the knowledge map used
+#: to hold both as its own hardcoded dictionaries keyed by capability id, which
+#: meant adding a capability raised a ``KeyError`` from an unrelated module at
+#: import time — a duplication that announced itself only when someone tripped
+#: over it.
 CAPABILITIES: tuple[dict, ...] = (
     {
         "capability_id": "private.documents.list",
@@ -54,6 +68,34 @@ CAPABILITIES: tuple[dict, ...] = (
         "flag_env": "PRIVATE_DOCUMENTS_ENABLED",
         "audit_action": _audit.ACTION_DOCUMENT_READ,
         "object_type": "DOCUMENT_LIST",
+        "native_screen": "PrivateDocuments",
+        "service_module": "documents",
+    },
+    {
+        # The second read over document intelligence, and the reason the
+        # one-capability-per-feature shape above is no longer the rule: listing
+        # what was uploaded and asking what those uploads *said* are different
+        # questions, and collapsing them into one read would mean either the
+        # file list carries fact values nobody asked for, or the citations are
+        # unreachable. Both reads gate on the same feature id and the same kill
+        # switch, so turning document intelligence off still turns off exactly
+        # its own reads and no sibling's.
+        "capability_id": "private.documents.facts",
+        "feature_id": "private_office.document.extraction",
+        "description": (
+            "Show facts already accepted from the member's own documents, each "
+            "with the document and locator it came from"
+        ),
+        "intents": ("where did this come from", "what do my documents say",
+                    "what did i accept from my documents", "cite that",
+                    "which document says that", "source of that fact"),
+        "native_route": "/pulse/private-office/documents",
+        "backend_route": "GET /api/private-office/documents/facts",
+        "flag_env": "PRIVATE_DOCUMENTS_ENABLED",
+        "audit_action": _audit.ACTION_DOCUMENT_READ,
+        "object_type": "DOCUMENT_FACTS",
+        "native_screen": "PrivateDocuments",
+        "service_module": "documents",
     },
     {
         "capability_id": "private.people.list",
@@ -67,6 +109,8 @@ CAPABILITIES: tuple[dict, ...] = (
         "flag_env": "PRIVATE_RELATIONSHIPS_ENABLED",
         "audit_action": _audit.ACTION_GRAPH_READ,
         "object_type": "PERSON_DIRECTORY",
+        "native_screen": "PrivatePeople",
+        "service_module": "relationships",
     },
     {
         "capability_id": "private.briefings.list",
@@ -79,6 +123,8 @@ CAPABILITIES: tuple[dict, ...] = (
         "flag_env": "PRIVATE_BRIEFINGS_ENABLED",
         "audit_action": _audit.ACTION_BRIEFING_READ,
         "object_type": "BRIEFING_LIST",
+        "native_screen": "PrivateBriefings",
+        "service_module": "briefings",
     },
     {
         "capability_id": "private.shield.posture",
@@ -94,6 +140,8 @@ CAPABILITIES: tuple[dict, ...] = (
         "flag_env": "PRIVATE_SHIELD_ENABLED",
         "audit_action": _audit.ACTION_SHIELD_READ,
         "object_type": "SHIELD_POSTURE",
+        "native_screen": "PrivateShield",
+        "service_module": "shield",
     },
     {
         "capability_id": "private.concierge.desk",
@@ -106,6 +154,8 @@ CAPABILITIES: tuple[dict, ...] = (
         "flag_env": "PRIVATE_CONCIERGE_ENABLED",
         "audit_action": _audit.ACTION_CONCIERGE_READ,
         "object_type": "REQUEST_LIST",
+        "native_screen": "PrivateConcierge",
+        "service_module": "concierge",
     },
 )
 
@@ -177,6 +227,22 @@ def execute_capability(
         from services.private_office import documents as _documents
         records = [_documents.public_view(doc) for doc in
                    _documents.list_documents(cur, owner_user_id=owner, limit=limit)]
+    elif spec["capability_id"] == "private.documents.facts":
+        from services.private_office import documents as _documents
+        outcome = _documents.list_document_facts(
+            cur, owner_user_id=owner, limit=limit, actor_user_id=owner)
+        if outcome.get("denied"):
+            # Passed through, not flattened into an empty list. An agent told
+            # "no facts" when a policy withheld them will tell the member they
+            # have nothing on file, which is a false statement about their own
+            # store made in PulseSoc's voice.
+            return {"ok": False, "denied": str(outcome["denied"]),
+                    "records": [], "counts": outcome["counts"],
+                    "extras": {"content_boundary": outcome["boundary"]}}
+        records = outcome["records"]
+        # The boundary rides with the values, always. See documents.CONTENT_BOUNDARY.
+        extras["content_boundary"] = outcome["boundary"]
+        extras["withheld"] = int(outcome["counts"].get("withheld") or 0)
     elif spec["capability_id"] == "private.people.list":
         from services.private_office import relationships as _relationships
         records = _relationships.directory(cur, owner_user_id=owner, limit=limit)
