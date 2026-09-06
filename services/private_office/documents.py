@@ -14,6 +14,14 @@ standing rules:
   in the capital graph through ``graph.upsert_node``. This module never
   touches those tables directly.
 
+* **An accepted fact is subjected to the document's node.** Not to the owner.
+  ``retrieval.retrieve`` selects facts by ``subject_type=NODE`` against the
+  node ids it walked, so the subject is what decides whether a fact is
+  reachable at all — an owner-subjected fact is invisible to Capital Graph and
+  to every reasoning intent, however well provenanced it is. The document node
+  is therefore created before the fact and carries the document's own
+  sensitivity, so the node, the fact and the retrieval ceiling agree.
+
 * **Nothing is asserted unreviewed.** Extraction *proposes* claims; only the
   member's explicit review turns a proposal into a fact. An extractor's guess
   landing directly in the fact store would put a model's (or a parser's)
@@ -469,11 +477,47 @@ def review_claim(cur, *, owner_user_id: int, claim_id: int, decision: str,
     fact_id = 0
     if verb == "accept":
         document_id = int(claim["document_id"])
+        document = get_document(cur, owner_user_id=owner, document_id=document_id)
+        if document is None:
+            # The claim outlived its document. Accepting would mint a fact whose
+            # citation points at content the member has deleted — a fact that
+            # outlives the only thing able to justify it. Refusing is the same
+            # decision `evidence.may_verify` makes about a withdrawn source.
+            raise PrivateDocumentRejected("the source document is no longer available")
+
+        # The node is created *first*, because the fact is subjected to it.
+        #
+        # Facts here used to be written against `subject_type="OWNER"`, which no
+        # reader in this package looks for: `retrieval.retrieve` — the one gated
+        # path Capital Graph and every reasoning intent read through — selects
+        # facts with `subject_type=NODE` keyed by the node ids it walked. A fact
+        # subjected to the owner was therefore written, audited, and then
+        # unreachable by everything except a flat `list_facts` scan, while the
+        # DOCUMENT node created beside it held no facts at all.
+        #
+        # `upsert_node` returns the existing node when this document already has
+        # one, so the second accepted claim from a document lands on the same
+        # subject as the first rather than minting a parallel one.
+        node = graph_mod.upsert_node(
+            cur, owner_user_id=owner, node_type=model.NODE_DOCUMENT,
+            external_ref=evidence.format_ref("document", document_id),
+            domain=claim.get("domain"),
+            # The document's own classification, not the package default. A
+            # RESTRICTED document whose node defaulted to CONFIDENTIAL would be
+            # released by a retrieval ceiling that should have withheld it, and
+            # `upsert_node` only ever raises sensitivity, so passing it here is
+            # also what stops a later claim from quietly lowering it.
+            sensitivity=document["sensitivity"],
+            actor_user_id=actor_user_id or owner,
+            purpose="document_processing",
+        )
+        node_id = int(node["node_id"])
+
         outcome = facts_mod.record_fact(
             cur,
             owner_user_id=owner,
-            subject_type="OWNER",
-            subject_id=str(owner),
+            subject_type=facts_mod.SUBJECT_NODE,
+            subject_id=str(node_id),
             fact_type=claim["fact_type"],
             value=claim["proposed_value"],
             value_type=claim["value_type"],
@@ -484,17 +528,15 @@ def review_claim(cur, *, owner_user_id: int, claim_id: int, decision: str,
                 locator=str(claim.get("locator") or ""),
             ),
             domain=claim.get("domain"),
+            # Carried for the same reason as the node's, and it must match the
+            # node's: retrieval filters the node and the fact against the same
+            # ceiling, so a fact classified above its node is dropped from a
+            # walk that reached it.
+            sensitivity=document["sensitivity"],
             actor_user_id=actor_user_id or owner,
             purpose="document_processing",
         )
         fact_id = int(outcome.get("fact_id") or 0)
-        graph_mod.upsert_node(
-            cur, owner_user_id=owner, node_type=model.NODE_DOCUMENT,
-            external_ref=evidence.format_ref("document", document_id),
-            domain=claim.get("domain"),
-            actor_user_id=actor_user_id or owner,
-            purpose="document_processing",
-        )
 
     cur.execute(
         f"""UPDATE {CLAIMS_TABLE} SET status=?, fact_id=?, reviewed_at=?

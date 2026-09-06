@@ -16,6 +16,12 @@ What these tests defend
 * **The provider edge is truthful, per document.** A PDF is stored and served
   but its extraction state is ``PROVIDER_REQUIRED`` with a note that says why
   — never a fabricated "nothing found".
+* **An accepted fact is reachable, and classified like its source.** The fact
+  is subjected to the document's graph node — the only subject
+  ``retrieval.retrieve`` looks for — and it comes back from a real gated
+  retrieval, not just from a flat scan. It carries the document's own
+  sensitivity, so a RESTRICTED document cannot be declassified on the way into
+  the graph. A claim whose document has been deleted cannot be accepted at all.
 * **Owner isolation everywhere.** Another member's document, claim, or bytes
   are indistinguishable from ones that never existed: list, detail, content,
   delete and review all answer the not-found shape.
@@ -69,6 +75,7 @@ from services.private_office import feature_matrix as matrix  # noqa: E402
 from services.private_office import graph as graph_mod  # noqa: E402
 from services.private_office import jobs  # noqa: E402
 from services.private_office import model  # noqa: E402
+from services.private_office import retrieval  # noqa: E402
 from services.private_office import schema  # noqa: E402
 from services.private_office import tiers  # noqa: E402
 
@@ -593,6 +600,173 @@ def stage_feature_matrix():
 
 
 # ---------------------------------------------------------------------------
+# Reachability — which subject the fact was written against
+#
+# This stage exists because of a defect the stages above could not see. They
+# assert that accepting a claim writes one fact with the right provenance and
+# that the document enters the graph. Both were true while the fact was written
+# against `subject_type=OWNER` and the node it was supposedly about held
+# nothing — and `retrieval.retrieve` reads facts by `subject_type=NODE` keyed by
+# the nodes it walked, so no document fact was ever reachable through the gated
+# path. Provenance was correct and the fact was still invisible.
+#
+# So the assertions here are deliberately about the join rather than about
+# either side of it: the subject the fact carries, and an actual retrieval that
+# has to traverse to find it. It runs last because it uploads and accepts, and
+# the earlier stages assert exact fact counts.
+# ---------------------------------------------------------------------------
+
+def _document_node(owner, document_id):
+    """The DOCUMENT node for one document, read at the widest ceiling."""
+    ref = evidence.format_ref("document", document_id)
+    conn = db.connect()
+    try:
+        nodes = graph_mod.list_nodes(
+            conn.cursor(), owner_user_id=owner,
+            node_types=[model.NODE_DOCUMENT],
+            sensitivity_ceiling=model.SENSITIVITY_RESTRICTED)
+    finally:
+        conn.close()
+    return next((n for n in nodes if n.get("external_ref") == ref), None)
+
+
+def _fact_for_document(owner, document_id):
+    """The accepted fact citing one document, found by its provenance ref."""
+    ref = evidence.format_ref("document", document_id)
+    conn = db.connect()
+    try:
+        rows = facts_mod.list_facts(
+            conn.cursor(), owner_user_id=owner,
+            sensitivity_ceiling=model.SENSITIVITY_RESTRICTED)
+    finally:
+        conn.close()
+    return next((f for f in rows
+                 if (f.get("provenance") or {}).get("source_id") == ref), None)
+
+
+def _retrieve_documents(owner):
+    """A real gated read over the document nodes, as UNDX would issue it."""
+    conn = db.connect()
+    try:
+        cur = conn.cursor()
+        context = retrieval.retrieve(
+            cur, owner_user_id=owner, intent=retrieval.INTENT_LEGAL_DOCUMENTS,
+            seed_node_types=[model.NODE_DOCUMENT],
+            purpose="document_processing")
+        conn.commit()
+    finally:
+        conn.close()
+    return context
+
+
+def _upload_with_sensitivity(client, filename, payload, sensitivity):
+    data = {"file": (io.BytesIO(payload), filename), "sensitivity": sensitivity}
+    return client.post("/api/private-office/documents", data=data,
+                       content_type="multipart/form-data")
+
+
+def stage_fact_reachability():
+    print("\n[documents: fact subject and reachability]")
+    client = _app().test_client()
+    _as(USER_A)
+    doc_id = _STATE["txt_doc_id"]
+
+    node = _document_node(USER_A, doc_id)
+    fact = _fact_for_document(USER_A, doc_id)
+    check("the accepted claim left a document node and a fact",
+          node is not None and fact is not None, f"node={node} fact={fact}")
+    if not (node and fact):
+        return
+
+    check("the fact is subjected to the document node, not to the owner",
+          fact.get("subject_type") == facts_mod.SUBJECT_NODE
+          and str(fact.get("subject_id")) == str(node["id"]),
+          f"{fact.get('subject_type')}:{fact.get('subject_id')} "
+          f"vs NODE:{node['id']}")
+
+    context = _retrieve_documents(USER_A)
+    check("the gated retrieval was not refused",
+          context.get("denied") == "", str(context.get("denied")))
+    reached = {int(f.get("id") or 0) for f in context.get("relevant_facts") or []}
+    check("a real retrieval reaches the fact end to end",
+          int(fact["id"]) in reached, f"{fact['id']} not in {sorted(reached)}")
+    cited = {(p.get("ref") or {}).get("source_id")
+             for p in context.get("provenance") or []}
+    check("the retrieved context can name the document it came from",
+          evidence.format_ref("document", doc_id) in cited, str(sorted(cited)))
+
+    # --- classification travels with the fact ------------------------------
+    resp = _upload_with_sensitivity(
+        client, "trust-deed.txt", b"Trustee: Halcyon Nominees\n",
+        model.SENSITIVITY_RESTRICTED)
+    body = resp.get_json() or {}
+    restricted_doc = (body.get("document") or {}).get("id")
+    restricted_claims = body.get("claims") or []
+    check("a RESTRICTED upload is stored at the sensitivity it was given",
+          resp.status_code == 201
+          and (body.get("document") or {}).get("sensitivity")
+          == model.SENSITIVITY_RESTRICTED and len(restricted_claims) == 1,
+          str(body.get("document")))
+    if not restricted_claims:
+        return
+
+    review = client.post(
+        f"/api/private-office/claims/{restricted_claims[0]['id']}/review",
+        json={"decision": "accept"})
+    check("the RESTRICTED claim is accepted", review.status_code == 200,
+          str(review.status_code))
+
+    r_node = _document_node(USER_A, restricted_doc)
+    r_fact = _fact_for_document(USER_A, restricted_doc)
+    check("the node inherits the document's classification",
+          r_node is not None
+          and r_node.get("sensitivity") == model.SENSITIVITY_RESTRICTED,
+          str(r_node))
+    check("the fact inherits it too — node and fact agree",
+          r_fact is not None
+          and r_fact.get("sensitivity") == model.SENSITIVITY_RESTRICTED,
+          str(r_fact and r_fact.get("sensitivity")))
+
+    context = _retrieve_documents(USER_A)
+    reached = {int(f.get("id") or 0) for f in context.get("relevant_facts") or []}
+    check("an intent capped at CONFIDENTIAL still reaches the confidential fact",
+          int(fact["id"]) in reached, str(sorted(reached)))
+    check("but it does not reach the RESTRICTED one — no declassification",
+          r_fact is not None and int(r_fact["id"]) not in reached,
+          str(sorted(reached)))
+
+    # --- a claim cannot outlive the document that justifies it -------------
+    resp = _upload_with_sensitivity(
+        client, "codicil.txt", b"Executor: M. Alvarez\n",
+        model.SENSITIVITY_CONFIDENTIAL)
+    body = resp.get_json() or {}
+    orphan_doc = (body.get("document") or {}).get("id")
+    orphan_claims = body.get("claims") or []
+    if not orphan_claims:
+        check("the orphan fixture produced a claim", False, str(body))
+        return
+    orphan_claim = orphan_claims[0]["id"]
+
+    check("the document is deleted before its claim is reviewed",
+          client.delete(f"/api/private-office/documents/{orphan_doc}").status_code == 200)
+
+    before = _fact_count(USER_A)
+    review = client.post(f"/api/private-office/claims/{orphan_claim}/review",
+                         json={"decision": "accept"})
+    message = (review.get_json() or {}).get("message") or ""
+    check("accepting a claim whose document is gone is refused",
+          review.status_code == 400 and "no longer available" in message,
+          f"{review.status_code} {message}")
+    check("the refusal minted no fact", _fact_count(USER_A) == before,
+          f"{before} -> {_fact_count(USER_A)}")
+    surviving = _query_all(
+        f"SELECT status FROM {documents_mod.CLAIMS_TABLE} WHERE id=?", (orphan_claim,))
+    check("and it did not consume the claim — still PROPOSED",
+          surviving and surviving[0]["status"] == documents_mod.CLAIM_PROPOSED,
+          str(surviving))
+
+
+# ---------------------------------------------------------------------------
 # Harness
 # ---------------------------------------------------------------------------
 
@@ -608,6 +782,7 @@ STAGES = (
     stage_delete,
     stage_bookkeeping,
     stage_feature_matrix,
+    stage_fact_reachability,
 )
 
 
