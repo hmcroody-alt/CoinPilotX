@@ -108,6 +108,17 @@ OP_SUPERSEDE = "supersede"
 OP_FLAG_CONFLICT = "flag_conflict"
 #: Settle a disagreement in this row's favour. An owner action, always.
 OP_RESOLVE = "resolve"
+#: Something checkable was produced in support of this fact. The promotion this
+#: causes is the only route to EVIDENCE_SUPPORTED, and it is deliberately not
+#: available to the member's own say-so: `confirm` is a person's opinion,
+#: `attach_evidence` is a person's opinion plus an item somebody else can open.
+OP_ATTACH_EVIDENCE = "attach_evidence"
+#: The last of that support was taken away. Demotes rather than restoring
+#: whatever the fact was before, because "we no longer know why we believed
+#: this" is a state that deserves a human, not a silent reversion.
+OP_DETACH_EVIDENCE = "detach_evidence"
+#: Put this fact in front of the member. Machine-driven, like OP_FLAG_CONFLICT.
+OP_FLAG_REVIEW = "flag_review"
 
 FACT_OPERATIONS: tuple[str, ...] = (
     OP_CREATE, OP_REFRESH, OP_CONFIRM, OP_REVISE, OP_DISPUTE,
@@ -119,6 +130,7 @@ FACT_OPERATIONS: tuple[str, ...] = (
     # says only "created" is exactly the fact a member would most want
     # explained.
     OP_FLAG_CONFLICT, OP_RESOLVE,
+    OP_ATTACH_EVIDENCE, OP_DETACH_EVIDENCE, OP_FLAG_REVIEW,
 )
 
 #: Who acted, as a class. Mirrors ``telemetry.ACTOR_TYPE_VOCAB``.
@@ -151,6 +163,19 @@ REASON_CODES: tuple[str, ...] = (
     # and a history that recorded both the same way would lose the difference
     # between a decision and a correction of the detector.
     "conflict_dismissed",
+    # Evidence arrived, or was taken away. The second is the one that has to
+    # exist as its own code: a fact that dropped to NEEDS_REVIEW needs its
+    # history to say whether time passed or whether somebody removed the
+    # document it was resting on, and `system_sweep` would tell the first story
+    # for both.
+    "evidence_attached",
+    "evidence_withdrawn",
+    # The staleness sweep, as distinct from `system_sweep`, which expiry
+    # already uses. Expiry retires a fact because its stated validity window
+    # closed — a fact about which the member said, in advance, when it would
+    # stop being true. Staleness is the softer claim that nobody has looked in
+    # a while, and the two must not read the same in a history.
+    "freshness_horizon",
 )
 
 #: Fact types that must never be stored, however they are spelled.
@@ -578,6 +603,71 @@ VERIFICATION_TRANSITIONS: dict[str, tuple[frozenset[str], str]] = {
         # to keep closed — and it would be a doorway with a queue of members
         # being asked to walk through it.
         _model.VERIFICATION_USER_CONFIRMED,
+    ),
+    OP_ATTACH_EVIDENCE: (
+        # Not from DISPUTED and not from CONFLICTING. Those two mean somebody —
+        # a person in the first case, the detector in the second — has an open
+        # objection to this row, and a document arriving afterwards does not
+        # answer it. The member may well have attached that document *in order
+        # to* settle the dispute, and the way to settle it is to settle it:
+        # `resolve_fact` for a conflict, a fresh confirmation for a dispute.
+        # Letting an attachment do it silently would mean a fact could be argued
+        # out of contention by whoever uploaded a file last.
+        #
+        # The citation is still recorded in either case. `attach_evidence`
+        # writes the link row first and only then asks whether the fact may be
+        # promoted, so evidence gathered against a disputed fact is kept and
+        # visible — it simply does not change the fact's standing on its own.
+        #
+        # Not from VERIFIED or PROVIDER_VERIFIED either, and that exclusion is
+        # the important one: those rank at 90 and 100, EVIDENCE_SUPPORTED ranks
+        # at 70, so accepting them here would let attaching a supporting
+        # document *downgrade* a fact. A rule that punishes better sourcing is
+        # a rule nobody will follow twice.
+        frozenset({
+            _model.VERIFICATION_UNVERIFIED,
+            _model.VERIFICATION_LEGACY_UNKNOWN,
+            _model.VERIFICATION_USER_CONFIRMED,
+            _model.VERIFICATION_NEEDS_REVIEW,
+            _model.VERIFICATION_EVIDENCE_SUPPORTED,
+        }),
+        _model.VERIFICATION_EVIDENCE_SUPPORTED,
+    ),
+    OP_DETACH_EVIDENCE: (
+        # Only from EVIDENCE_SUPPORTED, because only a fact that was standing on
+        # its evidence has anything to lose when the evidence goes. A fact the
+        # member confirmed themselves keeps its confirmation; a fact a provider
+        # attested keeps the attestation. `detach_evidence` calls this only when
+        # the citation it removed was the last live one, so the ordinary case —
+        # dropping one of three documents — moves nothing.
+        frozenset({_model.VERIFICATION_EVIDENCE_SUPPORTED}),
+        # Down to NEEDS_REVIEW, not back to UNVERIFIED. The difference is
+        # whether anybody is told. A fact that quietly returned to UNVERIFIED
+        # would keep being read, at rank 20, by a caller with no way to know
+        # that the reason it was trusted has been withdrawn; NEEDS_REVIEW ranks
+        # at zero, is in UNTRUSTWORTHY_VERIFICATION, and puts the row in front
+        # of the member. Losing your justification is exactly the moment to ask.
+        _model.VERIFICATION_NEEDS_REVIEW,
+    ),
+    OP_FLAG_REVIEW: (
+        # Everything live except the states that already carry a stronger, more
+        # specific objection. Flagging a DISPUTED or CONFLICTING fact for review
+        # would replace "the member says this is wrong" or "two sources
+        # disagree" with the vaguer "somebody should look at this", and all
+        # three rank at zero, so the trade is a strict loss of information for
+        # no gain in caution.
+        #
+        # A PROVIDER_VERIFIED fact *can* be flagged, and that is the point of
+        # the staleness sweep: a bank balance read six months ago is still a
+        # bank's own answer and is no longer current, and a ledger that let
+        # rank 100 exempt a row from ageing would quote figures from last year
+        # with total confidence.
+        _ALL_NON_TERMINAL - frozenset({
+            _model.VERIFICATION_DISPUTED,
+            _model.VERIFICATION_CONFLICTING,
+            _model.VERIFICATION_NEEDS_REVIEW,
+        }),
+        _model.VERIFICATION_NEEDS_REVIEW,
     ),
     OP_REVOKE: (_ALL_NON_TERMINAL, _model.VERIFICATION_REVOKED),
     OP_ARCHIVE: (_ALL_NON_TERMINAL, ""),
@@ -1099,6 +1189,9 @@ _LIFECYCLE_AUDIT_ACTION: dict[str, str] = {
     OP_EXPIRE: _audit.ACTION_FACT_EXPIRE,
     OP_FLAG_CONFLICT: _audit.ACTION_CONFLICT_DETECTED,
     OP_RESOLVE: _audit.ACTION_CONFLICT_RESOLVED,
+    OP_ATTACH_EVIDENCE: _audit.ACTION_FACT_EVIDENCE_ATTACH,
+    OP_DETACH_EVIDENCE: _audit.ACTION_FACT_EVIDENCE_DETACH,
+    OP_FLAG_REVIEW: _audit.ACTION_FACT_REVIEW_FLAG,
 }
 
 
@@ -1906,3 +1999,709 @@ def count_facts_by_domain(
         if name in summary:
             summary[name] = int(row["n"] if keyed else row[1])
     return summary
+
+
+# ---------------------------------------------------------------------------
+# Evidence (Section 16 — what makes EVIDENCE_SUPPORTED reachable)
+# ---------------------------------------------------------------------------
+# `record_fact` can write any verification state the caller names, and the
+# lifecycle operations above can reach every state except two. EVIDENCE_SUPPORTED
+# and NEEDS_REVIEW are the exceptions, and they are exceptions on purpose: the
+# first is only earned by producing something a third party can open, and the
+# second is only reached by losing that support or by ageing past a horizon.
+# Neither is something a caller should be able to assert. So the only routes to
+# them are the four functions below, and each of them does the work first and
+# asks about the fact's standing second.
+
+MAX_EVIDENCE_REF = 128
+MAX_EVIDENCE_LOCATOR = 128
+
+#: The evidence projection, in SELECT order. One tuple so the column list and
+#: the key names cannot drift apart, exactly as with :data:`_HISTORY_FIELDS`.
+#: ``evidence_ref`` is an opaque identifier, not a title — resolving it to
+#: something a person can read is the owning package's job, under its own owner
+#: predicate, so that a citation never becomes a way to learn the name of a
+#: document you are not entitled to open.
+_EVIDENCE_FIELDS: tuple[str, ...] = (
+    "id",
+    "fact_id",
+    "evidence_type",
+    "evidence_ref",
+    "locator",
+    "attached_by_actor_type",
+    "attached_by_actor_id",
+    "attached_at",
+    "detached_at",
+    "detached_by_actor_type",
+)
+
+#: Outcomes of an evidence mutation. ``unchanged`` is distinct from ``attached``
+#: because re-sending an attachment that is already live is an idempotent no-op,
+#: and reporting it as a fresh attachment would make the telemetry say support
+#: was gathered when nothing happened.
+EVIDENCE_ATTACHED = "attached"
+EVIDENCE_DETACHED = "detached"
+EVIDENCE_UNCHANGED = "unchanged"
+
+
+def _evidence_natural_key(
+    *, evidence_type: str, evidence_ref: object, locator: object
+) -> tuple[str, str, str]:
+    """The tuple that identifies one citation, normalized the way it is stored.
+
+    Trimmed and truncated *before* the lookup rather than after, so the SELECT
+    that decides "is this a re-attachment" compares the same bytes the INSERT
+    would write. Doing it in the other order is how a citation with a trailing
+    space becomes a second row that the UNIQUE constraint then rejects.
+    """
+    return (
+        evidence_type,
+        str(evidence_ref or "").strip()[:MAX_EVIDENCE_REF],
+        str(locator or "").strip()[:MAX_EVIDENCE_LOCATOR],
+    )
+
+
+def _count_live_evidence(cur, *, owner_user_id: int, fact_id: int) -> int:
+    """How many citations currently support this fact.
+
+    ``detached_at = ''`` is the live predicate throughout this package; see the
+    note under the table DDL for why detachment is a soft delete.
+    """
+    cur.execute(
+        f"SELECT COUNT(*) AS n FROM {_schema.FACT_EVIDENCE_TABLE} "
+        f"WHERE owner_user_id = ? AND fact_id = ? AND detached_at = ''",
+        (int(owner_user_id), int(fact_id)),
+    )
+    row = cur.fetchone()
+    if row is None:
+        return 0
+    return int(row["n"] if hasattr(row, "keys") else row[0])
+
+
+def _load_fact_for_evidence(cur, *, owner_user_id: int, fact_id: int) -> dict | None:
+    """The few fact columns an evidence mutation needs, or ``None``.
+
+    Owner predicate in the SELECT, not applied to the result, for the reason
+    given at length in :func:`_apply_lifecycle`: a query that fetches by id and
+    compares owners afterwards has already read another member's row.
+    """
+    cur.execute(
+        f"SELECT id, verification_state, lifecycle_state, domain, "
+        f"subject_type, subject_id "
+        f"FROM {_schema.FACTS_TABLE} WHERE id = ? AND owner_user_id = ?",
+        (int(fact_id), int(owner_user_id)),
+    )
+    row = cur.fetchone()
+    if row is None:
+        return None
+    keyed = hasattr(row, "keys")
+
+    def _col(name: str, index: int):
+        return row[name] if keyed else row[index]
+
+    return {
+        "id": int(_col("id", 0) or 0),
+        "verification_state": _stored_verification(_col("verification_state", 1)),
+        "lifecycle_state": str(_col("lifecycle_state", 2) or ""),
+        "domain": str(_col("domain", 3) or ""),
+        "subject_type": str(_col("subject_type", 4) or ""),
+        "subject_id": str(_col("subject_id", 5) or ""),
+    }
+
+
+def list_evidence(
+    cur,
+    *,
+    owner_user_id: int,
+    fact_id: int,
+    include_detached: bool = False,
+) -> list[dict]:
+    """The citations attached to one fact, newest first. Owner-scoped.
+
+    ``include_detached`` exists for one screen: the explanation of why a fact
+    that used to be well-supported now needs review. Everywhere else the answer
+    to "what supports this" must exclude withdrawn citations, which is why the
+    default is the live set — a reader who forgot the flag gets the safe answer.
+    """
+    owner = int(owner_user_id or 0)
+    if owner <= 0:
+        raise PrivateFactRejected("owner_user_id is required")
+    target = int(fact_id or 0)
+    if target <= 0:
+        raise PrivateFactRejected("fact_id is required")
+    _schema.require_private_schema(cur)
+
+    clauses = ["owner_user_id = ?", "fact_id = ?"]
+    params: list[Any] = [owner, target]
+    if not include_detached:
+        clauses.append("detached_at = ''")
+
+    cur.execute(
+        f"SELECT {', '.join(_EVIDENCE_FIELDS)} "
+        f"FROM {_schema.FACT_EVIDENCE_TABLE} "
+        f"WHERE {' AND '.join(clauses)} "
+        f"ORDER BY attached_at DESC, id DESC LIMIT 200",
+        tuple(params),
+    )
+    # Built from the explicit field tuple rather than ``dict(row)``, for the
+    # reason spelled out in :func:`list_fact_history`: only a `sqlite3.Row`
+    # factory makes a row mapping-like, and this must work on a plain cursor.
+    rows = []
+    for row in (cur.fetchall() or []):
+        item = {name: row[index] for index, name in enumerate(_EVIDENCE_FIELDS)}
+        item["live"] = not str(item.get("detached_at") or "").strip()
+        # Whether a person could be *shown* this, as opposed to merely told it
+        # exists. A STATEMENT is somebody's word and an EXTERNAL reference may
+        # be a link nobody in this system can open; a reviewer deciding whether
+        # a fact is backed needs that distinction on the citation, not in a
+        # separate lookup table they will forget to consult.
+        item["resolvable"] = str(item.get("evidence_type") or "") in _model.RESOLVABLE_EVIDENCE
+        rows.append(item)
+    return rows
+
+
+def attach_evidence(
+    cur,
+    *,
+    owner_user_id: int,
+    fact_id: int,
+    evidence_type: str,
+    evidence_ref: str = "",
+    locator: str = "",
+    actor_user_id: int | None = None,
+    actor_type: str = ACTOR_OWNER,
+    purpose: str = "user_request",
+) -> dict:
+    """Record that something checkable was produced in support of this fact.
+
+    Returns ``{"status", "fact_id", "evidence_id", "promoted", "live_evidence",
+    "verification_state"}``.
+
+    **The citation is written before the promotion is attempted, and a refused
+    promotion is not an error.** That ordering is the whole design. Attaching a
+    document to a DISPUTED fact is a legitimate thing to do — it is often the
+    first step in settling the dispute — and
+    :data:`VERIFICATION_TRANSITIONS` deliberately refuses to let it clear the
+    dispute on its own. If the promotion ran first, or if a refusal raised, the
+    evidence would be discarded precisely in the cases where the member was
+    doing the right thing. So the link row lands, the fact's standing is asked
+    about second, and ``promoted: False`` reports the difference honestly.
+
+    An unrecognised ``evidence_type`` raises rather than defaulting. A default
+    kind would let a typo attach evidence of a type nobody chose and still
+    promote the fact to EVIDENCE_SUPPORTED — the citation would exist, be
+    unopenable, and have moved the fact anyway.
+    """
+    owner = int(owner_user_id or 0)
+    if owner <= 0:
+        raise PrivateFactRejected("owner_user_id is required")
+    target = int(fact_id or 0)
+    if target <= 0:
+        raise PrivateFactRejected("fact_id is required")
+
+    kind = _model.normalize_evidence_type(evidence_type)
+    if not kind:
+        raise PrivateFactRejected(f"unknown evidence type: {evidence_type!r}")
+
+    _schema.require_private_schema(cur)
+
+    actor = int(actor_user_id or owner)
+    actor_class = _normalize_actor_type(actor_type)
+    kind, ref, loc = _evidence_natural_key(
+        evidence_type=kind, evidence_ref=evidence_ref, locator=locator)
+
+    fact = _load_fact_for_evidence(cur, owner_user_id=owner, fact_id=target)
+    if fact is None:
+        # Same answer as "no such fact at all", per Section 14.
+        return {"status": OUTCOME_NOT_FOUND, "fact_id": target, "evidence_id": 0,
+                "promoted": False, "live_evidence": 0, "verification_state": "",
+                "reason": "no_such_fact"}
+    if fact["lifecycle_state"] != _model.LIFECYCLE_ACTIVE:
+        # Citing a retired fact is not a partial success to be recorded with a
+        # warning. An archived, revoked, expired or superseded row is not
+        # something the member is still asserting, and letting evidence accrue
+        # against it would build a support trail for a claim nobody is making.
+        _audit.record(
+            cur, actor_user_id=actor, owner_user_id=owner,
+            action=_audit.ACTION_FACT_EVIDENCE_ATTACH,
+            object_type=fact["subject_type"], object_id=fact["subject_id"],
+            purpose=purpose, outcome=_audit.OUTCOME_DENIED,
+        )
+        return {"status": OUTCOME_REFUSED, "fact_id": target, "evidence_id": 0,
+                "promoted": False, "live_evidence": 0,
+                "verification_state": fact["verification_state"],
+                "reason": "fact_not_active"}
+
+    now_iso = _now_iso()
+
+    # SELECT-then-UPDATE-or-INSERT rather than ``INSERT OR IGNORE``. The latter
+    # reads as the obvious idempotent write and is not available here:
+    # ``services.db`` rewrites it for PostgreSQL, and the rewrite cannot know
+    # which constraint to name, so the statement that works locally is the one
+    # that fails in production. It would also be wrong even if it worked —
+    # ignoring the insert would leave a previously *detached* citation detached,
+    # so re-attaching the document a member just re-uploaded would silently do
+    # nothing while reporting success.
+    cur.execute(
+        f"SELECT id, detached_at FROM {_schema.FACT_EVIDENCE_TABLE} "
+        f"WHERE owner_user_id = ? AND fact_id = ? AND evidence_type = ? "
+        f"AND evidence_ref = ? AND locator = ?",
+        (owner, target, kind, ref, loc),
+    )
+    existing = cur.fetchone()
+
+    if existing is not None:
+        keyed = hasattr(existing, "keys")
+        evidence_id = int(existing["id"] if keyed else existing[0])
+        was_live = not str(
+            (existing["detached_at"] if keyed else existing[1]) or "").strip()
+        if was_live:
+            # Already supporting this fact. Nothing to write and nothing to
+            # promote — but still audited, because "the member sent this again"
+            # is an access to their store and the audit trail is not a log of
+            # state changes, it is a log of who touched what.
+            live_now = _count_live_evidence(cur, owner_user_id=owner, fact_id=target)
+            _audit.record(
+                cur, actor_user_id=actor, owner_user_id=owner,
+                action=_audit.ACTION_FACT_EVIDENCE_ATTACH,
+                object_type=fact["subject_type"], object_id=fact["subject_id"],
+                purpose=purpose, outcome=_audit.OUTCOME_OK,
+            )
+            _telemetry.emit(
+                _telemetry.EVENT_EVIDENCE_LINKED, evidence_type=kind,
+                actor_type=actor_class, domain=fact["domain"],
+                attached=True, promoted=False, live_evidence=live_now,
+            )
+            return {"status": EVIDENCE_UNCHANGED, "fact_id": target,
+                    "evidence_id": evidence_id, "promoted": False,
+                    "live_evidence": live_now,
+                    "verification_state": fact["verification_state"],
+                    "reason": "already_attached"}
+        # A withdrawn citation coming back. `detached_by_actor_type` is cleared
+        # along with the timestamp: leaving it set would describe a live row as
+        # having been detached by somebody, which is the kind of residue that
+        # makes an audit trail unreadable a year later.
+        cur.execute(
+            f"UPDATE {_schema.FACT_EVIDENCE_TABLE} SET detached_at = '', "
+            f"detached_by_actor_type = '', attached_at = ?, "
+            f"attached_by_actor_type = ?, attached_by_actor_id = ?, "
+            f"updated_at = ? WHERE id = ? AND owner_user_id = ?",
+            (now_iso, actor_class, actor, now_iso, evidence_id, owner),
+        )
+    else:
+        cur.execute(
+            f"""INSERT INTO {_schema.FACT_EVIDENCE_TABLE}
+            (owner_user_id, fact_id, evidence_type, evidence_ref, locator,
+             attached_by_actor_type, attached_by_actor_id, attached_at,
+             detached_at, detached_by_actor_type, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', '', ?, ?)""",
+            (owner, target, kind, ref, loc, actor_class, actor, now_iso,
+             now_iso, now_iso),
+        )
+        # The id comes back through the unique key rather than ``lastrowid``,
+        # which is ``None`` on PostgreSQL for these tables — the same approach
+        # `records._insert` takes, for the same reason.
+        cur.execute(
+            f"SELECT id FROM {_schema.FACT_EVIDENCE_TABLE} "
+            f"WHERE owner_user_id = ? AND fact_id = ? AND evidence_type = ? "
+            f"AND evidence_ref = ? AND locator = ?",
+            (owner, target, kind, ref, loc),
+        )
+        inserted = cur.fetchone()
+        evidence_id = 0
+        if inserted is not None:
+            evidence_id = int(
+                inserted["id"] if hasattr(inserted, "keys") else inserted[0])
+
+    live_now = _count_live_evidence(cur, owner_user_id=owner, fact_id=target)
+
+    # Only now, with the citation safely recorded, is the fact's standing
+    # reconsidered. `refused` here means the state machine declined to promote —
+    # a DISPUTED or CONFLICTING fact, or one already ranked above
+    # EVIDENCE_SUPPORTED — and none of those are failures of this call.
+    outcome = _apply_lifecycle(
+        cur, operation=OP_ATTACH_EVIDENCE, owner_user_id=owner, fact_id=target,
+        actor_user_id=actor, actor_type=actor_class,
+        reason_code="evidence_attached", purpose=purpose,
+    )
+    promoted = outcome.get("status") == OUTCOME_APPLIED
+
+    _telemetry.emit(
+        _telemetry.EVENT_EVIDENCE_LINKED, evidence_type=kind,
+        actor_type=actor_class, domain=fact["domain"],
+        attached=True, promoted=promoted, live_evidence=live_now,
+    )
+    return {
+        "status": EVIDENCE_ATTACHED,
+        "fact_id": target,
+        "evidence_id": evidence_id,
+        "promoted": promoted,
+        "live_evidence": live_now,
+        "verification_state": outcome.get("to_state") or fact["verification_state"],
+        "reason": outcome.get("reason") or "",
+    }
+
+
+def detach_evidence(
+    cur,
+    *,
+    owner_user_id: int,
+    fact_id: int,
+    evidence_type: str,
+    evidence_ref: str = "",
+    locator: str = "",
+    actor_user_id: int | None = None,
+    actor_type: str = ACTOR_OWNER,
+    purpose: str = "user_request",
+) -> dict:
+    """Withdraw one citation. Demotes the fact only if it was the last one.
+
+    Returns the same shape as :func:`attach_evidence`, with ``demoted`` in place
+    of ``promoted``.
+
+    Two things here are deliberate and easy to get wrong in the other direction.
+
+    The row is kept and ``detached_at`` is stamped, rather than deleted. A
+    detached citation is the only surviving explanation for why a fact that used
+    to sit at EVIDENCE_SUPPORTED is suddenly in NEEDS_REVIEW; hard-deleting it
+    would leave the demotion in the fact's history with its cause erased.
+
+    And the demotion only fires when the live count reaches zero. Dropping one
+    of three supporting documents does not mean the fact has lost its
+    justification, and a rule that demoted on every detachment would train
+    members never to tidy up their citations.
+    """
+    owner = int(owner_user_id or 0)
+    if owner <= 0:
+        raise PrivateFactRejected("owner_user_id is required")
+    target = int(fact_id or 0)
+    if target <= 0:
+        raise PrivateFactRejected("fact_id is required")
+
+    kind = _model.normalize_evidence_type(evidence_type)
+    if not kind:
+        raise PrivateFactRejected(f"unknown evidence type: {evidence_type!r}")
+
+    _schema.require_private_schema(cur)
+
+    actor = int(actor_user_id or owner)
+    actor_class = _normalize_actor_type(actor_type)
+    kind, ref, loc = _evidence_natural_key(
+        evidence_type=kind, evidence_ref=evidence_ref, locator=locator)
+
+    fact = _load_fact_for_evidence(cur, owner_user_id=owner, fact_id=target)
+    if fact is None:
+        return {"status": OUTCOME_NOT_FOUND, "fact_id": target, "evidence_id": 0,
+                "demoted": False, "live_evidence": 0, "verification_state": "",
+                "reason": "no_such_fact"}
+
+    cur.execute(
+        f"SELECT id, detached_at FROM {_schema.FACT_EVIDENCE_TABLE} "
+        f"WHERE owner_user_id = ? AND fact_id = ? AND evidence_type = ? "
+        f"AND evidence_ref = ? AND locator = ?",
+        (owner, target, kind, ref, loc),
+    )
+    row = cur.fetchone()
+    if row is None:
+        return {"status": OUTCOME_NOT_FOUND, "fact_id": target, "evidence_id": 0,
+                "demoted": False,
+                "live_evidence": _count_live_evidence(
+                    cur, owner_user_id=owner, fact_id=target),
+                "verification_state": fact["verification_state"],
+                "reason": "no_such_evidence"}
+
+    keyed = hasattr(row, "keys")
+    evidence_id = int(row["id"] if keyed else row[0])
+    already_detached = bool(
+        str((row["detached_at"] if keyed else row[1]) or "").strip())
+    live_now = _count_live_evidence(cur, owner_user_id=owner, fact_id=target)
+
+    if already_detached:
+        # Idempotent. Reporting this as a detachment would emit a second
+        # `attached=False` event for one withdrawal and, worse, would run the
+        # zero-count check again — demoting a fact whose evidence was removed
+        # last week because somebody clicked the button twice.
+        _telemetry.emit(
+            _telemetry.EVENT_EVIDENCE_LINKED, evidence_type=kind,
+            actor_type=actor_class, domain=fact["domain"],
+            attached=False, promoted=False, live_evidence=live_now,
+        )
+        return {"status": EVIDENCE_UNCHANGED, "fact_id": target,
+                "evidence_id": evidence_id, "demoted": False,
+                "live_evidence": live_now,
+                "verification_state": fact["verification_state"],
+                "reason": "already_detached"}
+
+    now_iso = _now_iso()
+    cur.execute(
+        f"UPDATE {_schema.FACT_EVIDENCE_TABLE} SET detached_at = ?, "
+        f"detached_by_actor_type = ?, updated_at = ? "
+        f"WHERE id = ? AND owner_user_id = ?",
+        (now_iso, actor_class, now_iso, evidence_id, owner),
+    )
+
+    live_now = _count_live_evidence(cur, owner_user_id=owner, fact_id=target)
+
+    demoted = False
+    outcome: dict = {}
+    if live_now == 0:
+        outcome = _apply_lifecycle(
+            cur, operation=OP_DETACH_EVIDENCE, owner_user_id=owner,
+            fact_id=target, actor_user_id=actor, actor_type=actor_class,
+            reason_code="evidence_withdrawn", purpose=purpose,
+        )
+        demoted = outcome.get("status") == OUTCOME_APPLIED
+    else:
+        # No lifecycle call means no audit row from `_apply_lifecycle`, and a
+        # withdrawal that left the fact standing is still an act on the member's
+        # store that has to appear in the trail.
+        _audit.record(
+            cur, actor_user_id=actor, owner_user_id=owner,
+            action=_audit.ACTION_FACT_EVIDENCE_DETACH,
+            object_type=fact["subject_type"], object_id=fact["subject_id"],
+            purpose=purpose, outcome=_audit.OUTCOME_OK,
+        )
+
+    _telemetry.emit(
+        _telemetry.EVENT_EVIDENCE_LINKED, evidence_type=kind,
+        actor_type=actor_class, domain=fact["domain"],
+        attached=False, promoted=demoted, live_evidence=live_now,
+    )
+    return {
+        "status": EVIDENCE_DETACHED,
+        "fact_id": target,
+        "evidence_id": evidence_id,
+        "demoted": demoted,
+        "live_evidence": live_now,
+        "verification_state": outcome.get("to_state") or fact["verification_state"],
+        "reason": outcome.get("reason") or "",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Review (Sections 16, 32 — putting a fact in front of the member)
+# ---------------------------------------------------------------------------
+#: Why a fact is in the review queue. A closed set, and a superset of
+#: :data:`telemetry.REVIEW_REASON_VOCAB` — the sweep only ever publishes
+#: ``stale``, because that is the only reason a *sweep* produces, while the
+#: queue also has to explain rows that were flagged for reasons the sweep did
+#: not cause. Keeping the two lists separate is what stops the queue's richer
+#: vocabulary from leaking into telemetry, where every extra enum value is a
+#: new dimension on a metric nobody asked for.
+REVIEW_STALE = "stale"
+REVIEW_EVIDENCE_REMOVED = "evidence_removed"
+REVIEW_DISPUTED = "disputed"
+REVIEW_CONFLICTING = "conflicting"
+REVIEW_FLAGGED = "flagged"
+
+REVIEW_REASONS: tuple[str, ...] = (
+    REVIEW_STALE, REVIEW_EVIDENCE_REMOVED, REVIEW_DISPUTED,
+    REVIEW_CONFLICTING, REVIEW_FLAGGED,
+)
+
+#: How many rows a queue read may examine to fill one page. Staleness is
+#: computed rather than stored — see the module docstring — so it cannot appear
+#: in a ``WHERE`` clause, and the queue has to scan and filter in Python. The
+#: multiplier bounds that scan: without it, "give me 50 rows to review" on a
+#: store with no stale facts would read the entire table to prove it.
+REVIEW_SCAN_MULTIPLIER = 10
+REVIEW_SCAN_CEILING = 1000
+
+#: Live states that already carry a more specific objection than "somebody
+#: should look at this", and so are not candidates for the staleness sweep.
+#: Mirrors the exclusions in :data:`VERIFICATION_TRANSITIONS` for
+#: ``OP_FLAG_REVIEW``; kept as its own tuple because the sweep uses it in SQL,
+#: and a sweep that selected rows the state machine would then refuse would do
+#: its work by generating refusals.
+_UNSWEEPABLE_STATES: tuple[str, ...] = (
+    _model.VERIFICATION_DISPUTED,
+    _model.VERIFICATION_CONFLICTING,
+    _model.VERIFICATION_NEEDS_REVIEW,
+)
+
+
+def sweep_stale_facts(
+    cur,
+    *,
+    owner_user_id: int,
+    now: object = None,
+    limit: int = 200,
+) -> dict:
+    """Flag facts that have aged past their citation horizon. Owner-scoped.
+
+    Returns ``{"scanned", "flagged"}``. Both numbers are real counts, and an
+    unreadable table raises rather than reporting zero — the same contract as
+    :func:`expire_due_facts`, for the same reason: a sweep that reports
+    ``{"scanned": 0, "flagged": 0}`` when it could not read the table is
+    indistinguishable from a healthy one.
+
+    This is not expiry and must not read like it. Expiry retires a fact whose
+    stated validity window closed — something the member said in advance would
+    stop being true. Staleness is the softer claim that nobody has looked in a
+    while: the fact stays ACTIVE, stays readable, and is merely moved to
+    NEEDS_REVIEW so it is presented with its observation date attached rather
+    than as a description of how things are now. Hence ``freshness_horizon``
+    rather than ``system_sweep`` in the history.
+
+    The actor is the system and the purpose is maintenance, so this never
+    stamps ``last_verified_at`` — ``OP_FLAG_REVIEW`` is not in
+    :data:`VERIFYING_OPERATIONS`. A sweep noticing a fact is old is not a person
+    looking at it, and a clock that a background job could refresh would make
+    every fact permanently fresh and the horizon meaningless.
+    """
+    owner = int(owner_user_id or 0)
+    if owner <= 0:
+        raise PrivateFactRejected("owner_user_id is required")
+    _schema.require_private_schema(cur)
+
+    moment = _parse_iso(now) or _now()
+    bounded = max(1, min(int(limit or 200), REVIEW_SCAN_CEILING))
+
+    cur.execute(
+        f"SELECT id, observed_at, provenance_type FROM {_schema.FACTS_TABLE} "
+        f"WHERE owner_user_id = ? AND lifecycle_state = ? "
+        f"AND verification_state NOT IN ({','.join('?' * len(_UNSWEEPABLE_STATES))}) "
+        f"ORDER BY observed_at ASC, id ASC LIMIT ?",
+        (owner, _model.LIFECYCLE_ACTIVE, *_UNSWEEPABLE_STATES, bounded),
+    )
+    candidates = []
+    for row in (cur.fetchall() or []):
+        keyed = hasattr(row, "keys")
+        candidates.append({
+            "id": int(row["id"] if keyed else row[0]),
+            "observed_at": row["observed_at"] if keyed else row[1],
+            "provenance_type": row["provenance_type"] if keyed else row[2],
+        })
+
+    flagged = 0
+    for candidate in candidates:
+        if not staleness(candidate, at=moment)["stale"]:
+            continue
+        result = _apply_lifecycle(
+            cur, operation=OP_FLAG_REVIEW, owner_user_id=owner,
+            fact_id=candidate["id"], actor_type=ACTOR_SYSTEM,
+            reason_code="freshness_horizon", purpose="system_maintenance",
+        )
+        if result.get("status") == OUTCOME_APPLIED:
+            flagged += 1
+
+    # Both halves, always. See the field comment on ``EVENT_REVIEW_SWEEP``:
+    # `flagged` alone cannot distinguish a sweep that found nothing wrong from
+    # a sweep that read no rows at all.
+    _telemetry.emit(
+        _telemetry.EVENT_REVIEW_SWEEP, reason=REVIEW_STALE,
+        actor_type=ACTOR_SYSTEM, scanned=len(candidates), flagged=flagged,
+    )
+    return {"scanned": len(candidates), "flagged": flagged}
+
+
+def review_queue(cur, *, owner_user_id: int, limit: int = 50) -> list[dict]:
+    """Facts that need the member's attention, with a reason for each.
+
+    Two populations, deliberately merged into one list. The first is every live
+    fact in an :data:`model.UNTRUSTWORTHY_VERIFICATION` state — disputed,
+    conflicting, already flagged. The second is facts that have aged past their
+    horizon but which no sweep has reached yet.
+
+    Including the second is what makes this read model correct rather than
+    merely convenient. Staleness is computed at read time, so a queue built only
+    from stored state would show an empty list on a store whose sweep has not
+    run — which is precisely the store most in need of a review queue. The
+    member should not have to know whether a background job is healthy in order
+    to see that their facts are old.
+
+    Each row carries a ``review_reason`` from :data:`REVIEW_REASONS`. The reason
+    is not decoration: "this document was withdrawn" and "nobody has looked at
+    this since March" call for completely different actions, and a queue that
+    said only "needs review" for both would send the member hunting for what
+    changed.
+
+    Read-only. Nothing here flags, promotes or stamps anything —
+    :func:`sweep_stale_facts` is the writer, and a read model that mutated on
+    display would make the queue's contents depend on who opened it last.
+    """
+    owner = int(owner_user_id or 0)
+    if owner <= 0:
+        raise PrivateFactRejected("owner_user_id is required")
+    _schema.require_private_schema(cur)
+
+    bounded = max(1, min(int(limit or 50), 200))
+    scan = min(bounded * REVIEW_SCAN_MULTIPLIER, REVIEW_SCAN_CEILING)
+
+    # Oldest observation first. That is both the natural review order and the
+    # order that makes the bounded scan find stale rows rather than proving
+    # their absence one fresh fact at a time.
+    cur.execute(
+        f"SELECT * FROM {_schema.FACTS_TABLE} "
+        f"WHERE owner_user_id = ? AND lifecycle_state = ? "
+        f"ORDER BY observed_at ASC, id ASC LIMIT ?",
+        (owner, _model.LIFECYCLE_ACTIVE, scan),
+    )
+    rows = [_row_to_fact(row) for row in (cur.fetchall() or [])]
+
+    needs_review_ids = [
+        int(row.get("id") or 0) for row in rows
+        if row.get("verification_state") == _model.VERIFICATION_NEEDS_REVIEW
+    ]
+    # One grouped query rather than one per row. The question — "did this fact
+    # lose its evidence, or just its freshness" — is answerable from the
+    # citation table alone: a fact with detached citations and no live ones is
+    # a fact whose support was withdrawn.
+    evidence_removed: set[int] = set()
+    if needs_review_ids:
+        placeholders = ",".join("?" * len(needs_review_ids))
+        cur.execute(
+            f"SELECT fact_id, "
+            f"SUM(CASE WHEN detached_at = '' THEN 1 ELSE 0 END) AS live_n, "
+            f"COUNT(*) AS total_n "
+            f"FROM {_schema.FACT_EVIDENCE_TABLE} "
+            f"WHERE owner_user_id = ? AND fact_id IN ({placeholders}) "
+            f"GROUP BY fact_id",
+            (owner, *needs_review_ids),
+        )
+        for row in (cur.fetchall() or []):
+            keyed = hasattr(row, "keys")
+            fact_id = int(row["fact_id"] if keyed else row[0])
+            live_n = int((row["live_n"] if keyed else row[1]) or 0)
+            total_n = int((row["total_n"] if keyed else row[2]) or 0)
+            if total_n > 0 and live_n == 0:
+                evidence_removed.add(fact_id)
+
+    queue: list[dict] = []
+    for row in rows:
+        state = row.get("verification_state") or ""
+        stale = bool((row.get("freshness") or {}).get("stale"))
+        untrustworthy = state in _model.UNTRUSTWORTHY_VERIFICATION
+
+        if not untrustworthy and not stale:
+            continue
+
+        if state == _model.VERIFICATION_DISPUTED:
+            # The member said this is wrong. More specific than anything the
+            # machine could add, and it outranks staleness: telling somebody
+            # their disputed fact is also old is not the next thing they need.
+            reason = REVIEW_DISPUTED
+        elif state == _model.VERIFICATION_CONFLICTING:
+            reason = REVIEW_CONFLICTING
+        elif state == _model.VERIFICATION_NEEDS_REVIEW:
+            if int(row.get("id") or 0) in evidence_removed:
+                reason = REVIEW_EVIDENCE_REMOVED
+            elif stale:
+                reason = REVIEW_STALE
+            else:
+                reason = REVIEW_FLAGGED
+        else:
+            # Trustworthy but past its horizon — the population a stored-state
+            # query would miss entirely.
+            reason = REVIEW_STALE
+
+        row["review_reason"] = reason
+        # Whether the sweep has caught up with this row yet. A UI can use it to
+        # distinguish "we flagged this" from "we are telling you now because you
+        # asked", which is honest about how the queue works.
+        row["flagged"] = state == _model.VERIFICATION_NEEDS_REVIEW
+        queue.append(row)
+        if len(queue) >= bounded:
+            break
+
+    return queue
