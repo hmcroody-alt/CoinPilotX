@@ -687,5 +687,76 @@ def test_invalid_transitions_are_409(cur):
         status=410, code="meeting_over")
 
 
+# ---------------------------------------------------------------------------
+# Status polling — the canonical native client's ONLY backend signal
+# ---------------------------------------------------------------------------
+#
+# callSessionStore polls the engine's call_status every 4.2s and treats
+# 404/410 as terminal ("the backend no longer knows the call") while any other
+# error is retried forever. That makes the read-access rule load-bearing:
+#  * an admitted participant must get 200 or their tiles never update;
+#  * a stranger must get 403 (the meeting's existence stays unconfirmed —
+#    they had to know the call id already to even ask);
+#  * a removed/left participant must get 410 — that is HOW host-removal and
+#    end-for-everyone reach a device that is otherwise happily connected to
+#    Agora. A 403 here would present as a transient poll error and the
+#    revoked client would ring the endpoint forever, still in the room.
+
+
+def _viewer(cursor, meeting_payload, user_id):
+    call = eng._get_call(cursor, meeting_payload["call_public_id"])
+    assert call, "meeting must ride a communication_calls row"
+    return eng._viewer_denied(cursor, call, user_id)
+
+
+def test_admitted_participant_may_poll_call_status(cur):
+    m = _instant(cur, waiting_room_enabled=False)
+    meetings.join_meeting(cur, user_id=GUEST, meeting_ref=m["meeting_code"])
+    assert _viewer(cur, m, HOST) is None
+    assert _viewer(cur, m, GUEST) is None
+
+
+def test_stranger_and_waiting_room_poll_is_403(cur):
+    m = _instant(cur)  # waiting room ON
+    meetings.join_meeting(cur, user_id=GUEST, meeting_ref=m["meeting_code"])
+    for user in (STRANGER, GUEST):  # GUEST is parked in the waiting room
+        denied = _viewer(cur, m, user)
+        assert denied and denied["http_status"] == 403
+
+
+def test_removed_participant_poll_is_410_terminal(cur):
+    m = _instant(cur, waiting_room_enabled=False)
+    meetings.join_meeting(cur, user_id=GUEST, meeting_ref=m["meeting_code"])
+    meetings.remove_participant(
+        cur, actor_user_id=HOST, meeting_ref=m["public_id"], user_id=GUEST)
+    denied = _viewer(cur, m, GUEST)
+    assert denied and denied["http_status"] == 410
+    # The host is untouched.
+    assert _viewer(cur, m, HOST) is None
+
+
+def test_end_for_everyone_makes_every_poll_410(cur):
+    m = _instant(cur, waiting_room_enabled=False)
+    meetings.join_meeting(cur, user_id=GUEST, meeting_ref=m["meeting_code"])
+    meetings.end_meeting(cur, actor_user_id=HOST, meeting_ref=m["public_id"])
+    for user in (HOST, GUEST):
+        denied = _viewer(cur, m, user)
+        assert denied and denied["http_status"] == 410
+
+
+def test_conversation_scope_viewer_rule_is_unchanged(cur):
+    # Non-room calls keep the historical conversation-membership check;
+    # _viewer_denied must not accidentally re-gate them by participant row.
+    cur.execute(
+        "CREATE TABLE IF NOT EXISTS comm_v2_participants ("
+        "conversation_id INT, user_id INT, membership_state TEXT, left_at TEXT)")
+    cur.execute(
+        "INSERT INTO comm_v2_participants VALUES (77, ?, 'active', '')", (HOST,))
+    call = {"id": 999999, "call_scope": "direct", "conversation_id": 77}
+    assert eng._viewer_denied(cur, call, HOST) is None  # member, no row needed
+    denied = eng._viewer_denied(cur, call, STRANGER)
+    assert denied and denied["http_status"] == 403
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))
