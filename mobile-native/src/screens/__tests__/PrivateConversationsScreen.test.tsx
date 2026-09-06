@@ -76,6 +76,16 @@ jest.mock("../../api/privateOffice", () => ({
   unlockOffice: (...args: unknown[]) => mockUnlockOffice(...args)
 }));
 
+/**
+ * Who is signed in, as far as the gate can tell.
+ *
+ * Mutable rather than a literal because Stage 107 is about what happens when
+ * this value *changes* under a live grant: the account-switch test moves it and
+ * then remounts, which is exactly the sequence a real device performs when one
+ * member signs out and another signs in without the process restarting.
+ */
+let mockSessionUserId = 4021;
+
 // An unlock grant belongs to an account, and the gate relocks on any mount that
 // finds no signed-in member. Without a session this suite would be modelling a
 // signed-out device rather than a member with a locked office.
@@ -83,7 +93,7 @@ jest.mock("../../session/sessionStore", () => ({
   ...jest.requireActual("../../session/sessionStore"),
   getSessionEnvelope: async () => ({
     version: 1,
-    userId: 4021,
+    userId: mockSessionUserId,
     accessToken: "access-token",
     accessTokenExpiresAt: Date.now() + 600_000,
     refreshToken: "refresh-token",
@@ -218,6 +228,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   // Every case starts locked: the in-memory grant does not survive a test.
   __resetOfficeLockForTests();
+  mockSessionUserId = 4021;
   mockPulseApi.mockResolvedValue(listBody([rawRow()]));
   mockOfficeStatus.mockResolvedValue({
     state: "READY",
@@ -476,5 +487,52 @@ describe("the office lock is honoured after it has been opened", () => {
     // The lock door, not an empty office and not the stale rows behind it.
     expect(queryByText(EMPTY_TITLE)).toBeNull();
     expect(queryByText("Acquisition working group")).toBeNull();
+  });
+
+  /**
+   * Stage 107 — the grant belongs to an account, not to a handset.
+   *
+   * The dangerous sequence is a process that never restarts: member A unlocks,
+   * signs out, member B signs in, and the module-scope grant in `officeLock` is
+   * still sitting there because nothing tore the JS context down. If the gate
+   * trusted `isOfficeUnlocked()` with no argument, B would walk straight into
+   * A's office and read A's conversation titles.
+   *
+   * The screen owns none of this and must not: `reconcileOfficeOwner` in the
+   * gate is the single account-switch boundary, and this test exists to prove
+   * that wrapping the screen in `PrivateOfficeLockGate` is enough to inherit it.
+   * A future refactor that renders the conversation list outside the gate — or
+   * that "helpfully" restores the grant — fails here.
+   */
+  it("does not carry one member's unlocked office into the next member's session", async () => {
+    const first = await renderScreen();
+    await waitFor(() => first.getByText("Acquisition working group"));
+    expect(isOfficeUnlocked(4021)).toBe(true);
+
+    // Sign-out and sign-in, without a process restart: the grant survives in
+    // module scope, which is precisely the condition being defended against.
+    first.unmount();
+    mockSessionUserId = 5544;
+    expect(isOfficeUnlocked()).toBe(true);
+
+    // Rendered bare rather than through `renderScreen`, which would type B's
+    // passcode in and reopen the door — the point here is what B sees *before*
+    // authenticating. The server would refuse B's use of A's grant anyway, but
+    // the client must not need to be told.
+    const second = render(
+      <PrivateConversationsScreen
+        route={{ key: "c", name: "PrivateConversations", params: {} } as never}
+        navigation={
+          { navigate: jest.fn(), goBack: jest.fn(), setOptions: jest.fn() } as never
+        }
+      />
+    );
+    await waitFor(() => second.getByText("premium:privateOffice.lock.unlock"));
+
+    // A's grant is gone, not merely hidden behind a door.
+    expect(isOfficeUnlocked()).toBe(false);
+    // And none of A's office leaked into B's render.
+    expect(second.queryByText("Acquisition working group")).toBeNull();
+    expect(second.queryByText(EMPTY_TITLE)).toBeNull();
   });
 });
