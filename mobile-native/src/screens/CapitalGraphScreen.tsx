@@ -45,6 +45,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   CAPITAL_CURRENCY_UNSPECIFIED,
   CAPITAL_VIEWS,
+  CapitalCashFlow,
+  CapitalCashFlowResult,
   CapitalGraph,
   CapitalGraphResult,
   CapitalObligations,
@@ -55,6 +57,7 @@ import {
   CapitalPortfolioResult,
   CapitalView,
   asCapitalView,
+  getCapitalCashFlow,
   getCapitalGraph,
   getCapitalObligations,
   getCapitalOverview,
@@ -80,19 +83,24 @@ type ScreenState = "LOADING" | "EMPTY" | CapitalGraphResult["state"];
 /**
  * The screen's tabs are wider than the graph's views.
  *
- * `CAPITAL_VIEWS` are arguments the graph route accepts. Overview and
- * Obligations are not: each is a different endpoint with a different payload
- * and no `view` parameter at all. Folding them into one union and filtering at
- * the call site would leave a bogus `view=overview` request one careless
- * refactor away, so the tab type is widened here and narrowed back to a real
- * view before anything is fetched.
+ * `CAPITAL_VIEWS` are arguments the graph route accepts. Overview, Cash Flow
+ * and Obligations are not: each is a different endpoint with a different
+ * payload and no `view` parameter at all. Folding them into one union and
+ * filtering at the call site would leave a bogus `view=overview` request one
+ * careless refactor away, so the tab type is widened here and narrowed back to
+ * a real view before anything is fetched.
  */
-const CAPITAL_PANELS = ["overview", "obligations"] as const;
+const CAPITAL_PANELS = ["overview", "cash_flow", "obligations"] as const;
 
 /** A tab served by its own endpoint rather than by `view=`. */
 type CapitalPanel = (typeof CAPITAL_PANELS)[number];
 
-const CAPITAL_TABS = ["overview", ...CAPITAL_VIEWS, "obligations"] as const;
+/**
+ * Cash Flow sits beside Obligations rather than next to Overview: it is the
+ * same recorded debts on a timeline, and a member comparing "what is owed" with
+ * "when it falls due" should not have to cross the graph views to do it.
+ */
+const CAPITAL_TABS = ["overview", ...CAPITAL_VIEWS, "cash_flow", "obligations"] as const;
 
 type CapitalTab = (typeof CAPITAL_TABS)[number];
 
@@ -128,11 +136,13 @@ const readPanel = async (
   which: CapitalPanel
 ): Promise<
   | { panel: "overview"; result: CapitalOverviewResult }
+  | { panel: "cash_flow"; result: CapitalCashFlowResult }
   | { panel: "obligations"; result: CapitalObligationsResult }
-> =>
-  which === "overview"
-    ? { panel: "overview", result: await getCapitalOverview() }
-    : { panel: "obligations", result: await getCapitalObligations() };
+> => {
+  if (which === "overview") return { panel: "overview", result: await getCapitalOverview() };
+  if (which === "cash_flow") return { panel: "cash_flow", result: await getCapitalCashFlow() };
+  return { panel: "obligations", result: await getCapitalObligations() };
+};
 
 /**
  * EMPTY is a claim — "nothing recorded" — and on the portfolio-backed views
@@ -184,6 +194,8 @@ function CapitalGraphBody({ navigation, route }: Props) {
   const [obligationsState, setObligationsState] = useState<ScreenState>("LOADING");
   const [obligationsResult, setObligationsResult] =
     useState<CapitalObligationsResult | null>(null);
+  const [cashFlowState, setCashFlowState] = useState<ScreenState>("LOADING");
+  const [cashFlowResult, setCashFlowResult] = useState<CapitalCashFlowResult | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   // One request pair at a time: a second Retry tap while the first is still in
   // flight would race two setState pairs and double-hit the server.
@@ -205,6 +217,7 @@ function CapitalGraphBody({ navigation, route }: Props) {
   const applyPanel = useCallback(
     (read:
       | { panel: "overview"; result: CapitalOverviewResult }
+      | { panel: "cash_flow"; result: CapitalCashFlowResult }
       | { panel: "obligations"; result: CapitalObligationsResult }) => {
       // The server said the grant is dead (revoked elsewhere, expired). Drop
       // the local token so the enclosing gate flips back to the unlock door.
@@ -217,6 +230,14 @@ function CapitalGraphBody({ navigation, route }: Props) {
         // as zero owed — which is a different sentence from "we found nothing
         // to show you".
         setOverviewState(read.result.state);
+        return;
+      }
+      if (read.panel === "cash_flow") {
+        // Same reasoning as the other two, and it bites hardest here: an empty
+        // schedule is "nothing recorded falls due in any window we can date",
+        // which a generic EMPTY would render as "you owe nothing".
+        setCashFlowResult(read.result);
+        setCashFlowState(read.result.state);
         return;
       }
       setObligationsResult(read.result);
@@ -256,6 +277,7 @@ function CapitalGraphBody({ navigation, route }: Props) {
     // Only the active tab's state is reset. Blanking the others would make a
     // return to an already-loaded tab flash LOADING over an answer we hold.
     if (panel === "overview") setOverviewState("LOADING");
+    else if (panel === "cash_flow") setCashFlowState("LOADING");
     else if (panel === "obligations") setObligationsState("LOADING");
     else setState("LOADING");
     (async () => {
@@ -303,14 +325,24 @@ function CapitalGraphBody({ navigation, route }: Props) {
    * Overview's while Obligations is showing would do it in the other
    * direction.
    */
-  const panelRead: { result: CapitalOverviewResult | CapitalObligationsResult | null; state: ScreenState } | null =
+  const panelRead: {
+    result: CapitalOverviewResult | CapitalCashFlowResult | CapitalObligationsResult | null;
+    state: ScreenState;
+  } | null =
     panel === "overview"
       ? { result: overviewResult, state: overviewState }
-      : panel === "obligations"
-        ? { result: obligationsResult, state: obligationsState }
-        : null;
+      : panel === "cash_flow"
+        ? { result: cashFlowResult, state: cashFlowState }
+        : panel === "obligations"
+          ? { result: obligationsResult, state: obligationsState }
+          : null;
 
-  const active: CapitalOverviewResult | CapitalObligationsResult | CapitalGraphResult | null =
+  const active:
+    | CapitalOverviewResult
+    | CapitalCashFlowResult
+    | CapitalObligationsResult
+    | CapitalGraphResult
+    | null =
     panelRead !== null ? panelRead.result : result;
   const shown: ScreenState = panelRead !== null ? panelRead.state : state;
   const minimumTier = active && active.state === "NOT_ENTITLED" ? active.minimumTier : "";
@@ -321,12 +353,17 @@ function CapitalGraphBody({ navigation, route }: Props) {
     obligationsResult && obligationsResult.state === "READY"
       ? obligationsResult.obligations
       : null;
+  const cashFlow =
+    cashFlowResult && cashFlowResult.state === "READY" ? cashFlowResult.cashFlow : null;
 
   const ot = (key: string, options?: Record<string, unknown>) =>
     t(`premium:privateOffice.capital.overview.${key}`, options);
 
   const bt = (key: string, options?: Record<string, unknown>) =>
     t(`premium:privateOffice.capital.obligations.${key}`, options);
+
+  const ft = (key: string, options?: Record<string, unknown>) =>
+    t(`premium:privateOffice.capital.cashFlow.${key}`, options);
 
   const nodeTypeLabel = (token: string) =>
     t(`premium:privateOffice.capital.nodeType.${token}`, { defaultValue: token });
@@ -1202,6 +1239,295 @@ function CapitalGraphBody({ navigation, route }: Props) {
     );
   };
 
+  /**
+   * The Cash Flow tab: when the recorded obligations fall due.
+   *
+   * ## It is outflows, and the screen says so before it says anything else
+   *
+   * PulseSoc has no income ledger — no salary record, no dividend record, no
+   * rent received. A screen headed "Cash Flow" showing only money leaving is
+   * describing half a balance while implying the other half was checked and
+   * found to be zero. The server states this in `basis.inflows`; it is rendered
+   * verbatim, in the same card as the figure, on every render. It is not a
+   * defect notice and it never disappears.
+   *
+   * ## Nothing recurs unless the member recorded it recurring
+   *
+   * One dated mortgage payment is one outflow here, not twelve. `basis.recurrence`
+   * carries that sentence and is shown for the same reason: a member who sees a
+   * single payment in a yearly window needs to know the app did not silently
+   * decide their mortgage was a one-off.
+   *
+   * ## Undated is not never, and unquantified is not zero
+   *
+   * An obligation with an amount but no due date is real money owed at an
+   * unknown time, and it appears in no bucket because it belongs to none. The
+   * server counts those in `excluded`; drawing the buckets without them would
+   * present a schedule that quietly omits money. So the excluded counters are
+   * rendered whenever they are non-zero, and `complete` is read from the server
+   * rather than inferred from whether the list looks full.
+   *
+   * ## Buckets are the server's, including ones this build has no name for
+   *
+   * The rows are ordered and labelled from `basis.buckets`. Any bucket present
+   * in `buckets` but absent from that list is still drawn, under its raw key —
+   * an unrecognised bucket is the one case where silently dropping it would
+   * hide money from a member while looking perfectly healthy.
+   */
+  const cashFlowPanels = (data: CapitalCashFlow) => {
+    const totals = data.totals;
+    const headline = moneyIn(totals.scheduledAmount, totals.currency);
+
+    // Declared buckets first, in the server's order, then any the payload
+    // carries without declaring. The second list is normally empty; when it is
+    // not, the alternative to drawing it is losing a bucket that has money in
+    // it because this build shipped before the name did.
+    const declared = data.basis.buckets.map((definition) => ({
+      name: definition.name,
+      fromDays: definition.fromDays,
+      toDays: definition.toDays,
+      declared: true
+    }));
+    const undeclared = Object.keys(data.buckets)
+      .filter((name) => !declared.some((entry) => entry.name === name))
+      .map((name) => ({ name, fromDays: null, toDays: null, declared: false }));
+    const buckets = [...declared, ...undeclared];
+
+    const bucketLabel = (name: string) =>
+      t(`premium:privateOffice.capital.cashFlow.bucket.${name}`, { defaultValue: name });
+
+    /** The window in the server's own numbers, so an unfamiliar name is still readable. */
+    const bucketRange = (entry: (typeof buckets)[number]) => {
+      if (!entry.declared) return ft("bucketUndeclared");
+      if (entry.fromDays === null && entry.toDays === null) return null;
+      if (entry.fromDays === null) return ft("bucketBefore", { to: entry.toDays });
+      if (entry.toDays === null) return ft("bucketAfter", { from: entry.fromDays });
+      return ft("bucketBetween", { from: entry.fromDays, to: entry.toDays });
+    };
+
+    const excludedRows: [string, number][] = [
+      ["undated", data.excluded.undated],
+      ["unquantified", data.excluded.unquantified],
+      ["undatedAndUnquantified", data.excluded.undatedAndUnquantified]
+    ];
+    const anyExcluded = excludedRows.some(([, count]) => count > 0);
+
+    return (
+      <>
+        <View style={styles.folioPanel}>
+          <View style={styles.folioHead}>
+            <Text style={styles.folioTitle}>{ft("title")}</Text>
+            {/* The server's flag. It is false whenever *anything* was left out
+                — an undated debt, a truncated list, a currency that could not
+                be summed — not merely when the list is short. */}
+            <Text
+              style={[
+                styles.freshTier,
+                { color: totals.complete ? colors.accent : colors.warning }
+              ]}
+            >
+              {totals.complete ? ft("complete") : ft("partial")}
+            </Text>
+          </View>
+
+          <View style={styles.folioTotals}>
+            {headline !== null ? (
+              <Text style={styles.folioTotalValue}>{headline}</Text>
+            ) : (
+              <>
+                {/* Not a zero and not a bare number. The server withheld the
+                    sum because the obligations span currencies it has no
+                    approved rate for. */}
+                <Text style={styles.folioPartial}>{ft("withheld")}</Text>
+                <Text style={styles.folioWarn}>{ft("notSummable")}</Text>
+              </>
+            )}
+          </View>
+
+          {/* The load-bearing sentence of this entire tab, drawn on every
+              render including the complete case. `basis.inflows` is the
+              server's own wording and is printed verbatim rather than
+              paraphrased: it is the difference between "what leaves" and "what
+              is left". */}
+          <View style={styles.warnPanel}>
+            <View style={styles.warnHead}>
+              <Ionicons name="information-circle-outline" size={16} color={colors.warning} />
+              <Text style={styles.warnTitle}>{ft("outflowsTitle")}</Text>
+            </View>
+            <Text style={styles.conflictReason}>{data.basis.inflows}</Text>
+            <Text style={styles.conflictReason}>{data.basis.recurrence}</Text>
+          </View>
+
+          {!data.sync.projected ? (
+            <Text style={styles.folioWarn}>{ft("notProjected")}</Text>
+          ) : null}
+
+          <View style={styles.statRow}>
+            <View style={styles.statCell}>
+              <Text style={styles.statLabel}>{ft("scheduledLabel")}</Text>
+              <Text style={styles.statValue}>{countText(totals.scheduledCount)}</Text>
+            </View>
+            <View style={styles.statCell}>
+              <Text style={styles.statLabel}>{ft("seenLabel")}</Text>
+              <Text style={styles.statValue}>{countText(totals.obligationsSeen)}</Text>
+            </View>
+            <View style={styles.statCell}>
+              <Text style={styles.statLabel}>{ft("excludedLabel")}</Text>
+              {/* Excluded rows are the reason the schedule understates. Shown
+                  in the warning colour so the number reads as a gap, not a
+                  tally. */}
+              <Text style={totals.excludedCount > 0 ? styles.folioWarn : styles.statValue}>
+                {countText(totals.excludedCount)}
+              </Text>
+            </View>
+          </View>
+
+          {/* Nothing scheduled is a statement about dated records, not about
+              the member's debts. Both halves of that sentence are needed:
+              undated obligations are excluded from every bucket by design. */}
+          {totals.scheduledCount === 0 ? (
+            <Text style={styles.folioWarn}>{ft("noneScheduled")}</Text>
+          ) : null}
+
+          {totals.truncated ? <Text style={styles.folioWarn}>{ft("truncated")}</Text> : null}
+
+          {/* Published by the server as an invariant that must always be 0. If
+              it is ever non-zero, a row in a currency the total does not name
+              reached a bucket, and the figure above is FX by accident. Loud,
+              because the alternative is a wrong total that looks right. */}
+          {totals.mixedCurrencyRows > 0 ? (
+            <Text style={styles.folioWarn}>
+              {ft("mixedCurrency", { count: totals.mixedCurrencyRows })}
+            </Text>
+          ) : null}
+        </View>
+
+        <View style={styles.folioPanel}>
+          <Text style={styles.folioTitle}>{ft("bucketsTitle")}</Text>
+          {buckets.map((entry) => {
+            const bucket = data.buckets[entry.name];
+            const range = bucketRange(entry);
+            return (
+              <View key={entry.name} style={styles.obligationRow}>
+                <View style={styles.obligationHead}>
+                  <Text style={styles.folioSymbol} numberOfLines={1}>
+                    {bucketLabel(entry.name)}
+                  </Text>
+                  {bucket === undefined ? (
+                    // Declared but not reported. Not zero: the server named
+                    // this window and then sent no figure for it.
+                    <Text style={styles.statMuted}>{ft("bucketMissing")}</Text>
+                  ) : bucket.amount !== null ? (
+                    <Text style={styles.statValue}>
+                      {moneyIn(bucket.amount, totals.currency) ?? ft("withheld")}
+                    </Text>
+                  ) : (
+                    // A count with no sum. The rows exist; the currency does
+                    // not allow adding them. A 0 here would read as "nothing
+                    // falls due in this window".
+                    <Text style={styles.folioWarn}>{ft("notSummable")}</Text>
+                  )}
+                </View>
+                {range !== null ? <Text style={styles.folioMeta}>{range}</Text> : null}
+                <View style={styles.coverageRow}>
+                  <Text style={styles.coverageLabel}>{ft("bucketCountLabel")}</Text>
+                  <Text style={styles.coverageCount}>
+                    {bucket === undefined ? ft("bucketMissing") : countText(bucket.count)}
+                  </Text>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+
+        {anyExcluded ? (
+          <View style={styles.folioPanel}>
+            <Text style={styles.folioTitle}>{ft("excludedTitle")}</Text>
+            {/* Why these are not in any bucket, in the member's terms. Without
+                it, the excluded count above is a number with no meaning. */}
+            <Text style={styles.panelCaption}>{ft("excludedBody")}</Text>
+            {excludedRows.map(([key, count]) =>
+              count > 0 ? (
+                <View key={key} style={styles.excludedRow}>
+                  <Text style={styles.coverageLabel}>{ft(key)}</Text>
+                  <Text style={styles.coverageCount}>{countText(count)}</Text>
+                </View>
+              ) : null
+            )}
+          </View>
+        ) : null}
+
+        {data.schedule.length ? (
+          <View style={styles.folioPanel}>
+            {data.schedule.map((row) => {
+              const amount = moneyIn(row.amount, row.currency);
+              return (
+                <View key={row.nodeId} style={styles.obligationRow}>
+                  <View style={styles.obligationHead}>
+                    <Text style={styles.folioSymbol} numberOfLines={1}>
+                      {row.title || nodeTypeLabel(row.kind)}
+                    </Text>
+                    {row.amount === null ? (
+                      <Text style={styles.statMuted}>{ft("amountMissing")}</Text>
+                    ) : amount !== null ? (
+                      <Text style={styles.statValue}>{amount}</Text>
+                    ) : (
+                      // A figure with no currency. Printing it in the screen's
+                      // default would name a currency the member never gave.
+                      <Text style={styles.folioWarn}>{ft("unspecifiedCurrency")}</Text>
+                    )}
+                  </View>
+                  <Text style={styles.folioMeta}>{bucketLabel(row.bucket)}</Text>
+                  <View style={styles.coverageRow}>
+                    <Text style={styles.coverageLabel}>{ft("dueLabel")}</Text>
+                    {row.dueAt ? (
+                      // The record store's own text, verbatim — reformatting a
+                      // string whose shape is not guaranteed risks printing a
+                      // date the member never wrote.
+                      <Text style={styles.coverageCount}>{row.dueAt}</Text>
+                    ) : (
+                      <Text style={styles.statMuted}>{ft("dueMissing")}</Text>
+                    )}
+                  </View>
+                  {/* Overdue is the server's, computed from its own read
+                      instant. A client clock could disagree with the bucket the
+                      same payload already assigned. */}
+                  {row.overdue ? <Text style={styles.folioWarn}>{ft("overdue")}</Text> : null}
+                  <View style={styles.coverageRow}>
+                    {row.evidence.factIds.length ? (
+                      <>
+                        <Text style={styles.coverageLabel}>{ft("evidenceLabel")}</Text>
+                        <Text style={styles.coverageCount}>
+                          {countText(row.evidence.factIds.length)}
+                        </Text>
+                      </>
+                    ) : (
+                      <Text style={styles.statMuted}>{ft("evidenceMissing")}</Text>
+                    )}
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        ) : null}
+
+        <View style={styles.folioPanel}>
+          <Text style={styles.folioTitle}>{ft("syncTitle")}</Text>
+          <View style={styles.coverageRow}>
+            <Text style={styles.coverageLabel}>{ft("projectedLabel")}</Text>
+            <Text style={styles.coverageCount}>{countText(data.sync.obligations)}</Text>
+          </View>
+          <View style={styles.coverageRow}>
+            <Text style={styles.coverageLabel}>{ft("skippedLabel")}</Text>
+            <Text style={data.sync.skipped > 0 ? styles.folioWarn : styles.coverageCount}>
+              {countText(data.sync.skipped)}
+            </Text>
+          </View>
+        </View>
+      </>
+    );
+  };
+
   const holdingsPanels = () => {
     if (view !== "holdings" || !portfolio) return null;
     if (portfolio.state !== "READY") return portfolioFailure(portfolio);
@@ -1450,6 +1776,7 @@ function CapitalGraphBody({ navigation, route }: Props) {
           would paint the net position over Obligations — or the obligation
           totals over the net position. */}
       {panel === "overview" && shown === "READY" && overview ? overviewPanels(overview) : null}
+      {panel === "cash_flow" && shown === "READY" && cashFlow ? cashFlowPanels(cashFlow) : null}
       {panel === "obligations" && shown === "READY" && obligations
         ? obligationsPanels(obligations)
         : null}

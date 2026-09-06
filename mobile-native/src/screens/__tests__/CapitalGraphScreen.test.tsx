@@ -40,6 +40,7 @@ jest.mock("../../i18n", () => ({
 const mockGetGraph = jest.fn();
 const mockGetPortfolio = jest.fn();
 const mockGetOverview = jest.fn();
+const mockGetCashFlow = jest.fn();
 const mockGetObligations = jest.fn();
 const mockOfficeStatus = jest.fn();
 const mockUnlockOffice = jest.fn();
@@ -52,6 +53,7 @@ jest.mock("../../api/capitalGraph", () => ({
   getCapitalGraph: (...args: unknown[]) => mockGetGraph(...args),
   getCapitalPortfolio: (...args: unknown[]) => mockGetPortfolio(...args),
   getCapitalOverview: (...args: unknown[]) => mockGetOverview(...args),
+  getCapitalCashFlow: (...args: unknown[]) => mockGetCashFlow(...args),
   getCapitalObligations: (...args: unknown[]) => mockGetObligations(...args)
 }));
 
@@ -76,6 +78,7 @@ jest.mock("../../session/sessionStore", () => ({
 }));
 
 import {
+  parseCapitalCashFlow,
   parseCapitalGraph,
   parseCapitalObligations,
   parseCapitalOverview,
@@ -301,6 +304,116 @@ function readyObligations(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/** The server's own wording for the two things this tab is not. */
+const INFLOWS_BASIS =
+  "Outflows only. PulseSoc records obligations but has no income ledger, so nothing here " +
+  "has been netted against earnings, dividends or rent received. This is what is owed and " +
+  "when, not what will be left.";
+const RECURRENCE_BASIS =
+  "Each obligation appears once, on the due date recorded for it. Recurrence is never " +
+  "inferred: a monthly commitment recorded as a single dated obligation is scheduled once " +
+  "here, not twelve times.";
+
+/** The six windows `cash_flow.BUCKETS` declares, in the server's order. */
+const DECLARED_BUCKETS = [
+  { name: "overdue", from_days: null, to_days: 0 },
+  { name: "due_30", from_days: 0, to_days: 30 },
+  { name: "due_90", from_days: 30, to_days: 90 },
+  { name: "due_180", from_days: 90, to_days: 180 },
+  { name: "due_365", from_days: 180, to_days: 365 },
+  { name: "beyond_365", from_days: 365, to_days: null }
+];
+
+/**
+ * A cash-flow payload exactly as `services/private_office/cash_flow.py` emits it.
+ *
+ * As with `readyObligations`, the default is the awkward case rather than the
+ * tidy one: six obligations were seen, three could be placed on the timeline,
+ * and the other three were left out for three different reasons. A fixture
+ * where everything was dated and priced would let a screen that reads
+ * `scheduled_amount` as "what you owe" pass every assertion.
+ *
+ * The amounts are deliberately unlike the overview fixture's 240000 and the
+ * obligations fixture's 137500 — tests here assert that leaving the tab clears
+ * the figure, which a number two tabs both happen to print could never prove.
+ */
+function readyCashFlow(overrides: Record<string, unknown> = {}) {
+  return {
+    state: "READY",
+    cashFlow: parseCapitalCashFlow({
+      generated_at: "2026-09-06T11:00:00+00:00",
+      schedule: [
+        {
+          node_id: 81,
+          root_id: 21,
+          title: "Council tax",
+          kind: "LIABILITY",
+          amount: 4200,
+          currency: "USD",
+          due_at: "2026-08-01T00:00:00+00:00",
+          days_until: -36.4,
+          overdue: true,
+          bucket: "overdue",
+          evidence: { fact_ids: [401], provenance: null }
+        },
+        {
+          node_id: 82,
+          root_id: 22,
+          title: "Insurance premium",
+          kind: "LIABILITY",
+          amount: 18750,
+          currency: "USD",
+          due_at: "2026-09-20T00:00:00+00:00",
+          days_until: 14.1,
+          overdue: false,
+          bucket: "due_30",
+          evidence: { fact_ids: [], provenance: null }
+        },
+        {
+          node_id: 83,
+          root_id: 23,
+          title: "Mortgage balloon",
+          kind: "LIABILITY",
+          amount: 312400,
+          currency: "USD",
+          due_at: "2031-04-01T00:00:00+00:00",
+          days_until: 1668.0,
+          overdue: false,
+          bucket: "beyond_365",
+          evidence: { fact_ids: [402, 403], provenance: null }
+        }
+      ],
+      buckets: {
+        overdue: { amount: 4200, count: 1 },
+        due_30: { amount: 18750, count: 1 },
+        due_90: { amount: 0, count: 0 },
+        due_180: { amount: 0, count: 0 },
+        due_365: { amount: 0, count: 0 },
+        beyond_365: { amount: 312400, count: 1 }
+      },
+      totals: {
+        currency: "USD",
+        scheduled_amount: 335350,
+        scheduled_count: 3,
+        obligations_seen: 6,
+        truncated: false,
+        // Three obligations could not be placed, so the schedule understates.
+        complete: false,
+        excluded_count: 3,
+        mixed_currency_rows: 0
+      },
+      excluded: { undated: 1, unquantified: 1, undated_and_unquantified: 1 },
+      basis: {
+        inflows: INFLOWS_BASIS,
+        recurrence: RECURRENCE_BASIS,
+        buckets: DECLARED_BUCKETS
+      },
+      sync: { projected: true, obligations: 6, retired: 0, skipped: 0 },
+      ...overrides
+    })
+  };
+}
+
 async function unlockDoor(utils: ReturnType<typeof render>) {
   const { getByLabelText, getByText, queryByText } = utils;
   if (isOfficeUnlocked()) return;
@@ -339,6 +452,7 @@ beforeEach(() => {
   mockGetGraph.mockResolvedValue(emptyGraph());
   mockGetPortfolio.mockResolvedValue(readyPortfolio([btcAsset()]));
   mockGetOverview.mockResolvedValue(readyOverview());
+  mockGetCashFlow.mockResolvedValue(readyCashFlow());
   mockGetObligations.mockResolvedValue(readyObligations());
   // The status probe answers from the grant, as the real endpoint does: the
   // server that just accepted the passcode reports `unlocked: true` on the
@@ -1521,6 +1635,488 @@ describe("CapitalGraphScreen obligations tab", () => {
   it("relocks the office when the obligations read says the grant is dead", async () => {
     mockGetObligations.mockResolvedValue({ state: "LOCKED", setupRequired: false });
     const { getByText } = await renderScreen("obligations");
+
+    await waitFor(() => getByText("premium:privateOffice.lock.unlock"));
+    expect(isOfficeUnlocked()).toBe(false);
+  });
+});
+
+describe("CapitalGraphScreen cash flow tab", () => {
+  const CF = "premium:privateOffice.capital.cashFlow";
+  const OV = "premium:privateOffice.capital.overview";
+
+  it("asks the cash-flow endpoint, and never the graph, for a view it has no name for", async () => {
+    const { getByText } = await renderScreen("cash_flow");
+    await waitFor(() => getByText(`${CF}.title`));
+
+    expect(mockGetCashFlow).toHaveBeenCalledTimes(1);
+    // `view=cash_flow` is not in the graph route's vocabulary, and the
+    // obligations endpoint returns a different payload for the same debts.
+    // Reaching for either would be a different question answered under this
+    // tab's heading.
+    expect(mockGetGraph).not.toHaveBeenCalled();
+    expect(mockGetOverview).not.toHaveBeenCalled();
+    expect(mockGetObligations).not.toHaveBeenCalled();
+  });
+
+  it("prints the outflows-only basis verbatim, including when nothing is missing", async () => {
+    // The tempting case. Everything dated, everything priced, one currency,
+    // nothing excluded — and it is still a list of what leaves, never netted
+    // against anything that arrives. If this caveat is a defect notice that
+    // disappears when the data is clean, the clean case is the one that lies.
+    mockGetCashFlow.mockResolvedValue(
+      readyCashFlow({
+        excluded: { undated: 0, unquantified: 0, undated_and_unquantified: 0 },
+        totals: {
+          currency: "USD",
+          scheduled_amount: 335350,
+          scheduled_count: 3,
+          obligations_seen: 3,
+          truncated: false,
+          complete: true,
+          excluded_count: 0,
+          mixed_currency_rows: 0
+        }
+      })
+    );
+    const { getByText, queryByText } = await renderScreen("cash_flow");
+    await waitFor(() => getByText(`${CF}.title`));
+
+    getByText(`${CF}.complete`);
+    getByText(`${CF}.outflowsTitle`);
+    // The server's own sentences, not a paraphrase: they are the difference
+    // between "what leaves" and "what is left".
+    getByText(INFLOWS_BASIS);
+    getByText(RECURRENCE_BASIS);
+    expect(queryByText(`${CF}.partial`)).toBeNull();
+  });
+
+  it("withholds the headline when no single currency answers for one", async () => {
+    mockGetCashFlow.mockResolvedValue(
+      readyCashFlow({
+        buckets: {
+          overdue: { amount: null, count: 1 },
+          due_30: { amount: null, count: 1 },
+          due_90: { amount: null, count: 0 },
+          due_180: { amount: null, count: 0 },
+          due_365: { amount: null, count: 0 },
+          beyond_365: { amount: null, count: 1 }
+        },
+        totals: {
+          currency: "",
+          // The server refuses to sum across currencies it has no approved
+          // rate for. null, never 0.0.
+          scheduled_amount: null,
+          scheduled_count: 3,
+          obligations_seen: 6,
+          truncated: false,
+          complete: false,
+          excluded_count: 3,
+          mixed_currency_rows: 0
+        }
+      })
+    );
+    const { getAllByText, getByText, queryByText } = await renderScreen("cash_flow");
+    await waitFor(() => getByText(`${CF}.title`));
+
+    getByText(`${CF}.withheld`);
+    // Once for the headline, once for each of the six buckets that has rows
+    // but no summable figure.
+    expect(getAllByText(`${CF}.notSummable`).length).toBeGreaterThan(1);
+    // What the server declined to compute, and what a helpful client would
+    // have computed for it in a currency nobody named.
+    expect(queryByText(money(335350))).toBeNull();
+    expect(queryByText(money(0))).toBeNull();
+  });
+
+  it("keeps a declared window the server did not report an absence, not a zero", async () => {
+    mockGetCashFlow.mockResolvedValue(
+      readyCashFlow({
+        // `basis.buckets` still names all six. The payload reports five.
+        buckets: {
+          overdue: { amount: 4200, count: 1 },
+          due_30: { amount: 18750, count: 1 },
+          due_180: { amount: 0, count: 0 },
+          due_365: { amount: 0, count: 0 },
+          beyond_365: { amount: 312400, count: 1 }
+        }
+      })
+    );
+    const { getAllByText, getByText } = await renderScreen("cash_flow");
+    await waitFor(() => getByText(`${CF}.title`));
+
+    // The window is still drawn under its own name — dropping the row would
+    // make the schedule look like it had five windows all along.
+    getByText("due_90");
+    // Named twice on that row: once where the amount goes, once where the
+    // count goes. Neither may quietly become 0.
+    expect(getAllByText(`${CF}.bucketMissing`)).toHaveLength(2);
+  });
+
+  it("draws a bucket the payload carries but never declared", async () => {
+    mockGetCashFlow.mockResolvedValue(
+      readyCashFlow({
+        buckets: {
+          overdue: { amount: 4200, count: 1 },
+          due_30: { amount: 18750, count: 1 },
+          due_90: { amount: 0, count: 0 },
+          due_180: { amount: 0, count: 0 },
+          due_365: { amount: 0, count: 0 },
+          beyond_365: { amount: 312400, count: 1 },
+          // A window a newer server added to `buckets` without this build
+          // knowing its name. Rendering only what `basis.buckets` declares
+          // would silently hide the money in it.
+          due_730: { amount: 91000, count: 2 }
+        }
+      })
+    );
+    const { getByText } = await renderScreen("cash_flow");
+    await waitFor(() => getByText(`${CF}.title`));
+
+    getByText("due_730");
+    getByText(money(91000));
+    // Marked as a window this build cannot describe, rather than given an
+    // invented range that would misplace it on the member's timeline.
+    getByText(`${CF}.bucketUndeclared`);
+  });
+
+  it("describes each declared window by the edge the server actually gave it", async () => {
+    const { getAllByText, getByText, queryByText } = await renderScreen("cash_flow");
+    await waitFor(() => getByText(`${CF}.title`));
+
+    // Overdue is open at the near end and beyond_365 at the far end; the four
+    // between them are closed. Three different sentences, because a window
+    // with no lower bound and one with no upper bound are not the same fact,
+    // and rendering `from_days: null` as 0 would put "already overdue" and
+    // "due within a month" on the same footing.
+    getByText(`${CF}.bucketBefore`);
+    getByText(`${CF}.bucketAfter`);
+    expect(getAllByText(`${CF}.bucketBetween`)).toHaveLength(4);
+    // Every window here is declared, so none may be labelled as one this
+    // build cannot describe.
+    expect(queryByText(`${CF}.bucketUndeclared`)).toBeNull();
+    // The six names the server declared, drawn in the server's order rather
+    // than in whatever order `Object.keys` happened to yield. The three that
+    // follow are the schedule rows, each labelled with the bucket the server
+    // assigned it — the same name in both places, so a member can match a row
+    // to the window it was counted in.
+    expect(
+      getAllByText(/^(overdue|due_30|due_90|due_180|due_365|beyond_365)$/).map(
+        (node) => node.props.children
+      )
+    ).toEqual([
+      "overdue",
+      "due_30",
+      "due_90",
+      "due_180",
+      "due_365",
+      "beyond_365",
+      "overdue",
+      "due_30",
+      "beyond_365"
+    ]);
+  });
+
+  it("counts what could not be placed instead of dropping it from the tab", async () => {
+    const { getByText } = await renderScreen("cash_flow");
+    await waitFor(() => getByText(`${CF}.title`));
+
+    getByText(`${CF}.excludedTitle`);
+    getByText(`${CF}.excludedBody`);
+    // Three separate absences, each named for what is missing. An obligation
+    // with an amount and no date is not the same gap as one with neither, and
+    // collapsing them would tell the member less than the server knows.
+    getByText(`${CF}.undated`);
+    getByText(`${CF}.unquantified`);
+    getByText(`${CF}.undatedAndUnquantified`);
+    getByText(`${CF}.excludedLabel`);
+    // Six obligations were seen; three reached a window. Saying so is what
+    // stops the headline speaking for all six.
+    getByText(`${CF}.scheduledLabel`);
+    getByText(`${CF}.seenLabel`);
+    getByText(`${CF}.partial`);
+  });
+
+  it("names only the exclusions that happened", async () => {
+    mockGetCashFlow.mockResolvedValue(
+      readyCashFlow({
+        excluded: { undated: 2, unquantified: 0, undated_and_unquantified: 0 },
+        totals: {
+          currency: "USD",
+          scheduled_amount: 335350,
+          scheduled_count: 3,
+          obligations_seen: 5,
+          truncated: false,
+          complete: false,
+          excluded_count: 2,
+          mixed_currency_rows: 0
+        }
+      })
+    );
+    const { getByText, queryByText } = await renderScreen("cash_flow");
+    await waitFor(() => getByText(`${CF}.title`));
+
+    getByText(`${CF}.undated`);
+    // A zero counter listed beside a real one reads as a category that was
+    // checked and found empty; here it is a category nothing fell into.
+    expect(queryByText(`${CF}.unquantified`)).toBeNull();
+    expect(queryByText(`${CF}.undatedAndUnquantified`)).toBeNull();
+  });
+
+  it("says an empty schedule is about dates it holds, not about debts", async () => {
+    mockGetCashFlow.mockResolvedValue(
+      readyCashFlow({
+        schedule: [],
+        buckets: {
+          overdue: { amount: 0, count: 0 },
+          due_30: { amount: 0, count: 0 },
+          due_90: { amount: 0, count: 0 },
+          due_180: { amount: 0, count: 0 },
+          due_365: { amount: 0, count: 0 },
+          beyond_365: { amount: 0, count: 0 }
+        },
+        totals: {
+          currency: "USD",
+          scheduled_amount: 0,
+          scheduled_count: 0,
+          obligations_seen: 4,
+          truncated: false,
+          complete: false,
+          // Four obligations exist. None of them could be dated.
+          excluded_count: 4,
+          mixed_currency_rows: 0
+        },
+        excluded: { undated: 4, unquantified: 0, undated_and_unquantified: 0 }
+      })
+    );
+    const { getByText, queryByText } = await renderScreen("cash_flow");
+    await waitFor(() => getByText(`${CF}.title`));
+
+    getByText(`${CF}.noneScheduled`);
+    getByText(`${CF}.undated`);
+    // Not the generic empty state, which says "nothing recorded" and stops —
+    // four obligations were recorded and every one of them is undated.
+    expect(queryByText(EMPTY_TITLE)).toBeNull();
+  });
+
+  it("takes overdue from the server's read instant rather than the device clock", async () => {
+    mockGetCashFlow.mockResolvedValue(
+      readyCashFlow({
+        schedule: [
+          {
+            node_id: 84,
+            root_id: 24,
+            title: "Settled early",
+            kind: "LIABILITY",
+            amount: 900,
+            currency: "USD",
+            // A date in the past by any clock a test could run under, and the
+            // server did not call it overdue. A screen recomputing this from
+            // `Date.now()` would contradict the bucket in the same payload.
+            due_at: "2020-01-01T00:00:00+00:00",
+            days_until: 4.0,
+            overdue: false,
+            bucket: "due_30",
+            evidence: { fact_ids: [], provenance: null }
+          }
+        ]
+      })
+    );
+    const { getByText, queryByText } = await renderScreen("cash_flow");
+    await waitFor(() => getByText(`${CF}.title`));
+
+    getByText("Settled early");
+    expect(queryByText(`${CF}.overdue`)).toBeNull();
+  });
+
+  it("keeps a scheduled row with no amount an absence rather than a zero", async () => {
+    // A contract-break probe, not a payload production emits today: the
+    // backend routes an unquantified obligation to `excluded.unquantified` and
+    // never into `schedule`. If that ever loosens, the row must arrive as an
+    // absence — a dated obligation summed as 0 would make the window it lands
+    // in read as settled.
+    mockGetCashFlow.mockResolvedValue(
+      readyCashFlow({
+        schedule: [
+          {
+            node_id: 85,
+            root_id: 25,
+            title: "Service charge",
+            kind: "LIABILITY",
+            amount: null,
+            currency: "USD",
+            due_at: "2026-11-01T00:00:00+00:00",
+            days_until: 56.0,
+            overdue: false,
+            bucket: "due_90",
+            evidence: { fact_ids: [], provenance: null }
+          }
+        ]
+      })
+    );
+    const { getAllByText, getByText } = await renderScreen("cash_flow");
+    await waitFor(() => getByText(`${CF}.title`));
+
+    getByText("Service charge");
+    getByText(`${CF}.amountMissing`);
+    getByText(`${CF}.evidenceMissing`);
+    // Exactly three zeros on the tab, and all three are the server's own: the
+    // declared windows it summed and found empty. A fourth would be this row
+    // having been given a figure nobody recorded.
+    expect(getAllByText(money(0))).toHaveLength(3);
+  });
+
+  it("tells an amount with no currency apart from no amount at all", async () => {
+    mockGetCashFlow.mockResolvedValue(
+      readyCashFlow({
+        schedule: [
+          {
+            node_id: 86,
+            root_id: 26,
+            title: "Tax bill",
+            kind: "LIABILITY",
+            // A figure the member entered, against a currency they did not.
+            amount: 5000,
+            currency: "",
+            due_at: "2027-01-31T00:00:00+00:00",
+            days_until: 147.0,
+            overdue: false,
+            bucket: "due_180",
+            evidence: { fact_ids: [7], provenance: null }
+          }
+        ]
+      })
+    );
+    const { getByText, queryByText } = await renderScreen("cash_flow");
+    await waitFor(() => getByText(`${CF}.title`));
+
+    getByText("Tax bill");
+    getByText(`${CF}.unspecifiedCurrency`);
+    // Printing 5000 in the screen's default would name a currency the member
+    // never gave; printing nothing would lose a figure they did.
+    expect(queryByText(`${CF}.amountMissing`)).toBeNull();
+    expect(queryByText(money(5000))).toBeNull();
+  });
+
+  it("shouts when the server's always-zero currency invariant breaks", async () => {
+    mockGetCashFlow.mockResolvedValue(
+      readyCashFlow({
+        totals: {
+          currency: "USD",
+          scheduled_amount: 335350,
+          scheduled_count: 3,
+          obligations_seen: 6,
+          truncated: false,
+          complete: false,
+          excluded_count: 3,
+          // Must always be 0. Non-zero means a row in a currency this total
+          // does not name reached a bucket, so the headline above is FX by
+          // accident and the member has no way to see it otherwise.
+          mixed_currency_rows: 2
+        }
+      })
+    );
+    const { getByText } = await renderScreen("cash_flow");
+    await waitFor(() => getByText(`${CF}.title`));
+
+    getByText(`${CF}.mixedCurrency`);
+  });
+
+  it("says nothing about mixed currencies while the invariant holds", async () => {
+    const { getByText, queryByText } = await renderScreen("cash_flow");
+    await waitFor(() => getByText(`${CF}.title`));
+
+    // The paired half of the test above: a warning that is always on is not a
+    // warning, and would train the member to ignore the one case that matters.
+    expect(queryByText(`${CF}.mixedCurrency`)).toBeNull();
+  });
+
+  it("admits the schedule is capped rather than implying it is every obligation", async () => {
+    mockGetCashFlow.mockResolvedValue(
+      readyCashFlow({
+        excluded: { undated: 0, unquantified: 0, undated_and_unquantified: 0 },
+        totals: {
+          currency: "USD",
+          scheduled_amount: 335350,
+          scheduled_count: 200,
+          obligations_seen: 200,
+          truncated: true,
+          complete: false,
+          excluded_count: 0,
+          mixed_currency_rows: 0
+        }
+      })
+    );
+    const { getByText } = await renderScreen("cash_flow");
+    await waitFor(() => getByText(`${CF}.title`));
+
+    getByText(`${CF}.truncated`);
+    // Nothing was excluded and every row is in one currency, and the schedule
+    // is still not complete — because rows were cut off. A screen inferring
+    // completeness from the excluded count alone would call this whole.
+    getByText(`${CF}.partial`);
+  });
+
+  it("warns beside the figure when the projection never ran", async () => {
+    mockGetCashFlow.mockResolvedValue(
+      readyCashFlow({ sync: { projected: false, obligations: 0, retired: 0, skipped: 4 } })
+    );
+    const { getByText } = await renderScreen("cash_flow");
+    await waitFor(() => getByText(`${CF}.title`));
+
+    // Every figure on this tab is read from the projection. If the sweep did
+    // not run, the caveat belongs with the number, not in a footer.
+    getByText(`${CF}.notProjected`);
+    getByText(`${CF}.syncTitle`);
+    getByText(`${CF}.skippedLabel`);
+  });
+
+  it("keeps a cash-flow refusal a refusal, with no schedule and no empty claim", async () => {
+    mockGetCashFlow.mockResolvedValue({ state: "DENIED", reason: "not the owner of record" });
+    const { getByText, queryByText } = await renderScreen("cash_flow");
+    await waitFor(() => getByText("premium:privateOffice.capital.denied.title"));
+
+    getByText("not the owner of record");
+    expect(queryByText(`${CF}.title`)).toBeNull();
+    expect(queryByText(`${CF}.noneScheduled`)).toBeNull();
+    expect(queryByText(EMPTY_TITLE)).toBeNull();
+    expect(queryByText(RETRY)).toBeNull();
+  });
+
+  it("lets the tab in front own the verdict — a healthy overview does not vouch for a failed schedule", async () => {
+    mockGetCashFlow.mockResolvedValue({ state: "UNAVAILABLE" });
+    const { getByText, queryByText } = await renderScreen("cash_flow");
+    await waitFor(() => getByText("premium:privateOffice.capital.unavailable.title"));
+    expect(queryByText(`${CF}.title`)).toBeNull();
+
+    fireEvent.press(getByText("premium:privateOffice.capital.views.overview"));
+    await waitFor(() => getByText(`${OV}.title`));
+    expect(queryByText("premium:privateOffice.capital.unavailable.title")).toBeNull();
+
+    fireEvent.press(getByText("premium:privateOffice.capital.views.cash_flow"));
+    await waitFor(() => getByText("premium:privateOffice.capital.unavailable.title"));
+    expect(queryByText(`${OV}.title`)).toBeNull();
+  });
+
+  it("stops drawing the schedule once the member leaves the tab", async () => {
+    const { getByText, queryByText } = await renderScreen("cash_flow");
+    await waitFor(() => getByText(`${CF}.title`));
+    getByText(money(335350));
+
+    // The parsed answer survives the switch by design, so that returning is
+    // instant. Painting it under the Obligations heading would not be: the two
+    // tabs count the same debts to different totals.
+    fireEvent.press(getByText("premium:privateOffice.capital.views.obligations"));
+    await waitFor(() => getByText("premium:privateOffice.capital.obligations.title"));
+    expect(queryByText(`${CF}.title`)).toBeNull();
+    expect(queryByText(money(335350))).toBeNull();
+    expect(queryByText("Council tax")).toBeNull();
+    expect(queryByText(INFLOWS_BASIS)).toBeNull();
+  });
+
+  it("relocks the office when the cash-flow read says the grant is dead", async () => {
+    mockGetCashFlow.mockResolvedValue({ state: "LOCKED", setupRequired: false });
+    const { getByText } = await renderScreen("cash_flow");
 
     await waitFor(() => getByText("premium:privateOffice.lock.unlock"));
     expect(isOfficeUnlocked()).toBe(false);
