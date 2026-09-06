@@ -223,6 +223,13 @@ def stage_verification_never_rounds_up():
         model.PROVENANCE_ESTIMATED: office.VERIFICATION_ESTIMATED,
         model.PROVENANCE_STALE: office.VERIFICATION_NEEDS_REVIEW,
         model.PROVENANCE_CONFLICTING: office.VERIFICATION_NEEDS_REVIEW,
+        # Ledger core. The table is spelled out rather than derived so that a
+        # future edit to the map has to be argued for here too.
+        model.PROVENANCE_SYSTEM_OBSERVED: office.VERIFICATION_SOURCED,
+        model.PROVENANCE_MEETING_DERIVED: office.VERIFICATION_SELF_REPORTED,
+        model.PROVENANCE_HUMAN_CONFIRMED: office.VERIFICATION_SELF_REPORTED,
+        model.PROVENANCE_UNDX_PROPOSED: office.VERIFICATION_ESTIMATED,
+        model.PROVENANCE_LEGACY_UNKNOWN: office.VERIFICATION_NEEDS_REVIEW,
     }
     for provenance, want in expected.items():
         check(f"{provenance} reads {want}",
@@ -234,6 +241,20 @@ def stage_verification_never_rounds_up():
           str(set(model.PROVENANCE_TYPES) - set(expected)))
     check("what the member typed is never called verified",
           office.verification_state(model.PROVENANCE_USER_ASSERTED)
+          != office.VERIFICATION_VERIFIED)
+    # The ledger refuses to promote a confirmation to VERIFIED. The projection
+    # layer is the other place that promotion could happen, quietly, one map
+    # entry at a time — so the rule is asserted here as well as there.
+    reads_verified = sorted(
+        p for p in model.PROVENANCE_TYPES
+        if office.verification_state(p) == office.VERIFICATION_VERIFIED)
+    check("only an attested provenance reads verified",
+          reads_verified == [model.PROVENANCE_VERIFIED], str(reads_verified))
+    check("a human confirming a fact is not an attestation",
+          office.verification_state(model.PROVENANCE_HUMAN_CONFIRMED)
+          != office.VERIFICATION_VERIFIED)
+    check("and neither is anything UNDX proposed",
+          office.verification_state(model.PROVENANCE_UNDX_PROPOSED)
           != office.VERIFICATION_VERIFIED)
     check("an unknown provenance needs review rather than reassuring",
           office.verification_state("MADE_UP") == office.VERIFICATION_NEEDS_REVIEW)

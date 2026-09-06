@@ -139,6 +139,31 @@ _VERIFICATION_BY_PROVENANCE: dict[str, str] = {
     _model.PROVENANCE_ESTIMATED: VERIFICATION_ESTIMATED,
     _model.PROVENANCE_STALE: VERIFICATION_NEEDS_REVIEW,
     _model.PROVENANCE_CONFLICTING: VERIFICATION_NEEDS_REVIEW,
+    # The ledger-core additions. Every one of them collapses into a bucket that
+    # already exists, on purpose: these five words are wire values whitelisted
+    # in the native client, and a sixth bucket would arrive at a parser that has
+    # never heard of it. The vocabulary grows on the *provenance* axis, which is
+    # internal; the member-facing one stays closed.
+    #
+    # PulseSoc watching its own systems is a source — not a member's claim, and
+    # not a third party's attestation.
+    _model.PROVENANCE_SYSTEM_OBSERVED: VERIFICATION_SOURCED,
+    # What somebody said in a meeting. A self-report at one remove, and the
+    # remove makes it weaker rather than stronger: the note may be a faithful
+    # record of a mistaken statement.
+    _model.PROVENANCE_MEETING_DERIVED: VERIFICATION_SELF_REPORTED,
+    # Deliberately NOT VERIFIED. A person affirming a fact is the strongest
+    # thing the review loop can produce, and it is still a person saying so.
+    # Routing it to VERIFIED would launder confirmation into attestation in the
+    # projection layer — the exact promotion the writer refuses to make in the
+    # ledger, undone one layer further out where nobody would look for it.
+    _model.PROVENANCE_HUMAN_CONFIRMED: VERIFICATION_SELF_REPORTED,
+    # An AI proposal is an inference wearing a suit.
+    _model.PROVENANCE_UNDX_PROPOSED: VERIFICATION_ESTIMATED,
+    # Rows migrated from before provenance and verification were separate axes.
+    # We do not know where they came from, and "look at this" is the only
+    # truthful rendering of that.
+    _model.PROVENANCE_LEGACY_UNKNOWN: VERIFICATION_NEEDS_REVIEW,
 }
 
 
