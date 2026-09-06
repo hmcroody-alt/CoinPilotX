@@ -952,11 +952,22 @@ def _require_call_access(cur: Any, user_id: int, call_ref: str | int) -> tuple[d
     call = _get_call(cur, call_ref)
     if not call:
         return {}, {}, _err("Call not found.", 404, "missing_call")
-    if not _participant_allowed(cur, int(call.get("conversation_id") or 0), int(user_id)):
-        return call, {}, _err("You do not have access to this call.", 403, "forbidden")
+    # Room-scope calls (private meetings) have no conversation: the owning
+    # meeting layer is the admission authority, and admission is expressed as
+    # the communication_call_participants row checked immediately below. A
+    # waiting-room occupant has no row, so this path stays fail-closed.
+    if str(call.get("call_scope") or "") != "room":
+        if not _participant_allowed(cur, int(call.get("conversation_id") or 0), int(user_id)):
+            return call, {}, _err("You do not have access to this call.", 403, "forbidden")
     participant = _participant_for_call(cur, int(call["id"]), int(user_id))
     if not participant:
         return call, {}, _err("Only call participants can access this call.", 403, "not_participant")
+    if str(call.get("call_scope") or "") == "room" and str(participant.get("status") or "") in {"removed", "left"}:
+        # Meetings revoke by marking the row, not deleting it (one logical
+        # participant per user, forever). A revoked row must not re-arm itself
+        # through join_token's status='joined' update — re-admission goes
+        # through the meeting layer, which revives the row explicitly.
+        return call, participant, _err("You are no longer in this meeting.", 403, "not_participant")
     return call, participant, None
 
 

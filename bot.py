@@ -1319,6 +1319,12 @@ _load_route_pack("private_office_shield", "services.private_office_shield_routes
 # truth (PRIVATE_CONCIERGE_OPERATOR_IDS) rides on every payload and no code
 # path can generate an operator reply.
 _load_route_pack("private_office_concierge", "services.private_office_concierge_routes")
+# Private Meetings: Zoom-class multi-guest meetings where PulseSoc is the
+# authority (lifecycle, waiting room, lock, roles, invites, chat, recording
+# metadata) and Agora is transport only, reached through the canonical
+# communications engine's room-scope calls. Fail-closed behind
+# PRIVATE_MEETINGS_ENABLED (default OFF) plus the Office second lock.
+_load_route_pack("private_office_meetings", "services.private_office_meetings_routes")
 
 
 def cancel_scheduled_account_deletion(cur, user_id):
@@ -44684,6 +44690,7 @@ def pulse_finalize_message_delivery(result, sender, trace_id=""):
     deep_link = f"/pulse/messages/{conversation_id}"
     mobile_deep_link = f"pulse://pulse/messages-v2?conversation={conversation_id}"
     trace_id = str(trace_id or secrets.token_hex(6))[:120]
+    event_timestamp = datetime.utcnow().isoformat(timespec="seconds")
     completed = 0
     for recipient in recipients:
         recipient_id = int((recipient or {}).get("user_id") or 0)
@@ -44692,6 +44699,12 @@ def pulse_finalize_message_delivery(result, sender, trace_id=""):
         unread_count = max(0, int((recipient or {}).get("unread_count") or 0))
         suppress_push = bool((recipient or {}).get("suppress_push"))
         metadata = {
+            "event_type": note_type,
+            "entity_type": "conversation",
+            "entity_id": str(message_id),
+            "actor_id": sender_id,
+            "timestamp": event_timestamp,
+            "sync_cursor_key": f"{note_type}:conversation:{message_id}:{event_timestamp}",
             "push_trace_id": trace_id,
             "message_id": message_id,
             "messageId": message_id,
