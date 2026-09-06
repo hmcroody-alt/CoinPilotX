@@ -102,10 +102,23 @@ OP_ARCHIVE = "archive"
 OP_REVOKE = "revoke"
 OP_EXPIRE = "expire"
 OP_SUPERSEDE = "supersede"
+#: Stamp a row as one side of a live disagreement. Driven by the contradiction
+#: engine, not by a person, which is why it is the only operation here whose
+#: normal actor is the system.
+OP_FLAG_CONFLICT = "flag_conflict"
+#: Settle a disagreement in this row's favour. An owner action, always.
+OP_RESOLVE = "resolve"
 
 FACT_OPERATIONS: tuple[str, ...] = (
     OP_CREATE, OP_REFRESH, OP_CONFIRM, OP_REVISE, OP_DISPUTE,
     OP_ARCHIVE, OP_REVOKE, OP_EXPIRE, OP_SUPERSEDE,
+    # The conflict pair. Membership here is not decoration: `_write_history`
+    # drops any operation it does not recognise — loudly, but without failing
+    # the mutation — so an operation missing from this tuple applies to the
+    # fact and then vanishes from its timeline. A contested row whose history
+    # says only "created" is exactly the fact a member would most want
+    # explained.
+    OP_FLAG_CONFLICT, OP_RESOLVE,
 )
 
 #: Who acted, as a class. Mirrors ``telemetry.ACTOR_TYPE_VOCAB``.
@@ -132,6 +145,12 @@ REASON_CODES: tuple[str, ...] = (
     "source_revoked", "document_review", "provider_refresh",
     "validity_window_closed", "conflict_resolution", "system_sweep",
     "replaced_by_newer",
+    # A conflict the member judged not to be one. Distinct from
+    # `conflict_resolution` because the two describe opposite conclusions —
+    # "this source was right" and "these sources were never in disagreement" —
+    # and a history that recorded both the same way would lose the difference
+    # between a decision and a correction of the detector.
+    "conflict_dismissed",
 )
 
 #: Fact types that must never be stored, however they are spelled.
@@ -515,6 +534,51 @@ VERIFICATION_TRANSITIONS: dict[str, tuple[frozenset[str], str]] = {
         _ALL_NON_TERMINAL,
         _model.VERIFICATION_DISPUTED,
     ),
+    OP_FLAG_CONFLICT: (
+        # Everything live can be flagged, including a PROVIDER_VERIFIED row, and
+        # that is the uncomfortable part of this entry: flagging costs the row
+        # its attestation, because the machine has no from-state memory and
+        # CONFLICTING ranks at zero. It is still right. An attestation that is
+        # contradicted by another source is no longer uncontested, and a ledger
+        # that let the bank's figure keep reading as VERIFIED while a document
+        # said otherwise would be answering "what does the bank say" to a member
+        # who asked "what is true". The history table keeps the from-state, so
+        # nothing is lost — only demoted, which is the safe direction.
+        #
+        # DISPUTED is the one exclusion. A dispute is a person saying "this is
+        # wrong"; a conflict flag is a machine saying "these two disagree". The
+        # first is more specific and was more expensive to obtain, and letting a
+        # nightly detection sweep overwrite it would erase the member's own
+        # judgement in favour of an observation they already knew about.
+        _ALL_NON_TERMINAL - frozenset({_model.VERIFICATION_DISPUTED}),
+        _model.VERIFICATION_CONFLICTING,
+    ),
+    OP_RESOLVE: (
+        # Only from states that mean "contested or unchecked". Resolving is not
+        # a general-purpose upgrade path: a VERIFIED or PROVIDER_VERIFIED row
+        # that was never flagged has nothing to resolve, and accepting it here
+        # would silently *downgrade* an attestation to USER_CONFIRMED on the way
+        # past. The orchestration in `contradictions.resolve_conflict` flags
+        # every competitor before nominating a winner, so by the time this runs
+        # the winner is CONFLICTING and the entry it needs is the first one.
+        frozenset({
+            _model.VERIFICATION_CONFLICTING,
+            _model.VERIFICATION_DISPUTED,
+            _model.VERIFICATION_NEEDS_REVIEW,
+            _model.VERIFICATION_UNVERIFIED,
+            _model.VERIFICATION_LEGACY_UNKNOWN,
+            _model.VERIFICATION_EVIDENCE_SUPPORTED,
+            _model.VERIFICATION_USER_CONFIRMED,
+        }),
+        # The same ceiling as OP_CONFIRM, and for the same reason. A member
+        # weighing two sources and picking one is exercising judgement, which is
+        # the strongest thing a person can contribute and is still not a system
+        # of record being read. If resolution could reach VERIFIED then every
+        # conflict would become a doorway to the state the whole ledger is built
+        # to keep closed — and it would be a doorway with a queue of members
+        # being asked to walk through it.
+        _model.VERIFICATION_USER_CONFIRMED,
+    ),
     OP_REVOKE: (_ALL_NON_TERMINAL, _model.VERIFICATION_REVOKED),
     OP_ARCHIVE: (_ALL_NON_TERMINAL, ""),
     OP_EXPIRE: (_ALL_NON_TERMINAL, _model.VERIFICATION_EXPIRED),
@@ -537,7 +601,11 @@ LIFECYCLE_AFTER: dict[str, str] = {
 #: move ``last_verified_at``. Note that DISPUTE is not one of them: a dispute is
 #: attention, but it is the opposite of confirmation, and letting it refresh the
 #: verification clock would make a contested fact look freshly checked.
-VERIFYING_OPERATIONS: frozenset[str] = frozenset({OP_CONFIRM})
+#: RESOLVE is here for the same reason CONFIRM is — a member who weighed two
+#: sources and chose one has demonstrably looked at the fact — and FLAG_CONFLICT
+#: is not, for the same reason DISPUTE is not: the detector noticing a
+#: disagreement is not evidence that anybody checked anything.
+VERIFYING_OPERATIONS: frozenset[str] = frozenset({OP_CONFIRM, OP_RESOLVE})
 
 
 def _normalize_actor_type(value: object) -> str:
@@ -1029,6 +1097,8 @@ _LIFECYCLE_AUDIT_ACTION: dict[str, str] = {
     OP_ARCHIVE: _audit.ACTION_FACT_ARCHIVE,
     OP_REVOKE: _audit.ACTION_FACT_REVOKE,
     OP_EXPIRE: _audit.ACTION_FACT_EXPIRE,
+    OP_FLAG_CONFLICT: _audit.ACTION_CONFLICT_DETECTED,
+    OP_RESOLVE: _audit.ACTION_CONFLICT_RESOLVED,
 }
 
 
@@ -1192,6 +1262,67 @@ def dispute_fact(cur, *, owner_user_id: int, fact_id: int, **kwargs) -> dict:
     kwargs.setdefault("reason_code", "source_disagreement")
     return _apply_lifecycle(
         cur, operation=OP_DISPUTE, owner_user_id=owner_user_id,
+        fact_id=fact_id, **kwargs)
+
+
+def flag_conflicting_fact(cur, *, owner_user_id: int, fact_id: int, **kwargs) -> dict:
+    """Mark this row as one side of a live disagreement.
+
+    Called by the contradiction engine, which is why the actor defaults to the
+    system rather than the owner: nobody clicked anything, a scan noticed two
+    sources saying different things about the same subject in the same period.
+
+    The row keeps its provenance. That separation is the point of the whole
+    second axis — "your insurer's record says March, the policy document says
+    April" is only sayable while both rows still remember where they came from,
+    and the pre-ledger schema could not say it because CONFLICTING was filed as
+    though it were a *source*.
+    """
+    kwargs.setdefault("reason_code", "source_disagreement")
+    kwargs.setdefault("actor_type", ACTOR_SYSTEM)
+    kwargs.setdefault("purpose", "system_maintenance")
+    return _apply_lifecycle(
+        cur, operation=OP_FLAG_CONFLICT, owner_user_id=owner_user_id,
+        fact_id=fact_id, **kwargs)
+
+
+def resolve_fact(cur, *, owner_user_id: int, fact_id: int, **kwargs) -> dict:
+    """Settle a disagreement in this row's favour. Lands on USER_CONFIRMED.
+
+    Never on VERIFIED — see :data:`VERIFICATION_TRANSITIONS`. Choosing between
+    two sources is judgement, and judgement is the ceiling of what a person can
+    add to a fact's standing.
+
+    This moves one row. Nominating a winner without doing anything about the
+    rows it beat would leave the conflict half-settled and re-detected on the
+    next scan, so callers should go through
+    :func:`services.private_office.contradictions.resolve_conflict`, which moves
+    the losers and writes the durable resolution record in the same breath.
+    """
+    kwargs.setdefault("reason_code", "conflict_resolution")
+    return _apply_lifecycle(
+        cur, operation=OP_RESOLVE, owner_user_id=owner_user_id,
+        fact_id=fact_id, **kwargs)
+
+
+def retire_fact(cur, *, owner_user_id: int, fact_id: int, **kwargs) -> dict:
+    """Retire one row as SUPERSEDED. Terminal.
+
+    Distinct from :func:`supersede_facts`, which retires everything a projection
+    replaced within one (subject, fact_type) scope and is driven by a system of
+    record changing. This retires a single named row because a person decided it
+    lost an argument — the losing side of a resolved conflict, when the member
+    judged it a stale reading rather than a rival account still worth keeping in
+    view.
+
+    Terminal, and that is why it is not the default disposition anywhere. The
+    validity window closes, so the row stops competing in detection and cannot
+    be brought back in place; correcting the decision means recording a new
+    fact, which leaves a trail.
+    """
+    kwargs.setdefault("reason_code", "replaced_by_newer")
+    return _apply_lifecycle(
+        cur, operation=OP_SUPERSEDE, owner_user_id=owner_user_id,
         fact_id=fact_id, **kwargs)
 
 

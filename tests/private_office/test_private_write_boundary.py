@@ -99,6 +99,14 @@ PRIVATE_TABLES = (
     "private_structured_records",
     "private_record_fields",
     "private_record_revisions",
+    # The conflict settlement ledger. Guarded because a row inserted here is a
+    # *suppression*: detection consults this table and drops any conflict it
+    # matches, so a direct INSERT permanently stops a disagreement being shown
+    # to the member without anyone having decided it. The writer refuses a
+    # non-owner actor and moves the competing rows through the state machine;
+    # a bare statement does neither and leaves the facts still contradicting
+    # each other, silently, with nothing on screen.
+    "private_fact_conflicts",
 )
 
 # The schema module exports these; interpolating one into a write statement is
@@ -108,8 +116,8 @@ PRIVATE_TABLES = (
 # without the token in this list every write in the module would be invisible
 # to the guard and the allowlist entry above would protect nothing. The name is
 # distinctive enough not to appear as a substring of ordinary identifiers.
-TABLE_CONSTANTS = ("FACTS_TABLE", "NODES_TABLE", "EDGES_TABLE", "AUDIT_TABLE",
-                   "private_table_for")
+TABLE_CONSTANTS = ("FACTS_TABLE", "FACT_CONFLICTS_TABLE", "NODES_TABLE",
+                   "EDGES_TABLE", "AUDIT_TABLE", "private_table_for")
 
 _TARGET = "(?:" + "|".join(PRIVATE_TABLES + TABLE_CONSTANTS) + ")"
 # Quoting, braces, a module prefix or a schema qualifier may sit between the

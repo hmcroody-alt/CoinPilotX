@@ -130,6 +130,13 @@ LIFECYCLE_VOCAB = frozenset({
 FACT_OPERATION_VOCAB = frozenset({
     "create", "refresh", "confirm", "revise", "dispute", "archive", "revoke",
     "expire", "supersede",
+    # The two conflict operations. `flag_conflict` is machine-driven — the
+    # detector stamping a contested row — and `resolve` is not, which is the
+    # single most useful thing this vocabulary can distinguish. A dashboard
+    # showing flags rising while resolutions stay flat is a member drowning in
+    # disagreements nobody is settling, and that is invisible if both arrive as
+    # "a fact changed state".
+    "flag_conflict", "resolve",
 })
 
 #: Who performed a fact operation, as a *class* rather than an identity. The
@@ -192,6 +199,19 @@ CONFLICT_REASON_VOCAB = frozenset({
     "values_differ_beyond_tolerance", "dates_differ",
     "boolean_values_differ", "text_values_differ",
 })
+
+#: How a conflict was settled. ``dismissed`` is not a failure mode — a member
+#: concluding that two sources were never describing the same thing is a real
+#: answer, and one the ledger would otherwise force them to fake by nominating
+#: a winner they do not believe in.
+CONFLICT_RESOLUTION_VOCAB = frozenset({"winner_chosen", "dismissed"})
+
+#: What happened to the rows that did not win. Published because the two are
+#: very different decisions wearing similar buttons: a dispute leaves the losing
+#: figure live and flagged, a supersession retires it. A build where the second
+#: became the default would quietly start discarding sources, and the only
+#: signal before a member noticed would be this ratio moving.
+CONFLICT_DISPOSITION_VOCAB = frozenset({"dispute", "supersede", "none"})
 
 #: The six Batch C record primitives. A closed vocabulary for the same reason
 #: intents are: this is a policy name chosen by the package, never anything a
@@ -260,6 +280,11 @@ EVENT_GRAPH_WRITE = "private_office.graph_write"
 EVENT_CONTEXT_RETRIEVED = "private_office.context_retrieved"
 EVENT_CONTEXT_DENIED = "private_office.context_denied"
 EVENT_CONFLICT_DETECTED = "private_office.conflict_detected"
+#: The other half of the pair. Detection without resolution is a metric that
+#: only ever goes up, and a package that shipped one and not the other would be
+#: reporting a growing pile of disagreements with no way to see any of them
+#: being closed.
+EVENT_CONFLICT_RESOLVED = "private_office.conflict_resolved"
 EVENT_SCHEMA_STATE = "private_office.schema_state"
 EVENT_RECORD_WRITE = "private_office.record_write"
 EVENT_RECORD_CLOSED = "private_office.record_closed"
@@ -334,6 +359,25 @@ EVENTS: dict[str, dict[str, tuple[str, frozenset[str] | None]]] = {
         "domain": (KIND_ENUM, DOMAIN_VOCAB),
         "competing_count": (KIND_COUNT, None),
         "resolved": (KIND_FLAG, None),
+    },
+    EVENT_CONFLICT_RESOLVED: {
+        "resolution": (KIND_ENUM, CONFLICT_RESOLUTION_VOCAB),
+        "reason": (KIND_ENUM, CONFLICT_REASON_VOCAB),
+        "loser_disposition": (KIND_ENUM, CONFLICT_DISPOSITION_VOCAB),
+        "actor_type": (KIND_ENUM, ACTOR_TYPE_VOCAB),
+        "domain": (KIND_ENUM, DOMAIN_VOCAB),
+        "competing_count": (KIND_COUNT, None),
+        # How many losing rows the writer actually moved. Deliberately separate
+        # from `competing_count`: they differ when a row was already in the
+        # target state or refused the transition, and a resolution that settled
+        # three competitors by moving one of them is a bug that this pair of
+        # numbers makes visible and either number alone hides.
+        "losers_moved": (KIND_COUNT, None),
+        # Whether the resolution replaced an earlier one for the same conflict.
+        # Re-settling is legitimate — the member changed their mind, or new
+        # evidence arrived — but a rate that climbs means the detector is
+        # producing conflicts people cannot decide once.
+        "resettled": (KIND_FLAG, None),
     },
     EVENT_SCHEMA_STATE: {
         "state": (KIND_ENUM, SCHEMA_STATE_VOCAB),
@@ -554,6 +598,7 @@ __all__ = [
     "EVENT_CONTEXT_RETRIEVED",
     "EVENT_CONTEXT_DENIED",
     "EVENT_CONFLICT_DETECTED",
+    "EVENT_CONFLICT_RESOLVED",
     "EVENT_SCHEMA_STATE",
     "FORBIDDEN_FIELDS",
     "OTHER",

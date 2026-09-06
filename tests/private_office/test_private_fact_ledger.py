@@ -146,9 +146,27 @@ def stage_the_two_axes_are_independent() -> None:
     check("confirmation lands on USER_CONFIRMED specifically",
           facts.VERIFICATION_TRANSITIONS[facts.OP_CONFIRM][1]
           == model.VERIFICATION_USER_CONFIRMED)
-    check("and only confirmation stamps a verification time",
-          facts.VERIFYING_OPERATIONS == frozenset({facts.OP_CONFIRM}),
-          str(facts.VERIFYING_OPERATIONS))
+    # `last_verified_at` is stamped by whatever is in VERIFYING_OPERATIONS, so
+    # the set is allowed to grow — resolving a conflict means a member weighed
+    # two sources and chose, which is looking at the fact as surely as
+    # confirming it is. What must never grow is the *ceiling*: an operation that
+    # both stamps the clock and lands on a verified state would make the review
+    # queue a laundering machine. Asserting the ceiling rather than the exact
+    # membership is the check that survives the next legitimate addition and
+    # still fails the dangerous one.
+    check("every clock-stamping operation is an owner attestation, not a "
+          "verification",
+          all(facts.VERIFICATION_TRANSITIONS[op][1] not in verified_targets
+              for op in facts.VERIFYING_OPERATIONS),
+          str(sorted(facts.VERIFYING_OPERATIONS)))
+    check("and confirmation is among them",
+          facts.OP_CONFIRM in facts.VERIFYING_OPERATIONS)
+    # Named explicitly so that adding an operation to the set is a deliberate
+    # act with a test to update, rather than something that happens quietly.
+    check("and the set is exactly the two owner judgements",
+          facts.VERIFYING_OPERATIONS
+          == frozenset({facts.OP_CONFIRM, facts.OP_RESOLVE}),
+          str(sorted(facts.VERIFYING_OPERATIONS)))
 
     # Then behaviourally, by walking a real row through every state the
     # operations can actually reach and confirming from each one.

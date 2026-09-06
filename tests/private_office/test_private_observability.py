@@ -768,6 +768,42 @@ def stage_telemetry_carries_no_member_data():
         cur, owner_user_id=USER_A, fact_id=lifecycle["fact_id"],
         reason_code="OBSERVABILITY_PROBE")
 
+    # And a real disagreement, settled. Driven through detection and the
+    # canonical resolver rather than by emitting the event directly, because the
+    # claim this suite makes is that every declared metric is fired by shipping
+    # code — a fixture that emits the event itself would prove only that the
+    # constant is spelled the same in two files.
+    #
+    # Both values are secrets, and the winner is nominated by id. If any part of
+    # the resolution payload ever grows a value, a fact type, or the member's
+    # own words for why they chose, the leak inspection below sees it.
+    left = facts.record_fact(
+        cur, owner_user_id=USER_A, subject_type=retrieval.SUBJECT_TYPE_NODE,
+        subject_id="912", fact_type="renewal_date", value=SECRETS[1],
+        value_type=model.VALUE_STRING,
+        provenance_type=model.PROVENANCE_PROVIDER_ASSERTED,
+        domain=model.DOMAIN_FINANCIAL)
+    right = facts.record_fact(
+        cur, owner_user_id=USER_A, subject_type=retrieval.SUBJECT_TYPE_NODE,
+        subject_id="912", fact_type="renewal_date", value=SECRETS[2],
+        value_type=model.VALUE_STRING,
+        provenance_type=model.PROVENANCE_DOCUMENT_EXTRACTED,
+        domain=model.DOMAIN_FINANCIAL)
+    contested = contradictions.detect_conflicts(
+        cur, owner_user_id=USER_A, subject_id="912")
+    check("two sources disagreeing produced a conflict to settle",
+          len(contested) == 1, str(len(contested)))
+    if contested:
+        contradictions.mark_conflicts(
+            cur, owner_user_id=USER_A, conflicts=contested)
+        settled = contradictions.resolve_conflict(
+            cur, owner_user_id=USER_A,
+            conflict_id=contested[0]["conflict_id"],
+            winning_fact_id=int(left["fact_id"]))
+        check("the settlement fired its metric through the resolver",
+              settled.get("status") == "applied", str(settled.get("status")))
+    del right
+
     conn.commit()
     conn.close()
 

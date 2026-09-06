@@ -86,6 +86,7 @@ LOGGER = logging.getLogger("private_office.schema")
 
 FACTS_TABLE = "private_facts"
 FACT_HISTORY_TABLE = "private_fact_history"
+FACT_CONFLICTS_TABLE = "private_fact_conflicts"
 NODES_TABLE = "private_graph_nodes"
 EDGES_TABLE = "private_graph_edges"
 AUDIT_TABLE = "private_audit_events"
@@ -93,8 +94,8 @@ SECURITY_TABLE = "private_office_security"
 GRANTS_TABLE = "private_office_unlock_grants"
 
 TABLES: tuple[str, ...] = (
-    FACTS_TABLE, FACT_HISTORY_TABLE, NODES_TABLE, EDGES_TABLE, AUDIT_TABLE,
-    SECURITY_TABLE, GRANTS_TABLE,
+    FACTS_TABLE, FACT_HISTORY_TABLE, FACT_CONFLICTS_TABLE, NODES_TABLE,
+    EDGES_TABLE, AUDIT_TABLE, SECURITY_TABLE, GRANTS_TABLE,
 )
 
 STATUS_READY = "ready"
@@ -357,9 +358,64 @@ CREATE TABLE IF NOT EXISTS {GRANTS_TABLE} (
 )
 """
 
+# ---------------------------------------------------------------------------
+# Conflict resolution — the record that a disagreement was settled
+# ---------------------------------------------------------------------------
+# Detection is deterministic and stateless: it re-derives the same conflict from
+# the same rows every time it runs. That is the property that makes it
+# trustworthy and it is also, without this table, the property that makes it
+# useless — a member who settles a disagreement on Monday is asked about it
+# again on Tuesday, and every day after, forever. A ledger that cannot remember
+# a decision is not a ledger, it is a nag.
+#
+# The row is keyed on `conflict_id`, which `contradictions.conflict_id` derives
+# from the owner plus the sorted fact keys of the competitors. That choice has a
+# consequence worth stating out loud, because it looks like a bug the first time
+# it is seen: if a *new* competing source arrives, the set of fact keys changes,
+# so the conflict id changes, so this resolution no longer matches and the
+# conflict surfaces again. That is correct. The member settled "the insurer says
+# March, the document says April". They did not settle "and also the broker says
+# June". A resolution that survived a new contradicting source would be a
+# resolution that silently suppressed evidence.
+#
+# What is NOT here: any value, any fact type, any free text. `resolution` and
+# `reason` are closed vocabularies owned by this package. The winning fact is an
+# id, and reading it requires the same owner predicate as everything else.
+FACT_CONFLICTS_TABLE_DDL = f"""
+CREATE TABLE IF NOT EXISTS {FACT_CONFLICTS_TABLE} (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_user_id INTEGER NOT NULL,
+    conflict_id TEXT NOT NULL,
+    resolution TEXT NOT NULL DEFAULT '',
+    winning_fact_id INTEGER NOT NULL DEFAULT 0,
+    competing_count INTEGER NOT NULL DEFAULT 0,
+    reason TEXT NOT NULL DEFAULT '',
+    loser_disposition TEXT NOT NULL DEFAULT '',
+    resolved_by_actor_type TEXT NOT NULL DEFAULT '',
+    resolved_by_actor_id INTEGER NOT NULL DEFAULT 0,
+    resolved_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(owner_user_id, conflict_id)
+)
+"""
+
+# `winning_fact_id` is 0-for-absent rather than NULL and rather than mandatory,
+# because "there is no winner" is a real outcome. A member looking at two
+# addresses may conclude that both are wrong, or that the two sources were never
+# actually talking about the same thing. Forcing a winner would push them into
+# nominating one to make the prompt go away, which is how a truth ledger ends up
+# holding a value nobody believes.
+#
+# `resolved_by_actor_type` is recorded for one specific question: "how many of
+# this member's conflicts were settled by a machine". The intended answer is
+# zero — the writer refuses any actor that is not the owner — and a column that
+# can only ever hold one value is a cheap way to notice the day it holds two.
+
 TABLE_DDL: dict[str, str] = {
     FACTS_TABLE: FACTS_TABLE_DDL,
     FACT_HISTORY_TABLE: FACT_HISTORY_TABLE_DDL,
+    FACT_CONFLICTS_TABLE: FACT_CONFLICTS_TABLE_DDL,
     NODES_TABLE: NODES_TABLE_DDL,
     EDGES_TABLE: EDGES_TABLE_DDL,
     AUDIT_TABLE: AUDIT_TABLE_DDL,
@@ -387,6 +443,7 @@ TABLE_ADDED_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
         ("created_by_actor_id", "INTEGER NOT NULL DEFAULT 0"),
     ),
     FACT_HISTORY_TABLE: (),
+    FACT_CONFLICTS_TABLE: (),
     NODES_TABLE: (),
     EDGES_TABLE: (),
     AUDIT_TABLE: (),
@@ -414,6 +471,16 @@ REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
     ),
     FACT_HISTORY_TABLE: (
         "owner_user_id", "fact_id", "operation", "created_at",
+    ),
+    # Required rather than optional, and for the same reason
+    # `verification_state` is: a reader that cannot see resolutions cannot tell
+    # a settled disagreement from an open one, and would put every conflict the
+    # member has ever decided back in front of them as though it were new. A
+    # review queue that re-asks answered questions is worse than one that is
+    # visibly broken, because the member has no way to tell it is wrong.
+    FACT_CONFLICTS_TABLE: (
+        "owner_user_id", "conflict_id", "resolution", "winning_fact_id",
+        "resolved_at",
     ),
     NODES_TABLE: (
         "owner_user_id", "node_key", "node_type", "lifecycle_state",
@@ -467,6 +534,12 @@ INDEX_DDL: tuple[str, ...] = (
     # History is read one fact at a time, newest first.
     f"CREATE INDEX IF NOT EXISTS idx_private_fact_history_fact "
     f"ON {FACT_HISTORY_TABLE} (owner_user_id, fact_id, created_at)",
+    # Every detection pass asks "has this one already been settled", once per
+    # conflict it found. The UNIQUE constraint would serve the lookup on its
+    # own, but naming the index makes the access path explicit rather than
+    # incidental to a constraint someone could later relax.
+    f"CREATE INDEX IF NOT EXISTS idx_private_fact_conflicts_owner "
+    f"ON {FACT_CONFLICTS_TABLE} (owner_user_id, conflict_id)",
     f"CREATE INDEX IF NOT EXISTS idx_private_nodes_type "
     f"ON {NODES_TABLE} (owner_user_id, node_type, lifecycle_state)",
     f"CREATE INDEX IF NOT EXISTS idx_private_edges_source "

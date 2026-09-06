@@ -42,12 +42,45 @@ two dates is to say so and ask, which is a *better* answer than a confident
 wrong date and is not reachable once one of the two rows has been quietly
 retired.
 
-So conflicts are recorded and left ``unresolved``. The rows keep their original
-provenance — deliberately, rather than being restamped ``CONFLICTING`` — because
-"your insurer's record says March, the policy document says April" is only
-sayable while both rows still remember where they came from. Overwriting
-provenance with the fact that there is a conflict destroys the material needed
-to explain it.
+So conflicts are recorded and left ``unresolved`` until a *person* settles them.
+The rows keep their original provenance — deliberately, rather than being
+restamped ``CONFLICTING`` — because "your insurer's record says March, the policy
+document says April" is only sayable while both rows still remember where they
+came from. Overwriting provenance with the fact that there is a conflict destroys
+the material needed to explain it.
+
+Contested is a state, not a source
+----------------------------------
+What the rows *do* get is ``verification_state = CONFLICTING``. That is the
+second axis the ledger core exists to provide, and it is what makes the sentence
+above survivable: provenance keeps answering "where did this come from", while
+verification answers "what has since been done about it", and a contested row now
+says both. Before the two axes were separated there was exactly one column, so
+recording the conflict meant destroying the provenance — which is why the
+original code recorded nothing and left ``CONFLICTING`` as a word the package
+knew and never used.
+
+The consequence is that a contested fact stops reading as current truth
+everywhere at once: ``CONFLICTING`` is in ``UNTRUSTWORTHY_VERIFICATION`` and
+ranks at zero, so a briefing, a projection or an UNDX answer that would have
+quoted it now cannot. Marking a conflict and leaving every competitor still
+reading as believable was the gap — the disagreement was findable by anyone who
+went looking for it, and invisible to everyone who did not.
+
+Resolution, and why it needs a durable record
+---------------------------------------------
+Detection is stateless: it re-derives the same conflict from the same rows every
+time it runs. Without somewhere to record that a member has already decided, the
+member is asked the same question every day forever, and the third or fourth
+time they are asked they will start clicking whatever makes it stop. That is how
+a truth ledger acquires values nobody believes.
+
+:func:`resolve_conflict` is the settlement. It is an owner action — the writer
+refuses any other actor, because "UNDX must not silently choose" is not a
+preference that survives a convenient exception — and the winner it nominates
+lands on ``USER_CONFIRMED``, never ``VERIFIED``. A member weighing two sources
+is exercising judgement, which is the most a person can contribute and is still
+not a system of record being read.
 
 Values, and where they may go
 -----------------------------
@@ -79,6 +112,40 @@ LOGGER = logging.getLogger("private_office.contradictions")
 #: which would make the detector trivially defeatable by recording the second
 #: value a moment after the first — the exact shape of a bad import.
 SIMULTANEITY_HOURS = 24
+
+#: How a conflict was settled. A closed vocabulary owned by this module, never
+#: anything a member typed — the same rule ``reason_code`` follows in the writer.
+#:
+#: ``RESOLUTION_DISMISSED`` is not a lesser outcome. A member may look at two
+#: figures and conclude that the sources were never describing the same thing,
+#: or that both are wrong. Offering only "pick a winner" would force them to
+#: nominate a value they do not believe in order to clear the prompt.
+RESOLUTION_WINNER = "winner_chosen"
+RESOLUTION_DISMISSED = "dismissed"
+RESOLUTIONS: tuple[str, ...] = (RESOLUTION_WINNER, RESOLUTION_DISMISSED)
+
+#: What happens to the rows that did not win.
+#:
+#: ``DISPOSITION_DISPUTE`` is the default, and the default is the reversible one
+#: on purpose. Disputing leaves the losing figure live and flagged, so a member
+#: who chose wrong can still see what they rejected and change their mind.
+#: ``DISPOSITION_SUPERSEDE`` retires it — correct when the loser is genuinely a
+#: stale reading rather than a rival account, and terminal, which is why it is
+#: never what happens unless a caller asks for it by name.
+DISPOSITION_DISPUTE = "dispute"
+DISPOSITION_SUPERSEDE = "supersede"
+DISPOSITION_NONE = "none"
+DISPOSITIONS: tuple[str, ...] = (
+    DISPOSITION_DISPUTE, DISPOSITION_SUPERSEDE, DISPOSITION_NONE,
+)
+
+#: Outcomes of :func:`resolve_conflict`, kept distinct for the same reason the
+#: writer keeps its four apart: "there is no such conflict" and "you may not do
+#: that" are different answers and a caller that cannot tell them apart cannot
+#: say anything useful to the member.
+RESOLVE_APPLIED = "applied"
+RESOLVE_REFUSED = "refused"
+RESOLVE_NOT_FOUND = "not_found"
 
 #: When two numbers count as materially different.
 #:
@@ -261,6 +328,63 @@ def _competing_entry(row: dict) -> dict:
     }
 
 
+def _row_value(row, name: str, index: int):
+    """Read one column from a cursor row that may or may not be a mapping.
+
+    The same accessor the writer uses. Some callers hand this package a
+    ``sqlite3.Row``, some a plain tuple from a PostgreSQL cursor, and indexing a
+    tuple by name fails at a point far from the configuration that caused it.
+    """
+    return row[name] if hasattr(row, "keys") else row[index]
+
+
+def load_resolutions(
+    cur,
+    *,
+    owner_user_id: int,
+    conflict_ids: Sequence[str],
+) -> dict[str, dict]:
+    """Settled conflicts among ``conflict_ids``, keyed by conflict id.
+
+    One read for the whole batch rather than one per conflict. Detection runs on
+    every retrieval, so a lookup that scaled with the number of disagreements a
+    member has would make the members with the most conflicts — the ones the
+    feature exists for — the slowest to serve.
+    """
+    owner = int(owner_user_id or 0)
+    wanted = [str(value)[:64] for value in conflict_ids or () if str(value or "").strip()]
+    if owner <= 0 or not wanted:
+        return {}
+    found: dict[str, dict] = {}
+    # Chunked because a member with a very noisy import can produce more
+    # conflicts than some drivers accept bound parameters for, and the failure
+    # mode of exceeding that limit is an exception from the driver rather than
+    # anything this package could explain.
+    for start in range(0, len(wanted), 200):
+        chunk = wanted[start:start + 200]
+        placeholders = ",".join("?" * len(chunk))
+        cur.execute(
+            f"SELECT conflict_id, resolution, winning_fact_id, loser_disposition, "
+            f"resolved_by_actor_type, resolved_at "
+            f"FROM {_schema.FACT_CONFLICTS_TABLE} "
+            f"WHERE owner_user_id = ? AND conflict_id IN ({placeholders})",
+            [owner, *chunk],
+        )
+        for row in cur.fetchall() or ():
+            marker = str(_row_value(row, "conflict_id", 0) or "")
+            if not marker:
+                continue
+            found[marker] = {
+                "conflict_id": marker,
+                "resolution": str(_row_value(row, "resolution", 1) or ""),
+                "winning_fact_id": int(_row_value(row, "winning_fact_id", 2) or 0),
+                "loser_disposition": str(_row_value(row, "loser_disposition", 3) or ""),
+                "resolved_by_actor_type": str(_row_value(row, "resolved_by_actor_type", 4) or ""),
+                "resolved_at": str(_row_value(row, "resolved_at", 5) or ""),
+            }
+    return found
+
+
 def detect_conflicts(
     cur,
     *,
@@ -270,16 +394,31 @@ def detect_conflicts(
     subject_ids: Sequence[object] | None = None,
     fact_types: Sequence[str] | None = None,
     limit: int = MAX_SCAN,
+    include_resolved: bool = False,
 ) -> list[dict]:
     """Unresolved contradictions in one owner's facts.
 
     Each entry is ``{"conflict_id", "owner_user_id", "subject_type",
     "subject_id", "fact_type", "reason", "competing_fact_ids", "competing",
-    "unresolved": True}``.
+    "unresolved", "resolution"}``.
 
-    ``unresolved`` is hard-coded true and there is no code path that sets it
-    false. Resolution is an act by the owner — confirming which source is right
-    — and this module's job ends at presenting the disagreement honestly.
+    Detection itself is stateless and derives nothing from history: the same
+    rows always produce the same conflict with the same id. What changes the
+    answer is :func:`resolve_conflict` having written a settlement, which is
+    looked up here and, by default, removes the conflict from the result. That
+    default is the whole point of the resolution record — a conflict a member
+    has already decided must stop being presented as an open question, or the
+    review queue becomes something they learn to dismiss without reading. Pass
+    ``include_resolved=True`` to see settled ones as well, with ``unresolved``
+    false and the settlement under ``resolution``; a history view wants that and
+    a prompt never does.
+
+    Note what does *not* suppress a conflict: a new competing source. The
+    conflict id is derived from the fact keys of the competitors, so a third
+    source arriving changes the id and the settlement no longer matches. That
+    looks like a bug and is the correct behaviour — the member settled "the
+    insurer says March, the document says April", not "and the broker says
+    June".
 
     ``subject_ids`` asks about many subjects in **one** read. Stage 37: the
     grouping below is already keyed by subject, so answering for a hundred
@@ -372,7 +511,22 @@ def detect_conflicts(
                 "competing_fact_ids": [int(m["id"]) for m in members],
                 "competing": [_competing_entry(m) for m in members],
                 "unresolved": True,
+                "resolution": None,
             })
+
+    if conflicts:
+        settled = load_resolutions(
+            cur, owner_user_id=owner,
+            conflict_ids=[c["conflict_id"] for c in conflicts])
+        if settled:
+            for conflict in conflicts:
+                record = settled.get(conflict["conflict_id"])
+                if not record:
+                    continue
+                conflict["unresolved"] = False
+                conflict["resolution"] = record
+            if not include_resolved:
+                conflicts = [c for c in conflicts if c["unresolved"]]
 
     if conflicts:
         # Fact types and counts only — never a value. A conflict about a policy
@@ -408,15 +562,38 @@ def mark_conflicts(
     actor_user_id: int | None = None,
     purpose: str = "system_maintenance",
 ) -> int:
-    """Stamp ``conflict_id`` onto the competing rows. Returns rows updated.
+    """Stamp the competing rows as contested. Returns rows updated.
 
-    What this deliberately does **not** do is change ``provenance_type`` to
+    Two things happen to each row, and the difference between them is the
+    difference the ledger core was built to make.
+
+    ``conflict_id`` is written directly here: it is a grouping key, not a claim
+    about the fact, and it is what lets a resolution address the whole cluster
+    later.
+
+    ``verification_state`` becomes ``CONFLICTING``, and that goes through
+    :func:`services.private_office.facts.flag_conflicting_fact` rather than
+    through the UPDATE below — one canonical writer owns durable state changes,
+    so the transition is checked against the state machine and lands in the
+    audit trail and the fact history like every other one. A row that was
+    already ``DISPUTED`` is left alone by that machine, because a person saying
+    "this is wrong" is more specific than a scan saying "these two disagree",
+    and a nightly sweep that overwrote the member's own judgement would be
+    losing the more expensive signal to the cheaper one.
+
+    What this still does **not** do is change ``provenance_type`` to
     ``CONFLICTING`` or move any row to ``SUPERSEDED``. Both would look tidier
     and both destroy the ability to explain the conflict: the answer the owner
     needs is "your insurer's record says one date and the policy document says
     another", and that sentence requires each row to still know where it came
-    from. Marking is additive, and a resolved conflict is cleared by the owner
-    acting, not by this function choosing.
+    from. Which is exactly why the contested-ness lives on the verification axis
+    instead — it is a state the fact was moved into, and it is now recorded as
+    one.
+
+    Conflicts already carrying a resolution are skipped rather than re-flagged.
+    Detection filters them out by default, so reaching one here means a caller
+    is holding a stale list, and re-contesting a settled disagreement would undo
+    the member's decision without anything recording that it had been undone.
     """
     owner = int(owner_user_id or 0)
     if owner <= 0:
@@ -429,6 +606,8 @@ def mark_conflicts(
         ids = [int(i) for i in conflict.get("competing_fact_ids") or () if str(i).strip()]
         if not marker or not ids:
             continue
+        if conflict.get("unresolved") is False:
+            continue
         placeholders = ",".join("?" * len(ids))
         cur.execute(
             f"UPDATE {_schema.FACTS_TABLE} SET conflict_id = ?, updated_at = ? "
@@ -436,6 +615,10 @@ def mark_conflicts(
             [marker, now_iso, owner, *ids],
         )
         updated += len(ids)
+        for fact_id in ids:
+            _facts.flag_conflicting_fact(
+                cur, owner_user_id=owner, fact_id=fact_id,
+                actor_user_id=actor_user_id, purpose=purpose)
         _audit.record(
             cur, actor_user_id=int(actor_user_id or owner), owner_user_id=owner,
             action=_audit.ACTION_CONFLICT_DETECTED,
@@ -444,3 +627,267 @@ def mark_conflicts(
             purpose=purpose, outcome=_audit.OUTCOME_OK, result_count=len(ids),
         )
     return updated
+
+
+def _competitors(cur, *, owner_user_id: int, marker: str) -> list[dict]:
+    """The live rows carrying this conflict marker.
+
+    Read from the facts table rather than from a caller-supplied list, and that
+    is a security decision rather than a convenience one. A resolution names a
+    winning fact id, and trusting the caller's idea of which ids belong to the
+    conflict would let a request nominate a fact from somewhere else — or from
+    somebody else — and have the writer confirm it. Re-reading with the owner
+    predicate in the SELECT means the winner can only ever be one of this
+    member's own contested rows.
+    """
+    cur.execute(
+        f"SELECT id, verification_state, lifecycle_state, domain, subject_type, "
+        f"subject_id "
+        f"FROM {_schema.FACTS_TABLE} "
+        f"WHERE owner_user_id = ? AND conflict_id = ? AND lifecycle_state = ? "
+        f"ORDER BY id",
+        (int(owner_user_id), marker, _model.LIFECYCLE_ACTIVE),
+    )
+    rows = []
+    for row in cur.fetchall() or ():
+        rows.append({
+            "id": int(_row_value(row, "id", 0) or 0),
+            "verification_state": str(_row_value(row, "verification_state", 1) or ""),
+            "lifecycle_state": str(_row_value(row, "lifecycle_state", 2) or ""),
+            "domain": str(_row_value(row, "domain", 3) or ""),
+            "subject_type": str(_row_value(row, "subject_type", 4) or ""),
+            "subject_id": str(_row_value(row, "subject_id", 5) or ""),
+        })
+    return rows
+
+
+def _write_resolution(
+    cur,
+    *,
+    owner_user_id: int,
+    marker: str,
+    resolution: str,
+    winning_fact_id: int,
+    competing_count: int,
+    reason: str,
+    loser_disposition: str,
+    actor_type: str,
+    actor_user_id: int,
+) -> bool:
+    """Persist the settlement. Returns True if it replaced an earlier one.
+
+    Read-then-write rather than an upsert, because ``INSERT OR IGNORE`` means
+    two different things on the two engines this package runs on and
+    ``services.db`` rewrites it — so dedupe here is a decision the writer makes
+    in code that can be read, not a side effect of a statement that behaves
+    differently in production than in the test that covered it.
+
+    Re-settling is allowed. A member may change their mind, or new evidence may
+    arrive that does not change the competitor set. What is not allowed is
+    losing the fact that it happened twice, which is why the audit row and the
+    metric both mark it.
+    """
+    owner = int(owner_user_id)
+    now_iso = _facts._now_iso()
+    cur.execute(
+        f"SELECT id FROM {_schema.FACT_CONFLICTS_TABLE} "
+        f"WHERE owner_user_id = ? AND conflict_id = ?",
+        (owner, marker),
+    )
+    existing = cur.fetchone()
+    if existing is not None:
+        cur.execute(
+            f"UPDATE {_schema.FACT_CONFLICTS_TABLE} SET resolution = ?, "
+            f"winning_fact_id = ?, competing_count = ?, reason = ?, "
+            f"loser_disposition = ?, resolved_by_actor_type = ?, "
+            f"resolved_by_actor_id = ?, resolved_at = ?, updated_at = ? "
+            f"WHERE owner_user_id = ? AND conflict_id = ?",
+            (resolution, winning_fact_id, competing_count, reason,
+             loser_disposition, actor_type, int(actor_user_id), now_iso, now_iso,
+             owner, marker),
+        )
+        return True
+    cur.execute(
+        f"INSERT INTO {_schema.FACT_CONFLICTS_TABLE} "
+        f"(owner_user_id, conflict_id, resolution, winning_fact_id, "
+        f"competing_count, reason, loser_disposition, resolved_by_actor_type, "
+        f"resolved_by_actor_id, resolved_at, created_at, updated_at) "
+        f"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (owner, marker, resolution, winning_fact_id, competing_count, reason,
+         loser_disposition, actor_type, int(actor_user_id), now_iso, now_iso,
+         now_iso),
+    )
+    return False
+
+
+def resolve_conflict(
+    cur,
+    *,
+    owner_user_id: int,
+    conflict_id: str,
+    resolution: str = RESOLUTION_WINNER,
+    winning_fact_id: int = 0,
+    reason: str = "",
+    loser_disposition: str = DISPOSITION_DISPUTE,
+    actor_user_id: int | None = None,
+    actor_type: str = _facts.ACTOR_OWNER,
+    purpose: str = "user_request",
+) -> dict:
+    """Settle a detected conflict. The one place a disagreement ends.
+
+    Returns ``{"status", "conflict_id", "resolution", "winning_fact_id",
+    "competing_fact_ids", "losers_moved", "resettled", "reason"}`` where
+    ``status`` is ``applied``, ``refused`` or ``not_found``.
+
+    Three rules, and each of them is the reason this function exists rather than
+    the caller doing it in three statements:
+
+    **Only the owner may settle.** ``actor_type`` must be ``owner``. UNDX may
+    surface a conflict, explain it, and recommend — it may not decide, and the
+    refusal lives here rather than in a route because a second route would
+    otherwise be a second chance to forget. This is Stage 13's "UNDX must not
+    silently choose" expressed as a predicate instead of a comment.
+
+    **The winner is confirmed, not verified.** The nomination goes through
+    :func:`services.private_office.facts.resolve_fact`, which lands on
+    ``USER_CONFIRMED``. There is no argument, no override and no flag that
+    reaches ``VERIFIED``: a member choosing between two sources has exercised
+    judgement, and judgement is not a system of record being read.
+
+    **The losers move through the state machine.** Never a direct UPDATE. They
+    are disputed by default — live, flagged, and still visible to a member who
+    wants to see what they rejected — or superseded if the caller says so, which
+    retires them and is deliberately not the default because it cannot be
+    undone.
+
+    ``RESOLUTION_DISMISSED`` takes no winner and moves every competitor out of
+    ``CONFLICTING`` together. It is the answer for "these two were never
+    describing the same thing", and without it the only way to clear a
+    mis-detected conflict would be to declare one of the rows the truth.
+    """
+    owner = int(owner_user_id or 0)
+    marker = str(conflict_id or "").strip()[:64]
+    outcome = {
+        "status": RESOLVE_REFUSED, "conflict_id": marker,
+        "resolution": "", "winning_fact_id": 0, "competing_fact_ids": [],
+        "losers_moved": 0, "resettled": False, "reason": "",
+    }
+    if owner <= 0 or not marker:
+        outcome["reason"] = "invalid_request"
+        return outcome
+    if resolution not in RESOLUTIONS:
+        outcome["reason"] = "unknown_resolution"
+        return outcome
+    if loser_disposition not in DISPOSITIONS:
+        outcome["reason"] = "unknown_disposition"
+        return outcome
+
+    actor_class = str(actor_type or "").strip().lower()
+    if actor_class != _facts.ACTOR_OWNER:
+        # Audited rather than silently dropped. An attempt by a machine to
+        # settle a member's disagreement is exactly the event the trail exists
+        # for, and it is worth being able to count even when it is a bug rather
+        # than an attack.
+        _audit.record(
+            cur, actor_user_id=int(actor_user_id or owner), owner_user_id=owner,
+            action=_audit.ACTION_CONFLICT_RESOLVED, object_type="", object_id="",
+            purpose=purpose, outcome=_audit.OUTCOME_DENIED,
+        )
+        outcome["reason"] = "actor_not_owner"
+        return outcome
+
+    _schema.require_private_schema(cur)
+    competing = _competitors(cur, owner_user_id=owner, marker=marker)
+    if len(competing) < 2:
+        # Fewer than two live rows carry the marker, so there is nothing left to
+        # disagree. Reported as not-found rather than as success: a caller whose
+        # conflict evaporated between reading and deciding should hear that the
+        # question changed, not that their answer was recorded.
+        outcome["status"] = RESOLVE_NOT_FOUND
+        outcome["reason"] = "no_such_conflict"
+        return outcome
+
+    ids = [row["id"] for row in competing]
+    outcome["competing_fact_ids"] = list(ids)
+    winner = int(winning_fact_id or 0)
+    if resolution == RESOLUTION_WINNER:
+        if winner not in ids:
+            outcome["reason"] = "winner_not_in_conflict"
+            return outcome
+    else:
+        winner = 0
+        loser_disposition = DISPOSITION_NONE
+
+    moved = 0
+    if resolution == RESOLUTION_DISMISSED:
+        # Nobody lost, so every competitor is released from CONFLICTING by the
+        # same operation the winner would have used. The member has looked at
+        # all of them and said they can all stand.
+        for fact_id in ids:
+            applied = _facts.resolve_fact(
+                cur, owner_user_id=owner, fact_id=fact_id,
+                actor_user_id=actor_user_id, actor_type=_facts.ACTOR_OWNER,
+                reason_code="conflict_dismissed", purpose=purpose)
+            if applied.get("status") == "applied":
+                moved += 1
+    else:
+        _facts.resolve_fact(
+            cur, owner_user_id=owner, fact_id=winner,
+            actor_user_id=actor_user_id, actor_type=_facts.ACTOR_OWNER,
+            reason_code="conflict_resolution", purpose=purpose)
+        for fact_id in ids:
+            if fact_id == winner:
+                continue
+            if loser_disposition == DISPOSITION_SUPERSEDE:
+                applied = _facts.retire_fact(
+                    cur, owner_user_id=owner, fact_id=fact_id,
+                    actor_user_id=actor_user_id, actor_type=_facts.ACTOR_OWNER,
+                    reason_code="conflict_resolution", purpose=purpose)
+            elif loser_disposition == DISPOSITION_DISPUTE:
+                applied = _facts.dispute_fact(
+                    cur, owner_user_id=owner, fact_id=fact_id,
+                    actor_user_id=actor_user_id, actor_type=_facts.ACTOR_OWNER,
+                    reason_code="conflict_resolution", purpose=purpose)
+            else:
+                continue
+            if applied.get("status") == "applied":
+                moved += 1
+
+    reason_code = str(reason or "")[:64]
+    resettled = _write_resolution(
+        cur, owner_user_id=owner, marker=marker, resolution=resolution,
+        winning_fact_id=winner, competing_count=len(ids), reason=reason_code,
+        loser_disposition=loser_disposition, actor_type=_facts.ACTOR_OWNER,
+        actor_user_id=int(actor_user_id or owner),
+    )
+
+    _audit.record(
+        cur, actor_user_id=int(actor_user_id or owner), owner_user_id=owner,
+        action=_audit.ACTION_CONFLICT_RESOLVED,
+        object_type=competing[0]["subject_type"],
+        object_id=competing[0]["subject_id"],
+        purpose=purpose, outcome=_audit.OUTCOME_OK, result_count=len(ids),
+    )
+    # Ids and counts only, per the module docstring. Which fact won is a fact
+    # about the member's holdings; that it was settled at all is process health.
+    LOGGER.info(
+        "PRIVATE_CONFLICT_RESOLVED owner=%s resolution=%s competing=%s moved=%s",
+        owner, resolution, len(ids), moved,
+    )
+    _telemetry.emit(
+        _telemetry.EVENT_CONFLICT_RESOLVED,
+        resolution=resolution, reason=reason_code or None,
+        loser_disposition=loser_disposition, actor_type=_facts.ACTOR_OWNER,
+        domain=next((row["domain"] for row in competing if row["domain"]), None),
+        competing_count=len(ids), losers_moved=moved, resettled=resettled,
+    )
+
+    outcome.update({
+        "status": RESOLVE_APPLIED,
+        "resolution": resolution,
+        "winning_fact_id": winner,
+        "losers_moved": moved,
+        "resettled": resettled,
+        "reason": reason_code,
+    })
+    return outcome
