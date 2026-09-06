@@ -39,6 +39,17 @@ first real Private Office capability.
     worth is a feature this surface declines to have rather than one it has not
     got round to.
 
+``GET /api/private-office/capital-graph/portfolio``
+``GET /api/private-office/capital-graph/overview``
+``GET /api/private-office/capital-graph/obligations``
+``GET /api/private-office/capital-graph/exposure``
+    The capital *projections*, which do carry arithmetic — but only over the
+    subsets that their source projections mark as known, and always beside the
+    counts of what was left out. ``overview`` reports an estimated net position
+    with ``complete`` and an ``excluded`` block; it is not the net worth the
+    paragraph above declines to compute, and the distinction is enforced by
+    tests rather than by comment.
+
 ``GET /api/private-office/records/<view>``
 ``POST /api/private-office/records/<view>``
 ``POST /api/private-office/records/<view>/<id>/status``
@@ -74,9 +85,11 @@ from services import db
 from services.private_office import access as po_access
 from services.private_office import audit as po_audit
 from services.private_office import capital_graph as po_capital
+from services.private_office import capital_overview as po_capital_overview
 from services.private_office import facts as po_facts
 from services.private_office import feature_matrix as po_matrix
 from services.private_office import model as po_model
+from services.private_office import obligation_projection as po_obligations
 from services.private_office import office as po_office
 from services.private_office import portfolio_projection as po_portfolio
 from services.private_office import records as po_records
@@ -700,6 +713,152 @@ def api_private_office_capital_portfolio():
         )
 
     return _no_store({"ok": True, "portfolio": payload})
+
+
+@private_office_blueprint.route(
+    "/api/private-office/capital-graph/overview", methods=["GET"])
+def api_private_office_capital_overview():
+    """The Capital Command Center: assets, liabilities, net position, coverage.
+
+    A composition of the two projections that already carry their own
+    completeness flags, not a new ledger and not a second traversal. The
+    payload's ``net_position.complete`` is the field that matters: it is False
+    whenever anything was excluded — an unpriced holding, an obligation with no
+    amount, a liability in another currency, or no liability records at all —
+    and a client that renders ``estimated`` without it is claiming a net worth
+    the server did not assert.
+    """
+    user = _current_user()
+    if not user:
+        return _no_store({"ok": False, "message": "Login required."}, 401)
+
+    resolved = _resolve_for(user)
+    refusal = _gate(resolved, CAPITAL_FEATURE_ID)
+    if refusal:
+        return refusal
+    locked = _office_lock_gate(user)
+    if locked:
+        return locked
+
+    try:
+        payload = _with_cursor(
+            lambda cur: po_capital_overview.overview(
+                cur,
+                owner_user_id=user["user_id"],
+                actor_user_id=user["user_id"],
+            )
+        )
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("PRIVATE_OFFICE_CAPITAL_OVERVIEW_READ_FAILED")
+        return _capital_failure()
+
+    if not payload.get("ok"):
+        return _no_store(
+            {"ok": False, "state": "denied",
+             "reason": payload.get("denied") or {}},
+            403,
+        )
+
+    return _no_store({"ok": True, "overview": payload})
+
+
+@private_office_blueprint.route(
+    "/api/private-office/capital-graph/obligations", methods=["GET"])
+def api_private_office_capital_obligations():
+    """The member's projected liabilities, summed only where they are known.
+
+    A read of the *projection*, not of the record store: ``records`` remains
+    the authority for an obligation's amount, due date and OPEN/RESOLVED
+    state, and nothing here can change any of them. Rows whose amount the
+    record store does not state arrive with ``amount: null`` and are counted
+    in ``totals.unquantified`` — never rendered as zero.
+    """
+    user = _current_user()
+    if not user:
+        return _no_store({"ok": False, "message": "Login required."}, 401)
+
+    resolved = _resolve_for(user)
+    refusal = _gate(resolved, CAPITAL_FEATURE_ID)
+    if refusal:
+        return refusal
+    locked = _office_lock_gate(user)
+    if locked:
+        return locked
+
+    try:
+        payload = _with_cursor(
+            lambda cur: po_obligations.liabilities_view(
+                cur,
+                owner_user_id=user["user_id"],
+                actor_user_id=user["user_id"],
+            )
+        )
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("PRIVATE_OFFICE_CAPITAL_OBLIGATIONS_READ_FAILED")
+        return _capital_failure()
+
+    if not payload.get("ok"):
+        return _no_store(
+            {"ok": False, "state": "denied",
+             "reason": payload.get("denied") or {}},
+            403,
+        )
+
+    return _no_store({"ok": True, "obligations": payload})
+
+
+@private_office_blueprint.route(
+    "/api/private-office/capital-graph/exposure", methods=["GET"])
+def api_private_office_capital_exposure():
+    """Concentration over the subset whose value is actually known.
+
+    A projection of the same overview read rather than a second computation,
+    so the exposure screen and the command center can never disagree about
+    which holding is the largest. Shares are of the *priced* total and the
+    excluded counts travel with them.
+    """
+    user = _current_user()
+    if not user:
+        return _no_store({"ok": False, "message": "Login required."}, 401)
+
+    resolved = _resolve_for(user)
+    refusal = _gate(resolved, CAPITAL_FEATURE_ID)
+    if refusal:
+        return refusal
+    locked = _office_lock_gate(user)
+    if locked:
+        return locked
+
+    try:
+        payload = _with_cursor(
+            lambda cur: po_capital_overview.overview(
+                cur,
+                owner_user_id=user["user_id"],
+                actor_user_id=user["user_id"],
+            )
+        )
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("PRIVATE_OFFICE_CAPITAL_EXPOSURE_READ_FAILED")
+        return _capital_failure()
+
+    if not payload.get("ok"):
+        return _no_store(
+            {"ok": False, "state": "denied",
+             "reason": payload.get("denied") or {}},
+            403,
+        )
+
+    return _no_store({
+        "ok": True,
+        "exposure": {
+            "concentrations": payload["concentrations"],
+            "assets": payload["assets"],
+            "liabilities": payload["liabilities"],
+            "coverage": payload["coverage"],
+            "prices": payload["prices"],
+            "generated_at": payload["generated_at"],
+        },
+    })
 
 
 @private_office_blueprint.route(
