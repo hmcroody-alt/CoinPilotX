@@ -455,6 +455,74 @@ def stage_price_source_unavailable() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Journey: the output is bounded, and says how much it left out
+# ---------------------------------------------------------------------------
+#
+# Written because the mutation battery found nothing here: raising
+# MAX_CONCENTRATIONS and MAX_REVIEW_ITEMS to a billion left every stage above
+# green, because no stage ever seeded enough rows to reach either bound. An
+# unenforced bound is how a read model with a large enough member becomes an
+# unbounded response, so the bound needs a member large enough to hit it.
+
+def stage_bounded_output() -> None:
+    print("\n[bounded output]")
+    conn, cur = _connect()
+    # Deliberately clear of USER_B + 1, which the mutation battery uses as its
+    # never-touched empty store; seeding that id here would make the
+    # decorative-coverage-floor mutation unfalsifiable.
+    owner = 9951
+    surplus = 5
+    total = overview_mod.MAX_CONCENTRATIONS + surplus
+    # Descending values, so the ranking has an unambiguous correct prefix and
+    # the truncated tail is the cheapest holdings rather than an arbitrary set.
+    symbols = {f"TB{i:02d}": float(total - i) for i in range(total)}
+    original = _priced(symbols)
+    try:
+        for symbol in symbols:
+            _add_lot(cur, owner, symbol, f"Bounded {symbol}", 1.0, None)
+        portfolio.drain(cur, user_id=owner)
+        # Every holding has an unknown cost basis, so each one also produces a
+        # needs_review item: one seeding covers both bounds.
+        payload = _read(cur, owner=owner)
+
+        conc = payload["concentrations"]
+        check("every holding is counted",
+              payload["assets"]["count"] == total, payload["assets"])
+        check(f"the ranking is capped at MAX_CONCENTRATIONS "
+              f"({overview_mod.MAX_CONCENTRATIONS})",
+              len(conc["assets"]) == overview_mod.MAX_CONCENTRATIONS,
+              len(conc["assets"]))
+        check("the ranking keeps the largest positions, in order",
+              [row["key"] for row in conc["assets"]]
+              == [f"TB{i:02d}" for i in range(overview_mod.MAX_CONCENTRATIONS)],
+              [row["key"] for row in conc["assets"]])
+        check("the truncated tail is disclosed as a count, not dropped",
+              conc["assets_unranked_tail"] == surplus,
+              (conc.get("assets_ranked"), conc.get("assets_unranked_tail")))
+        check("the ranked count matches what was actually returned",
+              conc["assets_ranked"] == len(conc["assets"]),
+              (conc["assets_ranked"], len(conc["assets"])))
+        check("the shares still divide the full priced total, so a truncated "
+              "ranking does not sum to 1 and does not pretend to",
+              sum(row["share"] for row in conc["assets"]) < 1.0
+              and abs(conc["asset_total"]
+                      - payload["assets"]["priced_value"]) < 1e-9,
+              (sum(row["share"] for row in conc["assets"]), conc["asset_total"]))
+
+        check(f"needs_review is capped at MAX_REVIEW_ITEMS "
+              f"({overview_mod.MAX_REVIEW_ITEMS})",
+              len(payload["needs_review"]) <= overview_mod.MAX_REVIEW_ITEMS,
+              len(payload["needs_review"]))
+        check("and the untruncated total is published alongside it",
+              payload["needs_review_total"] >= len(payload["needs_review"]),
+              (payload["needs_review_total"], len(payload["needs_review"])))
+        conn.commit()
+    finally:
+        market_data.live_market_board = original
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
 # Journey: owner isolation
 # ---------------------------------------------------------------------------
 
@@ -643,6 +711,7 @@ STAGES = (
     stage_no_liabilities_recorded,
     stage_coverage_and_concentration,
     stage_price_source_unavailable,
+    stage_bounded_output,
     stage_owner_isolation,
     stage_mutation_battery,
 )
