@@ -324,11 +324,22 @@ and wrong.
 stored status unchanged unless the type is `OBLIGATION` *and* the stored status is exactly
 `OPEN`, so a resolved obligation with a past due date is resolved, not overdue.
 
-Two limitations: only `OBLIGATION` has derived state, so a `DECISION` past its
-`deadline_at` and a `REQUEST` past its `deadline_at` are **not** surfaced as overdue
-anywhere (gap G-6); and no state machine validates transitions — `update_record` accepts
-any status in the type's vocabulary, so `RESOLVED → OPEN` is currently permitted with no
-governed reopen semantics (gap G-4).
+Two limitations were recorded here — and **both were closed by `937cd118`, the same
+commit that last touched this document.** The paragraph is kept, corrected, because a
+stale gap entry in a foundation map is the exact failure this map exists to prevent: it
+invites the next session to rebuild working code.
+
+* ~~only `OBLIGATION` has derived state~~ (gap G-6) — **CLOSED.** `DEADLINE_FIELDS`
+  (`records.py:203`) resolves the deadline column per type and `DUE_SOON_WINDOWS`
+  (`:225`) gives each its own window. Verified behaviourally: at +5 days a `DECISION`
+  reads `DUE_SOON` while a `REQUEST` reads `OPEN`; at +10 days only `OBLIGATION` still
+  does. The three windows are genuinely distinct, not one window shared.
+* ~~no state machine validates transitions~~ (gap G-4) — **CLOSED.** `check_transition`
+  (`:1205`) classifies every move and raises rather than returning a falsey verdict, so
+  a caller cannot proceed past a refusal by forgetting to check. `RESOLVED → OPEN` now
+  requires explicit `reopen=True`; `COMPLETED → OPEN` on a `REQUEST` and `DECIDED → OPEN`
+  on a `DECISION` are refused outright per `REOPENABLE` (`:1163`); and closing → a
+  *different* closing is refused because it would overwrite how the record ended.
 
 ---
 
@@ -509,20 +520,20 @@ section number.
 | G-1 | No `TASK` type | 4, 10 | The OBLIGATION/TASK "why vs work" split does not exist. Add as a seventh entry in `SPECS`, not as a new module. |
 | G-2 | No `PROJECT` type, no grouping | 4, 11, 50 | Requires a parent link plus computed progress from defined states. |
 | G-3 | No dependency graph | 17, 18, 54, 93 | Nothing models "A depends on B". Needs a junction table, self-dependency rejection, cycle detection, cross-owner rejection. The only Operations feature here that genuinely warrants a new table. |
-| G-4 | No transition validation | 13, 86 | `update_record` accepts any status in the vocabulary. `RESOLVED → OPEN` is currently legal with no governed reopen. |
+| ~~G-4~~ | ~~No transition validation~~ | 13, 86 | **CLOSED by `937cd118`.** `check_transition` (`records.py:1205`) + `REOPENABLE` (`:1163`); `update_record` audits refusals as `ACTION_RECORD_TRANSITION_DENIED`. Behaviourally verified. |
 | G-5 | No approvals | 19, 94 | No `REQUESTED/APPROVED/REJECTED/EXPIRED/REVOKED` state anywhere. |
 
 ### Tier 2 — engines and read model
 
 | ID | Gap | Mission § | Notes |
 |---|---|---|---|
-| G-6 | Derived state is obligation-only | 6, 15, 63 | `DECISION.deadline_at` and `REQUEST.deadline_at` never surface as overdue. `effective_status:707` is the single place to extend. |
+| ~~G-6~~ | ~~Derived state is obligation-only~~ | 6, 15, 63 | **CLOSED by `937cd118`.** `DEADLINE_FIELDS` (`:203`) + per-type `DUE_SOON_WINDOWS` (`:225`); `NO_DEADLINE_REASON` (`:211`) records why the other three are excluded. Behaviourally verified. |
 | G-7 | No blocked state or blocker reason | 18 | Nothing can express *why* something is blocked. |
 | G-8 | No recurrence | 23, 24, 95 | And no canonical scheduler identified. `jobs.py` is explicitly not a queue. |
 | G-9 | Pagination is `id`-only | 67 | `before_id` cursor, not `timestamp + id`. Correct today; not the mission's contract. |
-| G-10 | No Overview read model | 42, 43, 65 | `/attention` is the seed — counts + due-soon in one call — but has no overdue / blocked / pending-decision / high-risk buckets. |
-| G-11 | Not registered in Backend OS health | 78, 79 | `health.py` does not know the six tables exist. |
-| G-12 | No integrity diagnostics | 80 | No read-only checker for invalid status, missing owner, orphan links, dangling refs. |
+| ~~G-10~~ | ~~No Overview read model~~ | 42, 43, 65 | **CLOSED by `937cd118`.** `operations.overview()` (`operations.py:340`). |
+| ~~G-11~~ | ~~Not registered in Backend OS health~~ | 78, 79 | **CLOSED by `3d42a72c`.** `health._operations_section`; `FEATURE_ROW_MISSING` distinguished from `NOT_IMPLEMENTED`. |
+| ~~G-12~~ | ~~No integrity diagnostics~~ | 80 | **CLOSED by `62d8ad5f`.** `services/private_office/integrity.py::diagnose`. |
 
 ### Tier 3 — integrations
 
@@ -541,7 +552,7 @@ section number.
 |---|---|---|
 | G-13 | False-empty regression test not confirmed | The native types are correct; whether a test *proves* `UNAVAILABLE ≠ EMPTY` was not verified in this pass. Mission §105 requires it. |
 | G-14 | Six tables not in `schema.TABLES` | Deliberate (`records.py:76–84`) and still defensible. Should eventually land. |
-| G-21 | `records.py` docstring stale | Lines 87–88 claim route and UNDX wiring are deferred. Both are complete. Fix this first — it is the cheapest change here and it prevents a future mission rebuilding what exists. |
+| ~~G-21~~ | ~~`records.py` docstring stale~~ | **CLOSED by `937cd118`.** The docstring now carries a "Route and UNDX wiring are complete" section that explains why the note is retained. |
 | G-22 | Test harness is not pytest-native | `test_private_records.py` (802 lines) and `test_operations_routes.py` (511 lines) each expose one `test_*` entrypoint over hand-rolled `stage_*` functions and a `check()` helper. Coverage is real and broad; granularity is not, so a single stage failure reports as one failed test. Relevant to mission §107's mutation battery, which needs to attribute a caught mutation to a specific stage. |
 
 ---
@@ -550,21 +561,30 @@ section number.
 
 Derived from the dependency structure of the gaps, not from mission section order.
 
-1. **G-21** — correct the stale docstring. One edit, prevents the most expensive possible
-   mistake (rebuilding the writer).
-2. **G-4** — transition validation in `update_record`. Small, self-contained, and every
-   later state feature depends on transitions being governed.
-3. **G-6** — extend `effective_status` to decision and request deadlines. One function.
-4. **G-10** — the Overview read model over the six existing primitives, extending
-   `/attention`. No schema change. Highest visible value per unit of risk.
-5. **G-3** — the dependency graph. First genuine new table; needs the full cycle /
-   self / cross-owner rejection battery of mission §93.
+> **Steps 1–4 are complete.** They were implemented by `937cd118` and `3d42a72c` and
+> struck through below. This list was written before that work and was not revised when
+> it landed, which is how a later session came to be asked for G-4 and G-6 that already
+> existed. **The next open item is G-3.**
+
+1. ~~**G-21** — correct the stale docstring.~~ **DONE** (`937cd118`).
+2. ~~**G-4** — transition validation in `update_record`.~~ **DONE** (`937cd118`).
+3. ~~**G-6** — extend `effective_status` to decision and request deadlines.~~ **DONE**
+   (`937cd118`).
+4. ~~**G-10** — the Overview read model over the six existing primitives.~~ **DONE**
+   (`937cd118`). G-11 (health) and G-12 (integrity sweep) also landed out of order.
+5. **G-3** — the dependency graph. ← **NEXT.** First genuine new table; needs the full
+   cycle / self / cross-owner rejection battery of mission §93.
 6. **G-1, G-2** — TASK and PROJECT as new `SPECS` entries.
 7. **G-5** — approvals.
 8. **G-8, G-18** — recurrence and notifications, gated on first identifying the canonical
    scheduler.
 9. **G-17** — UNDX writes, last, because it is an authorization-model change requiring
    coordinated edits across three surfaces.
+
+**Maintenance rule for this document.** A gap table that outlives the work it describes is
+worse than no gap table, because it carries the authority of a forensic audit while
+pointing at code that already exists. Any commit that closes a gap must strike its row
+here in the same commit.
 
 ---
 
