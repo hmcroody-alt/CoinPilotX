@@ -769,11 +769,11 @@ Merging §13 with this addendum, and ordering by what blocks what:
 | ~~4~~ | ~~#8 **as revised** — no document *reasoning* capability~~ | **Closed as a *citation* read.** See A11 for why "reasoning" was the wrong word |
 | 1 | #1 — no PDF/OCR capability | Unchanged, and now the top of the list. A decision, not a task |
 | 2 | #5 — synchronous extraction only; no `PROCESSING` state | Unchanged. OCR cannot run in-request |
-| 3 | #6 — 404 / unmapped statuses collapse into `FeatureEmptyPanel` | Unchanged. The error-never-empty rule |
-| 4 | A-b / A-c — reprocessing not idempotent, count wrong | Prerequisites for re-extraction, therefore for #1 |
-| 5 | #9 — no Operation proposal state | Unchanged |
-| 6 | #10 — no entity resolution | Unchanged; must default to *proposing* a match |
-| 7 | A-a, A-d, #11, #12, A-e, A-f | Medium/low |
+| ~~3~~ | ~~#6 — 404 / unmapped statuses collapse into `FeatureEmptyPanel`~~ | **Closed** by `d4634e35` — but the stated cause above was **wrong**. See A11 |
+| 3 | A-b / A-c — reprocessing not idempotent, count wrong | Prerequisites for re-extraction, therefore for #1 |
+| 4 | #9 — no Operation proposal state | Unchanged |
+| 5 | #10 — no entity resolution | Unchanged; must default to *proposing* a match |
+| 6 | A-a, A-d, #11, #12, A-e, A-f | Medium/low |
 | — | #3 | Partly satisfied — see A2 |
 | — | #4 | **Struck** — closed by `89251ec3` |
 | — | #7 | **Reduced** — evidence layer already supports page locators |
@@ -901,13 +901,65 @@ in PulseSoc's voice. So the refusal is passed through, unflattened, at the servi
 (`ok: False`). The executor turns it into a failure rather than an empty success for the
 same reason.
 
+### #6 — error rendering as empty — CLOSED (`d4634e35`), and the stated cause was wrong
+
+The gap was worded "404 / unmapped statuses collapse into `FeatureEmptyPanel`." That
+diagnosis does not survive contact with the code. `pulseApi` throws a `PulseApiError` on
+any non-2xx, on `ok: false`, and on a body it could not parse (`pulseApi.ts:217`, `:391`),
+so 404s and unmapped statuses never reach these parsers at all — they surface as refusals
+already. Implementing against the gap as written would have been building a guard against
+a path that cannot be taken.
+
+The real hole is narrower and was genuine: a **well-formed 200 carrying a payload the
+parser was not written against** — a route that changed shape, a proxy or cache answering
+with a different document, a partial serialization. Every feature client reached for its
+list with `asList`, which turns a missing key, a `null`, an object, or a string into `[]`.
+The screens render `READY` with zero rows as a settled statement about the member's own
+belongings: "No documents yet." "No open findings." Those sentences were being manufactured
+from responses we had failed to read.
+
+`sentList()` returns the list the server actually sent or `null`, and nine call sites answer
+`UNREADABLE` instead of inventing an empty one. The state word is `ERROR`, not
+`UNAVAILABLE`: the server was reachable and answered; we could not read the answer. Both
+render a retry, but only one is true, and the state word is what a bug report gets written
+from.
+
+This is not a new principle — it is an existing one finally extended to lists. `privateRecords`
+already omits an attention count rather than reporting zero for one it did not receive
+(`if (view in rawCounts)`), because "confident zeros over real obligations" is the failure
+that shape exists to prevent. A confident empty list is the same failure with a different
+type.
+
+Worst case, and the reason this ranked above versioning: the shield. A missing `posture`
+block parsed to zero open findings, no named checks, and an empty `external` list — the one
+place the product says out loud what no outside provider has looked at. Rendered, that is a
+clean bill of health assembled entirely from a response we could not read, and a member
+concluding they are not exposed is exactly the decision this must never manufacture.
+
+**Two non-guards are deliberate**, and are pinned by tests so a later reader does not "fix"
+them:
+
+- a genuinely empty list from a well-formed payload stays `READY`. The point is not to
+  distrust the server; it is to stop speaking *for* it.
+- a missing concierge `desk` block still fails closed to `UNSTAFFED`. The asymmetry is the
+  point: everywhere else a missing block is a refusal, but here the parsed default is
+  itself the safe claim, and refusing would hide the member's real requests over a block
+  whose absence cannot mislead them. Implying a human who is not on the roster is the one
+  error that feature exists to never make.
+
+Every test asserts the **state word**, not merely that the list is empty — an implementation
+that returned `READY` with no rows would satisfy a laxer assertion perfectly.
+
 ### Verification
 
 | What | Result |
 |---|---|
 | `tests/private_office/` | **45/45 files pass**, each in its own process (they set their own temp `DATABASE_URL` at import) |
+| `privateFeaturesEmptiness.test.ts` | **19/19 pass**; `tsc --noEmit` clean |
+| Mobile regression | 8 suites / 48 tests fail — **identical at the baseline** (verified by swapping in `git show HEAD:…/privateFeatures.ts`); all pre-existing |
 | `tests/undx_agent/` | 16 failures — **byte-identical to the same suite at the baseline commit**; all pre-existing, none in Private Office |
-| Mutation testing | 6 mutants introduced across `documents.py` and the route; every one was caught. Two initial mutants were *no-ops* because guards overlapped — that gap was itself a finding, and two new test cases now isolate the ref-kind and ref-parse guards |
+| Mutation testing (Python) | 6 mutants introduced across `documents.py` and the route; every one was caught. Two initial mutants were *no-ops* because guards overlapped — that gap was itself a finding, and two new test cases now isolate the ref-kind and ref-parse guards |
+| Mutation testing (TypeScript) | 2 rounds. Making `sentList` return `[]` fails 10 tests; removing all 5 phantom-id / posture guards fails 5 more. **15 guards independently load-bearing**, the remaining 4 tests being the deliberate non-guards. Restored from backup and `diff`-verified byte-identical after each round |
 
 The most instructive mutant: deleting the `parsed[0] != "document"` check made a
 `briefing:5` provenance ref render as `document_id: 5` — a citation pointing at a document
@@ -916,8 +968,18 @@ that was never the source.
 ### Still open, unchanged
 
 Gap #1 (no PDF/OCR capability) is now rank 1 and remains **a decision, not a task** — no
-provider has been chosen. `PROCESSING` state, document versioning, the native UI for cited
-facts, i18n and physical-device acceptance are untouched.
+provider has been chosen; choosing one means a dependency, credentials and a running cost.
+Rank 2 (`PROCESSING` state) has nothing to do until OCR exists, since extraction is only
+long-running once there is something slow to run.
+
+Document versioning, the native UI for cited facts, and physical-device acceptance are
+untouched. The cited-facts UI is deferred for a specific reason rather than an arbitrary
+one: it needs new strings across 11 i18n catalogs, and those catalogs are currently dirty
+in this shared checkout from a concurrent session. This increment was therefore scoped to
+the API layer and its tests — **zero i18n surface, zero merge collision**.
+
+Also unchanged: the `#6` work is client-side only. It stops the app from *asserting* an
+emptiness the server never stated; it does not make any server route more truthful.
 
 **RTC hard lock held: zero Agora / audio / video / livestream files were read or modified.**
 **Nothing was pushed.**
