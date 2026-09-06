@@ -5029,7 +5029,26 @@
           "leaveMeeting": "Meeting verlassen",
           "endForEveryone": "Für alle beenden",
           "endFailed": "Meeting konnte nicht beendet werden",
-          "actionFailed": "Das konnte nicht ausgeführt werden"
+          "actionFailed": "Das konnte nicht ausgeführt werden",
+          "raiseHand": "Hand heben",
+          "lowerHand": "Hand senken",
+          "reactions": "Reaktion senden",
+          "chat": "Chat",
+          "chatPlaceholder": "Nachricht an alle",
+          "chatEmpty": "Noch keine Nachrichten.",
+          "send": "Senden",
+          "more": "Mehr",
+          "startRecording": "Aufnahme starten",
+          "stopRecording": "Aufnahme beenden",
+          "recordingFailed": "Aufnahme konnte nicht geändert werden",
+          "screenShare": "Bildschirm teilen",
+          "captions": "Untertitel",
+          "capability": {
+            "not_implemented": "Noch nicht verfügbar.",
+            "provider_required": "Benötigt einen Anbieter, der nicht eingerichtet ist.",
+            "flag_disabled": "Vom Server abgeschaltet.",
+            "notInThisVersion": "In dieser App-Version noch nicht verfügbar."
+          }
         },
         "summary": {
           "title": "Meeting beendet",

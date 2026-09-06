@@ -4990,7 +4990,26 @@
           "leaveMeeting": "ミーティングから退出",
           "endForEveryone": "全員のために終了",
           "endFailed": "ミーティングを終了できませんでした",
-          "actionFailed": "操作を完了できませんでした"
+          "actionFailed": "操作を完了できませんでした",
+          "raiseHand": "挙手する",
+          "lowerHand": "手を下げる",
+          "reactions": "リアクションを送る",
+          "chat": "チャット",
+          "chatPlaceholder": "全員にメッセージ",
+          "chatEmpty": "まだメッセージはありません。",
+          "send": "送信",
+          "more": "その他",
+          "startRecording": "録画を開始",
+          "stopRecording": "録画を停止",
+          "recordingFailed": "録画状態を変更できませんでした",
+          "screenShare": "画面共有",
+          "captions": "字幕",
+          "capability": {
+            "not_implemented": "まだ利用できません。",
+            "provider_required": "未設定のプロバイダーが必要です。",
+            "flag_disabled": "サーバー側で無効になっています。",
+            "notInThisVersion": "このバージョンのアプリではまだ利用できません。"
+          }
         },
         "summary": {
           "title": "ミーティング終了",

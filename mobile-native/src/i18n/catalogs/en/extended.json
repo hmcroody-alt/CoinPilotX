@@ -4942,7 +4942,26 @@
           "leaveMeeting": "Leave meeting",
           "endForEveryone": "End for everyone",
           "endFailed": "Could not end the meeting",
-          "actionFailed": "Could not complete that"
+          "actionFailed": "Could not complete that",
+          "raiseHand": "Raise hand",
+          "lowerHand": "Lower hand",
+          "reactions": "Send a reaction",
+          "chat": "Chat",
+          "chatPlaceholder": "Message everyone",
+          "chatEmpty": "No messages yet.",
+          "send": "Send",
+          "more": "More",
+          "startRecording": "Start recording",
+          "stopRecording": "Stop recording",
+          "recordingFailed": "Could not change recording",
+          "screenShare": "Screen share",
+          "captions": "Captions",
+          "capability": {
+            "not_implemented": "Not available yet.",
+            "provider_required": "Needs a provider that is not set up.",
+            "flag_disabled": "Switched off by the server.",
+            "notInThisVersion": "Not available in this app version yet."
+          }
         },
         "summary": {
           "title": "Meeting ended",

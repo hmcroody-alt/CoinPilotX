@@ -5029,7 +5029,26 @@
           "leaveMeeting": "मीटिंग छोड़ें",
           "endForEveryone": "सभी के लिए समाप्त करें",
           "endFailed": "मीटिंग समाप्त नहीं हो सकी",
-          "actionFailed": "यह पूरा नहीं हो सका"
+          "actionFailed": "यह पूरा नहीं हो सका",
+          "raiseHand": "हाथ उठाएँ",
+          "lowerHand": "हाथ नीचे करें",
+          "reactions": "प्रतिक्रिया भेजें",
+          "chat": "चैट",
+          "chatPlaceholder": "सभी को संदेश",
+          "chatEmpty": "अभी कोई संदेश नहीं।",
+          "send": "भेजें",
+          "more": "और",
+          "startRecording": "रिकॉर्डिंग शुरू करें",
+          "stopRecording": "रिकॉर्डिंग रोकें",
+          "recordingFailed": "रिकॉर्डिंग बदली नहीं जा सकी",
+          "screenShare": "स्क्रीन साझा करें",
+          "captions": "कैप्शन",
+          "capability": {
+            "not_implemented": "अभी उपलब्ध नहीं।",
+            "provider_required": "एक प्रदाता चाहिए जो सेट नहीं है।",
+            "flag_disabled": "सर्वर द्वारा बंद किया गया।",
+            "notInThisVersion": "ऐप के इस संस्करण में अभी उपलब्ध नहीं।"
+          }
         },
         "summary": {
           "title": "मीटिंग समाप्त",

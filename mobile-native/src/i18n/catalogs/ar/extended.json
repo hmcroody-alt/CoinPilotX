@@ -5249,7 +5249,26 @@
           "leaveMeeting": "مغادرة الاجتماع",
           "endForEveryone": "إنهاء للجميع",
           "endFailed": "تعذّر إنهاء الاجتماع",
-          "actionFailed": "تعذّر إتمام ذلك"
+          "actionFailed": "تعذّر إتمام ذلك",
+          "raiseHand": "رفع اليد",
+          "lowerHand": "خفض اليد",
+          "reactions": "إرسال تفاعل",
+          "chat": "الدردشة",
+          "chatPlaceholder": "رسالة للجميع",
+          "chatEmpty": "لا توجد رسائل بعد.",
+          "send": "إرسال",
+          "more": "المزيد",
+          "startRecording": "بدء التسجيل",
+          "stopRecording": "إيقاف التسجيل",
+          "recordingFailed": "تعذّر تغيير التسجيل",
+          "screenShare": "مشاركة الشاشة",
+          "captions": "الترجمة النصية",
+          "capability": {
+            "not_implemented": "غير متاح بعد.",
+            "provider_required": "يحتاج إلى مزوّد لم يتم إعداده.",
+            "flag_disabled": "أوقفه الخادم.",
+            "notInThisVersion": "غير متاح في هذا الإصدار من التطبيق بعد."
+          }
         },
         "summary": {
           "title": "انتهى الاجتماع",

@@ -5029,7 +5029,26 @@
           "leaveMeeting": "Salir de la reunión",
           "endForEveryone": "Terminar para todos",
           "endFailed": "No se pudo terminar la reunión",
-          "actionFailed": "No se pudo completar eso"
+          "actionFailed": "No se pudo completar eso",
+          "raiseHand": "Levantar la mano",
+          "lowerHand": "Bajar la mano",
+          "reactions": "Enviar una reacción",
+          "chat": "Chat",
+          "chatPlaceholder": "Mensaje para todos",
+          "chatEmpty": "Aún no hay mensajes.",
+          "send": "Enviar",
+          "more": "Más",
+          "startRecording": "Iniciar grabación",
+          "stopRecording": "Detener grabación",
+          "recordingFailed": "No se pudo cambiar la grabación",
+          "screenShare": "Compartir pantalla",
+          "captions": "Subtítulos",
+          "capability": {
+            "not_implemented": "Aún no disponible.",
+            "provider_required": "Necesita un proveedor que no está configurado.",
+            "flag_disabled": "Desactivado por el servidor.",
+            "notInThisVersion": "Aún no disponible en esta versión de la app."
+          }
         },
         "summary": {
           "title": "Reunión terminada",

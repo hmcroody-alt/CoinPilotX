@@ -4998,7 +4998,26 @@
           "leaveMeeting": "Kite reyinyon an",
           "endForEveryone": "Fini pou tout moun",
           "endFailed": "Nou pa t ka fini reyinyon an",
-          "actionFailed": "Nou pa t ka fè sa"
+          "actionFailed": "Nou pa t ka fè sa",
+          "raiseHand": "Leve men",
+          "lowerHand": "Desann men",
+          "reactions": "Voye yon reyaksyon",
+          "chat": "Chat",
+          "chatPlaceholder": "Mesaj pou tout moun",
+          "chatEmpty": "Poko gen mesaj.",
+          "send": "Voye",
+          "more": "Plis",
+          "startRecording": "Kòmanse anrejistreman",
+          "stopRecording": "Kanpe anrejistreman",
+          "recordingFailed": "Nou pa t ka chanje anrejistreman an",
+          "screenShare": "Pataje ekran",
+          "captions": "Soutit",
+          "capability": {
+            "not_implemented": "Poko disponib.",
+            "provider_required": "Li bezwen yon founisè ki poko konfigire.",
+            "flag_disabled": "Sèvè a fèmen li.",
+            "notInThisVersion": "Poko disponib nan vèsyon app sa a."
+          }
         },
         "summary": {
           "title": "Reyinyon fini",

@@ -17,16 +17,26 @@
  */
 
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { ComponentType, ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  ComponentType,
+  ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from "react";
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -44,11 +54,25 @@ import { PrivateOfficeLockGate } from "../privateOffice/PrivateOfficeLockGate";
 import {
   admitParticipant,
   denyParticipant,
+  listMeetingMessages,
   removeParticipant,
+  sendMeetingMessage,
   setMeetingLocked,
   setParticipantRole,
-  startMeeting
+  setRaisedHand,
+  startMeeting,
+  startMeetingRecording,
+  stopMeetingRecording
 } from "../privateOffice/meetings/api";
+import {
+  CHAT_POLL_MS,
+  maxMessageId,
+  mergeMeetingMessages,
+  newReactionEvents,
+  REACTION_PALETTE,
+  REACTION_TTL_MS,
+  unreadTextCount
+} from "../privateOffice/meetings/meetingChat";
 import {
   buildMeetingTiles,
   meetingGridColumns,
@@ -67,6 +91,8 @@ import {
   withdrawFromWaitingRoom
 } from "../privateOffice/meetings/meetingSession";
 import {
+  MeetingCapability,
+  MeetingMessage,
   MeetingParticipant,
   MODERATOR_ROLES,
   PrivateMeeting
@@ -99,7 +125,15 @@ function PrivateMeetingRoomBody({ route, navigation }: Props) {
   const session = useMeetingSession();
   const call = useCallSession();
   const [panelVisible, setPanelVisible] = useState(false);
+  const [chatVisible, setChatVisible] = useState(false);
+  const [moreVisible, setMoreVisible] = useState(false);
+  const [reactionsVisible, setReactionsVisible] = useState(false);
   const [busy, setBusy] = useState("");
+  const [messages, setMessages] = useState<MeetingMessage[]>([]);
+  const [lastReadId, setLastReadId] = useState(0);
+  const [reactionFeed, setReactionFeed] = useState<MeetingMessage[]>([]);
+  const chatInFlight = useRef(false);
+  const reactionCursor = useRef(0);
   const [AgoraVideoViewComponent, setAgoraVideoViewComponent] =
     useState<ComponentType<AgoraVideoViewProps> | null>(null);
 
@@ -141,6 +175,139 @@ function PrivateMeetingRoomBody({ route, navigation }: Props) {
   );
   const columns = meetingGridColumns(tiles.length);
   const waiting = useMemo(() => waitingRoomOccupants(meeting), [meeting]);
+  const meetingRef = meeting?.public_id || "";
+
+  // --- chat + reactions ------------------------------------------------------
+  // The screen polls the message feed while in the meeting (badge + reaction
+  // overlay work even with the chat closed). Merge/dedupe logic lives in
+  // meetingChat.ts; the server is the only message authority.
+
+  const messagesRef = useRef<MeetingMessage[]>([]);
+
+  useEffect(() => {
+    messagesRef.current = [];
+    setMessages([]);
+    setLastReadId(0);
+    setReactionFeed([]);
+    reactionCursor.current = 0;
+  }, [meetingRef]);
+
+  const pollMessages = useCallback(async () => {
+    if (!meetingRef || chatInFlight.current) return;
+    chatInFlight.current = true;
+    try {
+      const page = await listMeetingMessages(meetingRef, maxMessageId(messagesRef.current));
+      const merged = mergeMeetingMessages(messagesRef.current, page);
+      if (merged === messagesRef.current) return;
+      const firstSync = messagesRef.current.length === 0 && reactionCursor.current === 0;
+      messagesRef.current = merged;
+      setMessages(merged);
+      if (firstSync) {
+        // First sync is history — don't replay it as unread or as reactions.
+        reactionCursor.current = maxMessageId(merged);
+        setLastReadId(maxMessageId(merged));
+        return;
+      }
+      const fresh = newReactionEvents(merged, reactionCursor.current);
+      reactionCursor.current = maxMessageId(merged);
+      if (fresh.length) {
+        setReactionFeed((current) => [...current, ...fresh].slice(-6));
+        setTimeout(() => {
+          setReactionFeed((current) => current.filter((m) => !fresh.includes(m)));
+        }, REACTION_TTL_MS);
+      }
+    } catch {
+      // Message polls fail silently; the projection poll owns lifecycle truth.
+    } finally {
+      chatInFlight.current = false;
+    }
+  }, [meetingRef]);
+
+  useEffect(() => {
+    if (session.phase !== "in_meeting" || !meetingRef) return;
+    pollMessages().catch(() => undefined);
+    const timer = setInterval(() => {
+      pollMessages().catch(() => undefined);
+    }, CHAT_POLL_MS);
+    return () => clearInterval(timer);
+  }, [session.phase, meetingRef, pollMessages]);
+
+  useEffect(() => {
+    if (chatVisible) setLastReadId(maxMessageId(messages));
+  }, [chatVisible, messages]);
+
+  const unread = useMemo(
+    () => unreadTextCount(messages, lastReadId, meeting?.me?.user_id || 0),
+    [messages, lastReadId, meeting?.me?.user_id]
+  );
+
+  const sendText = useCallback(
+    async (body: string) => {
+      const trimmed = body.trim();
+      if (!meetingRef || !trimmed) return;
+      const sent = await sendMeetingMessage(meetingRef, trimmed, "text");
+      reactionCursor.current = Math.max(reactionCursor.current, sent.id);
+      const merged = mergeMeetingMessages(messagesRef.current, [sent]);
+      messagesRef.current = merged;
+      setMessages(merged);
+      setLastReadId(maxMessageId(merged));
+    },
+    [meetingRef]
+  );
+
+  const sendReaction = useCallback(
+    async (emoji: string) => {
+      if (!meetingRef) return;
+      setReactionsVisible(false);
+      try {
+        const sent = await sendMeetingMessage(meetingRef, emoji, "reaction");
+        reactionCursor.current = Math.max(reactionCursor.current, sent.id);
+        const merged = mergeMeetingMessages(messagesRef.current, [sent]);
+        messagesRef.current = merged;
+        setMessages(merged);
+        setReactionFeed((current) => [...current, sent].slice(-6));
+        setTimeout(() => {
+          setReactionFeed((current) => current.filter((m) => m !== sent));
+        }, REACTION_TTL_MS);
+      } catch {
+        // A dropped reaction is not worth an alert.
+      }
+    },
+    [meetingRef]
+  );
+
+  const toggleHand = useCallback(async () => {
+    if (!meeting?.me) return;
+    setBusy("hand");
+    try {
+      await setRaisedHand(meeting.public_id, !meeting.me.raised_hand);
+      await refreshMeetingProjection();
+    } catch {
+      Alert.alert(
+        t("premium:privateOffice.meetings.room.actionFailed"),
+        t("premium:privateOffice.feature.error.body")
+      );
+    } finally {
+      setBusy("");
+    }
+  }, [meeting, t]);
+
+  const toggleRecording = useCallback(async () => {
+    if (!meeting) return;
+    setBusy("recording");
+    try {
+      if (meeting.recording_active) await stopMeetingRecording(meeting.public_id);
+      else await startMeetingRecording(meeting.public_id);
+      await refreshMeetingProjection();
+    } catch {
+      Alert.alert(
+        t("premium:privateOffice.meetings.room.recordingFailed"),
+        t("premium:privateOffice.feature.error.body")
+      );
+    } finally {
+      setBusy("");
+    }
+  }, [meeting, t]);
 
   const leaveOnly = useCallback(async () => {
     await leaveCurrentMeeting();
@@ -423,6 +590,39 @@ function PrivateMeetingRoomBody({ route, navigation }: Props) {
         ))}
       </ScrollView>
 
+      {reactionFeed.length ? (
+        <View style={styles.reactionOverlay} pointerEvents="none">
+          {reactionFeed.map((event) => (
+            <View key={event.id} style={styles.reactionChip}>
+              <Text style={styles.reactionChipEmoji}>{event.body}</Text>
+              <Text style={styles.reactionChipName} numberOfLines={1}>
+                {event.sender_user_id === (meeting?.me?.user_id || 0)
+                  ? t("premium:privateOffice.meetings.room.you")
+                  : t("premium:privateOffice.meetings.room.member", {
+                      id: event.sender_user_id
+                    })}
+              </Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
+      {reactionsVisible ? (
+        <View style={styles.reactionBar}>
+          {REACTION_PALETTE.map((emoji) => (
+            <Pressable
+              key={emoji}
+              style={styles.reactionButton}
+              onPress={() => sendReaction(emoji)}
+              accessibilityRole="button"
+              accessibilityLabel={emoji}
+            >
+              <Text style={styles.reactionButtonEmoji}>{emoji}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+
       <View style={[styles.dock, { paddingBottom: Math.max(insets.bottom, 12) }]}>
         <DockButton
           icon={call.audioEnabled ? "mic-outline" : "mic-off-outline"}
@@ -445,16 +645,36 @@ function PrivateMeetingRoomBody({ route, navigation }: Props) {
           onPress={() => setCallCameraEnabled(!call.videoEnabled).catch(() => undefined)}
         />
         <DockButton
-          icon={call.speakerEnabled ? "volume-high-outline" : "volume-low-outline"}
-          active={call.speakerEnabled}
-          label={t("premium:privateOffice.meetings.room.speaker")}
-          onPress={() => setCallSpeakerEnabled(!call.speakerEnabled).catch(() => undefined)}
+          icon="hand-left-outline"
+          active={!meeting?.me?.raised_hand}
+          highlighted={Boolean(meeting?.me?.raised_hand)}
+          label={t(
+            meeting?.me?.raised_hand
+              ? "premium:privateOffice.meetings.room.lowerHand"
+              : "premium:privateOffice.meetings.room.raiseHand"
+          )}
+          onPress={() => {
+            if (busy !== "hand") toggleHand().catch(() => undefined);
+          }}
         />
         <DockButton
-          icon="camera-reverse-outline"
+          icon="happy-outline"
           active
-          label={t("premium:privateOffice.meetings.room.flip")}
-          onPress={() => switchCallCamera().catch(() => undefined)}
+          label={t("premium:privateOffice.meetings.room.reactions")}
+          onPress={() => setReactionsVisible((current) => !current)}
+        />
+        <DockButton
+          icon="chatbubble-outline"
+          active
+          label={t("premium:privateOffice.meetings.room.chat")}
+          badge={unread}
+          onPress={() => setChatVisible(true)}
+        />
+        <DockButton
+          icon="ellipsis-horizontal"
+          active
+          label={t("premium:privateOffice.meetings.room.more")}
+          onPress={() => setMoreVisible(true)}
         />
         <Pressable
           style={styles.leaveButton}
@@ -465,6 +685,28 @@ function PrivateMeetingRoomBody({ route, navigation }: Props) {
           <Ionicons name="call-outline" size={20} color="#fff" style={styles.leaveIcon} />
         </Pressable>
       </View>
+
+      <ChatPanel
+        visible={chatVisible}
+        onClose={() => setChatVisible(false)}
+        messages={messages}
+        selfUserId={meeting?.me?.user_id || 0}
+        onSend={sendText}
+      />
+
+      <MoreSheet
+        visible={moreVisible}
+        onClose={() => setMoreVisible(false)}
+        meeting={meeting}
+        amModerator={amModerator}
+        busy={busy}
+        speakerEnabled={call.speakerEnabled}
+        onToggleSpeaker={() =>
+          setCallSpeakerEnabled(!call.speakerEnabled).catch(() => undefined)
+        }
+        onFlipCamera={() => switchCallCamera().catch(() => undefined)}
+        onToggleRecording={() => toggleRecording().catch(() => undefined)}
+      />
 
       <ParticipantsPanel
         visible={panelVisible}
@@ -563,22 +805,322 @@ function MeetingTileView({
 function DockButton({
   icon,
   active,
+  highlighted,
   label,
+  badge,
   onPress
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   active: boolean;
+  highlighted?: boolean;
   label: string;
+  badge?: number;
   onPress: () => void;
 }) {
   return (
     <Pressable
-      style={[styles.dockButton, !active && styles.dockButtonMuted]}
+      style={[
+        styles.dockButton,
+        !active && styles.dockButtonMuted,
+        highlighted && styles.dockButtonHighlighted
+      ]}
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
     >
-      <Ionicons name={icon} size={20} color={active ? colors.text : colors.warning} />
+      <Ionicons
+        name={icon}
+        size={20}
+        color={highlighted ? colors.accentStrong : active ? colors.text : colors.warning}
+      />
+      {badge ? (
+        <View style={styles.dockBadge}>
+          <Text style={styles.dockBadgeText}>{badge > 9 ? "9+" : badge}</Text>
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
+/**
+ * In-meeting chat. Message truth is the server feed the screen polls; this
+ * panel only renders it and submits new lines through the meetings API.
+ */
+function ChatPanel({
+  visible,
+  onClose,
+  messages,
+  selfUserId,
+  onSend
+}: {
+  visible: boolean;
+  onClose: () => void;
+  messages: MeetingMessage[];
+  selfUserId: number;
+  onSend: (body: string) => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const scrollRef = useRef<ScrollView | null>(null);
+
+  const submit = useCallback(async () => {
+    const body = draft.trim();
+    if (!body || sending) return;
+    setSending(true);
+    try {
+      await onSend(body);
+      setDraft("");
+    } catch {
+      Alert.alert(
+        t("premium:privateOffice.meetings.room.actionFailed"),
+        t("premium:privateOffice.feature.error.body")
+      );
+    } finally {
+      setSending(false);
+    }
+  }, [draft, sending, onSend, t]);
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        style={styles.panelBackdrop}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <Pressable style={styles.panelDismiss} onPress={onClose} accessibilityRole="button" />
+        <View style={[styles.panel, { paddingBottom: Math.max(insets.bottom, 14) }]}>
+          <View style={styles.panelHead}>
+            <Text style={styles.panelTitle}>
+              {t("premium:privateOffice.meetings.room.chat")}
+            </Text>
+            <Pressable
+              onPress={onClose}
+              accessibilityRole="button"
+              accessibilityLabel={t("common:actions.close")}
+            >
+              <Ionicons name="close" size={20} color={colors.muted} />
+            </Pressable>
+          </View>
+          <ScrollView
+            ref={scrollRef}
+            style={styles.chatScroll}
+            onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}
+          >
+            {messages.length ? (
+              messages.map((message) => (
+                <ChatRow key={message.id} message={message} selfUserId={selfUserId} />
+              ))
+            ) : (
+              <Text style={styles.chatEmpty}>
+                {t("premium:privateOffice.meetings.room.chatEmpty")}
+              </Text>
+            )}
+          </ScrollView>
+          <View style={styles.chatComposer}>
+            <TextInput
+              style={styles.chatInput}
+              value={draft}
+              onChangeText={setDraft}
+              placeholder={t("premium:privateOffice.meetings.room.chatPlaceholder")}
+              placeholderTextColor={colors.muted}
+              multiline
+              accessibilityLabel={t("premium:privateOffice.meetings.room.chatPlaceholder")}
+            />
+            <Pressable
+              style={[styles.chatSend, (!draft.trim() || sending) && styles.chatSendDisabled]}
+              onPress={submit}
+              disabled={!draft.trim() || sending}
+              accessibilityRole="button"
+              accessibilityLabel={t("premium:privateOffice.meetings.room.send")}
+            >
+              {sending ? (
+                <ActivityIndicator color={colors.accentStrong} size="small" />
+              ) : (
+                <Ionicons name="send" size={17} color={colors.accentStrong} />
+              )}
+            </Pressable>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+function ChatRow({ message, selfUserId }: { message: MeetingMessage; selfUserId: number }) {
+  const { t } = useTranslation();
+  if (message.kind === "system") {
+    return <Text style={styles.chatSystem}>{message.body}</Text>;
+  }
+  const mine = message.sender_user_id === selfUserId;
+  const sender = mine
+    ? t("premium:privateOffice.meetings.room.you")
+    : t("premium:privateOffice.meetings.room.member", { id: message.sender_user_id });
+  if (message.kind === "reaction") {
+    return (
+      <Text style={styles.chatReaction}>
+        {sender} {message.body}
+      </Text>
+    );
+  }
+  return (
+    <View style={[styles.chatRow, mine && styles.chatRowMine]}>
+      <Text style={styles.chatSender}>{sender}</Text>
+      <Text style={styles.chatBody}>{message.body}</Text>
+    </View>
+  );
+}
+
+/**
+ * Secondary controls + truthful capability rows. Screen share and captions
+ * render EXACTLY what the server asserted (§30-31): a disabled row with the
+ * server's reason — never a dead button pretending to work.
+ */
+function MoreSheet({
+  visible,
+  onClose,
+  meeting,
+  amModerator,
+  busy,
+  speakerEnabled,
+  onToggleSpeaker,
+  onFlipCamera,
+  onToggleRecording
+}: {
+  visible: boolean;
+  onClose: () => void;
+  meeting: PrivateMeeting | null;
+  amModerator: boolean;
+  busy: string;
+  speakerEnabled: boolean;
+  onToggleSpeaker: () => void;
+  onFlipCamera: () => void;
+  onToggleRecording: () => void;
+}) {
+  const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
+  const capabilities = meeting?.capabilities;
+  const recording = capabilities?.recording;
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.panelBackdrop}>
+        <Pressable style={styles.panelDismiss} onPress={onClose} accessibilityRole="button" />
+        <View style={[styles.panel, { paddingBottom: Math.max(insets.bottom, 14) }]}>
+          <View style={styles.panelHead}>
+            <Text style={styles.panelTitle}>
+              {t("premium:privateOffice.meetings.room.more")}
+            </Text>
+            <Pressable
+              onPress={onClose}
+              accessibilityRole="button"
+              accessibilityLabel={t("common:actions.close")}
+            >
+              <Ionicons name="close" size={20} color={colors.muted} />
+            </Pressable>
+          </View>
+
+          <MoreRow
+            icon={speakerEnabled ? "volume-high-outline" : "volume-low-outline"}
+            label={t("premium:privateOffice.meetings.room.speaker")}
+            onPress={onToggleSpeaker}
+          />
+          <MoreRow
+            icon="camera-reverse-outline"
+            label={t("premium:privateOffice.meetings.room.flip")}
+            onPress={onFlipCamera}
+          />
+          {amModerator && recording?.available ? (
+            <MoreRow
+              icon={meeting?.recording_active ? "stop-circle-outline" : "radio-button-on-outline"}
+              label={t(
+                meeting?.recording_active
+                  ? "premium:privateOffice.meetings.room.stopRecording"
+                  : "premium:privateOffice.meetings.room.startRecording"
+              )}
+              onPress={onToggleRecording}
+              disabled={busy === "recording"}
+            />
+          ) : null}
+          {amModerator && recording && !recording.available ? (
+            <MoreRow
+              icon="radio-button-on-outline"
+              label={t("premium:privateOffice.meetings.room.startRecording")}
+              unavailableReason={capabilityReason(recording, t)}
+            />
+          ) : null}
+          <MoreRow
+            icon="share-outline"
+            label={t("premium:privateOffice.meetings.room.screenShare")}
+            unavailableReason={
+              capabilities ? capabilityReason(capabilities.screen_share, t) : undefined
+            }
+          />
+          <MoreRow
+            icon="text-outline"
+            label={t("premium:privateOffice.meetings.room.captions")}
+            unavailableReason={
+              capabilities
+                ? capabilities.captions.available
+                  ? t("premium:privateOffice.meetings.room.capability.notInThisVersion")
+                  : capabilityReason(capabilities.captions, t)
+                : undefined
+            }
+          />
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+/** Server capability → the honest line under a disabled row. */
+function capabilityReason(
+  capability: MeetingCapability,
+  t: (key: string) => string
+): string | undefined {
+  if (capability.available) return undefined;
+  const key = `premium:privateOffice.meetings.room.capability.${capability.reason}`;
+  const text = t(key);
+  return text && text !== key
+    ? text
+    : t("premium:privateOffice.meetings.room.capability.not_implemented");
+}
+
+function MoreRow({
+  icon,
+  label,
+  onPress,
+  disabled,
+  unavailableReason
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  onPress?: () => void;
+  disabled?: boolean;
+  unavailableReason?: string;
+}) {
+  const unavailable = Boolean(unavailableReason);
+  return (
+    <Pressable
+      style={[styles.moreRow, (unavailable || disabled) && styles.moreRowDisabled]}
+      onPress={unavailable ? undefined : onPress}
+      disabled={unavailable || disabled}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: unavailable || Boolean(disabled) }}
+    >
+      <Ionicons
+        name={icon}
+        size={18}
+        color={unavailable ? colors.muted : colors.text}
+      />
+      <View style={styles.moreRowInfo}>
+        <Text style={[styles.moreRowLabel, unavailable && styles.moreRowLabelMuted]}>
+          {label}
+        </Text>
+        {unavailableReason ? (
+          <Text style={styles.moreRowReason}>{unavailableReason}</Text>
+        ) : null}
+      </View>
     </Pressable>
   );
 }
@@ -875,13 +1417,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 12,
+    gap: 8,
     paddingTop: 10,
-    paddingHorizontal: 14
+    paddingHorizontal: 10
   },
   dockButton: {
-    width: 46,
-    height: 46,
+    width: 42,
+    height: 42,
     borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
@@ -890,14 +1432,121 @@ const styles = StyleSheet.create({
     borderWidth: 1
   },
   dockButtonMuted: { borderColor: colors.warning },
+  dockButtonHighlighted: { borderColor: colors.accentStrong },
+  dockBadge: {
+    position: "absolute",
+    top: -3,
+    right: -3,
+    backgroundColor: colors.accentStrong,
+    borderRadius: 999,
+    minWidth: 16,
+    height: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 3
+  },
+  dockBadgeText: { color: "#000", fontSize: 10, fontWeight: "800" },
+  reactionOverlay: {
+    position: "absolute",
+    left: 14,
+    right: 14,
+    bottom: 96,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    justifyContent: "center"
+  },
+  reactionChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6
+  },
+  reactionChipEmoji: { fontSize: 18 },
+  reactionChipName: { color: "#fff", fontSize: 11, fontWeight: "600", maxWidth: 90 },
+  reactionBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    marginHorizontal: 14,
+    marginBottom: 6,
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 8
+  },
+  reactionButton: {
+    width: 40,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 999
+  },
+  reactionButtonEmoji: { fontSize: 22 },
   leaveButton: {
-    width: 52,
-    height: 46,
+    width: 48,
+    height: 42,
     borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#e5484d"
   },
+  chatScroll: { flexGrow: 0, maxHeight: 320, minHeight: 140 },
+  chatEmpty: { color: colors.muted, fontSize: 13, textAlign: "center", paddingVertical: 24 },
+  chatRow: { paddingVertical: 6, gap: 1 },
+  chatRowMine: { opacity: 0.92 },
+  chatSender: { color: colors.accent, fontSize: 11, fontWeight: "700" },
+  chatBody: { color: colors.text, fontSize: 14, lineHeight: 19 },
+  chatSystem: {
+    color: colors.muted,
+    fontSize: 12,
+    textAlign: "center",
+    paddingVertical: 5,
+    fontStyle: "italic"
+  },
+  chatReaction: { color: colors.muted, fontSize: 13, paddingVertical: 4 },
+  chatComposer: { flexDirection: "row", alignItems: "flex-end", gap: 8 },
+  chatInput: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 14,
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: 13,
+    paddingTop: 9,
+    paddingBottom: 9,
+    maxHeight: 110
+  },
+  chatSend: {
+    width: 40,
+    height: 40,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.border,
+    borderWidth: 1
+  },
+  chatSendDisabled: { opacity: 0.45 },
+  moreRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 11
+  },
+  moreRowDisabled: { opacity: 0.85 },
+  moreRowInfo: { flex: 1, gap: 1 },
+  moreRowLabel: { color: colors.text, fontSize: 14, fontWeight: "600" },
+  moreRowLabelMuted: { color: colors.muted },
+  moreRowReason: { color: colors.muted, fontSize: 12, lineHeight: 16 },
   leaveIcon: { transform: [{ rotate: "135deg" }] },
   panelBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   panelDismiss: { flex: 1 },
