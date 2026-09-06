@@ -78,6 +78,13 @@ STATE_UNAVAILABLE = "unavailable"
 IMPL_LIVE = "LIVE"
 IMPL_NOT_READY = "NOT_READY"
 
+#: The feature_matrix row the Operations section reports on. Named here rather
+#: than inlined so that the string is greppable alongside the one the route gate
+#: uses (``private_office_routes.OPERATIONS_FEATURE_ID``); the row itself, in
+#: ``feature_matrix.FEATURES``, remains the single source of truth for the tier
+#: and the kill switch, and neither of these constants restates either.
+_OPERATIONS_FEATURE_ID = "private_office.operations"
+
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -357,15 +364,26 @@ def _operations_section(cur, *, include_counts: bool) -> dict:
     }
 
     try:
-        gate = _fm.availability(
-            "private_office.operations", _tiers.TIER_PRIVATE_OFFICE)
+        # Resolved before the gate is asked, because `availability` answers an
+        # unknown feature_id with NOT_IMPLEMENTED — the same word it uses for a
+        # feature that genuinely is not built. A typo here would therefore read
+        # as "operations was never shipped", which is precisely the class of
+        # confident-but-wrong answer this module exists to prevent. If the row
+        # is missing, say so in its own field rather than borrowing a word that
+        # means something else.
+        if _fm.get(_OPERATIONS_FEATURE_ID) is None:
+            section["availability"] = "FEATURE_ROW_MISSING"
+            section["enabled"] = None
+        else:
+            gate = _fm.availability(
+                _OPERATIONS_FEATURE_ID, _tiers.TIER_PRIVATE_OFFICE)
+            section["availability"] = gate.get("availability")
+            section["enabled"] = bool(
+                gate.get("availability") == _fm.AVAIL_ENTITLED)
     except Exception:  # noqa: BLE001
+        # Left as None: unknown, not disabled. A failed lookup must not read as
+        # a deliberate kill switch.
         _log.exception("PRIVATE_HEALTH_OPERATIONS_GATE_FAILED")
-        gate = None
-    if gate is not None:
-        section["availability"] = gate.get("availability")
-        section["enabled"] = bool(
-            gate.get("availability") == _fm.AVAIL_ENTITLED)
 
     try:
         from services.private_office import records as _records
