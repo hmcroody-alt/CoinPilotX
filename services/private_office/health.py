@@ -55,6 +55,7 @@ from services import db as _db
 from services.private_office import facts as _facts
 from services.private_office import feature_matrix as _fm
 from services.private_office import integrity as _integrity
+from services.private_office import migration as _migration
 from services.private_office import model as _model
 from services.private_office import read_model as _read_model
 from services.private_office import retrieval as _retrieval
@@ -312,6 +313,47 @@ def _integrity_section() -> dict:
     }
 
 
+def _migration_section() -> dict:
+    """What the legacy backfill will change, what it refuses to, and how far.
+
+    The two lists are the point, and the second one more than the first. An
+    operator deciding whether to run a backfill is deciding whether to let a
+    process rewrite columns on rows nobody has looked at, and the only honest
+    basis for that decision is knowing in advance exactly which columns are in
+    scope. ``repairs`` names the three, and ``replacements`` names what each one
+    becomes — so the answer to "what will this write" is readable without
+    reading the module, and a change to either shows up here as a diff.
+
+    ``unrepairable`` is the list this section exists for. Those are the four
+    kinds of damage the backfill finds, counts, and deliberately declines to
+    guess at: a lifecycle nobody can restore without either resurfacing an
+    archived fact or hiding a live one, a value type that would mean re-parsing
+    the member's data under a type nobody chose, and two timestamps that cannot
+    be invented because nobody observed them. Publishing them is a commitment.
+    A future edit that "improves" the backfill by teaching it to repair one of
+    these has to move a name out of this list to do it, and that is a visible
+    act rather than a quiet one.
+
+    No counts, for the same reason the integrity section carries none: how many
+    rows in this deployment are damaged is a question about members, and this
+    endpoint answers questions about code.
+    """
+    return {
+        "implementation": IMPL_LIVE,
+        "repairs": list(_migration.REPAIRS),
+        "replacements": {
+            kind: replacement
+            for kind, (_column, replacement) in _migration.REPLACEMENT.items()
+        },
+        "unrepairable": list(_migration.UNREPAIRABLE),
+        "history_change_type": _model.CHANGE_BACKFILLED,
+        "bounds": {
+            "max_batch": _migration.MAX_BACKFILL_BATCH,
+            "max_batches": _migration.MAX_BACKFILL_BATCHES,
+        },
+    }
+
+
 def _telemetry_section() -> dict:
     """Stage 38 — is the event table itself sound?
 
@@ -413,6 +455,7 @@ def private_office_health(
         "review": _review_section(),
         "read_model": _read_model_section(),
         "integrity": _integrity_section(),
+        "migration": _migration_section(),
         "telemetry": telemetry_section,
         # The feature census, so a reader can see at a glance how much of the
         # Private Office is actually built versus entitled. `status` owns this;

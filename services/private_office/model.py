@@ -460,6 +460,20 @@ CHANGE_EVIDENCE_UNLINKED = "EVIDENCE_UNLINKED"
 CHANGE_CONFLICT_MARKED = "CONFLICT_MARKED"
 CHANGE_CONFLICT_RESOLVED = "CONFLICT_RESOLVED"
 CHANGE_ARCHIVED = "ARCHIVED"
+#: The legacy backfill repaired a *label* on this row — its provenance,
+#: sensitivity or domain — because the stored one was not a word this package
+#: recognises.
+#:
+#: Deliberately not ``CORRECTED``, which is the other candidate and would be a
+#: lie in the specific way this vocabulary exists to prevent. ``CORRECTED``
+#: means the member's claim turned out to be wrong and a truer one replaced it;
+#: it is written on the old row of a supersession and it is paired with
+#: ``CORRECTS``. A backfill changes none of that. The value, its type, its
+#: window and its evidence are all untouched — what changed is that a column
+#: describing the row became readable. Filing that under ``CORRECTED`` would
+#: put "your accountant revised this figure" and "our migration could not read
+#: the sensitivity column" in the same bucket on the member's own timeline.
+CHANGE_BACKFILLED = "BACKFILLED"
 
 HISTORY_CHANGE_TYPES: tuple[str, ...] = (
     CHANGE_CREATED,
@@ -472,6 +486,7 @@ HISTORY_CHANGE_TYPES: tuple[str, ...] = (
     CHANGE_CONFLICT_MARKED,
     CHANGE_CONFLICT_RESOLVED,
     CHANGE_ARCHIVED,
+    CHANGE_BACKFILLED,
 )
 
 #: Closed set of reasons a history entry may carry, so `note_key` is a key and

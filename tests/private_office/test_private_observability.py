@@ -70,6 +70,7 @@ from services.private_office import model  # noqa: E402
 from services.private_office import records  # noqa: E402
 from services.private_office import retrieval  # noqa: E402
 from services.private_office import integrity  # noqa: E402
+from services.private_office import migration  # noqa: E402
 from services.private_office import review  # noqa: E402
 from services.private_office import schema  # noqa: E402
 from services.private_office import telemetry  # noqa: E402
@@ -592,6 +593,44 @@ def stage_health_surface():
                   for key in ("counts", "total_findings", "findings_by_kind",
                               "scanned", "uncheckable")),
           str(sorted(degraded["integrity"])))
+
+    # The migration section is the only one here that describes a *write*, so
+    # the thing being published is not an ordering but a scope. An operator
+    # deciding whether to run a backfill is deciding whether to let a process
+    # rewrite columns on rows nobody has looked at, and the only honest basis
+    # for that is knowing beforehand which columns are in scope and what each
+    # one becomes.
+    check("the migration publishes exactly which labels it will rewrite",
+          degraded["migration"]["repairs"] == list(migration.REPAIRS),
+          str(degraded["migration"].get("repairs")))
+    check("and what each damaged label is replaced with",
+          degraded["migration"]["replacements"]
+          == {kind: value for kind, (_c, value) in migration.REPLACEMENT.items()},
+          str(degraded["migration"].get("replacements")))
+    # This assertion is the commitment, not the disclosure. These are the four
+    # kinds of damage the backfill finds, counts and deliberately refuses to
+    # guess at. A future edit that "improves" the backfill by teaching it to
+    # repair one of them has to remove a name from this published list to do so,
+    # which makes it a visible act rather than a quiet one.
+    check("and every kind of damage it refuses to guess at",
+          degraded["migration"]["unrepairable"] == list(migration.UNREPAIRABLE),
+          str(degraded["migration"].get("unrepairable")))
+    check("a repair is advertised as a backfill, not as a correction",
+          degraded["migration"]["history_change_type"] == model.CHANGE_BACKFILLED
+          and degraded["migration"]["history_change_type"]
+          != model.CHANGE_CORRECTED,
+          str(degraded["migration"].get("history_change_type")))
+    check("the backfill bounds are published too",
+          degraded["migration"]["bounds"]["max_batch"]
+          == migration.MAX_BACKFILL_BATCH
+          and degraded["migration"]["bounds"]["max_batches"]
+          == migration.MAX_BACKFILL_BATCHES,
+          str(degraded["migration"]["bounds"]))
+    check("and the migration section counts nobody's damaged rows",
+          not any(key in degraded["migration"]
+                  for key in ("scanned", "repaired", "remaining", "counts",
+                              "next_after_id")),
+          str(sorted(degraded["migration"])))
 
     # A count that fails is None, never 0 — the rule, checked at the seam.
     class _CountsExplode:

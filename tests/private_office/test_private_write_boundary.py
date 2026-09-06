@@ -72,6 +72,20 @@ WRITER_MODULES = frozenset({
     # INSERT would produce a structurally valid row with a passport number in a
     # searchable plaintext column.
     "structured_records.py",
+    # The legacy backfill. It is the one module here that writes without going
+    # through `facts.record_fact`, and it has to: what it repairs is a *column*
+    # on a row that already exists — an unreadable provenance, sensitivity or
+    # domain — and the create path has no way to express that. Superseding the
+    # row instead would be worse than a direct UPDATE rather than better: it
+    # would manufacture a correction event on the member's own timeline for
+    # something nobody corrected, and leave the damaged row in the chain
+    # forever.
+    #
+    # Trusted with writes on the same terms as the others: the rules that make
+    # the repair safe — never touching a value, a fact_key or a timestamp, and
+    # replacing an unreadable label only with one that stays true whatever the
+    # original was — live in that module and are asserted in its own suite.
+    "migration.py",
 })
 
 PRIVATE_TABLES = (
@@ -173,6 +187,16 @@ DAMAGE_FIXTURES: dict[str, int] = {
     # UPDATE helper, plus the unparseable citation `link_evidence` rejects by
     # design.
     os.path.join("tests", "private_office", "test_private_integrity.py"): 2,
+    # One generic UPDATE helper, and it is the premise of the module it tests
+    # rather than a convenience. The legacy backfill exists to repair labels no
+    # writer in this package will accept — a blank `provenance_type`, a
+    # `sensitivity` spelled `NOPE` — and `record_fact` normalizes and rejects
+    # every one of those columns. So a damaged row has no route in through the
+    # package at all; it arrives from an older build, a restored backup, or
+    # somebody's SQL console. A fixture that could produce one through the
+    # writers would not be a better test — it would be evidence that the writers
+    # had a hole, and that the backfill was repairing damage of its own making.
+    os.path.join("tests", "private_office", "test_private_migration.py"): 1,
 }
 
 _TARGET = "(?:" + "|".join(PRIVATE_TABLES + TABLE_CONSTANTS) + ")"
