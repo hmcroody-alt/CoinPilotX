@@ -4997,7 +4997,26 @@
           "leaveMeeting": "회의 나가기",
           "endForEveryone": "모두를 위해 종료",
           "endFailed": "회의를 종료할 수 없습니다",
-          "actionFailed": "작업을 완료할 수 없습니다"
+          "actionFailed": "작업을 완료할 수 없습니다",
+          "raiseHand": "손 들기",
+          "lowerHand": "손 내리기",
+          "reactions": "리액션 보내기",
+          "chat": "채팅",
+          "chatPlaceholder": "모두에게 메시지",
+          "chatEmpty": "아직 메시지가 없습니다.",
+          "send": "보내기",
+          "more": "더 보기",
+          "startRecording": "녹화 시작",
+          "stopRecording": "녹화 중지",
+          "recordingFailed": "녹화 상태를 변경할 수 없습니다",
+          "screenShare": "화면 공유",
+          "captions": "자막",
+          "capability": {
+            "not_implemented": "아직 사용할 수 없습니다.",
+            "provider_required": "설정되지 않은 제공업체가 필요합니다.",
+            "flag_disabled": "서버에서 꺼져 있습니다.",
+            "notInThisVersion": "이 앱 버전에서는 아직 사용할 수 없습니다."
+          }
         },
         "summary": {
           "title": "회의 종료됨",

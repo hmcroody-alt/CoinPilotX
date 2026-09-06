@@ -4997,7 +4997,26 @@
           "leaveMeeting": "离开会议",
           "endForEveryone": "为所有人结束",
           "endFailed": "无法结束会议",
-          "actionFailed": "无法完成该操作"
+          "actionFailed": "无法完成该操作",
+          "raiseHand": "举手",
+          "lowerHand": "放下手",
+          "reactions": "发送表情反应",
+          "chat": "聊天",
+          "chatPlaceholder": "发给所有人",
+          "chatEmpty": "还没有消息。",
+          "send": "发送",
+          "more": "更多",
+          "startRecording": "开始录制",
+          "stopRecording": "停止录制",
+          "recordingFailed": "无法更改录制状态",
+          "screenShare": "屏幕共享",
+          "captions": "字幕",
+          "capability": {
+            "not_implemented": "暂不可用。",
+            "provider_required": "需要尚未配置的服务提供方。",
+            "flag_disabled": "已被服务器关闭。",
+            "notInThisVersion": "此版本应用暂不支持。"
+          }
         },
         "summary": {
           "title": "会议已结束",
