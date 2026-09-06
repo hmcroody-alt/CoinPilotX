@@ -13,6 +13,12 @@
  * has checked — absence of findings is not external safety) and the concierge
  * `desk` block (UNSTAFFED when nobody is on the roster — the client must
  * never imply a human who does not exist).
+ *
+ * **A refusal and an empty result never render the same.** Every `READY` here
+ * means the server sent the payload and it said the member has nothing; a
+ * payload we could not read is a refusal instead. See `sentList`. The one
+ * deliberate exception is the concierge `desk`, which fails closed to
+ * UNSTAFFED because that is the only direction it is safe to be wrong in.
  */
 
 import { PulseApiError, pulseApi } from "./pulseApi";
@@ -45,6 +51,45 @@ function asCount(value: unknown): number {
 function asList(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
+
+/**
+ * The list the server actually sent, or `null` if it did not send one.
+ *
+ * `asList` answers `[]` for a key that is missing, null, or the wrong type.
+ * That is the right reading for an optional decoration and the wrong reading
+ * for the array a screen renders as "you have nothing yet", because those two
+ * sentences are different claims:
+ *
+ *   - "the server told us you have no documents" — true, and the member's own
+ *     fact about their own vault;
+ *   - "we could not find a document list in what came back" — a failure on our
+ *     side, rendered to the member as a statement about their belongings.
+ *
+ * `pulseApi` already throws on a non-2xx, on `ok: false`, and on a body it
+ * could not parse as JSON, so most of this class never reaches here. What is
+ * left is the narrow, real case: a well-formed 200 whose payload is not the
+ * one this function was written against — a route that changed shape, a proxy
+ * or cache answering with a different document, a partial serialization. In
+ * every one of those the honest answer is a refusal the member can retry, not
+ * a confident empty state.
+ *
+ * The Office already draws exactly this line for scalars: `privateRecords`
+ * omits an attention count rather than reporting zero for one it did not
+ * receive, because "confident zeros over real obligations" is the failure that
+ * shape exists to prevent. A confident empty list is the same failure.
+ */
+function sentList(body: Record<string, unknown>, key: string): unknown[] | null {
+  return Array.isArray(body[key]) ? (body[key] as unknown[]) : null;
+}
+
+/**
+ * What a 200 that did not carry its payload is worth.
+ *
+ * `ERROR` rather than `UNAVAILABLE`: the server was reachable and answered.
+ * We could not read the answer. Both render a retry, but only one of them is
+ * true, and the state word is what a bug report will be written from.
+ */
+const UNREADABLE: PrivateFeatureRefusal = { state: "ERROR", message: "" };
 
 function refusal(error: unknown): PrivateFeatureRefusal {
   if (!(error instanceof PulseApiError)) return { state: "ERROR", message: "" };
@@ -145,7 +190,9 @@ export async function getPrivateDocuments(): Promise<PrivateDocumentsResult> {
     const body = asRecordObject(
       await pulseApi<unknown>(PRIVATE_DOCUMENTS_PATH, { headers: await officeRequestHeaders() })
     );
-    return { state: "READY", documents: asList(body.documents).map(parsePrivateDocument) };
+    const documents = sentList(body, "documents");
+    if (documents === null) return UNREADABLE;
+    return { state: "READY", documents: documents.map(parsePrivateDocument) };
   } catch (error) {
     return refusal(error);
   }
@@ -163,11 +210,13 @@ export async function getPrivateDocument(id: number): Promise<PrivateDocumentDet
         headers: await officeRequestHeaders()
       })
     );
-    return {
-      state: "READY",
-      document: parsePrivateDocument(body.document),
-      claims: asList(body.claims).map(parseClaim)
-    };
+    const claims = sentList(body, "claims");
+    const document = parsePrivateDocument(body.document);
+    // A missing `document` block parses to id 0 — a phantom row with a blank
+    // title and no extraction state, which would render as a real document
+    // that simply has nothing to say about itself.
+    if (claims === null || document.id <= 0) return UNREADABLE;
+    return { state: "READY", document, claims: claims.map(parseClaim) };
   } catch (error) {
     if (error instanceof PulseApiError && error.status === 404) {
       const details = asRecordObject(error.details);
@@ -336,7 +385,9 @@ export async function getPrivatePeople(): Promise<PrivatePeopleResult> {
     const body = asRecordObject(
       await pulseApi<unknown>(PRIVATE_PEOPLE_PATH, { headers: await officeRequestHeaders() })
     );
-    return { state: "READY", people: asList(body.people).map(parsePerson) };
+    const people = sentList(body, "people");
+    if (people === null) return UNREADABLE;
+    return { state: "READY", people: people.map(parsePerson) };
   } catch (error) {
     return refusal(error);
   }
@@ -357,6 +408,9 @@ export async function getPrivatePersonProfile(
       })
     );
     const person = asRecordObject(body.person);
+    // No `person` block parses to node 0 with a blank name — a profile screen
+    // for somebody who is not in the directory.
+    if (asCount(person.node_id) <= 0) return UNREADABLE;
     return {
       state: "READY",
       profile: {
@@ -497,7 +551,9 @@ export async function getPrivateBriefings(): Promise<PrivateBriefingsResult> {
     const body = asRecordObject(
       await pulseApi<unknown>(PRIVATE_BRIEFINGS_PATH, { headers: await officeRequestHeaders() })
     );
-    return { state: "READY", briefings: asList(body.briefings).map(parseBriefingSummary) };
+    const briefings = sentList(body, "briefings");
+    if (briefings === null) return UNREADABLE;
+    return { state: "READY", briefings: briefings.map(parseBriefingSummary) };
   } catch (error) {
     return refusal(error);
   }
@@ -515,7 +571,9 @@ export async function getPrivateBriefing(id: number): Promise<PrivateBriefingDet
         headers: await officeRequestHeaders()
       })
     );
-    return { state: "READY", briefing: parseBriefingDetail(body.briefing) };
+    const briefing = parseBriefingDetail(body.briefing);
+    if (briefing.id <= 0) return UNREADABLE;
+    return { state: "READY", briefing };
   } catch (error) {
     if (error instanceof PulseApiError && error.status === 404) {
       const details = asRecordObject(error.details);
@@ -630,10 +688,22 @@ export async function getShieldHome(): Promise<ShieldHomeResult> {
       pulseApi<unknown>(PRIVATE_SHIELD_PATH, { headers }),
       pulseApi<unknown>(`${PRIVATE_SHIELD_PATH}/findings`, { headers })
     ]);
+    const postureBlock = asRecordObject(postureBody).posture;
+    const findings = sentList(asRecordObject(findingsBody), "findings");
+    // The most dangerous false-empty in the Office. A missing posture block
+    // parses to zero open findings, no named checks, and — worst — an empty
+    // `external` list, which is the one place the product says out loud what
+    // no outside provider has looked at. Rendered, that is a clean bill of
+    // health assembled entirely from a response we failed to read. A member
+    // deciding they are not exposed is exactly the decision this must not
+    // manufacture.
+    if (findings === null || !Array.isArray(asRecordObject(postureBlock).checks)) {
+      return UNREADABLE;
+    }
     return {
       state: "READY",
-      posture: parsePosture(asRecordObject(postureBody).posture),
-      findings: asList(asRecordObject(findingsBody).findings).map(parseFinding)
+      posture: parsePosture(postureBlock),
+      findings: findings.map(parseFinding)
     };
   } catch (error) {
     return refusal(error);
@@ -782,10 +852,16 @@ export async function getConciergeHome(): Promise<ConciergeHomeResult> {
     const body = asRecordObject(
       await pulseApi<unknown>(PRIVATE_CONCIERGE_PATH, { headers: await officeRequestHeaders() })
     );
+    const requests = sentList(body, "requests");
+    if (requests === null) return UNREADABLE;
+    // `desk` is deliberately not guarded. A missing block parses to
+    // `staffed: false` — UNSTAFFED — which is the one direction this feature
+    // is allowed to be wrong in. Failing closed here means never implying a
+    // human who is not there.
     return {
       state: "READY",
       desk: parseDesk(body.desk),
-      requests: asList(body.requests).map(parseConciergeRequest)
+      requests: requests.map(parseConciergeRequest)
     };
   } catch (error) {
     return refusal(error);
@@ -804,12 +880,12 @@ export async function getConciergeRequest(requestId: number): Promise<ConciergeT
         headers: await officeRequestHeaders()
       })
     );
-    return {
-      state: "READY",
-      request: parseConciergeRequest(body.request),
-      thread: asList(body.thread).map(parseMessage),
-      desk: parseDesk(body.desk)
-    };
+    const thread = sentList(body, "thread");
+    const request = parseConciergeRequest(body.request);
+    // An empty thread is ordinary — a request filed and not yet answered. A
+    // *missing* one alongside a phantom request is not.
+    if (thread === null || request.id <= 0) return UNREADABLE;
+    return { state: "READY", request, thread: thread.map(parseMessage), desk: parseDesk(body.desk) };
   } catch (error) {
     if (error instanceof PulseApiError && error.status === 404) {
       const details = asRecordObject(error.details);
