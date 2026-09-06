@@ -139,6 +139,27 @@ PRIVATE_TABLES = (
     # a bare statement does neither and leaves the facts still contradicting
     # each other, silently, with nothing on screen.
     "private_fact_conflicts",
+    # The verification ledger's two supporting tables. Both were reachable by
+    # any module in the repo until this entry existed, which made the single
+    # writer a convention rather than a guarantee.
+    #
+    # `private_fact_history` is the append-only record of every verification and
+    # lifecycle transition — the only place that says a fact was demoted, by
+    # whom, and under which reason code. A direct INSERT forges a transition
+    # that never happened; a direct UPDATE rewrites one that did. Either way the
+    # history stops being evidence about the ledger and becomes just another
+    # mutable table, and the fact's current state is then the only surviving
+    # claim about it, with nothing to check it against.
+    "private_fact_history",
+    # `private_fact_evidence` is what makes EVIDENCE_SUPPORTED mean anything. A
+    # bare INSERT here does not merely record a citation — the row *is* the
+    # justification a reader is shown for trusting the fact, and the promotion
+    # that should accompany it lives in `attach_evidence`, not in the table. So
+    # an unguarded write produces support that no state machine approved.
+    # Detachment is worse in the other direction: `detached_at` is a soft delete
+    # precisely so a demotion keeps its cause, and a hand-written DELETE erases
+    # why a fact that used to be well-supported now needs review.
+    "private_fact_evidence",
 )
 
 # The schema module exports these; interpolating one into a write statement is
@@ -148,8 +169,9 @@ PRIVATE_TABLES = (
 # without the token in this list every write in the module would be invisible
 # to the guard and the allowlist entry above would protect nothing. The name is
 # distinctive enough not to appear as a substring of ordinary identifiers.
-TABLE_CONSTANTS = ("FACTS_TABLE", "FACT_CONFLICTS_TABLE", "NODES_TABLE",
-                   "EDGES_TABLE", "AUDIT_TABLE", "private_table_for")
+TABLE_CONSTANTS = ("FACTS_TABLE", "FACT_CONFLICTS_TABLE", "FACT_HISTORY_TABLE",
+                   "FACT_EVIDENCE_TABLE", "NODES_TABLE", "EDGES_TABLE",
+                   "AUDIT_TABLE", "private_table_for")
 
 _TARGET = "(?:" + "|".join(PRIVATE_TABLES + TABLE_CONSTANTS) + ")"
 # Quoting, braces, a module prefix or a schema qualifier may sit between the
@@ -466,6 +488,31 @@ _MUST_CATCH = {
         'cur.execute("CREATE TABLE IF NOT EXISTS private_record_fields (id INTEGER)")',
     "a rival index on the field projection":
         'cur.execute("CREATE INDEX IF NOT EXISTS idx_f ON private_record_fields (owner_user_id)")',
+    # Batch 3. Each of these is a way to make the verification axis lie, and
+    # none of them is refused by the database.
+    "a history insert that would forge a transition":
+        'cur.execute("INSERT INTO private_fact_history (fact_id, operation) VALUES (?, ?)", (1, "CONFIRM"))',
+    "a history update that would rewrite one that happened":
+        'cur.execute("UPDATE private_fact_history SET reason_code = ? WHERE id = ?", ("user_request", 1))',
+    "a history delete that would erase the audit of a demotion":
+        'cur.execute("DELETE FROM private_fact_history WHERE fact_id = 1")',
+    "an evidence insert that would manufacture support":
+        'cur.execute("INSERT INTO private_fact_evidence (fact_id, evidence_type) VALUES (?, ?)", (1, "DOCUMENT"))',
+    # The soft delete is the point: stamping `detached_at` by hand skips the
+    # live-count check, so the fact keeps EVIDENCE_SUPPORTED with nothing
+    # supporting it.
+    "an evidence update that would strand a promotion":
+        'cur.execute("UPDATE private_fact_evidence SET detached_at = ? WHERE id = ?", ("now", 1))',
+    "an evidence delete that would erase why a fact needs review":
+        'cur.execute("DELETE FROM private_fact_evidence WHERE fact_id = 1")',
+    "the history table constant interpolated into a write":
+        'cur.execute(f"UPDATE {_schema.FACT_HISTORY_TABLE} SET operation = ?", ("CONFIRM",))',
+    "the evidence table constant interpolated into a write":
+        'cur.execute(f"INSERT INTO {_schema.FACT_EVIDENCE_TABLE} (fact_id) VALUES (?)", (1,))',
+    "a rival create table for the evidence ledger":
+        'cur.execute("CREATE TABLE IF NOT EXISTS private_fact_evidence (id INTEGER)")',
+    "a rival index on the history ledger":
+        'cur.execute("CREATE INDEX IF NOT EXISTS idx_h ON private_fact_history (fact_id)")',
 }
 
 _MUST_IGNORE = {
@@ -483,6 +530,14 @@ _MUST_IGNORE = {
         'cur.execute("SELECT id FROM private_obligations WHERE owner_user_id = ?", (1,))',
     "a read through the records resolver":
         'cur.execute(f"SELECT * FROM {private_table_for(kind)} WHERE owner_user_id = ?", (1,))',
+    # Reading the ledger is what every consumer of it does. `list_fact_history`
+    # and `list_evidence` are the intended path, but a read is a read, and a
+    # guard that flagged one would push callers into copying the projection
+    # instead of the query.
+    "a read of the history ledger":
+        'cur.execute("SELECT operation FROM private_fact_history WHERE fact_id = ?", (1,))',
+    "a read of the evidence ledger":
+        'cur.execute(f"SELECT id FROM {_schema.FACT_EVIDENCE_TABLE} WHERE owner_user_id = ?", (1,))',
     # The token is distinctive on purpose; an identifier that merely ends in
     # "table_for" must not be mistaken for the resolver.
     "an unrelated identifier ending in table_for":
