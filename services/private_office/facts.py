@@ -473,7 +473,8 @@ def _record_fact(
     _schema.require_private_schema(cur)
 
     cur.execute(
-        f"SELECT id, observed_at, confidence FROM {_schema.FACTS_TABLE} "
+        f"SELECT id, observed_at, confidence, lifecycle_state "
+        f"FROM {_schema.FACTS_TABLE} "
         f"WHERE owner_user_id = ? AND fact_key = ?",
         (owner, key),
     )
@@ -485,15 +486,35 @@ def _record_fact(
         # a stronger earlier read established.
         row_id = int(existing["id"] if hasattr(existing, "keys") else existing[0])
         prior = existing["confidence"] if hasattr(existing, "keys") else existing[2]
+        state = str((existing["lifecycle_state"] if hasattr(existing, "keys")
+                     else existing[3]) or "")
         try:
             prior_score = float(prior or 0.0)
         except (TypeError, ValueError):
             prior_score = 0.0
-        cur.execute(
-            f"UPDATE {_schema.FACTS_TABLE} "
-            f"SET observed_at = ?, confidence = ?, updated_at = ? WHERE id = ?",
-            (observed_iso, max(score, prior_score), now_iso, row_id),
-        )
+        if state == _model.LIFECYCLE_SUPERSEDED:
+            # The identical claim, from the same source, arrived again *after*
+            # being superseded: it is a live claim once more, not history. A
+            # refresh that only moved `observed_at` would leave the store
+            # swallowing a current assertion — the projector journey is a
+            # resolved obligation reopening, or a sold holding re-bought at
+            # the old quantity, where the "new" fact IS the retired row.
+            # Reactivate it and give it the caller's validity window; the
+            # `valid_to` the supersede stamped described the retirement, and
+            # the retirement has just been undone.
+            cur.execute(
+                f"UPDATE {_schema.FACTS_TABLE} "
+                f"SET observed_at = ?, confidence = ?, updated_at = ?, "
+                f"lifecycle_state = ?, valid_to = ? WHERE id = ?",
+                (observed_iso, max(score, prior_score), now_iso,
+                 _model.LIFECYCLE_ACTIVE, to_iso, row_id),
+            )
+        else:
+            cur.execute(
+                f"UPDATE {_schema.FACTS_TABLE} "
+                f"SET observed_at = ?, confidence = ?, updated_at = ? WHERE id = ?",
+                (observed_iso, max(score, prior_score), now_iso, row_id),
+            )
         _audit.record(
             cur, actor_user_id=int(actor_user_id or owner), owner_user_id=owner,
             action=_audit.ACTION_FACT_CREATE, object_type=subject_kind,
