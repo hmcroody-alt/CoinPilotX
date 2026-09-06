@@ -87926,11 +87926,16 @@ def api_messages_media_download(attachment_id):
         if target.get("kind") == "signed_redirect":
             response = redirect(target["url"], code=302)
         else:
+            # Documents download, media renders. The allowlist decides which is
+            # which (messenger_media_foundation.disposition_for) and the target
+            # carries the answer; this route does not re-derive it, and an
+            # unrecognized type resolves to "attachment" there rather than
+            # falling through to inline.
             response = send_file(
                 target["path"],
                 mimetype=target["mime_type"],
                 download_name=target["filename"],
-                as_attachment=False,
+                as_attachment=(target.get("disposition") == "attachment"),
                 conditional=True,
                 max_age=0,
             )

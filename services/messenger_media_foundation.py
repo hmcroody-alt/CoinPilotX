@@ -32,20 +32,59 @@ UPLOAD_STATUSES = {"pending", "uploaded", "attached", "failed", "deleted"}
 PROCESSING_STATUSES = {"not_required", "queued", "processing", "ready", "failed"}
 MEDIA_TYPES = {"photo", "video", "voice", "file"}
 
+# The single server-side allowlist for everything Messenger will accept as an
+# attachment. Nothing outside this table can be uploaded, and the entry decides
+# three things: which media_type the file belongs to, which filename extensions
+# may accompany that type, and -- crucially -- whether the download route is
+# allowed to serve the bytes INLINE.
+#
+# On ``disposition``. Attachments are served from the product's own origin
+# (/api/messages/media/<id>/download), so an inline response is same-origin
+# content. That is safe for the media formats a browser renders in a sandboxed
+# decoder: images, video and audio cannot execute script. It is NOT safe as a
+# blanket rule for documents, and the two entries a reviewer will look for --
+# text/html and image/svg+xml -- are deliberately absent from this table rather
+# than present-and-forced-to-download, because a stored-XSS vector should not
+# depend on one header being correct forever.
+#
+# Documents therefore enter as ``"disposition": "attachment"``. The download
+# route reads it (as_attachment) and the presigner reads it
+# (ResponseContentDisposition), so both the local-bytes path and the object-
+# storage redirect path force a download instead of rendering. A future entry
+# that omits ``disposition`` gets "attachment" from ``disposition_for`` -- the
+# default is the safe one, so forgetting the key cannot open a rendering path.
 ALLOWED_MIME_TYPES: dict[str, dict[str, Any]] = {
-    "image/jpeg": {"media_type": "photo", "extensions": {"jpg", "jpeg"}},
-    "image/png": {"media_type": "photo", "extensions": {"png"}},
-    "image/webp": {"media_type": "photo", "extensions": {"webp"}},
-    "image/heic": {"media_type": "photo", "extensions": {"heic"}},
-    "image/heif": {"media_type": "photo", "extensions": {"heif"}},
-    "video/mp4": {"media_type": "video", "extensions": {"mp4", "m4v"}},
-    "video/webm": {"media_type": "video", "extensions": {"webm"}},
-    "audio/webm": {"media_type": "voice", "extensions": {"webm"}},
-    "audio/mpeg": {"media_type": "voice", "extensions": {"mp3", "mpeg"}},
-    "audio/mp4": {"media_type": "voice", "extensions": {"mp4", "m4a"}},
-    "audio/wav": {"media_type": "voice", "extensions": {"wav"}},
-    "audio/x-wav": {"media_type": "voice", "extensions": {"wav"}},
-    "audio/ogg": {"media_type": "voice", "extensions": {"ogg", "oga"}},
+    "image/jpeg": {"media_type": "photo", "extensions": {"jpg", "jpeg"}, "disposition": "inline"},
+    "image/png": {"media_type": "photo", "extensions": {"png"}, "disposition": "inline"},
+    "image/webp": {"media_type": "photo", "extensions": {"webp"}, "disposition": "inline"},
+    "image/heic": {"media_type": "photo", "extensions": {"heic"}, "disposition": "inline"},
+    "image/heif": {"media_type": "photo", "extensions": {"heif"}, "disposition": "inline"},
+    "video/mp4": {"media_type": "video", "extensions": {"mp4", "m4v"}, "disposition": "inline"},
+    "video/webm": {"media_type": "video", "extensions": {"webm"}, "disposition": "inline"},
+    "audio/webm": {"media_type": "voice", "extensions": {"webm"}, "disposition": "inline"},
+    "audio/mpeg": {"media_type": "voice", "extensions": {"mp3", "mpeg"}, "disposition": "inline"},
+    "audio/mp4": {"media_type": "voice", "extensions": {"mp4", "m4a"}, "disposition": "inline"},
+    "audio/wav": {"media_type": "voice", "extensions": {"wav"}, "disposition": "inline"},
+    "audio/x-wav": {"media_type": "voice", "extensions": {"wav"}, "disposition": "inline"},
+    "audio/ogg": {"media_type": "voice", "extensions": {"ogg", "oga"}, "disposition": "inline"},
+    # Documents. media_type "file" already existed here -- MEDIA_TYPES has
+    # carried "file" and SIZE_LIMIT_ENV has carried MESSENGER_FILE_MAX_MB since
+    # the foundation was written -- but no document MIME type was ever
+    # allowlisted, so the branch was unreachable. These entries make the
+    # existing "file" path usable rather than introducing a new one, which is
+    # why Private Office document sharing needs no separate upload surface.
+    "application/pdf": {"media_type": "file", "extensions": {"pdf"}, "disposition": "attachment"},
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {
+        "media_type": "file", "extensions": {"docx"}, "disposition": "attachment"},
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+        "media_type": "file", "extensions": {"xlsx"}, "disposition": "attachment"},
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": {
+        "media_type": "file", "extensions": {"pptx"}, "disposition": "attachment"},
+    "application/msword": {"media_type": "file", "extensions": {"doc"}, "disposition": "attachment"},
+    "application/vnd.ms-excel": {"media_type": "file", "extensions": {"xls"}, "disposition": "attachment"},
+    "application/vnd.ms-powerpoint": {"media_type": "file", "extensions": {"ppt"}, "disposition": "attachment"},
+    "text/plain": {"media_type": "file", "extensions": {"txt", "log", "md"}, "disposition": "attachment"},
+    "text/csv": {"media_type": "file", "extensions": {"csv"}, "disposition": "attachment"},
 }
 
 MIME_ALIASES = {
@@ -69,7 +108,26 @@ DEFAULT_EXTENSION_BY_MIME = {
     "audio/wav": "wav",
     "audio/x-wav": "wav",
     "audio/ogg": "ogg",
+    "application/pdf": "pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
+    "application/msword": "doc",
+    "application/vnd.ms-excel": "xls",
+    "application/vnd.ms-powerpoint": "ppt",
+    "text/plain": "txt",
+    "text/csv": "csv",
 }
+
+# Sent by iOS/Android pickers and by Windows clients for the same bytes. An
+# alias is a spelling of an ALREADY allowlisted type -- it never widens what is
+# accepted, because ``_normalize_mime`` resolves it before the allowlist check.
+MIME_ALIASES.update({
+    "application/x-pdf": "application/pdf",
+    "text/comma-separated-values": "text/csv",
+    "application/csv": "text/csv",
+    "text/markdown": "text/plain",
+})
 
 SIZE_LIMIT_ENV = {
     "photo": ("MESSENGER_PHOTO_MAX_MB", 15),
@@ -243,6 +301,18 @@ def max_size_for(media_type: str) -> int:
 def _normalize_mime(mime_type: str) -> str:
     cleaned = str(mime_type or "").split(";", 1)[0].strip().lower()
     return MIME_ALIASES.get(cleaned, cleaned)
+
+
+def disposition_for(mime_type: str) -> str:
+    """Return "inline" or "attachment" for an allowlisted MIME type.
+
+    Unknown types answer "attachment". A caller reaching here with a type the
+    allowlist has never heard of is already in a state that should not render,
+    and an entry whose author forgot the key should not silently inherit the
+    permissive answer.
+    """
+    entry = ALLOWED_MIME_TYPES.get(_normalize_mime(mime_type)) or {}
+    return "inline" if entry.get("disposition") == "inline" else "attachment"
 
 
 def sanitize_filename(filename: str) -> str:
@@ -931,9 +1001,21 @@ def signed_or_private_url(row: Any) -> str:
         client = media_storage.object_client()
         if not client:
             return ""
+        params: dict[str, Any] = {
+            "Bucket": os.getenv("R2_BUCKET") or os.getenv("S3_BUCKET"),
+            "Key": storage_key,
+        }
+        # A presigned URL bypasses the download route entirely, so the
+        # disposition decision has to be baked into the signature. Without
+        # this, a document served straight from object storage would render
+        # inline on the storage origin no matter what the route did.
+        mime_type = _normalize_mime(_row_get(row, "mime_type", ""))
+        if disposition_for(mime_type) == "attachment":
+            filename = sanitize_filename(str(_row_get(row, "original_filename", "") or "attachment"))
+            params["ResponseContentDisposition"] = f'attachment; filename="{filename}"'
         return client.generate_presigned_url(
             "get_object",
-            Params={"Bucket": os.getenv("R2_BUCKET") or os.getenv("S3_BUCKET"), "Key": storage_key},
+            Params=params,
             ExpiresIn=SIGNED_URL_TTL_SECONDS,
         )
     except Exception as exc:
@@ -1030,11 +1112,20 @@ def attachment_download_target(cur: Any, user: dict[str, Any], attachment_id: in
     storage_key = str(_row_get(row, "storage_key", "") or "")
     mime_type = str(_row_get(row, "mime_type", "") or "application/octet-stream")
     filename = str(_row_get(row, "original_filename", "") or f"attachment-{attachment_id}")
+    # The route must not have to re-derive this from the MIME type: one place
+    # decides whether these bytes may render, and it is the allowlist.
+    disposition = disposition_for(mime_type)
     if storage_key:
         local_path = _local_path(storage_key)
         if local_path.exists():
-            return {"kind": "local", "path": local_path, "mime_type": mime_type, "filename": filename}
+            return {
+                "kind": "local", "path": local_path, "mime_type": mime_type,
+                "filename": filename, "disposition": disposition,
+            }
     signed_url = signed_or_private_url(row)
     if signed_url:
-        return {"kind": "signed_redirect", "url": signed_url, "mime_type": mime_type, "filename": filename}
+        return {
+            "kind": "signed_redirect", "url": signed_url, "mime_type": mime_type,
+            "filename": filename, "disposition": disposition,
+        }
     raise MessengerMediaError("file_not_available", "Attachment file is temporarily unavailable.", 404)
