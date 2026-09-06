@@ -24,7 +24,7 @@ const initial = {
   audioEnabled: false, videoEnabled: false, speakerEnabled: true, remoteAudioEnabled: true,
   localVideoTrack: null as any, localVideoTrackCount: 0, localAudioTrackCount: 0, remoteAudioTrackCount: 0, remoteVideoTrackCount: 0,
   participants: [] as LiveParticipant[], reconnectCount: 0, disconnectReason: "", diagnosticCode: "",
-  audioPath: "v1_legacy" as const, audioBusy: false, recovering: false, audioWarning: "",
+  audioPath: "legacy_fallback" as const, audioBusy: false, recovering: false, audioWarning: "",
   liveMusic: DEFAULT_LIVE_MUSIC_MIXING_STATE,
   /** Agora uid of the current active speaker, 0 for nobody. */
   activeSpeakerUid: 0

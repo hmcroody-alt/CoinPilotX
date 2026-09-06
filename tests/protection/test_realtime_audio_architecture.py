@@ -29,6 +29,22 @@ NATIVE_SRC = ROOT / "mobile-native" / "src"
 
 MANIFEST = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
 
+# The only files permitted to touch remote subscription / track playback
+# directly. Everything else must route through them.
+#
+# `realtimeAudioEngine.ts` and `realtimeMicrophonePublisher.ts` are the original
+# two owners. `realtimeRemoteAudioController.ts` and `realtimeAudioMediaPath.ts`
+# were added when remote-audio reconciliation and the local media transition
+# were consolidated out of the call/live hooks: they are the shared owners the
+# rule exists to funnel callers into, not new bypasses. Adding a fifth entry
+# means someone widened the boundary instead of routing through an owner.
+APPROVED_PLATFORM_FILES = {
+    NATIVE_SRC / "core" / "realtimeAudioEngine.ts",
+    NATIVE_SRC / "core" / "realtimeMicrophonePublisher.ts",
+    NATIVE_SRC / "core" / "realtimeRemoteAudioController.ts",
+    NATIVE_SRC / "core" / "realtimeAudioMediaPath.ts",
+}
+
 
 def _source_files():
     """Every non-test .ts/.tsx under mobile-native/src.
@@ -310,38 +326,36 @@ class DependencyLockTests(unittest.TestCase):
             # renamed script would make the CI workflow fail open.
             self.assertIn(key, scripts, f"package.json is missing the {key} script named by the manifest")
 
-    def test_remote_subscription_and_track_playback_stay_in_shared_controller(self) -> None:
-        forbidden = (".setSubscribed(", "track.setEnabled(")
-        violations = []
-        for path in _source_files():
-            if "__tests__" in path.parts or path in APPROVED_PLATFORM_FILES:
-                continue
-            text = path.read_text(encoding="utf-8")
-            for marker in forbidden:
-                if marker in text:
-                    violations.append(f"{path.relative_to(ROOT)} uses {marker}")
-        self.assertFalse(violations, "Remote realtime audio bypassed the shared controller:\n" + "\n".join(violations))
-
-    def test_live_shared_path_is_governed_and_mutually_exclusive(self) -> None:
-        text = (NATIVE / "live" / "useLiveBroadcastRoom.ts").read_text(encoding="utf-8")
-        self.assertIn("startPublishingAudio", text)
-        self.assertIn("startReceivingAudio", text)
-        self.assertIn("claimRealtimeAudioPath", text)
-        self.assertIn("releaseRealtimeAudioPath", text)
-        self.assertNotIn("publishLiveMicrophone(room", text)
-
-    def test_calls_and_live_share_remote_audio_controller(self) -> None:
-        calls = (NATIVE / "calls" / "useNativeCallRoom.ts").read_text(encoding="utf-8")
-        live = (NATIVE / "live" / "useLiveBroadcastRoom.ts").read_text(encoding="utf-8")
-        self.assertIn('from "../core/realtimeRemoteAudioController"', calls)
-        self.assertIn('from "../core/realtimeAudioMediaPath"', live)
-
-    def test_video_calls_and_live_share_the_local_media_transition(self) -> None:
-        for relative in ("calls/useNativeCallRoom.ts", "live/useLiveBroadcastRoom.ts"):
-            text = (NATIVE / relative).read_text(encoding="utf-8")
-            self.assertIn("initializeRealtimePublisherMedia", text)
-        live = (NATIVE / "live" / "useLiveBroadcastRoom.ts").read_text(encoding="utf-8")
-        self.assertNotIn("initializeLivePublisherMedia", live)
+    # RETIRED (2026-09-05): four assertions that pinned a LiveKit-era shape.
+    #
+    # They required `useNativeCallRoom.ts` / `useLiveBroadcastRoom.ts` to contain
+    # `startPublishingAudio`, `startReceivingAudio`, `claimRealtimeAudioPath`,
+    # `releaseRealtimeAudioPath` and `initializeRealtimePublisherMedia`, and to
+    # import `core/realtimeRemoteAudioController` / `core/realtimeAudioMediaPath`.
+    #
+    # None of that is reachable any more. `chore(rtc): fire LiveKit` (f93e7ce3)
+    # made both of those files thin re-export shims over `useAgoraCallRoom` and
+    # `useAgoraLiveBroadcastRoom`, and none of the six symbols above appears
+    # anywhere in the Agora hooks. `test(protection): make the Agora suites
+    # actually execute, and retire LiveKit assertions` (6ebafa97) had already
+    # removed them; the merge `preserve codex/governed-realtime-audio` (71489d4f)
+    # brought them back, and because they referenced two module-level names that
+    # the same merge had dropped, they raised NameError rather than failing -
+    # i.e. the whole DependencyLockTests class was dead, not merely stale.
+    #
+    # Coverage was not dropped, it was moved to where it is maintained:
+    # `.setSubscribed(` and `track.setEnabled(` are both markers on the
+    # manifest's `direct_remote_audio_subscription` rule, enforced over the whole
+    # native tree by ForbiddenApiTests above with a three-owner allowlist
+    # (core/realtimeAudioEngine.ts, core/realtimeRemoteAudioController.ts,
+    # live-audio/liveAudioEngine.ts). That is the manifest-derived enforcement
+    # this module's docstring says should replace hard-coded allowlists.
+    #
+    # Do not re-add assertions against `useNativeCallRoom.ts` or
+    # `useLiveBroadcastRoom.ts`. If the Agora publisher path needs a governance
+    # contract pinned, pin it on `useAgoraCallRoom.ts` /
+    # `useAgoraLiveBroadcastRoom.ts`, which are the files that actually ship.
+    pass
 
 
 if __name__ == "__main__":

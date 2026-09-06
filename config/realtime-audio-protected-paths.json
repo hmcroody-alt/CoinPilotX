@@ -331,13 +331,16 @@
       "markers": [
         ".setSubscribed(",
         "remoteParticipant.setVolume(",
-        ".setAudioEnabled("
+        ".setAudioEnabled(",
+        "track.setEnabled("
       ],
       "allowed_paths": [
         "mobile-native/src/core/realtimeAudioEngine.ts",
+        "mobile-native/src/core/realtimeRemoteAudioController.ts",
         "mobile-native/src/live-audio/liveAudioEngine.ts"
       ],
       "reason": "Viewer audibility depends on a single reconciliation pass over remote tracks. A screen that subscribes on its own will fight the reapply-on-reconnect logic.",
+      "consolidation_note": "realtimeRemoteAudioController.ts is where the remote reconciliation pass was consolidated to when calls and Live stopped each keeping their own copy. It is the owner this rule funnels callers into, not an additional bypass: the call and live hooks now import it instead of calling .setSubscribed( themselves.",
       "live_copy_note": "Live owns a copy of this control flow at mobile-native/src/live-audio/. The rule is not relaxed: it now names two owners instead of one, and every other file is still refused. Calls resolve to src/core/, Live resolves to src/live-audio/, and neither can reach the other."
     },
     {
@@ -407,6 +410,8 @@
     "allowed_importers": [
       "mobile-native/src/core/realtimeAudioEngine.ts",
       "mobile-native/src/core/realtimeMicrophonePublisher.ts",
+      "mobile-native/src/core/realtimeAudioMediaPath.ts",
+      "mobile-native/src/core/realtimeRemoteAudioController.ts",
       "mobile-native/src/core/realtimeAudioInvariants.ts",
       "mobile-native/src/core/realtimeAudioStateMachine.ts",
       "mobile-native/src/core/audioOwnershipPolicy.ts",
@@ -503,8 +508,7 @@
       "mobile-native/eas.json",
       "mobile-native/ios/Podfile",
       "mobile-native/ios/Podfile.lock",
-      "mobile-native/patches/react-native+0.81.5.patch",
-      "mobile-native/patches/@livekit+react-native-webrtc+144.1.1.patch"
+      "mobile-native/patches/react-native+0.81.5.patch"
     ],
     "must_be_exactly_pinned": [
       "react-native-agora",

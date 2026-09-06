@@ -2860,3 +2860,131 @@ test file are new and orphan cleanly; the `CallScreen.tsx` hunk restores the
 previous `openCallWebFallback` call site exactly. Partial rollback is not
 meaningful — reverting only the sheet leaves the screen importing a component
 that no longer exists.
+
+---
+
+## Consolidation addendum 4 — repair the audio guard itself (2026-09-05)
+
+### Why
+
+This addendum changes no audio behavior. It repairs the **enforcement machinery**,
+which had stopped running.
+
+`merge: preserve codex/governed-realtime-audio` (71489d4f) reintroduced a
+`DependencyLockTests` class from the codex branch while the same merge dropped
+two module-level names that class referenced (`NATIVE`, `APPROVED_PLATFORM_FILES`).
+The result was not a failing guard but a **dead** one: three of its tests raised
+`NameError` before evaluating a single assertion. A guard that cannot execute
+protects nothing, and it had been in that state on `main`.
+
+Alongside it, `chore(rtc): fire LiveKit` (f93e7ce3) removed
+`@livekit/react-native-webrtc` and its patch, but the manifest still listed
+`mobile-native/patches/@livekit+react-native-webrtc+144.1.1.patch` under
+`dependency_watch.files`. A manifest entry pointing at a deleted file makes
+`test_every_protected_path_points_at_a_file_that_exists` fail permanently, which
+is what was keeping the whole backend audio suite red.
+
+### Which dependency-watch file changed
+
+`config/realtime-audio-protected-paths.json` — three edits:
+
+1. **Removed** the stale `@livekit+react-native-webrtc+144.1.1.patch` entry from
+   `dependency_watch.files`. Verified absent three ways: no `patches/` file, no
+   `livekit` string in `package.json`, no `node_modules/@livekit`. The remaining
+   watched patch, `react-native+0.81.5.patch`, still exists.
+2. **Added** `track.setEnabled(` as a fourth marker on the
+   `direct_remote_audio_subscription` rule. This *widens* enforcement: the marker
+   previously lived only in the hard-coded backend test being retired below, so
+   moving it into the manifest is what keeps the native mirror and the backend
+   reader agreeing on it.
+3. **Added** `core/realtimeRemoteAudioController.ts` to that rule's
+   `allowed_paths`, and `core/realtimeAudioMediaPath.ts` +
+   `core/realtimeRemoteAudioController.ts` to `import_boundary.allowed_importers`.
+   These are the modules remote reconciliation and the local media transition were
+   consolidated into; they are the owners the rules funnel callers into, not new
+   bypasses. Every non-test file using `.setSubscribed(` / `track.setEnabled(` is
+   now exactly one of the three named owners.
+
+### Retired assertions, and where the coverage went
+
+Four `DependencyLockTests` assertions pinned a LiveKit-era shape:
+`useNativeCallRoom.ts` / `useLiveBroadcastRoom.ts` were required to contain
+`startPublishingAudio`, `startReceivingAudio`, `claimRealtimeAudioPath`,
+`releaseRealtimeAudioPath`, `initializeRealtimePublisherMedia`. Both files are now
+thin re-export shims over `useAgoraCallRoom` / `useAgoraLiveBroadcastRoom`, and
+**none of those six symbols appears anywhere in the Agora hooks**. The assertions
+could never pass again. `6ebafa97` had already retired them deliberately; the
+merge brought them back.
+
+Coverage was moved, not dropped: `.setSubscribed(` and `track.setEnabled(` are
+now manifest markers enforced across the entire native tree by `ForbiddenApiTests`
+with a three-owner allowlist. That is strictly broader than the retired test,
+which scanned with a hard-coded two-file allowlist.
+
+### Open finding (not fixed here, deliberately)
+
+`core/realtimeAudioMediaPath.ts` and `core/realtimeRemoteAudioController.ts` have
+**no production consumer** — only each other and their own tests. The governed
+path they implement is not wired into the shipping Agora hooks. This is pre-existing
+and is left alone: deleting or rewiring modules in a hard-locked subsystem is not
+in scope for a release mission. Recorded here so it is not mistaken for live
+governance.
+
+### Invariants re-verified
+
+- `react-native-agora` pinned `4.6.2`; `expo-av` pinned `~16.0.8` — unchanged.
+- `NSMicrophoneUsageDescription` non-empty; `UIBackgroundModes` contains `audio`.
+- `expo_av_global_audio_mode` allowlist still ≤ 6 entries, still `frozen_at_baseline`.
+- RTC provider is Agora only. No LiveKit package, patch, or import reintroduced.
+
+### Expected behavior change
+
+**None at runtime**, with one exception that is a label, not behavior:
+`useAgoraLiveBroadcastRoom.ts` initialised `audioPath` to the retired string
+`"v1_legacy"`. Every other producer and consumer of that field had already moved to
+`"legacy_fallback" | "shared_governed"` (`liveAudioFlags.ts`,
+`liveAudioTelemetry.ts`, `realtimeAudioMediaPath.ts`). The hook was emitting a
+value outside its own union, so live-broadcast telemetry was being attributed to a
+cohort that no longer exists. Corrected to `"legacy_fallback"`, which is the value
+the resolver returns for the same state.
+
+### Regression risk
+
+None to audio path selection: `resolveLiveAudioPath` is unchanged, still returns
+the stable path for absent/false/non-`true` flags, and still has no local override.
+The two `realtimeAudioInvariants` assertions updated here were left on the old
+string by an incomplete rename in `a9f7417c`; the assertion semantics
+("absent flag means the stable path") are preserved exactly.
+
+`realtimeAudioEngine.test.ts` had its `stabilizeRealtimeAudioEngine` call stripped
+of `audioSession`/`mode`/`speaker` by `a9f7417c` without supplying the replacement
+`reactivateSession` callback, leaving three assertions about session
+re-establishment unsatisfiable. Restored via
+`activateRealtimeAudioSession(audioSession, "live_host", …)`, which is what the
+publisher path does in production. The test again proves the record-capable session
+is re-applied **before** the ADM restart — the camera-teardown case it exists for.
+
+### Tests run
+
+Against this exact tree:
+
+- `realtimeAudioInvariants` + `realtimeAudioEngine` + `realtimeAudioMediaPath` +
+  `liveAudioTelemetry` — **92 tests, 0 failures.**
+- `realtimeAudioArchitecture.test.ts` (native manifest mirror) — **22 tests, 0 failures.**
+- `tests/protection/test_realtime_audio_architecture.py` — **19 passed** (was 7 failed / 16 passed, 3 of them `NameError`).
+- Full backend protection suite — **327 checks across 28 suites, passed.**
+- `tsc --noEmit` — clean. `i18n:validate` — 11 locales, OK.
+
+### Physical validation required
+
+**Not required for the audio invariants.** The protected diff contains no session,
+track, publication, route, or engine line; the only production hunk is a telemetry
+string literal. No audible validation is claimed. Ordinary release QA on device
+(audio call, video call, livestream) is carried by the release mission this
+addendum belongs to, not discharged here.
+
+### Rollback procedure
+
+Revert the single commit. The manifest edits, the guard-file edits and the two test
+files are independent of each other and of the one-line hook change; any subset can
+be reverted without leaving a dangling reference.

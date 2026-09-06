@@ -267,18 +267,18 @@ describe("livestream audio flag exclusivity", () => {
   it("defaults to the stable path when the server says nothing", () => {
     // Absent flag means legacy. A rollout that fails to deliver the flag must
     // fall back to the path that was physically verified, not the new one.
-    expect(resolveLiveAudioPath(undefined)).toBe("v1_legacy");
-    expect(resolveLiveAudioPath(null)).toBe("v1_legacy");
-    expect(resolveLiveAudioPath({} as any)).toBe("v1_legacy");
+    expect(resolveLiveAudioPath(undefined)).toBe("legacy_fallback");
+    expect(resolveLiveAudioPath(null)).toBe("legacy_fallback");
+    expect(resolveLiveAudioPath({} as any)).toBe("legacy_fallback");
   });
 
   it("is server-driven with no local override reachable from the module", () => {
     const source = { [LIVE_AUDIO_V2_FLAG_KEY]: false } as any;
-    expect(resolveLiveAudioPath(source)).toBe("v1_legacy");
+    expect(resolveLiveAudioPath(source)).toBe("legacy_fallback");
     // The resolver is pure: the only input is the server payload. There is no
     // setter, no cached local preference, and no environment read, which is
     // what makes this a real remote kill switch.
-    expect(resolveLiveAudioPath(source)).toBe("v1_legacy");
+    expect(resolveLiveAudioPath(source)).toBe("legacy_fallback");
     expect(Object.keys(require("../../live/liveAudioFlags"))).not.toContain("setLiveAudioV2Enabled");
   });
 });

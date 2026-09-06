@@ -299,6 +299,15 @@ describe("realtimeAudioEngine canonical audio ownership", () => {
       playout: true,
       recording: true,
       settleMs: 0,
+      // The guard no longer takes `audioSession`/`mode`/`speaker` directly; the
+      // publisher path supplies re-activation as a callback. Routing it through
+      // `activateRealtimeAudioSession` is what this test is actually about:
+      // camera startup left the shared session non-record-capable, so the
+      // record-capable configuration must be re-applied before the ADM restart.
+      reactivateSession: () =>
+        activateRealtimeAudioSession(audioSession as any, "live_host", "live-host-camera-recovery", {
+          speaker: true
+        }).then(() => undefined)
     })).resolves.toEqual({
       engineRunning: true,
       playoutRunning: true,
