@@ -4559,7 +4559,7 @@
         "overview": {
           "heading": "개요",
           "loading": "개요를 불러오는 중…",
-          "unavailable": "개요를 불러오지 못했습니다. 이것은 0이 아닙니다.",
+          "unavailable": "개요를 불러오지 못했습니다. 이것은 영이 아닙니다.",
           "needsAttention": "주의 필요",
           "dueToday": "오늘 마감",
           "overdue": "기한 초과",
