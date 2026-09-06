@@ -75,6 +75,7 @@ from services.business_os.entitlements import service as svc  # noqa: E402
 from services import private_office_routes as routes  # noqa: E402
 from services.private_office import capital_graph  # noqa: E402
 from services.private_office import capital_overview as overview_mod  # noqa: E402
+from services.private_office import cash_flow as cash_flow_mod  # noqa: E402
 from services.private_office import feature_matrix  # noqa: E402
 from services.private_office import obligation_projection as obligations  # noqa: E402
 from services.private_office import portfolio_projection as portfolio  # noqa: E402
@@ -88,13 +89,15 @@ PASSCODE = "731905"
 OVERVIEW_PATH = "/api/private-office/capital-graph/overview"
 OBLIGATIONS_PATH = "/api/private-office/capital-graph/obligations"
 EXPOSURE_PATH = "/api/private-office/capital-graph/exposure"
-PATHS = (OVERVIEW_PATH, OBLIGATIONS_PATH, EXPOSURE_PATH)
+CASH_FLOW_PATH = "/api/private-office/capital-graph/cash-flow"
+PATHS = (OVERVIEW_PATH, OBLIGATIONS_PATH, EXPOSURE_PATH, CASH_FLOW_PATH)
 
 #: The payload key each route wraps its data in. Used to assert that a refusal
 #: carries no data key at all, rather than an empty one.
 DATA_KEY = {OVERVIEW_PATH: "overview",
             OBLIGATIONS_PATH: "obligations",
-            EXPOSURE_PATH: "exposure"}
+            EXPOSURE_PATH: "exposure",
+            CASH_FLOW_PATH: "cash_flow"}
 
 _FAILURES: list[str] = []
 
@@ -356,6 +359,58 @@ def stage_reads_when_live():
           (conc.get("asset_total"),
            (payload.get("concentrations") or {}).get("asset_total")))
 
+    flow_resp = client.get(CASH_FLOW_PATH)
+    flow_body = flow_resp.get_json() or {}
+    check("cash flow answers 200", flow_resp.status_code == 200,
+          f"{flow_resp.status_code} {flow_body}")
+    flow = flow_body.get("cash_flow") or {}
+    for block in ("schedule", "buckets", "totals", "excluded", "basis",
+                  "generated_at"):
+        check(f"cash flow carries {block}", block in flow, sorted(flow))
+    # The two sentences that stop a schedule of outflows being read as a
+    # forecast of what the member will have left. If either can be dropped
+    # without a test noticing, the client can render the chart bare.
+    basis = flow.get("basis") or {}
+    check("cash flow states that it has no income side",
+          "income" in str(basis.get("inflows", "")).lower(),
+          basis.get("inflows"))
+    check("cash flow states that recurrence is never inferred",
+          "recurrence" in str(basis.get("recurrence", "")).lower(),
+          basis.get("recurrence"))
+    check("cash flow publishes its bucket edges rather than implying them",
+          isinstance(basis.get("buckets"), list) and basis["buckets"],
+          basis.get("buckets"))
+    # Every bucket named in the basis must exist in the data, or a client that
+    # renders from the basis draws an axis with a missing column.
+    named = {str(b.get("name")) for b in basis.get("buckets") or []}
+    check("every published bucket edge has a bucket to match",
+          named and named <= set((flow.get("buckets") or {})),
+          (sorted(named), sorted(flow.get("buckets") or {})))
+    flow_totals = flow.get("totals") or {}
+    for field in ("currency", "scheduled_amount", "scheduled_count",
+                  "obligations_seen", "truncated", "complete",
+                  "excluded_count", "mixed_currency_rows"):
+        check(f"cash flow totals state {field}", field in flow_totals,
+              flow_totals)
+    check("cash flow never folds a row into a total it does not name",
+          flow_totals.get("mixed_currency_rows") == 0, flow_totals)
+    check("the seeded obligation appears on the schedule",
+          any("Alpha bridge loan" in str(row.get("title"))
+              for row in flow.get("schedule") or []),
+          flow.get("schedule"))
+    # Outflows only: a net figure here would imply the income side had been
+    # checked, and PulseSoc has no income ledger to check.
+    for netted in ("net", "net_cash", "income", "surplus", "remaining"):
+        check(f"cash flow totals publish no '{netted}' figure",
+              netted not in {str(k).lower() for k in flow_totals},
+              sorted(flow_totals))
+    check("cash flow is never cached",
+          "no-store" in flow_resp.headers.get("Cache-Control", ""))
+    check("the schedule never exceeds the obligations it was built from",
+          len(flow.get("schedule") or []) <= flow_totals.get(
+              "obligations_seen", 0),
+          (len(flow.get("schedule") or []), flow_totals.get("obligations_seen")))
+
 
 def stage_no_invented_total():
     """A field spelled like a net worth is read as one. None may exist."""
@@ -423,6 +478,7 @@ def stage_failure_is_not_emptiness():
         (OVERVIEW_PATH, overview_mod, "overview"),
         (EXPOSURE_PATH, overview_mod, "overview"),
         (OBLIGATIONS_PATH, obligations, "liabilities_view"),
+        (CASH_FLOW_PATH, cash_flow_mod, "schedule"),
     )
     for path, module, attr in targets:
         original = getattr(module, attr)

@@ -86,6 +86,7 @@ from services.private_office import access as po_access
 from services.private_office import audit as po_audit
 from services.private_office import capital_graph as po_capital
 from services.private_office import capital_overview as po_capital_overview
+from services.private_office import cash_flow as po_cash_flow
 from services.private_office import facts as po_facts
 from services.private_office import feature_matrix as po_matrix
 from services.private_office import model as po_model
@@ -859,6 +860,54 @@ def api_private_office_capital_exposure():
             "generated_at": payload["generated_at"],
         },
     })
+
+
+@private_office_blueprint.route(
+    "/api/private-office/capital-graph/cash-flow", methods=["GET"])
+def api_private_office_capital_cash_flow():
+    """When the member's recorded obligations fall due, bucketed.
+
+    Named ``cash-flow`` because that is the screen it serves, but the payload
+    is explicit that it is outflows only: PulseSoc has no income ledger, so
+    nothing here has been netted against earnings, and ``basis.inflows`` says
+    so in the response rather than leaving the client to assume it.
+
+    No recurrence is inferred and no rate is invented. An obligation with no
+    due date, or no amount, is counted in ``excluded`` and drops
+    ``totals.complete``; it never becomes a zero on a timeline.
+    """
+    user = _current_user()
+    if not user:
+        return _no_store({"ok": False, "message": "Login required."}, 401)
+
+    resolved = _resolve_for(user)
+    refusal = _gate(resolved, CAPITAL_FEATURE_ID)
+    if refusal:
+        return refusal
+    locked = _office_lock_gate(user)
+    if locked:
+        return locked
+
+    try:
+        payload = _with_cursor(
+            lambda cur: po_cash_flow.schedule(
+                cur,
+                owner_user_id=user["user_id"],
+                actor_user_id=user["user_id"],
+            )
+        )
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("PRIVATE_OFFICE_CAPITAL_CASH_FLOW_READ_FAILED")
+        return _capital_failure()
+
+    if not payload.get("ok"):
+        return _no_store(
+            {"ok": False, "state": "denied",
+             "reason": payload.get("denied") or {}},
+            403,
+        )
+
+    return _no_store({"ok": True, "cash_flow": payload})
 
 
 @private_office_blueprint.route(
