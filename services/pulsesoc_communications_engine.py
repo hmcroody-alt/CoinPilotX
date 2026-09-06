@@ -971,6 +971,32 @@ def _require_call_access(cur: Any, user_id: int, call_ref: str | int) -> tuple[d
     return call, participant, None
 
 
+def _viewer_denied(cur: Any, call: dict[str, Any], user_id: int) -> dict[str, Any] | None:
+    """Read access for call_status.
+
+    Conversation scopes keep the historical rule: any active conversation
+    member may view the call (that is how the ringing UI works for invitees
+    who have no participant row yet). Room scope (private meetings) has no
+    conversation, so membership IS the participant row — and a row that the
+    meeting layer marked 'removed' or 'left' answers 410, not 403, on
+    purpose: the native call store treats 404/410 as terminal, so a host
+    removing someone (or ending the meeting, which marks every row 'left')
+    tears that client's call session down on its next status poll without any
+    client-side special-casing. A plain 403 would present as a transient poll
+    error and the revoked client would keep ringing the endpoint forever.
+    """
+    if str(call.get("call_scope") or "") != "room":
+        if not _participant_allowed(cur, int(call.get("conversation_id") or 0), int(user_id)):
+            return _err("You do not have access to this call.", 403, "forbidden")
+        return None
+    participant = _participant_for_call(cur, int(call["id"]), int(user_id))
+    if not participant:
+        return _err("You do not have access to this call.", 403, "forbidden")
+    if str(participant.get("status") or "") in {"removed", "left"}:
+        return _err("This call has ended for you.", 410, "call_final")
+    return None
+
+
 def _mark_missed_stale_calls_cur(cur: Any, timeout_seconds: int = 45) -> int:
     threshold = time.time() - max(5, int(timeout_seconds or 45))
     cur.execute("SELECT * FROM communication_calls WHERE status='ringing' ORDER BY id ASC")
@@ -1656,8 +1682,9 @@ def call_status(user_id: int, call_ref: str | int) -> dict[str, Any]:
         call = _get_call(cur, call_ref)
         if not call:
             return _err("Call not found.", 404, "missing_call")
-        if not _participant_allowed(cur, int(call.get("conversation_id") or 0), int(user_id)):
-            return _err("You do not have access to this call.", 403, "forbidden")
+        denied = _viewer_denied(cur, call, int(user_id))
+        if denied:
+            return denied
         return _ok({"call": _serialize_call(cur, call, int(user_id))})
     finally:
         conn.close()
@@ -1694,7 +1721,13 @@ def submit_quality_report(user_id: int, call_ref: str | int, payload: dict[str, 
         call = _get_call(cur, call_ref)
         if not call:
             return _err("Call not found.", 404, "missing_call")
-        if not _participant_allowed(cur, int(call.get("conversation_id") or 0), int(user_id)):
+        if str(call.get("call_scope") or "") == "room":
+            # Quality reports arrive AFTER teardown, when the participant row is
+            # already 'left'. Any row at all proves the reporter was in the
+            # meeting; no row is a stranger.
+            if not _participant_for_call(cur, int(call["id"]), int(user_id)):
+                return _err("You do not have access to this call.", 403, "forbidden")
+        elif not _participant_allowed(cur, int(call.get("conversation_id") or 0), int(user_id)):
             return _err("You do not have access to this call.", 403, "forbidden")
         cur.execute(
             """
