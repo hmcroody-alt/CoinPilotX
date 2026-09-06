@@ -123,7 +123,12 @@ describe("navigator header titles", () => {
     // 143 + 5: `PrivateDocuments`, `PrivatePeople`, `PrivateBriefings`,
     // `PrivateShield` and `PrivateConcierge` — the five Private Office feature
     // screens, each titled `route.params?.title || t("common:screens....")`.
-    expect(TITLE_OPTIONS.length).toBe(148);
+    //
+    // 148 + 2: `PrivateConversations` and `PrivateConversationInfo`. Two and not
+    // three — an Office conversation is a canonical conversation, so the thread
+    // itself opens in the existing `Chat` screen rather than in an Office-side
+    // copy of it. A third entry appearing here is the regression to look for.
+    expect(TITLE_OPTIONS.length).toBe(150);
   });
 
   it("has no hardcoded string literal titles", () => {

@@ -4333,6 +4333,10 @@
         "privateMeetings": {
           "label": "Reuniões Privadas",
           "hint": "Reuniões seguras com sala de espera e controles do anfitrião."
+        },
+        "privateConversations": {
+          "label": "Conversas privadas",
+          "hint": "Tópicos do escritório, classificados e ligados ao seu trabalho."
         }
       },
       "entry": {
@@ -5107,6 +5111,76 @@
             "call_ended": "A conexão terminou, então você saiu da reunião.",
             "feature_disabled": "As reuniões foram desativadas enquanto você estava conectado.",
             "generic": "A reunião acabou."
+          }
+        }
+      },
+      "conversations": {
+        "title": "Conversas privadas",
+        "subtitle": "Tópicos do escritório, classificados e ligados ao trabalho a que pertencem.",
+        "unread": "Não lida",
+        "archived": "Arquivada",
+        "filters": {
+          "all": "Todas"
+        },
+        "scopes": {
+          "DIRECT": "Direta",
+          "GROUP": "Grupo",
+          "ORGANIZATION_ROOM": "Sala da organização",
+          "PROJECT_ROOM": "Sala do projeto"
+        },
+        "empty": {
+          "title": "Ainda não há conversas privadas",
+          "body": "Tópicos classificados como conversas do escritório aparecem aqui com o seu âmbito e as suas ligações."
+        },
+        "create": {
+          "open": "Nova conversa",
+          "failed": "Não foi possível criar a conversa",
+          "boundScopeNote": "As salas de organização e de projeto são criadas a partir do nó de organização ou do projeto a que pertencem."
+        },
+        "sensitivity": {
+          "title": "Sensibilidade",
+          "note": "Define como este tópico é tratado e com quem pode ser partilhado. Não altera a forma como as mensagens são transmitidas.",
+          "failed": "Não foi possível alterar a sensibilidade",
+          "unknownLabel": "Sensibilidade guardada",
+          "PUBLIC": "Pública",
+          "INTERNAL": "Interna",
+          "CONFIDENTIAL": "Confidencial",
+          "HIGHLY_SENSITIVE": "Muito sensível",
+          "RESTRICTED": "Restrita"
+        },
+        "links": {
+          "title": "Ligações",
+          "note": "Uma ligação é uma referência. Removê-la não elimina o documento, o registo, o facto nem a reunião a que aponta.",
+          "empty": "Ainda não há nada ligado a esta conversa.",
+          "remove": "Remover ligação",
+          "failed": "Não foi possível alterar as ligações"
+        },
+        "linkTypes": {
+          "DOCUMENT": "Documento",
+          "RECORD": "Registo",
+          "FACT": "Facto",
+          "MEETING": "Reunião",
+          "ORGANIZATION_NODE": "Organização",
+          "PROJECT": "Projeto"
+        },
+        "security": {
+          "title": "Segurança",
+          "notEncrypted": "As mensagens estão protegidas em trânsito e pelo controlo de acesso no servidor. Não têm encriptação ponta a ponta, por isso o servidor pode lê-las.",
+          "encrypted": "As mensagens desta conversa têm encriptação ponta a ponta.",
+          "ledger": "Armazenamento de mensagens",
+          "rtc": "Chamadas"
+        },
+        "info": {
+          "title": "Detalhes da conversa",
+          "subtitle": "A classificação de escritório deste tópico. As mensagens vivem na conversa normal.",
+          "open": "Detalhes da conversa",
+          "openThread": "Abrir conversa",
+          "classification": "Classificação",
+          "scope": "Âmbito",
+          "archivedYes": "Sim",
+          "notFound": {
+            "title": "Não é uma conversa do escritório",
+            "body": "Este tópico não tem classificação de Escritório privado. Continua disponível nas Mensagens."
           }
         }
       }

@@ -4302,6 +4302,10 @@
         "privateMeetings": {
           "label": "Reyinyon Prive",
           "hint": "Reyinyon an sekirite ak yon sal datant ak kontwòl pou moun k ap resevwa a."
+        },
+        "privateConversations": {
+          "label": "Konvèsasyon prive",
+          "hint": "Konvèsasyon biwo a, klase epi lye ak travay ou."
         }
       },
       "entry": {
@@ -5076,6 +5080,76 @@
             "call_ended": "Koneksyon an fini, kidonk ou soti nan reyinyon an.",
             "feature_disabled": "Reyinyon yo te fèmen pandan ou te konekte.",
             "generic": "Reyinyon an fini."
+          }
+        }
+      },
+      "conversations": {
+        "title": "Konvèsasyon prive",
+        "subtitle": "Konvèsasyon biwo a, klase epi lye ak travay yo apatni an.",
+        "unread": "Poko li",
+        "archived": "Achive",
+        "filters": {
+          "all": "Tout"
+        },
+        "scopes": {
+          "DIRECT": "Dirèk",
+          "GROUP": "Gwoup",
+          "ORGANIZATION_ROOM": "Sal òganizasyon",
+          "PROJECT_ROOM": "Sal pwojè"
+        },
+        "empty": {
+          "title": "Poko gen konvèsasyon prive",
+          "body": "Konvèsasyon ki klase kòm konvèsasyon biwo parèt isit la ak nivo yo ak lyen yo."
+        },
+        "create": {
+          "open": "Nouvo konvèsasyon",
+          "failed": "Nou pa t kapab kreye konvèsasyon an",
+          "boundScopeNote": "Sal òganizasyon ak sal pwojè kreye depi nan nœud òganizasyon an oswa pwojè yo apatni an."
+        },
+        "sensitivity": {
+          "title": "Sansiblite",
+          "note": "Li defini kijan konvèsasyon sa a jere ak ak ki moun yo ka pataje l. Li pa chanje fason mesaj yo voye.",
+          "failed": "Nou pa t kapab chanje sansiblite a",
+          "unknownLabel": "Sansiblite ki anrejistre",
+          "PUBLIC": "Piblik",
+          "INTERNAL": "Entèn",
+          "CONFIDENTIAL": "Konfidansyèl",
+          "HIGHLY_SENSITIVE": "Trè sansib",
+          "RESTRICTED": "Restren"
+        },
+        "links": {
+          "title": "Lye",
+          "note": "Yon lyen se yon referans. Retire l pa efase dokiman an, dosye a, enfòmasyon an oswa reyinyon an.",
+          "empty": "Poko gen anyen ki lye ak konvèsasyon sa a.",
+          "remove": "Retire lyen an",
+          "failed": "Nou pa t kapab chanje lyen yo"
+        },
+        "linkTypes": {
+          "DOCUMENT": "Dokiman",
+          "RECORD": "Dosye",
+          "FACT": "Enfòmasyon",
+          "MEETING": "Reyinyon",
+          "ORGANIZATION_NODE": "Òganizasyon",
+          "PROJECT": "Pwojè"
+        },
+        "security": {
+          "title": "Sekirite",
+          "notEncrypted": "Mesaj yo pwoteje pandan transpò a ak pa kontwòl aksè sou sèvè a. Yo pa chifre bout an bout, kidonk sèvè a ka li yo.",
+          "encrypted": "Mesaj nan konvèsasyon sa a chifre bout an bout.",
+          "ledger": "Kote mesaj yo estoke",
+          "rtc": "Apèl"
+        },
+        "info": {
+          "title": "Detay konvèsasyon an",
+          "subtitle": "Klasifikasyon biwo a pou konvèsasyon sa a. Mesaj yo rete nan konvèsasyon nòmal la.",
+          "open": "Detay konvèsasyon an",
+          "openThread": "Louvri konvèsasyon an",
+          "classification": "Klasifikasyon",
+          "scope": "Nivo",
+          "archivedYes": "Wi",
+          "notFound": {
+            "title": "Se pa yon konvèsasyon biwo",
+            "body": "Konvèsasyon sa a pa gen klasifikasyon Biwo prive. Li toujou disponib nan Mesaj."
           }
         }
       }

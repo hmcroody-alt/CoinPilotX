@@ -4301,6 +4301,10 @@
         "privateMeetings": {
           "label": "프라이빗 회의",
           "hint": "대기실과 호스트 제어 기능을 갖춘 안전한 회의."
+        },
+        "privateConversations": {
+          "label": "비공개 대화",
+          "hint": "분류되어 업무와 연결된 오피스 스레드입니다."
         }
       },
       "entry": {
@@ -5075,6 +5079,76 @@
             "call_ended": "연결이 종료되어 회의에서 나가게 되었습니다.",
             "feature_disabled": "연결 중에 회의 기능이 꺼졌습니다.",
             "generic": "회의가 끝났습니다."
+          }
+        }
+      },
+      "conversations": {
+        "title": "비공개 대화",
+        "subtitle": "분류되어 관련 업무와 연결된 오피스 스레드입니다.",
+        "unread": "읽지 않음",
+        "archived": "보관됨",
+        "filters": {
+          "all": "전체"
+        },
+        "scopes": {
+          "DIRECT": "일대일",
+          "GROUP": "그룹",
+          "ORGANIZATION_ROOM": "조직 룸",
+          "PROJECT_ROOM": "프로젝트 룸"
+        },
+        "empty": {
+          "title": "아직 비공개 대화가 없습니다",
+          "body": "오피스 대화로 분류된 스레드가 범위와 연결 항목과 함께 여기에 표시됩니다."
+        },
+        "create": {
+          "open": "새 대화",
+          "failed": "대화를 만들지 못했습니다",
+          "boundScopeNote": "조직 룸과 프로젝트 룸은 해당 조직 노드 또는 프로젝트에서 만듭니다."
+        },
+        "sensitivity": {
+          "title": "민감도",
+          "note": "이 스레드를 어떻게 다루고 누구와 공유할 수 있는지 정합니다. 메시지 전송 방식은 바뀌지 않습니다.",
+          "failed": "민감도를 변경하지 못했습니다",
+          "unknownLabel": "저장된 민감도",
+          "PUBLIC": "공개",
+          "INTERNAL": "내부",
+          "CONFIDENTIAL": "기밀",
+          "HIGHLY_SENSITIVE": "매우 민감",
+          "RESTRICTED": "제한"
+        },
+        "links": {
+          "title": "연결 항목",
+          "note": "연결은 참조입니다. 연결을 해제해도 가리키는 문서, 기록, 사실, 회의는 삭제되지 않습니다.",
+          "empty": "이 대화에 연결된 항목이 아직 없습니다.",
+          "remove": "연결 해제",
+          "failed": "연결 항목을 변경하지 못했습니다"
+        },
+        "linkTypes": {
+          "DOCUMENT": "문서",
+          "RECORD": "기록",
+          "FACT": "사실",
+          "MEETING": "회의",
+          "ORGANIZATION_NODE": "조직",
+          "PROJECT": "프로젝트"
+        },
+        "security": {
+          "title": "보안",
+          "notEncrypted": "메시지는 전송 구간과 서버의 접근 제어로 보호됩니다. 종단 간 암호화가 아니므로 서버가 내용을 읽을 수 있습니다.",
+          "encrypted": "이 대화의 메시지는 종단 간 암호화됩니다.",
+          "ledger": "메시지 저장소",
+          "rtc": "통화"
+        },
+        "info": {
+          "title": "대화 세부정보",
+          "subtitle": "이 스레드의 오피스 분류입니다. 메시지는 일반 대화에 있습니다.",
+          "open": "대화 세부정보",
+          "openThread": "대화 열기",
+          "classification": "분류",
+          "scope": "범위",
+          "archivedYes": "예",
+          "notFound": {
+            "title": "오피스 대화가 아닙니다",
+            "body": "이 스레드에는 비공개 오피스 분류가 없습니다. 메신저에서는 계속 사용할 수 있습니다."
           }
         }
       }

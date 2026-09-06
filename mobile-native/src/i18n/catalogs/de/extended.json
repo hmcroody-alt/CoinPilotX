@@ -4333,6 +4333,10 @@
         "privateMeetings": {
           "label": "Private Meetings",
           "hint": "Sichere Meetings mit Warteraum und Host-Steuerung."
+        },
+        "privateConversations": {
+          "label": "Private Unterhaltungen",
+          "hint": "Büro-Threads, klassifiziert und mit Ihrer Arbeit verknüpft."
         }
       },
       "entry": {
@@ -5107,6 +5111,76 @@
             "call_ended": "Die Verbindung wurde beendet, daher wurden Sie aus dem Meeting abgemeldet.",
             "feature_disabled": "Meetings wurden abgeschaltet, während Sie verbunden waren.",
             "generic": "Das Meeting ist vorbei."
+          }
+        }
+      },
+      "conversations": {
+        "title": "Private Unterhaltungen",
+        "subtitle": "Büro-Threads, klassifiziert und mit der zugehörigen Arbeit verknüpft.",
+        "unread": "Ungelesen",
+        "archived": "Archiviert",
+        "filters": {
+          "all": "Alle"
+        },
+        "scopes": {
+          "DIRECT": "Direkt",
+          "GROUP": "Gruppe",
+          "ORGANIZATION_ROOM": "Organisationsraum",
+          "PROJECT_ROOM": "Projektraum"
+        },
+        "empty": {
+          "title": "Noch keine privaten Unterhaltungen",
+          "body": "Als Büro-Unterhaltungen klassifizierte Threads erscheinen hier mit ihrem Bereich und ihren Verknüpfungen."
+        },
+        "create": {
+          "open": "Neue Unterhaltung",
+          "failed": "Unterhaltung konnte nicht erstellt werden",
+          "boundScopeNote": "Organisations- und Projekträume werden aus dem Organisationsknoten oder dem zugehörigen Projekt heraus erstellt."
+        },
+        "sensitivity": {
+          "title": "Vertraulichkeit",
+          "note": "Legt fest, wie dieser Thread behandelt wird und mit wem er geteilt werden darf. Die Übertragung der Nachrichten ändert sich dadurch nicht.",
+          "failed": "Vertraulichkeit konnte nicht geändert werden",
+          "unknownLabel": "Gespeicherte Vertraulichkeit",
+          "PUBLIC": "Öffentlich",
+          "INTERNAL": "Intern",
+          "CONFIDENTIAL": "Vertraulich",
+          "HIGHLY_SENSITIVE": "Streng vertraulich",
+          "RESTRICTED": "Eingeschränkt"
+        },
+        "links": {
+          "title": "Verknüpft",
+          "note": "Eine Verknüpfung ist ein Verweis. Sie zu entfernen löscht weder das Dokument noch den Datensatz, die Angabe oder das Meeting.",
+          "empty": "Mit dieser Unterhaltung ist noch nichts verknüpft.",
+          "remove": "Verknüpfung entfernen",
+          "failed": "Verknüpfungen konnten nicht geändert werden"
+        },
+        "linkTypes": {
+          "DOCUMENT": "Dokument",
+          "RECORD": "Datensatz",
+          "FACT": "Angabe",
+          "MEETING": "Meeting",
+          "ORGANIZATION_NODE": "Organisation",
+          "PROJECT": "Projekt"
+        },
+        "security": {
+          "title": "Sicherheit",
+          "notEncrypted": "Nachrichten sind bei der Übertragung und durch die Zugriffskontrolle auf dem Server geschützt. Sie sind nicht Ende-zu-Ende-verschlüsselt, der Server kann sie also lesen.",
+          "encrypted": "Nachrichten in dieser Unterhaltung sind Ende-zu-Ende-verschlüsselt.",
+          "ledger": "Nachrichtenspeicher",
+          "rtc": "Anrufe"
+        },
+        "info": {
+          "title": "Details zur Unterhaltung",
+          "subtitle": "Die Büro-Klassifizierung dieses Threads. Die Nachrichten liegen in der gewöhnlichen Unterhaltung.",
+          "open": "Details zur Unterhaltung",
+          "openThread": "Unterhaltung öffnen",
+          "classification": "Klassifizierung",
+          "scope": "Bereich",
+          "archivedYes": "Ja",
+          "notFound": {
+            "title": "Keine Büro-Unterhaltung",
+            "body": "Dieser Thread hat keine Private-Office-Klassifizierung. Er ist weiterhin in den Nachrichten verfügbar."
           }
         }
       }

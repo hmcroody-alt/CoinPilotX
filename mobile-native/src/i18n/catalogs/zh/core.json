@@ -224,7 +224,9 @@
       "privateBriefings": "私人简报",
       "privateShield": "私人护盾",
       "privateConcierge": "真人礼宾",
-      "privateMeetings": "私人会议"
+      "privateMeetings": "私人会议",
+      "privateConversations": "私密对话",
+      "privateConversationInfo": "对话详情"
     },
     "navSubtitles": {
       "missionControl": "指挥中心",

@@ -224,7 +224,9 @@
       "privateBriefings": "프라이빗 브리핑",
       "privateShield": "프라이빗 실드",
       "privateConcierge": "휴먼 컨시어지",
-      "privateMeetings": "프라이빗 회의"
+      "privateMeetings": "프라이빗 회의",
+      "privateConversations": "비공개 대화",
+      "privateConversationInfo": "대화 세부정보"
     },
     "navSubtitles": {
       "missionControl": "관제 센터",
