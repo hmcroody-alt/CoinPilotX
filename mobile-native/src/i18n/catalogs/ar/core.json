@@ -223,7 +223,8 @@
       "privatePeople": "ذكاء العلاقات",
       "privateBriefings": "الإحاطات الخاصة",
       "privateShield": "الدرع الخاص",
-      "privateConcierge": "الكونسيرج البشري"
+      "privateConcierge": "الكونسيرج البشري",
+      "privateMeetings": "الاجتماعات الخاصة"
     },
     "navSubtitles": {
       "missionControl": "مركز القيادة",

@@ -223,7 +223,8 @@
       "privatePeople": "관계 인텔리전스",
       "privateBriefings": "프라이빗 브리핑",
       "privateShield": "프라이빗 실드",
-      "privateConcierge": "휴먼 컨시어지"
+      "privateConcierge": "휴먼 컨시어지",
+      "privateMeetings": "프라이빗 회의"
     },
     "navSubtitles": {
       "missionControl": "관제 센터",

@@ -4326,6 +4326,10 @@
           "label": "Human Concierge",
           "hint": "A person who handles requests on your behalf."
         },
+        "privateMeetings": {
+          "label": "Private Meetings",
+          "hint": "Secure meetings with a waiting room and host controls."
+        },
         "operations": {
           "label": "Operations",
           "hint": "Obligations, decisions, requests, risks and opportunities you track."
@@ -4852,6 +4856,106 @@
           "REQUESTS": "Requests",
           "RISKS": "Risks",
           "OPPORTUNITIES": "Opportunities"
+        }
+      },
+      "meetings": {
+        "subtitle": "Secure meetings on your private line. The waiting room and host controls are enforced by the server, not the screen.",
+        "instant": "Start an instant meeting",
+        "starting": "Starting…",
+        "instantFailed": "Could not start a meeting",
+        "joinTitle": "Join with a code or meeting ID",
+        "joinPlaceholder": "Code or meeting ID",
+        "join": "Join",
+        "joinFailed": "Could not join",
+        "scheduleTitle": "Schedule a meeting",
+        "scheduleTitleField": "Title (optional)",
+        "schedule": "Schedule",
+        "scheduleFailed": "Could not schedule",
+        "startFailed": "Could not start",
+        "cancelFailed": "Could not cancel",
+        "start": "Start",
+        "cancel": "Cancel",
+        "untitled": "Meeting",
+        "liveNow": "Live now",
+        "durationMinutes_one": "{{count}} minute",
+        "durationMinutes_other": "{{count}} minutes",
+        "presets": {
+          "in15m": "In 15 minutes",
+          "in1h": "In 1 hour",
+          "tomorrowMorning": "Tomorrow 9:00"
+        },
+        "buckets": {
+          "live": "Happening now",
+          "upcoming": "Upcoming",
+          "recent": "Recent"
+        },
+        "empty": {
+          "title": "No meetings yet",
+          "body": "Start an instant meeting or schedule one. Meetings you host or join appear here."
+        },
+        "refusals": {
+          "feature_disabled": "Meetings are switched off right now.",
+          "office_locked": "Your office is locked. Unlock it to continue.",
+          "not_found": "That meeting could not be found.",
+          "not_admitted": "You have not been admitted to this meeting.",
+          "meeting_locked": "This meeting is locked by the host.",
+          "meeting_over": "This meeting has ended.",
+          "not_live": "This meeting has not started yet.",
+          "blocked": "You cannot join this meeting.",
+          "forbidden": "You do not have access to this meeting.",
+          "invalid": "That request could not be understood.",
+          "unavailable": "Meetings could not be reached just now."
+        },
+        "room": {
+          "joining": "Joining…",
+          "connecting": "Connecting…",
+          "reconnecting": "Reconnecting…",
+          "waitingBody": "You are in the waiting room. The host will let you in.",
+          "notStartedBody": "This meeting has not started yet.",
+          "withdraw": "Leave the waiting room",
+          "you": "You",
+          "member": "Member {{id}}",
+          "host": "Host",
+          "coHost": "Co-host",
+          "recording": "Recording",
+          "locked": "Locked",
+          "participants": "Participants",
+          "inRoomSection": "In the meeting",
+          "waitingSection": "Waiting room",
+          "admit": "Admit",
+          "deny": "Deny",
+          "remove": "Remove from meeting",
+          "makeCoHost": "Make co-host",
+          "removeCoHost": "Remove co-host role",
+          "lock": "Lock meeting",
+          "unlock": "Unlock meeting",
+          "inviteCode": "Code: {{code}}",
+          "mute": "Mute",
+          "unmute": "Unmute",
+          "cameraOn": "Turn camera on",
+          "cameraOff": "Turn camera off",
+          "speaker": "Speaker",
+          "flip": "Flip camera",
+          "leave": "Leave",
+          "leaveTitle": "Leave this meeting?",
+          "leaveBodyModerator": "You can leave on your own, or end the meeting for everyone.",
+          "leaveMeeting": "Leave meeting",
+          "endForEveryone": "End for everyone",
+          "endFailed": "Could not end the meeting",
+          "actionFailed": "Could not complete that"
+        },
+        "summary": {
+          "title": "Meeting ended",
+          "back": "Back to meetings",
+          "reasons": {
+            "left": "You left the meeting.",
+            "removed": "You are no longer in this meeting.",
+            "ended": "The meeting has ended.",
+            "ended_by_host": "You ended the meeting for everyone.",
+            "call_ended": "The connection ended, so you were signed out of the meeting.",
+            "feature_disabled": "Meetings were switched off while you were connected.",
+            "generic": "The meeting is over."
+          }
         }
       },
       "shield": {

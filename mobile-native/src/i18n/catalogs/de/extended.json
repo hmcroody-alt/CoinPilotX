@@ -4329,6 +4329,10 @@
         "operations": {
           "label": "Vorgänge",
           "hint": "Verpflichtungen, Entscheidungen, Anfragen, Risiken und Chancen, die Sie verfolgen."
+        },
+        "privateMeetings": {
+          "label": "Private Meetings",
+          "hint": "Sichere Meetings mit Warteraum und Host-Steuerung."
         }
       },
       "entry": {
@@ -4939,6 +4943,106 @@
           "you": "Sie",
           "placeholder": "Nachricht schreiben…",
           "send": "Senden"
+        }
+      },
+      "meetings": {
+        "subtitle": "Sichere Meetings auf Ihrer privaten Leitung. Warteraum und Host-Steuerung werden vom Server durchgesetzt, nicht vom Bildschirm.",
+        "instant": "Sofort-Meeting starten",
+        "starting": "Wird gestartet…",
+        "instantFailed": "Meeting konnte nicht gestartet werden",
+        "joinTitle": "Mit Code oder Meeting-ID beitreten",
+        "joinPlaceholder": "Code oder Meeting-ID",
+        "join": "Beitreten",
+        "joinFailed": "Beitritt nicht möglich",
+        "scheduleTitle": "Meeting planen",
+        "scheduleTitleField": "Titel (optional)",
+        "schedule": "Planen",
+        "scheduleFailed": "Planung fehlgeschlagen",
+        "startFailed": "Start fehlgeschlagen",
+        "cancelFailed": "Absage fehlgeschlagen",
+        "start": "Starten",
+        "cancel": "Absagen",
+        "untitled": "Meeting",
+        "liveNow": "Jetzt live",
+        "durationMinutes_one": "{{count}} Minute",
+        "durationMinutes_other": "{{count}} Minuten",
+        "presets": {
+          "in15m": "In 15 Minuten",
+          "in1h": "In 1 Stunde",
+          "tomorrowMorning": "Morgen 9:00 Uhr"
+        },
+        "buckets": {
+          "live": "Läuft gerade",
+          "upcoming": "Bevorstehend",
+          "recent": "Kürzlich"
+        },
+        "empty": {
+          "title": "Noch keine Meetings",
+          "body": "Starten Sie ein Sofort-Meeting oder planen Sie eines. Meetings, die Sie veranstalten oder besuchen, erscheinen hier."
+        },
+        "refusals": {
+          "feature_disabled": "Meetings sind derzeit abgeschaltet.",
+          "office_locked": "Ihr Büro ist gesperrt. Entsperren Sie es, um fortzufahren.",
+          "not_found": "Dieses Meeting wurde nicht gefunden.",
+          "not_admitted": "Sie wurden zu diesem Meeting nicht zugelassen.",
+          "meeting_locked": "Dieses Meeting wurde vom Host gesperrt.",
+          "meeting_over": "Dieses Meeting ist beendet.",
+          "not_live": "Dieses Meeting hat noch nicht begonnen.",
+          "blocked": "Sie können diesem Meeting nicht beitreten.",
+          "forbidden": "Sie haben keinen Zugriff auf dieses Meeting.",
+          "invalid": "Diese Anfrage konnte nicht verarbeitet werden.",
+          "unavailable": "Meetings sind gerade nicht erreichbar."
+        },
+        "room": {
+          "joining": "Beitritt läuft…",
+          "connecting": "Verbindung wird hergestellt…",
+          "reconnecting": "Verbindung wird wiederhergestellt…",
+          "waitingBody": "Sie sind im Warteraum. Der Host lässt Sie herein.",
+          "notStartedBody": "Dieses Meeting hat noch nicht begonnen.",
+          "withdraw": "Warteraum verlassen",
+          "you": "Sie",
+          "member": "Mitglied {{id}}",
+          "host": "Host",
+          "coHost": "Co-Host",
+          "recording": "Aufnahme",
+          "locked": "Gesperrt",
+          "participants": "Teilnehmer",
+          "inRoomSection": "Im Meeting",
+          "waitingSection": "Warteraum",
+          "admit": "Zulassen",
+          "deny": "Ablehnen",
+          "remove": "Aus dem Meeting entfernen",
+          "makeCoHost": "Zum Co-Host machen",
+          "removeCoHost": "Co-Host-Rolle entfernen",
+          "lock": "Meeting sperren",
+          "unlock": "Meeting entsperren",
+          "inviteCode": "Code: {{code}}",
+          "mute": "Stummschalten",
+          "unmute": "Stummschaltung aufheben",
+          "cameraOn": "Kamera einschalten",
+          "cameraOff": "Kamera ausschalten",
+          "speaker": "Lautsprecher",
+          "flip": "Kamera wechseln",
+          "leave": "Verlassen",
+          "leaveTitle": "Dieses Meeting verlassen?",
+          "leaveBodyModerator": "Sie können allein gehen oder das Meeting für alle beenden.",
+          "leaveMeeting": "Meeting verlassen",
+          "endForEveryone": "Für alle beenden",
+          "endFailed": "Meeting konnte nicht beendet werden",
+          "actionFailed": "Das konnte nicht ausgeführt werden"
+        },
+        "summary": {
+          "title": "Meeting beendet",
+          "back": "Zurück zu den Meetings",
+          "reasons": {
+            "left": "Sie haben das Meeting verlassen.",
+            "removed": "Sie sind nicht mehr in diesem Meeting.",
+            "ended": "Das Meeting ist beendet.",
+            "ended_by_host": "Sie haben das Meeting für alle beendet.",
+            "call_ended": "Die Verbindung wurde beendet, daher wurden Sie aus dem Meeting abgemeldet.",
+            "feature_disabled": "Meetings wurden abgeschaltet, während Sie verbunden waren.",
+            "generic": "Das Meeting ist vorbei."
+          }
         }
       }
     },

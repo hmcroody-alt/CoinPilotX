@@ -223,7 +223,8 @@
       "privatePeople": "リレーションシップインテリジェンス",
       "privateBriefings": "プライベートブリーフィング",
       "privateShield": "プライベートシールド",
-      "privateConcierge": "ヒューマンコンシェルジュ"
+      "privateConcierge": "ヒューマンコンシェルジュ",
+      "privateMeetings": "プライベートミーティング"
     },
     "navSubtitles": {
       "missionControl": "管制センター",

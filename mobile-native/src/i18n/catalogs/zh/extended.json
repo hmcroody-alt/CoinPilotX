@@ -4297,6 +4297,10 @@
         "operations": {
           "label": "事务",
           "hint": "您跟踪的义务、决定、请求、风险和机会。"
+        },
+        "privateMeetings": {
+          "label": "私人会议",
+          "hint": "带等候室和主持人控制的安全会议。"
         }
       },
       "entry": {
@@ -4907,6 +4911,106 @@
           "you": "您",
           "placeholder": "写一条消息…",
           "send": "发送"
+        }
+      },
+      "meetings": {
+        "subtitle": "在您的私人线路上进行安全会议。等候室和主持人控制由服务器执行，而不是由屏幕执行。",
+        "instant": "开始即时会议",
+        "starting": "正在开始…",
+        "instantFailed": "无法开始会议",
+        "joinTitle": "使用代码或会议 ID 加入",
+        "joinPlaceholder": "代码或会议 ID",
+        "join": "加入",
+        "joinFailed": "无法加入",
+        "scheduleTitle": "安排会议",
+        "scheduleTitleField": "标题（可选）",
+        "schedule": "安排",
+        "scheduleFailed": "无法安排",
+        "startFailed": "无法开始",
+        "cancelFailed": "无法取消",
+        "start": "开始",
+        "cancel": "取消",
+        "untitled": "会议",
+        "liveNow": "正在进行",
+        "durationMinutes_one": "{{count}} 分钟",
+        "durationMinutes_other": "{{count}} 分钟",
+        "presets": {
+          "in15m": "15 分钟后",
+          "in1h": "1 小时后",
+          "tomorrowMorning": "明天 9:00"
+        },
+        "buckets": {
+          "live": "正在进行",
+          "upcoming": "即将开始",
+          "recent": "最近"
+        },
+        "empty": {
+          "title": "还没有会议",
+          "body": "开始即时会议或安排一个。您主持或参加的会议会显示在这里。"
+        },
+        "refusals": {
+          "feature_disabled": "会议功能目前已关闭。",
+          "office_locked": "您的办公室已锁定。请解锁以继续。",
+          "not_found": "找不到该会议。",
+          "not_admitted": "您尚未获准进入此会议。",
+          "meeting_locked": "主持人已锁定此会议。",
+          "meeting_over": "此会议已结束。",
+          "not_live": "此会议尚未开始。",
+          "blocked": "您无法加入此会议。",
+          "forbidden": "您无权访问此会议。",
+          "invalid": "无法理解该请求。",
+          "unavailable": "目前无法连接到会议服务。"
+        },
+        "room": {
+          "joining": "正在加入…",
+          "connecting": "正在连接…",
+          "reconnecting": "正在重新连接…",
+          "waitingBody": "您在等候室中。主持人会让您进入。",
+          "notStartedBody": "此会议尚未开始。",
+          "withdraw": "离开等候室",
+          "you": "您",
+          "member": "成员 {{id}}",
+          "host": "主持人",
+          "coHost": "联合主持人",
+          "recording": "录制中",
+          "locked": "已锁定",
+          "participants": "参会者",
+          "inRoomSection": "会议中",
+          "waitingSection": "等候室",
+          "admit": "准入",
+          "deny": "拒绝",
+          "remove": "移出会议",
+          "makeCoHost": "设为联合主持人",
+          "removeCoHost": "取消联合主持人角色",
+          "lock": "锁定会议",
+          "unlock": "解锁会议",
+          "inviteCode": "代码：{{code}}",
+          "mute": "静音",
+          "unmute": "取消静音",
+          "cameraOn": "开启摄像头",
+          "cameraOff": "关闭摄像头",
+          "speaker": "扬声器",
+          "flip": "翻转摄像头",
+          "leave": "离开",
+          "leaveTitle": "离开此会议？",
+          "leaveBodyModerator": "您可以自己离开，或为所有人结束会议。",
+          "leaveMeeting": "离开会议",
+          "endForEveryone": "为所有人结束",
+          "endFailed": "无法结束会议",
+          "actionFailed": "无法完成该操作"
+        },
+        "summary": {
+          "title": "会议已结束",
+          "back": "返回会议列表",
+          "reasons": {
+            "left": "您已离开会议。",
+            "removed": "您已不在此会议中。",
+            "ended": "会议已结束。",
+            "ended_by_host": "您为所有人结束了会议。",
+            "call_ended": "连接已结束，因此您已退出会议。",
+            "feature_disabled": "在您连接期间会议功能被关闭。",
+            "generic": "会议已结束。"
+          }
         }
       }
     },

@@ -4329,6 +4329,10 @@
         "operations": {
           "label": "Operações",
           "hint": "Obrigações, decisões, solicitações, riscos e oportunidades que você acompanha."
+        },
+        "privateMeetings": {
+          "label": "Reuniões Privadas",
+          "hint": "Reuniões seguras com sala de espera e controles do anfitrião."
         }
       },
       "entry": {
@@ -4939,6 +4943,106 @@
           "you": "Você",
           "placeholder": "Escreva uma mensagem…",
           "send": "Enviar"
+        }
+      },
+      "meetings": {
+        "subtitle": "Reuniões seguras na sua linha privada. A sala de espera e os controles do anfitrião são aplicados pelo servidor, não pela tela.",
+        "instant": "Iniciar uma reunião instantânea",
+        "starting": "Iniciando…",
+        "instantFailed": "Não foi possível iniciar uma reunião",
+        "joinTitle": "Entrar com um código ou ID de reunião",
+        "joinPlaceholder": "Código ou ID da reunião",
+        "join": "Entrar",
+        "joinFailed": "Não foi possível entrar",
+        "scheduleTitle": "Agendar uma reunião",
+        "scheduleTitleField": "Título (opcional)",
+        "schedule": "Agendar",
+        "scheduleFailed": "Não foi possível agendar",
+        "startFailed": "Não foi possível iniciar",
+        "cancelFailed": "Não foi possível cancelar",
+        "start": "Iniciar",
+        "cancel": "Cancelar",
+        "untitled": "Reunião",
+        "liveNow": "Ao vivo agora",
+        "durationMinutes_one": "{{count}} minuto",
+        "durationMinutes_other": "{{count}} minutos",
+        "presets": {
+          "in15m": "Em 15 minutos",
+          "in1h": "Em 1 hora",
+          "tomorrowMorning": "Amanhã às 9:00"
+        },
+        "buckets": {
+          "live": "Acontecendo agora",
+          "upcoming": "Próximas",
+          "recent": "Recentes"
+        },
+        "empty": {
+          "title": "Nenhuma reunião ainda",
+          "body": "Inicie uma reunião instantânea ou agende uma. As reuniões que você organiza ou participa aparecem aqui."
+        },
+        "refusals": {
+          "feature_disabled": "As reuniões estão desativadas no momento.",
+          "office_locked": "Seu escritório está bloqueado. Desbloqueie-o para continuar.",
+          "not_found": "Essa reunião não foi encontrada.",
+          "not_admitted": "Você não foi admitido nesta reunião.",
+          "meeting_locked": "Esta reunião está bloqueada pelo anfitrião.",
+          "meeting_over": "Esta reunião terminou.",
+          "not_live": "Esta reunião ainda não começou.",
+          "blocked": "Você não pode entrar nesta reunião.",
+          "forbidden": "Você não tem acesso a esta reunião.",
+          "invalid": "Não foi possível entender essa solicitação.",
+          "unavailable": "Não foi possível acessar as reuniões agora."
+        },
+        "room": {
+          "joining": "Entrando…",
+          "connecting": "Conectando…",
+          "reconnecting": "Reconectando…",
+          "waitingBody": "Você está na sala de espera. O anfitrião vai deixar você entrar.",
+          "notStartedBody": "Esta reunião ainda não começou.",
+          "withdraw": "Sair da sala de espera",
+          "you": "Você",
+          "member": "Membro {{id}}",
+          "host": "Anfitrião",
+          "coHost": "Coanfitrião",
+          "recording": "Gravando",
+          "locked": "Bloqueada",
+          "participants": "Participantes",
+          "inRoomSection": "Na reunião",
+          "waitingSection": "Sala de espera",
+          "admit": "Admitir",
+          "deny": "Negar",
+          "remove": "Remover da reunião",
+          "makeCoHost": "Tornar coanfitrião",
+          "removeCoHost": "Remover função de coanfitrião",
+          "lock": "Bloquear reunião",
+          "unlock": "Desbloquear reunião",
+          "inviteCode": "Código: {{code}}",
+          "mute": "Silenciar",
+          "unmute": "Ativar microfone",
+          "cameraOn": "Ligar câmera",
+          "cameraOff": "Desligar câmera",
+          "speaker": "Alto-falante",
+          "flip": "Virar câmera",
+          "leave": "Sair",
+          "leaveTitle": "Sair desta reunião?",
+          "leaveBodyModerator": "Você pode sair sozinho ou encerrar a reunião para todos.",
+          "leaveMeeting": "Sair da reunião",
+          "endForEveryone": "Encerrar para todos",
+          "endFailed": "Não foi possível encerrar a reunião",
+          "actionFailed": "Não foi possível concluir isso"
+        },
+        "summary": {
+          "title": "Reunião encerrada",
+          "back": "Voltar às reuniões",
+          "reasons": {
+            "left": "Você saiu da reunião.",
+            "removed": "Você não está mais nesta reunião.",
+            "ended": "A reunião terminou.",
+            "ended_by_host": "Você encerrou a reunião para todos.",
+            "call_ended": "A conexão terminou, então você saiu da reunião.",
+            "feature_disabled": "As reuniões foram desativadas enquanto você estava conectado.",
+            "generic": "A reunião acabou."
+          }
         }
       }
     },
