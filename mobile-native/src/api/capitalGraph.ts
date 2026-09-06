@@ -991,6 +991,14 @@ export type CapitalFreshness = {
   horizonDays: number | null;
 };
 
+/**
+ * The key the server files amounts under when the record store named no
+ * currency at all. It appears in `by_currency` beside real ISO codes, and it is
+ * not one: a screen that prints it as written tells the member they hold a
+ * currency called UNSPECIFIED. It is also what `unspecified_currency` counts.
+ */
+export const CAPITAL_CURRENCY_UNSPECIFIED = "UNSPECIFIED";
+
 export type CapitalObligationTotals = {
   /**
    * Populated only when a single currency answers for every quantified row.

@@ -4624,11 +4624,12 @@
         "subtitle": "Ce que vous détenez, ce qui le couvre et comment tout se relie — avec le degré de certitude de chaque élément.",
         "loading": "Chargement de votre graphe…",
         "views": {
-          "holdings": "Avoirs",
           "coverage": "Couverture",
-          "structure": "Structure",
           "documents": "Documents",
-          "overview": "Aperçu"
+          "holdings": "Avoirs",
+          "obligations": "Engagements",
+          "overview": "Aperçu",
+          "structure": "Structure"
         },
         "countExact": "{{count}}",
         "countSoFar": "{{count}} pour l'instant",
@@ -4812,6 +4813,33 @@
           "title": "Position nette",
           "unscoreable": "Rien à évaluer",
           "withheld": "Non indiqué"
+        },
+        "obligations": {
+          "amountMissing": "Aucun montant enregistré",
+          "complete": "Tous les montants enregistrés",
+          "currenciesTitle": "Par devise",
+          "disclaimerBody": "C'est la somme des obligations que vous avez enregistrées, pas tout ce que vous devez.",
+          "disclaimerTitle": "Ce que représente ce total",
+          "dueLabel": "Échéance",
+          "dueMissing": "Aucune échéance enregistrée",
+          "evidenceLabel": "Faits justificatifs",
+          "evidenceMissing": "Aucun fait justificatif enregistré",
+          "none": "Aucun engagement n'est enregistré. Ce n'est pas la même chose que ne rien devoir.",
+          "notProjected": "Cette liste n'a pas été reconstruite depuis le registre.",
+          "notSummable": "Aucune devise unique, donc aucun total n'est affiché.",
+          "partial": "Certains montants manquent",
+          "projectedLabel": "Reconstruit à partir des enregistrements",
+          "quantifiedLabel": "Avec un montant enregistré",
+          "recordedLabel": "Obligations enregistrées",
+          "retiredLabel": "Clôturés",
+          "skippedLabel": "Ignorés",
+          "staleTitle": "Pas actualisé récemment",
+          "syncTitle": "Projection",
+          "title": "Total chiffré",
+          "truncated": "Il existe plus d'engagements que ceux affichés ici.",
+          "unquantifiedLabel": "Sans montant enregistré",
+          "unspecifiedCurrency": "Montant enregistré sans devise",
+          "withheld": "Non communiqué"
         }
       },
       "attention": {

@@ -43,9 +43,12 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
+  CAPITAL_CURRENCY_UNSPECIFIED,
   CAPITAL_VIEWS,
   CapitalGraph,
   CapitalGraphResult,
+  CapitalObligations,
+  CapitalObligationsResult,
   CapitalOverview,
   CapitalOverviewResult,
   CapitalPortfolio,
@@ -53,6 +56,7 @@ import {
   CapitalView,
   asCapitalView,
   getCapitalGraph,
+  getCapitalObligations,
   getCapitalOverview,
   getCapitalPortfolio
 } from "../api/capitalGraph";
@@ -76,32 +80,59 @@ type ScreenState = "LOADING" | "EMPTY" | CapitalGraphResult["state"];
 /**
  * The screen's tabs are wider than the graph's views.
  *
- * `CAPITAL_VIEWS` are arguments the graph route accepts; Overview is a
- * different endpoint with a different payload and no `view` parameter at all.
- * Folding them into one union and filtering at the call site would leave a
- * bogus `view=overview` request one careless refactor away, so the tab type is
- * widened here and narrowed back to a real view before anything is fetched.
+ * `CAPITAL_VIEWS` are arguments the graph route accepts. Overview and
+ * Obligations are not: each is a different endpoint with a different payload
+ * and no `view` parameter at all. Folding them into one union and filtering at
+ * the call site would leave a bogus `view=overview` request one careless
+ * refactor away, so the tab type is widened here and narrowed back to a real
+ * view before anything is fetched.
  */
-const CAPITAL_TABS = ["overview", ...CAPITAL_VIEWS] as const;
+const CAPITAL_PANELS = ["overview", "obligations"] as const;
+
+/** A tab served by its own endpoint rather than by `view=`. */
+type CapitalPanel = (typeof CAPITAL_PANELS)[number];
+
+const CAPITAL_TABS = ["overview", ...CAPITAL_VIEWS, "obligations"] as const;
 
 type CapitalTab = (typeof CAPITAL_TABS)[number];
 
+const asPanel = (tab: CapitalTab): CapitalPanel | null =>
+  (CAPITAL_PANELS as readonly string[]).includes(tab) ? (tab as CapitalPanel) : null;
+
 /** null means "this tab is not a graph read" — never a default view. */
 const asGraphView = (tab: CapitalTab): CapitalView | null =>
-  tab === "overview" ? null : tab;
+  asPanel(tab) === null ? (tab as CapitalView) : null;
 
 /**
- * Overview is the screen's own tab; every other name is delegated to the API
- * module's parser rather than re-checked against a copy of the list here, so
- * the graph's accepted vocabulary keeps exactly one definition.
+ * The panels are the screen's own tabs; every other name is delegated to the
+ * API module's parser rather than re-checked against a copy of the list here,
+ * so the graph's accepted vocabulary keeps exactly one definition.
  */
 const asCapitalTab = (value: unknown): CapitalTab | null => {
-  if (String(value ?? "").trim().toLowerCase() === "overview") return "overview";
-  return asCapitalView(value);
+  const word = String(value ?? "").trim().toLowerCase();
+  const panel = CAPITAL_PANELS.find((name) => name === word);
+  return panel ?? asCapitalView(value);
 };
 
 /** Holdings and coverage read the projected portfolio; the other tabs don't. */
 const wantsPortfolio = (tab: CapitalTab) => tab === "holdings" || tab === "coverage";
+
+/**
+ * Fetch a panel, tagged with which one it was.
+ *
+ * The tag travels with the answer instead of being re-derived where the answer
+ * lands, so an awaited read can never be filed under the tab that happens to
+ * be in front when it returns.
+ */
+const readPanel = async (
+  which: CapitalPanel
+): Promise<
+  | { panel: "overview"; result: CapitalOverviewResult }
+  | { panel: "obligations"; result: CapitalObligationsResult }
+> =>
+  which === "overview"
+    ? { panel: "overview", result: await getCapitalOverview() }
+    : { panel: "obligations", result: await getCapitalObligations() };
 
 /**
  * EMPTY is a claim — "nothing recorded" — and on the portfolio-backed views
@@ -150,6 +181,9 @@ function CapitalGraphBody({ navigation, route }: Props) {
   const [portfolio, setPortfolio] = useState<CapitalPortfolioResult | null>(null);
   const [overviewState, setOverviewState] = useState<ScreenState>("LOADING");
   const [overviewResult, setOverviewResult] = useState<CapitalOverviewResult | null>(null);
+  const [obligationsState, setObligationsState] = useState<ScreenState>("LOADING");
+  const [obligationsResult, setObligationsResult] =
+    useState<CapitalObligationsResult | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   // One request pair at a time: a second Retry tap while the first is still in
   // flight would race two setState pairs and double-hit the server.
@@ -157,19 +191,51 @@ function CapitalGraphBody({ navigation, route }: Props) {
 
   /** The graph view this tab reads, or null when the tab is not a graph read. */
   const view = asGraphView(tab);
+  /** The panel this tab reads, or null when the tab *is* a graph read. */
+  const panel = asPanel(tab);
+
+  /**
+   * Each panel's answer lands in its own pair of slots.
+   *
+   * They are deliberately not merged into one "last panel read": the reads
+   * fail separately, and a shared slot would let the newest failure erase an
+   * older tab's good answer — or, worse, let one tab's refusal be drawn under
+   * another tab's heading.
+   */
+  const applyPanel = useCallback(
+    (read:
+      | { panel: "overview"; result: CapitalOverviewResult }
+      | { panel: "obligations"; result: CapitalObligationsResult }) => {
+      // The server said the grant is dead (revoked elsewhere, expired). Drop
+      // the local token so the enclosing gate flips back to the unlock door.
+      if (read.result.state === "LOCKED") lockOfficeLocally();
+      if (read.panel === "overview") {
+        setOverviewResult(read.result);
+        // Read straight through. The panels have no EMPTY: a member with
+        // nothing on file still gets a real answer — zero priced assets, or
+        // zero obligations recorded and the warning that this is not the same
+        // as zero owed — which is a different sentence from "we found nothing
+        // to show you".
+        setOverviewState(read.result.state);
+        return;
+      }
+      setObligationsResult(read.result);
+      setObligationsState(read.result.state);
+    },
+    []
+  );
 
   const load = useCallback(async (wanted: CapitalTab) => {
     if (inFlight.current) return;
     inFlight.current = true;
     try {
-      const wantedView = asGraphView(wanted);
-      if (wantedView === null) {
-        const next = await getCapitalOverview();
-        if (next.state === "LOCKED") lockOfficeLocally();
-        setOverviewResult(next);
-        setOverviewState(next.state);
+      const wantedPanel = asPanel(wanted);
+      if (wantedPanel !== null) {
+        applyPanel(await readPanel(wantedPanel));
         return;
       }
+      const wantedView = asGraphView(wanted);
+      if (wantedView === null) return;
       const [next, folio] = await Promise.all([
         getCapitalGraph(wantedView),
         wantsPortfolio(wanted) ? getCapitalPortfolio() : Promise.resolve(null)
@@ -183,27 +249,23 @@ function CapitalGraphBody({ navigation, route }: Props) {
     } finally {
       inFlight.current = false;
     }
-  }, []);
+  }, [applyPanel]);
 
   useEffect(() => {
     let cancelled = false;
-    // Only the active tab's state is reset. Blanking both would make a return
-    // to an already-loaded tab flash LOADING over an answer we still hold.
-    if (view === null) setOverviewState("LOADING");
+    // Only the active tab's state is reset. Blanking the others would make a
+    // return to an already-loaded tab flash LOADING over an answer we hold.
+    if (panel === "overview") setOverviewState("LOADING");
+    else if (panel === "obligations") setObligationsState("LOADING");
     else setState("LOADING");
     (async () => {
-      if (view === null) {
-        const next = await getCapitalOverview();
+      if (panel !== null) {
+        const read = await readPanel(panel);
         if (cancelled) return;
-        if (next.state === "LOCKED") lockOfficeLocally();
-        setOverviewResult(next);
-        // Read straight through. The overview has no EMPTY: a member with
-        // nothing on file still gets a real answer — zero priced assets and
-        // the reasons why — which is a different sentence from "we found
-        // nothing to show you".
-        setOverviewState(next.state);
+        applyPanel(read);
         return;
       }
+      if (view === null) return;
       const [next, folio] = await Promise.all([
         getCapitalGraph(view),
         wantsPortfolio(tab) ? getCapitalPortfolio() : Promise.resolve(null)
@@ -217,7 +279,7 @@ function CapitalGraphBody({ navigation, route }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [tab, view]);
+  }, [applyPanel, panel, tab, view]);
 
   const onRefresh = useCallback(async () => {
     if (inFlight.current) return;
@@ -234,21 +296,37 @@ function CapitalGraphBody({ navigation, route }: Props) {
   /**
    * The tab in front owns the screen's verdict.
    *
-   * Overview and the graph views are separate reads that fail separately, so
+   * The panels and the graph views are separate reads that fail separately, so
    * the banner must name the state of the request that actually backs what is
    * on screen. Reading the graph's `state` while Overview is showing would let
-   * a healthy graph vouch for an overview that never answered.
+   * a healthy graph vouch for an overview that never answered — and reading
+   * Overview's while Obligations is showing would do it in the other
+   * direction.
    */
-  const active: CapitalOverviewResult | CapitalGraphResult | null =
-    view === null ? overviewResult : result;
-  const shown: ScreenState = view === null ? overviewState : state;
+  const panelRead: { result: CapitalOverviewResult | CapitalObligationsResult | null; state: ScreenState } | null =
+    panel === "overview"
+      ? { result: overviewResult, state: overviewState }
+      : panel === "obligations"
+        ? { result: obligationsResult, state: obligationsState }
+        : null;
+
+  const active: CapitalOverviewResult | CapitalObligationsResult | CapitalGraphResult | null =
+    panelRead !== null ? panelRead.result : result;
+  const shown: ScreenState = panelRead !== null ? panelRead.state : state;
   const minimumTier = active && active.state === "NOT_ENTITLED" ? active.minimumTier : "";
   const deniedReason = active && active.state === "DENIED" ? active.reason : "";
   const overview =
     overviewResult && overviewResult.state === "READY" ? overviewResult.overview : null;
+  const obligations =
+    obligationsResult && obligationsResult.state === "READY"
+      ? obligationsResult.obligations
+      : null;
 
   const ot = (key: string, options?: Record<string, unknown>) =>
     t(`premium:privateOffice.capital.overview.${key}`, options);
+
+  const bt = (key: string, options?: Record<string, unknown>) =>
+    t(`premium:privateOffice.capital.obligations.${key}`, options);
 
   const nodeTypeLabel = (token: string) =>
     t(`premium:privateOffice.capital.nodeType.${token}`, { defaultValue: token });
@@ -898,6 +976,232 @@ function CapitalGraphBody({ navigation, route }: Props) {
     );
   };
 
+  /**
+   * The Obligations tab: what is recorded as owed, and everything that keeps
+   * that from being the whole of it.
+   *
+   * ## The total is a subset, and says so in the same card
+   *
+   * `known_amount` is the sum of obligations that have an amount *and* share a
+   * single currency. The server sets it to null the moment either condition
+   * fails, and null is not zero: a member with three unquantified debts is not
+   * debt-free. So the headline is either the server's figure or the words for
+   * "not stated" — never a fallback, never a bare number without its currency —
+   * and the quantified/unquantified split sits directly beneath it rather than
+   * in a footnote.
+   *
+   * ## An empty list is a claim about our records, not about the member
+   *
+   * Zero rows renders as "nothing is recorded, which is not the same as
+   * nothing being owed". That is why this tab has no EMPTY state: the sentence
+   * a member needs here is longer than "nothing to show".
+   *
+   * ## Row-level absences stay distinguishable
+   *
+   * "No amount recorded", "an amount with no currency", and a real figure are
+   * three different rows. Collapsing the middle one into either neighbour
+   * either invents a currency or hides a number the member entered.
+   */
+  const obligationsPanels = (data: CapitalObligations) => {
+    const totals = data.totals;
+    const headline = moneyIn(totals.knownAmount, totals.currency);
+
+    // Everything the headline does not speak for. When the headline exists,
+    // its own currency is dropped from this list — what is left is exactly
+    // what was set aside. When it does not, `currency` is "" and nothing is
+    // dropped, which is the correct answer: none of it was summed.
+    const otherCurrencies = Object.entries(totals.byCurrency).filter(
+      ([code]) => code !== totals.currency
+    );
+
+    return (
+      <>
+        <View style={styles.folioPanel}>
+          <View style={styles.folioHead}>
+            <Text style={styles.folioTitle}>{bt("title")}</Text>
+            {/* `complete` is the server's, and it means "no row was left out
+                of this sum for any reason" — not "the list is non-empty". */}
+            <Text
+              style={[
+                styles.freshTier,
+                { color: totals.complete ? colors.accent : colors.warning }
+              ]}
+            >
+              {totals.complete ? bt("complete") : bt("partial")}
+            </Text>
+          </View>
+
+          <View style={styles.folioTotals}>
+            {headline !== null ? (
+              <Text style={styles.folioTotalValue}>{headline}</Text>
+            ) : (
+              <>
+                <Text style={styles.folioPartial}>{bt("withheld")}</Text>
+                <Text style={styles.folioWarn}>{bt("notSummable")}</Text>
+              </>
+            )}
+          </View>
+
+          {/* Drawn on every render, including the complete case. "What you
+              recorded" and "what you owe" are different quantities even when
+              every record is perfect, so this is not a defect notice that
+              disappears once the data is clean. */}
+          <View style={styles.warnPanel}>
+            <View style={styles.warnHead}>
+              <Ionicons name="information-circle-outline" size={16} color={colors.warning} />
+              <Text style={styles.warnTitle}>{bt("disclaimerTitle")}</Text>
+            </View>
+            <Text style={styles.conflictReason}>{bt("disclaimerBody")}</Text>
+          </View>
+
+          {/* The projection is what this whole tab reads. If the sweep did not
+              run, the caveat belongs beside the figure, not at the bottom of
+              the screen next to its counters. */}
+          {!data.sync.projected ? (
+            <Text style={styles.folioWarn}>{bt("notProjected")}</Text>
+          ) : null}
+
+          <View style={styles.statRow}>
+            <View style={styles.statCell}>
+              <Text style={styles.statLabel}>{bt("recordedLabel")}</Text>
+              <Text style={styles.statValue}>{countText(totals.count)}</Text>
+            </View>
+            <View style={styles.statCell}>
+              <Text style={styles.statLabel}>{bt("quantifiedLabel")}</Text>
+              <Text style={styles.statValue}>{countText(totals.quantified)}</Text>
+            </View>
+            <View style={styles.statCell}>
+              <Text style={styles.statLabel}>{bt("unquantifiedLabel")}</Text>
+              {/* Unquantified rows are the reason the headline understates.
+                  They are counted in the warning colour so the number reads as
+                  a gap rather than as a tally. */}
+              <Text style={totals.unquantified > 0 ? styles.folioWarn : styles.statValue}>
+                {countText(totals.unquantified)}
+              </Text>
+            </View>
+          </View>
+
+          {totals.unspecifiedCurrency > 0 ? (
+            <View style={styles.excludedRow}>
+              <Text style={styles.coverageLabel}>{bt("unspecifiedCurrency")}</Text>
+              <Text style={styles.coverageCount}>
+                {countText(totals.unspecifiedCurrency)}
+              </Text>
+            </View>
+          ) : null}
+
+          {/* Nothing recorded is a statement about this app's records. The
+              member may still owe money it has never been told about. */}
+          {totals.count === 0 ? <Text style={styles.folioWarn}>{bt("none")}</Text> : null}
+
+          {/* The server caps the rows it sends. Without this the list reads as
+              the complete set of obligations. */}
+          {totals.truncated ? <Text style={styles.folioWarn}>{bt("truncated")}</Text> : null}
+
+          {otherCurrencies.length ? (
+            <View style={styles.reasonList}>
+              <Text style={styles.statLabel}>{bt("currenciesTitle")}</Text>
+              {otherCurrencies.map(([code, bucket]) => {
+                // The server files amounts with no stated currency under a
+                // sentinel key. Printing it verbatim beside EUR and JPY would
+                // dress a missing field as a currency of its own.
+                const named = code !== CAPITAL_CURRENCY_UNSPECIFIED;
+                const value = named ? moneyIn(bucket.amount, code) : null;
+                return (
+                  <View key={code} style={styles.excludedRow}>
+                    <Text style={styles.coverageLabel}>
+                      {named ? code : bt("unspecifiedCurrency")}
+                    </Text>
+                    <Text style={styles.coverageCount}>
+                      {value !== null ? value : countText(bucket.count)}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          ) : null}
+        </View>
+
+        {data.liabilities.length ? (
+          <View style={styles.folioPanel}>
+            {data.liabilities.map((row) => {
+              const amount = moneyIn(row.amount, row.currency);
+              return (
+                <View key={row.nodeId} style={styles.obligationRow}>
+                  <View style={styles.obligationHead}>
+                    <Text style={styles.folioSymbol} numberOfLines={1}>
+                      {row.title || nodeTypeLabel(row.kind)}
+                    </Text>
+                    {row.amount === null ? (
+                      // Nothing was ever entered. A zero here would be this
+                      // screen inventing a debt-free line item.
+                      <Text style={styles.statMuted}>{bt("amountMissing")}</Text>
+                    ) : amount !== null ? (
+                      <Text style={styles.statValue}>{amount}</Text>
+                    ) : (
+                      // A figure exists but no currency does. Rendering it in
+                      // the screen's default would name a currency the member
+                      // never gave; hiding it would lose a number they did.
+                      <Text style={styles.folioWarn}>{bt("unspecifiedCurrency")}</Text>
+                    )}
+                  </View>
+                  <Text style={styles.folioMeta}>{nodeTypeLabel(row.kind)}</Text>
+                  <View style={styles.coverageRow}>
+                    <Text style={styles.coverageLabel}>{bt("dueLabel")}</Text>
+                    {row.dueAt ? (
+                      // The record store's own text, verbatim. Reformatting a
+                      // string whose shape is not guaranteed risks printing a
+                      // date the member never wrote.
+                      <Text style={styles.coverageCount}>{row.dueAt}</Text>
+                    ) : (
+                      <Text style={styles.statMuted}>{bt("dueMissing")}</Text>
+                    )}
+                  </View>
+                  {row.freshness?.stale ? (
+                    <Text style={styles.folioWarn}>{bt("staleTitle")}</Text>
+                  ) : null}
+                  <View style={styles.coverageRow}>
+                    {row.evidence.factIds.length ? (
+                      <>
+                        <Text style={styles.coverageLabel}>{bt("evidenceLabel")}</Text>
+                        <Text style={styles.coverageCount}>
+                          {countText(row.evidence.factIds.length)}
+                        </Text>
+                      </>
+                    ) : (
+                      <Text style={styles.statMuted}>{bt("evidenceMissing")}</Text>
+                    )}
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        ) : null}
+
+        <View style={styles.folioPanel}>
+          <Text style={styles.folioTitle}>{bt("syncTitle")}</Text>
+          <View style={styles.coverageRow}>
+            <Text style={styles.coverageLabel}>{bt("projectedLabel")}</Text>
+            <Text style={styles.coverageCount}>{countText(data.sync.obligations)}</Text>
+          </View>
+          <View style={styles.coverageRow}>
+            <Text style={styles.coverageLabel}>{bt("retiredLabel")}</Text>
+            <Text style={styles.coverageCount}>{countText(data.sync.retired)}</Text>
+          </View>
+          <View style={styles.coverageRow}>
+            <Text style={styles.coverageLabel}>{bt("skippedLabel")}</Text>
+            {/* Skipped rows are records the sweep could not project. They are
+                absent from everything above, so the count is the only place
+                they are visible at all. */}
+            <Text style={data.sync.skipped > 0 ? styles.folioWarn : styles.coverageCount}>
+              {countText(data.sync.skipped)}
+            </Text>
+          </View>
+        </View>
+      </>
+    );
+  };
+
   const holdingsPanels = () => {
     if (view !== "holdings" || !portfolio) return null;
     if (portfolio.state !== "READY") return portfolioFailure(portfolio);
@@ -1141,10 +1445,14 @@ function CapitalGraphBody({ navigation, route }: Props) {
         </View>
       ) : null}
 
-      {/* `view === null` is the Overview tab. The extra guard is not
-          redundant: `overview` survives a tab switch, so testing it alone
-          would paint the net position over a graph tab. */}
-      {view === null && shown === "READY" && overview ? overviewPanels(overview) : null}
+      {/* Each panel is named explicitly. The extra guard is not redundant: a
+          panel's answer survives a tab switch, so testing the payload alone
+          would paint the net position over Obligations — or the obligation
+          totals over the net position. */}
+      {panel === "overview" && shown === "READY" && overview ? overviewPanels(overview) : null}
+      {panel === "obligations" && shown === "READY" && obligations
+        ? obligationsPanels(obligations)
+        : null}
       {shown === "READY" ? holdingsPanels() : null}
       {shown === "READY" ? coveragePanels() : null}
 
@@ -1568,6 +1876,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     gap: 8
+  },
+  obligationRow: {
+    gap: 3,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.border
+  },
+  obligationHead: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 10
   },
   reviewRow: { gap: 2 },
   reviewSubject: { color: colors.text, fontSize: 13, fontWeight: "800" },

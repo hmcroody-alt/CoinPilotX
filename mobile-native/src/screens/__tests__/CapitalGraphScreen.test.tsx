@@ -40,6 +40,7 @@ jest.mock("../../i18n", () => ({
 const mockGetGraph = jest.fn();
 const mockGetPortfolio = jest.fn();
 const mockGetOverview = jest.fn();
+const mockGetObligations = jest.fn();
 const mockOfficeStatus = jest.fn();
 const mockUnlockOffice = jest.fn();
 
@@ -50,7 +51,8 @@ jest.mock("../../api/capitalGraph", () => ({
   ...jest.requireActual("../../api/capitalGraph"),
   getCapitalGraph: (...args: unknown[]) => mockGetGraph(...args),
   getCapitalPortfolio: (...args: unknown[]) => mockGetPortfolio(...args),
-  getCapitalOverview: (...args: unknown[]) => mockGetOverview(...args)
+  getCapitalOverview: (...args: unknown[]) => mockGetOverview(...args),
+  getCapitalObligations: (...args: unknown[]) => mockGetObligations(...args)
 }));
 
 // The screen sits behind `PrivateOfficeLockGate`; same boundary stubs as the
@@ -75,6 +77,7 @@ jest.mock("../../session/sessionStore", () => ({
 
 import {
   parseCapitalGraph,
+  parseCapitalObligations,
   parseCapitalOverview,
   parseCapitalPortfolio
 } from "../../api/capitalGraph";
@@ -230,6 +233,74 @@ function readyOverview(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/**
+ * The obligations payload exactly as `/capital-graph/obligations` emits it,
+ * run through the real parser.
+ *
+ * The default is the interesting case rather than the happy one: five recorded
+ * obligations of which three carry an amount, in a single currency, with one
+ * more filed under the server's no-currency sentinel. A fixture where
+ * everything is known would let a screen that reads `known_amount` as "the
+ * total owed" pass.
+ */
+function readyObligations(overrides: Record<string, unknown> = {}) {
+  return {
+    state: "READY",
+    obligations: parseCapitalObligations({
+      liabilities: [
+        {
+          node_id: 71,
+          root_id: 12,
+          title: "Mortgage",
+          kind: "LIABILITY",
+          // Deliberately not the overview fixture's 240000: these tests assert
+          // that leaving the tab clears the figure, and a number both tabs
+          // happen to print could never prove it.
+          amount: 137500,
+          currency: "USD",
+          quantified: true,
+          due_at: "2031-04-01",
+          projected_at: "2026-09-06T11:00:00Z",
+          freshness: { stale: false, age_days: 1, horizon_days: 30 },
+          evidence: { fact_ids: [901, 902], provenance: null }
+        },
+        {
+          node_id: 72,
+          root_id: 13,
+          title: "Family loan",
+          kind: "LIABILITY",
+          // No amount was ever entered. Not zero.
+          amount: null,
+          currency: "",
+          quantified: false,
+          due_at: null,
+          projected_at: "2026-09-06T11:00:00Z",
+          freshness: { stale: true, age_days: 400, horizon_days: 30 },
+          evidence: { fact_ids: [], provenance: null }
+        }
+      ],
+      totals: {
+        known_amount: 137500,
+        currency: "USD",
+        by_currency: {
+          USD: { amount: 137500, count: 1 },
+          UNSPECIFIED: { amount: 5000, count: 1 }
+        },
+        currencies: ["USD"],
+        count: 5,
+        quantified: 3,
+        unquantified: 2,
+        unspecified_currency: 1,
+        complete: false,
+        truncated: false,
+        limit: 200
+      },
+      sync: { projected: true, obligations: 5, retired: 1, skipped: 0 },
+      ...overrides
+    })
+  };
+}
+
 async function unlockDoor(utils: ReturnType<typeof render>) {
   const { getByLabelText, getByText, queryByText } = utils;
   if (isOfficeUnlocked()) return;
@@ -268,6 +339,7 @@ beforeEach(() => {
   mockGetGraph.mockResolvedValue(emptyGraph());
   mockGetPortfolio.mockResolvedValue(readyPortfolio([btcAsset()]));
   mockGetOverview.mockResolvedValue(readyOverview());
+  mockGetObligations.mockResolvedValue(readyObligations());
   // The status probe answers from the grant, as the real endpoint does: the
   // server that just accepted the passcode reports `unlocked: true` on the
   // next status read. A static `false` here would model a server-side
@@ -1127,6 +1199,329 @@ describe("CapitalGraphScreen overview tab", () => {
 
     // The gate takes the screen back to the unlock door rather than leaving a
     // dead grant in place.
+    await waitFor(() => getByText("premium:privateOffice.lock.unlock"));
+    expect(isOfficeUnlocked()).toBe(false);
+  });
+});
+
+/**
+ * Obligations: the tab where a null is most likely to be read as a zero.
+ *
+ * `known_amount` is null whenever the recorded debts do not share one
+ * currency, and null there means "we will not add these up" — not "nothing is
+ * owed". The same distinction repeats per row: no amount recorded, an amount
+ * recorded with no currency, and a real figure are three different states, and
+ * every one of them has a way to be flattened into a comforting zero. These
+ * tests exist to make each flattening fail.
+ */
+describe("CapitalGraphScreen obligations tab", () => {
+  const OB = "premium:privateOffice.capital.obligations";
+  const OV = "premium:privateOffice.capital.overview";
+
+  it("asks the obligations endpoint, and never the graph, for a view it has no name for", async () => {
+    const { getByText } = await renderScreen("obligations");
+    await waitFor(() => getByText(`${OB}.title`));
+
+    expect(mockGetObligations).toHaveBeenCalledTimes(1);
+    // `view=obligations` is not in the graph's vocabulary — the route would
+    // reject it. The tab must never be narrowed into one.
+    expect(mockGetGraph).not.toHaveBeenCalled();
+    expect(mockGetOverview).not.toHaveBeenCalled();
+  });
+
+  it("draws no total when no single currency answers for one — least of all a sum across them", async () => {
+    mockGetObligations.mockResolvedValue(
+      readyObligations({
+        totals: {
+          known_amount: null,
+          currency: "",
+          by_currency: {
+            USD: { amount: 240000, count: 1 },
+            EUR: { amount: 88000, count: 2 }
+          },
+          currencies: ["EUR", "USD"],
+          count: 5,
+          quantified: 3,
+          unquantified: 2,
+          unspecified_currency: 0,
+          complete: false,
+          truncated: false,
+          limit: 200
+        }
+      })
+    );
+    const { getByText, queryByText } = await renderScreen("obligations");
+    await waitFor(() => getByText(`${OB}.title`));
+
+    getByText(`${OB}.withheld`);
+    getByText(`${OB}.notSummable`);
+    // The two figures the server did publish, each under its own code.
+    getByText(`${OB}.currenciesTitle`);
+    getByText("USD");
+    getByText("EUR");
+    // What the server refused to compute, and what a helpful client would
+    // have computed for it: 240000 + 88000, in a currency nobody named.
+    expect(queryByText(money(328000))).toBeNull();
+    expect(queryByText(money(0))).toBeNull();
+  });
+
+  it("keeps the quantified split in the same card as the figure it qualifies", async () => {
+    const { getAllByText, getByText } = await renderScreen("obligations");
+    await waitFor(() => getByText(`${OB}.title`));
+
+    // Twice: once as the headline, once on the row that is the whole of it.
+    expect(getAllByText(money(137500))).toHaveLength(2);
+    // Three of five obligations carry an amount. The headline speaks for
+    // three; saying so is what stops it speaking for five.
+    getByText(`${OB}.recordedLabel`);
+    getByText(`${OB}.quantifiedLabel`);
+    getByText(`${OB}.unquantifiedLabel`);
+    getByText(`${OB}.partial`);
+  });
+
+  it("still qualifies a total that has nothing missing from it", async () => {
+    // The tempting case. One obligation, quantified, one currency, nothing
+    // truncated, nothing skipped — and it is still the sum of what has been
+    // written down, not the sum of what is owed. The disclaimer is not a
+    // defect notice that disappears when the data is clean.
+    mockGetObligations.mockResolvedValue(
+      readyObligations({
+        liabilities: [
+          {
+            node_id: 71,
+            root_id: 12,
+            title: "Mortgage",
+            kind: "LIABILITY",
+            amount: 240000,
+            currency: "USD",
+            quantified: true,
+            due_at: "2031-04-01",
+            projected_at: "2026-09-06T11:00:00Z",
+            freshness: { stale: false, age_days: 1, horizon_days: 30 },
+            evidence: { fact_ids: [901], provenance: null }
+          }
+        ],
+        totals: {
+          known_amount: 240000,
+          currency: "USD",
+          by_currency: { USD: { amount: 240000, count: 1 } },
+          currencies: ["USD"],
+          count: 1,
+          quantified: 1,
+          unquantified: 0,
+          unspecified_currency: 0,
+          complete: true,
+          truncated: false,
+          limit: 200
+        },
+        sync: { projected: true, obligations: 1, retired: 0, skipped: 0 }
+      })
+    );
+    const { getByText, queryByText } = await renderScreen("obligations");
+    await waitFor(() => getByText(`${OB}.title`));
+
+    getByText(`${OB}.complete`);
+    getByText(`${OB}.disclaimerTitle`);
+    getByText(`${OB}.disclaimerBody`);
+    expect(queryByText(`${OB}.partial`)).toBeNull();
+  });
+
+  it("says that no obligations recorded is not the same as none owed", async () => {
+    mockGetObligations.mockResolvedValue(
+      readyObligations({
+        liabilities: [],
+        totals: {
+          known_amount: null,
+          currency: "",
+          by_currency: {},
+          currencies: [],
+          count: 0,
+          quantified: 0,
+          unquantified: 0,
+          unspecified_currency: 0,
+          complete: true,
+          truncated: false,
+          limit: 200
+        },
+        sync: { projected: true, obligations: 0, retired: 0, skipped: 0 }
+      })
+    );
+    const { getByText, queryByText } = await renderScreen("obligations");
+    await waitFor(() => getByText(`${OB}.title`));
+
+    getByText(`${OB}.none`);
+    // Not the generic empty state, which says "nothing recorded" and stops.
+    expect(queryByText(EMPTY_TITLE)).toBeNull();
+    expect(queryByText(money(0))).toBeNull();
+  });
+
+  it("keeps a row with no amount an absence rather than a zero", async () => {
+    const { getByText, queryByText } = await renderScreen("obligations");
+    await waitFor(() => getByText(`${OB}.title`));
+
+    getByText("Family loan");
+    getByText(`${OB}.amountMissing`);
+    getByText(`${OB}.dueMissing`);
+    getByText(`${OB}.staleTitle`);
+    getByText(`${OB}.evidenceMissing`);
+    expect(queryByText(money(0))).toBeNull();
+  });
+
+  it("tells an amount with no currency apart from no amount at all", async () => {
+    mockGetObligations.mockResolvedValue(
+      readyObligations({
+        liabilities: [
+          {
+            node_id: 73,
+            root_id: 14,
+            title: "Tax bill",
+            kind: "LIABILITY",
+            // A figure the member entered, against a currency they did not.
+            amount: 5000,
+            currency: "",
+            quantified: true,
+            due_at: "2027-01-31",
+            projected_at: "2026-09-06T11:00:00Z",
+            freshness: null,
+            evidence: { fact_ids: [5], provenance: null }
+          }
+        ],
+        totals: {
+          known_amount: null,
+          currency: "",
+          by_currency: { UNSPECIFIED: { amount: 5000, count: 1 } },
+          currencies: [],
+          count: 1,
+          quantified: 1,
+          unquantified: 0,
+          unspecified_currency: 1,
+          complete: false,
+          truncated: false,
+          limit: 200
+        }
+      })
+    );
+    const { getAllByText, getByText, queryByText } = await renderScreen("obligations");
+    await waitFor(() => getByText(`${OB}.title`));
+
+    getByText("Tax bill");
+    // The row is neither blank nor a dollar figure: "an amount, no currency"
+    // is its own sentence, and it appears both on the row and in the totals.
+    expect(getAllByText(`${OB}.unspecifiedCurrency`).length).toBeGreaterThan(1);
+    expect(queryByText(`${OB}.amountMissing`)).toBeNull();
+    expect(queryByText(money(5000))).toBeNull();
+  });
+
+  it("never prints the server's no-currency bucket as though it were a currency", async () => {
+    const { getAllByText, getByText, queryByText } = await renderScreen("obligations");
+    await waitFor(() => getByText(`${OB}.title`));
+
+    // `by_currency` files unpriced-currency amounts under a sentinel key. It
+    // is a marker, not an ISO code, and a member reading "UNSPECIFIED" beside
+    // USD would reasonably think it was one.
+    expect(queryByText("UNSPECIFIED")).toBeNull();
+    // Named twice — as the totals' excluded count and as the bucket's label.
+    expect(getAllByText(`${OB}.unspecifiedCurrency`)).toHaveLength(2);
+  });
+
+  it("admits the list is capped rather than implying it is every obligation", async () => {
+    mockGetObligations.mockResolvedValue(
+      readyObligations({
+        totals: {
+          known_amount: 240000,
+          currency: "USD",
+          by_currency: { USD: { amount: 240000, count: 1 } },
+          currencies: ["USD"],
+          count: 200,
+          quantified: 200,
+          unquantified: 0,
+          unspecified_currency: 0,
+          complete: false,
+          truncated: true,
+          limit: 200
+        }
+      })
+    );
+    const { getByText } = await renderScreen("obligations");
+    await waitFor(() => getByText(`${OB}.title`));
+
+    getByText(`${OB}.truncated`);
+    // Every row here is quantified and in one currency, and the total is
+    // still not complete — because rows were left out. A screen that inferred
+    // completeness from the unquantified count would call this whole.
+    getByText(`${OB}.partial`);
+  });
+
+  it("warns beside the figure when the projection never ran", async () => {
+    mockGetObligations.mockResolvedValue(
+      readyObligations({ sync: { projected: false, obligations: 0, retired: 0, skipped: 3 } })
+    );
+    const { getByText } = await renderScreen("obligations");
+    await waitFor(() => getByText(`${OB}.title`));
+
+    // Everything on this tab is read from the projection. If the sweep did
+    // not run, the caveat belongs with the number, not in a footer.
+    getByText(`${OB}.notProjected`);
+  });
+
+  it("counts what the sweep projected, retired and skipped", async () => {
+    const { getByText } = await renderScreen("obligations");
+    await waitFor(() => getByText(`${OB}.title`));
+
+    getByText(`${OB}.syncTitle`);
+    getByText(`${OB}.projectedLabel`);
+    getByText(`${OB}.retiredLabel`);
+    // Skipped records are absent from every figure above; this counter is the
+    // only place they are visible at all.
+    getByText(`${OB}.skippedLabel`);
+  });
+
+  it("keeps an obligations refusal a refusal, with no totals and no empty claim", async () => {
+    mockGetObligations.mockResolvedValue({ state: "DENIED", reason: "not the owner of record" });
+    const { getByText, queryByText } = await renderScreen("obligations");
+    await waitFor(() => getByText("premium:privateOffice.capital.denied.title"));
+
+    getByText("not the owner of record");
+    expect(queryByText(`${OB}.title`)).toBeNull();
+    expect(queryByText(`${OB}.none`)).toBeNull();
+    expect(queryByText(EMPTY_TITLE)).toBeNull();
+    expect(queryByText(RETRY)).toBeNull();
+  });
+
+  it("lets the tab in front own the verdict — a healthy overview does not vouch for failed obligations", async () => {
+    mockGetObligations.mockResolvedValue({ state: "UNAVAILABLE" });
+    const { getByText, queryByText } = await renderScreen("obligations");
+    await waitFor(() => getByText("premium:privateOffice.capital.unavailable.title"));
+    expect(queryByText(`${OB}.title`)).toBeNull();
+
+    // The overview answers fine. Its success must not clear the obligations
+    // outage banner, nor must the outage survive onto the tab that answered.
+    fireEvent.press(getByText("premium:privateOffice.capital.views.overview"));
+    await waitFor(() => getByText(`${OV}.title`));
+    expect(queryByText("premium:privateOffice.capital.unavailable.title")).toBeNull();
+
+    fireEvent.press(getByText("premium:privateOffice.capital.views.obligations"));
+    await waitFor(() => getByText("premium:privateOffice.capital.unavailable.title"));
+    expect(queryByText(`${OV}.title`)).toBeNull();
+  });
+
+  it("stops drawing the obligation totals once the member leaves the tab", async () => {
+    const { getByText, queryAllByText, queryByText } = await renderScreen("obligations");
+    await waitFor(() => getByText(`${OB}.title`));
+
+    // The parsed answer survives the switch by design, so that returning is
+    // instant. Painting it under the Overview heading would not be.
+    fireEvent.press(getByText("premium:privateOffice.capital.views.overview"));
+    await waitFor(() => getByText(`${OV}.title`));
+    expect(queryByText(`${OB}.title`)).toBeNull();
+    expect(queryAllByText(money(137500))).toHaveLength(0);
+    expect(queryByText("Family loan")).toBeNull();
+  });
+
+  it("relocks the office when the obligations read says the grant is dead", async () => {
+    mockGetObligations.mockResolvedValue({ state: "LOCKED", setupRequired: false });
+    const { getByText } = await renderScreen("obligations");
+
     await waitFor(() => getByText("premium:privateOffice.lock.unlock"));
     expect(isOfficeUnlocked()).toBe(false);
   });

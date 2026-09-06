@@ -4592,11 +4592,12 @@
         "subtitle": "보유한 것, 이를 보장하는 것, 그리고 그 연결 — 각 요소의 확실성과 함께.",
         "loading": "그래프를 불러오는 중…",
         "views": {
-          "holdings": "보유 자산",
           "coverage": "보장",
-          "structure": "구조",
           "documents": "문서",
-          "overview": "개요"
+          "holdings": "보유 자산",
+          "obligations": "부채",
+          "overview": "개요",
+          "structure": "구조"
         },
         "countExact": "{{count}}",
         "countSoFar": "지금까지 {{count}}",
@@ -4780,6 +4781,33 @@
           "title": "순포지션",
           "unscoreable": "평가할 항목 없음",
           "withheld": "명시되지 않음"
+        },
+        "obligations": {
+          "amountMissing": "금액 기록 없음",
+          "complete": "모든 금액이 기록됨",
+          "currenciesTitle": "통화별",
+          "disclaimerBody": "기록된 채무의 합계이며, 갚아야 할 전부가 아닙니다.",
+          "disclaimerTitle": "이 합계의 의미",
+          "dueLabel": "만기",
+          "dueMissing": "만기일 기록 없음",
+          "evidenceLabel": "근거 기록",
+          "evidenceMissing": "근거 기록 없음",
+          "none": "기록된 부채가 없습니다. 갚을 것이 없다는 뜻은 아닙니다.",
+          "notProjected": "이 목록은 기록 저장소에서 다시 만들어지지 않았습니다.",
+          "notSummable": "통화가 하나로 정해지지 않아 합계를 표시하지 않습니다.",
+          "partial": "일부 금액이 없음",
+          "projectedLabel": "기록에서 다시 구성됨",
+          "quantifiedLabel": "금액이 기록된 항목",
+          "recordedLabel": "기록된 채무",
+          "retiredLabel": "종료됨",
+          "skippedLabel": "제외됨",
+          "staleTitle": "최근에 갱신되지 않음",
+          "syncTitle": "투영",
+          "title": "금액이 확인된 합계",
+          "truncated": "여기에 표시된 것보다 많은 부채가 있습니다.",
+          "unquantifiedLabel": "금액이 기록되지 않은 항목",
+          "unspecifiedCurrency": "통화 없이 기록된 금액",
+          "withheld": "기재 없음"
         }
       },
       "attention": {
