@@ -500,3 +500,315 @@ Unrelated to this mission but still owed, and recorded here so it is not lost: t
 audio work is committed at `997b8869` on `codex/emergency-live-audio-recovery` with six
 unpushed commits. The push is proxy-blocked from this sandbox and must be run from the
 Mac. Physical device validation of that fix has not been performed.
+
+---
+---
+
+# ADDENDUM A — INDEPENDENT RE-VERIFICATION
+
+Added 2026-09-06 against `main` @ `6ebc1cf2`. Method: source inspection only, plus
+`git show` against the map's own commit to distinguish *stale* entries from *wrong* ones.
+
+HEAD moved to `1703281e` during this addendum — the shared checkout again. Re-checked:
+`git diff 6ebc1cf2..1703281e` touches **none** of the source files cited below
+(`documents.py`, `facts.py`, `retrieval.py`, `evidence.py`, `schema.py`,
+`undx_feature_reads_spec.py`, `undx_policy.py`, `undx_knowledge_map.py`,
+`private_office_documents_routes.py`), so every line number here holds at `1703281e`.
+`health.py` did change (`3d42a72c`, Operations reporting); gap A-e was re-verified against
+it and still holds.
+
+§14 above asked for exactly this: *"Anything in this map that touches those files should be
+re-read before it is edited."* This addendum is that re-read. **The map above is sound in
+its architecture, its posture (EXTEND, not CREATE), and its lock/writer/provenance
+analysis.** What follows corrects five specific claims and adds one finding that changes
+the mission's sequencing.
+
+Nothing above has been deleted. Corrections are recorded here so the original reasoning
+and the correction sit side by side.
+
+---
+
+## A1 — NEW FINDING: document facts are unreachable through graph retrieval
+
+**Not recorded anywhere in this repository before now. This is a defect in shipped
+behaviour, not a missing feature.**
+
+`documents.review_claim()` writes accepted claims with a bare string literal:
+
+```python
+# services/private_office/documents.py:475
+subject_type="OWNER",
+subject_id=str(owner),
+```
+
+Every other writer in the package uses the constant `facts.SUBJECT_NODE` (`= "NODE"`,
+`facts.py:80`) — `relationships.py:112,121,161,187,318` and
+`obligation_projection.py:196,209,219,508,616`. Documents is the **sole** exception, and
+`"OWNER"` is not a declared constant anywhere in the package.
+
+The write succeeds silently because `facts.record_fact()` does not validate `subject_type`
+against a closed set — it uppercases and truncates to 32 chars (`facts.py:844-846`) and
+accepts anything non-empty. There is no `SUBJECT_TYPES` tuple in `model.py`.
+
+**The consequence.** `retrieval.retrieve()` — the single gated read path that Capital
+Graph, the obligation projector and every reasoning intent go through — filters facts with
+a hard `subject_type=SUBJECT_TYPE_NODE` (`retrieval.py:457` and `:498`, where
+`SUBJECT_TYPE_NODE = "NODE"` at `:84`).
+
+> **No fact produced by accepting a document claim has ever been reachable through
+> `retrieval.retrieve()`.**
+
+Compounding it: `review_claim()` *does* create a `NODE_DOCUMENT` graph node for the
+document (`documents.py:491-497`), but the fact it just wrote does not point at that node.
+The node has no facts; the facts have no node.
+
+**Scope of the damage.** Partial, and worth stating precisely rather than alarmingly.
+`facts.list_facts()` treats `subject_type` as an *optional* filter (`facts.py:1748`,
+`1781-1783`), and the UNDX `private_facts_list` executor passes none
+(`undx_agent_tools.py:2654-2660`). So document facts **are** visible in the flat fact list.
+They are unreachable *through the graph*, not unreachable entirely.
+
+**Why this changes sequencing.** §10 above concludes that the brief's "Capital Graph only
+via confirmed facts" is *"structurally already true — the module cannot be written to
+directly."* That is correct about writes and incomplete about reads: document facts never
+arrive there at all. Any "ask a question about your documents" surface built on
+`retrieval.retrieve()` will return nothing from documents and will do so silently — the
+exact error/empty conflation this codebase is disciplined about everywhere else.
+
+**This should be resolved before UNDX document capability work begins.** It is also a
+decision, not a task: attaching document facts to the `NODE_DOCUMENT` node changes what
+`retrieve()` returns for existing members, and the two candidate fixes (re-subject the
+facts vs. teach retrieval a second subject axis) have different blast radii.
+
+---
+
+## A2 — CORRECTION to gap #8: documents **are** registered with UNDX
+
+Gap #8 reads *"Zero `private.documents.*` capabilities registered … High — the whole UNDX
+arc."* **This is incorrect, and it was incorrect when written.**
+
+`private.documents.list` is registered. It is declared in
+`services/private_office/undx_feature_reads_spec.py:47-58` — a module §11 above did not
+examine, having looked only at `services/undx_capability_registry.py`. The five Private
+Office feature reads (documents, people, briefings, shield, concierge) are declared there
+and **derive** into the other surfaces:
+
+| Surface | Where |
+|---|---|
+| Policy table | `undx_policy.py:85` → `pulsesoc.private_documents.list`, `risk: read_only`, `confirmation: False` |
+| Knowledge map — output schema | `undx_knowledge_map.py:2842-2849` |
+| Knowledge map — screen | `undx_knowledge_map.py:2886` → `PrivateDocuments` |
+| Knowledge map — service | `undx_knowledge_map.py:2895` → `services.private_office.documents` |
+| Executor name | `undx_feature_reads_spec.py:131` → `private_documents_list` |
+
+The spec's docstring states the design intent (lines 5-9): *"three registration surfaces
+that agree by construction cannot drift apart by review."*
+
+**Why this correction matters more than its size suggests.** A reader acting on gap #8 as
+written would register `private.documents.list` a second time, in the wrong module,
+breaking the single-declaration invariant that the spec exists to hold — which is the
+"do not build a second foundation" failure in miniature.
+
+**The real gap is narrower and should replace #8:** the one registered capability is a
+read of *document metadata* — `id, title, original_name, extension, mime_type, size_bytes,
+extraction_state, extraction_note, domain, sensitivity, created_at, updated_at`. It
+returns no claims, no extracted values and no evidence. There is no capability that can
+answer *"what obligations do I have?"*, *"when does this expire?"* or *"where did this fact
+come from?"*. **New capabilities must be added to `undx_feature_reads_spec.py`'s
+`CAPABILITIES` tuple, not to a new registry.**
+
+Note also gap #3 (*"No registry ↔ knowledge-map parity test"*) is partly satisfied for
+these five: `tests/private_office/test_private_records_undx_spec.py:108-164` guards spec
+drift and a `WIRING_COMPLETE` flag, asserting `stage_deferral_is_honest`.
+
+---
+
+## A3 — CORRECTION to gap #13: object-storage deletion exists
+
+Gap #13 reads *"R2/S3 objects are never deleted on document delete … `documents.py:661-664`
+… a real retention defect."* **This is incorrect, and `git show 62d8ad5f` confirms it was
+incorrect at this map's own commit.**
+
+The cited lines `661-664` are the *local* unlink. The object-storage delete is the block
+immediately below, at `documents.py:667-676`:
+
+```python
+if document.get("storage_provider") in {"r2", "s3"}:
+    try:
+        client = media_storage.object_client()
+        if client is not None:
+            import os as _os
+            client.delete_object(
+                Bucket=_os.getenv("R2_BUCKET") or _os.getenv("S3_BUCKET"),
+                Key=storage_key)
+    except Exception:
+        pass
+```
+
+There is no retention defect. Both copies are removed, best-effort, and the row survives
+soft-deleted so provenance stays resolvable.
+
+The residual observation worth keeping: both deletes are `except Exception: pass`, so a
+failed object-storage delete leaves bytes behind **silently**. That is a real but much
+smaller gap than "never deleted" — it is an observability gap, not a retention gap.
+
+---
+
+## A4 — CORRECTION to gap #4: `SOURCE_UNAVAILABLE` now exists (stale, not wrong)
+
+Gap #4 reads *"No `SOURCE_UNAVAILABLE`; deleted document leaves facts looking intact."*
+This was accurate when written and has since been closed by `89251ec3`
+(*"evidence availability as a third, independent axis"*, 2026-09-06) — the day **after**
+this map was committed in `62d8ad5f`.
+
+`services/private_office/evidence.py` now defines a full availability vocabulary:
+
+```
+AVAILABILITY_AVAILABLE          :102
+AVAILABILITY_ARCHIVED           :105
+AVAILABILITY_SUPERSEDED         :109
+AVAILABILITY_EXPIRED            :112
+AVAILABILITY_SOURCE_UNAVAILABLE :116
+AVAILABILITY_NOT_FOUND          :119
+AVAILABILITY_UNKNOWN            :124
+```
+
+with `availability_for()` (`:248`), `is_resolvable()` (`:273`), `may_verify()` (`:278`),
+`historical_attribution()` (`:289`) and `resolve_refs()` (`:357`).
+
+The delete semantics in §5 above now interlock with it correctly: `get_document()` filters
+to `ACTIVE` and returns `None`, but `resolve_refs()` deliberately does **not** filter on
+lifecycle, so a soft-deleted document still resolves and reports a non-`AVAILABLE`
+availability. A fact from a deleted document keeps its citation, and that citation
+truthfully says the source is gone.
+
+Fail-closed twice over (`evidence.py:248-270`): not found → `NOT_FOUND`; found but with an
+unrecognised lifecycle → `UNKNOWN`, never `AVAILABLE`. A ref naming another member's row
+resolves identically to a ref naming nothing — no label, lifecycle or availability leaks.
+
+**Gap #4 should be struck.**
+
+---
+
+## A5 — CORRECTION to gap #7: page/section citation needs no schema work
+
+Gap #7 reads *"No page/section anchor model; locators are line/cell only … High —
+citations are the mission's honesty mechanism."* **Half right.**
+
+Correct at the extraction layer: claim locators are `line=N`, `row=N`, `key=X` only
+(`documents.py:311-348`), because the extractor only reads text formats.
+
+Incorrect at the evidence layer: `private_fact_evidence` already carries `locator` **inside
+its UNIQUE key** (`schema.py:459`):
+
+```sql
+UNIQUE(owner_user_id, fact_id, evidence_type, evidence_ref, locator)
+```
+
+The schema comment states the reasoning explicitly — *"page 4 of the schedule" and "page 11
+of the schedule" are two distinct citations of one document*, and collapsing them would
+make the second attachment look like a duplicate of the first and be silently dropped.
+
+**So page- and section-level citation is already supported by the store. No migration and
+no "anchor model" is required.** Given there is no migration framework in this repo, that
+is a meaningful reduction in scope. What remains is producing page anchors during
+extraction — which is downstream of the OCR decision (gap #1), not independent of it.
+
+---
+
+## A6 — CORRECTION to premise #4: RTC is **Agora**, not LiveKit ⚠ safety-relevant
+
+§0 premise-correction #4 states: *"The repository uses LiveKit for calls and Live today.
+This stage reads that constraint as scoped to this mission … and not as a description of
+the repo."*
+
+**This is wrong, and it inverts a safety constraint.** Verified on `6ebc1cf2`:
+
+```
+mobile-native/package.json:71   "react-native-agora": "4.6.2"
+requirements.txt:19             agora-token-builder==1.0.0
+mobile-native/patches/          react-native+0.81.5.patch   (only patch present)
+```
+
+There is no `@livekit` package, no LiveKit Python dependency, and no LiveKit patch. The
+brief's *"PULSESOC RTC = AGORA ONLY. Do not introduce LiveKit"* is an accurate description
+of the repository, not a mission-scoped constraint layered over a LiveKit codebase.
+
+The danger in leaving this uncorrected is specific: a reader told LiveKit is already
+present may add a LiveKit dependency believing it introduces nothing new. It would be a
+new RTC stack alongside Agora.
+
+(`CLAUDE.md` makes the same error, describing LiveKit for calls/live. It is stale there
+too. Untracked `tests/test_pulsesoc_call_livekit_grants.py` in the working tree is foreign
+work referencing a package that is not installed — flagged, not touched, not this
+mission's.)
+
+---
+
+## A7 — GAPS NOT IN THE LIST ABOVE
+
+| # | Gap | Where | Severity |
+|---|---|---|---|
+| A-a | **sha256 dedupe is a check, not a constraint.** No `UNIQUE(owner_user_id, sha256)`; dedupe is a read-then-write probe (`documents.py:229-239`). Two concurrent identical uploads can both insert, defeating the module's own stated invariant that one document means one reviewable row | `documents.py:96-116` | Medium |
+| A-b | **Reprocessing is not idempotent.** No UNIQUE on `(document_id, fact_type, locator)` in the claims table, so re-running `process_document()` duplicates every claim | `documents.py:118-133` | Medium — becomes live the moment OCR ships and documents need re-extraction |
+| A-c | **`claims_created` counts wrong.** `COUNT(*) … WHERE owner_user_id=? AND document_id=?` (`documents.py:410-415`) returns *all* claims for the document, not the ones this run inserted. A second run reports the cumulative total as though new | `documents.py:410-415` | Low today, load-bearing with A-b |
+| A-d | **Documents are not registered in Backend OS.** No `private_office.document.*` entry in `services/backend_management_registry.py` — no admin surface, no declared risk level, no named `audit_log_table`, no owner | `backend_management_registry.py` | Medium |
+| A-e | **`private_office_health` has no documents section.** Schema, substrate, retrieval, meetings, operations, telemetry and entitlement are covered; the vault is not. No extraction-state distribution, no claim backlog | `services/private_office/health.py` | Low |
+| A-f | **No `document → conversation` linkage is ever created.** `conversations.link(link_type="DOCUMENT", target_id=doc_id)` exists and is idempotent (`conversations.py:572-629`), but nothing in the document path calls it. No document↔meeting attachment table exists at all | `conversations.py`, `meetings.py` | Low |
+
+---
+
+## A8 — REVISED GAP ORDERING
+
+Merging §13 with this addendum, and ordering by what blocks what:
+
+| Rank | Gap | Note |
+|---|---|---|
+| 1 | **A1 — document facts unreachable via `retrieve()`** | New. A shipped defect. Blocks every retrieval-backed answer; must precede capability work |
+| 2 | #1 — no PDF/OCR capability | Unchanged. A decision, not a task |
+| 3 | #2 — no prompt-injection defence for document text | Unchanged. Theoretical until a capability returns content; load-bearing the instant one does |
+| 4 | #8 **as revised** — no document *reasoning* capability | Registration exists; **extend `undx_feature_reads_spec.py`**, do not create a registry |
+| 5 | #5 — synchronous extraction only; no `PROCESSING` state | Unchanged. OCR cannot run in-request |
+| 6 | #6 — 404 / unmapped statuses collapse into `FeatureEmptyPanel` | Unchanged. The error-never-empty rule |
+| 7 | A-b / A-c — reprocessing not idempotent, count wrong | Prerequisites for re-extraction, therefore for #1 |
+| 8 | #9 — no Operation proposal state | Unchanged |
+| 9 | #10 — no entity resolution | Unchanged; must default to *proposing* a match |
+| 10 | A-a, A-d, #11, #12, A-e, A-f | Medium/low |
+| — | #3 | Partly satisfied — see A2 |
+| — | #4 | **Struck** — closed by `89251ec3` |
+| — | #7 | **Reduced** — evidence layer already supports page locators |
+| — | #13 | **Struck** — object deletion exists; residual is silent-failure observability |
+
+---
+
+## A9 — WHAT THIS ADDENDUM DID NOT ESTABLISH
+
+- Still nothing was run. No test executed, no route called, no device touched. §14's caveat
+  stands unchanged.
+- **A1's blast radius was not measured.** Whether any member has accepted document claims
+  in production — and therefore how many facts are currently stranded — was not queried.
+  Production Postgres is reachable only via `DATABASE_PUBLIC_URL` under
+  `railway run --service Postgres`; that was not done.
+- Whether the Postgres schema matches the SQLite DDL in `documents.py` remains unverified,
+  as §14 noted. `private_documents` is **not** in `bot.init_db()`'s `AUTO_PK_TABLES`; the
+  writer relies on `cur.lastrowid` with a `SELECT … ORDER BY id DESC LIMIT 1` fallback
+  (`documents.py:267-275`), which is portable but was not exercised against Postgres here.
+- Whether `private_office.document.extraction` is enabled in production is still unknown.
+
+## A10 — STAGE 1 STATUS
+
+Stage 1 is **complete**. The map above plus this addendum together satisfy the brief's
+requirement to record the canonical document table, writer, storage identity, ACL,
+delete/archive semantics, extraction engine, OCR path, fact proposal path, evidence model,
+provenance, UNDX capabilities, UI and gaps.
+
+The verdict is unchanged and reinforced: **the foundation exists and its governance is
+correct — single writer, two locks, structural owner scope, propose-then-review, provenance
+carrying locators, three-axis evidence, honest capability states, read-only UNDX.** What is
+missing is *understanding*, not *governance*.
+
+The one revision to the plan is A1: before Document Intelligence can answer questions, the
+facts it already produces have to be reachable by the thing that would answer them.
+
+**RTC hard lock held: zero Agora / audio / video / livestream files were read or modified
+in producing this addendum.**
