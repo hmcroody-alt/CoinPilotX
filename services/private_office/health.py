@@ -36,14 +36,19 @@ incident, which is the one time anyone wants to run it.
 
 Cost
 ----
-Four ``SELECT COUNT(*)`` over the private tables, plus whatever
+One ``SELECT COUNT(*)`` per private table — the substrate tables, the six
+meetings tables and the six operations tables — plus whatever
 ``status.subsystem_status`` costs when included. The counts are unfiltered, so
 on a large table PostgreSQL will do a sequential scan; that is why
 :func:`private_office_health` takes ``include_counts`` and why the default is
 to include them but the caller can turn them off for a liveness probe that runs
-every few seconds. The retrieval section costs nothing at all — it reports the
-configured bounds and the intent catalog, which are constants in code, because
-"what would retrieval do" is answerable without asking the database anything.
+every few seconds. The retrieval section and the operations *policy* block cost
+nothing at all — they report the configured bounds, the intent catalog, the
+deadline semantics and the attention ranking, all of which are constants in
+code, because "what would this deployment do" is answerable without asking the
+database anything. Those two survive ``include_counts=False`` and a dead
+database alike, which is deliberate: during an incident they are the half of
+the payload most likely to identify the fault.
 """
 
 from __future__ import annotations
@@ -59,6 +64,7 @@ from services.private_office import retrieval as _retrieval
 from services.private_office import schema as _schema
 from services.private_office import status as _status
 from services.private_office import telemetry as _telemetry
+from services.private_office import tiers as _tiers
 
 _log = logging.getLogger("private_office.health")
 
@@ -250,6 +256,147 @@ def _meetings_section(cur, *, include_counts: bool) -> dict:
     return section
 
 
+def _operations_policy() -> dict:
+    """What the lifecycle would do, answered from code rather than the database.
+
+    Separated from the volume probe on purpose and computed even when the
+    database is unreachable, because this is the half an operator needs during
+    an incident. "Is this deployment's due-soon window what I think it is" and
+    "does this build rank HIGH_RISK above DUE_SOON" are answerable without
+    asking the database anything, and the answers stop a config question from
+    being mistaken for a data problem. Same posture, and the same reasoning, as
+    :func:`_retrieval_section`.
+
+    Every value is read from the owning module's constants rather than
+    restated. A second copy of the due-soon windows that could drift from the
+    ones the classifier actually applies would make this surface worse than
+    having no surface: it would be confidently wrong at exactly the moment
+    someone trusted it.
+    """
+    policy: dict = {"available": False}
+    try:
+        from services.private_office import operations as _operations
+        from services.private_office import records as _records
+    except Exception:  # noqa: BLE001
+        _log.exception("PRIVATE_HEALTH_OPERATIONS_POLICY_IMPORT_FAILED")
+        return policy
+    try:
+        policy.update({
+            "available": True,
+            "record_types": list(_records.RECORD_TYPES),
+            # Which types can be late at all, and — stated rather than left as
+            # an absence — why the other three cannot. An operator reading
+            # "zero overdue events" should be able to see from here that EVENT
+            # has no deadline semantics, not conclude the sweep is broken.
+            "deadline_fields": dict(_records.DEADLINE_FIELDS),
+            "no_deadline_reason": dict(_records.NO_DEADLINE_REASON),
+            "due_soon_days": {
+                rtype: int(window.total_seconds() // 86400)
+                for rtype, window in _records.DUE_SOON_WINDOWS.items()
+            },
+            "derived_states": [_records.DERIVED_DUE_SOON, _records.DERIVED_OVERDUE],
+            "reopenable": {k: list(v) for k, v in _records.REOPENABLE.items()},
+            # Strongest first. Reported as an ordered list because the order is
+            # the policy; sorting it here would destroy the only information it
+            # carries.
+            "attention_reasons": list(_operations.REASON_RANK),
+            "unsupported_reasons": dict(_operations.UNSUPPORTED_REASONS),
+            "attention_severities": sorted(_operations.ATTENTION_SEVERITIES),
+            "bounds": {
+                "max_attention_items": _operations.MAX_ATTENTION_ITEMS,
+                "max_recent_activity": _operations.MAX_RECENT_ACTIVITY,
+                "attention_scan_per_type": _operations.ATTENTION_SCAN_PER_TYPE,
+                "recent_window_days": int(
+                    _operations.RECENT_WINDOW.total_seconds() // 86400),
+            },
+        })
+    except Exception:  # noqa: BLE001
+        _log.exception("PRIVATE_HEALTH_OPERATIONS_POLICY_FAILED")
+        return {"available": False}
+    return policy
+
+
+def _operations_section(cur, *, include_counts: bool) -> dict:
+    """Operations volume, kill-switch state and lifecycle policy.
+
+    Three questions that present identically to a member as "my Overview is
+    empty", and need three different responses:
+
+    * the feature is **off** — ``availability`` is FEATURE_DISABLED, and the
+      answer is to check PRIVATE_OPERATIONS_ENABLED, not to page anyone;
+    * the **schema** is not on this database — ``implementation`` stays
+      NOT_READY and every count is ``None``;
+    * the tables are **genuinely empty** — ``implementation`` is LIVE and the
+      counts are integers that happen to be zero.
+
+    Only the third is a member with nothing recorded. Collapsing the first two
+    into a zero is the Stage 176B failure this module opens by naming, so a
+    count here is an integer or ``None`` and never both meanings at once.
+
+    ``availability`` is asked of ``feature_matrix`` at the top tier rather than
+    by reading the environment variable here. The gate on every operations
+    route resolves the kill switch through that same function, so this reports
+    what the routes will actually do; a second ``os.getenv`` parse in this file
+    could disagree with the gate, and a health surface that disagrees with the
+    thing it describes is worse than none. Asking at PRIVATE_OFFICE tier is
+    what makes NOT_ENTITLED impossible in the answer — entitlement is a
+    property of a member, this surface has no member, and the only reason this
+    call can come back refused is one that belongs to the deployment.
+
+    Aggregates only, and no owner may be named — the same rule as every other
+    section here. Imported lazily so an operations import error degrades this
+    section rather than taking down the health payload.
+    """
+    section: dict = {
+        "implementation": IMPL_NOT_READY,
+        "enabled": None,
+        "availability": None,
+        "counts": {},
+        "counts_included": False,
+        "policy": _operations_policy(),
+    }
+
+    try:
+        gate = _fm.availability(
+            "private_office.operations", _tiers.TIER_PRIVATE_OFFICE)
+    except Exception:  # noqa: BLE001
+        _log.exception("PRIVATE_HEALTH_OPERATIONS_GATE_FAILED")
+        gate = None
+    if gate is not None:
+        section["availability"] = gate.get("availability")
+        section["enabled"] = bool(
+            gate.get("availability") == _fm.AVAIL_ENTITLED)
+
+    try:
+        from services.private_office import records as _records
+    except Exception:  # noqa: BLE001
+        _log.exception("PRIVATE_HEALTH_OPERATIONS_IMPORT_FAILED")
+        return section
+
+    tables = {
+        rtype: _records.SPECS[rtype]["table"] for rtype in _records.RECORD_TYPES
+    }
+    section["counts"] = {name: None for name in tables}
+    if cur is None:
+        return section
+    try:
+        # Idempotent IF NOT EXISTS ensure used as a probe, exactly as
+        # `_schema_section` and `_meetings_section` do. Without it, counting on
+        # a database the operations routes have never touched would log six
+        # failures and, on PostgreSQL, abort the shared transaction — taking
+        # the sections after this one down with it.
+        _records.ensure_records_schema(cur)
+    except Exception:  # noqa: BLE001
+        _log.exception("PRIVATE_HEALTH_OPERATIONS_SCHEMA_PROBE_FAILED")
+        return section
+    section["implementation"] = IMPL_LIVE
+    if include_counts:
+        for name, table in tables.items():
+            section["counts"][name] = _count(cur, table)
+        section["counts_included"] = True
+    return section
+
+
 def _telemetry_section() -> dict:
     """Stage 38 — is the event table itself sound?
 
@@ -320,6 +467,7 @@ def private_office_health(
         None, schema_usable=False, include_counts=False)
 
     meetings_section = _meetings_section(cur, include_counts=include_counts)
+    operations_section = _operations_section(cur, include_counts=include_counts)
 
     if conn is not None:
         try:
@@ -350,6 +498,7 @@ def private_office_health(
         "schema": schema_section,
         "substrate": substrate,
         "meetings": meetings_section,
+        "operations": operations_section,
         "retrieval": _retrieval_section(),
         "telemetry": telemetry_section,
         # The feature census, so a reader can see at a glance how much of the

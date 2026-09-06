@@ -74,6 +74,28 @@ WRITER_MODULES = frozenset({
     "structured_records.py",
 })
 
+# Fault-injection test files, allowed to write private tables directly.
+#
+# This is a hole in the guard and is written down as one. The justification is
+# narrow: `integrity.py` is a detector for stores that are already corrupt —
+# an edge pointing at another owner's node, an edge whose endpoint no longer
+# exists, a duplicate identity left behind by a migration that dropped a
+# constraint. Every one of those states is unreachable through the writers,
+# because the writers are what prevent them. A test that can only build its
+# fixtures through the writers can therefore only ever prove the detector
+# returns "healthy", which is the vacuous pass this repository keeps finding
+# and killing. So the corruption is inserted with raw SQL, on purpose.
+#
+# What keeps this from becoming a general escape hatch: entries must live under
+# `tests/`, must exist, and the list is capped at two. A production module can
+# never appear here — `may_write` checks the package path first and this list
+# only afterwards, so nothing under `services/` can be admitted by it. A third
+# file wanting in is a design conversation, not an edit to this set.
+FAULT_INJECTION_TESTS = frozenset({
+    os.path.join("tests", "private_office", "test_integrity.py"),
+})
+MAX_FAULT_INJECTION_TESTS = 2
+
 PRIVATE_TABLES = (
     "private_facts",
     "private_graph_nodes",
@@ -252,14 +274,48 @@ def python_files() -> list[str]:
 
 
 def may_write(relpath: str) -> bool:
-    if not relpath.startswith(PACKAGE_DIR + os.sep):
-        return False
-    return os.path.basename(relpath) in WRITER_MODULES
+    # Package membership is decided first and exclusively: a file under
+    # `services/private_office/` is judged only against WRITER_MODULES, and a
+    # file outside it can never be a writer module. The fault-injection list is
+    # consulted only for paths that are not production modules at all.
+    if relpath.startswith(PACKAGE_DIR + os.sep):
+        return os.path.basename(relpath) in WRITER_MODULES
+    return relpath in FAULT_INJECTION_TESTS
 
 
 # --------------------------------------------------------------------------
 # The guard, applied to the repository.
 # --------------------------------------------------------------------------
+
+def test_fault_injection_allowlist_is_bounded():
+    """The one hole in the guard is small, real, and cannot admit a module.
+
+    Checked rather than trusted, because an allowlist nobody audits is how a
+    guard turns into a formality. A stale entry would silently grant write
+    rights to a path that could later be recreated as something else, and an
+    entry under ``services/`` would defeat the boundary entirely.
+    """
+    print("\n[fault injection allowlist]")
+    check("the allowlist is capped",
+          len(FAULT_INJECTION_TESTS) <= MAX_FAULT_INJECTION_TESTS,
+          f"{len(FAULT_INJECTION_TESTS)} of {MAX_FAULT_INJECTION_TESTS}")
+    for relpath in sorted(FAULT_INJECTION_TESTS):
+        check(f"{relpath} is a test file",
+              relpath.startswith("tests" + os.sep), relpath)
+        check(f"{relpath} still exists",
+              os.path.isfile(os.path.join(REPO_ROOT, relpath)), relpath)
+        # The entry earns its place only if the file actually needs it. A file
+        # that no longer writes should be removed from the list, not left to
+        # carry a permission it does not use.
+        with open(os.path.join(REPO_ROOT, relpath), "r", encoding="utf-8") as fh:
+            check(f"{relpath} actually injects faults",
+                  bool(offences(fh.read())), relpath)
+    # The membership rule itself, not just the data: no path under the package
+    # can be waved through by the fault-injection branch.
+    smuggled = os.path.join(PACKAGE_DIR, "test_integrity.py")
+    check("a package module cannot be admitted by the fault-injection list",
+          may_write(smuggled) is False, smuggled)
+
 
 def test_no_private_writes_outside_the_writers():
     print("\n[write boundary]")
@@ -507,6 +563,7 @@ def main() -> int:
     print(f"repo: {REPO_ROOT}")
     test_guard_detects_known_violations()
     test_prefilter_cannot_hide_a_violation()
+    test_fault_injection_allowlist_is_bounded()
     test_no_private_writes_outside_the_writers()
     test_package_membership_is_explicit()
     print("\n" + "=" * 60)

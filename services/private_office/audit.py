@@ -77,6 +77,21 @@ ACTION_FACT_REVOKE = "PRIVATE_FACT_REVOKE"
 #: make the sweep indistinguishable from owner action.
 ACTION_FACT_EXPIRE = "PRIVATE_FACT_EXPIRE"
 ACTION_FACT_HISTORY_READ = "PRIVATE_FACT_HISTORY_READ"
+#: Evidence was attached to a fact, or taken away from it. Two verbs rather than
+#: one with a direction field, because the questions they answer are asked
+#: separately and the second one is the alarming one: attachments accumulating
+#: is a store getting better sourced, detachments accumulating is somebody
+#: dismantling the support under facts that are still being quoted. Detachment
+#: also demotes the fact, so this is the audit record of a *downgrade* — and a
+#: downgrade with no verb of its own is a downgrade nobody can query for.
+ACTION_FACT_EVIDENCE_ATTACH = "PRIVATE_FACT_EVIDENCE_ATTACH"
+ACTION_FACT_EVIDENCE_DETACH = "PRIVATE_FACT_EVIDENCE_DETACH"
+#: A fact was put in front of the member for review. Almost always the staleness
+#: sweep rather than a person, which is precisely why it is not folded into
+#: ACTION_FACT_REVISE: a review queue that grows because the system flagged
+#: things and a review queue that grows because the member is flagging things by
+#: hand are opposite health signals wearing the same number.
+ACTION_FACT_REVIEW_FLAG = "PRIVATE_FACT_REVIEW_FLAG"
 #: A detected conflict was settled. Pairs with ACTION_CONFLICT_DETECTED below —
 #: detection without resolution is an open question, and only having the first
 #: verb makes the backlog impossible to measure.
@@ -198,6 +213,9 @@ ACTIONS: tuple[str, ...] = (
     ACTION_FACT_REVOKE,
     ACTION_FACT_EXPIRE,
     ACTION_FACT_HISTORY_READ,
+    ACTION_FACT_EVIDENCE_ATTACH,
+    ACTION_FACT_EVIDENCE_DETACH,
+    ACTION_FACT_REVIEW_FLAG,
     ACTION_CONFLICT_RESOLVED,
     ACTION_GRAPH_WRITE,
     ACTION_GRAPH_READ,
