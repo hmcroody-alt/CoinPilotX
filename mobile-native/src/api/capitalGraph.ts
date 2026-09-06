@@ -527,6 +527,388 @@ export async function getCapitalEntity(
   }
 }
 
+/* --- command center ------------------------------------------------------
+ *
+ * `overview` and `exposure` are the SAME server computation: the exposure route
+ * projects a subset of the overview payload precisely so the two screens can
+ * never disagree about which holding is largest. They are parsed by shared
+ * helpers here for the same reason — two parsers would reintroduce the drift
+ * the server went out of its way to prevent.
+ *
+ * Every money field goes through `asMaybeNumber`, which yields `null` rather
+ * than `0` for an absent key. That matters most on the refusal payload, where
+ * the server sends `net_position: {}`: a parser that defaulted to zero would
+ * turn "we would not say" into "you have nothing", which is the single lie this
+ * surface exists to avoid.
+ */
+
+/** One coverage dimension, carrying its own arithmetic. */
+export type CapitalCoverageDimension = {
+  known: number;
+  countable: number;
+  /** null when nothing was countable — not 0, which would read as "0% known". */
+  ratio: number | null;
+};
+
+/** One slice of a concentration chart. */
+export type CapitalConcentration = {
+  key: string;
+  label: string;
+  value: number | null;
+  /** Share of the *priced* total. null when there is no total to divide by. */
+  share: number | null;
+};
+
+/** A gap in the picture, explained (§37: what / why / source). */
+export type CapitalReviewItem = {
+  kind: string;
+  subject: string;
+  detail: string;
+  source: string;
+};
+
+export type CapitalAssetsBlock = {
+  pricedValue: number | null;
+  currency: string;
+  count: number;
+  priced: number;
+  unpriced: number;
+  unpricedSymbols: string[];
+  basisKnown: number;
+  knownCost: number | null;
+  complete: boolean;
+};
+
+/** One currency's slice of the liability side, as the server bucketed it. */
+export type CapitalCurrencyBucket = {
+  amount: number | null;
+  count: number;
+};
+
+export type CapitalLiabilitiesBlock = {
+  knownAmount: number | null;
+  currency: string;
+  count: number;
+  quantified: number;
+  unquantified: number;
+  foreignCurrency: number;
+  unspecifiedCurrency: number;
+  /**
+   * Every currency the member's obligations are denominated in, keyed by code.
+   *
+   * `knownAmount` is the base-currency bucket alone; everything else here was
+   * excluded from the net position because the server will not invent an FX
+   * rate. This map is the only place that says *how much* was set aside, so a
+   * screen that reports "2 liabilities excluded" without it is naming a count
+   * while withholding the magnitude.
+   */
+  byCurrency: Record<string, CapitalCurrencyBucket>;
+  complete: boolean;
+  truncated: boolean;
+};
+
+export type CapitalNetPosition = {
+  /**
+   * Priced assets minus quantified liabilities — NOT net worth.
+   *
+   * Never render this without `complete` and `incompleteReasons` beside it.
+   * When `complete` is false the server has excluded something it could not
+   * compare, and `incompleteReasons` names what. `no_liabilities_recorded` is
+   * in that list on purpose: no debt on file is not the same as no debt.
+   */
+  estimated: number | null;
+  currency: string;
+  knownAssets: number | null;
+  knownLiabilities: number | null;
+  complete: boolean;
+  incompleteReasons: string[];
+  excluded: {
+    unpricedAssets: number;
+    unquantifiedLiabilities: number;
+    foreignCurrencyLiabilities: number;
+    unspecifiedCurrencyLiabilities: number;
+  };
+  basis: string;
+  disclaimer: string;
+};
+
+export type CapitalCoverage = {
+  dimensions: Record<string, CapitalCoverageDimension>;
+  /** null when no dimension was scoreable. Never silently 0. */
+  score: number | null;
+  scoredDimensions: string[];
+  formula: string;
+};
+
+export type CapitalConcentrations = {
+  assets: CapitalConcentration[];
+  assetBasis: string;
+  assetTotal: number | null;
+  assetsRanked: number;
+  assetsUnrankedTail: number;
+  liabilities: CapitalConcentration[];
+  liabilityBasis: string;
+  liabilityTotal: number | null;
+  currency: string;
+};
+
+export type CapitalPrices = {
+  source: string;
+  observedEpoch: number | null;
+  ageSeconds: number | null;
+  warning: string;
+};
+
+export type CapitalOverview = {
+  assets: CapitalAssetsBlock;
+  liabilities: CapitalLiabilitiesBlock;
+  netPosition: CapitalNetPosition;
+  coverage: CapitalCoverage;
+  concentrations: CapitalConcentrations;
+  needsReview: CapitalReviewItem[];
+  /** May exceed `needsReview.length`: the server caps what it sends. */
+  needsReviewTotal: number;
+  prices: CapitalPrices;
+  generatedAt: string;
+};
+
+/** The exposure route's strict subset of the overview payload. */
+export type CapitalExposure = {
+  concentrations: CapitalConcentrations;
+  assets: CapitalAssetsBlock;
+  liabilities: CapitalLiabilitiesBlock;
+  coverage: CapitalCoverage;
+  prices: CapitalPrices;
+  generatedAt: string;
+};
+
+export type CapitalOverviewResult =
+  | { state: "READY"; overview: CapitalOverview }
+  | { state: "DENIED"; reason: string }
+  | { state: "NOT_ENTITLED"; minimumTier: string }
+  | { state: "FEATURE_DISABLED" }
+  | { state: "NOT_IMPLEMENTED" }
+  | { state: "UNAVAILABLE" }
+  | { state: "LOCKED"; setupRequired: boolean }
+  | { state: "ERROR"; message: string };
+
+export type CapitalExposureResult =
+  | { state: "READY"; exposure: CapitalExposure }
+  | { state: "DENIED"; reason: string }
+  | { state: "NOT_ENTITLED"; minimumTier: string }
+  | { state: "FEATURE_DISABLED" }
+  | { state: "NOT_IMPLEMENTED" }
+  | { state: "UNAVAILABLE" }
+  | { state: "LOCKED"; setupRequired: boolean }
+  | { state: "ERROR"; message: string };
+
+function parseCapitalPrices(raw: unknown): CapitalPrices {
+  const row = asRecord(raw);
+  return {
+    source: asText(row.source),
+    observedEpoch: asMaybeNumber(row.observed_epoch),
+    ageSeconds: asMaybeNumber(row.age_seconds),
+    warning: asText(row.warning)
+  };
+}
+
+function parseCoverageDimension(raw: unknown): CapitalCoverageDimension {
+  const row = asRecord(raw);
+  return {
+    known: asId(row.known),
+    countable: asId(row.countable),
+    ratio: asMaybeNumber(row.ratio)
+  };
+}
+
+function parseConcentration(raw: unknown): CapitalConcentration {
+  const row = asRecord(raw);
+  return {
+    key: asText(row.key),
+    label: asText(row.label),
+    value: asMaybeNumber(row.value),
+    share: asMaybeNumber(row.share)
+  };
+}
+
+function parseAssetsBlock(raw: unknown): CapitalAssetsBlock {
+  const row = asRecord(raw);
+  return {
+    pricedValue: asMaybeNumber(row.priced_value),
+    currency: asText(row.currency),
+    count: asId(row.count),
+    priced: asId(row.priced),
+    unpriced: asId(row.unpriced),
+    unpricedSymbols: (Array.isArray(row.unpriced_symbols) ? row.unpriced_symbols : []).map(asText),
+    basisKnown: asId(row.basis_known),
+    knownCost: asMaybeNumber(row.known_cost),
+    complete: row.complete === true
+  };
+}
+
+function parseLiabilitiesBlock(raw: unknown): CapitalLiabilitiesBlock {
+  const row = asRecord(raw);
+  return {
+    knownAmount: asMaybeNumber(row.known_amount),
+    currency: asText(row.currency),
+    count: asId(row.count),
+    quantified: asId(row.quantified),
+    unquantified: asId(row.unquantified),
+    foreignCurrency: asId(row.foreign_currency),
+    unspecifiedCurrency: asId(row.unspecified_currency),
+    byCurrency: parseCurrencyBuckets(row.by_currency),
+    complete: row.complete === true,
+    truncated: row.truncated === true
+  };
+}
+
+function parseCurrencyBuckets(raw: unknown): Record<string, CapitalCurrencyBucket> {
+  const rows = asRecord(raw);
+  const buckets: Record<string, CapitalCurrencyBucket> = {};
+  for (const code of Object.keys(rows)) {
+    const bucket = asRecord(rows[code]);
+    buckets[code] = { amount: asMaybeNumber(bucket.amount), count: asId(bucket.count) };
+  }
+  return buckets;
+}
+
+function parseCoverage(raw: unknown): CapitalCoverage {
+  const row = asRecord(raw);
+  const rawDimensions = asRecord(row.dimensions);
+  const dimensions: Record<string, CapitalCoverageDimension> = {};
+  for (const name of Object.keys(rawDimensions)) {
+    dimensions[name] = parseCoverageDimension(rawDimensions[name]);
+  }
+  return {
+    dimensions,
+    score: asMaybeNumber(row.score),
+    scoredDimensions: (Array.isArray(row.scored_dimensions) ? row.scored_dimensions : []).map(
+      asText
+    ),
+    formula: asText(row.formula)
+  };
+}
+
+function parseConcentrations(raw: unknown): CapitalConcentrations {
+  const row = asRecord(raw);
+  return {
+    assets: (Array.isArray(row.assets) ? row.assets : []).map(parseConcentration),
+    assetBasis: asText(row.asset_basis),
+    assetTotal: asMaybeNumber(row.asset_total),
+    assetsRanked: asId(row.assets_ranked),
+    assetsUnrankedTail: asId(row.assets_unranked_tail),
+    liabilities: (Array.isArray(row.liabilities) ? row.liabilities : []).map(parseConcentration),
+    liabilityBasis: asText(row.liability_basis),
+    liabilityTotal: asMaybeNumber(row.liability_total),
+    currency: asText(row.currency)
+  };
+}
+
+function parseReviewItem(raw: unknown): CapitalReviewItem {
+  const row = asRecord(raw);
+  return {
+    kind: asText(row.kind),
+    subject: asText(row.subject),
+    detail: asText(row.detail),
+    source: asText(row.source)
+  };
+}
+
+function parseNetPosition(raw: unknown): CapitalNetPosition {
+  const row = asRecord(raw);
+  const excluded = asRecord(row.excluded);
+  return {
+    estimated: asMaybeNumber(row.estimated),
+    currency: asText(row.currency),
+    knownAssets: asMaybeNumber(row.known_assets),
+    knownLiabilities: asMaybeNumber(row.known_liabilities),
+    // Read, never derived. A client that recomputed this from the reason list
+    // would start disagreeing with the server the moment a reason is added.
+    complete: row.complete === true,
+    incompleteReasons: (Array.isArray(row.incomplete_reasons) ? row.incomplete_reasons : []).map(
+      asText
+    ),
+    excluded: {
+      unpricedAssets: asId(excluded.unpriced_assets),
+      unquantifiedLiabilities: asId(excluded.unquantified_liabilities),
+      foreignCurrencyLiabilities: asId(excluded.foreign_currency_liabilities),
+      unspecifiedCurrencyLiabilities: asId(excluded.unspecified_currency_liabilities)
+    },
+    basis: asText(row.basis),
+    disclaimer: asText(row.disclaimer)
+  };
+}
+
+export function parseCapitalOverview(raw: unknown): CapitalOverview {
+  const row = asRecord(raw);
+  return {
+    assets: parseAssetsBlock(row.assets),
+    liabilities: parseLiabilitiesBlock(row.liabilities),
+    netPosition: parseNetPosition(row.net_position),
+    coverage: parseCoverage(row.coverage),
+    concentrations: parseConcentrations(row.concentrations),
+    needsReview: (Array.isArray(row.needs_review) ? row.needs_review : []).map(parseReviewItem),
+    needsReviewTotal: asId(row.needs_review_total),
+    prices: parseCapitalPrices(row.prices),
+    generatedAt: asText(row.generated_at)
+  };
+}
+
+export function parseCapitalExposure(raw: unknown): CapitalExposure {
+  const row = asRecord(raw);
+  return {
+    concentrations: parseConcentrations(row.concentrations),
+    assets: parseAssetsBlock(row.assets),
+    liabilities: parseLiabilitiesBlock(row.liabilities),
+    coverage: parseCoverage(row.coverage),
+    prices: parseCapitalPrices(row.prices),
+    generatedAt: asText(row.generated_at)
+  };
+}
+
+export const CAPITAL_OVERVIEW_PATH = "/api/private-office/capital-graph/overview";
+export const CAPITAL_EXPOSURE_PATH = "/api/private-office/capital-graph/exposure";
+
+/** The Capital Command Center: assets, liabilities, net position, coverage. */
+export async function getCapitalOverview(): Promise<CapitalOverviewResult> {
+  try {
+    const body = asRecord(
+      await pulseApi<unknown>(CAPITAL_OVERVIEW_PATH, {
+        headers: await officeRequestHeaders()
+      })
+    );
+    return { state: "READY", overview: parseCapitalOverview(body.overview) };
+  } catch (error) {
+    if (error instanceof PulseApiError && error.status === 403) {
+      const details = asRecord(error.details);
+      if (asText(details.state).trim().toUpperCase() === "DENIED") {
+        return { state: "DENIED", reason: asText(asRecord(details.reason).reason) };
+      }
+    }
+    return refusal(error);
+  }
+}
+
+/** Concentration over the subset whose value is actually known. */
+export async function getCapitalExposure(): Promise<CapitalExposureResult> {
+  try {
+    const body = asRecord(
+      await pulseApi<unknown>(CAPITAL_EXPOSURE_PATH, {
+        headers: await officeRequestHeaders()
+      })
+    );
+    return { state: "READY", exposure: parseCapitalExposure(body.exposure) };
+  } catch (error) {
+    if (error instanceof PulseApiError && error.status === 403) {
+      const details = asRecord(error.details);
+      if (asText(details.state).trim().toUpperCase() === "DENIED") {
+        return { state: "DENIED", reason: asText(asRecord(details.reason).reason) };
+      }
+    }
+    return refusal(error);
+  }
+}
+
 /** The edges touching one entity, with the far end named. */
 export async function getCapitalRelationships(
   nodeId: number,

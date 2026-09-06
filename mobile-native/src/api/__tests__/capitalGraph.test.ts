@@ -37,10 +37,14 @@ jest.mock("expo-secure-store", () => ({
 import { PulseApiError } from "../pulseApi";
 import {
   CAPITAL_ENTITY_PATH,
+  CAPITAL_EXPOSURE_PATH,
   CAPITAL_GRAPH_PATH,
+  CAPITAL_OVERVIEW_PATH,
   CAPITAL_PORTFOLIO_PATH,
   getCapitalEntity,
+  getCapitalExposure,
   getCapitalGraph,
+  getCapitalOverview,
   getCapitalPortfolio,
   getCapitalRelationships,
   parseCapitalEdge,
@@ -618,5 +622,413 @@ describe("createPrivateFact", () => {
 
     mockPulseApi.mockRejectedValueOnce(apiError(503, {}));
     expect(await createPrivateFact(draft)).toEqual({ state: "UNAVAILABLE" });
+  });
+});
+
+/**
+ * The Capital Command Center — overview and exposure.
+ *
+ * These two routes are one server computation (`capital_overview.overview`)
+ * projected twice, so the suite checks that the client keeps them agreeing
+ * rather than re-deriving either. The bodies below are shaped from
+ * `services/private_office/capital_overview.py` directly; if a key here is
+ * wrong the parser silently yields null and a screen quietly under-reports,
+ * which no type can catch.
+ *
+ * The load-bearing cases are the honesty ones. `estimated` is priced assets
+ * minus quantified liabilities, NOT net worth, and the server says so through
+ * `complete` / `incomplete_reasons`. A parser that defaulted a missing money
+ * key to 0 would turn "we would not say" into "you have nothing" — so every
+ * money field is asserted `null`, never `0`, when the server omits it.
+ */
+
+function rawAssets(overrides: Record<string, unknown> = {}) {
+  return {
+    priced_value: 812450.25,
+    currency: "USD",
+    count: 9,
+    priced: 7,
+    unpriced: 2,
+    unpriced_symbols: ["XMR", "PRIVATECO"],
+    basis_known: 5,
+    known_cost: 604000,
+    complete: false,
+    ...overrides
+  };
+}
+
+function rawLiabilities(overrides: Record<string, unknown> = {}) {
+  return {
+    known_amount: 240000,
+    currency: "USD",
+    count: 5,
+    quantified: 3,
+    unquantified: 2,
+    foreign_currency: 1,
+    unspecified_currency: 1,
+    by_currency: {
+      USD: { amount: 240000, count: 3 },
+      GBP: { amount: 88000, count: 1 },
+      UNSPECIFIED: { amount: null, count: 1 }
+    },
+    complete: false,
+    truncated: false,
+    ...overrides
+  };
+}
+
+function rawNetPosition(overrides: Record<string, unknown> = {}) {
+  return {
+    estimated: 572450.25,
+    currency: "USD",
+    known_assets: 812450.25,
+    known_liabilities: 240000,
+    complete: false,
+    incomplete_reasons: ["unpriced_assets", "unquantified_liabilities"],
+    excluded: {
+      unpriced_assets: 2,
+      unquantified_liabilities: 2,
+      foreign_currency_liabilities: 1,
+      unspecified_currency_liabilities: 1
+    },
+    basis: "priced_assets_minus_quantified_liabilities",
+    disclaimer: "This is not a net worth figure.",
+    ...overrides
+  };
+}
+
+function rawCoverage(overrides: Record<string, unknown> = {}) {
+  return {
+    dimensions: {
+      pricing: { known: 7, countable: 9, ratio: 7 / 9 },
+      cost_basis: { known: 5, countable: 9, ratio: 5 / 9 },
+      liability_amounts: { known: 3, countable: 5, ratio: 0.6 },
+      evidence: { known: 0, countable: 0, ratio: null }
+    },
+    score: 0.6,
+    scored_dimensions: ["pricing", "cost_basis", "liability_amounts"],
+    formula: "mean(scored_dimensions)",
+    ...overrides
+  };
+}
+
+function rawConcentrations(overrides: Record<string, unknown> = {}) {
+  return {
+    assets: [{ key: "BTC", label: "Bitcoin", value: 500000, share: 0.6157 }],
+    asset_basis: "priced_asset_value",
+    asset_total: 812450.25,
+    assets_ranked: 1,
+    assets_unranked_tail: 6,
+    liabilities: [{ key: "MORTGAGE", label: "MORTGAGE", value: 240000, share: 1 }],
+    liability_basis: "quantified_liability_amount",
+    liability_total: 240000,
+    currency: "USD",
+    ...overrides
+  };
+}
+
+function rawPrices(overrides: Record<string, unknown> = {}) {
+  return {
+    source: "live_market_board",
+    observed_epoch: 1788000000,
+    age_seconds: 42,
+    warning: "",
+    ...overrides
+  };
+}
+
+function rawOverviewBody(overrides: Record<string, unknown> = {}) {
+  return {
+    ok: true,
+    overview: {
+      assets: rawAssets(),
+      liabilities: rawLiabilities(),
+      net_position: rawNetPosition(),
+      coverage: rawCoverage(),
+      concentrations: rawConcentrations(),
+      needs_review: [
+        {
+          kind: "UNPRICED_ASSET",
+          subject: "XMR",
+          detail: "no price on the board",
+          source: "portfolio_projection"
+        }
+      ],
+      needs_review_total: 4,
+      prices: rawPrices(),
+      generated_at: "2026-09-06T12:00:00+00:00",
+      ...overrides
+    }
+  };
+}
+
+describe("getCapitalOverview", () => {
+  it("parses a READY envelope — every wire key lands on its camel field", async () => {
+    mockPulseApi.mockResolvedValueOnce(rawOverviewBody());
+    const result = await getCapitalOverview();
+
+    expect(result).toEqual({
+      state: "READY",
+      overview: {
+        assets: {
+          pricedValue: 812450.25,
+          currency: "USD",
+          count: 9,
+          priced: 7,
+          unpriced: 2,
+          unpricedSymbols: ["XMR", "PRIVATECO"],
+          basisKnown: 5,
+          knownCost: 604000,
+          complete: false
+        },
+        liabilities: {
+          knownAmount: 240000,
+          currency: "USD",
+          count: 5,
+          quantified: 3,
+          unquantified: 2,
+          foreignCurrency: 1,
+          unspecifiedCurrency: 1,
+          byCurrency: {
+            USD: { amount: 240000, count: 3 },
+            GBP: { amount: 88000, count: 1 },
+            UNSPECIFIED: { amount: null, count: 1 }
+          },
+          complete: false,
+          truncated: false
+        },
+        netPosition: {
+          estimated: 572450.25,
+          currency: "USD",
+          knownAssets: 812450.25,
+          knownLiabilities: 240000,
+          complete: false,
+          incompleteReasons: ["unpriced_assets", "unquantified_liabilities"],
+          excluded: {
+            unpricedAssets: 2,
+            unquantifiedLiabilities: 2,
+            foreignCurrencyLiabilities: 1,
+            unspecifiedCurrencyLiabilities: 1
+          },
+          basis: "priced_assets_minus_quantified_liabilities",
+          disclaimer: "This is not a net worth figure."
+        },
+        coverage: {
+          dimensions: {
+            pricing: { known: 7, countable: 9, ratio: 7 / 9 },
+            cost_basis: { known: 5, countable: 9, ratio: 5 / 9 },
+            liability_amounts: { known: 3, countable: 5, ratio: 0.6 },
+            evidence: { known: 0, countable: 0, ratio: null }
+          },
+          score: 0.6,
+          scoredDimensions: ["pricing", "cost_basis", "liability_amounts"],
+          formula: "mean(scored_dimensions)"
+        },
+        concentrations: {
+          assets: [{ key: "BTC", label: "Bitcoin", value: 500000, share: 0.6157 }],
+          assetBasis: "priced_asset_value",
+          assetTotal: 812450.25,
+          assetsRanked: 1,
+          assetsUnrankedTail: 6,
+          liabilities: [{ key: "MORTGAGE", label: "MORTGAGE", value: 240000, share: 1 }],
+          liabilityBasis: "quantified_liability_amount",
+          liabilityTotal: 240000,
+          currency: "USD"
+        },
+        needsReview: [
+          {
+            kind: "UNPRICED_ASSET",
+            subject: "XMR",
+            detail: "no price on the board",
+            source: "portfolio_projection"
+          }
+        ],
+        needsReviewTotal: 4,
+        prices: {
+          source: "live_market_board",
+          observedEpoch: 1788000000,
+          ageSeconds: 42,
+          warning: ""
+        },
+        generatedAt: "2026-09-06T12:00:00+00:00"
+      }
+    });
+
+    expect(lastRequest().path).toBe(CAPITAL_OVERVIEW_PATH);
+    expect(
+      (lastRequest().options.headers as Record<string, string>)[OFFICE_DEVICE_HEADER]
+    ).toBeTruthy();
+  });
+
+  it("yields null, never 0, for money the server withheld", async () => {
+    // The shape `_denied()` builds and the shape a partially-degraded read
+    // returns: present keys, empty objects. Zero here would be a lie.
+    mockPulseApi.mockResolvedValueOnce({
+      ok: true,
+      overview: {
+        assets: {},
+        liabilities: {},
+        net_position: {},
+        coverage: {},
+        concentrations: {},
+        needs_review: [],
+        prices: {}
+      }
+    });
+    const result = await getCapitalOverview();
+    if (result.state !== "READY") throw new Error(`expected READY, got ${result.state}`);
+
+    const { netPosition, assets, liabilities, coverage, concentrations } = result.overview;
+
+    expect(netPosition.estimated).toBeNull();
+    expect(netPosition.estimated).not.toBe(0);
+    expect(netPosition.knownAssets).toBeNull();
+    expect(netPosition.knownLiabilities).toBeNull();
+    expect(assets.pricedValue).toBeNull();
+    expect(assets.knownCost).toBeNull();
+    expect(liabilities.knownAmount).toBeNull();
+    expect(coverage.score).toBeNull();
+    expect(concentrations.assetTotal).toBeNull();
+    expect(concentrations.liabilityTotal).toBeNull();
+
+    // An absent net position is never "complete" — the UI must not print a
+    // bare figure because a boolean defaulted true.
+    expect(netPosition.complete).toBe(false);
+  });
+
+  it("never treats an absent `complete` as true", async () => {
+    mockPulseApi.mockResolvedValueOnce(
+      rawOverviewBody({ net_position: rawNetPosition({ complete: "yes" }) })
+    );
+    const result = await getCapitalOverview();
+    if (result.state !== "READY") throw new Error("expected READY");
+    // A truthy non-boolean must not be promoted; only literal true counts.
+    expect(result.overview.netPosition.complete).toBe(false);
+  });
+
+  it("keeps a zero ratio distinct from an unscoreable one", async () => {
+    mockPulseApi.mockResolvedValueOnce(
+      rawOverviewBody({
+        coverage: rawCoverage({
+          dimensions: {
+            pricing: { known: 0, countable: 4, ratio: 0 },
+            evidence: { known: 0, countable: 0, ratio: null }
+          }
+        })
+      })
+    );
+    const result = await getCapitalOverview();
+    if (result.state !== "READY") throw new Error("expected READY");
+
+    // "nothing priced out of 4" and "nothing to price" are different claims.
+    expect(result.overview.coverage.dimensions.pricing.ratio).toBe(0);
+    expect(result.overview.coverage.dimensions.evidence.ratio).toBeNull();
+  });
+
+  it("carries the excluded-currency magnitudes, not just their counts", async () => {
+    mockPulseApi.mockResolvedValueOnce(rawOverviewBody());
+    const result = await getCapitalOverview();
+    if (result.state !== "READY") throw new Error("expected READY");
+
+    const { byCurrency, knownAmount } = result.overview.liabilities;
+    // knownAmount is the base bucket alone; GBP is excluded but must remain
+    // visible, and its amount must not have been folded into the total.
+    expect(knownAmount).toBe(240000);
+    expect(byCurrency.GBP).toEqual({ amount: 88000, count: 1 });
+    expect(byCurrency.UNSPECIFIED.amount).toBeNull();
+    expect(Object.keys(byCurrency).sort()).toEqual(["GBP", "UNSPECIFIED", "USD"]);
+  });
+
+  it("reports needsReviewTotal from the wire, not from the truncated list", async () => {
+    mockPulseApi.mockResolvedValueOnce(rawOverviewBody());
+    const result = await getCapitalOverview();
+    if (result.state !== "READY") throw new Error("expected READY");
+    expect(result.overview.needsReview).toHaveLength(1);
+    expect(result.overview.needsReviewTotal).toBe(4);
+  });
+
+  it("maps the shared refusals — a refusal is never an empty balance sheet", async () => {
+    mockPulseApi.mockRejectedValueOnce(
+      apiError(403, { state: "DENIED", reason: { reason: "not_owner" } })
+    );
+    expect(await getCapitalOverview()).toEqual({ state: "DENIED", reason: "not_owner" });
+
+    mockPulseApi.mockRejectedValueOnce(apiError(423, { setup_required: true }));
+    expect(await getCapitalOverview()).toEqual({ state: "LOCKED", setupRequired: true });
+
+    mockPulseApi.mockRejectedValueOnce(
+      apiError(403, { state: "NOT_ENTITLED", minimum_tier: "PRIVATE" })
+    );
+    expect(await getCapitalOverview()).toEqual({
+      state: "NOT_ENTITLED",
+      minimumTier: "PRIVATE"
+    });
+
+    mockPulseApi.mockRejectedValueOnce(apiError(503, {}));
+    expect(await getCapitalOverview()).toEqual({ state: "UNAVAILABLE" });
+  });
+});
+
+describe("getCapitalExposure", () => {
+  function rawExposureBody(overrides: Record<string, unknown> = {}) {
+    return {
+      ok: true,
+      exposure: {
+        concentrations: rawConcentrations(),
+        assets: rawAssets(),
+        liabilities: rawLiabilities(),
+        coverage: rawCoverage(),
+        prices: rawPrices(),
+        generated_at: "2026-09-06T12:00:00+00:00",
+        ...overrides
+      }
+    };
+  }
+
+  it("parses the route's strict subset and asserts no net position rides along", async () => {
+    mockPulseApi.mockResolvedValueOnce(rawExposureBody());
+    const result = await getCapitalExposure();
+    if (result.state !== "READY") throw new Error("expected READY");
+
+    expect(Object.keys(result.exposure).sort()).toEqual([
+      "assets",
+      "concentrations",
+      "coverage",
+      "generatedAt",
+      "liabilities",
+      "prices"
+    ]);
+    expect(result.exposure).not.toHaveProperty("netPosition");
+    expect(lastRequest().path).toBe(CAPITAL_EXPOSURE_PATH);
+  });
+
+  it("agrees with the overview, because both read one server computation", async () => {
+    mockPulseApi.mockResolvedValueOnce(rawOverviewBody());
+    const overview = await getCapitalOverview();
+    mockPulseApi.mockResolvedValueOnce(rawExposureBody());
+    const exposure = await getCapitalExposure();
+    if (overview.state !== "READY" || exposure.state !== "READY") {
+      throw new Error("expected both READY");
+    }
+
+    // The largest holding must be the same object on both screens. If either
+    // side ever starts deriving instead of reading, this diverges.
+    expect(exposure.exposure.concentrations).toEqual(overview.overview.concentrations);
+    expect(exposure.exposure.assets).toEqual(overview.overview.assets);
+    expect(exposure.exposure.liabilities).toEqual(overview.overview.liabilities);
+    expect(exposure.exposure.coverage).toEqual(overview.overview.coverage);
+  });
+
+  it("maps the shared refusals", async () => {
+    mockPulseApi.mockRejectedValueOnce(
+      apiError(403, { state: "DENIED", reason: { reason: "second_lock" } })
+    );
+    expect(await getCapitalExposure()).toEqual({ state: "DENIED", reason: "second_lock" });
+
+    mockPulseApi.mockRejectedValueOnce(apiError(423, { setup_required: false }));
+    expect(await getCapitalExposure()).toEqual({ state: "LOCKED", setupRequired: false });
+
+    mockPulseApi.mockRejectedValueOnce(apiError(503, {}));
+    expect(await getCapitalExposure()).toEqual({ state: "UNAVAILABLE" });
   });
 });
