@@ -138,6 +138,15 @@ def _read(cur, owner: int = USER_A, actor: int | None = None) -> dict:
 def setup_environment() -> None:
     schema.reset_schema_cache()
     conn, cur = _connect()
+    # `portfolio_items` lives in bot.init_db(), not in the Private Office
+    # schema, and the projection reads it as an external source. Created here
+    # with the same column set the monolith uses, as
+    # tests/private_office/test_portfolio_projection.py does.
+    cur.execute(
+        "CREATE TABLE IF NOT EXISTS portfolio_items ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, "
+        "symbol TEXT NOT NULL, coin_name TEXT NOT NULL DEFAULT '', "
+        "amount REAL NOT NULL DEFAULT 0, average_buy_price REAL)")
     conn.commit()
     conn.close()
 
@@ -543,12 +552,26 @@ def stage_mutation_battery() -> None:
               truth["assets"]["unpriced"] > 0
               and mutated["assets"]["unpriced"] == 0,
               (truth["assets"]["unpriced"], mutated["assets"]["unpriced"]))
-        check("MUTATION incomplete-set-declared-complete is caught by "
-              "net_position.complete",
-              truth["net_position"]["complete"] is False
-              and mutated["net_position"]["complete"] is True,
-              (truth["net_position"]["incomplete_reasons"],
-               mutated["net_position"]["incomplete_reasons"]))
+        # The same mutation, read for what it destroyed. It cannot flip
+        # `complete` to True on its own — by this stage the store also holds an
+        # unquantified and a foreign-currency liability, and those reasons are
+        # independent of the portfolio. What it does do is erase the two
+        # asset-side disclosures, which is exactly the damage a lying upstream
+        # projection would cause, so that is what is asserted.
+        asset_reasons = {"unpriced_assets", "incomplete_portfolio"}
+        truth_reasons = set(truth["net_position"]["incomplete_reasons"])
+        mutated_reasons = set(mutated["net_position"]["incomplete_reasons"])
+        check("MUTATION incomplete-set-declared-complete erases exactly the "
+              "asset-side disclosures",
+              asset_reasons <= truth_reasons
+              and not (asset_reasons & mutated_reasons),
+              (sorted(truth_reasons), sorted(mutated_reasons)))
+        check("and the independent liability reasons survive it, so the "
+              "position is still not called complete",
+              mutated["net_position"]["complete"] is False
+              and mutated_reasons == truth_reasons - asset_reasons,
+              (sorted(mutated_reasons),
+               sorted(truth_reasons - asset_reasons)))
 
         # 3. Convert a foreign-currency debt at an invented rate.
         def _converted(cur_, **kwargs):
