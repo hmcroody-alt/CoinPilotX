@@ -4,6 +4,11 @@ Forensic map of the existing Capital Graph foundation, produced before any
 implementation (mission §3). Every claim below was verified by reading the
 named file at the named line in this working tree (main @ d21014c8).
 
+**Revalidated at main @ 6ebc1cf2.** Sections 9 and 12 carry the corrections;
+sections 1-8, 10, 11 and 13 were re-checked and still hold. Treat any section
+without a revalidation stamp as verified only as of d21014c8 — the surrounding
+Private Office missions move quickly and this file has already gone stale once.
+
 ---
 
 ## 1. CURRENT NODE TYPES (9)
@@ -177,13 +182,12 @@ across tabs and the owner does NOT bypass the second lock.
   AUDIT_CATEGORY private_capital_read, native route
   `/pulse/private-office/capital-graph`, `_ASSET_FIELDS` allowlist,
   `execute()` hook.
-- **GAP (confirmed, failing test):** never `_register`ed in
-  `undx_capability_registry.py`. Registry pattern to follow: the
-  derive-from-spec-module helpers at ~1191-1257
-  (`_register_private_record_capabilities` /
-  `_register_private_feature_read_capabilities`).
-  Failing check: tests/private_office/test_capital_undx_capability.py —
-  "the capability is in the registry" (all other ~40 checks pass).
+- ~~**GAP:** never `_register`ed in `undx_capability_registry.py`~~ —
+  **CLOSED at 6ebc1cf2.** The registry now derives the capability from
+  `undx_capital_spec` (~1263-1269), following the same derive-from-spec-module
+  pattern as `_register_private_record_capabilities`. The check in
+  tests/private_office/test_capital_undx_capability.py that pinned this gap
+  should now pass; re-run it before relying on either statement.
 
 ## 10. CURRENT UI (mobile-native)
 
@@ -224,24 +228,58 @@ backend test_pulsesoc_call_livekit_grants, `import bot` smoke.
 
 ## 12. GAPS vs. MISSION (what gets built)
 
-1. UNDX capability unregistered (§103) — one registration block.
-2. No Backend OS feature registration for capital_graph (§100).
-3. Node/edge vocabulary short of §5-6 (extend model.py matrix, no synonyms).
-4. No facts→graph or operations→graph projection (assets beyond crypto,
-   liabilities, accounts, entities) (§16-23) — must go through graph.py +
-   portfolio-projection patterns (convergent, owner-scoped, outbox-style).
-5. No overview/command-center read model; NO_AGGREGATE_VALUE pin means net
-   position (§20, §49) needs a separate honest summary contract
-   (KNOWN assets − KNOWN liabilities + coverage disclosure), not a
-   violation of capital_graph.py's pinned payload.
-6. Missing read surfaces: overview, graph (bounded hops), cash-flow
-   (known amounts only, no recurrence fabrication), obligations (links to
-   Operations, not a second ledger), exposure, history (§78-80).
-7. Native: 4 of 8 tabs; no Structure tree expand/collapse ownership %, no
-   native visual graph, no cash-flow/obligations/exposure/history surfaces.
-8. Integrity diagnostics (§95: duplicate/cross-owner/orphan/stale-projection
-   detection, no auto-repair in the diagnostic path) absent.
-9. §138 mutation battery not yet encoded as tests.
+> **Revalidated at main @ 6ebc1cf2.** The list below was written at d21014c8 and
+> four of its nine entries have since been closed. Re-verified entry by entry
+> against HEAD rather than trusted — an out-of-date gap list is worse than no
+> gap list, because it sends the next session to rebuild work that already
+> exists. That nearly happened here.
+
+**CLOSED since d21014c8 — do not rebuild:**
+
+- ~~1. UNDX capability unregistered~~ — **CLOSED.** `undx_capability_registry.py`
+  now derives the capability from `undx_capital_spec` (registry ~1263-1269).
+- ~~5. No overview/command-center read model~~ — **CLOSED.**
+  `capital_overview.py:154 overview()` composes portfolio + liabilities and
+  honours the NO_AGGREGATE_VALUE pin: it publishes `net_position.estimated`
+  alongside `complete`, `incomplete_reasons`, `excluded` and `basis`, and
+  repeats the disclaimer in-payload. It does not assert a net worth.
+- ~~8. Integrity diagnostics absent~~ — **CLOSED.**
+  `services/private_office/integrity.py` (six checks: `cross_owner_edges`,
+  `orphan_edges`, `duplicate_node_identity`, `unknown_vocabulary`,
+  `edges_into_retired_nodes`, `portfolio_projection_drift`), exposed at
+  `GET /api/private-office/capital-graph/integrity`, repairs nothing.
+- ~~9. Mutation battery not encoded~~ — **PARTIALLY CLOSED.** `test_integrity.py`
+  carries a five-mutation battery. The §106 battery for pricing/basis/dedup/
+  owner-scope is still absent.
+
+**STILL OPEN:**
+
+2. No Backend OS feature registration for capital_graph (§86).
+   `backend_management_registry.py` contains zero occurrences of "capital".
+3. Node/edge vocabulary short of §4 — still 9 node types and 6 relation types
+   (`model.py:410`, `:471`). Missing nodes: ACCOUNT, WALLET, INCOME_SOURCE,
+   OBLIGATION-as-node, PORTFOLIO_CONTAINER. Missing relations: HOLDS, OWES,
+   GENERATES_INCOME, PAYS, HELD_AT, CUSTODIED_BY, PARTY_TO, MANAGED_BY,
+   BELONGS_TO, DERIVED_FROM. Consequence: "PERSON OWNS BROKERAGE; BROKERAGE
+   HOLDS AAPL" (§7, §17) is **unrepresentable today**. Extend
+   RELATION_ENDPOINTS; never bypass `relation_permits()`.
+4. No facts→graph or operations→graph projection (§16-23). Note before
+   attempting: `fact_type` is an OPEN namespace (`facts.py:243`
+   `^[a-z0-9][a-z0-9_.]{0,63}$`), not a closed vocabulary — so a projector must
+   carry an explicit declared mapping of capital fact types. Projecting
+   whatever happens to be present would be fabrication under §15.
+6. Read surfaces — overview ✓, cash-flow ✓, obligations ✓, exposure ✓ and
+   integrity ✓ now exist. **Still missing: `graph` (bounded hops) and
+   `history` (§44, §92).** `structure` and `documents` exist as *views* on
+   `GET /capital-graph?view=`, not as their own routes.
+7. **Native is the widest gap and the one that blocks §110-114 acceptance.**
+   `capitalGraph.ts` calls exactly two paths (`CAPITAL_GRAPH_PATH`,
+   `CAPITAL_PORTFOLIO_PATH`) and `CAPITAL_VIEWS` is still the original four
+   (holdings, coverage, structure, documents). The overview, obligations,
+   exposure, cash-flow and integrity surfaces are built, gated and tested on
+   the server and are **unreachable from the product** — the member sees a
+   four-chip holdings screen while the Capital Command Center exists behind it.
+   No device acceptance of §47 is possible until the client consumes them.
 
 ## 13. INVARIANTS THAT MUST SURVIVE EVERY CHANGE
 
