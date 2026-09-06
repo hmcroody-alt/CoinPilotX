@@ -4627,7 +4627,8 @@
           "holdings": "संपत्तियाँ",
           "coverage": "कवरेज",
           "structure": "संरचना",
-          "documents": "दस्तावेज़"
+          "documents": "दस्तावेज़",
+          "overview": "अवलोकन"
         },
         "countExact": "{{count}}",
         "countSoFar": "अब तक {{count}}",
@@ -4769,6 +4770,48 @@
         },
         "documents": {
           "evidenceTitle": "जुड़े हुए प्रमाण"
+        },
+        "overview": {
+          "assets": "मूल्यांकित संपत्तियाँ",
+          "complete": "पूर्ण",
+          "concentrationTitle": "सबसे बड़ी होल्डिंग्स",
+          "concentrationUnranked": "छोटी होल्डिंग्स यहाँ सूचीबद्ध नहीं हैं।",
+          "coverageTitle": "कवरेज",
+          "dimension": {
+            "pricing": "मूल्य निर्धारण",
+            "cost_basis": "लागत आधार",
+            "liability_amounts": "देनदारी की राशियाँ",
+            "evidence": "प्रमाण"
+          },
+          "dimensionCount": "{{total}} में से {{known}}",
+          "disclaimerBody": "यह मूल्यांकित संपत्तियों की तुलना निर्धारित देनदारियों से करता है। जिसका मूल्य या राशि तय नहीं हो सकी, वह इसमें शामिल नहीं है।",
+          "disclaimerTitle": "यह निवल संपत्ति का आंकड़ा नहीं है",
+          "excludedForeignCurrency": "दूसरी मुद्रा में देनदारियाँ",
+          "excludedTitle": "इस आंकड़े से बाहर",
+          "excludedUnpricedAssets": "बिना मूल्य वाली संपत्तियाँ",
+          "excludedUnquantifiedLiabilities": "बिना राशि वाली देनदारियाँ",
+          "excludedUnspecifiedCurrency": "बिना मुद्रा वाली देनदारियाँ",
+          "liabilities": "निर्धारित देनदारियाँ",
+          "liabilityConcentrationTitle": "सबसे बड़ी देनदारियाँ",
+          "noLiabilities": "कोई देनदारी दर्ज नहीं है। इसका अर्थ यह नहीं कि कुछ बकाया नहीं है।",
+          "notSummable": "कोई एक मुद्रा नहीं है, इसलिए कुल नहीं दिखाया गया।",
+          "otherCurrencies": "अन्य मुद्राएँ",
+          "partial": "आंशिक",
+          "quantifiedOf": "राशि ज्ञात {{done}}/{{total}}",
+          "reason": {
+            "unpriced_assets": "कुछ संपत्तियों का मूल्य नहीं मिल सका।",
+            "incomplete_portfolio": "पोर्टफोलियो का कुल योग स्वयं अधूरा है।",
+            "unquantified_liabilities": "कुछ देनदारियों की राशि दर्ज नहीं है।",
+            "uncomparable_currency": "कुछ देनदारियाँ ऐसी मुद्रा में हैं जिसकी तुलना नहीं हो सकती।",
+            "liabilities_truncated": "पढ़ी गई देनदारियों से अधिक देनदारियाँ मौजूद हैं।",
+            "no_liabilities_recorded": "कोई भी देनदारी दर्ज नहीं है।"
+          },
+          "reviewMore": "अन्य मदें यहाँ नहीं दिखाई गई हैं।",
+          "reviewTitle": "समीक्षा आवश्यक",
+          "shareUnknown": "हिस्सा अज्ञात",
+          "title": "शुद्ध स्थिति",
+          "unscoreable": "आँकने के लिए कुछ नहीं",
+          "withheld": "नहीं बताया गया"
         }
       },
       "attention": {

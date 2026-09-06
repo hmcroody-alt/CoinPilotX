@@ -39,6 +39,7 @@ jest.mock("../../i18n", () => ({
 
 const mockGetGraph = jest.fn();
 const mockGetPortfolio = jest.fn();
+const mockGetOverview = jest.fn();
 const mockOfficeStatus = jest.fn();
 const mockUnlockOffice = jest.fn();
 
@@ -48,7 +49,8 @@ const mockUnlockOffice = jest.fn();
 jest.mock("../../api/capitalGraph", () => ({
   ...jest.requireActual("../../api/capitalGraph"),
   getCapitalGraph: (...args: unknown[]) => mockGetGraph(...args),
-  getCapitalPortfolio: (...args: unknown[]) => mockGetPortfolio(...args)
+  getCapitalPortfolio: (...args: unknown[]) => mockGetPortfolio(...args),
+  getCapitalOverview: (...args: unknown[]) => mockGetOverview(...args)
 }));
 
 // The screen sits behind `PrivateOfficeLockGate`; same boundary stubs as the
@@ -71,7 +73,11 @@ jest.mock("../../session/sessionStore", () => ({
   })
 }));
 
-import { parseCapitalGraph, parseCapitalPortfolio } from "../../api/capitalGraph";
+import {
+  parseCapitalGraph,
+  parseCapitalOverview,
+  parseCapitalPortfolio
+} from "../../api/capitalGraph";
 import {
   __resetOfficeLockForTests,
   isOfficeUnlocked,
@@ -136,6 +142,94 @@ function btcAsset() {
   };
 }
 
+/**
+ * The overview exactly as `/capital-graph/overview` emits it, run through the
+ * real parser. Overrides are applied to the `overview` object, so a test can
+ * say `readyOverview({ net_position: ... })` and still exercise every field
+ * the screen reads.
+ */
+function readyOverview(overrides: Record<string, unknown> = {}) {
+  return {
+    state: "READY",
+    overview: parseCapitalOverview({
+      assets: {
+        priced_value: 812450.25,
+        currency: "USD",
+        count: 9,
+        priced: 7,
+        unpriced: 2,
+        unpriced_symbols: ["XMR"],
+        basis_known: 5,
+        known_cost: 604000,
+        complete: false
+      },
+      liabilities: {
+        known_amount: 240000,
+        currency: "USD",
+        count: 5,
+        quantified: 3,
+        unquantified: 2,
+        foreign_currency: 1,
+        unspecified_currency: 1,
+        by_currency: {
+          USD: { amount: 240000, count: 3 },
+          GBP: { amount: 88000, count: 1 }
+        },
+        complete: false,
+        truncated: false
+      },
+      net_position: {
+        estimated: 572450.25,
+        currency: "USD",
+        known_assets: 812450.25,
+        known_liabilities: 240000,
+        complete: false,
+        incomplete_reasons: ["unpriced_assets", "unquantified_liabilities"],
+        excluded: {
+          unpriced_assets: 2,
+          unquantified_liabilities: 2,
+          foreign_currency_liabilities: 1,
+          unspecified_currency_liabilities: 0
+        },
+        basis: "priced_assets_minus_quantified_liabilities",
+        disclaimer: "This is not a net worth figure."
+      },
+      coverage: {
+        dimensions: {
+          pricing: { known: 7, countable: 9, ratio: 7 / 9 },
+          evidence: { known: 0, countable: 0, ratio: null }
+        },
+        score: 0.6,
+        scored_dimensions: ["pricing"],
+        formula: "mean(scored_dimensions)"
+      },
+      concentrations: {
+        assets: [{ key: "BTC", label: "Bitcoin", value: 500000, share: 0.6157 }],
+        asset_basis: "priced_asset_value",
+        asset_total: 812450.25,
+        assets_ranked: 1,
+        assets_unranked_tail: 6,
+        liabilities: [{ key: "MORTGAGE", label: "Mortgage", value: 240000, share: 1 }],
+        liability_basis: "quantified_liability_amount",
+        liability_total: 240000,
+        currency: "USD"
+      },
+      needs_review: [
+        {
+          kind: "UNPRICED_ASSET",
+          subject: "XMR",
+          detail: "No market price is available.",
+          source: "market_data"
+        }
+      ],
+      needs_review_total: 4,
+      prices: { source: "live_market_board", observed_epoch: 1788000000, age_seconds: 42, warning: "" },
+      generated_at: "2026-09-06T12:00:00+00:00",
+      ...overrides
+    })
+  };
+}
+
 async function unlockDoor(utils: ReturnType<typeof render>) {
   const { getByLabelText, getByText, queryByText } = utils;
   if (isOfficeUnlocked()) return;
@@ -173,6 +267,7 @@ beforeEach(() => {
   __resetOfficeLockForTests();
   mockGetGraph.mockResolvedValue(emptyGraph());
   mockGetPortfolio.mockResolvedValue(readyPortfolio([btcAsset()]));
+  mockGetOverview.mockResolvedValue(readyOverview());
   // The status probe answers from the grant, as the real endpoint does: the
   // server that just accepted the passcode reports `unlocked: true` on the
   // next status read. A static `false` here would model a server-side
@@ -703,5 +798,336 @@ describe("CapitalGraphScreen coverage, structure and documents tabs", () => {
     expect(queryByText("premium:privateOffice.lock.unlock")).toBeNull();
     // The portfolio read belongs to holdings and coverage alone.
     expect(mockGetPortfolio).toHaveBeenCalledTimes(2);
+  });
+});
+
+/**
+ * The Overview tab, and the lie it exists to make impossible: `estimated`
+ * quoted as if it were net worth.
+ *
+ * It is priced assets minus quantified liabilities. The server ships
+ * `complete` and `incomplete_reasons` alongside it precisely so the number
+ * cannot be read without its qualifier, and when the server withholds the
+ * figure there must be no number on the screen at all — not a zero, not a
+ * bare unlabelled total in some assumed currency.
+ *
+ * Overview is also a different endpoint from the graph, so it fails
+ * separately. A healthy graph must never vouch for an overview that never
+ * answered.
+ */
+describe("CapitalGraphScreen overview tab", () => {
+  const OV = "premium:privateOffice.capital.overview";
+
+  it("asks the overview endpoint, and does not ask the graph for a view it has no name for", async () => {
+    const { getByText } = await renderScreen("overview");
+    await waitFor(() => getByText(`${OV}.title`));
+
+    expect(mockGetOverview).toHaveBeenCalledTimes(1);
+    // The graph route rejects an unknown `view`. Sending it "overview" would
+    // be a 400 dressed as a tab.
+    expect(mockGetGraph).not.toHaveBeenCalled();
+    expect(mockGetPortfolio).not.toHaveBeenCalled();
+  });
+
+  it("never renders the figure without the qualifier the server sent with it", async () => {
+    const { getByText, queryByText } = await renderScreen("overview");
+    await waitFor(() => getByText(`${OV}.title`));
+
+    // The number is present...
+    getByText(money(572450.25));
+    // ...and so is every part of what makes it honest: the partial badge, the
+    // standing disclaimer, and each reason the server gave by name.
+    getByText(`${OV}.partial`);
+    expect(queryByText(`${OV}.complete`)).toBeNull();
+    getByText(`${OV}.disclaimerTitle`);
+    getByText(`${OV}.disclaimerBody`);
+    getByText("unpriced_assets");
+    getByText("unquantified_liabilities");
+  });
+
+  it("reads `complete` from the wire rather than inferring it from an empty reason list", async () => {
+    // Deliberately contradictory: no reasons, but the server still says the
+    // figure is partial. A screen that derived the badge from
+    // `incompleteReasons.length` would call this complete and be wrong.
+    mockGetOverview.mockResolvedValue(
+      readyOverview({
+        net_position: {
+          estimated: 100,
+          currency: "USD",
+          known_assets: 100,
+          known_liabilities: 0,
+          complete: false,
+          incomplete_reasons: [],
+          excluded: {
+            unpriced_assets: 0,
+            unquantified_liabilities: 0,
+            foreign_currency_liabilities: 0,
+            unspecified_currency_liabilities: 0
+          },
+          basis: "priced_assets_minus_quantified_liabilities",
+          disclaimer: "This is not a net worth figure."
+        }
+      })
+    );
+    const { getByText, queryByText } = await renderScreen("overview");
+    await waitFor(() => getByText(`${OV}.title`));
+
+    getByText(`${OV}.partial`);
+    expect(queryByText(`${OV}.complete`)).toBeNull();
+  });
+
+  it("still refuses to call a COMPLETE figure net worth", async () => {
+    // The tempting case. Everything is priced, everything is quantified,
+    // nothing was excluded — and it is still assets minus liabilities on
+    // record, not a net worth statement. The disclaimer is not a defect
+    // notice that disappears when the data is clean.
+    mockGetOverview.mockResolvedValue(
+      readyOverview({
+        net_position: {
+          estimated: 572450.25,
+          currency: "USD",
+          known_assets: 812450.25,
+          known_liabilities: 240000,
+          complete: true,
+          incomplete_reasons: [],
+          excluded: {
+            unpriced_assets: 0,
+            unquantified_liabilities: 0,
+            foreign_currency_liabilities: 0,
+            unspecified_currency_liabilities: 0
+          },
+          basis: "priced_assets_minus_quantified_liabilities",
+          disclaimer: "This is not a net worth figure."
+        }
+      })
+    );
+    const { getByText, queryByText } = await renderScreen("overview");
+    await waitFor(() => getByText(`${OV}.title`));
+
+    getByText(`${OV}.complete`);
+    expect(queryByText(`${OV}.partial`)).toBeNull();
+    // Present regardless of completeness — both our wording and the server's.
+    getByText(`${OV}.disclaimerTitle`);
+    getByText(`${OV}.disclaimerBody`);
+    getByText("This is not a net worth figure.");
+    // Nothing was excluded, so that section stays away entirely.
+    expect(queryByText(`${OV}.excludedTitle`)).toBeNull();
+  });
+
+  it("draws no number at all when the server withheld the total — least of all a zero", async () => {
+    mockGetOverview.mockResolvedValue(
+      readyOverview({
+        net_position: {
+          estimated: null,
+          currency: "",
+          known_assets: null,
+          known_liabilities: null,
+          complete: false,
+          incomplete_reasons: ["uncomparable_currency"],
+          excluded: {
+            unpriced_assets: 0,
+            unquantified_liabilities: 0,
+            foreign_currency_liabilities: 3,
+            unspecified_currency_liabilities: 0
+          },
+          basis: "priced_assets_minus_quantified_liabilities",
+          disclaimer: "This is not a net worth figure."
+        }
+      })
+    );
+    const { getByText, getAllByText, queryByText } = await renderScreen("overview");
+    await waitFor(() => getByText(`${OV}.title`));
+
+    // Three cells had nothing to say, and all three say so.
+    expect(getAllByText(`${OV}.withheld`).length).toBeGreaterThanOrEqual(3);
+    getByText(`${OV}.notSummable`);
+    getByText("uncomparable_currency");
+    // The specific failure this guards: a null total rendered as money.
+    expect(queryByText(money(0))).toBeNull();
+  });
+
+  it("names what was left out of the figure, and how much of it there was", async () => {
+    const { getByText } = await renderScreen("overview");
+    await waitFor(() => getByText(`${OV}.title`));
+
+    getByText(`${OV}.excludedUnpricedAssets`);
+    getByText(`${OV}.excludedUnquantifiedLiabilities`);
+    getByText(`${OV}.excludedForeignCurrency`);
+    // Zero-count exclusions are absent rather than listed as none.
+    expect(() => getByText(`${OV}.excludedUnspecifiedCurrency`)).toThrow();
+
+    // A count of excluded foreign-currency debts is only half the fact. The
+    // magnitude the server set aside has to appear too, or the screen names a
+    // number of liabilities while withholding their size.
+    getByText(`${OV}.otherCurrencies`);
+    getByText("GBP");
+    getByText(
+      new Intl.NumberFormat(undefined, { style: "currency", currency: "GBP" }).format(88000)
+    );
+  });
+
+  it("says that nothing recorded is not the same as nothing owed", async () => {
+    mockGetOverview.mockResolvedValue(
+      readyOverview({
+        liabilities: {
+          known_amount: null,
+          currency: "USD",
+          count: 0,
+          quantified: 0,
+          unquantified: 0,
+          foreign_currency: 0,
+          unspecified_currency: 0,
+          by_currency: {},
+          complete: true,
+          truncated: false
+        }
+      })
+    );
+    const { getByText } = await renderScreen("overview");
+    await waitFor(() => getByText(`${OV}.title`));
+
+    getByText(`${OV}.noLiabilities`);
+  });
+
+  it("calls an unscoreable coverage unscoreable, not zero", async () => {
+    mockGetOverview.mockResolvedValue(
+      readyOverview({
+        coverage: {
+          dimensions: { evidence: { known: 0, countable: 0, ratio: null } },
+          score: null,
+          scored_dimensions: [],
+          formula: "mean(scored_dimensions)"
+        }
+      })
+    );
+    const { getByText, queryByText } = await renderScreen("overview");
+    await waitFor(() => getByText(`${OV}.title`));
+
+    getByText(`${OV}.unscoreable`);
+    // "0%" would read as "we looked and you have nothing verified".
+    expect(queryByText(percent(0))).toBeNull();
+  });
+
+  it("renders the server's concentration share instead of recomputing one from the values", async () => {
+    // The server's `share` is a share of the *priced* total, which is not the
+    // same denominator as the ranked slices this list shows. So the fixture
+    // makes them disagree on purpose: value/total would land on a different
+    // percentage than the ratio the server published. Only a screen that
+    // reads the wire prints the server's number.
+    mockGetOverview.mockResolvedValue(
+      readyOverview({
+        concentrations: {
+          assets: [{ key: "BTC", label: "Bitcoin", value: 500000, share: 0.25 }],
+          asset_basis: "priced_asset_value",
+          asset_total: 1000000,
+          assets_ranked: 1,
+          assets_unranked_tail: 0,
+          liabilities: [],
+          liability_basis: "quantified_liability_amount",
+          liability_total: null,
+          currency: "USD"
+        }
+      })
+    );
+    const { getByText, queryByText } = await renderScreen("overview");
+    await waitFor(() => getByText(`${OV}.title`));
+
+    getByText(`${OV}.concentrationTitle`);
+    getByText("Bitcoin");
+    getByText(percent(0.25));
+    // 500000/1000000. A client that divided would print this instead.
+    expect(queryByText(percent(0.5))).toBeNull();
+    // Nothing was truncated here, so the tail note stays away.
+    expect(queryByText(`${OV}.concentrationUnranked`)).toBeNull();
+  });
+
+  it("says the share is unknown when the server had no total to divide by", async () => {
+    mockGetOverview.mockResolvedValue(
+      readyOverview({
+        concentrations: {
+          assets: [{ key: "BTC", label: "Bitcoin", value: null, share: null }],
+          asset_basis: "priced_asset_value",
+          asset_total: null,
+          assets_ranked: 1,
+          assets_unranked_tail: 2,
+          liabilities: [],
+          liability_basis: "quantified_liability_amount",
+          liability_total: null,
+          currency: "USD"
+        }
+      })
+    );
+    const { getByText } = await renderScreen("overview");
+    await waitFor(() => getByText(`${OV}.title`));
+
+    getByText(`${OV}.shareUnknown`);
+    getByText(`${OV}.concentrationUnranked`);
+  });
+
+  it("admits the review list is capped rather than implying it is the whole set", async () => {
+    const { getByText } = await renderScreen("overview");
+    await waitFor(() => getByText(`${OV}.title`));
+
+    getByText(`${OV}.reviewTitle`);
+    getByText("XMR");
+    // The server's own prose and the system that owns the fix, verbatim.
+    getByText("No market price is available.");
+    getByText("market_data");
+    getByText(`${OV}.reviewMore`);
+  });
+
+  it("keeps an overview refusal a refusal, with no balance sheet and no empty claim", async () => {
+    mockGetOverview.mockResolvedValue({ state: "DENIED", reason: "not the owner of record" });
+    const { getByText, queryByText } = await renderScreen("overview");
+    await waitFor(() => getByText("premium:privateOffice.capital.denied.title"));
+
+    getByText("not the owner of record");
+    expect(queryByText(`${OV}.title`)).toBeNull();
+    expect(queryByText(EMPTY_TITLE)).toBeNull();
+    expect(queryByText(RETRY)).toBeNull();
+  });
+
+  it("lets the tab in front own the verdict — a healthy graph does not vouch for a failed overview", async () => {
+    mockGetOverview.mockResolvedValue({ state: "UNAVAILABLE" });
+    const { getAllByText, getByText, queryAllByText, queryByText } =
+      await renderScreen("overview");
+    await waitFor(() => getByText("premium:privateOffice.capital.unavailable.title"));
+    expect(queryByText(`${OV}.title`)).toBeNull();
+
+    // Holdings answers fine. Its success must not retroactively clear the
+    // overview's outage banner — nor must the overview's outage survive onto
+    // a tab that did answer.
+    fireEvent.press(getByText("premium:privateOffice.capital.views.holdings"));
+    // BTC labels both the allocation bar and its holdings row, so the count is
+    // two; what matters here is that the tab rendered at all.
+    await waitFor(() => expect(getAllByText("BTC").length).toBeGreaterThan(0));
+    expect(queryByText("premium:privateOffice.capital.unavailable.title")).toBeNull();
+
+    // And back: the overview is still broken, and says so again.
+    fireEvent.press(getByText("premium:privateOffice.capital.views.overview"));
+    await waitFor(() => getByText("premium:privateOffice.capital.unavailable.title"));
+    expect(queryAllByText("BTC")).toHaveLength(0);
+  });
+
+  it("stops drawing the net position once the member leaves the tab", async () => {
+    const { getAllByText, getByText, queryByText } = await renderScreen("overview");
+    await waitFor(() => getByText(`${OV}.title`));
+
+    // The parsed overview survives the switch by design (returning is
+    // instant). Painting it over the holdings tab would not.
+    fireEvent.press(getByText("premium:privateOffice.capital.views.holdings"));
+    await waitFor(() => expect(getAllByText("BTC").length).toBeGreaterThan(0));
+    expect(queryByText(`${OV}.title`)).toBeNull();
+    expect(queryByText(money(572450.25))).toBeNull();
+  });
+
+  it("relocks the office when the overview says the grant is dead", async () => {
+    mockGetOverview.mockResolvedValue({ state: "LOCKED", setupRequired: false });
+    const { getByText } = await renderScreen("overview");
+
+    // The gate takes the screen back to the unlock door rather than leaving a
+    // dead grant in place.
+    await waitFor(() => getByText("premium:privateOffice.lock.unlock"));
+    expect(isOfficeUnlocked()).toBe(false);
   });
 });

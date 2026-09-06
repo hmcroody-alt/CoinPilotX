@@ -4595,7 +4595,8 @@
           "holdings": "보유 자산",
           "coverage": "보장",
           "structure": "구조",
-          "documents": "문서"
+          "documents": "문서",
+          "overview": "개요"
         },
         "countExact": "{{count}}",
         "countSoFar": "지금까지 {{count}}",
@@ -4737,6 +4738,48 @@
         },
         "documents": {
           "evidenceTitle": "연결된 증빙"
+        },
+        "overview": {
+          "assets": "가격이 매겨진 자산",
+          "complete": "완전",
+          "concentrationTitle": "보유 규모 상위",
+          "concentrationUnranked": "규모가 작은 보유는 여기에 표시되지 않습니다.",
+          "coverageTitle": "커버리지",
+          "dimension": {
+            "pricing": "가격 평가",
+            "cost_basis": "취득 원가",
+            "liability_amounts": "부채 금액",
+            "evidence": "증빙"
+          },
+          "dimensionCount": "{{total}}건 중 {{known}}건",
+          "disclaimerBody": "가격이 매겨진 자산과 금액이 확정된 부채를 비교한 값입니다. 가격이나 금액을 확정하지 못한 항목은 빠져 있습니다.",
+          "disclaimerTitle": "순자산 수치가 아닙니다",
+          "excludedForeignCurrency": "다른 통화의 부채",
+          "excludedTitle": "이 수치에서 제외된 항목",
+          "excludedUnpricedAssets": "가격이 없는 자산",
+          "excludedUnquantifiedLiabilities": "금액이 없는 부채",
+          "excludedUnspecifiedCurrency": "통화가 없는 부채",
+          "liabilities": "금액이 확정된 부채",
+          "liabilityConcentrationTitle": "부채 규모 상위",
+          "noLiabilities": "기록된 부채가 없습니다. 갚을 것이 없다는 뜻은 아닙니다.",
+          "notSummable": "단일 통화가 아니어서 합계를 표시하지 않습니다.",
+          "otherCurrencies": "기타 통화",
+          "partial": "일부",
+          "quantifiedOf": "금액 확인 {{done}}/{{total}}",
+          "reason": {
+            "unpriced_assets": "가격을 확인할 수 없는 자산이 있습니다.",
+            "incomplete_portfolio": "포트폴리오 합계 자체가 불완전합니다.",
+            "unquantified_liabilities": "금액이 기록되지 않은 부채가 있습니다.",
+            "uncomparable_currency": "비교할 수 없는 통화로 표시된 부채가 있습니다.",
+            "liabilities_truncated": "읽어온 것보다 많은 부채가 존재합니다.",
+            "no_liabilities_recorded": "기록된 부채가 하나도 없습니다."
+          },
+          "reviewMore": "다른 항목은 여기에 표시되지 않습니다.",
+          "reviewTitle": "검토 필요",
+          "shareUnknown": "비중 미상",
+          "title": "순포지션",
+          "unscoreable": "평가할 항목 없음",
+          "withheld": "명시되지 않음"
         }
       },
       "attention": {

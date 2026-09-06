@@ -4627,7 +4627,8 @@
           "holdings": "Avoirs",
           "coverage": "Couverture",
           "structure": "Structure",
-          "documents": "Documents"
+          "documents": "Documents",
+          "overview": "Aperçu"
         },
         "countExact": "{{count}}",
         "countSoFar": "{{count}} pour l'instant",
@@ -4769,6 +4770,48 @@
         },
         "documents": {
           "evidenceTitle": "Preuves reliées"
+        },
+        "overview": {
+          "assets": "Actifs valorisés",
+          "complete": "Complet",
+          "concentrationTitle": "Positions les plus importantes",
+          "concentrationUnranked": "Les positions plus petites ne sont pas listées.",
+          "coverageTitle": "Couverture",
+          "dimension": {
+            "pricing": "Valorisation",
+            "cost_basis": "Prix de revient",
+            "liability_amounts": "Montants des passifs",
+            "evidence": "Justificatifs"
+          },
+          "dimensionCount": "{{known}} sur {{total}}",
+          "disclaimerBody": "Ceci compare les actifs valorisés aux passifs chiffrés. Tout ce qui n'a pu être valorisé ou chiffré est exclu.",
+          "disclaimerTitle": "Ce n'est pas un patrimoine net",
+          "excludedForeignCurrency": "Passifs dans une autre devise",
+          "excludedTitle": "Exclu de ce chiffre",
+          "excludedUnpricedAssets": "Actifs sans prix",
+          "excludedUnquantifiedLiabilities": "Passifs sans montant",
+          "excludedUnspecifiedCurrency": "Passifs sans devise",
+          "liabilities": "Passifs chiffrés",
+          "liabilityConcentrationTitle": "Engagements les plus importants",
+          "noLiabilities": "Aucun passif n'est enregistré. Ce n'est pas la même chose que ne rien devoir.",
+          "notSummable": "Aucune devise unique, donc aucun total n'est affiché.",
+          "otherCurrencies": "Autres devises",
+          "partial": "Partiel",
+          "quantifiedOf": "Chiffrés {{done}}/{{total}}",
+          "reason": {
+            "unpriced_assets": "Certains actifs n'ont pas pu être valorisés.",
+            "incomplete_portfolio": "Le total du portefeuille est lui-même incomplet.",
+            "unquantified_liabilities": "Certains passifs n'ont aucun montant enregistré.",
+            "uncomparable_currency": "Certains passifs sont dans une devise non comparable.",
+            "liabilities_truncated": "Il existe plus de passifs que ceux lus.",
+            "no_liabilities_recorded": "Aucun passif n'est enregistré."
+          },
+          "reviewMore": "D'autres éléments ne sont pas affichés ici.",
+          "reviewTitle": "À vérifier",
+          "shareUnknown": "Part inconnue",
+          "title": "Position nette",
+          "unscoreable": "Rien à évaluer",
+          "withheld": "Non indiqué"
         }
       },
       "attention": {

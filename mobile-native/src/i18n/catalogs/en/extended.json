@@ -4627,7 +4627,8 @@
           "holdings": "Holdings",
           "coverage": "Coverage",
           "structure": "Structure",
-          "documents": "Documents"
+          "documents": "Documents",
+          "overview": "Overview"
         },
         "countExact": "{{count}}",
         "countSoFar": "{{count}} so far",
@@ -4769,6 +4770,48 @@
         },
         "documents": {
           "evidenceTitle": "Connected evidence"
+        },
+        "overview": {
+          "assets": "Priced assets",
+          "complete": "Complete",
+          "concentrationTitle": "Largest positions",
+          "concentrationUnranked": "Smaller positions are not listed.",
+          "coverageTitle": "Coverage",
+          "dimension": {
+            "pricing": "Pricing",
+            "cost_basis": "Cost basis",
+            "liability_amounts": "Liability amounts",
+            "evidence": "Evidence"
+          },
+          "dimensionCount": "{{known}} of {{total}}",
+          "disclaimerBody": "This compares priced assets with quantified liabilities. Anything that could not be priced or quantified is left out.",
+          "disclaimerTitle": "Not a net worth figure",
+          "excludedForeignCurrency": "Liabilities in another currency",
+          "excludedTitle": "Left out of this figure",
+          "excludedUnpricedAssets": "Assets with no price",
+          "excludedUnquantifiedLiabilities": "Liabilities with no amount",
+          "excludedUnspecifiedCurrency": "Liabilities with no currency",
+          "liabilities": "Quantified liabilities",
+          "liabilityConcentrationTitle": "Largest obligations",
+          "noLiabilities": "No liabilities are recorded. That is not the same as none being owed.",
+          "notSummable": "No single currency, so no total is shown.",
+          "otherCurrencies": "Other currencies",
+          "partial": "Partial",
+          "quantifiedOf": "Quantified {{done}}/{{total}}",
+          "reason": {
+            "unpriced_assets": "Some assets could not be priced.",
+            "incomplete_portfolio": "The portfolio total is itself incomplete.",
+            "unquantified_liabilities": "Some liabilities have no recorded amount.",
+            "uncomparable_currency": "Some liabilities are in a currency that cannot be compared.",
+            "liabilities_truncated": "More liabilities exist than were read.",
+            "no_liabilities_recorded": "No liabilities are recorded at all."
+          },
+          "reviewMore": "Further items are not shown here.",
+          "reviewTitle": "Needs review",
+          "shareUnknown": "Share unknown",
+          "title": "Net position",
+          "unscoreable": "Nothing to score",
+          "withheld": "Not stated"
         }
       },
       "attention": {

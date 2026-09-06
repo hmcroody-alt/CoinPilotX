@@ -46,11 +46,14 @@ import {
   CAPITAL_VIEWS,
   CapitalGraph,
   CapitalGraphResult,
+  CapitalOverview,
+  CapitalOverviewResult,
   CapitalPortfolio,
   CapitalPortfolioResult,
   CapitalView,
   asCapitalView,
   getCapitalGraph,
+  getCapitalOverview,
   getCapitalPortfolio
 } from "../api/capitalGraph";
 import { useTranslation } from "../i18n";
@@ -70,8 +73,35 @@ type Props = NativeStackScreenProps<RootStackParamList, "CapitalGraph">;
  */
 type ScreenState = "LOADING" | "EMPTY" | CapitalGraphResult["state"];
 
-/** Holdings and coverage read the projected portfolio; the other views don't. */
-const wantsPortfolio = (view: CapitalView) => view === "holdings" || view === "coverage";
+/**
+ * The screen's tabs are wider than the graph's views.
+ *
+ * `CAPITAL_VIEWS` are arguments the graph route accepts; Overview is a
+ * different endpoint with a different payload and no `view` parameter at all.
+ * Folding them into one union and filtering at the call site would leave a
+ * bogus `view=overview` request one careless refactor away, so the tab type is
+ * widened here and narrowed back to a real view before anything is fetched.
+ */
+const CAPITAL_TABS = ["overview", ...CAPITAL_VIEWS] as const;
+
+type CapitalTab = (typeof CAPITAL_TABS)[number];
+
+/** null means "this tab is not a graph read" — never a default view. */
+const asGraphView = (tab: CapitalTab): CapitalView | null =>
+  tab === "overview" ? null : tab;
+
+/**
+ * Overview is the screen's own tab; every other name is delegated to the API
+ * module's parser rather than re-checked against a copy of the list here, so
+ * the graph's accepted vocabulary keeps exactly one definition.
+ */
+const asCapitalTab = (value: unknown): CapitalTab | null => {
+  if (String(value ?? "").trim().toLowerCase() === "overview") return "overview";
+  return asCapitalView(value);
+};
+
+/** Holdings and coverage read the projected portfolio; the other tabs don't. */
+const wantsPortfolio = (tab: CapitalTab) => tab === "holdings" || tab === "coverage";
 
 /**
  * EMPTY is a claim — "nothing recorded" — and on the portfolio-backed views
@@ -114,21 +144,34 @@ export function CapitalGraphScreen(props: Props) {
 function CapitalGraphBody({ navigation, route }: Props) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
-  const [view, setView] = useState<CapitalView>(asCapitalView(route.params?.view) ?? "holdings");
+  const [tab, setTab] = useState<CapitalTab>(asCapitalTab(route.params?.view) ?? "overview");
   const [state, setState] = useState<ScreenState>("LOADING");
   const [result, setResult] = useState<CapitalGraphResult | null>(null);
   const [portfolio, setPortfolio] = useState<CapitalPortfolioResult | null>(null);
+  const [overviewState, setOverviewState] = useState<ScreenState>("LOADING");
+  const [overviewResult, setOverviewResult] = useState<CapitalOverviewResult | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   // One request pair at a time: a second Retry tap while the first is still in
   // flight would race two setState pairs and double-hit the server.
   const inFlight = useRef(false);
 
-  const load = useCallback(async (wanted: CapitalView) => {
+  /** The graph view this tab reads, or null when the tab is not a graph read. */
+  const view = asGraphView(tab);
+
+  const load = useCallback(async (wanted: CapitalTab) => {
     if (inFlight.current) return;
     inFlight.current = true;
     try {
+      const wantedView = asGraphView(wanted);
+      if (wantedView === null) {
+        const next = await getCapitalOverview();
+        if (next.state === "LOCKED") lockOfficeLocally();
+        setOverviewResult(next);
+        setOverviewState(next.state);
+        return;
+      }
       const [next, folio] = await Promise.all([
-        getCapitalGraph(wanted),
+        getCapitalGraph(wantedView),
         wantsPortfolio(wanted) ? getCapitalPortfolio() : Promise.resolve(null)
       ]);
       // The server said the grant is dead (revoked elsewhere, expired). Drop
@@ -144,11 +187,26 @@ function CapitalGraphBody({ navigation, route }: Props) {
 
   useEffect(() => {
     let cancelled = false;
-    setState("LOADING");
+    // Only the active tab's state is reset. Blanking both would make a return
+    // to an already-loaded tab flash LOADING over an answer we still hold.
+    if (view === null) setOverviewState("LOADING");
+    else setState("LOADING");
     (async () => {
+      if (view === null) {
+        const next = await getCapitalOverview();
+        if (cancelled) return;
+        if (next.state === "LOCKED") lockOfficeLocally();
+        setOverviewResult(next);
+        // Read straight through. The overview has no EMPTY: a member with
+        // nothing on file still gets a real answer — zero priced assets and
+        // the reasons why — which is a different sentence from "we found
+        // nothing to show you".
+        setOverviewState(next.state);
+        return;
+      }
       const [next, folio] = await Promise.all([
         getCapitalGraph(view),
-        wantsPortfolio(view) ? getCapitalPortfolio() : Promise.resolve(null)
+        wantsPortfolio(tab) ? getCapitalPortfolio() : Promise.resolve(null)
       ]);
       if (cancelled) return;
       if (next.state === "LOCKED" || folio?.state === "LOCKED") lockOfficeLocally();
@@ -159,21 +217,38 @@ function CapitalGraphBody({ navigation, route }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [view]);
+  }, [tab, view]);
 
   const onRefresh = useCallback(async () => {
     if (inFlight.current) return;
     setRefreshing(true);
     try {
-      await load(view);
+      await load(tab);
     } finally {
       setRefreshing(false);
     }
-  }, [load, view]);
+  }, [load, tab]);
 
   const graph = result && result.state === "READY" ? result.graph : null;
-  const minimumTier = result && result.state === "NOT_ENTITLED" ? result.minimumTier : "";
-  const deniedReason = result && result.state === "DENIED" ? result.reason : "";
+
+  /**
+   * The tab in front owns the screen's verdict.
+   *
+   * Overview and the graph views are separate reads that fail separately, so
+   * the banner must name the state of the request that actually backs what is
+   * on screen. Reading the graph's `state` while Overview is showing would let
+   * a healthy graph vouch for an overview that never answered.
+   */
+  const active: CapitalOverviewResult | CapitalGraphResult | null =
+    view === null ? overviewResult : result;
+  const shown: ScreenState = view === null ? overviewState : state;
+  const minimumTier = active && active.state === "NOT_ENTITLED" ? active.minimumTier : "";
+  const deniedReason = active && active.state === "DENIED" ? active.reason : "";
+  const overview =
+    overviewResult && overviewResult.state === "READY" ? overviewResult.overview : null;
+
+  const ot = (key: string, options?: Record<string, unknown>) =>
+    t(`premium:privateOffice.capital.overview.${key}`, options);
 
   const nodeTypeLabel = (token: string) =>
     t(`premium:privateOffice.capital.nodeType.${token}`, { defaultValue: token });
@@ -195,6 +270,31 @@ function CapitalGraphBody({ navigation, route }: Props) {
     new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(value);
 
   const signedMoney = (value: number) => `${value >= 0 ? "+" : ""}${money(value)}`;
+
+  /**
+   * Money in the currency the server named, or null.
+   *
+   * The overview reads carry their own currency code, and it is blank exactly
+   * when the server refused to reduce a mixed-currency set to one figure.
+   * Falling back to the screen's default currency there would relabel a
+   * withheld total as dollars; printing the bare number would invite the
+   * reader to assume the same thing. Both are lies about provenance, so an
+   * unusable code yields null and the caller says "not stated" instead.
+   */
+  const moneyIn = (value: number | null, currency: string): string | null => {
+    if (value === null) return null;
+    const code = currency.trim().toUpperCase();
+    if (!/^[A-Z]{3}$/.test(code)) return null;
+    try {
+      return new Intl.NumberFormat(undefined, { style: "currency", currency: code }).format(value);
+    } catch {
+      return null;
+    }
+  };
+
+  /** A bare count, routed through i18n so digit shaping follows the locale. */
+  const countText = (count: number) =>
+    t("premium:privateOffice.capital.countExact", { count });
 
   const percent = (ratio: number) =>
     new Intl.NumberFormat(undefined, { style: "percent", maximumFractionDigits: 1 }).format(ratio);
@@ -463,7 +563,7 @@ function CapitalGraphBody({ navigation, route }: Props) {
             <Pressable
               key={asset.nodeId}
               style={styles.folioRow}
-              onPress={() => navigation.navigate("CapitalEntity", { id: asset.nodeId, view })}
+              onPress={() => navigation.navigate("CapitalEntity", { id: asset.nodeId, view: view ?? undefined })}
               accessibilityRole="button"
               accessibilityLabel={asset.symbol}
             >
@@ -520,6 +620,284 @@ function CapitalGraphBody({ navigation, route }: Props) {
   };
 
   /** The whole holdings dashboard, or the failure card when the read failed. */
+  /**
+   * The Overview tab: net position, what it excludes, coverage, concentration
+   * and the named gaps.
+   *
+   * ## `estimated` never travels alone
+   *
+   * It is priced assets minus quantified liabilities — not net worth — and the
+   * server ships `complete` and `incomplete_reasons` precisely so the figure
+   * cannot be quoted without them. They render in the same card, above the
+   * fold, not as a footnote. When the server withheld the figure the card
+   * shows no number at all rather than a zero.
+   *
+   * ## Counts are shown next to the money they qualify
+   *
+   * "Priced assets" beside "3/7 priced" is a different claim from "assets".
+   * Every money cell here carries the count of records that actually fed it.
+   */
+  const overviewPanels = (data: CapitalOverview) => {
+    const net = data.netPosition;
+    const headline = moneyIn(net.estimated, net.currency);
+    const assetsValue = moneyIn(net.knownAssets, net.currency);
+    const liabilitiesValue = moneyIn(net.knownLiabilities, net.currency);
+
+    // Only non-zero exclusions are listed. A row reading "no price: none" is
+    // noise; the absence of the row is the same fact, said quieter.
+    const excluded = (
+      [
+        ["excludedUnpricedAssets", net.excluded.unpricedAssets],
+        ["excludedUnquantifiedLiabilities", net.excluded.unquantifiedLiabilities],
+        ["excludedForeignCurrency", net.excluded.foreignCurrencyLiabilities],
+        ["excludedUnspecifiedCurrency", net.excluded.unspecifiedCurrencyLiabilities]
+      ] as const
+    ).filter(([, count]) => count > 0);
+
+    // Currencies the obligations are denominated in, minus the one already
+    // reported as the known amount. What is left is what was set aside.
+    const otherCurrencies = Object.entries(data.liabilities.byCurrency).filter(
+      ([code]) => code !== data.liabilities.currency
+    );
+
+    const scored = data.coverage.scoredDimensions;
+    const assetTotal = data.concentrations.assetTotal;
+    const liabilityTotal = data.concentrations.liabilityTotal;
+
+    const concentrationRows = (
+      slices: typeof data.concentrations.assets,
+      total: number | null,
+      currency: string
+    ) =>
+      slices.map((slice, index) => {
+        const value = moneyIn(slice.value, currency);
+        return (
+          <View key={slice.key} style={styles.allocationRow}>
+            <View
+              style={[
+                styles.allocationSwatch,
+                { backgroundColor: ALLOCATION_PALETTE[index % ALLOCATION_PALETTE.length] }
+              ]}
+            />
+            <Text style={styles.allocationSymbol} numberOfLines={1}>
+              {slice.label || slice.key}
+            </Text>
+            {value !== null ? <Text style={styles.folioMeta}>{value}</Text> : null}
+            {/* `share` is the server's ratio. It is null when there was no
+                total to divide by, and a computed stand-in would be a number
+                the server declined to publish. */}
+            {slice.share !== null && total !== null ? (
+              <Text style={styles.allocationShare}>{percent(slice.share)}</Text>
+            ) : (
+              <Text style={styles.statMuted}>{ot("shareUnknown")}</Text>
+            )}
+          </View>
+        );
+      });
+
+    return (
+      <>
+        <View style={styles.folioPanel}>
+          <View style={styles.folioHead}>
+            <Text style={styles.folioTitle}>{ot("title")}</Text>
+            <Text
+              style={[
+                styles.freshTier,
+                { color: net.complete ? colors.accent : colors.warning }
+              ]}
+            >
+              {net.complete ? ot("complete") : ot("partial")}
+            </Text>
+          </View>
+
+          <View style={styles.folioTotals}>
+            {headline !== null ? (
+              <Text style={styles.folioTotalValue}>{headline}</Text>
+            ) : (
+              <>
+                <Text style={styles.folioPartial}>{ot("withheld")}</Text>
+                <Text style={styles.folioWarn}>{ot("notSummable")}</Text>
+              </>
+            )}
+          </View>
+
+          {/* The qualifier rides with the number, always drawn, never
+              collapsed when `complete` is true — "this is not net worth" is
+              true of a complete figure too. */}
+          <View style={styles.warnPanel}>
+            <View style={styles.warnHead}>
+              <Ionicons name="information-circle-outline" size={16} color={colors.warning} />
+              <Text style={styles.warnTitle}>{ot("disclaimerTitle")}</Text>
+            </View>
+            <Text style={styles.conflictReason}>{ot("disclaimerBody")}</Text>
+            {/* The server's own wording, verbatim: it is policy text, and a
+                paraphrase here would drift from it silently. */}
+            {net.disclaimer ? <Text style={styles.panelCaption}>{net.disclaimer}</Text> : null}
+          </View>
+
+          {net.incompleteReasons.length ? (
+            <View style={styles.reasonList}>
+              {net.incompleteReasons.map((token) => (
+                <Text key={token} style={styles.reasonRow}>
+                  {ot(`reason.${token}`, { defaultValue: token })}
+                </Text>
+              ))}
+            </View>
+          ) : null}
+
+          <View style={styles.statRow}>
+            <View style={styles.statCell}>
+              <Text style={styles.statLabel}>{ot("assets")}</Text>
+              {assetsValue !== null ? (
+                <Text style={styles.statValue}>{assetsValue}</Text>
+              ) : (
+                <Text style={styles.statMuted}>{ot("withheld")}</Text>
+              )}
+              <Text style={styles.statCaption}>
+                {pt("qualityPriced", { priced: data.assets.priced, total: data.assets.count })}
+              </Text>
+            </View>
+            <View style={styles.statCell}>
+              <Text style={styles.statLabel}>{ot("liabilities")}</Text>
+              {liabilitiesValue !== null ? (
+                <Text style={styles.statValue}>{liabilitiesValue}</Text>
+              ) : (
+                <Text style={styles.statMuted}>{ot("withheld")}</Text>
+              )}
+              <Text style={styles.statCaption}>
+                {ot("quantifiedOf", {
+                  done: data.liabilities.quantified,
+                  total: data.liabilities.count
+                })}
+              </Text>
+            </View>
+          </View>
+
+          {/* Zero recorded liabilities is not zero owed, and the server puts
+              `no_liabilities_recorded` in the reasons for exactly that. */}
+          {data.liabilities.count === 0 ? (
+            <Text style={styles.folioWarn}>{ot("noLiabilities")}</Text>
+          ) : null}
+
+          {excluded.length ? (
+            <View style={styles.reasonList}>
+              <Text style={styles.statLabel}>{ot("excludedTitle")}</Text>
+              {excluded.map(([token, count]) => (
+                <View key={token} style={styles.excludedRow}>
+                  <Text style={styles.coverageLabel}>{ot(token)}</Text>
+                  <Text style={styles.coverageCount}>{countText(count)}</Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
+          {/* The magnitude behind "excluded, other currency". Naming the count
+              without it would tell the member something was left out while
+              withholding how much. */}
+          {otherCurrencies.length ? (
+            <View style={styles.reasonList}>
+              <Text style={styles.statLabel}>{ot("otherCurrencies")}</Text>
+              {otherCurrencies.map(([code, bucket]) => {
+                const value = moneyIn(bucket.amount, code);
+                return (
+                  <View key={code} style={styles.excludedRow}>
+                    <Text style={styles.coverageLabel}>{code}</Text>
+                    <Text style={styles.coverageCount}>
+                      {value !== null ? value : countText(bucket.count)}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          ) : null}
+        </View>
+
+        <View style={styles.folioPanel}>
+          <View style={styles.folioHead}>
+            <Text style={styles.folioTitle}>{ot("coverageTitle")}</Text>
+            {/* A null score means nothing was scoreable. Rendering it as zero
+                would accuse the member of having recorded nothing. */}
+            {data.coverage.score !== null ? (
+              <Text style={styles.folioTitle}>{percent(data.coverage.score)}</Text>
+            ) : (
+              <Text style={styles.statMuted}>{ot("unscoreable")}</Text>
+            )}
+          </View>
+          {Object.entries(data.coverage.dimensions).map(([name, dimension]) => (
+            <View key={name} style={styles.coverageRow}>
+              <Text style={styles.coverageLabel}>
+                {ot(`dimension.${name}`, { defaultValue: name })}
+              </Text>
+              <Text style={styles.coverageCount}>
+                {ot("dimensionCount", {
+                  known: dimension.known,
+                  total: dimension.countable
+                })}
+              </Text>
+              {dimension.ratio !== null ? (
+                <Text style={styles.allocationShare}>{percent(dimension.ratio)}</Text>
+              ) : (
+                <Text style={styles.statMuted}>{ot("withheld")}</Text>
+              )}
+            </View>
+          ))}
+          {/* Which dimensions the headline score is an average of — without it
+              the percentage looks like it covers all four. */}
+          {scored.length ? (
+            <Text style={styles.panelCaption}>
+              {scored.map((name) => ot(`dimension.${name}`, { defaultValue: name })).join(", ")}
+            </Text>
+          ) : null}
+        </View>
+
+        {data.concentrations.assets.length ? (
+          <View style={styles.folioPanel}>
+            <Text style={styles.folioTitle}>{ot("concentrationTitle")}</Text>
+            {concentrationRows(
+              data.concentrations.assets,
+              assetTotal,
+              data.concentrations.currency
+            )}
+            {data.concentrations.assetsUnrankedTail > 0 ? (
+              <Text style={styles.panelCaption}>{ot("concentrationUnranked")}</Text>
+            ) : null}
+          </View>
+        ) : null}
+
+        {data.concentrations.liabilities.length ? (
+          <View style={styles.folioPanel}>
+            <Text style={styles.folioTitle}>{ot("liabilityConcentrationTitle")}</Text>
+            {concentrationRows(
+              data.concentrations.liabilities,
+              liabilityTotal,
+              data.concentrations.currency
+            )}
+          </View>
+        ) : null}
+
+        {data.needsReview.length ? (
+          <View style={styles.folioPanel}>
+            <Text style={styles.folioTitle}>{ot("reviewTitle")}</Text>
+            {data.needsReview.map((item, index) => (
+              <View key={`${item.kind}:${item.subject}:${index}`} style={styles.reviewRow}>
+                <Text style={styles.reviewSubject}>{item.subject}</Text>
+                {/* The server explains each gap in prose written for a person
+                    and names the system that owns the fix. Both verbatim. */}
+                <Text style={styles.reviewDetail}>{item.detail}</Text>
+                <Text style={styles.reviewSource}>{item.source}</Text>
+              </View>
+            ))}
+            {/* The server caps what it sends, so the list can be shorter than
+                the count. Saying so beats implying these are all of them. */}
+            {data.needsReviewTotal > data.needsReview.length ? (
+              <Text style={styles.panelCaption}>{ot("reviewMore")}</Text>
+            ) : null}
+          </View>
+        ) : null}
+      </>
+    );
+  };
+
   const holdingsPanels = () => {
     if (view !== "holdings" || !portfolio) return null;
     if (portfolio.state !== "READY") return portfolioFailure(portfolio);
@@ -737,22 +1115,22 @@ function CapitalGraphBody({ navigation, route }: Props) {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.chips}
       >
-        {CAPITAL_VIEWS.map((candidate) => (
+        {CAPITAL_TABS.map((candidate) => (
           <Pressable
             key={candidate}
-            style={[styles.chip, candidate === view ? styles.chipActive : null]}
-            onPress={() => setView(candidate)}
+            style={[styles.chip, candidate === tab ? styles.chipActive : null]}
+            onPress={() => setTab(candidate)}
             accessibilityRole="button"
-            accessibilityState={{ selected: candidate === view }}
+            accessibilityState={{ selected: candidate === tab }}
           >
-            <Text style={[styles.chipText, candidate === view ? styles.chipTextActive : null]}>
+            <Text style={[styles.chipText, candidate === tab ? styles.chipTextActive : null]}>
               {t(`premium:privateOffice.capital.views.${candidate}`)}
             </Text>
           </Pressable>
         ))}
       </ScrollView>
 
-      {state === "LOADING" ? (
+      {shown === "LOADING" ? (
         <View accessibilityRole="progressbar" style={styles.skeletonStack}>
           <View style={styles.panel}>
             <ActivityIndicator color={colors.accent} />
@@ -763,10 +1141,14 @@ function CapitalGraphBody({ navigation, route }: Props) {
         </View>
       ) : null}
 
-      {state === "READY" ? holdingsPanels() : null}
-      {state === "READY" ? coveragePanels() : null}
+      {/* `view === null` is the Overview tab. The extra guard is not
+          redundant: `overview` survives a tab switch, so testing it alone
+          would paint the net position over a graph tab. */}
+      {view === null && shown === "READY" && overview ? overviewPanels(overview) : null}
+      {shown === "READY" ? holdingsPanels() : null}
+      {shown === "READY" ? coveragePanels() : null}
 
-      {state === "EMPTY"
+      {shown === "EMPTY" && view
         ? notice(
             "file-tray-outline",
             colors.muted,
@@ -785,7 +1167,7 @@ function CapitalGraphBody({ navigation, route }: Props) {
 
       {/* The headline is ours; the reason is the server's, shown verbatim in
           the caption because it was written for a person. */}
-      {state === "DENIED"
+      {shown === "DENIED"
         ? notice(
             "hand-left-outline",
             colors.warning,
@@ -796,7 +1178,7 @@ function CapitalGraphBody({ navigation, route }: Props) {
           )
         : null}
 
-      {state === "NOT_ENTITLED"
+      {shown === "NOT_ENTITLED"
         ? notice(
             "lock-closed-outline",
             colors.warning,
@@ -808,7 +1190,7 @@ function CapitalGraphBody({ navigation, route }: Props) {
           )
         : null}
 
-      {state === "FEATURE_DISABLED"
+      {shown === "FEATURE_DISABLED"
         ? notice(
             "pause-circle-outline",
             colors.warning,
@@ -818,7 +1200,7 @@ function CapitalGraphBody({ navigation, route }: Props) {
           )
         : null}
 
-      {state === "NOT_IMPLEMENTED"
+      {shown === "NOT_IMPLEMENTED"
         ? notice(
             "construct-outline",
             colors.muted,
@@ -828,7 +1210,7 @@ function CapitalGraphBody({ navigation, route }: Props) {
           )
         : null}
 
-      {state === "LOCKED"
+      {shown === "LOCKED"
         ? notice(
             "lock-closed-outline",
             colors.accent,
@@ -838,7 +1220,7 @@ function CapitalGraphBody({ navigation, route }: Props) {
           )
         : null}
 
-      {state === "UNAVAILABLE"
+      {shown === "UNAVAILABLE"
         ? notice(
             "cloud-offline-outline",
             colors.warning,
@@ -848,7 +1230,7 @@ function CapitalGraphBody({ navigation, route }: Props) {
           )
         : null}
 
-      {state === "ERROR"
+      {shown === "ERROR"
         ? notice(
             "alert-circle-outline",
             colors.danger,
@@ -858,7 +1240,7 @@ function CapitalGraphBody({ navigation, route }: Props) {
           )
         : null}
 
-      {graph && state === "READY" ? (
+      {graph && shown === "READY" ? (
         <>
           {/* Counts of things, never of money. `complete` gates the phrasing:
               exact counts only while the server says nothing was truncated. */}
@@ -938,7 +1320,7 @@ function CapitalGraphBody({ navigation, route }: Props) {
             <Pressable
               key={node.id}
               style={styles.nodeRow}
-              onPress={() => navigation.navigate("CapitalEntity", { id: node.id, view })}
+              onPress={() => navigation.navigate("CapitalEntity", { id: node.id, view: view ?? undefined })}
               accessibilityRole="button"
               accessibilityLabel={node.externalRef || nodeTypeLabel(node.nodeType)}
             >
@@ -1178,7 +1560,19 @@ const styles = StyleSheet.create({
   truthMark: { color: colors.muted, fontSize: 10, fontWeight: "800", letterSpacing: 0.8 },
   truthDanger: { color: colors.danger },
   truthWarning: { color: colors.warning },
-  nodeCaption: { color: colors.muted, fontSize: 11 }
+  nodeCaption: { color: colors.muted, fontSize: 11 },
+  reasonList: { gap: 4 },
+  reasonRow: { color: colors.warning, fontSize: 12, lineHeight: 17 },
+  excludedRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8
+  },
+  reviewRow: { gap: 2 },
+  reviewSubject: { color: colors.text, fontSize: 13, fontWeight: "800" },
+  reviewDetail: { color: colors.muted, fontSize: 12, lineHeight: 17 },
+  reviewSource: { color: colors.muted, fontSize: 10, fontWeight: "800", letterSpacing: 0.8 }
 });
 
 export default CapitalGraphScreen;

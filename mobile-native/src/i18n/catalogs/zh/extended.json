@@ -4595,7 +4595,8 @@
           "holdings": "持有",
           "coverage": "保障",
           "structure": "结构",
-          "documents": "文件"
+          "documents": "文件",
+          "overview": "概览"
         },
         "countExact": "{{count}}",
         "countSoFar": "目前 {{count}}",
@@ -4737,6 +4738,48 @@
         },
         "documents": {
           "evidenceTitle": "已连接的证据"
+        },
+        "overview": {
+          "assets": "已定价资产",
+          "complete": "完整",
+          "concentrationTitle": "最大持仓",
+          "concentrationUnranked": "较小的持仓未在此列出。",
+          "coverageTitle": "覆盖率",
+          "dimension": {
+            "pricing": "计价",
+            "cost_basis": "成本基础",
+            "liability_amounts": "负债金额",
+            "evidence": "凭证"
+          },
+          "dimensionCount": "{{total}} 项中的 {{known}} 项",
+          "disclaimerBody": "此处将已定价的资产与已确定金额的负债作比较。无法定价或无法确定金额的项目均未计入。",
+          "disclaimerTitle": "这不是净资产数字",
+          "excludedForeignCurrency": "其他币种的负债",
+          "excludedTitle": "未计入此数字的项目",
+          "excludedUnpricedAssets": "无价格的资产",
+          "excludedUnquantifiedLiabilities": "无金额的负债",
+          "excludedUnspecifiedCurrency": "未标明币种的负债",
+          "liabilities": "已确定金额的负债",
+          "liabilityConcentrationTitle": "最大负债",
+          "noLiabilities": "未记录任何负债。这并不等于没有欠款。",
+          "notSummable": "没有统一币种，因此不显示合计。",
+          "otherCurrencies": "其他货币",
+          "partial": "部分",
+          "quantifiedOf": "已计金额 {{done}}/{{total}}",
+          "reason": {
+            "unpriced_assets": "部分资产无法取得价格。",
+            "incomplete_portfolio": "投资组合总额本身并不完整。",
+            "unquantified_liabilities": "部分负债没有记录金额。",
+            "uncomparable_currency": "部分负债以无法比较的货币计价。",
+            "liabilities_truncated": "实际负债多于本次读取的部分。",
+            "no_liabilities_recorded": "没有记录任何负债。"
+          },
+          "reviewMore": "其他项目未在此显示。",
+          "reviewTitle": "需要复核",
+          "shareUnknown": "占比未知",
+          "title": "净头寸",
+          "unscoreable": "无可评估项",
+          "withheld": "未说明"
         }
       },
       "attention": {

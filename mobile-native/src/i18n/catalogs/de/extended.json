@@ -4627,7 +4627,8 @@
           "holdings": "Bestände",
           "coverage": "Absicherung",
           "structure": "Struktur",
-          "documents": "Dokumente"
+          "documents": "Dokumente",
+          "overview": "Überblick"
         },
         "countExact": "{{count}}",
         "countSoFar": "{{count}} bisher",
@@ -4769,6 +4770,48 @@
         },
         "documents": {
           "evidenceTitle": "Verbundene Nachweise"
+        },
+        "overview": {
+          "assets": "Bewertete Vermögenswerte",
+          "complete": "Vollständig",
+          "concentrationTitle": "Größte Positionen",
+          "concentrationUnranked": "Kleinere Positionen werden nicht aufgeführt.",
+          "coverageTitle": "Abdeckung",
+          "dimension": {
+            "pricing": "Bewertung",
+            "cost_basis": "Anschaffungskosten",
+            "liability_amounts": "Beträge der Verbindlichkeiten",
+            "evidence": "Nachweise"
+          },
+          "dimensionCount": "{{known}} von {{total}}",
+          "disclaimerBody": "Hier werden bewertete Vermögenswerte mit bezifferten Verbindlichkeiten verglichen. Alles, was nicht bewertet oder beziffert werden konnte, bleibt außen vor.",
+          "disclaimerTitle": "Keine Nettovermögensangabe",
+          "excludedForeignCurrency": "Verbindlichkeiten in anderer Währung",
+          "excludedTitle": "Nicht in dieser Zahl enthalten",
+          "excludedUnpricedAssets": "Vermögenswerte ohne Preis",
+          "excludedUnquantifiedLiabilities": "Verbindlichkeiten ohne Betrag",
+          "excludedUnspecifiedCurrency": "Verbindlichkeiten ohne Währung",
+          "liabilities": "Bezifferte Verbindlichkeiten",
+          "liabilityConcentrationTitle": "Größte Verpflichtungen",
+          "noLiabilities": "Es sind keine Verbindlichkeiten erfasst. Das heißt nicht, dass keine bestehen.",
+          "notSummable": "Keine einheitliche Währung, daher wird keine Summe angezeigt.",
+          "otherCurrencies": "Andere Währungen",
+          "partial": "Unvollständig",
+          "quantifiedOf": "Beziffert {{done}}/{{total}}",
+          "reason": {
+            "unpriced_assets": "Einige Vermögenswerte konnten nicht bewertet werden.",
+            "incomplete_portfolio": "Die Portfoliosumme ist selbst unvollständig.",
+            "unquantified_liabilities": "Bei einigen Verbindlichkeiten ist kein Betrag erfasst.",
+            "uncomparable_currency": "Einige Verbindlichkeiten lauten auf eine nicht vergleichbare Währung.",
+            "liabilities_truncated": "Es bestehen mehr Verbindlichkeiten als gelesen wurden.",
+            "no_liabilities_recorded": "Es ist keine Verbindlichkeit erfasst."
+          },
+          "reviewMore": "Weitere Einträge werden hier nicht angezeigt.",
+          "reviewTitle": "Zu prüfen",
+          "shareUnknown": "Anteil unbekannt",
+          "title": "Nettoposition",
+          "unscoreable": "Nichts zu bewerten",
+          "withheld": "Nicht angegeben"
         }
       },
       "attention": {

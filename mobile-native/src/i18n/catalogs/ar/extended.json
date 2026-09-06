@@ -4819,7 +4819,8 @@
           "holdings": "الممتلكات",
           "coverage": "التغطية",
           "structure": "الهيكل",
-          "documents": "المستندات"
+          "documents": "المستندات",
+          "overview": "نظرة عامة"
         },
         "countExact": "{{count}}",
         "countSoFar": "{{count}} حتى الآن",
@@ -4969,6 +4970,48 @@
         },
         "documents": {
           "evidenceTitle": "الأدلة المتصلة"
+        },
+        "overview": {
+          "assets": "الأصول المُسعَّرة",
+          "complete": "مكتمل",
+          "concentrationTitle": "أكبر المراكز",
+          "concentrationUnranked": "المراكز الأصغر غير مدرجة هنا.",
+          "coverageTitle": "التغطية",
+          "dimension": {
+            "pricing": "التسعير",
+            "cost_basis": "تكلفة الاقتناء",
+            "liability_amounts": "مبالغ الالتزامات",
+            "evidence": "المستندات"
+          },
+          "dimensionCount": "{{known}} من {{total}}",
+          "disclaimerBody": "يقارن هذا الأصول المُسعَّرة بالالتزامات المُحدَّدة. وكل ما تعذَّر تسعيره أو تحديده مستبعَد.",
+          "disclaimerTitle": "ليس رقم صافي الثروة",
+          "excludedForeignCurrency": "التزامات بعملة أخرى",
+          "excludedTitle": "مستبعَد من هذا الرقم",
+          "excludedUnpricedAssets": "أصول بلا سعر",
+          "excludedUnquantifiedLiabilities": "التزامات بلا مبلغ",
+          "excludedUnspecifiedCurrency": "التزامات بلا عملة",
+          "liabilities": "الالتزامات المُحدَّدة",
+          "liabilityConcentrationTitle": "أكبر الالتزامات",
+          "noLiabilities": "لا توجد التزامات مسجَّلة. وهذا لا يعني عدم وجود مستحقات.",
+          "notSummable": "لا توجد عملة واحدة، لذلك لا يُعرض أي إجمالي.",
+          "otherCurrencies": "عملات أخرى",
+          "partial": "جزئي",
+          "quantifiedOf": "المحدَّدة {{done}}/{{total}}",
+          "reason": {
+            "unpriced_assets": "تعذّر تسعير بعض الأصول.",
+            "incomplete_portfolio": "إجمالي المحفظة نفسه غير مكتمل.",
+            "unquantified_liabilities": "بعض الالتزامات لا يوجد لها مبلغ مسجّل.",
+            "uncomparable_currency": "بعض الالتزامات بعملة لا يمكن مقارنتها.",
+            "liabilities_truncated": "توجد التزامات أكثر مما تمت قراءته.",
+            "no_liabilities_recorded": "لا يوجد أي التزام مسجّل."
+          },
+          "reviewMore": "لا تُعرض هنا عناصر أخرى.",
+          "reviewTitle": "يحتاج مراجعة",
+          "shareUnknown": "الحصة غير معروفة",
+          "title": "صافي المركز",
+          "unscoreable": "لا شيء للتقييم",
+          "withheld": "غير مذكور"
         }
       },
       "attention": {

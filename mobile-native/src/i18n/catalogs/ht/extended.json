@@ -4596,7 +4596,8 @@
           "holdings": "Byen yo",
           "coverage": "Kouvèti",
           "structure": "Estrikti",
-          "documents": "Dokiman"
+          "documents": "Dokiman",
+          "overview": "Apèsi"
         },
         "countExact": "{{count}}",
         "countSoFar": "{{count}} jiskaprezan",
@@ -4738,6 +4739,48 @@
         },
         "documents": {
           "evidenceTitle": "Prèv ki konekte"
+        },
+        "overview": {
+          "assets": "Byen ki gen pri",
+          "complete": "Konplè",
+          "concentrationTitle": "Pi gwo pozisyon yo",
+          "concentrationUnranked": "Pozisyon ki pi piti yo pa parèt isit la.",
+          "coverageTitle": "Kouvèti",
+          "dimension": {
+            "pricing": "Pri",
+            "cost_basis": "Pri acha",
+            "liability_amounts": "Montan dèt yo",
+            "evidence": "Prèv"
+          },
+          "dimensionCount": "{{known}} sou {{total}}",
+          "disclaimerBody": "Sa konpare byen ki gen pri ak dèt ki gen montan. Tou sa ki pa t kapab jwenn pri oswa montan rete deyò.",
+          "disclaimerTitle": "Se pa yon chif richès nèt",
+          "excludedForeignCurrency": "Dèt nan yon lòt lajan",
+          "excludedTitle": "Deyò nan chif sa a",
+          "excludedUnpricedAssets": "Byen san pri",
+          "excludedUnquantifiedLiabilities": "Dèt san montan",
+          "excludedUnspecifiedCurrency": "Dèt san lajan presize",
+          "liabilities": "Dèt ki gen montan",
+          "liabilityConcentrationTitle": "Pi gwo obligasyon yo",
+          "noLiabilities": "Pa gen dèt anrejistre. Sa pa vle di ou pa dwe anyen.",
+          "notSummable": "Pa gen yon sèl lajan, donk nou pa montre yon total.",
+          "otherCurrencies": "Lòt lajan",
+          "partial": "Pasyèl",
+          "quantifiedOf": "Chifre {{done}}/{{total}}",
+          "reason": {
+            "unpriced_assets": "Kèk byen pa t kapab jwenn yon pri.",
+            "incomplete_portfolio": "Total pòtfòy la li menm pa konplè.",
+            "unquantified_liabilities": "Kèk dèt pa gen montan anrejistre.",
+            "uncomparable_currency": "Kèk dèt nan yon lajan ou pa ka konpare.",
+            "liabilities_truncated": "Gen plis dèt pase sa yo li a.",
+            "no_liabilities_recorded": "Pa gen okenn dèt anrejistre."
+          },
+          "reviewMore": "Lòt atik pa parèt isit la.",
+          "reviewTitle": "Bezwen revizyon",
+          "shareUnknown": "Pòsyon an pa konnen",
+          "title": "Pozisyon nèt",
+          "unscoreable": "Anyen pou evalye",
+          "withheld": "Pa deklare"
         }
       },
       "attention": {

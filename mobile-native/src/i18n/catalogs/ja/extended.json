@@ -4588,7 +4588,8 @@
           "holdings": "保有資産",
           "coverage": "補償",
           "structure": "構造",
-          "documents": "書類"
+          "documents": "書類",
+          "overview": "概要"
         },
         "countExact": "{{count}}",
         "countSoFar": "これまでに {{count}}",
@@ -4730,6 +4731,48 @@
         },
         "documents": {
           "evidenceTitle": "接続された証跡"
+        },
+        "overview": {
+          "assets": "価格の付いた資産",
+          "complete": "完全",
+          "concentrationTitle": "保有額の大きい順",
+          "concentrationUnranked": "小規模な保有はここには表示されません。",
+          "coverageTitle": "カバレッジ",
+          "dimension": {
+            "pricing": "価格評価",
+            "cost_basis": "取得原価",
+            "liability_amounts": "負債の金額",
+            "evidence": "証跡"
+          },
+          "dimensionCount": "{{total}} 件中 {{known}} 件",
+          "disclaimerBody": "価格の付いた資産と金額の確定した負債を比較しています。価格や金額が確定できなかったものは含まれていません。",
+          "disclaimerTitle": "純資産の数値ではありません",
+          "excludedForeignCurrency": "他通貨建ての負債",
+          "excludedTitle": "この数値に含まれないもの",
+          "excludedUnpricedAssets": "価格のない資産",
+          "excludedUnquantifiedLiabilities": "金額のない負債",
+          "excludedUnspecifiedCurrency": "通貨が不明な負債",
+          "liabilities": "金額の確定した負債",
+          "liabilityConcentrationTitle": "負債額の大きい順",
+          "noLiabilities": "負債は記録されていません。負債がないという意味ではありません。",
+          "notSummable": "通貨が一つに定まらないため、合計は表示しません。",
+          "otherCurrencies": "その他の通貨",
+          "partial": "一部",
+          "quantifiedOf": "金額あり {{done}}/{{total}}",
+          "reason": {
+            "unpriced_assets": "価格を取得できない資産があります。",
+            "incomplete_portfolio": "ポートフォリオの合計自体が不完全です。",
+            "unquantified_liabilities": "金額が記録されていない負債があります。",
+            "uncomparable_currency": "比較できない通貨建ての負債があります。",
+            "liabilities_truncated": "読み取った件数より多くの負債があります。",
+            "no_liabilities_recorded": "負債は一件も記録されていません。"
+          },
+          "reviewMore": "ほかの項目はここには表示していません。",
+          "reviewTitle": "要確認",
+          "shareUnknown": "構成比は不明",
+          "title": "純ポジション",
+          "unscoreable": "評価対象なし",
+          "withheld": "記載なし"
         }
       },
       "attention": {
