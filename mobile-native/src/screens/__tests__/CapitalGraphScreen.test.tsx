@@ -173,14 +173,19 @@ beforeEach(() => {
   __resetOfficeLockForTests();
   mockGetGraph.mockResolvedValue(emptyGraph());
   mockGetPortfolio.mockResolvedValue(readyPortfolio([btcAsset()]));
-  mockOfficeStatus.mockResolvedValue({
+  // The status probe answers from the grant, as the real endpoint does: the
+  // server that just accepted the passcode reports `unlocked: true` on the
+  // next status read. A static `false` here would model a server-side
+  // revocation between mounts — which the gate treats as authoritative and
+  // answers by relocking, a different scenario than these tests stage.
+  mockOfficeStatus.mockImplementation(async () => ({
     state: "READY",
     passcodeSet: true,
     setupRequired: false,
     cooldownSeconds: 0,
     biometricPreference: "unset",
-    unlocked: false
-  });
+    unlocked: isOfficeUnlocked()
+  }));
   mockUnlockOffice.mockImplementation(async (passcode: string, userId: number) => {
     if (passcode !== OFFICE_PASSCODE) return { state: "WRONG_PASSCODE" };
     setOfficeUnlocked(
