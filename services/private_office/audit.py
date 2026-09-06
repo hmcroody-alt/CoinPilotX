@@ -144,6 +144,19 @@ ACTION_RECORD_TRANSITION_DENIED = "PRIVATE_RECORD_TRANSITION_DENIED"
 #: its own action rather than a ``PRIVATE_RECORD_READ`` with a different purpose
 #: string. "Show me every reveal" must be an equality filter, not a heuristic.
 ACTION_RECORD_FIELD_REVEAL = "PRIVATE_RECORD_FIELD_REVEAL"
+#: A dependency between two records was declared or removed. Both carry the
+#: *dependent* as the object, not the blocker, so "what has been sequenced
+#: around this record" is one filter — and because the dependent is the record
+#: whose behaviour changes when the edge exists.
+ACTION_RECORD_LINK = "PRIVATE_RECORD_LINK"
+ACTION_RECORD_UNLINK = "PRIVATE_RECORD_UNLINK"
+#: A dependency the graph rules forbid: a self-dependency, one that would close
+#: a cycle, or one past the per-record ceiling. Its own action rather than a
+#: denied ``PRIVATE_RECORD_LINK`` for the same reason the transition denial is
+#: separate — the refusal writes no other row, so without this the attempt is
+#: invisible, and repeated attempts to close a cycle are worth being able to
+#: count.
+ACTION_RECORD_LINK_DENIED = "PRIVATE_RECORD_LINK_DENIED"
 
 # Capability-completion vocabulary — documents, briefings, shield, concierge.
 # Same shape as Batch C: one small set of verbs per capability with the
@@ -237,6 +250,9 @@ ACTIONS: tuple[str, ...] = (
     ACTION_RECORD_REOPEN,
     ACTION_RECORD_TRANSITION_DENIED,
     ACTION_RECORD_FIELD_REVEAL,
+    ACTION_RECORD_LINK,
+    ACTION_RECORD_UNLINK,
+    ACTION_RECORD_LINK_DENIED,
     ACTION_DOCUMENT_CREATE,
     ACTION_DOCUMENT_READ,
     ACTION_DOCUMENT_DELETE,
@@ -416,6 +432,13 @@ RECORD_ACTIVITY_ACTIONS: tuple[str, ...] = (
     ACTION_RECORD_UPDATE,
     ACTION_RECORD_REVISE,
     ACTION_RECORD_REOPEN,
+    # Sequencing is a change to the member's affairs, not a view of them: an
+    # edge decides whether a record reads as ready to start. The *denied* link
+    # stays out, on the same rule that keeps the denied transition out — a
+    # refusal is a security question, and mixing refusals into the activity
+    # feed makes "what changed" answer with things that did not.
+    ACTION_RECORD_LINK,
+    ACTION_RECORD_UNLINK,
 )
 
 MAX_ACTIVITY_ROWS = 200

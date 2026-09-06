@@ -148,12 +148,18 @@ def _iso(moment: datetime) -> str:
 # ---------------------------------------------------------------------------
 # Classification
 # ---------------------------------------------------------------------------
-def reasons_for(record: dict, *, record_type: str) -> tuple[str, ...]:
+def reasons_for(record: dict, *, record_type: str, blocked: bool = False) -> tuple[str, ...]:
     """Every attention reason true of *record*, strongest first.
 
     Takes a serialized record — the shape ``records.list_records`` returns — so
     it reads ``effective_status`` rather than recomputing time, and cannot
     disagree with what the member is shown next to the row.
+
+    ``blocked`` is passed in rather than looked up here, because this function
+    is given one record and has no cursor; resolving dependencies inside it
+    would mean a query per row. :func:`attention` resolves the whole type in one
+    pass and hands the answer down. It defaults to ``False`` so an existing
+    caller keeps its current behaviour instead of silently gaining a reason.
 
     Returns ``()`` for a record that needs nothing. That is the common case and
     it is meant to be: a classifier that finds a reason for everything has not
@@ -197,6 +203,20 @@ def reasons_for(record: dict, *, record_type: str) -> tuple[str, ...]:
         elif stored == "WAITING_ON_PROVIDER":
             found.add(REASON_BLOCKED)
 
+    # A record waiting on another record is blocked in exactly the sense
+    # REASON_BLOCKED already means for a request waiting on a provider, so it
+    # reuses the reason rather than introducing a second one that would need its
+    # own place in REASON_RANK and its own explanation on the screen.
+    #
+    # It does not suppress the other reasons. An overdue obligation that is
+    # blocked is still overdue — the blocker is what the member has to go and
+    # chase, not a reason to stop showing them the deadline. Because
+    # `primary_reason` is the strongest reason present and BLOCKED ranks last,
+    # being blocked only decides the ranking for records that had nothing more
+    # urgent to say.
+    if blocked:
+        found.add(REASON_BLOCKED)
+
     if kind == _records.TYPE_DECISION and stored in ("OPEN", "UNDER_REVIEW"):
         # An open decision is by definition a question waiting on the member.
         # It ranks near the bottom precisely because it is always true of every
@@ -239,17 +259,25 @@ class _Desc:
         return isinstance(other, _Desc) and self.value == other.value
 
 
-def attention_item(record: dict, *, record_type: str, reasons: tuple[str, ...]) -> dict:
+def attention_item(record: dict, *, record_type: str, reasons: tuple[str, ...],
+                   open_blocker_count: int = 0) -> dict:
     """One queue row: the record, why it is here, and what ranked it.
 
     ``primary_reason`` is on the item rather than derived by the caller so the
     screen, the API and the sort all read the same field. A UI that recomputes
     the reason is a UI that can display one thing while the order reflects
     another.
+
+    ``open_blocker_count`` is carried alongside ``blocked`` for the same reason:
+    "waiting on 3 things" is actionable and "blocked" is not, and a screen that
+    wanted the number would otherwise have to ask per row.
     """
     kind = str(record_type).strip().upper()
     deadline_field = _records.DEADLINE_FIELDS.get(kind, "")
+    blockers = max(0, int(open_blocker_count or 0))
     return {
+        "blocked": blockers > 0,
+        "open_blocker_count": blockers,
         "id": int(record.get("id") or 0),
         "record_type": kind,
         "title": record.get("title") or "",
@@ -284,6 +312,12 @@ def attention(cur, *, owner_user_id: int, limit: int = MAX_ATTENTION_ITEMS) -> d
                 "unsupported_reasons": dict(UNSUPPORTED_REASONS)}
 
     now = _now()
+    # Every dependency this owner has, resolved once, outside the type loop.
+    # Per row it would be a query per record; per type it would be five queries
+    # six times over, on a read that is otherwise thirty queries in total. Here
+    # it is five, and it stays five however much the member has going on.
+    blockers = _records.open_blocker_counts_all(cur, owner_user_id=owner)
+
     collected: list[dict] = []
     for kind in _records.RECORD_TYPES:
         rows = _records.list_records(
@@ -291,10 +325,14 @@ def attention(cur, *, owner_user_id: int, limit: int = MAX_ATTENTION_ITEMS) -> d
             statuses=_records.working_statuses(kind),
             limit=ATTENTION_SCAN_PER_TYPE,
         )
+        waiting_by_id = blockers.get(kind, {})
         for row in rows:
-            found = reasons_for(row, record_type=kind)
+            waiting = waiting_by_id.get(int(row.get("id") or 0), 0)
+            found = reasons_for(row, record_type=kind, blocked=waiting > 0)
             if found:
-                collected.append(attention_item(row, record_type=kind, reasons=found))
+                collected.append(attention_item(
+                    row, record_type=kind, reasons=found,
+                    open_blocker_count=waiting))
 
     collected.sort(key=_sort_key)
     bounded = max(1, min(int(limit or MAX_ATTENTION_ITEMS), MAX_ATTENTION_ITEMS))
@@ -304,6 +342,11 @@ def attention(cur, *, owner_user_id: int, limit: int = MAX_ATTENTION_ITEMS) -> d
         # told 300; capping the number as well as the list would be the display
         # bound quietly editing the fact.
         "total": len(collected),
+        # Counted over everything collected, not over the page, for the same
+        # reason. A blocked record always carries REASON_BLOCKED and so is always
+        # collected, which makes this complete within the same per-type scan
+        # bound `total` already lives under.
+        "blocked": sum(1 for item in collected if item.get("blocked")),
         "truncated": len(collected) > bounded,
         "scanned_at": _iso(now),
         "unsupported_reasons": dict(UNSUPPORTED_REASONS),
@@ -409,6 +452,12 @@ def overview(cur, *, owner_user_id: int, now: datetime | None = None) -> dict:
     return {
         "as_of": now_iso,
         "needs_attention": queue["total"],
+        # Records waiting on another record. Distinct from `needs_attention`
+        # and deliberately not subtracted from it: something can be both
+        # blocked and overdue, and a dashboard that moved those rows out of the
+        # attention count would let a late obligation disappear from the number
+        # the member actually reads by pointing it at a second late thing.
+        "blocked": queue.get("blocked", 0),
         "due_today": due_today,
         "due_this_week": due_this_week,
         "overdue": overdue,

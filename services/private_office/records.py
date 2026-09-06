@@ -536,7 +536,145 @@ def index_ddl(record_type: str) -> tuple[str, ...]:
     return tuple(statements)
 
 
-TABLES: tuple[str, ...] = tuple(SPECS[k]["table"] for k in RECORD_TYPES)
+#: The six primitive tables. Kept separate from :data:`TABLES` because several
+#: callers iterate this in step with :data:`RECORD_TYPES` and would break on a
+#: seventh entry that has no record type.
+RECORD_TABLES: tuple[str, ...] = tuple(SPECS[k]["table"] for k in RECORD_TYPES)
+
+
+# ---------------------------------------------------------------------------
+# Dependencies (Stage G-3)
+# ---------------------------------------------------------------------------
+# A seventh table, and the only one in this package that holds a relationship
+# between two records rather than a record.
+#
+# Why not the existing graph. `private_graph_edges` already stores edges, and
+# reusing it was the first thing considered and the right thing to reject.
+# That graph is an *estate* graph: its nodes are PERSON, BUSINESS, PROPERTY,
+# ASSET, LIABILITY and its relations are OWNS / ADVISED_BY / COVERED_BY. Its
+# module docstring draws the line it is built around — the graph holds
+# relationships between entities, and admitting a second kind of node would
+# make traversal depth meaningless, because two hops could then be one estate
+# relation and one workflow link. "This filing is blocked by that decision" is
+# not a statement about the member's estate, and putting it there would buy one
+# fewer table at the cost of the invariant that makes the estate graph
+# traversable at all.
+#
+# Direction. `source DEPENDS_ON target` reads "source is waiting on target".
+# The dependent is always the source, so "what is blocking me" is a query on
+# `source_*` and "what am I holding up" is a query on `target_*`. Stating it
+# once here is cheaper than every reader inferring it from a column name, and
+# an inverted edge is invisible in the data — it simply blocks the wrong record.
+# Naming, and why this table breaks the module's own resolver convention. The
+# six primitives are reached through `private_table_for` because the table is
+# chosen at runtime from a record type, and the static write-boundary guard
+# needs *some* token it can match inside the f-string. This table is fixed, so
+# every statement below writes `private_record_links` literally. That is the
+# more visible of the two options, not a shortcut: the guard matches the real
+# table name in the real statement, with no indirection to follow and no second
+# entry in its constants list that could be removed while the writes stayed.
+# `RECORD_LINKS_TABLE` exists for the places that need the name as a value —
+# `TABLES`, the ensure step's column probe — and `test_record_dependencies`
+# asserts the constant and the DDL cannot drift apart.
+RECORD_LINKS_TABLE = "private_record_links"
+
+LINK_DEPENDS_ON = "DEPENDS_ON"
+LINK_TYPES: tuple[str, ...] = (LINK_DEPENDS_ON,)
+
+#: Ceilings on a dependency walk. Cycle detection traverses user-controlled
+#: data, so it needs a bound that does not depend on the data being sane: a
+#: chain built before this code existed, or one produced by a future writer with
+#: a defect, must make the walk stop rather than hang the request holding a
+#: database connection.
+MAX_DEPENDENCY_DEPTH = 32
+MAX_DEPENDENCY_VISITS = 512
+
+#: How many blockers one record may declare. A bound rather than none, for the
+#: same reason every list in this module has one.
+MAX_DEPENDENCIES_PER_RECORD = 64
+
+
+def linkable_types() -> tuple[str, ...]:
+    """The types that may take part in a dependency.
+
+    Derived from ``spec["closing"]`` rather than enumerated, so the rule cannot
+    drift from the vocabulary it depends on. A dependency means "this cannot
+    proceed until that has ended", which requires the far end to be *capable* of
+    ending. EVENT is the one type with no closing status — it has exactly one
+    status, RECORDED — so an edge pointing at an event would never be satisfied
+    and would mark its dependent blocked forever, while an edge *from* an event
+    would claim something that already happened is still waiting.
+
+    If EVENT ever gains a closing status this function admits it automatically,
+    which is the point of deriving it.
+    """
+    return tuple(k for k in RECORD_TYPES if SPECS[k]["closing"])
+
+
+#: Why a type is excluded, kept as text so the omission reads as a decision.
+NO_LINK_REASON: dict[str, str] = {
+    TYPE_EVENT: "an event has no closing status, so a dependency on one could "
+                "never be satisfied and a dependency from one would say "
+                "something already recorded is still waiting",
+}
+
+
+def links_table_ddl() -> str:
+    """DDL for the dependency table.
+
+    The UNIQUE constraint carries a real invariant rather than tidiness: it is
+    what makes "A depends on B" idempotent at the storage layer, so a retried
+    request cannot accumulate duplicate edges that would then each have to be
+    removed separately before the dependent unblocks.
+    """
+    return (
+        f"CREATE TABLE IF NOT EXISTS private_record_links (\n"
+        f"    id INTEGER PRIMARY KEY AUTOINCREMENT,\n"
+        f"    owner_user_id INTEGER NOT NULL,\n"
+        f"    link_type TEXT NOT NULL DEFAULT '{LINK_DEPENDS_ON}',\n"
+        f"    source_type TEXT NOT NULL,\n"
+        f"    source_id INTEGER NOT NULL,\n"
+        f"    target_type TEXT NOT NULL,\n"
+        f"    target_id INTEGER NOT NULL,\n"
+        f"    note TEXT NOT NULL DEFAULT '',\n"
+        f"    created_at TEXT NOT NULL,\n"
+        f"    updated_at TEXT NOT NULL,\n"
+        f"    UNIQUE(owner_user_id, link_type, source_type, source_id,"
+        f" target_type, target_id)\n"
+        f")"
+    )
+
+
+#: Column names the ensure step verifies. Restated rather than parsed out of the
+#: DDL above, so a column silently dropped from the DDL is a missing-schema
+#: report instead of an ensure that checks nothing.
+LINK_COLUMNS: tuple[str, ...] = (
+    "owner_user_id", "link_type", "source_type", "source_id",
+    "target_type", "target_id", "note", "created_at", "updated_at",
+)
+
+
+def links_index_ddl() -> tuple[str, ...]:
+    """Both directions, both led by ``owner_user_id``.
+
+    Two indexes rather than one because both directions are hot: resolving
+    "what blocks this" walks the source side and cycle detection walks the
+    target side, and the cycle walk runs inside the write path where a scan of
+    every member's edges would be paid on every link.
+    """
+    return (
+        "CREATE INDEX IF NOT EXISTS idx_record_links_owner_source "
+        "ON private_record_links(owner_user_id, source_type, source_id)",
+        "CREATE INDEX IF NOT EXISTS idx_record_links_owner_target "
+        "ON private_record_links(owner_user_id, target_type, target_id)",
+    )
+
+
+#: Every table this module owns, primitives and dependency edges together. This
+#: is the collision and ownership surface — the write-boundary guard and the
+#: cross-batch coexistence check both read it, so a table missing from here is a
+#: table nothing is defending.
+TABLES: tuple[str, ...] = RECORD_TABLES + (RECORD_LINKS_TABLE,)
 
 _SCHEMA_READY = False
 
@@ -581,6 +719,18 @@ def ensure_records_schema(cur, *, force: bool = False) -> dict:
                 # impossible. Only the second one blocks.
                 LOGGER.warning("PRIVATE_RECORDS_INDEX_FAILED error=%s", exc)
 
+    try:
+        cur.execute(links_table_ddl())
+    except Exception as exc:
+        LOGGER.warning(
+            "PRIVATE_RECORDS_TABLE_DDL_FAILED table=%s error=%s",
+            RECORD_LINKS_TABLE, exc)
+    for statement in links_index_ddl():
+        try:
+            cur.execute(statement)
+        except Exception as exc:
+            LOGGER.warning("PRIVATE_RECORDS_INDEX_FAILED error=%s", exc)
+
     for record_type in RECORD_TYPES:
         spec = SPECS[record_type]
         try:
@@ -592,6 +742,22 @@ def ensure_records_schema(cur, *, force: bool = False) -> dict:
         absent = [name for name in _column_names(spec) if name not in present]
         if absent or not present:
             missing.append(f"{spec['table']}:{','.join(absent) or 'absent'}")
+
+    # The dependency table is verified on the same terms as the six. It is
+    # reported as missing rather than skipped, because a link writer running
+    # against an absent table would refuse every dependency as though the member
+    # had none — which reads on screen as "nothing is blocked".
+    try:
+        present = db_module.get_table_columns(cur, RECORD_LINKS_TABLE)
+    except Exception as exc:
+        LOGGER.exception(
+            "PRIVATE_RECORDS_ENSURE_FAILED table=%s", RECORD_LINKS_TABLE)
+        return {"status": "error", "tables": [], "missing": [],
+                "error": f"private_record_links: {str(exc)[:400]}",
+                "cached": False}
+    absent = [name for name in LINK_COLUMNS if name not in present]
+    if absent or not present:
+        missing.append(f"private_record_links:{','.join(absent) or 'absent'}")
 
     if missing:
         LOGGER.error("PRIVATE_RECORDS_SCHEMA_MISSING tables=%s", ";".join(missing))
@@ -1483,6 +1649,11 @@ def revise_record(
     new_id = _insert(cur, spec, kind, owner, values,
                      key=key, supersedes_id=int(record_id), now_iso=now_iso)
 
+    # A revision is the same thing continuing under a new id, so its
+    # dependencies come with it. See `_repoint_links` in the dependencies
+    # section for why this cannot be left to the read side.
+    _repoint_links(cur, owner, kind, int(record_id), new_id, now_iso=now_iso)
+
     _audit.record(
         cur, actor_user_id=int(actor_user_id or owner), owner_user_id=owner,
         action=_audit.ACTION_RECORD_REVISE, object_type=spec["audit_object"],
@@ -1751,6 +1922,476 @@ def count_records(
     if row is None:
         return 0
     return int(row["n"] if hasattr(row, "keys") else row[0])
+
+
+def _link_endpoint(cur, owner: int, record_type: object, record_id: object,
+                   *, role: str) -> tuple[str, int, dict]:
+    """Resolve one end of a dependency, or refuse.
+
+    Every refusal below is deliberate about *which* refusal it is, because two
+    of them leak and one does not:
+
+    * An unknown type or an unlinkable type is a shape error. The caller named
+      something that could never be an endpoint for anybody, so saying so
+      reveals nothing about this member's data.
+    * An id that does not resolve **under this owner** is reported as not found,
+      with no hint that the row exists for someone else. This is the same rule
+      the graph module applies to nodes and the same rule ``update_record``
+      applies to a missing record: "you may not see that" and "that was never
+      issued" must be indistinguishable, or the error message becomes an
+      existence oracle an attacker can enumerate.
+
+    Cross-owner rejection therefore needs no separate branch. It falls out of
+    resolving the endpoint through an owner-scoped query, which is the only way
+    to make it hold — a check written as ``if row["owner_user_id"] != owner``
+    requires having already read another member's row.
+    """
+    kind = str(record_type or "").strip().upper()
+    if kind not in SPECS:
+        raise PrivateRecordRejected(f"unknown record_type: {record_type!r}")
+    if kind not in linkable_types():
+        reason = NO_LINK_REASON.get(kind, "this type cannot take part in a dependency")
+        raise PrivateRecordRejected(f"{kind} cannot be a dependency {role}: {reason}")
+    try:
+        ident = int(record_id or 0)
+    except (TypeError, ValueError):
+        ident = 0
+    if ident <= 0:
+        raise PrivateRecordRejected(f"a dependency {role} needs a record id")
+    row = _fetch(cur, SPECS[kind], owner, ident)
+    if row is None:
+        raise PrivateRecordRejected(f"no such {kind} record")
+    return kind, ident, dict(row)
+
+
+def _repoint_links(cur, owner: int, kind: str, old_id: int, new_id: int,
+                   *, now_iso: str) -> int:
+    """Move every edge touching ``old_id`` onto ``new_id`` after a revision.
+
+    Without this the store is quietly wrong in three separate ways, all of them
+    invisible to a test that only links and reads:
+
+    * ``dependencies_for`` resolves the endpoint with :func:`_fetch`, which does
+      not filter lifecycle, so it keeps reading the superseded row and reports
+      the status that row was frozen at. ``blocked_record_ids`` *does* filter to
+      ACTIVE, so it drops the edge entirely. The same question gets two answers
+      depending on which reader a screen happens to call.
+    * Closing the live blocker no longer unblocks anything, because the edge is
+      still watching the version nobody is working on.
+    * Revising the *dependent* makes its dependencies vanish from the new
+      version, which is the worst of the three: the record silently reports
+      itself ready to start.
+
+    Fixing this on the read side would mean walking the supersession chain on
+    every endpoint of every edge, bounded, in both readers — two more traversals
+    to keep in step with each other. Re-pointing at revision time is one write in
+    the one place that already holds both ids.
+
+    Safe by construction rather than by check: ``new_id`` was inserted moments
+    ago, so no edge can already reference it, and no UNIQUE collision or
+    self-loop is reachable. Relabelling a single node cannot create or destroy a
+    cycle either, so the acyclicity invariant carries over untouched.
+    """
+    if old_id <= 0 or new_id <= 0 or old_id == new_id:
+        return 0
+    moved = 0
+    for column in ("source", "target"):
+        cur.execute(
+            f"UPDATE private_record_links "
+            f"SET {column}_id = ?, updated_at = ? "
+            f"WHERE owner_user_id = ? AND {column}_type = ? AND {column}_id = ?",
+            (new_id, now_iso, owner, kind, old_id),
+        )
+        moved += int(getattr(cur, "rowcount", 0) or 0)
+    return moved
+
+
+def _outgoing(cur, owner: int, kind: str, ident: int) -> list[tuple[str, int]]:
+    """What ``(kind, ident)`` is waiting on. One hop, owner-scoped."""
+    cur.execute(
+        f"SELECT target_type, target_id FROM private_record_links "
+        f"WHERE owner_user_id = ? AND link_type = ? "
+        f"AND source_type = ? AND source_id = ?",
+        (owner, LINK_DEPENDS_ON, kind, ident),
+    )
+    out: list[tuple[str, int]] = []
+    for row in cur.fetchall() or ():
+        data = dict(row)
+        out.append((str(data["target_type"]), int(data["target_id"])))
+    return out
+
+
+def _reaches(cur, owner: int, start: tuple[str, int],
+             goal: tuple[str, int]) -> bool:
+    """Can ``start`` reach ``goal`` by following DEPENDS_ON edges?
+
+    This is the whole of cycle detection. Adding ``A DEPENDS_ON B`` closes a
+    loop exactly when B already reaches A, so the check runs *before* the insert
+    and the store never holds a cycle even briefly — which matters because the
+    read side walks these edges too, and a cycle that exists for the duration of
+    a transaction is still a cycle a concurrent reader can walk forever.
+
+    Bounded twice, by depth and by total visits. An unbounded walk over
+    user-controlled data is a denial of service that arrives looking like a slow
+    page. Exhausting a bound returns ``True`` — the safe direction: refusing a
+    legitimate link is recoverable and visible, admitting one that closes a loop
+    is neither.
+    """
+    seen: set[tuple[str, int]] = {start}
+    frontier = [(start, 0)]
+    visits = 0
+    while frontier:
+        (node, depth) = frontier.pop()
+        if node == goal:
+            return True
+        if depth >= MAX_DEPENDENCY_DEPTH:
+            return True
+        visits += 1
+        if visits > MAX_DEPENDENCY_VISITS:
+            return True
+        for nxt in _outgoing(cur, owner, node[0], node[1]):
+            if nxt in seen:
+                continue
+            seen.add(nxt)
+            frontier.append((nxt, depth + 1))
+    return False
+
+
+def link_records(
+    cur,
+    *,
+    owner_user_id: int,
+    source_type: str,
+    source_id: int,
+    target_type: str,
+    target_id: int,
+    actor_user_id: int | None = None,
+    note: str = "",
+    purpose: str = "user_request",
+) -> dict:
+    """Record that ``source`` is waiting on ``target``.
+
+    Refuses, in this order: an endpoint that is not a linkable type or does not
+    resolve under this owner; a self-dependency; a link that would close a
+    cycle; and a source that already carries the maximum number of blockers.
+    Re-linking an existing pair is not an error — it reports ``existing`` and
+    writes nothing, so a retried request converges instead of duplicating.
+    """
+    owner = int(owner_user_id or 0)
+    if owner <= 0:
+        raise PrivateRecordRejected("owner_user_id is required")
+    require_records_schema(cur)
+
+    src_kind, src_id, _src = _link_endpoint(
+        cur, owner, source_type, source_id, role="source")
+    tgt_kind, tgt_id, _tgt = _link_endpoint(
+        cur, owner, target_type, target_id, role="target")
+
+    actor = int(actor_user_id or owner)
+
+    def _deny(message: str) -> PrivateRecordRejected:
+        # Every refusal is audited, and audited before it is raised. A denied
+        # link is the interesting event — an accepted one is ordinary — and a
+        # refusal that leaves no trace makes repeated probing invisible.
+        _audit.record(
+            cur, actor_user_id=actor, owner_user_id=owner,
+            action=_audit.ACTION_RECORD_LINK_DENIED,
+            object_type=SPECS[src_kind]["audit_object"], object_id=src_id,
+            purpose=purpose, outcome=_audit.OUTCOME_DENIED,
+        )
+        return PrivateRecordRejected(message)
+
+    if (src_kind, src_id) == (tgt_kind, tgt_id):
+        # The degenerate cycle, checked separately because `_reaches` starting
+        # and ending at the same node would report the trivial path and give a
+        # message about loops that hides what actually happened.
+        raise _deny("a record cannot depend on itself")
+
+    if _reaches(cur, owner, (tgt_kind, tgt_id), (src_kind, src_id)):
+        raise _deny(
+            f"{tgt_kind} {tgt_id} already depends on {src_kind} {src_id}, so "
+            f"this link would create a circular dependency")
+
+    cur.execute(
+        f"SELECT id FROM private_record_links "
+        f"WHERE owner_user_id = ? AND link_type = ? AND source_type = ? "
+        f"AND source_id = ? AND target_type = ? AND target_id = ?",
+        (owner, LINK_DEPENDS_ON, src_kind, src_id, tgt_kind, tgt_id),
+    )
+    found = cur.fetchone()
+    if found is not None:
+        return {"status": STATUS_EXISTING, "link_id": int(dict(found)["id"]),
+                "source": {"record_type": src_kind, "record_id": src_id},
+                "target": {"record_type": tgt_kind, "record_id": tgt_id}}
+
+    cur.execute(
+        f"SELECT COUNT(*) AS n FROM private_record_links "
+        f"WHERE owner_user_id = ? AND link_type = ? "
+        f"AND source_type = ? AND source_id = ?",
+        (owner, LINK_DEPENDS_ON, src_kind, src_id),
+    )
+    row = cur.fetchone()
+    existing_count = int(dict(row)["n"]) if row is not None else 0
+    if existing_count >= MAX_DEPENDENCIES_PER_RECORD:
+        raise _deny(
+            f"{src_kind} {src_id} already has {MAX_DEPENDENCIES_PER_RECORD} "
+            f"dependencies")
+
+    now_iso = _now_iso()
+    cur.execute(
+        f"INSERT INTO private_record_links "
+        f"(owner_user_id, link_type, source_type, source_id, target_type, "
+        f" target_id, note, created_at, updated_at) "
+        f"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (owner, LINK_DEPENDS_ON, src_kind, src_id, tgt_kind, tgt_id,
+         _text(note, MAX_OUTCOME), now_iso, now_iso),
+    )
+    cur.execute(
+        f"SELECT id FROM private_record_links "
+        f"WHERE owner_user_id = ? AND link_type = ? AND source_type = ? "
+        f"AND source_id = ? AND target_type = ? AND target_id = ?",
+        (owner, LINK_DEPENDS_ON, src_kind, src_id, tgt_kind, tgt_id),
+    )
+    created = cur.fetchone()
+    _audit.record(
+        cur, actor_user_id=actor, owner_user_id=owner,
+        action=_audit.ACTION_RECORD_LINK,
+        object_type=SPECS[src_kind]["audit_object"], object_id=src_id,
+        purpose=purpose, outcome=_audit.OUTCOME_OK,
+    )
+    return {"status": STATUS_CREATED,
+            "link_id": int(dict(created)["id"]) if created is not None else 0,
+            "source": {"record_type": src_kind, "record_id": src_id},
+            "target": {"record_type": tgt_kind, "record_id": tgt_id}}
+
+
+def unlink_records(
+    cur,
+    *,
+    owner_user_id: int,
+    source_type: str,
+    source_id: int,
+    target_type: str,
+    target_id: int,
+    actor_user_id: int | None = None,
+    purpose: str = "user_request",
+) -> dict:
+    """Remove a dependency.
+
+    A real DELETE, and the one place this package deletes rather than
+    superseding. The justification is that an edge is not a claim about the
+    member's life — it is a working annotation about sequencing, and a
+    tombstoned edge would have to be excluded from every traversal, which is
+    exactly the kind of filter a later query forgets and then reports a
+    resolved blocker as still blocking. The audit row is the history.
+    """
+    owner = int(owner_user_id or 0)
+    if owner <= 0:
+        raise PrivateRecordRejected("owner_user_id is required")
+    require_records_schema(cur)
+    src_kind, src_id, _ = _link_endpoint(
+        cur, owner, source_type, source_id, role="source")
+    tgt_kind, tgt_id, _ = _link_endpoint(
+        cur, owner, target_type, target_id, role="target")
+
+    cur.execute(
+        f"SELECT id FROM private_record_links "
+        f"WHERE owner_user_id = ? AND link_type = ? AND source_type = ? "
+        f"AND source_id = ? AND target_type = ? AND target_id = ?",
+        (owner, LINK_DEPENDS_ON, src_kind, src_id, tgt_kind, tgt_id),
+    )
+    found = cur.fetchone()
+    if found is None:
+        return {"status": "absent", "link_id": 0}
+    link_id = int(dict(found)["id"])
+    cur.execute(
+        f"DELETE FROM private_record_links "
+        f"WHERE owner_user_id = ? AND id = ?",
+        (owner, link_id),
+    )
+    _audit.record(
+        cur, actor_user_id=int(actor_user_id or owner), owner_user_id=owner,
+        action=_audit.ACTION_RECORD_UNLINK,
+        object_type=SPECS[src_kind]["audit_object"], object_id=src_id,
+        purpose=purpose, outcome=_audit.OUTCOME_OK,
+    )
+    return {"status": "removed", "link_id": link_id}
+
+
+def _describe_endpoint(cur, owner: int, kind: str, ident: int,
+                       *, now: datetime | None = None) -> dict:
+    """A blocker or dependent as a reader needs it: enough to act, no more.
+
+    Carries ``open`` rather than leaving the caller to compare ``status``
+    against ``closing`` itself. That comparison is the whole meaning of the edge
+    and having two implementations of it is how a screen ends up saying a record
+    is blocked by something that finished last week.
+    """
+    row = _fetch(cur, SPECS[kind], owner, ident)
+    if row is None:
+        # An endpoint that no longer resolves. Reported rather than hidden: the
+        # alternative is an edge that silently stops blocking, which looks
+        # exactly like the blocker having been completed.
+        return {"record_type": kind, "record_id": ident, "found": False,
+                "open": False, "status": "", "title": ""}
+    data = dict(row)
+    status = str(data.get("status") or "")
+    return {
+        "record_type": kind,
+        "record_id": ident,
+        "found": True,
+        "open": status not in SPECS[kind]["closing"],
+        "status": status,
+        "effective_status": effective_status(kind, data, now=now),
+        "title": str(data.get("title") or ""),
+    }
+
+
+def dependencies_for(
+    cur,
+    *,
+    owner_user_id: int,
+    record_type: str,
+    record_id: int,
+    now: datetime | None = None,
+) -> dict:
+    """Both directions for one record, plus whether it is blocked.
+
+    ``blocked`` is derived here and never stored, for the same reason
+    ``OVERDUE`` is derived in :func:`effective_status`: a stored flag depends on
+    something having run when the blocker closed, and a sweep that stops leaves
+    every dependent reporting itself ready to start.
+    """
+    owner = int(owner_user_id or 0)
+    if owner <= 0:
+        raise PrivateRecordRejected("owner_user_id is required")
+    require_records_schema(cur)
+    kind, ident, _ = _link_endpoint(
+        cur, owner, record_type, record_id, role="source")
+
+    cur.execute(
+        f"SELECT target_type, target_id FROM private_record_links "
+        f"WHERE owner_user_id = ? AND link_type = ? "
+        f"AND source_type = ? AND source_id = ? ORDER BY id",
+        (owner, LINK_DEPENDS_ON, kind, ident),
+    )
+    blockers = [
+        _describe_endpoint(cur, owner, str(d["target_type"]),
+                           int(d["target_id"]), now=now)
+        for d in (dict(r) for r in (cur.fetchall() or ()))
+    ]
+
+    cur.execute(
+        f"SELECT source_type, source_id FROM private_record_links "
+        f"WHERE owner_user_id = ? AND link_type = ? "
+        f"AND target_type = ? AND target_id = ? ORDER BY id",
+        (owner, LINK_DEPENDS_ON, kind, ident),
+    )
+    dependents = [
+        _describe_endpoint(cur, owner, str(d["source_type"]),
+                           int(d["source_id"]), now=now)
+        for d in (dict(r) for r in (cur.fetchall() or ()))
+    ]
+
+    open_blockers = [b for b in blockers if b["open"]]
+    return {
+        "record_type": kind,
+        "record_id": ident,
+        "depends_on": blockers,
+        "blocks": dependents,
+        "blocked": bool(open_blockers),
+        "open_blocker_count": len(open_blockers),
+    }
+
+
+def _blocker_counts(cur, owner: int, source_kind: str | None) -> dict[str, dict[int, int]]:
+    """Open-blocker counts, keyed by source type then source id.
+
+    One query per *target* type — five, fixed — whether the caller wants one
+    source type or all of them. The obvious shape is a query per
+    (source, target) pair, which is twenty-five, and the read model calls this
+    once per type, so that shape costs thirty queries on a dashboard that is
+    otherwise thirty in total. Grouping by ``source_type`` in SQL and bucketing
+    in Python answers the same question for a fifth of the round trips.
+
+    A target type has to be joined separately because each primitive lives in
+    its own table with its own closing vocabulary; that is the irreducible five.
+
+    Not ``DISTINCT``: a record waiting on three separate requests is waiting on
+    three things, and collapsing that to "blocked" throws away the number the
+    member most wants — whether clearing one blocker will actually free it.
+    """
+    if owner <= 0:
+        return {}
+    require_records_schema(cur)
+    counts: dict[str, dict[int, int]] = {}
+    for target_kind in linkable_types():
+        closing = SPECS[target_kind]["closing"]
+        if not closing:
+            continue
+        placeholders = ", ".join("?" for _ in closing)
+        # The optional clause and its parameter are built together, and both go
+        # in ahead of the variable-length status list. An optional placeholder
+        # appended after a `NOT IN (?, ?)` silently shifts every status by one
+        # and the query still runs, just against the wrong values.
+        clause = "" if source_kind is None else "AND l.source_type = ? "
+        params: list = [owner, LINK_DEPENDS_ON, target_kind]
+        if source_kind is not None:
+            params.append(source_kind)
+        params.append(LIFECYCLE_ACTIVE)
+        params.extend(closing)
+        cur.execute(
+            f"SELECT l.source_type AS source_type, l.source_id AS source_id, "
+            f"       COUNT(*) AS n "
+            f"FROM private_record_links l "
+            f"JOIN {SPECS[target_kind]['table']} t "
+            f"  ON t.id = l.target_id AND t.owner_user_id = l.owner_user_id "
+            f"WHERE l.owner_user_id = ? AND l.link_type = ? "
+            f"AND l.target_type = ? "
+            f"{clause}"
+            f"AND t.lifecycle_state = ? "
+            f"AND t.status NOT IN ({placeholders}) "
+            f"GROUP BY l.source_type, l.source_id",
+            tuple(params),
+        )
+        for row in cur.fetchall() or ():
+            data = dict(row)
+            bucket = counts.setdefault(str(data["source_type"]), {})
+            source = int(data["source_id"])
+            bucket[source] = bucket.get(source, 0) + int(data["n"])
+    return counts
+
+
+def open_blocker_counts(cur, *, owner_user_id: int, record_type: str) -> dict[int, int]:
+    """How many open blockers each of this owner's ``record_type`` rows has."""
+    kind = str(record_type or "").strip().upper()
+    if kind not in SPECS:
+        return {}
+    return _blocker_counts(cur, int(owner_user_id or 0), kind).get(kind, {})
+
+
+def open_blocker_counts_all(cur, *, owner_user_id: int) -> dict[str, dict[int, int]]:
+    """The same, for every source type at once, in the same five queries.
+
+    The read model classifies all six primitives in one pass, so asking per type
+    would multiply a fixed cost by six for an answer the single call already
+    contains.
+    """
+    return _blocker_counts(cur, int(owner_user_id or 0), None)
+
+
+def blocked_record_ids(cur, *, owner_user_id: int, record_type: str) -> set[int]:
+    """Ids of this owner's ``record_type`` rows that have an open blocker.
+
+    Defined in terms of :func:`open_blocker_counts` rather than as a second
+    query. Two readers answering the same question by different routes is
+    exactly how the revision bug got in — ``dependencies_for`` and this function
+    disagreed about superseded rows because one filtered on lifecycle and the
+    other did not. A set that is literally the keys of the count map cannot
+    drift from it.
+    """
+    return set(open_blocker_counts(
+        cur, owner_user_id=owner_user_id, record_type=record_type))
 
 
 def count_open(cur, *, record_type: str, owner_user_id: int) -> int:

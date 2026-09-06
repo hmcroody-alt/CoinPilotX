@@ -121,6 +121,21 @@ is moving, not because it needs them; ranking it with the things that do need
 them is how a queue fills with items nobody can act on, which is how members
 learn to ignore the queue.
 
+`BLOCKED` is raised by two different things and deliberately not split. A
+`REQUEST` in `WAITING_ON_PROVIDER` raises it, and so does any record with an open
+dependency (see **Dependencies** below). They mean the same thing to the member —
+this is waiting on something that is not you — and a second reason would need its
+own rank and its own sentence on screen to express a distinction the member does
+not have to act on differently.
+
+Being blocked **adds** a reason, it does not replace them. An overdue obligation
+that is also blocked is still overdue: the blocker is what the member has to go
+and chase, not grounds to stop showing the deadline. Since `primary_reason` is
+the strongest reason present and `BLOCKED` ranks last, being blocked only decides
+the ranking of records that had nothing more urgent to say. A blocked record is
+never dropped from the queue — something waiting on a blocker that never clears
+is precisely what a member needs to see.
+
 `operations.UNSUPPORTED_REASONS` declares the reasons the model cannot support
 and why — `EXPIRING_OPPORTUNITY` because `private_opportunities` has no expiry
 column, `ESCALATED` because no escalation state exists. They are declared rather
@@ -128,9 +143,14 @@ than omitted so a screen can say "not tracked" instead of implying "none found".
 The API returns them alongside the queue.
 
 Bounds: 50 items returned, 120 rows scanned per type, 25 recent activity entries,
-a 14-day window for "recently". Six fixed queries whose cost does not grow with
-the size of the account. The header count is **not** capped — a member with 300
-overdue items is told 300 and shown the worst 50.
+a 14-day window for "recently". Eleven fixed queries whose cost does not grow with
+the size of the account — the original six, plus one per linkable type to resolve
+blockers in bulk. That second group is issued **once for the whole call**, not
+once per type and never once per record: resolving a record's blockers
+individually would make the query count grow with the size of the account, which
+is the one property this read model is built to keep. Measured at 11 for both 40
+and 140 records. The header count is **not** capped — a member with 300 overdue
+items is told 300 and shown the worst 50.
 
 ## Overview
 
@@ -139,9 +159,9 @@ call: `as_of`, `needs_attention`, `due_today`, `due_this_week`, `overdue`,
 `pending_decisions`, `open_requests`, `awaiting_response`, `active_risks`,
 `active_high_risks`, `active_opportunities`, `recently_completed`,
 `expiring_opportunities`, `counts`, `attention`, `recent_activity`,
-`recent_window_days`, `unsupported`.
+`recent_window_days`, `unsupported`, `blocked`.
 
-Four properties of that list are load-bearing.
+Five properties of that list are load-bearing.
 
 **`expiring_opportunities` is the string `UNSUPPORTED`, not a number.** No expiry
 column exists on `private_opportunities`, so the question is unanswerable rather
@@ -159,6 +179,14 @@ the number matters.
 single `active_high_risks` that actually counted all live risks would be the same
 class of untruth as a fabricated zero, just harder to notice.
 
+**`blocked` counts every blocked record, not the blocked ones on the page.** Same
+rule as `active_high_risks` and for the same reason, but the failure is sharper
+here: blocked items rank last, so they are the first thing a 50-item cap cuts.
+Counting the page would report "3 blocked" to a member with 80, and would do it
+most confidently at the moment the account is most jammed. It is also **not**
+subtracted from `needs_attention` — a blocked item still needs attention, it just
+needs a different action — so the two numbers overlap by design.
+
 **Recent activity comes from the audit ledger**, not reconstructed from the rows
 as they currently stand. Current rows can tell you what a record *is*, never what
 happened to it; inferring the second from the first relabels every past change
@@ -169,6 +197,104 @@ a superseded revision is not counted beside the row that replaced it, and the
 status is one the type does not treat as an ending. Dropping either half breaks a
 count — the first inflates everything after the member edits anything, the second
 means completed work never leaves the dashboard.
+
+## Dependencies
+
+`private_record_links` holds edges between the existing types. It is the only new
+table the Operations work added, and it earns one by storing something none of the
+six can: a relationship *between* records rather than a property of one.
+
+One link type, `DEPENDS_ON`, written as `source DEPENDS_ON target` — the source
+waits, the target blocks. Direction is not a detail; it is the whole meaning of
+the row, and a reversed edge reads as a perfectly valid dependency pointing the
+wrong way, which nothing downstream can detect.
+
+`records.link_records`, `unlink_records`, and `dependencies_for` are the surface.
+Linking is idempotent: re-linking an existing pair is accepted and changes
+nothing, because a member clicking twice has not made a second dependency.
+
+**`EVENT` cannot be linked.** `linkable_types()` derives this from the specs
+rather than listing it — a type is linkable exactly when it has closing statuses.
+An event has already happened, so it can never *stop* blocking, and an edge to one
+would be a blocker that no action can clear.
+
+### What is refused, and why refusal is the safe direction
+
+- **Self-dependency.** A record cannot depend on itself.
+- **Cycles.** `A DEPENDS_ON B` closes a loop exactly when B already reaches A,
+  checked by `_reaches` **before** the insert, so the store never holds a cycle
+  even briefly.
+- **Cross-owner.** Endpoints must belong to the caller.
+- **Ceiling.** `MAX_DEPENDENCIES_PER_RECORD` (64) per record.
+
+`_reaches` walks to `MAX_DEPENDENCY_DEPTH` (32) and **fails closed**: exhausting
+the bound returns "yes, reachable", refusing the link. This is the deliberate
+choice and it is worth stating plainly, because the opposite is the more natural
+thing to write. A wrongly refused link is visible immediately and the member can
+retry or restructure. A wrongly admitted one creates a cycle that every later
+traversal walks while the rules claim it cannot exist — invisible at the moment it
+happens and unbounded afterwards. The bound exists to stop a runaway walk, and a
+bound that admits the edge when it trips is not a safety mechanism.
+
+A cross-owner endpoint and a nonexistent one produce the **same** refusal, `no
+such <type> record`, byte for byte. Saying "that belongs to someone else" would
+turn the link endpoint into an existence oracle for other members' record ids. An
+unknown *type*, by contrast, is reported precisely: which types exist is true for
+everybody and leaks nothing. The tests assert the two id-refusals are string-equal
+rather than merely both-rejecting.
+
+### Blocked is derived, never stored
+
+A record is blocked when it has at least one `DEPENDS_ON` edge to a target that is
+`ACTIVE` and not in a closing status. There is no `blocked` column and no sweep
+that sets one. A stored flag is only as accurate as the last run of whatever
+maintains it, and the failure mode of a stopped sweep is silent and maximally
+misleading: everything reports healthy. Closing a blocker unblocks its dependents
+on the next read, with nothing scheduled in between.
+
+`open_blocker_counts_all` answers this for every type in five queries, one per
+linkable type, and `attention()` calls it once per request.
+
+`blocked_record_ids` is defined as `set(open_blocker_counts(...))` rather than as
+its own query. That is not a shortcut — two readers answering the same question by
+different routes is exactly how the bug below got in, and a set that is literally
+the keys of the count map cannot drift from it.
+
+### Revisions carry their dependencies
+
+`revise_record` supersedes a row and writes a new one with a new id.
+`_repoint_links` moves every edge touching the old id onto the new one, at write
+time.
+
+This was found by writing the test, not by reading the code. Without it, three
+things broke and none of them raised: `dependencies_for` and the bulk blocker
+reader disagreed with each other; closing a live blocker never unblocked its
+dependent; and revising a dependent silently dropped every blocker it had. The
+last is the worst — an edit unrelated to dependencies quietly marks blocked work
+as ready.
+
+Re-pointing at write time beats having each reader walk supersession chains,
+because "each reader" is two readers today and more later, and they have already
+been shown to drift. It is safe by construction: the new id is fresh, so no
+`UNIQUE` collision and no self-loop is reachable, and relabelling one node can
+neither create nor destroy a cycle.
+
+### Enforcement
+
+`private_record_links` is in `PRIVATE_TABLES` in the write-boundary guard, so only
+`records.py` may write it. This matters more than for the other tables. The
+database cannot express "no cycles" — that rule lives only in the writer, so a
+direct `INSERT` is precisely how a loop would get in, after which every traversal
+is walking a graph its own invariants say is impossible. A direct `DELETE` is the
+mirror image: it makes blocked work read as ready to start.
+
+The rejection battery is `tests/private_office/test_private_record_links.py`, and
+the sixteen G-3 entries in
+`scripts/private_office/operations_mutation_battery.py` are what keep it from
+passing vacuously. Two of those mutations survived their first run — one that made
+depth exhaustion admit the link, one that counted the blocked total from the
+truncated page — because every existing stage happened to stay inside the bounds.
+`stage_bounds` exists because of that, and both are caught now.
 
 ## HTTP surface
 
@@ -264,9 +390,11 @@ to ignore the state field.
 
 ## Deliberately absent
 
-No task type, no project type, no approval engine, no recurrence, no dependency
-table, no escalation writes, no UNDX mutations. Each was considered and deferred
-rather than half-built. `UNSUPPORTED_REASONS` and `NO_DEADLINE_REASON` are where
+No task type, no project type, no approval engine, no recurrence, no escalation
+writes, no UNDX mutations. Each was considered and deferred rather than
+half-built. The dependency table was on this list and no longer is — see
+**Dependencies** above. There is still no dependency *view*: the graph is
+enforced and drives `blocked`, but no screen renders it. `UNSUPPORTED_REASONS` and `NO_DEADLINE_REASON` are where
 the gaps are recorded in code, so a screen can name them instead of implying a
 zero.
 

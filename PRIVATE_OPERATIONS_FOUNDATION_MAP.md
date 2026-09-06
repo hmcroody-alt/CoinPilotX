@@ -519,7 +519,7 @@ section number.
 |---|---|---|---|
 | G-1 | No `TASK` type | 4, 10 | The OBLIGATION/TASK "why vs work" split does not exist. Add as a seventh entry in `SPECS`, not as a new module. |
 | G-2 | No `PROJECT` type, no grouping | 4, 11, 50 | Requires a parent link plus computed progress from defined states. |
-| G-3 | No dependency graph | 17, 18, 54, 93 | Nothing models "A depends on B". Needs a junction table, self-dependency rejection, cycle detection, cross-owner rejection. The only Operations feature here that genuinely warrants a new table. |
+| ~~G-3~~ | ~~No dependency graph~~ | 17, 18, 54, 93 | **CLOSED by this commit.** `private_record_links` (`records.py:579`) with `link_records` (`:2060`), `unlink_records` (`:2168`), `dependencies_for` (`:2250`). Rejection battery: self (`:2060`), cycle via `_reaches` (`:2024`), cross-owner, non-linkable type, and a per-record ceiling (`MAX_DEPENDENCIES_PER_RECORD`, `:594`). `_reaches` fails **closed** — exhausting `MAX_DEPENDENCY_DEPTH` (`:589`) refuses the link rather than admitting it, because a refused legitimate link is visible and recoverable and an admitted cycle is neither. Guarded in `test_private_write_boundary.py`; the table cannot express the cycle rule, so a direct INSERT is how a loop would get in. |
 | ~~G-4~~ | ~~No transition validation~~ | 13, 86 | **CLOSED by `937cd118`.** `check_transition` (`records.py:1205`) + `REOPENABLE` (`:1163`); `update_record` audits refusals as `ACTION_RECORD_TRANSITION_DENIED`. Behaviourally verified. |
 | G-5 | No approvals | 19, 94 | No `REQUESTED/APPROVED/REJECTED/EXPIRED/REVOKED` state anywhere. |
 
@@ -528,7 +528,7 @@ section number.
 | ID | Gap | Mission § | Notes |
 |---|---|---|---|
 | ~~G-6~~ | ~~Derived state is obligation-only~~ | 6, 15, 63 | **CLOSED by `937cd118`.** `DEADLINE_FIELDS` (`:203`) + per-type `DUE_SOON_WINDOWS` (`:225`); `NO_DEADLINE_REASON` (`:211`) records why the other three are excluded. Behaviourally verified. |
-| G-7 | No blocked state or blocker reason | 18 | Nothing can express *why* something is blocked. |
+| ~~G-7~~ | ~~No blocked state or blocker reason~~ | 18 | **CLOSED by this commit**, for the dependency sense §18 asks about. `blocked` and `open_blocker_count` on every attention item (`operations.py:277`), `REASON_BLOCKED` raised from a real edge (`:217`), and `dependencies_for` names the specific blocking records. Both fields are **derived at read time, never stored**: a stored flag is only as fresh as the last sweep, and a sweep that stops leaves every record reporting healthy. Residue, deliberately not claimed: `REASON_BLOCKED` also fires for a `REQUEST` in `WAITING_ON_PROVIDER` (`:203`), which pre-dates this work and still does not name *which* provider — that is delegation (G-20), not the dependency graph. |
 | G-8 | No recurrence | 23, 24, 95 | And no canonical scheduler identified. `jobs.py` is explicitly not a queue. |
 | G-9 | Pagination is `id`-only | 67 | `before_id` cursor, not `timestamp + id`. Correct today; not the mission's contract. |
 | ~~G-10~~ | ~~No Overview read model~~ | 42, 43, 65 | **CLOSED by `937cd118`.** `operations.overview()` (`operations.py:340`). |
@@ -564,7 +564,8 @@ Derived from the dependency structure of the gaps, not from mission section orde
 > **Steps 1–4 are complete.** They were implemented by `937cd118` and `3d42a72c` and
 > struck through below. This list was written before that work and was not revised when
 > it landed, which is how a later session came to be asked for G-4 and G-6 that already
-> existed. **The next open item is G-3.**
+> existed. **Step 5 (G-3) is now also complete**, and closed G-7 with it. The next open
+> items are G-1 and G-2.
 
 1. ~~**G-21** — correct the stale docstring.~~ **DONE** (`937cd118`).
 2. ~~**G-4** — transition validation in `update_record`.~~ **DONE** (`937cd118`).
@@ -572,9 +573,12 @@ Derived from the dependency structure of the gaps, not from mission section orde
    (`937cd118`).
 4. ~~**G-10** — the Overview read model over the six existing primitives.~~ **DONE**
    (`937cd118`). G-11 (health) and G-12 (integrity sweep) also landed out of order.
-5. **G-3** — the dependency graph. ← **NEXT.** First genuine new table; needs the full
-   cycle / self / cross-owner rejection battery of mission §93.
-6. **G-1, G-2** — TASK and PROJECT as new `SPECS` entries.
+5. ~~**G-3** — the dependency graph.~~ **DONE** (this commit). The §93 battery is
+   `tests/private_office/test_private_record_links.py`, and the sixteen G-3 entries in
+   `scripts/private_office/operations_mutation_battery.py` are what stop that battery from
+   passing vacuously. Two of those mutations survived their first run — the traversal bound
+   and the blocked total — which is how `stage_bounds` came to exist. G-7 closed with it.
+6. **G-1, G-2** — TASK and PROJECT as new `SPECS` entries. ← **NEXT.**
 7. **G-5** — approvals.
 8. **G-8, G-18** — recurrence and notifications, gated on first identifying the canonical
    scheduler.
@@ -592,7 +596,14 @@ here in the same commit.
 
 **FOUNDATION MAP: PASS.**
 
-**SECOND OPERATIONS LEDGER CREATED: NO.** No code was changed by this mission.
+**SECOND OPERATIONS LEDGER CREATED: NO.** This line originally read "No code was changed
+by this mission," which was true when the document was a pure audit and stopped being true
+the moment the sequence in section 13 started getting executed. Code has since been changed
+by `937cd118`, `3d42a72c`, `62d8ad5f`, and the G-3 commit. The verdict itself still holds
+and is the stronger claim: every one of those landed *inside* `services/private_office/`,
+extending `records.py` and `operations.py` rather than standing up a rival store. G-3 added
+the only new table any of them added, and it holds edges between the existing six types —
+it does not restate them.
 
 The canonical Operations authority exists, is well-reasoned, and is statically enforced.
 The mission's directive is correctly read as *extend and deepen*, and any plan that starts

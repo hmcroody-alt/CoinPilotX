@@ -3,9 +3,13 @@
 
 A passing test suite proves nothing on its own: a suite that asserts the wrong
 thing, or asserts nothing at all, is also green. This script breaks the
-implementation in twelve specific, plausible ways — each one a change a
+implementation in a series of specific, plausible ways — each one a change a
 reasonable engineer might make while "simplifying" — and requires that the
-suite go red for every one of them.
+paired suite go red for every one of them.
+
+The count is deliberately not written down here. A number in a docstring is a
+fact that stops being true the first time someone adds a mutation and does not
+notice the prose, and the summary line at the end reports the real one.
 
 A mutation that survives is reported as a hole in the tests, not as a pass.
 
@@ -24,7 +28,13 @@ import sys
 import tempfile
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-SUITE = "tests/private_office/test_private_operations.py"
+
+#: Each mutation is paired with the suite that is supposed to defend against it,
+#: rather than being run against everything. Pairing is the stricter claim: it
+#: says *this* suite covers *this* invariant, so a mutation caught only by some
+#: unrelated file's incidental breakage is still reported as a hole.
+SUITE_OPS = "tests/private_office/test_private_operations.py"
+SUITE_LINKS = "tests/private_office/test_private_record_links.py"
 
 RECORDS = "services/private_office/records.py"
 OPS = "services/private_office/operations.py"
@@ -112,6 +122,107 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ),
 ]
 
+#: G-3, the dependency graph. Same rule: each of these is a change that leaves
+#: the feature working well enough to demo.
+LINK_MUTATIONS: list[tuple[str, str, str, str]] = [
+    (
+        "cycle detection is skipped",
+        RECORDS,
+        "    if _reaches(cur, owner, (tgt_kind, tgt_id), (src_kind, src_id)):",
+        "    if False:",
+    ),
+    (
+        "the cycle walk stops at one hop",
+        RECORDS,
+        "        for nxt in _outgoing(cur, owner, node[0], node[1]):",
+        "        for nxt in (_outgoing(cur, owner, node[0], node[1]) if depth < 1 else ()):",
+    ),
+    (
+        "exhausting the traversal bound admits the link",
+        RECORDS,
+        "        if depth >= MAX_DEPENDENCY_DEPTH:\n            return True",
+        "        if depth >= MAX_DEPENDENCY_DEPTH:\n            return False",
+    ),
+    (
+        "a record may depend on itself",
+        RECORDS,
+        "    if (src_kind, src_id) == (tgt_kind, tgt_id):",
+        "    if False:",
+    ),
+    (
+        "the dependency ceiling is off by one",
+        RECORDS,
+        "if existing_count >= MAX_DEPENDENCIES_PER_RECORD:",
+        "if existing_count > MAX_DEPENDENCIES_PER_RECORD:",
+    ),
+    (
+        "a cross-owner endpoint says so instead of not-found",
+        RECORDS,
+        'raise PrivateRecordRejected(f"no such {kind} record")',
+        'raise PrivateRecordRejected(f"{kind} {ident} belongs to another owner")',
+    ),
+    (
+        "events become linkable",
+        RECORDS,
+        '    return tuple(k for k in RECORD_TYPES if SPECS[k]["closing"])',
+        "    return RECORD_TYPES",
+    ),
+    (
+        "a refused link is not audited",
+        RECORDS,
+        "            action=_audit.ACTION_RECORD_LINK_DENIED,",
+        "            action=_audit.ACTION_RECORD_READ,",
+    ),
+    (
+        "closed blockers still block",
+        RECORDS,
+        '    open_blockers = [b for b in blockers if b["open"]]',
+        "    open_blockers = list(blockers)",
+    ),
+    (
+        "a revision leaves its dependencies behind",
+        RECORDS,
+        "    _repoint_links(cur, owner, kind, int(record_id), new_id, now_iso=now_iso)",
+        "    pass",
+    ),
+    (
+        "only the blocker side of a revision is re-pointed",
+        RECORDS,
+        '    for column in ("source", "target"):',
+        '    for column in ("target",):',
+    ),
+    (
+        "the bulk reader ignores the blocker's lifecycle",
+        RECORDS,
+        'f"AND t.lifecycle_state = ? "\n            f"AND t.status NOT IN ({placeholders}) "',
+        'f"AND t.lifecycle_state IS NOT ? "\n            f"AND t.status NOT IN ({placeholders}) "',
+    ),
+    (
+        "blocked records are dropped from the attention queue",
+        OPS,
+        "    if blocked:\n        found.add(REASON_BLOCKED)",
+        "    if blocked:\n        return ()",
+    ),
+    (
+        "being blocked outranks being overdue",
+        OPS,
+        "    if blocked:\n        found.add(REASON_BLOCKED)",
+        "    if blocked:\n        return (REASON_BLOCKED,)",
+    ),
+    (
+        "the blocker count collapses to a boolean",
+        OPS,
+        '        "open_blocker_count": blockers,',
+        '        "open_blocker_count": 1 if blockers else 0,',
+    ),
+    (
+        "the blocked total is counted from the page",
+        OPS,
+        '"blocked": sum(1 for item in collected if item.get("blocked")),',
+        '"blocked": sum(1 for item in collected[:bounded] if item.get("blocked")),',
+    ),
+]
+
 
 def _overlay(root: str) -> str:
     """A symlink mirror of the repo, deep only where we need to write."""
@@ -156,49 +267,61 @@ def _apply(root: str, rel_path: str, old: str, new: str) -> bool:
     return True
 
 
-def _run(root: str) -> int:
+def _run(root: str, suite: str) -> int:
     env = dict(os.environ)
     env.pop("DATABASE_URL", None)
     env["PYTHONPATH"] = root
     proc = subprocess.run(
-        [sys.executable, os.path.join(root, SUITE)],
+        [sys.executable, os.path.join(root, suite)],
         cwd=root, env=env, capture_output=True, text=True, timeout=900,
     )
     return proc.returncode
 
 
-def main() -> int:
-    mutations = MUTATIONS
+#: (suite, mutations). Order is presentation only; each group is independent.
+GROUPS: list[tuple[str, str, list[tuple[str, str, str, str]]]] = [
+    ("Operations Slice 1", SUITE_OPS, MUTATIONS),
+    ("G-3 dependencies", SUITE_LINKS, LINK_MUTATIONS),
+]
 
-    print("Baseline: the unmutated suite must pass.")
+
+def main() -> int:
+    print("Baseline: every unmutated suite must pass.")
     base = _overlay(tempfile.mkdtemp(prefix="mut_base_"))
     try:
-        if _run(base) != 0:
-            print("  FAIL — the suite is already red; mutation results would be noise.")
-            return 1
-        print("  PASS — baseline green.\n")
+        for label, suite, _ in GROUPS:
+            if _run(base, suite) != 0:
+                print(f"  FAIL — {label} is already red; "
+                      f"mutation results would be noise.")
+                return 1
+            print(f"  PASS — {label} baseline green.")
     finally:
         shutil.rmtree(base, ignore_errors=True)
+    print()
 
     survived: list[str] = []
     unapplied: list[str] = []
-    for name, rel_path, old, new in mutations:
-        root = _overlay(tempfile.mkdtemp(prefix="mut_"))
-        try:
-            if not _apply(root, rel_path, old, new):
-                unapplied.append(name)
-                print(f"  ERROR  {name} — anchor text not found exactly once")
-                continue
-            code = _run(root)
-            if code == 0:
-                survived.append(name)
-                print(f"  SURVIVED  {name}")
-            else:
-                print(f"  CAUGHT    {name}")
-        finally:
-            shutil.rmtree(root, ignore_errors=True)
+    total = 0
+    for label, suite, mutations in GROUPS:
+        print(f"{label} ({len(mutations)} mutations, judged by {suite}):")
+        for name, rel_path, old, new in mutations:
+            total += 1
+            root = _overlay(tempfile.mkdtemp(prefix="mut_"))
+            try:
+                if not _apply(root, rel_path, old, new):
+                    unapplied.append(f"{label}: {name}")
+                    print(f"  ERROR  {name} — anchor text not found exactly once")
+                    continue
+                if _run(root, suite) == 0:
+                    survived.append(f"{label}: {name}")
+                    print(f"  SURVIVED  {name}")
+                else:
+                    print(f"  CAUGHT    {name}")
+            finally:
+                shutil.rmtree(root, ignore_errors=True)
+        print()
 
-    print("\n" + "=" * 60)
+    print("=" * 60)
     if unapplied:
         print(f"{len(unapplied)} mutation(s) could not be applied:")
         for name in unapplied:
@@ -209,7 +332,7 @@ def main() -> int:
             print(f"  - {name}")
     if survived or unapplied:
         return 1
-    print(f"PASS — all {len(mutations)} mutations were caught.")
+    print(f"PASS — all {total} mutations were caught.")
     return 0
 
 

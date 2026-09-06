@@ -112,6 +112,16 @@ PRIVATE_TABLES = (
     "private_requests",
     "private_risks",
     "private_opportunities",
+    # The dependency edges between those six. Guarded because an edge is not a
+    # description of the member's affairs, it is an instruction to the read
+    # model: a row here makes its dependent report as blocked, and a DELETE here
+    # makes a blocked record read as ready to start. Both are reachable with one
+    # statement and neither is refused by the database. The writer is also the
+    # only thing that rejects a cycle — the table cannot express that constraint
+    # — so a direct INSERT is how a loop gets in, after which every traversal
+    # that follows these edges is walking a graph its own rules say is
+    # impossible.
+    "private_record_links",
     # Batch D — the structured record store. `private_record_fields` is the one
     # table in this list where a single unguarded INSERT is directly a
     # disclosure rather than a loss of provenance: the row carries its own
