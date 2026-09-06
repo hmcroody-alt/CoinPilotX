@@ -4997,6 +4997,7 @@
         "start": "Starten",
         "cancel": "Absagen",
         "untitled": "Meeting",
+        "details": "Details zu {{title}}",
         "liveNow": "Jetzt live",
         "durationMinutes_one": "{{count}} Minute",
         "durationMinutes_other": "{{count}} Minuten",

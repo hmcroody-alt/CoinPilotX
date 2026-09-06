@@ -6,13 +6,22 @@
  * over a failed read, and the whole point of this affordance is that the empty
  * state is trustworthy.
  *
- * Wired today into the documents screen only, which is the one Office surface
- * with a per-object detail region to host it. Facts and meetings render flat
- * rows with nowhere to put this yet, and there is no records screen at all;
- * giving them one is a disclosure-design change, not a wiring change, so it is
- * deliberately not smuggled in here. `linkType` is the full union rather than
- * `"DOCUMENT"` because the server answers for every kind already — the gap is
- * in the hosts, not in this component or the route beneath it.
+ * Hosted today by documents (the per-document detail region), facts (the "why"
+ * provenance sheet) and meetings (a per-row disclosure added for this). Each
+ * host owns its own disclosure design; this component owns only the read and
+ * the three states, which is why adding a host is a wiring change rather than
+ * three more chances to get the empty state wrong. There is still no records
+ * screen to host it. `linkType` is the full union rather than the three that
+ * ship, because the server answers for every kind already — the gap is in the
+ * hosts, not in this component or the route beneath it.
+ *
+ * Worth knowing before trusting a screenshot of this panel: nothing in the app
+ * currently WRITES a link. `link()` in `services/private_office/conversations.py`
+ * is the only writer of `private_office_conversation_links`, it is reachable
+ * only via `POST /<ref>/links`, and `linkPrivateConversation` has no non-test
+ * caller. So every host renders the "none" line today. That line is honest —
+ * the server really does return zero rows — but it is not yet evidence that the
+ * panel can render rows in production.
  *
  * It owns no data of its own: it asks `listConversationsForTarget`, which is
  * the server's intersection of the link rows with the member's visible threads,

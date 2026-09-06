@@ -4958,6 +4958,7 @@
         "start": "開始",
         "cancel": "キャンセル",
         "untitled": "ミーティング",
+        "details": "{{title}} の詳細",
         "liveNow": "開催中",
         "durationMinutes_one": "{{count}}分",
         "durationMinutes_other": "{{count}}分",

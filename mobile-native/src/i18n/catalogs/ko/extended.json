@@ -4965,6 +4965,7 @@
         "start": "시작",
         "cancel": "취소",
         "untitled": "회의",
+        "details": "{{title}} 세부 정보",
         "liveNow": "지금 진행 중",
         "durationMinutes_one": "{{count}}분",
         "durationMinutes_other": "{{count}}분",

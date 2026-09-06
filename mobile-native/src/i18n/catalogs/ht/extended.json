@@ -4966,6 +4966,7 @@
         "start": "Kòmanse",
         "cancel": "Anile",
         "untitled": "Reyinyon",
+        "details": "Detay pou {{title}}",
         "liveNow": "An dirèk kounye a",
         "durationMinutes_one": "{{count}} minit",
         "durationMinutes_other": "{{count}} minit",

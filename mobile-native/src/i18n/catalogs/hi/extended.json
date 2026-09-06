@@ -4997,6 +4997,7 @@
         "start": "शुरू करें",
         "cancel": "रद्द करें",
         "untitled": "मीटिंग",
+        "details": "{{title}} का विवरण",
         "liveNow": "अभी लाइव",
         "durationMinutes_one": "{{count}} मिनट",
         "durationMinutes_other": "{{count}} मिनट",

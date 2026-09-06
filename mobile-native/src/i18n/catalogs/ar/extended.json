@@ -5213,6 +5213,7 @@
         "start": "بدء",
         "cancel": "إلغاء",
         "untitled": "اجتماع",
+        "details": "تفاصيل {{title}}",
         "liveNow": "مباشر الآن",
         "durationMinutes_zero": "{{count}} دقيقة",
         "durationMinutes_one": "دقيقة واحدة",

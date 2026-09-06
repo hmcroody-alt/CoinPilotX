@@ -4965,6 +4965,7 @@
         "start": "开始",
         "cancel": "取消",
         "untitled": "会议",
+        "details": "{{title}} 的详细信息",
         "liveNow": "正在进行",
         "durationMinutes_one": "{{count}} 分钟",
         "durationMinutes_other": "{{count}} 分钟",

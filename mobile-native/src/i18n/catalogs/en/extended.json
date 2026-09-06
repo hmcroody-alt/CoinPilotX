@@ -4910,6 +4910,7 @@
         "start": "Start",
         "cancel": "Cancel",
         "untitled": "Meeting",
+        "details": "Details for {{title}}",
         "liveNow": "Live now",
         "durationMinutes_one": "{{count}} minute",
         "durationMinutes_other": "{{count}} minutes",

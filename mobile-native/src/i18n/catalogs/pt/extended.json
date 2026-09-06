@@ -4997,6 +4997,7 @@
         "start": "Iniciar",
         "cancel": "Cancelar",
         "untitled": "Reunião",
+        "details": "Detalhes de {{title}}",
         "liveNow": "Ao vivo agora",
         "durationMinutes_one": "{{count}} minuto",
         "durationMinutes_other": "{{count}} minutos",
