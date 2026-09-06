@@ -170,6 +170,100 @@ the Portuguese catalog — "agora" means "now" — and it is not in my diff.
 
 ## 5. Honest gaps — what was NOT proven
 
+**Two closing changes were written but UNVERIFIED and UNCOMMITTED at the time
+this section was first written. They have since been executed and verified — see
+§5a.** After the main commit landed I identified two gaps by repository evidence
+rather than assumption: `health.py` had a section for every comparable feature —
+`_schema_section`, `_substrate_section`, `_retrieval_section`,
+`_meetings_section`, `_telemetry_section` — and none for operations; and
+`grep -rln "operations/overview" docs/` returned empty, with
+`docs/private_office/` holding only `PRIVATE_OFFICE_CONFIGURATION.md`. Both are
+now written:
+
+- `services/private_office/health.py` — an `operations` section, split into a
+  zero-cost `policy` block read from `records`/`operations` constants that
+  survives a dead database, and a volume block whose counts are `int | None`
+  under the module's Stage 176B rule. `availability` is asked of
+  `feature_matrix.availability` at `PRIVATE_OFFICE` tier — the same function the
+  route gate uses, so health cannot disagree with the thing it describes, and no
+  second `os.getenv` parse enters the file. An unknown feature id is reported as
+  `FEATURE_ROW_MISSING` rather than borrowing `NOT_IMPLEMENTED`, which already
+  means "never built". A kill switch that is off deliberately does **not**
+  degrade `_overall`: dark on purpose is not a fault.
+- `docs/private_office/PRIVATE_OFFICE_OPERATIONS.md` — the transition engine,
+  derived deadline semantics, the attention ranking and its two defended
+  placements, the overview contract, the HTTP surface, the health section, and
+  the Stage 20 refusal with the test that pins it.
+
+**At the time of writing, neither had been executed, and neither was staged or
+committed.** The Linux
+sandbox failed with `no space left on device` on the orchestration host and did
+not recover, so no interpreter and no `git` were available. Every symbol the new
+code touches was verified by reading source — `_fm.availability` / `_fm.get` /
+`_fm.AVAIL_ENTITLED`, `_tiers.TIER_PRIVATE_OFFICE`, `_records.SPECS[t]["table"]`,
+`RECORD_TYPES`, `ensure_records_schema`, `DEADLINE_FIELDS`,
+`NO_DEADLINE_REASON`, `DUE_SOON_WINDOWS`, `REOPENABLE`, `REASON_RANK`,
+`UNSUPPORTED_REASONS`, `ATTENTION_SEVERITIES`, the four bounds — and the new
+module-level `tiers` import was checked for cycles (`tiers` imports only
+`business_os.entitlements`; nothing in `private_office` imports `health`). That
+is a static audit, not a test run. It is not the standard the rest of this slice
+was held to, and it should not be treated as one.
+
+Before these are committed: run `test_private_observability` first — it
+JSON-serializes the whole health payload and asserts the signature accepts no
+identifier, so it is the suite most likely to catch a defect in the new section.
+Then the full private_office suite, the mutation battery and the RTC gate. Then
+re-check `git diff --cached --name-only`: the concurrent session currently has
+six files staged that must not be swept in.
+
+---
+
+## 5a. The §5 changes, executed — verification closed
+
+The protocol §5 prescribed was run verbatim on macOS CPython 3.13 against the
+repository `.venv`, in the prescribed order. The changes are now committed.
+
+| Step | Result |
+|------|--------|
+| `test_private_observability` (run first, as prescribed) | 1 passed |
+| Full `tests/private_office/` | 287 passed, 31 subtests, **1 failed** — `test_capital_projection_routes`, triaged below |
+| `scripts/private_office/operations_mutation_battery.py` | 13/13 mutations CAUGHT — PASS |
+| `scripts/realtime_audio_change_gate.py` | No protected real-time audio path changed |
+| `git diff --cached --name-only` before staging | empty — nothing of the concurrent session's was inherited |
+
+**The one failure is pre-existing and not mine.** `test_capital_projection_routes`
+passes in isolation (`1 passed in 1.03s`) and fails only in the full-suite run
+with `sqlite3.OperationalError: no such table: portfolio_outbox` raised from
+`services/portfolio_events.py:180` via `portfolio_projection.drain` — cross-test
+database pollution in the concurrent Capital work, not an Operations defect. I
+proved it is independent of this change rather than asserting it: with
+`health.py` stashed to its committed state the full suite fails **identically**
+(`1 failed, 287 passed, 31 subtests`), and `health.py` was then confirmed
+byte-identical after restore. It is logged here for the Capital owner; I did not
+fix it, because it is not in this slice's scope and the polluting test is
+another session's in-flight work.
+
+**The new health section was not accepted on a green suite alone.** A passing
+test proves the payload serializes; it does not prove the section says anything.
+`private_office_health()` was invoked directly against a throwaway empty
+database and both branches were exercised:
+
+- feature row present → `availability: ENTITLED`, `enabled: True`
+- `feature_matrix.get` returning `None` → `availability: FEATURE_ROW_MISSING`,
+  `enabled: None`, asserted **distinct** from `NOT_IMPLEMENTED` — the whole
+  point of the sentinel, and the branch the diff actually added
+- the full payload JSON-serializes
+- the `policy` block renders 11 real keys read from the domain constants —
+  `due_soon_days`, `derived_states`, `deadline_fields`, `reopenable`,
+  `attention_reasons`, `attention_severities`, `unsupported_reasons`,
+  `no_deadline_reason`, `record_types`, `bounds`, `available`
+
+That last run was against a database with **none** of the private tables
+present. Every volume count degraded to `None` with a logged traceback and the
+policy block still rendered — which is the "survives a dead database" claim in
+§5 demonstrated rather than argued. The static audit in §5 stands, but it is no
+longer what the change rests on.
+
 **4 suites still cannot run** — `test_office_security`,
 `test_owner_office_membership`, `test_private_facts_kill_switch`,
 `test_private_meetings`. All four are pytest-based, and this sandbox's
@@ -251,3 +345,29 @@ let it join your health context to your financial context.
 
 The lifecycle is now something the office *enforces* rather than something the
 caller is trusted to respect. That is the difference the standard asks for.
+
+---
+
+## 8. Completion status — read this before certifying
+
+This slice is **closed on the work that could be evidenced, not certified across
+all thirty stages.** Two things are true and should not be blurred together.
+
+**Stages 21–23 were never executed.** They were not tracked as tasks, and the
+session transcript containing their text is not among the sessions I can read
+back. I do not know what they asked for. Nothing in this report should be taken
+as covering them. If you still have the mission brief, those three stages are the
+outstanding work; restating them is the only way I can finish them, and inventing
+plausible substitutes would be worse than leaving the gap visible.
+
+**The two closing changes in §5 are now verified and committed — see §5a.** They
+were derived from repository evidence — a health module with a section for every
+comparable feature and none for operations, and a docs tree with no mention of
+the overview endpoint — so they are the architecturally correct closing work
+rather than a guess at 21–23. They are **not** a substitute for stages 21–23,
+and this report should still not be read as covering those.
+
+Everything committed at `937cd118` stands on the verification in §4: 34 PASS /
+4 SKIP / 0 FAIL on the private_office suite, 13/13 on the mutation battery, 327
+protection checks, no undx_agent regression under two environments, and 0 files
+touched under the RTC lock.

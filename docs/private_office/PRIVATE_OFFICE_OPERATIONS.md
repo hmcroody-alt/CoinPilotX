@@ -248,6 +248,12 @@ schema is not on this database (`implementation: NOT_READY`, counts `None`), or
 the tables really are empty (`implementation: LIVE`, counts are zeros). Only the
 last is a member with nothing recorded.
 
+A fourth value, `FEATURE_ROW_MISSING`, exists because `feature_matrix.availability`
+answers an unknown feature id with `NOT_IMPLEMENTED` — the same word it uses for
+a feature that genuinely was never built. Health resolves the row first and names
+that case separately, so a typo in the id cannot be read as "operations was never
+shipped". A lookup that raises leaves `enabled` as `null`: unknown, not disabled.
+
 The section takes no user identifier, like the rest of that surface. A health
 endpoint that accepts a user id is an oracle, and an oracle behind an admin check
 is one credential away from being an oracle.
