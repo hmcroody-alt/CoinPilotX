@@ -517,7 +517,11 @@ def portfolio_view(cur, *, owner_user_id: int, actor_user_id: int) -> dict:
         assets.append({
             "node_id": node_id,
             "symbol": symbol,
-            "name": str((name_fact or {}).get("value") or symbol),
+            # `typed_value`, not `value`: list_facts returns raw table columns
+            # and there is no `value` key, so this silently fell back to the
+            # ticker for every holding and the exposure chart labelled a
+            # position "BTC" when the member had named it.
+            "name": str((name_fact or {}).get("typed_value") or symbol),
             "quantity": float(quantity) if quantity is not None else None,
             "lot_count": int((lots_fact or {}).get("value_number") or 0),
             "cost_basis": float(basis) if basis is not None else None,

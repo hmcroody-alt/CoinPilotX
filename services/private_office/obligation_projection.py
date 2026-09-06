@@ -439,6 +439,20 @@ def _fact_of(rows: list[dict], fact_type: str) -> dict | None:
     return next((row for row in rows if row.get("fact_type") == fact_type), None)
 
 
+def _text_of(fact: dict | None) -> str:
+    """The string side of a fact row.
+
+    ``facts.list_facts`` returns raw table columns, and the column is
+    ``typed_value`` — there is no ``value`` key. Reading ``.get("value")``
+    here returned ``""`` for every string field while the numeric side kept
+    working, which is the worst possible failure shape: amounts summed
+    correctly and every currency silently became UNSPECIFIED, so a USD-only
+    store reported itself uncomparable. Centralised in one accessor so the
+    column name is stated once.
+    """
+    return str((fact or {}).get("typed_value") or "").strip()
+
+
 def liabilities_view(cur, *, owner_user_id: int, actor_user_id: int) -> dict:
     """The projected liabilities, summed only where they are actually known.
 
@@ -504,7 +518,7 @@ def liabilities_view(cur, *, owner_user_id: int, actor_user_id: int) -> dict:
 
         raw_amount = (amount_fact or {}).get("value_number")
         amount = float(raw_amount) if raw_amount is not None else None
-        currency = str((currency_fact or {}).get("value") or "").strip().upper()
+        currency = _text_of(currency_fact).upper()
 
         if amount is None:
             unquantified += 1
@@ -519,13 +533,13 @@ def liabilities_view(cur, *, owner_user_id: int, actor_user_id: int) -> dict:
             "node_id": node_id,
             "root_id": int(ref[len(LIABILITY_REF_PREFIX):] or 0)
             if ref.startswith(LIABILITY_REF_PREFIX) else 0,
-            "title": str((title_fact or {}).get("value") or ""),
-            "kind": str((kind_fact or {}).get("value") or ""),
+            "title": _text_of(title_fact),
+            "kind": _text_of(kind_fact),
             # None, never 0.0 — the read side must be able to see the absence.
             "amount": amount,
             "currency": currency,
             "quantified": amount is not None,
-            "due_at": (due_fact or {}).get("value") or None,
+            "due_at": _text_of(due_fact) or None,
             "projected_at": (title_fact or {}).get("observed_at"),
             "freshness": (title_fact or {}).get("freshness"),
             "evidence": {
