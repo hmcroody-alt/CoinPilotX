@@ -4587,6 +4587,36 @@
           "CLOSED": "Encerrada",
           "OVERDUE": "Vencido",
           "DUE_SOON": "Vence em breve"
+        },
+        "overview": {
+          "heading": "Visão geral",
+          "loading": "Carregando sua visão geral…",
+          "unavailable": "Não foi possível carregar sua visão geral. Isto não são zeros.",
+          "needsAttention": "Requer atenção",
+          "dueToday": "Vence hoje",
+          "overdue": "Atrasado",
+          "pendingDecisions": "Decisões pendentes",
+          "dueThisWeek": "Vence esta semana",
+          "highRisks": "Riscos altos",
+          "openRequests": "Solicitações abertas",
+          "awaitingResponse": "Aguardando sua resposta",
+          "opportunities": "Oportunidades",
+          "recentlyCompleted": "Concluído recentemente",
+          "recentWindow": "Últimos {{days}} dias",
+          "queue": "Fila de atenção",
+          "queueEmpty": "Nada requer sua atenção.",
+          "truncated": "Mostrando {{shown}} de {{total}}.",
+          "notTracked": "Não registrado",
+          "reason": {
+            "OVERDUE": "Atrasado",
+            "HIGH_RISK": "Risco alto",
+            "DUE_SOON": "Vence em breve",
+            "RESPONSE_REQUIRED": "Precisa da sua resposta",
+            "MISSING_REQUIRED_CONTEXT": "Precisa de revisão",
+            "DECISION_REQUIRED": "Decisão em aberto",
+            "BLOCKED": "Aguardando o prestador"
+          },
+          "expiringOpportunities": "Oportunidades a expirar"
         }
       },
       "capital": {

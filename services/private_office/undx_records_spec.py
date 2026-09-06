@@ -40,6 +40,26 @@ What the specs commit to
 * **Bounds are in the schema.** ``limit`` is capped in the field spec as well as
   in the service, so an over-large request is refused at the edge rather than
   silently trimmed in the middle.
+
+The lifecycle reaches the agent for free — and why the overview does not
+---------------------------------------------------------------------------
+Derived status (``DUE_SOON``, ``OVERDUE``) needs no capability of its own.
+:func:`execute_view` delegates to ``retrieval.retrieve_records``, which calls
+``records.list_records``, which is the one reader that computes it — so a
+deadline rule added for the member's own screen reaches UNDX in the same commit
+or not at all. ``tests/private_office/test_private_records_undx_spec.py``
+asserts that, so the day somebody gives the agent its own SELECT the divergence
+is a red test rather than an agent calling an overdue obligation fine.
+
+The executive **overview** is deliberately absent, and should stay absent. It
+is an aggregate across every domain and sensitivity the member holds, while the
+agent reads through ``INTENT_GENERAL`` — GENERAL domain, INTERNAL ceiling —
+specifically so a model cannot join health context to financial context
+(``retrieval.domain_join_permitted``). Handing over the overview whole walks
+around that gate; handing over a narrowed one gives the agent a count that
+contradicts the member's own screen, and a confidently wrong "three things need
+your attention" is worse than no number. The agent answers attention questions
+from the six lists, at the ceiling it already has.
 """
 
 from __future__ import annotations

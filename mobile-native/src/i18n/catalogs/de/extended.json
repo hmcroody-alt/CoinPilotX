@@ -4587,6 +4587,36 @@
           "CLOSED": "Geschlossen",
           "OVERDUE": "Überfällig",
           "DUE_SOON": "Bald fällig"
+        },
+        "overview": {
+          "heading": "Übersicht",
+          "loading": "Übersicht wird geladen…",
+          "unavailable": "Ihre Übersicht konnte nicht geladen werden. Das sind keine Nullen.",
+          "needsAttention": "Erfordert Aufmerksamkeit",
+          "dueToday": "Heute fällig",
+          "overdue": "Überfällig",
+          "pendingDecisions": "Offene Entscheidungen",
+          "dueThisWeek": "Diese Woche fällig",
+          "highRisks": "Hohe Risiken",
+          "openRequests": "Offene Anfragen",
+          "awaitingResponse": "Wartet auf Ihre Antwort",
+          "opportunities": "Gelegenheiten",
+          "recentlyCompleted": "Kürzlich erledigt",
+          "recentWindow": "Letzte {{days}} Tage",
+          "queue": "Aufmerksamkeitsliste",
+          "queueEmpty": "Nichts erfordert Ihre Aufmerksamkeit.",
+          "truncated": "{{shown}} von {{total}} werden angezeigt.",
+          "notTracked": "Nicht erfasst",
+          "reason": {
+            "OVERDUE": "Überfällig",
+            "HIGH_RISK": "Hohes Risiko",
+            "DUE_SOON": "Bald fällig",
+            "RESPONSE_REQUIRED": "Ihre Antwort nötig",
+            "MISSING_REQUIRED_CONTEXT": "Prüfung nötig",
+            "DECISION_REQUIRED": "Entscheidung offen",
+            "BLOCKED": "Wartet auf Anbieter"
+          },
+          "expiringOpportunities": "Auslaufende Gelegenheiten"
         }
       },
       "capital": {

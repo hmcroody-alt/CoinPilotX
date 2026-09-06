@@ -4548,6 +4548,36 @@
           "CLOSED": "クローズ",
           "OVERDUE": "期限超過",
           "DUE_SOON": "期限間近"
+        },
+        "overview": {
+          "heading": "概要",
+          "loading": "概要を読み込んでいます…",
+          "unavailable": "概要を読み込めませんでした。これはゼロではありません。",
+          "needsAttention": "対応が必要",
+          "dueToday": "本日期限",
+          "overdue": "期限超過",
+          "pendingDecisions": "保留中の決定",
+          "dueThisWeek": "今週期限",
+          "highRisks": "高いリスク",
+          "openRequests": "未完了の依頼",
+          "awaitingResponse": "あなたの返答待ち",
+          "opportunities": "機会",
+          "recentlyCompleted": "最近完了",
+          "recentWindow": "直近{{days}}日",
+          "queue": "対応キュー",
+          "queueEmpty": "対応が必要なものはありません。",
+          "truncated": "{{total}}件中{{shown}}件を表示。",
+          "notTracked": "未追跡",
+          "reason": {
+            "OVERDUE": "期限超過",
+            "HIGH_RISK": "高リスク",
+            "DUE_SOON": "期限間近",
+            "RESPONSE_REQUIRED": "返答が必要",
+            "MISSING_REQUIRED_CONTEXT": "確認が必要",
+            "DECISION_REQUIRED": "決定が未了",
+            "BLOCKED": "提供者待ち"
+          },
+          "expiringOpportunities": "期限切れが近い機会"
         }
       },
       "capital": {

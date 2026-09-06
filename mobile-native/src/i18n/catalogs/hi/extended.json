@@ -4587,6 +4587,36 @@
           "CLOSED": "बंद",
           "OVERDUE": "अतिदेय",
           "DUE_SOON": "जल्द देय"
+        },
+        "overview": {
+          "heading": "अवलोकन",
+          "loading": "आपका अवलोकन लोड हो रहा है…",
+          "unavailable": "आपका अवलोकन लोड नहीं हो सका। ये शून्य नहीं हैं।",
+          "needsAttention": "ध्यान चाहिए",
+          "dueToday": "आज देय",
+          "overdue": "अतिदेय",
+          "pendingDecisions": "लंबित निर्णय",
+          "dueThisWeek": "इस सप्ताह देय",
+          "highRisks": "उच्च जोखिम",
+          "openRequests": "खुले अनुरोध",
+          "awaitingResponse": "आपके उत्तर की प्रतीक्षा",
+          "opportunities": "अवसर",
+          "recentlyCompleted": "हाल ही में पूर्ण",
+          "recentWindow": "पिछले {{days}} दिन",
+          "queue": "ध्यान सूची",
+          "queueEmpty": "कुछ भी आपके ध्यान की प्रतीक्षा में नहीं है।",
+          "truncated": "{{total}} में से {{shown}} दिखाए जा रहे हैं।",
+          "notTracked": "ट्रैक नहीं किया गया",
+          "reason": {
+            "OVERDUE": "अतिदेय",
+            "HIGH_RISK": "उच्च जोखिम",
+            "DUE_SOON": "जल्द देय",
+            "RESPONSE_REQUIRED": "आपके उत्तर की आवश्यकता",
+            "MISSING_REQUIRED_CONTEXT": "समीक्षा आवश्यक",
+            "DECISION_REQUIRED": "निर्णय शेष",
+            "BLOCKED": "प्रदाता की प्रतीक्षा"
+          },
+          "expiringOpportunities": "समाप्त होते अवसर"
         }
       },
       "capital": {

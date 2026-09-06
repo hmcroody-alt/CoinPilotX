@@ -4587,6 +4587,36 @@
           "CLOSED": "Closed",
           "OVERDUE": "Overdue",
           "DUE_SOON": "Due soon"
+        },
+        "overview": {
+          "heading": "Overview",
+          "loading": "Loading your overview…",
+          "unavailable": "Your overview could not be loaded. These are not zeros.",
+          "needsAttention": "Needs attention",
+          "dueToday": "Due today",
+          "overdue": "Overdue",
+          "pendingDecisions": "Pending decisions",
+          "dueThisWeek": "Due this week",
+          "highRisks": "High risks",
+          "openRequests": "Open requests",
+          "awaitingResponse": "Awaiting your response",
+          "opportunities": "Opportunities",
+          "recentlyCompleted": "Recently completed",
+          "recentWindow": "Last {{days}} days",
+          "queue": "Attention queue",
+          "queueEmpty": "Nothing needs your attention.",
+          "truncated": "Showing {{shown}} of {{total}}.",
+          "notTracked": "Not tracked",
+          "reason": {
+            "OVERDUE": "Overdue",
+            "HIGH_RISK": "High risk",
+            "DUE_SOON": "Due soon",
+            "RESPONSE_REQUIRED": "Needs your reply",
+            "MISSING_REQUIRED_CONTEXT": "Needs review",
+            "DECISION_REQUIRED": "Decision open",
+            "BLOCKED": "Waiting on provider"
+          },
+          "expiringOpportunities": "Expiring opportunities"
         }
       },
       "capital": {

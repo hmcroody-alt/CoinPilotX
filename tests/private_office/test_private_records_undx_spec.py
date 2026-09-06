@@ -504,6 +504,97 @@ def stage_hook_is_thin() -> None:
               banned not in body)
 
 
+def stage_lifecycle_parity() -> None:
+    """The agent sees the same lifecycle the member's screen sees.
+
+    This is the whole of "UNDX read parity" for the Operations work, and the
+    reason it needs no new capability is structural rather than lucky:
+    ``execute_view`` delegates to ``retrieval.retrieve_records``, which calls
+    ``records.list_records``, which is the one reader that derives
+    ``effective_status``. There is no second query for the agent to read the
+    world through, so a deadline rule added for the screen reaches the agent in
+    the same commit or not at all.
+
+    The checks below are what make that claim falsifiable. If somebody ever
+    gives UNDX its own SELECT — the obvious "optimisation" — the derived status
+    stops arriving and this stage goes red, which is the point at which the
+    divergence is cheap to fix rather than the point at which an agent tells a
+    member an overdue obligation is fine.
+
+    What is deliberately *not* here: an ``operations.overview`` capability.
+    The overview is an aggregate across every domain and sensitivity the member
+    holds, and UNDX reads through ``INTENT_GENERAL`` — GENERAL domain, INTERNAL
+    ceiling — precisely so a model cannot join health context to financial
+    context (``retrieval.domain_join_permitted``). Exposing the overview whole
+    would walk around that gate; exposing it narrowed would hand the agent a
+    count that contradicts the member's own screen, which is worse than no
+    count at all. Both options are refused, so the agent answers "what needs my
+    attention" from the six lists it already has, at the ceiling it already
+    has. See the Stage 20 finding in the mission report.
+    """
+    print("\n[lifecycle parity]")
+    conn, cur = _connect()
+
+    capability = spec.capability_for_view(retrieval.VIEW_OBLIGATIONS)["capability_id"]
+
+    late = records.create_record(
+        cur, owner_user_id=USER_A, record_type=records.TYPE_OBLIGATION,
+        title="A's lapsed filing", obligation_type="TAX",
+        due_at=_iso_in(-10), sensitivity="INTERNAL")
+    conn.commit()
+
+    read = spec.execute_view(cur, capability_id=capability, owner_user_id=USER_A)
+    rows = [r for r in read["records"] if r.get("id") == late["record_id"]]
+    check("the overdue obligation reaches the agent at all",
+          len(rows) == 1, str(read["counts"]))
+
+    if rows:
+        row = rows[0]
+        # Stored and derived both travel: an agent that only saw OVERDUE could
+        # not tell the member what they had actually recorded, and one that
+        # only saw OPEN would not know the date had passed.
+        check("the agent is told the stored status",
+              row.get("status") == "OPEN", str(row.get("status")))
+        check("the agent is told the derived status the screen shows",
+              row.get("effective_status") == records.DERIVED_OVERDUE,
+              str(row.get("effective_status")))
+
+    # Every row, not just the seeded one — the knowledge map declares
+    # ``effective_status`` in the output schema for all six views, and a field
+    # present on some rows is a field a caller will read as absent on the rest.
+    check("every row the agent receives carries a derived status",
+          all("effective_status" in r for r in read["records"]),
+          str([sorted(r) for r in read["records"][:1]]))
+
+    # Closure is not a deadline question. A resolved obligation whose date has
+    # passed is finished, and an agent that called it overdue would be
+    # manufacturing work out of the member's own completed row.
+    records.update_record(cur, owner_user_id=USER_A, record_id=late["record_id"],
+                          record_type=records.TYPE_OBLIGATION, status="RESOLVED")
+    conn.commit()
+    after = spec.execute_view(cur, capability_id=capability, owner_user_id=USER_A)
+    closed = [r for r in after["records"] if r.get("id") == late["record_id"]]
+    check("a closed obligation is not reported to the agent as overdue",
+          bool(closed) and closed[0].get("effective_status") == "RESOLVED",
+          str(closed[0].get("effective_status")) if closed else "row absent")
+
+    # No new write reached the agent surface. The lifecycle work added writers
+    # to ``records.py``; none of them may be reachable from the spec module,
+    # and the capability set must still be exactly the six reads.
+    body = inspect.getsource(spec)
+    for writer in ("create_record", "update_record", "revise_record"):
+        check(f"the agent surface cannot reach {writer}", writer not in body)
+    check("the capability set is still the six reads",
+          len(spec.CAPABILITIES) == 6, str(len(spec.CAPABILITIES)))
+    check("no capability describes an overview or an aggregate",
+          not any("overview" in entry["capability_id"] or
+                  "attention" in entry["capability_id"]
+                  for entry in spec.CAPABILITIES),
+          str([e["capability_id"] for e in spec.CAPABILITIES]))
+
+    conn.close()
+
+
 # ---------------------------------------------------------------------------
 def main() -> int:
     _FAILURES.clear()
@@ -516,6 +607,7 @@ def main() -> int:
     stage_hook_delegates_and_bounds()
     stage_isolation()
     stage_hook_is_thin()
+    stage_lifecycle_parity()
     print("\n" + "=" * 60)
     if _FAILURES:
         print(f"FAIL — {len(_FAILURES)} check(s) failed:")

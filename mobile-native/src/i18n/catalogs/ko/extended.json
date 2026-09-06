@@ -4555,6 +4555,36 @@
           "CLOSED": "종료",
           "OVERDUE": "기한 초과",
           "DUE_SOON": "기한 임박"
+        },
+        "overview": {
+          "heading": "개요",
+          "loading": "개요를 불러오는 중…",
+          "unavailable": "개요를 불러오지 못했습니다. 이것은 0이 아닙니다.",
+          "needsAttention": "주의 필요",
+          "dueToday": "오늘 마감",
+          "overdue": "기한 초과",
+          "pendingDecisions": "대기 중인 결정",
+          "dueThisWeek": "이번 주 마감",
+          "highRisks": "높은 위험",
+          "openRequests": "진행 중인 요청",
+          "awaitingResponse": "회신 대기 중",
+          "opportunities": "기회",
+          "recentlyCompleted": "최근 완료",
+          "recentWindow": "최근 {{days}}일",
+          "queue": "주의 목록",
+          "queueEmpty": "주의가 필요한 항목이 없습니다.",
+          "truncated": "{{total}}개 중 {{shown}}개 표시.",
+          "notTracked": "추적하지 않음",
+          "reason": {
+            "OVERDUE": "기한 초과",
+            "HIGH_RISK": "높은 위험",
+            "DUE_SOON": "마감 임박",
+            "RESPONSE_REQUIRED": "회신 필요",
+            "MISSING_REQUIRED_CONTEXT": "검토 필요",
+            "DECISION_REQUIRED": "결정 미완",
+            "BLOCKED": "제공자 대기"
+          },
+          "expiringOpportunities": "만료 예정 기회"
         }
       },
       "capital": {

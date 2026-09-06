@@ -92,6 +92,7 @@ from services.private_office import feature_matrix as po_matrix
 from services.private_office import model as po_model
 from services.private_office import obligation_projection as po_obligations
 from services.private_office import office as po_office
+from services.private_office import operations as po_operations
 from services.private_office import portfolio_projection as po_portfolio
 from services.private_office import records as po_records
 from services.private_office import retrieval as po_retrieval
@@ -1070,6 +1071,18 @@ def _record_view(view: str):
     return record_type, None
 
 
+def _attention_limit() -> int:
+    """Requested queue size, clamped. A missing or unparseable ``limit`` falls
+    back to the default rather than to "everything" — the failure mode of
+    reading a bad parameter as unbounded is a typo turning a page into a dump of
+    the member's whole ledger."""
+    try:
+        wanted = int(request.args.get("limit") or po_operations.MAX_ATTENTION_ITEMS)
+    except (TypeError, ValueError):
+        wanted = po_operations.MAX_ATTENTION_ITEMS
+    return max(1, min(wanted, po_operations.MAX_ATTENTION_ITEMS))
+
+
 def _operations_entry():
     """Auth + tier gate + second lock shared by every operations route."""
     user = _current_user()
@@ -1244,6 +1257,12 @@ def api_private_office_record_status(view, record_id):
     fields: dict = {"status": body["status"]}
     if str(body.get("outcome") or "").strip():
         fields["outcome"] = body["outcome"]
+    # Reopening is a separate act of intent, not a status that happens to be
+    # earlier in the vocabulary. Passed through as a strict boolean so that a
+    # form echoing back a stale value — a string, a 0, an absent key — reads as
+    # "no", and only a client that meant it can undo a closure.
+    if body.get("reopen") is True:
+        fields["reopen"] = True
 
     def work(cur):
         return po_records.update_record(
@@ -1296,6 +1315,8 @@ def api_private_office_attention():
         _dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(days=14)
     ).strftime("%Y-%m-%dT%H:%M:%SZ")
 
+    limit = _attention_limit()
+
     def work(cur):
         counts = {
             view: po_records.count_open(
@@ -1311,6 +1332,12 @@ def api_private_office_attention():
             due_before=horizon,
             limit=5,
         )
+        # Added beside the original two fields, not in place of them. The Office
+        # Home renders `counts` and `due_soon`; removing either to make room for
+        # the ranked queue would be this slice breaking a screen it was not
+        # asked to touch.
+        queue = po_operations.attention(
+            cur, owner_user_id=user["user_id"], limit=limit)
         po_audit.record(
             cur,
             actor_user_id=user["user_id"],
@@ -1321,10 +1348,10 @@ def api_private_office_attention():
             purpose="user_request",
             result_count=len(due_soon),
         )
-        return counts, due_soon
+        return counts, due_soon, queue
 
     try:
-        counts, due_soon = _with_cursor(work)
+        counts, due_soon, queue = _with_cursor(work)
     except Exception:  # noqa: BLE001
         LOGGER.exception("PRIVATE_OFFICE_ATTENTION_FAILED")
         # An unreadable store is not a quiet one. Refusing beats rendering
@@ -1341,8 +1368,55 @@ def api_private_office_attention():
             "counts": counts,
             "due_soon": due_soon,
             "due_horizon": horizon,
+            "attention": queue,
+            "unsupported_reasons": queue.get("unsupported_reasons", {}),
         }
     )
+
+
+@private_office_blueprint.route(
+    "/api/private-office/operations/overview", methods=["GET"])
+def api_private_office_operations_overview():
+    """The executive summary across all six primitives in one call.
+
+    Under the same ``_operations_entry`` gate as every other route in this
+    family — auth, then the ``private_office.operations`` entitlement, then the
+    second lock — which is why a locked Office cannot leak a count from here.
+    The 423 is produced before any cursor is opened, so no read runs and the
+    response carries no evidence that any record exists.
+    """
+    user, refusal = _operations_entry()
+    if refusal:
+        return refusal
+
+    def work(cur):
+        summary = po_operations.overview(cur, owner_user_id=user["user_id"])
+        po_audit.record(
+            cur,
+            actor_user_id=user["user_id"],
+            owner_user_id=user["user_id"],
+            action=po_audit.ACTION_RECORD_READ,
+            object_type="RECORD_VIEW",
+            object_id="operations_overview",
+            purpose="user_request",
+            result_count=int(summary.get("needs_attention") or 0),
+        )
+        return summary
+
+    try:
+        summary = _with_cursor(work)
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("PRIVATE_OFFICE_OVERVIEW_FAILED")
+        # `state: unavailable`, never an empty summary. A dashboard of zeros is
+        # indistinguishable from a member with nothing outstanding, and that is
+        # the one confusion this endpoint must never cause.
+        return _no_store(
+            {"ok": False, "state": "unavailable",
+             "message": "We could not load your information just now."},
+            503,
+        )
+
+    return _no_store({"ok": True, "state": "ready", "overview": summary})
 
 
 # --- second-lock management routes ------------------------------------------

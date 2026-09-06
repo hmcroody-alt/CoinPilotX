@@ -82,30 +82,33 @@ deliberately deferred — ``schema.py`` is being edited by the concurrent Privat
 Office security mission, and a merge conflict in the one module that decides
 whether the database is usable is a worse outcome than a second ensure call.
 
-Route and UNDX wiring are deferred
+Route and UNDX wiring are complete
 ----------------------------------
-Status: **ROUTE_WIRING_DEFERRED_DUE_TO_CONCURRENT_SECURITY_WORK** and
-**UNDX_WIRING_DEFERRED_DUE_TO_CONCURRENT_SECURITY_WORK**.
+Both deferrals recorded here have been resolved and this section is kept only
+to say so, because a reader who finds a stale ``DEFERRED`` banner in the
+canonical writer has no way to tell whether the wiring is missing or the note
+is.
 
-The service layer is complete: six primitives, one canonical writer each, typed
-views behind :func:`retrieval.retrieve_records`, and a scoped test gate over all
-of it. What is *not* done is the last hop to the two callers — the HTTP route
-pack and the UNDX capability registry — because both are gated by the Private
-Office security boundary the concurrent mission is still moving, and neither can
-be wired correctly against a contract that has not settled.
+The HTTP surface is the Private Office Operations route family in
+:mod:`services.private_office_routes` — the typed record views, the status
+move, and the attention read — all behind the same entry gate: authentication,
+then the ``private_office.operations`` entitlement, then the Private Office
+second lock.
 
-What matters is the shape of the deferral. There is no temporary route and no
-second executor table "just for now": a parallel surface is a surface nobody
-gates, and it outlives the temporary. The UNDX side is declared in one place,
-:mod:`services.private_office.undx_records_spec`, which registers nothing and
-carries ``WIRING_COMPLETE = False``; while that flag is False the suite asserts
-the six capabilities are *absent* from all three authorization surfaces, so
-"deferred" cannot quietly become "forgotten" or "half-registered". Wiring is
-then three edits in the files that own registration, plus flipping the flag —
-and the same test inverts into a presence check, so the flag cannot be flipped
-without the registration being real.
+The UNDX surface is declared in one place,
+:mod:`services.private_office.undx_records_spec`, which now carries
+``WIRING_COMPLETE = True``. The flag is not decoration. While it was False the
+suite asserted the six capabilities were *absent* from all three authorization
+surfaces; now that it is True the same suite asserts they are *present* in all
+three, so the flag cannot be flipped without the registration being real, and
+the registration cannot be removed without the flag failing. ``DEFERRAL_REASON``
+survives in that module as a historical string, not as a live status.
 
-Until then, every write and every read of these six goes through this module and
+There was never a temporary route and never a second executor table "just for
+now", which is why resolving the deferral was three edits in the files that own
+registration rather than a migration off a parallel surface.
+
+Every write and every read of these six goes through this module and
 ``retrieval``, which is enforced statically by
 ``tests/private_office/test_private_write_boundary.py``.
 """
@@ -180,10 +183,54 @@ DERIVED_SOURCES: frozenset[str] = frozenset({
 LIFECYCLE_ACTIVE = _model.LIFECYCLE_ACTIVE
 LIFECYCLE_SUPERSEDED = _model.LIFECYCLE_SUPERSEDED
 
-#: Derived obligation states. Never stored — see the module docstring.
+#: Derived time states. Never stored — see the module docstring. They are
+#: computed from a deadline column and the server clock every time a row is
+#: serialized, which is the only way they can be right: a stored ``OVERDUE``
+#: depends on a sweep having run, and a sweep that silently stops leaves a store
+#: reporting that everything is still OPEN — healthy-looking and wrong.
 DERIVED_DUE_SOON = "DUE_SOON"
 DERIVED_OVERDUE = "OVERDUE"
-DUE_SOON_WINDOW = timedelta(days=14)
+
+#: The deadline column per type, and *only* where the column is genuinely a
+#: deadline. This map is the whole of Stage 5's "type-specific semantics": the
+#: tempting shortcut is to treat every date-bearing record as capable of being
+#: overdue, and three of the six would be wrong.
+#:
+#: EVENT is the clearest case. It has ``occurred_at``, which is when something
+#: happened in the member's life. Every domain event ever recorded has a past
+#: ``occurred_at``, so a naive rule would mark the member's entire history
+#: overdue and drown every real obligation in it.
+DEADLINE_FIELDS: dict[str, str] = {
+    TYPE_OBLIGATION: "due_at",
+    TYPE_DECISION: "deadline_at",
+    TYPE_REQUEST: "deadline_at",
+}
+
+#: Why the other three have no derived time state. Kept as text rather than as
+#: an implicit absence so the next reader does not "fix" the omission.
+NO_DEADLINE_REASON: dict[str, str] = {
+    TYPE_EVENT: "occurred_at records when something happened, not when it is due",
+    TYPE_RISK: "a risk carries severity and coverage, not a date it must be done by",
+    TYPE_OPPORTUNITY: "no expiry column exists on private_opportunities",
+}
+
+#: How close counts as soon, per type. Not one shared window, because "soon"
+#: is a claim about the member's runway and the runway differs: a tax filing
+#: fourteen days out is worth surfacing, a concierge request fourteen days out
+#: is not urgent and would push genuinely urgent rows off the top of the queue.
+#:
+#: The obligation window is 14 days because that is what it already was. It is
+#: restated here rather than changed, so generalizing the mechanism does not
+#: quietly move a threshold the existing behaviour depends on.
+DUE_SOON_WINDOWS: dict[str, timedelta] = {
+    TYPE_OBLIGATION: timedelta(days=14),
+    TYPE_DECISION: timedelta(days=7),
+    TYPE_REQUEST: timedelta(days=3),
+}
+
+#: Retained under its original name because callers and tests reference it. It
+#: is the obligation window, which is the one this constant always meant.
+DUE_SOON_WINDOW = DUE_SOON_WINDOWS[TYPE_OBLIGATION]
 
 SEVERITY_UNKNOWN = "UNKNOWN"
 SEVERITIES: tuple[str, ...] = (
@@ -234,6 +281,12 @@ STATUS_CREATED = "created"
 STATUS_EXISTING = "existing"
 STATUS_UPDATED = "updated"
 STATUS_REVISED = "revised"
+#: The caller asked for the status the record already has, and asked for nothing
+#: else. Distinct from ``updated`` for the same reason ``existing`` is distinct
+#: from ``created``: an idempotent caller re-sending CANCELED on a canceled
+#: request has not failed, but counting it as an update would make a queue look
+#: like it was being worked when the same row is being restated.
+STATUS_UNCHANGED = "unchanged"
 
 
 # ---------------------------------------------------------------------------
@@ -699,29 +752,73 @@ def record_key(
 # ---------------------------------------------------------------------------
 # Derived state
 # ---------------------------------------------------------------------------
+def deadline_moment(record_type: str, row: dict) -> datetime | None:
+    """The record's deadline as an aware datetime, or ``None``.
+
+    ``None`` covers four different situations on purpose — the type has no
+    deadline concept, the column is empty, the stored text will not parse, or
+    the type is not one of the six — because every one of them means the same
+    thing to a caller: there is no date here to reason about. A caller that
+    needs to tell "no deadline" from "unparseable deadline" apart is asking a
+    data-quality question, which belongs in a health check rather than in the
+    read path where the answer would become a user-visible state.
+    """
+    field = DEADLINE_FIELDS.get(str(record_type).strip().upper())
+    if not field:
+        return None
+    raw = _iso(row.get(field), default=None)
+    if not raw:
+        return None
+    try:
+        candidate = raw[:-1] + "+00:00" if raw.endswith("Z") else raw
+        moment = (datetime.fromisoformat(candidate) if len(candidate) > 10
+                  else datetime.fromisoformat(candidate + "T00:00:00"))
+    except ValueError:
+        return None
+    return moment.replace(tzinfo=timezone.utc) if moment.tzinfo is None else moment
+
+
 def effective_status(record_type: str, row: dict, *, now: datetime | None = None) -> str:
     """What is true right now, as opposed to what somebody last decided.
 
-    Only obligations have a derived state today, and only while they are open:
-    a resolved obligation with a past due date is resolved, not overdue.
+    Derived states are layered *over* the stored status and never replace it in
+    storage — the serialized record carries both, under ``status`` and
+    ``effective_status``, so a reader can always recover what the member or the
+    desk actually decided.
+
+    Two rules make this trustworthy, and both are about what the function
+    declines to do:
+
+    A closed record is never derived. A resolved obligation whose due date has
+    passed is resolved; a canceled request past its deadline is canceled. The
+    check is ``stored in spec["closing"]``, so it follows the type's own
+    definition of an ending rather than a list of status names kept in step by
+    hand — which is how the sixth primitive ends up reporting completed work as
+    overdue.
+
+    A record whose type has no deadline is never derived. See
+    :data:`NO_DEADLINE_REASON`; the failure this avoids is marking the member's
+    entire recorded history overdue because domain events happened in the past.
     """
+    kind = str(record_type).strip().upper()
     stored = str(row.get("status") or "")
-    if record_type != TYPE_OBLIGATION or stored != "OPEN":
+    spec = SPECS.get(kind)
+    if spec is None or not stored:
         return stored
-    due = _iso(row.get("due_at"), default=None)
-    if not due:
+    # Time does not close a record and it does not reopen one. Both directions
+    # matter: the first stops completed work being reported as overdue, the
+    # second stops a derived state from making a closed record look actionable.
+    if stored in spec["closing"]:
         return stored
-    try:
-        candidate = due[:-1] + "+00:00" if due.endswith("Z") else due
-        moment = datetime.fromisoformat(candidate) if len(candidate) > 10 else datetime.fromisoformat(candidate + "T00:00:00")
-    except ValueError:
+    moment = deadline_moment(kind, row)
+    if moment is None:
         return stored
-    if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=timezone.utc)
+    # Server time. A client-supplied "now" would let a device with a wrong clock
+    # decide what the member owes.
     reference = now or _now()
     if moment < reference:
         return DERIVED_OVERDUE
-    if moment - reference <= DUE_SOON_WINDOW:
+    if moment - reference <= DUE_SOON_WINDOWS.get(kind, DUE_SOON_WINDOW):
         return DERIVED_DUE_SOON
     return stored
 
@@ -1001,6 +1098,160 @@ def create_record(
                                  record_id=record_id, audit=False)}
 
 
+# ---------------------------------------------------------------------------
+# The transition contract
+# ---------------------------------------------------------------------------
+# Before this section existed, `update_record` accepted any status in the type's
+# vocabulary, which made ``RESOLVED -> OPEN`` and ``COMPLETED -> CANCELED`` legal
+# moves that left no trace of what they overwrote. The vocabulary was never the
+# problem and is not changed here: every status below is one the six specs
+# already declared. What was missing was the *edge* set — which of the pairs the
+# vocabulary makes expressible are actually meaningful — and that is derived from
+# the spec structure rather than restated, so a status added to a spec cannot
+# arrive without a transition rule.
+#
+# Three classes of state, all read off ``spec["statuses"]`` and ``spec["closing"]``:
+#
+#   working   a status not in ``closing`` — the matter is live
+#   closing   a status in ``closing`` — the matter ended, and ``closed_at`` says when
+#   (none)    EVENT has one status and no closing set, so every move is a STAY
+#
+# and four classes of move:
+#
+#   STAY      old == new. Not a transition. Restating CANCELED on a canceled
+#             request is how an idempotent caller behaves, not an error.
+#   MOVE      working -> working. Unrestricted within the type. A request going
+#             OPEN -> WAITING_ON_PROVIDER -> IN_PROGRESS is the concierge desk
+#             working; ordering that sequence would be inventing a workflow the
+#             product does not have.
+#   CLOSE     working -> closing. Always legal. Ending a live matter is the
+#             normal terminus of every primitive that has one.
+#   REOPEN    closing -> working. Legal only for the pairs in `REOPENABLE`, only
+#             onto the type's default status, and only when the caller says so.
+#
+# Everything else is forbidden, and one case deserves naming because it looks
+# harmless: closing -> a *different* closing. "Cancel this completed request"
+# reads like tidying and is actually a rewrite of how the matter ended, with the
+# original ending unrecoverable — the same class of loss `revise_record` exists
+# to prevent on the substance side. A caller who means it reopens first, which
+# leaves two audit rows instead of none.
+
+#: Which closed statuses may return to the working state, per type. Deliberately
+#: enumerated rather than derived from ``closing``, because "can this end be
+#: undone" is a product question with a different answer for each pair and no
+#: structural tell.
+#:
+#: * OBLIGATION — both. A dismissed obligation that turns out to be real, and a
+#:   resolved one that bounced, are ordinary events in anyone's affairs.
+#: * DECISION — ABANDONED only. A question set aside can be picked back up.
+#:   DECIDED is excluded on purpose: a decision whose conclusion is reopened and
+#:   re-decided in place is a decision log that records the latest answer and
+#:   destroys the one before it, which is precisely what this primitive's
+#:   revision rule exists to prevent. Revisiting a decided question is a new
+#:   decision, and the old one stays legible next to it.
+#: * REQUEST — CANCELED only. A member who withdraws a request may want it back.
+#:   COMPLETED is excluded: work the desk reported as finished is not un-finished
+#:   by an update, and "it wasn't actually done" is a new request that can cite
+#:   the old one.
+#: * RISK — both. Recurrence is the defining behaviour of a risk; a store that
+#:   cannot reopen one would push the member into filing duplicates and lose the
+#:   history that made the risk worth watching.
+#: * OPPORTUNITY — PASSED only. Passing is a judgement and judgements change.
+#:   CLOSED is the window shutting, which is not a judgement and cannot be
+#:   revisited by changing a row.
+#: * EVENT — absent. It has no closing statuses to return from.
+REOPENABLE: dict[str, tuple[str, ...]] = {
+    TYPE_OBLIGATION: ("RESOLVED", "DISMISSED"),
+    TYPE_DECISION: ("ABANDONED",),
+    TYPE_REQUEST: ("CANCELED",),
+    TYPE_RISK: ("RESOLVED", "DISMISSED"),
+    TYPE_OPPORTUNITY: ("PASSED",),
+}
+
+TRANSITION_STAY = "STAY"
+TRANSITION_MOVE = "MOVE"
+TRANSITION_CLOSE = "CLOSE"
+TRANSITION_REOPEN = "REOPEN"
+
+
+def working_statuses(record_type: str) -> tuple[str, ...]:
+    """The statuses of *record_type* that mean the matter is still live."""
+    spec = _spec(record_type)
+    closing = set(spec["closing"])
+    return tuple(s for s in spec["statuses"] if s not in closing)
+
+
+def allowed_transitions(record_type: str, current: str) -> tuple[str, ...]:
+    """Every status reachable from *current*, including *current* itself.
+
+    Read-only and side-effect free, so a caller — a route rendering the buttons
+    a member may press, a test asserting the contract — can ask what is legal
+    without attempting it. The UI drawing a control the writer will refuse is a
+    lie told in advance; this is how it avoids telling it.
+    """
+    spec = _spec(record_type)
+    here = str(current or "").strip().upper()
+    if here not in spec["statuses"]:
+        return ()
+    live = working_statuses(record_type)
+    if here not in spec["closing"]:
+        # Working: anywhere else that is working, plus every ending.
+        return tuple(dict.fromkeys(live + tuple(spec["closing"])))
+    if here in REOPENABLE.get(str(record_type).strip().upper(), ()):
+        return (here, spec["default_status"])
+    return (here,)
+
+
+def check_transition(
+    record_type: str, current: str, target: str, *, reopen: bool = False,
+) -> str:
+    """Classify ``current -> target``, or raise :class:`PrivateRecordRejected`.
+
+    Returns one of the ``TRANSITION_*`` constants. Raising rather than returning
+    a falsey verdict is the fail-closed half of the contract: there is no way to
+    call this and carry on past a refusal by forgetting to check the result.
+    """
+    spec = _spec(record_type)
+    kind = str(record_type).strip().upper()
+    here = str(current or "").strip().upper()
+    there = str(target or "").strip().upper()
+
+    if there not in spec["statuses"]:
+        raise PrivateRecordRejected(f"{there or '(empty)'} is not a {kind} status")
+    if here not in spec["statuses"]:
+        # A row carrying a status the spec no longer declares. Refusing is the
+        # only safe reading: the transition rules were written against a
+        # vocabulary this row predates, so none of them are known to apply.
+        raise PrivateRecordRejected(
+            f"{kind} record is in unrecognised state {here or '(empty)'}")
+    if here == there:
+        return TRANSITION_STAY
+
+    closing = set(spec["closing"])
+    if here not in closing:
+        return TRANSITION_CLOSE if there in closing else TRANSITION_MOVE
+
+    # Closed. The only way out is a reopen the type allows, onto the default
+    # status, asked for explicitly.
+    if there in closing:
+        raise PrivateRecordRejected(
+            f"{kind} is already closed as {here}; changing it to {there} would "
+            f"overwrite how the record ended — reopen it first")
+    if here not in REOPENABLE.get(kind, ()):
+        raise PrivateRecordRejected(f"{kind} cannot be reopened from {here}")
+    if there != spec["default_status"]:
+        raise PrivateRecordRejected(
+            f"reopening a {kind} returns it to {spec['default_status']}, not {there}")
+    if not reopen:
+        # The status alone is not consent. A caller that means to undo a closure
+        # says so; one that arrived here by passing a stale status through from
+        # a form gets a refusal instead of a silently discarded resolved_at.
+        raise PrivateRecordRejected(
+            f"{kind} is closed as {here}; pass reopen=True to return it to "
+            f"{spec['default_status']}")
+    return TRANSITION_REOPEN
+
+
 #: Fields :func:`update_record` will move. Anything else is a change to the
 #: substance of the record and belongs in :func:`revise_record`, which keeps the
 #: old version. This tuple is the enforcement, not a docstring: a caller passing
@@ -1036,6 +1287,10 @@ def update_record(
     if owner <= 0:
         raise PrivateRecordRejected("owner_user_id is required")
 
+    # `reopen` is intent, not data. It is pulled out before the UPDATABLE check
+    # so it never reaches the column loop and never appears in an assignment.
+    reopen = bool(fields.pop("reopen", False))
+
     unknown = [name for name in fields if name not in UPDATABLE]
     if unknown:
         raise PrivateRecordRejected(
@@ -1051,23 +1306,49 @@ def update_record(
         # read path.
         return {"status": "absent", "record_id": 0, "record_type": kind, "record": None}
 
+    # `_fetch` returns whatever the driver's row type is — ``sqlite3.Row``
+    # locally, something else on Postgres — and only ``dict(row)`` is common to
+    # all of them. `_serialize` already relies on that; doing the same here
+    # keeps the transition check from being the one place that assumes SQLite.
+    current_row = dict(current)
+
     enums = spec.get("enums") or {}
     assignments: list[str] = []
     params: list = []
     now_iso = _now_iso()
 
+    move = ""
     if "status" in fields:
-        status = _enum(fields["status"], spec["statuses"], "status", spec["default_status"])
-        assignments.append("status = ?")
-        params.append(status)
-        if status in spec["closing"]:
-            assignments.append("closed_at = ?")
-            params.append(now_iso)
-        else:
-            # Reopening clears the closure stamp. A record that is OPEN and
-            # carries a resolved_at is a row two readers will read two ways.
-            assignments.append("closed_at = ?")
-            params.append(None)
+        # Not `_enum`, which coerces an unrecognised value to the default. A
+        # typo'd status must not silently reopen a resolved obligation, so the
+        # raw value goes to `check_transition`, which rejects what it does not
+        # recognise instead of substituting something plausible.
+        status = str(fields["status"] or "").strip().upper()
+        try:
+            move = check_transition(
+                kind, str(current_row.get("status") or ""), status, reopen=reopen)
+        except PrivateRecordRejected:
+            # Fail closed, and leave a trace. No column has been assigned yet,
+            # so nothing is written but this row: the refusal is the only
+            # evidence the attempt happened.
+            _audit.record(
+                cur, actor_user_id=int(actor_user_id or owner), owner_user_id=owner,
+                action=_audit.ACTION_RECORD_TRANSITION_DENIED,
+                object_type=spec["audit_object"], object_id=int(record_id),
+                purpose=purpose, outcome=_audit.OUTCOME_DENIED,
+            )
+            raise
+        if move != TRANSITION_STAY:
+            assignments.append("status = ?")
+            params.append(status)
+            if move == TRANSITION_CLOSE:
+                assignments.append("closed_at = ?")
+                params.append(now_iso)
+            elif move == TRANSITION_REOPEN:
+                # Reopening clears the closure stamp. A record that is OPEN and
+                # carries a resolved_at is a row two readers will read two ways.
+                assignments.append("closed_at = ?")
+                params.append(None)
 
     extra_kinds = {name: kind_ for name, _ddl, kind_, _req in spec["extra"]}
     for name, value in fields.items():
@@ -1091,6 +1372,14 @@ def update_record(
         params.append(resolved)
 
     if not assignments:
+        if move == TRANSITION_STAY:
+            # A legal restatement of the status the record already holds, with
+            # nothing else to move. Not an error and not a write: touching
+            # `updated_at` here would make "when did this last change" mean
+            # "when was it last mentioned", which is what makes a recent-activity
+            # feed fill with rows that did not change.
+            return {"status": STATUS_UNCHANGED, "record_id": int(record_id),
+                    "record_type": kind, "record": _serialize(kind, current)}
         raise PrivateRecordRejected("nothing to update")
 
     assignments.append("updated_at = ?")
@@ -1111,7 +1400,9 @@ def update_record(
 
     _audit.record(
         cur, actor_user_id=int(actor_user_id or owner), owner_user_id=owner,
-        action=_audit.ACTION_RECORD_UPDATE, object_type=spec["audit_object"],
+        action=(_audit.ACTION_RECORD_REOPEN if move == TRANSITION_REOPEN
+                else _audit.ACTION_RECORD_UPDATE),
+        object_type=spec["audit_object"],
         object_id=int(record_id), purpose=purpose, outcome=_audit.OUTCOME_OK,
     )
     _telemetry.emit(
@@ -1323,10 +1614,18 @@ def list_records(
         clauses.append(f"sensitivity IN ({', '.join('?' for _ in permitted)})")
         params.extend(permitted)
 
-    if due_before and "due_at" in _column_names(spec):
+    # Resolved through `DEADLINE_FIELDS` rather than hardcoded to `due_at`, so
+    # "due before X" means the same thing on a decision's `deadline_at` as on an
+    # obligation's `due_at`. A type with no deadline concept ignores the filter
+    # instead of matching everything, which is the safe direction: EVENT would
+    # otherwise return the member's whole history for any boundary in the past.
+    deadline_column = DEADLINE_FIELDS.get(kind)
+    if due_before:
+        if not deadline_column:
+            return []
         boundary = _iso(due_before, default=None)
         if boundary:
-            clauses.append("due_at IS NOT NULL AND due_at <= ?")
+            clauses.append(f"{deadline_column} IS NOT NULL AND {deadline_column} <= ?")
             params.append(boundary)
 
     if before_id and int(before_id) > 0:
@@ -1351,6 +1650,107 @@ def _as_tuple(value: object) -> tuple:
     if isinstance(value, (list, tuple, set, frozenset)):
         return tuple(value)
     return (value,)
+
+
+def count_records(
+    cur,
+    *,
+    record_type: str,
+    owner_user_id: int,
+    statuses: object = None,
+    open_only: bool = False,
+    include_superseded: bool = False,
+    due_before: object = None,
+    due_after: object = None,
+    closed_since: object = None,
+    severities: object = None,
+) -> int:
+    """A bounded ``COUNT`` for one owner and one type. Owner-scoped.
+
+    This exists so the overview can count in SQL rather than in Python over a
+    truncated list. The tempting shortcut — pull the first two hundred rows and
+    ``len`` the ones that match — produces an overview that is exactly right for
+    small accounts and silently understates every large one, and the accounts it
+    lies to are the ones with the most at stake.
+
+    ``include_superseded`` defaults to False, so a revised record counts once.
+    A superseded row is the *old version* of something the member still has;
+    counting both is how "3 open obligations" becomes 7 after a few edits.
+    """
+    spec = _spec(record_type)
+    kind = str(record_type).strip().upper()
+    owner = int(owner_user_id or 0)
+    if owner <= 0:
+        return 0
+    require_records_schema(cur)
+
+    clauses = ["owner_user_id = ?"]
+    params: list = [owner]
+
+    if not include_superseded:
+        clauses.append("lifecycle_state = ?")
+        params.append(LIFECYCLE_ACTIVE)
+
+    wanted = _as_tuple(statuses)
+    if wanted:
+        valid = [s for s in (str(x).strip().upper() for x in wanted) if s in spec["statuses"]]
+        # Same rule as `list_records`: an unrecognised filter narrows to nothing
+        # rather than widening to everything.
+        if not valid:
+            return 0
+        clauses.append(f"status IN ({', '.join('?' for _ in valid)})")
+        params.extend(valid)
+    elif open_only:
+        live = [s for s in spec["statuses"] if s not in spec["closing"]] or list(spec["statuses"])
+        clauses.append(f"status IN ({', '.join('?' for _ in live)})")
+        params.extend(live)
+
+    named_severities = _as_tuple(severities)
+    if named_severities:
+        # Only the types that declare a `severity` enum can answer this. The
+        # others return 0 rather than ignoring the filter, so "how many critical
+        # opportunities" cannot come back as "all of them".
+        if "severity" not in (spec.get("enums") or {}):
+            return 0
+        valid = [s for s in (str(x).strip().upper() for x in named_severities)
+                 if s in SEVERITIES]
+        if not valid:
+            return 0
+        clauses.append(f"severity IN ({', '.join('?' for _ in valid)})")
+        params.extend(valid)
+
+    deadline_column = DEADLINE_FIELDS.get(kind)
+    if due_before is not None or due_after is not None:
+        if not deadline_column:
+            return 0
+        clauses.append(f"{deadline_column} IS NOT NULL")
+        if due_after is not None:
+            boundary = _iso(due_after, default=None)
+            if boundary:
+                clauses.append(f"{deadline_column} >= ?")
+                params.append(boundary)
+        if due_before is not None:
+            boundary = _iso(due_before, default=None)
+            if boundary:
+                clauses.append(f"{deadline_column} < ?")
+                params.append(boundary)
+
+    if closed_since is not None:
+        if not spec["closing"]:
+            return 0
+        boundary = _iso(closed_since, default=None)
+        if boundary:
+            clauses.append("closed_at IS NOT NULL AND closed_at >= ?")
+            params.append(boundary)
+
+    cur.execute(
+        f"SELECT COUNT(*) AS n FROM {spec['table']} WHERE {' AND '.join(clauses)}",
+        tuple(params),
+    )
+    row = cur.fetchone()
+    if row is None:
+        return 0
+    return int(row["n"] if hasattr(row, "keys") else row[0])
 
 
 def count_open(cur, *, record_type: str, owner_user_id: int) -> int:

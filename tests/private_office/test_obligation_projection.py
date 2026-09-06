@@ -315,9 +315,16 @@ def stage_resolution_and_reopen_journey() -> None:
         amount = _node_facts(cur, USER_A, node_id, projection.FACT_AMOUNT)
         check("the amount fact is retired with it", len(amount) == 0, amount)
 
+        # `reopen=True` is required now that the transition engine treats
+        # leaving a closing status as a distinct act rather than an ordinary
+        # status write. This stage is about what the *projection* does when an
+        # obligation comes back, so the intent is stated and the journey is
+        # unchanged — the alternative reading, that a resolved obligation
+        # should quietly reopen because someone sent "OPEN", is the behaviour
+        # the engine exists to refuse.
         records.update_record(
             cur, record_type=records.TYPE_OBLIGATION, owner_user_id=USER_A,
-            record_id=active_id, status="OPEN")
+            record_id=active_id, status="OPEN", reopen=True)
         projection.project_user(cur, user_id=USER_A)
         node = _liability_node(cur, USER_A, root)
         check("reopening reactivates the same node, no duplicate",

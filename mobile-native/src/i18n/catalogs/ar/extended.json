@@ -4779,6 +4779,36 @@
           "CLOSED": "مغلقة",
           "OVERDUE": "متأخر",
           "DUE_SOON": "يستحق قريبًا"
+        },
+        "overview": {
+          "heading": "نظرة عامة",
+          "loading": "جارٍ تحميل نظرتك العامة…",
+          "unavailable": "تعذّر تحميل نظرتك العامة. هذه ليست أصفارًا.",
+          "needsAttention": "يحتاج إلى انتباهك",
+          "dueToday": "مستحق اليوم",
+          "overdue": "متأخر",
+          "pendingDecisions": "قرارات معلّقة",
+          "dueThisWeek": "مستحق هذا الأسبوع",
+          "highRisks": "مخاطر عالية",
+          "openRequests": "طلبات مفتوحة",
+          "awaitingResponse": "بانتظار ردّك",
+          "opportunities": "الفرص",
+          "recentlyCompleted": "أُنجز مؤخرًا",
+          "recentWindow": "آخر {{days}} يومًا",
+          "queue": "قائمة الانتباه",
+          "queueEmpty": "لا شيء يحتاج إلى انتباهك.",
+          "truncated": "عرض {{shown}} من {{total}}.",
+          "notTracked": "غير متتبَّع",
+          "reason": {
+            "OVERDUE": "متأخر",
+            "HIGH_RISK": "خطر عالٍ",
+            "DUE_SOON": "يستحق قريبًا",
+            "RESPONSE_REQUIRED": "يحتاج إلى ردّك",
+            "MISSING_REQUIRED_CONTEXT": "يحتاج إلى مراجعة",
+            "DECISION_REQUIRED": "قرار مفتوح",
+            "BLOCKED": "بانتظار المزوّد"
+          },
+          "expiringOpportunities": "فرص تنتهي قريبًا"
         }
       },
       "capital": {

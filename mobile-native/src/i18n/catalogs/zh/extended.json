@@ -4555,6 +4555,36 @@
           "CLOSED": "已关闭",
           "OVERDUE": "已逾期",
           "DUE_SOON": "即将到期"
+        },
+        "overview": {
+          "heading": "概览",
+          "loading": "正在加载您的概览…",
+          "unavailable": "无法加载您的概览。这些不是零。",
+          "needsAttention": "需要处理",
+          "dueToday": "今日到期",
+          "overdue": "已逾期",
+          "pendingDecisions": "待定决策",
+          "dueThisWeek": "本周到期",
+          "highRisks": "高风险",
+          "openRequests": "进行中的请求",
+          "awaitingResponse": "等待您的答复",
+          "opportunities": "机会",
+          "recentlyCompleted": "最近完成",
+          "recentWindow": "最近 {{days}} 天",
+          "queue": "待处理队列",
+          "queueEmpty": "目前没有需要您处理的事项。",
+          "truncated": "显示 {{total}} 项中的 {{shown}} 项。",
+          "notTracked": "未跟踪",
+          "reason": {
+            "OVERDUE": "已逾期",
+            "HIGH_RISK": "高风险",
+            "DUE_SOON": "即将到期",
+            "RESPONSE_REQUIRED": "需要您答复",
+            "MISSING_REQUIRED_CONTEXT": "需要复核",
+            "DECISION_REQUIRED": "决策未定",
+            "BLOCKED": "等待服务方"
+          },
+          "expiringOpportunities": "即将到期的机会"
         }
       },
       "capital": {

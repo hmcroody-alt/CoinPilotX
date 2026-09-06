@@ -4556,6 +4556,36 @@
           "CLOSED": "Fèmen",
           "OVERDUE": "An reta",
           "DUE_SOON": "Prèt pou rive"
+        },
+        "overview": {
+          "heading": "Apèsi",
+          "loading": "N ap chaje apèsi w la…",
+          "unavailable": "Nou pa t kapab chaje apèsi w la. Sa yo se pa zewo.",
+          "needsAttention": "Bezwen atansyon",
+          "dueToday": "Delè jodi a",
+          "overdue": "An reta",
+          "pendingDecisions": "Desizyon k ap tann",
+          "dueThisWeek": "Delè semèn sa a",
+          "highRisks": "Gwo risk",
+          "openRequests": "Demann ouvè",
+          "awaitingResponse": "K ap tann repons ou",
+          "opportunities": "Opòtinite",
+          "recentlyCompleted": "Fèk fini",
+          "recentWindow": "Dènye {{days}} jou",
+          "queue": "Liy atansyon",
+          "queueEmpty": "Anyen pa bezwen atansyon w.",
+          "truncated": "Montre {{shown}} sou {{total}}.",
+          "notTracked": "Pa swiv",
+          "reason": {
+            "OVERDUE": "An reta",
+            "HIGH_RISK": "Gwo risk",
+            "DUE_SOON": "Delè pwoche",
+            "RESPONSE_REQUIRED": "Bezwen repons ou",
+            "MISSING_REQUIRED_CONTEXT": "Bezwen revizyon",
+            "DECISION_REQUIRED": "Desizyon ouvè",
+            "BLOCKED": "K ap tann founisè a"
+          },
+          "expiringOpportunities": "Opòtinite k ap ekspire"
         }
       },
       "capital": {

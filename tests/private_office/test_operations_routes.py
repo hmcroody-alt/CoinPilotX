@@ -373,6 +373,7 @@ def stage_second_lock():
         ("post", "/api/private-office/records/obligations",
          {"json": _SEED_BODIES["obligations"]}),
         ("get", "/api/private-office/attention", {}),
+        ("get", "/api/private-office/operations/overview", {}),
     ):
         resp = getattr(client, method)(
             path, headers={routes.GRANT_HEADER: ""}, **kwargs)
@@ -381,6 +382,16 @@ def stage_second_lock():
               resp.status_code == 423, str(resp.status_code))
         check("the locked refusal carries no records",
               "records" not in body and "due_soon" not in body, str(body))
+        # A locked Office must not answer "you have four overdue things"
+        # either. A count is disclosure: it confirms records exist, how many,
+        # and how badly they are going, without naming one.
+        check("the locked refusal carries no overview",
+              not ({"overview", "attention", "counts"} & set(body)), str(body))
+        text = json.dumps(body)
+        for leak in ("overdue", "due_at", "severity", "needs_attention",
+                     "OBLIGATION", "title"):
+            check(f"the locked refusal does not mention {leak}",
+                  leak not in text, str(body))
 
 
 def stage_attention():
@@ -415,6 +426,68 @@ def stage_attention():
           str(body.get("due_horizon")))
     check("attention is never cached",
           "no-store" in resp.headers.get("Cache-Control", ""))
+
+    # The ranked queue arrives beside the original fields, not instead of them.
+    queue = body.get("attention") or {}
+    check("the ranked queue is carried too", "items" in queue, str(body.keys()))
+    check("every queued item says why it is there",
+          all(i.get("primary_reason") for i in queue.get("items") or []),
+          str(queue.get("items")))
+
+
+def stage_overview():
+    print("\n[operations overview]")
+    _as(USER_A)
+    client = _app().test_client()
+
+    resp = client.get("/api/private-office/operations/overview")
+    body = resp.get_json() or {}
+    check("the overview answers 200", resp.status_code == 200,
+          f"{resp.status_code} {body}")
+    check("the state is explicit, not inferred from emptiness",
+          body.get("state") == "ready", str(body.get("state")))
+    check("the overview is never cached",
+          "no-store" in resp.headers.get("Cache-Control", ""))
+
+    summary = body.get("overview") or {}
+    for field in ("as_of", "needs_attention", "due_today", "due_this_week",
+                  "overdue", "pending_decisions", "open_requests",
+                  "awaiting_response", "active_risks", "active_high_risks",
+                  "active_opportunities", "recently_completed",
+                  "expiring_opportunities", "recent_activity", "attention"):
+        check(f"the payload carries {field}", field in summary, str(sorted(summary)))
+
+    check("an unanswerable count says so rather than reporting zero",
+          summary.get("expiring_opportunities") == "UNSUPPORTED",
+          str(summary.get("expiring_opportunities")))
+    check("the reason is carried with it",
+          "EXPIRING_OPPORTUNITY" in (summary.get("unsupported") or {}),
+          str(summary.get("unsupported")))
+
+    blob = json.dumps(body, default=str)
+    for leaked in ("owner_user_id", "record_key"):
+        check(f"the overview never exposes {leaked}", leaked not in blob)
+
+    # Owner isolation over HTTP: the owner is the session, and there is no
+    # parameter that names anyone else — including one this route ignores.
+    _as(USER_B)
+    other = (client.get(
+        "/api/private-office/operations/overview?owner_user_id=%d" % USER_A
+    ).get_json() or {}).get("overview") or {}
+    _as(USER_A)
+    mine = (client.get("/api/private-office/operations/overview").get_json()
+            or {}).get("overview") or {}
+    check("naming another owner in the query string changes nothing",
+          other.get("counts") != mine.get("counts")
+          or other.get("needs_attention") != mine.get("needs_attention"),
+          f"{other.get('counts')} vs {mine.get('counts')}")
+
+    # Login is required here as it is everywhere else in the family.
+    _stub._test_user = None
+    fresh = _app().test_client()
+    check("the overview requires login",
+          fresh.get("/api/private-office/operations/overview").status_code == 401)
+    _as(USER_A)
 
 
 def stage_projection():
@@ -489,6 +562,7 @@ def main() -> int:
     stage_owner_isolation()
     stage_second_lock()
     stage_attention()
+    stage_overview()
     stage_projection()
     stage_reads_are_audited()
     stage_kill_switch()

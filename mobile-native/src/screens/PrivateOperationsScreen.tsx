@@ -44,6 +44,9 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
+  AttentionItem,
+  OverviewCount,
+  PrivateOverviewResult,
   PrivateRecord,
   PrivateRecordDraft,
   PrivateRecordView,
@@ -51,6 +54,7 @@ import {
   RECORD_VIEWS,
   asRecordView,
   createPrivateRecord,
+  getPrivateOverview,
   getPrivateRecords,
   setPrivateRecordStatus
 } from "../api/privateRecords";
@@ -83,6 +87,29 @@ const FORM_FIELDS: Readonly<
   risks: { primary: "title", token: "risk_type", long: "summary", due: false },
   opportunities: { primary: "title", token: "opportunity_type", long: "summary", due: false }
 };
+
+/**
+ * A record type as the overview names it, back to the view that lists it. The
+ * server sends the singular type on a queue item and the plural view in the
+ * path, and this is the one place the two vocabularies meet — a queue row is
+ * only useful if tapping it lands on the record.
+ */
+const VIEW_FOR_TYPE: Readonly<Record<string, PrivateRecordView>> = {
+  OBLIGATION: "obligations",
+  EVENT: "events",
+  DECISION: "decisions",
+  REQUEST: "requests",
+  RISK: "risks",
+  OPPORTUNITY: "opportunities"
+};
+
+/**
+ * How many queue rows the summary shows before deferring to the views. The
+ * server's page is fifty; printing fifty rows above the six tabs would bury the
+ * thing the member came here to open. The *count* is never truncated — only the
+ * list is.
+ */
+const QUEUE_PREVIEW = 6;
 
 function asToken(value: string): string {
   const cleaned = value
@@ -133,12 +160,39 @@ function PrivateOperationsBody({ route }: Props) {
   const [draftDue, setDraftDue] = useState("");
   const [writeError, setWriteError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [summary, setSummary] = useState<PrivateOverviewResult | null>(null);
 
-  const load = useCallback(async (wanted: PrivateRecordView) => {
-    const next = await getPrivateRecords(wanted);
+  const loadOverview = useCallback(async () => {
+    const next = await getPrivateOverview();
     if (next.state === "LOCKED") lockOfficeLocally();
-    setResult(next);
-    setState(next.state === "READY" && next.records.length === 0 ? "EMPTY" : next.state);
+    setSummary(next);
+  }, []);
+
+  const load = useCallback(
+    async (wanted: PrivateRecordView) => {
+      const next = await getPrivateRecords(wanted);
+      if (next.state === "LOCKED") lockOfficeLocally();
+      setResult(next);
+      setState(next.state === "READY" && next.records.length === 0 ? "EMPTY" : next.state);
+      // Refreshed alongside the list because a status move changes both, and a
+      // header still showing "3 overdue" after the member cleared the third one
+      // is the screen contradicting itself.
+      await loadOverview();
+    },
+    [loadOverview]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const next = await getPrivateOverview();
+      if (cancelled) return;
+      if (next.state === "LOCKED") lockOfficeLocally();
+      setSummary(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -228,6 +282,214 @@ function PrivateOperationsBody({ route }: Props) {
   const statusLabel = (word: string) =>
     t(`premium:privateOffice.operations.status.${word}`, { defaultValue: word });
 
+  const reasonLabel = (word: string) =>
+    t(`premium:privateOffice.operations.overview.reason.${word}`, { defaultValue: word });
+
+  /** A headline or secondary figure. `UNSUPPORTED` renders as words, never 0. */
+  const figure = (value: OverviewCount) =>
+    value === "UNSUPPORTED"
+      ? t("premium:privateOffice.operations.overview.notTracked")
+      : String(value);
+
+  const tile = (key: string, label: string, value: OverviewCount, alarming: boolean) => (
+    <View key={key} style={styles.tile}>
+      <Text style={[styles.tileValue, alarming && value !== 0 ? styles.tileValueAlarm : null]}>
+        {figure(value)}
+      </Text>
+      <Text style={styles.tileLabel}>{label}</Text>
+    </View>
+  );
+
+  const queueRow = (item: AttentionItem) => {
+    const destination = VIEW_FOR_TYPE[item.recordType];
+    return (
+      <Pressable
+        key={`${item.recordType}:${item.id}`}
+        style={styles.queueRow}
+        onPress={() => (destination ? setView(destination) : undefined)}
+        accessibilityRole="button"
+      >
+        <View style={styles.queueHead}>
+          <Text style={styles.queueTitle} numberOfLines={2}>
+            {item.title}
+          </Text>
+          <Text
+            style={[
+              styles.reasonChip,
+              item.primaryReason === "OVERDUE" ? styles.reasonChipAlarm : null,
+              item.primaryReason === "HIGH_RISK" ? styles.reasonChipAlarm : null
+            ]}
+          >
+            {reasonLabel(item.primaryReason)}
+          </Text>
+        </View>
+        <View style={styles.recordMeta}>
+          {destination ? (
+            <Text style={styles.metaText}>
+              {t(`premium:privateOffice.operations.views.${destination}`)}
+            </Text>
+          ) : null}
+          {item.dueAt ? (
+            <Text style={styles.metaText}>
+              {t("premium:privateOffice.operations.due", { date: shortDate(item.dueAt) })}
+            </Text>
+          ) : null}
+          {item.reasons.length > 1
+            ? item.reasons
+                .slice(1)
+                .map((word) => (
+                  <Text key={word} style={styles.metaText}>
+                    {reasonLabel(word)}
+                  </Text>
+                ))
+            : null}
+        </View>
+      </Pressable>
+    );
+  };
+
+  /**
+   * The executive summary, above the six views rather than instead of them.
+   * A refusal renders one honest line and no figures at all: a dashboard of
+   * zeros over a read that never happened is the single worst thing this screen
+   * could show, because it is indistinguishable from a clear week.
+   */
+  const overviewPanel = () => {
+    if (summary === null) {
+      return (
+        <View style={styles.overview} accessibilityRole="progressbar">
+          <Text style={styles.panelText}>
+            {t("premium:privateOffice.operations.overview.loading")}
+          </Text>
+        </View>
+      );
+    }
+    if (summary.state !== "READY" && summary.state !== "EMPTY") {
+      // NOT_ENTITLED, FEATURE_DISABLED, NOT_IMPLEMENTED, NOT_FOUND, LOCKED,
+      // UNAVAILABLE and ERROR all land here. The six views below carry their
+      // own, more specific notice for the same condition, so repeating it seven
+      // ways here would only push the actual records off the screen.
+      return (
+        <View style={styles.overview}>
+          <Text style={styles.panelText}>
+            {t("premium:privateOffice.operations.overview.unavailable")}
+          </Text>
+        </View>
+      );
+    }
+    const data = summary.overview;
+    const shown = data.attention.slice(0, QUEUE_PREVIEW);
+    return (
+      <View style={styles.overview}>
+        <Text style={styles.overviewHeading}>
+          {t("premium:privateOffice.operations.overview.heading")}
+        </Text>
+        <View style={styles.tiles}>
+          {tile(
+            "needsAttention",
+            t("premium:privateOffice.operations.overview.needsAttention"),
+            data.needsAttention,
+            true
+          )}
+          {tile(
+            "dueToday",
+            t("premium:privateOffice.operations.overview.dueToday"),
+            data.dueToday,
+            true
+          )}
+          {tile(
+            "overdue",
+            t("premium:privateOffice.operations.overview.overdue"),
+            data.overdue,
+            true
+          )}
+          {tile(
+            "pendingDecisions",
+            t("premium:privateOffice.operations.overview.pendingDecisions"),
+            data.pendingDecisions,
+            false
+          )}
+        </View>
+
+        <View style={styles.tiles}>
+          {tile(
+            "dueThisWeek",
+            t("premium:privateOffice.operations.overview.dueThisWeek"),
+            data.dueThisWeek,
+            false
+          )}
+          {tile(
+            "highRisks",
+            t("premium:privateOffice.operations.overview.highRisks"),
+            data.activeHighRisks,
+            true
+          )}
+          {tile(
+            "openRequests",
+            t("premium:privateOffice.operations.overview.openRequests"),
+            data.openRequests,
+            false
+          )}
+          {tile(
+            "awaitingResponse",
+            t("premium:privateOffice.operations.overview.awaitingResponse"),
+            data.awaitingResponse,
+            false
+          )}
+          {tile(
+            "opportunities",
+            t("premium:privateOffice.operations.overview.opportunities"),
+            data.activeOpportunities,
+            false
+          )}
+          {tile(
+            "recentlyCompleted",
+            t("premium:privateOffice.operations.overview.recentlyCompleted"),
+            data.recentlyCompleted,
+            false
+          )}
+          {/* Rendered rather than hidden. The member asked what is expiring;
+              "not tracked" answers them, and omitting the tile would let them
+              assume it was covered by one of the others. */}
+          {tile(
+            "expiringOpportunities",
+            t("premium:privateOffice.operations.overview.expiringOpportunities"),
+            data.expiringOpportunities,
+            false
+          )}
+        </View>
+        {data.recentWindowDays > 0 ? (
+          <Text style={styles.metaText}>
+            {t("premium:privateOffice.operations.overview.recentWindow", {
+              days: data.recentWindowDays
+            })}
+          </Text>
+        ) : null}
+
+        <Text style={styles.overviewHeading}>
+          {t("premium:privateOffice.operations.overview.queue")}
+        </Text>
+        {shown.length === 0 ? (
+          <Text style={styles.panelText}>
+            {t("premium:privateOffice.operations.overview.queueEmpty")}
+          </Text>
+        ) : (
+          shown.map(queueRow)
+        )}
+        {data.attentionTotal > shown.length ? (
+          <Text style={styles.metaText}>
+            {t("premium:privateOffice.operations.overview.truncated", {
+              shown: shown.length,
+              // The server's own total, which is not capped. A member with 300
+              // items is told 300 and shown the worst few.
+              total: data.attentionTotal
+            })}
+          </Text>
+        ) : null}
+      </View>
+    );
+  };
+
   const notice = (
     icon: keyof typeof Ionicons.glyphMap,
     tint: string,
@@ -262,6 +524,8 @@ function PrivateOperationsBody({ route }: Props) {
         <Text style={styles.title}>{t("premium:privateOffice.operations.title")}</Text>
         <Text style={styles.subtitle}>{t("premium:privateOffice.operations.subtitle")}</Text>
       </View>
+
+      {overviewPanel()}
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
         {RECORD_VIEWS.map((candidate) => (
@@ -569,6 +833,55 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: colors.surfaceRaised, borderColor: colors.accentStrong },
   chipText: { color: colors.muted, fontSize: 12, fontWeight: "700" },
   chipTextActive: { color: colors.accentStrong },
+  overview: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 16,
+    gap: 10
+  },
+  overviewHeading: {
+    color: colors.text,
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.9,
+    textTransform: "uppercase"
+  },
+  tiles: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  tile: {
+    minWidth: 88,
+    flexGrow: 1,
+    flexBasis: "22%",
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    gap: 2
+  },
+  tileValue: { color: colors.text, fontSize: 19, fontWeight: "800" },
+  tileValueAlarm: { color: colors.danger },
+  tileLabel: { color: colors.muted, fontSize: 10, lineHeight: 14 },
+  queueRow: {
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 5
+  },
+  queueHead: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 10
+  },
+  queueTitle: { color: colors.text, fontSize: 14, fontWeight: "700", flexShrink: 1 },
+  reasonChip: { color: colors.muted, fontSize: 10, fontWeight: "800", letterSpacing: 0.6 },
+  reasonChipAlarm: { color: colors.danger },
   addButton: { flexDirection: "row", alignItems: "center", gap: 6 },
   addText: { color: colors.accentStrong, fontSize: 13, fontWeight: "700" },
   panel: {

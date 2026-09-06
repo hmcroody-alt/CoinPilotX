@@ -37,6 +37,7 @@ jest.mock("../../i18n", () => ({
 }));
 
 const mockGetRecords = jest.fn();
+const mockGetOverview = jest.fn();
 const mockCreateRecord = jest.fn();
 const mockSetStatus = jest.fn();
 const mockOfficeStatus = jest.fn();
@@ -48,6 +49,7 @@ const mockUnlockOffice = jest.fn();
 jest.mock("../../api/privateRecords", () => ({
   ...jest.requireActual("../../api/privateRecords"),
   getPrivateRecords: (...args: unknown[]) => mockGetRecords(...args),
+  getPrivateOverview: (...args: unknown[]) => mockGetOverview(...args),
   createPrivateRecord: (...args: unknown[]) => mockCreateRecord(...args),
   setPrivateRecordStatus: (...args: unknown[]) => mockSetStatus(...args)
 }));
@@ -82,7 +84,7 @@ jest.mock("../../session/sessionStore", () => ({
   })
 }));
 
-import { parsePrivateRecord } from "../../api/privateRecords";
+import { parseOverview, parsePrivateRecord } from "../../api/privateRecords";
 import {
   __resetOfficeLockForTests,
   isOfficeUnlocked,
@@ -130,6 +132,60 @@ function ready(
   };
 }
 
+/** A payload exactly as `operations.overview` emits it. */
+function rawOverview(overrides: Record<string, unknown> = {}) {
+  return {
+    as_of: "2026-09-05T12:00:00Z",
+    needs_attention: 3,
+    due_today: 1,
+    due_this_week: 2,
+    overdue: 1,
+    pending_decisions: 4,
+    open_requests: 2,
+    awaiting_response: 1,
+    active_risks: 5,
+    active_high_risks: 2,
+    active_opportunities: 3,
+    recently_completed: 6,
+    // The field the model genuinely cannot answer.
+    expiring_opportunities: "UNSUPPORTED",
+    counts: { OBLIGATION: 7 },
+    attention: {
+      items: [
+        {
+          id: 41,
+          record_type: "OBLIGATION",
+          // Deliberately not the title of the row in the list below. The queue
+          // and the list are two different reads of the same store, and giving
+          // them the same string here would let a test pass by finding the
+          // wrong one.
+          title: "File the quarterly return",
+          status: "OPEN",
+          effective_status: "OVERDUE",
+          due_at: "2026-09-01T00:00:00Z",
+          deadline_field: "due_at",
+          priority: "HIGH",
+          severity: "",
+          domain: "FINANCIAL",
+          updated_at: "2026-08-21T09:00:00Z",
+          primary_reason: "OVERDUE",
+          reasons: ["OVERDUE"]
+        }
+      ],
+      total: 3,
+      truncated: false
+    },
+    recent_activity: [],
+    recent_window_days: 14,
+    unsupported: { EXPIRING_OPPORTUNITY: "no expiry column" },
+    ...overrides
+  };
+}
+
+function overviewReady(overrides: Record<string, unknown> = {}) {
+  return { state: "READY", overview: parseOverview(rawOverview(overrides)) };
+}
+
 /**
  * Open the second lock the way a member does: the gate's own passcode field and
  * unlock button. Nothing here bypasses the lock — the records are unreachable
@@ -171,6 +227,7 @@ beforeEach(() => {
   // Every case starts locked: the in-memory grant does not survive a test.
   __resetOfficeLockForTests();
   mockGetRecords.mockResolvedValue(ready([rawRecord()]));
+  mockGetOverview.mockResolvedValue(overviewReady());
   mockCreateRecord.mockResolvedValue({ state: "OK", record: null });
   mockSetStatus.mockResolvedValue({ state: "OK", record: null });
   mockOfficeStatus.mockResolvedValue({
@@ -352,6 +409,140 @@ describe("PrivateOperationsScreen", () => {
       expect(queryByText("premium:privateOffice.operations.form.kind")).toBeNull()
     );
     await waitFor(() => expect(mockGetRecords).toHaveBeenCalledTimes(2));
+  });
+
+  it("renders the executive summary above the six views, from the server's numbers", async () => {
+    const { getByText } = await renderScreen();
+    await waitFor(() => getByText("premium:privateOffice.operations.overview.heading"));
+    // The four headline figures.
+    expect(getByText("premium:privateOffice.operations.overview.needsAttention")).toBeTruthy();
+    expect(getByText("premium:privateOffice.operations.overview.dueToday")).toBeTruthy();
+    expect(getByText("premium:privateOffice.operations.overview.overdue")).toBeTruthy();
+    expect(getByText("premium:privateOffice.operations.overview.pendingDecisions")).toBeTruthy();
+    // The rest of the summary the mission asks for.
+    expect(getByText("premium:privateOffice.operations.overview.dueThisWeek")).toBeTruthy();
+    expect(getByText("premium:privateOffice.operations.overview.highRisks")).toBeTruthy();
+    expect(getByText("premium:privateOffice.operations.overview.openRequests")).toBeTruthy();
+    expect(getByText("premium:privateOffice.operations.overview.opportunities")).toBeTruthy();
+    expect(getByText("premium:privateOffice.operations.overview.recentlyCompleted")).toBeTruthy();
+    // The six views are still there. This slice adds a summary; it does not
+    // replace the thing the summary is about.
+    expect(getByText("premium:privateOffice.operations.views.risks")).toBeTruthy();
+    await waitFor(() => getByText("Renew home insurance"));
+  });
+
+  it("shows an unanswerable figure as not tracked rather than as zero", async () => {
+    const { getByText, queryByText } = await renderScreen();
+    await waitFor(() => getByText("premium:privateOffice.operations.overview.heading"));
+    // `expiring_opportunities` has no column behind it. A zero here would be
+    // indistinguishable from a real one, and the member would have no way to
+    // know they were reading a gap.
+    expect(getByText("premium:privateOffice.operations.overview.notTracked")).toBeTruthy();
+    expect(queryByText("premium:privateOffice.operations.overview.unavailable")).toBeNull();
+  });
+
+  it("draws the ranked queue with each row's strongest reason", async () => {
+    const { getAllByText, getByText } = await renderScreen();
+    await waitFor(() => getByText("premium:privateOffice.operations.overview.queue"));
+    expect(getByText("File the quarterly return")).toBeTruthy();
+    // The reason is the server's, carried on the item — not recomputed here
+    // from the row, which is how a chip and an ordering come to disagree. The
+    // label hook resolves through `defaultValue`, so this is the reason name.
+    expect(getByText("OVERDUE")).toBeTruthy();
+    // And the queue row names the view that holds it, beside the chip.
+    expect(
+      getAllByText("premium:privateOffice.operations.views.obligations").length
+    ).toBeGreaterThan(1);
+  });
+
+  it("reports the server's true total, not the length of the page it drew", async () => {
+    const many = Array.from({ length: 9 }, (_, n) => ({
+      id: 100 + n,
+      record_type: "REQUEST",
+      title: `Request ${n}`,
+      status: "WAITING_ON_USER",
+      effective_status: "WAITING_ON_USER",
+      due_at: "",
+      deadline_field: "deadline_at",
+      priority: "NORMAL",
+      severity: "",
+      domain: "",
+      updated_at: "2026-08-21T09:00:00Z",
+      primary_reason: "RESPONSE_REQUIRED",
+      reasons: ["RESPONSE_REQUIRED"]
+    }));
+    mockGetOverview.mockResolvedValue(
+      overviewReady({ attention: { items: many, total: 312, truncated: true } })
+    );
+    const { getByText, queryByText } = await renderScreen();
+    await waitFor(() => getByText("premium:privateOffice.operations.overview.truncated"));
+    // Six drawn, 312 reported. Counting the page instead would tell a member
+    // with 312 problems that they have six — correct until it matters most.
+    expect(getByText("Request 5")).toBeTruthy();
+    expect(queryByText("Request 6")).toBeNull();
+  });
+
+  it("says nothing needs attention only when the server said the queue was empty", async () => {
+    mockGetOverview.mockResolvedValue(
+      overviewReady({
+        needs_attention: 0,
+        attention: { items: [], total: 0, truncated: false }
+      })
+    );
+    const { getByText } = await renderScreen();
+    await waitFor(() => getByText("premium:privateOffice.operations.overview.queueEmpty"));
+  });
+
+  it("prints no figures at all when the overview could not be read", async () => {
+    mockGetOverview.mockResolvedValue({ state: "UNAVAILABLE" });
+    const { getByText, queryByText } = await renderScreen();
+    await waitFor(() => getByText("premium:privateOffice.operations.overview.unavailable"));
+    // The failure this whole shape exists to prevent: a wall of confident zeros
+    // over a read that never happened.
+    expect(queryByText("premium:privateOffice.operations.overview.needsAttention")).toBeNull();
+    expect(queryByText("premium:privateOffice.operations.overview.queue")).toBeNull();
+    expect(queryByText("premium:privateOffice.operations.overview.queueEmpty")).toBeNull();
+  });
+
+  it("treats a missing overview route as a refusal, not as an empty summary", async () => {
+    // An optional route pack that failed to register looks exactly like this.
+    mockGetOverview.mockResolvedValue({ state: "NOT_FOUND" });
+    const { getByText, queryByText } = await renderScreen();
+    await waitFor(() => getByText("premium:privateOffice.operations.overview.unavailable"));
+    expect(queryByText("premium:privateOffice.operations.overview.dueToday")).toBeNull();
+    // The six views are unaffected: this slice must not take the screen down
+    // with a summary that is not there.
+    await waitFor(() => getByText("Renew home insurance"));
+  });
+
+  it("relocks the office when the overview alone answers LOCKED", async () => {
+    mockGetOverview.mockResolvedValue({ state: "LOCKED", setupRequired: false });
+    const { getByText } = await renderScreen();
+    await waitFor(() => getByText("premium:privateOffice.lock.unlock"));
+    expect(isOfficeUnlocked()).toBe(false);
+  });
+
+  it("switches to the view that holds a queue row when the row is pressed", async () => {
+    const { getByText } = await renderScreen({ view: "decisions" });
+    await waitFor(() => getByText("File the quarterly return"));
+    expect(mockGetRecords).toHaveBeenCalledWith("decisions");
+    // The queue row names OBLIGATION; the list route wants "obligations". The
+    // two vocabularies meet in exactly one place, and this is the assertion
+    // that it is the right one.
+    fireEvent.press(getByText("File the quarterly return"));
+    await waitFor(() => expect(mockGetRecords).toHaveBeenCalledWith("obligations"));
+  });
+
+  it("re-reads the summary after a status move, so the header cannot contradict the list", async () => {
+    const { getByText } = await renderScreen();
+    await waitFor(() => getByText("Renew home insurance"));
+    expect(mockGetOverview).toHaveBeenCalledTimes(1);
+    fireEvent.press(getByText("premium:privateOffice.operations.move"));
+    await waitFor(() => getByText("DONE"));
+    fireEvent.press(getByText("DONE"));
+    // A member who just cleared their last overdue item must not still be
+    // looking at "1 overdue".
+    await waitFor(() => expect(mockGetOverview).toHaveBeenCalledTimes(2));
   });
 
   it("keeps a rejected creation's message verbatim, inside the still-open sheet", async () => {
