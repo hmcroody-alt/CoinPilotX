@@ -62,7 +62,7 @@ VIEW_CHOICES: tuple[str, ...] = tuple(sorted(_retrieval.RECORD_VIEWS))
 MAX_LIMIT = 25
 DEFAULT_LIMIT = 10
 
-#: One capability per view. Six capabilities rather than one with a ``view``
+#: One capability per view. Separate capabilities rather than one with a ``view``
 #: argument, because the model routes on intent and "what do I owe" and "what
 #: has my office flagged as a risk" are different questions a member asks in
 #: different words. The executor is shared; only the bound view differs.
@@ -117,6 +117,22 @@ CAPABILITIES: tuple[dict, ...] = (
         "intents": ("my opportunities", "what has been flagged for me",
                     "what is in my opportunity list"),
         "native_route": "/pulse/private-office/opportunities",
+    },
+    {
+        "capability_id": "private.tasks.list",
+        "view": _retrieval.VIEW_TASKS,
+        "description": "List the authenticated member's own operational tasks",
+        "intents": ("my tasks", "what is on my plate", "my to do list",
+                    "what am i working on", "my open tasks"),
+        "native_route": "/pulse/private-office/tasks",
+    },
+    {
+        "capability_id": "private.projects.list",
+        "view": _retrieval.VIEW_PROJECTS,
+        "description": "List the authenticated member's own operational projects",
+        "intents": ("my projects", "what projects are running",
+                    "status of my projects", "my initiatives"),
+        "native_route": "/pulse/private-office/projects",
     },
 )
 
