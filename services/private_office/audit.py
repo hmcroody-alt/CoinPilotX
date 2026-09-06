@@ -174,6 +174,19 @@ ACTION_MEETING_READ = "PRIVATE_MEETING_READ"
 ACTION_MEETING_CODE_ROTATED = "PRIVATE_MEETING_CODE_ROTATED"
 ACTION_MEETING_ARTIFACT_SAVE = "PRIVATE_MEETING_ARTIFACT_SAVE"
 
+# Private Conversations vocabulary. The classification layer writes no message
+# rows, so there is deliberately no PRIVATE_CONVERSATION_MESSAGE action here —
+# message activity belongs to the canonical messaging system, and a second copy
+# in this log would be a second, diverging history of the same thread. What this
+# package owns is the classification and the cross-domain links, which is what
+# these five verbs cover. `object_id` is `CONVERSATION:<id>`; a title or a
+# member's name would put conversation content into a metadata-only log.
+ACTION_CONVERSATION_CLASSIFY = "PRIVATE_CONVERSATION_CLASSIFY"
+ACTION_CONVERSATION_SENSITIVITY_CHANGE = "PRIVATE_CONVERSATION_SENSITIVITY_CHANGE"
+ACTION_CONVERSATION_LINK = "PRIVATE_CONVERSATION_LINK"
+ACTION_CONVERSATION_UNLINK = "PRIVATE_CONVERSATION_UNLINK"
+ACTION_CONVERSATION_READ = "PRIVATE_CONVERSATION_READ"
+
 ACTIONS: tuple[str, ...] = (
     ACTION_FACT_CREATE,
     ACTION_FACT_SUPERSEDE,
@@ -236,6 +249,11 @@ ACTIONS: tuple[str, ...] = (
     ACTION_MEETING_READ,
     ACTION_MEETING_CODE_ROTATED,
     ACTION_MEETING_ARTIFACT_SAVE,
+    ACTION_CONVERSATION_CLASSIFY,
+    ACTION_CONVERSATION_SENSITIVITY_CHANGE,
+    ACTION_CONVERSATION_LINK,
+    ACTION_CONVERSATION_UNLINK,
+    ACTION_CONVERSATION_READ,
 )
 
 OUTCOME_OK = "ok"

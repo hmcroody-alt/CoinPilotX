@@ -306,6 +306,28 @@ _FEATURES = (
         ),
     ),
     FeatureSpec(
+        feature_id="private_office.conversations",
+        minimum_tier=TIER_PRIVATE,
+        server_enforced=True,
+        # Private Conversations is a CLASSIFICATION AND POLICY layer over the
+        # canonical messaging authority, not a second messaging system.
+        # pulse_communications_v2 remains the only message ledger
+        # (comm_v2_messages) and messenger_media_foundation remains the only
+        # attachment authority (message_attachments);
+        # services/private_office/conversations.py owns exactly two tables,
+        # neither of which can hold a message body. Membership is answered by
+        # the canonical service, never by a second participant query. RTC is
+        # Agora via communication_calls. There is no cryptographic E2EE, so
+        # capability_states() reports end_to_end_encrypted=False and no
+        # surface may claim otherwise. Exercised by
+        # tests/private_office/test_private_conversations.py.
+        implementation=IMPL_IMPLEMENTED,
+        flag_env="PRIVATE_CONVERSATIONS_ENABLED",
+        # Fail closed, matching the private_meetings precedent: a deploy
+        # without the env var has no Private Conversations surface at all.
+        flag_default_on=False,
+    ),
+    FeatureSpec(
         feature_id="relationship_intelligence",
         minimum_tier=TIER_PRIVATE,
         server_enforced=True,

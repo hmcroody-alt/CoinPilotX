@@ -1325,6 +1325,17 @@ _load_route_pack("private_office_concierge", "services.private_office_concierge_
 # communications engine's room-scope calls. Fail-closed behind
 # PRIVATE_MEETINGS_ENABLED (default OFF) plus the Office second lock.
 _load_route_pack("private_office_meetings", "services.private_office_meetings_routes")
+# Private Conversations: the Office view of messaging. This pack owns
+# CLASSIFICATION and CROSS-DOMAIN LINKS only — pulse_communications_v2 remains
+# the sole message ledger and messenger_media_foundation the sole attachment
+# authority, and every message operation here is a gated delegation to them.
+# There is no second ledger, no second membership predicate and no second RTC
+# path. Fail-closed behind PRIVATE_CONVERSATIONS_ENABLED (default OFF) plus the
+# Office second lock.
+_load_route_pack(
+    "private_office_conversations",
+    "services.private_office_conversations_routes",
+)
 
 
 def cancel_scheduled_account_deletion(cur, user_id):

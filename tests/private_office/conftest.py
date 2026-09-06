@@ -36,6 +36,7 @@ import pytest
 # Imported for its cache reset only. The package is import-cheap and pulls in
 # neither `bot` nor Flask, which `test_private_observability` proves in a clean
 # subprocess.
+from services.private_office import conversations as _conversations
 from services.private_office import records as _records
 from services.private_office import schema as _schema
 from services.private_office import structured_records as _structured
@@ -47,17 +48,20 @@ _ABSENT = object()
 def _reset_schema_caches() -> None:
     """Forget every "the tables are already there" flag in the package.
 
-    There are three of them — ``schema`` owns the six original tables,
-    ``records`` owns the six Batch C primitives and ``structured_records`` owns
-    the three Batch D record tables — and all three are module-level booleans
-    whose entire purpose is to stop the DDL running twice in one process.
-    Pointed at a different database by the rebinding below, any one of them
-    becomes a claim about a file this test has never opened, and the failure it
-    produces is a missing-table error several stages after the cause.
+    There are four of them — ``schema`` owns the six original tables,
+    ``records`` owns the six Batch C primitives, ``structured_records`` owns
+    the three Batch D record tables and ``conversations`` owns the two Private
+    Conversations classification tables — and all four are module-level
+    booleans whose entire purpose is to stop the DDL running twice in one
+    process. Pointed at a different database by the rebinding below, any one of
+    them becomes a claim about a file this test has never opened, and the
+    failure it produces is a missing-table error several stages after the
+    cause.
     """
     _schema.reset_schema_cache()
     _records.reset_records_schema_cache()
     _structured.reset_structured_schema_cache()
+    _conversations.reset_conversations_schema_cache()
 
 
 def _bind(module):
