@@ -56,11 +56,42 @@ LOGGER = logging.getLogger("private_office.audit")
 # every denial spells the action the same way.
 ACTION_FACT_CREATE = "PRIVATE_FACT_CREATE"
 ACTION_FACT_READ = "PRIVATE_FACT_READ"
+#: A correction: one fact replaced by another, both surviving. Distinct from
+#: CREATE even though a supersession does write a new fact, because the question
+#: worth asking afterwards is not "what was added" but "what stopped being
+#: current, and when" — and that question has no answer if the two look alike in
+#: the trail.
+ACTION_FACT_SUPERSEDE = "PRIVATE_FACT_SUPERSEDE"
+#: A verification transition. Separate from CREATE and from SUPERSEDE because a
+#: badge is the thing a member acts on most directly, and "who decided this was
+#: verified, and when" is the question an audit trail is for.
+ACTION_FACT_VERIFY = "PRIVATE_FACT_VERIFY"
+#: Attaching and withdrawing a source. Both recorded, and withdrawal especially:
+#: it is the operation that can leave a verified fact standing on nothing, and
+#: an unlink that left no trace would make that state look like it had always
+#: been that way.
+ACTION_FACT_EVIDENCE_LINK = "PRIVATE_FACT_EVIDENCE_LINK"
+ACTION_FACT_EVIDENCE_UNLINK = "PRIVATE_FACT_EVIDENCE_UNLINK"
 ACTION_GRAPH_WRITE = "PRIVATE_GRAPH_WRITE"
 ACTION_GRAPH_READ = "PRIVATE_GRAPH_READ"
 ACTION_CONTEXT_RETRIEVED = "PRIVATE_CONTEXT_RETRIEVED"
 ACTION_ACCESS_DENIED = "PRIVATE_ACCESS_DENIED"
 ACTION_CONFLICT_DETECTED = "PRIVATE_CONFLICT_DETECTED"
+#: A member settled a contradiction. The most consequential entry in this
+#: vocabulary, because it is the only one that records a *judgement about what is
+#: true* — every other action records something mechanical. Detection is
+#: automatic and deliberately cannot close anything, so a conflict moving from
+#: open to settled has exactly one cause: a person decided. If that decision were
+#: not audited there would be no way to answer "who chose this value, and when"
+#: about the one transition where the answer is not "the system".
+ACTION_CONFLICT_RESOLVED = "PRIVATE_CONFLICT_RESOLVED"
+#: Retiring a fact. Separate from SUPERSEDE: a correction says "this was wrong,
+#: here is the right value" and leaves a successor, whereas archiving says "this
+#: should no longer be asserted" and leaves nothing in its place. Conflating them
+#: would make a rejected claim indistinguishable from a corrected one in the
+#: trail, and those have very different implications for anything downstream that
+#: consumed the original.
+ACTION_FACT_ARCHIVE = "PRIVATE_FACT_ARCHIVE"
 
 # Second-lock vocabulary. Same rule as above — a closed set, and structurally
 # metadata-only: there is no column a passcode, hash, or grant token could be
@@ -110,11 +141,17 @@ ACTION_CONCIERGE_MESSAGE = "PRIVATE_CONCIERGE_MESSAGE"
 ACTIONS: tuple[str, ...] = (
     ACTION_FACT_CREATE,
     ACTION_FACT_READ,
+    ACTION_FACT_SUPERSEDE,
+    ACTION_FACT_VERIFY,
+    ACTION_FACT_EVIDENCE_LINK,
+    ACTION_FACT_EVIDENCE_UNLINK,
     ACTION_GRAPH_WRITE,
     ACTION_GRAPH_READ,
     ACTION_CONTEXT_RETRIEVED,
     ACTION_ACCESS_DENIED,
     ACTION_CONFLICT_DETECTED,
+    ACTION_CONFLICT_RESOLVED,
+    ACTION_FACT_ARCHIVE,
     ACTION_OFFICE_PASSCODE_CREATED,
     ACTION_OFFICE_UNLOCKED,
     ACTION_OFFICE_UNLOCK_FAILED,

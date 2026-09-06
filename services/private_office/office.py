@@ -120,28 +120,75 @@ ENTRY_UNAVAILABLE = "ENTRY_UNAVAILABLE"
 #: share a shape.
 ENTRY_UNKNOWN = "ENTRY_UNKNOWN"
 
-# --- verification vocabulary -------------------------------------------------
+# --- trust bucket ------------------------------------------------------------
+#
+# Naming warning, because these two things are one word apart and one of them is
+# a much weaker claim than the other.
+#
+# `model.VERIFICATION_STATES` is the *canonical verification axis*: eleven
+# states, stored on the row, recording what somebody actually did to check the
+# value. That is the real answer to "has this been verified".
+#
+# What follows here is a *trust bucket* — five coarse labels derived from
+# provenance alone, which is to say derived from where the value came from and
+# not from anyone checking it. It predates the verification axis and it is
+# retained for exactly one job: rendering a legacy row that has no stored
+# verification state yet. It is a fallback, and `trust_bucket` is what it should
+# have been called from the start.
+#
+# The two vocabularies share no values, deliberately. There is no string that
+# could be read as belonging to either, so a bucket label can never be mistaken
+# downstream for a verification state that somebody earned.
 
-VERIFICATION_VERIFIED = "VERIFIED"
-VERIFICATION_SOURCED = "SOURCED"
-VERIFICATION_SELF_REPORTED = "SELF_REPORTED"
-VERIFICATION_ESTIMATED = "ESTIMATED"
-VERIFICATION_NEEDS_REVIEW = "NEEDS_REVIEW"
+TRUST_VERIFIED = "VERIFIED"
+TRUST_SOURCED = "SOURCED"
+TRUST_SELF_REPORTED = "SELF_REPORTED"
+TRUST_ESTIMATED = "ESTIMATED"
+TRUST_NEEDS_REVIEW = "NEEDS_REVIEW"
 
-_VERIFICATION_BY_PROVENANCE: dict[str, str] = {
-    _model.PROVENANCE_VERIFIED: VERIFICATION_VERIFIED,
-    _model.PROVENANCE_PROVIDER_ASSERTED: VERIFICATION_SOURCED,
-    _model.PROVENANCE_DOCUMENT_EXTRACTED: VERIFICATION_SOURCED,
-    _model.PROVENANCE_USER_ASSERTED: VERIFICATION_SELF_REPORTED,
-    _model.PROVENANCE_INFERRED: VERIFICATION_ESTIMATED,
-    _model.PROVENANCE_ESTIMATED: VERIFICATION_ESTIMATED,
-    _model.PROVENANCE_STALE: VERIFICATION_NEEDS_REVIEW,
-    _model.PROVENANCE_CONFLICTING: VERIFICATION_NEEDS_REVIEW,
+#: Back-compatible aliases. The route pack, the native projection and the
+#: existing surface tests all import the `VERIFICATION_*` names; renaming them
+#: outright would be a wire change disguised as a rename.
+VERIFICATION_VERIFIED = TRUST_VERIFIED
+VERIFICATION_SOURCED = TRUST_SOURCED
+VERIFICATION_SELF_REPORTED = TRUST_SELF_REPORTED
+VERIFICATION_ESTIMATED = TRUST_ESTIMATED
+VERIFICATION_NEEDS_REVIEW = TRUST_NEEDS_REVIEW
+
+_TRUST_BY_PROVENANCE: dict[str, str] = {
+    _model.PROVENANCE_VERIFIED: TRUST_VERIFIED,
+    _model.PROVENANCE_PROVIDER_ASSERTED: TRUST_SOURCED,
+    # A person confirming a value is a named, traceable origin, so SOURCED. Not
+    # VERIFIED: this bucket's top slot means a system of record stood behind the
+    # value, and a member saying "yes that's right" is not that. The distinction
+    # matters most in the case it is most tempting to blur — someone confirming
+    # a number they half-remember.
+    _model.PROVENANCE_HUMAN_CONFIRMED: TRUST_SOURCED,
+    _model.PROVENANCE_DOCUMENT_EXTRACTED: TRUST_SOURCED,
+    _model.PROVENANCE_MEETING_DERIVED: TRUST_SOURCED,
+    _model.PROVENANCE_USER_ASSERTED: TRUST_SELF_REPORTED,
+    _model.PROVENANCE_INFERRED: TRUST_ESTIMATED,
+    _model.PROVENANCE_ESTIMATED: TRUST_ESTIMATED,
+    # A proposal is not a reading of the world, it is a suggestion awaiting an
+    # answer, and the only honest rendering of that is "look at this".
+    _model.PROVENANCE_UNDX_PROPOSED: TRUST_NEEDS_REVIEW,
+    # Likewise for a row whose origin was lost before provenance existed. It is
+    # not estimated — nobody estimated anything — it is unaccounted for.
+    _model.PROVENANCE_LEGACY_UNKNOWN: TRUST_NEEDS_REVIEW,
+    _model.PROVENANCE_STALE: TRUST_NEEDS_REVIEW,
+    _model.PROVENANCE_CONFLICTING: TRUST_NEEDS_REVIEW,
 }
 
+#: Retained under its historical name; see the aliases above.
+_VERIFICATION_BY_PROVENANCE = _TRUST_BY_PROVENANCE
 
-def verification_state(provenance_type: object) -> str:
-    """Member-facing trust bucket for a provenance type.
+
+def trust_bucket(provenance_type: object) -> str:
+    """Coarse member-facing bucket derived from provenance alone.
+
+    This does **not** answer "has this been verified" — nothing about provenance
+    can. It answers "how did this get here", collapsed to five labels for
+    display. Prefer the stored verification state whenever the row has one.
 
     An unrecognised provenance is NEEDS_REVIEW rather than anything reassuring.
     A word this module has not been taught is, by definition, a claim nobody
@@ -150,8 +197,13 @@ def verification_state(provenance_type: object) -> str:
     """
     known = _model.normalize_provenance(provenance_type)
     if not known:
-        return VERIFICATION_NEEDS_REVIEW
-    return _VERIFICATION_BY_PROVENANCE.get(known, VERIFICATION_NEEDS_REVIEW)
+        return TRUST_NEEDS_REVIEW
+    return _TRUST_BY_PROVENANCE.get(known, TRUST_NEEDS_REVIEW)
+
+
+def verification_state(provenance_type: object) -> str:
+    """Historical name for :func:`trust_bucket`. Same behaviour, same value."""
+    return trust_bucket(provenance_type)
 
 
 # --- fact projection ---------------------------------------------------------
@@ -402,6 +454,8 @@ def entry_visible(effective_tier: object, *, resolver_ok: bool = True) -> bool:
 __all__ = [
     "OFFICE_FEATURE_ID", "OFFICE_CHILD_IDS",
     "ENTRY_AVAILABLE", "ENTRY_UPGRADE_REQUIRED", "ENTRY_UNAVAILABLE", "ENTRY_UNKNOWN",
+    "TRUST_VERIFIED", "TRUST_SOURCED", "TRUST_SELF_REPORTED",
+    "TRUST_ESTIMATED", "TRUST_NEEDS_REVIEW", "trust_bucket",
     "VERIFICATION_VERIFIED", "VERIFICATION_SOURCED", "VERIFICATION_SELF_REPORTED",
     "VERIFICATION_ESTIMATED", "VERIFICATION_NEEDS_REVIEW",
     "verification_state", "project_provenance", "project_fact", "project_facts",

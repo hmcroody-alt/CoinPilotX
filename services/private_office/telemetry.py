@@ -96,9 +96,17 @@ SENSITIVITY_VOCAB = frozenset({
     "PUBLIC", "INTERNAL", "CONFIDENTIAL", "HIGHLY_SENSITIVE", "RESTRICTED",
 })
 
+#: Spelled out rather than imported from ``model`` on purpose: this is the list
+#: of provenance labels this package is willing to *publish*, and it must not
+#: silently grow the moment somebody adds a vocabulary constant. Widening it is
+#: a decision about what leaves the private boundary, so it is made here, by
+#: hand. The cost of the duplication is that the two can drift, and the drift is
+#: one-directional and safe — an unlisted label collapses to ``other`` and the
+#: metric loses resolution, which is a reporting gap, not a disclosure.
 PROVENANCE_VOCAB = frozenset({
-    "VERIFIED", "PROVIDER_ASSERTED", "DOCUMENT_EXTRACTED", "USER_ASSERTED",
-    "INFERRED", "ESTIMATED", "STALE", "CONFLICTING",
+    "VERIFIED", "PROVIDER_ASSERTED", "HUMAN_CONFIRMED", "DOCUMENT_EXTRACTED",
+    "MEETING_DERIVED", "USER_ASSERTED", "INFERRED", "ESTIMATED",
+    "UNDX_PROPOSED", "LEGACY_UNKNOWN", "STALE", "CONFLICTING",
 })
 
 NODE_TYPE_VOCAB = frozenset({
@@ -144,6 +152,15 @@ CONFLICT_REASON_VOCAB = frozenset({
     "boolean_values_differ", "text_values_differ",
 })
 
+#: What a member decided about a contradiction. Safe to publish for the same
+#: reason every vocabulary here is: these are policy names this package chose,
+#: never anything a member typed. The distribution is the point — a store where
+#: most conflicts resolve to SEPARATED has a detector producing false alarms,
+#: and that is invisible from the detection count alone.
+RESOLUTION_OUTCOME_VOCAB = frozenset({
+    "KEPT", "SEPARATED", "ALL_REJECTED", "DEFERRED",
+})
+
 #: The six Batch C record primitives. A closed vocabulary for the same reason
 #: intents are: this is a policy name chosen by the package, never anything a
 #: member typed, so it is safe to publish and an unrecognised one collapses to
@@ -176,6 +193,7 @@ EVENT_GRAPH_WRITE = "private_office.graph_write"
 EVENT_CONTEXT_RETRIEVED = "private_office.context_retrieved"
 EVENT_CONTEXT_DENIED = "private_office.context_denied"
 EVENT_CONFLICT_DETECTED = "private_office.conflict_detected"
+EVENT_CONFLICT_RESOLVED = "private_office.conflict_resolved"
 EVENT_SCHEMA_STATE = "private_office.schema_state"
 EVENT_RECORD_WRITE = "private_office.record_write"
 EVENT_RECORD_CLOSED = "private_office.record_closed"
@@ -230,6 +248,15 @@ EVENTS: dict[str, dict[str, tuple[str, frozenset[str] | None]]] = {
         "domain": (KIND_ENUM, DOMAIN_VOCAB),
         "competing_count": (KIND_COUNT, None),
         "resolved": (KIND_FLAG, None),
+    },
+    EVENT_CONFLICT_RESOLVED: {
+        "outcome": (KIND_ENUM, RESOLUTION_OUTCOME_VOCAB),
+        "reason": (KIND_ENUM, CONFLICT_REASON_VOCAB),
+        "competing_count": (KIND_COUNT, None),
+        # Whether this decision ended the disagreement. DEFERRED is a recorded
+        # decision that closes nothing, and counting it as a resolution would
+        # make a growing backlog look like a healthy one.
+        "closed": (KIND_FLAG, None),
     },
     EVENT_SCHEMA_STATE: {
         "state": (KIND_ENUM, SCHEMA_STATE_VOCAB),

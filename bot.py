@@ -1305,6 +1305,14 @@ _load_route_pack("private_office_documents", "services.private_office_documents_
 # cited timelines and deterministic briefing preparation, composed from the
 # private graph, fact store and record primitives — no store of its own.
 _load_route_pack("private_office_relationships", "services.private_office_relationships_routes")
+# The fact store's bounded read model: overview counts, paged list, fact detail
+# with evidence, chain-aware timeline, source index, open conflicts, review
+# queue and expiring windows. GET-only, and mounted beneath the existing
+# /api/private-office/facts pair in the pack above rather than replacing them —
+# that surface is what the shipped native client reads. Same matrix row and the
+# same PRIVATE_FACTS_ENABLED kill switch, imported from that pack so the two
+# cannot be switched off independently.
+_load_route_pack("private_office_facts", "services.private_office_facts_routes")
 
 
 def cancel_scheduled_account_deletion(cur, user_id):

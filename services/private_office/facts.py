@@ -67,6 +67,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Sequence
 
 from services.private_office import audit as _audit
+from services.private_office import evidence as _evidence
 from services.private_office import model as _model
 from services.private_office import schema as _schema
 from services.private_office import telemetry as _telemetry
@@ -82,6 +83,10 @@ SUBJECT_NODE = "NODE"
 STATUS_WRITTEN = "written"
 STATUS_REFRESHED = "refreshed"
 STATUS_REJECTED = "rejected"
+#: "You asked for a state the row was already in." Distinct from WRITTEN so an
+#: idempotent retry is visible as a no-op rather than reported as a second
+#: change, which matters wherever a caller counts what it altered.
+STATUS_EXISTING = "existing"
 
 #: How long a fact of each provenance may be quoted as current. These are
 #: horizons for *citation*, not expiry: nothing is deleted, and a stale fact is
@@ -95,10 +100,25 @@ STATUS_REJECTED = "rejected"
 FRESHNESS_HORIZON_DAYS: dict[str, int] = {
     _model.PROVENANCE_VERIFIED: 90,
     _model.PROVENANCE_PROVIDER_ASSERTED: 60,
+    # A person deliberately confirming a value ages like a person asserting one,
+    # because it is the same kind of evidence — someone's understanding at a
+    # moment — arrived at more carefully.
+    _model.PROVENANCE_HUMAN_CONFIRMED: 180,
     _model.PROVENANCE_DOCUMENT_EXTRACTED: 365,
+    # Shorter than a document and longer than an inference. A meeting captures
+    # what was said, and what people say about their own arrangements goes out
+    # of date faster than what a document records about them.
+    _model.PROVENANCE_MEETING_DERIVED: 90,
     _model.PROVENANCE_USER_ASSERTED: 180,
     _model.PROVENANCE_INFERRED: 30,
     _model.PROVENANCE_ESTIMATED: 14,
+    # Zero, so a proposal is never quotable as current state at any age. It is
+    # not a reading that has gone stale; it was never a reading.
+    _model.PROVENANCE_UNDX_PROPOSED: 0,
+    # Zero for the same structural reason as an unparseable date: an unknown
+    # origin is not a young one, and the reading that treats it as young is the
+    # one that misleads.
+    _model.PROVENANCE_LEGACY_UNKNOWN: 0,
     _model.PROVENANCE_STALE: 0,
     _model.PROVENANCE_CONFLICTING: 0,
 }
@@ -116,6 +136,20 @@ class PrivateFactRejected(ValueError):
     bugs in the caller, and a caller that silently ignores a ``{"status":
     "rejected"}`` return is how facts stop being written without anyone
     noticing. Business-level outcomes (duplicate, refreshed) are returned.
+    """
+
+
+class PrivateFactMissing(LookupError):
+    """A named fact does not exist for this owner.
+
+    A separate type from :class:`PrivateFactRejected` so the route layer can map
+    it to 404 while a rejection maps to 400. They are genuinely different
+    answers: "there is nothing here" versus "what you asked for is not allowed".
+
+    Deliberately *not* separate from "it exists but belongs to somebody else" —
+    every reader in this package scopes by ``owner_user_id``, so a foreign id
+    raises exactly this, with exactly this message. Distinguishing the two would
+    turn the error into an oracle for enumerating another account's id space.
     """
 
 
@@ -337,6 +371,35 @@ def staleness(row: dict, *, at: datetime | None = None) -> dict:
 # ---------------------------------------------------------------------------
 # Write
 # ---------------------------------------------------------------------------
+#: How much the observation time must move before a refresh is worth a history
+#: entry.
+#:
+#: A refresh is not a change — the claim, the source and the window are all
+#: identical, and the fact row's own ``observed_at`` already records when it was
+#: last seen. What history adds is corroboration over time: "this has been
+#: re-confirmed by its source every month for a year" is a real signal and it is
+#: not recoverable from a single timestamp.
+#:
+#: The threshold is what makes that affordable. A provider sync running hourly
+#: would otherwise write twenty-four entries a day per fact, and a history tab
+#: that is 99% "re-confirmed" is one nobody reads, which costs the member the
+#: corrections buried in it. One entry per day per fact keeps the signal and
+#: bounds the volume at something a member could actually scroll.
+HISTORY_REFRESH_MIN_HOURS = 24
+
+
+def _refresh_is_notable(previous: object, current: object) -> bool:
+    """Whether a refresh moved the observation time far enough to record."""
+    was = _parse_iso(previous)
+    now = _parse_iso(current)
+    if was is None or now is None:
+        # An unparseable timestamp on either side means the comparison cannot be
+        # made. Recording is the safe failure: a spurious history entry is
+        # noise, a missing one is a gap in an append-only trail.
+        return True
+    return (now - was) >= timedelta(hours=HISTORY_REFRESH_MIN_HOURS)
+
+
 def record_fact(cur, **kwargs) -> dict:
     """:func:`_record_fact`, with the Stage 38 rejection counter around it.
 
@@ -380,8 +443,10 @@ def _record_fact(
     valid_to: object = None,
     sensitivity: object = None,
     domain: object = None,
+    verification_state: object = None,
     actor_user_id: int | None = None,
     purpose: str = "user_request",
+    allow_backfill: bool = False,
 ) -> dict:
     """Write one private fact. The only supported way to create one.
 
@@ -432,6 +497,39 @@ def _record_fact(
         # argument because it already ranks at zero.
         raise PrivateFactRejected(
             f"{source} is a derived state, not a source of a new fact")
+    if source in _model.BACKFILL_ONLY_PROVENANCE and not allow_backfill:
+        # LEGACY_UNKNOWN is the honest label for a row written before provenance
+        # was tracked, and it must stay hard to reach. If any caller could pass
+        # it, "I would rather not say where this came from" becomes an available
+        # option, and the ledger's central claim — that every fact can name its
+        # origin — stops being true the first time somebody takes it. Only the
+        # migration passes allow_backfill.
+        raise PrivateFactRejected(
+            f"{source} may only be written by the legacy backfill")
+
+    # Verification is a separate axis and it is deliberately not settable here.
+    #
+    # A caller may open a fact at any *neutral* state — most write UNVERIFIED
+    # and the review queue may open one at PENDING_REVIEW — but the states that
+    # mean somebody checked something are unreachable from the create path. They
+    # are reached by a verification transition, which is where the evidence
+    # requirement is enforced. Allowing them here would let a writer assert
+    # AUTHORITY_VERIFIED with nothing behind it, which is not a weaker claim
+    # than a real one, it is an unfalsifiable one.
+    verified = _model.normalize_verification(
+        verification_state or _model.DEFAULT_VERIFICATION)
+    if not verified:
+        raise PrivateFactRejected(
+            f"unknown verification_state: {verification_state!r}")
+    if verified in _model.VERIFICATION_REQUIRES_EVIDENCE:
+        raise PrivateFactRejected(
+            f"{verified} is reached by verifying a fact, not by creating one")
+    if verified in _model.VERIFICATION_NEGATIVE:
+        # Same reasoning from the other end. "This failed verification" is the
+        # outcome of a check, and a fact born FAILED records a check that never
+        # happened.
+        raise PrivateFactRejected(
+            f"{verified} is the outcome of a check, not a starting state")
 
     resolved_domain = _model.normalize_domain(domain or _model.DEFAULT_DOMAIN)
     if not resolved_domain:
@@ -484,6 +582,7 @@ def _record_fact(
         # higher confidence; do not insert, and do not lower a confidence that
         # a stronger earlier read established.
         row_id = int(existing["id"] if hasattr(existing, "keys") else existing[0])
+        prior_seen = existing["observed_at"] if hasattr(existing, "keys") else existing[1]
         prior = existing["confidence"] if hasattr(existing, "keys") else existing[2]
         try:
             prior_score = float(prior or 0.0)
@@ -506,21 +605,33 @@ def _record_fact(
             _telemetry.EVENT_FACT_WRITE, outcome=STATUS_REFRESHED,
             domain=resolved_domain, sensitivity=resolved_sensitivity,
             provenance_type=source, superseded=False)
+        if _refresh_is_notable(prior_seen, observed_iso):
+            _history(cur, owner_user_id=owner, fact_id=row_id,
+                     change_type=_model.CHANGE_REFRESHED,
+                     actor_user_id=int(actor_user_id or owner),
+                     note_key=_model.NOTE_SYSTEM)
         return {"status": STATUS_REFRESHED, "fact_id": row_id, "fact_key": key,
-                "sensitivity": resolved_sensitivity, "domain": resolved_domain}
+                "sensitivity": resolved_sensitivity, "domain": resolved_domain,
+                # Reported but not written. A refresh is the same claim from the
+                # same source arriving again; it is not a check, so whatever
+                # verification the row already carries stands untouched.
+                "verification_state": verified}
 
     cur.execute(
         f"""INSERT INTO {_schema.FACTS_TABLE}
         (owner_user_id, fact_key, subject_type, subject_id, fact_type,
          value_type, typed_value, value_number, provenance_type, provenance_ref,
          confidence, observed_at, valid_from, valid_to, sensitivity, domain,
-         lifecycle_state, conflict_id, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?)""",
+         lifecycle_state, conflict_id, verification_state, verified_at,
+         verified_by, supersedes_id, superseded_by_id, superseded_at,
+         created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '',
+                ?, '', 0, 0, 0, '', ?, ?)""",
         (
             owner, key, subject_kind, subject, kind, resolved_value_type,
             typed_value, value_number, source, ref, score, observed_iso,
             from_iso, to_iso, resolved_sensitivity, resolved_domain,
-            _model.LIFECYCLE_ACTIVE, now_iso, now_iso,
+            _model.LIFECYCLE_ACTIVE, verified, now_iso, now_iso,
         ),
     )
     cur.execute(
@@ -539,8 +650,860 @@ def _record_fact(
         _telemetry.EVENT_FACT_WRITE, outcome=STATUS_WRITTEN,
         domain=resolved_domain, sensitivity=resolved_sensitivity,
         provenance_type=source, superseded=False)
+    _history(cur, owner_user_id=owner, fact_id=fact_id,
+             change_type=_model.CHANGE_CREATED,
+             actor_user_id=int(actor_user_id or owner),
+             to_state=verified,
+             note_key=_model.NOTE_LEGACY_BACKFILL if allow_backfill else None)
     return {"status": STATUS_WRITTEN, "fact_id": fact_id, "fact_key": key,
-            "sensitivity": resolved_sensitivity, "domain": resolved_domain}
+            "sensitivity": resolved_sensitivity, "domain": resolved_domain,
+            "verification_state": verified}
+
+
+# ---------------------------------------------------------------------------
+# History
+# ---------------------------------------------------------------------------
+#: How far a chain walk will follow ``superseded_by_id`` before giving up.
+#:
+#: Not a guess at how many times a member might correct one fact — it is a
+#: termination guarantee. The cycle check below is what *prevents* a loop, but a
+#: reader that trusts the check and walks unbounded is one direct-SQL mistake or
+#: one restored backup away from spinning forever inside a request. Sixty-four
+#: corrections to a single fact is already far past anything meaningful, so a
+#: walk that hits this limit has found a bug, and it reports one instead of
+#: hanging.
+MAX_CHAIN = 64
+
+
+def _history(
+    cur,
+    *,
+    owner_user_id: int,
+    fact_id: int,
+    change_type: str,
+    actor_user_id: int = 0,
+    from_state: object = "",
+    to_state: object = "",
+    related_fact_id: int = 0,
+    note_key: object = None,
+) -> bool:
+    """Append one immutable history entry. Returns whether it landed.
+
+    Best-effort in the same sense as :mod:`audit`: a failure to record history
+    is logged and swallowed rather than failing the write it describes. The
+    alternative — letting a history failure roll back a legitimate correction —
+    would mean the store loses the *fact* in order to protect the record of the
+    fact, which is backwards.
+
+    There is no value parameter and the table has no value column. See the DDL
+    in :mod:`schema` for why. ``from_state``/``to_state`` carry vocabulary
+    labels — lifecycle or verification states — and are truncated rather than
+    trusted, because "it is only ever a state name" is exactly the assumption
+    that holds until one caller passes something else.
+    """
+    change = _model.normalize_change_type(change_type)
+    if not change:
+        LOGGER.warning(
+            "PRIVATE_FACT_HISTORY_UNKNOWN_CHANGE change=%s", str(change_type)[:64])
+        return False
+    note = ""
+    if note_key is not None and str(note_key).strip():
+        note = _model.normalize_note_key(note_key) or ""
+        if not note:
+            # Rejected rather than dropped-with-the-row: an unrecognised note is
+            # a caller bug, and the entry itself is still worth having.
+            LOGGER.warning(
+                "PRIVATE_FACT_HISTORY_UNKNOWN_NOTE note=%s", str(note_key)[:64])
+    try:
+        cur.execute(
+            f"""INSERT INTO {_schema.FACT_HISTORY_TABLE}
+            (owner_user_id, fact_id, change_type, actor_user_id, from_state,
+             to_state, related_fact_id, note_key, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                int(owner_user_id or 0), int(fact_id or 0), change,
+                int(actor_user_id or 0), str(from_state or "")[:64],
+                str(to_state or "")[:64], int(related_fact_id or 0), note,
+                _now_iso(),
+            ),
+        )
+        return True
+    except Exception as exc:
+        LOGGER.warning(
+            "PRIVATE_FACT_HISTORY_WRITE_FAILED change=%s error=%s", change, exc)
+        return False
+
+
+def fact_history(cur, *, owner_user_id: int, fact_id: int, limit: int = 100) -> list[dict]:
+    """History entries for one fact, oldest first, owner-scoped and bounded."""
+    owner = int(owner_user_id or 0)
+    target = int(fact_id or 0)
+    if owner <= 0 or target <= 0:
+        return []
+    capped = max(1, min(int(limit or 100), 500))
+    _schema.require_private_schema(cur)
+    cur.execute(
+        f"""SELECT id, fact_id, change_type, actor_user_id, from_state, to_state,
+                   related_fact_id, note_key, created_at
+        FROM {_schema.FACT_HISTORY_TABLE}
+        WHERE owner_user_id = ? AND fact_id = ?
+        ORDER BY id ASC LIMIT ?""",
+        (owner, target, capped),
+    )
+    return [dict(row) for row in cur.fetchall()]
+
+
+def fact_chain(cur, *, owner_user_id: int, fact_id: int) -> list[int]:
+    """The supersession chain containing ``fact_id``, oldest first.
+
+    Walks backwards to the head of the chain and then forwards to its tip, so
+    the answer is the same list whichever link the caller happens to hold. Both
+    walks are bounded by :data:`MAX_CHAIN` and both refuse to revisit an id, so
+    a cycle that reached the table by some other path is reported as a truncated
+    chain rather than hanging the request that found it.
+    """
+    owner = int(owner_user_id or 0)
+    start = int(fact_id or 0)
+    if owner <= 0 or start <= 0:
+        return []
+    _schema.require_private_schema(cur)
+
+    def _link(target: int) -> tuple[int, int]:
+        cur.execute(
+            f"SELECT supersedes_id, superseded_by_id FROM {_schema.FACTS_TABLE} "
+            f"WHERE owner_user_id = ? AND id = ?",
+            (owner, target),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return (0, 0)
+        data = dict(row)
+        return (int(data.get("supersedes_id") or 0),
+                int(data.get("superseded_by_id") or 0))
+
+    back, _forward = _link(start)
+    if back == 0 and _forward == 0:
+        cur.execute(
+            f"SELECT 1 FROM {_schema.FACTS_TABLE} WHERE owner_user_id = ? AND id = ?",
+            (owner, start),
+        )
+        return [start] if cur.fetchone() is not None else []
+
+    seen = {start}
+    head = start
+    for _ in range(MAX_CHAIN):
+        previous, _unused = _link(head)
+        if previous <= 0 or previous in seen:
+            break
+        seen.add(previous)
+        head = previous
+
+    chain = [head]
+    seen = {head}
+    cursor = head
+    for _ in range(MAX_CHAIN):
+        _unused, following = _link(cursor)
+        if following <= 0 or following in seen:
+            break
+        seen.add(following)
+        chain.append(following)
+        cursor = following
+    return chain
+
+
+def _reaches(cur, *, owner_user_id: int, start: int, target: int) -> bool:
+    """Whether following ``superseded_by_id`` from ``start`` arrives at ``target``."""
+    owner = int(owner_user_id or 0)
+    cursor = int(start or 0)
+    goal = int(target or 0)
+    seen: set[int] = set()
+    for _ in range(MAX_CHAIN):
+        if cursor <= 0 or cursor in seen:
+            return False
+        if cursor == goal:
+            return True
+        seen.add(cursor)
+        cur.execute(
+            f"SELECT superseded_by_id FROM {_schema.FACTS_TABLE} "
+            f"WHERE owner_user_id = ? AND id = ?",
+            (owner, cursor),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return False
+        cursor = int(dict(row).get("superseded_by_id") or 0)
+    # Ran out of budget without deciding, so answer "yes". The caller uses this
+    # to refuse a link, and when the walk could not finish the safe outcome is
+    # to refuse: declining a legitimate correction on a sixty-four-link chain is
+    # an inconvenience the member can see and report, while permitting one that
+    # closes an undetected ring is a read path that hangs.
+    return True
+
+
+def supersede_fact(
+    cur,
+    *,
+    owner_user_id: int,
+    fact_id: int,
+    value: object,
+    value_type: str,
+    provenance_type: str,
+    provenance: ProvenanceRef | None = None,
+    confidence: float | None = None,
+    observed_at: object = None,
+    valid_from: object = None,
+    valid_to: object = None,
+    sensitivity: object = None,
+    domain: object = None,
+    actor_user_id: int | None = None,
+    purpose: str = "user_request",
+) -> dict:
+    """Correct a fact by writing a replacement and linking the two.
+
+    This is the only supported way a stored fact's value changes, and it does
+    not change one: the old row keeps its value, its provenance and its
+    observation time, and moves to ``SUPERSEDED``. What the member sees as "I
+    updated this" is two rows and a link, so the question "what did I believe
+    before, and when did I stop" always has an answer.
+
+    ``subject_type``, ``subject_id`` and ``fact_type`` are inherited from the
+    superseded row and cannot be passed. A correction that changed the subject
+    would not be a correction — it would be a new fact wearing the old one's
+    history, and the chain would assert continuity between two claims about
+    different things.
+
+    Returns ``{"status", "fact_id", "superseded_fact_id", "fact_key",
+    "sensitivity", "domain", "verification_state"}``.
+
+    Raises :class:`PrivateFactMissing` when the target does not exist for this
+    owner, and :class:`PrivateFactRejected` when the link would break the chain
+    invariants or the replacement itself is not writable.
+    """
+    owner = int(owner_user_id or 0)
+    if owner <= 0:
+        raise PrivateFactRejected("owner_user_id is required")
+    old_id = int(fact_id or 0)
+    if old_id <= 0:
+        raise PrivateFactRejected("fact_id is required")
+
+    _schema.require_private_schema(cur)
+    cur.execute(
+        f"""SELECT id, subject_type, subject_id, fact_type, sensitivity, domain,
+                   lifecycle_state, superseded_by_id
+        FROM {_schema.FACTS_TABLE} WHERE owner_user_id = ? AND id = ?""",
+        (owner, old_id),
+    )
+    row = cur.fetchone()
+    if row is None:
+        # Owner-scoped, so a fact belonging to somebody else is reported exactly
+        # as one that does not exist. The two must be indistinguishable or the
+        # error message becomes an oracle for probing other accounts' id space.
+        raise PrivateFactMissing(f"fact {old_id} not found")
+    old = dict(row)
+
+    if int(old.get("superseded_by_id") or 0) != 0:
+        # A second correction of an already-corrected row is a fork, and a fork
+        # is not a supersession — it is two claims about what replaced the same
+        # thing, which is a contradiction and has its own home in `conflict_id`.
+        # Refusing here keeps `superseded_by_id` honest as a single link; the
+        # caller's remedy is to correct the tip of the chain.
+        raise PrivateFactRejected(
+            f"fact {old_id} is already superseded; correct the current fact instead")
+    if _model.normalize_lifecycle(old.get("lifecycle_state")) == _model.LIFECYCLE_ARCHIVED:
+        raise PrivateFactRejected(f"fact {old_id} is archived and cannot be corrected")
+
+    written = _record_fact(
+        cur,
+        owner_user_id=owner,
+        subject_type=old.get("subject_type"),
+        subject_id=old.get("subject_id"),
+        fact_type=old.get("fact_type"),
+        value=value,
+        value_type=value_type,
+        provenance_type=provenance_type,
+        provenance=provenance,
+        confidence=confidence,
+        observed_at=observed_at,
+        valid_from=valid_from,
+        valid_to=valid_to,
+        # Inherited when the caller says nothing. A correction that silently
+        # dropped to the default sensitivity would publish, to every reader
+        # allowed at that level, a value the member had classified higher.
+        sensitivity=sensitivity or old.get("sensitivity"),
+        domain=domain or old.get("domain"),
+        actor_user_id=actor_user_id,
+        purpose=purpose,
+    )
+    new_id = int(written.get("fact_id") or 0)
+    if new_id <= 0:
+        raise PrivateFactRejected("replacement fact could not be written")
+
+    if new_id == old_id:
+        # Reachable, and this is the reason the check exists rather than being
+        # obviously unnecessary: `_record_fact` returns `refreshed` pointing at
+        # an existing row when the same claim from the same source in the same
+        # window is written again. Correcting a fact to the value it already
+        # holds lands right back on it, and without this the row would be
+        # recorded as having superseded itself.
+        raise PrivateFactRejected(
+            "replacement is identical to the fact it would supersede")
+    if _reaches(cur, owner_user_id=owner, start=new_id, target=old_id):
+        # Same mechanism, one link further out: correcting A to B and then B
+        # back to A's value re-uses A's row and would close the chain into a
+        # ring that every forward walk spins in.
+        raise PrivateFactRejected(
+            "that correction would create a supersession cycle")
+
+    cur.execute(
+        f"SELECT supersedes_id, lifecycle_state FROM {_schema.FACTS_TABLE} "
+        f"WHERE owner_user_id = ? AND id = ?",
+        (owner, new_id),
+    )
+    replacement = dict(cur.fetchone() or {})
+    if int(replacement.get("supersedes_id") or 0) not in (0, old_id):
+        raise PrivateFactRejected(
+            f"fact {new_id} already corrects another fact")
+    if _model.normalize_lifecycle(replacement.get("lifecycle_state")) != _model.LIFECYCLE_ACTIVE:
+        raise PrivateFactRejected(
+            f"fact {new_id} is not active and cannot supersede another fact")
+
+    now_iso = _now_iso()
+    cur.execute(
+        f"""UPDATE {_schema.FACTS_TABLE}
+        SET lifecycle_state = ?, superseded_by_id = ?, superseded_at = ?,
+            updated_at = ?
+        WHERE owner_user_id = ? AND id = ? AND superseded_by_id = 0""",
+        (_model.LIFECYCLE_SUPERSEDED, new_id, now_iso, now_iso, owner, old_id),
+    )
+    if getattr(cur, "rowcount", 1) == 0:
+        # The guard clause repeated as a WHERE predicate, so a concurrent
+        # correction of the same row loses instead of overwriting the link the
+        # winner just wrote. The read-then-write above is not atomic; this is.
+        raise PrivateFactRejected(
+            f"fact {old_id} was superseded by a concurrent correction")
+    cur.execute(
+        f"""UPDATE {_schema.FACTS_TABLE} SET supersedes_id = ?, updated_at = ?
+        WHERE owner_user_id = ? AND id = ?""",
+        (old_id, now_iso, owner, new_id),
+    )
+
+    actor = int(actor_user_id or owner)
+    _history(cur, owner_user_id=owner, fact_id=old_id,
+             change_type=_model.CHANGE_CORRECTED, actor_user_id=actor,
+             from_state=_model.LIFECYCLE_ACTIVE,
+             to_state=_model.LIFECYCLE_SUPERSEDED, related_fact_id=new_id,
+             note_key=_model.NOTE_OWNER_ACTION)
+    _history(cur, owner_user_id=owner, fact_id=new_id,
+             change_type=_model.CHANGE_CORRECTS, actor_user_id=actor,
+             to_state=_model.LIFECYCLE_ACTIVE, related_fact_id=old_id,
+             note_key=_model.NOTE_OWNER_ACTION)
+
+    _audit.record(
+        cur, actor_user_id=actor, owner_user_id=owner,
+        action=_audit.ACTION_FACT_SUPERSEDE,
+        object_type=str(old.get("subject_type") or ""),
+        object_id=old.get("subject_id"), purpose=purpose,
+        outcome=_audit.OUTCOME_OK,
+    )
+    _telemetry.emit(
+        _telemetry.EVENT_FACT_WRITE, outcome=STATUS_WRITTEN,
+        domain=written.get("domain"), sensitivity=written.get("sensitivity"),
+        provenance_type=provenance_type, superseded=True)
+
+    result = dict(written)
+    result["status"] = STATUS_WRITTEN
+    result["superseded_fact_id"] = old_id
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Evidence
+# ---------------------------------------------------------------------------
+#: Live evidence links one fact may carry.
+#:
+#: The same reasoning as ``evidence.MAX_REFS`` and a different number, because
+#: this cap governs a different thing. That one bounds a citation list rendered
+#: inline; this one bounds how many sources a member may attach to a single
+#: claim over its whole life. Fifty is far past honest — a fact supported by
+#: fifty documents is not better supported than one backed by three, it is a
+#: fact somebody attached a folder to — and the cap is what stops one fact's
+#: evidence tab from becoming an unbounded read.
+MAX_EVIDENCE_PER_FACT = 50
+
+
+def _load_fact(cur, owner: int, fact_id: int, columns: str) -> dict:
+    """One owner-scoped fact row, or raise :class:`PrivateFactMissing`."""
+    cur.execute(
+        f"SELECT {columns} FROM {_schema.FACTS_TABLE} "
+        f"WHERE owner_user_id = ? AND id = ?",
+        (owner, fact_id),
+    )
+    row = cur.fetchone()
+    if row is None:
+        raise PrivateFactMissing(f"fact {fact_id} not found")
+    return dict(row)
+
+
+def link_evidence(
+    cur,
+    *,
+    owner_user_id: int,
+    fact_id: int,
+    source_ref: object,
+    relation: object = None,
+    note_key: object = None,
+    actor_user_id: int | None = None,
+    purpose: str = "user_request",
+) -> dict:
+    """Attach a source to a fact. Returns ``{"status", "evidence_id", ...}``.
+
+    ``source_ref`` is a canonical ``kind:id`` reference in the :mod:`evidence`
+    vocabulary and must resolve, *for this owner*, at the moment it is linked.
+    Refusing an unresolvable ref at write time is the cheap half of reference
+    integrity: the expensive half — a source that disappears later — cannot be
+    prevented and is reported at read time as SOURCE_UNAVAILABLE instead.
+
+    Re-linking a source already attached is not an error and does not duplicate;
+    it returns ``existing``. A member who taps "attach" twice has expressed one
+    intention, and a second row would double the apparent support behind a fact
+    without adding a second source.
+    """
+    owner = int(owner_user_id or 0)
+    if owner <= 0:
+        raise PrivateFactRejected("owner_user_id is required")
+    target = int(fact_id or 0)
+    if target <= 0:
+        raise PrivateFactRejected("fact_id is required")
+
+    parsed = _evidence.parse_ref(source_ref)
+    if parsed is None:
+        raise PrivateFactRejected(f"not a usable evidence reference: {source_ref!r}")
+    kind, _row_id = parsed
+    ref = f"{kind}:{_row_id}"
+
+    link_relation = _model.normalize_evidence_relation(
+        relation or _model.DEFAULT_EVIDENCE_RELATION)
+    if not link_relation:
+        raise PrivateFactRejected(f"unknown evidence relation: {relation!r}")
+
+    note = ""
+    if note_key is not None and str(note_key).strip():
+        note = _model.normalize_note_key(note_key) or ""
+        if not note:
+            raise PrivateFactRejected(f"unknown note_key: {note_key!r}")
+
+    _schema.require_private_schema(cur)
+    _load_fact(cur, owner, target, "id")
+
+    resolved = _evidence.resolve_refs(cur, owner, [ref])
+    if not resolved or not resolved[0].get("exists"):
+        # Owner-scoped in the resolver, so a ref naming somebody else's document
+        # is refused with the same words as one naming nothing.
+        raise PrivateFactRejected(f"evidence source {ref} is not available")
+
+    cur.execute(
+        f"SELECT id, relation, detached_at FROM {_schema.FACT_EVIDENCE_TABLE} "
+        f"WHERE owner_user_id = ? AND fact_id = ? AND source_ref = ? "
+        f"ORDER BY id DESC LIMIT 1",
+        (owner, target, ref),
+    )
+    prior = cur.fetchone()
+    now_iso = _now_iso()
+    actor = int(actor_user_id or owner)
+    if prior is not None:
+        previous = dict(prior)
+        if not str(previous.get("detached_at") or ""):
+            return {"status": STATUS_EXISTING, "evidence_id": int(previous["id"]),
+                    "source_ref": ref, "relation": previous.get("relation"),
+                    "fact_id": target}
+        # Detached earlier and now being re-attached. A new row rather than
+        # clearing `detached_at`, because the earlier attachment and its
+        # withdrawal both happened and un-detaching would erase the withdrawal.
+
+    cur.execute(
+        f"SELECT COUNT(*) AS live FROM {_schema.FACT_EVIDENCE_TABLE} "
+        f"WHERE owner_user_id = ? AND fact_id = ? AND detached_at = ''",
+        (owner, target),
+    )
+    live = int(dict(cur.fetchone() or {}).get("live") or 0)
+    if live >= MAX_EVIDENCE_PER_FACT:
+        raise PrivateFactRejected(
+            f"a fact may carry at most {MAX_EVIDENCE_PER_FACT} live sources")
+
+    cur.execute(
+        f"""INSERT INTO {_schema.FACT_EVIDENCE_TABLE}
+        (owner_user_id, fact_id, source_ref, source_kind, relation, note_key,
+         linked_by, linked_at, detached_at, detached_by, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', 0, ?)""",
+        (owner, target, ref, kind, link_relation, note, actor, now_iso, now_iso),
+    )
+    cur.execute(
+        f"SELECT id FROM {_schema.FACT_EVIDENCE_TABLE} "
+        f"WHERE owner_user_id = ? AND fact_id = ? AND source_ref = ? "
+        f"ORDER BY id DESC LIMIT 1",
+        (owner, target, ref),
+    )
+    evidence_id = int(dict(cur.fetchone() or {}).get("id") or 0)
+
+    _history(cur, owner_user_id=owner, fact_id=target,
+             change_type=_model.CHANGE_EVIDENCE_LINKED, actor_user_id=actor,
+             to_state=link_relation, note_key=note or _model.NOTE_OWNER_ACTION)
+    _audit.record(
+        cur, actor_user_id=actor, owner_user_id=owner,
+        action=_audit.ACTION_FACT_EVIDENCE_LINK, object_type="fact",
+        object_id=target, purpose=purpose, outcome=_audit.OUTCOME_OK,
+    )
+    return {"status": STATUS_WRITTEN, "evidence_id": evidence_id,
+            "source_ref": ref, "relation": link_relation, "fact_id": target}
+
+
+def unlink_evidence(
+    cur,
+    *,
+    owner_user_id: int,
+    fact_id: int,
+    source_ref: object,
+    actor_user_id: int | None = None,
+    purpose: str = "user_request",
+) -> dict:
+    """Detach a source from a fact. The link survives, marked withdrawn.
+
+    Deleting would erase the answer to "what was this verified against, at the
+    time it was verified" — which is the one question a badge has to be able to
+    answer even after the member changes their mind about the source.
+
+    Detaching the last supporting source does **not** silently revoke a
+    verification state. The fact is left holding a badge with nothing live
+    behind it, which the integrity sweep reports and the review queue surfaces.
+    Quietly downgrading it would be this package making a truth judgement on its
+    own, which is exactly what it is not allowed to do.
+    """
+    owner = int(owner_user_id or 0)
+    target = int(fact_id or 0)
+    if owner <= 0 or target <= 0:
+        raise PrivateFactRejected("owner_user_id and fact_id are required")
+    parsed = _evidence.parse_ref(source_ref)
+    if parsed is None:
+        raise PrivateFactRejected(f"not a usable evidence reference: {source_ref!r}")
+    ref = f"{parsed[0]}:{parsed[1]}"
+
+    _schema.require_private_schema(cur)
+    _load_fact(cur, owner, target, "id")
+
+    now_iso = _now_iso()
+    actor = int(actor_user_id or owner)
+    cur.execute(
+        f"""UPDATE {_schema.FACT_EVIDENCE_TABLE}
+        SET detached_at = ?, detached_by = ?
+        WHERE owner_user_id = ? AND fact_id = ? AND source_ref = ?
+          AND detached_at = ''""",
+        (now_iso, actor, owner, target, ref),
+    )
+    detached = int(getattr(cur, "rowcount", 0) or 0)
+    if detached <= 0:
+        return {"status": STATUS_EXISTING, "detached": 0, "source_ref": ref,
+                "fact_id": target}
+
+    _history(cur, owner_user_id=owner, fact_id=target,
+             change_type=_model.CHANGE_EVIDENCE_UNLINKED, actor_user_id=actor,
+             note_key=_model.NOTE_OWNER_ACTION)
+    _audit.record(
+        cur, actor_user_id=actor, owner_user_id=owner,
+        action=_audit.ACTION_FACT_EVIDENCE_UNLINK, object_type="fact",
+        object_id=target, purpose=purpose, outcome=_audit.OUTCOME_OK,
+    )
+    return {"status": STATUS_WRITTEN, "detached": detached, "source_ref": ref,
+            "fact_id": target}
+
+
+def fact_evidence(
+    cur,
+    *,
+    owner_user_id: int,
+    fact_id: int,
+    include_detached: bool = False,
+) -> list[dict]:
+    """Evidence attached to one fact, each entry carrying its availability.
+
+    Availability is resolved now, not read from a column. A source the member
+    deleted last week reads ``SOURCE_UNAVAILABLE`` here even though the link row
+    is unchanged, because the question the evidence tab asks is "can I go and
+    look at this", and the only honest way to answer it is to try.
+    """
+    owner = int(owner_user_id or 0)
+    target = int(fact_id or 0)
+    if owner <= 0 or target <= 0:
+        return []
+    _schema.require_private_schema(cur)
+    clause = "" if include_detached else " AND detached_at = ''"
+    cur.execute(
+        f"""SELECT id, fact_id, source_ref, source_kind, relation, note_key,
+                   linked_by, linked_at, detached_at
+        FROM {_schema.FACT_EVIDENCE_TABLE}
+        WHERE owner_user_id = ? AND fact_id = ?{clause}
+        ORDER BY id ASC LIMIT ?""",
+        (owner, target, MAX_EVIDENCE_PER_FACT * 4),
+    )
+    rows = [dict(row) for row in cur.fetchall()]
+    if not rows:
+        return []
+
+    availability = {
+        entry["ref"]: entry
+        for entry in _evidence.resolve_refs(
+            cur, owner, [row["source_ref"] for row in rows][:_evidence.MAX_REFS])
+    }
+    out: list[dict] = []
+    for row in rows:
+        resolved = availability.get(row["source_ref"])
+        # A ref past the resolver's own cap was never checked. Reporting it as
+        # available would be asserting something nobody looked at; reporting it
+        # unavailable would be claiming the source is gone. It is neither —
+        # `checked` is what separates the two, and the read model shows an
+        # unchecked source as present but unconfirmed.
+        checked = resolved is not None
+        available = bool(resolved and resolved.get("exists"))
+        row["checked"] = checked
+        row["available"] = available
+        row["status"] = (_model.SOURCE_AVAILABLE if available
+                         else _model.SOURCE_UNAVAILABLE)
+        row["label"] = (resolved or {}).get("label", "")
+        row["detached"] = bool(str(row.get("detached_at") or ""))
+        row["supports"] = (_model.evidence_supports(row.get("relation"))
+                           and not row["detached"] and available)
+        out.append(row)
+    return out
+
+
+def supporting_evidence_count(cur, *, owner_user_id: int, fact_id: int) -> int:
+    """How many live, resolvable, *supporting* sources stand behind a fact.
+
+    All four adjectives are load bearing, and each one is a way the count could
+    otherwise lie: a detached link is one the member withdrew, an unresolvable
+    one names a source that is gone, and a CONTRADICTS link is the strongest
+    reason to doubt the fact rather than a reason to believe it.
+    """
+    return sum(1 for row in fact_evidence(
+        cur, owner_user_id=owner_user_id, fact_id=fact_id) if row["supports"])
+
+
+# ---------------------------------------------------------------------------
+# Verification transitions
+# ---------------------------------------------------------------------------
+def verification_status(row: object, *, at: datetime | None = None) -> dict:
+    """The verification axis of one fact row, with expiry computed at read.
+
+    Returns ``{"state", "effective_state", "verified_at", "expires_at",
+    "expired", "positive"}``. ``state`` is what is stored; ``effective_state``
+    is what a reader should act on, and the two differ exactly when a positive
+    verification has aged past its horizon.
+
+    Nothing writes EXPIRED. A sweeper that stamped it would leave a window
+    between the horizon passing and the sweep running in which the database says
+    verified and the truth is that nobody has checked in over a year — and that
+    window is precisely when a member acts on the badge.
+    """
+    data = dict(row) if not isinstance(row, dict) else row
+    stored = _model.normalize_verification(data.get("verification_state"))
+    if not stored:
+        # An unreadable state is not a mild problem on this axis: it is a claim
+        # about how well-checked something is that nobody can interpret. It
+        # reads as UNVERIFIED, which is the floor rather than a guess.
+        stored = _model.DEFAULT_VERIFICATION
+    verified_at = str(data.get("verified_at") or "")
+    horizon = _model.VERIFICATION_HORIZON_DAYS.get(stored, 0)
+    moment = at or _now()
+    expires_at = ""
+    expired = False
+    if horizon > 0 and verified_at:
+        checked = _parse_iso(verified_at)
+        if checked is not None:
+            deadline = checked + timedelta(days=horizon)
+            expires_at = deadline.isoformat()
+            expired = moment >= deadline
+        else:
+            # A positive state whose timestamp cannot be read cannot be shown to
+            # be current, and "cannot be shown to be current" is the definition
+            # of expired here. The alternative is a badge that never ages
+            # because its date is corrupt.
+            expired = True
+    effective = _model.VERIFICATION_EXPIRED if expired else stored
+    return {
+        "state": stored,
+        "effective_state": effective,
+        "verified_at": verified_at,
+        "expires_at": expires_at,
+        "expired": expired,
+        "positive": _model.verification_is_positive(effective),
+    }
+
+
+def set_verification(
+    cur,
+    *,
+    owner_user_id: int,
+    fact_id: int,
+    verification_state: object,
+    actor_user_id: int | None = None,
+    purpose: str = "user_request",
+    note_key: object = None,
+) -> dict:
+    """Move one fact along the verification axis. The only way a badge is set.
+
+    The rule this function exists to enforce, in one line: **a positive
+    verification state requires at least one live, resolvable, supporting piece
+    of evidence, checked at the moment the state is set.** §50 — no orphan
+    Verified badge with no evidence trail.
+
+    Provenance is not touched. Recording that somebody checked a fact must not
+    destroy the record of where it came from, and a fact can be
+    DOCUMENT_EXTRACTED in origin and AUTHORITY_VERIFIED in checking at once —
+    those are two true statements about two different things.
+
+    ``EXPIRED`` is not settable. Expiry is computed from ``verified_at`` and the
+    state's horizon, so writing it would be storing a derived value that then
+    goes stale on its own.
+    """
+    owner = int(owner_user_id or 0)
+    target = int(fact_id or 0)
+    if owner <= 0 or target <= 0:
+        raise PrivateFactRejected("owner_user_id and fact_id are required")
+
+    wanted = _model.normalize_verification(verification_state)
+    if not wanted:
+        raise PrivateFactRejected(
+            f"unknown verification_state: {verification_state!r}")
+    if wanted == _model.VERIFICATION_EXPIRED:
+        raise PrivateFactRejected(
+            "EXPIRED is computed from verified_at, not set")
+
+    note = ""
+    if note_key is not None and str(note_key).strip():
+        note = _model.normalize_note_key(note_key) or ""
+        if not note:
+            raise PrivateFactRejected(f"unknown note_key: {note_key!r}")
+
+    _schema.require_private_schema(cur)
+    current = _load_fact(
+        cur, owner, target,
+        "id, verification_state, verified_at, lifecycle_state, subject_type, subject_id")
+
+    if _model.normalize_lifecycle(current.get("lifecycle_state")) != _model.LIFECYCLE_ACTIVE:
+        # Verifying a superseded fact would attach a fresh check to a value the
+        # member has already replaced, and the detail screen would show a
+        # recently-verified badge on the row it is telling them is out of date.
+        raise PrivateFactRejected(
+            f"fact {target} is not active and cannot be verified")
+
+    if wanted in _model.VERIFICATION_REQUIRES_EVIDENCE:
+        supporting = supporting_evidence_count(
+            cur, owner_user_id=owner, fact_id=target)
+        if supporting <= 0:
+            raise PrivateFactRejected(
+                f"{wanted} requires at least one live supporting source")
+
+    before = _model.normalize_verification(
+        current.get("verification_state")) or _model.DEFAULT_VERIFICATION
+    now_iso = _now_iso()
+    actor = int(actor_user_id or owner)
+    # `verified_at` records when this check happened, for every state including
+    # the negative ones: "this failed verification eighteen months ago" is a
+    # different statement from "this failed verification this morning", and only
+    # a timestamp tells them apart.
+    cur.execute(
+        f"""UPDATE {_schema.FACTS_TABLE}
+        SET verification_state = ?, verified_at = ?, verified_by = ?,
+            updated_at = ?
+        WHERE owner_user_id = ? AND id = ?""",
+        (wanted, now_iso, actor, now_iso, owner, target),
+    )
+    _history(cur, owner_user_id=owner, fact_id=target,
+             change_type=_model.CHANGE_VERIFICATION_SET, actor_user_id=actor,
+             from_state=before, to_state=wanted,
+             note_key=note or _model.NOTE_OWNER_ACTION)
+    _audit.record(
+        cur, actor_user_id=actor, owner_user_id=owner,
+        action=_audit.ACTION_FACT_VERIFY,
+        object_type=str(current.get("subject_type") or ""),
+        object_id=current.get("subject_id"), purpose=purpose,
+        outcome=_audit.OUTCOME_OK,
+    )
+    return {"status": STATUS_WRITTEN, "fact_id": target, "from_state": before,
+            "verification_state": wanted, "verified_at": now_iso}
+
+
+def archive_fact(
+    cur,
+    *,
+    owner_user_id: int,
+    fact_id: int,
+    actor_user_id: int | None = None,
+    purpose: str = "user_request",
+    note_key: str | None = None,
+) -> dict:
+    """Retire a fact so the store stops asserting it. Idempotent.
+
+    Archiving is not deletion and not supersession. The row stays, keeps its
+    value, its provenance and its whole evidence trail, and remains readable as
+    history — what changes is that it is no longer *claimed*. That distinction
+    is the reason this exists as its own transition rather than as a lifecycle
+    argument on some other writer: "this was replaced by a better value" and
+    "this should never have been asserted" are different statements about the
+    past, and only one of them leaves a successor.
+
+    Deliberately **not** reachable as a side effect of detection. A conflict
+    engine that could archive would be a conflict engine that decides which of
+    two claims is wrong, and this package's central rule is that it does not.
+    The caller here is always executing an instruction a person gave.
+
+    Idempotent because the realistic caller is a conflict resolution rejecting
+    several facts at once, where a partial failure part-way through would leave
+    a decision half-applied — and a retry of that is far more useful than an
+    error about the rows that already succeeded.
+    """
+    owner = int(owner_user_id or 0)
+    target = int(fact_id or 0)
+    if owner <= 0 or target <= 0:
+        raise PrivateFactRejected("owner_user_id and fact_id are required")
+
+    note = ""
+    if note_key is not None and str(note_key).strip():
+        note = _model.normalize_note_key(note_key) or ""
+        if not note:
+            raise PrivateFactRejected(f"unknown note_key: {note_key!r}")
+
+    _schema.require_private_schema(cur)
+    current = _load_fact(
+        cur, owner, target, "id, lifecycle_state, subject_type, subject_id")
+    before = _model.normalize_lifecycle(current.get("lifecycle_state"))
+    if before == _model.LIFECYCLE_ARCHIVED:
+        return {"status": STATUS_EXISTING, "fact_id": target,
+                "lifecycle_state": _model.LIFECYCLE_ARCHIVED}
+
+    now_iso = _now_iso()
+    actor = int(actor_user_id or owner)
+    # `superseded_by_id` is untouched. An archived fact has no successor — that
+    # is what makes it archived rather than corrected — and writing one here
+    # would forge a supersession chain link the member never created.
+    cur.execute(
+        f"""UPDATE {_schema.FACTS_TABLE}
+        SET lifecycle_state = ?, updated_at = ?
+        WHERE owner_user_id = ? AND id = ?""",
+        (_model.LIFECYCLE_ARCHIVED, now_iso, owner, target),
+    )
+    _history(cur, owner_user_id=owner, fact_id=target,
+             change_type=_model.CHANGE_ARCHIVED, actor_user_id=actor,
+             from_state=before or "", to_state=_model.LIFECYCLE_ARCHIVED,
+             note_key=note or _model.NOTE_OWNER_ACTION)
+    _audit.record(
+        cur, actor_user_id=actor, owner_user_id=owner,
+        action=_audit.ACTION_FACT_ARCHIVE,
+        object_type=str(current.get("subject_type") or ""),
+        object_id=current.get("subject_id"), purpose=purpose,
+        outcome=_audit.OUTCOME_OK,
+    )
+    return {"status": STATUS_WRITTEN, "fact_id": target, "from_state": before,
+            "lifecycle_state": _model.LIFECYCLE_ARCHIVED}
 
 
 # ---------------------------------------------------------------------------

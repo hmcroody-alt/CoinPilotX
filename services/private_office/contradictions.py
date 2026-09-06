@@ -60,6 +60,7 @@ only, per Stage 18 and rule 8.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import re
 from datetime import timedelta
@@ -270,16 +271,35 @@ def detect_conflicts(
     subject_ids: Sequence[object] | None = None,
     fact_types: Sequence[str] | None = None,
     limit: int = MAX_SCAN,
+    include_resolved: bool = False,
 ) -> list[dict]:
     """Unresolved contradictions in one owner's facts.
 
     Each entry is ``{"conflict_id", "owner_user_id", "subject_type",
     "subject_id", "fact_type", "reason", "competing_fact_ids", "competing",
-    "unresolved": True}``.
+    "unresolved"}``, plus ``"resolution"`` when a decision exists.
 
-    ``unresolved`` is hard-coded true and there is no code path that sets it
-    false. Resolution is an act by the owner — confirming which source is right
-    — and this module's job ends at presenting the disagreement honestly.
+    Resolution is an act by the owner — confirming which source is right — and
+    this module still never chooses. What it now does is *remember* that the
+    owner chose: a conflict whose stored outcome is in
+    :data:`~services.private_office.model.RESOLUTION_CLOSES` is filtered out by
+    default, so a settled disagreement stops re-surfacing forever. Pass
+    ``include_resolved=True`` to get the full list with each entry annotated.
+
+    Which outcomes this actually filters is narrower than it looks.
+    ``list_facts`` reads ``lifecycle_state = ACTIVE``, so the losers of a
+    ``KEPT`` or ``ALL_REJECTED`` decision have already dropped out of the scan
+    and the conflict cannot re-form. The outcome that genuinely needs
+    suppressing here is ``SEPARATED`` — where the member said "these describe
+    different things" and every competitor stays active and keeps matching. For
+    the other two this is defence in depth: if an archive had partially failed,
+    the conflict resurfacing is the correct behaviour and the stored resolution
+    would be the wrong thing to trust.
+
+    ``DEFERRED`` is deliberately not in ``RESOLUTION_CLOSES``. A member who
+    looked and could not decide has not settled anything, and hiding the
+    conflict because they *engaged* with it is how a backlog disappears from
+    the only screen that would have shown it.
 
     ``subject_ids`` asks about many subjects in **one** read. Stage 37: the
     grouping below is already keyed by subject, so answering for a hundred
@@ -375,6 +395,30 @@ def detect_conflicts(
             })
 
     if conflicts:
+        resolutions = conflict_resolutions(
+            cur, owner_user_id=owner,
+            conflict_ids=[c["conflict_id"] for c in conflicts])
+        kept: list[dict] = []
+        for conflict in conflicts:
+            decision = resolutions.get(conflict["conflict_id"])
+            if decision is not None and (
+                    decision["competing_fact_ids"] != sorted(conflict["competing_fact_ids"])):
+                # The id matched but the set did not. The id is a hash of the
+                # competing fact *keys* while the stored set is fact *ids*, so
+                # this is reachable — a fact re-recorded under the same key
+                # produces the same id with a different row. A decision made
+                # about rows that are no longer the ones in front of the member
+                # is not a decision about this conflict, and honouring it would
+                # suppress a disagreement nobody ever saw.
+                decision = None
+            if decision is not None:
+                conflict["unresolved"] = not decision["closed"]
+                conflict["resolution"] = decision
+            if include_resolved or conflict["unresolved"]:
+                kept.append(conflict)
+        conflicts = kept
+
+    if conflicts:
         # Fact types and counts only — never a value. A conflict about a policy
         # number that logged both policy numbers would put the secret in the
         # place it is least protected, which is the failure rule 8 names.
@@ -444,3 +488,277 @@ def mark_conflicts(
             purpose=purpose, outcome=_audit.OUTCOME_OK, result_count=len(ids),
         )
     return updated
+
+
+# ---------------------------------------------------------------------------
+# Resolution
+# ---------------------------------------------------------------------------
+#: Resolutions read back per call. A conflict resolved and re-resolved a
+#: handful of times is normal; thousands of rows for one ``conflict_id`` is a
+#: caller in a loop, and the read that answers "what is the current decision"
+#: should not degrade because of it.
+MAX_RESOLUTION_SCAN = 200
+
+
+def _pack_ids(ids: Sequence[int]) -> str:
+    """Storage form for a competing set: a JSON array of ascending ints."""
+    return json.dumps(sorted({int(i) for i in ids}))
+
+
+def _unpack_ids(stored: object) -> list[int]:
+    """Inverse of :func:`_pack_ids`; malformed storage reads as empty.
+
+    A resolution row whose competing set will not parse is a row that can no
+    longer say what it decided about. Returning ``[]`` makes it close nothing,
+    so the conflict resurfaces and the member is asked again — which is the
+    safe direction. Raising here would take down the conflict list entirely.
+    """
+    try:
+        loaded = json.loads(str(stored or "").strip() or "[]")
+    except ValueError:
+        return []
+    if not isinstance(loaded, list):
+        return []
+    out: list[int] = []
+    for item in loaded:
+        try:
+            value = int(item)
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            out.append(value)
+    return sorted(set(out))
+
+
+def _row_to_resolution(row) -> dict:
+    data = dict(row)
+    return {
+        "id": int(data.get("id") or 0),
+        "conflict_id": str(data.get("conflict_id") or ""),
+        "subject_type": str(data.get("subject_type") or ""),
+        "subject_id": str(data.get("subject_id") or ""),
+        "fact_type": str(data.get("fact_type") or ""),
+        "reason": str(data.get("reason") or ""),
+        "competing_fact_ids": _unpack_ids(data.get("competing_fact_ids")),
+        "outcome": str(data.get("outcome") or ""),
+        "kept_fact_id": int(data.get("kept_fact_id") or 0),
+        "note_key": str(data.get("note_key") or ""),
+        "resolved_by": int(data.get("resolved_by") or 0),
+        "resolved_at": str(data.get("resolved_at") or ""),
+        "closed": str(data.get("outcome") or "") in _model.RESOLUTION_CLOSES,
+    }
+
+
+def resolve_conflict(
+    cur,
+    *,
+    owner_user_id: int,
+    conflict_id: str,
+    outcome: str,
+    competing_fact_ids: Sequence[int],
+    kept_fact_id: int | None = None,
+    subject_type: str = "",
+    subject_id: object = "",
+    fact_type: str = "",
+    reason: str = "",
+    actor_user_id: int | None = None,
+    purpose: str = "user_request",
+    note_key: object = None,
+) -> dict:
+    """Record the owner's decision about one conflict, and execute it.
+
+    This is the other half of the promise the detector makes. Detection says
+    "two of your sources disagree and I will not choose between them"; without
+    a resolution path that sentence becomes "…and you can never make this go
+    away", so the conflict list grows monotonically and stops being read for
+    exactly the reason the module docstring warns about.
+
+    The decision is the member's and this function only carries it out:
+
+    * ``KEPT`` — one competitor is right. The others are **archived**, not
+      deleted and not superseded: they keep their values, provenance and
+      evidence, and stop being asserted. ``kept_fact_id`` is required and must
+      name a member of the competing set.
+    * ``ALL_REJECTED`` — none of them is right. All are archived. The subject
+      is left with no claim of this type, which is a truthful state and a
+      better one than an arbitrary survivor.
+    * ``SEPARATED`` — the detector was wrong to pair them; they describe
+      different things. **No lifecycle change**, because nothing here is false.
+    * ``DEFERRED`` — the member looked and could not decide. Recorded so the
+      looking is not lost, but it closes nothing and the conflict keeps
+      surfacing.
+
+    Why ``competing_fact_ids`` is required rather than re-derived
+    ------------------------------------------------------------
+    :func:`conflict_id` hashes the *fact keys of the competing set*, so a
+    conflict that acquires a third competitor gets a different id and arrives
+    as a new, unresolved conflict. That is the property that stops a stale
+    decision from silently suppressing a genuinely new disagreement, and it
+    only holds while a resolution is bound to the precise set it was made
+    about. Storing the set is what lets a reader verify that binding instead of
+    trusting it.
+
+    Append-only. A member who changes their mind resolves again and the newer
+    row wins; the earlier decision stays readable, because "I first said keep
+    the insurer's date, then changed to the document's" is exactly the history
+    a truth ledger exists to preserve.
+    """
+    owner = int(owner_user_id or 0)
+    marker = str(conflict_id or "").strip()[:64]
+    if owner <= 0 or not marker:
+        raise _facts.PrivateFactRejected(
+            "owner_user_id and conflict_id are required")
+
+    decision = _model.normalize_resolution(outcome)
+    if not decision:
+        raise _facts.PrivateFactRejected(f"unknown outcome: {outcome!r}")
+
+    ids = _unpack_ids(list(competing_fact_ids or ()))
+    if len(ids) < 2:
+        # A "conflict" with fewer than two sides is not one, and accepting it
+        # would let a caller close an arbitrary conflict_id by naming a single
+        # fact — including one that was never part of it.
+        raise _facts.PrivateFactRejected(
+            "a conflict resolution needs at least two competing facts")
+
+    note = _model.NOTE_CONFLICT_RESOLUTION
+    if note_key is not None and str(note_key).strip():
+        note = _model.normalize_note_key(note_key) or ""
+        if not note:
+            raise _facts.PrivateFactRejected(f"unknown note_key: {note_key!r}")
+
+    _schema.require_private_schema(cur)
+    actor = int(actor_user_id or owner)
+
+    # Every competitor is loaded under the owner predicate before anything is
+    # written. A resolution naming another member's fact id must fail as
+    # "not found" and must not archive anything, so the ownership check cannot
+    # come after the first UPDATE.
+    for fact_id in ids:
+        _facts._load_fact(cur, owner, fact_id, "id")
+
+    keep = int(kept_fact_id or 0)
+    if decision == _model.RESOLUTION_KEPT:
+        if keep not in ids:
+            raise _facts.PrivateFactRejected(
+                "kept_fact_id must name one of the competing facts")
+    elif keep:
+        # Silently ignoring it would let "reject everything, but keep this one"
+        # store a contradiction of itself.
+        raise _facts.PrivateFactRejected(
+            f"kept_fact_id is meaningless for outcome {decision}")
+
+    if decision == _model.RESOLUTION_KEPT:
+        to_archive = [i for i in ids if i != keep]
+    elif decision == _model.RESOLUTION_ALL_REJECTED:
+        to_archive = list(ids)
+    else:
+        to_archive = []
+
+    archived = 0
+    for fact_id in to_archive:
+        result = _facts.archive_fact(
+            cur, owner_user_id=owner, fact_id=fact_id, actor_user_id=actor,
+            purpose=purpose, note_key=note)
+        if result.get("status") != _facts.STATUS_EXISTING:
+            archived += 1
+
+    # History on every competitor, including the survivor and including the
+    # rows a SEPARATED or DEFERRED outcome leaves untouched. "Nothing changed
+    # here" is a decision too, and a fact whose timeline omits the conflict it
+    # was part of reads as though it was never questioned.
+    for fact_id in ids:
+        _facts._history(
+            cur, owner_user_id=owner, fact_id=fact_id,
+            change_type=_model.CHANGE_CONFLICT_RESOLVED, actor_user_id=actor,
+            from_state=marker, to_state=decision,
+            related_fact_id=keep if keep != fact_id else 0, note_key=note)
+
+    now_iso = _facts._now_iso()
+    cur.execute(
+        f"""INSERT INTO {_schema.FACT_CONFLICTS_TABLE}
+        (owner_user_id, conflict_id, subject_type, subject_id, fact_type,
+         reason, competing_fact_ids, outcome, kept_fact_id, note_key,
+         resolved_by, resolved_at, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (owner, marker, str(subject_type or "")[:64], str(subject_id or "")[:128],
+         str(fact_type or "")[:64], str(reason or "")[:64], _pack_ids(ids),
+         decision, keep, note, actor, now_iso, now_iso),
+    )
+
+    _audit.record(
+        cur, actor_user_id=actor, owner_user_id=owner,
+        action=_audit.ACTION_CONFLICT_RESOLVED,
+        object_type=str(subject_type or ""), object_id=str(subject_id or ""),
+        purpose=purpose, outcome=_audit.OUTCOME_OK, result_count=len(ids),
+    )
+    LOGGER.info(
+        "PRIVATE_CONFLICT_RESOLVED owner=%s outcome=%s competing=%s archived=%s",
+        owner, decision, len(ids), archived)
+    _telemetry.emit(
+        _telemetry.EVENT_CONFLICT_RESOLVED,
+        outcome=decision, reason=str(reason or "") or None,
+        competing_count=len(ids),
+        closed=decision in _model.RESOLUTION_CLOSES)
+
+    return {
+        "conflict_id": marker,
+        "outcome": decision,
+        "kept_fact_id": keep,
+        "competing_fact_ids": ids,
+        "archived_count": archived,
+        "closed": decision in _model.RESOLUTION_CLOSES,
+        "resolved_at": now_iso,
+    }
+
+
+def conflict_resolutions(
+    cur,
+    *,
+    owner_user_id: int,
+    conflict_ids: Sequence[str] | None = None,
+) -> dict[str, dict]:
+    """Current decision per ``conflict_id``, newest row wins.
+
+    One query for many ids, for the Stage 37 reason spelled out in
+    :func:`detect_conflicts`: the natural caller holds a page of conflicts and
+    needs the decision for each, and doing that one id at a time is the N+1
+    that stage forbids.
+
+    Passing ``conflict_ids=None`` reads every resolution the owner has, which
+    is what detection needs — it does not know which ids it is about to
+    produce until after it has grouped the rows.
+    """
+    owner = int(owner_user_id or 0)
+    if owner <= 0:
+        return {}
+    _schema.require_private_schema(cur)
+
+    sql = f"SELECT * FROM {_schema.FACT_CONFLICTS_TABLE} WHERE owner_user_id = ?"
+    params: list[Any] = [owner]
+    if conflict_ids is not None:
+        wanted = sorted({str(c).strip()[:64] for c in conflict_ids if str(c or "").strip()})
+        if not wanted:
+            return {}
+        sql += f" AND conflict_id IN ({','.join('?' * len(wanted))})"
+        params.extend(wanted)
+    # Ascending, so the newest row for each id overwrites the older ones as the
+    # loop runs and the last write wins without a per-id subquery.
+    sql += " ORDER BY id ASC LIMIT ?"
+    params.append(MAX_RESOLUTION_SCAN * max(1, len(conflict_ids or ("",))))
+
+    latest: dict[str, dict] = {}
+    try:
+        cur.execute(sql, params)
+        rows = cur.fetchall() or []
+    except Exception as exc:
+        # A deployment without the table yet must not break the conflict list.
+        # Reading as "nothing resolved" surfaces conflicts that were in fact
+        # settled, which is noisy; the opposite would hide live disagreements.
+        LOGGER.warning("PRIVATE_CONFLICT_RESOLUTION_READ_FAILED error=%s", exc)
+        return {}
+    for row in rows:
+        entry = _row_to_resolution(row)
+        if entry["conflict_id"]:
+            latest[entry["conflict_id"]] = entry
+    return latest

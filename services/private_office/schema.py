@@ -85,6 +85,9 @@ import logging
 LOGGER = logging.getLogger("private_office.schema")
 
 FACTS_TABLE = "private_facts"
+FACT_HISTORY_TABLE = "private_fact_history"
+FACT_EVIDENCE_TABLE = "private_fact_evidence"
+FACT_CONFLICTS_TABLE = "private_fact_conflicts"
 NODES_TABLE = "private_graph_nodes"
 EDGES_TABLE = "private_graph_edges"
 AUDIT_TABLE = "private_audit_events"
@@ -92,8 +95,9 @@ SECURITY_TABLE = "private_office_security"
 GRANTS_TABLE = "private_office_unlock_grants"
 
 TABLES: tuple[str, ...] = (
-    FACTS_TABLE, NODES_TABLE, EDGES_TABLE, AUDIT_TABLE,
-    SECURITY_TABLE, GRANTS_TABLE,
+    FACTS_TABLE, FACT_HISTORY_TABLE, FACT_EVIDENCE_TABLE,
+    FACT_CONFLICTS_TABLE, NODES_TABLE,
+    EDGES_TABLE, AUDIT_TABLE, SECURITY_TABLE, GRANTS_TABLE,
 )
 
 STATUS_READY = "ready"
@@ -139,9 +143,180 @@ CREATE TABLE IF NOT EXISTS {FACTS_TABLE} (
     domain TEXT NOT NULL,
     lifecycle_state TEXT NOT NULL DEFAULT 'ACTIVE',
     conflict_id TEXT NOT NULL DEFAULT '',
+    verification_state TEXT NOT NULL DEFAULT 'UNVERIFIED',
+    verified_at TEXT NOT NULL DEFAULT '',
+    verified_by INTEGER NOT NULL DEFAULT 0,
+    supersedes_id INTEGER NOT NULL DEFAULT 0,
+    superseded_by_id INTEGER NOT NULL DEFAULT 0,
+    superseded_at TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     UNIQUE(owner_user_id, fact_key)
+)
+"""
+# `verification_state` is a column of its own and not a value of
+# `provenance_type`, which is the single most consequential shape decision in
+# this table. Provenance says where the value came from; verification says what
+# anyone has done to check it. Sharing one column means recording a check
+# destroys the record of the origin, and it means a trusted feed's output is
+# indistinguishable from a document somebody actually read.
+#
+# `verified_at` and `verified_by` are stored while expiry is *not*. The first
+# two are facts about an event that happened — a check occurred, at a time, by
+# an actor — and no later reading can recover them. Expiry is arithmetic over
+# `verified_at` and a horizon, so storing it would create a window in which the
+# row says "verified" because nothing has swept it yet, and that window is
+# precisely when somebody acts on it.
+#
+# `verified_by` is 0 rather than NULL for a system-performed check, so the
+# column never has to be read as tri-state. It names an actor, not an owner:
+# owner is already on the row and a verification performed by the owner
+# themselves is a weaker claim than one performed by anyone else, which is a
+# distinction the review queue needs to keep.
+#
+# `supersedes_id` / `superseded_by_id` are integers rather than a join table
+# because supersession is a chain and a chain has exactly one predecessor and
+# one successor per link. A join table would permit a row to be superseded by
+# two different corrections at once, which is not a supersession — it is a
+# contradiction, and it already has a home in `conflict_id`. Both default to 0
+# rather than NULL so a cycle check is integer comparison with no NULL
+# handling, and 0 is not a valid `id` in this table, so it cannot collide with
+# a real link.
+
+# ---------------------------------------------------------------------------
+# Fact history — the transition log
+# ---------------------------------------------------------------------------
+# Append-only. Nothing in this package updates or deletes a row here, and the
+# writer exposes no function that could.
+#
+# **There is no value column, and that is a design decision rather than an
+# omission.** The obvious shape for a history table is "old value, new value",
+# and it is the wrong one here for two reasons that compound.
+#
+# The first is that supersession already preserves the old value: correcting a
+# fact writes a *new row* and links the old one, so the previous value is still
+# sitting in `private_facts` with its own sensitivity, its own domain and its own
+# owner predicate. Copying it here would put the same private value in a second
+# table with a second set of rules, and the second set is always the one that
+# gets forgotten when someone adds a read.
+#
+# The second is that this table is the thing a member reads to understand what
+# happened, which means it is the thing most likely to be rendered in a list, and
+# a list of every value a fact has ever held is a far more sensitive object than
+# the fact itself. A history of "what changed and when" is answerable without it.
+#
+# `note_key` is a vocabulary key, never free text and never a value. It exists so
+# a transition can carry *why* — `conflict_resolution`, `legacy_backfill` — in a
+# form that translates and that cannot be turned into a smuggling channel by a
+# caller who passes a string.
+FACT_HISTORY_TABLE_DDL = f"""
+CREATE TABLE IF NOT EXISTS {FACT_HISTORY_TABLE} (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_user_id INTEGER NOT NULL,
+    fact_id INTEGER NOT NULL,
+    change_type TEXT NOT NULL,
+    actor_user_id INTEGER NOT NULL DEFAULT 0,
+    from_state TEXT NOT NULL DEFAULT '',
+    to_state TEXT NOT NULL DEFAULT '',
+    related_fact_id INTEGER NOT NULL DEFAULT 0,
+    note_key TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+)
+"""
+
+# ---------------------------------------------------------------------------
+# What a fact is believed *on the basis of*.
+#
+# The claim this table has to make good on is the one a badge makes: if a fact
+# reads AUTHORITY_VERIFIED, a member must be able to tap it and see what it was
+# verified against. A verification state with nothing behind it is worse than an
+# unverified fact, because the member acts on it.
+#
+# `source_ref` is a canonical `kind:id` reference in the `evidence` module's
+# vocabulary — `document:7`, `record:12`, `event:88`. Identity, never content:
+# the row it names is read back through its own owning module's gated reader,
+# and this table stores no copy of what the source said. That is what keeps a
+# document's contents governed by the document module's rules rather than by
+# whatever rules the fact detail screen happens to apply.
+#
+# **Detached, never deleted.** `detached_at` is a timestamp rather than an
+# absence of a row, because unlinking evidence is exactly the operation that
+# would otherwise erase the answer to "what was this verified against, back when
+# it was verified". A fact whose supporting document was later unlinked still
+# has to be able to explain the badge it was wearing at the time. Live evidence
+# is `detached_at = ''`; everything else is history and reads as history.
+#
+# `relation` matters more than it looks. Evidence that *contradicts* a fact is
+# still evidence and still belongs on the record — but it must never count
+# toward verification, and it would if this column did not exist and every link
+# were assumed supportive.
+FACT_EVIDENCE_TABLE_DDL = f"""
+CREATE TABLE IF NOT EXISTS {FACT_EVIDENCE_TABLE} (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_user_id INTEGER NOT NULL,
+    fact_id INTEGER NOT NULL,
+    source_ref TEXT NOT NULL,
+    source_kind TEXT NOT NULL,
+    relation TEXT NOT NULL DEFAULT 'SUPPORTS',
+    note_key TEXT NOT NULL DEFAULT '',
+    linked_by INTEGER NOT NULL DEFAULT 0,
+    linked_at TEXT NOT NULL,
+    detached_at TEXT NOT NULL DEFAULT '',
+    detached_by INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+)
+"""
+
+# ---------------------------------------------------------------------------
+# What a member decided about a contradiction.
+#
+# The detector is deliberately incapable of closing a conflict — it reports and
+# stops. That leaves a gap this table fills: without somewhere durable to record
+# "I looked at this, they are two different policies", every detection pass
+# re-raises a disagreement the member already settled, and a queue that keeps
+# returning answered questions is a queue they stop opening.
+#
+# **Append-only, one row per decision.** Not one row per conflict updated in
+# place. A member who defers a conflict in March and settles it in June has made
+# two decisions, and the first one is the reason the second took until June —
+# that is exactly the kind of thing an audit of "why did this sit unresolved"
+# needs, and an UPDATE would erase it. The live answer is the newest row.
+#
+# `conflict_id` is the detector's deterministic hash of the *competing fact
+# keys*, which gives this table a property worth stating plainly: a resolution
+# binds to the precise set of claims it was made about. If a third source later
+# disagrees, the competing set changes, the hash changes, and the conflict
+# re-raises as a new one rather than inheriting a decision made without
+# knowledge of the new claim. Settling a two-way disagreement is not consent to
+# a three-way one.
+#
+# `competing_fact_ids` duplicates what the hash already encodes, and is stored
+# anyway: the hash proves two sets are the same set but cannot say *which* rows
+# they were, and "what exactly did I agree to" is unanswerable from a digest.
+#
+# `kept_fact_id` is 0 for every outcome except KEPT. A KEPT that did not name
+# which fact was kept would record that the member chose without recording what
+# they chose, which is not a resolution — it is the appearance of one.
+#
+# There is no `note` column, only `note_key`. Same reason as the history table:
+# a free-text field here would be the one place a caller could write arbitrary
+# member prose into a table with no sensitivity column to govern who reads it.
+FACT_CONFLICTS_TABLE_DDL = f"""
+CREATE TABLE IF NOT EXISTS {FACT_CONFLICTS_TABLE} (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_user_id INTEGER NOT NULL,
+    conflict_id TEXT NOT NULL,
+    subject_type TEXT NOT NULL DEFAULT '',
+    subject_id TEXT NOT NULL DEFAULT '',
+    fact_type TEXT NOT NULL DEFAULT '',
+    reason TEXT NOT NULL DEFAULT '',
+    competing_fact_ids TEXT NOT NULL DEFAULT '',
+    outcome TEXT NOT NULL,
+    kept_fact_id INTEGER NOT NULL DEFAULT 0,
+    note_key TEXT NOT NULL DEFAULT '',
+    resolved_by INTEGER NOT NULL DEFAULT 0,
+    resolved_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
 )
 """
 
@@ -280,6 +455,9 @@ CREATE TABLE IF NOT EXISTS {GRANTS_TABLE} (
 
 TABLE_DDL: dict[str, str] = {
     FACTS_TABLE: FACTS_TABLE_DDL,
+    FACT_HISTORY_TABLE: FACT_HISTORY_TABLE_DDL,
+    FACT_EVIDENCE_TABLE: FACT_EVIDENCE_TABLE_DDL,
+    FACT_CONFLICTS_TABLE: FACT_CONFLICTS_TABLE_DDL,
     NODES_TABLE: NODES_TABLE_DDL,
     EDGES_TABLE: EDGES_TABLE_DDL,
     AUDIT_TABLE: AUDIT_TABLE_DDL,
@@ -287,11 +465,30 @@ TABLE_DDL: dict[str, str] = {
     GRANTS_TABLE: GRANTS_TABLE_DDL,
 }
 
-#: Columns added after the first release. Empty today; the loop exists so the
-#: first person who needs a column does not have to invent the mechanism, and
-#: so `ensure` is already the place it goes rather than a route handler.
+#: Columns added after the first release, applied by ``ensure`` as idempotent
+#: ALTERs. Every definition here must carry a DEFAULT, because the ALTER runs
+#: against a table that already holds rows and a NOT NULL column with no default
+#: cannot be added to one.
+#:
+#: The defaults are also the backfill, and they were chosen to be the honest
+#: reading of an existing row rather than a convenient one. A fact written
+#: before this column existed has not been verified — nobody checked it, because
+#: there was no mechanism to record a check — so 'UNVERIFIED' is not a
+#: placeholder, it is correct. Defaulting to SELF_ASSERTED would have been the
+#: tempting choice and it would have been a fabrication: it asserts the owner
+#: personally stated the value, which is unknown for every legacy row.
 TABLE_ADDED_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
-    FACTS_TABLE: (),
+    FACTS_TABLE: (
+        ("verification_state", "TEXT NOT NULL DEFAULT 'UNVERIFIED'"),
+        ("verified_at", "TEXT NOT NULL DEFAULT ''"),
+        ("verified_by", "INTEGER NOT NULL DEFAULT 0"),
+        ("supersedes_id", "INTEGER NOT NULL DEFAULT 0"),
+        ("superseded_by_id", "INTEGER NOT NULL DEFAULT 0"),
+        ("superseded_at", "TEXT NOT NULL DEFAULT ''"),
+    ),
+    FACT_HISTORY_TABLE: (),
+    FACT_EVIDENCE_TABLE: (),
+    FACT_CONFLICTS_TABLE: (),
     NODES_TABLE: (),
     EDGES_TABLE: (),
     AUDIT_TABLE: (),
@@ -306,6 +503,27 @@ REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
         "owner_user_id", "fact_key", "subject_type", "subject_id", "fact_type",
         "value_type", "typed_value", "provenance_type", "observed_at",
         "valid_from", "sensitivity", "domain", "lifecycle_state",
+        # Required rather than optional. Every read model below asks what a
+        # fact's verification state is and where its supersession chain leads,
+        # so a database missing these cannot answer the store's own questions —
+        # and the fail-closed reading of that is "could not look", not a page
+        # that renders every fact as unverified because the column is absent.
+        "verification_state", "supersedes_id", "superseded_by_id",
+    ),
+    FACT_HISTORY_TABLE: (
+        "owner_user_id", "fact_id", "change_type", "created_at",
+    ),
+    FACT_EVIDENCE_TABLE: (
+        # `detached_at` is required, not optional. Every live-evidence query
+        # filters on it, and a database missing it would answer "is this fact
+        # supported" by counting links the member had already withdrawn.
+        "owner_user_id", "fact_id", "source_ref", "relation", "detached_at",
+    ),
+    FACT_CONFLICTS_TABLE: (
+        # `outcome` decides whether a conflict is closed, so a database missing
+        # it cannot tell a settled disagreement from an open one — and the
+        # failure would be silent re-raising of questions already answered.
+        "owner_user_id", "conflict_id", "outcome", "resolved_at",
     ),
     NODES_TABLE: (
         "owner_user_id", "node_key", "node_type", "lifecycle_state",
@@ -342,6 +560,40 @@ INDEX_DDL: tuple[str, ...] = (
     f"ON {FACTS_TABLE} (owner_user_id, fact_type, lifecycle_state)",
     f"CREATE INDEX IF NOT EXISTS idx_private_facts_domain "
     f"ON {FACTS_TABLE} (owner_user_id, domain, sensitivity)",
+    # The review queue's predicate. Verification state leads because the queue
+    # is built by asking which states need attention, and lifecycle follows
+    # because a superseded fact needing review is not a task — it has already
+    # been answered by the row that replaced it.
+    f"CREATE INDEX IF NOT EXISTS idx_private_facts_verification "
+    f"ON {FACTS_TABLE} (owner_user_id, verification_state, lifecycle_state)",
+    # Chain walks in both directions. `superseded_by_id` is the forward walk —
+    # "what replaced this" — and it is the one a detail view runs, so it gets
+    # the index; the backward walk is bounded by the same chain and reads the
+    # same rows.
+    f"CREATE INDEX IF NOT EXISTS idx_private_facts_supersession "
+    f"ON {FACTS_TABLE} (owner_user_id, superseded_by_id)",
+    # One fact's history, newest first. `fact_id` follows the owner rather than
+    # standing alone because every read of this table is already scoped to an
+    # owner and an index that could serve an unscoped read is an invitation to
+    # write one.
+    f"CREATE INDEX IF NOT EXISTS idx_private_fact_history_fact "
+    f"ON {FACT_HISTORY_TABLE} (owner_user_id, fact_id, id)",
+    # One fact's evidence. `detached_at` is in the index rather than left to a
+    # filter because the question this table is asked most often is "what
+    # supports this *now*", and that read runs on the verification path where a
+    # wrong answer is a badge with nothing behind it.
+    f"CREATE INDEX IF NOT EXISTS idx_private_fact_evidence_fact "
+    f"ON {FACT_EVIDENCE_TABLE} (owner_user_id, fact_id, detached_at)",
+    # The other direction: "what does this document support". The SOURCES tab
+    # groups by source, and the integrity sweep walks every ref of one kind.
+    f"CREATE INDEX IF NOT EXISTS idx_private_fact_evidence_source "
+    f"ON {FACT_EVIDENCE_TABLE} (owner_user_id, source_ref, detached_at)",
+    # "How was this conflict settled" — asked once per conflict on every
+    # detection pass, so that a decision already made is not re-raised. `id`
+    # trails the key because the table is append-only and the live answer is the
+    # newest row, which makes this an index-ordered lookup rather than a sort.
+    f"CREATE INDEX IF NOT EXISTS idx_private_fact_conflicts_conflict "
+    f"ON {FACT_CONFLICTS_TABLE} (owner_user_id, conflict_id, id)",
     f"CREATE INDEX IF NOT EXISTS idx_private_nodes_type "
     f"ON {NODES_TABLE} (owner_user_id, node_type, lifecycle_state)",
     f"CREATE INDEX IF NOT EXISTS idx_private_edges_source "

@@ -69,6 +69,7 @@ from services.private_office import health  # noqa: E402
 from services.private_office import model  # noqa: E402
 from services.private_office import records  # noqa: E402
 from services.private_office import retrieval  # noqa: E402
+from services.private_office import review  # noqa: E402
 from services.private_office import schema  # noqa: E402
 from services.private_office import telemetry  # noqa: E402
 
@@ -539,6 +540,23 @@ def stage_health_surface():
           degraded["retrieval"]["bounds"]["max_subject_batch"]
           == facts.MAX_SUBJECT_BATCH)
 
+    # The review queue reports on the same terms and for the same reason: it is
+    # a bounded read whose *ordering* is the product, so "what would it rank
+    # first" has to be answerable from outside without reading the source.
+    check("the review ranking is published, weights included",
+          degraded["review"]["weights"] == dict(model.REVIEW_WEIGHT)
+          and degraded["review"]["reasons"] == list(model.REVIEW_REASONS),
+          str(degraded["review"].get("reasons")))
+    check("the review bounds are published alongside retrieval's",
+          degraded["review"]["bounds"]["max_items"] == review.MAX_REVIEW_ITEMS
+          and degraded["review"]["bounds"]["max_scan"] == review.MAX_REVIEW_SCAN
+          and degraded["review"]["bounds"]["max_refs"] == review.MAX_REVIEW_REFS,
+          str(degraded["review"]["bounds"]))
+    check("and the review section counts nobody's outstanding items",
+          not any(key in degraded["review"]
+                  for key in ("total", "items", "queue", "by_reason")),
+          str(sorted(degraded["review"])))
+
     # A count that fails is None, never 0 — the rule, checked at the seam.
     class _CountsExplode:
         def execute(self, sql, params=()):
@@ -686,6 +704,22 @@ def stage_telemetry_carries_no_member_data():
         cur, owner_user_id=USER_A, subject_id="910")
     check("the contradiction was detected, so its metric fired",
           len(conflicts) == 1, str(len(conflicts)))
+
+    # And then settled, which is the other half of the pair. Resolution is the
+    # one event in the spec that carries a *judgement*, so it is also the one
+    # whose payload most needs the inspection below: the temptation is to log
+    # which value won, and the winning value is member data.
+    settled = contradictions.resolve_conflict(
+        cur, owner_user_id=USER_A, conflict_id=conflicts[0]["conflict_id"],
+        outcome=model.RESOLUTION_KEPT,
+        competing_fact_ids=conflicts[0]["competing_fact_ids"],
+        kept_fact_id=conflicts[0]["competing_fact_ids"][0],
+        subject_type=conflicts[0]["subject_type"],
+        subject_id=conflicts[0]["subject_id"],
+        fact_type=conflicts[0]["fact_type"], reason=conflicts[0]["reason"],
+        actor_user_id=USER_A)
+    check("the resolution was recorded, so its metric fired",
+          settled["closed"] is True, str(settled))
 
     # And the three record events, through the real writer, the real closer,
     # and the real typed view — with a planted secret in the title so the

@@ -187,6 +187,14 @@ def _validated_provenance(provenance_type: object) -> str:
         # ranks at zero and can therefore never lose an argument to a better one.
         raise PrivateGraphRejected(
             f"{source} is a derived state, not a source of a new edge")
+    if source in _model.BACKFILL_ONLY_PROVENANCE:
+        # There is no graph backfill and there is no reason to add one: an edge
+        # whose origin nobody can name is a relationship the store invented, and
+        # a traversal that follows it is reporting a connection with nothing
+        # behind it. LEGACY_UNKNOWN exists for fact rows that predate provenance
+        # tracking; no such edges exist.
+        raise PrivateGraphRejected(
+            f"{source} may not be the origin of an edge")
     return source
 
 

@@ -820,6 +820,13 @@ def _prepare(record_type: str, spec: dict, fields: dict, *, revision: int) -> di
             # argument it was never in.
             raise PrivateRecordRejected(
                 f"{provenance_state} is a derived state, not a source of a new record")
+        if provenance_state in _model.BACKFILL_ONLY_PROVENANCE:
+            # No record backfill exists. LEGACY_UNKNOWN is reserved for fact
+            # rows written before provenance was tracked, and accepting it here
+            # would make "origin unknown" a live option for new records rather
+            # than a historical artefact.
+            raise PrivateRecordRejected(
+                f"{provenance_state} may not be the origin of a new record")
     if source in DERIVED_SOURCES and not provenance_state:
         raise PrivateRecordRejected(
             f"source_type={source} is a derivation; provenance_type is required")

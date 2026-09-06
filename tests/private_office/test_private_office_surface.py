@@ -215,30 +215,54 @@ def stage_verification_never_rounds_up():
     """Stage 4 — the trust bucket is a collapse, never a promotion."""
     print("\n[verification state]")
     expected = {
-        model.PROVENANCE_VERIFIED: office.VERIFICATION_VERIFIED,
-        model.PROVENANCE_PROVIDER_ASSERTED: office.VERIFICATION_SOURCED,
-        model.PROVENANCE_DOCUMENT_EXTRACTED: office.VERIFICATION_SOURCED,
-        model.PROVENANCE_USER_ASSERTED: office.VERIFICATION_SELF_REPORTED,
-        model.PROVENANCE_INFERRED: office.VERIFICATION_ESTIMATED,
-        model.PROVENANCE_ESTIMATED: office.VERIFICATION_ESTIMATED,
-        model.PROVENANCE_STALE: office.VERIFICATION_NEEDS_REVIEW,
-        model.PROVENANCE_CONFLICTING: office.VERIFICATION_NEEDS_REVIEW,
+        model.PROVENANCE_VERIFIED: office.TRUST_VERIFIED,
+        model.PROVENANCE_PROVIDER_ASSERTED: office.TRUST_SOURCED,
+        model.PROVENANCE_HUMAN_CONFIRMED: office.TRUST_SOURCED,
+        model.PROVENANCE_DOCUMENT_EXTRACTED: office.TRUST_SOURCED,
+        model.PROVENANCE_MEETING_DERIVED: office.TRUST_SOURCED,
+        model.PROVENANCE_USER_ASSERTED: office.TRUST_SELF_REPORTED,
+        model.PROVENANCE_INFERRED: office.TRUST_ESTIMATED,
+        model.PROVENANCE_ESTIMATED: office.TRUST_ESTIMATED,
+        model.PROVENANCE_UNDX_PROPOSED: office.TRUST_NEEDS_REVIEW,
+        model.PROVENANCE_LEGACY_UNKNOWN: office.TRUST_NEEDS_REVIEW,
+        model.PROVENANCE_STALE: office.TRUST_NEEDS_REVIEW,
+        model.PROVENANCE_CONFLICTING: office.TRUST_NEEDS_REVIEW,
     }
     for provenance, want in expected.items():
         check(f"{provenance} reads {want}",
-              office.verification_state(provenance) == want,
-              office.verification_state(provenance))
+              office.trust_bucket(provenance) == want,
+              office.trust_bucket(provenance))
 
     check("every declared provenance type is mapped",
           set(expected) == set(model.PROVENANCE_TYPES),
           str(set(model.PROVENANCE_TYPES) - set(expected)))
     check("what the member typed is never called verified",
-          office.verification_state(model.PROVENANCE_USER_ASSERTED)
-          != office.VERIFICATION_VERIFIED)
+          office.trust_bucket(model.PROVENANCE_USER_ASSERTED)
+          != office.TRUST_VERIFIED)
+    check("a model's proposal is never called verified or even sourced",
+          office.trust_bucket(model.PROVENANCE_UNDX_PROPOSED)
+          == office.TRUST_NEEDS_REVIEW)
     check("an unknown provenance needs review rather than reassuring",
-          office.verification_state("MADE_UP") == office.VERIFICATION_NEEDS_REVIEW)
+          office.trust_bucket("MADE_UP") == office.TRUST_NEEDS_REVIEW)
     check("an empty provenance needs review",
-          office.verification_state("") == office.VERIFICATION_NEEDS_REVIEW)
+          office.trust_bucket("") == office.TRUST_NEEDS_REVIEW)
+
+    # The historical name is still exported and still means the same thing.
+    # Callers outside this package import it, so a rename that quietly changed
+    # behaviour would be worse than not renaming at all.
+    check("the historical name still resolves identically",
+          all(office.verification_state(p) == office.trust_bucket(p)
+              for p in model.PROVENANCE_TYPES))
+
+    # The bucket and the real axis must never be confusable. If a value could
+    # belong to either vocabulary, a downstream reader holding one string has no
+    # way to know which question it answers.
+    buckets = {office.TRUST_VERIFIED, office.TRUST_SOURCED,
+               office.TRUST_SELF_REPORTED, office.TRUST_ESTIMATED,
+               office.TRUST_NEEDS_REVIEW}
+    check("no trust bucket label collides with a verification state",
+          not (buckets & set(model.VERIFICATION_STATES)),
+          str(buckets & set(model.VERIFICATION_STATES)))
 
 
 def stage_entry_state_reads_implementation_first():
@@ -329,6 +353,70 @@ def stage_no_sql_in_the_surface_layer():
           "_facts.count_facts_by_domain" in source)
 
 
+def stage_every_vocabulary_normalizes_to_itself():
+    """Each closed vocabulary round-trips through its own normalizer.
+
+    Sounds tautological and is not. ``model._canonical`` upper-cases before
+    comparing, so a vocabulary member spelled in lower case can never match
+    itself: the normalizer returns ``None`` for its own constant. Callers built
+    to treat ``None`` as "unrecognised, carry on without it" then drop the value
+    everywhere it is used, silently and for every row — which is exactly how the
+    history ``note_key`` shipped blank until this check existed.
+
+    The pairing below is written out by hand because only a human knows which
+    normalizer belongs to which vocabulary — but the *coverage* is not trusted
+    to a human: the last check discovers every closed vocabulary the module
+    exports and fails if one is missing from the list. Otherwise this check
+    protects exactly the vocabularies that existed the day it was written.
+    """
+    print("\n[vocabulary round-trip]")
+    pairs = (
+        ("DOMAINS", model.DOMAINS, model.normalize_domain),
+        ("SENSITIVITIES", model.SENSITIVITIES, model.normalize_sensitivity),
+        ("PROVENANCE_TYPES", model.PROVENANCE_TYPES, model.normalize_provenance),
+        ("VERIFICATION_STATES", model.VERIFICATION_STATES, model.normalize_verification),
+        ("RESOLUTION_OUTCOMES", model.RESOLUTION_OUTCOMES, model.normalize_resolution),
+        ("REVIEW_REASONS", model.REVIEW_REASONS, model.normalize_review_reason),
+        ("EVIDENCE_RELATIONS", model.EVIDENCE_RELATIONS,
+         model.normalize_evidence_relation),
+        ("HISTORY_CHANGE_TYPES", model.HISTORY_CHANGE_TYPES, model.normalize_change_type),
+        ("HISTORY_NOTE_KEYS", model.HISTORY_NOTE_KEYS, model.normalize_note_key),
+        ("VALUE_TYPES", model.VALUE_TYPES, model.normalize_value_type),
+        ("NODE_TYPES", model.NODE_TYPES, model.normalize_node_type),
+        ("RELATION_TYPES", model.RELATION_TYPES, model.normalize_relation),
+        ("LIFECYCLE_STATES", model.LIFECYCLE_STATES, model.normalize_lifecycle),
+    )
+    for name, values, normalizer in pairs:
+        broken = [v for v in values if normalizer(v) != v]
+        check(f"{name} round-trips through its normalizer",
+              not broken, f"unmatchable: {broken}")
+        check(f"{name} has no duplicate members",
+              len(set(values)) == len(values), str(values))
+
+    # The two axes must stay disjoint. A string in hand has to answer exactly one
+    # question — where did this come from, or how well has it been checked — and
+    # a label that appears in both makes that ambiguous at every call site that
+    # takes a bare string.
+    overlap = set(model.PROVENANCE_TYPES) & set(model.VERIFICATION_STATES)
+    check("provenance and verification vocabularies do not overlap",
+          not overlap, f"shared: {sorted(overlap)}")
+
+    # Coverage. Every plural uppercase tuple-of-strings the module exports is a
+    # closed vocabulary, and every closed vocabulary needs a normalizer that can
+    # recognise its own members. Anything found here and absent above is either
+    # a vocabulary with no normalizer or one this check forgot; both are worth
+    # failing on, and neither is discoverable by reading the list above.
+    covered = {name for name, _values, _fn in pairs}
+    discovered = {
+        name for name in dir(model)
+        if name.isupper() and isinstance(getattr(model, name), tuple)
+        and getattr(model, name)
+        and all(isinstance(item, str) for item in getattr(model, name))
+    }
+    check("every closed vocabulary in model.py is covered above",
+          discovered <= covered, f"uncovered: {sorted(discovered - covered)}")
+
+
 # ---------------------------------------------------------------------------
 def main() -> int:
     _FAILURES.clear()
@@ -341,6 +429,7 @@ def main() -> int:
     stage_verification_never_rounds_up()
     stage_entry_state_reads_implementation_first()
     stage_no_sql_in_the_surface_layer()
+    stage_every_vocabulary_normalizes_to_itself()
     print("\n" + "=" * 60)
     if _FAILURES:
         print(f"FAIL — {len(_FAILURES)} check(s) failed:")

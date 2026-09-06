@@ -99,6 +99,27 @@ PRIVATE_TABLES = (
     "private_structured_records",
     "private_record_fields",
     "private_record_revisions",
+    # The fact history. Append-only and value-free, which makes an unguarded
+    # INSERT here less of a disclosure than most of the list — but a *forged*
+    # one is worse than most, because this table is the evidence that a
+    # correction happened. A writer outside the boundary could record a
+    # supersession that never occurred, or leave one out, and the fact detail
+    # screen would present either as history.
+    "private_fact_history",
+    # The evidence links. This is the table that decides whether a verified
+    # badge is allowed to exist, so an unguarded INSERT here does not leak
+    # anything — it manufactures the justification for a claim the member will
+    # act on. A writer outside the boundary could attach a source it never
+    # resolved and clear the way for AUTHORITY_VERIFIED on a fact standing on
+    # nothing.
+    "private_fact_evidence",
+    # The durable conflict resolutions. An unguarded INSERT here is a forged
+    # decision: the table is what lets a settled conflict stop re-surfacing, so
+    # a row written from outside the boundary can silence a live disagreement
+    # between two sources without the member ever seeing it. That is the exact
+    # failure the whole contradiction design exists to prevent, arriving
+    # through the back door rather than through the detector.
+    "private_fact_conflicts",
 )
 
 # The schema module exports these; interpolating one into a write statement is
@@ -109,7 +130,41 @@ PRIVATE_TABLES = (
 # to the guard and the allowlist entry above would protect nothing. The name is
 # distinctive enough not to appear as a substring of ordinary identifiers.
 TABLE_CONSTANTS = ("FACTS_TABLE", "NODES_TABLE", "EDGES_TABLE", "AUDIT_TABLE",
-                   "private_table_for")
+                   "FACT_HISTORY_TABLE", "FACT_EVIDENCE_TABLE",
+                   "FACT_CONFLICTS_TABLE", "private_table_for")
+
+#: Test files allowed to write a private table directly, and the exact number
+#: of statements each may use.
+#:
+#: There is one honest reason to need this: proving that the product survives a
+#: row it could not have written itself. A resilience test has to *produce* the
+#: corruption, and by construction no writer will emit a malformed row — that
+#: is what makes them writers. Reaching for raw SQL there is the point of the
+#: test, not a way around this guard.
+#:
+#: Enumerated per file with a count rather than exempting ``tests/`` wholesale,
+#: because a blanket exemption would let a helper that quietly writes real
+#: fixture data grow inside the test tree, and fixture data written outside the
+#: writers is exactly the provenance-free row this boundary exists to prevent.
+#: The count is asserted in both directions below: adding a second raw write
+#: fails, and so does removing the first.
+DAMAGE_FIXTURES: dict[str, int] = {
+    os.path.join("tests", "private_office", "test_private_fact_conflicts.py"): 1,
+    # An evidence row citing a source kind `evidence.parse_ref` does not know.
+    # `link_evidence` validates the kind — that is what makes it a writer — so
+    # the row cannot be produced through the package, and the read model's
+    # three-valued `available` would otherwise have an unreachable third value.
+    # The legacy backfill will read tables this package did not write, which is
+    # where such a citation actually comes from.
+    os.path.join("tests", "private_office", "test_private_read_model.py"): 1,
+    # The same unparseable citation, one layer up. The read routes have to prove
+    # that `available: null` survives JSON serialisation as null rather than
+    # arriving as false, and that a ref nobody can check stays out of
+    # `missing_sources` on the wire — neither of which the module-level suite
+    # can speak to, because neither is a property of the module.
+    os.path.join("tests", "private_office",
+                 "test_private_facts_read_routes.py"): 1,
+}
 
 _TARGET = "(?:" + "|".join(PRIVATE_TABLES + TABLE_CONSTANTS) + ")"
 # Quoting, braces, a module prefix or a schema qualifier may sit between the
@@ -262,6 +317,7 @@ def test_no_private_writes_outside_the_writers():
     unparseable: list[str] = []
     violations: list[str] = []
     package_seen: set[str] = set()
+    used_allowances: dict[str, int] = {}
     parsed = 0
 
     for path in paths:
@@ -295,11 +351,27 @@ def test_no_private_writes_outside_the_writers():
             continue
 
         if hits and not may_write(relpath):
-            for hit in hits:
-                violations.append(f"{relpath}: {hit}")
+            allowance = DAMAGE_FIXTURES.get(relpath, 0)
+            if allowance:
+                used_allowances[relpath] = len(hits)
+            if len(hits) > allowance:
+                for hit in hits:
+                    violations.append(f"{relpath}: {hit}")
 
     check("no module outside the private writers writes to a private table",
           not violations, "; ".join(violations[:5]))
+
+    # An allowance nobody uses is an open door left over from a deleted test,
+    # so a stale entry fails as loudly as an over-budget one. Together these
+    # pin each fixture to the exact number of raw statements it was reviewed
+    # for: the door cannot widen, and it cannot be left ajar.
+    unused = sorted(set(DAMAGE_FIXTURES) - set(used_allowances))
+    check("every damage-fixture allowance is still needed", not unused,
+          str(unused))
+    for relpath, count in sorted(used_allowances.items()):
+        check(f"{os.path.basename(relpath)} uses its full reviewed allowance",
+              count == DAMAGE_FIXTURES[relpath],
+              f"{count} statement(s), allowance {DAMAGE_FIXTURES[relpath]}")
     # A prefilter bug that matched nothing would leave this at roughly the size
     # of the package alone and every violation would go unseen.
     check("the prefilter still handed a real body of files to the parser",

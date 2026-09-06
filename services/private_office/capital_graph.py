@@ -318,10 +318,16 @@ def project_conflict(conflict: dict) -> dict:
         "fact_type": str(conflict.get("fact_type") or ""),
         "reason": str(conflict.get("reason") or ""),
         "competing": competing,
-        # Hard-coded, mirroring ``contradictions.detect_conflicts``. There is no
-        # code path in this package that sets it false, and this module must not
-        # become the first one.
-        "unresolved": True,
+        # Carried through from the detector rather than asserted. This was
+        # hard-coded true while ``detect_conflicts`` had no way to say
+        # otherwise; now that a member can settle a conflict, restating it here
+        # would re-open a decision they already made — on a projection screen,
+        # with no way to tell it had been overridden.
+        #
+        # Absent reads as unresolved, which is the conservative direction: a
+        # conflict whose state this module cannot determine is one to put in
+        # front of the member, not one to quietly drop.
+        "unresolved": bool(conflict.get("unresolved", True)),
     }
 
 

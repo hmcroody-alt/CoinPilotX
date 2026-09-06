@@ -55,7 +55,9 @@ from services import db as _db
 from services.private_office import facts as _facts
 from services.private_office import feature_matrix as _fm
 from services.private_office import model as _model
+from services.private_office import read_model as _read_model
 from services.private_office import retrieval as _retrieval
+from services.private_office import review as _review
 from services.private_office import schema as _schema
 from services.private_office import status as _status
 from services.private_office import telemetry as _telemetry
@@ -169,6 +171,14 @@ def _substrate_section(cur, *, schema_usable: bool, include_counts: bool) -> dic
             "node_types": len(_model.NODE_TYPES),
             "relation_types": len(_model.RELATION_TYPES),
             "provenance_types": len(_model.PROVENANCE_TYPES),
+            # Reported separately from provenance rather than summed into it,
+            # because the whole point of the verification axis is that it is a
+            # second question. A single "vocabulary size" covering both would
+            # make the health surface unable to show the difference between the
+            # two columns existing and one of them having absorbed the other.
+            "verification_states": len(_model.VERIFICATION_STATES),
+            "review_reasons": len(_model.REVIEW_REASONS),
+            "resolution_outcomes": len(_model.RESOLUTION_OUTCOMES),
         },
     }
 
@@ -195,6 +205,70 @@ def _retrieval_section() -> dict:
         },
         "isolated_domains": sorted(_retrieval.ISOLATED_DOMAINS),
         "denial_reasons": sorted(_telemetry.DENIAL_VOCAB),
+    }
+
+
+def _review_section() -> dict:
+    """What the review queue would rank, and how far it would look.
+
+    Answered from code for the same reason the retrieval section is: reporting
+    on a real queue would mean picking an owner, and this surface does not get
+    to pick one. Counting anybody's outstanding review items here would also
+    put a number derived from one member's private store into an operational
+    endpoint, which is the disclosure the whole package is arranged to prevent.
+
+    The bounds are published so an N+1 can be reasoned about from outside,
+    matching the existing rule for ``max_subject_batch``. The weights are
+    published because the ordering is the product: if the queue ever ranks
+    something surprisingly, the first question is what it was ranked by, and
+    that has to be answerable without reading the source.
+    """
+    return {
+        "implementation": IMPL_LIVE,
+        "reasons": list(_model.REVIEW_REASONS),
+        "weights": dict(_model.REVIEW_WEIGHT),
+        "bounds": {
+            "max_items": _review.MAX_REVIEW_ITEMS,
+            "max_scan": _review.MAX_REVIEW_SCAN,
+            "max_refs": _review.MAX_REVIEW_REFS,
+            "validity_ending_days": _review.VALIDITY_ENDING_DAYS,
+        },
+    }
+
+
+def _read_model_section() -> dict:
+    """The ceilings every read screen is clamped to, and nothing about anybody.
+
+    Answered from code, like the two sections above, and for the same reason:
+    reporting real numbers would mean picking an owner.
+
+    Publishing the bounds is the point. Every function in the read model
+    truncates, and a truncation the caller cannot anticipate reads downstream as
+    a smaller store rather than a shorter answer. A client that knows
+    ``max_page`` is 100 can tell "your last page" from "the ceiling bit"; one
+    that has to infer the ceiling by watching pages come back short will
+    eventually infer it wrong.
+
+    ``overview_scan`` is the one an operator should look at first. It is the
+    only bound in the package that limits a *computed* aggregate — the
+    verification and staleness counts are derived per row in memory, so beyond
+    this many facts the overview reports on a sample and says so via
+    ``observed.complete``. The exact counts beside them are unaffected.
+    """
+    return {
+        "implementation": IMPL_LIVE,
+        "bounds": {
+            "overview_scan": _read_model.MAX_OVERVIEW_SCAN,
+            "max_page": _read_model.MAX_PAGE,
+            "default_page": _read_model.DEFAULT_PAGE,
+            "max_timeline": _read_model.MAX_TIMELINE,
+            "max_sources": _read_model.MAX_SOURCES,
+            "max_source_links": _read_model.MAX_SOURCE_LINKS,
+            "max_expiring": _read_model.MAX_EXPIRING,
+            "default_expiring_days": _read_model.DEFAULT_EXPIRING_DAYS,
+            "max_expiring_days": _read_model.MAX_EXPIRING_DAYS,
+            "max_conflict_groups": _read_model.MAX_CONFLICT_GROUPS,
+        },
     }
 
 
@@ -296,6 +370,8 @@ def private_office_health(
         "schema": schema_section,
         "substrate": substrate,
         "retrieval": _retrieval_section(),
+        "review": _review_section(),
+        "read_model": _read_model_section(),
         "telemetry": telemetry_section,
         # The feature census, so a reader can see at a glance how much of the
         # Private Office is actually built versus entitled. `status` owns this;

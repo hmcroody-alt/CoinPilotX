@@ -52,6 +52,57 @@ KINDS: dict[str, tuple[str, str]] = {
 #: turn the resolver into an amplification vector.
 MAX_REFS = 20
 
+#: Kinds whose table carries a lifecycle column, so that a plain
+#: ``WHERE id=? AND owner_user_id=?`` can match a row the member has retired or
+#: destroyed. Ten of the twelve: everything ``records.py`` builds gets the
+#: shared lifecycle column, the graph and fact tables have their own, and
+#: documents has a private one. Listed by hand and cross-checked against the
+#: live schema by a test, because a set like this is worth nothing once stale.
+LIFECYCLE_AWARE_KINDS: frozenset[str] = frozenset({
+    "fact", "node", "edge", "document",
+    "obligation", "event", "decision", "request", "risk", "opportunity",
+})
+
+LIFECYCLE_COLUMN = "lifecycle_state"
+
+#: States meaning *the source is no longer there*, as opposed to merely retired
+#: or replaced. Deliberately narrow, and it is the narrowness that carries the
+#: meaning:
+#:
+#: * ``ARCHIVED`` — the row and its content still exist; the member moved it out
+#:   of the way. Treating that as vanished would strip support from every fact
+#:   it backs the moment somebody tidied up.
+#: * ``SUPERSEDED`` — a later revision replaced it. The original still exists and
+#:   is precisely what a historical citation *should* resolve to; a fact
+#:   verified against revision 1 was not verified against revision 2.
+#: * ``DELETED`` — different in kind. ``documents.delete_document`` destroys the
+#:   stored bytes and keeps only a tombstone, so the citation cannot be honoured.
+LIFECYCLE_GONE: frozenset[str] = frozenset({"DELETED"})
+
+
+def _is_live(cur, table: str, row_id: int, owner: int) -> bool:
+    """Is this row more than a tombstone?
+
+    Probed separately from the existence query, and *tolerant* on failure. A
+    deployment whose table predates the lifecycle column would make a combined
+    SELECT raise, and the surrounding handler reads a raise as "does not
+    exist" — which would silently mark every citation on that deployment
+    unavailable at once. A missing column is an unanswerable question, not a
+    negative answer, so it leaves the existence verdict alone.
+    """
+    try:
+        cur.execute(
+            f"SELECT {LIFECYCLE_COLUMN} FROM {table} WHERE id=? AND owner_user_id=?",
+            (row_id, owner),
+        )
+        row = cur.fetchone()
+    except Exception:
+        return True
+    if row is None:
+        return False
+    value = row[LIFECYCLE_COLUMN] if isinstance(row, dict) else row[0]
+    return str(value or "").strip().upper() not in LIFECYCLE_GONE
+
 _REF_PATTERN = re.compile(r"^([a-z_]{1,32}):([1-9][0-9]{0,17})$")
 
 
@@ -138,6 +189,14 @@ def resolve_refs(cur, owner_user_id: int, refs: object) -> list[dict[str, Any]]:
     deployment) also reads as ``exists=False``: the citation is unverifiable
     here and now, and this resolver reports what it can prove, not what was
     probably meant.
+
+    A row that survives only as a tombstone does not count as existing. The
+    tables in :data:`LIFECYCLE_AWARE_KINDS` soft-delete: ``delete_document``
+    destroys the stored bytes and leaves the row behind on purpose, so that a
+    fact citing it keeps a readable trail. That is the right call for the
+    trail and the wrong answer for *availability* — without the lifecycle
+    predicate below, a document the member deleted still resolves, still reads
+    AVAILABLE, and still counts as support underneath a Verified badge.
     """
     owner = int(owner_user_id or 0)
     resolved: list[dict[str, Any]] = []
@@ -158,6 +217,10 @@ def resolve_refs(cur, owner_user_id: int, refs: object) -> list[dict[str, Any]]:
                     label = str(value or "")[:80]
             except Exception:
                 exists, label = False, ""
+            if exists and kind in LIFECYCLE_AWARE_KINDS:
+                exists = _is_live(cur, table, row_id, owner)
+                if not exists:
+                    label = ""
         resolved.append(
             {"ref": ref, "kind": kind, "id": row_id, "exists": exists, "label": label}
         )
