@@ -2875,6 +2875,89 @@ def _private_feature_read_executor(capability_id: str) -> Callable[[int, dict[st
     return _read_feature
 
 
+def private_capital_portfolio(user_id: int, arguments: dict[str, Any]) -> ToolResult:
+    """The Capital Graph read. Shape is ``_private_records_executor``'s.
+
+    The gate runs on the capability's own feature id (``capital_graph``) so
+    this read refuses exactly when the member's own Capital Graph screen
+    refuses, and the second lock fails closed. The service hook adds no
+    authorization of its own — the projection's owner gate is the one gate —
+    and its totals honesty crosses the boundary untouched: a null total with
+    named unpriced symbols is the answer, never a guessed number.
+    """
+    started = time.perf_counter()
+    from services.private_office import undx_capital_spec as capital_spec
+    capability_id = capital_spec.CAPABILITY_ID
+    tool = capital_spec.tool_name(capability_id)
+    db, access, facts, office, schema, tiers = _private_office()
+
+    owner = int(user_id or 0)
+    if owner <= 0:
+        return _fail(tool, capability_id, "authentication_required",
+                     "UNDX needs you signed in to read your Private Office.",
+                     started=started)
+
+    try:
+        resolved = tiers.resolve_tier(owner)
+    except Exception:  # noqa: BLE001 - a resolver fault is not a denial
+        resolved = {}
+    decision = access.decide(resolved, capital_spec.FEATURE_ID)
+    verdict = decision["decision"]
+
+    if verdict == access.UNAVAILABLE:
+        return _fail(tool, capability_id, "entitlement_unavailable",
+                     "UNDX could not confirm your Private Office access just now.",
+                     retryable=True, started=started)
+    if verdict in (access.NOT_IMPLEMENTED, access.FEATURE_DISABLED):
+        return _fail(tool, capability_id, "capability_not_available",
+                     "That part of the Private Office is not available yet.",
+                     started=started)
+    if verdict == access.NOT_ENTITLED:
+        return _fail(tool, capability_id, "not_entitled",
+                     "Your plan does not include the Private Office.",
+                     started=started)
+
+    connection = db.connect()
+    try:
+        cursor = connection.cursor()
+        schema.ensure_private_schema(cursor)
+
+        from services.private_office import security as office_security
+        if not office_security.request_is_unlocked(cursor, owner).get("ok"):
+            return _office_locked_result(tool, capability_id, started)
+
+        result = capital_spec.execute(cursor, owner_user_id=owner)
+        # The projection's audit and outbox sweep must survive the read.
+        connection.commit()
+    except Exception:  # noqa: BLE001
+        return _fail(tool, capability_id, "private_store_unavailable",
+                     "UNDX could not read your Private Office just now.",
+                     retryable=True, started=started)
+    finally:
+        connection.close()
+
+    if not result.get("ok"):
+        return _fail(tool, capability_id, "records_denied",
+                     "UNDX could not read your portfolio just now.",
+                     started=started)
+
+    return ToolResult(
+        ok=True,
+        tool_name=tool,
+        capability_id=capability_id,
+        records=list(result.get("records") or []),
+        data={
+            "count": int(result.get("counts", {}).get("returned") or 0),
+            # The honesty blocks ride along unrenamed: totals carries the
+            # null-when-incomplete contract, prices confesses its freshness.
+            "totals": result.get("totals") or {},
+            "prices": result.get("prices") or {},
+            "sync": result.get("sync") or {},
+        },
+        latency_ms=_timed(started),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Resolution
 # ---------------------------------------------------------------------------
@@ -3016,6 +3099,18 @@ def _register_private_record_executors() -> None:
 
 
 _register_private_record_executors()
+
+
+# The Capital Graph read, registered under its derived name so the registry
+# entry and this table cannot spell it differently.
+def _register_private_capital_executor() -> None:
+    from services.private_office import undx_capital_spec as _po_capital
+
+    EXECUTORS[_po_capital.executor_name(_po_capital.CAPABILITY_ID)] = (
+        private_capital_portfolio)
+
+
+_register_private_capital_executor()
 
 
 # The five feature reads, bound from their spec module for the same reason.
