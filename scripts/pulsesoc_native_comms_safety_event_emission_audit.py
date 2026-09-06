@@ -35,9 +35,8 @@ def import_bot_with_temp_db():
     os.environ["TELEGRAM_BOT_TOKEN"] = ""
     os.environ["SKIP_TELEGRAM"] = "1"
     os.environ["BREVO_EMAIL_ENABLED"] = "false"
-    os.environ["LIVEKIT_URL"] = "wss://livekit.audit.invalid"
-    os.environ["LIVEKIT_API_KEY"] = "audit_key"
-    os.environ["LIVEKIT_API_SECRET"] = "audit_secret"
+    os.environ["AGORA_APP_ID"] = "auditagoraappid"
+    os.environ["AGORA_APP_CERTIFICATE"] = "auditagoracertificate"
     bot = importlib.import_module("bot")
     if hasattr(bot, "push_service"):
         bot.push_service._async_push_enabled = lambda: False
@@ -117,7 +116,9 @@ def run_message_safety_flow(bot, failures: list[str]) -> tuple[int, int]:
     require(send_response.status_code < 400 and send_data.get("ok") is True, f"message send failed: {send_response.status_code} {send_data}", failures)
     message_id = int(send_data.get("message_id") or 0)
     require(message_id > 0, "message send did not return message_id", failures)
-    require_event(sync_events(client, recipient_id, failures), "message_received", failures)
+    # Since 78530b9b each message produces exactly ONE recipient notification
+    # (type "message"); a separate message_received row would double-deliver.
+    require_event(sync_events(client, recipient_id, failures), "message", failures)
 
     set_session(client, recipient_id)
     seen_response = client.post(f"/api/pulse/messages/{conversation_id}/seen", json={})
@@ -140,7 +141,13 @@ def run_message_safety_flow(bot, failures: list[str]) -> tuple[int, int]:
     require(block_response.status_code < 400, f"user block failed: {block_response.status_code} {block_response.get_json(silent=True)}", failures)
     sender_events = sync_events(client, sender_id, failures)
     require_event(sender_events, "user_blocked", failures)
-    require_event(sender_events, "report_submitted", failures)
+    # Blocking must NOT auto-file a report: a block is a visibility preference,
+    # not an accusation (see /api/pulse/block route comment in bot.py).
+    require(
+        not [event for event in sender_events if event.get("event_type") == "report_submitted"],
+        "block auto-filed report_submitted; blocks must not open moderation reports",
+        failures,
+    )
 
     generic_report = client.post("/api/pulse/report", json={"target_type": "user", "target_id": third_id, "reason": "audit generic report"})
     require(generic_report.status_code < 400, f"generic report failed: {generic_report.status_code} {generic_report.get_json(silent=True)}", failures)
@@ -199,14 +206,14 @@ def run_call_flow(bot, caller_id: int, callee_id: int, failures: list[str]) -> N
         conn.close()
     require_event(sync_events(client, callee_id, failures), "call_missed", failures)
 
-    original_token = calls._generate_livekit_token
-    calls._generate_livekit_token = lambda *args, **kwargs: {"ok": False, "status": "token_failed", "message": "audit token failure"}
+    original_token = calls._generate_agora_token
+    calls._generate_agora_token = lambda *args, **kwargs: {"ok": False, "status": "token_failed", "message": "audit token failure"}
     try:
         failed_conversation_id = seed_comm_v2_conversation(bot, caller_id, callee_id)
         failed = calls.start_call(caller_id, {"conversation_id": failed_conversation_id, "call_type": "audio"})
         require(failed.get("ok") is False, f"call failure fixture should fail token generation: {failed}", failures)
     finally:
-        calls._generate_livekit_token = original_token
+        calls._generate_agora_token = original_token
     require_event(sync_events(client, caller_id, failures), "call_failed", failures)
 
 
@@ -219,7 +226,6 @@ def main() -> int:
 
     for token in [
         "def pulse_emit_comms_safety_event",
-        "message_received",
         "message_seen",
         "message_deleted",
         "message_reported",
