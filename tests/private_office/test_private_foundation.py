@@ -153,10 +153,15 @@ def stage_ref_resolution() -> None:
     missing = evidence.resolve_refs(cur, USER_A, ["fact:999999"])
     check("another member's row resolves exists=False", other and other[0]["exists"] is False)
     check("a missing row resolves exists=False", missing and missing[0]["exists"] is False)
+    # Every field except the two the caller supplied. Comparing only `exists`
+    # would let a field added later -- `lifecycle`, `availability` -- become the
+    # existence oracle that `exists` was closed against.
+    _oracle = ("exists", "label", "lifecycle", "availability",
+               "resolvable", "may_verify")
     check("cross-owner and missing are indistinguishable (no existence oracle)",
           other and missing and
-          {k: other[0][k] for k in ("exists", "label")} ==
-          {k: missing[0][k] for k in ("exists", "label")})
+          {k: other[0][k] for k in _oracle} ==
+          {k: missing[0][k] for k in _oracle})
 
     check("owner 0 resolves nothing",
           all(not e["exists"] for e in evidence.resolve_refs(cur, 0, [ref])))
@@ -166,6 +171,13 @@ def stage_ref_resolution() -> None:
     ghost = evidence.resolve_refs(cur, USER_A, ["briefing:1"])
     check("a kind whose table is absent resolves exists=False, never raises",
           ghost and ghost[0]["exists"] is False, str(ghost))
+    # ...and says so as UNKNOWN rather than NOT_FOUND: the resolver could not
+    # look, and "there is no such row" is a conclusion it never reached.
+    check("an unprobeable kind is UNKNOWN, not a claimed absence",
+          ghost and ghost[0]["availability"] == evidence.AVAILABILITY_UNKNOWN,
+          str(ghost))
+    check("an unprobeable citation cannot establish verification",
+          ghost and ghost[0]["may_verify"] is False, str(ghost))
 
     conn.close()
 
