@@ -1,10 +1,18 @@
 /**
  * "Discussed in N conversations" — the reverse of a Private Office link.
  *
- * One component rather than a block copied into the documents, records, facts
- * and meetings screens. Four copies would be four chances for one of them to
- * render "not discussed anywhere" over a failed read, and the whole point of
- * this affordance is that the empty state is trustworthy.
+ * One component rather than a block copied into each host screen. Every copy
+ * would be another chance for one of them to render "not discussed anywhere"
+ * over a failed read, and the whole point of this affordance is that the empty
+ * state is trustworthy.
+ *
+ * Wired today into the documents screen only, which is the one Office surface
+ * with a per-object detail region to host it. Facts and meetings render flat
+ * rows with nowhere to put this yet, and there is no records screen at all;
+ * giving them one is a disclosure-design change, not a wiring change, so it is
+ * deliberately not smuggled in here. `linkType` is the full union rather than
+ * `"DOCUMENT"` because the server answers for every kind already — the gap is
+ * in the hosts, not in this component or the route beneath it.
  *
  * It owns no data of its own: it asks `listConversationsForTarget`, which is
  * the server's intersection of the link rows with the member's visible threads,
