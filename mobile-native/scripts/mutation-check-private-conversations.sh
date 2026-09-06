@@ -11,11 +11,20 @@ cd "$(dirname "$0")/.." || exit 1
 
 CLIENT=src/api/privateConversations.ts
 SCREEN=src/screens/PrivateConversationsScreen.tsx
+# Not a file this mission wrote, but one it depends on for a security property:
+# the conversation list is only account-safe because the gate wrapped around it
+# calls `reconcileOfficeOwner`. Mutant 10 lives here for that reason.
+LOCK=src/privateOffice/officeLock.ts
 SUITES="src/api/__tests__/privateConversations.test.ts src/screens/__tests__/PrivateConversationsScreen.test.tsx"
 
 cp "$CLIENT" /tmp/mut_client.bak
 cp "$SCREEN" /tmp/mut_screen.bak
-restore() { cp /tmp/mut_client.bak "$CLIENT"; cp /tmp/mut_screen.bak "$SCREEN"; }
+cp "$LOCK" /tmp/mut_lock.bak
+restore() {
+  cp /tmp/mut_client.bak "$CLIENT"
+  cp /tmp/mut_screen.bak "$SCREEN"
+  cp /tmp/mut_lock.bak "$LOCK"
+}
 trap restore EXIT
 
 pass=0
@@ -30,7 +39,9 @@ fail=0
 run() {
   local name="$1"
   local out
-  if cmp -s "$CLIENT" /tmp/mut_client.bak && cmp -s "$SCREEN" /tmp/mut_screen.bak; then
+  if cmp -s "$CLIENT" /tmp/mut_client.bak &&
+     cmp -s "$SCREEN" /tmp/mut_screen.bak &&
+     cmp -s "$LOCK" /tmp/mut_lock.bak; then
     echo "  HARNESS ERROR    — $name   <<< mutation did not apply, result meaningless"
     fail=$((fail+1))
     return
@@ -98,6 +109,13 @@ run "scope change leaves the previous scope's rows on screen"
 # 9. A 423 no longer relocks the office.
 perl -0pi -e 's/    if \(next\.state === "LOCKED"\) lockOfficeLocally\(\);/    \/* mutant: no relock *\//' "$SCREEN"
 run "a 423 read does not relock the office"
+
+# 10. Stage 107: the account-switch boundary stops firing, so a grant minted by
+#     one member stays live for whoever signs in next. The screen itself has no
+#     defence against this and should not grow one — the assertion under test is
+#     that it is wrapped in the gate that does.
+perl -0pi -e 's/(export function reconcileOfficeOwner\(currentUserId: number\) \{\n)/$1  return;\n/' "$LOCK"
+run "an account switch does not relock the previous member's office"
 
 echo
 echo "killed=$pass survived=$fail"
