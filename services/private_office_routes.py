@@ -844,6 +844,8 @@ _RECORD_BODY_FIELDS: tuple[str, ...] = (
     "category", "priority", "confidentiality",
     "risk_type", "severity", "coverage_state", "review_required",
     "opportunity_type",
+    "task_type", "project_ref",
+    "project_type",
 )
 
 

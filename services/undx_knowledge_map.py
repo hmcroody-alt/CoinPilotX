@@ -2833,6 +2833,40 @@ def _register_private_record_map_entries() -> None:
 _register_private_record_map_entries()
 
 
+# The Capital Graph portfolio projection. One handwritten record because it is
+# one capability with its own output shape and its own honesty contract.
+_live(
+    "private.capital.portfolio",
+    product_area="Private Office", resource_type="private_portfolio",
+    native_screen="CapitalGraph",
+    backend_route="GET /api/private-office/capital-graph",
+    domain_service="services.private_office.portfolio_projection",
+    domain_operation="portfolio_view",
+    authorization_scope=_SELF, owner_field="owner_user_id",
+    output_schema=(("symbol", "str"), ("name", "str"), ("quantity", "float"),
+                   ("lot_count", "int"), ("cost_basis", "float"),
+                   ("price", "float"), ("value", "float"),
+                   ("pnl_value", "float"), ("priced", "bool"),
+                   ("change_24h", "float"), ("projected_at", "str"),
+                   ("evidence", "dict")),
+    feature_flag="UNDX_AGENT_READS_ENABLED",
+    evidence=("services/private_office/portfolio_projection.py portfolio_view",
+              "services/private_office/undx_capital_spec.py execute",
+              "services/undx_agent_tools.py private_capital_portfolio",
+              "tests/private_office/test_capital_undx_capability.py"),
+    known_limitations=(
+        "An incomplete set refuses to total: totals.value is null whenever "
+        "any holding lacks a live quote, with the unpriced symbols named, and "
+        "an unpriced holding carries null — never zero — for price, value and "
+        "an unknowable cost basis.",
+        "This read reports what the member holds and what named sources say "
+        "it is worth. It gives no advice and no execution: nothing here "
+        "ranks, recommends, buys, sells or forecasts, and nothing ever will "
+        "through this capability.",
+    ),
+)
+
+
 # The five shipped feature reads. Derived from the spec module in a loop for
 # the same construction-not-review reason; only the output schema is stated
 # here, because each engine projects a different shape. ``native_screen`` is
