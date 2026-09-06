@@ -224,7 +224,9 @@
       "privateBriefings": "Briefings privés",
       "privateShield": "Bouclier privé",
       "privateConcierge": "Conciergerie humaine",
-      "privateMeetings": "Réunions Privées"
+      "privateMeetings": "Réunions Privées",
+      "privateConversations": "Conversations privées",
+      "privateConversationInfo": "Détails de la conversation"
     },
     "navSubtitles": {
       "missionControl": "Centre de pilotage",

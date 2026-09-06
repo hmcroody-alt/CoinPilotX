@@ -224,7 +224,9 @@
       "privateBriefings": "निजी ब्रीफ़िंग",
       "privateShield": "निजी शील्ड",
       "privateConcierge": "मानव कंसीयज",
-      "privateMeetings": "निजी मीटिंग"
+      "privateMeetings": "निजी मीटिंग",
+      "privateConversations": "निजी बातचीत",
+      "privateConversationInfo": "बातचीत का विवरण"
     },
     "navSubtitles": {
       "missionControl": "मिशन कंट्रोल",

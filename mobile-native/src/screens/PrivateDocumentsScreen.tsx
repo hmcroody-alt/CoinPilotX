@@ -43,6 +43,7 @@ import {
   FeatureLoadingPanel,
   FeatureRefusalPanel
 } from "../privateOffice/FeatureStatePanels";
+import { LinkedConversations } from "../privateOffice/LinkedConversations";
 import { PrivateOfficeLockGate } from "../privateOffice/PrivateOfficeLockGate";
 import { lockOfficeLocally } from "../privateOffice/officeLock";
 import { colors } from "../theme/colors";
@@ -67,7 +68,7 @@ export function PrivateDocumentsScreen(props: Props) {
   );
 }
 
-function PrivateDocumentsBody(_props: Props) {
+function PrivateDocumentsBody({ navigation }: Props) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const [result, setResult] = useState<PrivateDocumentsResult | null>(null);
@@ -80,6 +81,16 @@ function PrivateDocumentsBody(_props: Props) {
     if (next.state === "LOCKED") lockOfficeLocally();
     setResult(next);
   }, []);
+
+  // A linked conversation opens in `Chat`, the canonical thread screen. The
+  // Office does not get a reader of its own: a second place to read a thread
+  // would be a second place for read state, delivery and membership to drift.
+  const openConversation = useCallback(
+    (conversationId: number) => {
+      navigation.navigate("Chat", { conversationId });
+    },
+    [navigation]
+  );
 
   useEffect(() => {
     load();
@@ -191,6 +202,7 @@ function PrivateDocumentsBody(_props: Props) {
                 setOpenDocumentId(openDocumentId === document.id ? 0 : document.id)
               }
               onChanged={load}
+              onOpenConversation={openConversation}
             />
           ))
         : null}
@@ -218,12 +230,14 @@ function DocumentRow({
   document,
   open,
   onToggle,
-  onChanged
+  onChanged,
+  onOpenConversation
 }: {
   document: PrivateDocument;
   open: boolean;
   onToggle: () => void;
   onChanged: () => Promise<void>;
+  onOpenConversation: (conversationId: number) => void;
 }) {
   const { t } = useTranslation();
   return (
@@ -253,7 +267,13 @@ function DocumentRow({
           })}
         </Text>
       </Pressable>
-      {open ? <DocumentDetail documentId={document.id} onChanged={onChanged} /> : null}
+      {open ? (
+        <DocumentDetail
+          documentId={document.id}
+          onChanged={onChanged}
+          onOpenConversation={onOpenConversation}
+        />
+      ) : null}
     </View>
   );
 }
@@ -265,10 +285,12 @@ function DocumentRow({
  */
 function DocumentDetail({
   documentId,
-  onChanged
+  onChanged,
+  onOpenConversation
 }: {
   documentId: number;
   onChanged: () => Promise<void>;
+  onOpenConversation: (conversationId: number) => void;
 }) {
   const { t } = useTranslation();
   const [claims, setClaims] = useState<PrivateClaim[] | null>(null);
@@ -378,6 +400,17 @@ function DocumentDetail({
           )}
         </View>
       ))}
+      {/*
+        Its own read, with its own three states. Deliberately not folded into
+        the claims fetch above: a failed extraction says nothing about where
+        the document was discussed, and one panel answering for both would let
+        a failure on either side print a false empty on the other.
+      */}
+      <LinkedConversations
+        linkType="DOCUMENT"
+        targetId={documentId}
+        onOpenConversation={onOpenConversation}
+      />
     </View>
   );
 }

@@ -72,6 +72,7 @@ const COPY_KEYS: Readonly<Record<string, string>> = {
   private_shield: "privateShield",
   "private_shield.breach_monitoring": "breachMonitoring",
   "private_office.document.extraction": "documentIntelligence",
+  "private_office.conversations": "privateConversations",
   private_meetings: "privateMeetings",
   human_concierge: "humanConcierge"
 };
@@ -89,6 +90,7 @@ const DESTINATIONS: Readonly<Record<string, keyof RootStackParamList>> = {
   "private_office.operations": "PrivateOperations",
   capital_graph: "CapitalGraph",
   "private_office.document.extraction": "PrivateDocuments",
+  "private_office.conversations": "PrivateConversations",
   relationship_intelligence: "PrivatePeople",
   private_briefings: "PrivateBriefings",
   private_shield: "PrivateShield",
@@ -105,6 +107,7 @@ const ICONS: Readonly<Record<string, keyof typeof Ionicons.glyphMap>> = {
   private_shield: "shield-outline",
   "private_shield.breach_monitoring": "eye-outline",
   "private_office.document.extraction": "scan-outline",
+  "private_office.conversations": "chatbubbles-outline",
   private_meetings: "videocam-outline",
   human_concierge: "person-circle-outline"
 };

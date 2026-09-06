@@ -4333,6 +4333,10 @@
         "privateMeetings": {
           "label": "Réunions Privées",
           "hint": "Réunions sécurisées avec salle d'attente et contrôles de l'hôte."
+        },
+        "privateConversations": {
+          "label": "Conversations privées",
+          "hint": "Fils du bureau, classés et reliés à votre travail."
         }
       },
       "entry": {
@@ -5064,6 +5068,7 @@
         "start": "Démarrer",
         "cancel": "Annuler",
         "untitled": "Réunion",
+        "details": "Détails de {{title}}",
         "liveNow": "En direct",
         "durationMinutes_one": "{{count}} minute",
         "durationMinutes_other": "{{count}} minutes",
@@ -5179,6 +5184,82 @@
             "feature_disabled": "Les réunions ont été désactivées pendant que vous étiez connecté.",
             "generic": "La réunion est terminée."
           }
+        }
+      },
+      "conversations": {
+        "title": "Conversations privées",
+        "subtitle": "Fils du bureau, classés et reliés au travail auquel ils appartiennent.",
+        "unread": "Non lu",
+        "archived": "Archivée",
+        "filters": {
+          "all": "Toutes"
+        },
+        "scopes": {
+          "DIRECT": "Directe",
+          "GROUP": "Groupe",
+          "ORGANIZATION_ROOM": "Salle d’organisation",
+          "PROJECT_ROOM": "Salle de projet"
+        },
+        "empty": {
+          "title": "Aucune conversation privée pour l’instant",
+          "body": "Les fils classés comme conversations du bureau apparaissent ici avec leur portée et leurs liens."
+        },
+        "create": {
+          "open": "Nouvelle conversation",
+          "failed": "Impossible de créer la conversation",
+          "boundScopeNote": "Les salles d’organisation et de projet se créent depuis le nœud d’organisation ou le projet auquel elles appartiennent."
+        },
+        "sensitivity": {
+          "title": "Sensibilité",
+          "note": "Définit le traitement de ce fil et avec qui il peut être partagé. Cela ne change pas la façon dont les messages sont transmis.",
+          "failed": "Impossible de changer la sensibilité",
+          "unknownLabel": "Sensibilité enregistrée",
+          "PUBLIC": "Publique",
+          "INTERNAL": "Interne",
+          "CONFIDENTIAL": "Confidentielle",
+          "HIGHLY_SENSITIVE": "Très sensible",
+          "RESTRICTED": "Restreinte"
+        },
+        "links": {
+          "title": "Liens",
+          "note": "Un lien est une référence. En retirer un ne supprime ni le document, ni la fiche, ni le fait, ni la réunion visés.",
+          "empty": "Rien n’est encore lié à cette conversation.",
+          "remove": "Retirer le lien",
+          "failed": "Impossible de modifier les liens"
+        },
+        "linkTypes": {
+          "DOCUMENT": "Document",
+          "RECORD": "Fiche",
+          "FACT": "Fait",
+          "MEETING": "Réunion",
+          "ORGANIZATION_NODE": "Organisation",
+          "PROJECT": "Projet"
+        },
+        "security": {
+          "title": "Sécurité",
+          "notEncrypted": "Les messages sont protégés en transit et par le contrôle d’accès du serveur. Ils ne sont pas chiffrés de bout en bout : le serveur peut donc les lire.",
+          "encrypted": "Les messages de cette conversation sont chiffrés de bout en bout.",
+          "ledger": "Stockage des messages",
+          "rtc": "Appels"
+        },
+        "info": {
+          "title": "Détails de la conversation",
+          "subtitle": "Le classement bureau de ce fil. Les messages vivent dans la conversation ordinaire.",
+          "open": "Détails de la conversation",
+          "openThread": "Ouvrir la conversation",
+          "classification": "Classement",
+          "scope": "Portée",
+          "archivedYes": "Oui",
+          "notFound": {
+            "title": "Pas une conversation du bureau",
+            "body": "Ce fil n’a aucun classement Bureau privé. Il reste disponible dans Messages."
+          }
+        },
+        "untitled": "Conversation sans titre",
+        "linked": {
+          "title": "ABORDÉ DANS",
+          "unavailable": "Nous n'avons pas pu vérifier les conversations liées.",
+          "none": "Aucune conversation dont vous faites partie n'y fait référence."
         }
       }
     },

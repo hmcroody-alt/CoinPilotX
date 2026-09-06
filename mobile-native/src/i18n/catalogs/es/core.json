@@ -224,7 +224,9 @@
       "privateBriefings": "Informes privados",
       "privateShield": "Escudo privado",
       "privateConcierge": "Conserjería humana",
-      "privateMeetings": "Reuniones Privadas"
+      "privateMeetings": "Reuniones Privadas",
+      "privateConversations": "Conversaciones privadas",
+      "privateConversationInfo": "Detalles de la conversación"
     },
     "navSubtitles": {
       "missionControl": "Centro de mando",

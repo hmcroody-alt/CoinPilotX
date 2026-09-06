@@ -4333,6 +4333,10 @@
         "privateMeetings": {
           "label": "Reuniones Privadas",
           "hint": "Reuniones seguras con sala de espera y controles de anfitrión."
+        },
+        "privateConversations": {
+          "label": "Conversaciones privadas",
+          "hint": "Hilos de la oficina, clasificados y vinculados a tu trabajo."
         }
       },
       "entry": {
@@ -5064,6 +5068,7 @@
         "start": "Iniciar",
         "cancel": "Cancelar",
         "untitled": "Reunión",
+        "details": "Detalles de {{title}}",
         "liveNow": "En vivo ahora",
         "durationMinutes_one": "{{count}} minuto",
         "durationMinutes_other": "{{count}} minutos",
@@ -5179,6 +5184,82 @@
             "feature_disabled": "Las reuniones se desactivaron mientras estabas conectado.",
             "generic": "La reunión ha terminado."
           }
+        }
+      },
+      "conversations": {
+        "title": "Conversaciones privadas",
+        "subtitle": "Hilos de la oficina, clasificados y vinculados al trabajo al que pertenecen.",
+        "unread": "Sin leer",
+        "archived": "Archivada",
+        "filters": {
+          "all": "Todas"
+        },
+        "scopes": {
+          "DIRECT": "Directa",
+          "GROUP": "Grupo",
+          "ORGANIZATION_ROOM": "Sala de organización",
+          "PROJECT_ROOM": "Sala de proyecto"
+        },
+        "empty": {
+          "title": "Aún no hay conversaciones privadas",
+          "body": "Los hilos clasificados como conversaciones de la oficina aparecen aquí con su ámbito y sus vínculos."
+        },
+        "create": {
+          "open": "Nueva conversación",
+          "failed": "No se pudo crear la conversación",
+          "boundScopeNote": "Las salas de organización y de proyecto se crean desde el nodo de organización o el proyecto al que pertenecen."
+        },
+        "sensitivity": {
+          "title": "Sensibilidad",
+          "note": "Define cómo se trata este hilo y con quién puede compartirse. No cambia cómo se transmiten los mensajes.",
+          "failed": "No se pudo cambiar la sensibilidad",
+          "unknownLabel": "Sensibilidad guardada",
+          "PUBLIC": "Pública",
+          "INTERNAL": "Interna",
+          "CONFIDENTIAL": "Confidencial",
+          "HIGHLY_SENSITIVE": "Muy sensible",
+          "RESTRICTED": "Restringida"
+        },
+        "links": {
+          "title": "Vinculado",
+          "note": "Un vínculo es una referencia. Quitarlo no elimina el documento, el registro, el dato ni la reunión a la que apunta.",
+          "empty": "Todavía no hay nada vinculado a esta conversación.",
+          "remove": "Quitar vínculo",
+          "failed": "No se pudieron cambiar los vínculos"
+        },
+        "linkTypes": {
+          "DOCUMENT": "Documento",
+          "RECORD": "Registro",
+          "FACT": "Dato",
+          "MEETING": "Reunión",
+          "ORGANIZATION_NODE": "Organización",
+          "PROJECT": "Proyecto"
+        },
+        "security": {
+          "title": "Seguridad",
+          "notEncrypted": "Los mensajes están protegidos en tránsito y por el control de acceso del servidor. No tienen cifrado de extremo a extremo, por lo que el servidor puede leerlos.",
+          "encrypted": "Los mensajes de esta conversación tienen cifrado de extremo a extremo.",
+          "ledger": "Almacén de mensajes",
+          "rtc": "Llamadas"
+        },
+        "info": {
+          "title": "Detalles de la conversación",
+          "subtitle": "La clasificación de oficina de este hilo. Los mensajes viven en la conversación normal.",
+          "open": "Detalles de la conversación",
+          "openThread": "Abrir conversación",
+          "classification": "Clasificación",
+          "scope": "Ámbito",
+          "archivedYes": "Sí",
+          "notFound": {
+            "title": "No es una conversación de la oficina",
+            "body": "Este hilo no tiene clasificación de Oficina privada. Sigue disponible en Mensajes."
+          }
+        },
+        "untitled": "Conversación sin título",
+        "linked": {
+          "title": "SE HABLA DE ESTO EN",
+          "unavailable": "No pudimos comprobar si hay conversaciones vinculadas.",
+          "none": "No se menciona en ninguna conversación de la que formes parte."
         }
       }
     },

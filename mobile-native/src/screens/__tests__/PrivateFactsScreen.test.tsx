@@ -45,6 +45,18 @@ const mockGetFacts = jest.fn();
 const mockOfficeStatus = jest.fn();
 const mockUnlockOffice = jest.fn();
 
+// The provenance sheet now hosts `LinkedConversations`, which reads the
+// reverse-link route directly. The transport is stubbed rather than the panel,
+// so the real client, the real parser and the real refusal translator all stay
+// in the path — a stubbed panel would leave a suite proving that a hand-built
+// result object renders, which nobody doubted.
+const mockPulseApi = jest.fn();
+
+jest.mock("../../api/pulseApi", () => ({
+  ...jest.requireActual("../../api/pulseApi"),
+  pulseApi: (...args: unknown[]) => mockPulseApi(...args)
+}));
+
 // Only the network reads are replaced. `parseFact` is the real one — it is the
 // contract under test, and a stubbed parser would leave a suite that proves the
 // stub agrees with itself.
@@ -80,6 +92,7 @@ jest.mock("../../session/sessionStore", () => ({
   })
 }));
 
+import { PulseApiError } from "../../api/pulseApi";
 import { parseFact } from "../../api/privateOffice";
 import {
   __resetOfficeLockForTests,
@@ -165,6 +178,10 @@ beforeEach(() => {
   // Every case starts locked: the in-memory grant does not survive a test.
   __resetOfficeLockForTests();
   mockGetFacts.mockResolvedValue(ready([rawFact()]));
+  // Default: the reverse lookup answers honestly with nothing. Cases that care
+  // override it. Without a default every sheet-opening test would exercise the
+  // refusal path by accident.
+  mockPulseApi.mockResolvedValue({ ok: true, count: 0, conversations: [], capabilities: {} });
   mockOfficeStatus.mockResolvedValue({
     state: "READY",
     passcodeSet: true,
@@ -363,5 +380,77 @@ describe("PrivateFactsScreen", () => {
     );
     const { getByText } = await renderScreen();
     await waitFor(() => getByText("COUNTERSIGNED"));
+  });
+});
+
+/**
+ * "Where was this fact discussed" — hosted in the provenance sheet.
+ *
+ * The sheet is the screen's only per-fact detail region, so it is where the
+ * reverse-link panel belongs. These cases pin the wiring, not the panel: the
+ * panel's own three-state behaviour is proven in
+ * `src/privateOffice/__tests__/LinkedConversations.test.tsx`. What can only be
+ * checked here is that the sheet asks about *this* fact, under the FACT link
+ * type, and that opening a thread from inside a modal leaves the modal closed.
+ */
+describe("PrivateFactsScreen — linked conversations", () => {
+  const EMPTY_LINE = "premium:privateOffice.conversations.linked.none";
+  const UNAVAILABLE_LINE = "premium:privateOffice.conversations.linked.unavailable";
+
+  /** Open the sheet for the single fact the default fixture renders. */
+  async function openWhySheet() {
+    const utils = await renderScreen();
+    await waitFor(() => utils.getByText("Miami, FL"));
+    fireEvent.press(utils.getByText("premium:privateOffice.facts.why"));
+    return utils;
+  }
+
+  it("asks the reverse-link route about this fact, under the FACT link type", async () => {
+    mockGetFacts.mockResolvedValue(ready([rawFact({ id: 8831 })]));
+    await openWhySheet();
+
+    await waitFor(() => expect(mockPulseApi).toHaveBeenCalled());
+    const [path] = mockPulseApi.mock.calls[0];
+    // The fact's own id, not the provenance `source_id` — that is a pointer
+    // into private storage and is deliberately never sent anywhere.
+    expect(String(path)).toContain("/links/FACT/8831");
+    expect(String(path)).not.toContain("vault-object-8831");
+  });
+
+  it("does not print the empty line when the reverse lookup was refused", async () => {
+    mockPulseApi.mockRejectedValue(
+      new PulseApiError("failed", 503, undefined, { ok: false, state: "unavailable" })
+    );
+    const { getByText, queryByText } = await openWhySheet();
+
+    await waitFor(() => getByText(UNAVAILABLE_LINE));
+    // A failed read says nothing about whether this fact was discussed.
+    expect(queryByText(EMPTY_LINE)).toBeNull();
+  });
+
+  it("says nothing was found only when the server genuinely returned none", async () => {
+    const { getByText, queryByText } = await openWhySheet();
+
+    await waitFor(() => getByText(EMPTY_LINE));
+    expect(queryByText(UNAVAILABLE_LINE)).toBeNull();
+  });
+
+  it("opens the canonical thread and dismisses the sheet behind it", async () => {
+    mockPulseApi.mockResolvedValue({
+      ok: true,
+      count: 1,
+      conversations: [{ id: 77, conversation_id: 77, title: "Residency review" }],
+      capabilities: {}
+    });
+    const { getByText, queryByText, navigation } = await openWhySheet();
+
+    await waitFor(() => getByText("Residency review"));
+    fireEvent.press(getByText("Residency review"));
+
+    // Chat, not an Office-side reader: one place to read a thread.
+    expect(navigation.navigate).toHaveBeenCalledWith("Chat", { conversationId: 77 });
+    // And the sheet is gone, rather than left sitting over the thread the
+    // member just asked to read.
+    await waitFor(() => expect(queryByText("Residency review")).toBeNull());
   });
 });

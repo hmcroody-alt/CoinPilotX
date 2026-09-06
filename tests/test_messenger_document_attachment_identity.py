@@ -260,6 +260,65 @@ class DocumentAttachmentIdentity(unittest.TestCase):
                     call()
                 self.assertEqual(caught.exception.status_code, 403, name)
 
+    def test_the_two_write_paths_refuse_on_membership_and_not_merely_ownership(self):
+        """The write paths must refuse a non-member *because* of membership.
+
+        ``upload_file`` and ``attach_to_message`` run two checks inside one
+        call: conversation membership, and then "are you the sender". A
+        stranger fails the second one, so the stranger-based subtests above
+        cannot distinguish "membership was checked" from "ownership happened
+        to catch it" -- a mutation that makes the membership check always pass
+        survives both of them, which is exactly what was observed.
+
+        The discriminating caller owns the attachment and owns the message but
+        is not in the conversation. Ownership has nothing left to say, so a
+        refusal here can only have come from membership, and its error code is
+        asserted rather than just its status.
+        """
+        # A message that genuinely belongs to the stranger, so the late
+        # message-ownership check cannot stand in for the membership check
+        # either.
+        self.cur.execute(
+            "INSERT INTO comm_v2_messages (id, conversation_id, sender_user_id) VALUES (?, ?, ?)",
+            (5154, CONVERSATION_ID, STRANGER),
+        )
+
+        # upload_file: a pending attachment the stranger owns.
+        pending, _ = self._init_pdf()
+        pending_id = int(pending["attachment_id"])
+        self.cur.execute(
+            "UPDATE message_attachments SET sender_id=? WHERE id=?", (STRANGER, pending_id))
+        self.conn.commit()
+
+        with self.assertRaises(foundation.MessengerMediaError) as caught:
+            self._upload(pending_id, user_id=STRANGER)
+        self.assertEqual(caught.exception.error, "not_conversation_member")
+        self.assertEqual(caught.exception.status_code, 403)
+
+        # attach_to_message: an uploaded attachment the stranger owns, bound to
+        # a message the stranger sent.
+        uploaded, _ = self._init_pdf()
+        uploaded_id = int(uploaded["attachment_id"])
+        self._upload(uploaded_id)
+        self.cur.execute(
+            "UPDATE message_attachments SET sender_id=? WHERE id=?", (STRANGER, uploaded_id))
+        self.conn.commit()
+
+        with self.assertRaises(foundation.MessengerMediaError) as caught:
+            foundation.attach_to_message(
+                self.cur, self.conn, {"user_id": STRANGER},
+                {"message_id": 5154, "attachments": [uploaded_id]})
+        self.assertEqual(caught.exception.error, "not_conversation_member")
+        self.assertEqual(caught.exception.status_code, 403)
+
+        # And the refusal was real: the row is untouched.
+        self.cur.execute(
+            "SELECT message_id, upload_status FROM message_attachments WHERE id=?",
+            (uploaded_id,))
+        row = self.cur.fetchone()
+        self.assertEqual(int(row["message_id"] or 0), 0)
+        self.assertEqual(row["upload_status"], "uploaded")
+
     def test_a_participant_who_is_not_the_sender_cannot_mutate_the_upload(self):
         """Reading is a membership question; writing is an ownership question."""
         created, _ = self._init_pdf()

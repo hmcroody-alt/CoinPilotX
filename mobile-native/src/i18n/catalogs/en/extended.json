@@ -4333,6 +4333,10 @@
         "operations": {
           "label": "Operations",
           "hint": "Obligations, decisions, requests, risks and opportunities you track."
+        },
+        "privateConversations": {
+          "label": "Private Conversations",
+          "hint": "Office threads, classified and linked to your work."
         }
       },
       "entry": {
@@ -4977,6 +4981,7 @@
         "start": "Start",
         "cancel": "Cancel",
         "untitled": "Meeting",
+        "details": "Details for {{title}}",
         "liveNow": "Live now",
         "durationMinutes_one": "{{count}} minute",
         "durationMinutes_other": "{{count}} minutes",
@@ -5179,6 +5184,82 @@
           "you": "You",
           "placeholder": "Write a message…",
           "send": "Send"
+        }
+      },
+      "conversations": {
+        "title": "Private Conversations",
+        "subtitle": "Office threads, classified and linked to the work they belong to.",
+        "unread": "Unread",
+        "archived": "Archived",
+        "filters": {
+          "all": "All"
+        },
+        "scopes": {
+          "DIRECT": "Direct",
+          "GROUP": "Group",
+          "ORGANIZATION_ROOM": "Organization room",
+          "PROJECT_ROOM": "Project room"
+        },
+        "empty": {
+          "title": "No private conversations yet",
+          "body": "Threads classified as Office conversations appear here with their scope and their links."
+        },
+        "create": {
+          "open": "New conversation",
+          "failed": "Could not create the conversation",
+          "boundScopeNote": "Organization and project rooms are created from the organization node or the project they belong to."
+        },
+        "sensitivity": {
+          "title": "Sensitivity",
+          "note": "Sets how this thread is handled and who it may be shared with. It does not change how messages are transmitted.",
+          "failed": "Could not change the sensitivity",
+          "unknownLabel": "Stored sensitivity",
+          "PUBLIC": "Public",
+          "INTERNAL": "Internal",
+          "CONFIDENTIAL": "Confidential",
+          "HIGHLY_SENSITIVE": "Highly sensitive",
+          "RESTRICTED": "Restricted"
+        },
+        "links": {
+          "title": "Linked",
+          "note": "A link is a reference. Removing one does not delete the document, record, fact or meeting it points to.",
+          "empty": "Nothing is linked to this conversation yet.",
+          "remove": "Remove link",
+          "failed": "Could not change the links"
+        },
+        "linkTypes": {
+          "DOCUMENT": "Document",
+          "RECORD": "Record",
+          "FACT": "Fact",
+          "MEETING": "Meeting",
+          "ORGANIZATION_NODE": "Organization",
+          "PROJECT": "Project"
+        },
+        "security": {
+          "title": "Security",
+          "notEncrypted": "Messages are protected in transit and by access control on the server. They are not end-to-end encrypted, so the server can read them.",
+          "encrypted": "Messages in this conversation are end-to-end encrypted.",
+          "ledger": "Message store",
+          "rtc": "Calls"
+        },
+        "info": {
+          "title": "Conversation details",
+          "subtitle": "The Office classification of this thread. The messages live in the ordinary conversation.",
+          "open": "Conversation details",
+          "openThread": "Open conversation",
+          "classification": "Classification",
+          "scope": "Scope",
+          "archivedYes": "Yes",
+          "notFound": {
+            "title": "Not an Office conversation",
+            "body": "This thread has no Private Office classification. It is still available in Messenger."
+          }
+        },
+        "untitled": "Untitled conversation",
+        "linked": {
+          "title": "DISCUSSED IN",
+          "unavailable": "We could not check this for linked conversations.",
+          "none": "Not referenced in any conversation you are part of."
         }
       }
     },

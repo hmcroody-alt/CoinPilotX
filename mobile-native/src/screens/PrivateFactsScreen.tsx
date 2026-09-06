@@ -60,6 +60,7 @@ import {
 import { useTranslation } from "../i18n";
 import { BOTTOM_NAV_CONTENT_CLEARANCE } from "../navigation/BottomNavVisibility";
 import { RootStackParamList } from "../navigation/types";
+import { LinkedConversations } from "../privateOffice/LinkedConversations";
 import { PrivateOfficeLockGate } from "../privateOffice/PrivateOfficeLockGate";
 import { lockOfficeLocally } from "../privateOffice/officeLock";
 import { colors } from "../theme/colors";
@@ -120,7 +121,7 @@ export function PrivateFactsScreen(props: Props) {
   );
 }
 
-function PrivateFactsBody({ route }: Props) {
+function PrivateFactsBody({ navigation, route }: Props) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const [state, setState] = useState<ScreenState>("LOADING");
@@ -177,6 +178,19 @@ function PrivateFactsBody({ route }: Props) {
     setComposing(false);
     setWriteError("");
   }, []);
+
+  /**
+   * Dismiss the sheet before navigating. A modal left mounted over the pushed
+   * Chat screen would sit on top of the thread the member just asked to read,
+   * which reads as the app having ignored the tap.
+   */
+  const openConversation = useCallback(
+    (conversationId: number) => {
+      setInspecting(null);
+      navigation.navigate("Chat", { conversationId });
+    },
+    [navigation]
+  );
 
   const save = useCallback(async () => {
     // The token spelling the server validates as-written: the form label is
@@ -518,6 +532,19 @@ function PrivateFactsBody({ route }: Props) {
                     {t("premium:privateOffice.facts.hasDocument")}
                   </Text>
                 ) : null}
+                {/*
+                  Where this fact was discussed, on its own read with its own
+                  three states. Provenance answers "why do we believe this";
+                  this answers "who has talked about it", and the two must not
+                  share a fetch — a provenance failure says nothing about the
+                  conversations, and one panel answering for both would let a
+                  failure on either side print a false empty on the other.
+                */}
+                <LinkedConversations
+                  linkType="FACT"
+                  targetId={inspecting.id}
+                  onOpenConversation={openConversation}
+                />
               </View>
             ) : null}
             <Pressable

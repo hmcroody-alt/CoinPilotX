@@ -511,6 +511,16 @@ export type RootStackParamList = {
   PrivateConcierge: { title?: string } | undefined;
   PrivateMeetings: { title?: string } | undefined;
   PrivateMeetingRoom: { ref?: string; title?: string } | undefined;
+  // Private Conversations. `scope` is a *filter* the list may open pre-applied,
+  // not an authority: the server decides which threads exist for this member
+  // and an unrecognized value falls back to "all" rather than to an empty list.
+  //
+  // There is no thread route here on purpose. An Office conversation is a
+  // canonical conversation, so it opens in `Chat` — the one thread screen. Info
+  // is the only genuinely new surface, and takes the same conversation id the
+  // canonical ledger uses.
+  PrivateConversations: { scope?: string; title?: string } | undefined;
+  PrivateConversationInfo: { conversationId: number; title?: string };
   AccountCenter: { section?: "account" | "security" | "privacy" | "devices"; title?: string } | undefined;
   AccountSettings: { title?: string } | undefined;
   AccountSecurity: { title?: string } | undefined;

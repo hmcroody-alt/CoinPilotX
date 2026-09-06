@@ -4301,6 +4301,10 @@
         "privateMeetings": {
           "label": "私人会议",
           "hint": "带等候室和主持人控制的安全会议。"
+        },
+        "privateConversations": {
+          "label": "私密对话",
+          "hint": "已分类并关联到你工作的办公对话。"
         }
       },
       "entry": {
@@ -5032,6 +5036,7 @@
         "start": "开始",
         "cancel": "取消",
         "untitled": "会议",
+        "details": "{{title}} 的详细信息",
         "liveNow": "正在进行",
         "durationMinutes_one": "{{count}} 分钟",
         "durationMinutes_other": "{{count}} 分钟",
@@ -5147,6 +5152,82 @@
             "feature_disabled": "在您连接期间会议功能被关闭。",
             "generic": "会议已结束。"
           }
+        }
+      },
+      "conversations": {
+        "title": "私密对话",
+        "subtitle": "已分类并关联到相关工作的办公对话。",
+        "unread": "未读",
+        "archived": "已归档",
+        "filters": {
+          "all": "全部"
+        },
+        "scopes": {
+          "DIRECT": "单聊",
+          "GROUP": "群组",
+          "ORGANIZATION_ROOM": "组织房间",
+          "PROJECT_ROOM": "项目房间"
+        },
+        "empty": {
+          "title": "还没有私密对话",
+          "body": "被归类为办公对话的会话会连同其范围和关联项显示在这里。"
+        },
+        "create": {
+          "open": "新建对话",
+          "failed": "无法创建对话",
+          "boundScopeNote": "组织房间和项目房间需从其所属的组织节点或项目中创建。"
+        },
+        "sensitivity": {
+          "title": "敏感级别",
+          "note": "决定该对话的处理方式以及可以共享给谁。不会改变消息的传输方式。",
+          "failed": "无法修改敏感级别",
+          "unknownLabel": "已保存的敏感级别",
+          "PUBLIC": "公开",
+          "INTERNAL": "内部",
+          "CONFIDENTIAL": "机密",
+          "HIGHLY_SENSITIVE": "高度机密",
+          "RESTRICTED": "受限"
+        },
+        "links": {
+          "title": "关联项",
+          "note": "关联只是引用。移除关联不会删除它所指向的文档、记录、事实或会议。",
+          "empty": "此对话还没有任何关联项。",
+          "remove": "移除关联",
+          "failed": "无法修改关联项"
+        },
+        "linkTypes": {
+          "DOCUMENT": "文档",
+          "RECORD": "记录",
+          "FACT": "事实",
+          "MEETING": "会议",
+          "ORGANIZATION_NODE": "组织",
+          "PROJECT": "项目"
+        },
+        "security": {
+          "title": "安全",
+          "notEncrypted": "消息在传输过程中以及通过服务器上的访问控制受到保护。它们并非端到端加密，因此服务器可以读取。",
+          "encrypted": "此对话中的消息经过端到端加密。",
+          "ledger": "消息存储",
+          "rtc": "通话"
+        },
+        "info": {
+          "title": "对话详情",
+          "subtitle": "该会话的办公分类。消息本身仍在普通对话中。",
+          "open": "对话详情",
+          "openThread": "打开对话",
+          "classification": "分类",
+          "scope": "范围",
+          "archivedYes": "是",
+          "notFound": {
+            "title": "不是办公对话",
+            "body": "该会话没有私密办公分类，但在消息中仍然可用。"
+          }
+        },
+        "untitled": "未命名会话",
+        "linked": {
+          "title": "在以下会话中讨论",
+          "unavailable": "无法查询关联的会话。",
+          "none": "你参与的会话中都没有提到它。"
         }
       }
     },

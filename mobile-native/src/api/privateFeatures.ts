@@ -91,6 +91,18 @@ function sentList(body: Record<string, unknown>, key: string): unknown[] | null 
  */
 const UNREADABLE: PrivateFeatureRefusal = { state: "ERROR", message: "" };
 
+/**
+ * Translate a thrown API error into the tagged refusal the server intended.
+ *
+ * Exported so the Private Conversations client shares this one translation
+ * rather than copying it. Two copies drift the moment the server adds a state,
+ * and the screen reading the stale copy renders a generic "something went
+ * wrong" for a refusal the product has a precise word for.
+ */
+export function privateFeatureRefusal(error: unknown): PrivateFeatureRefusal {
+  return refusal(error);
+}
+
 function refusal(error: unknown): PrivateFeatureRefusal {
   if (!(error instanceof PulseApiError)) return { state: "ERROR", message: "" };
   const details = asRecordObject(error.details);

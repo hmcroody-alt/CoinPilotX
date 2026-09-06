@@ -39,6 +39,7 @@ import {
   FeatureRefusalPanel,
   FeatureRefusalState
 } from "../privateOffice/FeatureStatePanels";
+import { LinkedConversations } from "../privateOffice/LinkedConversations";
 import { PrivateOfficeLockGate } from "../privateOffice/PrivateOfficeLockGate";
 import { lockOfficeLocally } from "../privateOffice/officeLock";
 import {
@@ -136,6 +137,11 @@ function PrivateMeetingsBody({ navigation }: Props) {
   const [scheduleTitle, setScheduleTitle] = useState("");
   const [schedulePreset, setSchedulePreset] = useState<"in15m" | "in1h" | "tomorrowMorning">("in1h");
   const [scheduleDuration, setScheduleDuration] = useState(30);
+  // The `public_id` of the row whose detail is open, or "" for none. One at a
+  // time: each open row is a live read, and three buckets' worth of
+  // simultaneous reverse lookups is a lot of requests for an affordance the
+  // member asked about one meeting at a time.
+  const [expanded, setExpanded] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -172,6 +178,18 @@ function PrivateMeetingsBody({ navigation }: Props) {
   const openRoom = useCallback(
     (ref: string, title: string) => {
       navigation.navigate("PrivateMeetingRoom", { ref, title });
+    },
+    [navigation]
+  );
+
+  /**
+   * A linked conversation opens in `Chat`, the canonical thread screen — the
+   * same destination the documents and facts panels use. The Office does not
+   * get a reader of its own.
+   */
+  const openConversation = useCallback(
+    (conversationId: number) => {
+      navigation.navigate("Chat", { conversationId });
     },
     [navigation]
   );
@@ -471,6 +489,9 @@ function PrivateMeetingsBody({ navigation }: Props) {
               title={t("premium:privateOffice.meetings.buckets.live")}
               meetings={buckets.live}
               busy={busy}
+              expanded={expanded}
+              onToggle={(id) => setExpanded(expanded === id ? "" : id)}
+              onOpenConversation={openConversation}
               renderActions={(meeting) => (
                 <Pressable
                   style={styles.smallButton}
@@ -496,6 +517,9 @@ function PrivateMeetingsBody({ navigation }: Props) {
               title={t("premium:privateOffice.meetings.buckets.upcoming")}
               meetings={buckets.upcoming}
               busy={busy}
+              expanded={expanded}
+              onToggle={(id) => setExpanded(expanded === id ? "" : id)}
+              onOpenConversation={openConversation}
               renderActions={(meeting) =>
                 meeting.me && MODERATOR_ROLES.has(meeting.me.role) ? (
                   <View style={styles.rowActions}>
@@ -536,6 +560,9 @@ function PrivateMeetingsBody({ navigation }: Props) {
               title={t("premium:privateOffice.meetings.buckets.recent")}
               meetings={buckets.recent}
               busy={busy}
+              expanded={expanded}
+              onToggle={(id) => setExpanded(expanded === id ? "" : id)}
+              onOpenConversation={openConversation}
               renderActions={() => null}
             />
           ) : null}
@@ -555,35 +582,74 @@ function refusalMessage(error: unknown, t: (key: string) => string): string {
   return t("premium:privateOffice.feature.error.body");
 }
 
+/**
+ * A bucket of rows, each of which can disclose its own detail.
+ *
+ * The disclosure exists because this screen had nowhere to host a per-meeting
+ * panel: the rows are flat, and the only other detail surface is the room
+ * itself, which a member cannot open just to find out where a meeting was
+ * discussed. Expanding in place rather than pushing a screen keeps that from
+ * becoming a second meeting-detail surface to keep in sync with the room.
+ */
 function MeetingBucket({
   title,
   meetings,
-  renderActions
+  renderActions,
+  expanded,
+  onToggle,
+  onOpenConversation
 }: {
   title: string;
   meetings: PrivateMeeting[];
   busy: string;
   renderActions: (meeting: PrivateMeeting) => ReactNode;
+  expanded: string;
+  onToggle: (publicId: string) => void;
+  onOpenConversation: (conversationId: number) => void;
 }) {
   const { t } = useTranslation();
   return (
     <View style={styles.card}>
       <Text style={styles.cardTitle}>{title}</Text>
-      {meetings.map((meeting) => (
-        <View key={meeting.public_id} style={styles.meetingRow}>
-          <View style={styles.meetingInfo}>
-            <Text style={styles.meetingTitle} numberOfLines={1}>
-              {meeting.title || t("premium:privateOffice.meetings.untitled")}
-            </Text>
-            <Text style={styles.meetingHint} numberOfLines={1}>
-              {meeting.status === "LIVE"
-                ? t("premium:privateOffice.meetings.liveNow")
-                : whenLabel(meeting.scheduled_start_at || meeting.ended_at || meeting.started_at)}
-            </Text>
+      {meetings.map((meeting) => {
+        const isOpen = expanded === meeting.public_id;
+        return (
+          <View key={meeting.public_id} style={styles.meetingBlock}>
+            <View style={styles.meetingRow}>
+              <Pressable
+                style={styles.meetingInfo}
+                onPress={() => onToggle(meeting.public_id)}
+                accessibilityRole="button"
+                accessibilityState={{ expanded: isOpen }}
+                accessibilityLabel={t("premium:privateOffice.meetings.details", {
+                  title: meeting.title || t("premium:privateOffice.meetings.untitled")
+                })}
+              >
+                <Text style={styles.meetingTitle} numberOfLines={1}>
+                  {meeting.title || t("premium:privateOffice.meetings.untitled")}
+                </Text>
+                <Text style={styles.meetingHint} numberOfLines={1}>
+                  {meeting.status === "LIVE"
+                    ? t("premium:privateOffice.meetings.liveNow")
+                    : whenLabel(
+                        meeting.scheduled_start_at || meeting.ended_at || meeting.started_at
+                      )}
+                </Text>
+              </Pressable>
+              {renderActions(meeting)}
+            </View>
+            {isOpen ? (
+              <View style={styles.meetingDetail}>
+                <LinkedConversations
+                  linkType="MEETING"
+                  targetId={meeting.public_id}
+                  onOpenConversation={onOpenConversation}
+                />
+              </View>
+            ) : null}
           </View>
-          {renderActions(meeting)}
-        </View>
-      ))}
+        );
+      })}
     </View>
   );
 }
@@ -661,7 +727,14 @@ const styles = StyleSheet.create({
   chipActive: { borderColor: colors.accent },
   chipText: { color: colors.muted, fontSize: 12, fontWeight: "600" },
   chipTextActive: { color: colors.accentStrong },
+  meetingBlock: { gap: 2 },
   meetingRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  meetingDetail: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    marginTop: 6,
+    paddingTop: 4
+  },
   meetingInfo: { flex: 1, gap: 2 },
   meetingTitle: { color: colors.text, fontSize: 14, fontWeight: "600" },
   meetingHint: { color: colors.muted, fontSize: 12 },

@@ -678,5 +678,176 @@ def test_no_livekit_anywhere_on_this_surface():
     assert "livekit" not in source
 
 
+# ---------------------------------------------------------------------------
+# The reverse direction: which threads reference this object
+# ---------------------------------------------------------------------------
+
+def _link_target(client, target_id="42", link_type=None):
+    """Create an owner/guest thread and link it to one object."""
+    created = (_create_direct(client).get_json() or {})
+    conversation_id = int(created["conversation_id"])
+    _as(OWNER)
+    resp = client.post(
+        f"{BASE}/{conversation_id}/links",
+        json={
+            "link_type": link_type or convo.LINK_DOCUMENT,
+            "target_id": target_id,
+        },
+    )
+    assert resp.status_code == 200, resp.get_json()
+    return conversation_id
+
+
+def test_reverse_lookup_finds_the_thread_that_references_the_object(client):
+    conversation_id = _link_target(client, "42")
+
+    _as(OWNER)
+    resp = client.get(f"{BASE}/links/{convo.LINK_DOCUMENT}/42")
+    body = resp.get_json() or {}
+    assert resp.status_code == 200, body
+    assert body["count"] == 1
+    found = [int(row.get("id") or row.get("conversation_id") or 0)
+             for row in body["conversations"]]
+    assert found == [conversation_id]
+
+
+def test_reverse_lookup_narrows_to_the_linked_thread_not_the_whole_office(client):
+    """The member's *other* threads are not an answer to "who discussed this".
+
+    The stranger case below proves the intersection is bounded by membership.
+    It cannot prove the intersection is bounded by the *link*, because a
+    stranger has no Office threads for a broken predicate to over-report. So
+    this case gives the owner a second, unlinked thread: with the narrowing
+    removed, the route hands back both and tells the member that a document
+    they never mentioned is under discussion in a thread that never mentions
+    it.
+
+    Written after a mutation run: replacing the ``keep`` predicate with
+    ``return True`` survived the suite as it stood, which meant the outer
+    membership check was carrying an assertion the link check was supposed to
+    own.
+    """
+    linked_id = _link_target(client, "42")
+    # A different peer, because the canonical service returns the *existing*
+    # direct thread for a pair rather than opening a second one — asking for
+    # OWNER↔GUEST again would hand back the thread we just linked, and the test
+    # would be comparing a conversation with itself.
+    unlinked = (_create_direct(client, other_user_id=STRANGER).get_json() or {})
+    unlinked_id = int(unlinked["conversation_id"])
+    assert unlinked_id != linked_id
+
+    _as(OWNER)
+    resp = client.get(f"{BASE}/links/{convo.LINK_DOCUMENT}/42")
+    body = resp.get_json() or {}
+    assert resp.status_code == 200, body
+    found = [int(row.get("id") or row.get("conversation_id") or 0)
+             for row in body["conversations"]]
+    assert found == [linked_id]
+    assert unlinked_id not in found
+    assert body["count"] == 1
+
+
+def test_a_stranger_learns_nothing_about_a_document_linked_elsewhere(client):
+    """The leak this route is shaped to prevent.
+
+    ``conversations_for_target`` answers from the link table, which knows that a
+    link exists and nothing about who may know it exists. Returning its rows
+    directly would tell a stranger that document 42 is under discussion — and a
+    count of private threads is itself the disclosure, before any title leaks.
+
+    A stranger is entitled, unlocked, and past the flag. The only thing standing
+    between them and the answer is that they are not a participant, which is
+    exactly the property under test.
+    """
+    _link_target(client, "42")
+
+    _as(STRANGER)
+    resp = client.get(f"{BASE}/links/{convo.LINK_DOCUMENT}/42")
+    body = resp.get_json() or {}
+    assert resp.status_code == 200, body
+    # An honest empty: the object exists and is linked, but not for them.
+    assert body["count"] == 0
+    assert body["conversations"] == []
+
+
+def test_reverse_lookup_does_not_bleed_across_link_types(client):
+    """Document 42 and record 42 are different objects that share a string."""
+    _link_target(client, "42", link_type=convo.LINK_DOCUMENT)
+
+    _as(OWNER)
+    resp = client.get(f"{BASE}/links/{convo.LINK_RECORD}/42")
+    body = resp.get_json() or {}
+    assert resp.status_code == 200, body
+    assert body["count"] == 0
+
+
+def test_reverse_lookup_of_an_unlinked_object_is_an_empty_200(client):
+    _create_direct(client)
+    _as(OWNER)
+    resp = client.get(f"{BASE}/links/{convo.LINK_DOCUMENT}/999")
+    body = resp.get_json() or {}
+    assert resp.status_code == 200, body
+    assert body["count"] == 0
+    assert body["conversations"] == []
+
+
+def test_reverse_lookup_rejects_a_link_type_it_does_not_know(client):
+    _as(OWNER)
+    resp = client.get(f"{BASE}/links/NOT_A_LINK_TYPE/42")
+    assert resp.status_code == 400
+    assert (resp.get_json() or {}).get("ok") is False
+
+
+def test_reverse_lookup_applies_the_target_shape_check(client):
+    """A permissive URL converter must not become a permissive validator.
+
+    ``<path:target_id>`` exists so identifiers containing slashes survive
+    routing. It also means a sentence reaches the handler, and a sentence in a
+    target column is leaked content — so the same ``safe_object_id`` check that
+    guards the write guards the read.
+    """
+    _as(OWNER)
+    resp = client.get(
+        f"{BASE}/links/{convo.LINK_DOCUMENT}/the succession memo for Q3, see page 4"
+    )
+    assert resp.status_code == 400
+    assert (resp.get_json() or {}).get("ok") is False
+
+
+def test_reverse_lookup_is_gated_like_everything_else(client, monkeypatch):
+    """Same gate chain, same order — this route is not a side door."""
+    _stub._test_user = None
+    assert client.get(f"{BASE}/links/{convo.LINK_DOCUMENT}/42").status_code == 401
+
+    _as(NO_TIER)
+    assert client.get(f"{BASE}/links/{convo.LINK_DOCUMENT}/42").status_code == 403
+
+    monkeypatch.delenv("PRIVATE_CONVERSATIONS_ENABLED", raising=False)
+    convo.reset_conversations_schema_cache()
+    _as(OWNER)
+    assert client.get(f"{BASE}/links/{convo.LINK_DOCUMENT}/42").status_code == 404
+
+
+def test_a_failing_reverse_lookup_is_503_and_carries_no_conversations_key(
+    client, monkeypatch
+):
+    """Failure is never emptiness — the same rule as the list route.
+
+    "Not discussed anywhere" is a claim about data. If the read failed, the
+    client must not be handed a shape it can render as that claim.
+    """
+    def _boom(*args, **kwargs):
+        raise RuntimeError("database is on fire")
+
+    monkeypatch.setattr(convo, "list_for_target", _boom)
+    _as(OWNER)
+    resp = client.get(f"{BASE}/links/{convo.LINK_DOCUMENT}/42")
+    body = resp.get_json() or {}
+    assert resp.status_code == 503
+    assert body.get("state") == "unavailable"
+    assert "conversations" not in body
+    assert "count" not in body
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))

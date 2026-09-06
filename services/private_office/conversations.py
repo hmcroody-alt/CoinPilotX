@@ -762,6 +762,46 @@ def create(cur, *, actor_user_id: int, office_scope: str,
     }
 
 
+def _visible_office_threads(cur, *, actor_user_id: int, limit: int,
+                            keep) -> list[dict]:
+    """The member's Office threads, narrowed by ``keep``.
+
+    The single place this package turns "who is this member" into "which threads
+    exist for them". Both callers below go through it, so there is one answer to
+    that question rather than two that drift.
+
+    ``keep(conversation_id, classification_row) -> bool`` may only ever *narrow*
+    the canonical result. That direction is the whole safety argument: the
+    canonical participant check decides membership, and no predicate passed in
+    here can add a thread the member was not already admitted to.
+    """
+    listed = _unwrap(
+        comm_service.list_conversations(int(actor_user_id), {}),
+        default_code="list_failed",
+    )
+    items = list(listed.get("items") or [])
+    ids = [int(item.get("id") or item.get("conversation_id") or 0) for item in items]
+    classified = classifications_for(cur, ids)
+
+    out: list[dict] = []
+    for item in items:
+        conversation_id = int(item.get("id") or item.get("conversation_id") or 0)
+        row = classified.get(conversation_id)
+        if not row:
+            continue
+        if str(row.get("archived_at") or ""):
+            continue
+        if not keep(conversation_id, row):
+            continue
+        enriched = dict(item)
+        enriched["private_office"] = classification_payload(row)
+        enriched["links"] = list_links(cur, conversation_id)
+        out.append(enriched)
+
+    capped = max(1, min(int(limit or DEFAULT_LIST_LIMIT), MAX_LIST_LIMIT))
+    return out[:capped]
+
+
 def list_for_member(cur, *, actor_user_id: int, limit: int = DEFAULT_LIST_LIMIT,
                     office_scope: str = "") -> dict:
     """The member's Private Office threads — a filtered view of canonical rows.
@@ -774,32 +814,14 @@ def list_for_member(cur, *, actor_user_id: int, limit: int = DEFAULT_LIST_LIMIT,
     _require_enabled()
     ensure_conversations_schema(cur)
 
-    listed = _unwrap(
-        comm_service.list_conversations(int(actor_user_id), {}),
-        default_code="list_failed",
-    )
-    items = list(listed.get("items") or [])
-    ids = [int(item.get("id") or item.get("conversation_id") or 0) for item in items]
-    classified = classifications_for(cur, ids)
-
     wanted = _clean_scope(office_scope) if office_scope else ""
-    out: list[dict] = []
-    for item in items:
-        conversation_id = int(item.get("id") or item.get("conversation_id") or 0)
-        row = classified.get(conversation_id)
-        if not row:
-            continue
-        if wanted and str(row.get("office_scope") or "") != wanted:
-            continue
-        if str(row.get("archived_at") or ""):
-            continue
-        enriched = dict(item)
-        enriched["private_office"] = classification_payload(row)
-        enriched["links"] = list_links(cur, conversation_id)
-        out.append(enriched)
 
-    capped = max(1, min(int(limit or DEFAULT_LIST_LIMIT), MAX_LIST_LIMIT))
-    out = out[:capped]
+    def keep(_conversation_id: int, row: dict) -> bool:
+        return not wanted or str(row.get("office_scope") or "") == wanted
+
+    out = _visible_office_threads(
+        cur, actor_user_id=actor_user_id, limit=limit, keep=keep
+    )
 
     audit.record(
         cur,
@@ -808,6 +830,56 @@ def list_for_member(cur, *, actor_user_id: int, limit: int = DEFAULT_LIST_LIMIT,
         action=audit.ACTION_CONVERSATION_READ,
         object_type="CONVERSATION_LIST",
         object_id="LIST",
+        purpose="user_request",
+        result_count=len(out),
+    )
+    return {"items": out, "count": len(out)}
+
+
+def list_for_target(cur, *, actor_user_id: int, link_type: str, target_id: object,
+                    limit: int = DEFAULT_LIST_LIMIT) -> dict:
+    """Which of *this member's* threads reference the given object.
+
+    The reverse of :func:`link`, and what lets a document detail screen say
+    "discussed in two conversations" without the documents package learning
+    anything about messaging.
+
+    :func:`conversations_for_target` on its own is not safe to expose: it reads
+    the link table, which records that a link exists and says nothing about who
+    may know it exists. Answering from it directly would leak the count — and
+    then, on the follow-up read, the title — of threads the member was never in.
+    So the link rows are used to *narrow* the member's own visible set and never
+    to build one. An id the member cannot already see cannot come back from here
+    no matter what the link table says.
+    """
+    _require_enabled()
+    ensure_conversations_schema(cur)
+
+    kind = _clean_link_type(link_type)
+    target = _clean_target_id(target_id)
+    linked = set(conversations_for_target(cur, link_type=kind, target_id=target))
+
+    def keep(conversation_id: int, _row: dict) -> bool:
+        return conversation_id in linked
+
+    # Short-circuit only the canonical round trip, not the audit row: "nothing
+    # is linked here" is a real read of this member's office and is recorded
+    # like one.
+    out = (
+        _visible_office_threads(
+            cur, actor_user_id=actor_user_id, limit=limit, keep=keep
+        )
+        if linked
+        else []
+    )
+
+    audit.record(
+        cur,
+        actor_user_id=int(actor_user_id),
+        owner_user_id=int(actor_user_id),
+        action=audit.ACTION_CONVERSATION_READ,
+        object_type="CONVERSATION_LINK_TARGET",
+        object_id=f"{kind}:{target}",
         purpose="user_request",
         result_count=len(out),
     )
@@ -897,6 +969,6 @@ __all__ = [
     "classification", "classifications_for", "classification_payload",
     "is_private_conversation", "classify", "set_sensitivity",
     "link", "unlink", "list_links", "link_payload", "conversations_for_target",
-    "create", "list_for_member", "require_member_view",
+    "create", "list_for_member", "list_for_target", "require_member_view",
     "capability_states",
 ]

@@ -47,6 +47,8 @@ import { PrivateShieldScreen } from "../screens/PrivateShieldScreen";
 import { PrivateConciergeScreen } from "../screens/PrivateConciergeScreen";
 import { PrivateMeetingsScreen } from "../screens/PrivateMeetingsScreen";
 import { PrivateMeetingRoomScreen } from "../screens/PrivateMeetingRoomScreen";
+import { PrivateConversationsScreen } from "../screens/PrivateConversationsScreen";
+import { PrivateConversationInfoScreen } from "../screens/PrivateConversationInfoScreen";
 import { PortfolioScreen } from "../screens/PortfolioScreen";
 import { WatchlistsScreen } from "../screens/WatchlistsScreen";
 import { ActivityRoute } from "../screens/ActivityRoute";
@@ -633,6 +635,8 @@ export function AppNavigator() {
       <Stack.Screen name="PrivateConcierge" component={PrivateConciergeScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateConcierge") })} />
       <Stack.Screen name="PrivateMeetings" component={PrivateMeetingsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateMeetings") })} />
       <Stack.Screen name="PrivateMeetingRoom" component={PrivateMeetingRoomScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="PrivateConversations" component={PrivateConversationsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateConversations") })} />
+      <Stack.Screen name="PrivateConversationInfo" component={PrivateConversationInfoScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateConversationInfo") })} />
       {/* This is the first-frame title only: AssetDetailScreen calls
           `setOptions` on mount and replaces it with the asset's name, which is a
           proper noun and so is deliberately not routed through the catalog. The
