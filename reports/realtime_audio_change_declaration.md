@@ -2930,6 +2930,30 @@ and is left alone: deleting or rewiring modules in a hard-locked subsystem is no
 in scope for a release mission. Recorded here so it is not mistaken for live
 governance.
 
+### Changed protected files
+
+Every protected path in this commit, by exact path:
+
+- `config/realtime-audio-protected-paths.json` — *audio_governance*. The three
+  manifest edits described above.
+- `tests/protection/test_realtime_audio_architecture.py` — *critical_audio_tests*.
+  Restored `NATIVE_SRC` / `APPROVED_PLATFORM_FILES`; retired the four LiveKit-era
+  `DependencyLockTests`.
+- `mobile-native/src/core/__tests__/realtimeAudioInvariants.test.ts` —
+  *critical_audio_tests*. Five string literals updated from the retired
+  `"v1_legacy"` to `"legacy_fallback"`, completing the rename `a9f7417c` began.
+  No assertion was added, removed, weakened or re-scoped: each one still asserts
+  that the resolver returns the **stable** path for `undefined`, `null`, `{}` and
+  an explicit `false`, and that no `setLiveAudioV2Enabled` setter is exported.
+- `mobile-native/src/core/__tests__/realtimeAudioEngine.test.ts` —
+  *critical_audio_tests*. One call site given the `reactivateSession` callback
+  that replaced the removed `audioSession`/`mode`/`speaker` options, restoring
+  three assertions `a9f7417c` had left unsatisfiable.
+- `mobile-native/src/live/useAgoraLiveBroadcastRoom.ts` —
+  *livestream_audio_adapter*. One string literal in the `initial` state object:
+  `audioPath: "v1_legacy"` → `"legacy_fallback"`. No session, track, publication,
+  route or engine line is touched.
+
 ### Invariants re-verified
 
 - `react-native-agora` pinned `4.6.2`; `expo-av` pinned `~16.0.8` — unchanged.
