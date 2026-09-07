@@ -182,14 +182,20 @@ beforeEach(() => {
   // override it. Without a default every sheet-opening test would exercise the
   // refusal path by accident.
   mockPulseApi.mockResolvedValue({ ok: true, count: 0, conversations: [], capabilities: {} });
-  mockOfficeStatus.mockResolvedValue({
+  // `/security/status` carries the grant header, so the real server answers
+  // `unlocked: true` for a grant it still honours, and `PrivateOfficeLockGate`
+  // trusts that answer over the in-memory token by design. A hardcoded `false`
+  // here is a server that never honours anything: the first mount works because
+  // it unlocks interactively, but every later mount in the same test redraws the
+  // door over a live grant, which is not a state production can reach.
+  mockOfficeStatus.mockImplementation(async () => ({
     state: "READY",
     passcodeSet: true,
     setupRequired: false,
     cooldownSeconds: 0,
     biometricPreference: "unset",
-    unlocked: false
-  });
+    unlocked: isOfficeUnlocked()
+  }));
   // Mirrors the real `unlockOffice`: the server is the only thing that can mint
   // a grant, and a wrong passcode mints nothing.
   mockUnlockOffice.mockImplementation(async (passcode: string, userId: number) => {

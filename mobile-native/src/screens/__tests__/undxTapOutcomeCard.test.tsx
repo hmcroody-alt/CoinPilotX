@@ -90,6 +90,7 @@ jest.mock("../../api/messenger", () => {
 import { ChatScreen } from "../ChatScreen";
 import { PULSE_AI_CONVERSATION_ID } from "../../api/messenger";
 import { PulseApiError } from "../../api/pulseApi";
+import { activateLocale } from "../../i18n/engine";
 
 /** `APPROVAL_STATE_MESSAGE["expired"]`, verbatim. The state a lapsed approval reaches. */
 const EXPIRED_SENTENCE =
@@ -174,6 +175,17 @@ async function raiseKeyboard() {
     keyboardHandlers.keyboardWillShow?.();
   });
 }
+
+/**
+ * The copy below is real catalog text, and catalogs load lazily. `I18nProvider`
+ * awaits that load before rendering children in the app; a bare `render()` in a
+ * test does not. Without this, every key resolves through `humanizeKey` and the
+ * assertions compare against a humanized leaf instead of the sentence the
+ * catalog actually defines.
+ */
+beforeAll(async () => {
+  await activateLocale("en");
+});
 
 describe("a refused press is answered on the card it was made on", () => {
   it("draws the sentence with the keyboard up, which is when the tap happens", async () => {

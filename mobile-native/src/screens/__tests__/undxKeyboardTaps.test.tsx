@@ -75,6 +75,7 @@ jest.mock("../../api/messenger", () => {
 
 import { ChatScreen } from "../ChatScreen";
 import { PULSE_AI_CONVERSATION_ID } from "../../api/messenger";
+import { activateLocale } from "../../i18n/engine";
 
 const METRICS = {
   frame: { x: 0, y: 0, width: 390, height: 844 },
@@ -114,6 +115,17 @@ async function askForAConfirmation() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+});
+
+/**
+ * The copy below is real catalog text, and catalogs load lazily. `I18nProvider`
+ * awaits that load before rendering children in the app; a bare `render()` in a
+ * test does not. Without this, every key resolves through `humanizeKey` and the
+ * assertions compare against a humanized leaf instead of the sentence the
+ * catalog actually defines.
+ */
+beforeAll(async () => {
+  await activateLocale("en");
 });
 
 describe("a card control can be pressed while the keyboard is up", () => {

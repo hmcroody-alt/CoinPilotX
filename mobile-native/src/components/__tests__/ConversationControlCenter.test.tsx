@@ -28,6 +28,7 @@ jest.mock("../PulseCommand", () => ({
 }));
 
 import { ConversationControlCenter } from "../ConversationControlCenter";
+import { activateLocale } from "../../i18n/engine";
 
 const controlData = {
   ok: true,
@@ -56,6 +57,17 @@ function renderCenter() {
     />
   );
 }
+
+/**
+ * The copy below is real catalog text, and catalogs load lazily. `I18nProvider`
+ * awaits that load before rendering children in the app; a bare `render()` in a
+ * test does not. Without this, every key resolves through `humanizeKey` and the
+ * assertions compare against a humanized leaf instead of the sentence the
+ * catalog actually defines.
+ */
+beforeAll(async () => {
+  await activateLocale("en");
+});
 
 describe("ConversationControlCenter", () => {
   it("loads server-authorized data and opens member details without a stuck busy state", async () => {
