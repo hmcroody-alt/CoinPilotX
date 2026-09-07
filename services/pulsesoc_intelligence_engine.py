@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 from urllib.parse import urlparse
 from typing import Any
 
+from services import app_links
 from services import db as db_service
 from services import pulsesoc_notification_system
 
@@ -24,10 +25,11 @@ from services import pulsesoc_notification_system
 INTERNAL_CODENAME = "LogiNexus Intelligence Engine"
 PUBLIC_CENTER_NAME = "Pulse Signals"
 ADMIN_CENTER_NAME = "Galaxy Intelligence Center"
-PULSESOC_APP_STORE_URL = os.getenv(
-    "PULSESOC_APP_STORE_URL",
-    "https://apps.apple.com/us/app/pulsesoc/id6777591572",
-).strip()
+# Was a second copy of the listing URL that trusted PULSESOC_APP_STORE_URL
+# verbatim. app_links.app_store_url() is the one authority and rejects an
+# override that is not an apps.apple.com URL, which matters here because these
+# values are handed to members as tappable "Download PulseSoc" actions.
+PULSESOC_APP_STORE_URL = app_links.app_store_url()
 ALLOWED_ACTION_DOMAINS = {"apps.apple.com", "pulsesoc.com"}
 CONFIDENCE_LABELS = [
     (88, "Very High"),

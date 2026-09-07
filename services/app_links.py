@@ -43,6 +43,7 @@ module exists to prevent.
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 from typing import Iterable, Mapping
@@ -61,6 +62,34 @@ CANONICAL_APP_ORIGIN = f"https://{CANONICAL_APP_HOST}"
 
 # Hosts we will accept as "already ours" when re-writing an existing link.
 ALLOWED_APP_LINK_HOSTS = frozenset({CANONICAL_APP_HOST, f"www.{CANONICAL_APP_HOST}"})
+
+
+# --------------------------------------------------------------------------
+# App Store listing
+# --------------------------------------------------------------------------
+
+# The official production listing, and the only place in the codebase that
+# should spell it out. It lived in two unrelated modules before this, one of
+# which took whatever PULSESOC_APP_STORE_URL contained without checking it --
+# a typo'd or hostile Railway variable would have been handed straight to
+# members as a "Download PulseSoc" button.
+APP_STORE_URL_PREFIX = "https://apps.apple.com/"
+APP_STORE_FALLBACK_URL = f"{APP_STORE_URL_PREFIX}us/app/pulsesoc/id6777591572"
+
+
+def app_store_url() -> str:
+    """The App Store destination, from trusted server configuration only.
+
+    Read per call rather than cached at import so a corrected Railway variable
+    takes effect on the next request instead of the next deploy. An override
+    that is not an apps.apple.com URL is ignored, not trusted: this value is
+    used as a redirect target, so accepting arbitrary input here would turn
+    every app-intent link into an open redirect.
+    """
+    configured = (os.environ.get("PULSESOC_APP_STORE_URL") or "").strip()
+    if configured.startswith(APP_STORE_URL_PREFIX):
+        return configured
+    return APP_STORE_FALLBACK_URL
 
 
 # --------------------------------------------------------------------------
