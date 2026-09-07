@@ -15,7 +15,6 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 
 from services import db
-from services.business_os.marketplace import orders
 from services.business_os.payments import webhook_inbox
 
 
@@ -77,6 +76,41 @@ def _text(value, name, limit=200):
     if not isinstance(value, str) or not value or len(value) > limit:
         raise FulfillmentError("invalid_" + name, 400)
     return value
+
+
+def _canonical_order(conn, order_id):
+    """One customer order from the canonical marketplace ledger, or None.
+
+    Joins to ``marketplace_listings`` for ``listing_type`` because
+    ``marketplace_orders`` does not carry one and the physical/digital
+    distinction is a property of the product, not of the sale. Resolved through
+    the same rule the rest of the app uses (``effective_listing_type``) rather
+    than by reading the raw column, so a listing that predates the column and
+    only has ``product_type`` set is classified the same way here as it is on the
+    listing page.
+
+    Returns None for anything unparseable, so an unusable order id refuses
+    identically to an absent one.
+    """
+    from services.marketplace_listing_types import effective_listing_type
+
+    try:
+        resolved = int(str(order_id).strip())
+    except (TypeError, ValueError):
+        return None
+    row = conn.execute(
+        "SELECT o.id, o.seller_user_id, o.listing_id, o.quantity, o.status, "
+        "l.listing_type, l.product_type FROM marketplace_orders o "
+        "JOIN marketplace_listings l ON l.id = o.listing_id WHERE o.id = ?",
+        (resolved,)).fetchone()
+    if row is None:
+        return None
+    item = dict(row)
+    item["status"] = str(item.get("status") or "").strip().lower()
+    item["listing_type"] = effective_listing_type(item.get("listing_type"),
+                                                  item.get("product_type"))
+    item["quantity"] = int(item.get("quantity") or 0)
+    return item
 
 
 def create_intent(*, connection_id, business_id, store_id, actor_user_id, order_id,
@@ -193,13 +227,20 @@ def create_intent(*, connection_id, business_id, store_id, actor_user_id, order_
         merchant = connections._authorize(conn, business_id, store_id, actor_user_id, context=context, write=True)
         current_connection = connections._row(conn, connection_id, business_id, store_id, merchant)
         _validate_binding({**meta, "connection_id": connection_id}, current_connection)
-        canonical = orders.get_order(order_id, conn=conn)
-        if canonical is None or str(canonical.get("seller_user_id")) != str(meta["merchant_id"]):
+        # The customer order is a marketplace_orders row, keyed by listing_id —
+        # the same identity space canonical_product_id now lives in. It used to be
+        # read from business_os_mkt_orders, whose product ids could never match a
+        # listing id, so this check could not have passed once the binding moved.
+        #
+        # This stays firmly the *customer* order. The CJ supplier order is the
+        # intent written below; the two are deliberately separate rows with
+        # separate lifecycles, and nothing here copies a status between them.
+        canonical = _canonical_order(conn, order_id)
+        if canonical is None or str(canonical["seller_user_id"]) != str(meta["merchant_id"]):
             raise FulfillmentError("order_not_found", 404)
-        if canonical.get("status") in {"cancelled", "refunded"} or canonical.get("fulfillment_type") != "physical":
+        if canonical["status"] in {"cancelled", "refunded", "disputed"} or canonical["listing_type"] != "physical":
             raise FulfillmentError("order_not_eligible")
-        canonical_items = {str(row["product_id"]): int(row["quantity"])
-                           for row in orders.get_order_items(order_id, conn=conn)}
+        canonical_items = {str(canonical["listing_id"]): int(canonical["quantity"])}
         if set(canonical_items) != {item["canonical_product_id"] for item in clean_items} or any(canonical_items.get(item["canonical_product_id"]) != item["quantity"] for item in clean_items):
             raise FulfillmentError("order_line_mismatch", 400)
         prior = conn.execute("SELECT * FROM business_os_supplier_intents WHERE connection_id=? "
@@ -364,8 +405,12 @@ def dispatch(intent, adapter, meta, *, now=None):
             return "LINKED"
         # Check canonical cancellation/ownership again after queueing.
         from . import gateway
-        current_order = orders.get_order(intent["order_id"])
-        if not current_order or str(current_order["seller_user_id"]) != str(intent["merchant_id"]) or current_order.get("status") in {"cancelled", "refunded"}:
+        conn = db.connect()
+        try:
+            current_order = _canonical_order(conn, intent["order_id"])
+        finally:
+            conn.close()
+        if not current_order or str(current_order["seller_user_id"]) != str(intent["merchant_id"]) or current_order["status"] in {"cancelled", "refunded", "disputed"}:
             raise FulfillmentError("order_not_eligible")
         shops = adapter.get_shops()
         selected = [s for s in shops if s.get("shop_id") == intent["external_shop_id"] and s.get("status") == 1]

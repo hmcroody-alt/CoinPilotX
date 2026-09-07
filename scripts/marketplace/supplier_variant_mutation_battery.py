@@ -26,6 +26,16 @@ non-additive override list (destroys merchant edits on the second field), and a
 ``None`` supplier source read as "unrestricted" (lets a stray sync overwrite a
 hand-authored product).
 
+The reconciliation group is different in kind. Those mutants do not break a
+distinction inside one module — they put the *two ledgers* back. Each is a
+relapse to the shape this repo had before ``marketplace_listings`` was made the
+single canonical product authority: the CJ gateway reading the empty
+``business_os_mkt_products`` again, a supplier mapping with no listing behind it,
+``supplier_product_links`` reappearing beside ``marketplace_product_sources``, a
+provider sync reaching across into the merchant's retail price. Those live in
+three different modules and are judged by three different suites, because a
+boundary is only defended if the tests on *that* boundary notice.
+
 The count is deliberately not written down in this docstring. A number in prose
 is a fact that stops being true the first time somebody adds a mutation and does
 not notice; the summary line at the end reports the real one.
@@ -59,6 +69,17 @@ SUITE = "tests/marketplace/test_supplier_variants.py"
 
 VARIANTS = "services/marketplace_variants.py"
 SCHEMA = "services/marketplace_supplier_schema.py"
+
+#: The reconciliation mutants are judged by the suites that own the boundary each
+#: one breaks, which is not the supplier-variant suite. A mutant that reaches into
+#: the CJ gateway has to be answered by the CJ gateway's own tests; catching it
+#: with a marketplace unit test would prove the wrong thing.
+GATEWAY_SUITE = "tests/business_os/test_cj_gateway.py"
+FULFILLMENT_SUITE = "tests/business_os/test_cj_fulfillment.py"
+LEDGER_SUITE = "tests/marketplace/test_supplier_ledger_authority.py"
+
+GATEWAY = "services/business_os/suppliers/gateway.py"
+FULFILLMENT = "services/business_os/suppliers/fulfillment.py"
 
 
 #: (name, file, old, new). ``old`` must appear exactly once in the file.
@@ -338,7 +359,10 @@ SCHEMA_MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "the source required-column list is trimmed",
         SCHEMA,
-        "REQUIRED_SOURCE_COLUMNS = (\"listing_id\", \"seller_user_id\", \"provider\",\n                           \"provider_product_id\", \"fulfillment_mode\")",
+        "REQUIRED_SOURCE_COLUMNS = (\"listing_id\", \"seller_user_id\", \"provider\",\n"
+        "                           \"provider_product_id\", \"fulfillment_mode\",\n"
+        "                           \"supplier_connection_id\", \"provider_variant_id\",\n"
+        "                           \"supplier_cost_cents\", \"sync_state\")",
         "REQUIRED_SOURCE_COLUMNS = ()",
     ),
     (
@@ -365,10 +389,94 @@ SCHEMA_MUTATIONS: list[tuple[str, str, str, str]] = [
 ]
 
 
+#: The reconciliation mutants (§18). Each is a *relapse*: the shape the code had
+#: before the two ledgers were reconciled, or the shortcut that would put it back
+#: there. They are the only mutants in this file that span repositories of
+#: responsibility — supplier gateway, fulfillment, canonical mapping — which is
+#: why each carries its own suite as a fifth element.
+RECONCILIATION_MUTATIONS: list[tuple] = [
+    (
+        "the CJ lookup goes back to the legacy business_os product ledger",
+        GATEWAY,
+        "    row = conn.execute(\"SELECT seller_user_id FROM marketplace_listings WHERE id=?\",\n"
+        "                       (listing_id,)).fetchone()",
+        "    row = conn.execute(\"SELECT seller_user_id FROM business_os_mkt_products WHERE product_id=?\",\n"
+        "                       (str(canonical_product_id),)).fetchone()",
+        GATEWAY_SUITE,
+    ),
+    (
+        "a supplier mapping is created without a canonical listing behind it",
+        GATEWAY,
+        "    row = conn.execute(\"SELECT seller_user_id FROM marketplace_listings WHERE id=?\",\n"
+        "                       (listing_id,)).fetchone()\n"
+        "    if row is None or row[\"seller_user_id\"] is None or int(row[\"seller_user_id\"]) != owner_user_id:\n"
+        "        raise SupplierError(\"not_found\", http_status=404)\n"
+        "    return listing_id, owner_user_id",
+        "    return listing_id, owner_user_id",
+        GATEWAY_SUITE,
+    ),
+    (
+        "the listing is found but its owner is taken from the row, not checked",
+        GATEWAY,
+        "    if row is None or row[\"seller_user_id\"] is None or int(row[\"seller_user_id\"]) != owner_user_id:\n"
+        "        raise SupplierError(\"not_found\", http_status=404)\n"
+        "    return listing_id, owner_user_id",
+        "    if row is None or row[\"seller_user_id\"] is None:\n"
+        "        raise SupplierError(\"not_found\", http_status=404)\n"
+        "    return listing_id, int(row[\"seller_user_id\"])",
+        GATEWAY_SUITE,
+    ),
+    (
+        "the second mapping authority is recreated by the supplier DDL",
+        GATEWAY,
+        "            merchant_fields_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'DRAFT',\n"
+        "            created_at DOUBLE PRECISION NOT NULL)\"\"\")",
+        "            merchant_fields_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'DRAFT',\n"
+        "            created_at DOUBLE PRECISION NOT NULL)\"\"\")\n"
+        "        conn.execute(\"\"\"CREATE TABLE IF NOT EXISTS supplier_product_links (\n"
+        "            connection_id TEXT NOT NULL, canonical_product_id TEXT NOT NULL,\n"
+        "            pid TEXT NOT NULL, vid TEXT NOT NULL,\n"
+        "            PRIMARY KEY (connection_id, canonical_product_id))\"\"\")",
+        GATEWAY_SUITE,
+    ),
+    (
+        "a provider sync writes the merchant's retail price",
+        VARIANTS,
+        "    cost = _coerce_minor(supplier_cost_cents, \"supplier_cost_cents\")\n    now = _now()",
+        "    cost = _coerce_minor(supplier_cost_cents, \"supplier_cost_cents\")\n"
+        "    if cost is not None:\n"
+        "        cur.execute(\"UPDATE marketplace_listings SET price_label=? WHERE id=?\",\n"
+        "                    (f\"${cost / 100:.2f}\", int(listing_id)))\n"
+        "    now = _now()",
+        LEDGER_SUITE,
+    ),
+    (
+        "an unknown supplier cost is stored as zero",
+        VARIANTS,
+        "        \"supplier_cost_cents\": cost,",
+        "        \"supplier_cost_cents\": cost or 0,",
+        LEDGER_SUITE,
+    ),
+    (
+        "unverified provider inventory counts as in stock",
+        FULFILLMENT,
+        "            if not any(w.get(\"state\") == \"IN_STOCK\" and w.get(\"verified\") == 1"
+        " and type(w.get(\"total\")) is int and w[\"total\"] >= item[\"quantity\"] for w in warehouses):",
+        "            if not any(w.get(\"state\") != \"OUT_OF_STOCK\""
+        " and (w.get(\"total\") or 0) >= item[\"quantity\"] for w in warehouses):",
+        FULFILLMENT_SUITE,
+    ),
+]
+
+
 def _overlay(root: str) -> str:
     """A symlink mirror of the repo, deep only where we need to write."""
-    real_dirs = {"services", "tests", "tests/marketplace", "scripts",
-                 "scripts/marketplace"}
+    # Every *ancestor* of a mutable directory has to be listed: the walk prunes at
+    # the first directory it does not recognise, so omitting "services/business_os"
+    # would leave "services/business_os/suppliers" unreachable and every gateway
+    # mutation silently unapplied.
+    real_dirs = {"services", "services/business_os", "services/business_os/suppliers",
+                 "tests", "tests/marketplace", "scripts", "scripts/marketplace"}
     for base, dirs, files in os.walk(REPO):
         rel = os.path.relpath(base, REPO)
         rel = "" if rel == "." else rel.replace(os.sep, "/")
@@ -434,7 +542,8 @@ def _run(root: str, suite: str) -> int:
 
 
 #: (label, suite, mutations). Order is presentation only; each group is independent.
-GROUPS: list[tuple[str, str, list[tuple[str, str, str, str]]]] = [
+#: ``suite`` is the group default; a mutation may override it with a fifth element.
+GROUPS: list[tuple[str, str, list[tuple]]] = [
     ("Three-valued availability", SUITE, READ_MUTATIONS),
     ("Unknown cost is not zero", SUITE, MONEY_MUTATIONS),
     ("The variant key", SUITE, KEY_MUTATIONS),
@@ -442,27 +551,44 @@ GROUPS: list[tuple[str, str, list[tuple[str, str, str, str]]]] = [
     ("Ownership and the existence oracle", SUITE, OWNERSHIP_MUTATIONS),
     ("Supplier source and field ownership", SUITE, SOURCE_MUTATIONS),
     ("Schema ownership", SUITE, SCHEMA_MUTATIONS),
+    ("Ledger reconciliation", LEDGER_SUITE, RECONCILIATION_MUTATIONS),
 ]
 
 
 def main() -> int:
-    print("Baseline: the unmutated suite must pass.")
+    suites = []
+    for _, default, mutations in GROUPS:
+        for suite in [default] + [m[4] for m in mutations if len(m) > 4]:
+            if suite not in suites:
+                suites.append(suite)
+
+    print(f"Baseline: all {len(suites)} judging suites must pass unmutated.")
     base = _overlay(tempfile.mkdtemp(prefix="mkt_mut_base_"))
     try:
-        if _run(base, SUITE) != 0:
-            print("  FAIL — the suite is already red; mutation results "
-                  "would be noise.")
-            return 1
-        print("  PASS — baseline green.\n")
+        for suite in suites:
+            if _run(base, suite) != 0:
+                print(f"  FAIL — {suite} is already red; mutation results "
+                      f"judged by it would be noise.")
+                return 1
+            print(f"  PASS  {suite}")
     finally:
         shutil.rmtree(base, ignore_errors=True)
+    print()
 
     survived: list[str] = []
     unapplied: list[str] = []
     total = 0
-    for label, suite, mutations in GROUPS:
-        print(f"{label} ({len(mutations)} mutations, judged by {suite}):")
-        for name, rel_path, old, new in mutations:
+    for label, default, mutations in GROUPS:
+        targets = {m[4] if len(m) > 4 else default for m in mutations}
+        if len(targets) == 1:
+            print(f"{label} ({len(mutations)} mutations, judged by {default}):")
+        else:
+            print(f"{label} ({len(mutations)} mutations, each judged by the suite "
+                  f"that owns the boundary it breaks):")
+        for mutation in mutations:
+            name, rel_path, old, new = mutation[:4]
+            suite = mutation[4] if len(mutation) > 4 else default
+            note = "" if len(targets) == 1 else f"  [{os.path.basename(suite)}]"
             total += 1
             root = _overlay(tempfile.mkdtemp(prefix="mkt_mut_"))
             try:
@@ -472,9 +598,9 @@ def main() -> int:
                     continue
                 if _run(root, suite) == 0:
                     survived.append(f"{label}: {name}")
-                    print(f"  SURVIVED  {name}")
+                    print(f"  SURVIVED  {name}{note}")
                 else:
-                    print(f"  CAUGHT    {name}")
+                    print(f"  CAUGHT    {name}{note}")
             finally:
                 shutil.rmtree(root, ignore_errors=True)
         print()

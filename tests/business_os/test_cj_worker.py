@@ -2,11 +2,11 @@ import time
 
 import pytest
 
-from services import db
+from services import db, marketplace_variants
 from services.business_os.suppliers import worker, fulfillment
 from services.business_os.suppliers.errors import SupplierError
 from tests.business_os.test_cj_connections import database
-from tests.business_os.test_cj_fulfillment import ready, outbox
+from tests.business_os.test_cj_fulfillment import MERCHANT, ready, outbox
 
 
 def test_worker_dark_without_provider_approval(ready, monkeypatch):
@@ -55,10 +55,32 @@ def test_worker_entrypoint_disabled_without_importing_bot(monkeypatch):
 
 
 def test_seeding_advances_beyond_first_page(ready):
+    """Paging walks supplier mappings, and mappings now hang off real listings.
+
+    Eight distinct provider products are expected, not seven: the ``ready``
+    fixture already bound one. Each extra product needs its own *listing*, because
+    a mapping with no canonical listing behind it is precisely the orphan this
+    reconciliation removed — and ``_seed_jobs`` reads
+    ``marketplace_product_sources``, which cannot hold one.
+
+    The extra listings are seeded past the production id range rather than reusing
+    ids 8..13, so the six real rows stay exactly as production has them.
+    """
     conn = db.connect()
+    cur = conn.cursor()
     for number in range(7):
-        conn.execute("INSERT INTO supplier_product_links(connection_id,business_id,store_id,canonical_product_id,pid,vid,snapshot_id,created_at) VALUES(?,?,?,?,?,?,?,?)",
-                     (ready[1]["id"], "biz-a", "store-a", f"selected-{number}", str(30000 + number), str(40000 + number), "fixture", time.time()))
+        listing_id = 1000 + number
+        cur.execute(
+            "INSERT INTO marketplace_listings (id, seller_user_id, title, status, "
+            "approval_status, listing_type, product_type, delivery_type, price_label, "
+            "currency, quantity, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (listing_id, MERCHANT, f"Paging fixture {number}", "published", "approved",
+             "physical", "physical", "shipping", "$1.00", "USD", 1, "now", "now"))
+        marketplace_variants.link_source(
+            cur, listing_id=listing_id, seller_user_id=MERCHANT, provider="cj",
+            provider_product_id=str(30000 + number), provider_variant_id=str(40000 + number),
+            supplier_connection_id=ready[1]["id"], business_id="biz-a", store_id="store-a",
+            source_snapshot_id="fixture")
     conn.commit()
     conn.close()
     for _ in range(5):

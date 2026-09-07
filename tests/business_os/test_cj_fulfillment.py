@@ -12,8 +12,29 @@ from services.business_os.marketplace import schema as market_schema
 from services.business_os.suppliers import connections, fulfillment as f, gateway, worker
 from services.business_os.suppliers.errors import SupplierError
 from tests.business_os.test_cj_connections import database, connect, FakeAdapter
+from tests.marketplace_production_listings import (
+    PHYSICAL_PUBLISHED_ID, seed_orders_table, seed_production_listings)
 
 PID, VID = "10001", "20001"
+
+#: The merchant behind ``biz-a``/``store-a`` — this is
+#: ``business_os_business.owner_user_id``, and it is the same integer as
+#: ``marketplace_listings.seller_user_id``. That identity, not a translation
+#: table, is what lets the supplier gateway reach the canonical ledger.
+MERCHANT = 100
+FOREIGN_MERCHANT = 200
+
+#: A physical, published listing owned by ``MERCHANT``. Passed to the gateway as
+#: a string because it arrives over HTTP as one; the gateway coerces.
+OWNED_LISTING = str(PHYSICAL_PUBLISHED_ID)
+
+#: Owned by ``FOREIGN_MERCHANT``. Binding or fulfilling against it must refuse.
+FOREIGN_LISTING = "99"
+
+#: The customer order. Integer-shaped because ``marketplace_orders.id`` is an
+#: INTEGER PRIMARY KEY, unlike the opaque ``'order-a'`` this suite used when the
+#: canonical order lived in ``business_os_mkt_orders``.
+ORDER_ID = "4001"
 
 
 class CommerceAdapter(FakeAdapter):
@@ -72,21 +93,26 @@ def ready(database):
     adapter = CommerceAdapter()
     connection = connect(adapter)
     conn = db.connect()
-    conn.execute("INSERT INTO business_os_mkt_products(product_id,seller_user_id,title,price_cents,created_at,updated_at) VALUES('product-a','100','Retail owned title',900,'now','now')")
-    conn.execute("INSERT INTO business_os_mkt_products(product_id,seller_user_id,title,price_cents,created_at,updated_at) VALUES('product-b','200','Other merchant',900,'now','now')")
-    conn.execute("INSERT INTO business_os_mkt_orders(order_id,buyer_user_id,seller_user_id,subtotal_cents,total_cents,created_at,updated_at) VALUES('order-a','999','100',900,900,'now','now')")
-    conn.execute("INSERT INTO business_os_mkt_order_items(order_id,product_id,unit_price_cents,quantity,line_total_cents,created_at) VALUES('order-a','product-a',900,1,900,'now')")
+    cur = conn.cursor()
+    # The real ledger, in its real shape: ids 8..13, one owner, price as prose.
+    # The foreign row exists so the cross-merchant refusals below have something
+    # real to refuse rather than only an id that was never issued.
+    seed_production_listings(cur, owner=MERCHANT, extra_owner=FOREIGN_MERCHANT)
+    seed_orders_table(cur)
+    cur.execute("INSERT INTO marketplace_orders (id,buyer_user_id,seller_user_id,listing_id,"
+                "quantity,unit_price_cents,amount_cents,status,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+                (int(ORDER_ID), 999, MERCHANT, int(OWNED_LISTING), 1, 900, 900, "paid", "now"))
     conn.commit()
     conn.close()
     gateway.bind_product(connection_id=connection["id"], business_id="biz-a", store_id="store-a", actor_user_id="100",
-                         canonical_product_id="product-a", pid=PID, vid=VID, adapter=adapter)
+                         canonical_product_id=OWNED_LISTING, pid=PID, vid=VID, adapter=adapter)
     quote = gateway.read("shipping", connection_id=connection["id"], business_id="biz-a", store_id="store-a",
                          actor_user_id="100", params={"reqDTOS": [{"srcAreaCode": "CN", "destAreaCode": "US", "weight": 100,
                            "productProp": ["COMMON"], "skuList": ["FIXTURE-SKU"], "province": "CA", "city": "Test City",
                            "recipientAddress": "Synthetic fixture address",
                            "freightTrialSkuList": [{"vid": VID, "sku": "FIXTURE-SKU", "skuQuantity": 1}]}]}, adapter=adapter)
-    request = dict(connection_id=connection["id"], business_id="biz-a", store_id="store-a", actor_user_id="100", order_id="order-a",
-                   items=[{"canonical_product_id": "product-a", "pid": PID, "vid": VID, "sku": "FIXTURE-SKU", "quantity": 1}],
+    request = dict(connection_id=connection["id"], business_id="biz-a", store_id="store-a", actor_user_id="100", order_id=ORDER_ID,
+                   items=[{"canonical_product_id": OWNED_LISTING, "pid": PID, "vid": VID, "sku": "FIXTURE-SKU", "quantity": 1}],
                    shipping_destination={"shippingCountryCode": "US", "shippingCountry": "United States", "shippingProvince": "CA",
                      "shippingCity": "Test City", "shippingCustomerName": "Sandbox Fixture", "shippingAddress": "Synthetic fixture address"},
                    shipping_quote={"snapshot_id": quote["snapshot_id"], "option_id": "option-1", "channel_id": "channel-1"},
@@ -98,6 +124,22 @@ def outbox(intent_id):
     conn = db.connect()
     try:
         return dict(conn.execute("SELECT * FROM business_os_supplier_outbox WHERE intent_id=?", (intent_id,)).fetchone())
+    finally:
+        conn.close()
+
+
+def canonical_order():
+    """The customer order as the marketplace stores it.
+
+    Read as a whole row rather than a status column, so a supplier-side write
+    that touched quantity, amount or listing_id would be caught too. The customer
+    order and the CJ supplier order are separate rows on purpose; this is how the
+    tests below prove nothing leaks from the second into the first.
+    """
+    conn = db.connect()
+    try:
+        return dict(conn.execute("SELECT * FROM marketplace_orders WHERE id=?",
+                                 (int(ORDER_ID),)).fetchone())
     finally:
         conn.close()
 
@@ -133,7 +175,7 @@ def test_product_binding_cannot_be_forged_or_cross_merchant(ready):
     adapter, connection, request = ready
     with pytest.raises(SupplierError):
         gateway.bind_product(connection_id=connection["id"], business_id="biz-a", store_id="store-a", actor_user_id="100",
-                             canonical_product_id="product-b", pid=PID, vid=VID, adapter=adapter)
+                             canonical_product_id=FOREIGN_LISTING, pid=PID, vid=VID, adapter=adapter)
     changed = copy.deepcopy(request)
     changed["items"][0]["vid"] = "forged-vid"
     with pytest.raises(f.FulfillmentError, match="binding"):
@@ -143,7 +185,7 @@ def test_product_binding_cannot_be_forged_or_cross_merchant(ready):
 
 
 @pytest.mark.parametrize("override", [{"expected_supplier_cost_cents": 1}, {"shipping_quote": {"snapshot_id": "fake"}},
-                                     {"items": [{"canonical_product_id": "product-b", "pid": PID, "vid": VID, "sku": "FIXTURE-SKU", "quantity": 1}]}])
+                                     {"items": [{"canonical_product_id": FOREIGN_LISTING, "pid": PID, "vid": VID, "sku": "FIXTURE-SKU", "quantity": 1}]}])
 def test_unverified_cost_quote_and_binding_denied(ready, override):
     with pytest.raises((f.FulfillmentError, SupplierError)):
         f.create_intent(**(ready[2] | override))
@@ -198,14 +240,14 @@ def test_readback_mismatch_never_links_or_recreates(ready, override):
 
 
 def test_supplier_status_readback_updates_only_supplier_outbox(ready):
-    before = f.orders.get_order("order-a")
+    before = canonical_order()
     result, _, _ = attempt(ready)
     meta = connections.worker_connection(ready[1]["id"], "biz-a", "store-a")["connection"]
     assert f.dispatch(f.claim(now=time.time() + 4), ready[0], meta) == "LINKED"
     ready[0].observed["provider_status"] = "SHIPPED"
     f.observe_linked(meta, "90001", ready[0].observed)
     assert outbox(result["intent_id"])["provider_status"] == "SHIPPED"
-    assert f.orders.get_order("order-a") == before
+    assert canonical_order() == before
 
 
 def test_one_canonical_order_cannot_create_via_two_owned_stores(ready):
@@ -216,7 +258,7 @@ def test_one_canonical_order_cannot_create_via_two_owned_stores(ready):
     conn.close()
     second = connections.connect_cj("biz-b", "store-b", "100", "fixture-api-key-A", "cj-shop-a", adapter=ready[0])
     gateway.bind_product(connection_id=second["id"], business_id="biz-b", store_id="store-b", actor_user_id="100",
-                         canonical_product_id="product-a", pid=PID, vid=VID, adapter=ready[0])
+                         canonical_product_id=OWNED_LISTING, pid=PID, vid=VID, adapter=ready[0])
     conn = db.connect()
     stored = json.loads(conn.execute("SELECT payload_json FROM supplier_snapshots WHERE snapshot_id=?", (ready[2]["shipping_quote"]["snapshot_id"],)).fetchone()[0])
     conn.close()
@@ -228,7 +270,7 @@ def test_one_canonical_order_cannot_create_via_two_owned_stores(ready):
     with pytest.raises(f.FulfillmentError, match="conflict"):
         f.create_intent(**second_request)
     conn = db.connect()
-    assert conn.execute("SELECT count(*) FROM business_os_supplier_intents WHERE order_id='order-a'").fetchone()[0] == 1
+    assert conn.execute("SELECT count(*) FROM business_os_supplier_intents WHERE order_id=?", (ORDER_ID,)).fetchone()[0] == 1
     conn.close()
     assert outbox(first["intent_id"])["state"] == "READY" and ready[0].created == []
 
@@ -292,12 +334,16 @@ def test_429_honors_long_retry_after_and_does_not_mark_stock_zero(ready):
 
 
 def test_orders_and_funding_remain_canonical_unchanged(ready):
+    before = canonical_order()
     result, _, _ = attempt(ready)
     with pytest.raises(f.FulfillmentError):
         f.fund_fulfillment(result["intent_id"])
     assert outbox(result["intent_id"])["funding_state"] == "FUNDING_NOT_READY"
-    conn = db.connect()
-    assert conn.execute("SELECT status,total_cents FROM business_os_mkt_orders WHERE order_id='order-a'").fetchone()[0] == "created"
-    conn.close()
+    # A whole-row comparison, not just status: a supplier dispatch that
+    # decremented the customer order's quantity or rewrote its amount would be
+    # just as much a breach of "customer order ≠ supplier order" as one that
+    # marked it shipped.
+    assert canonical_order() == before
+    assert before["status"] == "paid"
     with pytest.raises(connections.SupplierConnectionError):
         f.get_intent(result["intent_id"], ready[1]["id"], "biz-a", "store-a", "200")

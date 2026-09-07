@@ -191,15 +191,47 @@ def test_cache_singleflight_lease_allows_only_one_provider_read(connected):
     assert len(first.reads) == 1
 
 
+#: The connection fixture's merchant is business_os_business.owner_user_id = '100'
+#: for biz-a. That is a *user id*, the same identity marketplace_listings.seller_user_id
+#: holds — TEXT on one side, INTEGER on the other. Binding relies on exactly that
+#: equivalence, so the fixture states it once rather than restating '100' inline.
+OWNED_SELLER = 100
+OWNED_LISTING = "8001"
+FOREIGN_LISTING = "8002"
+
+
 def seed_marketplace_products():
-    from services.business_os.marketplace import schema as marketplace_schema
-    marketplace_schema.ensure_schema()
+    """Seed the canonical ledger, not the legacy business_os one.
+
+    ``marketplace_listings`` is owned by ``bot.init_db`` and cannot be called
+    from a unit test, so the columns this suite touches are declared here. Two
+    listings: one owned by the connection's merchant and one owned by someone
+    else, because "not yours" and "does not exist" have to be shown to refuse
+    identically and that needs a real foreign row, not just a missing id.
+    """
     conn = db.connect()
-    for product_id, owner in (("market-a", "100"), ("market-b", "200")):
-        conn.execute("INSERT INTO business_os_mkt_products (product_id,seller_user_id,title,price_cents,currency,created_at,updated_at) "
-                     "VALUES (?,?,?,?,?,?,?)", (product_id, owner, "Merchant product", 1999, "USD", "now", "now"))
+    conn.execute("""CREATE TABLE IF NOT EXISTS marketplace_listings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, seller_user_id INTEGER, title TEXT,
+        category TEXT, price_label TEXT, status TEXT, approval_status TEXT,
+        listing_type TEXT, product_type TEXT, delivery_type TEXT, currency TEXT,
+        quantity INTEGER, created_at TEXT, updated_at TEXT)""")
+    for listing_id, owner in ((OWNED_LISTING, OWNED_SELLER), (FOREIGN_LISTING, 200)):
+        conn.execute("INSERT INTO marketplace_listings (id,seller_user_id,title,price_label,"
+                     "status,approval_status,listing_type,product_type,delivery_type,currency,"
+                     "quantity,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                     (int(listing_id), owner, "Merchant product", "$19.99", "published",
+                      "approved", "physical", "physical", "shipping", "USD", 5, "now", "now"))
     conn.commit()
     conn.close()
+
+
+def _sources():
+    conn = db.connect()
+    try:
+        return [dict(r) for r in conn.execute(
+            "SELECT * FROM marketplace_product_sources ORDER BY id").fetchall()]
+    finally:
+        conn.close()
 
 
 def test_product_binding_requires_owned_canonical_product_and_exact_provider_variant(connected):
@@ -207,15 +239,45 @@ def test_product_binding_requires_owned_canonical_product_and_exact_provider_var
     adapter = CatalogAdapter()
     base = dict(connection_id=connected["id"], business_id="biz-a", store_id="store-a", actor_user_id="100", adapter=adapter)
     with pytest.raises(SupplierError) as failure:
-        gateway.bind_product(**base, canonical_product_id="market-b", pid="1001", vid="2001")
+        gateway.bind_product(**base, canonical_product_id=FOREIGN_LISTING, pid="1001", vid="2001")
     assert failure.value.http_status == 404 and adapter.reads == []
     with pytest.raises(SupplierError) as failure:
-        gateway.bind_product(**base, canonical_product_id="market-a", pid="1001", vid="2002")
+        gateway.bind_product(**base, canonical_product_id=OWNED_LISTING, pid="1001", vid="2002")
     assert failure.value.code == "variant_mismatch"
-    result = gateway.bind_product(**base, canonical_product_id="market-a", pid="1001", vid="2001")
-    assert result["canonical_product_id"] == "market-a" and result["vid"] == "2001"
+    result = gateway.bind_product(**base, canonical_product_id=OWNED_LISTING, pid="1001", vid="2001")
+    assert result["canonical_product_id"] == OWNED_LISTING and result["vid"] == "2001"
+    # The mapping landed on the canonical table, carrying both the listing it
+    # belongs to and the connection scope it was established through.
+    rows = _sources()
+    assert len(rows) == 1
+    assert rows[0]["listing_id"] == int(OWNED_LISTING)
+    assert rows[0]["seller_user_id"] == OWNED_SELLER
+    assert rows[0]["provider"] == "cj"
+    assert rows[0]["provider_product_id"] == "1001" and rows[0]["provider_variant_id"] == "2001"
+    assert rows[0]["supplier_connection_id"] == connected["id"]
+    assert rows[0]["business_id"] == "biz-a" and rows[0]["store_id"] == "store-a"
     with pytest.raises(SupplierError):
-        gateway.get_product_binding(connected["id"], "biz-b", "store-b", "market-a")
+        gateway.get_product_binding(connected["id"], "biz-b", "store-b", OWNED_LISTING)
+
+
+def test_a_nonexistent_listing_refuses_exactly_like_someone_elses(connected):
+    """No existence oracle across the reconciliation boundary.
+
+    ``canonical_product_id`` used to be an opaque string and is now an integer
+    listing id, which introduces a third failure mode — a reference that is not
+    an id at all. All three must be indistinguishable, or a caller can map the
+    id space by watching which refusal it gets.
+    """
+    seed_marketplace_products()
+    base = dict(connection_id=connected["id"], business_id="biz-a", store_id="store-a",
+                actor_user_id="100", adapter=CatalogAdapter(), pid="1001", vid="2001")
+    seen = []
+    for reference in (FOREIGN_LISTING, "999999", "market-a", "", "0", "-1"):
+        with pytest.raises(SupplierError) as failure:
+            gateway.bind_product(**base, canonical_product_id=reference)
+        seen.append((failure.value.http_status, failure.value.code))
+    assert len(set(seen)) == 1, f"refusals differ and leak existence: {seen}"
+    assert seen[0][0] == 404
 
 
 def test_product_transfer_during_provider_read_prevents_foreign_binding(connected):
@@ -224,15 +286,31 @@ def test_product_transfer_during_provider_read_prevents_foreign_binding(connecte
     class TransferringAdapter(CatalogAdapter):
         def get_product(self, pid):
             conn = db.connect()
-            conn.execute("UPDATE business_os_mkt_products SET seller_user_id='200' WHERE product_id='market-a'")
+            conn.execute("UPDATE marketplace_listings SET seller_user_id=200 WHERE id=?",
+                         (int(OWNED_LISTING),))
             conn.commit()
             conn.close()
             return super().get_product(pid)
 
     with pytest.raises(SupplierError) as failure:
         gateway.bind_product(connection_id=connected["id"], business_id="biz-a", store_id="store-a", actor_user_id="100",
-            canonical_product_id="market-a", pid="1001", vid="2001", adapter=TransferringAdapter())
+            canonical_product_id=OWNED_LISTING, pid="1001", vid="2001", adapter=TransferringAdapter())
     assert failure.value.http_status == 404
+    assert _sources() == []
+
+
+def test_supplier_product_links_is_gone(connected):
+    """The competing mapping authority must not be recreated.
+
+    ``ensure_schema`` used to create ``supplier_product_links``. Deleting the
+    writes without deleting the DDL would leave an empty table that a future
+    reader could rediscover and start trusting, which is how a second authority
+    comes back.
+    """
+    gateway.ensure_schema()
     conn = db.connect()
-    assert conn.execute("SELECT COUNT(*) FROM supplier_product_links").fetchone()[0] == 0
-    conn.close()
+    try:
+        with pytest.raises(Exception):
+            conn.execute("SELECT 1 FROM supplier_product_links LIMIT 1").fetchone()
+    finally:
+        conn.close()

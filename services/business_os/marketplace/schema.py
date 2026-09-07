@@ -5,14 +5,34 @@ Follows the advertising slice's ``ensure_schema`` convention exactly: idempotent
 no ``bot.py`` import, and it NEVER mutates any legacy table. In particular the
 legacy inline-``bot.py`` marketplace tables (``marketplace_listings``,
 ``marketplace_sellers``, ``seller_transactions``, the ``*_placeholder`` tables …)
-are left completely untouched; this builds a new canonical surface beside them.
+are left completely untouched; this builds a new surface beside them.
+
+That surface was *intended* to be canonical. For products it never became so —
+see ``business_os_mkt_products`` below — so read "canonical" in this file as a
+per-table claim to be checked, not a property of the ``business_os_mkt_*``
+prefix.
 
 Tables:
 
 * ``business_os_mkt_sellers`` — seller approval state, ONE row per user (the
   merchant-approval input, separate from account hold and commercial entitlement).
-* ``business_os_mkt_products`` — product/listing catalog with ownership, lifecycle
-  state, price (integer cents), physical/digital fulfillment type, and inventory.
+* ``business_os_mkt_products`` — **LEGACY / NON-CANONICAL.** Product/listing
+  catalog with ownership, lifecycle state, price (integer cents),
+  physical/digital fulfillment type, and inventory.
+
+  It was built as the successor catalog and never became one: in production it
+  holds **zero rows**, while ``marketplace_listings`` holds the live products
+  customers actually buy. The canonical product ledger is therefore
+  ``marketplace_listings``, and supplier provenance hangs off it via
+  ``marketplace_product_sources``.
+
+  The table is kept — not dropped — because dropping a table to make a point
+  about authority is a destructive migration in exchange for tidiness. What is
+  *not* kept is its authority: no new code may bind a product identity here. The
+  CJ supplier gateway used to, which is why CJ could never reach a real product;
+  see ``services/business_os/suppliers/gateway.py``. If you are adding a product
+  concept and this table looks like the natural home, it isn't — the emptiness
+  you are about to fill is the symptom, not the opportunity.
 * ``business_os_mkt_orders`` — the canonical order with an explicit state-machine
   ``status`` column, integer-cents money fields, and a server-authoritative
   platform-fee snapshot. This is the real table the legacy 0-row
@@ -98,7 +118,10 @@ def ensure_schema(conn=None) -> None:
             """
         )
 
-        # Product / listing catalog.
+        # LEGACY / NON-CANONICAL. See the module docstring: the canonical product
+        # ledger is `marketplace_listings`. This table is still created so that
+        # existing readers keep working, and is deliberately NOT dropped, but
+        # nothing new may bind a product identity to it.
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS business_os_mkt_products (

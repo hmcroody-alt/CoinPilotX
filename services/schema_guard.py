@@ -65,6 +65,21 @@ def run_once_per_process(fn):
     return wrapper
 
 
+def register_resetter(fn):
+    """Enrol a hand-rolled schema cache in ``reset_all``.
+
+    Not every module can use ``run_once_per_process``: some own a cache with more
+    states than done/not-done, or need a ``force`` argument. Those still have to
+    be forgettable between tests for exactly the reason in ``reset_all`` below,
+    and a module that keeps its cache private simply gets skipped — silently, and
+    only visibly as "no such table" in whichever suite happens to run second.
+
+    Returns ``fn`` so it can be used as a decorator or called directly.
+    """
+    _RESETTERS.append(fn)
+    return fn
+
+
 def reset_all():
     """Forget every cached creation.
 

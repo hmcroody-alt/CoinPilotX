@@ -90,6 +90,21 @@ MODE_STOCKED = "STOCKED"
 MODE_DROPSHIP = "DROPSHIP"
 FULFILLMENT_MODES = (MODE_STOCKED, MODE_DROPSHIP)
 
+#: How current the provider side of this mapping is. Like stock, this is
+#: three-valued and the third value carries the weight: ``PENDING`` means nobody
+#: has synced yet, which is not the same as ``STALE`` (we synced and the answer
+#: has aged) and neither is ``ERROR`` (we tried and the provider refused). A
+#: single boolean ``synced`` would merge "never asked" with "asked and failed",
+#: and those two demand different operator responses.
+SYNC_PENDING = "PENDING"
+SYNC_SYNCED = "SYNCED"
+SYNC_STALE = "STALE"
+SYNC_ERROR = "ERROR"
+SYNC_DISCONNECTED = "DISCONNECTED"
+SYNC_REMOVED = "REMOVED"
+SYNC_STATES = (SYNC_PENDING, SYNC_SYNCED, SYNC_STALE, SYNC_ERROR,
+               SYNC_DISCONNECTED, SYNC_REMOVED)
+
 
 VARIANT_TABLE_DDL = f"""
 CREATE TABLE IF NOT EXISTS {VARIANT_TABLE} (
@@ -122,6 +137,17 @@ CREATE TABLE IF NOT EXISTS {SOURCE_TABLE} (
     provider_product_id TEXT NOT NULL,
     fulfillment_mode TEXT DEFAULT '{MODE_DROPSHIP}',
     overridden_fields_json TEXT DEFAULT '[]',
+    supplier_connection_id TEXT,
+    business_id TEXT,
+    store_id TEXT,
+    provider_variant_id TEXT,
+    external_sku TEXT,
+    source_snapshot_id TEXT,
+    supplier_cost_cents INTEGER,
+    supplier_cost_currency TEXT,
+    inventory_source TEXT,
+    inventory_reference TEXT,
+    sync_state TEXT DEFAULT '{SYNC_PENDING}',
     last_synced_at TEXT,
     last_sync_error TEXT,
     created_at TEXT,
@@ -149,6 +175,35 @@ VARIANT_COLUMNS = (
 SOURCE_COLUMNS = (
     ("fulfillment_mode", "TEXT"),
     ("overridden_fields_json", "TEXT"),
+    # The supplier-gateway half of the mapping. These arrived when the CJ gateway
+    # was folded onto this table; they are listed here as well as in the CREATE
+    # because a database that already has the table (any dev box that booted
+    # init_db before the fold) would never see an edit to the CREATE.
+    #
+    # ``business_id``/``store_id`` are *not* a second tenant identity. The owner
+    # of this row is ``seller_user_id``, exactly as it is for every other row, and
+    # it is the only column ownership is ever checked against. These two record
+    # *which supplier connection scope* the mapping was established through,
+    # because a connection is keyed by (business_id, store_id, provider) in
+    # ``business_os_supplier_connections`` and the worker and webhook paths have
+    # only that tuple to work from — they have no actor and no listing. Storing
+    # the tuple on the edge is what lets those paths resolve back to a canonical
+    # listing without inventing an ownership rule of their own.
+    ("supplier_connection_id", "TEXT"),
+    ("business_id", "TEXT"),
+    ("store_id", "TEXT"),
+    ("provider_variant_id", "TEXT"),
+    ("external_sku", "TEXT"),
+    ("source_snapshot_id", "TEXT"),
+    # Nullable on purpose, and NULL means "the supplier has not told us". It does
+    # not mean free. ``marketplace_variants.margin_cents`` returns None rather
+    # than a full-margin number for exactly this state; a DEFAULT 0 here would
+    # defeat that at the storage layer where no caller could see it.
+    ("supplier_cost_cents", "INTEGER"),
+    ("supplier_cost_currency", "TEXT"),
+    ("inventory_source", "TEXT"),
+    ("inventory_reference", "TEXT"),
+    ("sync_state", "TEXT"),
     ("last_synced_at", "TEXT"),
     ("last_sync_error", "TEXT"),
 )
@@ -175,13 +230,31 @@ VARIANT_LOOKUP_INDEX_DDL = (
     f"ON {VARIANT_TABLE} (seller_user_id, listing_id)"
 )
 SOURCE_PROVIDER_INDEX_DDL = (
-    f"CREATE UNIQUE INDEX IF NOT EXISTS idx_mkt_source_provider_ref "
-    f"ON {SOURCE_TABLE} (provider, provider_product_id, seller_user_id)"
+    f"CREATE UNIQUE INDEX IF NOT EXISTS idx_mkt_source_conn_ref "
+    f"ON {SOURCE_TABLE} "
+    f"(seller_user_id, provider, supplier_connection_id, provider_product_id)"
 )
 SOURCE_LISTING_INDEX_DDL = (
     f"CREATE UNIQUE INDEX IF NOT EXISTS idx_mkt_source_listing "
     f"ON {SOURCE_TABLE} (listing_id)"
 )
+SOURCE_SCOPE_INDEX_DDL = (
+    f"CREATE INDEX IF NOT EXISTS idx_mkt_source_scope "
+    f"ON {SOURCE_TABLE} (supplier_connection_id, business_id, store_id)"
+)
+
+# The predecessor of ``idx_mkt_source_conn_ref``, dropped rather than left
+# alongside it. It was UNIQUE on (provider, provider_product_id, seller_user_id),
+# which is strictly coarser than the import identity: it would reject a seller
+# importing the same CJ product through two different supplier connections, which
+# is legitimate. Leaving both indexes in place would keep the coarser one
+# authoritative, so "add the better index" would have changed nothing.
+#
+# Dropping is safe here and only here: this index has never existed in
+# production (the table itself is absent there), so no deployed data depends on
+# it. This is an index retirement, not a data migration — no row is read,
+# rewritten or removed by it.
+RETIRED_INDEXES = ("idx_mkt_source_provider_ref",)
 
 #: Without these there is no honest answer to "what are this listing's variants",
 #: so a caller must report that it could not look rather than that it looked and
@@ -191,7 +264,9 @@ SOURCE_LISTING_INDEX_DDL = (
 REQUIRED_VARIANT_COLUMNS = ("listing_id", "seller_user_id", "variant_key",
                             "stock_state", "cost_cents")
 REQUIRED_SOURCE_COLUMNS = ("listing_id", "seller_user_id", "provider",
-                           "provider_product_id", "fulfillment_mode")
+                           "provider_product_id", "fulfillment_mode",
+                           "supplier_connection_id", "provider_variant_id",
+                           "supplier_cost_cents", "sync_state")
 
 STATUS_READY = "ready"
 STATUS_MISSING = "missing"
@@ -202,10 +277,26 @@ _COLUMN_CACHE: dict[str, set[str]] | None = None
 
 
 def reset_schema_cache() -> None:
-    """Forget the caches. For tests, and for any caller that changed the tables."""
+    """Forget the caches. For tests, and for any caller that changed the tables.
+
+    Registered with ``schema_guard.reset_all`` below, so a suite that builds a
+    fresh database per test does not have to know this module exists. Without
+    that, the first suite to call ``ensure_supplier_schema`` would set
+    ``_SCHEMA_READY`` for the whole pytest process and every later suite would be
+    told the tables are ready against a database that has never seen them.
+    """
     global _SCHEMA_READY, _COLUMN_CACHE
     _SCHEMA_READY = False
     _COLUMN_CACHE = None
+
+
+try:  # pragma: no cover - registration, not behaviour
+    from services import schema_guard as _schema_guard
+
+    _schema_guard.register_resetter(reset_schema_cache)
+except Exception:  # pragma: no cover
+    # This module must stay importable by a worker that has no test harness.
+    LOGGER.debug("SUPPLIER_SCHEMA_RESETTER_NOT_REGISTERED", exc_info=True)
 
 
 def _columns(cur, table: str) -> set[str]:
@@ -285,8 +376,19 @@ def ensure_supplier_schema(cur, *, force: bool = False) -> dict:
         LOGGER.exception("SUPPLIER_SCHEMA_ENSURE_FAILED stage=tables")
         return _result(STATUS_ERROR, error=str(exc)[:500])
 
+    for name in RETIRED_INDEXES:
+        try:
+            cur.execute(f"DROP INDEX IF EXISTS {name}")
+        except Exception as exc:
+            # Non-fatal, but it does mean the coarser predecessor is still
+            # authoritative and a legitimate second-connection import will be
+            # rejected by it. That is a refusal, not a corruption, so degrading
+            # here is safe; the log line is how an operator finds out.
+            LOGGER.warning("SUPPLIER_INDEX_DROP_FAILED index=%s error=%s", name, exc)
+
     for ddl in (VARIANT_INDEX_DDL, VARIANT_LOOKUP_INDEX_DDL,
-                SOURCE_PROVIDER_INDEX_DDL, SOURCE_LISTING_INDEX_DDL):
+                SOURCE_PROVIDER_INDEX_DDL, SOURCE_LISTING_INDEX_DDL,
+                SOURCE_SCOPE_INDEX_DDL):
         try:
             cur.execute(ddl)
         except Exception as exc:

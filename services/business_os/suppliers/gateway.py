@@ -13,11 +13,26 @@ import time
 import uuid
 
 from services import db
+from services import marketplace_supplier_schema
+from services import marketplace_variants
 from services.business_os.suppliers import connections, policy
 from services.business_os.suppliers.errors import SupplierError
 
 
 def ensure_schema(conn=None):
+    """Snapshots, read cache and import drafts — but *not* a product mapping.
+
+    This function used to also create ``supplier_product_links``, a mapping from
+    a CJ (pid, vid) to a ``business_os_mkt_products`` row. That made it a second
+    product-provenance authority competing with ``marketplace_product_sources``,
+    and it keyed off a ledger with no rows in production while the live
+    marketplace ran on ``marketplace_listings``. The mapping now lives in the
+    canonical table and this module ensures that schema instead of its own.
+
+    The remaining three tables are supplier-gateway concerns and stay here:
+    immutable provider snapshots, a provider read cache, and merchant import
+    drafts. None of them claims to say what a product *is*.
+    """
     owned = conn is None
     conn = conn or db.connect()
     try:
@@ -30,21 +45,47 @@ def ensure_schema(conn=None):
             cache_key TEXT PRIMARY KEY, payload_json TEXT,
             expires_at DOUBLE PRECISION NOT NULL DEFAULT 0, lease_until DOUBLE PRECISION NOT NULL DEFAULT 0,
             lease_owner TEXT)""")
-        conn.execute("""CREATE TABLE IF NOT EXISTS supplier_product_links (
-            connection_id TEXT NOT NULL, business_id TEXT NOT NULL, store_id TEXT NOT NULL,
-            canonical_product_id TEXT NOT NULL, pid TEXT NOT NULL, vid TEXT NOT NULL,
-            snapshot_id TEXT NOT NULL, created_at DOUBLE PRECISION NOT NULL,
-            PRIMARY KEY (connection_id, business_id, store_id, canonical_product_id))""")
         conn.execute("""CREATE TABLE IF NOT EXISTS supplier_import_drafts (
             draft_id TEXT PRIMARY KEY, connection_id TEXT NOT NULL,
             business_id TEXT NOT NULL, store_id TEXT NOT NULL, snapshot_id TEXT NOT NULL,
             merchant_fields_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'DRAFT',
             created_at DOUBLE PRECISION NOT NULL)""")
+        # The canonical mapping schema, ensured here so that a supplier worker —
+        # which never serves an HTTP request and never runs bot.init_db() — can
+        # still create it. Returned as data, never raised: a worker loop that
+        # cannot get the schema must degrade and retry, not die on import.
+        marketplace_supplier_schema.ensure_supplier_schema(conn)
         if owned:
             conn.commit()
     finally:
         if owned:
             conn.close()
+
+
+def _owned_listing_id(conn, canonical_product_id, merchant_id):
+    """Resolve a merchant-supplied product reference to an owned listing id.
+
+    This is the §3 lookup chain's middle link: the caller has already been
+    authenticated and authorised for the store, and ``merchant_id`` came from
+    ``connections._canonical_scope`` — it is ``business_os_business.owner_user_id``,
+    which is the same identity as ``marketplace_listings.seller_user_id``, stored
+    as TEXT on one side and INTEGER on the other. Nothing here infers tenancy
+    from a CJ id.
+
+    Every failure — unparseable reference, absent listing, someone else's
+    listing, a merchant_id that is not a user id — raises the identical 404. A
+    caller cannot use this to discover which listing ids exist.
+    """
+    try:
+        listing_id = marketplace_variants.coerce_listing_id(canonical_product_id)
+        owner_user_id = int(str(merchant_id).strip())
+    except (marketplace_variants.VariantRejected, TypeError, ValueError):
+        raise SupplierError("not_found", http_status=404) from None
+    row = conn.execute("SELECT seller_user_id FROM marketplace_listings WHERE id=?",
+                       (listing_id,)).fetchone()
+    if row is None or row["seller_user_id"] is None or int(row["seller_user_id"]) != owner_user_id:
+        raise SupplierError("not_found", http_status=404)
+    return listing_id, owner_user_id
 
 
 def _json(value):
@@ -220,14 +261,24 @@ def create_import_draft(snapshot_id, connection_id, business_id, store_id, actor
 
 def bind_product(*, connection_id, business_id, store_id, actor_user_id,
                  canonical_product_id, pid, vid, context=None, adapter=None):
-    """Explicit bridge for an OWNED marketplace product, never a display-label join."""
+    """Explicit bridge for an OWNED marketplace listing, never a display-label join.
+
+    ``canonical_product_id`` names a ``marketplace_listings.id``. It used to name
+    a ``business_os_mkt_products.product_id``, which is a ledger with zero rows in
+    production; binding there meant the supplier gateway could never reach a real
+    product. The full chain is now: authenticated actor → authorised store →
+    owned ``marketplace_listings`` row → ``marketplace_product_sources`` →
+    supplier connection → CJ (pid, vid).
+
+    Ownership is checked twice, before and after the provider read, because the
+    read is a network call and a product can be transferred while it is in
+    flight. The second check is inside the same transaction as the write.
+    """
     connection = _scope(connection_id, business_id, store_id, actor_user_id, context, write=True)
     ensure_schema()
     conn = db.connect()
     try:
-        row = conn.execute("SELECT seller_user_id FROM business_os_mkt_products WHERE product_id=?", (canonical_product_id,)).fetchone()
-        if row is None or str(row["seller_user_id"]) != str(connection["merchant_id"]):
-            raise SupplierError("not_found", http_status=404)
+        _owned_listing_id(conn, canonical_product_id, connection["merchant_id"])
     finally:
         conn.close()
     detail = read("product", business_id=business_id, store_id=store_id, actor_user_id=actor_user_id,
@@ -239,15 +290,33 @@ def bind_product(*, connection_id, business_id, store_id, actor_user_id,
     try:
         merchant = connections._authorize(conn, business_id, store_id, actor_user_id, context=context, write=True)
         connections._row(conn, connection_id, business_id, store_id, merchant)
-        owned = conn.execute("SELECT seller_user_id FROM business_os_mkt_products WHERE product_id=?", (canonical_product_id,)).fetchone()
-        if owned is None or str(owned["seller_user_id"]) != str(merchant):
-            raise SupplierError("not_found", http_status=404)
-        conn.execute("INSERT INTO supplier_product_links (connection_id,business_id,store_id,canonical_product_id,pid,vid,snapshot_id,created_at) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(connection_id,business_id,store_id,canonical_product_id) DO NOTHING",
-                     (connection_id, business_id, store_id, canonical_product_id, pid, vid, detail["snapshot_id"], time.time()))
+        listing_id, owner_user_id = _owned_listing_id(conn, canonical_product_id, merchant)
+        # `marketplace_variants` takes a cursor, not a connection. On SQLite the
+        # two are nearly interchangeable — `Connection.execute` returns a cursor —
+        # but only until something reads a result, because `fetchone` lives on the
+        # cursor alone. Handing over a connection therefore type-checks, runs, and
+        # dies at the first read. One cursor, reused, so the ownership check and
+        # the write it guards are demonstrably on the same transaction.
+        cur = conn.cursor()
+        try:
+            marketplace_variants.link_source(
+                cur, listing_id=listing_id, seller_user_id=owner_user_id,
+                provider="cj", provider_product_id=pid, provider_variant_id=vid,
+                supplier_connection_id=connection_id,
+                business_id=business_id, store_id=store_id,
+                source_snapshot_id=detail["snapshot_id"],
+                sync_state=marketplace_supplier_schema.SYNC_SYNCED)
+        except marketplace_variants.VariantRejected as exc:
+            # Already bound to a different provider product or variant. Refused
+            # rather than overwritten: a listing whose supplier changed silently
+            # would keep selling a page describing the old product.
+            conn.rollback()
+            raise SupplierError("binding_conflict", http_status=409) from exc
         conn.commit()
-        row = conn.execute("SELECT pid,vid FROM supplier_product_links WHERE connection_id=? AND business_id=? AND store_id=? AND canonical_product_id=?",
-                           (connection_id, business_id, store_id, canonical_product_id)).fetchone()
-        if row["pid"] != pid or row["vid"] != vid:
+        row = marketplace_variants.supplier_binding(
+            conn.cursor(), listing_id=listing_id, supplier_connection_id=connection_id,
+            business_id=business_id, store_id=store_id)
+        if row is None or row["provider_product_id"] != pid or row["provider_variant_id"] != vid:
             raise SupplierError("binding_conflict", http_status=409)
     finally:
         conn.close()
@@ -255,14 +324,28 @@ def bind_product(*, connection_id, business_id, store_id, actor_user_id,
 
 
 def get_product_binding(connection_id, business_id, store_id, canonical_product_id):
-    """Internal worker lookup; HTTP callers must use an authorized gateway method."""
+    """Internal worker lookup; HTTP callers must use an authorized gateway method.
+
+    Returns the canonical source row under the gateway's own field names
+    (``pid``/``vid``/``snapshot_id``) so that fulfillment keeps speaking the
+    provider's vocabulary while the storage is canonical. The listing id travels
+    alongside, because an intent that cannot name the canonical listing it is
+    fulfilling is the split this reconciliation removed.
+    """
     ensure_schema()
     conn = db.connect()
     try:
-        row = conn.execute("SELECT * FROM supplier_product_links WHERE connection_id=? AND business_id=? AND store_id=? AND canonical_product_id=?",
-                           (connection_id, business_id, store_id, canonical_product_id)).fetchone()
-        if row is None:
+        row = marketplace_variants.supplier_binding(
+            conn.cursor(), listing_id=canonical_product_id, supplier_connection_id=connection_id,
+            business_id=business_id, store_id=store_id)
+        if row is None or not row.get("provider_variant_id"):
             raise SupplierError("product_binding_required", http_status=409)
-        return dict(row)
+        return dict(row) | {
+            "canonical_product_id": str(row["listing_id"]),
+            "listing_id": row["listing_id"],
+            "pid": row["provider_product_id"],
+            "vid": row["provider_variant_id"],
+            "snapshot_id": row["source_snapshot_id"],
+        }
     finally:
         conn.close()

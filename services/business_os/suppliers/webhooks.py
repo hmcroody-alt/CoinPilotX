@@ -65,16 +65,21 @@ def _targets(meta, event):
                 raise WebhookError()
             # Never trust an event to establish a provider order ID after UNKNOWN.
             return [{"kind": "intent", "resource_id": row["id"]}]
-        query = "SELECT DISTINCT pid,vid FROM supplier_product_links WHERE connection_id=? AND business_id=? AND store_id=?"
+        # Resolved against the canonical mapping. The provider names a pid/vid; only
+        # rows this connection actually bound can turn that into a listing, so an
+        # event naming a product bound by some other tenant selects nothing.
+        query = ("SELECT DISTINCT provider_product_id AS pid,provider_variant_id AS vid "
+                 "FROM marketplace_product_sources WHERE supplier_connection_id=? "
+                 "AND business_id=? AND store_id=? AND provider_variant_id IS NOT NULL")
         args = [meta["id"], meta["business_id"], meta["store_id"]]
         if kind == "PRODUCT":
-            query += " AND pid=?"
+            query += " AND provider_product_id=?"
             args.append(params.get("pid"))
         elif kind == "VARIANT":
-            query += " AND vid=?"
+            query += " AND provider_variant_id=?"
             args.append(params.get("vid"))
         elif kind == "STOCK" and 1 <= len(params) <= 100:
-            query += " AND vid IN (" + ",".join("?" for _ in params) + ")"
+            query += " AND provider_variant_id IN (" + ",".join("?" for _ in params) + ")"
             args.extend(params)
         else:
             raise WebhookError("unsupported_webhook", 422)

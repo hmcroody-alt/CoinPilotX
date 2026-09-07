@@ -310,6 +310,21 @@ def _coerce_minor(value: Any, field: str) -> int | None:
     return amount
 
 
+def _optional_text(value: Any, limit: int) -> str | None:
+    """A trimmed, length-capped string, or None for absent.
+
+    Empty string collapses to None so that a caller passing ``""`` cannot write a
+    row that reads as "bound to a connection whose id is the empty string". An
+    absent supplier reference and a blank one are the same fact and must have the
+    same storage, or every downstream ``IS NOT NULL`` test acquires a second case
+    it will not have been written to handle.
+    """
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text[:limit] if text else None
+
+
 def _coerce_stock(state: Any, quantity: Any) -> tuple[str, int | None]:
     """Normalise a (state, quantity) pair, defaulting to UNKNOWN.
 
@@ -464,20 +479,65 @@ def archive_variant(cur, *, variant_id: int, seller_user_id: int) -> bool:
 # Supplier source
 # ---------------------------------------------------------------------------
 
+def coerce_listing_id(value: Any) -> int:
+    """Parse an external product reference into a listing id, or refuse.
+
+    The supplier gateway carries its product reference as a string, because it
+    used to name a ``business_os_mkt_products.product_id`` (``"mktp_..."``).
+    Pointed at the canonical ledger it now has to name a
+    ``marketplace_listings.id``, which is an integer.
+
+    Anything unparseable raises the *same* ``VariantRejected("listing not
+    found")`` that ``_assert_owned`` raises for a listing owned by someone else.
+    That identical wording is load-bearing, not lazy: if a malformed reference
+    produced a distinguishable error, a caller could tell "this is not a listing
+    id at all" apart from "this is a listing id that is not yours", and the
+    second answer is the existence oracle the whole ownership check exists to
+    deny.
+    """
+    try:
+        listing_id = int(str(value).strip())
+    except (TypeError, ValueError):
+        raise VariantRejected("listing not found") from None
+    if listing_id <= 0:
+        raise VariantRejected("listing not found")
+    return listing_id
+
+
 def link_source(cur, *, listing_id: int, seller_user_id: int, provider: str,
                 provider_product_id: str,
-                fulfillment_mode: str = _schema.MODE_DROPSHIP) -> int:
+                fulfillment_mode: str = _schema.MODE_DROPSHIP,
+                supplier_connection_id: Any = None,
+                business_id: Any = None, store_id: Any = None,
+                provider_variant_id: Any = None, external_sku: Any = None,
+                source_snapshot_id: Any = None,
+                supplier_cost_cents: Any = None,
+                supplier_cost_currency: Any = None,
+                inventory_source: Any = None, inventory_reference: Any = None,
+                sync_state: Any = None) -> int:
     """Record where a listing came from. Idempotent per listing.
+
+    This is the *only* writer of supplier provenance. The CJ gateway used to
+    keep its own ``supplier_product_links`` table keyed on a
+    ``business_os_mkt_products`` id; that table was a second mapping authority
+    for the same fact, and two authorities for one fact means the question "where
+    does this listing come from" has two answers that can disagree. The gateway
+    now calls this function, so there is one answer.
 
     ``provider`` and ``fulfillment_mode`` are separate on purpose. A product can
     be imported from CJ and stocked in the seller's own garage, or authored by
     hand and drop-shipped; one column for both makes "who do I call to fulfil
     this order" unanswerable.
 
-    Re-linking the same listing to the same provider product updates the row.
-    Re-linking it to a *different* provider product is refused: a listing whose
+    Re-linking the same listing to the same provider product *and variant*
+    updates the row. Re-linking it to a different one is refused: a listing whose
     supplier silently changed underneath it would keep selling a page describing
     the old product.
+
+    Every optional argument left as ``None`` leaves the stored value alone rather
+    than nulling it. That matters most for ``supplier_cost_cents``, where None
+    means "this caller is not telling us the cost" and overwriting a known cost
+    with it would manufacture the unknown-cost state the caller never claimed.
     """
     _assert_owned(cur, listing_id, seller_user_id)
     resolved = str(provider or "").strip().lower()
@@ -489,34 +549,70 @@ def link_source(cur, *, listing_id: int, seller_user_id: int, provider: str,
     mode = str(fulfillment_mode or "").strip().upper()
     if mode not in FULFILLMENT_MODES:
         raise VariantRejected(f"unknown fulfillment_mode: {fulfillment_mode}")
+    variant_ref = _optional_text(provider_variant_id, 190)
+    state = str(sync_state or "").strip().upper() or None
+    if state is not None and state not in _schema.SYNC_STATES:
+        raise VariantRejected(f"unknown sync_state: {sync_state}")
+    cost = _coerce_minor(supplier_cost_cents, "supplier_cost_cents")
     now = _now()
 
+    optional = {
+        "supplier_connection_id": _optional_text(supplier_connection_id, 190),
+        "business_id": _optional_text(business_id, 190),
+        "store_id": _optional_text(store_id, 190),
+        "provider_variant_id": variant_ref,
+        "external_sku": _optional_text(external_sku, 190),
+        "source_snapshot_id": _optional_text(source_snapshot_id, 190),
+        "supplier_cost_cents": cost,
+        "supplier_cost_currency": _optional_text(supplier_cost_currency, 8),
+        "inventory_source": _optional_text(inventory_source, 190),
+        "inventory_reference": _optional_text(inventory_reference, 190),
+        "sync_state": state,
+    }
+
     cur.execute(
-        f"SELECT id, provider, provider_product_id FROM {SOURCE_TABLE} "
-        f"WHERE listing_id=? LIMIT 1",
+        f"SELECT id, provider, provider_product_id, provider_variant_id "
+        f"FROM {SOURCE_TABLE} WHERE listing_id=? LIMIT 1",
         (int(listing_id),),
     )
     row = cur.fetchone()
     if row is not None:
         existing = dict(row)
+        bound_variant = existing.get("provider_variant_id")
         if (str(existing.get("provider")) != resolved
-                or str(existing.get("provider_product_id")) != reference):
+                or str(existing.get("provider_product_id")) != reference
+                or (variant_ref is not None and bound_variant is not None
+                    and str(bound_variant) != variant_ref)):
             raise VariantRejected(
                 "this listing is already linked to a different supplier product")
+        sets = ["fulfillment_mode=?", "updated_at=?"]
+        values: list[Any] = [mode, now]
+        for column, value in optional.items():
+            if value is None:
+                continue
+            sets.append(f"{column}=?")
+            values.append(value)
+        values.extend([int(existing["id"]), int(seller_user_id)])
         cur.execute(
-            f"UPDATE {SOURCE_TABLE} SET fulfillment_mode=?, updated_at=? "
+            f"UPDATE {SOURCE_TABLE} SET {', '.join(sets)} "
             f"WHERE id=? AND seller_user_id=?",
-            (mode, now, int(existing["id"]), int(seller_user_id)),
+            tuple(values),
         )
         return int(existing["id"])
 
+    columns = ["listing_id", "seller_user_id", "provider", "provider_product_id",
+               "fulfillment_mode", "overridden_fields_json", "created_at", "updated_at"]
+    values = [int(listing_id), int(seller_user_id), resolved, reference, mode,
+              "[]", now, now]
+    for column, value in optional.items():
+        if value is None:
+            continue
+        columns.append(column)
+        values.append(value)
     cur.execute(
-        f"INSERT INTO {SOURCE_TABLE} "
-        f"(listing_id, seller_user_id, provider, provider_product_id, fulfillment_mode, "
-        f"overridden_fields_json, created_at, updated_at) "
-        f"VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (int(listing_id), int(seller_user_id), resolved, reference, mode,
-         "[]", now, now),
+        f"INSERT INTO {SOURCE_TABLE} ({', '.join(columns)}) "
+        f"VALUES ({', '.join('?' for _ in columns)})",
+        tuple(values),
     )
     cur.execute(
         f"SELECT id FROM {SOURCE_TABLE} WHERE listing_id=? LIMIT 1",
@@ -546,6 +642,71 @@ def source_for(cur, listing_id: int) -> dict | None:
     except (TypeError, ValueError):
         item["overridden_fields"] = []
     return item
+
+
+def supplier_binding(cur, *, listing_id: Any, supplier_connection_id: Any,
+                     business_id: Any, store_id: Any) -> dict | None:
+    """The supplier mapping for one listing *within one connection scope*.
+
+    This replaces ``gateway.get_product_binding``, which read the retired
+    ``supplier_product_links`` table. The scope tuple is matched, not trusted:
+    asking for a listing through a connection it was not bound through returns
+    None, so a worker holding a stale tuple cannot reach another tenant's row.
+
+    It takes no ``seller_user_id`` because its callers are worker and webhook
+    paths that have no actor. That is safe only because the connection scope is
+    itself already owner-scoped — ``business_os_supplier_connections`` is unique
+    on (business_id, store_id, provider) and the row was written by
+    ``link_source``, which did check ownership. The check happens once, at bind
+    time, and this read inherits it; it does not skip it.
+    """
+    try:
+        resolved = coerce_listing_id(listing_id)
+    except VariantRejected:
+        return None
+    cur.execute(
+        f"SELECT * FROM {SOURCE_TABLE} WHERE listing_id=? AND supplier_connection_id=? "
+        f"AND business_id=? AND store_id=? LIMIT 1",
+        (resolved, str(supplier_connection_id), str(business_id), str(store_id)),
+    )
+    row = cur.fetchone()
+    return dict(row) if row is not None else None
+
+
+def supplier_bindings_for_connection(cur, *, supplier_connection_id: Any,
+                                     business_id: Any, store_id: Any,
+                                     provider_product_id: Any = None,
+                                     provider_variant_id: Any = None,
+                                     variant_ids: Sequence[Any] | None = None,
+                                     limit: int = 101) -> list[dict]:
+    """Every supplier mapping reachable through one connection scope.
+
+    The webhook path needs this to answer "which of my listings does this
+    provider event touch". It is scoped to the connection tuple for the same
+    reason the single-row read is: a provider can name any product id it likes in
+    a webhook body, and the answer must be bounded by what this connection
+    actually bound rather than by what the event claims.
+    """
+    where = ["supplier_connection_id=?", "business_id=?", "store_id=?"]
+    args: list[Any] = [str(supplier_connection_id), str(business_id), str(store_id)]
+    if provider_product_id is not None:
+        where.append("provider_product_id=?")
+        args.append(str(provider_product_id))
+    if provider_variant_id is not None:
+        where.append("provider_variant_id=?")
+        args.append(str(provider_variant_id))
+    if variant_ids is not None:
+        wanted = [str(v) for v in variant_ids]
+        if not wanted:
+            return []
+        where.append("provider_variant_id IN (" + ",".join("?" for _ in wanted) + ")")
+        args.extend(wanted)
+    cur.execute(
+        f"SELECT * FROM {SOURCE_TABLE} WHERE {' AND '.join(where)} "
+        f"ORDER BY id LIMIT {int(limit)}",
+        tuple(args),
+    )
+    return [dict(row) for row in cur.fetchall()]
 
 
 def mark_overridden(cur, *, listing_id: int, seller_user_id: int,

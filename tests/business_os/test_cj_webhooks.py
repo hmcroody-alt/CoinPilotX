@@ -8,7 +8,7 @@ from services import db
 from services.business_os.payments import webhook_inbox
 from services.business_os.suppliers import webhooks as w
 from tests.business_os.test_cj_connections import database, SECRETS
-from tests.business_os.test_cj_fulfillment import ready, PID, VID, attempt
+from tests.business_os.test_cj_fulfillment import ready, OWNED_LISTING, PID, VID, attempt
 
 OFFICIAL_BODY = b'{"messageId":"123111","messageType":"INSERT","params":"123","type":"PRODUCT"}'
 OFFICIAL_SIGNATURE = "AHxoGFMoS/4mZfJ5vFes5//Pz2QibFQhh3GlrTtnWpk="
@@ -110,8 +110,16 @@ def test_delayed_and_out_of_order_events_only_schedule_readback(ready):
     webhook_inbox.reconcile_pending(w.mark_dirty, provider="cj", limit=10)
     conn = db.connect()
     assert conn.execute("SELECT COUNT(*) FROM business_os_supplier_sync_jobs").fetchone()[0] == 1
-    assert conn.execute("SELECT title FROM business_os_mkt_products WHERE product_id='product-a'").fetchone()[0] == "Retail owned title"
+    # A provider DELETED event schedules a read-back; it does not edit the
+    # merchant's storefront. Title and price are merchant-owned retail fields on
+    # the canonical listing, and no supplier path may write them — least of all a
+    # webhook, which is an unauthenticated stranger's claim about the world.
+    listing = dict(conn.execute(
+        "SELECT title, price_label, status, approval_status FROM marketplace_listings WHERE id=?",
+        (int(OWNED_LISTING),)).fetchone())
     conn.close()
+    assert listing == {"title": "Sports item", "price_label": "$5.00",
+                       "status": "published", "approval_status": "approved"}
 
 
 def test_shared_inbox_never_records_arbitrary_exception_text(ready, monkeypatch):

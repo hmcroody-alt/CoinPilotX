@@ -163,7 +163,11 @@ def _seed_jobs(limit, now):
         for account in accounts:
             for kind in ("health", "shops", "subscriptions"):
                 schedule(connection_id=account["id"], business_id=account["business_id"], store_id=account["store_id"], kind=kind, now=now)
-        links = conn.execute("SELECT DISTINCT l.connection_id,l.business_id,l.store_id,l.pid FROM supplier_product_links l WHERE NOT EXISTS (SELECT 1 FROM business_os_supplier_sync_jobs j WHERE j.connection_id=l.connection_id AND j.kind='inventory' AND j.resource_id=l.pid) ORDER BY l.connection_id,l.pid LIMIT ?", (limit,)).fetchall()
+        # Seeded from the canonical mapping, not the retired supplier_product_links.
+        # ``supplier_connection_id IS NOT NULL`` is what keeps this to provider-backed
+        # listings: a merchant-authored source row has no connection to sync against,
+        # and scheduling a CJ read for one would be a job that can never succeed.
+        links = conn.execute("SELECT DISTINCT l.supplier_connection_id AS connection_id,l.business_id AS business_id,l.store_id AS store_id,l.provider_product_id AS pid FROM marketplace_product_sources l WHERE l.supplier_connection_id IS NOT NULL AND l.business_id IS NOT NULL AND l.store_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM business_os_supplier_sync_jobs j WHERE j.connection_id=l.supplier_connection_id AND j.kind='inventory' AND j.resource_id=l.provider_product_id) ORDER BY connection_id,pid LIMIT ?", (limit,)).fetchall()
         for link in links:
             for kind in ("product", "inventory"):
                 schedule(connection_id=link["connection_id"], business_id=link["business_id"], store_id=link["store_id"], kind=kind, resource_id=link["pid"], now=now)
