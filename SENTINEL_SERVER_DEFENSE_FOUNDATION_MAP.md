@@ -147,6 +147,49 @@ Any new enforcement must express itself only in these codes.
   initialize_database_for_web_startup()` (`bot.py:119686`), which runs at import
   under gunicorn.
 
+### Found while wiring Stage 3
+
+* **`account_user_id()` is not a read — it can rotate a session.** It falls
+  through `session.get("account_user_id")` → `account_user_id_from_mobile_access_token()`
+  (opens a DB connection, `bot.py:3243`) → `restore_account_from_persistent_cookie()`,
+  which calls `rotate_mobile_refresh_token()` (`bot.py:3233`). Calling it from
+  an `after_request` hook would therefore make *logging a 401* both open a
+  database connection and rotate the user's refresh token — under a 401 flood,
+  connection amplification plus token-family churn, on the same code path
+  already known for reuse-detection revocations. Any observer must read
+  `session.get("account_user_id")` directly and accept device-level attribution
+  for bearer-only clients.
+* **A `before_request` already resolves the account for every request**
+  (`pulse_security_core_guard`, noted in the docstring at `bot.py:3222`), so by
+  `after_request` the session value is populated for free — the cheap read is
+  also the well-populated one.
+* **`webhook_app` is assigned twice, so hook registration needs proving, not
+  reading.** A decorator can attach a hook to the discarded first app object
+  and every unit test still passes. `tests/sentinel_integration/` asserts
+  membership in `webhook_app.after_request_funcs` and that `bot.app is
+  bot.webhook_app`.
+* **`log_visitor` excludes `/api/` deliberately** (a SELECT+INSERT+COMMIT per
+  request would tax every native call). That exclusion must *not* be copied by
+  a buffered observer — the native app drives almost all traffic through
+  `/api/`, so inheriting it would blind Sentinel to nearly everything. Pinned
+  by `test_api_paths_are_not_excluded_the_way_the_visitor_log_excludes_them`.
+
+## 5b. A dedupe default that silently eats the brute-force signal
+
+`events.Event` derives `dedupe_key` from
+`source|category|event_type|subject_type|subject_id|occurred_at`, and
+`occurred_at` has **one-second** resolution. For the scheduled scrapers the
+package was built around, that is correct idempotency. For anything observing
+the request path it is not: 50 failed logins in one second share every one of
+those fields, so 49 are discarded as "duplicates" — and volume is precisely
+what makes a brute force detectable. The loss is silent and is named after a
+virtue.
+
+Any request-path emitter must therefore set `dedupe_key` explicitly. The
+bridge uses `reqbridge:{uuid4}`; idempotency is not weakened by this, because
+`flush()` pops events off the buffer before writing, so no event is ever
+offered to `ingest()` twice.
+
 ## 6. Do not touch
 
 * `mobile-native/**`, `ios/**`, Expo/EAS config — Hard Rule #1, expected diff 0.

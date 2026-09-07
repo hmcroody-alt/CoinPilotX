@@ -3110,6 +3110,67 @@ def inject_admin_form_csrf(response):
     return response
 
 
+# Statuses the shipped App Store client already understands (Stage 1 contract):
+# 401 invalid/expired token, 403 restricted/forbidden, 423 Private Office
+# locked, 429 rate limited. Observing exactly these keeps the observation
+# surface aligned with the enforcement surface.
+SENTINEL_OBSERVED_STATUSES = (401, 403, 423, 429)
+
+
+@webhook_app.after_request
+def sentinel_observe_security_response(response):
+    """Feed security-relevant response codes into Sentinel. Shadow-mode.
+
+    Default OFF (``SENTINEL_REQUEST_BRIDGE_ENABLED``). Observes only; it never
+    alters the response, and it must never be the reason a request fails.
+
+    Two things this hook deliberately does NOT do, both of which are the
+    obvious implementation:
+
+    1. **It never calls ``account_user_id()``.** That helper falls through to
+       ``account_user_id_from_mobile_access_token()`` (which opens a database
+       connection) and then to ``restore_account_from_persistent_cookie()``
+       (which *rotates the user's refresh token*). Resolving the user here
+       would therefore turn logging a 401 into a database connection plus a
+       session rotation — during a 401 flood, the exact amplification the
+       buffered bridge exists to prevent, with token-family churn on top.
+       ``session.get("account_user_id")`` is a free dictionary read, and
+       ``pulse_security_core_guard`` has already resolved it for every
+       cookie-authenticated request by the time this runs.
+
+    2. **It does not read the request or response body.** Only the status, the
+       method and the identifier-stripped path shape leave this function.
+
+    Known gap, stated rather than discovered later: a client authenticated by
+    bearer token alone — with no session cookie — is recorded at device level
+    rather than against its user id, because naming it would cost the database
+    lookup above. Closing that belongs where the lookup already happens
+    (stash the id on ``g`` inside the token path), not here.
+    """
+    try:
+        if response.status_code not in SENTINEL_OBSERVED_STATUSES:
+            return response
+        from services.sentinel import request_bridge as _sentinel_bridge
+        if not _sentinel_bridge.bridge_enabled():
+            return response
+        event = _sentinel_bridge.build_request_event(
+            status=response.status_code,
+            path=request.path or "",
+            method=request.method or "",
+            user_id=session.get("account_user_id"),
+            ip_hash=client_ip_hash(),
+            environment=os.getenv("RAILWAY_ENVIRONMENT_NAME", "") or "",
+        )
+        if event is not None:
+            _sentinel_bridge.emit(event)
+    except Exception:
+        # A security observer that can 500 the product is a worse security
+        # outcome than no observer. This is not silent: emit() and flush()
+        # count their own failures into request_bridge.stats().
+        pass
+    return response
+
+
 @webhook_app.before_request
 def enforce_admin_form_csrf():
     if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
