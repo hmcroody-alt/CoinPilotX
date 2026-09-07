@@ -94,6 +94,13 @@ export type PulseLiveState = {
   guest_count?: number;
   messages?: PulseLiveChatMessage[];
   playback?: LivePlayback;
+  archive?: {
+    status?: string;
+    recording_status?: string;
+    recording_error?: string;
+    replay_available?: boolean;
+    replay_url?: string;
+  };
   discovery?: PulseLiveItem;
   reaction_cloud?: Record<string, unknown> | unknown[];
   health?: Record<string, unknown>;
