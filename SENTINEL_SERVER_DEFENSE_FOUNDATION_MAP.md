@@ -42,7 +42,7 @@ write a second security stack next to the dormant one.
 | Storage | 22 `sentinel_*` tables + 29 indexes (51 statements), `store.ensure_schema()` | `services/sentinel/store.py` |
 | Evidence | append-only hash chain | `services/sentinel/evidence.py` |
 | Health | freshness-decaying `HealthSnapshot`; UNKNOWN/STALE/CONFIGURED are **not** healthy | `services/sentinel/health.py` |
-| Kill switches | emergency > master > domain > per-runbook | `services/sentinel/killswitches.py` |
+| Kill switches | emergency > master > domain > per-runbook; **plus `GATES`, the registry every gate must appear in** (Stage 21) | `services/sentinel/killswitches.py` |
 | Prompt-injection primitives | `scan_for_injection()`, `wrap_untrusted()` | `services/sentinel/ai_security.py` |
 | UNDX tool authorization | `undx_tool_gateway.execute()` 9-step chokepoint; `undx_agent_policy.Decision` | `services/undx_tool_gateway.py`, `services/undx_agent_policy.py` |
 | Member login throttle | `login_security_preflight()` / `register_failed_login()` — **DB-backed**, per ip/email/domain | `bot.py:5360`, `bot.py:5491` |
@@ -82,6 +82,93 @@ implemented*. The correct move is to extend them, not to re-found them.
    ad-hoc per route (`WHERE user_id=?`), with no test proving user A cannot
    read user B. *(Closed in Stage 5/29 — but see the correction below, which
    changes what this gap actually was.)*
+
+### Found during Stage 21: the emergency switch did not reach everything
+
+`killswitches.py` opens by promising that `SENTINEL_EMERGENCY_KILL_SWITCH` turns
+"everything off, no exceptions". It did not, and the gap was in code this mission
+wrote.
+
+Established by running the process rather than by reading it — every enabling
+variable set, then the emergency switch on, then ask each gate what it returns:
+
+| Gate | Honoured emergency? | Added by |
+|---|---|---|
+| `killswitches.ingest_enabled` / `automation_enabled` | yes | pre-existing |
+| `external_providers.master_enabled` | yes | pre-existing (Stage 45) |
+| `rate_limit.mode` / `enabled` | yes | Stage 6 (this mission) |
+| `request_bridge.bridge_enabled` | **no** | Stage 3 (this mission) |
+| `bootstrap.bootstrap_enabled` | **no** | Stage 2 (this mission) |
+
+Every gate that predates this mission honoured the switch. Both that ignored it
+were added by it, which is the useful part of the finding: the convention was
+sound and unenforced, so it decayed exactly where new code touched it.
+
+**Severity, stated honestly, because the two are not equal.**
+
+`bridge_enabled` is the *less* serious one despite being on the request path.
+`emit()` checks `killswitches.ingest_enabled()` one line after it checks
+`bridge_enabled()`, and `events.ingest()` checks it a third time, so under an
+emergency stop nothing was ever buffered or written. The consequence was not a
+control gap but a reporting lie: `stats()["enabled"]` is `bridge_enabled()`, so
+the health surface reported the bridge as **enabled**, with
+`evidence_complete: true` beside it, while it was recording nothing. An operator
+reading that during an incident would conclude Sentinel was watching. That is
+Hard Rule #4 broken in the direction that actually costs something — a stopped
+control reported as running is worse than one reported as unknown, because it is
+believed.
+
+`bootstrap_enabled` is the substantive one. It gates DDL at boot and genuinely
+still ran. The docstring's defence — creating empty tables is inert — holds in
+the ordinary case but not in the case you would use the switch for: this
+repository has a documented failure mode where schema creation on a connection
+that never commits leaves a catalog lock and the next connection blocks on it.
+"Sentinel's DDL is hanging boot" is a plausible reason to hit the emergency
+switch, and it was one of the few things the switch could not stop. Nothing is
+stranded by refusing, since bootstrap runs on every boot.
+
+**Why nothing noticed, which is the finding that mattered.** The test named
+`test_emergency_kills_everything` called the three functions defined in
+`killswitches.py` and stopped. It was structurally incapable of failing for a
+gate defined in another module. A test whose name claims a global property and
+whose body checks a local one is the same vacuity this mission has been
+correcting elsewhere, and here it had already cost something.
+
+So the fix is not the two one-line guards. It is `killswitches.GATES`: a registry
+of all twelve gates with the module, function, kind and documented default for
+each, plus `all_gates()`, `gate_value()` and `enforcement_gates()`. Three
+invariants are now enforced by `tests/sentinel/test_gate_registry.py`:
+
+1. every registered gate returns False under the emergency switch — with a
+   partner that turns them all on first, since "everything is off" would
+   otherwise pass for the boring reason that most of them default off;
+2. no gate classified as enforcement may default on — deploying the code must not
+   be the decision that starts changing production behaviour for a client that
+   cannot be updated (Hard Rule #3). Today the only enforcement gate is
+   `distributed_limits`, and it defaults off;
+3. an AST scan finds every function in `services/sentinel` that reads a
+   `SENTINEL_*_ENABLED`/`_MODE` switch and fails if one is neither registered nor
+   in a documented exemption list — so the next gate cannot repeat this.
+
+The exemptions are six, each with a reason that was checked rather than assumed:
+`domain_automation_enabled`, `runbook_enabled` and `provider_enabled` are
+parameterised sub-gates that return False unless a registered parent does;
+`enrichment_policy.evaluate` and `external_providers.ensure_registered` call the
+registered gates rather than deciding anything; `rate_limit.mode` returns a mode
+string and is registered through its boolean wrapper `rate_limit.enabled`.
+
+**Detection vs enforcement.** The brief asks for this separation. It already
+exists and did not need inventing: `rate_limit` has `off` / `shadow` / `enforce`
+with separate `shadow_limited` and `enforced_blocks` counters. Stage 21 adopts
+that vocabulary as the `kind` field on `Gate` rather than introducing a second
+one, per Hard Rule #6.
+
+**Caught by mutation, not by review:** `gate_value()` on an unknown name returned
+False, but nothing tested it, and flipping the fallback to `return True` passed
+the entire suite. An unknown gate name is an unanswerable authorization question
+and the answer is no (Hard Rule #5); a renamed or deleted gate would otherwise
+have read as permanently open. Now tested, with a partner proving a real name
+still says yes.
 
 ### Correction applied during Stage 10: gap 4 named the wrong function twice
 

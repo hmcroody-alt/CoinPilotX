@@ -365,6 +365,87 @@ SEAM_MUTANTS = [
      [("        sections.extend(sealed_sections)", "        pass")]),
 ]
 
+# --- Stage 21: the gate registry --------------------------------------------
+# The defect this stage fixed was not that two gates ignored the emergency switch.
+# It was that nothing could notice: the test called `test_emergency_kills_everything`
+# exercised the three functions defined in killswitches.py and no consumer, so it
+# was structurally incapable of failing for a gate defined elsewhere. Two were.
+#
+# A registry only helps if the tests around it can fail, and a registry is unusually
+# easy to test vacuously — iterating an empty tuple satisfies almost every assertion
+# you would write about one. Most of the mutants below therefore attack the *test's*
+# ability to see rather than the gate logic itself.
+GATE_TARGET = ROOT / "services/sentinel/killswitches.py"
+GATE_TESTS = "tests/sentinel/test_gate_registry.py"
+
+_GATE_BOOTSTRAP_ENTRY = """    Gate("schema_bootstrap", "services.sentinel.bootstrap", "bootstrap_enabled",
+         _SCHEMA, True, "creating Sentinel tables at boot"),"""
+
+_GATE_LIMITS_ENTRY = """    Gate("distributed_limits", "services.sentinel.rate_limit", "enabled",
+         _ENFORCE, False, "rejecting requests with 429 across gunicorn workers"),"""
+
+GATE_MUTANTS = [
+    # A gate exists in the code but drops out of the registry — the precise shape of
+    # the original defect, since an unregistered gate is one the emergency test
+    # cannot reach. The AST scan is what has to catch this.
+    ("G1 a real gate is dropped from the registry and nothing scans for it",
+     [(_GATE_BOOTSTRAP_ENTRY, "")]),
+
+    # The vacuity failure: every loop over GATES passes when GATES is empty.
+    ("G2 the registry reports no gates at all",
+     [("    return {gate.name: bool(_resolve(gate)()) for gate in GATES}",
+       "    return {}")]),
+
+    # Unknown-means-open. A gate name that no longer resolves would read as allowed.
+    ("G3 an unknown gate name reports as enabled instead of denied",
+     [("""        if gate.name == name:
+            return bool(_resolve(gate)())
+    return False""",
+       """        if gate.name == name:
+            return bool(_resolve(gate)())
+    return True""")]),
+
+    # Enforcement checks iterate this; returning nothing makes them all trivially pass.
+    ("G4 no gate is classified as enforcement, so the default-off rule guards nothing",
+     [("    return tuple(g for g in GATES if g.kind in ENFORCEMENT_KINDS)",
+       "    return ()")]),
+
+    # Misclassifying the one gate a user can feel as read-only exempts it from the
+    # rule that enforcement may never arrive switched on.
+    ("G5 the 429 limiter is reclassified as observation",
+     [(_GATE_LIMITS_ENTRY, _GATE_LIMITS_ENTRY.replace("_ENFORCE", "_OBSERVE"))]),
+
+    # Documentation drift: the registry claims default-off for something that is on.
+    ("G6 the limiter is documented default-off while defaulting on",
+     [(_GATE_LIMITS_ENTRY, _GATE_LIMITS_ENTRY.replace("_ENFORCE, False,", "_ENFORCE, True,"))]),
+
+    # Health stops carrying the registry, so an operator sees a hand-picked subset.
+    ("G7 the health snapshot stops reporting the gate registry",
+     [('        "gates": all_gates(),', "")]),
+]
+
+# The two gates that actually survived the emergency switch, each restored in its own
+# file. These are named separately from the registry mutants because losing them again
+# should fail with the file's name attached.
+GATEBOOT_TARGET = ROOT / "services/sentinel/bootstrap.py"
+GATEBRIDGE_TARGET = ROOT / "services/sentinel/request_bridge.py"
+
+GATEBOOT_MUTANTS = [
+    ("G8 schema bootstrap ignores the emergency switch and runs DDL anyway",
+     [("""    if killswitches.emergency_killed():
+        return False
+    raw = os.getenv("SENTINEL_SCHEMA_BOOTSTRAP_ENABLED")""",
+       """    raw = os.getenv("SENTINEL_SCHEMA_BOOTSTRAP_ENABLED")""")]),
+]
+
+GATEBRIDGE_MUTANTS = [
+    ("G9 the bridge reports itself enabled while the emergency switch has it stopped",
+     [("""    if killswitches.emergency_killed():
+        return False
+    return str(os.getenv("SENTINEL_REQUEST_BRIDGE_ENABLED", "")).strip().lower() in _TRUTHY""",
+       """    return str(os.getenv("SENTINEL_REQUEST_BRIDGE_ENABLED", "")).strip().lower() in _TRUTHY""")]),
+]
+
 SUITES = [
     ("services/sentinel/request_bridge.py", BRIDGE_TARGET, BRIDGE_TESTS, BRIDGE_MUTANTS),
     ("services/sentinel/rate_limit.py", RATE_TARGET, RATE_TESTS, RATE_MUTANTS),
@@ -375,6 +456,12 @@ SUITES = [
      OBJAUTH_TARGET, OBJAUTH_TESTS, OBJAUTH_MUTANTS),
     ("services/pulse_ai_knowledge.py (Stage 10 prompt boundary seam)",
      SEAM_TARGET, SEAM_TESTS, SEAM_MUTANTS),
+    ("services/sentinel/killswitches.py (Stage 21 gate registry)",
+     GATE_TARGET, GATE_TESTS, GATE_MUTANTS),
+    ("services/sentinel/bootstrap.py (Stage 21 emergency reach)",
+     GATEBOOT_TARGET, GATE_TESTS, GATEBOOT_MUTANTS),
+    ("services/sentinel/request_bridge.py (Stage 21 emergency reach)",
+     GATEBRIDGE_TARGET, GATE_TESTS, GATEBRIDGE_MUTANTS),
 ]
 
 survived = []

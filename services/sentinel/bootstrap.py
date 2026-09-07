@@ -41,7 +41,7 @@ import re
 import threading
 import time
 
-from services.sentinel import store
+from services.sentinel import killswitches, store
 
 logger = logging.getLogger(__name__)
 
@@ -252,7 +252,21 @@ def bootstrap_enabled() -> bool:
     defaults off, is whether the request path *writes* to them — see
     ``SENTINEL_REQUEST_BRIDGE_ENABLED``. Creating storage and filling it are
     different decisions and get different switches.
+
+    The emergency switch overrides the default-on, and this one is not cosmetic.
+    Creating empty tables is inert in the ordinary case, but DDL at boot is not
+    free on PostgreSQL: this repository has a documented failure mode where
+    schema creation on a connection that never commits leaves a catalog lock and
+    the next connection blocks on it. "Sentinel's DDL is hanging boot" is
+    therefore a plausible reason for an owner to reach for the emergency switch,
+    and before this it was one of the few things the switch could not stop. The
+    switch is only worth having if it works on the case you would use it for.
+
+    Nothing is stranded by refusing: bootstrap runs on every boot, so clearing
+    the switch and restarting recreates the schema.
     """
+    if killswitches.emergency_killed():
+        return False
     raw = os.getenv("SENTINEL_SCHEMA_BOOTSTRAP_ENABLED")
     if raw is None or raw.strip() == "":
         return True

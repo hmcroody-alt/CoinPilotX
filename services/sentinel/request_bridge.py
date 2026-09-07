@@ -89,7 +89,22 @@ _STATS: dict = {
 
 
 def bridge_enabled() -> bool:
-    """Whether the request path may write into Sentinel. Default **OFF**."""
+    """Whether the request path may write into Sentinel. Default **OFF**.
+
+    The emergency switch is consulted here even though it changes no behaviour on
+    the write path: :func:`emit` already refuses when ``ingest_enabled()`` is
+    false, and that check runs one line after this one. What it changes is what
+    :func:`stats` reports. ``stats()["enabled"]`` is this function, so during an
+    emergency stop the health surface used to say the bridge was enabled while it
+    was in fact recording nothing — and said ``evidence_complete: true`` beside
+    it, because nothing had been dropped. An operator reading that would conclude
+    Sentinel was watching. A health surface that reports a stopped control as
+    enabled is the "no fake health" rule broken in the one direction that
+    matters, so the gate now answers the question an operator is actually asking:
+    is this thing running.
+    """
+    if killswitches.emergency_killed():
+        return False
     return str(os.getenv("SENTINEL_REQUEST_BRIDGE_ENABLED", "")).strip().lower() in _TRUTHY
 
 
