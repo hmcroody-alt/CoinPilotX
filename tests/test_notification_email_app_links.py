@@ -171,3 +171,46 @@ def test_mutation_the_label_follows_the_registry(monkeypatch):
         lambda path: patched["post"] if "/pulse/post/" in path else None,
     )
     assert cta("/pulse/post/1234")[1] == "Renamed CTA"
+
+
+# ---------------------------------------------------------------------------
+# Destination correctness in _deep_link_for_event
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "event_type",
+    ["marketplace_order", "order_accepted", "order_shipped", "order_delivered"],
+)
+def test_order_notifications_point_at_a_destination_that_exists(event_type):
+    from services.notification_service import _deep_link_for_event
+
+    # The old /pulse/marketplace/orders was a 404 on the web and, in the app,
+    # matched MarketplaceDetail's `:listingId` -- opening a listing screen
+    # hunting for a listing called "orders".
+    link = _deep_link_for_event(event_type)
+    assert link == "/pulse/orders"
+    assert app_links.match_destination(link) is not None
+    assert app_links.match_destination(link).key == "orders"
+
+
+def test_every_generated_deep_link_either_resolves_or_is_web_intent():
+    # A destination string that is neither is a link that lands nowhere.
+    from services.notification_service import _deep_link_for_event
+
+    events = [
+        ("message", {"conversation_id": 12}),
+        ("post_like", {"post_id": 5}),
+        ("status_reply", {"status_id": 3}),
+        ("new_follower", {"actor_user_id": 9}),
+        ("live_started", {"live_id": 4}),
+        ("premium", {}),
+        ("account_login", {}),
+        ("marketplace_order", {}),
+        ("unknown_event", {}),
+    ]
+    for event_type, metadata in events:
+        link = _deep_link_for_event(event_type, metadata=metadata)
+        resolves = app_links.match_destination(link) is not None
+        web_intent = app_links.is_web_intent_path(link)
+        assert resolves or web_intent, f"{event_type} -> {link} lands nowhere"
