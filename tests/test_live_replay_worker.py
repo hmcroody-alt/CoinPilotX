@@ -250,7 +250,7 @@ def _backlog_database(tmp_path, rows, ended_at="2026-01-01T00:00:00"):
     return database
 
 
-def test_backlog_requeues_replay_unavailable_that_still_has_a_recording_source(tmp_path, monkeypatch):
+def test_backlog_requeues_every_recoverable_or_unpublished_recording(tmp_path, monkeypatch):
     """replay_unavailable is only terminal when there is nothing left to recover.
 
     api_pulse_live_end assigns it when a session has no recording source, so a row
@@ -272,8 +272,44 @@ def test_backlog_requeues_replay_unavailable_that_still_has_a_recording_source(t
     queued = [r[0] for r in conn.execute(
         "SELECT target_id FROM pulse_jobs WHERE job_type='finalize_live_replay' ORDER BY target_id").fetchall()]
     conn.close()
-    assert queued == [11], f"expected only the recoverable session to be queued, got {queued}"
-    assert result["queued"] == 1
+    assert queued == [11, 14], f"expected recoverable and ready-but-unpublished sessions, got {queued}"
+    assert result["queued"] == 2
+
+
+def test_backlog_requeues_ready_asset_to_repair_lost_publication(tmp_path, monkeypatch):
+    """A restart after VOD persistence but before publication must self-heal."""
+    database = _backlog_database(tmp_path, [(14, "ls-14", "asset-14", "mux_asset_ready")])
+    conn = _connect(database)
+    conn.execute(
+        "INSERT INTO pulse_posts (id,live_session_id,live_status,live_viewer_count,replay_url,"
+        "playback_url,preview_url,body,title,status,deleted_at,updated_at) "
+        "VALUES (114,14,'processing',5,'','','poster.jpg','Live','Live','published',NULL,'2026-01-01T00:00:00')"
+    )
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(media_worker.bot, "db", lambda: _connect(database))
+    media_worker.reconcile_live_replay_backlog(25)
+
+    ready = {
+        "ok": True,
+        "mux_status": "ready",
+        "mux_recording_playback_id": "play-14",
+        "playback_url": "https://stream.mux.com/play-14.m3u8",
+    }
+    monkeypatch.setattr(media_worker.mux_live_service, "create_mux_asset_from_live_recording", lambda **_: ready)
+    published = []
+    monkeypatch.setattr(
+        media_worker.bot,
+        "pulse_live_publish_replay_reel",
+        lambda live_id, trace_id: published.append(live_id) or {"ok": True},
+    )
+
+    assert _run_due_now(database) == {"queued": 1, "processed": 1, "failed": 0}
+    assert published == [14]
+    conn = _connect(database)
+    post = conn.execute("SELECT live_status,replay_url FROM pulse_posts WHERE live_session_id=14").fetchone()
+    conn.close()
+    assert post == ("archived", "https://stream.mux.com/play-14.m3u8")
 
 
 def test_backlog_requeue_is_one_way_and_cannot_loop(tmp_path, monkeypatch):
