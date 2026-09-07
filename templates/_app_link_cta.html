@@ -1,0 +1,48 @@
+{#
+  Shared app-link call to action.
+
+  One component so every "open this in the app" button on the website is built
+  the same way and points at the same canonical link. Templates must not
+  hand-write app links: `app_link()` validates the destination against what the
+  released binary actually resolves and raises otherwise, which is how a button
+  reading "Open this listing" is stopped from shipping if it would land on Home.
+
+  Deliberately NOT a replacement for ordinary web navigation. A signed-in member
+  clicking "Open PulseSoc" in the site header wants the web feed; this component
+  is for places that are explicitly about the app. Add it, do not convert.
+
+  Accessibility notes, since these render inside existing design-system buttons:
+  - a real <a>, so it is keyboard reachable and gets the site's focus ring
+  - the label states that the link leaves the website, so the accessible name is
+    meaningful out of context ("Open this post in PulseSoc", not "Open")
+  - no ids are emitted, so the macro is safe to use more than once on a page
+  - the badge is a sibling link, never hover-revealed, and never an overlay
+  - nothing here is absolutely positioned, so it cannot shift layout on load
+
+  Usage -- the `with context` is required, not stylistic. Jinja imports are
+  context-less by default, so without it the macros cannot see `app_link` /
+  `app_link_label` / `app_store_url` from the context processor and every call
+  raises UndefinedError at render time:
+    {% raw %}{% from "_app_link_cta.html" import app_cta, app_store_badge with context %}
+    {{ app_cta("home", source="web") }}
+    {{ app_cta("post", post_id, source="web") }}{% endraw %}
+#}
+
+{% macro app_cta(destination, resource_id=None, source="web", label=None, classes="button primary") -%}
+<a class="{{ classes }}"
+   href="{{ app_link(destination, resource_id, source) }}"
+   data-app-link="{{ destination }}">{{ label or app_link_label(destination) }}</a>
+{%- endmacro %}
+
+{#
+  A separately labelled store link. Section 3 allows this alongside a contextual
+  app-opening CTA but never instead of one: "Download on the App Store" tells a
+  member without the app where to get it, while the CTA above is what actually
+  opens the destination they were looking at.
+#}
+{% macro app_store_badge(classes="button ghost") -%}
+<a class="{{ classes }}"
+   href="{{ app_store_url() }}"
+   rel="noopener"
+   data-app-link="app-store">Download on the App Store</a>
+{%- endmacro %}
