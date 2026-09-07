@@ -103,7 +103,8 @@ CREATE TABLE IF NOT EXISTS marketplace_listings (
     product_type TEXT DEFAULT 'digital',
     listing_type TEXT DEFAULT '',
     listing_metadata_json TEXT DEFAULT '',
-    published_at TEXT
+    published_at TEXT,
+    cover_image_url TEXT
 )
 """
 

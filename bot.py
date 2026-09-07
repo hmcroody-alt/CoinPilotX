@@ -1268,6 +1268,11 @@ _load_route_pack("business_os_web", "services.business_os_web")
 # page. Every endpoint is DARK (404) until its BUSINESS_OS_* flag is on.
 _load_route_pack("business_os_commerce", "services.business_os_commerce_routes")
 _load_route_pack("business_os_suppliers", "services.business_os_supplier_routes")
+# The merchant-facing dropshipping journey (browse -> import cart -> DRAFT
+# listing -> merchant edits -> publish) over /api/business-os/dropshipping. No
+# path or field here names a provider; CJ is a value, not a URL segment, so a
+# second supplier reaches the same screens. Shares the suppliers feature flag.
+_load_route_pack("business_os_dropshipping", "services.business_os_dropshipping_routes")
 # UNDX durable agent runs, read side only: GET /api/undx/runs and /<run_id>. The write
 # half of a run is queued by the existing /api/pulse-ai/message path and executed by the
 # undx_worker service; this pack is how the person who asked finds out what became of it.
