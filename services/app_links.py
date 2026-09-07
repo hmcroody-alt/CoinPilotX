@@ -533,6 +533,15 @@ WEB_INTENT_PREFIXES = (
     "/account/",
     "/checkout/",
     "/billing/",
+    # The whole /dashboard family is a web-designed analytics and management
+    # surface -- creator, crypto, economy, network, system. There is no native
+    # equivalent to open, so these must never be marked as app intents or an
+    # iPhone member would be sent to the App Store instead of the page they
+    # asked for.
+    "/dashboard",
+    # The livestream studio is a browser broadcasting surface. Classified here
+    # so link handling leaves it strictly alone.
+    "/pulse/live/studio",
     "/api/",
     "/static/",
     "/.well-known/",

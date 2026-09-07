@@ -20,6 +20,7 @@ from typing import Any
 
 import requests
 
+from services import app_links
 from services import db as db_service
 from services import email_service, push_service, sms_service
 from services.schema_guard import run_once_per_process
@@ -540,6 +541,42 @@ def sanitize_deep_link(value: Any) -> str:
     if link.startswith(("/api/", "/static/", "/admin/")):
         return "/pulse/notifications"
     return link
+
+
+SMS_PREFIX = "PulseSoc: "
+SMS_MAX_CHARS = 480
+
+
+def _sms_link(deep_link: Any) -> str:
+    """The absolute, tappable URL to put in a text message.
+
+    sanitize_deep_link returns a relative path, and a relative path in an SMS is
+    not a link at all -- members were being sent the literal string
+    "/pulse/post/123". This promotes it to the canonical origin and marks it as
+    an app intent, so an iPhone with PulseSoc installed opens the app and one
+    without it lands on the App Store rather than the website.
+
+    Web-intent destinations (legal pages, password reset) come back from
+    app_intent_url unmarked and stay on the web, which is the only place they
+    can actually be completed.
+    """
+    link = app_links.app_intent_url(
+        sanitize_deep_link(deep_link or "/pulse/notifications"), "sms"
+    )
+    if link.startswith("/"):
+        link = f"{app_links.CANONICAL_APP_ORIGIN}{link}"
+    return link
+
+
+def _sms_body(preview: Any, link: str, limit: int = SMS_MAX_CHARS) -> str:
+    """Assemble the message, trimming the preview rather than the URL.
+
+    The old code truncated the whole string, so a long preview silently ate the
+    end of the link and shipped a dead one. A clipped sentence is recoverable;
+    a clipped URL is not.
+    """
+    budget = max(limit - len(SMS_PREFIX) - len(link) - 1, 0)
+    return f"{SMS_PREFIX}{str(preview or '')[:budget]} {link}"
 
 
 def _env_value(*keys: str) -> str:
@@ -1760,7 +1797,11 @@ def notify_security_event(
         title=_compact_text(title, 200) or "Security alert",
         body=_compact_text(body, 300) or "Review recent account activity.",
         preview=preview,
-        deep_link="/dashboard/security",
+        # Was /dashboard/security, which is not a route -- a security alert, the
+        # one notification a member must be able to act on immediately, opened a
+        # 404. /account/security is the real page, and reviewing account
+        # activity is a web account workflow, so it stays on the web.
+        deep_link="/account/security",
         metadata=_event_metadata(metadata, secure_preview=True),
         category="security",
         priority="urgent",
@@ -1805,7 +1846,9 @@ def notify_creator_event(
     title: str,
     body: str,
     source_id: str | int = "",
-    deep_link: str = "/pulse/dashboard/creator",
+    # Was /pulse/dashboard/creator, which is not a route. The creator dashboard
+    # lives at /dashboard/creator.
+    deep_link: str = "/dashboard/creator",
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     normalized = normalize_type(event_type or "creator_payout")
@@ -2684,7 +2727,10 @@ def _dispatch_sms(cur: Any, notification: dict[str, Any], prefs: dict[str, Any])
         return {"ok": False, "status": "skipped_no_contact", "provider": "brevo_sms", "message": "Verified SMS opt-in phone number is missing."}
     if not _brevo_sms_configured():
         return {"ok": False, "status": "config_missing", "provider": "brevo_sms", "message": "Brevo SMS is not configured."}
-    text = f"PulseSoc: {_notification_public_preview(notification, prefs)} {sanitize_deep_link(notification.get('deep_link') or '/pulse/notifications')}"[:480]
+    text = _sms_body(
+        _notification_public_preview(notification, prefs),
+        _sms_link(notification.get("deep_link")),
+    )
     result = sms_service.send_sms(phone, text, purpose=str(notification.get("type") or "notification"), user_id=int(notification.get("recipient_user_id") or notification.get("user_id") or 0))
     if result.get("ok"):
         return {"ok": True, "status": "sent", "provider": "brevo_sms", "provider_response": result}
