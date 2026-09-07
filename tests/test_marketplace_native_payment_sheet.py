@@ -101,14 +101,16 @@ def test_the_offers_lane_reserves_stock_like_every_other_lane():
     assert "quantity=quantity-?" in code
     assert 'code="OUT_OF_STOCK"' in code
     # Failure has to give the stock back, or a Stripe outage quietly empties
-    # the catalogue.
-    assert "release_inventory_reservation(cur, tx_id, now=now)" in code
+    # the catalogue. Stage 6 routed that release through the shared settlement
+    # path, so the bare call this used to name is gone by design.
+    assert "settle_failed_transactions(" in code
+    assert "REASON_CHECKOUT_ERROR" in code
 
 
 def test_the_offers_lane_imports_the_cart_helpers_rather_than_copying_them():
     # Three checkout entry points with three private reservation
     # implementations is how one of them drifts.
-    assert offers.release_inventory_reservation is cart.release_inventory_reservation
+    assert offers.settle_failed_transactions is cart.settle_failed_transactions
     assert offers.stripe_shipping_checkout_params is cart.stripe_shipping_checkout_params
     assert offers._listing_metadata is cart._listing_metadata
 
@@ -172,7 +174,9 @@ def test_a_declined_delayed_payment_releases_held_stock():
     assert '"checkout.session.async_payment_failed"' in code
     assert 'terminal_status = "checkout_expired" if event_type == "checkout.session.expired" else "checkout_failed"' in code
     # And a plain card decline on a single-transaction lane must release too.
-    assert code.count("marketplace_cart_service.release_inventory_reservation(cur, tx_id, now=now)") >= 1
+    # Stage 6 moved every one of these releases behind the shared settlement
+    # path; the count is kept so a branch cannot drop its release entirely.
+    assert code.count("marketplace_cart_service.settle_failed_transactions(") >= 4
 
 
 def test_the_sheet_header_names_the_store_not_the_account_holder():

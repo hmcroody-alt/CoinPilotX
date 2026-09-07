@@ -41,6 +41,11 @@ REQUIRED_EVENTS = {
     "customer.subscription.deleted",
     "payment_intent.succeeded",
     "payment_intent.payment_failed",
+    # Stripe sends no event of its own when a buyer dismisses the Apple Pay or
+    # PaymentSheet UI; the intent's cancellation is the only signal. Endpoint
+    # subscriptions live in the Stripe Dashboard, so an unsubscribed endpoint
+    # leaves the handler inert and every abandoned sheet strands its hold.
+    "payment_intent.canceled",
     "charge.refunded",
     "payout.paid",
     "payout.failed",
