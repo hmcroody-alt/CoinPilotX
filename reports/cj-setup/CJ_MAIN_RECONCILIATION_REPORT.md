@@ -26,6 +26,21 @@ performed. The newly authorized staging stack is in a separate Railway project,
 not the pre-existing production project. See `CJ_STAGING_ACCEPTANCE_STATUS.md`
 for current acceptance; the earlier inventory below is historical.
 
+Final read-only main status also revealed a new, still-uncommitted ledger-authority
+reconciliation in progress. Preserved without copying or staging:
+`services/business_os/marketplace/schema.py`,
+`services/business_os/suppliers/fulfillment.py`,
+`services/business_os/suppliers/gateway.py`,
+`services/business_os/suppliers/webhooks.py`,
+`services/business_os/suppliers/worker.py`,
+`services/marketplace_supplier_schema.py`, `services/marketplace_variants.py`,
+`services/schema_guard.py`, `tests/business_os/test_cj_fulfillment.py`,
+`tests/business_os/test_cj_gateway.py`, `tests/business_os/test_cj_webhooks.py`,
+`tests/business_os/test_cj_worker.py`,
+`tests/marketplace/test_supplier_ledger_authority.py`, and
+`tests/marketplace_production_listings.py`. A future handoff must reconcile this
+work explicitly; the staging deployment does not contain these changing files.
+
 Observed 2026-09-07. This is current checkout/configuration evidence, not live CJ
 or live production-database acceptance.
 

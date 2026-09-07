@@ -1,5 +1,10 @@
 # PulseSoc CJ staging acceptance + import integration
 
+> HISTORICAL PRE-AUTHORIZATION REPORT. The user subsequently authorized billable
+> isolated staging. Current deployment, PostgreSQL, worker and remaining live-CJ
+> evidence is in [CJ_RAILWAY_STAGING_ACCEPTANCE.md](CJ_RAILWAY_STAGING_ACCEPTANCE.md).
+> The original no-staging-authorization blocker below is now closed.
+
 ## FINAL VERDICT: PARTIAL — staging authorization boundary
 
 The existing foundation was preserved, reconciled locally, and reverified.
