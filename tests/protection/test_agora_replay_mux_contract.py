@@ -47,8 +47,9 @@ def test_existing_media_worker_finalizes_and_reconciles_live_replay():
 def test_mux_ready_stores_replay_identity_and_duration_before_reel_creation():
     webhook = BOT[BOT.index("def api_pulse_live_mux_webhook"):BOT.index("def pulse_live_audio_v2_env_flag")]
     assert "mux_recording_duration_seconds" in webhook
-    assert '"mux_asset_ready" if status == "ready" else "mux_retryable"' in webhook
-    assert "pulse_live_publish_replay_reel" in webhook
+    assert "finalize_live_replay" in webhook
+    assert "video.asset.live_stream_completed" in webhook
+    assert "pulse_live_publish_replay_reel" not in webhook
 
 
 def test_long_reel_is_linked_to_original_live_and_mux_vod():

@@ -48598,6 +48598,7 @@ def api_pulse_live_start():
         live_id = int(cur.lastrowid)
         if custom_category:
             cur.execute("UPDATE pulse_live_sessions SET custom_category=? WHERE id=?", (custom_category, live_id))
+        cur.execute("UPDATE pulse_live_sessions SET record_replay=?, replay_publish_enabled=? WHERE id=?", (int(live_archive_service.recording_allowed(payload)), int(live_archive_service.publication_allowed(payload)), live_id))
         logging.info("PULSE_LIVE_START_TRACE trace_id=%s step=session_insert_ok live_id=%s", trace_id, live_id)
         studio_url = f"/pulse/live/studio/{live_id}"
         cur.execute(
@@ -48841,6 +48842,7 @@ def api_pulse_live_mux_create():
         )
         live_id = int(cur.lastrowid)
         studio_url = f"/pulse/live/studio/{live_id}"
+        cur.execute("UPDATE pulse_live_sessions SET record_replay=?, replay_publish_enabled=? WHERE id=?", (int(live_archive_service.recording_allowed(payload)), int(live_archive_service.publication_allowed(payload)), live_id))
         cur.execute("UPDATE pulse_live_sessions SET studio_url=?, stream_id=? WHERE id=?", (studio_url, live_id, live_id))
         cur.execute(
             """
@@ -48999,6 +49001,9 @@ def api_pulse_live_mux_webhook():
     now = datetime.utcnow().isoformat(timespec="seconds")
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     try:
+        marker = str(data.get("passthrough") or "").split(":", 3)
+        if mux_asset_id and len(marker) == 4 and marker[0] == "pulse_replay" and marker[1].isdigit():
+            cur.execute("UPDATE pulse_live_sessions SET mux_recording_asset_id=? WHERE id=? AND agora_recording_sid=? AND COALESCE(replay_retry_key,'')=? AND COALESCE(mux_recording_asset_id,'')='' AND COALESCE(record_replay,1)=1", (mux_asset_id, int(marker[1]), marker[2], marker[3]))
         if event_type in {"video.live_stream.created", "video.live_stream.connected", "video.live_stream.disconnected"} and mux_live_stream_id:
             status = "live" if event_type == "video.live_stream.connected" else "idle" if event_type == "video.live_stream.disconnected" else (data.get("status") or "created")
             cur.execute(
@@ -49008,11 +49013,11 @@ def api_pulse_live_mux_webhook():
                     publish_state=CASE WHEN ?='live' THEN CASE WHEN provider='agora' THEN 'agora_mux_live' ELSE 'publishing' END WHEN ?='idle' THEN 'idle' ELSE publish_state END,
                     is_live=CASE WHEN ?='live' THEN 1 WHEN ?='idle' THEN 0 ELSE is_live END,
                     updated_at=?
-                WHERE mux_live_stream_id=?
+                WHERE mux_live_stream_id=? AND status NOT IN ('ended','archived')
                 """,
                 (status, status, status, status, status, status, status, now, mux_live_stream_id),
             )
-            cur.execute("UPDATE pulse_live_streams SET mux_live_status=?, status=CASE WHEN ?='live' THEN 'live' WHEN ?='idle' THEN 'idle' ELSE status END, updated_at=? WHERE mux_live_stream_id=?", (status, status, status, now, mux_live_stream_id))
+            cur.execute("UPDATE pulse_live_streams SET mux_live_status=?, status=CASE WHEN ?='live' THEN 'live' WHEN ?='idle' THEN 'idle' ELSE status END, updated_at=? WHERE mux_live_stream_id=? AND status NOT IN ('ended','archived')", (status, status, status, now, mux_live_stream_id))
         elif event_type in {"video.upload.asset_created", "video.upload.cancelled", "video.upload.errored"} and mux_upload_id:
             status = "preparing" if event_type == "video.upload.asset_created" else "errored"
             processing_status = "mux_processing" if status == "preparing" else "failed"
@@ -49068,36 +49073,31 @@ def api_pulse_live_mux_webhook():
                     UPDATE pulse_live_sessions
                     SET mux_recording_asset_id=COALESCE(NULLIF(?, ''), mux_recording_asset_id),
                         mux_recording_playback_id=COALESCE(NULLIF(?, ''), mux_recording_playback_id),
-                        replay_url=COALESCE(NULLIF(?, ''), replay_url),
                         mux_recording_duration_seconds=CASE WHEN ?>0 THEN ? ELSE mux_recording_duration_seconds END,
                         recording_status=?, recording_error=?, updated_at=?
-                    WHERE mux_recording_asset_id=? OR mux_live_stream_id=?
+                    WHERE (mux_recording_asset_id=? OR (COALESCE(mux_recording_asset_id,'')='' AND mux_live_stream_id=?)) AND COALESCE(record_replay,1)=1 AND COALESCE(recording_status,'') NOT IN ('mux_asset_ready','replay_ready')
                     """,
-                    (mux_asset_id, playback_id, playback_url, mux_duration_seconds, mux_duration_seconds, "mux_asset_ready" if status == "ready" else "mux_retryable", "" if status == "ready" else "Mux recording asset errored; replay finalization may be retried.", now, mux_asset_id, mux_live_stream_id),
+                    (mux_asset_id, playback_id, mux_duration_seconds, mux_duration_seconds, "processing_replay", "", now, mux_asset_id, mux_live_stream_id),
                 )
                 cur.execute(
                     "UPDATE pulse_live_streams SET mux_recording_asset_id=COALESCE(NULLIF(?, ''), mux_recording_asset_id), mux_recording_playback_id=COALESCE(NULLIF(?, ''), mux_recording_playback_id), updated_at=? WHERE mux_recording_asset_id=? OR mux_live_stream_id=?",
                     (mux_asset_id, playback_id, now, mux_asset_id, mux_live_stream_id),
                 )
         replay_reel_live_ids = []
-        if event_type == "video.asset.ready" and mux_asset_id:
+        if event_type in {"video.asset.ready", "video.asset.live_stream_completed", "video.asset.errored"} and mux_asset_id:
             cur.execute(
-                "SELECT id FROM pulse_live_sessions WHERE (mux_recording_asset_id=? OR mux_live_stream_id=?) AND status IN ('ended','archived') AND COALESCE(replay_reel_id,0)=0",
+                "SELECT id FROM pulse_live_sessions WHERE (mux_recording_asset_id=? OR (COALESCE(mux_recording_asset_id,'')='' AND mux_live_stream_id=?)) AND status IN ('ended','archived') AND COALESCE(record_replay,1)=1 AND COALESCE(replay_reel_id,0)=0",
                 (mux_asset_id, mux_live_stream_id),
             )
             replay_reel_live_ids = [safe_int(row[0], 0) for row in cur.fetchall()]
+            for replay_live_id in replay_reel_live_ids:
+                cur.execute("UPDATE pulse_live_sessions SET mux_recording_asset_id=COALESCE(NULLIF(mux_recording_asset_id,''),?) WHERE id=?", (mux_asset_id, replay_live_id))
+                cur.execute("INSERT INTO pulse_jobs (job_type,target_type,target_id,status,attempts,max_attempts,run_after,created_at,updated_at) SELECT 'finalize_live_replay','live',?,'pending',0,5,?,?,? WHERE NOT EXISTS (SELECT 1 FROM pulse_jobs WHERE job_type='finalize_live_replay' AND target_id=? AND status IN ('pending','processing'))", (replay_live_id, now, now, now, replay_live_id))
         cur.execute(
             "INSERT INTO pulse_live_events (event_type, actor_user_id, post_id, payload_json, created_at) VALUES (?, 0, 0, ?, ?)",
             (f"mux:{event_type}", json.dumps({"event_id": event.get("id") or "", "mux_live_stream_id": mux_live_stream_id, "mux_upload_id": mux_upload_id, "mux_asset_id": mux_asset_id}, default=str)[:5000], now),
         )
         conn.commit(); conn.close()
-        for replay_live_id in replay_reel_live_ids:
-            if not replay_live_id:
-                continue
-            try:
-                pulse_live_publish_replay_reel(replay_live_id, trace_id=f"mux-ready-{replay_live_id}")
-            except Exception:
-                logging.exception("PULSE_LIVE_REPLAY_REEL_WEBHOOK_FAILED live_id=%s", replay_live_id)
         return jsonify({"ok": True, "event_type": event_type})
     except Exception as exc:
         logging.exception("PULSE_LIVE_MUX_WEBHOOK_FAILED event_type=%s error=%s", event_type, exc)
@@ -50393,6 +50393,8 @@ def pulse_live_bootstrap_recording(cur, live, *, trace_id=""):
     live_id = safe_int(live.get("id"), 0)
     if not live_id:
         return {"ok": False, "reason": "live_not_found"}
+    if not live_archive_service.recording_allowed(live) or live.get("status") in {"ended", "archived"}:
+        return {"ok": False, "reason": "recording_disabled_or_ended"}
     if str(live.get("agora_recording_sid") or "").strip():
         return {"ok": True, "already": True}
     channel_name = live.get("webrtc_room_id") or f"pulse-live-{live_id}"
@@ -50488,7 +50490,7 @@ def api_pulse_live_browser_publish(live_id):
                 channel_name = live.get("webrtc_room_id") or f"pulse-live-{live_id}"
                 existing_sid = str(live.get("agora_recording_sid") or "").strip()
                 existing_alive = False
-                if existing_sid:
+                if existing_sid and live_archive_service.recording_allowed(live):
                     # The recording now starts server-side at live start. Reuse
                     # it while the provider still knows it; a dead recorder
                     # (idle timeout before the host joined) is restarted below.
@@ -50496,7 +50498,7 @@ def api_pulse_live_browser_publish(live_id):
                     existing_alive = bool(probe.get("ok"))
                 if existing_alive:
                     recording = {"ok": True, "sid": existing_sid, "resource_id": live.get("agora_recording_resource_id") or "", "recording_uid": live.get("agora_recording_uid") or "", "prefix": live.get("agora_recording_prefix") or ""}
-                else:
+                elif live_archive_service.recording_allowed(live):
                     acquired = agora_cloud_recording_service.acquire(live_id=live_id, channel_name=channel_name)
                     if acquired.get("ok") and acquired.get("resource_id"):
                         recording = agora_cloud_recording_service.start(live_id=live_id, channel_name=channel_name, resource_id=acquired["resource_id"], recording_uid=acquired["recording_uid"])
@@ -50507,6 +50509,8 @@ def api_pulse_live_browser_publish(live_id):
                 logging.exception("PULSE_LIVE_AGORA_RECORDING_START_FAILED live_id=%s", live_id)
                 recording = {"ok": False, "reason": "exception", "message": "Replay recording could not start."}
             recording_status = "recording" if recording.get("ok") and recording.get("sid") else "recording_failed"
+            if not live_archive_service.recording_allowed(live):
+                recording_status = "recording_disabled"
             recording_error = "" if recording_status == "recording" else clean_html(recording.get("message") or recording.get("reason") or "Replay recording could not start.")[:500]
             cur.execute(
                 "UPDATE pulse_live_sessions SET provider='agora', publish_state='agora_host_publishing', stream_health='agora_connected', status='live', is_live=1, audio_tracks=?, video_tracks=?, recording_status=?, recording_error=?, agora_recording_resource_id=?, agora_recording_sid=?, agora_recording_uid=?, agora_recording_prefix=?, updated_at=? WHERE id=?",
@@ -50776,6 +50780,12 @@ def api_pulse_live_state(live_id):
     if not live:
         conn.close()
         return api_error("Live stream not found.", 404)
+    authorized, _ = pulse_live_viewer_authorized(cur, live, user["user_id"])
+    if live.get("status") in {"ended", "archived"} and not live_archive_service.publication_allowed(live):
+        authorized = pulse_live_is_host(live, user) or bool(admin_current_user())
+    if not authorized or pulse_live_user_is_blocked(cur, live_id, user["user_id"]):
+        conn.close()
+        return api_error("This live replay is not available to this account.", 403)
     cur.execute("""
         SELECT c.*, COALESCE(u.display_name,u.username,'Viewer') AS display_name
         FROM pulse_live_chat c
@@ -50854,7 +50864,7 @@ def api_pulse_live_state(live_id):
         "playback": playback,
         "mux": {
             "live_status": live.get("mux_live_status") or "",
-            "playback_id": live.get("mux_playback_id") or "",
+            "playback_id": playback.get("mux_playback_id") or "",
             "playback_url": playback.get("playback_url") or "",
             "quota_exhausted": (live.get("mux_live_status") or "").lower() == "egress_quota_exhausted",
         },
@@ -52308,11 +52318,14 @@ def pulse_live_publish_replay_reel(live_id, *, trace_id=""):
         if (live.get("status") or "") not in ("ended", "archived"):
             conn.close()
             return {"ok": False, "reason": "live_not_ended"}
+        if not live_archive_service.publication_allowed(live) or not live_archive_service.replay_ready(live):
+            conn.close()
+            return {"ok": False, "reason": "replay_not_authorized_or_ready"}
         if (live.get("moderation_status") or "clear").strip().lower() not in {"clear", "approved"}:
             conn.close()
             return {"ok": False, "reason": "replay_blocked_by_moderation"}
         playback_id = (live.get("mux_recording_playback_id") or "").strip()
-        video_url = f"https://stream.mux.com/{playback_id}.m3u8" if playback_id else (live.get("replay_url") or "").strip()
+        video_url = mux_live_service.refresh_signed_replay_url((live.get("replay_url") or "").strip())
         if not video_url or not reel_media_source_is_playable(video_url):
             conn.close()
             return {"ok": False, "reason": "replay_not_playable"}
@@ -52420,7 +52433,7 @@ def pulse_live_publish_replay_reel(live_id, *, trace_id=""):
             nconn = db(); nconn.row_factory = sqlite3.Row; ncur = nconn.cursor()
             ncur.execute("SELECT * FROM users WHERE user_id=? LIMIT 1", (host_user_id,))
             host = dict(ncur.fetchone() or {})
-            if host:
+            if host and visibility == "public":
                 replay_notifications = pulse_notify_followers(
                     ncur,
                     host,
@@ -52454,6 +52467,7 @@ def api_pulse_live_end(live_id):
         return api_error("Login required.", 401)
     now = datetime.utcnow().isoformat(timespec="seconds")
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("UPDATE pulse_live_sessions SET updated_at=updated_at WHERE id=?", (live_id,))
     cur.execute("SELECT * FROM pulse_live_sessions WHERE id=? LIMIT 1", (live_id,))
     live = dict(cur.fetchone() or {})
     if not live:
@@ -52463,22 +52477,27 @@ def api_pulse_live_end(live_id):
         conn.close()
         return api_error("Only the host or an admin can end this stream.", 403)
     replay_url = clean_html((request.get_json(silent=True) or {}).get("replay_url") or live.get("replay_url") or "")[:700]
+    if live.get("status") in {"ended", "archived"}:
+        archive = live_archive_service.replay_manifest(live)
+        conn.close()
+        return jsonify({"ok": True, "status": "ended", "live_id": live_id, "recording_status": live.get("recording_status"), "replay_status": archive["status"], "replay_available": archive["replay_available"], "replay_url": archive["replay_url"]})
+    if not live_archive_service.recording_allowed(live):
+        replay_url = ""
     replay_is_cdn = bool(replay_url and replay_url.startswith((os.getenv("R2_PUBLIC_BASE_URL", "").rstrip("/") or "https://cdn.coinpilotx.app") + "/"))
     # A Mux-recorded session has no asset id yet at end time: Mux only populates
     # recent_asset_ids once it has cut the recording, which is after this call.
     # Treating the live stream id as a recording source is what keeps the session
     # out of 'replay_unavailable' and gets a finalize job queued for it.
-    has_recording_source = bool(
+    has_recording_source = live_archive_service.recording_allowed(live) and bool(
         live.get("agora_recording_sid")
         or live.get("mux_recording_asset_id")
         or live.get("mux_live_stream_id")
     )
-    # The asset.ready webhook can land before the host taps end. When it has, the
-    # playback id is already stored and overwriting the status with
-    # 'processing_replay' would send a finished replay back through finalization.
+    # A playback ID may exist while the recording is still live. Preserve only
+    # readiness confirmed by the replay worker, never infer it from an ID.
     recording_status = (
         "replay_ready" if replay_is_cdn
-        else "mux_asset_ready" if live.get("mux_recording_playback_id")
+        else "mux_asset_ready" if live_archive_service.replay_ready(live)
         else "processing_replay" if has_recording_source
         else "replay_unavailable"
     )
@@ -52503,9 +52522,10 @@ def api_pulse_live_end(live_id):
             )
     cur.execute("UPDATE pulse_live_streams SET status='ended', ended_at=?, updated_at=? WHERE session_id=?", (now, now, live_id))
     cur.execute("UPDATE pulse_live_viewers SET status='left', left_at=?, last_seen_at=? WHERE live_id=? AND status IN ('watching','hosting')", (now, now, live_id))
-    feed_post_id = live_feed_service.mark_live_feed_ended(cur, live_id=live_id, replay_url=replay_url if replay_is_cdn else "", viewer_count=viewer_count, replay_expected=has_recording_source)
+    publish_replay = live_archive_service.publication_allowed(live)
+    feed_post_id = live_feed_service.mark_live_feed_ended(cur, live_id=live_id, replay_url=replay_url if replay_is_cdn and publish_replay else "", viewer_count=viewer_count, replay_expected=has_recording_source and publish_replay)
     live_restream_service.mark_targets_ended(cur, live_id=live_id)
-    share_options = live_archive_share_service.create_post_live_options(cur, live_id=live_id, replay_url=replay_url if replay_is_cdn else "")
+    share_options = live_archive_share_service.create_post_live_options(cur, live_id=live_id, replay_url=replay_url if replay_is_cdn else "") if publish_replay else []
     cur.execute("INSERT INTO pulse_live_chat (live_id, user_id, body, message_type, moderation_status, pinned, metadata_json, created_at) VALUES (?, ?, 'Live stream ended.', 'system', 'approved', 1, ?, ?)", (live_id, user["user_id"], json.dumps({"kind": "ended"}, default=str), now))
     conn.commit(); conn.close()
     # ZERO-DELAY LIVE END: nothing below this line may do media work, replay
@@ -52544,6 +52564,53 @@ def api_pulse_live_end(live_id):
         "replay_reel_post_id": 0,
         "post_live_options": share_options,
     })
+
+
+@webhook_app.route("/api/pulse/live/<int:live_id>/replay/retry", methods=["POST"])
+def api_pulse_live_replay_retry(live_id):
+    """Host-requested recovery; a processing Mux asset is never replaced."""
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    try:
+        # Serialize retries for this recording before inspecting provider state.
+        cur.execute("UPDATE pulse_live_sessions SET updated_at=updated_at WHERE id=?", (live_id,))
+        cur.execute("SELECT * FROM pulse_live_sessions WHERE id=?", (live_id,))
+        live = dict(cur.fetchone() or {})
+        if not live or int(live.get("user_id") or 0) != int(user["user_id"]):
+            return api_error("Only the host can retry this replay.", 403)
+        if live.get("status") != "ended" or not live_archive_service.recording_allowed(live):
+            return api_error("This recording cannot be retried.", 409)
+        if live_archive_service.replay_ready(live):
+            return jsonify({"ok": True, "status": "ready"})
+        cur.execute("SELECT 1 FROM pulse_jobs WHERE job_type='finalize_live_replay' AND target_id=? AND status IN ('pending','processing')", (live_id,))
+        if cur.fetchone():
+            return jsonify({"ok": True, "status": "processing"})
+        asset_id = live.get("mux_recording_asset_id") or ""
+        if asset_id:
+            asset = mux_live_service.create_mux_asset_from_live_recording(recording_asset_id=asset_id)
+            if not asset.get("ok"):
+                return api_error("The recording service is unavailable. Try again shortly.", 503)
+            if asset.get("mux_status") == "errored":
+                if not live.get("agora_recording_filename"):
+                    return api_error("The original recording needs support review before recovery.", 409)
+                cur.execute("UPDATE pulse_live_sessions SET replay_retry_key=?, mux_recording_asset_id='', mux_recording_playback_id='', replay_url='', recording_status='processing_replay', recording_error='' WHERE id=?", (asset_id, live_id))
+        elif live.get("recording_status") != "mux_creation_pending":
+            if not (live.get("agora_recording_sid") or live.get("mux_live_stream_id")):
+                return api_error("No original recording is available for recovery.", 409)
+            cur.execute("UPDATE pulse_live_sessions SET recording_status='processing_replay', recording_error='' WHERE id=?", (live_id,))
+        now = datetime.utcnow().isoformat(timespec="seconds")
+        if live.get("recording_status") != "mux_creation_pending":
+            cur.execute("UPDATE pulse_live_sessions SET recording_status='processing_replay',recording_error='' WHERE id=?", (live_id,))
+        cur.execute("INSERT INTO pulse_jobs (job_type,target_type,target_id,status,attempts,max_attempts,run_after,created_at,updated_at) VALUES ('finalize_live_replay','live',?,'pending',0,5,?,?,?)", (live_id, now, now, now))
+        if live_archive_service.publication_allowed(live):
+            cur.execute("UPDATE pulse_posts SET live_status='processing',replay_url='',playback_url='',updated_at=? WHERE live_session_id=? AND deleted_at IS NULL", (now, live_id))
+        conn.commit()
+        return jsonify({"ok": True, "status": "processing"})
+    finally:
+        conn.close()
 
 
 @webhook_app.route("/pulse/creator-status", methods=["GET"])
@@ -109921,6 +109988,9 @@ def _init_db_impl():
         ("replay_asset_id", "INTEGER DEFAULT 0"),
         ("replay_reel_id", "INTEGER DEFAULT 0"),
         ("recording_status", "TEXT DEFAULT 'pending'"),
+        ("record_replay", "INTEGER DEFAULT 1"),
+        ("replay_publish_enabled", "INTEGER DEFAULT 1"),
+        ("replay_retry_key", "TEXT DEFAULT ''"),
         ("recording_error", "TEXT"),
         ("custom_category", "TEXT"),
         ("mux_live_stream_id", "TEXT"),

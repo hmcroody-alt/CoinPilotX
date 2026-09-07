@@ -112,6 +112,31 @@ def public_recording_url(prefix: str, filename: str) -> str:
     return f"{base}/{'/'.join(parts)}" if base and filename else ""
 
 
+def find_finalized_recording(prefix: str) -> dict:
+    """Recover a stopped recorder when its stop response was lost on restart."""
+    prefix = str(prefix or "").strip("/")
+    if not prefix:
+        return {"ok": False}
+    try:
+        import boto3
+        from botocore.config import Config
+        client = boto3.client("s3", endpoint_url=os.environ["R2_ENDPOINT_URL"], aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"], aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"], config=Config(signature_version="s3v4"))
+        options = {"Bucket": os.environ["R2_BUCKET"], "Prefix": prefix + "/", "MaxKeys": 1000}
+        for _ in range(3):
+            page = client.list_objects_v2(**options)
+            candidates = [item for item in page.get("Contents", []) if item["Key"].endswith(".m3u8") and not item["Key"].endswith("mux-ingest.m3u8")]
+            for item in sorted(candidates, key=lambda item: item.get("LastModified", ""), reverse=True)[:10]:
+                body = client.get_object(Bucket=options["Bucket"], Key=item["Key"])["Body"].read().decode("utf-8", "replace")
+                if "#EXT-X-ENDLIST" in body and "#EXTINF:" in body:
+                    return {"ok": True, "filename": item["Key"]}
+            if not page.get("NextContinuationToken"):
+                break
+            options["ContinuationToken"] = page["NextContinuationToken"]
+    except Exception:
+        logging.warning("AGORA_RECORDING_RECOVERY_UNAVAILABLE")
+    return {"ok": False}
+
+
 def prepare_private_mux_input(prefix: str, filename: str) -> dict:
     """Build a private HLS input Mux can fetch directly from R2.
 
@@ -138,6 +163,8 @@ def prepare_private_mux_input(prefix: str, filename: str) -> dict:
         )
         bucket = os.environ["R2_BUCKET"]
         manifest = client.get_object(Bucket=bucket, Key=manifest_key)["Body"].read().decode("utf-8", "replace")
+        if "#EXT-X-ENDLIST" not in manifest:
+            return {"ok": False, "reason": "recording_upload_pending", "message": "The recording is still uploading."}
         base_dir = posixpath.dirname(manifest_key)
         expires = max(900, min(int(os.getenv("R2_MUX_SIGNED_URL_TTL_SECONDS", "7200")), 21600))
         rewritten = []

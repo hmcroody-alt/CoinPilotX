@@ -834,10 +834,12 @@ def _public_post(
     if (item.get("post_type") or "") == "live" or live_session_id:
         live_status = str(item.get("live_status") or item.get("status") or "live").lower()
         replay_url = item.get("replay_url") or (item.get("playback_url") if live_status in {"archived", "replay_ready"} else "") or ""
+        from . import mux_live_service
+        replay_url = mux_live_service.refresh_signed_replay_url(replay_url)
         live_payload = {
             "live_session_id": live_session_id,
             "status": live_status,
-            "playback_url": (item.get("playback_url") or "") if live_status not in {"processing", "ended"} else "",
+            "playback_url": replay_url if live_status in {"archived", "replay_ready"} else (item.get("playback_url") or "") if live_status not in {"processing", "ended", "unavailable", "failed"} else "",
             "preview_url": item.get("preview_url") or "",
             "replay_url": replay_url,
             "viewer_count": int(item.get("live_viewer_count") or 0),

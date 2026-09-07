@@ -100,6 +100,10 @@ export type PulseLiveState = {
     recording_error?: string;
     replay_available?: boolean;
     replay_url?: string;
+    message?: string;
+    delayed?: boolean;
+    processing_seconds?: number;
+    retry_after_seconds?: number;
   };
   discovery?: PulseLiveItem;
   reaction_cloud?: Record<string, unknown> | unknown[];
@@ -294,6 +298,10 @@ export type EndLiveResult = {
   replayUrl: string;
   replayAvailable: boolean;
 };
+
+export async function retryLiveReplay(liveId: number) {
+  return pulseApi(`/api/pulse/live/${liveId}/replay/retry`, { method: "POST", body: "{}" });
+}
 
 /** End a broadcast (host only). Optionally attach a replay url. */
 export async function endLive(liveId: number, opts: { replayUrl?: string } = {}): Promise<EndLiveResult> {

@@ -48,3 +48,14 @@ def test_private_mux_input_rewrites_manifest_without_copying_video(monkeypatch):
     body = r2.puts[0]["Body"].decode("utf-8")
     assert "https://signed.example/pulsesoc/live-recordings/8/part-1.ts" in body
     assert "https://signed.example/pulsesoc/live-recordings/8/part-2.ts" in body
+
+
+def test_restart_recovers_finalized_manifest_without_restarting_recorder(monkeypatch):
+    r2 = _R2()
+    r2.list_objects_v2 = lambda **kwargs: {"Contents": [{"Key": "pulsesoc/live-recordings/8/recording.m3u8"}, {"Key": "pulsesoc/live-recordings/8/mux-ingest.m3u8"}]}
+    monkeypatch.setitem(sys.modules, "boto3", types.SimpleNamespace(client=lambda *args, **kwargs: r2))
+    for name in ["R2_ENDPOINT_URL", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET"]:
+        monkeypatch.setenv(name, "test")
+    result = agora_cloud_recording_service.find_finalized_recording("pulsesoc/live-recordings/8")
+    assert result == {"ok": True, "filename": "pulsesoc/live-recordings/8/recording.m3u8"}
+    assert r2.puts == []

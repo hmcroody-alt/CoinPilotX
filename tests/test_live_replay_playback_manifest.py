@@ -5,6 +5,7 @@ def test_finished_live_uses_durable_replay_url_not_expired_live_url():
     manifest = live_distribution_service.playback_manifest({
         "id": 41,
         "status": "ended",
+        "recording_status": "mux_asset_ready",
         "mux_live_status": "idle",
         "playback_url": "https://old.example/live.m3u8",
         "replay_url": "https://stream.mux.com/replay-41.m3u8",
@@ -19,7 +20,7 @@ def test_finished_live_uses_durable_replay_url_not_expired_live_url():
     assert manifest["preferred_transport"] == "hls"
 
 
-def test_finished_live_can_reconstruct_replay_from_recording_playback_id():
+def test_finished_live_requires_confirmed_replay_before_using_playback_id():
     manifest = live_distribution_service.playback_manifest({
         "id": 42,
         "status": "archived",
@@ -27,8 +28,8 @@ def test_finished_live_can_reconstruct_replay_from_recording_playback_id():
         "mux_recording_playback_id": "replay-42",
     })
 
-    assert manifest["playback_url"] == "https://stream.mux.com/replay-42.m3u8"
-    assert manifest["supports_hls"] is True
+    assert manifest["playback_url"] == ""
+    assert manifest["supports_hls"] is False
 
 
 def test_active_live_still_uses_live_playback_identity():

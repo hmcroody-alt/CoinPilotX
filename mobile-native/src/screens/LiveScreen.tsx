@@ -18,6 +18,7 @@ import {
 } from "react-native";
 import {
   getLiveState,
+  retryLiveReplay,
   getLiveRtcToken,
   joinLive,
   listLiveChat,
@@ -324,7 +325,7 @@ export function LiveScreen({ route, navigation }: Props) {
   const currentPublishState = String(state?.publish_state || active?.publish_state || "").toLowerCase();
   const liveMayAcceptWebRtc = Boolean(activeLiveId && !["ended", "offline", "archived", "deleted", "failed"].includes(currentStatus));
   const liveReadyForGuest = Boolean(["live", "active"].includes(currentStatus) || (currentProvider === "agora" && currentPublishState === "agora_host_publishing"));
-  const canUseWebRtc = Boolean((currentProvider === "agora" || liveSupportsNativeWebRtc(state || active) || (!canPlayHls && liveMayAcceptWebRtc)) && !playbackFailed && !rtcPlaybackFailed);
+  const canUseWebRtc = Boolean(liveMayAcceptWebRtc && (currentProvider === "agora" || liveSupportsNativeWebRtc(state || active) || !canPlayHls) && !playbackFailed && !rtcPlaybackFailed);
   const rtcParticipants = useMemo(
     () =>
       room.participants
@@ -681,12 +682,19 @@ export function LiveScreen({ route, navigation }: Props) {
               />
             ) : (
               <View style={styles.unsupported}>
-                <Text style={styles.unsupportedTitle}>Live playback unavailable</Text>
+                <Text style={styles.unsupportedTitle}>{!liveMayAcceptWebRtc ? "Live ended" : "Live playback unavailable"}</Text>
                 <Text style={styles.unsupportedText}>
-                  PulseSoc could not establish native playback for this Live.
+                  {!liveMayAcceptWebRtc ? state?.archive?.message || "Replay unavailable" : "PulseSoc could not establish native playback for this Live."}
                 </Text>
-                <Pressable style={styles.primaryButton} onPress={() => openLiveWebFallback(activeLiveId).catch(() => undefined)}>
-                  <Text style={styles.primaryButtonText}>Open Live Web Viewer</Text>
+                <Pressable style={styles.primaryButton} onPress={() => {
+                  if (liveMayAcceptWebRtc) { void openLiveWebFallback(activeLiveId).catch(() => undefined); return; }
+                  const recover = state?.viewer_role === "host" && state?.archive?.status === "failed";
+                  void (recover ? retryLiveReplay(activeLiveId) : Promise.resolve()).then(() => {
+                    setPlaybackFailed(false);
+                    return refreshLiveState(activeLiveId, "manual");
+                  }).catch((error) => setError(error instanceof Error ? error.message : "Replay status could not be refreshed."));
+                }}>
+                  <Text style={styles.primaryButtonText}>{liveMayAcceptWebRtc ? "Open Live Web Viewer" : state?.viewer_role === "host" && state?.archive?.status === "failed" ? "Retry replay" : "Check replay status"}</Text>
                 </Pressable>
               </View>
             )}

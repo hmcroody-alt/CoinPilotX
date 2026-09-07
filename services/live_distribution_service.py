@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 
-from . import mux_live_service
+from . import mux_live_service, live_archive_service
 
 
 def playback_manifest(session=None):
@@ -18,7 +18,9 @@ def playback_manifest(session=None):
     # finalization successfully produced a replay.
     mux_playback_id = (
         session.get("mux_recording_playback_id") if finished else session.get("mux_playback_id")
-    ) or session.get("mux_playback_id") or ""
+    ) or ""
+    if finished and not live_archive_service.replay_ready(session):
+        mux_playback_id = ""
     mux_url = mux_live_service.playback_url(mux_playback_id)
     mux_status = (session.get("mux_live_status") or "").lower()
     publish_state = (session.get("publish_state") or session.get("status") or "idle").lower()
@@ -28,8 +30,12 @@ def playback_manifest(session=None):
         or mux_status in {"egress_quota_exhausted", "livekit_direct"}
         or (session.get("stream_health") or "").lower() in {"livekit_direct", "egress_quota_exhausted"}
     )
-    replay_url = (session.get("replay_url") or "") if finished else ""
-    explicit_hls = replay_url or mux_url or session.get("playback_url") or session.get("hls_url") or ""
+    replay_url = mux_live_service.refresh_signed_replay_url(session.get("replay_url") or "") if finished and live_archive_service.replay_ready(session) else ""
+    if finished and "token=" in (session.get("replay_url") or ""):
+        mux_url = ""
+        if not replay_url:
+            mux_playback_id = ""
+    explicit_hls = (replay_url or mux_url) if finished else (mux_url or session.get("playback_url") or session.get("hls_url") or "")
     direct_hls_ready = bool(explicit_hls) and (
         direct_mode
         or publish_state in {"live", "active", "started"}
@@ -37,10 +43,10 @@ def playback_manifest(session=None):
     )
     hls_url = explicit_hls if finished or mux_public_live or direct_hls_ready else ""
     stream_uuid = session.get("stream_uuid") or ""
-    if not hls_url and stream_uuid and mux_public_live:
+    if not finished and not hls_url and stream_uuid and mux_public_live:
         base = os.getenv("PULSE_HLS_PLAYBACK_URL", "https://live.coinpilotxai.app/hls").rstrip("/")
         hls_url = f"{base}/{stream_uuid}.m3u8"
-    supports_webrtc = bool(session.get("webrtc_room_id"))
+    supports_webrtc = not finished and bool(session.get("webrtc_room_id"))
     preferred_transport = "hls" if hls_url else "webrtc" if supports_webrtc else "waiting"
     effective_status = status
     if effective_status not in {"ended", "offline", "archived", "deleted", "failed"} and supports_webrtc:

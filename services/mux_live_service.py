@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import time
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 
@@ -72,6 +73,52 @@ def playback_url(playback_id: str) -> str:
     return f"https://stream.mux.com/{playback_id}.m3u8" if playback_id else ""
 
 
+def signed_playback_url(playback_id: str) -> str:
+    """Mint a short-lived viewer token; never return an unsigned fallback."""
+    key_id = os.getenv("MUX_SIGNING_KEY_ID", "")
+    private_key = os.getenv("MUX_SIGNING_PRIVATE_KEY", "")
+    if not key_id or not private_key:
+        return ""
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import padding
+    def encoded(value):
+        return base64.urlsafe_b64encode(value).rstrip(b"=")
+    try:
+        pem = private_key.encode() if "BEGIN" in private_key else base64.b64decode(private_key)
+        key = serialization.load_pem_private_key(pem, password=None)
+        header = encoded(json.dumps({"alg": "RS256", "typ": "JWT", "kid": key_id}).encode())
+        # Stable within an hour so status refreshes do not restart the player.
+        body = encoded(json.dumps({"sub": playback_id, "aud": "v", "exp": (int(time.time()) // 3600 + 6) * 3600}).encode())
+        message = header + b"." + body
+        signature = encoded(key.sign(message, padding.PKCS1v15(), hashes.SHA256()))
+        return playback_url(playback_id) + "?token=" + (message + b"." + signature).decode()
+    except Exception:
+        logging.warning("MUX_REPLAY_SIGNING_UNAVAILABLE")
+        return ""
+
+
+def refresh_signed_replay_url(url: str) -> str:
+    parsed = urlparse(url or "")
+    if parsed.hostname == "stream.mux.com" and "token=" in parsed.query:
+        return signed_playback_url(parsed.path.rsplit("/", 1)[-1].removesuffix(".m3u8"))
+    return url or ""
+
+
+def find_recording_asset(marker: str) -> dict:
+    """Bounded recovery after an ambiguous create; never create a second asset."""
+    for page in range(1, 4):
+        response = _request(f"/assets?limit=100&page={page}")
+        if not response.get("ok"):
+            return response
+        assets = response.get("data") or []
+        for asset in assets:
+            if asset.get("passthrough") == marker:
+                return {"ok": True, "mux_recording_asset_id": asset["id"]}
+        if len(assets) < 100:
+            break
+    return {"ok": True, "mux_recording_asset_id": ""}
+
+
 def create_mux_live_stream(*, title: str = "PulseSoc Live", record: bool = True, low_latency: bool = True, metadata: dict | None = None) -> dict:
     payload = {
         "playback_policy": ["public"],
@@ -94,7 +141,7 @@ def create_mux_live_stream(*, title: str = "PulseSoc Live", record: bool = True,
         "mux_stream_key": data.get("stream_key") or "",
         "mux_playback_id": playback_id,
         "mux_live_status": data.get("status") or "idle",
-        "mux_recording_asset_id": data.get("recent_asset_ids", [""])[0] if data.get("recent_asset_ids") else "",
+        "mux_recording_asset_id": data.get("recent_asset_ids", [""])[-1] if data.get("recent_asset_ids") else "",
         "playback_url": playback_url(playback_id),
         "ingest_url": MUX_RTMP_INGEST_URL,
         "rtmp_url": MUX_RTMP_INGEST_URL,
@@ -118,7 +165,7 @@ def get_mux_live_stream(live_stream_id: str) -> dict:
         "mux_stream_key": data.get("stream_key") or "",
         "mux_playback_id": playback_id,
         "mux_live_status": data.get("status") or "",
-        "mux_recording_asset_id": data.get("recent_asset_ids", [""])[0] if data.get("recent_asset_ids") else "",
+        "mux_recording_asset_id": data.get("recent_asset_ids", [""])[-1] if data.get("recent_asset_ids") else "",
         "playback_url": playback_url(playback_id),
         "raw": data,
     }
@@ -128,7 +175,7 @@ def disable_mux_live_stream(live_stream_id: str) -> dict:
     live_stream_id = str(live_stream_id or "").strip()
     if not live_stream_id:
         return {"ok": False, "message": "Mux live stream id is required."}
-    response = _request(f"/live-streams/{live_stream_id}", method="PATCH", payload={"status": "disabled"}, timeout=float(os.getenv("MUX_LIVE_DISABLE_TIMEOUT_SECONDS", "8")))
+    response = _request(f"/live-streams/{live_stream_id}/disable", method="PUT", timeout=float(os.getenv("MUX_LIVE_DISABLE_TIMEOUT_SECONDS", "8")))
     if not response.get("ok"):
         return response
     data = response.get("data") or {}
@@ -151,8 +198,8 @@ def create_mux_asset_from_live_recording(*, recording_asset_id: str = "", source
             "ok": True,
             "mux_recording_asset_id": data.get("id") or recording_asset_id,
             "mux_recording_playback_id": playback_id,
-            "playback_url": playback_url(playback_id),
-            "mux_status": data.get("status") or "",
+            "playback_url": signed_playback_url(playback_id) if any(item.get("id") == playback_id and item.get("policy") == "signed" for item in data.get("playback_ids") or []) else playback_url(playback_id),
+            "mux_status": "preparing" if data.get("is_live") else data.get("status") or "",
             "raw": data,
         }
     if source_url:
@@ -170,7 +217,7 @@ def create_mux_asset_from_live_recording(*, recording_asset_id: str = "", source
     return {"ok": False, "message": "Recording asset id or source URL is required."}
 
 
-def create_mux_asset_from_private_recording(source_url: str) -> dict:
+def create_mux_asset_from_private_recording(source_url: str, *, marker: str = "", private: bool = False) -> dict:
     """Create a Mux VOD asset without logging or preflighting its signed URL."""
     source_url = str(source_url or "").strip()
     if not source_url.startswith("https://"):
@@ -178,7 +225,7 @@ def create_mux_asset_from_private_recording(source_url: str) -> dict:
     response = _request(
         "/assets",
         method="POST",
-        payload={"input": source_url, "playback_policy": ["public"], "mp4_support": "standard"},
+        payload={"inputs": [{"url": source_url}], "playback_policies": ["signed" if private else "public"], "passthrough": marker},
         timeout=float(os.getenv("MUX_ASSET_CREATE_TIMEOUT_SECONDS", "15")),
     )
     if not response.get("ok"):
@@ -206,6 +253,7 @@ def verify_mux_webhook_signature(payload: bytes, signature_header: str | None, *
             key, value = item.split("=", 1)
             parts[key.strip()] = value.strip()
     timestamp = parts.get("t") or ""
+    signatures = [item.split("=", 1)[1].strip() for item in header.split(",") if item.strip().startswith("v1=")]
     expected = parts.get("v1") or ""
     if not timestamp or not expected:
         return {"ok": False, "message": "Mux webhook signature header is malformed.", "reason": "malformed_header"}
@@ -217,6 +265,6 @@ def verify_mux_webhook_signature(payload: bytes, signature_header: str | None, *
         return {"ok": False, "message": "Mux webhook timestamp is outside the allowed window.", "reason": "stale_timestamp"}
     signed = f"{timestamp}.".encode("utf-8") + (payload or b"")
     digest = hmac.new(secret.encode("utf-8"), signed, hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(digest, expected):
+    if not any(hmac.compare_digest(digest, candidate) for candidate in signatures):
         return {"ok": False, "message": "Mux webhook signature did not match.", "reason": "signature_mismatch"}
     return {"ok": True, "reason": "verified"}

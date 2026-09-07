@@ -1,6 +1,8 @@
 import React from "react";
 import { Alert, StyleSheet } from "react-native";
-import { fireEvent, render } from "@testing-library/react-native";
+import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
+import * as liveApi from "../../api/live";
+import * as feedApi from "../../api/feed";
 
 jest.mock("@react-native-async-storage/async-storage", () => ({
   getItem: jest.fn(),
@@ -53,6 +55,34 @@ function basePost(overrides: Partial<PulsePost> = {}): PulsePost {
     ...overrides
   } as PulsePost;
 }
+
+describe("Replay processing refresh", () => {
+  afterEach(() => { jest.restoreAllMocks(); jest.useRealTimers(); });
+
+  it("replaces processing with the refreshed replay without reopening", async () => {
+    const live = { live_session_id: 91, status: "processing" };
+    jest.spyOn(liveApi, "getLiveState").mockResolvedValue({ live_id: 91, archive: { replay_available: true, status: "ready" } });
+    const post = basePost({ live });
+    jest.spyOn(feedApi, "getPostDetail").mockResolvedValue({ post: { ...post, live: { ...live, status: "archived" } }, comments: [] });
+    const screen = render(<PostCard post={post} active />);
+    await waitFor(() => expect(feedApi.getPostDetail).toHaveBeenCalledWith(post.id));
+    await waitFor(() => expect(screen.queryByText("Replay processing")).toBeNull());
+    screen.unmount();
+  });
+
+  it("retries a failed network check and shows the server delay message", async () => {
+    jest.useFakeTimers();
+    const getState = jest.spyOn(liveApi, "getLiveState")
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValue({ live_id: 91, archive: { status: "processing_recording", message: "Replay is still processing", retry_after_seconds: 30 } });
+    const screen = render(<PostCard post={basePost({ live: { live_session_id: 91, status: "processing" } })} active />);
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => { jest.advanceTimersByTime(30000); });
+    expect(getState).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("Replay is still processing. You can keep using PulseSoc.")).toBeTruthy();
+    screen.unmount();
+  });
+});
 
 describe("computeMediaBleedStyle", () => {
   it("returns no horizontal margin for inset layout", () => {

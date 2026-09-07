@@ -59,7 +59,7 @@ def test_live_replay_job_creates_one_mux_asset_then_reconciles_ready(tmp_path, m
     created = []
     published = []
     monkeypatch.setattr(media_worker.agora_cloud_recording_service, "prepare_private_mux_input", lambda prefix, filename: prepared.append((prefix, filename)) or {"ok": True, "input_url": "https://signed.example/replay"})
-    monkeypatch.setattr(media_worker.mux_live_service, "create_mux_asset_from_private_recording", lambda url: created.append(url) or {"ok": True, "mux_recording_asset_id": "asset-7", "mux_recording_playback_id": "play-7", "mux_status": "preparing"})
+    monkeypatch.setattr(media_worker.mux_live_service, "create_mux_asset_from_private_recording", lambda url, **kwargs: created.append(url) or {"ok": True, "mux_recording_asset_id": "asset-7", "mux_recording_playback_id": "play-7", "mux_status": "preparing"})
     monkeypatch.setattr(media_worker.mux_live_service, "create_mux_asset_from_live_recording", lambda **kwargs: {"ok": True, "mux_recording_asset_id": "asset-7", "mux_recording_playback_id": "play-7", "playback_url": "https://stream.mux.com/play-7.m3u8", "mux_status": "ready"})
     monkeypatch.setattr(media_worker.bot, "pulse_live_publish_replay_reel", lambda live_id, trace_id: published.append((live_id, trace_id)) or {"ok": True})
 
@@ -245,6 +245,9 @@ def _backlog_database(tmp_path, rows, ended_at="2026-01-01T00:00:00"):
             "VALUES (?,'ended','','','',?,?,'','',?,'','poster.jpg',5,?,?)",
             (live_id, stream_id, asset_id, recording_status, ended_at, ended_at),
         )
+    conn.execute("ALTER TABLE pulse_live_sessions ADD COLUMN record_replay INTEGER DEFAULT 1")
+    conn.execute("ALTER TABLE pulse_live_sessions ADD COLUMN replay_publish_enabled INTEGER DEFAULT 1")
+    conn.execute("ALTER TABLE pulse_live_sessions ADD COLUMN replay_reel_id INTEGER DEFAULT 0")
     conn.commit()
     conn.close()
     return database

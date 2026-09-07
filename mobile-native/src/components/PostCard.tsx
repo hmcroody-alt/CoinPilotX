@@ -1,9 +1,10 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Animated, Image, Modal, PanResponder, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { ActivityIndicator, Alert, Animated, AppState, Image, Modal, PanResponder, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { Audio, ResizeMode, Video } from "expo-av";
 import * as Haptics from "expo-haptics";
 import { Ionicons } from "@expo/vector-icons";
-import { feedRenderableMedia, mediaDisplayUrl, mediaKind, PulseMedia, PulsePost, pulsePostUrl, savablePostId } from "../api/feed";
+import { feedRenderableMedia, getPostDetail, mediaDisplayUrl, mediaKind, PulseMedia, PulsePost, pulsePostUrl, savablePostId } from "../api/feed";
+import { getLiveState } from "../api/live";
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "./NativeMediaViewer";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
 import { AttachedMusicPolicy, resolvePostAudioPolicy } from "../core/attachedMusicAudioPolicy";
@@ -99,7 +100,7 @@ type PostCardProps = {
  * the `useCallback` block in `HomeScreen`.
  */
 function PostCardBody({
-  post,
+  post: incomingPost,
   detail,
   busy,
   active = false,
@@ -122,6 +123,57 @@ function PostCardBody({
   onAuthorPress,
   onOpenLive
 }: PostCardProps) {
+  const [refreshedPost, setRefreshedPost] = useState<PulsePost | null>(null);
+  const [replayMessage, setReplayMessage] = useState("Replay processing");
+  const post = refreshedPost?.id === incomingPost.id ? refreshedPost : incomingPost;
+  useEffect(() => { setRefreshedPost(null); }, [incomingPost]);
+  useEffect(() => {
+    if (!(active || detail) || !String(post.live?.replay_url || "").includes("token=")) return;
+    let cancelled = false;
+    const refresh = async () => {
+      if (AppState.currentState === "background") return;
+      try {
+        const result = await getPostDetail(post.id);
+        if (!cancelled && result.post) setRefreshedPost(result.post);
+      } catch { /* Retry on the next interval or foreground event. */ }
+    };
+    void refresh();
+    const timer = setInterval(refresh, 15 * 60 * 1000);
+    const subscription = AppState.addEventListener("change", (next) => { if (next === "active") void refresh(); });
+    return () => { cancelled = true; clearInterval(timer); subscription.remove(); };
+  }, [post.id, Boolean(post.live?.replay_url?.includes("token=")), active, detail]);
+  useEffect(() => {
+    const liveId = Number(post.live?.live_session_id || 0);
+    if (!liveId || !["processing", "ended"].includes(String(post.live?.status || "")) || !(active || detail)) return;
+    let cancelled = false;
+    let inFlight = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const refresh = async () => {
+      if (cancelled || inFlight || AppState.currentState === "background") return;
+      inFlight = true;
+      let delay = 30000;
+      try {
+        const state = await getLiveState(liveId);
+        if (cancelled) return;
+        setReplayMessage(state.archive?.message || "Replay processing");
+        delay = Math.max(10000, Number(state.archive?.retry_after_seconds || 30) * 1000);
+        if (state.archive?.replay_available || ["failed", "unavailable"].includes(state.archive?.status || "")) {
+          const result = await getPostDetail(post.id);
+          if (!cancelled && result.post) setRefreshedPost(result.post);
+        }
+      } catch { /* Network recovery uses the next bounded check. */ }
+      finally {
+        inFlight = false;
+        if (!cancelled) timer = setTimeout(refresh, delay);
+      }
+    };
+    void refresh();
+    const subscription = AppState.addEventListener("change", (next) => {
+      if (timer) clearTimeout(timer);
+      if (next === "active") void refresh();
+    });
+    return () => { cancelled = true; if (timer) clearTimeout(timer); subscription.remove(); };
+  }, [post.id, post.live?.live_session_id, post.live?.status, active, detail]);
   const { width: windowWidth } = useWindowDimensions();
   const [cardWidth, setCardWidth] = useState(0);
   const mediaBleedStyle = computeMediaBleedStyle(mediaLayout, windowWidth, cardWidth);
@@ -377,10 +429,10 @@ function PostCardBody({
           <View style={styles.liveProcessingShade} />
           <View style={styles.liveProcessingBadge}>
             <Ionicons name="time-outline" size={14} color={colors.accent} />
-            <Text style={styles.liveProcessingBadgeText}>Background processing</Text>
+            <Text style={styles.liveProcessingBadgeText}>Replay processing</Text>
           </View>
           <Text style={styles.liveProcessingTitle}>Live ended</Text>
-          <Text style={styles.liveProcessingBody}>Replay is processing in the background. You can keep using PulseSoc.</Text>
+          <Text style={styles.liveProcessingBody}>{replayMessage}. You can keep using PulseSoc.</Text>
         </View>
       ) : isReplayUnavailable ? (
         <View style={[styles.liveProcessing, mediaBleedStyle]}>
@@ -396,7 +448,7 @@ function PostCardBody({
           and reserve a full-bleed 4:5 box around nothing. And once an image that
           did have a URL 404s, `mediaFailed` drops the whole wrapper so not even
           the bleed margin survives. */}
-      {feedRenderableMedia(post.media).length && !mediaFailed ? (
+      {feedRenderableMedia(post.media).length && !mediaFailed && !isReplayProcessing && !isReplayUnavailable ? (
         <View style={[styles.mediaBleed, mediaBleedStyle]}>
           <MediaStrip
             post={post}

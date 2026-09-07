@@ -2,9 +2,29 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from . import mux_live_service
+
+
+def recording_allowed(session):
+    return str(session.get("record_replay", 1)).lower() not in {"0", "false", "no", "off"}
+
+
+def publication_allowed(session):
+    return recording_allowed(session) and str(session.get("replay_publish_enabled", 1)).lower() not in {"0", "false", "no", "off"}
+
+
+def replay_ready(session):
+    return recording_allowed(session) and session.get("recording_status") in {"mux_asset_ready", "replay_ready"} and bool(session.get("replay_url"))
+
+
+def replay_age_seconds(session):
+    try:
+        ended = datetime.fromisoformat(str(session.get("ended_at") or "").replace("Z", "+00:00"))
+        return max(0, int((datetime.now(timezone.utc) - ended.replace(tzinfo=ended.tzinfo or timezone.utc)).total_seconds()))
+    except (ValueError, TypeError):
+        return 0
 
 
 def replay_manifest(session=None, chat_messages=None):
@@ -12,9 +32,11 @@ def replay_manifest(session=None, chat_messages=None):
     chat_messages = chat_messages or []
     live_id = int(session.get("id") or session.get("live_id") or 0)
     recording_status = (session.get("recording_status") or "").strip().lower()
-    replay_url = session.get("replay_url") or mux_live_service.playback_url(session.get("mux_recording_playback_id") or "")
+    replay_url = mux_live_service.refresh_signed_replay_url(session.get("replay_url") or "") if replay_ready(session) else ""
     status = (session.get("status") or "").strip().lower()
-    if status == "live":
+    if not recording_allowed(session):
+        replay_state = "unavailable"
+    elif status == "live":
         replay_state = "recording"
     elif replay_url:
         replay_state = "ready"
@@ -26,6 +48,9 @@ def replay_manifest(session=None, chat_messages=None):
         replay_state = "processing_recording"
     else:
         replay_state = "pending"
+    age = replay_age_seconds(session)
+    processing = replay_state == "processing_recording"
+    message = "Replay is delayed. We’re checking the recording." if processing and age >= 300 else "Replay is still processing" if processing and age >= 120 else "Replay processing" if processing else "Replay unavailable" if replay_state in {"failed", "unavailable"} else ""
     return {
         "ok": True,
         "live_id": live_id,
@@ -38,6 +63,10 @@ def replay_manifest(session=None, chat_messages=None):
         "recording_status": recording_status or replay_state,
         "recording_error": session.get("recording_error") or "",
         "replay_available": bool(replay_url and replay_state == "ready"),
+        "processing_seconds": age,
+        "delayed": processing and age >= 300,
+        "message": message,
+        "retry_after_seconds": 30 if age >= 120 else 10,
         "created_at": datetime.utcnow().isoformat(timespec="seconds"),
     }
 

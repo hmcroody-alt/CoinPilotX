@@ -160,6 +160,11 @@ def ensure_media_worker_schema() -> None:
         ("cover_generated_at", "TEXT"),
         ("cover_attempts", "INTEGER"),
     ], conn=conn)
+    bot.add_columns_if_missing(cur, "pulse_live_sessions", [
+        ("record_replay", "INTEGER DEFAULT 1"),
+        ("replay_publish_enabled", "INTEGER DEFAULT 1"),
+        ("replay_retry_key", "TEXT DEFAULT ''"),
+    ], conn=conn)
     conn.commit()
     conn.close()
     logging.info("MEDIA_WORKER_SCHEMA_READY table=chat_media_uploads playback_columns=true")
@@ -554,7 +559,7 @@ def _fail_or_retry_job(cur, job, error: Exception) -> None:
         live_id = int(job.get("target_id") or 0)
         message = str(error or "Replay finalization failed.")[:500]
         cur.execute(
-            "UPDATE pulse_live_sessions SET recording_status='replay_failed', recording_error=?, updated_at=? WHERE id=? AND status='ended' AND COALESCE(replay_url,'')=''",
+            "UPDATE pulse_live_sessions SET recording_status='replay_failed', recording_error=?, updated_at=? WHERE id=? AND status='ended' AND COALESCE(recording_status,'') NOT IN ('mux_asset_ready','replay_ready')",
             (message, _now(), live_id),
         )
         cur.execute(
@@ -673,12 +678,19 @@ def _process_live_replay_job(cur, job) -> None:
     if not live or (live.get("status") or "").lower() != "ended":
         _complete_job(cur, int(job.get("id") or 0), "done")
         return
+    if not bot.live_archive_service.recording_allowed(live):
+        _complete_job(cur, int(job.get("id") or 0), "done")
+        return
+    publish = bot.live_archive_service.publication_allowed(live)
     if (live.get("recording_status") or "") == "replay_ready" and str(live.get("replay_url") or "").strip():
         # CDN-supplied replay: the host attached a durable replay URL at end
         # time, so there is no recording to cut. The end endpoint no longer
         # publishes inline (zero-delay live end); this branch flips the feed
         # post to its playable replay and hands the reel publication to the
         # idempotent publish step below.
+        if not publish:
+            _complete_job(cur, int(job.get("id") or 0), "done")
+            return
         bot.live_feed_service.mark_live_feed_replay_ready(
             cur,
             live_id=live_id,
@@ -699,6 +711,10 @@ def _process_live_replay_job(cur, job) -> None:
         stream = mux_live_service.get_mux_live_stream(live_stream_id)
         if not stream.get("ok"):
             raise RuntimeError(stream.get("message") or "Mux live stream lookup failed")
+        if stream.get("mux_live_status") in {"active", "live"}:
+            stopped_stream = mux_live_service.disable_mux_live_stream(live_stream_id)
+            if not stopped_stream.get("ok"):
+                raise RuntimeError("Mux recording could not be finalized yet.")
         asset_id = str(stream.get("mux_recording_asset_id") or "")
         if not asset_id:
             if _replay_wait_expired(live):
@@ -713,13 +729,22 @@ def _process_live_replay_job(cur, job) -> None:
         mux_asset = mux_live_service.create_mux_asset_from_live_recording(recording_asset_id=asset_id)
         if not mux_asset.get("ok"):
             raise RuntimeError(mux_asset.get("message") or "Mux replay reconciliation failed")
-        if (mux_asset.get("mux_status") or "").lower() == "ready":
+        if (mux_asset.get("raw") or {}).get("is_live") and live_stream_id:
+            mux_live_service.disable_mux_live_stream(live_stream_id)
+        mux_status = (mux_asset.get("mux_status") or "").lower()
+        if mux_status == "errored":
+            raise RuntimeError("Mux confirmed that the recording could not be processed.")
+        if mux_status == "ready" and mux_asset.get("mux_recording_playback_id") and mux_asset.get("playback_url"):
             playback_id = mux_asset.get("mux_recording_playback_id") or live.get("mux_recording_playback_id") or ""
             playback_url = mux_asset.get("playback_url") or ""
             cur.execute(
                 "UPDATE pulse_live_sessions SET mux_recording_playback_id=COALESCE(NULLIF(?,''),mux_recording_playback_id), replay_url=COALESCE(NULLIF(?,''),replay_url), recording_status='mux_asset_ready', recording_error='', updated_at=? WHERE id=?",
                 (playback_id, playback_url, _now(), live_id),
             )
+            logging.info("LIVE_REPLAY_PLAYABLE live_id=%s seconds_since_end=%s asset_id=%s", live_id, bot.live_archive_service.replay_age_seconds(live), asset_id)
+            if not publish:
+                _complete_job(cur, int(job.get("id") or 0), "done")
+                return
             bot.live_feed_service.mark_live_feed_replay_ready(
                 cur,
                 live_id=live_id,
@@ -730,12 +755,20 @@ def _process_live_replay_job(cur, job) -> None:
             REPLAYS_READY_TO_PUBLISH.add(live_id)
             _complete_job(cur, int(job.get("id") or 0), "done")
             return
-        if _replay_wait_expired(live):
-            raise RuntimeError(f"Mux asset {asset_id} never became ready.")
-        _reschedule(cur, job)
+        # A provider-confirmed preparing asset is delayed, not failed, regardless
+        # of its age. Slow checks are bounded per cycle and never recreate it.
+        age = bot.live_archive_service.replay_age_seconds(live)
+        _reschedule(cur, job, seconds=300 if age >= 300 else 30)
         return
 
     filename = str(live.get("agora_recording_filename") or "")
+    marker = "pulse_replay:" + str(live_id) + ":" + str(live.get("agora_recording_sid") or "") + ":" + str(live.get("replay_retry_key") or "")
+    if live.get("recording_status") == "mux_creation_pending":
+        recovered = mux_live_service.find_recording_asset(marker)
+        if recovered.get("mux_recording_asset_id"):
+            cur.execute("UPDATE pulse_live_sessions SET mux_recording_asset_id=?, recording_status='processing_replay', updated_at=? WHERE id=?", (recovered["mux_recording_asset_id"], _now(), live_id))
+        _reschedule(cur, job, seconds=300)
+        return
     if not filename:
         if live.get("agora_converter_id"):
             agora_media_push_service.stop_mux_bridge(live.get("agora_converter_id") or "")
@@ -746,16 +779,31 @@ def _process_live_replay_job(cur, job) -> None:
             recording_uid=live.get("agora_recording_uid") or "",
         )
         if not stopped.get("ok") or not stopped.get("filename"):
-            raise RuntimeError(stopped.get("message") or stopped.get("reason") or "Agora recording did not finalize")
+            recovered = agora_cloud_recording_service.find_finalized_recording(live.get("agora_recording_prefix") or "")
+            if not recovered.get("ok"):
+                raise RuntimeError(stopped.get("message") or stopped.get("reason") or "Agora recording did not finalize")
+            stopped = recovered
         filename = str(stopped.get("filename") or "")
         cur.execute("UPDATE pulse_live_sessions SET agora_recording_filename=?, recording_status='preparing_replay', updated_at=? WHERE id=?", (filename, _now(), live_id))
 
     mux_input = agora_cloud_recording_service.prepare_private_mux_input(live.get("agora_recording_prefix") or "", filename)
     if not mux_input.get("ok"):
+        if mux_input.get("reason") == "recording_upload_pending":
+            _reschedule(cur, job)
+            return
         raise RuntimeError(mux_input.get("message") or mux_input.get("reason") or "Replay input preparation failed")
-    created = mux_live_service.create_mux_asset_from_private_recording(mux_input.get("input_url") or "")
+    # Commit the creation intent before the external request. On a lost response
+    # or process restart, recover by passthrough instead of repeating POST.
+    cur.execute("UPDATE pulse_live_sessions SET recording_status='mux_creation_pending', updated_at=? WHERE id=? AND COALESCE(recording_status,'')<>'mux_creation_pending' AND COALESCE(mux_recording_asset_id,'')=''", (_now(), live_id))
+    if not cur.rowcount:
+        _reschedule(cur, job)
+        return
+    connection = getattr(cur, "connection", None) or getattr(cur, "_owner", None)
+    connection.commit()
+    created = mux_live_service.create_mux_asset_from_private_recording(mux_input.get("input_url") or "", marker=marker, private=(live.get("audience") or "public") != "public" or not publish)
     if not created.get("ok") or not created.get("mux_recording_asset_id"):
-        raise RuntimeError(created.get("message") or "Mux replay asset creation failed")
+        _reschedule(cur, job, seconds=300)
+        return
     cur.execute(
         "UPDATE pulse_live_sessions SET mux_recording_asset_id=?, mux_recording_playback_id=COALESCE(NULLIF(?,''),mux_recording_playback_id), recording_status='processing_replay', recording_error='', updated_at=? WHERE id=? AND COALESCE(mux_recording_asset_id,'')=''",
         (created.get("mux_recording_asset_id") or "", created.get("mux_recording_playback_id") or "", _now(), live_id),
@@ -813,8 +861,9 @@ def process_media_jobs(limit: int = BATCH_SIZE) -> dict:
     conn.close()
     for live_id in list(REPLAYS_READY_TO_PUBLISH):
         try:
-            bot.pulse_live_publish_replay_reel(live_id, trace_id=f"media-worker-reconcile-{live_id}")
-            REPLAYS_READY_TO_PUBLISH.discard(live_id)
+            result = bot.pulse_live_publish_replay_reel(live_id, trace_id=f"media-worker-reconcile-{live_id}")
+            if result.get("ok") or result.get("reason") in {"replay_reel_deleted", "replay_post_deleted", "replay_blocked_by_moderation", "replay_not_authorized_or_ready"}:
+                REPLAYS_READY_TO_PUBLISH.discard(live_id)
         except Exception:
             logging.exception("MEDIA_WORKER_REPLAY_PUBLISH_FAILED live_id=%s", live_id)
     return {"queued": len(jobs), "processed": processed, "failed": failed}
@@ -843,9 +892,12 @@ def reconcile_live_replay_backlog(limit: int = 25) -> dict:
         SELECT id, recording_status
         FROM pulse_live_sessions
         WHERE status='ended'
-          AND (COALESCE(agora_recording_sid,'')<>'' OR COALESCE(mux_live_stream_id,'')<>'')
-          AND COALESCE(recording_status,'') NOT IN ('replay_ready','replay_failed')
-        ORDER BY id ASC LIMIT ?
+          AND (COALESCE(agora_recording_sid,'')<>'' OR COALESCE(mux_live_stream_id,'')<>'' OR COALESCE(mux_recording_asset_id,'')<>'' OR (recording_status='replay_ready' AND COALESCE(replay_url,'')<>''))
+          AND COALESCE(recording_status,'') NOT IN ('replay_failed')
+          AND COALESCE(record_replay,1)=1
+          AND NOT EXISTS (SELECT 1 FROM pulse_jobs j WHERE j.job_type='finalize_live_replay' AND j.target_type='live' AND j.target_id=pulse_live_sessions.id AND j.status IN ('pending','processing'))
+          AND (COALESCE(recording_status,'') NOT IN ('mux_asset_ready','replay_ready') OR (COALESCE(replay_reel_id,0)=0 AND COALESCE(replay_publish_enabled,1)=1))
+        ORDER BY updated_at ASC, id ASC LIMIT ?
         """,
         (max(1, int(limit or 25)),),
     )
