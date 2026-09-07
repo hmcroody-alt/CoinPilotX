@@ -237,9 +237,13 @@ export const LAUNCH_READINESS: Readonly<Record<LaunchModuleId, ReadinessState>> 
   /* --- Customers -----------------------------------------------------
    * The section has no screen and no endpoint at all — see the section row
    * above. These name what it will be rather than what is missing from it.
+   *
+   * `records` has nothing behind it; `segments` is the one being cut first, and
+   * the two states are kept apart deliberately. Collapsing both to COMING_SOON
+   * erases the only signal that says which of the two is actually moving.
    */
   "business:customers.records": "COMING_SOON",
-  "business:customers.segments": "COMING_SOON",
+  "business:customers.segments": "BUILDING",
   "business:customers.history": "COMING_SOON",
   "business:customers.notes": "COMING_SOON",
 
@@ -284,11 +288,26 @@ export const LAUNCH_READINESS: Readonly<Record<LaunchModuleId, ReadinessState>> 
   "business:events.drafts": "BUILDING",
   "business:events.create": "COMING_SOON",
   "business:events.rsvp": "COMING_SOON",
+  /*
+   * The hosted-events manager is the module that cannot hold a row (see
+   * `business:events` above) — it is the module that is unfinished, not the
+   * section. Live discovery is a real, shipping screen and is deliberately
+   * absent from this table, so Events opens with one working capability and one
+   * locked one. Without this row `events.manager` reads READY by absence while
+   * carrying no `route`, which is a tap that goes nowhere.
+   */
+  "business:events.manager": "BUILDING",
 
   /* --- Team ----------------------------------------------------------
    * No screen and no endpoint — see the section row above. Page-level roles
    * under `/api/pages/*` are the Presence team, a different subject.
    */
+  /*
+   * Same absence hazard as `events.manager`: `members` is a declared module in
+   * `BUSINESS_OS_SECTION_MODULES` with no `route`, so leaving it out of this
+   * table makes it READY and gives the landing a row that opens nothing.
+   */
+  "business:team.members": "COMING_SOON",
   "business:team.invites": "COMING_SOON",
   "business:team.roles": "COMING_SOON",
   "business:team.activity": "COMING_SOON",
