@@ -2793,21 +2793,52 @@ def capture_referral_and_run_trial_maintenance():
     return None
 
 
+RATE_LIMIT_REFUSAL_MESSAGE = "Too many attempts. Please wait a few minutes and try again."
+
+
+def rate_limit_refusal(path, retry_after=0):
+    """The 429 this app has always returned for an abuse-guarded path.
+
+    Extracted so the in-process refusal and the distributed one below cannot
+    drift apart. The shape depends on the client that asked — JSON for ``/api/``
+    callers, text for the web forms — and both are statuses the shipped App Store
+    binary already handles (Hard Rule #3). ``retry_after`` is omitted when zero so
+    the pre-existing refusal stays byte-for-byte what it was.
+    """
+    if str(path or "").startswith("/api/"):
+        response = jsonify({"ok": False, "message": RATE_LIMIT_REFUSAL_MESSAGE})
+        response.status_code = 429
+    else:
+        response = Response(RATE_LIMIT_REFUSAL_MESSAGE, status=429)
+    if retry_after:
+        response.headers["Retry-After"] = str(max(1, int(retry_after)))
+    return response
+
+
+# path -> (limit, window_seconds). Hoisted out of basic_abuse_guard so it is
+# readable by exactly one thing besides the guard: the test that proves the
+# limiter is on these paths. A test that restated the numbers would keep passing
+# after someone changed a real limit, which is the kind of green that means
+# nothing. This is the single source of rate-limit policy for these routes —
+# services/sentinel/rate_limit.py deliberately holds no table of its own.
+ABUSE_GUARD_PROTECTED = {
+    "/login": (12, 300),
+    "/signup": (8, 300),
+    "/forgot-password": (6, 300),
+    "/forgot-username": (6, 300),
+    "/api/mobile/auth/recover": (6, 300),
+    "/api/pulse/mobile/auth/recover": (6, 300),
+    "/api/account/password/change-request": (6, 300),
+    "/admin/login": (8, 300),
+    "/create-checkout-session": (8, 300),
+    "/api/create-checkout-session": (8, 300),
+    "/api/ai-assistant": (30, 300),
+}
+
+
 @webhook_app.before_request
 def basic_abuse_guard():
-    protected = {
-        "/login": (12, 300),
-        "/signup": (8, 300),
-        "/forgot-password": (6, 300),
-        "/forgot-username": (6, 300),
-        "/api/mobile/auth/recover": (6, 300),
-        "/api/pulse/mobile/auth/recover": (6, 300),
-        "/api/account/password/change-request": (6, 300),
-        "/admin/login": (8, 300),
-        "/create-checkout-session": (8, 300),
-        "/api/create-checkout-session": (8, 300),
-        "/api/ai-assistant": (30, 300),
-    }
+    protected = ABUSE_GUARD_PROTECTED
     if request.method not in {"POST", "PUT"} or request.path not in protected:
         return None
     limit, window_seconds = protected[request.path]
@@ -2816,11 +2847,44 @@ def basic_abuse_guard():
     bucket = [stamp for stamp in RATE_LIMIT_BUCKETS.get(key, []) if now - stamp < window_seconds]
     if len(bucket) >= limit:
         logging.warning("Rate limit triggered path=%s ip_hash=%s", request.path, client_ip_hash())
-        if request.path.startswith("/api/"):
-            return jsonify({"ok": False, "message": "Too many attempts. Please wait a few minutes and try again."}), 429
-        return Response("Too many attempts. Please wait a few minutes and try again.", status=429)
+        return rate_limit_refusal(request.path)
     bucket.append(now)
     RATE_LIMIT_BUCKETS[key] = bucket
+    # Reclaim keys for IP hashes that stopped coming. This dict prunes stamps
+    # whenever a key is touched but never removed the key itself, so a worker
+    # accumulated one entry per (ip_hash, path) it had ever seen and never gave
+    # any of it back. See security_guard.sweep_expired for why a sweep cannot
+    # change a verdict.
+    security_guard.sweep_expired(
+        "bot.RATE_LIMIT_BUCKETS", RATE_LIMIT_BUCKETS, window_seconds, now=now)
+
+    # The bucket above lives in RATE_LIMIT_BUCKETS, a module-level dict, and the
+    # Procfile runs `gunicorn --workers ${WEB_CONCURRENCY:-4}`. So the table at
+    # the top of this function reads "6 per 300s" and production actually permits
+    # up to 24 — one window per worker, and which one an attacker hits depends on
+    # which worker the load balancer picked. That has always been true; nothing
+    # in this file said so.
+    #
+    # The call below counts the same path, for the same subject, under the same
+    # limit, in PostgreSQL, where all four workers can see it. It does not
+    # replace the bucket: the bucket is free and its verdict is sound in one
+    # direction (a single worker over the limit proves the fleet is), so it stays
+    # as the cheap first pass and the shared counter is only consulted when the
+    # local view says "allowed" — which is exactly the case a single worker
+    # cannot answer.
+    #
+    # Default OFF. With SENTINEL_DISTRIBUTED_LIMITS_MODE unset this returns None
+    # without opening a connection, and this route behaves precisely as it did
+    # before. Correct enforcement here is a ~4x tightening on real users of a
+    # client that cannot be updated, so it ships dark and is measured in `shadow`
+    # before anyone turns it on.
+    refused = sentinel_rate_refused(request.path, limit, window_seconds)
+    if refused is not None:
+        logging.warning(
+            "Rate limit triggered path=%s ip_hash=%s source=distributed "
+            "count=%.2f limit=%s", request.path, client_ip_hash(),
+            refused.count, limit)
+        return rate_limit_refusal(request.path, retry_after=refused.retry_after)
     return None
 
 
@@ -3183,6 +3247,144 @@ def inject_admin_form_csrf(response):
         # only removes the need to remember.
         logging.exception("CSRF token injection failed for %s", request.path)
     return response
+
+
+# Statuses the shipped App Store client already understands (Stage 1 contract):
+# 401 invalid/expired token, 403 restricted/forbidden, 423 Private Office
+# locked, 429 rate limited. Observing exactly these keeps the observation
+# surface aligned with the enforcement surface.
+SENTINEL_OBSERVED_STATUSES = (401, 403, 423, 429)
+
+
+@webhook_app.after_request
+def sentinel_observe_security_response(response):
+    """Feed security-relevant response codes into Sentinel. Shadow-mode.
+
+    Default OFF (``SENTINEL_REQUEST_BRIDGE_ENABLED``). Observes only; it never
+    alters the response, and it must never be the reason a request fails.
+
+    Two things this hook deliberately does NOT do, both of which are the
+    obvious implementation:
+
+    1. **It never calls ``account_user_id()``.** That helper falls through to
+       ``account_user_id_from_mobile_access_token()`` (which opens a database
+       connection) and then to ``restore_account_from_persistent_cookie()``
+       (which *rotates the user's refresh token*). Resolving the user here
+       would therefore turn logging a 401 into a database connection plus a
+       session rotation — during a 401 flood, the exact amplification the
+       buffered bridge exists to prevent, with token-family churn on top.
+       ``session.get("account_user_id")`` is a free dictionary read, and
+       ``pulse_security_core_guard`` has already resolved it for every
+       cookie-authenticated request by the time this runs.
+
+    2. **It does not read the request or response body.** Only the status, the
+       method and the identifier-stripped path shape leave this function.
+
+    Known gap, stated rather than discovered later: a client authenticated by
+    bearer token alone — with no session cookie — is recorded at device level
+    rather than against its user id, because naming it would cost the database
+    lookup above. Closing that belongs where the lookup already happens
+    (stash the id on ``g`` inside the token path), not here.
+    """
+    try:
+        if response.status_code not in SENTINEL_OBSERVED_STATUSES:
+            return response
+        from services.sentinel import request_bridge as _sentinel_bridge
+        if not _sentinel_bridge.bridge_enabled():
+            return response
+        event = _sentinel_bridge.build_request_event(
+            status=response.status_code,
+            path=request.path or "",
+            method=request.method or "",
+            user_id=session.get("account_user_id"),
+            ip_hash=client_ip_hash(),
+            environment=os.getenv("RAILWAY_ENVIRONMENT_NAME", "") or "",
+        )
+        if event is not None:
+            _sentinel_bridge.emit(event)
+    except Exception:
+        # A security observer that can 500 the product is a worse security
+        # outcome than no observer. This is not silent: emit() and flush()
+        # count their own failures into request_bridge.stats().
+        pass
+    return response
+
+
+def sentinel_rate_refused(scope, limit, window_seconds, subject=None):
+    """Count one security-critical action; return the Decision if it is refused.
+
+    ``None`` means proceed. Default OFF: with
+    ``SENTINEL_DISTRIBUTED_LIMITS_MODE`` unset this returns ``None`` without
+    touching the database, so adding a call site changes nothing until an
+    operator decides otherwise. In ``shadow`` it also returns ``None`` while
+    recording what enforcement would have done.
+
+    **The caller supplies the limit.** This function does not know what "6 per
+    300 seconds" applies to and must not: ``basic_abuse_guard`` already carries a
+    deployed table of paths and limits, and a second table inside Sentinel would
+    be a duplicate rate-limit policy — two numbers for one route, disagreeing
+    eventually, with nobody able to say which one production applied. Sentinel
+    owns the counting; this file keeps owning the policy (Hard Rule #6).
+
+    **Subject defaults to the hashed IP, and must never be the email.** Limiting
+    a password-reset request per email address would hand an attacker a
+    denial-of-service against any account they can name: flood the victim's
+    address and the victim can no longer reset their own password. Per-IP has
+    the opposite failure mode, which is the survivable one. It also keeps the
+    response free of account-existence information, which is the reason these
+    endpoints answer identically for known and unknown addresses already.
+    """
+    try:
+        from services.sentinel import rate_limit as _sentinel_rate
+        if not _sentinel_rate.enabled():
+            return None
+        decision = _sentinel_rate.check(
+            scope,
+            subject if subject is not None else f"ip:{client_ip_hash()}",
+            limit=limit,
+            window_seconds=window_seconds,
+        )
+        return None if decision.allowed else decision
+    except Exception:
+        # A limiter that can 500 the endpoint it protects has made the product
+        # less available, not more secure. rate_limit.stats() counts its own
+        # failures, so this is quiet rather than silent.
+        logging.exception("SENTINEL_RATE_GUARD_FAILED scope=%s", scope)
+        return None
+
+
+def sentinel_note_shadow_refusal(event_type, subject_type, subject_id, detail=None):
+    """Record that an enforcement gate *would* have refused, while it is off.
+
+    This is what makes ``shadow`` different from ``off``. A flag that changes
+    nothing and reports nothing gives an operator no way to decide whether
+    turning it on is safe, so they either never turn it on or turn it on blind;
+    both outcomes make the flag worse than useless. The event is what lets the
+    blast radius be counted from real traffic first.
+
+    Routed through ``request_bridge.emit`` rather than ``events.ingest`` on
+    purpose: emit is buffered and non-blocking, so a detection that fires on a
+    hot path cannot become a synchronous database write per request. It also
+    inherits the bridge and ingest switches, and therefore the emergency switch,
+    instead of needing an escape hatch of its own.
+    """
+    try:
+        from services.sentinel import events as _sentinel_events
+        from services.sentinel import request_bridge as _sentinel_bridge
+        from services.sentinel.identity import SENTINEL_INGEST
+        if not _sentinel_bridge.bridge_enabled():
+            return
+        _sentinel_bridge.emit(_sentinel_events.Event(
+            category="SECURITY", event_type=event_type, severity="low",
+            actor_id=SENTINEL_INGEST.actor_id, source="bot.shadow_enforcement",
+            subject_type=subject_type, subject_id=str(subject_id),
+            environment=os.getenv("RAILWAY_ENVIRONMENT_NAME", "") or "",
+            payload={"mode": "shadow", "would_refuse": True, **(detail or {})}))
+    except Exception:
+        # Same reasoning as the bridge hook above: an observer that can 500 the
+        # route it observes is a worse security outcome than no observer. The
+        # bridge counts its own failures in request_bridge.stats().
+        pass
 
 
 @webhook_app.before_request
@@ -88457,10 +88659,29 @@ def api_pulse_messages_seen(conversation_id):
     if not user:
         return api_error("Login required.", 401)
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    cur.execute("SELECT 1 FROM pulse_conversation_participants WHERE conversation_id=? AND user_id=? LIMIT 1", (conversation_id, user["user_id"]))
-    if not cur.fetchone():
+    # The four sibling chat routes gate on ``AND COALESCE(left_at,'')=''``; this
+    # one did not, so a member who left a group kept writing read receipts into it
+    # and the people still in the conversation kept seeing "read by" from someone
+    # who walked out. ``left_at`` is selected rather than filtered in the WHERE
+    # clause because the two cases need different answers: never a participant is
+    # a refusal today, while departed is a refusal only once an operator turns the
+    # gate on. Filtering would collapse them and lose the shadow signal.
+    cur.execute("SELECT COALESCE(left_at,'') AS left_at FROM pulse_conversation_participants WHERE conversation_id=? AND user_id=? LIMIT 1", (conversation_id, user["user_id"]))
+    membership = cur.fetchone()
+    if not membership:
         conn.close()
         return api_error("Conversation not found.", 404)
+    if dict(membership).get("left_at"):
+        from services.sentinel import killswitches as _sentinel_switches
+        if _sentinel_switches.receipt_participation_enforced():
+            conn.close()
+            # 404, not 403, so a conversation the caller may not touch is
+            # indistinguishable from one that does not exist — the same refusal
+            # its four siblings give, and the property mutant O6 protects.
+            return api_error("Conversation not found.", 404)
+        sentinel_note_shadow_refusal(
+            "receipt_from_departed_member", "conversation", conversation_id,
+            {"route": "/api/pulse/messages/:id/seen", "user_id": user["user_id"]})
     now = datetime.utcnow().isoformat(timespec="seconds")
     last_message_id = pulse_mark_conversation_read(cur, conversation_id, user["user_id"])
     cur.execute("SELECT id FROM pulse_messages WHERE conversation_id=? AND sender_user_id!=? AND deleted_at IS NULL ORDER BY id DESC LIMIT 100", (conversation_id, user["user_id"]))
@@ -115227,7 +115448,45 @@ def _init_db_impl():
     conn.commit()
     conn.close()
     premium_entitlement_service.ensure_founder_schema()
+    _ensure_sentinel_schema()
     return True
+
+
+def _ensure_sentinel_schema():
+    """Create Sentinel's 22 tables at boot.
+
+    Until this call existed, ``services/sentinel/store.ensure_schema()`` had no
+    caller anywhere in the repository: the security package was fully built and
+    its storage had never been created, so any attempt to record a security
+    event would have failed against a live database.
+
+    Placed after ``conn.commit()``/``conn.close()`` above, following the
+    ``ensure_founder_schema`` precedent on the line before, because Sentinel's
+    bootstrap opens its own connection. Handing it this function's connection
+    would leave the DDL uncommitted while still holding catalog locks, and the
+    next worker to attempt the same creation would block on it.
+
+    Never raises. Sentinel observes and is not on the critical path, while
+    ``_init_db_impl`` has no exception handler and is reached from ordinary
+    route handlers — a security-package problem must not become a product
+    outage. The failure is recorded instead, and ``bootstrap.schema_state()``
+    reports it as unhealthy rather than unknown.
+    """
+    try:
+        from services.sentinel import bootstrap as sentinel_bootstrap
+    except Exception as exc:
+        # Nothing here can record state, because the recorder is what failed to
+        # import. Say so loudly under a greppable token instead of returning
+        # quietly, or Sentinel would appear merely idle rather than broken.
+        logging.error("SENTINEL_BOOTSTRAP_IMPORT_FAILED error=%s", str(exc)[:300])
+        return
+    try:
+        if not sentinel_bootstrap.bootstrap_enabled():
+            logging.info("SENTINEL_SCHEMA_BOOTSTRAP_DISABLED")
+            return
+        sentinel_bootstrap.ensure_schema()
+    except Exception as exc:  # pragma: no cover - bootstrap catches its own
+        logging.error("SENTINEL_BOOTSTRAP_UNEXPECTED_ERROR error=%s", str(exc)[:300])
 
 
 def help_message():

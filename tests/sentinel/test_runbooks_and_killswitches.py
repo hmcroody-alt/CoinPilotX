@@ -36,11 +36,18 @@ class TestKillSwitches:
         assert killswitches.ingest_enabled()
 
     def test_emergency_kills_everything(self, monkeypatch):
+        # This test used to stop after the three functions below, which are all
+        # defined in killswitches.py — so despite its name it could not fail for a
+        # gate defined in any other module, and two such gates had grown without
+        # the switch. The registry assertion is the one that earns the name; see
+        # tests/sentinel/test_gate_registry.py for the full treatment, including
+        # the partner that proves these gates can be switched on in the first place.
         _enable_chain(monkeypatch, "test_probe")
         monkeypatch.setenv("SENTINEL_EMERGENCY_KILL_SWITCH", "1")
         assert not killswitches.automation_enabled()
         assert not killswitches.runbook_enabled("test_probe", "OPERATIONAL")
         assert not killswitches.ingest_enabled()
+        assert [n for n, on in killswitches.all_gates().items() if on] == []
 
     def test_domain_gate_requires_master(self, monkeypatch):
         monkeypatch.setenv("SENTINEL_SECURITY_AUTOMATION_ENABLED", "1")

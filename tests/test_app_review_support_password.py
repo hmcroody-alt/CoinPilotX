@@ -338,11 +338,16 @@ class PasswordResetHardeningTest(unittest.TestCase):
         cls.client = bot.webhook_app.test_client()
 
     def test_mobile_recover_routes_in_abuse_guard_dict(self):
-        import inspect
-
-        source = inspect.getsource(bot.basic_abuse_guard)
-        self.assertIn('"/api/mobile/auth/recover"', source)
-        self.assertIn('"/api/pulse/mobile/auth/recover"', source)
+        # Reads the table itself rather than the guard's source text. It used to
+        # grep inspect.getsource(basic_abuse_guard) because the dict was a local
+        # inside that function; it is now bot.ABUSE_GUARD_PROTECTED, hoisted so
+        # that the distributed counter added in Sentinel Stage 6 reads the same
+        # single deployed copy of the policy instead of carrying its own.
+        # Asserting on the mapping is also strictly stronger than asserting on
+        # the source: the old form would have passed if the path appeared only
+        # in a comment.
+        self.assertIn("/api/mobile/auth/recover", bot.ABUSE_GUARD_PROTECTED)
+        self.assertIn("/api/pulse/mobile/auth/recover", bot.ABUSE_GUARD_PROTECTED)
 
     def test_mobile_recover_is_rate_limited(self):
         # Two layers apply: pulse_security_core (5/600s per ip+device) fires first,
@@ -393,8 +398,10 @@ class PasswordResetHardeningTest(unittest.TestCase):
         source = inspect.getsource(bot.api_account_password_change_request)
         self.assertIn("load_account_by_id", source)
         self.assertNotIn("payload", source, "the route must not read an email out of the request body")
-        guard = inspect.getsource(bot.basic_abuse_guard)
-        self.assertIn('"/api/account/password/change-request"', guard)
+        # See test_mobile_recover_routes_in_abuse_guard_dict: the guard's path
+        # table now lives in bot.ABUSE_GUARD_PROTECTED.
+        self.assertIn("/api/account/password/change-request",
+                      bot.ABUSE_GUARD_PROTECTED)
 
     def test_authenticated_change_request_uses_signed_in_account_email(self):
         sent_to = []

@@ -314,6 +314,142 @@ def _inv_identity_incident_evidence_preserved(cur) -> InvariantResult:
                            f"{len(keys)} identity incident(s) fully evidenced")
 
 
+# ---------------------------------------------------------------------------
+# Stage 5/29 — tenant isolation.
+#
+# The platform's object-level authorization idiom, as it is actually written,
+# is: resolve the object from the client-supplied id, resolve the conversation
+# it belongs to, then require a `pulse_conversation_participants` row before
+# reading or writing. Three verified call sites:
+#
+#   * bot.py `pulse_send_conversation_message` — 403 "Join this chat before
+#     sending" unless a participant row exists (or the conversation is public,
+#     in which case it *creates* one first).
+#   * bot.py `api_pulse_message_react` — loads the message by the client's id,
+#     then 404s unless the caller is a participant of that message's
+#     conversation.
+#   * bot.py `api_pulse_messages_seen` — the same gate before writing receipts.
+#
+# These invariants deliberately do NOT restate those checks. Restating a check
+# proves the line is still present; it does not prove the line was the only way
+# in. What is checked here is the *consequence* in storage: a row whose actor
+# was never a participant of its conversation is a row that did not come
+# through any of the paths above. That holds no matter which of the ~1,538
+# routes wrote it — including a route that does not exist yet.
+#
+# Two scoping decisions, both there to avoid crying wolf:
+#
+# * **Only conversations that still have a roster are considered.** Deleting a
+#   group removes messages, receipts, participants and the conversation — but
+#   NOT reactions, which are left orphaned. Without this clause every deleted
+#   group would report as a permanent violation, and an invariant that is
+#   always red is an invariant nobody reads. Skipping rosterless conversations
+#   costs no detection: with no participants there is nobody whose isolation
+#   could have been breached.
+# * **Leaving a conversation is not deletion.** The leave path sets `left_at`
+#   rather than deleting the row, so a departed member's old messages still
+#   match. The check asks whether a participant row exists *at all*, not
+#   whether it is currently active — the question is "was this actor ever let
+#   in", and asking the stricter question would flag every ex-member.
+#
+# The scan is bounded (TENANT_SCAN_LIMIT) and the OK detail says so out loud.
+# An unbounded scan of the platform's largest table on every cycle trades an
+# availability risk for a security check, and a result that read "no bypass"
+# after examining a window would be exactly the unearned reassurance this
+# engine exists to refuse.
+
+TENANT_SCAN_LIMIT = 5000
+
+# Table and column names are interpolated into the SQL below, so they are
+# pinned to an allowlist here rather than trusted from the call site. Nothing
+# today passes a request value, and this is what keeps that true.
+_PARTICIPATION_SOURCES = {
+    "pulse_messages": "sender_user_id",
+    "pulse_message_receipts": "user_id",
+    "pulse_message_reactions": "user_id",
+}
+
+
+def _participation_bypass(cur, table: str, limit: int = TENANT_SCAN_LIMIT):
+    """Return ``(bypassed, scanned)`` over the newest ``limit`` rows of ``table``.
+
+    ``bypassed`` counts rows whose actor has no participant row for the
+    conversation the row belongs to. It is None when the tables are
+    unavailable — unknown is reported as SKIPPED, never as OK.
+
+    One statement, valid on both SQLite and PostgreSQL, so the check that runs
+    in a test is the check that runs in production.
+    """
+    actor = _PARTICIPATION_SOURCES[table]  # KeyError = programming error, fail loud
+    sql = f"""
+        SELECT COUNT(*),
+               COALESCE(SUM(CASE
+                   WHEN EXISTS (SELECT 1 FROM pulse_conversation_participants roster
+                                WHERE roster.conversation_id = recent.cid)
+                    AND NOT EXISTS (SELECT 1 FROM pulse_conversation_participants p
+                                    WHERE p.conversation_id = recent.cid
+                                      AND p.user_id = recent.actor)
+                   THEN 1 ELSE 0 END), 0)
+        FROM (SELECT r.conversation_id AS cid, r.{actor} AS actor
+              FROM {table} r
+              WHERE COALESCE(r.conversation_id, 0) > 0
+                AND COALESCE(r.{actor}, 0) > 0
+              ORDER BY r.id DESC
+              LIMIT {int(limit)}) recent
+    """
+    try:
+        cur.execute(sql)
+        row = cur.fetchone()
+    except Exception:
+        return None, 0  # table missing / engine mismatch → SKIPPED
+    if not row:
+        return None, 0
+    return int(row[1] or 0), int(row[0] or 0)
+
+
+def _inv_message_sender_was_a_participant(cur) -> InvariantResult:
+    """A message may only exist in a conversation its sender was let into."""
+    bad, scanned = _participation_bypass(cur, "pulse_messages")
+    if bad is None:
+        return InvariantResult("INV_MESSAGE_SENDER_PARTICIPANT", STATUS_SKIPPED,
+                               "message/participant tables unavailable")
+    if bad:
+        return InvariantResult("INV_MESSAGE_SENDER_PARTICIPANT", STATUS_VIOLATED,
+                               f"{bad} of the {scanned} newest message(s) were written "
+                               f"by a non-participant")
+    return InvariantResult("INV_MESSAGE_SENDER_PARTICIPANT", STATUS_OK,
+                           f"{scanned} newest message(s) all written by a participant")
+
+
+def _inv_receipt_reader_was_a_participant(cur) -> InvariantResult:
+    """A read receipt is proof someone opened a thread. Only members may."""
+    bad, scanned = _participation_bypass(cur, "pulse_message_receipts")
+    if bad is None:
+        return InvariantResult("INV_RECEIPT_READER_PARTICIPANT", STATUS_SKIPPED,
+                               "receipt/participant tables unavailable")
+    if bad:
+        return InvariantResult("INV_RECEIPT_READER_PARTICIPANT", STATUS_VIOLATED,
+                               f"{bad} of the {scanned} newest read receipt(s) belong to "
+                               f"a non-participant")
+    return InvariantResult("INV_RECEIPT_READER_PARTICIPANT", STATUS_OK,
+                           f"{scanned} newest read receipt(s) all belong to a participant")
+
+
+def _inv_reaction_author_was_a_participant(cur) -> InvariantResult:
+    """Reacting requires having seen the message, so it carries the same read
+    exposure as a receipt."""
+    bad, scanned = _participation_bypass(cur, "pulse_message_reactions")
+    if bad is None:
+        return InvariantResult("INV_REACTION_AUTHOR_PARTICIPANT", STATUS_SKIPPED,
+                               "reaction/participant tables unavailable")
+    if bad:
+        return InvariantResult("INV_REACTION_AUTHOR_PARTICIPANT", STATUS_VIOLATED,
+                               f"{bad} of the {scanned} newest reaction(s) came from "
+                               f"a non-participant")
+    return InvariantResult("INV_REACTION_AUTHOR_PARTICIPANT", STATUS_OK,
+                           f"{scanned} newest reaction(s) all came from a participant")
+
+
 # invariant_id → (check_fn, event category, incident type). Financial checks
 # stay LEDGER/INVARIANT_VIOLATION (existing contract); privacy checks are
 # PRIVACY/DATA_EXPOSURE so the owner summary can separate the domains.
@@ -339,6 +475,18 @@ INVARIANTS: dict[str, tuple[Callable, str, str]] = {
         _inv_expired_risk_inactive, "SECURITY", "INVARIANT_VIOLATION"),
     "INV_IDENTITY_EVIDENCE_PRESERVED": (
         _inv_identity_incident_evidence_preserved, "SECURITY", "INVARIANT_VIOLATION"),
+    # Stage 5/29 tenant isolation. The split of category is deliberate: a
+    # message written by a non-participant is a *write* the authorization layer
+    # should have refused, while a receipt or a reaction can only be produced
+    # after the actor has read someone else's thread. The second kind is a
+    # disclosure and is filed as one, so the owner summary does not average a
+    # confidentiality breach together with an unauthorized insert.
+    "INV_MESSAGE_SENDER_PARTICIPANT": (
+        _inv_message_sender_was_a_participant, "SECURITY", "INVARIANT_VIOLATION"),
+    "INV_RECEIPT_READER_PARTICIPANT": (
+        _inv_receipt_reader_was_a_participant, "PRIVACY", "DATA_EXPOSURE"),
+    "INV_REACTION_AUTHOR_PARTICIPANT": (
+        _inv_reaction_author_was_a_participant, "PRIVACY", "DATA_EXPOSURE"),
 }
 
 

@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from services import pulse_ai_knowledge, pulse_ai_provider_router, pulse_ai_router, pulse_ai_safety, pulse_ai_web_search, undx_architecture, undx_market_context, undx_operator, undx_platform_knowledge, undx_policy, undx_self_knowledge, undx_semantic_retrieval
+from services.undx_brain import envelope
 
 
 LOGGER = logging.getLogger(__name__)
@@ -757,6 +758,37 @@ def _rate_limit_ok(cur, user_id: int) -> tuple[bool, int]:
     return count < limit, limit
 
 
+def web_search_knowledge_item(web_context: str, *, env=None) -> dict:
+    """The one knowledge item whose body did not come from PulseSoc.
+
+    Extracted from ``send_message`` so the marker can be tested. Inline it was a
+    single expression inside a function that needs a database cursor, a routing
+    decision and a provider call to reach, which meant nothing exercised it: the
+    seam tests downstream all build this dict by hand, so a mutation that stamped
+    the wrong flag here left every one of them passing.
+
+    ``envelope_sealed`` is read from the flag rather than from the string,
+    because the string is the thing under suspicion. ``context_block`` seals
+    exactly when the envelope is enabled, so the config read is the honest
+    witness to what it just did; asking ``is_sealed(web_context)`` would be
+    asking a search result whether it is trustworthy, and with the flag off that
+    string is unneutralised web text that can contain both fence tokens.
+
+    The two directions of a wrong answer are not symmetric. Claiming *sealed*
+    when it is not is caught downstream — ``pulse_ai_knowledge`` re-checks
+    ``is_sealed`` and clamps a mismarked item. Claiming *unsealed* when it is
+    sealed is not caught anywhere: the body goes through the 700-character
+    knowledge clamp, which truncates it mid-envelope and drops the closing
+    fence. That is the Stage 10 defect, and it is the direction this function
+    exists to pin.
+
+    The flag is off by default, so this returns False in production today and
+    the item is byte-identical to what shipped.
+    """
+    return {"id": 0, "title": "Live web search context", "category": "web_search",
+            "body": web_context, "envelope_sealed": envelope.enabled(env)}
+
+
 def get_conversation(user_id: int, limit: int = 80) -> dict:
     conn, cur = _open_db()
     try:
@@ -927,7 +959,7 @@ def send_message(user_id: int, payload: dict | None = None) -> dict:
             _record_web_search(cur, int(user_id), body, search_result)
             web_context = pulse_ai_web_search.context_block(search_result)
             if web_context:
-                knowledge.insert(0, {"id": 0, "title": "Live web search context", "category": "web_search", "body": web_context})
+                knowledge.insert(0, web_search_knowledge_item(web_context))
         user_memory = _user_memory(cur, int(user_id), settings, body)
         compiled_policy = undx_policy.compile_context(body, user_id=int(user_id))
         ui_context = undx_architecture.sanitize_ui_context(payload.get("ui_context"))

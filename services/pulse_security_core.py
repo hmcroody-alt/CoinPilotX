@@ -16,7 +16,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any
 
-from . import cache_engine
+from . import cache_engine, security_guard
 
 
 _RATE_BUCKETS: dict[str, list[float]] = defaultdict(list)
@@ -168,6 +168,12 @@ def rate_limited(*, path: str, method: str, ip_hash: str, user_id: int = 0, devi
         bucket.append(now)
         _RATE_BUCKETS[key] = bucket
         cache_engine.cache_set(cache_key, bucket, rule.window_seconds)
+    # Reclaim keys for subjects that stopped coming. See security_guard for why
+    # this cannot change a verdict. The cache_engine mirror above expires on its
+    # own TTL; this dict is the one with no expiry at all.
+    security_guard.sweep_expired(
+        "pulse_security_core._RATE_BUCKETS", _RATE_BUCKETS,
+        rule.window_seconds, now=now)
     return {"limited": False, "action": rule.action}
 
 

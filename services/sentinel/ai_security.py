@@ -61,7 +61,38 @@ def scan_for_injection(text: str) -> InjectionScan:
 
 def wrap_untrusted(text: str) -> str:
     """Mark content as data before it is shown to any model. The wrapper also
-    neutralizes nested wrapper markers so content cannot fake a close."""
+    neutralizes nested wrapper markers so content cannot fake a close.
+
+    **Do not wire this into prompt assembly.** ``services.undx_brain.envelope`` is
+    the platform's untrusted-content boundary and is already applied at the live
+    call sites (``pulse_ai_web_search.context_block``,
+    ``pulse_ai_knowledge.build_system_prompt``, ``undx_brain.corpus.prompt_block``).
+    It does strictly more than this function: it neutralises five reserved tags
+    rather than its own two markers, tolerates whitespace inside a tag so
+    ``< / system >`` cannot slip through, carries a ``Provenance`` recording which
+    source may instruct, places a declaration before the payload and a reassertion
+    after it, and reports truncation instead of performing it silently.
+
+    Adding a second boundary beside it would give the codebase two fence
+    vocabularies, and a payload that can forge one fence escapes whichever envelope
+    it is nested in — which is precisely why ``envelope.RESERVED_TAGS`` neutralises
+    ``pulsesoc_source_knowledge``, the *other* fence this repository renders.
+
+    An earlier draft of this note said the function was "retained for the non-prompt
+    uses it already has". That was wrong, and grepping rather than assuming is what
+    caught it: as of this commit ``wrap_untrusted`` has **no production callers at
+    all** — one test exercises it and nothing else in the tree references it. So the
+    accurate statement is that this is an unused second fence mechanism kept for its
+    tests, and the danger is not that it is misused today but that "retained" reads
+    like an invitation to a maintainer looking for a wrapper. Its markers are
+    deliberately absent from ``RESERVED_TAGS``, because adding them would be the
+    first step toward treating it as a parallel mechanism rather than as the dead
+    code it currently is.
+
+    ``tests/sentinel/test_ai_boundaries.py`` enforces the instruction in the first
+    paragraph by scanning for call sites, because an instruction that lives only in
+    a docstring decays the moment someone does not read it.
+    """
     content = str(text or "")
     content = content.replace(UNTRUSTED_OPEN, "[untrusted-open]")
     content = content.replace(UNTRUSTED_CLOSE, "[untrusted-close]")
