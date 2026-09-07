@@ -54,17 +54,20 @@ def test_the_sheet_bootstrap_carries_what_initpaymentsheet_needs():
         assert '"apple_pay_merchant_id"' in source
 
 
-def test_apple_pay_is_announced_only_when_the_binary_can_honour_it():
-    # An unset merchant id must stay empty. Substituting a plausible-looking
-    # default would advertise Apple Pay the signed app has no entitlement for,
-    # and the sheet would fail instead of offering the card form.
+def test_a_stale_env_var_cannot_re_announce_apple_pay():
+    # The signed binary stopped declaring `com.apple.developer.in-app-payments`
+    # on 2026-09-02, so the merchant id is a constant empty string rather than
+    # an env lookup. Advertising a merchant id the app has no entitlement for
+    # makes the sheet fail at presentation instead of offering the card form,
+    # and a leftover APPLE_PAY_MERCHANT_ID in any environment must not be able
+    # to do that. Restore the env lookup only together with the entitlement.
     import os
 
     previous = os.environ.pop("APPLE_PAY_MERCHANT_ID", None)
     try:
         assert cart._apple_pay_merchant_id() == ""
         os.environ["APPLE_PAY_MERCHANT_ID"] = "  merchant.com.pulsesoc.app  "
-        assert cart._apple_pay_merchant_id() == "merchant.com.pulsesoc.app"
+        assert cart._apple_pay_merchant_id() == ""
     finally:
         os.environ.pop("APPLE_PAY_MERCHANT_ID", None)
         if previous is not None:
