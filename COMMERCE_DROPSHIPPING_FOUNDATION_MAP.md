@@ -238,18 +238,59 @@ Ranked by how much else depends on them.
 
 - **No `Product V2`, `DropshippingProduct`, or `CJProduct` table.** There are already four
   product ledgers and three are empty. A fifth is the failure mode this mission names.
-- **No writes to `business_os_mkt_products` / `business_os_store_products` as if canonical.**
-  They are enabled and empty; treat them as a parallel stack, not a target.
+- **No writes to `business_os_mkt_products` / `business_os_store_products` as if canonical**
+  *until §10 is decided*. They are enabled and empty. Writing to them without finishing the
+  migration creates a second populated ledger, which is the same failure as inventing a fifth.
 - **No new publication gate.** §6 shows one exists and is stronger than a write-side check.
 - **Nothing in Agora / audio / video / livestream / call paths.** RTC hard lock, mission §65.
 
-## 10. Not established
+## 10. The one decision this map cannot make
+
+Everything above is settled evidence. This is not, and it determines the shape of the whole
+mission, so it is stated separately rather than guessed.
+
+**business_os was declared canonical and the declaration was never carried out.**
+
+Evidence that it *is* the intended future:
+
+- `services/business_os/marketplace/schema.py:1-8` calls `marketplace_listings` "legacy" and
+  says this "builds a new canonical surface beside them," explicitly never mutating the legacy
+  tables.
+- Commit `6e312e8a` (2026-07-28) is titled "Business OS S2: **canonical** Store (storefront +
+  catalog + collections)."
+- Its schema already has the three things this mission most needs and the live table lacks:
+  **price in integer cents**, **immutable per-order line items** (`business_os_mkt_order_items`,
+  price and qty snapshotted so later product edits cannot rewrite history), and an explicit
+  **order state machine** with an append-only transition log.
+
+Evidence that it is not:
+
+- It holds **zero rows in production while enabled** (§2). Not blocked — unused.
+- There is no migration or backfill. The schema docstring makes that a design choice, not an
+  omission: it builds *beside* the legacy tables, so nothing ever moves.
+- It went quiet on **2026-08-13**. Every September commit went into the "legacy" path instead —
+  durable reservation lifecycle (`242ed3db`), cash checkout (`d14cebbb`), App Review fixes
+  (`61b2d07c`, 2026-09-02). That is where production pressure actually lands.
+
+So the correct reading is not "which one is canonical" but: *a migration was designed, started,
+declared, and abandoned, and the system it was migrating away from kept winning.*
+
+This matters because the two branches give completely different missions:
+
+- **Build on `marketplace_listings`** — extend what ships. Then integer price, immutable order
+  lines, and the order state machine all have to be built, on a table that stores money as prose
+  and has live orders against it.
+- **Finish the business_os migration first** — three of the four blocking gaps in §8 are already
+  solved there. But it means completing an abandoned migration with a real data move, and the
+  native app talks exclusively to `/api/pulse/marketplace/*`.
+
+Picking wrong produces exactly the outcome the mission's §0 forbids: a fifth product ledger, or
+supplier schema bolted to a table that was already scheduled for retirement. **Not resolved
+here — needs a human call.**
+
+## 10b. Also not established
 
 Stated so it is not mistakenly relied on later:
-
-- Whether the business_os commerce stack is *intended* to become canonical. It is enabled in
-  production and empty. That is consistent with "staged for migration" and with "abandoned."
-  Nothing I read decides it, and the row census cannot distinguish them.
 - Whether the 6 live listings are real merchandise or test rows. Not inspected — deliberately,
   as row contents are user data and the census answered the structural question without them.
 - Whether `is_public` and `public_sql` currently agree on every input. They are a two-reader
