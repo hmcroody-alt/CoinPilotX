@@ -151,6 +151,7 @@ from telegram.ext import (
 )
 
 from services import (
+    app_links,
     brevo_contacts as brevo_contacts_service,
     command_center_client as command_center_client_service,
     command_router as command_router_service,
@@ -3148,6 +3149,64 @@ def enforce_admin_form_csrf():
         status=400,
         mimetype="text/plain",
     )
+
+
+@webhook_app.before_request
+def route_app_intent_links_to_the_app_store():
+    """App-first fallback for links that say "open this in the PulseSoc app".
+
+    An app-intent link only reaches Flask when the app did NOT claim it, which
+    on iOS means it is not installed. So the honest destination is the App Store
+    listing, not the website — the website is what the member was trying to
+    leave.
+
+    Everything else returns None and the request proceeds untouched: unmarked
+    traffic (an ordinary visitor browsing pulsesoc.com), web-intent paths (the
+    Privacy Policy, password reset, checkout), and non-iOS visitors on a
+    destination that genuinely has a web page. Non-iOS visitors on a destination
+    with no web page still get the listing, because an installable app beats a
+    404 — see `app_links.fallback_decision` for the reasoning.
+
+    The only redirect this hook can ever emit is `pulsesoc_app_store_url()`,
+    which returns a fixed constant or an env value pinned to
+    `https://apps.apple.com/`. No part of the target comes from the request, so
+    the hook cannot be turned into an open redirect however the URL is crafted.
+
+    Telemetry is a log line rather than an `analytics_events` row on purpose:
+    this runs on every marked request, and a DB round trip there would make the
+    link click slower than the page it opens.
+    """
+    if request.method != "GET":
+        return None
+    try:
+        if not app_links.is_app_intent_query(request.args):
+            return None
+        action, detail = app_links.fallback_decision(
+            request.path,
+            is_ios=is_ios_user_agent(request.headers.get("User-Agent", "")),
+            is_app_intent=True,
+        )
+    except Exception as exc:
+        # A link decision must never be why a page 500s. Section 18: malformed
+        # input falls through to normal routing.
+        logging.info("%s error=%s", app_links.EVENT_LINK_INVALID, exc)
+        return None
+
+    source = app_links.app_link_source(request.args)
+    if action != app_links.FALLBACK_APP_STORE:
+        if detail == "unknown_destination":
+            # Normal routing takes it from here, which means the ordinary 404 —
+            # never a redirect built from whatever path was requested.
+            logging.info("%s source=%s", app_links.EVENT_UNKNOWN_DESTINATION, source)
+        return None
+
+    logging.info(
+        "%s destination=%s source=%s client=ios result=app_store",
+        app_links.EVENT_LINK_FALLBACK,
+        detail,
+        source,
+    )
+    return redirect(pulsesoc_app_store_url(), code=302)
 
 
 def set_persistent_session_cookie(response, refresh_token):
