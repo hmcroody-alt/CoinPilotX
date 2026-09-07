@@ -534,6 +534,13 @@ def _normalize_path(path: str) -> str:
     raw = str(path or "").strip()
     if not raw:
         return "/"
+    if "://" in raw:
+        # Callers hold a mix of relative paths and full URLs. Matching on the
+        # path either way keeps a stored `https://pulsesoc.com/pulse/reels/3`
+        # from being classed as unknown and losing its destination label.
+        # Host safety is the caller's job -- app_intent_url checks it before it
+        # ever gets here.
+        raw = urlsplit(raw).path or "/"
     raw = raw.split("?", 1)[0].split("#", 1)[0]
     if not raw.startswith("/"):
         raw = f"/{raw}"
