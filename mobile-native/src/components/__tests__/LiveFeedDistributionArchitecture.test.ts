@@ -20,7 +20,15 @@ describe("Live Feed distribution architecture", () => {
   it("opens canonical Live and polls only the visible Live post for ended/replay state", () => {
     expect(home).toContain('navigation.navigate("LiveDetail", { liveId');
     expect(home).toContain("getPostDetail(activeLivePost.id)");
-    expect(postCard).toContain("Replay is processing in the background");
+    // The copy used to be the single literal "Replay is processing in the
+    // background". It is now server-driven: `replayMessage` carries whatever
+    // the archive state reports, defaulting to "Replay processing", and the
+    // reassurance that made the old sentence worth asserting was split out into
+    // its own clause. Both halves are pinned, because the default alone would
+    // still pass if the sentence became a bare status with no reassurance —
+    // which is the regression the original line was written to catch.
+    expect(postCard).toContain("Replay processing");
+    expect(postCard).toContain("You can keep using PulseSoc.");
     expect(postCard).not.toContain("Preparing replay…");
     expect(postCard).toContain("Replay unavailable");
     expect(postCard).toContain('liveStatus === "processing"');
