@@ -591,9 +591,8 @@ def remember_owner_temp_password(password, reason):
         "reason": reason,
     })
     logging.warning(
-        "OWNER ADMIN TEMPORARY CREDENTIALS GENERATED ONCE email=%s temporary_password=%s reason=%s",
+        "OWNER ADMIN TEMPORARY CREDENTIALS GENERATED ONCE email=%s reason=%s",
         OWNER_ADMIN_EMAIL,
-        password,
         reason,
     )
 
