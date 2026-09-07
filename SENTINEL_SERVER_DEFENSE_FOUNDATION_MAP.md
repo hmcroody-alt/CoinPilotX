@@ -411,6 +411,37 @@ Stage 21, and pinned by
 `test_the_older_guards_limit_is_unreachable_on_this_route` so it cannot drift
 unnoticed.
 
+#### Stage 21 correction: which number is decorative depends on the switch
+
+The finding above is true of a configuration, not of the route, and the
+paragraph above generalised past its own measurement. It was taken from a
+single test process with `SENTINEL_DISTRIBUTED_LIMITS_MODE` unset. Both of
+those conditions do work in the result.
+
+Once the shared counter is enforcing, `basic_abuse_guard`'s 6-per-300s is
+counted **fleet-wide**, while `pulse_security_core`'s 5-per-600s stays in one
+worker's memory. Across four workers the older guard needs roughly twenty-four
+requests before it sees six on any single one of them, so the shared limit
+binds first — at the seventh request to the fleet. The decorative number and
+the effective number swap places.
+
+| Configuration | Binds first | Decorative |
+|---|---|---|
+| Switch off (today's production) | `pulse_security_core` 5/600, per worker | `basic_abuse_guard` 6/300 |
+| Switch enforcing, 4 workers | `basic_abuse_guard` 6/300, fleet-wide | `pulse_security_core` 5/600 |
+
+Two consequences worth stating plainly. The conflict cannot be resolved by
+reading the two files, because neither is wrong in every configuration. And an
+operator turning on the distributed limiter is not only tightening a count —
+they are silently changing **which policy is authoritative** for this route.
+That is the kind of second-order effect a flag flip is not expected to have,
+so it belongs in the runbook rather than in someone's memory.
+
+Still not renumbered, for the reason given above. Pinned by
+`test_turning_the_shared_counter_on_inverts_which_limit_is_decorative`, with an
+anti-vacuity partner proving another worker's count is invisible while the
+switch is off.
+
 ### There is no Redis
 
 Verified against the live project (`railway variables`, 228 distinct names):

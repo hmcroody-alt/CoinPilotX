@@ -454,6 +454,70 @@ class RateGuardRouteTest(unittest.TestCase):
         self.assertEqual(first_refusal.get_json().get("security_state"),
                          "rate_limited")
 
+    def test_turning_the_shared_counter_on_inverts_which_limit_is_decorative(self):
+        """Stage 21. The finding above is true of one configuration, not of the
+        route, and the distinction is the thing worth writing down.
+
+        ``test_the_older_guards_limit_is_unreachable_on_this_route`` measures a
+        single process with the shared counter off. Both of those conditions do
+        work in the result. ``basic_abuse_guard``'s 6-per-300s is counted
+        *fleet-wide* once the counter is enforcing, while
+        ``pulse_security_core``'s 5-per-600s stays in one worker's memory — so
+        across four workers the older guard needs about twenty-four requests to
+        see six on any one of them, and the shared limit binds first at the
+        seventh request to the fleet.
+
+        Which guard is decorative therefore flips when an operator turns the
+        switch on. That matters beyond bookkeeping: it means the two numbers
+        cannot be reconciled by reading them, because neither file is wrong in
+        every configuration, and an operator enabling the distributed limiter is
+        also silently changing which policy is authoritative for this route.
+
+        Nothing is renumbered here. This test exists so that whoever finally
+        collapses these four limiters does it knowing both answers.
+        """
+        stated, _ = bot.ABUSE_GUARD_PROTECTED[RECOVER]
+        rule = pulse_security_core.rate_rule_for(RECOVER, "POST")
+        self.assertIsNotNone(rule, "the older guard no longer covers this route")
+        self.assertLess(rule.limit, stated,
+                        "the premise of the original finding is gone: the older "
+                        "guard is no longer the stricter of the two")
+
+        os.environ["SENTINEL_DISTRIBUTED_LIMITS_MODE"] = "enforce"
+        try:
+            # Six requests already counted by other workers — at the shared
+            # limit, not over it. This worker has served none of them.
+            self.prime_other_worker(RECOVER, stated)
+            response = self.post_recover(1)[0]
+
+            self.assertEqual(response.status_code, 429,
+                             response.get_data(as_text=True)[:300])
+            # ``rate_limit_refusal`` carries no ``security_state``; the older
+            # guard's body does. This is how the two refusals are told apart.
+            self.assertIsNone(response.get_json().get("security_state"),
+                              "the older guard refused, so this proves nothing "
+                              "about the shared counter")
+
+            # And the older guard was nowhere near firing: it saw one request on
+            # this worker against a limit of five.
+            older = [stamps for key, stamps in pulse_security_core._RATE_BUCKETS.items()
+                     if key.endswith(RECOVER)]
+            self.assertTrue(all(len(stamps) < rule.limit for stamps in older), older)
+        finally:
+            os.environ.pop("SENTINEL_DISTRIBUTED_LIMITS_MODE", None)
+
+    def test_with_the_shared_counter_off_the_same_priming_changes_nothing(self):
+        """Anti-vacuity partner. Six requests from other workers must be
+        invisible while the switch is off, or the test above is measuring a
+        route that refuses everyone rather than a limit that became reachable."""
+        stated, _ = bot.ABUSE_GUARD_PROTECTED[RECOVER]
+        os.environ.pop("SENTINEL_DISTRIBUTED_LIMITS_MODE", None)
+        self.prime_other_worker(RECOVER, stated)
+        response = self.post_recover(1)[0]
+        self.assertNotEqual(response.status_code, 429,
+                            "another worker's count reached this request with "
+                            "the switch off")
+
     # =====================================================================
     # Availability
     # =====================================================================
