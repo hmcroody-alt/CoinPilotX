@@ -84221,7 +84221,12 @@ def api_pulse_reel_share_by_id(reel_id):
     except Exception:
         pass
     conn.commit(); conn.close()
-    share_url = f"{request.host_url.rstrip('/')}/pulse/reels/{int(reel_id)}"
+    # This is the URL a member hands to someone else, so it is built from the
+    # canonical link authority rather than request.host_url: the old version
+    # inherited whatever Host header the sharing request happened to carry, and
+    # it produced a plain web URL, so a shared reel opened the website even for
+    # a recipient who has the app installed.
+    share_url = app_links.build_app_link("reel", int(reel_id), source="share")
     pulse_emit_event("pulse_reel_shared", {"reel_id": reel_id, "post_id": int(reel["post_id"]), "share_url": share_url}, user["user_id"], int(reel["post_id"]))
     return jsonify({"ok": True, "message": "Share ready.", "reel_id": reel_id, "share_url": share_url})
 
@@ -91699,7 +91704,16 @@ def api_pulse_group_invite_link(group_id):
     conn.close()
     if not group:
         return api_error("Group not found.", 404)
-    url = request.host_url.rstrip("/") + f"/pulse/groups/{group.get('slug') or group_id}"
+    # An invite link is the whole point of the app-first contract: someone is
+    # handing this to a person who may not have PulseSoc yet. Built from the
+    # canonical authority rather than request.host_url, which inherited whatever
+    # Host header the inviting request carried.
+    try:
+        url = app_links.build_app_link("group", group.get("slug") or group_id, source="invite")
+    except app_links.AppLinkError:
+        # A slug the builder will not accept costs the slug, not the invite --
+        # the numeric id always resolves to the same group.
+        url = app_links.build_app_link("group", group_id, source="invite")
     return jsonify({"ok": True, "invite_url": url, "message": "Invite link ready."})
 
 
