@@ -1268,6 +1268,7 @@ _load_route_pack("business_os_web", "services.business_os_web")
 # 37 /api/business-os endpoints plus the /business-os/commerce seller console
 # page. Every endpoint is DARK (404) until its BUSINESS_OS_* flag is on.
 _load_route_pack("business_os_commerce", "services.business_os_commerce_routes")
+_load_route_pack("business_os_suppliers", "services.business_os_supplier_routes")
 # UNDX durable agent runs, read side only: GET /api/undx/runs and /<run_id>. The write
 # half of a run is queued by the existing /api/pulse-ai/message path and executed by the
 # undx_worker service; this pack is how the person who asked finds out what became of it.
@@ -2988,7 +2989,11 @@ def pulse_security_core_guard():
         })
         response.headers["Retry-After"] = str(limited.get("retry_after") or 60)
         return response, 429
-    if request.mimetype == "application/json":
+    # Supplier bodies contain one-time credentials or signed provider bytes.
+    # Their bounded route parser/verifier owns them; never cache for telemetry.
+    if request.mimetype == "application/json" and not request.path.startswith((
+        "/api/business-os/suppliers/cj/", "/api/provider-webhooks/suppliers/cj/",
+    )):
         payload = request.get_json(silent=True)
         shape = pulse_security_core.validate_json_shape(path, payload)
         if not shape.get("ok"):
@@ -3039,7 +3044,11 @@ def interactive_security_guard():
                 "error": "file_too_large",
                 "max_upload_mb": int(max_request_mb),
             }), 413
-    if request.mimetype == "application/json":
+    # CJ verifies raw bytes / validates its own DTOs. Sampling these bodies here
+    # would persist merchant API keys or webhook openId in security telemetry.
+    if request.mimetype == "application/json" and not request.path.startswith((
+        "/api/business-os/suppliers/cj/", "/api/provider-webhooks/suppliers/cj/",
+    )):
         raw = request.get_data(cache=True, as_text=True)[:6000]
         if security_guard.suspicious_text(raw):
             security_monitor.record("xss_payload_blocked", "high", account_user_id() or 0, client_ip_hash(), request.path, {"sample": raw[:180]})
