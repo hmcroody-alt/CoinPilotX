@@ -3,11 +3,12 @@
 How a PulseSoc link decides between the native app, the App Store, and the
 website — what exists, what changed, and what is still blocked.
 
-> **Production status: Universal Links are inert right now.** Both association
-> files return HTTP 503 (see [Blocked on the owner](#blocked-on-the-owner)).
-> Everything below is correct in the codebase and covered by tests, but iOS
-> will not hand a single link to the app until two environment variables are
-> set on Railway.
+> **Production status: iOS Universal Links are configured and serving.**
+> `PULSESOC_APPLE_TEAM_ID` was set on Railway on 2026-09-07 and the AASA now
+> returns HTTP 200. Apple caches that file at install/update time, so existing
+> installs keep the old result until they are reinstalled — a device test is the
+> one remaining verification. `assetlinks.json` still returns 503 by design.
+> See [Association file status](#6-association-file-status).
 
 ---
 
@@ -151,30 +152,62 @@ instead, which needs no request context at all.
 
 ---
 
-## 6. Blocked on the owner
+## 6. Association file status
 
-Both association files are live-failing right now:
+### iOS — serving
+
+`PULSESOC_APPLE_TEAM_ID=87ZC69AGSR` was set on the Railway `CoinPilotX`
+production service on 2026-09-07 and the service redeployed:
 
 ```
 GET https://pulsesoc.com/.well-known/apple-app-site-association
-  → HTTP 503  native_link_configuration_missing
-    "PULSESOC_APPLE_TEAM_ID must be a 10-character Apple Team ID."
+  → HTTP 200  application/json
+      87ZC69AGSR.com.pulsesoc.app             /pulse/*  /search*
+      87ZC69AGSR.com.pulsesoc.nativeapp.dev   /pulse/*  /search*
+```
 
+An earlier revision of this document said neither value could be derived from
+the repository. That was wrong about the Apple half: the Team ID appears in
+`mobile-native/ios/PulseSoc.xcodeproj/project.pbxproj` as both `DevelopmentTeam`
+and `DEVELOPMENT_TEAM`, and independently in a signed build log as
+`AppIdentifierPrefix`.
+
+The dev bundle `com.pulsesoc.nativeapp.dev` is published alongside the
+production one because `PULSESOC_APPLE_ASSOCIATED_BUNDLE_IDS` is unset and the
+builder's default list carries both. That is the intended state — it gives
+development builds working universal links for device testing. Setting the
+variable to `com.pulsesoc.app` would ship production-only.
+
+**Still unverified.** iOS fetches the AASA through Apple's CDN at install or
+update time, not on demand, so existing installs keep the old 503 result until
+they are reinstalled. Nothing in this repository can prove the end-to-end hop.
+That needs a fresh install on a device, and it is the last open item in this
+mission.
+
+### Android — 503, deliberately
+
+```
 GET https://pulsesoc.com/.well-known/assetlinks.json
   → HTTP 503  native_link_configuration_missing
     "PULSESOC_ANDROID_SHA256_CERT_FINGERPRINTS must contain a valid
      SHA-256 certificate fingerprint."
 ```
 
-**Until these two Railway variables are set, iOS will not associate a single
-pulsesoc.com link with the app, and every link in this document opens the
-website.** The endpoints are behaving correctly — they refuse to serve a
-malformed association file rather than serving one that would poison Apple's
-CDN cache. The code side of this mission is complete; this is a configuration
-step only the account owner can perform.
+This blocks nothing. `eas.json` declares no Android build profile at all, so no
+Android binary has been produced — there is no installed app for the file to
+associate. `app.json` does declare the package and `autoVerify` intent filters,
+but those describe an app that does not yet ship.
 
-Neither value can be derived from the repository, and verifying the result
-requires a device test after Apple re-fetches the file.
+The only keystore in the repo is `mobile-native/android/app/debug.keystore`, and
+`build.gradle` signs the release variant with `signingConfigs.debug`. The
+Android debug key is a publicly known shared key, so publishing its fingerprint
+here would let any party sign an app that claims this domain. A 503 is strictly
+safer than a fingerprint anyone can reproduce.
+
+When there is a real Android release, the fingerprint comes from
+`eas credentials` or the Play Console's App Signing page and goes into
+`PULSESOC_ANDROID_SHA256_CERT_FINGERPRINTS`. It cannot be derived from this
+repository.
 
 ---
 
