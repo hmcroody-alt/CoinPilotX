@@ -1,5 +1,10 @@
 # PULSESOC CJ STAGING ACCEPTANCE
 
+> Provider-approval continuation: the authorized eight-question request is now
+> verified in Sent mail. Approval has not been received and the gate remains OFF.
+> See [CJ_LIVE_SANDBOX_ACCEPTANCE.md](CJ_LIVE_SANDBOX_ACCEPTANCE.md) for current
+> evidence. Infrastructure evidence below remains historical to its stated run.
+
 ## FINAL VERDICT: PARTIAL
 
 Observed 2026-09-07. Isolated Railway infrastructure, real PostgreSQL acceptance,

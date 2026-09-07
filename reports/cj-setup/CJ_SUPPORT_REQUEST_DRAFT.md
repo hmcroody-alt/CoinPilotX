@@ -1,48 +1,73 @@
-# CJ support request — draft, not sent
+# CJ support request — sent, awaiting provider response
 
-Subject: Authorized merchant API custody, sandbox callbacks, and hosted egress
+Verified in PulseSoc Sent mail on 2026-09-07 at approximately 18:53 UTC.
+The mailbox displays September 7, 11:46 AM for both messages. The first message
+contained only the existing signature image; the reply with subject prefixed
+`Re:` contains the complete eight-question request below, preceded by an apology
+for the missing body. That corrected body was opened and verified in Sent mail.
+Sender: `support@pulsesoc.com`. No duplicate request was sent during the
+verification continuation. Sent-folder evidence proves sending, not receipt
+by CJ or affirmative provider permission.
+
+To: developer@cjdropshipping.com
+
+Official channel: https://developers.cjdropshipping.com/en/about.html
+
+Subject: PulseSoc: permission for one merchant's hosted CJ sandbox integration
 
 Hello CJ Developer Support,
 
-CoinPlotXAI Inc. is integrating CJ into PulseSoc using merchant-owned CJ
-accounts. Each merchant would explicitly authorize PulseSoc to receive an API
-key over authenticated HTTPS. We store the key, access/refresh tokens and openId
-encrypted with tenant-bound access controls. No credential goes to mobile apps,
-AI tools, public APIs, logs or analytics. PulseSoc will not fund merchant orders.
+CoinPlotXAI Inc. is preparing a PulseSoc integration with CJ. We are requesting
+written permission to test ONE explicitly authorized merchant's own CJ account
+through our isolated hosted sandbox backend. This is not a request for a
+large-scale production rollout.
 
-Please confirm or provide the applicable official contract for:
+The design uses authenticated HTTPS ingestion and encrypted, merchant-scoped
+credential storage with tenant-bound access controls. Credentials will not be
+placed in mobile apps, AI prompts, public responses, logs or analytics. Testing
+would enforce isSandbox=1, with real funding and production fulfillment disabled.
+We will not purchase a CJ plan, points, inventory or fulfillment for this test.
 
-1. Whether this merchant-authorized hosted custody is permitted, including
-   retaining openId to verify callbacks. If a partner/delegated authorization
-   program is required, please provide its onboarding, scope and consent model.
-2. Whether one explicitly authorized merchant may conduct create-only sandbox
-   testing from a hosted backend using isSandbox=1 and payType=3, before any
-   multi-merchant production rollout.
-3. How the three-users-per-IP rule is counted for hosted services and API keys
-   belonging to the same CJ account, and the approved architecture for legitimate
-   growth beyond three merchants without rotating IPs or evading limits.
-4. Whether a stable dedicated outbound IP is required and how to register or
-   approve shared-backend egress, if that process exists.
-5. Which sandbox callback/test mechanism supports order, stock, product and
-   logistics events; required ACK deadline; and safe topic setup without
-   disturbing an account's existing production subscriptions.
-6. Whether product subscribe is additive or replaces a shop's existing set;
-   response/readback semantics; and the safest bounded update contract.
-7. Which order readback fields authoritatively prove sandbox mode, selected API
-   shop, exact variant quantities and a merchant-supplied order reference after a
-   create response is lost. Is a documented absence proof available?
-8. Whether a payment interface provides an immutable expected/max-amount guard.
-   All real funding remains disabled unless that contract is proven.
+Please confirm these eight points, or link the authoritative CJ agreement that
+explicitly covers them:
 
-Please distinguish permissions for this single-merchant sandbox acceptance from
-any separate multi-merchant production approval. We will not infer contractual
-permission from successful API calls.
+1. May PulseSoc securely store a merchant-provided CJ API key server-side solely
+   for that merchant's own CJ account?
+2. May PulseSoc securely retain that account's openId solely for CJ webhook HMAC
+   verification?
+3. May a hosted SaaS backend process CJ API traffic for multiple independently
+   authorized merchant accounts? This is a policy clarification for future use;
+   our immediate test remains limited to one authorized sandbox merchant.
+4. Does CJ's documented three-users-per-IP restriction apply to this hosted SaaS
+   model, including shared hosting-provider outbound IPs?
+5. Does CJ recommend or require a platform/partner authorization model for
+   PulseSoc? If so, which official onboarding path should we use?
+6. May one merchant's own API credentials be used from PulseSoc's hosted backend
+   for this authorized sandbox test without violating CJ integration policy?
+7. May CJ product, image and description data be displayed inside PulseSoc's
+   merchant storefront tooling?
+8. May CJ webhook callback traffic containing openId terminate at PulseSoc's
+   secure backend for that merchant's integration?
+
+Please distinguish permission for this one-merchant sandbox test from any
+separate production-scale approval. We will keep hosted credential ingestion
+disabled until we receive affirmative permission or an explicit authoritative
+agreement. Successful infrastructure or API tests will not be treated as
+provider authorization.
 
 Thank you,
 PulseSoc engineering, CoinPlotXAI Inc.
 
 ---
 
-No credentials, openId, webhook URL, merchant IDs or customer data are included.
-No support message was sent. Sending requires explicit authorization and an
-approved recipient/channel.
+No credentials, openId values, webhook URL, merchant IDs or customer data are
+included in the request. The corrected message also supplies the business reply
+contact `support@pulsesoc.com` and quotes the signature-only original message.
+Sending was explicitly authorized by the user's mission. No CJ reply was found
+in the CJ-related Inbox or Spam search at approximately 18:57 UTC. Delivery to
+CJ's mailbox and substantive review are not independently verified. Do not
+treat this request or a delivery acknowledgment as provider approval.
+
+See [CJ_LIVE_SANDBOX_ACCEPTANCE.md](CJ_LIVE_SANDBOX_ACCEPTANCE.md) for the current
+gate status and the implementation-use caveat that must be resolved before
+credential ingestion.
