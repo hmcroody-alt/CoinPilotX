@@ -15,7 +15,7 @@ import mimetypes
 import secrets
 import sqlite3
 import logging
-# Imported under an explicit name: 38 functions in this file bind a local
+# Imported under an explicit name: dozens of functions in this file bind a local
 # variable called `html`, so a plain `import html` would be shadowed inside them.
 from html import escape as html_escape
 from logging.handlers import RotatingFileHandler
