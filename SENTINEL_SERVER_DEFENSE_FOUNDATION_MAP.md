@@ -72,7 +72,9 @@ implemented*. The correct move is to extend them, not to re-found them.
 4. **`wrap_untrusted()` is never applied at context assembly.** The primitive
    exists in `ai_security.py`; `undx_policy.compile_context()` does not call it.
    Untrusted document/message/listing text reaches external LLM providers
-   without boundary markers.
+   without boundary markers. *(Both sentences are wrong in ways that matter —
+   see the correction below. The underlying worry was real and the defect found
+   was worse than the one described.)*
 5. **No Sentry.** No `SENTRY_DSN` among the 228 production variables and no
    `sentry_sdk` import. The brief's "reuse existing Sentry integration" has no
    referent — this must not be papered over.
@@ -80,6 +82,84 @@ implemented*. The correct move is to extend them, not to re-found them.
    ad-hoc per route (`WHERE user_id=?`), with no test proving user A cannot
    read user B. *(Closed in Stage 5/29 — but see the correction below, which
    changes what this gap actually was.)*
+
+### Correction applied during Stage 10: gap 4 named the wrong function twice
+
+Acting on gap 4 as written would have made the codebase worse. Two errors:
+
+**`compile_context()` carries no untrusted text.** It takes the user's message,
+but only to *route* on it — domain detection, risk mode, tool selection, freshness
+terms. The `system_context` it returns is compiled from the policy pack. There is
+nothing in its output to wrap, and wrapping it would fence the platform's own
+policy inside an untrusted marker.
+
+**`wrap_untrusted()` is the duplicate, not the missing piece.** The platform's
+untrusted-content boundary is `services/undx_brain/envelope.py`, and it is already
+applied at three live call sites (`pulse_ai_web_search.context_block`,
+`pulse_ai_knowledge.build_system_prompt` for memory, `undx_brain.corpus.prompt_block`).
+It does strictly more than `wrap_untrusted`: five reserved tags rather than two
+markers, whitespace-tolerant matching so `< / system >` cannot slip through, a
+`Provenance` vocabulary recording which source may instruct, a declaration before
+the payload and a reassertion after it, and reported rather than silent truncation.
+Wiring `wrap_untrusted` into prompt assembly would have created a second fence
+vocabulary — and a payload that can forge one fence escapes whichever envelope it
+is nested in, which is exactly why `envelope.RESERVED_TAGS` neutralises the *other*
+fence this repo renders. A pointer has been added to `ai_security.wrap_untrusted`
+saying so, because the next reader will be told to do what this brief told me to do.
+
+**What was actually broken: the seam between two correct clamps.**
+`context_block` clamps its payload to 4000 characters *before* sealing, precisely
+so truncation can never remove the closing fence, and its docstring says so.
+`build_system_prompt` clamped every knowledge body to 700 characters, because the
+prompt has a budget. Composed — and they are composed, on the live path — the second
+clamp truncated the first's rendered envelope:
+
+| sealed web payload | closing fence in system prompt |
+| --- | --- |
+| ≤ ~180 chars | intact |
+| > ~180 chars | **gone**, along with the reassertion |
+
+The declaration and opening fence fit inside 700 characters; the close and the
+reassertion did not. Real search blocks run to 4000, so in practice this was
+always broken — an opening fence with no close, for the single most
+attacker-controllable input in the system, in the message carrying the most
+authority in the request. Verified by execution, not by reading.
+
+Three things made it invisible. Each function is correct alone, so neither
+module's tests could see it. `test_the_clamp_is_applied_before_sealing_and_not_after`
+checks a huge payload but never puts it through `build_system_prompt`. And
+`test_the_three_hop_path_the_foundation_entry_describes_is_real` does cover the
+whole path and asserts exactly the right thing — `count(CLOSE_FENCE) == 1` — on a
+fixture whose payload is 144 characters. Adding one more search result to it takes
+that assertion from 1 to 0.
+
+**Fixed** by exempting an already-sealed body from the second clamp and rendering
+it as its own section rather than as a bullet under "Approved PulseSoc knowledge"
+— a heading that contradicted the envelope's own declaration and is the wrong word
+for a stranger's web page. The exemption is claimed by the producer
+(`envelope_sealed` on the knowledge item, set from the flag by `pulse_ai_service`),
+not inferred from the text: a first draft keyed on `envelope.is_sealed(body)` alone,
+which is a hole, because `is_sealed` asks about shape and any retrieved document can
+contain both fence tokens in the right order. Content cannot authenticate itself.
+
+**Blast radius: none today.** `UNDX_BRAIN_ENVELOPE_ENABLED` defaults off, so nothing
+is sealed in production and the fix cannot reach a live prompt. A differential test
+against the pre-fix function over 144 input combinations found 0 differences for
+unsealed bodies and a difference only for the sealed case. What this stage bought is
+that the flag is now safe to turn on — before it, turning it on produced an
+unterminated fence and also dropped the legacy "use carefully" preamble, i.e. was
+strictly worse than leaving it off.
+
+**Still unsealed, deliberately not changed here:** the rest of the `knowledge` list
+reaches the system prompt with no envelope — semantic retrieval, platform knowledge,
+market grounding, and the `pulsesoc_search` block at `pulse_ai_service.py:1065`,
+whose `preview_text` is other users' content. Sealing those changes prompt content
+for every request rather than fixing a broken boundary, so it belongs with the flag
+rollout. Also left alone: with the flag off, a forged fence inside an unsealed
+knowledge body still arrives live. `corpus.prompt_block` neutralises unconditionally
+and this path could too, but `test_off_it_returns_the_legacy_string_unchanged`
+asserts the live tag as a deliberate, documented decision, and overturning someone
+else's recorded decision is not a testing stage's job.
 
 ### Correction applied during Stage 5/29: the scoping is not ad-hoc
 

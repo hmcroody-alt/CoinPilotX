@@ -315,6 +315,56 @@ OBJAUTH_MUTANTS = [
        _REACT_CHECK.replace("AND COALESCE(left_at,'')='' LIMIT 1", "LIMIT 1"))]),
 ]
 
+# Stage 10. The target is the *seam*, not a control: two functions that each clamp
+# correctly, composed so the second one truncated the first one's rendered envelope and
+# left an opening fence with no close. Every mutant below restores some version of that
+# defect, because the fix is only worth what the tests' ability to notice its removal is
+# — and the test that already covered this exact path passed throughout, on a fixture
+# whose payload was 144 characters when the break begins around 180.
+SEAM_TARGET = ROOT / "services/pulse_ai_knowledge.py"
+SEAM_TESTS = "tests/undx_brain/test_prompt_boundary_seam.py"
+
+_SEAM_CHECK = """            if item.get("envelope_sealed") and envelope.is_sealed(raw):
+                sealed_sections.append(raw)
+                continue
+            body = compact_text(raw, 700)"""
+
+SEAM_MUTANTS = [
+    # The original defect, restored exactly: every body goes through the 700 clamp.
+    ("S1 a sealed envelope is clamped again and loses its closing fence",
+     [(_SEAM_CHECK, """            body = compact_text(raw, 700)""")]),
+
+    # The hole the first draft of the fix actually had. `is_sealed` is a question about
+    # shape, and a retrieved document can contain both fence tokens in the right order,
+    # so trusting it alone lets any text exempt itself from the clamp.
+    ("S2 the producer's claim is dropped and the text is allowed to vouch for itself",
+     [(_SEAM_CHECK, _SEAM_CHECK.replace(
+         'item.get("envelope_sealed") and envelope.is_sealed(raw)',
+         "envelope.is_sealed(raw)"))]),
+
+    # The mirror image: the structural check goes, so a mismarked item renders malformed.
+    ("S3 a mismarked item is trusted without checking the envelope is well formed",
+     [(_SEAM_CHECK, _SEAM_CHECK.replace(
+         'item.get("envelope_sealed") and envelope.is_sealed(raw)',
+         'item.get("envelope_sealed")'))]),
+
+    # Deleting the clamp entirely also makes the fence survive. It is the lazy fix, it
+    # passes every fence assertion, and it spends the prompt budget the clamp protects.
+    ("S4 the clamp is removed for everything instead of skipped for envelopes",
+     [(_SEAM_CHECK, _SEAM_CHECK.replace("compact_text(raw, 700)", "compact_text(raw, 10**9)"))]),
+
+    # The sealed block renders, but back under the heading that calls a stranger's web
+    # page approved — contradicting the declaration inside the envelope itself.
+    ("S5 sealed content is filed under the approved-knowledge heading again",
+     [(_SEAM_CHECK, _SEAM_CHECK.replace(
+         "sealed_sections.append(raw)\n                continue",
+         'knowledge_lines.append(f"- {title}: {raw}")\n                continue'))]),
+
+    # Silently dropping untrusted content would also produce an intact-looking prompt.
+    ("S6 the sealed section is computed and never rendered",
+     [("        sections.extend(sealed_sections)", "        pass")]),
+]
+
 SUITES = [
     ("services/sentinel/request_bridge.py", BRIDGE_TARGET, BRIDGE_TESTS, BRIDGE_MUTANTS),
     ("services/sentinel/rate_limit.py", RATE_TARGET, RATE_TESTS, RATE_MUTANTS),
@@ -323,6 +373,8 @@ SUITES = [
      TENANT_TARGET, TENANT_TESTS, TENANT_MUTANTS),
     ("bot.py (Stage 5 object authorization)",
      OBJAUTH_TARGET, OBJAUTH_TESTS, OBJAUTH_MUTANTS),
+    ("services/pulse_ai_knowledge.py (Stage 10 prompt boundary seam)",
+     SEAM_TARGET, SEAM_TESTS, SEAM_MUTANTS),
 ]
 
 survived = []

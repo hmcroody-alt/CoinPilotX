@@ -61,7 +61,26 @@ def scan_for_injection(text: str) -> InjectionScan:
 
 def wrap_untrusted(text: str) -> str:
     """Mark content as data before it is shown to any model. The wrapper also
-    neutralizes nested wrapper markers so content cannot fake a close."""
+    neutralizes nested wrapper markers so content cannot fake a close.
+
+    **Do not wire this into prompt assembly.** ``services.undx_brain.envelope`` is
+    the platform's untrusted-content boundary and is already applied at the live
+    call sites (``pulse_ai_web_search.context_block``,
+    ``pulse_ai_knowledge.build_system_prompt``, ``undx_brain.corpus.prompt_block``).
+    It does strictly more than this function: it neutralises five reserved tags
+    rather than its own two markers, tolerates whitespace inside a tag so
+    ``< / system >`` cannot slip through, carries a ``Provenance`` recording which
+    source may instruct, places a declaration before the payload and a reassertion
+    after it, and reports truncation instead of performing it silently.
+
+    Adding a second boundary beside it would give the codebase two fence
+    vocabularies, and a payload that can forge one fence escapes whichever envelope
+    it is nested in — which is precisely why ``envelope.RESERVED_TAGS`` neutralises
+    the *other* fence this repository renders. This function is retained for the
+    non-prompt uses it already has, and its markers are deliberately not added to
+    that reserved list, because doing so would be the first step toward treating it
+    as a parallel mechanism.
+    """
     content = str(text or "")
     content = content.replace(UNTRUSTED_OPEN, "[untrusted-open]")
     content = content.replace(UNTRUSTED_CLOSE, "[untrusted-close]")

@@ -295,13 +295,56 @@ def build_system_prompt(knowledge_items: list[dict[str, Any]] | None = None, use
     sections.append("Current PulseSoc feature map:\n" + "\n".join(registry_lines))
     if knowledge_items:
         knowledge_lines = []
+        # A sealed body is rendered as its own section rather than as a bullet in the
+        # list, and this is a correctness fix rather than a formatting preference.
+        #
+        # ``pulse_ai_web_search.context_block`` clamps its payload to 4000 characters
+        # *before* sealing, precisely so that truncation can never remove the closing
+        # fence. It then hands the rendered envelope to ``pulse_ai_service``, which
+        # inserts it into ``knowledge_items`` as an ordinary item — and the line below
+        # used to clamp every body to 700. Composing the two clamps decapitated the
+        # envelope: the declaration and the opening fence fit inside 700 characters,
+        # the closing fence and the reassertion did not. Measured, not inferred — a
+        # sealed block with a payload over ~180 characters left the system prompt with
+        # one opening fence and zero closing ones, which is the unterminated-fence
+        # state ``undx_brain.envelope`` exists to make impossible, for the single most
+        # attacker-controllable input in the system.
+        #
+        # Both functions were individually right; the defect lived in the seam between
+        # them, which is why each one's tests passed. The existing end-to-end test used
+        # a fixture whose payload was 144 characters — under the threshold. Adding one
+        # more search result to it takes the closing-fence count it asserts from 1 to 0.
+        #
+        # The heading matters too. An envelope carries its own declaration naming its
+        # provenance and stating that it has no authority; filing it under "Approved
+        # PulseSoc knowledge" contradicted that declaration in the same breath, and
+        # "approved" is exactly the word a stranger's web page should not arrive under.
+        # The exemption is claimed by the *producer*, not inferred from the text. An
+        # earlier draft skipped the clamp whenever ``envelope.is_sealed(body)`` was
+        # true, and that was a hole rather than a shortcut: `is_sealed` asks a question
+        # about shape, and any retrieved document can contain the two fence tokens in
+        # the right order. A body that merely looked sealed would have bought itself
+        # exemption from the clamp and a top-level section of its own, with no
+        # declaration in front of it. Content cannot authenticate itself; the caller
+        # that did the sealing has to say so out of band, which is the same reason
+        # ``envelope.seal`` takes a Provenance rather than sniffing one.
+        #
+        # ``is_sealed`` is still consulted, but only to refuse a mismarked item — a
+        # producer that sets the flag on something malformed gets the clamp, not a
+        # broken prompt.
+        sealed_sections = []
         for item in knowledge_items[:10]:
             title = compact_text(item.get("title") or "Knowledge", 120)
-            body = compact_text(item.get("body") or item.get("content") or "", 700)
+            raw = item.get("body") or item.get("content") or ""
+            if item.get("envelope_sealed") and envelope.is_sealed(raw):
+                sealed_sections.append(raw)
+                continue
+            body = compact_text(raw, 700)
             if body:
                 knowledge_lines.append(f"- {title}: {body}")
         if knowledge_lines:
             sections.append("Approved PulseSoc knowledge:\n" + "\n".join(knowledge_lines))
+        sections.extend(sealed_sections)
     if user_memory:
         memory_lines = []
         includes_military_context = False

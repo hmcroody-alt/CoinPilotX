@@ -470,10 +470,19 @@ class RememberedTextIsFencedToo(unittest.TestCase):
         self.assertIn("Approved PulseSoc knowledge:", unsealed)
         self.assertIn("</undx_untrusted>", unsealed)
 
+        # ``envelope_sealed`` is what ``pulse_ai_service`` sets on this item, and
+        # omitting it made this test describe a path the product does not take: without
+        # it the body goes through the 700-character knowledge clamp. The assertion
+        # below is the right one and passed anyway, because this fixture renders a
+        # 144-character payload and the clamp only reaches the closing fence at about
+        # 180 — one more search result took it from 1 to 0. The sizes that straddle
+        # that threshold are covered in ``test_prompt_boundary_seam.py``; this stays
+        # the end-to-end shape check it was written to be.
         body_on = w.context_block(TheWebSearchBlockIsSealedWhenTheFlagIsOn.HOSTILE,
                                   env=ON)
-        sealed = k.build_system_prompt([{"title": "Live web search", "body": body_on}],
-                                       None, "", env=ON)
+        sealed = k.build_system_prompt(
+            [{"title": "Live web search", "body": body_on, "envelope_sealed": True}],
+            None, "", env=ON)
         self.assertEqual(sealed.count(e.CLOSE_FENCE), 1)
         self.assertIn("&lt;/undx_untrusted>", sealed)
 

@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from services import pulse_ai_knowledge, pulse_ai_provider_router, pulse_ai_router, pulse_ai_safety, pulse_ai_web_search, undx_architecture, undx_market_context, undx_operator, undx_platform_knowledge, undx_policy, undx_self_knowledge, undx_semantic_retrieval
+from services.undx_brain import envelope
 
 
 LOGGER = logging.getLogger(__name__)
@@ -927,7 +928,16 @@ def send_message(user_id: int, payload: dict | None = None) -> dict:
             _record_web_search(cur, int(user_id), body, search_result)
             web_context = pulse_ai_web_search.context_block(search_result)
             if web_context:
-                knowledge.insert(0, {"id": 0, "title": "Live web search context", "category": "web_search", "body": web_context})
+                # ``envelope_sealed`` is read from the flag rather than from the string,
+                # because the string is the thing under suspicion. ``context_block``
+                # seals exactly when the envelope is enabled, so the config read is the
+                # honest witness to what it just did; asking ``is_sealed(web_context)``
+                # would be asking a search result whether it is trustworthy, and with
+                # the flag off that string is unneutralised web text that can contain
+                # both fence tokens. The flag is off by default, so this is False in
+                # production today and the knowledge item is byte-identical to before.
+                knowledge.insert(0, {"id": 0, "title": "Live web search context", "category": "web_search",
+                                     "body": web_context, "envelope_sealed": envelope.enabled()})
         user_memory = _user_memory(cur, int(user_id), settings, body)
         compiled_policy = undx_policy.compile_context(body, user_id=int(user_id))
         ui_context = undx_architecture.sanitize_ui_context(payload.get("ui_context"))
