@@ -9,7 +9,16 @@ from . import mux_live_service
 
 def playback_manifest(session=None):
     session = session or {}
-    mux_playback_id = session.get("mux_playback_id") or ""
+    status = str(session.get("status") or "starting").lower()
+    finished = status in {"ended", "offline", "archived", "finished", "complete"}
+    # Live playback and replay playback are deliberately separate provider
+    # identities.  Once a session ends, the durable VOD is stored in the
+    # recording fields; continuing to read only mux_playback_id/playback_url
+    # makes the state API advertise an empty or expired live input even though
+    # finalization successfully produced a replay.
+    mux_playback_id = (
+        session.get("mux_recording_playback_id") if finished else session.get("mux_playback_id")
+    ) or session.get("mux_playback_id") or ""
     mux_url = mux_live_service.playback_url(mux_playback_id)
     mux_status = (session.get("mux_live_status") or "").lower()
     publish_state = (session.get("publish_state") or session.get("status") or "idle").lower()
@@ -19,20 +28,21 @@ def playback_manifest(session=None):
         or mux_status in {"egress_quota_exhausted", "livekit_direct"}
         or (session.get("stream_health") or "").lower() in {"livekit_direct", "egress_quota_exhausted"}
     )
-    explicit_hls = mux_url or session.get("playback_url") or session.get("hls_url") or ""
+    replay_url = (session.get("replay_url") or "") if finished else ""
+    explicit_hls = replay_url or mux_url or session.get("playback_url") or session.get("hls_url") or ""
     direct_hls_ready = bool(explicit_hls) and (
         direct_mode
         or publish_state in {"live", "active", "started"}
         or not mux_status
     )
-    hls_url = explicit_hls if mux_public_live or direct_hls_ready else ""
+    hls_url = explicit_hls if finished or mux_public_live or direct_hls_ready else ""
     stream_uuid = session.get("stream_uuid") or ""
     if not hls_url and stream_uuid and mux_public_live:
         base = os.getenv("PULSE_HLS_PLAYBACK_URL", "https://live.coinpilotxai.app/hls").rstrip("/")
         hls_url = f"{base}/{stream_uuid}.m3u8"
     supports_webrtc = bool(session.get("webrtc_room_id"))
     preferred_transport = "hls" if hls_url else "webrtc" if supports_webrtc else "waiting"
-    effective_status = str(session.get("status") or "starting").lower()
+    effective_status = status
     if effective_status not in {"ended", "offline", "archived", "deleted", "failed"} and supports_webrtc:
         track_count = int(session.get("audio_tracks") or 0) + int(session.get("video_tracks") or 0)
         if track_count > 0 or publish_state in {
