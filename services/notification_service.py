@@ -1,3 +1,4 @@
+import html
 import json
 import logging
 import os
@@ -7,6 +8,7 @@ import threading
 import time
 from datetime import datetime, timedelta
 
+from . import app_links
 from . import user_context
 from . import email_service
 from . import push_service
@@ -549,17 +551,45 @@ def _template_key(note_type, category):
 
 
 def _branded_html(headline, body, deep_link="/pulse/notifications"):
+    """The shared body for every notification email.
+
+    This one function is why "Post published" opened the website: it turned the
+    notification's relative deep link into a plain pulsesoc.com URL, so tapping
+    it landed the member in Safari even with the app installed. Routing it
+    through `app_intent_url` makes it an app-intent link instead -- the app
+    claims it when installed, and the App Store handles the rest.
+
+    `app_intent_url` returns web-intent links (password reset, legal, checkout)
+    and anything the released binary cannot resolve completely unchanged, so
+    notification categories that genuinely belong on the web keep working as
+    they always did without this function needing to know which is which.
+
+    The CTA wording follows the destination rather than always reading "Open
+    PulseSoc", because a link to one post should say so.
+    """
     headline = str(headline or "PulseSoc notification")[:180]
     body = str(body or "")[:2000]
-    link = str(deep_link or "https://pulsesoc.com/pulse/notifications")[:700]
+    raw_link = str(deep_link or "/pulse/notifications")[:700]
+
+    link = app_links.app_intent_url(raw_link, "email")
+    destination = app_links.match_destination(raw_link)
+    label = destination.label if destination and link != raw_link else "Open PulseSoc"
     if link.startswith("/"):
-        link = f"https://pulsesoc.com{link}"
+        # Still relative: a web-intent path that app_intent_url deliberately
+        # left alone. It stays on the website, absolute so email clients can
+        # follow it.
+        link = f"{app_links.CANONICAL_APP_ORIGIN}{link}"
+
+    # Escaped because `deep_link` reaches here from notification metadata. An
+    # apostrophe would otherwise close the single-quoted href and let the rest
+    # of the value become markup.
+    safe_link = html.escape(link, quote=True)
     return (
         "<div style='font-family:Inter,Arial,sans-serif;line-height:1.55;color:#0f172a'>"
         "<p style='font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:#2563eb'>PulseSoc</p>"
         f"<h1 style='font-size:24px;margin:0 0 12px'>{headline}</h1>"
         f"<p>{body}</p>"
-        f"<p><a href='{link}' style='color:#2563eb'>Open PulseSoc</a></p>"
+        f"<p><a href='{safe_link}' style='color:#2563eb'>{html.escape(label)}</a></p>"
         "<p style='font-size:12px;color:#64748b'>PulseSoc&trade; &bull; Built by CoinPlotXAI Inc. Support: support@pulsesoc.com</p>"
         "</div>"
     )
