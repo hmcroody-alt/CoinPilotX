@@ -660,7 +660,12 @@ def _deep_link_for_event(event_type, content_id="", deep_link="", metadata=None)
     if event_type in {"premium", "premium_subscription", "premium_purchase"}:
         return "/pulse/premium"
     if event_type in {"marketplace_order", "order_accepted", "order_shipped", "order_delivered"}:
-        return "/pulse/marketplace/orders"
+        # Was /pulse/marketplace/orders, which resolves nowhere. The website has
+        # no such route, and in the app React Navigation matches it against
+        # MarketplaceDetail's `pulse/marketplace/:listingId` -- so an order
+        # notification opened a listing screen looking for a listing called
+        # "orders". /pulse/orders is BuyerOrders in linking.ts.
+        return "/pulse/orders"
     return "/pulse/notifications"
 
 
