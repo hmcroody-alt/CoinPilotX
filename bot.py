@@ -2775,6 +2775,13 @@ def basic_abuse_guard():
         return rate_limit_refusal(request.path)
     bucket.append(now)
     RATE_LIMIT_BUCKETS[key] = bucket
+    # Reclaim keys for IP hashes that stopped coming. This dict prunes stamps
+    # whenever a key is touched but never removed the key itself, so a worker
+    # accumulated one entry per (ip_hash, path) it had ever seen and never gave
+    # any of it back. See security_guard.sweep_expired for why a sweep cannot
+    # change a verdict.
+    security_guard.sweep_expired(
+        "bot.RATE_LIMIT_BUCKETS", RATE_LIMIT_BUCKETS, window_seconds, now=now)
 
     # The bucket above lives in RATE_LIMIT_BUCKETS, a module-level dict, and the
     # Procfile runs `gunicorn --workers ${WEB_CONCURRENCY:-4}`. So the table at

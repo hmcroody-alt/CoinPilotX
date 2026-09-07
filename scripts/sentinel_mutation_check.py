@@ -512,6 +512,53 @@ GATEBRIDGE_MUTANTS = [
        """    return str(os.getenv("SENTINEL_REQUEST_BRIDGE_ENABLED", "")).strip().lower() in _TRUTHY""")]),
 ]
 
+# Stage 21. The sweep is housekeeping that runs interleaved with rate limiting,
+# which is the dangerous combination: every way of getting it wrong either frees
+# nothing (the leak survives, silently) or drops a key that is still being
+# counted (a rate limit quietly loosens). Neither shows up as an error.
+SWEEP_TARGET = ROOT / "services/security_guard.py"
+SWEEP_TESTS = "tests/sentinel/test_bucket_sweep.py"
+
+SWEEP_MUTANTS = [
+    # The original defect restored: keys are never removed.
+    ("W1 the sweep frees nothing, so the leak is still there",
+     [("    for key in stale:\n        buckets.pop(key, None)",
+       "    for key in stale:\n        pass")]),
+
+    # The mistake the ordering comment exists to prevent: sweeping against
+    # whichever window this call happened to use. Drops live long-window keys,
+    # so a 600-second limit loses its history every time a 60-second request
+    # arrives — a rate limit that quietly stops limiting.
+    ("W2 the sweep uses the current call's window instead of the widest seen",
+     [("    horizon = now - widest", "    horizon = now - float(window_seconds)")]),
+
+    # Off-by-one in the other direction: keys whose newest stamp is exactly at
+    # the boundary are still live, and this drops them.
+    ("W3 the horizon is loosened so keys inside their window are dropped",
+     [("             if not stamps or max(stamps) <= horizon]",
+       "             if not stamps or min(stamps) <= horizon]")]),
+
+    # Widest stops growing, so the first window ever recorded governs forever.
+    ("W4 the widest window is not remembered across calls",
+     [("    widest = max(widest, float(window_seconds))",
+       "    widest = float(window_seconds)")]),
+
+    # The interval gate is removed, so the sweep walks the entire dict on every
+    # single request — turning a memory fix into a CPU cost on the hot path.
+    ("W5 the sweep runs on every request instead of once a minute",
+     [("    if now - last_sweep < min_interval:\n"
+       "        _SWEEPS[name] = (last_sweep, widest)\n"
+       "        return 0",
+       "    if False:\n"
+       "        _SWEEPS[name] = (last_sweep, widest)\n"
+       "        return 0")]),
+
+    # The refactor that made rate_limited store the bucket once. If the append
+    # is lost the limiter counts nothing and never refuses.
+    ("W6 the limiter stops recording the request it just allowed",
+     [("    if not limited:\n        bucket.append(now)", "    if False:\n        bucket.append(now)")]),
+]
+
 SUITES = [
     ("services/sentinel/request_bridge.py", BRIDGE_TARGET, BRIDGE_TESTS, BRIDGE_MUTANTS),
     ("services/sentinel/rate_limit.py", RATE_TARGET, RATE_TESTS, RATE_MUTANTS),
@@ -528,6 +575,8 @@ SUITES = [
      GATEBOOT_TARGET, GATE_TESTS, GATEBOOT_MUTANTS),
     ("services/sentinel/request_bridge.py (Stage 21 emergency reach)",
      GATEBRIDGE_TARGET, GATE_TESTS, GATEBRIDGE_MUTANTS),
+    ("services/security_guard.py (Stage 21 bucket sweep)",
+     SWEEP_TARGET, SWEEP_TESTS, SWEEP_MUTANTS),
 ]
 
 survived = []

@@ -360,6 +360,7 @@ Four independent OS processes. Therefore every configured limit is effectively
 **multiplied by the worker count**, and which limit an attacker hits depends on
 which worker the load balancer happened to pick. `BUCKETS` is also never evicted,
 so its key space grows without bound — a slow memory-exhaustion vector.
+**Fixed in Stage 21**; see below.
 
 Two limiters are honest exceptions, and they are the ones that matter most:
 member login and admin login are both **DB-backed** and therefore genuinely
@@ -441,6 +442,43 @@ Still not renumbered, for the reason given above. Pinned by
 `test_turning_the_shared_counter_on_inverts_which_limit_is_decorative`, with an
 anti-vacuity partner proving another worker's count is invisible while the
 switch is off.
+
+### Fixed in Stage 21: the three in-process limiters give their memory back
+
+All three prune *stamps* when a key is read and never removed the *key*. One
+dict entry per (subject, path) a worker had ever seen, held for the life of a
+long-lived gunicorn process, reclaimed by nothing. Organic traffic grows it
+slowly; anything sending unique subjects grows it as fast as it can send them.
+
+`security_guard.sweep_expired` drops keys whose newest stamp is older than the
+widest window that dict has ever been asked about, at most once a minute per
+dict. It is wired into `security_guard.rate_limited`,
+`pulse_security_core.rate_limited` and `bot.basic_abuse_guard`.
+
+**No switch, because it is not a policy change.** A key whose newest stamp has
+aged out prunes to an empty list the next time it is read — the existing filter
+keeps `now - stamp < window_seconds` — so deleting the key and letting
+`BUCKETS.get(key, [])` return the same empty list yields an identical verdict.
+That equivalence is asserted directly
+(`test_a_swept_key_and_an_expired_key_are_indistinguishable`) rather than
+argued.
+
+Two details are load-bearing, and one of them was found by a surviving mutant
+rather than by review:
+
+- **The widest window, not the current call's.** `BUCKETS` is shared by callers
+  with 600-second and 60-second windows. Sweeping on whichever request happened
+  to arrive would delete a live 600-second key the first time a 60-second one
+  came through. Because a key can only have been created by a call that already
+  recorded its own window, and the recorded maximum only grows, the widest
+  window is always at least the one governing any existing key (mutant W2).
+- **The newest stamp, not the oldest.** Judging a key by `min(stamps)` deletes
+  the bucket of a subject calling *steadily* across the window edge — the
+  oldest stamp has expired while newer ones have not — handing a fresh
+  allowance to whoever is hitting the limit hardest. Mutant W3 survived the
+  first version of the test file, because every "live" fixture in it held a
+  single stamp, where `min` and `max` are the same value. The test that kills
+  it uses a bucket with stamps on both sides of the edge.
 
 ### There is no Redis
 
