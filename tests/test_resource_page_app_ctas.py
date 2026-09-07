@@ -48,7 +48,7 @@ HREF_RE = re.compile(r"href='([^']*)'")
 
 @pytest.fixture(scope="module")
 def seeded():
-    """A signed-in member with one public post and one reel."""
+    """A signed-in member with one public post, one reel, and one group."""
     with bot.webhook_app.app_context():
         bot.init_db()
 
@@ -70,6 +70,11 @@ def seeded():
         (post_id, user_id, "A caption"),
     )
     reel_id = cur.lastrowid
+    cur.execute(
+        "INSERT INTO pulse_groups (name, slug, owner_user_id) VALUES (?,?,?)",
+        ("Ada Fans", "ada-fans", user_id),
+    )
+    group_id = cur.lastrowid
     conn.commit()
 
     client = bot.webhook_app.test_client()
@@ -80,6 +85,7 @@ def seeded():
         "user_id": user_id,
         "post_id": post_id,
         "reel_id": reel_id,
+        "group_id": group_id,
     }
 
 
@@ -122,6 +128,36 @@ def test_the_reel_page_links_to_that_reel(seeded):
     assert label == "Open this reel in PulseSoc"
 
 
+def test_the_group_page_links_to_that_group(seeded):
+    href, label = ctas(render(seeded, "/pulse/groups/ada-fans"))["group"]
+    assert href == app_links.build_app_link("group", "ada-fans", source="web")
+    assert label == "Open this group in PulseSoc"
+
+
+def test_the_group_page_reached_by_id_still_links_to_the_slug(seeded):
+    # The route accepts either, but the CTA prefers the shareable slug form so
+    # the two entrances do not hand out two different links for one group.
+    href, _ = ctas(render(seeded, f"/pulse/groups/{seeded['group_id']}"))["group"]
+    assert href == app_links.build_app_link("group", "ada-fans", source="web")
+
+
+def test_a_group_with_an_unbuildable_slug_still_gets_a_button(seeded):
+    # The fallback path: the numeric id resolves to the same group, so an odd
+    # slug must cost the slug rather than the button.
+    conn = bot.db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO pulse_groups (name, slug, owner_user_id) VALUES (?,?,?)",
+        ("Odd", "not/a/valid/slug", seeded["user_id"]),
+    )
+    odd_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+
+    href, _ = ctas(render(seeded, f"/pulse/groups/{odd_id}"))["group"]
+    assert href == app_links.build_app_link("group", odd_id, source="web")
+
+
 def test_the_profile_page_links_to_that_profile(seeded):
     html = render(seeded, f"/pulse/profile/{seeded['user_id']}")
     href, label = ctas(html)["profile"]
@@ -129,13 +165,23 @@ def test_the_profile_page_links_to_that_profile(seeded):
     assert label == "Open this profile in PulseSoc"
 
 
-@pytest.mark.parametrize("page", ["post", "reel", "profile"])
-def test_every_resource_cta_is_marked_and_canonical(seeded, page):
-    path = {
+def resource_paths(seeded):
+    """{destination: page path} for every resource page carrying a CTA.
+
+    One mapping so that adding a page to it extends every cross-cutting
+    guarantee below at once, rather than only the checks someone remembered.
+    """
+    return {
         "post": f"/pulse/post/{seeded['post_id']}",
         "reel": f"/pulse/reels/{seeded['reel_id']}",
         "profile": f"/pulse/profile/{seeded['user_id']}",
-    }[page]
+        "group": "/pulse/groups/ada-fans",
+    }
+
+
+@pytest.mark.parametrize("page", ["post", "reel", "profile", "group"])
+def test_every_resource_cta_is_marked_and_canonical(seeded, page):
+    path = resource_paths(seeded)[page]
     href, _ = ctas(render(seeded, path))[page]
     assert href.startswith(f"{app_links.CANONICAL_APP_ORIGIN}/pulse/")
     assert f"{app_links.APP_INTENT_PARAM}=1" in href
@@ -156,11 +202,7 @@ def test_the_post_page_keeps_its_web_navigation(seeded):
 def test_no_resource_page_marks_its_own_internal_links(seeded):
     # Only the deliberate CTA carries the marker. If it leaked onto the ordinary
     # in-site links, every click would bounce a web reader to the App Store.
-    for path in (
-        f"/pulse/post/{seeded['post_id']}",
-        f"/pulse/reels/{seeded['reel_id']}",
-        f"/pulse/profile/{seeded['user_id']}",
-    ):
+    for path in resource_paths(seeded).values():
         html = render(seeded, path)
         marked = re.findall(rf"href='(/[^']*{app_links.APP_INTENT_PARAM}[^']*)'", html)
         assert marked == [], f"{path} marked a relative link: {marked}"
@@ -169,10 +211,7 @@ def test_no_resource_page_marks_its_own_internal_links(seeded):
 def test_resource_pages_have_no_duplicate_element_ids(seeded):
     import collections
 
-    for path in (
-        f"/pulse/post/{seeded['post_id']}",
-        f"/pulse/reels/{seeded['reel_id']}",
-    ):
+    for path in resource_paths(seeded).values():
         html = render(seeded, path)
         counts = collections.Counter(re.findall(r"\sid='([^']+)'", html))
         dupes = [key for key, count in counts.items() if count > 1]
