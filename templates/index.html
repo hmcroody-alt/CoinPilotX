@@ -1,3 +1,4 @@
+{% from "_app_link_cta.html" import app_cta, app_store_badge with context %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -904,6 +905,18 @@
             <a class="button gold" href="/signup?next=/pulse">Join PulseSoc</a>
           {% endif %}
           <a class="button ghost" href="/pulse/premium">Explore Premium</a>
+        </div>
+        {#
+          The app entry point. Added beside the existing buttons rather than
+          replacing them: "Open PulseSoc" above is web navigation and a desktop
+          visitor clicking it wants the web feed. These two are explicitly about
+          the app, and they are the only app CTAs on this page — one designated
+          location, no banner repeated down the scroll, no overlay, and no
+          redirect of a visitor who did not ask for one.
+        #}
+        <div class="section-actions" style="justify-content:center;margin-top:14px">
+          {{ app_cta("home", source="web", label="Open in the PulseSoc app", classes="button") }}
+          {{ app_store_badge() }}
         </div>
       </div>
     </section>

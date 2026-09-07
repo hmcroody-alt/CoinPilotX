@@ -1384,6 +1384,29 @@ def inject_seo_runtime_config():
     }
 
 
+@webhook_app.context_processor
+def inject_app_link_helpers():
+    """Canonical app-link helpers for templates.
+
+    Exposed so a template never hand-writes an app link. `app_link` raises on an
+    unknown destination or a malformed id, which is deliberate: a template that
+    asks for something the released binary cannot open should fail in review,
+    not ship a button that lands members on the wrong screen.
+
+    `app_store_url` is the same authority the referral redirect and the
+    app-intent fallback use, so the listing URL lives in exactly one place.
+    """
+
+    def app_link(destination, resource_id=None, source="web", **params):
+        return app_links.build_app_link(destination, resource_id, params or None, source)
+
+    return {
+        "app_link": app_link,
+        "app_link_label": app_links.destination_label,
+        "app_store_url": pulsesoc_app_store_url,
+    }
+
+
 @webhook_app.route("/", methods=["GET"])
 def home():
     user = load_account_by_id(account_user_id())
