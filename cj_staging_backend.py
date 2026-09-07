@@ -1,8 +1,10 @@
 """Real canonical backend, isolated staging-only entry point."""
-from cj_staging_runtime import guard, health
+from cj_staging_runtime import guard, health, configure_http
 
 guard()  # Refuse production before importing application startup hooks.
-from bot import app
+import bot
+app = bot.app
+configure_http(bot)
 from flask import jsonify
 
 

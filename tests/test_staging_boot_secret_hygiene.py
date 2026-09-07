@@ -20,3 +20,25 @@ def test_bootstrap_password_never_enters_log_record(caplog):
     assert "GENERATED ONCE" in caplog.text
     assert sentinel not in caplog.text
     assert all(sentinel not in str(record.args) for record in caplog.records)
+
+
+def test_staging_probe_is_truthful_without_redirecting_to_production(monkeypatch):
+    from flask import Flask, redirect
+    from types import SimpleNamespace
+    import cj_staging_runtime as runtime
+    app = Flask(__name__)
+    app.before_request(lambda: redirect("https://pulsesoc.com", 301))
+    bot = SimpleNamespace(app=app, ROUTE_PACK_STATUS={"suppliers": {"registered": True}})
+    monkeypatch.setattr(runtime, "health", lambda: ({"infrastructure_ready": True}, 200))
+    runtime.configure_http(bot)
+    assert bot.CANONICAL_HTTPS_ORIGIN == runtime.ORIGIN
+    assert bot.APP_BASE_URL == runtime.ORIGIN
+    client = app.test_client()
+    response = client.get("/health/ready", base_url="http://healthcheck.railway.app")
+    assert response.status_code == 200 and response.json["infrastructure_ready"]
+    assert "Location" not in response.headers
+    bot.ROUTE_PACK_STATUS["suppliers"]["registered"] = False
+    assert client.get("/health/ready").status_code == 503
+    # No other route/method is exempted from the existing application hooks.
+    assert client.post("/health/ready").status_code == 301
+    assert client.get("/api/business-os/suppliers/cj/connections").status_code == 301

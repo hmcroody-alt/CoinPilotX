@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 PROJECT = "34d4cb5c-f3db-40bf-926e-2eaa80a91659"
 ENVIRONMENT = "3a3f2632-bfc1-4ef4-b95a-e99e278d0fc1"
+ORIGIN = "https://pulsesoc-staging-backend-pulsesoc-cj-staging.up.railway.app"
 
 
 def guard():
@@ -116,6 +117,33 @@ def health():
     payload["infrastructure_ready"] = ready
     payload["live_cj_accepted"] = False
     return payload, 200 if ready else 503
+
+
+def configure_http(bot_module):
+    """Keep redirects local to staging and permit Railway's plain-HTTP probes.
+
+    Only exact read-only health paths bypass HTTPS redirection. All merchant
+    routes retain canonical authentication, CSRF and TLS handling.
+    """
+    from flask import jsonify, request
+    bot_module.CANONICAL_HTTPS_ORIGIN = ORIGIN
+    bot_module.CANONICAL_HTTPS_HOSTS = {urlparse(ORIGIN).hostname}
+    bot_module.APP_BASE_URL = bot_module.BASE_URL = ORIGIN
+
+    def readiness():
+        if request.method != "GET" or request.path not in {"/health/ready", "/health/cj-staging"}:
+            return None
+        payload, status = health()
+        failed = sorted(name for name, state in bot_module.ROUTE_PACK_STATUS.items() if not state.get("registered"))
+        if failed:
+            payload["infrastructure_ready"], status = False, 503
+        payload["failed_route_packs"] = failed
+        response = jsonify(payload)
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Robots-Tag"] = "noindex, nofollow"
+        return response, status
+
+    bot_module.app.before_request_funcs.setdefault(None, []).insert(0, readiness)
 
 
 if __name__ == "__main__":

@@ -72,6 +72,8 @@ def provision():
         "DB_POOL_SIZE": "2", "DB_MAX_OVERFLOW": "2", "DB_CONNECT_TIMEOUT_SECONDS": "10",
         "CJ_STAGING_ACCEPTANCE": "1", "WEB_CONCURRENCY": "1", "WEB_THREADS": "2",
         "SENTINEL_EXTERNAL_INTEL_ENABLED": "OFF", "PYTHONUNBUFFERED": "1",
+        "PULSE_APP_URL": "https://pulsesoc-staging-backend-pulsesoc-cj-staging.up.railway.app",
+        "APP_BASE_URL": "https://pulsesoc-staging-backend-pulsesoc-cj-staging.up.railway.app",
     }
     for service in (BACKEND, WORKER):
         values = {**flags, **shared}
