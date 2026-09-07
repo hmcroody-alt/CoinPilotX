@@ -169,4 +169,11 @@ class TestBuyNowNoLongerFlattensEveryFailure:
         assert 'provider_error=classified["provider_error"]' in code
 
     def test_a_failed_provider_call_still_gives_the_stock_back(self):
-        assert "release_inventory_reservation(cur, tx_id, now=now)" in _code(BUY_NOW)
+        # Stage 6 moved the release behind `settle_failed_transactions`, so the
+        # bare call this used to name is gone from every lane by design. The
+        # property is unchanged — a failed provider call returns the stock — but
+        # it is now the shared path that returns it, carrying the settled-order
+        # guard and the audit reason the hand-rolled pairing here never had.
+        code = _code(BUY_NOW)
+        assert "marketplace_cart_service.settle_failed_transactions(" in code
+        assert "REASON_CHECKOUT_ERROR" in code
