@@ -1,5 +1,4 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as Device from "expo-device";
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 import { PULSE_API_BASE_URL } from "../api/config";
@@ -299,19 +298,20 @@ export async function setCachedSessionUser(user: unknown) {
   await AsyncStorage.setItem(CACHED_USER_KEY, JSON.stringify(safeUser));
 }
 
+/**
+ * The sole gate on the plaintext fallback below: the backend this build talks
+ * to, and nothing else.
+ *
+ * It is deliberately *not* "are we on a simulator". That gate existed here
+ * once (`Platform.OS === "ios" && !Device.isDevice`) to keep an unprovisioned
+ * simulator signed in across cold starts, and it is a strictly wider hole: a
+ * simulator pointed at pulsesoc.com holds a real production refresh token, so
+ * the device check would write one to unencrypted storage. Losing simulator
+ * persistence against prod is the accepted cost — re-login is cheap, a leaked
+ * bearer credential is not. See `__tests__/sessionStoreQaFallback.test.ts`.
+ */
 function isLocalQaSession() {
   return /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(PULSE_API_BASE_URL);
-}
-
-/**
- * Simulator builds are not provisioned and iOS may reject Keychain access with
- * errSecMissingEntitlement (-34018), even though the same target is correctly
- * entitled when signed for a physical device. Keep QA usable by falling back
- * only in an iOS Simulator (or against the explicitly local QA backend).
- * Physical-device sessions never persist credentials outside SecureStore.
- */
-function allowsInsecureQaStorageFallback() {
-  return isLocalQaSession() || (Platform.OS === "ios" && !Device.isDevice);
 }
 
 async function getSecureValue(key: string) {
