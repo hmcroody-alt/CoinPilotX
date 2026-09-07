@@ -844,7 +844,7 @@ def reconcile_live_replay_backlog(limit: int = 25) -> dict:
         FROM pulse_live_sessions
         WHERE status='ended'
           AND (COALESCE(agora_recording_sid,'')<>'' OR COALESCE(mux_live_stream_id,'')<>'')
-          AND COALESCE(recording_status,'') NOT IN ('replay_ready','mux_asset_ready','replay_failed')
+          AND COALESCE(recording_status,'') NOT IN ('replay_ready','replay_failed')
         ORDER BY id ASC LIMIT ?
         """,
         (max(1, int(limit or 25)),),
@@ -852,6 +852,9 @@ def reconcile_live_replay_backlog(limit: int = 25) -> dict:
     queued = 0
     for row in cur.fetchall():
         live_id = int(row["id"])
+        # A VOD may already be ready while its feed/reel publication was lost
+        # to a worker restart. Requeue it: _process_live_replay_job is
+        # idempotent and will repair the public representation.
         cur.execute(
             "SELECT id FROM pulse_jobs WHERE job_type='finalize_live_replay' AND target_type='live' AND target_id=? AND status IN ('pending','processing') LIMIT 1",
             (live_id,),
