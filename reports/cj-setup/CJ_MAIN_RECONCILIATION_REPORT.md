@@ -1,5 +1,31 @@
 # CJ main reconciliation report
 
+## Staging continuation addendum — 2026-09-07
+
+Current local main advanced to `b32cc2bed3d08611fe2efb8fc9c7f9addb1e0be8`
+(`feat(commerce): addressable variants and supplier provenance on marketplace_listings`).
+This commits the concurrent Marketplace work described below. The acceptance
+branch deliberately remains based on `edb3295e504ff6c37f27d4d7d01c7f99d382c300`;
+no further merge was needed merely to deploy staging.
+
+Read-only `git diff edb3295e main` confirms seven incoming paths:
+`COMMERCE_DROPSHIPPING_FOUNDATION_MAP.md`, `bot.py`, `services/db.py`,
+`services/marketplace_supplier_schema.py`, `services/marketplace_variants.py`,
+`scripts/marketplace/supplier_variant_mutation_battery.py`, and
+`tests/marketplace/test_supplier_variants.py`.
+The incoming bot change is the Marketplace supplier-schema bootstrap hook;
+the incoming db change is two auto-PK entries. Acceptance changes remove a raw
+admin-password log and add DB-API cursor iteration, respectively, in separate
+functions. Textual overlap is manageable, but the live listing/order authority
+bridge still requires deliberate semantic reconciliation after live CJ catalog
+acceptance. **NEEDS MANUAL RECONCILIATION** remains the import verdict.
+
+All Marketplace commits and unrelated main untracked files remain untouched.
+No main push, production deployment, or production configuration mutation was
+performed. The newly authorized staging stack is in a separate Railway project,
+not the pre-existing production project. See `CJ_STAGING_ACCEPTANCE_STATUS.md`
+for current acceptance; the earlier inventory below is historical.
+
 Observed 2026-09-07. This is current checkout/configuration evidence, not live CJ
 or live production-database acceptance.
 

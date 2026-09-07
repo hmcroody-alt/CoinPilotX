@@ -12,7 +12,6 @@ from pathlib import Path
 import secrets
 import subprocess
 import sys
-from urllib.parse import urlsplit, urlunsplit
 
 PROJECT = "34d4cb5c-f3db-40bf-926e-2eaa80a91659"
 ENVIRONMENT = "3a3f2632-bfc1-4ef4-b95a-e99e278d0fc1"
@@ -100,26 +99,6 @@ def verify():
                       "funding": False, "global_cj_key": False, "provider_approval": False}))
 
 
-def pgtest():
-    values = variables(POSTGRES)
-    # Explicit temporary TCP proxy created solely for this staging DB acceptance.
-    # Credentials come from this staging service only, never CLI arguments/files.
-    parts = urlsplit(values["DATABASE_URL"])
-    userinfo = parts.netloc.rsplit("@", 1)[0]
-    url = urlunsplit((parts.scheme, userinfo + "@ballast.proxy.rlwy.net:30014", parts.path, "sslmode=require", ""))
-    env = dict(os.environ, CJ_ACCEPTANCE_DATABASE_URL=url, CJ_ACCEPTANCE_POSTGRES_APPROVED="1",
-               COINPILOTX_DISABLE_LOCAL_ENV="1")
-    result = subprocess.run([sys.executable, "scripts/verify_cj_postgres_acceptance.py"],
-                            cwd=ROOT, env=env, capture_output=True, text=True, timeout=900)
-    # Runner emits only a sanitized report. Redact all resolved DB values defensively.
-    output = result.stdout + result.stderr
-    for value in sorted(set(values.values()), key=lambda value: len(str(value)), reverse=True):
-        if isinstance(value, str) and len(value) > 8:
-            output = output.replace(value, "[REDACTED]")
-    print(output, end="")
-    return result.returncode
-
-
 def pgremote():
     """Run the same test source beside staging Postgres to avoid WAN timing noise.
 
@@ -167,10 +146,10 @@ with tempfile.TemporaryDirectory(prefix="cj-pg-acceptance-") as target:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("provision", "verify", "pgtest", "pgremote"))
+    parser.add_argument("action", choices=("provision", "verify", "pgremote"))
     args = parser.parse_args()
     try:
-        return {"provision": provision, "verify": verify, "pgtest": pgtest, "pgremote": pgremote}[args.action]() or 0
+        return {"provision": provision, "verify": verify, "pgremote": pgremote}[args.action]() or 0
     except Exception as error:
         print(json.dumps({"ok": False, "error_type": type(error).__name__, "details": "withheld"}))
         return 1
