@@ -42,6 +42,7 @@ jest.mock("../../api/marketplace", () => ({
 
 import { sellerStoreHeading } from "../../navigation/sellerStoreMode";
 import { SellerStoreScreen } from "../SellerStoreScreen";
+import { activateLocale } from "../../i18n/engine";
 
 const LISTING = {
   id: 11,
@@ -83,6 +84,17 @@ const PANEL_TITLES = {
   orders: "Orders and payouts",
   trust: "Trust and eligibility"
 };
+
+/**
+ * The copy below is real catalog text, and catalogs load lazily. `I18nProvider`
+ * awaits that load before rendering children in the app; a bare `render()` in a
+ * test does not. Without this, every key resolves through `humanizeKey` and the
+ * assertions compare against a humanized leaf instead of the sentence the
+ * catalog actually defines.
+ */
+beforeAll(async () => {
+  await activateLocale("en");
+});
 
 describe("SellerStore mode wiring", () => {
   it("gives each Business OS entry point its own heading", async () => {

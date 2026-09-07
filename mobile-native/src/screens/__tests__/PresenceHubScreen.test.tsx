@@ -31,6 +31,7 @@ import { preloadNamespaces } from "../../i18n/engine";
 import { PresenceHubScreen } from "../PresenceHubScreen";
 import { presenceAccent } from "../../theme/presenceAccent";
 import { presenceTheme } from "../../theme/presenceTheme";
+import { activateLocale } from "../../i18n/engine";
 
 function nav() {
   return { navigate: jest.fn(), addListener: jest.fn(() => jest.fn()) };
@@ -73,6 +74,17 @@ function show() {
 beforeEach(() => {
   jest.clearAllMocks();
   mockListMyPages.mockResolvedValue([presence()]);
+});
+
+/**
+ * The copy below is real catalog text, and catalogs load lazily. `I18nProvider`
+ * awaits that load before rendering children in the app; a bare `render()` in a
+ * test does not. Without this, every key resolves through `humanizeKey` and the
+ * assertions compare against a humanized leaf instead of the sentence the
+ * catalog actually defines.
+ */
+beforeAll(async () => {
+  await activateLocale("en");
 });
 
 describe("every control on a presence card goes somewhere of its own", () => {

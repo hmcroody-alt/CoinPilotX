@@ -104,6 +104,36 @@ export const LAUNCH_READINESS: Readonly<Record<LaunchModuleId, ReadinessState>> 
    */
   "presence:businessOs": "BUILDING",
 
+  /*
+   * Presence — the three creation entries.
+   *
+   * "Create Artist Presence", "Create Business Presence" and "+ Create New" all
+   * land on the same `PageCreate` screen and differ only in the `flavor` they
+   * pass. They are three rows rather than one because they are three things a
+   * user can see and tap: the badge and the accessibility label are read per
+   * control, and a single shared id would leave the gate unable to say which
+   * door it just closed.
+   *
+   * BUILDING rather than COMING_SOON: `PageCreateScreen` exists and renders, so
+   * this is a workflow being finished rather than one never started. Both
+   * resolve to the same message for the user; the distinction is what lets a
+   * later reader tell half-built from not-started without re-running the audit.
+   *
+   * The landing page itself is deliberately absent from this table. Presence
+   * Home lists real pages from `listMyPages()` and its View / Manage actions
+   * work, so it stays READY — the gate is on creation, not on the surface.
+   *
+   * These three rows were added by 1c4242bf and then silently dropped by
+   * e084b188, which recovered a 4-day-old copy of this file out of a stale
+   * worktree and wrote it over the newer one. Nothing about the creation
+   * workflow was finished in between; only the table lost the rows. The
+   * PresenceHubScreen tests that assert the gate have been failing ever since,
+   * which is how this was found.
+   */
+  "presence:createArtist": "BUILDING",
+  "presence:createBusiness": "BUILDING",
+  "presence:createNew": "BUILDING",
+
   /* ================================================================== *
    * Capabilities.
    *
@@ -322,7 +352,21 @@ export function isLaunchGated(id: LaunchModuleId): boolean {
  * route itself cannot tell the two callers apart (which is precisely the bug).
  */
 export const GATED_ROUTES: Readonly<Record<string, LaunchModuleId>> = Object.freeze({
-  BusinessOsEvents: "business:events"
+  BusinessOsEvents: "business:events",
+  /*
+   * Presence creation. `PageCreate` qualifies on the rule above: the whole
+   * point of the route is the gated creation workflow. The button-level gate in
+   * Presence Home is not enough on its own — the same route is reached by
+   * `navigate("PageCreate")` in `PagesHubScreen` (the Manage surface), by the
+   * `pulse/pages/create` deep link, and by navigation state restored after a
+   * cold start, none of which pass a gated button.
+   *
+   * Dropped alongside the `presence:create*` rows by e084b188. `PageCreateRoute`
+   * kept calling `routeReadiness("PageCreate")` the whole time; with no entry
+   * here that call has been returning READY, so the guard was rendering the real
+   * form and every one of those three paths was open.
+   */
+  PageCreate: "presence:createNew"
 });
 
 /** The gate's verdict for a route name. Unregistered routes are READY. */

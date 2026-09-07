@@ -81,6 +81,17 @@ function openPulseGate(screen: ReturnType<typeof render>) {
   fireEvent.press(screen.getByTestId("pulse-gate-primary"));
 }
 
+/**
+ * The copy these tests assert on is real catalog text, and catalogs load
+ * lazily. `I18nProvider` awaits that load in the app; a bare `render()` does
+ * not, so without this the first frame resolves every key through
+ * `humanizeKey` and the assertions compare against "Identifier Mismatch"
+ * rather than the sentence the user actually sees.
+ */
+beforeAll(async () => {
+  await activateLocale("en");
+});
+
 describe("LoginScreen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
