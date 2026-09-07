@@ -187,10 +187,142 @@ WIRING_MUTANTS = [
        "        return rate_limit_refusal(request.path, retry_after=0)")]),
 ]
 
+# Stage 5/29. These invariants are *detectors*, and a detector has a failure
+# mode the controls above do not: it can report OK for a reason that has
+# nothing to do with the property being true. T3 and T4 are the two that
+# matter — T3 removes the actual cross-tenant comparison while leaving the
+# query shape intact, and T4 turns "I could not look" into "all clear".
+TENANT_TARGET = ROOT / "services/sentinel/invariants.py"
+TENANT_TESTS = "tests/sentinel/test_tenant_isolation.py"
+
+TENANT_MUTANTS = [
+    ("T1 the roster-exists guard is dropped, so every orphan reads as a breach",
+     [("""                   WHEN EXISTS (SELECT 1 FROM pulse_conversation_participants roster
+                                WHERE roster.conversation_id = recent.cid)
+                    AND NOT EXISTS""", "                   WHEN NOT EXISTS")]),
+
+    # The one that would matter most in production: the query still runs, still
+    # joins the roster, still returns a number — it just stops asking whether
+    # THIS actor is in it. Every result goes green and nothing looks wrong.
+    ("T2 the check stops comparing the actor, so any roster at all satisfies it",
+     [("""                                    WHERE p.conversation_id = recent.cid
+                                      AND p.user_id = recent.actor)""",
+       "                                    WHERE p.conversation_id = recent.cid)")]),
+
+    ("T3 the sense of the check inverts, so legitimate traffic is the violation",
+     [("                    AND NOT EXISTS (SELECT 1 FROM pulse_conversation_participants p",
+       "                    AND EXISTS (SELECT 1 FROM pulse_conversation_participants p")]),
+
+    ("T4 an unreadable table reports all-clear instead of unknown",
+     [("    except Exception:\n        return None, 0  # table missing / engine mismatch → SKIPPED",
+       "    except Exception:\n        return 0, 0  # table missing / engine mismatch → SKIPPED")]),
+
+    ("T5 a missing row count reports all-clear instead of unknown",
+     [("    if not row:\n        return None, 0", "    if not row:\n        return 0, 0")]),
+
+    ("T6 the table allowlist is bypassed, reopening SQL interpolation",
+     [('    actor = _PARTICIPATION_SOURCES[table]  # KeyError = programming error, fail loud',
+       '    actor = _PARTICIPATION_SOURCES.get(table, "user_id")')]),
+
+    ("T7 the scan window collapses to a single row",
+     [("TENANT_SCAN_LIMIT = 5000", "TENANT_SCAN_LIMIT = 1")]),
+
+    ("T8 a cross-tenant read is filed as a generic violation, not a disclosure",
+     [('    "INV_RECEIPT_READER_PARTICIPANT": (\n'
+       '        _inv_receipt_reader_was_a_participant, "PRIVACY", "DATA_EXPOSURE"),',
+       '    "INV_RECEIPT_READER_PARTICIPANT": (\n'
+       '        _inv_receipt_reader_was_a_participant, "SECURITY", "INVARIANT_VIOLATION"),')]),
+
+    ("T9 the OK line stops saying how much was examined",
+     [('    return InvariantResult("INV_MESSAGE_SENDER_PARTICIPANT", STATUS_OK,\n'
+       '                           f"{scanned} newest message(s) all written by a participant")',
+       '    return InvariantResult("INV_MESSAGE_SENDER_PARTICIPANT", STATUS_OK,\n'
+       '                           "no bypass detected")')]),
+
+    ("T10 the invariant corrects the data instead of reporting it",
+     [("    try:\n        cur.execute(sql)\n        row = cur.fetchone()",
+       "    try:\n        cur.execute(f\"DELETE FROM {table} WHERE COALESCE(conversation_id,0) = 404\")\n"
+       "        cur.execute(sql)\n        row = cur.fetchone()")]),
+]
+
+# Stage 5. These mutants break the *product's* access checks, not Sentinel's.
+# That is the point: tests/sentinel_integration/test_object_authorization.py
+# adds no control, it only claims the controls in bot.py are still there, and a
+# claim like that is worth exactly as much as its ability to notice their
+# absence. Every one of those 14 tests passed on the first run — which is how a
+# regression harness looks both when it is real and when it is vacuous.
+OBJAUTH_TARGET = ROOT / "bot.py"
+OBJAUTH_TESTS = "tests/sentinel_integration/test_object_authorization.py"
+
+_REACT_CHECK = ('    cur.execute("SELECT 1 FROM pulse_conversation_participants WHERE '
+                'conversation_id=? AND user_id=? AND COALESCE(left_at,\'\')=\'\' LIMIT 1", '
+                '(conversation_id, user["user_id"]))\n'
+                '    if not cur.fetchone():\n'
+                '        conn.close()\n'
+                '        return api_error("Conversation not found.", 404, trace_id)')
+
+OBJAUTH_MUTANTS = [
+    ("O1 the conversation detail route stops checking membership",
+     [("""        if not cur.fetchone():
+            chat_health_service.record_trace(cur, user["user_id"], f"/api/pulse/messages/{conversation_id}", "forbidden", trace_id, {"conversation_id": conversation_id, "http_status": 403})""",
+       """        if False:
+            chat_health_service.record_trace(cur, user["user_id"], f"/api/pulse/messages/{conversation_id}", "forbidden", trace_id, {"conversation_id": conversation_id, "http_status": 403})""")]),
+
+    ("O2 the react route stops checking membership",
+     [(_REACT_CHECK, _REACT_CHECK.replace("    if not cur.fetchone():", "    if False:", 1))]),
+
+    # The realistic version of the same bug, and the one a reviewer skims past:
+    # the query still joins the roster and still returns a row, it just stops
+    # asking whether THIS caller is in it. Any conversation with a single member
+    # becomes readable by everyone.
+    ("O3 the react route checks that the conversation has members, not that the caller is one",
+     [('cur.execute("SELECT 1 FROM pulse_conversation_participants WHERE conversation_id=? '
+       'AND user_id=? AND COALESCE(left_at,\'\')=\'\' LIMIT 1", (conversation_id, user["user_id"]))\n'
+       '    if not cur.fetchone():\n'
+       '        conn.close()\n'
+       '        return api_error("Conversation not found.", 404, trace_id)',
+       'cur.execute("SELECT 1 FROM pulse_conversation_participants WHERE conversation_id=? '
+       'LIMIT 1", (conversation_id,))\n'
+       '    if not cur.fetchone():\n'
+       '        conn.close()\n'
+       '        return api_error("Conversation not found.", 404, trace_id)')]),
+
+    ("O4 the seen route stops checking membership before writing receipts",
+     [('    cur.execute("SELECT 1 FROM pulse_conversation_participants WHERE conversation_id=? '
+       'AND user_id=? LIMIT 1", (conversation_id, user["user_id"]))\n'
+       '    if not cur.fetchone():\n'
+       '        conn.close()\n'
+       '        return api_error("Conversation not found.", 404)',
+       '    cur.execute("SELECT 1 FROM pulse_conversation_participants WHERE conversation_id=? '
+       'AND user_id=? LIMIT 1", (conversation_id, user["user_id"]))\n'
+       '    if False:\n'
+       '        conn.close()\n'
+       '        return api_error("Conversation not found.", 404)')]),
+
+    ("O5 the send path stops refusing a stranger, so a refusal becomes a write",
+     [('    if not participant and not bool(conversation.get("is_public")):',
+       "    if False:")]),
+
+    # Not an access-control break — an information leak. The caller is still
+    # refused, but the refusal now tells them which message ids are real.
+    ("O6 the refusal for a forbidden object differs from the one for a missing object",
+     [(_REACT_CHECK,
+       _REACT_CHECK.replace('return api_error("Conversation not found.", 404, trace_id)',
+                            'return api_error("You do not have access to this chat.", 403, trace_id)'))]),
+
+    ("O7 a departed member keeps their access forever",
+     [(_REACT_CHECK,
+       _REACT_CHECK.replace("AND COALESCE(left_at,'')='' LIMIT 1", "LIMIT 1"))]),
+]
+
 SUITES = [
     ("services/sentinel/request_bridge.py", BRIDGE_TARGET, BRIDGE_TESTS, BRIDGE_MUTANTS),
     ("services/sentinel/rate_limit.py", RATE_TARGET, RATE_TESTS, RATE_MUTANTS),
     ("bot.py (Stage 6 wiring)", WIRING_TARGET, WIRING_TESTS, WIRING_MUTANTS),
+    ("services/sentinel/invariants.py (Stage 5/29 tenant isolation)",
+     TENANT_TARGET, TENANT_TESTS, TENANT_MUTANTS),
+    ("bot.py (Stage 5 object authorization)",
+     OBJAUTH_TARGET, OBJAUTH_TESTS, OBJAUTH_MUTANTS),
 ]
 
 survived = []

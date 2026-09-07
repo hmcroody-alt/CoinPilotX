@@ -78,7 +78,65 @@ implemented*. The correct move is to extend them, not to re-found them.
    referent — this must not be papered over.
 6. **No automated cross-tenant authorization invariants.** Owner scoping is
    ad-hoc per route (`WHERE user_id=?`), with no test proving user A cannot
-   read user B.
+   read user B. *(Closed in Stage 5/29 — but see the correction below, which
+   changes what this gap actually was.)*
+
+### Correction applied during Stage 5/29: the scoping is not ad-hoc
+
+Gap 6 above was written from a distance and it overstated the problem. A traced
+audit of the `/api/pulse/**`, `/api/mobile/**` and `/api/messages/**` families
+found a **consistent, dual-layer idiom**, not an ad-hoc one:
+
+| Layer | What it does | Example |
+|---|---|---|
+| Route | `api_account_user()` / `pulse_ads_api_user_required()` — proves *somebody* is logged in, nothing more. 255 call sites. | `bot.py:17986` |
+| Object | Resolve the object from the client's id → resolve its conversation → require a `pulse_conversation_participants` row | `pulse_send_conversation_message`, `api_pulse_message_react`, `api_pulse_messages_seen`, `api_pulse_conversation_detail`, `api_pulse_conversation_messages` |
+| Service | User-owned rows are scoped in the SQL itself, `WHERE id=? AND user_id=?` | `alert_engine.delete_alert`, `pulse_advertiser_portal._role_for_account` |
+
+**No traced IDOR gap was found in those families.** That is a real result and it
+changed what this mission owed the codebase. What was actually missing was not
+the checks — it was any way to *notice their removal*. So Stage 5/29 built a
+regression harness and a detector, and added no permission engine (§7 names one
+as a duplicate risk; `sentinel/authority.py` already exists for Sentinel's own
+agent authority and is not on the product request path).
+
+Two things now exist:
+
+* `tests/sentinel_integration/test_object_authorization.py` — 16 tests that
+  drive HTTP as a member and as an outsider. Every refusal test is paired with
+  a success test for the same request, because a route that 404s for
+  *everybody* would otherwise satisfy the whole file.
+* `INV_MESSAGE_SENDER_PARTICIPANT`, `INV_RECEIPT_READER_PARTICIPANT`,
+  `INV_REACTION_AUTHOR_PARTICIPANT` in `services/sentinel/invariants.py` —
+  storage-level detectors. They do not restate the route checks; they look for
+  the *consequence* of a bypass (a row whose actor was never on the roster),
+  which holds no matter which of the ~1,538 routes wrote it, including one that
+  does not exist yet.
+
+Seven mutants against `bot.py`'s own access checks (O1–O7) confirm the harness
+can see them disappear.
+
+### Correction: `/seen` does not honour `left_at` like its four siblings
+
+Found by mutation O7 and pinned by
+`test_the_seen_route_does_not_check_left_at_like_the_others_do`.
+
+`api_pulse_messages_seen` (`bot.py:88404`) gates on
+`WHERE conversation_id=? AND user_id=?`. The other four chat routes add
+`AND COALESCE(left_at,'')=''`. So a member who has **left** a group can still
+write read receipts into it, and the remaining members keep seeing "read by"
+from someone who walked out.
+
+Scope, stated without dramatising it: `/seen` returns counters, not message
+bodies. The route needed to actually read the thread refuses the departed
+member. This is a consistency and privacy-signal defect, not content
+disclosure.
+
+**Deliberately not fixed in Stage 5/29**, for the same reason the two
+disagreeing rate limits found in Stage 6 were left alone: a stage that builds a
+regression harness should not quietly change what a frozen App Store client
+experiences. It is a one-line edit and belongs in **Stage 21**, behind the
+detection/enforcement flags, where it can run in shadow first.
 
 ## 4. The rate-limiting truth (production-critical)
 
@@ -259,3 +317,5 @@ offered to `ingest()` twice.
 | A session store | `mobile_security_sessions` |
 | An injection scanner | `ai_security.scan_for_injection()` |
 | A UNDX tool gate | `undx_tool_gateway.execute()` |
+| An object-ownership check | the roster idiom above — `pulse_conversation_participants` for chat, `WHERE id=? AND user_id=?` in services, `pulse_advertiser_portal._require_account_role` for ad accounts. Stage 5/29 tests and observes these; it does not replace them |
+| An invariant engine | `sentinel.invariants.INVARIANTS` + `run_all()` — add a check to the dict, never a second engine |
