@@ -3,11 +3,11 @@
 How a PulseSoc link decides between the native app, the App Store, and the
 website — what exists, what changed, and what is still blocked.
 
-> **Production status: iOS Universal Links are configured and serving.**
-> `PULSESOC_APPLE_TEAM_ID` was set on Railway on 2026-09-07 and the AASA now
-> returns HTTP 200. Apple caches that file at install/update time, so existing
-> installs keep the old result until they are reinstalled — a device test is the
-> one remaining verification. `assetlinks.json` still returns 503 by design.
+> **Production status: iOS Universal Links are live and verified on device.**
+> `PULSESOC_APPLE_TEAM_ID` was set on Railway on 2026-09-07; the AASA returns
+> HTTP 200, Apple's crawler has refetched it, and a tapped link opens the app on
+> the post it names. Existing installs keep the old cached association until they
+> are reinstalled. `assetlinks.json` still returns 503 by design.
 > See [Association file status](#6-association-file-status).
 
 ---
@@ -178,11 +178,25 @@ builder's default list carries both. That is the intended state — it gives
 development builds working universal links for device testing. Setting the
 variable to `com.pulsesoc.app` would ship production-only.
 
-**Still unverified.** iOS fetches the AASA through Apple's CDN at install or
-update time, not on demand, so existing installs keep the old 503 result until
-they are reinstalled. Nothing in this repository can prove the end-to-end hop.
-That needs a fresh install on a device, and it is the last open item in this
-mission.
+### Verified end to end, 2026-09-07
+
+After a reinstall on the physical iPhone P3r7or (build 22, `com.pulsesoc.app`),
+Apple's crawler refetched the file — `AASA-Bot/1.0.0 → 200` in the Railway
+access log — and a tapped `https://pulsesoc.com/pulse/post/2330` opened the app
+**on that post**. Not the feed, not Safari. That is the §1 contract, whole.
+
+Three things to know before re-testing this, each of which produces a
+convincing false negative:
+
+- **iOS honours a universal link only from a *tapped* link in another app.**
+  Typing the URL into Safari's address bar never routes to the app, by design.
+- **Existing installs keep whatever Apple's CDN last handed them.** A device
+  that saw the 503 goes on opening the website until the app is reinstalled on
+  it. Fixing the server does not retroactively fix installed apps.
+- **The iOS Simulator cannot test this at all here.** The simulator `.app` has
+  to be ad-hoc re-signed to work around the unsigned Agora framework, and that
+  strips its entitlements — leaving no `associated-domains` and no team
+  identifier. It will open Safari no matter how correct the server is.
 
 ### Android — 503, deliberately
 
