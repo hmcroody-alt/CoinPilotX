@@ -3271,6 +3271,40 @@ def sentinel_rate_refused(scope, limit, window_seconds, subject=None):
         return None
 
 
+def sentinel_note_shadow_refusal(event_type, subject_type, subject_id, detail=None):
+    """Record that an enforcement gate *would* have refused, while it is off.
+
+    This is what makes ``shadow`` different from ``off``. A flag that changes
+    nothing and reports nothing gives an operator no way to decide whether
+    turning it on is safe, so they either never turn it on or turn it on blind;
+    both outcomes make the flag worse than useless. The event is what lets the
+    blast radius be counted from real traffic first.
+
+    Routed through ``request_bridge.emit`` rather than ``events.ingest`` on
+    purpose: emit is buffered and non-blocking, so a detection that fires on a
+    hot path cannot become a synchronous database write per request. It also
+    inherits the bridge and ingest switches, and therefore the emergency switch,
+    instead of needing an escape hatch of its own.
+    """
+    try:
+        from services.sentinel import events as _sentinel_events
+        from services.sentinel import request_bridge as _sentinel_bridge
+        from services.sentinel.identity import SENTINEL_INGEST
+        if not _sentinel_bridge.bridge_enabled():
+            return
+        _sentinel_bridge.emit(_sentinel_events.Event(
+            category="SECURITY", event_type=event_type, severity="low",
+            actor_id=SENTINEL_INGEST.actor_id, source="bot.shadow_enforcement",
+            subject_type=subject_type, subject_id=str(subject_id),
+            environment=os.getenv("RAILWAY_ENVIRONMENT_NAME", "") or "",
+            payload={"mode": "shadow", "would_refuse": True, **(detail or {})}))
+    except Exception:
+        # Same reasoning as the bridge hook above: an observer that can 500 the
+        # route it observes is a worse security outcome than no observer. The
+        # bridge counts its own failures in request_bridge.stats().
+        pass
+
+
 @webhook_app.before_request
 def enforce_admin_form_csrf():
     if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
@@ -88401,10 +88435,29 @@ def api_pulse_messages_seen(conversation_id):
     if not user:
         return api_error("Login required.", 401)
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    cur.execute("SELECT 1 FROM pulse_conversation_participants WHERE conversation_id=? AND user_id=? LIMIT 1", (conversation_id, user["user_id"]))
-    if not cur.fetchone():
+    # The four sibling chat routes gate on ``AND COALESCE(left_at,'')=''``; this
+    # one did not, so a member who left a group kept writing read receipts into it
+    # and the people still in the conversation kept seeing "read by" from someone
+    # who walked out. ``left_at`` is selected rather than filtered in the WHERE
+    # clause because the two cases need different answers: never a participant is
+    # a refusal today, while departed is a refusal only once an operator turns the
+    # gate on. Filtering would collapse them and lose the shadow signal.
+    cur.execute("SELECT COALESCE(left_at,'') AS left_at FROM pulse_conversation_participants WHERE conversation_id=? AND user_id=? LIMIT 1", (conversation_id, user["user_id"]))
+    membership = cur.fetchone()
+    if not membership:
         conn.close()
         return api_error("Conversation not found.", 404)
+    if dict(membership).get("left_at"):
+        from services.sentinel import killswitches as _sentinel_switches
+        if _sentinel_switches.receipt_participation_enforced():
+            conn.close()
+            # 404, not 403, so a conversation the caller may not touch is
+            # indistinguishable from one that does not exist — the same refusal
+            # its four siblings give, and the property mutant O6 protects.
+            return api_error("Conversation not found.", 404)
+        sentinel_note_shadow_refusal(
+            "receipt_from_departed_member", "conversation", conversation_id,
+            {"route": "/api/pulse/messages/:id/seen", "user_id": user["user_id"]})
     now = datetime.utcnow().isoformat(timespec="seconds")
     last_message_id = pulse_mark_conversation_read(cur, conversation_id, user["user_id"])
     cur.execute("SELECT id FROM pulse_messages WHERE conversation_id=? AND sender_user_id!=? AND deleted_at IS NULL ORDER BY id DESC LIMIT 100", (conversation_id, user["user_id"]))

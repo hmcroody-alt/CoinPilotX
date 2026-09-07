@@ -135,7 +135,7 @@ whose body checks a local one is the same vacuity this mission has been
 correcting elsewhere, and here it had already cost something.
 
 So the fix is not the two one-line guards. It is `killswitches.GATES`: a registry
-of all twelve gates with the module, function, kind and documented default for
+of every gate with the module, function, kind and documented default for
 each, plus `all_gates()`, `gate_value()` and `enforcement_gates()`. Three
 invariants are now enforced by `tests/sentinel/test_gate_registry.py`:
 
@@ -144,8 +144,8 @@ invariants are now enforced by `tests/sentinel/test_gate_registry.py`:
    otherwise pass for the boring reason that most of them default off;
 2. no gate classified as enforcement may default on — deploying the code must not
    be the decision that starts changing production behaviour for a client that
-   cannot be updated (Hard Rule #3). Today the only enforcement gate is
-   `distributed_limits`, and it defaults off;
+   cannot be updated (Hard Rule #3). The enforcement gates are
+   `distributed_limits` and `receipt_participation`, and both default off;
 3. an AST scan finds every function in `services/sentinel` that reads a
    `SENTINEL_*_ENABLED`/`_MODE` switch and fails if one is neither registered nor
    in a documented exemption list — so the next gate cannot repeat this.
@@ -304,6 +304,46 @@ disagreeing rate limits found in Stage 6 were left alone: a stage that builds a
 regression harness should not quietly change what a frozen App Store client
 experiences. It is a one-line edit and belongs in **Stage 21**, behind the
 detection/enforcement flags, where it can run in shadow first.
+
+#### Resolved in Stage 21 — shipped dark, behind `SENTINEL_RECEIPT_PARTICIPATION_ENFORCED`
+
+The gate is registered in `GATES` as an `_ENFORCE` gate defaulting **off**, so it
+is revoked by the emergency switch along with everything else rather than by a
+special case of its own.
+
+Three details are load-bearing and are each pinned by a mutant:
+
+- **`left_at` is read, not filtered.** The query selects
+  `COALESCE(left_at,'') AS left_at` instead of adding the siblings'
+  `AND COALESCE(left_at,'')=''` to the `WHERE`. Filtering would have been the
+  smaller diff, and it would have collapsed "never joined" into "joined and
+  left" — the two cases need different answers here, because a stranger is
+  refused *today* while a departed member is refused only once an operator
+  turns the gate on. Mutant O12 restores the collapse; it reads as a
+  simplification and is a privilege escalation, since with the gate off a
+  stranger would fall through to the shadow branch and write a receipt.
+- **Enforcement answers 404, not 403**, matching the four siblings, so a
+  conversation the caller may not touch stays indistinguishable from one that
+  does not exist. This is the property mutant O6 protects, extended to the new
+  branch by O11.
+- **Shadow mode emits.** When the gate is off and a departed member arrives,
+  the route calls `sentinel_note_shadow_refusal` and continues. Without that
+  emission "shadow" and "off" are the same state, and the argument for shipping
+  dark — that the blast radius gets measured from real traffic before anyone
+  decides — is simply false. Mutant O13 deletes the call; nothing about the
+  route's observable behaviour changes, which is exactly why it needs a mutant.
+
+The default is asserted separately from the behaviour, because a test that only
+covered the enforced path would let the default flip to on without anything
+failing.
+
+One incidental repair came with it. `test_a_refused_write_leaves_no_trace_in_the_conversation`
+counts rows absolutely — the outsider must own zero messages, reactions and
+receipts — which silently depended on no earlier test having written any. That
+held only while the outsider was never allowed to succeed at anything, and
+proving this gate is off by default requires proving a departed member still
+gets a 200, which writes a receipt. The fixture is now restored per-test rather
+than teaching one helper to clean up after one route.
 
 ## 4. The rate-limiting truth (production-critical)
 

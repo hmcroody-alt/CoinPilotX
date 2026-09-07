@@ -180,6 +180,9 @@ GATES: tuple[Gate, ...] = (
          _OBSERVE, False, "ad wallet risk scoring"),
     Gate("distributed_limits", "services.sentinel.rate_limit", "enabled",
          _ENFORCE, False, "rejecting requests with 429 across gunicorn workers"),
+    Gate("receipt_participation", "services.sentinel.killswitches",
+         "receipt_participation_enforced", _ENFORCE, False,
+         "refusing read receipts from a member who left the conversation"),
     Gate("automation", "services.sentinel.killswitches", "automation_enabled",
          _AUTOMATE, False, "all runbook automation"),
     Gate("financial_automation", "services.sentinel.killswitches",
@@ -214,6 +217,25 @@ def all_gates() -> dict[str, bool]:
 def enforcement_gates() -> tuple[Gate, ...]:
     """Gates whose effect a user can feel. These may never default on."""
     return tuple(g for g in GATES if g.kind in ENFORCEMENT_KINDS)
+
+
+def receipt_participation_enforced() -> bool:
+    """Whether ``/seen`` refuses a departed member, or merely records that it
+    would have. DEFAULT OFF.
+
+    Four of the five chat routes gate on ``COALESCE(left_at,'')=''``; ``/seen``
+    did not, so someone who walked out of a group kept writing read receipts into
+    it and the remaining members kept seeing "read by" from them. Adding the
+    clause is a one-line edit, and one-line edits to what a frozen App Store
+    client experiences are exactly the ones worth shadowing: with this off the
+    route behaves as it does today and emits an event when it *would* have
+    refused, so the blast radius can be measured from production traffic before
+    anyone decides. That measurement is the whole point of the flag — without the
+    event, "shadow" and "off" are the same thing.
+    """
+    if emergency_killed():
+        return False
+    return _truthy(_env("SENTINEL_RECEIPT_PARTICIPATION_ENFORCED"))
 
 
 def switch_state() -> dict:

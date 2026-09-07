@@ -261,6 +261,21 @@ _REACT_CHECK = ('    cur.execute("SELECT 1 FROM pulse_conversation_participants 
                 '        conn.close()\n'
                 '        return api_error("Conversation not found.", 404, trace_id)')
 
+# /seen reads left_at rather than filtering on it, so the two refusals stay
+# distinguishable: a stranger is refused today, a departed member only once the
+# gate is on. The anchors below are split along that seam.
+_SEEN_STRANGER = ('    cur.execute("SELECT COALESCE(left_at,\'\') AS left_at FROM '
+                  'pulse_conversation_participants WHERE conversation_id=? AND user_id=? '
+                  'LIMIT 1", (conversation_id, user["user_id"]))\n'
+                  '    membership = cur.fetchone()\n'
+                  '    if not membership:\n'
+                  '        conn.close()\n'
+                  '        return api_error("Conversation not found.", 404)')
+
+_SEEN_DEPARTED = ('    if dict(membership).get("left_at"):\n'
+                  '        from services.sentinel import killswitches as _sentinel_switches\n'
+                  '        if _sentinel_switches.receipt_participation_enforced():')
+
 OBJAUTH_MUTANTS = [
     ("O1 the conversation detail route stops checking membership",
      [("""        if not cur.fetchone():
@@ -288,16 +303,7 @@ OBJAUTH_MUTANTS = [
        '        return api_error("Conversation not found.", 404, trace_id)')]),
 
     ("O4 the seen route stops checking membership before writing receipts",
-     [('    cur.execute("SELECT 1 FROM pulse_conversation_participants WHERE conversation_id=? '
-       'AND user_id=? LIMIT 1", (conversation_id, user["user_id"]))\n'
-       '    if not cur.fetchone():\n'
-       '        conn.close()\n'
-       '        return api_error("Conversation not found.", 404)',
-       '    cur.execute("SELECT 1 FROM pulse_conversation_participants WHERE conversation_id=? '
-       'AND user_id=? LIMIT 1", (conversation_id, user["user_id"]))\n'
-       '    if False:\n'
-       '        conn.close()\n'
-       '        return api_error("Conversation not found.", 404)')]),
+     [(_SEEN_STRANGER, _SEEN_STRANGER.replace("    if not membership:", "    if False:", 1))]),
 
     ("O5 the send path stops refusing a stranger, so a refusal becomes a write",
      [('    if not participant and not bool(conversation.get("is_public")):',
@@ -313,6 +319,66 @@ OBJAUTH_MUTANTS = [
     ("O7 a departed member keeps their access forever",
      [(_REACT_CHECK,
        _REACT_CHECK.replace("AND COALESCE(left_at,'')='' LIMIT 1", "LIMIT 1"))]),
+
+    # --- Stage 21: the /seen participation gate -------------------------------
+    # The fix here is deliberately dark, which makes it unusually easy to ship
+    # broken: with the switch off the route behaves exactly as it did before, so
+    # the default path stays green whether or not the gate works at all. Every
+    # mutant below survives the "nothing changed by default" test.
+
+    # The original defect, restored: /seen goes back to not caring about left_at,
+    # so turning the switch on does nothing and the shadow signal never fires.
+    ("O8 the seen route stops distinguishing a departed member from a present one",
+     [(_SEEN_DEPARTED, _SEEN_DEPARTED.replace(
+         '    if dict(membership).get("left_at"):', "    if False:", 1))]),
+
+    # The failure that would reach production the moment an operator flipped the
+    # switch: enforcement ignores its own gate. Every read receipt in the product
+    # would keep working, so only the departed-member test can see this — which is
+    # the point of pinning the default separately from the behaviour.
+    ("O9 the participation gate is ignored and seen enforces unconditionally",
+     [("        if _sentinel_switches.receipt_participation_enforced():",
+       "        if True:")]),
+
+    # The inverse: the gate is wired backwards, so "enforced" is the state in
+    # which nothing is enforced. Passes the default test for the wrong reason.
+    ("O10 the participation gate is inverted",
+     [("        if _sentinel_switches.receipt_participation_enforced():",
+       "        if not _sentinel_switches.receipt_participation_enforced():")]),
+
+    # Not an access-control break — the same information leak O6 covers, on the
+    # new branch. A departed member learns the conversation is real.
+    ("O11 enforcement refuses a departed member with 403 instead of 404",
+     [('            return api_error("Conversation not found.", 404)\n'
+       '        sentinel_note_shadow_refusal(',
+       '            return api_error("You do not have access to this chat.", 403)\n'
+       '        sentinel_note_shadow_refusal(')]),
+
+    # Collapses "never joined" into "joined and left", which reads as a
+    # simplification and is a privilege escalation: with the gate off, a stranger
+    # would fall through to the shadow branch and write a receipt.
+    ("O12 a stranger is treated as a departed member instead of refused",
+     [(_SEEN_STRANGER,
+       _SEEN_STRANGER.replace(
+           "    if not membership:\n        conn.close()\n"
+           '        return api_error("Conversation not found.", 404)',
+           "    if not membership:\n        membership = {\"left_at\": \"departed\"}"))]),
+
+    # Deletes the measurement the shadow mode exists for. Nothing about the
+    # route's behaviour changes, which is exactly why this needs a mutant: with
+    # the emission gone, "shadow" and "off" are the same state and the argument
+    # for shipping dark ("we will measure the blast radius first") is false.
+    ("O13 shadow mode stops recording the refusal it would have made",
+     [('        sentinel_note_shadow_refusal(\n'
+       '            "receipt_from_departed_member", "conversation", conversation_id,\n'
+       '            {"route": "/api/pulse/messages/:id/seen", "user_id": user["user_id"]})',
+       "        pass")]),
+
+    # The recorder fires for everyone. Blast-radius measurement would report the
+    # entire product as affected and argue against ever enabling the gate.
+    ("O14 the shadow recorder fires for present members too",
+     [(_SEEN_DEPARTED, _SEEN_DEPARTED.replace(
+         '    if dict(membership).get("left_at"):', "    if True:", 1))]),
 ]
 
 # Stage 10. The target is the *seam*, not a control: two functions that each clamp

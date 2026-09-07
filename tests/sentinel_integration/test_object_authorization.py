@@ -120,6 +120,37 @@ class ObjectAuthorizationTest(unittest.TestCase):
         pulse_security_core._RATE_BUCKETS.clear()
         security_guard.BUCKETS.clear()
         cache_engine._MEMORY.clear()
+        self._reset_conversation()
+
+    @classmethod
+    def _reset_conversation(cls):
+        """Return the conversation to exactly what ``_seed`` built.
+
+        ``test_a_refused_write_leaves_no_trace_in_the_conversation`` counts rows
+        absolutely — it asserts the outsider owns *zero* messages, reactions and
+        receipts — so it silently depends on no earlier test having written any.
+        That held only while the outsider was never allowed to succeed at
+        anything. The Stage 21 ``/seen`` tests break that assumption on purpose:
+        proving the gate is off by default means proving a departed member still
+        gets a 200, and a 200 from ``/seen`` writes a receipt.
+
+        ``_drop_membership`` removes the roster row but not the writes made
+        through it, so the leftover receipt made a passing test fail depending
+        on alphabetical method order. Restoring the fixture per-test is the fix
+        rather than teaching one helper to clean up after one route: any future
+        test that legitimately writes would reintroduce the same coupling.
+        """
+        conn = bot.db()
+        conn.execute("DELETE FROM pulse_conversation_participants "
+                     "WHERE conversation_id=? AND user_id<>?", (CONVERSATION_ID, MEMBER_ID))
+        conn.execute("DELETE FROM pulse_message_receipts WHERE conversation_id=?",
+                     (CONVERSATION_ID,))
+        conn.execute("DELETE FROM pulse_message_reactions WHERE conversation_id=?",
+                     (CONVERSATION_ID,))
+        conn.execute("DELETE FROM pulse_messages WHERE conversation_id=? AND id<>?",
+                     (CONVERSATION_ID, cls.MESSAGE_ID))
+        conn.commit()
+        conn.close()
 
     # --- speaking as a given user -----------------------------------------
 
@@ -298,30 +329,21 @@ class ObjectAuthorizationTest(unittest.TestCase):
         finally:
             self._drop_membership()
 
-    def test_the_seen_route_does_not_check_left_at_like_the_others_do(self):
-        """A finding, pinned rather than fixed here. Deferred to Stage 21.
+    def test_the_seen_route_still_accepts_a_departed_member_by_default(self):
+        """The Stage 21 fix landed, and it is off by default. This is the
+        replacement the previous version of this test asked for.
 
-        Four of the five chat routes gate on
-        ``AND COALESCE(left_at,'')=''``. ``/seen`` gates only on
-        ``conversation_id`` and ``user_id``, so a member who has left a group
-        can still write read receipts into it — other members keep seeing
-        "read by" from someone who walked out months ago.
+        Four of the five chat routes gate on ``AND COALESCE(left_at,'')=''``;
+        ``/seen`` did not, so a member who left a group kept writing read
+        receipts into it and the remaining members kept seeing "read by" from
+        someone who walked out. It now checks, but behind
+        ``SENTINEL_RECEIPT_PARTICIPATION_ENFORCED``, which defaults off.
 
-        Scope, stated honestly rather than dramatised: ``/seen`` returns
-        counters, not message bodies, so this is not a disclosure of content.
-        The route the departed member would need to actually read the thread
-        (``GET /api/pulse/messages/<id>``) refuses them, and
-        ``test_leaving_removes_access_on_every_route_that_grants_it`` proves it.
-
-        Not fixed in this commit for the same reason the two disagreeing rate
-        limits found in Stage 6 were left alone: this stage builds a regression
-        harness, and quietly changing what a frozen App Store client
-        experiences is not a testing change. Adding the clause is a one-line
-        edit; it belongs behind the Stage 21 flags with the rest of the
-        enforcement work, where it can be shadowed before it is enforced.
-
-        When that fix lands, this test should fail. Replace it — do not delete
-        it — with the assertion that ``/seen`` now refuses.
+        Asserting the default explicitly is the point. This is a behaviour change
+        against a frozen App Store client, and the whole argument for shipping it
+        dark is that deploying the code must not be the decision. A test that only
+        covered the enforced path would let the default flip to on without
+        anything failing.
         """
         self._set_membership(left_at="2026-01-03")
         try:
@@ -329,12 +351,117 @@ class ObjectAuthorizationTest(unittest.TestCase):
                 f"/api/pulse/messages/{CONVERSATION_ID}/seen", json={})
             self.assertEqual(
                 response.status_code, 200,
-                "/seen now checks left_at — good. Update this test to assert the "
-                "refusal and close the Stage 21 item.")
+                "with the gate off, /seen must behave exactly as it does in "
+                "production today")
             self.assertNotIn(SECRET, response.get_data(as_text=True),
                              "/seen must not return message content to anyone")
         finally:
             self._drop_membership()
+
+    def test_the_seen_route_refuses_a_departed_member_once_enforced(self):
+        """Partner to the test above: proves the gate does something. Without
+        this, 'off behaves as before' is satisfied by a fix that never works."""
+        self._set_membership(left_at="2026-01-03")
+        os.environ["SENTINEL_RECEIPT_PARTICIPATION_ENFORCED"] = "1"
+        try:
+            response = self.as_user(OUTSIDER_ID).post(
+                f"/api/pulse/messages/{CONVERSATION_ID}/seen", json={})
+            self.assertRefused(response, "seen after leaving, gate enforced")
+            self.assertEqual(
+                response.status_code, 404,
+                "a conversation the caller may not touch must be "
+                "indistinguishable from one that does not exist")
+        finally:
+            os.environ.pop("SENTINEL_RECEIPT_PARTICIPATION_ENFORCED", None)
+            self._drop_membership()
+
+    def test_enforcing_does_not_refuse_a_member_who_is_still_present(self):
+        """The failure mode that would matter in production. A gate that refuses
+        everyone is also a gate that 'correctly refuses departed members', and
+        turning it on would break every read receipt in the product."""
+        self._set_membership(left_at=None)
+        os.environ["SENTINEL_RECEIPT_PARTICIPATION_ENFORCED"] = "1"
+        try:
+            response = self.as_user(OUTSIDER_ID).post(
+                f"/api/pulse/messages/{CONVERSATION_ID}/seen", json={})
+            self.assertEqual(response.status_code, 200,
+                             response.get_data(as_text=True))
+        finally:
+            os.environ.pop("SENTINEL_RECEIPT_PARTICIPATION_ENFORCED", None)
+            self._drop_membership()
+
+    def test_the_emergency_switch_returns_seen_to_its_shipped_behaviour(self):
+        """Enforcement gates are revocable, and this one is reached by the
+        registry built in Stage 21 rather than by its own special case."""
+        self._set_membership(left_at="2026-01-03")
+        os.environ["SENTINEL_RECEIPT_PARTICIPATION_ENFORCED"] = "1"
+        os.environ["SENTINEL_EMERGENCY_KILL_SWITCH"] = "1"
+        try:
+            response = self.as_user(OUTSIDER_ID).post(
+                f"/api/pulse/messages/{CONVERSATION_ID}/seen", json={})
+            self.assertEqual(response.status_code, 200,
+                             "the emergency switch must revert enforcement")
+        finally:
+            os.environ.pop("SENTINEL_EMERGENCY_KILL_SWITCH", None)
+            os.environ.pop("SENTINEL_RECEIPT_PARTICIPATION_ENFORCED", None)
+            self._drop_membership()
+
+    def test_shadow_mode_records_the_refusal_it_did_not_make(self):
+        """The justification for shipping this dark is that the blast radius can
+        be measured from real traffic first. That is only true if something is
+        recorded, so a shadow gate that stays silent is indistinguishable from a
+        gate nobody wired up — and 'off' would be the honest name for it.
+
+        The route's call is what is checked here rather than the event reaching
+        the database: the emit path has its own suite, and requiring the bridge
+        and schema to be live would make this test fail for reasons that have
+        nothing to do with /seen.
+        """
+        calls = []
+        original = bot.sentinel_note_shadow_refusal
+        bot.sentinel_note_shadow_refusal = lambda *a, **kw: calls.append((a, kw))
+        self._set_membership(left_at="2026-01-03")
+        try:
+            response = self.as_user(OUTSIDER_ID).post(
+                f"/api/pulse/messages/{CONVERSATION_ID}/seen", json={})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(len(calls), 1, "shadow mode recorded nothing")
+            self.assertEqual(calls[0][0][0], "receipt_from_departed_member")
+            self.assertEqual(calls[0][0][2], CONVERSATION_ID)
+        finally:
+            bot.sentinel_note_shadow_refusal = original
+            self._drop_membership()
+
+    def test_a_present_member_produces_no_shadow_noise(self):
+        """Partner. A recorder that fires for everyone would show a huge blast
+        radius and argue against ever enabling the gate — the opposite of the
+        decision the signal exists to support."""
+        calls = []
+        original = bot.sentinel_note_shadow_refusal
+        bot.sentinel_note_shadow_refusal = lambda *a, **kw: calls.append((a, kw))
+        self._set_membership(left_at=None)
+        try:
+            self.as_user(OUTSIDER_ID).post(
+                f"/api/pulse/messages/{CONVERSATION_ID}/seen", json={})
+            self.assertEqual(calls, [], "a present member is not a would-be refusal")
+        finally:
+            bot.sentinel_note_shadow_refusal = original
+            self._drop_membership()
+
+    def test_a_stranger_is_still_refused_whatever_the_gate_says(self):
+        """Someone who was never a participant is refused today and must stay
+        refused with the gate off. The fix separates 'never joined' from
+        'joined and left', and collapsing them the wrong way would open the
+        route to strangers while looking like a tightening."""
+        self._drop_membership()
+        for enforced in ("0", "1"):
+            os.environ["SENTINEL_RECEIPT_PARTICIPATION_ENFORCED"] = enforced
+            try:
+                response = self.as_user(OUTSIDER_ID).post(
+                    f"/api/pulse/messages/{CONVERSATION_ID}/seen", json={})
+                self.assertRefused(response, f"stranger, enforced={enforced}")
+            finally:
+                os.environ.pop("SENTINEL_RECEIPT_PARTICIPATION_ENFORCED", None)
 
     def test_leaving_removes_access_on_every_route_that_grants_it(self):
         """Checked on all four routes rather than one.
