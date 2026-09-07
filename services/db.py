@@ -717,6 +717,17 @@ class CompatCursor:
     def rowcount(self):
         return getattr(self._cursor, "rowcount", -1)
 
+    def __iter__(self):
+        # sqlite3 cursors are iterable; supplier reads use that DB-API contract.
+        # Returning wrapped rows keeps named/indexed access identical on Postgres.
+        return self
+
+    def __next__(self):
+        row = self.fetchone()
+        if row is None:
+            raise StopIteration
+        return row
+
     def execute(self, sql, params=None):
         translated = _translate_sql(sql)
         params = tuple(params or ())
