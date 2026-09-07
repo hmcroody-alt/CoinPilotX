@@ -4,6 +4,13 @@ Baseline: `d8aaf911` on `main`. Worktree branch `feat/sentinel-server-defense-me
 Every claim below was read out of the repository or out of the live Railway
 project; nothing here is inferred from naming.
 
+> **Corrections applied during Stage 2.** Two claims in the first draft were
+> wrong, both from reading the package's documentation rather than its code:
+> the storage entry point is `store.ensure_schema()`, not `store.init_db()`
+> (no function of that name exists), and there are **22** tables, not 17. Both
+> surfaced the moment Stage 2 tried to *call* the thing this map described,
+> which is the argument for wiring early rather than mapping exhaustively first.
+
 ## 1. The headline finding
 
 **Sentinel is built and almost entirely unwired.**
@@ -12,7 +19,7 @@ project; nothing here is inferred from naming.
 package has:
 
 * no blueprint registered on the Flask app (`api.sentinel_bp` exists, nothing mounts it),
-* no `store.init_db()` call in the boot path, so **none of its 17 tables exist in production**,
+* no `store.ensure_schema()` call in the boot path, so **none of its 22 tables exist in production**,
 * exactly one live caller anywhere in the product: `alert_worker.py:79`
   `sentinel_runtime.run_scheduled_ingestion()`.
 
@@ -32,7 +39,7 @@ write a second security stack next to the dormant one.
 | Action broker | `runbooks.register()/execute()`, 3 cascading env gates, `EXECUTED_UNVERIFIED` → independent verifier → `COMPLETED` | `services/sentinel/runbooks.py` |
 | Incidents | `open_incident()`, 11-state machine, dedupe by `incident_key` | `services/sentinel/incidents.py` |
 | Correlation | CR1–CR5, each requires ≥2 events AND ≥2 distinct types (SC8) | `services/sentinel/correlation.py` |
-| Storage | 17 `sentinel_*` tables, `store.init_db()` | `services/sentinel/store.py` |
+| Storage | 22 `sentinel_*` tables + 29 indexes (51 statements), `store.ensure_schema()` | `services/sentinel/store.py` |
 | Evidence | append-only hash chain | `services/sentinel/evidence.py` |
 | Health | freshness-decaying `HealthSnapshot`; UNKNOWN/STALE/CONFIGURED are **not** healthy | `services/sentinel/health.py` |
 | Kill switches | emergency > master > domain > per-runbook | `services/sentinel/killswitches.py` |
@@ -53,8 +60,13 @@ implemented*. The correct move is to extend them, not to re-found them.
 1. **No request-path bridge into Sentinel.** Nothing in `bot.py` emits a
    `sentinel.Event`. Detection today is limited to whatever `alert_worker`
    scrapes on a schedule.
-2. **No Sentinel schema in production.** `store.init_db()` is never called, so
-   ingestion would fail against a live database.
+2. **No Sentinel schema in production.** `store.ensure_schema()` is never called,
+   so ingestion would fail against a live database. *(Closed in Stage 2.)*
+
+   Note the function's shape: handed a connection it does **not** commit, and on
+   PostgreSQL the uncommitted DDL still holds catalog locks, so the next
+   connection attempting the same creation blocks on it. Call it with its own
+   connection, or commit for it.
 3. **Distributed rate limiting does not exist.** See §4 — this is the most
    consequential gap.
 4. **`wrap_untrusted()` is never applied at context assembly.** The primitive
@@ -110,9 +122,30 @@ The shipped App Store binary is frozen. Status codes already in use:
 **401** invalid/expired token · **403** account restricted / email unconfirmed /
 admin permission · **423** Private Office locked · **429** rate limited.
 
-Login additionally returns **403** with `error: "login_challenge_required"`.
+Login additionally returns **403** with `error: "login_challenge_required"` —
+which the shipped client does not read, rendering it as "identifier mismatch".
+See Stage 1 §4.1.
 
 Any new enforcement must express itself only in these codes.
+
+## 5a. `bot.py` boot-path hazards found while wiring Stage 2
+
+* **`init_db` is defined twice** — `bot.py:807` and `bot.py:106154`. Python keeps
+  the second, so the first is dead code, exactly like the known double
+  `webhook_app = Flask(...)` at 384/1130. Anything added to the first definition
+  is silently discarded. The live one delegates to `_init_db_impl()`.
+* **`_init_db_impl` has no exception handler**, and `init_db()` wraps it only in
+  `try/finally`. It is reached from ordinary route handlers, so anything that
+  raises inside it becomes a request-time 500. Boot-time additions must catch
+  their own failures.
+* **`db()` opens a fresh connection on every call** (`bot.py:534`); there is no
+  per-request cached connection. Any per-request Sentinel write with
+  `conn=None` would therefore open a new DB connection per event — meaning
+  under attack, the moment the bridge matters most, it would amplify attacker
+  traffic into connection-pool exhaustion. This constrains Stage 3 to buffering.
+* The production boot path is `if __name__ != "__main__":
+  initialize_database_for_web_startup()` (`bot.py:119686`), which runs at import
+  under gunicorn.
 
 ## 6. Do not touch
 

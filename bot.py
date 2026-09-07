@@ -114998,7 +114998,45 @@ def _init_db_impl():
     conn.commit()
     conn.close()
     premium_entitlement_service.ensure_founder_schema()
+    _ensure_sentinel_schema()
     return True
+
+
+def _ensure_sentinel_schema():
+    """Create Sentinel's 22 tables at boot.
+
+    Until this call existed, ``services/sentinel/store.ensure_schema()`` had no
+    caller anywhere in the repository: the security package was fully built and
+    its storage had never been created, so any attempt to record a security
+    event would have failed against a live database.
+
+    Placed after ``conn.commit()``/``conn.close()`` above, following the
+    ``ensure_founder_schema`` precedent on the line before, because Sentinel's
+    bootstrap opens its own connection. Handing it this function's connection
+    would leave the DDL uncommitted while still holding catalog locks, and the
+    next worker to attempt the same creation would block on it.
+
+    Never raises. Sentinel observes and is not on the critical path, while
+    ``_init_db_impl`` has no exception handler and is reached from ordinary
+    route handlers — a security-package problem must not become a product
+    outage. The failure is recorded instead, and ``bootstrap.schema_state()``
+    reports it as unhealthy rather than unknown.
+    """
+    try:
+        from services.sentinel import bootstrap as sentinel_bootstrap
+    except Exception as exc:
+        # Nothing here can record state, because the recorder is what failed to
+        # import. Say so loudly under a greppable token instead of returning
+        # quietly, or Sentinel would appear merely idle rather than broken.
+        logging.error("SENTINEL_BOOTSTRAP_IMPORT_FAILED error=%s", str(exc)[:300])
+        return
+    try:
+        if not sentinel_bootstrap.bootstrap_enabled():
+            logging.info("SENTINEL_SCHEMA_BOOTSTRAP_DISABLED")
+            return
+        sentinel_bootstrap.ensure_schema()
+    except Exception as exc:  # pragma: no cover - bootstrap catches its own
+        logging.error("SENTINEL_BOOTSTRAP_UNEXPECTED_ERROR error=%s", str(exc)[:300])
 
 
 def help_message():
