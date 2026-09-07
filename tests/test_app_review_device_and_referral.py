@@ -8,6 +8,7 @@ module is imported directly — it is pure.
 """
 
 import ast
+import inspect
 import sqlite3
 import unittest
 from datetime import datetime, timedelta
@@ -22,6 +23,7 @@ import sys
 
 sys.path.insert(0, str(REPO))
 
+from services import app_links  # noqa: E402
 from services.device_classification import classify_device, device_family_fingerprint  # noqa: E402
 
 UA_IPHONE_SAFARI = (
@@ -206,6 +208,10 @@ def _referral_namespace(conn, user_agent):
         "hashlib": __import__("hashlib"),
         "REFERRAL_DEFERRED_CLAIM_WINDOW_HOURS": 48,
         "PULSESOC_APP_STORE_FALLBACK_URL": "https://apps.apple.com/us/app/pulsesoc/id6777591572",
+        # pulsesoc_app_store_url now delegates to the one link authority instead
+        # of carrying its own copy of the listing URL, so the extracted source
+        # needs the module the real bot.py has in scope.
+        "app_links": app_links,
     }
     for name in (
         "pulsesoc_app_store_url",
@@ -253,8 +259,16 @@ class ReferralRedirectTest(unittest.TestCase):
         self.assertIn("pulsesoc_app_store_url()", src)
         self.assertNotIn("request.args", src)
         url_src = extract_function("pulsesoc_app_store_url")
-        self.assertIn("https://apps.apple.com/", url_src)
         self.assertNotIn("request.", url_src)
+        # The listing URL moved into services.app_links so the referral redirect
+        # and the app-intent fallback share one authority. Follow the delegation
+        # rather than dropping the check: what matters is still that the target
+        # is a server constant and that nothing request-shaped can reach it.
+        self.assertNotIn("request.", inspect.getsource(app_links.app_store_url))
+        self.assertTrue(app_links.app_store_url().startswith("https://apps.apple.com/"))
+        self.assertTrue(
+            app_links.APP_STORE_FALLBACK_URL.startswith("https://apps.apple.com/")
+        )
 
 
 class DeferredClaimTest(unittest.TestCase):
