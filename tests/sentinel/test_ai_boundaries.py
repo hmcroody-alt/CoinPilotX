@@ -52,10 +52,15 @@ class TestThereIsOnlyOneFenceVocabulary:
 
     ROOT = pathlib.Path(__file__).resolve().parents[2]
 
+    # ``.claude/`` holds linked worktrees, which are whole checkouts nested inside
+    # this one. Without excluding them the scan finds every other branch's copy of
+    # the tree and reports it as a production caller.
+    SKIP_PREFIXES = ("tests/", "scripts/", ".venv/", "mobile/", "node_modules/", ".claude/")
+
     def _production_sources(self):
         for path in self.ROOT.rglob("*.py"):
             rel = path.relative_to(self.ROOT).as_posix()
-            if rel.startswith(("tests/", "scripts/", ".venv/", "mobile/", "node_modules/")):
+            if rel.startswith(self.SKIP_PREFIXES):
                 continue
             if rel == "services/sentinel/ai_security.py":
                 continue  # the definition itself
@@ -135,11 +140,15 @@ class TestTheModuleIsNotWiredToAnything:
     ROOT = pathlib.Path(__file__).resolve().parents[2]
     SYMBOLS = ("scan_for_injection", "record_injection_event", "wrap_untrusted")
 
+    # Same reason as TestThereIsOnlyOneFenceVocabulary.SKIP_PREFIXES: a nested
+    # worktree is another full copy of the tree, not a production caller.
+    SKIP_PREFIXES = ("tests/", "scripts/", ".venv/", "mobile/", "node_modules/", ".claude/")
+
     def _callers(self, symbol):
         found = []
         for path in self.ROOT.rglob("*.py"):
             rel = path.relative_to(self.ROOT).as_posix()
-            if rel.startswith(("tests/", "scripts/", ".venv/", "mobile/", "node_modules/")):
+            if rel.startswith(self.SKIP_PREFIXES):
                 continue
             if rel == "services/sentinel/ai_security.py":
                 continue
