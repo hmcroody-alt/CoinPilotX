@@ -68,6 +68,9 @@ INDIRECT_ACCESSORS = (
     "_flag",
     "_guard_enabled",
     "_truthy_env",
+    # `services/business_os/suppliers/policy.enabled` - the only public name here.
+    # It hid every CJ rollout gate except the two read through a bare os.getenv.
+    "enabled",
     "env_text",
     "pulse_live_audio_v2_env_flag",
     "subflag_enabled",
