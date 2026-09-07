@@ -109,6 +109,7 @@ class RateGuardRouteTest(unittest.TestCase):
         bot.RATE_LIMIT_BUCKETS.clear()
         pulse_security_core._RATE_BUCKETS.clear()
         security_guard.BUCKETS.clear()
+        security_guard._SWEEPS.clear()
         cache_engine._MEMORY.clear()
         cls._truncate()
 
@@ -423,6 +424,24 @@ class RateGuardRouteTest(unittest.TestCase):
         codes = [r.status_code for r in self.post_recover(effective + 2)]
         self.assertNotIn(429, codes[:effective])
         self.assertEqual(codes[effective:], [429, 429], codes)
+
+    def test_the_guard_actually_calls_the_bucket_sweep(self):
+        """Stage 21/30. ``basic_abuse_guard``'s dict is the largest of the three
+        leaking limiters — one key per (ip_hash, path) a worker has ever seen —
+        and the sweep that reclaims it is a single call inside this function.
+
+        Every test in ``tests/sentinel/test_bucket_sweep.py`` proves the sweep is
+        correct against a dict handed to it directly. None of them would notice
+        the call being deleted from here, which is exactly what a refactor of
+        this function drops: the guard would keep limiting correctly and keep
+        leaking, with no failing test and no error in production. ``_SWEEPS`` is
+        the per-dict bookkeeping the sweep writes, so the appearance of this
+        dict's name is proof the call site survived.
+        """
+        os.environ.pop("SENTINEL_DISTRIBUTED_LIMITS_MODE", None)
+        self.assertNotIn("bot.RATE_LIMIT_BUCKETS", security_guard._SWEEPS)
+        self.post_recover(1)
+        self.assertIn("bot.RATE_LIMIT_BUCKETS", security_guard._SWEEPS)
 
     def test_the_older_guards_limit_is_unreachable_on_this_route(self):
         """A finding this stage turned up, recorded rather than papered over.

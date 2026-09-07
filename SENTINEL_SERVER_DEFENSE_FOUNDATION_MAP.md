@@ -43,7 +43,7 @@ write a second security stack next to the dormant one.
 | Evidence | append-only hash chain | `services/sentinel/evidence.py` |
 | Health | freshness-decaying `HealthSnapshot`; UNKNOWN/STALE/CONFIGURED are **not** healthy | `services/sentinel/health.py` |
 | Kill switches | emergency > master > domain > per-runbook; **plus `GATES`, the registry every gate must appear in** (Stage 21) | `services/sentinel/killswitches.py` |
-| Prompt-injection primitives | `scan_for_injection()`, `wrap_untrusted()` | `services/sentinel/ai_security.py` |
+| Prompt-injection primitives — **no production callers**, see Stage 30 correction | `scan_for_injection()`, `wrap_untrusted()` | `services/sentinel/ai_security.py` |
 | UNDX tool authorization | `undx_tool_gateway.execute()` 9-step chokepoint; `undx_agent_policy.Decision` | `services/undx_tool_gateway.py`, `services/undx_agent_policy.py` |
 | Member login throttle | `login_security_preflight()` / `register_failed_login()` — **DB-backed**, per ip/email/domain | `bot.py:5360`, `bot.py:5491` |
 | Admin login throttle | `admin_gateway.login_rate_limited(conn, …)` — **DB-backed**, counts `admin_audit_logs` | `services/admin_gateway.py:138` |
@@ -193,6 +193,37 @@ vocabulary — and a payload that can forge one fence escapes whichever envelope
 is nested in, which is exactly why `envelope.RESERVED_TAGS` neutralises the *other*
 fence this repo renders. A pointer has been added to `ai_security.wrap_untrusted`
 saying so, because the next reader will be told to do what this brief told me to do.
+
+#### Stage 30 correction: `ai_security` is wired to nothing at all
+
+The pointer above originally said `wrap_untrusted` was "retained for the non-prompt
+uses it already has". That was an assumption, and it was wrong. Grepping the tree
+for real shows that **the entire module has no production callers** — not
+`wrap_untrusted`, not `scan_for_injection`, not `record_injection_event`. The only
+references outside the module are in `tests/sentinel/test_ai_boundaries.py`.
+
+This is worth stating plainly because of how it presents. The module reads like a
+control: it scans for injection, records an event instead of punishing, labels its
+method `heuristic_regex_v1` rather than claiming AI. Its tests pass. Row 46 and row
+594 of this document both list it. Every signal available short of grepping for call
+sites says "covered" — which makes it the precise shape of the thing Hard Rule #4
+forbids, arrived at by accretion rather than by anyone deciding to fake anything.
+
+It has deliberately **not** been wired in, and the two functions need different
+reasons:
+
+- `wrap_untrusted` **must not** be. `undx_brain.envelope` is the prompt boundary
+  and is strictly stronger; adding this one creates the second fence vocabulary the
+  paragraph above exists to prevent.
+- `scan_for_injection` *could* be, but where a detector runs is a policy decision —
+  which surfaces are scanned, and what an `injection_detected` event is permitted to
+  trigger. Wiring a detector into a request path as a side effect of a coverage
+  audit is how a detection quietly becomes an enforcement, which is the one thing
+  the closing directive of this mission rules out.
+
+`TestTheModuleIsNotWiredToAnything` pins the current state and fails the day it
+changes, with a message saying to update this section at the same time. Rows 46 and
+594 now carry the qualifier.
 
 **What was actually broken: the seam between two correct clamps.**
 `context_block` clamps its payload to 4000 characters *before* sealing, precisely
@@ -480,6 +511,20 @@ rather than by review:
   single stamp, where `min` and `max` are the same value. The test that kills
   it uses a bucket with stamps on both sides of the edge.
 
+#### Stage 30: the sweep was correct and half-connected
+
+The properties above are all about `sweep_expired` itself, tested against a dict
+handed to it directly. That proved the function and said nothing about whether
+anything calls it — and a sweep nobody calls frees exactly as much memory as no
+sweep at all, with no failing test, no error, and no log line. Deleting the call
+is also the likeliest regression, because each call site is three lines of
+housekeeping inside a function whose actual job is something else.
+
+Both call sites now have a mutant (W7 `pulse_security_core`, W8
+`basic_abuse_guard`) and a test that watches for the sweep's own per-dict
+bookkeeping key appearing in `security_guard._SWEEPS` after a real call. Checked
+that way rather than by reading the source, because the source is what changes.
+
 ### There is no Redis
 
 Verified against the live project (`railway variables`, 228 distinct names):
@@ -570,6 +615,39 @@ bridge uses `reqbridge:{uuid4}`; idempotency is not weakened by this, because
 `flush()` pops events off the buffer before writing, so no event is ever
 offered to `ingest()` twice.
 
+## 5c. Stage 30: what the coverage audit found
+
+The audit asked one question of every file this mission changed: is there a
+mutation of this code that the suite would not notice? 85 mutants, all killed.
+Three of the gaps it closed are worth recording, because each was invisible from
+inside the tests that were supposed to cover it.
+
+**A control can be correct and unreachable.** The bucket sweep (§4) was proven by
+six mutants and connected by nothing that any test observed. Fixed by W7/W8 above.
+
+**A seam can be tested from only one side.** The Stage 10 fix depends on
+`pulse_ai_service` stamping `envelope_sealed` on the web-search knowledge item.
+Every seam test built that item by hand — correct for testing the *renderer*, and
+it left the *producer* covered by nothing: pinning the marker to `False` restored
+the original defect and passed all 66 tests in the two seam files. The expression
+was inline in `send_message`, unreachable without a database cursor and a provider
+call, so no test could have caught it. It is now
+`pulse_ai_service.web_search_knowledge_item`, a named seam with mutants P1–P3.
+The two directions of a wrong marker are not symmetric and P1/P2 keep them apart:
+over-claiming is caught downstream by `is_sealed`, under-claiming is caught by
+nothing and feeds a sealed envelope to the 700-character clamp.
+
+**A module can look like a control and be wired to nothing.** See the Stage 30
+correction in §3: all three public functions of `ai_security` have zero production
+callers. This one is not a test gap that got fixed — it is a live finding, left in
+place deliberately, with the reasoning and the follow-up decision recorded there.
+
+The audit also confirmed one thing was already covered rather than assuming it:
+dropping `UNIQUE` from the shared counter's index (mutant S1) fails eight tests in
+`test_rate_limit.py`. Schema is code in this repo — `init_db` is imperative and
+there is no migration framework — so a one-word edit to a `CREATE` string is a
+silent change to a concurrency guarantee.
+
 ## 6. Do not touch
 
 * `mobile-native/**`, `ios/**`, Expo/EAS config — Hard Rule #1, expected diff 0.
@@ -591,7 +669,7 @@ offered to `ingest()` twice.
 | A login throttle | `login_security_preflight()` (member), `admin_gateway` (admin) |
 | A rate-limit policy table | `bot.ABUSE_GUARD_PROTECTED` (auth/checkout paths), `pulse_security_core.HIGH_RISK_RATE_RULES` — `sentinel.rate_limit` counts, callers set limits |
 | A session store | `mobile_security_sessions` |
-| An injection scanner | `ai_security.scan_for_injection()` |
+| An injection scanner | `ai_security.scan_for_injection()` — exists but is called by nothing; reuse it rather than writing a second one, and see the Stage 30 correction before wiring it to a request path |
 | A UNDX tool gate | `undx_tool_gateway.execute()` |
 | An object-ownership check | the roster idiom above — `pulse_conversation_participants` for chat, `WHERE id=? AND user_id=?` in services, `pulse_advertiser_portal._require_account_role` for ad accounts. Stage 5/29 tests and observes these; it does not replace them |
 | An invariant engine | `sentinel.invariants.INVARIANTS` + `run_all()` — add a check to the dict, never a second engine |

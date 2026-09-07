@@ -76,10 +76,22 @@ def wrap_untrusted(text: str) -> str:
     Adding a second boundary beside it would give the codebase two fence
     vocabularies, and a payload that can forge one fence escapes whichever envelope
     it is nested in — which is precisely why ``envelope.RESERVED_TAGS`` neutralises
-    the *other* fence this repository renders. This function is retained for the
-    non-prompt uses it already has, and its markers are deliberately not added to
-    that reserved list, because doing so would be the first step toward treating it
-    as a parallel mechanism.
+    ``pulsesoc_source_knowledge``, the *other* fence this repository renders.
+
+    An earlier draft of this note said the function was "retained for the non-prompt
+    uses it already has". That was wrong, and grepping rather than assuming is what
+    caught it: as of this commit ``wrap_untrusted`` has **no production callers at
+    all** — one test exercises it and nothing else in the tree references it. So the
+    accurate statement is that this is an unused second fence mechanism kept for its
+    tests, and the danger is not that it is misused today but that "retained" reads
+    like an invitation to a maintainer looking for a wrapper. Its markers are
+    deliberately absent from ``RESERVED_TAGS``, because adding them would be the
+    first step toward treating it as a parallel mechanism rather than as the dead
+    code it currently is.
+
+    ``tests/sentinel/test_ai_boundaries.py`` enforces the instruction in the first
+    paragraph by scanning for call sites, because an instruction that lives only in
+    a docstring decays the moment someone does not read it.
     """
     content = str(text or "")
     content = content.replace(UNTRUSTED_OPEN, "[untrusted-open]")

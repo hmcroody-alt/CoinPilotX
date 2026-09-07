@@ -173,6 +173,17 @@ class TestTheOlderGuardSweepsToo:
             600, now=time.time() + 3601)
         assert pulse_security_core._RATE_BUCKETS == {}
 
+    def test_the_older_guard_actually_calls_the_sweep(self):
+        """A correct sweep nobody calls frees nothing, and every other test in
+        this file would still pass. ``_SWEEPS`` is the bookkeeping the sweep
+        keeps per dict, so its appearance under this name is proof the call site
+        exists — checked here rather than by reading the source, because the
+        call site is what a refactor drops."""
+        assert "pulse_security_core._RATE_BUCKETS" not in security_guard._SWEEPS
+        pulse_security_core.rate_limited(
+            path="/api/mobile/auth/recover", method="POST", ip_hash="wiring")
+        assert "pulse_security_core._RATE_BUCKETS" in security_guard._SWEEPS
+
     def test_it_still_limits_at_its_configured_rule(self):
         """Partner: the sweep must not have loosened the guard it is housekeeping
         for. ``/api/mobile/auth/recover`` is 5 per 600s."""

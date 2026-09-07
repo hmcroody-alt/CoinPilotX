@@ -559,6 +559,78 @@ SWEEP_MUTANTS = [
      [("    if not limited:\n        bucket.append(now)", "    if False:\n        bucket.append(now)")]),
 ]
 
+# Stage 30. The sweep above is proven correct against a dict handed to it
+# directly. That says nothing about whether anything calls it. A sweep nobody
+# calls frees exactly as much memory as no sweep at all, and it fails silently:
+# the limiters keep limiting correctly, no test errors, no log line, the process
+# just grows. Deleting a call is also the most likely way for this to regress,
+# because the call sites are three lines of housekeeping inside functions whose
+# actual job is something else. So each call site gets its own mutant.
+SWEEPWIRE_CORE_TARGET = ROOT / "services/pulse_security_core.py"
+
+SWEEPWIRE_CORE_MUTANTS = [
+    ("W7 the older guard stops sweeping its own dict",
+     [('    security_guard.sweep_expired(\n'
+       '        "pulse_security_core._RATE_BUCKETS", _RATE_BUCKETS,\n'
+       '        rule.window_seconds, now=now)',
+       '    pass')]),
+]
+
+SWEEPWIRE_BOT_TARGET = ROOT / "bot.py"
+SWEEPWIRE_BOT_TESTS = "tests/sentinel_integration/test_rate_guard_routes.py"
+
+SWEEPWIRE_BOT_MUTANTS = [
+    ("W8 basic_abuse_guard stops sweeping its own dict",
+     [('    security_guard.sweep_expired(\n'
+       '        "bot.RATE_LIMIT_BUCKETS", RATE_LIMIT_BUCKETS, window_seconds, now=now)',
+       '    pass')]),
+]
+
+# Stage 30. The other half of the Stage 10 seam. The seam tests all build the
+# knowledge item by hand, which is correct for testing the renderer and left the
+# only thing that builds it in production covered by nothing: P1 below survived
+# the entire seam suite before ``web_search_knowledge_item`` was extracted.
+PRODUCER_TARGET = ROOT / "services/pulse_ai_service.py"
+PRODUCER_TESTS = "tests/undx_brain/test_prompt_boundary_seam.py"
+
+_PRODUCER_MARKER = '"body": web_context, "envelope_sealed": envelope.enabled(env)}'
+
+PRODUCER_MUTANTS = [
+    # The Stage 10 defect restored from the producer side: sealed content is not
+    # marked, so the 700-character knowledge clamp cuts the envelope open again.
+    ("P1 the producer never marks its output as sealed",
+     [(_PRODUCER_MARKER, '"body": web_context, "envelope_sealed": False}')]),
+
+    # The opposite lie. Caught downstream by is_sealed, but the producer should
+    # not be the one relying on that.
+    ("P2 the producer marks everything sealed regardless of the flag",
+     [(_PRODUCER_MARKER, '"body": web_context, "envelope_sealed": True}')]),
+
+    # The mistake the docstring exists to prevent: asking the untrusted string
+    # whether it is trustworthy, which lets a search result forge its own
+    # exemption from the clamp by containing both fence tokens.
+    ("P3 the producer sniffs the body instead of reading the flag",
+     [(_PRODUCER_MARKER,
+       '"body": web_context, "envelope_sealed": envelope.is_sealed(web_context)}')]),
+]
+
+# Stage 30. Schema is code here — `init_db` is imperative and there is no
+# migration framework, so a one-word edit to a CREATE string is a silent change
+# to a concurrency guarantee. The UNIQUE index is what makes the shared counter's
+# increment-and-read a single atomic statement instead of a read-then-write race
+# between four gunicorn workers; without it `ON CONFLICT` has no arbiter and the
+# limit reverts to per-worker, which is the exact defect Stage 6 exists to fix.
+SCHEMA_TARGET = ROOT / "services/sentinel/store.py"
+SCHEMA_TESTS = "tests/sentinel/test_rate_limit.py"
+
+SCHEMA_MUTANTS = [
+    ("S1 the rate-counter index loses UNIQUE, so ON CONFLICT has no arbiter",
+     [('"CREATE UNIQUE INDEX IF NOT EXISTS ux_sentinel_rate_counters_window ON '
+       'sentinel_rate_counters(scope, subject, window_start)",',
+       '"CREATE INDEX IF NOT EXISTS ux_sentinel_rate_counters_window ON '
+       'sentinel_rate_counters(scope, subject, window_start)",')]),
+]
+
 SUITES = [
     ("services/sentinel/request_bridge.py", BRIDGE_TARGET, BRIDGE_TESTS, BRIDGE_MUTANTS),
     ("services/sentinel/rate_limit.py", RATE_TARGET, RATE_TESTS, RATE_MUTANTS),
@@ -577,6 +649,14 @@ SUITES = [
      GATEBRIDGE_TARGET, GATE_TESTS, GATEBRIDGE_MUTANTS),
     ("services/security_guard.py (Stage 21 bucket sweep)",
      SWEEP_TARGET, SWEEP_TESTS, SWEEP_MUTANTS),
+    ("services/pulse_security_core.py (Stage 30 sweep wiring)",
+     SWEEPWIRE_CORE_TARGET, SWEEP_TESTS, SWEEPWIRE_CORE_MUTANTS),
+    ("bot.py (Stage 30 sweep wiring)",
+     SWEEPWIRE_BOT_TARGET, SWEEPWIRE_BOT_TESTS, SWEEPWIRE_BOT_MUTANTS),
+    ("services/pulse_ai_service.py (Stage 30 seam producer)",
+     PRODUCER_TARGET, PRODUCER_TESTS, PRODUCER_MUTANTS),
+    ("services/sentinel/store.py (Stage 30 counter schema)",
+     SCHEMA_TARGET, SCHEMA_TESTS, SCHEMA_MUTANTS),
 ]
 
 survived = []
