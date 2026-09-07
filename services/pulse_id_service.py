@@ -7,6 +7,7 @@ are not used to allocate new identities.
 
 from __future__ import annotations
 
+import logging
 import re
 
 
@@ -62,10 +63,22 @@ def ensure_schema(cur, *, is_postgres: bool = False) -> int:
     ]
     used: set[str] = set()
     changed = 0
+    skipped = 0
     for row in rows:
         user_id = int(row.get("user_id") or 0)
         current = normalize_pulse_id(row.get("pulse_id"))
-        candidate = current if current and current not in used else canonical_pulse_id(user_id)
+        needs_new_id = not current or current in used
+        if needs_new_id and user_id <= 0:
+            # There is no safe id to mint for a non-account row. Formatting the
+            # negative value gives "PLS--920871340", which fails PULSE_ID_RE and
+            # so would be re-minted on every boot; abs() gives a well-formed id
+            # that collides with the real account of that number, and since this
+            # scan is ascending the negative row would claim it first and
+            # permanently bump the legitimate user. NULL is the supported state —
+            # the unique index below is partial for exactly that reason.
+            skipped += 1
+            continue
+        candidate = current if not needs_new_id else canonical_pulse_id(user_id)
         counter = 1
         base = candidate
         while candidate in used:
@@ -75,6 +88,10 @@ def ensure_schema(cur, *, is_postgres: bool = False) -> int:
         if candidate != row.get("pulse_id"):
             cur.execute("UPDATE users SET pulse_id=? WHERE user_id=?", (candidate, user_id))
             changed += 1
+    if skipped:
+        logging.warning(
+            "PULSE_ID_BACKFILL_SKIPPED_NON_POSITIVE_ID count=%s assigned=%s", skipped, changed
+        )
     cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_users_pulse_id ON users(pulse_id) WHERE pulse_id IS NOT NULL")
     return changed
 
