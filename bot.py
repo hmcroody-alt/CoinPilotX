@@ -2735,14 +2735,26 @@ def add_pwa_headers(response):
     return response
 
 
+CANONICAL_HTTPS_ORIGIN = "https://pulsesoc.com"
+CANONICAL_HTTPS_HOSTS = {"pulsesoc.com", "www.pulsesoc.com"}
+
+
 @webhook_app.before_request
 def enforce_https():
     host = request.host.split(":")[0]
     if host in {"localhost", "127.0.0.1", "0.0.0.0"}:
         return None
     forwarded_proto = request.headers.get("X-Forwarded-Proto", request.scheme)
-    if forwarded_proto == "http":
-        return redirect(request.url.replace("http://", "https://", 1), code=301)
+    if forwarded_proto != "http":
+        return None
+    # Never build the target from request.host: the Host header is client-supplied,
+    # so echoing it turns this hook into an open redirect.
+    lowered = host.lower()
+    origin = f"https://{lowered}" if lowered in CANONICAL_HTTPS_HOSTS else CANONICAL_HTTPS_ORIGIN
+    path = request.full_path or request.path or "/"
+    if path.endswith("?"):
+        path = path[:-1]
+    return redirect(f"{origin}{path}", code=301)
 
 
 @webhook_app.before_request
