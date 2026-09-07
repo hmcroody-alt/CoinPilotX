@@ -45659,10 +45659,18 @@ def pulse_public_id_for_user(user_id):
 
 
 def pulse_id_for_user(cur, user_id):
+    user_id = int(user_id or 0)
+    if user_id <= 0:
+        # Both arms below mint through canonical_pulse_id, which raises on a
+        # non-positive id — so the except arm re-raised the very error it was
+        # written to absorb. Returning "" keeps the fallback total and matches
+        # normalize_pulse_id, which the `ident.get(...) or ...` callers of the
+        # sibling helper already rely on being falsy.
+        return ""
     try:
-        return pulse_id_service.ensure_user_pulse_id(cur, int(user_id or 0))
+        return pulse_id_service.ensure_user_pulse_id(cur, user_id)
     except Exception:
-        return pulse_id_service.canonical_pulse_id(int(user_id or 0))
+        return pulse_id_service.canonical_pulse_id(user_id)
 
 
 def pulse_media_url(url):
@@ -107182,7 +107190,17 @@ def _init_db_impl():
     # here (rather than only in the legacy initializer near the top of this
     # module) so every deployed database is backfilled before profile queries
     # can select users.pulse_id.
-    pulse_id_service.ensure_schema(cur, is_postgres=db_service.IS_POSTGRES)
+    #
+    # Guarded because it is a data migration over every row of `users` sitting
+    # above ~8,300 lines of DDL that have no other home: a raise here does not
+    # fail the boot loudly, it truncates the schema at this line. One row with an
+    # id the backfill could not mint an identity for left 49 tables of 586. The
+    # trade-off is a swallowed failure leaving pulse_id unbackfilled, which is
+    # why this logs rather than passes — degraded profile lookups beat no schema.
+    try:
+        pulse_id_service.ensure_schema(cur, is_postgres=db_service.IS_POSTGRES)
+    except Exception as exc:
+        logging.exception("PULSE_ID_SCHEMA_SKIPPED error=%s", exc)
 
     ensure_user_presence_schema(cur, conn)
     ensure_mobile_security_session_schema(cur)
