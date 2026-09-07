@@ -42,3 +42,18 @@ def test_staging_probe_is_truthful_without_redirecting_to_production(monkeypatch
     # No other route/method is exempted from the existing application hooks.
     assert client.post("/health/ready").status_code == 301
     assert client.get("/api/business-os/suppliers/cj/connections").status_code == 301
+
+
+def test_postgres_cursor_iteration_preserves_mapping_and_consumption():
+    from services.db import CompatCursor
+    class RawCursor:
+        description = [("id",), ("value",)]
+        def __init__(self):
+            self.rows = iter([(1, "first"), (2, "second")])
+        def fetchone(self):
+            return next(self.rows, None)
+    cursor = CompatCursor(RawCursor())
+    first = next(cursor)
+    assert first[0] == first["id"] == 1
+    assert [dict(row) for row in cursor] == [{"id": 2, "value": "second"}]
+    assert list(cursor) == []

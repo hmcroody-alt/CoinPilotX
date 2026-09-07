@@ -5,6 +5,7 @@ This helper refuses any project/environment/service outside this new staging sta
 It never reads production configuration, rotates an existing index key, or enables CJ.
 """
 import argparse
+import base64
 import json
 import os
 from pathlib import Path
@@ -119,12 +120,57 @@ def pgtest():
     return result.returncode
 
 
+def pgremote():
+    """Run the same test source beside staging Postgres to avoid WAN timing noise.
+
+    Only a source/test archive goes through SSH, never database credentials.
+    A disposable directory/vendor install does not modify the running worker.
+    """
+    paths = ["tests/__init__.py", "tests/staging/test_cj_postgres.py",
+             "services/__init__.py", "services/db.py", "scripts/verify_cj_postgres_acceptance.py"]
+    paths += ["tests/business_os/test_cj_" + name + ".py" for name in
+              ("connections", "quota", "gateway", "fulfillment", "webhooks", "worker")]
+    archive = subprocess.run(["tar", "-czf", "-", *paths], cwd=ROOT, capture_output=True, check=True).stdout
+    encoded = base64.b64encode(archive).decode("ascii")
+    remote = '''import base64,io,json,os,pathlib,runpy,subprocess,sys,tarfile,tempfile
+import cj_staging_runtime
+cj_staging_runtime.guard()
+with tempfile.TemporaryDirectory(prefix="cj-pg-acceptance-") as target:
+    with tarfile.open(fileobj=io.BytesIO(base64.b64decode(ARCHIVE)),mode="r:gz") as bundle:
+        bundle.extractall(target,filter="data")
+    vendor=str(pathlib.Path(target)/"vendor")
+    installed=subprocess.run([sys.executable,"-m","pip","install","--quiet","--target",vendor,"pytest>=8,<9"],capture_output=True,text=True)
+    if installed.returncode:
+        print(json.dumps({"result":"FAIL","reason":"staging_test_dependency_install_failed"})); sys.exit(1)
+    os.chdir(target)
+    sys.path[:0]=[target,vendor]
+    import services
+    services.__path__.insert(0,str(pathlib.Path(target)/"services"))
+    # The guard imports vault, not DB; fail closed if runtime import order changes.
+    assert "services.db" not in sys.modules
+    os.environ["CJ_ACCEPTANCE_DATABASE_URL"]=os.environ["DATABASE_URL"]
+    os.environ["CJ_ACCEPTANCE_POSTGRES_APPROVED"]="1"
+    os.environ["PYTEST_DISABLE_PLUGIN_AUTOLOAD"]="1"
+    runpy.run_path(str(pathlib.Path(target)/"scripts/verify_cj_postgres_acceptance.py"),run_name="__main__")
+'''.replace("ARCHIVE", repr(encoded))
+    result = subprocess.run(["railway", "ssh", "-p", PROJECT, "-e", ENVIRONMENT,
+                             "-s", WORKER, "--", "python", "-c", remote],
+                            cwd=ROOT, capture_output=True, text=True, timeout=600)
+    output = result.stdout + result.stderr
+    for service in (WORKER, POSTGRES):
+        for name, value in variables(service).items():
+            if isinstance(value, str) and len(value) > 8 and any(part in name for part in ("KEY", "PASSWORD", "DATABASE_URL")):
+                output = output.replace(value, "[REDACTED]")
+    print(output, end="")
+    return result.returncode
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("provision", "verify", "pgtest"))
+    parser.add_argument("action", choices=("provision", "verify", "pgtest", "pgremote"))
     args = parser.parse_args()
     try:
-        return {"provision": provision, "verify": verify, "pgtest": pgtest}[args.action]() or 0
+        return {"provision": provision, "verify": verify, "pgtest": pgtest, "pgremote": pgremote}[args.action]() or 0
     except Exception as error:
         print(json.dumps({"ok": False, "error_type": type(error).__name__, "details": "withheld"}))
         return 1

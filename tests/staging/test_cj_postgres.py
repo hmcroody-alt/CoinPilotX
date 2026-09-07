@@ -67,11 +67,13 @@ def database(monkeypatch):
     normalized = db._normalize_engine_url(url)
     schema_name = "cj_acceptance_" + uuid.uuid4().hex
     assert re.fullmatch(r"cj_acceptance_[a-f0-9]{32}", schema_name)
-    admin = create_engine(normalized, connect_args={"connect_timeout": 15})
+    admin = create_engine(normalized, connect_args={"connect_timeout": 15,
+                          "options": "-c lock_timeout=10000 -c statement_timeout=30000"})
     with admin.begin() as connection:
         connection.execute(text('CREATE SCHEMA "' + schema_name + '"'))
     engine = create_engine(normalized, pool_size=8, max_overflow=4, pool_pre_ping=True,
-                           connect_args={"connect_timeout": 15, "options": "-c search_path=" + schema_name})
+                           connect_args={"connect_timeout": 15, "options": "-c search_path=" + schema_name
+                                         + " -c lock_timeout=10000 -c statement_timeout=30000"})
     monkeypatch.setattr(db, "engine", engine)
     monkeypatch.setattr(db, "IS_POSTGRES", True)
     monkeypatch.setattr(db, "ENGINE_NAME", "postgresql")
@@ -85,6 +87,13 @@ def database(monkeypatch):
     monkeypatch.setenv("SUPPLIER_CREDENTIAL_KEY_ACTIVE", "test")
     monkeypatch.setenv("SUPPLIER_ACCOUNT_INDEX_KEY", "24" * 32)
     monkeypatch.delenv("CJ_EGRESS_GROUP", raising=False)
+    opened = []
+    original_connect = db.connect
+    def tracked_connect():
+        connection = original_connect()
+        opened.append(connection)
+        return connection
+    monkeypatch.setattr(db, "connect", tracked_connect)
     import requests
     def no_http(*args, **kwargs):
         raise AssertionError("Live HTTP forbidden during PostgreSQL fixture acceptance")
@@ -112,6 +121,10 @@ def database(monkeypatch):
             conn.close()
         yield
     finally:
+        # A failed assertion can retain a cursor/connection in pytest's traceback.
+        # Close those explicitly before schema cleanup instead of waiting on GC.
+        for connection in opened:
+            connection.close()
         engine.dispose()
         with admin.begin() as connection:
             # Only the random schema created by this test, never public/customer data.

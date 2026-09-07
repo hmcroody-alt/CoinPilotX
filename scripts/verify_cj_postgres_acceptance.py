@@ -19,9 +19,18 @@ def main():
     os.environ["DATABASE_URL"] = url
     os.environ["COINPILOTX_DISABLE_LOCAL_ENV"] = "1"
     output = io.StringIO()
+    progress_path = ROOT / "outputs" / "cj-postgres-progress.log"
+    progress_path.parent.mkdir(exist_ok=True)
+    progress_path.write_text("")
+    class Progress:
+        def pytest_runtest_logreport(self, report):
+            if report.when == "call" or report.failed:
+                with progress_path.open("a") as stream:
+                    stream.write(json.dumps({"test": report.nodeid, "phase": report.when,
+                                             "outcome": report.outcome}) + "\n")
     with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
         import pytest
-        code = pytest.main(["-q", "--tb=short", "--no-header", "tests/staging/test_cj_postgres.py"])
+        code = pytest.main(["-q", "-x", "--tb=short", "--no-header", "tests/staging/test_cj_postgres.py"], plugins=[Progress()])
     report = output.getvalue()
     for secret in (url, urlparse(url).password):
         if secret:
