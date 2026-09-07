@@ -10,6 +10,9 @@ import { createThemedStyles } from "../theme/themedStyles";
 
 type ResolveState = "resolving" | "ready" | "unavailable";
 
+const REPLAY_POLL_INTERVAL_MS = 3_000;
+const REPLAY_POLL_LIMIT = 40;
+
 /**
  * Dedicated viewer for a finished broadcast's replay. Plays the real recorded
  * Mux HLS asset with native scrubbing controls. When the backend hasn't produced
@@ -25,33 +28,53 @@ export function ReplayViewerScreen({ route, navigation }: NativeStackScreenProps
   const [state, setState] = useState<ResolveState>(paramUrl ? "ready" : "resolving");
   const [failed, setFailed] = useState(false);
   const videoRef = useRef<Video | null>(null);
+  const rejectedUrlRef = useRef("");
 
   useEffect(() => {
-    if (paramUrl || liveId <= 0) {
+    if ((paramUrl && !failed) || liveId <= 0) {
       if (!paramUrl) setState("unavailable");
       return;
     }
     let cancelled = false;
-    getLiveState(liveId)
-      .then((liveState) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let attempts = 0;
+
+    const resolveReplay = async () => {
+      attempts += 1;
+      try {
+        const liveState = await getLiveState(liveId);
         if (cancelled) return;
         const resolved = livePlaybackUrl(liveState);
-        if (resolved) {
+        if (resolved && resolved !== rejectedUrlRef.current) {
           setUrl(resolved);
+          setFailed(false);
           if (!poster) setPoster(livePosterUrl(liveState));
           setState("ready");
-        } else {
+          return;
+        }
+        const archive = liveState.archive;
+        const terminal = archive?.status === "failed" || archive?.status === "unavailable";
+        if (!terminal && attempts < REPLAY_POLL_LIMIT) {
+          timer = setTimeout(resolveReplay, REPLAY_POLL_INTERVAL_MS);
+          return;
+        }
+        setState("unavailable");
+      } catch {
+        if (!cancelled && attempts < REPLAY_POLL_LIMIT) {
+          timer = setTimeout(resolveReplay, REPLAY_POLL_INTERVAL_MS);
+        } else if (!cancelled) {
           setState("unavailable");
         }
-      })
-      .catch(() => {
-        if (!cancelled) setState("unavailable");
-      });
+      }
+    };
+
+    void resolveReplay();
     return () => {
       cancelled = true;
+      if (timer) clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveId, paramUrl]);
+  }, [failed, liveId, paramUrl]);
 
   const title = String(route.params?.title || "Replay");
   const creator = String(route.params?.creator || "");
@@ -70,7 +93,11 @@ export function ReplayViewerScreen({ route, navigation }: NativeStackScreenProps
           isLooping={false}
           usePoster={Boolean(poster)}
           posterSource={poster ? { uri: poster } : undefined}
-          onError={() => setFailed(true)}
+          onError={() => {
+            rejectedUrlRef.current = url;
+            setFailed(true);
+            if (liveId > 0) setState("resolving");
+          }}
         />
       ) : (
         <View style={StyleSheet.absoluteFill}>
