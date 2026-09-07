@@ -361,6 +361,27 @@ export type RootStackParamList = {
    */
   BusinessOsActivity: { title?: string; filter?: "all" | "social" | "marketplace" | "orders" | "system" } | undefined;
   SellerStore: { title?: string; mode?: "overview" | "apply" | "dashboard" | "profile" | "create" | "payouts" | "orders"; sellerId?: string; listingId?: number } | undefined;
+  /**
+   * Dropshipping. Nine routes rather than one because the merchant journey has
+   * nine distinct decisions in it, and the layers they act on are genuinely
+   * different things: a supplier connection is not a catalogue product, which
+   * is not an import-cart line, which is not a draft listing.
+   *
+   * `connectionId` is threaded explicitly instead of being held in a store. A
+   * merchant can connect more than one supplier, and a screen that inferred
+   * "the current connection" would eventually import from the wrong one.
+   */
+  Dropshipping: { title?: string } | undefined;
+  DropshippingSuppliers: { title?: string } | undefined;
+  DropshippingConnect: { title?: string } | undefined;
+  DropshippingCatalog: { connectionId: string; title?: string };
+  DropshippingProduct: { connectionId: string; externalProductId: string; title?: string };
+  DropshippingCart: { connectionId: string; title?: string };
+  DropshippingProducts: { connectionId: string; title?: string };
+  /** `listingId` is a PulseSoc listing id — the draft, not the supplier product. */
+  DropshippingDraft: { connectionId: string; listingId: number; title?: string };
+  DropshippingOrders: { title?: string } | undefined;
+  DropshippingSync: { connectionId: string; title?: string };
   BuyerOrders: { orderId?: number; source?: string; title?: string } | undefined;
   BuyerOrderDetail: { orderId: number; source?: string; title?: string };
   BuyerPurchases: { title?: string } | undefined;

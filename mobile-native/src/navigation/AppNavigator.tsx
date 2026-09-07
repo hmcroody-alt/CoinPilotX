@@ -68,6 +68,16 @@ import { SellerApplicationScreen } from "../screens/SellerApplicationScreen";
 import { SellerListingComposerScreen } from "../screens/SellerListingComposerScreen";
 import { SellerStoreRoute } from "../screens/SellerStoreRoute";
 import { SellerStoreScreen } from "../screens/SellerStoreScreen";
+import { ConnectSupplierScreen } from "../screens/dropshipping/ConnectSupplierScreen";
+import { DropshippingHubScreen } from "../screens/dropshipping/DropshippingHubScreen";
+import { DropshippingOrdersScreen } from "../screens/dropshipping/DropshippingOrdersScreen";
+import { DropshippingProductsScreen } from "../screens/dropshipping/DropshippingProductsScreen";
+import { DropshippingSyncScreen } from "../screens/dropshipping/DropshippingSyncScreen";
+import { ImportCartScreen } from "../screens/dropshipping/ImportCartScreen";
+import { ReviewImportedProductScreen } from "../screens/dropshipping/ReviewImportedProductScreen";
+import { SupplierCatalogScreen } from "../screens/dropshipping/SupplierCatalogScreen";
+import { SupplierProductScreen } from "../screens/dropshipping/SupplierProductScreen";
+import { SuppliersScreen } from "../screens/dropshipping/SuppliersScreen";
 import { DeveloperSettingsScreen } from "../screens/settings/DeveloperSettingsScreen";
 import { BuyerOrdersScreen } from "../screens/BuyerOrdersScreen";
 import { CameraStudioScreen } from "../screens/CameraStudioScreen";
@@ -535,6 +545,19 @@ export function AppNavigator() {
             : { title: route.params?.title || t("common:screens.sellerStore") }
         }
       />
+      {/* Dropshipping. Every one of these draws its own StoreHeader — the same
+          navy header the Store dashboard uses — so the stack header is hidden
+          throughout rather than stacked on top of it. */}
+      <Stack.Screen name="Dropshipping" component={DropshippingHubScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="DropshippingSuppliers" component={SuppliersScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="DropshippingConnect" component={ConnectSupplierScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="DropshippingCatalog" component={SupplierCatalogScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="DropshippingProduct" component={SupplierProductScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="DropshippingCart" component={ImportCartScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="DropshippingProducts" component={DropshippingProductsScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="DropshippingDraft" component={ReviewImportedProductScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="DropshippingOrders" component={DropshippingOrdersScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="DropshippingSync" component={DropshippingSyncScreen} options={{ headerShown: false }} />
       <Stack.Screen name="BuyerOrders" component={BuyerOrdersScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.purchaseHistory") })} />
       <Stack.Screen name="BuyerOrderDetail" component={BuyerOrdersScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.orderDetail") })} />
       <Stack.Screen name="BuyerPurchases" component={BuyerOrdersScreen} options={{ title: t("common:screens.purchaseHistory") }} />

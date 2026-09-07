@@ -412,6 +412,17 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
             onPress: openBuyerView,
             reducedMotion
           },
+          {
+            icon: "swap-horizontal-outline",
+            label: "Dropshipping",
+            // Deliberately not a count. This screen knows nothing about
+            // supplier connections, and loading them here to fill in a subtitle
+            // would put a supplier request on the store dashboard's critical
+            // path for a line of text. The hub behind it counts honestly.
+            subtitle: "Import products from suppliers",
+            onPress: () => navigation.navigate("Dropshipping", { title: "Dropshipping" }),
+            reducedMotion
+          },
           // Shipping settings and a returns policy have no screen in this app,
           // and neither has a backend to point at. Marked unavailable with an
           // honest subtitle rather than wired to something unrelated — a tile
