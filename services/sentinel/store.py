@@ -493,6 +493,34 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         policy_version TEXT NOT NULL DEFAULT ''
     )""",
     "CREATE INDEX IF NOT EXISTS idx_sentinel_finexp_incident ON sentinel_financial_exposure(incident_key, id)",
+
+    # Cross-process rate counters (Stage 6). The reason this table exists at all
+    # is that the platform's limiters keep their state in module-level dicts
+    # (`security_guard.BUCKETS`, `pulse_security_core._RATE_BUCKETS`) while the
+    # Procfile runs `gunicorn --workers ${WEB_CONCURRENCY:-4}` — four separate
+    # OS processes, so every configured limit is really that limit times four.
+    # There is no Redis in this project (verified against the live Railway
+    # variables: 228 names, no REDIS_URL), so Postgres is the only shared store
+    # available, exactly as `admin_gateway.login_rate_limited` already assumes.
+    #
+    # One row per (scope, subject, window). The UNIQUE index is not decoration:
+    # `ON CONFLICT (scope, subject, window_start) DO UPDATE` needs it to exist,
+    # and it is what makes increment-and-read a single atomic statement rather
+    # than a read-then-write race between four workers.
+    """CREATE TABLE IF NOT EXISTS sentinel_rate_counters (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        scope TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        window_start INTEGER NOT NULL,
+        hits INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )""",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_sentinel_rate_counters_window ON sentinel_rate_counters(scope, subject, window_start)",
+    # Pruning is mandatory, not housekeeping: `security_guard.BUCKETS` is never
+    # evicted and its key space grows without bound, which is a slow
+    # memory-exhaustion vector. Repeating that flaw in a table would turn it
+    # into a disk-exhaustion vector instead.
+    "CREATE INDEX IF NOT EXISTS idx_sentinel_rate_counters_prune ON sentinel_rate_counters(window_start)",
 )
 
 

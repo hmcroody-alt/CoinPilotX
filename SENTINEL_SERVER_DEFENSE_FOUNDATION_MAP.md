@@ -100,6 +100,52 @@ Two limiters are honest exceptions, and they are the ones that matter most:
 member login and admin login are both **DB-backed** and therefore genuinely
 cross-process.
 
+### Correction applied during Stage 6: there are four, not two
+
+The paragraph above was written from a `grep` for bucket-shaped module globals in
+`services/`. It missed the limiter that actually guards the authentication routes,
+because that one lives in `bot.py`:
+
+| # | Where | State | Scope |
+|---|---|---|---|
+| 1 | `services/security_guard.py:11` `BUCKETS` | process memory | paths from `request_limit_for()` |
+| 2 | `services/pulse_security_core.py:22` `_RATE_BUCKETS` | process memory (+ `cache_engine`, which has no Redis to reach) | `HIGH_RISK_RATE_RULES` |
+| 3 | **`bot.py:449` `RATE_LIMIT_BUCKETS`, used by `basic_abuse_guard`** | **process memory, never evicted** | **11 paths incl. `/login`, `/signup`, both `recover` routes, `/admin/login`, both checkout routes** |
+| 4 | `admin_gateway.login_rate_limited`, `bot.login_security_preflight` | **PostgreSQL** | admin + member login |
+
+How it was found is the useful part: Stage 6 wired a distributed limiter into
+three auth routes, and the integration tests failed with 429s the new code could
+not have produced. The log line was `Rate limit triggered
+path=/api/mobile/auth/recover`, emitted by `basic_abuse_guard` — a
+`before_request` already limiting all three, with its own deployed policy table.
+The Stage 6 code had a comment asserting one of those routes "had no rate limit
+of any kind." It was false.
+
+**Consequence for Stage 6.** Adding a `RULES` registry inside
+`services/sentinel/rate_limit.py` naming the same routes with limits of its own
+would have been a duplicate rate-limit policy — Hard Rule #6, and the specific
+failure where two numbers disagree and nobody can say which one production
+applied. The registry was deleted. `rate_limit.py` owns the counting; the limits
+stay in `bot.ABUSE_GUARD_PROTECTED`, where they were already deployed, and
+`basic_abuse_guard` was extended to consult the shared counter using them. That
+covers all eleven paths rather than the three the first attempt picked.
+
+### Correction: one configured limit on `/api/mobile/auth/recover` is dead
+
+Found while writing the Stage 6 route tests. `basic_abuse_guard` states 6-per-300s
+for that path; `pulse_security_core` states 5-per-600s for the same path.
+`basic_abuse_guard` is registered first and so checks first, but on request 6 its
+bucket holds only 5 — under its own limit — so it allows and passes the request
+to the stricter guard, which refuses. Request 7, where `basic_abuse_guard` would
+finally have refused, is never reached.
+
+So one of the two numbers configured for that route has no effect, and neither
+file says which. Not changed here: altering either limit changes what real users
+of a frozen client experience, which is outside this stage's remit. Recorded for
+Stage 21, and pinned by
+`test_the_older_guards_limit_is_unreachable_on_this_route` so it cannot drift
+unnoticed.
+
 ### There is no Redis
 
 Verified against the live project (`railway variables`, 228 distinct names):
@@ -209,6 +255,7 @@ offered to `ingest()` twice.
 | A policy engine | `authority.check()` + `constitution` SC1–SC15 |
 | An action broker | `runbooks.register()/execute()` |
 | A login throttle | `login_security_preflight()` (member), `admin_gateway` (admin) |
+| A rate-limit policy table | `bot.ABUSE_GUARD_PROTECTED` (auth/checkout paths), `pulse_security_core.HIGH_RISK_RATE_RULES` — `sentinel.rate_limit` counts, callers set limits |
 | A session store | `mobile_security_sessions` |
 | An injection scanner | `ai_security.scan_for_injection()` |
 | A UNDX tool gate | `undx_tool_gateway.execute()` |

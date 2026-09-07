@@ -2718,21 +2718,52 @@ def capture_referral_and_run_trial_maintenance():
     return None
 
 
+RATE_LIMIT_REFUSAL_MESSAGE = "Too many attempts. Please wait a few minutes and try again."
+
+
+def rate_limit_refusal(path, retry_after=0):
+    """The 429 this app has always returned for an abuse-guarded path.
+
+    Extracted so the in-process refusal and the distributed one below cannot
+    drift apart. The shape depends on the client that asked — JSON for ``/api/``
+    callers, text for the web forms — and both are statuses the shipped App Store
+    binary already handles (Hard Rule #3). ``retry_after`` is omitted when zero so
+    the pre-existing refusal stays byte-for-byte what it was.
+    """
+    if str(path or "").startswith("/api/"):
+        response = jsonify({"ok": False, "message": RATE_LIMIT_REFUSAL_MESSAGE})
+        response.status_code = 429
+    else:
+        response = Response(RATE_LIMIT_REFUSAL_MESSAGE, status=429)
+    if retry_after:
+        response.headers["Retry-After"] = str(max(1, int(retry_after)))
+    return response
+
+
+# path -> (limit, window_seconds). Hoisted out of basic_abuse_guard so it is
+# readable by exactly one thing besides the guard: the test that proves the
+# limiter is on these paths. A test that restated the numbers would keep passing
+# after someone changed a real limit, which is the kind of green that means
+# nothing. This is the single source of rate-limit policy for these routes —
+# services/sentinel/rate_limit.py deliberately holds no table of its own.
+ABUSE_GUARD_PROTECTED = {
+    "/login": (12, 300),
+    "/signup": (8, 300),
+    "/forgot-password": (6, 300),
+    "/forgot-username": (6, 300),
+    "/api/mobile/auth/recover": (6, 300),
+    "/api/pulse/mobile/auth/recover": (6, 300),
+    "/api/account/password/change-request": (6, 300),
+    "/admin/login": (8, 300),
+    "/create-checkout-session": (8, 300),
+    "/api/create-checkout-session": (8, 300),
+    "/api/ai-assistant": (30, 300),
+}
+
+
 @webhook_app.before_request
 def basic_abuse_guard():
-    protected = {
-        "/login": (12, 300),
-        "/signup": (8, 300),
-        "/forgot-password": (6, 300),
-        "/forgot-username": (6, 300),
-        "/api/mobile/auth/recover": (6, 300),
-        "/api/pulse/mobile/auth/recover": (6, 300),
-        "/api/account/password/change-request": (6, 300),
-        "/admin/login": (8, 300),
-        "/create-checkout-session": (8, 300),
-        "/api/create-checkout-session": (8, 300),
-        "/api/ai-assistant": (30, 300),
-    }
+    protected = ABUSE_GUARD_PROTECTED
     if request.method not in {"POST", "PUT"} or request.path not in protected:
         return None
     limit, window_seconds = protected[request.path]
@@ -2741,11 +2772,37 @@ def basic_abuse_guard():
     bucket = [stamp for stamp in RATE_LIMIT_BUCKETS.get(key, []) if now - stamp < window_seconds]
     if len(bucket) >= limit:
         logging.warning("Rate limit triggered path=%s ip_hash=%s", request.path, client_ip_hash())
-        if request.path.startswith("/api/"):
-            return jsonify({"ok": False, "message": "Too many attempts. Please wait a few minutes and try again."}), 429
-        return Response("Too many attempts. Please wait a few minutes and try again.", status=429)
+        return rate_limit_refusal(request.path)
     bucket.append(now)
     RATE_LIMIT_BUCKETS[key] = bucket
+
+    # The bucket above lives in RATE_LIMIT_BUCKETS, a module-level dict, and the
+    # Procfile runs `gunicorn --workers ${WEB_CONCURRENCY:-4}`. So the table at
+    # the top of this function reads "6 per 300s" and production actually permits
+    # up to 24 — one window per worker, and which one an attacker hits depends on
+    # which worker the load balancer picked. That has always been true; nothing
+    # in this file said so.
+    #
+    # The call below counts the same path, for the same subject, under the same
+    # limit, in PostgreSQL, where all four workers can see it. It does not
+    # replace the bucket: the bucket is free and its verdict is sound in one
+    # direction (a single worker over the limit proves the fleet is), so it stays
+    # as the cheap first pass and the shared counter is only consulted when the
+    # local view says "allowed" — which is exactly the case a single worker
+    # cannot answer.
+    #
+    # Default OFF. With SENTINEL_DISTRIBUTED_LIMITS_MODE unset this returns None
+    # without opening a connection, and this route behaves precisely as it did
+    # before. Correct enforcement here is a ~4x tightening on real users of a
+    # client that cannot be updated, so it ships dark and is measured in `shadow`
+    # before anyone turns it on.
+    refused = sentinel_rate_refused(request.path, limit, window_seconds)
+    if refused is not None:
+        logging.warning(
+            "Rate limit triggered path=%s ip_hash=%s source=distributed "
+            "count=%.2f limit=%s", request.path, client_ip_hash(),
+            refused.count, limit)
+        return rate_limit_refusal(request.path, retry_after=refused.retry_after)
     return None
 
 
@@ -3169,6 +3226,49 @@ def sentinel_observe_security_response(response):
         # count their own failures into request_bridge.stats().
         pass
     return response
+
+
+def sentinel_rate_refused(scope, limit, window_seconds, subject=None):
+    """Count one security-critical action; return the Decision if it is refused.
+
+    ``None`` means proceed. Default OFF: with
+    ``SENTINEL_DISTRIBUTED_LIMITS_MODE`` unset this returns ``None`` without
+    touching the database, so adding a call site changes nothing until an
+    operator decides otherwise. In ``shadow`` it also returns ``None`` while
+    recording what enforcement would have done.
+
+    **The caller supplies the limit.** This function does not know what "6 per
+    300 seconds" applies to and must not: ``basic_abuse_guard`` already carries a
+    deployed table of paths and limits, and a second table inside Sentinel would
+    be a duplicate rate-limit policy — two numbers for one route, disagreeing
+    eventually, with nobody able to say which one production applied. Sentinel
+    owns the counting; this file keeps owning the policy (Hard Rule #6).
+
+    **Subject defaults to the hashed IP, and must never be the email.** Limiting
+    a password-reset request per email address would hand an attacker a
+    denial-of-service against any account they can name: flood the victim's
+    address and the victim can no longer reset their own password. Per-IP has
+    the opposite failure mode, which is the survivable one. It also keeps the
+    response free of account-existence information, which is the reason these
+    endpoints answer identically for known and unknown addresses already.
+    """
+    try:
+        from services.sentinel import rate_limit as _sentinel_rate
+        if not _sentinel_rate.enabled():
+            return None
+        decision = _sentinel_rate.check(
+            scope,
+            subject if subject is not None else f"ip:{client_ip_hash()}",
+            limit=limit,
+            window_seconds=window_seconds,
+        )
+        return None if decision.allowed else decision
+    except Exception:
+        # A limiter that can 500 the endpoint it protects has made the product
+        # less available, not more secure. rate_limit.stats() counts its own
+        # failures, so this is quiet rather than silent.
+        logging.exception("SENTINEL_RATE_GUARD_FAILED scope=%s", scope)
+        return None
 
 
 @webhook_app.before_request
