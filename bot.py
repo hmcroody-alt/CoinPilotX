@@ -109394,6 +109394,24 @@ def _init_db_impl():
         updated_at TEXT
     )
     """)
+    # Variants and supplier provenance. The DDL deliberately is NOT inlined here
+    # like its siblings above: services.marketplace_supplier_schema is its single
+    # owner, because an import runs in a worker and a worker must be able to
+    # create this schema without having served an HTTP request. That is the exact
+    # failure marketplace_reservation_schema was written to record — reservation
+    # lifecycle columns lived in a cart route, so the expiry sweeper died on
+    # UndefinedColumn until a buyer happened to open a cart. Calling the owner
+    # from init_db gives every process the tables at boot; a second copy of the
+    # CREATE here is how the two would drift.
+    try:
+        from services import marketplace_supplier_schema as _supplier_schema
+        _supplier_schema.ensure_supplier_schema(cur)
+    except Exception:
+        # Never fatal to boot. The helper already returns its failures as data
+        # rather than raising; this catch covers only the import itself, and a
+        # missing supplier schema must not take down a web process that has 1,538
+        # routes with nothing to do with variants.
+        logging.getLogger(__name__).exception("SUPPLIER_SCHEMA_BOOTSTRAP_FAILED")
     cur.execute("""
     CREATE TABLE IF NOT EXISTS marketplace_reports (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

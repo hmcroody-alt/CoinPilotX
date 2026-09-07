@@ -381,6 +381,8 @@ AUTO_PK_TABLES = {
     "marketplace_merchant_documents": "id",
     "marketplace_listings": "id",
     "marketplace_product_media": "id",
+    "marketplace_listing_variants": "id",
+    "marketplace_product_sources": "id",
     "marketplace_reports": "id",
     "marketplace_saved_products": "id",
     "marketplace_buyer_interest": "id",

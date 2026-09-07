@@ -305,7 +305,79 @@ Stated so it is not mistakenly relied on later:
   reason: not unreachable, just empty. Reasoning from `.env.example` to production behaviour is
   invalid in this repo and should not be repeated.
 
-## 11. Standing correction to CLAUDE.md
+## 11. What has since been built against this map
+
+The decision left open in §10 was made by the user: **extend `marketplace_listings`.** Not the
+business_os stack — it is canonical by declaration and empty in fact, and choosing it would have
+meant migrating live orders before writing a single line of import code.
+
+Three files, none of them wired into a route, a buyer surface, or the money path:
+
+| File | Role |
+| --- | --- |
+| `services/marketplace_supplier_schema.py` | Sole owner of the DDL for `marketplace_listing_variants` and `marketplace_product_sources` |
+| `services/marketplace_variants.py` | Read/write layer over those two tables |
+| `tests/marketplace/test_supplier_variants.py` | 57 tests |
+| `scripts/marketplace/supplier_variant_mutation_battery.py` | 45 mutations, all caught |
+
+### Which §8 gaps this closes
+
+1. **Addressable variant — closed.** `marketplace_listing_variants` is the missing unit: it holds
+   a SKU, `provider_variant_id`, `cost_cents`, and a per-variant stock level, keyed by an
+   order-independent `variant_key` so re-import updates rather than duplicates. Note the seam
+   §8 identified is still open on purpose: `create_quote` accepts `variant_id` and all three call
+   sites still pass nothing. Filling it is a money-path change and is not this one.
+2. **Provider identity — closed. Money as prose — deliberately not.** `marketplace_product_sources`
+   carries `(provider, provider_product_id, seller_user_id)` with `fulfillment_mode` kept as a
+   *separate* column, because a product can be CJ-imported and self-stocked, or hand-authored and
+   drop-shipped. Retail money is untouched: `price_cents` on a variant is nullable and NULL means
+   "the listing's `price_label` governs", which is today's behaviour exactly. Only the *supplier*
+   side of the money is integer. See below.
+3. **Unknown inventory — closed.** Stock is three-valued, and `availability()` never collapses
+   UNKNOWN into UNAVAILABLE. This is the §5 gap: `inventory_available` returns `False` for a NULL
+   quantity, so a failed sync currently presents as a sell-out.
+4. **Shipment entity — not addressed.** Still the §8 ranking's last item and still absent.
+
+### What this deliberately did not do
+
+- **Did not make variants a money authority.** Two things that both claim to know the retail price
+  is how they drift, and `marketplace_listings` has live orders against it. Converting its prose
+  money to integers is a migration, not a schema addition. `test_variants_are_not_a_money_authority_yet`
+  exists so a later change has to delete that assertion deliberately rather than drift past it.
+- **Did not add a publication gate.** §6 already guarantees mission §3's "never import straight to
+  live" — publication is a property `is_public` tests at *read* time, not something a writer does,
+  so an import writer structurally cannot publish. A second gate would be a weaker duplicate.
+- **Did not fix the §4 create/edit normalizer asymmetry.** Still true, still on the import path,
+  and still the sharpest pre-existing defect this map found.
+
+### On the evidence standard
+
+The suite went green on its first run, which is when a suite deserves the least trust — so it is
+judged by a mutation battery rather than by its own pass. The first battery run reported three
+survivors. Two were genuine holes (an empty `provider_product_id` was accepted; a table missing a
+required column was still reported `ready`) and are now covered. The third was a **defect in the
+battery, not the suite**: dropping a column from the `CREATE` alone is survived *on purpose*,
+because the defensive `ALTER` list adds it straight back — that is the no-migration-framework
+design working. The battery gained multi-site mutations so the case could be expressed honestly
+instead of deleted for being inconvenient. 45/45 now caught.
+
+Wiring was verified by booting the real `init_db()` against a fresh database, not by reading the
+call site: both tables and all four indexes are created (588 tables total). Both tables are also
+registered in `AUTO_PK_TABLES` — but the writers re-`SELECT` the id rather than trusting
+`lastrowid` anyway, so a future drift in that list cannot reintroduce the `int(None)` production
+failure this repo has already shipped once.
+
+### One latent trap found while verifying the boot path
+
+`bot.py:107185` calls `pulse_id_service.ensure_schema(cur, ...)` unguarded. That function raises
+`ValueError` for any user with `user_id <= 0` (`pulse_id_service.py:31`), and `ORDER BY user_id ASC`
+processes negative ids first. Since `init_db()` *is* this repo's schema mechanism, one such row
+aborts the boot and every table defined after that line — including these two, 2,200 lines later —
+is silently never created. Reproduced against the local dev database, which already holds two
+Telegram-shaped negative ids. **Production is not currently affected** (38 users, 0 non-positive),
+so this is latent, not an outage. Filed separately; not fixed here, because it is not this mission.
+
+## 12. Standing correction to CLAUDE.md
 
 `CLAUDE.md` says "i18n is gated — hardcoded strings fail CI." Verified false, twice over:
 
