@@ -7,15 +7,17 @@ share sheet, a push notification, or an email — lands on a 404 for anyone
 without the app installed. There is no catch-all rule and no 404 handler, so
 the failure is silent from the app's side and total from the visitor's.
 
-34 such paths exist today. This test does not demand they be fixed; it pins
-them so the number can only go down. A newly added native screen with a deep
-link and no web route fails here, naming the route.
+One such path exists today. This test does not demand it be fixed; it pins the
+set so it can only shrink. A newly added native screen with a deep link and no
+web route fails here, naming the route.
 
-Regenerate the fixtures together after changing routes or navigation:
+Regenerate the fixture after changing routes or navigation:
 
-    python scripts/parity/dump_url_map.py > scripts/parity/url_map_snapshot.json
-    python scripts/parity/build_parity_matrix.py \
-        --url-map scripts/parity/url_map_snapshot.json > /tmp/matrix.json
+    python scripts/parity/dump_url_map.py --out scripts/parity/url_map_snapshot.json
+
+Use ``--out``, not a shell redirect: importing ``bot`` writes ~117kB of boot
+banner to stdout, so ``dump_url_map.py > snapshot.json`` produces a file that
+begins with log lines and is not valid JSON.
 """
 
 import json
