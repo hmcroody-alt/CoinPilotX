@@ -3,10 +3,10 @@
 
 # PulseSoc web product inventory
 
-- Flask routes discovered: **2152**
+- Flask routes discovered: **2153**
 - HTML page routes: **539**
 - JSON API routes: **1561**
-- Redirect-only routes: **35**
+- Redirect-only routes: **36**
 - File/stream routes: **17**
 
 The headline finding is *not* that the web is thin. With
@@ -59,16 +59,16 @@ per surface.
 | `/admin/audit-logs` | GET | admin_audit_logs_page | admin_page_html() | bot.py:17971 |
 | `/admin/billing/recalculate` | POST | admin_billing_recalculate_page | admin_page_html() | bot.py:22311 |
 | `/admin/bootstrap-owner` | GET | admin_bootstrap_owner_page | inline | bot.py:15928 |
-| `/admin/calls` | GET | admin_calls_page | _admin_calls_page() | pulse_communications_v2/routes.py:1558 |
-| `/admin/calls/<path:call_id>` | GET | admin_calls_detail_page | _admin_calls_page() | pulse_communications_v2/routes.py:1616 |
-| `/admin/calls/<path:call_id>/delivery` | GET | admin_calls_delivery_page | _admin_calls_page() | pulse_communications_v2/routes.py:1597 |
-| `/admin/calls/<path:call_id>/inspector` | GET | admin_calls_inspector_page | _admin_calls_page() | pulse_communications_v2/routes.py:1602 |
-| `/admin/calls/<path:call_id>/timeline` | GET | admin_calls_timeline_page | _admin_calls_page() | pulse_communications_v2/routes.py:1592 |
-| `/admin/calls/active` | GET | admin_calls_active_page | _admin_calls_page() | pulse_communications_v2/routes.py:1568 |
-| `/admin/calls/failed` | GET | admin_calls_failed_page | _admin_calls_page() | pulse_communications_v2/routes.py:1573 |
-| `/admin/calls/missed` | GET | admin_calls_missed_page | _admin_calls_page() | pulse_communications_v2/routes.py:1578 |
-| `/admin/calls/recent` | GET | admin_calls_recent_page | _admin_calls_page() | pulse_communications_v2/routes.py:1563 |
-| `/admin/calls/test-config` | GET,POST | admin_calls_test_config_page | _admin_calls_page() | pulse_communications_v2/routes.py:1583 |
+| `/admin/calls` | GET | admin_calls_page | _admin_calls_page() | pulse_communications_v2/routes.py:1589 |
+| `/admin/calls/<path:call_id>` | GET | admin_calls_detail_page | _admin_calls_page() | pulse_communications_v2/routes.py:1647 |
+| `/admin/calls/<path:call_id>/delivery` | GET | admin_calls_delivery_page | _admin_calls_page() | pulse_communications_v2/routes.py:1628 |
+| `/admin/calls/<path:call_id>/inspector` | GET | admin_calls_inspector_page | _admin_calls_page() | pulse_communications_v2/routes.py:1633 |
+| `/admin/calls/<path:call_id>/timeline` | GET | admin_calls_timeline_page | _admin_calls_page() | pulse_communications_v2/routes.py:1623 |
+| `/admin/calls/active` | GET | admin_calls_active_page | _admin_calls_page() | pulse_communications_v2/routes.py:1599 |
+| `/admin/calls/failed` | GET | admin_calls_failed_page | _admin_calls_page() | pulse_communications_v2/routes.py:1604 |
+| `/admin/calls/missed` | GET | admin_calls_missed_page | _admin_calls_page() | pulse_communications_v2/routes.py:1609 |
+| `/admin/calls/recent` | GET | admin_calls_recent_page | _admin_calls_page() | pulse_communications_v2/routes.py:1594 |
+| `/admin/calls/test-config` | GET,POST | admin_calls_test_config_page | _admin_calls_page() | pulse_communications_v2/routes.py:1614 |
 | `/admin/capability-matrix` | GET,POST | admin_capability_matrix_page | admin_page_html() | bot.py:96704 |
 | `/admin/change-password` | GET,POST | admin_change_password_page | admin_page_html() | bot.py:15968 |
 | `/admin/chat-health` | GET | admin_chat_health_page | admin_page_html() | bot.py:34596 |
@@ -112,7 +112,7 @@ per surface.
 | `/admin/group-chat-health` | GET | admin_group_chat_health_page | admin_page_html() | bot.py:96945 |
 | `/admin/groups-health` | GET | admin_groups_health_page | admin_page_html() | bot.py:96825 |
 | `/admin/growth-engine` | GET | admin_ads_command_center_page | admin_page_html() | bot.py:100693 |
-| `/admin/intelligence` | GET | admin_galaxy_intelligence_page | admin_galaxy_intelligence_center.html | pulse_communications_v2/routes.py:379 |
+| `/admin/intelligence` | GET | admin_galaxy_intelligence_page | admin_galaxy_intelligence_center.html | pulse_communications_v2/routes.py:410 |
 | `/admin/intelligence-command-center` | GET | admin_intelligence_command_center_page | admin_page_html() | bot.py:100168 |
 | `/admin/intelligence-command-center/<section_key>` | GET | admin_intelligence_command_center_section_page | admin_page_html() | bot.py:100207 |
 | `/admin/intelligence-graph` | GET | admin_intelligence_graph_page | admin_page_html() | bot.py:99245 |

@@ -330,6 +330,37 @@ def pulse_signal_stream_page(signal_key):
     return _render_pulse_signal_surface(signal_key)
 
 
+@comm_v2_blueprint.get("/pulse/intelligence/<string:subsystem_key>")
+def pulse_intelligence_subsystem_link(subsystem_key):
+    """Land `/pulse/intelligence/<subsystem>` universal links.
+
+    `mobile-native/src/navigation/linking.ts` registers `pulse/intelligence/
+    :subsystem?`, so the app opens any such URL; before this route the web
+    answered 404. The app is not the authority for which subsystems exist —
+    `notificationRouting.ts` mints the value by scraping it out of a
+    `/dashboard/intelligence/<key>` link the server sent, and those keys come
+    from `dashboard_intelligence_command_center`. So a known key is forwarded
+    to the page it actually names rather than to a hub: the member asked for
+    threat-intelligence and the web has a threat-intelligence page.
+
+    Sending a `/pulse/` link into `/dashboard/` is not a web-only invention.
+    `notificationRouting.ts` handles `/dashboard/intelligence` and
+    `/pulse/intelligence` in a single branch, navigating both to the one
+    IntelligenceCenter screen — the app already treats them as one
+    destination.
+
+    Unknown keys fall back to the pulse hub, matching both
+    `pulse_signal_stream_page` above and the app, whose IntelligenceCenter
+    renders the hub plus a note when it does not recognise the subsystem.
+    """
+    from services import dashboard_intelligence_command_center
+
+    key = (subsystem_key or "").strip().lower().replace("_", "-")
+    if key not in dashboard_intelligence_command_center.SUBSYSTEMS_BY_KEY:
+        return _bot().redirect("/pulse/intelligence")
+    return _bot().redirect("/dashboard/intelligence/" + key)
+
+
 @comm_v2_blueprint.get("/api/pulse/intelligence/state")
 def api_galaxy_intelligence_state():
     user, denied = _require_user()

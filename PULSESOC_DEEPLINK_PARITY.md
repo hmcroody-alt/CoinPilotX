@@ -9,8 +9,9 @@ using Werkzeug's own matcher, so a BROKEN row means no rule exists at all —
 not that the visitor was signed out.
 
 - Deep-link paths: **111**
-- Resolve on the web: **101**
-- Hub served, item links 404: **8**
+- Resolve on the web: **102**
+- Hub served, item links 404: **4** (0 confirmed, 4 unproven)
+- Hub served, all real values resolve: **3**
 - No web surface at all: **2** (1 pending, 1 blocked by policy)
 
 ## Broken share links — pending work
@@ -27,20 +28,26 @@ Still broken, and still counted above: a member following one of these gets a 40
 |---|---|---|
 | `/pulse/calls/:callId?` | Call | BLOCKED, not pending — do not build. A web call surface would be a second real-time audio publication path, which `docs/realtime_audio_change_policy.md` forbids regardless of justification. This is why the broken-link budget cannot honestly reach zero: its floor is 1. |
 
+## Hub served — but every value the app can produce resolves
+
+These land in the hub-only bucket only because the pattern is probed with an invented parameter. Re-probed with the literal paths the app's own `nativeRouteActions.ts` / `notificationRouting.ts` match on, they pass. Not gaps — do not build detail routes for these.
+
+| Path | Native screen | Values probed |
+|---|---|---|
+| `/pulse/marketplace/:listingId` | MarketplaceDetail | `create` ok |
+| `/pulse/settings/:section` | AccountCenter | `account` ok, `devices` ok, `privacy` ok, `security` ok |
+| `/scam-shield/:mode?` | ScamShield | `scan` ok |
+
 ## Hub served, deep links into it 404
 
-Browsing works; sharing a specific item does not. Either the web needs the detail route, or it enumerates valid values and only the made-up test value fails — check before building.
+Browsing works; sharing a specific item does not. A row with values probed is a confirmed gap: the app produces that value and the web 404s on it. A row with none is unproven — the parameter is an id or a value no source spells out, so it still needs a human before anyone builds anything.
 
-| Path | Native screen |
-|---|---|
-| `/dashboard/:legacyGroup/:legacyModule/:legacySubmodule?` | DashboardLegacyModule |
-| `/pulse/camera/:mode?` | CameraStudio |
-| `/pulse/marketplace/:listingId` | MarketplaceDetail |
-| `/pulse/events/:eventId` | EventDetail |
-| `/pulse/intelligence/:subsystem?` | IntelligenceCenter |
-| `/pulse/private-office/:view` | PrivateOperations |
-| `/pulse/settings/:section` | AccountCenter |
-| `/scam-shield/:mode?` | ScamShield |
+| Path | Native screen | Values probed |
+|---|---|---|
+| `/dashboard/:legacyGroup/:legacyModule/:legacySubmodule?` | DashboardLegacyModule | no real value derivable from the app's sources |
+| `/pulse/camera/:mode?` | CameraStudio | no real value derivable from the app's sources |
+| `/pulse/events/:eventId` | EventDetail | no real value derivable from the app's sources |
+| `/pulse/private-office/:view` | PrivateOperations | no real value derivable from the app's sources |
 
 ## Resolving
 
@@ -109,6 +116,7 @@ Browsing works; sharing a specific item does not. Either the web needs the detai
 | `/pulse/teachers/:teacherId?` | TeacherProfileGateway |
 | `/pulse/teacher-dashboard` | TeacherDashboardGateway |
 | `/pulse/growth` | GrowthCenter |
+| `/pulse/intelligence/:subsystem?` | IntelligenceCenter |
 | `/pulse/alerts/:alertId?` | AlertManagement |
 | `/pulse/crypto/alerts` | CryptoAlertManagement |
 | `/pulse/portfolio` | Portfolio |
