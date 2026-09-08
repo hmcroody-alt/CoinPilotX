@@ -36,7 +36,6 @@ Every extractor asserts it matched before it compares.
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import subprocess
@@ -44,6 +43,8 @@ import sys
 import tempfile
 
 import pytest
+
+from tests.probe_report import parse_report
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
@@ -197,9 +198,7 @@ def _run_probe() -> dict:
     env["PYTHONPATH"] = REPO
     proc = subprocess.run([sys.executable, "-c", code], cwd=REPO, env=env,
                           capture_output=True, text=True, timeout=600)
-    if "<<<REPORT>>>" not in proc.stdout:
-        pytest.fail("the app did not boot:\n" + proc.stdout[-4000:] + proc.stderr[-4000:])
-    return json.loads(proc.stdout.split("<<<REPORT>>>", 1)[1])
+    return parse_report(proc.stdout, proc.stderr)
 
 
 @pytest.fixture(scope="module")

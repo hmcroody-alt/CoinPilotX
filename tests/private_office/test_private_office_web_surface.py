@@ -29,13 +29,14 @@ the client at all.
 
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 import sys
 import tempfile
 
 import pytest
+
+from tests.probe_report import parse_report
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -119,9 +120,7 @@ def office_probe():
     code = _PROBE % {"repo": REPO, "paths": list(DEEP_LINKS) + [UNKNOWN_VIEW]}
     proc = subprocess.run([sys.executable, "-c", code], cwd=REPO, env=env,
                           capture_output=True, text=True, timeout=600)
-    if "<<<REPORT>>>" not in proc.stdout:
-        pytest.fail("the app did not boot:\n" + proc.stdout[-4000:] + proc.stderr[-4000:])
-    return json.loads(proc.stdout.split("<<<REPORT>>>", 1)[1])
+    return parse_report(proc.stdout, proc.stderr)
 
 
 def test_every_office_deep_link_resolves(office_probe):

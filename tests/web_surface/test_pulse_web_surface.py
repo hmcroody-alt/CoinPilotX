@@ -40,6 +40,8 @@ import tempfile
 
 import pytest
 
+from tests.probe_report import parse_report
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 BOT = os.path.join(REPO, "bot.py")
@@ -164,9 +166,7 @@ def web_probe():
     code = _PROBE % {"repo": REPO, "paths": list(PAGES) + [RECEIPT]}
     proc = subprocess.run([sys.executable, "-c", code], cwd=REPO, env=env,
                           capture_output=True, text=True, timeout=600)
-    if "<<<REPORT>>>" not in proc.stdout:
-        pytest.fail("the app did not boot:\n" + proc.stdout[-4000:] + proc.stderr[-4000:])
-    return json.loads(proc.stdout.split("<<<REPORT>>>", 1)[1])
+    return parse_report(proc.stdout, proc.stderr)
 
 
 def test_every_published_path_resolves(web_probe):
