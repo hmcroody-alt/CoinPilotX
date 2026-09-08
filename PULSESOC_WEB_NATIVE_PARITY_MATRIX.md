@@ -18,62 +18,62 @@ a per-system review that actually inspects the surface.
 
 | Verdict | Count |
 |---|---|
-| MISSING | 8 |
-| PAGE | 41 |
-| PARTIAL | 2 |
+| MISSING | 6 |
+| PAGE | 42 |
+| PARTIAL | 3 |
 
 ## Matrix
 
 | Verdict | Section | Destination | Native route | Web route | Kind | Evidence | Note |
 |---|---|---|---|---|---|---|---|
-| PAGE | Content | Reels | `/pulse/reels` | `/pulse/reels` | html | bot.py:46681 | html page served, source=pulse_social_shell() |
-| PAGE | Content | Status | `/pulse/status` | `/pulse/status` | html | bot.py:41655 | html page served, source=pulse_social_shell() |
-| PAGE | Content | Live Viewer | `/pulse/live` | `/pulse/live` | html | bot.py:48214 | html page served, source=pulse_social_shell() |
-| PAGE | Content | Live Studio | `/pulse/live/studio` | `/pulse/live/studio` | html | bot.py:48216 | html page served, source=pulse_social_shell() |
-| PAGE | Content | Pulse Radio | `/pulse/music#pulse-radio` | `/pulse/music` | html | bot.py:42318 | html page served, source=pulse_social_shell() |
-| PAGE | Creator / Business | Camera | `/pulse/camera/photo?target=feed` | `/pulse/camera/photo` | html | bot.py:53064 | html page served, source=pulse_social_shell() |
-| PAGE | Creator / Business | Creator Studio | `/pulse/creator-studio` | `/pulse/creator-studio` | html | bot.py:79303 | html page served, source=pulse_creator_dashboard_page() |
+| PAGE | Content | Reels | `/pulse/reels` | `/pulse/reels` | html | bot.py:46725 | html page served, source=pulse_social_shell() |
+| PAGE | Content | Status | `/pulse/status` | `/pulse/status` | html | bot.py:41699 | html page served, source=pulse_social_shell() |
+| PAGE | Content | Live Viewer | `/pulse/live` | `/pulse/live` | html | bot.py:48258 | html page served, source=pulse_social_shell() |
+| PAGE | Content | Live Studio | `/pulse/live/studio` | `/pulse/live/studio` | html | bot.py:48260 | html page served, source=pulse_social_shell() |
+| PAGE | Content | Pulse Radio | `/pulse/music#pulse-radio` | `/pulse/music` | html | bot.py:42362 | html page served, source=pulse_social_shell() |
+| PAGE | Creator / Business | Camera | `/pulse/camera/photo?target=feed` | `/pulse/camera/photo` | html | bot.py:53108 | html page served, source=pulse_social_shell() |
+| PAGE | Creator / Business | Creator Studio | `/pulse/creator-studio` | `/pulse/creator-studio` | html | bot.py:79347 | html page served, source=pulse_creator_dashboard_page() |
 | PAGE | Creator / Business | Content Planner | `/dashboard/creator/content-planner` | `/dashboard/creator/<subsystem_key>` | html | bot.py:10741 | html page served, source=dashboard_creator_shell(); matched via a parameterised rule — the page is reached as a route parameter, so confirm it renders this feature rather than treating the segment as an id |
 | PAGE | Creator / Business | Draft Studio | `/dashboard/creator/draft-studio` | `/dashboard/creator/<subsystem_key>` | html | bot.py:10741 | html page served, source=dashboard_creator_shell(); matched via a parameterised rule — the page is reached as a route parameter, so confirm it renders this feature rather than treating the segment as an id |
-| PAGE | Creator / Business | Growth Center | `/pulse/growth` | `/pulse/growth` | html | bot.py:11476 | html page served, source=pulse_advertiser_portal.html |
-| PAGE | Creator / Business | Courses | `/pulse/courses` | `/pulse/courses` | html | bot.py:79640 | html page served, source=ios_paid_digital_unavailable_response()+pulse_social_shell() |
-| PAGE | Creator / Business | Events | `/pulse/events` | `/pulse/events` | html | bot.py:79347 | html page served, source=pulse_social_shell() |
-| PAGE | Economy | Marketplace | `/pulse/marketplace` | `/pulse/marketplace` | html | bot.py:53258 | html page served, source=pulse_social_shell() |
-| PAGE | Economy | Create Listing | `/pulse/marketplace/create` | `/pulse/marketplace/create` | html | bot.py:54686 | html page served, source=pulse_social_shell() |
+| PAGE | Creator / Business | Growth Center | `/pulse/growth` | `/pulse/growth` | html | bot.py:11520 | html page served, source=pulse_advertiser_portal.html |
+| PAGE | Creator / Business | Courses | `/pulse/courses` | `/pulse/courses` | html | bot.py:79684 | html page served, source=ios_paid_digital_unavailable_response()+pulse_social_shell() |
+| PAGE | Creator / Business | Events | `/pulse/events` | `/pulse/events` | html | bot.py:79391 | html page served, source=pulse_social_shell() |
+| PAGE | Economy | Marketplace | `/pulse/marketplace` | `/pulse/marketplace` | html | bot.py:53302 | html page served, source=pulse_social_shell() |
+| PAGE | Economy | Create Listing | `/pulse/marketplace/create` | `/pulse/marketplace/create` | html | bot.py:54730 | html page served, source=pulse_social_shell() |
 | PAGE | Economy | Seller Inventory | `/dashboard/economy/seller-tools` | `/dashboard/economy/<subsystem_key>` | html | bot.py:9993 | html page served, source=dashboard_economy_shell(); matched via a parameterised rule — the page is reached as a route parameter, so confirm it renders this feature rather than treating the segment as an id |
-| PAGE | Economy | Premium | `/pulse/premium` | `/pulse/premium` | html | bot.py:54830 | html page served, source=ios_paid_digital_unavailable_response()+pulse_social_shell() |
+| PAGE | Economy | Premium | `/pulse/premium` | `/pulse/premium` | html | bot.py:54874 | html page served, source=ios_paid_digital_unavailable_response()+pulse_social_shell() |
 | PAGE | Intelligence | UNDX | `/pulse/ai` | `/pulse/ai` | html | bot.py:10848 | html page served, source=dashboard_ai_page() |
 | PAGE | Intelligence | Intelligence Center | `/pulse/intelligence` | `/pulse/intelligence` | html | pulse_communications_v2/routes.py:301 | html page served, source=_render_pulse_signal_surface() |
-| PAGE | Intelligence | Alert Management | `/pulse/alerts` | `/pulse/alerts` | html | pulse_communications_v2/routes.py:303 | html page served, source=_render_pulse_signal_surface(); NOTE also declared as a redirect at bot.py:38489 — duplicate registration, page wins only by ordering |
+| PAGE | Intelligence | Alert Management | `/pulse/alerts` | `/pulse/alerts` | html | pulse_communications_v2/routes.py:303 | html page served, source=_render_pulse_signal_surface(); NOTE also declared as a redirect at bot.py:38533 — duplicate registration, page wins only by ordering |
 | PAGE | Intelligence | Crypto Command | `/dashboard/crypto/alerts` | `/dashboard/crypto/<path:module_path>` | html | bot.py:9852 | html page served, source=dashboard_crypto_shell(); matched via a parameterised rule — the page is reached as a route parameter, so confirm it renders this feature rather than treating the segment as an id |
 | PAGE | Intelligence | Watchlists | `/dashboard/crypto/watchlists` | `/dashboard/crypto/<path:module_path>` | html | bot.py:9852 | html page served, source=dashboard_crypto_shell(); matched via a parameterised rule — the page is reached as a route parameter, so confirm it renders this feature rather than treating the segment as an id |
-| PAGE | Intelligence | Portfolio | `/pulse/portfolio` | `/pulse/portfolio` | html | bot.py:37279 | html page served, source=ios_paid_digital_unavailable_response()+pulse_social_shell() |
+| PAGE | Intelligence | Portfolio | `/pulse/portfolio` | `/pulse/portfolio` | html | bot.py:37323 | html page served, source=ios_paid_digital_unavailable_response()+pulse_social_shell() |
 | PAGE | Intelligence | Scam Shield | `/scam-shield/scan` | `/scam-shield/scan` | html | bot.py:1876 | html page served, source=inline |
-| PAGE | Primary | Home | `/pulse` | `/pulse` | html | bot.py:40973 | html page served, source=pulse_page_html() |
+| PAGE | Primary | Home | `/pulse` | `/pulse` | html | bot.py:41017 | html page served, source=pulse_page_html() |
 | PAGE | Primary | Dashboard | `/pulse/dashboard` | `/pulse/dashboard` | html | bot.py:10843 | html page served, source=dashboard_page() |
-| PAGE | Primary | Search | `/pulse/search` | `/pulse/search` | html | bot.py:41391 | html page served, source=pulse_social_shell() |
-| PAGE | Primary | Settings | `/pulse/settings` | `/pulse/settings` | html | bot.py:79407 | html page served, source=pulse_social_shell() |
-| PAGE | Social | Messages | `/pulse/messages` | `/pulse/messages` | html | bot.py:80772 | html page served, source=pulse_messages_v2.html |
-| PAGE | Social | Profile Edit | `/pulse/profile/edit` | `/pulse/profile/edit` | html | bot.py:80834 | html page served, source=pulse_social_shell() |
-| PAGE | Social | Groups | `/pulse/groups` | `/pulse/groups` | html | bot.py:81197 | html page served, source=pulse_social_shell() |
-| PAGE | Social | Saved | `/pulse/saved` | `/pulse/saved` | html | bot.py:54783 | html page served, source=pulse_social_shell() |
-| PAGE | Trust | Account Center | `/dashboard/account/settings` | `/dashboard/account/settings` | html | bot.py:10965 | html page served, source=dashboard_account_shell() |
-| PAGE | Trust | Security Center | `/dashboard/account/security` | `/dashboard/account/security` | html | bot.py:10960 | html page served, source=pulse_security_settings_page() |
-| PAGE | Trust | Privacy Center | `/pulse/settings/privacy` | `/pulse/settings/privacy` | html | bot.py:81031 | html page served, source=pulse_security_settings_page() |
+| PAGE | Primary | Search | `/pulse/search` | `/pulse/search` | html | bot.py:41435 | html page served, source=pulse_social_shell() |
+| PAGE | Primary | Settings | `/pulse/settings` | `/pulse/settings` | html | bot.py:79451 | html page served, source=pulse_social_shell() |
+| PAGE | Social | Messages | `/pulse/messages` | `/pulse/messages` | html | bot.py:80816 | html page served, source=pulse_messages_v2.html |
+| PAGE | Social | Profile Edit | `/pulse/profile/edit` | `/pulse/profile/edit` | html | bot.py:80878 | html page served, source=pulse_social_shell() |
+| PAGE | Social | Groups | `/pulse/groups` | `/pulse/groups` | html | bot.py:81241 | html page served, source=pulse_social_shell() |
+| PAGE | Social | Saved | `/pulse/saved` | `/pulse/saved` | html | bot.py:54827 | html page served, source=pulse_social_shell() |
+| PAGE | Trust | Account Center | `/dashboard/account/settings` | `/dashboard/account/settings` | html | bot.py:11009 | html page served, source=dashboard_account_shell() |
+| PAGE | Trust | Security Center | `/dashboard/account/security` | `/dashboard/account/security` | html | bot.py:11004 | html page served, source=pulse_security_settings_page() |
+| PAGE | Trust | Privacy Center | `/pulse/settings/privacy` | `/pulse/settings/privacy` | html | bot.py:81075 | html page served, source=pulse_security_settings_page() |
 | PAGE | Trust | Verification | `/pulse/verification` | `/pulse/verification` | html | bot.py:10886 | html page served, source=dashboard_account_verification_page() |
+| PAGE | Trust | Safety Hub | `/pulse/safety` | `/pulse/safety` | html | bot.py:10929 | html page served, source=dashboard_network_subsystem_page() |
 | PAGE | Trust | Support | `/pulse/support` | `/pulse/support` | html | bot.py:1714 | html page served, source=support.html |
-| PAGE | Utility | Notifications | `/pulse/notifications` | `/pulse/notifications` | html | bot.py:79773 | html page served, source=pulse_social_shell() |
+| PAGE | Utility | Notifications | `/pulse/notifications` | `/pulse/notifications` | html | bot.py:79817 | html page served, source=pulse_social_shell() |
 | PAGE | Utility | Notification Preferences | `/dashboard/network/notifications` | `/dashboard/network/notifications` | html | bot.py:10424 | html page served, source=dashboard_network_shell() |
 | PAGE | Utility | Terms | `/terms` | `/terms` | html | bot.py:1914 | html page served, source=terms.html |
 | PAGE | Utility | Privacy Policy | `/privacy` | `/privacy` | html | bot.py:1909 | html page served, source=privacy.html |
 | PAGE | Utility | System Status | `/dashboard/system/feed` | `/dashboard/system/<module_key>` | html | bot.py:8290 | html page served, source=dashboard_system_shell(); matched via a parameterised rule — the page is reached as a route parameter, so confirm it renders this feature rather than treating the segment as an id |
-| PARTIAL | Content | Add Status | `/pulse/status/create` | `/pulse/status/<path:status_id>` | redirect | bot.py:38521 | route redirects rather than rendering a web surface; SHADOWED by the parameterised rule `/pulse/status/<path:status_id>` — the last segment is being read as an id, not as a page name |
-| PARTIAL | Social | Profile | `/pulse/profile` | `/pulse/profile` | redirect | bot.py:80825 | route redirects rather than rendering a web surface |
-| MISSING | Creator / Business | Create Post | `/pulse/compose` | — | — | — | no Flask route serves this path |
+| PARTIAL | Content | Add Status | `/pulse/status/create` | `/pulse/status/<path:status_id>` | redirect | bot.py:38565 | route redirects rather than rendering a web surface; SHADOWED by the parameterised rule `/pulse/status/<path:status_id>` — the last segment is being read as an id, not as a page name |
+| PARTIAL | Creator / Business | Create Post | `/pulse/compose` | `/pulse/compose` | redirect | bot.py:10909 | route redirects rather than rendering a web surface |
+| PARTIAL | Social | Profile | `/pulse/profile` | `/pulse/profile` | redirect | bot.py:80869 | route redirects rather than rendering a web surface |
 | MISSING | Economy | Seller Store | `/pulse/seller-store` | — | — | — | no Flask route serves this path |
 | MISSING | Economy | Buyer Orders | `/pulse/orders` | — | — | — | no Flask route serves this path |
 | MISSING | Intelligence | UNDX Action Center | `/pulse/undx/actions` | — | — | — | no Flask route serves this path |
 | MISSING | Primary | Activity Inbox | `/pulse/activity` | — | — | — | no Flask route serves this path |
 | MISSING | Social | Calls | `/pulse/activity?category=calls` | — | — | — | no Flask route serves this path |
 | MISSING | Trust | Account Health | `/pulse/account-health` | — | — | — | no Flask route serves this path |
-| MISSING | Trust | Safety Hub | `/pulse/safety` | — | — | — | no Flask route serves this path |

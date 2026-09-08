@@ -51,7 +51,7 @@ FRAMEWORK_RULES = {"/static/<path:filename>"}
 
 # Deep links that currently 404 on the web. Lower this as gaps close; the gate
 # fails if it rises. Measured 2026-09-08 against the live url_map.
-BROKEN_DEEP_LINK_BUDGET = 42
+BROKEN_DEEP_LINK_BUDGET = 28
 
 
 def boot_app():
@@ -84,7 +84,13 @@ def _concrete(path: str) -> str:
         lambda m: "1" if m.group(1).lower().endswith("id") else "x", path)
 
 
-def deep_link_status(app) -> tuple[list, list]:
+def _base_path(path: str) -> str:
+    """The path up to its first parameter, e.g. /pulse/orders/:id -> /pulse/orders."""
+    head = path.split("/:", 1)[0]
+    return head.rstrip("/") or "/"
+
+
+def deep_link_status(app) -> tuple[list, list, list]:
     """Resolve every `linking.ts` path against the live routing table.
 
     This is the check that matters most to a user, and the destination matrix
@@ -97,35 +103,58 @@ def deep_link_status(app) -> tuple[list, list]:
     that parameterised routes are judged the way the server judges them. A
     NotFound here means no rule exists at all; it is not an auth or data
     outcome, so it cannot be explained away as "you had to be logged in".
+
+    Three outcomes, because two would lie. A parameterised link is tested with a
+    dummy value, and the web often enumerates its valid values instead of taking
+    a wildcard: `/pulse/settings/:section` fails on a made-up section while
+    `/pulse/settings/security` and seven siblings are served. Calling that
+    BROKEN would have sent someone to rebuild a settings router that exists.
+
+    So when the dummy fails, the parameterless base is tried:
+
+      HUB_ONLY  the hub is served but item links are not -- /pulse/marketplace
+                works, /pulse/marketplace/<listing> does not, so sharing a
+                specific listing 404s while browsing is fine.
+      BROKEN    neither form resolves; the feature has no web surface at all.
     """
     adapter = app.url_map.bind("pulsesoc.com")
     links = census.parse_linking(census._read(census.LINKING))
+
+    def resolves(path: str) -> bool:
+        try:
+            adapter.match(path, method="GET")
+        except Exception:
+            return False
+        return True
+
     seen: set[str] = set()
-    resolved, broken = [], []
+    resolved, hub_only, broken = [], [], []
     for link in links:
         if link.path in seen:
             continue
         seen.add(link.path)
-        try:
-            adapter.match(_concrete(link.path), method="GET")
-        except Exception:
-            broken.append(link)
-        else:
+        if resolves(_concrete(link.path)):
             resolved.append(link)
-    return resolved, broken
+            continue
+        base = _base_path(link.path)
+        if base != link.path and resolves(base):
+            hub_only.append(link)
+        else:
+            broken.append(link)
+    return resolved, hub_only, broken
 
 
 DEEP_LINK_DOC = os.path.join(REPO, "PULSESOC_DEEPLINK_PARITY.md")
 
 
-def write_deep_link_doc(resolved: list, broken: list) -> str:
+def write_deep_link_doc(resolved: list, hub_only: list, broken: list) -> str:
     """Record the share-link gap as a reviewable artifact.
 
     Kept separate from the census documents because it can only be produced by
     booting the app: it is a statement about the routing table Flask actually
     built, not about what the source appears to declare.
     """
-    total = len(resolved) + len(broken)
+    total = len(resolved) + len(hub_only) + len(broken)
     lines = [
         "# PulseSoc deep-link parity (native -> web)",
         "",
@@ -139,14 +168,27 @@ def write_deep_link_doc(resolved: list, broken: list) -> str:
         "",
         f"- Deep-link paths: **{total}**",
         f"- Resolve on the web: **{len(resolved)}**",
-        f"- Return 404 on the web: **{len(broken)}**",
+        f"- Hub served, item links 404: **{len(hub_only)}**",
+        f"- No web surface at all: **{len(broken)}**",
         "",
-        "## Broken share links",
+        "## Broken share links (no web surface)",
         "",
         "| Path | Native screen |",
         "|---|---|",
     ]
     lines += [f"| `{link.path}` | {link.screen} |" for link in broken]
+    lines += [
+        "",
+        "## Hub served, deep links into it 404",
+        "",
+        "Browsing works; sharing a specific item does not. Either the web needs the "
+        "detail route, or it enumerates valid values and only the made-up test value "
+        "fails — check before building.",
+        "",
+        "| Path | Native screen |",
+        "|---|---|",
+    ]
+    lines += [f"| `{link.path}` | {link.screen} |" for link in hub_only]
     lines += ["", "## Resolving", "", "| Path | Native screen |", "|---|---|"]
     lines += [f"| `{link.path}` | {link.screen} |" for link in resolved]
     with open(DEEP_LINK_DOC, "w", encoding="utf-8") as handle:
@@ -185,17 +227,22 @@ def main() -> int:
         for path in unrouted:
             print(f"   {path:60} {source_of[path]}")
 
-    resolved, broken = deep_link_status(app)
-    print(f"\nnative deep links       : {len(resolved) + len(broken)}")
+    resolved, hub_only, broken = deep_link_status(app)
+    print(f"\nnative deep links       : {len(resolved) + len(hub_only) + len(broken)}")
     print(f"  resolve on the web    : {len(resolved)}")
-    print(f"  404 on the web        : {len(broken)}")
+    print(f"  hub only (item 404s)  : {len(hub_only)}")
+    print(f"  no web surface at all : {len(broken)}")
     if broken:
-        print("\n-- shareable app URLs with no web route (broken share links):")
+        print("\n-- shareable app URLs with no web route at all:")
         for link in broken:
+            print(f"   {link.path:52} {link.screen}")
+    if hub_only:
+        print("\n-- hub served, deep links into it 404:")
+        for link in hub_only:
             print(f"   {link.path:52} {link.screen}")
 
     if not args.check:
-        print("\nwrote " + write_deep_link_doc(resolved, broken))
+        print("\nwrote " + write_deep_link_doc(resolved, hub_only, broken))
 
     failures = []
     if unseen:

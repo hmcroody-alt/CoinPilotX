@@ -10890,6 +10890,50 @@ def pulse_verification_alias(track=None):
     return dashboard_account_verification_page()
 
 
+@webhook_app.route("/dashboard/home", methods=["GET"])
+def dashboard_home_alias():
+    return dashboard_page()
+
+
+@webhook_app.route("/pulse/music-alias", methods=["GET"])
+def pulse_music_alias():
+    return pulse_music_page()
+
+
+# The web composer is a fragment on the feed, not a page: /pulse/create exists
+# only to redirect to /pulse#create. /pulse/compose is the name the app ships,
+# so it has to land in the same place. It cannot simply join pulse_page's
+# decorator stack -- that function decides what to render with
+# request.path.endswith("/create"), so /pulse/compose would quietly serve the
+# default feed instead of opening the composer.
+@webhook_app.route("/pulse/compose", methods=["GET"])
+def pulse_compose_alias():
+    return redirect("/pulse#create")
+
+
+@webhook_app.route("/pulse/crypto/alerts", methods=["GET"])
+def pulse_crypto_alerts_alias():
+    return dashboard_crypto_module_page("alerts")
+
+
+@webhook_app.route("/pulse/watchlists", methods=["GET"])
+def pulse_watchlists_alias():
+    return dashboard_crypto_module_page("watchlists")
+
+
+# SafetyHub and SafetyWebHub are the same web page under two app spellings, and
+# both carry an optional section the web page does not branch on yet. The
+# segment is accepted and ignored so the link resolves to the right product
+# now, and honouring it later will not require changing a URL the app has
+# already shipped.
+@webhook_app.route("/pulse/safety", methods=["GET"])
+@webhook_app.route("/pulse/safety/<section>", methods=["GET"])
+@webhook_app.route("/pulse/dashboard/network-safety", methods=["GET"])
+@webhook_app.route("/pulse/dashboard/network-safety/<section>", methods=["GET"])
+def pulse_safety_alias(section=None):
+    return dashboard_network_subsystem_page("safety")
+
+
 @webhook_app.route("/dashboard/account/profile", methods=["GET"])
 def dashboard_account_profile_page():
     init_db()

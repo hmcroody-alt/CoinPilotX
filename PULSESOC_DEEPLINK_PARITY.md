@@ -9,35 +9,26 @@ using Werkzeug's own matcher, so a BROKEN row means no rule exists at all —
 not that the visitor was signed out.
 
 - Deep-link paths: **111**
-- Resolve on the web: **69**
-- Return 404 on the web: **42**
+- Resolve on the web: **76**
+- Hub served, item links 404: **7**
+- No web surface at all: **28**
 
-## Broken share links
+## Broken share links (no web surface)
 
 | Path | Native screen |
 |---|---|
-| `/dashboard/:legacyGroup/:legacyModule/:legacySubmodule?` | DashboardLegacyModule |
-| `/dashboard/home` | UserDashboardWeb |
-| `/pulse/compose` | DashboardComposeAlias |
-| `/pulse/music-alias` | DashboardMusicAlias |
 | `/pulse/dashboard/module/:groupKey/:moduleKey` | DashboardModuleDetail |
-| `/pulse/camera/:mode?` | CameraStudio |
 | `/pulse/calls/:callId?` | Call |
 | `/pulse/messages/new` | NewChat |
-| `/pulse/marketplace/:listingId` | MarketplaceDetail |
 | `/pulse/seller-store` | SellerStore |
 | `/pulse/orders` | BuyerOrders |
 | `/pulse/orders/:orderId` | BuyerOrderDetail |
 | `/dashboard/orders` | BuyerOrdersDashboard |
-| `/pulse/events/:eventId` | EventDetail |
 | `/pulse/presence` | Presence |
 | `/pulse/pages/create` | PageCreate |
 | `/pulse/pages` | PagesHub |
 | `/pulse/pages/:handle` | Page |
-| `/pulse/intelligence/:subsystem?` | IntelligenceCenter |
 | `/pulse/undx/actions` | UndxActionCenter |
-| `/pulse/crypto/alerts` | CryptoAlertManagement |
-| `/pulse/watchlists` | Watchlists |
 | `/pulse/private-office` | PrivateOffice |
 | `/pulse/private-office/facts` | PrivateFacts |
 | `/pulse/private-office/security` | PrivateOfficeSecurity |
@@ -49,15 +40,25 @@ not that the visitor was signed out.
 | `/pulse/private-office/:view` | PrivateOperations |
 | `/pulse/private-office/capital-graph` | CapitalGraph |
 | `/pulse/private-office/capital-graph/:id` | CapitalEntity |
-| `/pulse/settings/:section` | AccountCenter |
 | `/pulse/account-health` | AccountHealth |
-| `/pulse/safety/:section?` | SafetyHub |
-| `/pulse/dashboard/network-safety/:section?` | SafetyWebHub |
-| `/scam-shield/:mode?` | ScamShield |
 | `/pulse/activity/:category?` | ActivityInbox |
 | `/pulse/inbox` | ActivityInboxLegacyInbox |
 | `/dashboard/activity` | ActivityInboxWebActivity |
 | `/dashboard/inbox` | ActivityInboxWebInbox |
+
+## Hub served, deep links into it 404
+
+Browsing works; sharing a specific item does not. Either the web needs the detail route, or it enumerates valid values and only the made-up test value fails — check before building.
+
+| Path | Native screen |
+|---|---|
+| `/dashboard/:legacyGroup/:legacyModule/:legacySubmodule?` | DashboardLegacyModule |
+| `/pulse/camera/:mode?` | CameraStudio |
+| `/pulse/marketplace/:listingId` | MarketplaceDetail |
+| `/pulse/events/:eventId` | EventDetail |
+| `/pulse/intelligence/:subsystem?` | IntelligenceCenter |
+| `/pulse/settings/:section` | AccountCenter |
+| `/scam-shield/:mode?` | ScamShield |
 
 ## Resolving
 
@@ -78,6 +79,9 @@ not that the visitor was signed out.
 | `/pulse/marketplace` | Marketplace |
 | `/pulse/settings` | Settings |
 | `/dashboard` | UserDashboard |
+| `/dashboard/home` | UserDashboardWeb |
+| `/pulse/compose` | DashboardComposeAlias |
+| `/pulse/music-alias` | DashboardMusicAlias |
 | `/pulse/music` | Music |
 | `/pulse/messages/:conversationId` | Chat |
 | `/pulse/post/:postId` | PostDetail |
@@ -114,7 +118,9 @@ not that the visitor was signed out.
 | `/pulse/teacher-dashboard` | TeacherDashboardGateway |
 | `/pulse/growth` | GrowthCenter |
 | `/pulse/alerts/:alertId?` | AlertManagement |
+| `/pulse/crypto/alerts` | CryptoAlertManagement |
 | `/pulse/portfolio` | Portfolio |
+| `/pulse/watchlists` | Watchlists |
 | `/pulse/crypto` | MarketPulse |
 | `/dashboard/account/settings` | AccountSettings |
 | `/dashboard/account/security` | AccountSecurity |
@@ -123,6 +129,8 @@ not that the visitor was signed out.
 | `/privacy-center` | AccountPrivacy |
 | `/pulse/settings/devices` | AccountDevices |
 | `/dashboard/account/health` | AccountHealthWeb |
+| `/pulse/safety/:section?` | SafetyHub |
+| `/pulse/dashboard/network-safety/:section?` | SafetyWebHub |
 | `/pulse/help` | TrustSafety |
 | `/pulse/support` | TrustSafetySupport |
 | `/help` | TrustSafetyHelp |
