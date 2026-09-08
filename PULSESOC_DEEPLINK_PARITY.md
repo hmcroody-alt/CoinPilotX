@@ -9,9 +9,9 @@ using Werkzeug's own matcher, so a BROKEN row means no rule exists at all —
 not that the visitor was signed out.
 
 - Deep-link paths: **111**
-- Resolve on the web: **97**
+- Resolve on the web: **100**
 - Hub served, item links 404: **8**
-- No web surface at all: **6**
+- No web surface at all: **3**
 
 ## Broken share links (no web surface)
 
@@ -19,9 +19,6 @@ not that the visitor was signed out.
 |---|---|
 | `/pulse/dashboard/module/:groupKey/:moduleKey` | DashboardModuleDetail |
 | `/pulse/calls/:callId?` | Call |
-| `/pulse/messages/new` | NewChat |
-| `/pulse/seller-store` | SellerStore |
-| `/pulse/presence` | Presence |
 | `/pulse/undx/actions` | UndxActionCenter |
 
 ## Hub served, deep links into it 404
@@ -63,10 +60,12 @@ Browsing works; sharing a specific item does not. Either the web needs the detai
 | `/pulse/music-alias` | DashboardMusicAlias |
 | `/pulse/music` | Music |
 | `/pulse/messages/:conversationId` | Chat |
+| `/pulse/messages/new` | NewChat |
 | `/pulse/post/:postId` | PostDetail |
 | `/pulse/marketplace/create` | MarketplaceCreateGateway |
 | `/pulse/reels/:reelId` | ReelDetail |
 | `/pulse/status/:statusId` | StatusDetail |
+| `/pulse/seller-store` | SellerStore |
 | `/pulse/orders` | BuyerOrders |
 | `/pulse/orders/:orderId` | BuyerOrderDetail |
 | `/pulse/purchases` | BuyerPurchases |
@@ -83,6 +82,7 @@ Browsing works; sharing a specific item does not. Either the web needs the detai
 | `/pulse/live/events/create` | LiveEventCreateGateway |
 | `/pulse/profile/edit` | ProfileEdit |
 | `/pulse/profile/:profileKey` | ProfileDetail |
+| `/pulse/presence` | Presence |
 | `/pulse/pages/create` | PageCreate |
 | `/pulse/pages` | PagesHub |
 | `/pulse/pages/:handle` | Page |

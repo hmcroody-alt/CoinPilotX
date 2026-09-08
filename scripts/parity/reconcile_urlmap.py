@@ -52,13 +52,18 @@ FRAMEWORK_RULES = {"/static/<path:filename>"}
 # Deep links that currently 404 on the web. Lower this as gaps close; the gate
 # fails if it rises. Measured 2026-09-08 against the live url_map, after the
 # Private Office web surface took ten of them, orders/Pages/Account Health took
-# seven more, and the Activity inbox took four.
+# seven more, the Activity inbox took four, and Seller Store, Presence and
+# Start-a-chat took three.
 #
-# One of the six -- `/pulse/calls/:callId?` -- is not a gap to close. A web call
-# surface would be a second real-time audio publication path, which
+# One of the three left -- `/pulse/calls/:callId?` -- is not a gap to close. A
+# web call surface would be a second real-time audio publication path, which
 # `docs/realtime_audio_change_policy.md` forbids outright, so this number cannot
 # honestly reach zero by building. It is BLOCKED, not pending; the floor is 1.
-BROKEN_DEEP_LINK_BUDGET = 6
+# The other two are pending work: `/pulse/undx/actions` needs a client that can
+# render six lists at once and tell "the feature is switched off" apart from
+# "you have nothing waiting", and `/pulse/dashboard/module/:groupKey/:moduleKey`
+# has not been investigated yet.
+BROKEN_DEEP_LINK_BUDGET = 3
 
 
 def boot_app():

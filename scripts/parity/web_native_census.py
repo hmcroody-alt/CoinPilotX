@@ -658,6 +658,39 @@ def _rule_regex(rule: str):
     return re.compile("^" + "".join(out) + "$")
 
 
+# Conclusions from a per-system review, appended to the machine's own note.
+#
+# They never change a verdict. A curated map that could promote PARTIAL to PAGE
+# would be precisely the hand-maintained parity claim this census exists to
+# replace, and the mission forbids it outright. All these do is stop the next
+# reader from re-deriving a conclusion somebody already reached.
+#
+# That is worth the mechanism because the machine's note is accurate and still
+# misleading. "Route redirects rather than rendering a web surface" describes
+# both an unfinished page and a deliberate router identically, and the last time
+# a reader guessed wrong about a gap of this shape -- `/pulse/intelligence`,
+# reported as having no web surface while Flask was serving it -- the guess was
+# worth a rebuild of a page that already existed.
+REVIEWED_NOTES = {
+    "/pulse/seller-store": (
+        "REVIEWED: redirects by design. `SellerStoreScreen` is one screen showing "
+        "a different subset of seven panels per `mode`; the web split those same "
+        "panels across the merchant application, dashboard, payouts and listing "
+        "composer years ago, and this route maps each `mode` onto the page that "
+        "already owns it. A web Seller Store page would be a second merchant "
+        "console with its own opinion of a seller's status. Pinned by "
+        "tests/web_surface/test_seller_store_presence_newchat.py"),
+    "/pulse/undx/actions": (
+        "REVIEWED: a real gap, deferred deliberately. The endpoint answers one "
+        "nested snapshot of six lists and the native screen fans out to two more, "
+        "which the shared web client cannot yet render; the subsystem is also "
+        "behind an env flag and 404s when off, a fourth state that must not draw "
+        "as empty. A server-side shim flattening it for the browser would be a "
+        "web-only backend authority, so this waits for a real client capability "
+        "rather than a workaround"),
+}
+
+
 def build_matrix(destinations: list[NativeDestination],
                  web_routes: list[WebRoute]) -> list[ParityRow]:
     by_path: dict[str, list[WebRoute]] = {}
@@ -752,7 +785,20 @@ def build_matrix(destinations: list[NativeDestination],
                 row.note += (f"; candidate page at `{near[0].path}` "
                              f"({near[0].file}:{near[0].line}) — same last "
                              "segment, needs confirmation")
+        reviewed = REVIEWED_NOTES.get(target)
+        if reviewed:
+            row.note += "; " + reviewed
         rows.append(row)
+
+    # A rationale for a destination the app no longer has is worse than no
+    # rationale: it reads as a live decision about a live route. Fail loudly
+    # rather than carrying an explanation of something that stopped existing.
+    targets = {_normalise(dest.route) for dest in destinations}
+    orphaned = sorted(set(REVIEWED_NOTES) - targets)
+    if orphaned:
+        raise SystemExit(
+            "REVIEWED_NOTES describes destinations the app no longer publishes: "
+            + ", ".join(orphaned) + " — delete the entry or fix the path.")
     return rows
 
 
