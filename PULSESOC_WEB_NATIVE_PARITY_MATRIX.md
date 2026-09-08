@@ -18,9 +18,9 @@ a per-system review that actually inspects the surface.
 
 | Verdict | Count |
 |---|---|
-| MISSING | 20 |
-| PAGE | 29 |
-| PARTIAL | 2 |
+| MISSING | 19 |
+| PAGE | 31 |
+| PARTIAL | 1 |
 
 ## Matrix
 
@@ -39,6 +39,8 @@ a per-system review that actually inspects the surface.
 | PAGE | Economy | Marketplace | `/pulse/marketplace` | `/pulse/marketplace` | html | bot.py:53184 | html page served, source=pulse_social_shell() |
 | PAGE | Economy | Create Listing | `/pulse/marketplace/create` | `/pulse/marketplace/create` | html | bot.py:54612 | html page served, source=pulse_social_shell() |
 | PAGE | Economy | Premium | `/pulse/premium` | `/pulse/premium` | html | bot.py:54756 | html page served, source=ios_paid_digital_unavailable_response()+pulse_social_shell() |
+| PAGE | Intelligence | Intelligence Center | `/pulse/intelligence` | `/pulse/intelligence` | html | pulse_communications_v2/routes.py:301 | html page served, source=_render_pulse_signal_surface() |
+| PAGE | Intelligence | Alert Management | `/pulse/alerts` | `/pulse/alerts` | html | pulse_communications_v2/routes.py:303 | html page served, source=_render_pulse_signal_surface(); NOTE also declared as a redirect at bot.py:38415 — duplicate registration, page wins only by ordering |
 | PAGE | Intelligence | Portfolio | `/pulse/portfolio` | `/pulse/portfolio` | html | bot.py:37205 | html page served, source=ios_paid_digital_unavailable_response()+pulse_social_shell() |
 | PAGE | Intelligence | Scam Shield | `/scam-shield/scan` | `/scam-shield/scan` | html | bot.py:1871 | html page served, source=inline |
 | PAGE | Primary | Home | `/pulse` | `/pulse` | html | bot.py:40899 | html page served, source=pulse_page_html() |
@@ -55,7 +57,6 @@ a per-system review that actually inspects the surface.
 | PAGE | Utility | Notification Preferences | `/dashboard/network/notifications` | `/dashboard/network/notifications` | html | bot.py:10419 | html page served, source=dashboard_network_shell() |
 | PAGE | Utility | Terms | `/terms` | `/terms` | html | bot.py:1909 | html page served, source=terms.html |
 | PAGE | Utility | Privacy Policy | `/privacy` | `/privacy` | html | bot.py:1904 | html page served, source=privacy.html |
-| PARTIAL | Intelligence | Alert Management | `/pulse/alerts` | `/pulse/alerts` | redirect | bot.py:38415 | route redirects rather than rendering a web surface |
 | PARTIAL | Social | Profile | `/pulse/profile` | `/pulse/profile` | redirect | bot.py:80751 | route redirects rather than rendering a web surface |
 | MISSING | Content | Add Status | `/pulse/status/create` | — | — | — | no Flask route serves this path; candidate page at `/pulse/create` (bot.py:40904) — same last segment, needs confirmation |
 | MISSING | Creator / Business | Create Post | `/pulse/compose` | — | — | — | no Flask route serves this path |
@@ -66,7 +67,6 @@ a per-system review that actually inspects the surface.
 | MISSING | Economy | Buyer Orders | `/pulse/orders` | — | — | — | no Flask route serves this path |
 | MISSING | Intelligence | UNDX | `/pulse/ai` | — | — | — | no Flask route serves this path; candidate page at `/dashboard/ai` (bot.py:10338) — same last segment, needs confirmation |
 | MISSING | Intelligence | UNDX Action Center | `/pulse/undx/actions` | — | — | — | no Flask route serves this path |
-| MISSING | Intelligence | Intelligence Center | `/pulse/intelligence` | — | — | — | no Flask route serves this path; candidate page at `/dashboard/intelligence` (bot.py:9231) — same last segment, needs confirmation |
 | MISSING | Intelligence | Crypto Command | `/dashboard/crypto/alerts` | — | — | — | no Flask route serves this path; candidate page at `/alerts` (bot.py:37712) — same last segment, needs confirmation |
 | MISSING | Intelligence | Watchlists | `/dashboard/crypto/watchlists` | — | — | — | no Flask route serves this path |
 | MISSING | Primary | Dashboard | `/pulse/dashboard` | — | — | — | no Flask route serves this path; candidate page at `/dashboard` (bot.py:7408) — same last segment, needs confirmation |

@@ -3,14 +3,14 @@
 
 # PulseSoc web product inventory
 
-- Flask routes discovered: **1883**
-- HTML page routes: **477**
-- JSON API routes: **1359**
-- Redirect-only routes: **30**
+- Flask routes discovered: **2107**
+- HTML page routes: **499**
+- JSON API routes: **1560**
+- Redirect-only routes: **31**
 - File/stream routes: **17**
 
 The headline finding is *not* that the web is thin. With
-**477** HTML page routes against
+**499** HTML page routes against
 **148** native screens, the website has more
 page endpoints than the app has screens. Counting templates badly
 understates this: only a handful of pages come from `templates/`,
@@ -59,6 +59,16 @@ per surface.
 | `/admin/audit-logs` | GET | admin_audit_logs_page | admin_page_html() | bot.py:17853 |
 | `/admin/billing/recalculate` | POST | admin_billing_recalculate_page | admin_page_html() | bot.py:22193 |
 | `/admin/bootstrap-owner` | GET | admin_bootstrap_owner_page | inline | bot.py:15810 |
+| `/admin/calls` | GET | admin_calls_page | _admin_calls_page() | pulse_communications_v2/routes.py:1558 |
+| `/admin/calls/<path:call_id>` | GET | admin_calls_detail_page | _admin_calls_page() | pulse_communications_v2/routes.py:1616 |
+| `/admin/calls/<path:call_id>/delivery` | GET | admin_calls_delivery_page | _admin_calls_page() | pulse_communications_v2/routes.py:1597 |
+| `/admin/calls/<path:call_id>/inspector` | GET | admin_calls_inspector_page | _admin_calls_page() | pulse_communications_v2/routes.py:1602 |
+| `/admin/calls/<path:call_id>/timeline` | GET | admin_calls_timeline_page | _admin_calls_page() | pulse_communications_v2/routes.py:1592 |
+| `/admin/calls/active` | GET | admin_calls_active_page | _admin_calls_page() | pulse_communications_v2/routes.py:1568 |
+| `/admin/calls/failed` | GET | admin_calls_failed_page | _admin_calls_page() | pulse_communications_v2/routes.py:1573 |
+| `/admin/calls/missed` | GET | admin_calls_missed_page | _admin_calls_page() | pulse_communications_v2/routes.py:1578 |
+| `/admin/calls/recent` | GET | admin_calls_recent_page | _admin_calls_page() | pulse_communications_v2/routes.py:1563 |
+| `/admin/calls/test-config` | GET,POST | admin_calls_test_config_page | _admin_calls_page() | pulse_communications_v2/routes.py:1583 |
 | `/admin/capability-matrix` | GET,POST | admin_capability_matrix_page | admin_page_html() | bot.py:94678 |
 | `/admin/change-password` | GET,POST | admin_change_password_page | admin_page_html() | bot.py:15850 |
 | `/admin/chat-health` | GET | admin_chat_health_page | admin_page_html() | bot.py:34478 |
@@ -102,6 +112,7 @@ per surface.
 | `/admin/group-chat-health` | GET | admin_group_chat_health_page | admin_page_html() | bot.py:94919 |
 | `/admin/groups-health` | GET | admin_groups_health_page | admin_page_html() | bot.py:94799 |
 | `/admin/growth-engine` | GET | admin_ads_command_center_page | admin_page_html() | bot.py:98667 |
+| `/admin/intelligence` | GET | admin_galaxy_intelligence_page | admin_galaxy_intelligence_center.html | pulse_communications_v2/routes.py:379 |
 | `/admin/intelligence-command-center` | GET | admin_intelligence_command_center_page | admin_page_html() | bot.py:98142 |
 | `/admin/intelligence-command-center/<section_key>` | GET | admin_intelligence_command_center_section_page | admin_page_html() | bot.py:98181 |
 | `/admin/intelligence-graph` | GET | admin_intelligence_graph_page | admin_page_html() | bot.py:97219 |
@@ -147,6 +158,7 @@ per surface.
 | `/admin/pulse-ads-review-board/action` | POST | admin_pulse_ads_review_board_action | admin_page_html() | bot.py:21053 |
 | `/admin/pulse-ads-verification` | GET | admin_pulse_ads_verification_page | admin_page_html() | bot.py:21095 |
 | `/admin/pulse-ads-verification/action` | POST | admin_pulse_ads_verification_action | admin_page_html() | bot.py:21178 |
+| `/admin/pulse-ai/learning` | GET | admin_pulse_ai_learning_page | admin_pulse_ai_learning_center.html | pulse_communications_v2/routes.py:256 |
 | `/admin/pulse-analytics` | GET | admin_pulse_analytics_page | admin_page_html() | bot.py:93341 |
 | `/admin/pulse-core` | GET | admin_pulse_core_page | admin_page_html() | bot.py:93437 |
 | `/admin/pulse-feed-health` | GET,POST | admin_pulse_feed_health_page | admin_page_html() | bot.py:93171 |
@@ -379,8 +391,10 @@ per surface.
 | `/pulse/@<path:profile_key>` | GET | pulse_profile_page | pulse_profile_not_found_page()+pulse_profile_page_for_user() | bot.py:81618 |
 | `/pulse/ads` | GET | pulse_advertiser_portal_page | pulse_advertiser_portal.html | bot.py:11404 |
 | `/pulse/advertise` | GET | pulse_advertiser_portal_page | pulse_advertiser_portal.html | bot.py:11403 |
+| `/pulse/alerts` | GET | pulse_alerts_page | _render_pulse_signal_surface() | pulse_communications_v2/routes.py:303 |
 | `/pulse/arena` | GET | pulse_page | pulse_page_html() | bot.py:40906 |
 | `/pulse/assistant` | GET | pulse_assistant_page | pulse_social_shell() | bot.py:54232 |
+| `/pulse/briefing` | GET | pulse_daily_briefing_page | _render_pulse_signal_surface() | pulse_communications_v2/routes.py:313 |
 | `/pulse/camera` | GET | pulse_camera_studio_page | pulse_social_shell() | bot.py:52989 |
 | `/pulse/camera/photo` | GET | pulse_camera_studio_page | pulse_social_shell() | bot.py:52990 |
 | `/pulse/camera/post` | GET | pulse_camera_studio_page | pulse_social_shell() | bot.py:52994 |
@@ -407,6 +421,7 @@ per surface.
 | `/pulse/discover` | GET | pulse_discover_page | pulse_social_shell() | bot.py:79234 |
 | `/pulse/events` | GET | pulse_events_page | pulse_social_shell() | bot.py:79273 |
 | `/pulse/following` | GET | pulse_page | pulse_page_html() | bot.py:40901 |
+| `/pulse/forecasts` | GET | pulse_forecasts_page | _render_pulse_signal_surface() | pulse_communications_v2/routes.py:308 |
 | `/pulse/friends` | GET | pulse_friends_page | pulse_social_shell() | bot.py:48056 |
 | `/pulse/groups` | GET | pulse_groups_page | pulse_social_shell() | bot.py:81123 |
 | `/pulse/groups/<group_slug>` | GET | pulse_group_detail_page | pulse_social_shell() | bot.py:81457 |
@@ -414,8 +429,10 @@ per surface.
 | `/pulse/growth` | GET | pulse_advertiser_portal_page | pulse_advertiser_portal.html | bot.py:11402 |
 | `/pulse/help` | GET,POST | support_page | support.html | bot.py:1708 |
 | `/pulse/id/<path:profile_key>` | GET | pulse_profile_page | pulse_profile_not_found_page()+pulse_profile_page_for_user() | bot.py:81620 |
+| `/pulse/intelligence` | GET | pulse_alerts_page | _render_pulse_signal_surface() | pulse_communications_v2/routes.py:301 |
 | `/pulse/invite` | GET | pulse_invite_page | pulse_social_shell() | bot.py:48117 |
 | `/pulse/labs` | GET | pulse_labs_page | pulse_labs.html | bot.py:40930 |
+| `/pulse/labs` | GET | pulse_labs_page | pulse_labs.html | undx_execution_kernel.py:617 |
 | `/pulse/live` | GET | pulse_live_page | pulse_social_shell() | bot.py:48140 |
 | `/pulse/live/eligibility` | GET | pulse_live_page | pulse_social_shell() | bot.py:48141 |
 | `/pulse/live/events/create` | GET | pulse_live_event_create_gateway_page | pulse_social_shell() | bot.py:79295 |
@@ -429,6 +446,7 @@ per surface.
 | `/pulse/merchant/dashboard` | GET | pulse_merchant_dashboard_page | pulse_social_shell() | bot.py:54487 |
 | `/pulse/merchant/payouts` | GET | pulse_merchant_payouts_page | seller_payouts_page() | bot.py:54542 |
 | `/pulse/messages` | GET | pulse_messages_page | pulse_messages_v2.html | bot.py:80698 |
+| `/pulse/messages-v2` | GET | messages_v2_page | pulse_messages_v2.html | pulse_communications_v2/routes.py:190 |
 | `/pulse/messages/<int:conversation_id>` | GET | pulse_message_thread_page | pulse_messages_v2.html | bot.py:81336 |
 | `/pulse/music` | GET | pulse_music_page | pulse_social_shell() | bot.py:42244 |
 | `/pulse/my-posts` | GET | pulse_page | pulse_page_html() | bot.py:40903 |
@@ -463,10 +481,14 @@ per surface.
 | `/pulse/settings` | GET | pulse_settings_page | pulse_social_shell() | bot.py:79333 |
 | `/pulse/settings/account` | GET | pulse_settings_account_page | pulse_security_settings_page() | bot.py:80952 |
 | `/pulse/settings/devices` | GET | pulse_settings_devices_page | pulse_security_settings_page() | bot.py:80962 |
+| `/pulse/settings/intelligence` | GET | pulse_signal_preferences_page | _render_pulse_signal_surface() | pulse_communications_v2/routes.py:318 |
 | `/pulse/settings/notifications` | GET | pulse_notification_settings_page | pulse_social_shell() | bot.py:79927 |
 | `/pulse/settings/privacy` | GET | pulse_settings_privacy_page | pulse_security_settings_page() | bot.py:80957 |
 | `/pulse/settings/recovery` | GET | pulse_settings_recovery_page | pulse_security_settings_page() | bot.py:80967 |
 | `/pulse/settings/security` | GET | pulse_settings_security_page | pulse_security_settings_page() | bot.py:80946 |
+| `/pulse/settings/signals` | GET | pulse_signal_preferences_page | _render_pulse_signal_surface() | pulse_communications_v2/routes.py:319 |
+| `/pulse/signals` | GET | pulse_alerts_page | _render_pulse_signal_surface() | pulse_communications_v2/routes.py:302 |
+| `/pulse/signals/<string:signal_key>` | GET | pulse_signal_stream_page | _render_pulse_signal_surface() | pulse_communications_v2/routes.py:324 |
 | `/pulse/spaces` | GET | pulse_spaces_page | pulse_social_shell() | bot.py:52890 |
 | `/pulse/spaces/<slug>` | GET | pulse_space_detail_page | pulse_section_shell()+pulse_social_shell() | bot.py:52911 |
 | `/pulse/status` | GET | pulse_status_page | pulse_social_shell() | bot.py:41581 |

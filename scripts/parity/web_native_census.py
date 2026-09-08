@@ -174,12 +174,27 @@ class WebRoute:
     line: int
     kind: str = "unknown"        # html | json | redirect | unknown
     template: str = ""
+    # How the route was found. The drift gate compares the parsed count against
+    # a raw count of `@x.route(` lines, and that invariant only holds for routes
+    # that actually have a decorator to count -- declarative tables mounted with
+    # `add_url_rule` have none, so they are tallied separately.
+    source: str = "decorator"    # decorator | table
 
 
+# Flask offers `@bp.route(p, methods=["GET"])` and the shortcuts
+# `@bp.get(p)` / `.post` / `.put` / `.patch` / `.delete`. Matching only the
+# first form lost all 106 routes in pulse_communications_v2, which is how
+# /pulse/intelligence came to be reported as having no web surface while Flask
+# was serving it the whole time.
+VERB = "get|post|put|patch|delete"
 ROUTE_DECORATOR = re.compile(
-    r'^@(?P<obj>[A-Za-z_][A-Za-z0-9_]*)\.route\(\s*(?P<path>.+?)\s*(?:,\s*methods\s*=\s*(?P<methods>\[[^\]]*\]))?\s*\)\s*$'
+    r'^@(?P<obj>[A-Za-z_][A-Za-z0-9_.]*)\.(?P<attr>route|' + VERB + r')\('
+    r'\s*(?P<path>.+?)\s*'
+    r'(?:,\s*methods\s*=\s*(?P<methods>\[[^\]]*\]))?'
+    r'(?:,\s*[a-z_]+\s*=\s*[^,()]+)*\s*\)\s*$'
 )
-ROUTE_DECORATOR_START = re.compile(r'^@(?P<obj>[A-Za-z_][A-Za-z0-9_]*)\.route\(')
+ROUTE_DECORATOR_START = re.compile(
+    r'^@(?P<obj>[A-Za-z_][A-Za-z0-9_.]*)\.(?:route|' + VERB + r')\(')
 DEF_LINE = re.compile(r'^\s*def\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*\(')
 
 
@@ -350,6 +365,21 @@ def classify_body(body: str, html_producers: set[str]) -> tuple[str, str]:
     return "json", ""
 
 
+def _blueprint_prefixes(text: str) -> dict[str, str]:
+    """Map each Blueprint variable to its `url_prefix`, defaulting to "".
+
+    A Blueprint's prefix is part of every path it serves. Ignoring it filed the
+    sentinel routes under `/events` and `/incidents` rather than
+    `/api/admin/sentinel/...` -- not merely a wrong path but a plausible-looking
+    one, which is the kind of error that survives review.
+    """
+    prefixes: dict[str, str] = {}
+    for match in BLUEPRINT_PREFIX.finditer(text):
+        found = re.search(r'url_prefix\s*=\s*["\']([^"\']*)["\']', match.group("args"))
+        prefixes[match.group("name")] = found.group(1) if found else ""
+    return prefixes
+
+
 def parse_flask_routes(path: str, html_producers: set[str] | None = None) -> list[WebRoute]:
     html_producers = html_producers or set()
     text = _read(path)
@@ -360,6 +390,7 @@ def parse_flask_routes(path: str, html_producers: set[str] | None = None) -> lis
             r'^(?P<name>[A-Z_][A-Z0-9_]*)\s*=\s*["\'](?P<value>/[^"\']*)["\']',
             text, re.MULTILINE)
     }
+    blueprint_prefix = _blueprint_prefixes(text)
     routes: list[WebRoute] = []
     rel = os.path.relpath(path, REPO)
     for index, line in enumerate(lines):
@@ -375,8 +406,13 @@ def parse_flask_routes(path: str, html_producers: set[str] | None = None) -> lis
         literal = _literal_path(match.group("path"), prefix_values)
         if literal is None:
             continue
-        methods_raw = match.group("methods") or '["GET"]'
-        methods = re.findall(r'["\']([A-Z]+)["\']', methods_raw) or ["GET"]
+        literal = blueprint_prefix.get(match.group("obj"), "") + literal
+        attr = match.group("attr")
+        if attr == "route":
+            methods_raw = match.group("methods") or '["GET"]'
+            methods = re.findall(r'["\']([A-Z]+)["\']', methods_raw) or ["GET"]
+        else:
+            methods = [attr.upper()]
 
         # Walk forward past stacked decorators to the def, then take the body.
         cursor = last_line + 1
@@ -398,11 +434,59 @@ def parse_flask_routes(path: str, html_producers: set[str] | None = None) -> lis
     return routes
 
 
+SKIP_DIRS = {
+    ".git", ".venv", "node_modules", ".claude", "mobile", "mobile-native",
+    "UNDX_RECON", "tests", "__pycache__", "migrations", "venv",
+}
+
+# Files that declare routes on some Flask app that is *not* `webhook_app`.
+# Counting them inflates the web surface with endpoints no browser can reach.
+# Each exclusion is checked against the live url_map by
+# scripts/parity/reconcile_urlmap.py, so this list cannot quietly rot.
+NON_WEB_ROUTE_FILES = {
+    # Its own Flask() app; a local developer bridge, never mounted on the site.
+    "undx_desktop_connector.py": "standalone Flask app (desktop connector)",
+    # Its own Flask() app; an internal worker addressed over the private network.
+    "services/command_center_worker/app.py": "standalone Flask app (worker)",
+    # A Blueprint that is deliberately never registered. tests/sentinel/
+    # test_ethical_regression.py actively asserts `sentinel_bp` stays out of the
+    # app, so treating these as web surface would contradict a guardrail test.
+    "services/sentinel/api.py": "blueprint intentionally left unregistered",
+    # Extends bot.app, but nothing imports it, so the rule is never added.
+    "cj_staging_backend.py": "module never imported at runtime",
+}
+
+BLUEPRINT_PREFIX = re.compile(
+    r'^(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*Blueprint\((?P<args>[^)]*)\)',
+    re.MULTILINE | re.DOTALL)
+
+
+def iter_python_sources() -> list[str]:
+    """Every Python file that could register a route on the web app.
+
+    Scanning bot.py plus `services/*.py` was not enough: `services/` has
+    packages one level down, and `pulse_communications_v2/` is a top-level
+    package holding 107 routes. The url_map diff is what surfaced this -- the
+    census claimed /pulse/intelligence had no web surface while Flask was
+    serving it. Directories are excluded only when they cannot contribute to
+    `webhook_app`; anything else is scanned and then reconciled against the
+    live url_map by tests/parity/.
+    """
+    files: list[str] = []
+    for root, dirs, names in os.walk(REPO):
+        dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS)
+        for name in sorted(names):
+            if not name.endswith(".py"):
+                continue
+            full = os.path.join(root, name)
+            if os.path.relpath(full, REPO) in NON_WEB_ROUTE_FILES:
+                continue
+            files.append(full)
+    return files
+
+
 def collect_web_routes() -> list[WebRoute]:
-    files = [BOT_PY]
-    for name in sorted(os.listdir(SERVICES_DIR)):
-        if name.endswith(".py"):
-            files.append(os.path.join(SERVICES_DIR, name))
+    files = iter_python_sources()
     sources = []
     for path in files:
         try:
@@ -414,8 +498,46 @@ def collect_web_routes() -> list[WebRoute]:
     for path in files:
         try:
             routes.extend(parse_flask_routes(path, html_producers))
+            routes.extend(parse_route_tables(path))
         except (OSError, UnicodeDecodeError):
             continue
+    return routes
+
+
+ROUTE_TABLE = re.compile(r'^ROUTES\b[^=]*=\s*[\(\[]', re.MULTILINE)
+TABLE_ENTRY = re.compile(
+    r'\bmethod\s*=\s*["\'](?P<method>[A-Z]+)["\'][^)]*?\brule\s*=\s*["\'](?P<rule>/[^"\']*)["\']'
+    r'|\brule\s*=\s*["\'](?P<rule2>/[^"\']*)["\'][^)]*?\bmethod\s*=\s*["\'](?P<method2>[A-Z]+)["\']',
+    re.DOTALL)
+
+
+def parse_route_tables(path: str) -> list[WebRoute]:
+    """Routes declared as data and mounted with `add_url_rule`, not decorators.
+
+    `services/business_os/commerce_gateway.py` holds a `ROUTES` tuple that the
+    adapter loops over, so 31 live Business OS endpoints have no decorator
+    anywhere and are invisible to a decorator scan. They are the entire
+    marketplace offers/returns/inventory and storefront API -- exactly the
+    surface the Store and Marketplace parity work depends on -- so leaving them
+    out would have understated those systems while looking complete.
+    """
+    text = _read(path)
+    start = ROUTE_TABLE.search(text)
+    if not start:
+        return []
+    prefix = ""
+    found = re.search(r'^API_PREFIX\s*=\s*["\'](?P<value>/[^"\']*)["\']', text, re.MULTILINE)
+    if found:
+        prefix = found.group("value")
+    rel = os.path.relpath(path, REPO)
+    line = text[:start.start()].count("\n") + 1
+    routes: list[WebRoute] = []
+    for match in TABLE_ENTRY.finditer(text, start.end()):
+        rule = match.group("rule") or match.group("rule2")
+        method = match.group("method") or match.group("method2")
+        routes.append(WebRoute(
+            path=prefix + rule, methods=[method], function="(route table)",
+            file=rel, line=line, kind="json", template="", source="table"))
     return routes
 
 
@@ -429,11 +551,7 @@ def count_route_decorators() -> int:
     this".
     """
     total = 0
-    files = [BOT_PY] + [
-        os.path.join(SERVICES_DIR, name)
-        for name in sorted(os.listdir(SERVICES_DIR)) if name.endswith(".py")
-    ]
-    for path in files:
+    for path in iter_python_sources():
         try:
             text = _read(path)
         except (OSError, UnicodeDecodeError):
@@ -515,6 +633,18 @@ def build_matrix(destinations: list[NativeDestination],
             row.web_source = f"{html[0].file}:{html[0].line}"
             row.verdict = PAGE
             row.note = f"html page served, source={html[0].template or 'inline'}"
+            if redirect:
+                # Two handlers are registered for one path and only one can win.
+                # /pulse/alerts is declared as a page in pulse_communications_v2
+                # and as a redirect in bot.py; the blueprint currently wins, so
+                # the page is reachable, but that is a property of registration
+                # order rather than of anything written down. Preferring html
+                # here is deliberate -- a rendering handler is the stronger
+                # claim -- but the losing handler is named so a per-system
+                # review can delete it instead of discovering it as an outage.
+                row.note += (f"; NOTE also declared as a redirect at "
+                             f"{redirect[0].file}:{redirect[0].line} — duplicate "
+                             "registration, page wins only by ordering")
         elif redirect:
             row.web_route = redirect[0].path
             row.web_kind = "redirect"
@@ -705,13 +835,24 @@ def main() -> int:
             problems.append(
                 f"only {len(data['web']['routes'])} Flask routes found.")
         declared = count_route_decorators()
-        parsed = len(data["web"]["routes"])
+        # Only decorator-derived routes are comparable to a count of decorator
+        # lines. Table routes are checked by their own floor below.
+        parsed = sum(1 for route in data["web"]["routes"]
+                     if route["source"] == "decorator")
         if parsed != declared:
             problems.append(
                 f"parsed {parsed} of {declared} route decorators; "
                 f"{declared - parsed} were dropped, so whole subsystems may be "
                 "absent from the census. Check for a decorator or path form the "
                 "parser does not handle.")
+        tabled = sum(1 for route in data["web"]["routes"]
+                     if route["source"] == "table")
+        if tabled < 30:
+            problems.append(
+                f"only {tabled} routes found in declarative route tables; the "
+                "Business OS commerce gateway alone declares ~37, so the "
+                "add_url_rule extractor has stopped matching and the entire "
+                "marketplace/storefront API would read as absent.")
         if data["web"]["html_routes"] < 100:
             problems.append(
                 f"only {data['web']['html_routes']} HTML page routes found; the "
