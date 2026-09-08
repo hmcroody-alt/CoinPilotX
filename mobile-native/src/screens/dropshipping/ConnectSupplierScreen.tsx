@@ -98,6 +98,9 @@ export function ConnectSupplierScreen({ route, navigation }: Props) {
    */
   const describe = useCallback((error: unknown, during: "discover" | "connect") => {
     const state = stateForError(error);
+    // The supplier's own name for the credential, so a merchant told their key
+    // was rejected knows which of their keys is meant.
+    const credential = provider?.credentialName ?? "supplier key";
     // The three below are conditions of this deployment, not of the merchant's
     // key. Saying "that key didn't work" to someone whose key is fine sends them
     // back to their supplier's dashboard to re-copy a correct credential.
@@ -118,7 +121,7 @@ export function ConnectSupplierScreen({ route, navigation }: Props) {
       return { state, message: "Your store isn't approved to sell yet, so it can't connect a supplier." };
     }
     if (state === "INVALID_CREDENTIAL") {
-      return { state, message: "Your supplier didn't accept that key. Check you copied the whole thing." };
+      return { state, message: `That ${credential} wasn't accepted. Check you copied the whole thing.` };
     }
     if (state === "PROVIDER_UNAVAILABLE") {
       return { state, message: "Your supplier isn't responding. Nothing was connected — try again shortly." };
@@ -129,11 +132,11 @@ export function ConnectSupplierScreen({ route, navigation }: Props) {
     if (state === "SUPPLIER_DISCONNECTED" || during === "discover") {
       return {
         state,
-        message: "That key didn't work. Check you copied the whole thing from your supplier's dashboard."
+        message: `That ${credential} didn't work. Check you copied the whole thing.`
       };
     }
     return { state, message: "That connection couldn't be created. Nothing was saved." };
-  }, []);
+  }, [provider]);
 
   const discover = useCallback(async () => {
     if (!scope || !apiKey.trim()) return;
@@ -146,7 +149,7 @@ export function ConnectSupplierScreen({ route, navigation }: Props) {
         // It needs a different sentence, so it is not routed through `describe`.
         setFailure({
           state: "EMPTY",
-          message: "That key works, but the account has no shops we can sell through yet."
+          message: `Your ${provider?.name ?? "supplier"} account connected, but it has no shops we can sell through yet.`
         });
         return;
       }
@@ -157,7 +160,7 @@ export function ConnectSupplierScreen({ route, navigation }: Props) {
     } finally {
       setBusy(false);
     }
-  }, [apiKey, describe, scope]);
+  }, [apiKey, describe, provider, scope]);
 
   const connect = useCallback(
     async (shop: SupplierShop) => {
@@ -286,13 +289,14 @@ export function ConnectSupplierScreen({ route, navigation }: Props) {
               <Pressable
                 onPress={() => setShowHelp((shown) => !shown)}
                 accessibilityRole="button"
-                accessibilityLabel="Where do I find this?"
+                accessibilityLabel={`Where do I find my ${provider.credentialName}?`}
               >
-                <Text style={styles.helpToggle}>Where do I find this?</Text>
+                <Text style={styles.helpToggle}>
+                  Where do I find my {provider.credentialName}?
+                </Text>
               </Pressable>
               {showHelp ? (
                 <View style={styles.help}>
-                  <Text style={styles.helpPath}>{provider.helpPath}</Text>
                   {provider.helpSteps.map((line) => (
                     <Text key={line} style={styles.cardBody}>
                       {line}
@@ -304,7 +308,7 @@ export function ConnectSupplierScreen({ route, navigation }: Props) {
                 style={styles.input}
                 value={apiKey}
                 onChangeText={setApiKey}
-                placeholder="Paste your access key"
+                placeholder={`Paste your ${provider.credentialName}`}
                 placeholderTextColor={storeLight.text.muted}
                 // A supplier key is case- and character-exact. Every one of
                 // these off is a key the keyboard would quietly mangle.
@@ -313,20 +317,21 @@ export function ConnectSupplierScreen({ route, navigation }: Props) {
                 autoCorrect={false}
                 spellCheck={false}
                 editable={!busy}
-                accessibilityLabel="Supplier access key"
+                accessibilityLabel={provider.credentialName}
                 onSubmitEditing={() => {
                   if (canSubmit) void discover();
                 }}
               />
+              <Text style={styles.cardBody}>{provider.securityNote}</Text>
               <Pressable
                 style={[styles.primary, canSubmit ? null : styles.primaryDisabled]}
                 onPress={() => void discover()}
                 disabled={!canSubmit}
                 accessibilityRole="button"
                 accessibilityState={{ disabled: !canSubmit }}
-                accessibilityLabel="Find my shops"
+                accessibilityLabel={provider.connectCta}
               >
-                <Text style={styles.primaryText}>{busy ? "Checking…" : "Find my shops"}</Text>
+                <Text style={styles.primaryText}>{busy ? "Checking…" : provider.connectCta}</Text>
               </Pressable>
               <Pressable
                 style={styles.secondary}
@@ -351,8 +356,9 @@ export function ConnectSupplierScreen({ route, navigation }: Props) {
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Choose a shop</Text>
               <Text style={styles.cardBody}>
-                This key can act for {shops.length === 1 ? "one shop" : `${shops.length} shops`}.
-                Pick the one this store should import from.
+                Your {provider?.name ?? "supplier"} account can act for{" "}
+                {shops.length === 1 ? "one shop" : `${shops.length} shops`}. Pick the one this store
+                should import from.
               </Text>
               {shops.map((shop) => (
                 <Pressable
@@ -420,7 +426,6 @@ const styles = StyleSheet.create({
   plannedLabel: { fontSize: 11, fontWeight: "700", color: storeLight.text.muted, letterSpacing: 0.6 },
   helpToggle: { fontSize: 13, fontWeight: "700", color: storeLight.text.link },
   help: { gap: 6 },
-  helpPath: { fontSize: 13, fontWeight: "700", color: storeLight.text.primary },
   input: {
     minHeight: storeLight.size.tapTarget,
     paddingHorizontal: 12,

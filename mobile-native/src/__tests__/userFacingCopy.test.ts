@@ -62,6 +62,30 @@ const BANNED: Array<[string, RegExp]> = [
 const NON_USER_SURFACES = ["screens/settings/DeveloperSettingsScreen.tsx"];
 
 /**
+ * Sentences where a banned word is a supplier's own product name.
+ *
+ * The ban on "API" exists to stop *our* vocabulary reaching a merchant. CJ
+ * Dropshipping names its credential a "CJ API Key", issues it from an app
+ * called "API" under "Apps", and labels the control "Add API". A merchant
+ * hunting for those exact words on CJ's site is not reading our jargon; they
+ * are reading their supplier's buttons, and paraphrasing to satisfy this
+ * detector would send them looking for a control that does not exist. The
+ * previous copy did exactly that — "Account → API", "create a new access key" —
+ * and neither names anything CJ has.
+ *
+ * Exact strings, not a pattern, and deliberately awkward to extend: each entry
+ * earns its place by being a label CJ prints, so rewording one costs a review
+ * here. Anything else that says "API" still fails.
+ */
+const EXTERNAL_VOCABULARY = [
+  "Under Apps, install the API app if you haven't already.",
+  "Open the API page and press Add API.",
+  "Enter a name, choose API Key as the Type, then confirm.",
+  "Copy the API Key from the list and paste it here.",
+  "PulseSoc encrypts your CJ API key and never keeps it on this device. It is used only to connect your CJ account."
+];
+
+/**
  * Object fields that hold engineering notes rather than copy.
  *
  * These are the MOCK-DATA gap constants — `ACTIVITY_MOCK_DATA_GAPS`,
@@ -171,6 +195,7 @@ function scan(): Finding[] {
           if (INTERNAL_NOTE_FIELDS.test(before)) continue;
           const text = match[1];
           if (!isProse(text)) continue;
+          if (EXTERNAL_VOCABULARY.includes(text.trim())) continue;
           const hit = BANNED.find(([, expression]) => expression.test(text.replace(/\$\{[^}]*\}/g, " ")));
           if (hit) findings.push({ file: rel, line: index + 1, term: hit[0], text });
         }
@@ -182,6 +207,7 @@ function scan(): Finding[] {
       const line = source.slice(0, match.index).split("\n").length;
       // A `<Text>` written out inside a comment is documentation, not copy.
       if (/^\s*(\/\/|\*|\/\*)/.test(lines[line - 1] || "")) continue;
+      if (EXTERNAL_VOCABULARY.includes(text)) continue;
       const hit = BANNED.find(([, expression]) => expression.test(text.replace(/\$\{[^}]*\}/g, " ")));
       if (hit) findings.push({ file: rel, line, term: hit[0], text });
     }
@@ -199,6 +225,26 @@ describe("user-facing copy", () => {
     // Both passes have to stay wired in. Dropping either one is silent.
     expect(scan.toString()).toContain("STRING_PATTERNS");
     expect(scan.toString()).toContain("JSX_TEXT_CHILD");
+    expect(scan.toString()).toContain("EXTERNAL_VOCABULARY");
+  });
+
+  /**
+   * The supplier-vocabulary exemption may not become a place to park copy.
+   *
+   * Every entry has to be a sentence the detector would otherwise catch and a
+   * sentence the app actually renders. An entry that stops being either is dead
+   * weight that quietly widens the hole, so it fails here rather than sitting
+   * in the list unnoticed.
+   */
+  it("exempts only supplier wording that is really banned and really rendered", () => {
+    const rendered = sourceFiles(SRC)
+      .filter((file) => !NON_USER_SURFACES.includes(relative(SRC, file).split("\\").join("/")))
+      .map((file) => readFileSync(file, "utf8"))
+      .join("\n");
+    for (const text of EXTERNAL_VOCABULARY) {
+      expect(BANNED.some(([, expression]) => expression.test(text))).toBe(true);
+      expect(rendered).toContain(text);
+    }
   });
 
   it("never says server, endpoint, payload or who owns a record", () => {

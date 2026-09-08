@@ -471,19 +471,86 @@ describe("ConnectSupplierScreen", () => {
     // Named so a merchant knows they are coming, with no control — a button
     // that lands nowhere teaches them the app cannot be trusted.
     expect(view.getByText(/Printful/)).toBeTruthy();
-    expect(view.queryByLabelText("Supplier access key")).toBeNull();
+    expect(view.queryByLabelText("CJ API key")).toBeNull();
   });
 
-  it("names the supplier on the key step and explains where its key lives", async () => {
+  /**
+   * §1: once CJ is chosen, the merchant is holding a thing CJ calls a "CJ API
+   * key". "Supplier access key" is our internal category and names no control
+   * that exists on CJ's site, so a merchant reading it has nothing to match.
+   */
+  it("asks for the credential by the name CJ gives it, not ours", async () => {
     const { view } = await connectScreen();
     fireEvent.press(view.getByLabelText("Connect CJ Dropshipping"));
 
     expect(view.getByText("Connect CJ Dropshipping")).toBeTruthy();
-    expect(view.getByLabelText("Supplier access key")).toBeTruthy();
-    // The help is opt-in, so it does not push the field off the first screen.
+    expect(view.getByLabelText("CJ API key")).toBeTruthy();
+    expect(view.getByPlaceholderText("Paste your CJ API key")).toBeTruthy();
+    expect(view.queryByLabelText("Supplier access key")).toBeNull();
+    expect(view.queryByText(/access key/i)).toBeNull();
+  });
+
+  /**
+   * §2: the old help sent merchants to "Account → API" and told them to
+   * "create a new access key" — a menu and a control CJ does not have. The
+   * replacement names CJ's own controls, and stays opt-in so it does not push
+   * the field off the first screen.
+   */
+  it("gives help in CJ's own control names and invents no menu path", async () => {
+    const { view } = await connectScreen();
+    fireEvent.press(view.getByLabelText("Connect CJ Dropshipping"));
+
     expect(view.queryByText("Account → API")).toBeNull();
-    fireEvent.press(view.getByLabelText("Where do I find this?"));
-    expect(view.getByText("Account → API")).toBeTruthy();
+    expect(view.queryByText(/Under Apps/)).toBeNull();
+
+    fireEvent.press(view.getByLabelText("Where do I find my CJ API key?"));
+    expect(view.getByText(/Under Apps, install the API app/)).toBeTruthy();
+    expect(view.getByText(/press Add API/)).toBeTruthy();
+    expect(view.getByText(/choose API Key as the Type/)).toBeTruthy();
+    // No step may resurrect the invented path or the invented control.
+    expect(view.queryByText("Account → API")).toBeNull();
+    expect(view.queryByText(/create a new access key/i)).toBeNull();
+  });
+
+  /**
+   * §2: what happens to the key is stated before they paste it, in the same
+   * breath as the field — not buried in a policy nobody opens. The guarantee is
+   * "encrypted, and never on your phone"; the word "backend" is not used
+   * because the copy guard bans it and a merchant does not need it.
+   */
+  it("states that the key is encrypted and never kept on the device", async () => {
+    const { view } = await connectScreen();
+    fireEvent.press(view.getByLabelText("Connect CJ Dropshipping"));
+
+    expect(
+      view.getByText(
+        "PulseSoc encrypts your CJ API key and never keeps it on this device. It is used only to connect your CJ account."
+      )
+    ).toBeTruthy();
+  });
+
+  /**
+   * §4: the button says what the merchant is doing — connecting their CJ
+   * account. "Find my shops" describes the backend's next call, and "shops" is
+   * CJ's word for a thing the merchant has not been shown yet.
+   */
+  it("labels the action as connecting to CJ, not as a backend step", async () => {
+    const { view } = await connectScreen();
+    fireEvent.press(view.getByLabelText("Connect CJ Dropshipping"));
+
+    expect(view.getByLabelText("Connect to CJ")).toBeTruthy();
+    expect(view.queryByLabelText("Find my shops")).toBeNull();
+  });
+
+  /**
+   * §3: sandbox is stated before anything is typed. A merchant who finds out
+   * after importing forty products found out too late.
+   */
+  it("says the connection is sandbox before the key is asked for", async () => {
+    const { view } = await connectScreen();
+
+    expect(view.getByText("Sandbox connection")).toBeTruthy();
+    expect(view.getByText(/no order is placed with the supplier and nothing ships/)).toBeTruthy();
   });
 
   /**
@@ -495,11 +562,11 @@ describe("ConnectSupplierScreen", () => {
     const { view } = await connectScreen();
     fireEvent.press(view.getByLabelText("Connect CJ Dropshipping"));
 
-    const field = view.getByLabelText("Supplier access key");
+    const field = view.getByLabelText("CJ API key");
     expect(field.props.secureTextEntry).toBe(true);
     fireEvent.changeText(field, "cj-secret-key");
     await act(async () => {
-      fireEvent.press(view.getByLabelText("Find my shops"));
+      fireEvent.press(view.getByLabelText("Connect to CJ"));
     });
 
     await waitFor(() => expect(view.getByText("Choose a shop")).toBeTruthy());
@@ -519,9 +586,9 @@ describe("ConnectSupplierScreen", () => {
     mockConnectSupplier.mockResolvedValue({ id: "conn-1" });
     const { view, nav } = await connectScreen();
     fireEvent.press(view.getByLabelText("Connect CJ Dropshipping"));
-    fireEvent.changeText(view.getByLabelText("Supplier access key"), "cj-secret-key");
+    fireEvent.changeText(view.getByLabelText("CJ API key"), "cj-secret-key");
     await act(async () => {
-      fireEvent.press(view.getByLabelText("Find my shops"));
+      fireEvent.press(view.getByLabelText("Connect to CJ"));
     });
     await waitFor(() => expect(view.getByText("Choose a shop")).toBeTruthy());
     expect(mockConnectSupplier).not.toHaveBeenCalled();
@@ -560,9 +627,9 @@ describe("ConnectSupplierScreen", () => {
     );
     const { view } = await connectScreen();
     fireEvent.press(view.getByLabelText("Connect CJ Dropshipping"));
-    fireEvent.changeText(view.getByLabelText("Supplier access key"), "cj-secret-key");
+    fireEvent.changeText(view.getByLabelText("CJ API key"), "cj-secret-key");
     await act(async () => {
-      fireEvent.press(view.getByLabelText("Find my shops"));
+      fireEvent.press(view.getByLabelText("Connect to CJ"));
     });
 
     await waitFor(() => expect(view.getByText(/Your key wasn't the problem/)).toBeTruthy());
@@ -573,18 +640,18 @@ describe("ConnectSupplierScreen", () => {
     mockDiscoverShops.mockRejectedValue(new PulseApiError("nope", 400, "invalid_api_key"));
     const { view } = await connectScreen();
     fireEvent.press(view.getByLabelText("Connect CJ Dropshipping"));
-    fireEvent.changeText(view.getByLabelText("Supplier access key"), "wrong");
+    fireEvent.changeText(view.getByLabelText("CJ API key"), "wrong");
     await act(async () => {
-      fireEvent.press(view.getByLabelText("Find my shops"));
+      fireEvent.press(view.getByLabelText("Connect to CJ"));
     });
-    await waitFor(() => expect(view.getByText(/didn't accept that key/)).toBeTruthy());
+    await waitFor(() => expect(view.getByText(/CJ API key wasn't accepted/)).toBeTruthy());
 
     mockDiscoverShops.mockResolvedValue([]);
     await act(async () => {
-      fireEvent.press(view.getByLabelText("Find my shops"));
+      fireEvent.press(view.getByLabelText("Connect to CJ"));
     });
     await waitFor(() => expect(view.getByText(/no shops we can sell through/)).toBeTruthy());
-    expect(view.queryByText(/didn't accept that key/)).toBeNull();
+    expect(view.queryByText(/CJ API key wasn't accepted/)).toBeNull();
   });
 });
 

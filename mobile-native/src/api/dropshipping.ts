@@ -165,19 +165,34 @@ function scopeBody(scope: DropshippingScope, extra: Record<string, unknown> = {}
  * ------------------------------------------------------------------ */
 
 /**
- * A supplier the merchant can connect, and where to get its key.
+ * A supplier the merchant can connect, and how that supplier names its own
+ * credential.
  *
- * `helpPath` is the supplier's own menu, written as they write it. It is kept as
- * a short label rather than folded into a sentence because it is a thing the
- * merchant reads off their screen and matches by eye, not a phrase we composed.
+ * Once a supplier is chosen, every string the merchant reads is that supplier's
+ * vocabulary, not ours. "Supplier access key" is our internal category; the
+ * thing the merchant is holding is a *CJ API key*, and it is called that on
+ * CJ's site, in CJ's documentation and in the dialog they copied it from.
+ * Asking for a "supplier access key" sends someone to look for a control that
+ * does not exist under that name.
+ *
+ * `helpSteps` name CJ's own controls (`Apps`, `API`, `Add API`, `Type`,
+ * `API Key`) because those are the words on the buttons. They are taken from
+ * CJ's published API documentation rather than composed here — an invented path
+ * is how the previous copy came to send merchants to an "Account → API" menu
+ * and a "create a new access key" control, neither of which CJ has.
  */
 export type SupplierProviderInfo = {
   id: string;
   name: string;
-  /** Shown on the CJ-specific step, in the supplier's own words. */
+  /** Shown on the supplier-specific step, in the supplier's own words. */
   blurb: string;
-  helpPath: string;
+  /** What this supplier calls the credential. Used for labels and placeholder. */
+  credentialName: string;
   helpSteps: readonly string[];
+  /** What we do with the credential, stated before they paste it. */
+  securityNote: string;
+  /** The action, in the merchant's terms — not "discover shops". */
+  connectCta: string;
 };
 
 /**
@@ -194,13 +209,20 @@ export const SUPPLIER_PROVIDERS: readonly SupplierProviderInfo[] = [
     name: "CJ Dropshipping",
     blurb:
       "Connect your CJ account to browse supplier products and import them into your PulseSoc Store.",
-    helpPath: "Account → API",
+    credentialName: "CJ API key",
     helpSteps: [
-      "Sign in to your CJ Dropshipping account on their website.",
-      "Open your account settings and find the access section below.",
-      "Create a new access key there, then copy the whole thing.",
-      "Paste it here. PulseSoc stores it encrypted and never shows it to anyone again."
-    ]
+      "Sign in to your CJ Dropshipping account.",
+      "Under Apps, install the API app if you haven't already.",
+      "Open the API page and press Add API.",
+      "Enter a name, choose API Key as the Type, then confirm.",
+      "Copy the API Key from the list and paste it here."
+    ],
+    // Says the same thing as "used only from the backend" without the word:
+    // the guarantee a merchant needs is that the key is not kept on the phone
+    // and is not used from it. See EXTERNAL_VOCABULARY in userFacingCopy.
+    securityNote:
+      "PulseSoc encrypts your CJ API key and never keeps it on this device. It is used only to connect your CJ account.",
+    connectCta: "Connect to CJ"
   }
 ];
 
