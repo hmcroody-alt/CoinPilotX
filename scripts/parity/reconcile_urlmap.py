@@ -52,18 +52,21 @@ FRAMEWORK_RULES = {"/static/<path:filename>"}
 # Deep links that currently 404 on the web. Lower this as gaps close; the gate
 # fails if it rises. Measured 2026-09-08 against the live url_map, after the
 # Private Office web surface took ten of them, orders/Pages/Account Health took
-# seven more, the Activity inbox took four, and Seller Store, Presence and
-# Start-a-chat took three.
+# seven more, the Activity inbox took four, Seller Store, Presence and
+# Start-a-chat took three, and the dashboard-module router took one.
 #
-# One of the three left -- `/pulse/calls/:callId?` -- is not a gap to close. A
-# web call surface would be a second real-time audio publication path, which
+# One of the two left -- `/pulse/calls/:callId?` -- is not a gap to close. A web
+# call surface would be a second real-time audio publication path, which
 # `docs/realtime_audio_change_policy.md` forbids outright, so this number cannot
 # honestly reach zero by building. It is BLOCKED, not pending; the floor is 1.
-# The other two are pending work: `/pulse/undx/actions` needs a client that can
-# render six lists at once and tell "the feature is switched off" apart from
-# "you have nothing waiting", and `/pulse/dashboard/module/:groupKey/:moduleKey`
-# has not been investigated yet.
-BROKEN_DEEP_LINK_BUDGET = 3
+#
+# The other is pending work: `/pulse/undx/actions` needs a client that can
+# render six lists at once and can tell "the feature is switched off" apart from
+# "you have nothing waiting" -- a fourth state, since the subsystem sits behind
+# an env flag and 404s when it is off. Flattening the response server-side for
+# the browser would be a web-only backend authority, so it waits for a real
+# client capability rather than a workaround.
+BROKEN_DEEP_LINK_BUDGET = 2
 
 
 def boot_app():
@@ -158,6 +161,27 @@ def deep_link_status(app) -> tuple[list, list, list]:
 
 DEEP_LINK_DOC = os.path.join(REPO, "PULSESOC_DEEPLINK_PARITY.md")
 
+# Broken links that must never be built, and why.
+#
+# The generated table cannot tell "nobody has got to this yet" apart from "this
+# is forbidden", and it prints them as identical rows. That is not a cosmetic
+# problem: a reader working the list down would eventually reach the call link
+# and build a web call surface, which is exactly the change
+# `docs/realtime_audio_change_policy.md` forbids outright. The artifact has to
+# say so itself, because the artifact is what gets read.
+#
+# These never move a path out of the broken count. A blocked gap is still a gap
+# a member hits, and hiding it in the total would be faking parity -- the whole
+# point of marking BLOCKED is that it is honest about a thing that stays broken.
+BLOCKED_DEEP_LINKS = {
+    "/pulse/calls/:callId?": (
+        "BLOCKED, not pending — do not build. A web call surface would be a "
+        "second real-time audio publication path, which "
+        "`docs/realtime_audio_change_policy.md` forbids regardless of "
+        "justification. This is why the broken-link budget cannot honestly "
+        "reach zero: its floor is 1."),
+}
+
 
 def write_deep_link_doc(resolved: list, hub_only: list, broken: list) -> str:
     """Record the share-link gap as a reviewable artifact.
@@ -167,6 +191,17 @@ def write_deep_link_doc(resolved: list, hub_only: list, broken: list) -> str:
     built, not about what the source appears to declare.
     """
     total = len(resolved) + len(hub_only) + len(broken)
+    # A rationale for a link the app no longer publishes reads as a live policy
+    # decision about a live route. Fail rather than carry it.
+    orphaned = sorted(set(BLOCKED_DEEP_LINKS) - {link.path for link in broken})
+    if orphaned:
+        raise SystemExit(
+            "BLOCKED_DEEP_LINKS names paths that are no longer broken links: "
+            + ", ".join(orphaned) + " — delete the entry, or fix the path. If "
+            "one of these now resolves, check it was not closed by building the "
+            "thing the entry forbids.")
+    blocked = [link for link in broken if link.path in BLOCKED_DEEP_LINKS]
+    pending = [link for link in broken if link.path not in BLOCKED_DEEP_LINKS]
     lines = [
         "# PulseSoc deep-link parity (native -> web)",
         "",
@@ -181,14 +216,28 @@ def write_deep_link_doc(resolved: list, hub_only: list, broken: list) -> str:
         f"- Deep-link paths: **{total}**",
         f"- Resolve on the web: **{len(resolved)}**",
         f"- Hub served, item links 404: **{len(hub_only)}**",
-        f"- No web surface at all: **{len(broken)}**",
+        f"- No web surface at all: **{len(broken)}** "
+        f"({len(pending)} pending, {len(blocked)} blocked by policy)",
         "",
-        "## Broken share links (no web surface)",
+        "## Broken share links — pending work",
         "",
         "| Path | Native screen |",
         "|---|---|",
     ]
-    lines += [f"| `{link.path}` | {link.screen} |" for link in broken]
+    lines += [f"| `{link.path}` | {link.screen} |" for link in pending]
+    lines += [
+        "",
+        "## Broken share links — BLOCKED, do not build",
+        "",
+        "Still broken, and still counted above: a member following one of these "
+        "gets a 404. They are listed apart because closing them is forbidden, so "
+        "nobody should pick them up off the pending list.",
+        "",
+        "| Path | Native screen | Why |",
+        "|---|---|---|",
+    ]
+    lines += [f"| `{link.path}` | {link.screen} | {BLOCKED_DEEP_LINKS[link.path]} |"
+              for link in blocked]
     lines += [
         "",
         "## Hub served, deep links into it 404",
@@ -247,7 +296,8 @@ def main() -> int:
     if broken:
         print("\n-- shareable app URLs with no web route at all:")
         for link in broken:
-            print(f"   {link.path:52} {link.screen}")
+            mark = " [BLOCKED]" if link.path in BLOCKED_DEEP_LINKS else ""
+            print(f"   {link.path:52} {link.screen}{mark}")
     if hub_only:
         print("\n-- hub served, deep links into it 404:")
         for link in hub_only:

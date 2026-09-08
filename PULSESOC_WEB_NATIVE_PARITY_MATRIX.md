@@ -36,7 +36,7 @@ a per-system review that actually inspects the surface.
 | PAGE | Creator / Business | Content Planner | `/dashboard/creator/content-planner` | `/dashboard/creator/<subsystem_key>` | html | bot.py:10741 | html page served, source=dashboard_creator_shell(); matched via a parameterised rule — the page is reached as a route parameter, so confirm it renders this feature rather than treating the segment as an id |
 | PAGE | Creator / Business | Draft Studio | `/dashboard/creator/draft-studio` | `/dashboard/creator/<subsystem_key>` | html | bot.py:10741 | html page served, source=dashboard_creator_shell(); matched via a parameterised rule — the page is reached as a route parameter, so confirm it renders this feature rather than treating the segment as an id |
 | PAGE | Creator / Business | Growth Center | `/pulse/growth` | `/pulse/growth` | html | bot.py:11520 | html page served, source=pulse_advertiser_portal.html |
-| PAGE | Creator / Business | Courses | `/pulse/courses` | `/pulse/courses` | html | bot.py:81493 | html page served, source=ios_paid_digital_unavailable_response()+pulse_social_shell() |
+| PAGE | Creator / Business | Courses | `/pulse/courses` | `/pulse/courses` | html | bot.py:81554 | html page served, source=ios_paid_digital_unavailable_response()+pulse_social_shell() |
 | PAGE | Creator / Business | Events | `/pulse/events` | `/pulse/events` | html | bot.py:79698 | html page served, source=pulse_social_shell() |
 | PAGE | Economy | Marketplace | `/pulse/marketplace` | `/pulse/marketplace` | html | bot.py:53609 | html page served, source=pulse_social_shell() |
 | PAGE | Economy | Create Listing | `/pulse/marketplace/create` | `/pulse/marketplace/create` | html | bot.py:55037 | html page served, source=pulse_social_shell() |
@@ -55,19 +55,19 @@ a per-system review that actually inspects the surface.
 | PAGE | Primary | Search | `/pulse/search` | `/pulse/search` | html | bot.py:41742 | html page served, source=pulse_social_shell() |
 | PAGE | Primary | Activity Inbox | `/pulse/activity` | `/pulse/activity` | html | bot.py:81141 | html page served, source=pulse_activity_page_response() |
 | PAGE | Primary | Settings | `/pulse/settings` | `/pulse/settings` | html | bot.py:79758 | html page served, source=pulse_social_shell() |
-| PAGE | Social | Messages | `/pulse/messages` | `/pulse/messages` | html | bot.py:82625 | html page served, source=pulse_messages_v2.html |
+| PAGE | Social | Messages | `/pulse/messages` | `/pulse/messages` | html | bot.py:82686 | html page served, source=pulse_messages_v2.html |
 | PAGE | Social | Calls | `/pulse/activity?category=calls` | `/pulse/activity` | html | bot.py:81141 | html page served, source=pulse_activity_page_response() |
-| PAGE | Social | Profile Edit | `/pulse/profile/edit` | `/pulse/profile/edit` | html | bot.py:82687 | html page served, source=pulse_social_shell() |
-| PAGE | Social | Groups | `/pulse/groups` | `/pulse/groups` | html | bot.py:83050 | html page served, source=pulse_social_shell() |
+| PAGE | Social | Profile Edit | `/pulse/profile/edit` | `/pulse/profile/edit` | html | bot.py:82748 | html page served, source=pulse_social_shell() |
+| PAGE | Social | Groups | `/pulse/groups` | `/pulse/groups` | html | bot.py:83111 | html page served, source=pulse_social_shell() |
 | PAGE | Social | Saved | `/pulse/saved` | `/pulse/saved` | html | bot.py:55134 | html page served, source=pulse_social_shell() |
 | PAGE | Trust | Account Center | `/dashboard/account/settings` | `/dashboard/account/settings` | html | bot.py:11009 | html page served, source=dashboard_account_shell() |
 | PAGE | Trust | Security Center | `/dashboard/account/security` | `/dashboard/account/security` | html | bot.py:11004 | html page served, source=pulse_security_settings_page() |
-| PAGE | Trust | Privacy Center | `/pulse/settings/privacy` | `/pulse/settings/privacy` | html | bot.py:82884 | html page served, source=pulse_security_settings_page() |
+| PAGE | Trust | Privacy Center | `/pulse/settings/privacy` | `/pulse/settings/privacy` | html | bot.py:82945 | html page served, source=pulse_security_settings_page() |
 | PAGE | Trust | Verification | `/pulse/verification` | `/pulse/verification` | html | bot.py:10886 | html page served, source=dashboard_account_verification_page() |
 | PAGE | Trust | Account Health | `/pulse/account-health` | `/pulse/account-health` | html | bot.py:81070 | html page served, source=dashboard_account_health_page() |
 | PAGE | Trust | Safety Hub | `/pulse/safety` | `/pulse/safety` | html | bot.py:10929 | html page served, source=dashboard_network_subsystem_page() |
 | PAGE | Trust | Support | `/pulse/support` | `/pulse/support` | html | bot.py:1714 | html page served, source=support.html |
-| PAGE | Utility | Notifications | `/pulse/notifications` | `/pulse/notifications` | html | bot.py:81626 | html page served, source=pulse_social_shell() |
+| PAGE | Utility | Notifications | `/pulse/notifications` | `/pulse/notifications` | html | bot.py:81687 | html page served, source=pulse_social_shell() |
 | PAGE | Utility | Notification Preferences | `/dashboard/network/notifications` | `/dashboard/network/notifications` | html | bot.py:10424 | html page served, source=dashboard_network_shell() |
 | PAGE | Utility | Terms | `/terms` | `/terms` | html | bot.py:1914 | html page served, source=terms.html |
 | PAGE | Utility | Privacy Policy | `/privacy` | `/privacy` | html | bot.py:1909 | html page served, source=privacy.html |
@@ -75,5 +75,5 @@ a per-system review that actually inspects the surface.
 | PARTIAL | Content | Add Status | `/pulse/status/create` | `/pulse/status/<path:status_id>` | redirect | bot.py:38872 | route redirects rather than rendering a web surface; SHADOWED by the parameterised rule `/pulse/status/<path:status_id>` — the last segment is being read as an id, not as a page name |
 | PARTIAL | Creator / Business | Create Post | `/pulse/compose` | `/pulse/compose` | redirect | bot.py:10909 | route redirects rather than rendering a web surface |
 | PARTIAL | Economy | Seller Store | `/pulse/seller-store` | `/pulse/seller-store` | redirect | bot.py:81235 | route redirects rather than rendering a web surface; REVIEWED: redirects by design. `SellerStoreScreen` is one screen showing a different subset of seven panels per `mode`; the web split those same panels across the merchant application, dashboard, payouts and listing composer years ago, and this route maps each `mode` onto the page that already owns it. A web Seller Store page would be a second merchant console with its own opinion of a seller's status. Pinned by tests/web_surface/test_seller_store_presence_newchat.py |
-| PARTIAL | Social | Profile | `/pulse/profile` | `/pulse/profile` | redirect | bot.py:82678 | route redirects rather than rendering a web surface |
+| PARTIAL | Social | Profile | `/pulse/profile` | `/pulse/profile` | redirect | bot.py:82739 | route redirects rather than rendering a web surface |
 | MISSING | Intelligence | UNDX Action Center | `/pulse/undx/actions` | — | — | — | no Flask route serves this path; REVIEWED: a real gap, deferred deliberately. The endpoint answers one nested snapshot of six lists and the native screen fans out to two more, which the shared web client cannot yet render; the subsystem is also behind an env flag and 404s when off, a fourth state that must not draw as empty. A server-side shim flattening it for the browser would be a web-only backend authority, so this waits for a real client capability rather than a workaround |

@@ -9,17 +9,23 @@ using Werkzeug's own matcher, so a BROKEN row means no rule exists at all —
 not that the visitor was signed out.
 
 - Deep-link paths: **111**
-- Resolve on the web: **100**
+- Resolve on the web: **101**
 - Hub served, item links 404: **8**
-- No web surface at all: **3**
+- No web surface at all: **2** (1 pending, 1 blocked by policy)
 
-## Broken share links (no web surface)
+## Broken share links — pending work
 
 | Path | Native screen |
 |---|---|
-| `/pulse/dashboard/module/:groupKey/:moduleKey` | DashboardModuleDetail |
-| `/pulse/calls/:callId?` | Call |
 | `/pulse/undx/actions` | UndxActionCenter |
+
+## Broken share links — BLOCKED, do not build
+
+Still broken, and still counted above: a member following one of these gets a 404. They are listed apart because closing them is forbidden, so nobody should pick them up off the pending list.
+
+| Path | Native screen | Why |
+|---|---|---|
+| `/pulse/calls/:callId?` | Call | BLOCKED, not pending — do not build. A web call surface would be a second real-time audio publication path, which `docs/realtime_audio_change_policy.md` forbids regardless of justification. This is why the broken-link budget cannot honestly reach zero: its floor is 1. |
 
 ## Hub served, deep links into it 404
 
@@ -59,6 +65,7 @@ Browsing works; sharing a specific item does not. Either the web needs the detai
 | `/pulse/compose` | DashboardComposeAlias |
 | `/pulse/music-alias` | DashboardMusicAlias |
 | `/pulse/music` | Music |
+| `/pulse/dashboard/module/:groupKey/:moduleKey` | DashboardModuleDetail |
 | `/pulse/messages/:conversationId` | Chat |
 | `/pulse/messages/new` | NewChat |
 | `/pulse/post/:postId` | PostDetail |
