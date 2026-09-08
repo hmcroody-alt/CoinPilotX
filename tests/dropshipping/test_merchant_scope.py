@@ -293,3 +293,49 @@ def test_unauthenticated_resolution_is_refused():
         with pytest.raises(merchant_scope.ScopeError) as caught:
             resolve(actor)
         assert caught.value.http_status == 401
+
+
+class _Recorder:
+    """A connection that remembers what each query was actually bound to."""
+
+    def __init__(self, inner):
+        self._inner = inner
+        self.calls = []
+
+    def execute(self, sql, params=()):
+        self.calls.append((sql, params))
+        return self._inner.execute(sql, params)
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    def bound_for(self, table):
+        return [p for sql, p in self.calls if table in sql]
+
+
+def test_each_identity_is_queried_in_the_type_its_column_is_declared_in():
+    """The two identities disagree on how a user id is stored, and Postgres cares.
+
+    ``marketplace_sellers.user_id`` is an integer column; every Business OS
+    column keys off text. Postgres refuses ``text = integer`` outright —
+    ``operator does not exist`` — so a resolver that hands the same value to both
+    crashes the route for every merchant. SQLite compares the two loosely, which
+    is exactly why the whole suite above passed against an identity that could
+    not be read at all in production. Nothing here can be asserted through
+    behaviour on SQLite, so it is asserted on the binding.
+    """
+    conn = db.connect()
+    recorder = _Recorder(conn)
+    try:
+        assert merchant_scope.resolve(recorder, SELLER_ID)["status"] == "ok"
+    finally:
+        conn.close()
+
+    seller_bindings = recorder.bound_for("marketplace_sellers")
+    assert seller_bindings, "the seller identity was never consulted"
+    for params in seller_bindings:
+        assert all(isinstance(value, int) for value in params), params
+
+    for table in ("business_os_business", "business_os_store_storefront"):
+        for params in recorder.bound_for(table):
+            assert all(isinstance(value, str) for value in params), (table, params)

@@ -92,10 +92,30 @@ def seller_scope_owner(business_id, store_id):
     return owner if owner.isdigit() else None
 
 
+def _actor_text(user_id):
+    return str(user_id).strip()
+
+
+def _actor_int(user_id):
+    """``marketplace_sellers.user_id`` is an integer column, while the Business OS
+    identity keys off text ones. Postgres refuses to compare across the two —
+    ``operator does not exist: text = integer`` — so each query is given the form
+    its own column is declared in. SQLite compares the two loosely, which is why
+    every test passed against a store identity that could not be read at all.
+    """
+    try:
+        return int(_actor_text(user_id))
+    except ValueError:
+        return None
+
+
 def _seller_row(conn, user_id):
+    actor = _actor_int(user_id)
+    if actor is None:
+        return None
     return conn.execute(
         "SELECT user_id, status, display_name, business_name FROM marketplace_sellers "
-        "WHERE user_id=?", (user_id,)).fetchone()
+        "WHERE user_id=?", (actor,)).fetchone()
 
 
 def seller_merchant(conn, owner_user_id):
@@ -136,7 +156,7 @@ def _business_os_scope(conn, user_id):
         "JOIN business_os_store_storefront s ON s.business_id=b.business_id "
         "WHERE b.owner_user_id=? AND COALESCE(b.status,'') NOT IN ('archived','suspended') "
         "AND COALESCE(s.status,'') NOT IN ('archived','suspended') "
-        "ORDER BY b.created_at LIMIT 1", (user_id,)).fetchone()
+        "ORDER BY b.created_at LIMIT 1", (_actor_text(user_id),)).fetchone()
     if row is None:
         return None
     return {
@@ -151,7 +171,7 @@ def _has_business_without_storefront(conn, user_id):
     return conn.execute(
         "SELECT 1 FROM business_os_business WHERE owner_user_id=? "
         "AND COALESCE(status,'') NOT IN ('archived','suspended') LIMIT 1",
-        (user_id,)).fetchone() is not None
+        (_actor_text(user_id),)).fetchone() is not None
 
 
 def _existing_connection_scope(conn, user_id):
