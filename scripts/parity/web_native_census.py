@@ -688,6 +688,33 @@ REVIEWED_NOTES = {
         "as empty. A server-side shim flattening it for the browser would be a "
         "web-only backend authority, so this waits for a real client capability "
         "rather than a workaround"),
+    # These three carry the same rationale and are deliberately not collapsed
+    # into one shared note. A reader lands on one row, not on the group, and a
+    # note that says "see the compose row" is a note that will one day point at
+    # a row somebody deleted.
+    "/pulse/compose": (
+        "REVIEWED: redirects by design. `nativeRouteActions.ts` resolves this to "
+        "Home with `openComposer: true` -- it means *open the composer*, not "
+        "*visit a page*, and on the web the composer is a fragment on the feed. "
+        "So it redirects to /pulse#create, which the feed acts on. A "
+        "/pulse/compose page would be a second composer with its own idea of "
+        "what a draft is. Pinned by "
+        "tests/web_surface/test_open_a_thing_redirects.py"),
+    "/pulse/status/create": (
+        "REVIEWED: redirects by design, and it was genuinely broken until "
+        "2026-09-08. `/pulse/status/<path:status_id>` matched `create` and read "
+        "it as a status id, so the app's own Add Status link reached the lane "
+        "with the viewer trying to open a story that does not exist. A literal "
+        "rule now wins and sends members to /pulse/status?create=1 -- the "
+        "spelling the web's own creator panel was already linking, and which "
+        "nothing read until the same fix. Pinned by "
+        "tests/web_surface/test_open_a_thing_redirects.py"),
+    "/pulse/profile": (
+        "REVIEWED: redirects by necessity. \"My profile\" is the one URL that "
+        "cannot be a static page -- it means a different page per visitor -- so "
+        "it resolves to the signed-in member's canonical path. This is a PARTIAL "
+        "the matrix can never promote, because the thing it is looking for does "
+        "not exist. Pinned by tests/web_surface/test_open_a_thing_redirects.py"),
 }
 
 

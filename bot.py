@@ -38869,6 +38869,25 @@ def account_security_notification_redirect():
     return redirect("/dashboard/account/security", code=302)
 
 
+# Declared ahead of the `<path:status_id>` rule below purely so the two are read
+# together; Werkzeug orders by specificity, not by registration, so the literal
+# wins either way. Without it the rule below swallowed this path and treated
+# "create" as a status id, sending members to /pulse/status?status_id=create --
+# the lane, with the viewer trying to open a story that does not exist. That is
+# the app's own Add Status link (`nativeRouteActions.ts` maps
+# /pulse/status/create to the Status screen with `openCreator`), so the one URL
+# for "post a story" worked in the app and quietly did nothing on the web.
+#
+# It redirects to the web's existing spelling rather than inventing a parameter:
+# `?create=1` is already what the creator command panel links to.
+@webhook_app.route("/pulse/status/create", methods=["GET"])
+def pulse_status_create_page():
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    return redirect("/pulse/status?create=1", code=302)
+
+
 @webhook_app.route("/pulse/status/<path:status_id>", methods=["GET"])
 def pulse_status_notification_redirect(status_id=""):
     user = require_account()
@@ -42176,6 +42195,19 @@ def pulse_status_page():
       statusCreateSheet?.setAttribute('aria-hidden','true');
       document.body.classList.remove('pulse-status-create-open');
     }
+    // "Open the composer" is two different actions on this page, and the sheet is
+    // only one of them. Above 900px a media query hides the sheet and the studio
+    // card carries the form instead, so opening the sheet on a desktop would add
+    // a class nobody can see and leave the visitor looking at an unchanged page.
+    // The split reuses statusMobileMode -- the same value that decided which form
+    // is live above -- rather than testing the width a second time, so the two
+    // cannot drift into disagreeing about which composer is on screen.
+    function openStatusCreator(type='text'){
+      if(statusMobileMode){openStatusCreateSheet(type);return}
+      setStatusType(type);
+      document.querySelector('.pulse-status-studio')?.scrollIntoView({block:'center',behavior:'smooth'});
+      setTimeout(()=>{if(type==='text')statusBody?.focus();},60);
+    }
     const clearStatusObjectUrl=()=>{if(statusObjectUrl){URL.revokeObjectURL(statusObjectUrl);statusObjectUrl=''}};
     function currentStatusStyle(){
       const style={...statusStyleDefaults};
@@ -42522,7 +42554,13 @@ def pulse_status_page():
     loadStatusLane(statusPage?.dataset.statusPageLane||'for_you').then(()=>{
       const statusParams=new URLSearchParams(location.search);
       const linkedStatusId=statusParams.get('status')||statusParams.get('status_id');
-      if(linkedStatusId)openStatusViewer(linkedStatusId);
+      if(linkedStatusId){openStatusViewer(linkedStatusId);return}
+      // `?create=1` was already being linked from the creator command panel and
+      // from /pulse/status/create, and until now nothing read it: both landed on
+      // the lane with the composer shut, which looks exactly like a page that
+      // ignored you. Viewing wins if a link somehow carries both, because a
+      // link to a specific story is a request to see that story.
+      if(statusParams.get('create'))openStatusCreator('text');
     });
     """
     return pulse_social_shell("PulseSoc Status", "Fullscreen stories, music, AI generation, live discovery, and creator-safe publishing.", main_html, side_html, script_html, show_intro=False)
