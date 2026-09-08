@@ -18,21 +18,19 @@ the database for the whole process and cannot be undone. So the app is booted
 once, in a child process, which reports back nothing but paths and status
 codes.
 
-## Why part of it is written in JavaScript
+## Where the client is tested
 
-The client's real failure modes live in the browser and cannot be reached from
-Python: drawing "you have nothing" over a failed fetch, drawing "you do not
-have this" over a tier resolver that merely fell over, or turning a capability
-with no web page into a link that 404s. Those are exercised in node against a
-stub DOM by `private_office_web_harness.js`.
+The browser client these pages ship is not theirs alone — `PULSE_WEB_SECTION_JS`
+also backs orders and Pages — so its behaviour is exercised in
+`tests/web_surface/`, in node against a stub DOM. What stays here is what is
+specific to the Office: its URLs, and the fact that every one of them serves
+the client at all.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import re
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -40,9 +38,6 @@ import tempfile
 import pytest
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-BOT = os.path.join(REPO, "bot.py")
-HARNESS = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                       "private_office_web_harness.js")
 
 #: Every path `linking.ts` publishes for the Office, minus meetings.
 #:
@@ -161,44 +156,3 @@ def test_signed_out_visitors_get_the_login_page(office_probe):
     """
     assert office_probe["signed_out_status"] == 302
     assert "/login" in office_probe["signed_out_location"]
-
-
-def _client_source() -> str:
-    """The browser client, read out of the source rather than imported.
-
-    `import bot` would boot the monolith; this assertion is about a string.
-    """
-    match = re.search(r'PULSE_WEB_SECTION_JS = r"""(.*?)"""',
-                      open(BOT, encoding="utf-8").read(), re.S)
-    assert match, "PULSE_WEB_SECTION_JS is no longer a module-level raw string"
-    return match.group(1)
-
-
-def test_client_script_parses():
-    """A syntax error here is a permanently blank Office that no Python test
-    would notice, because the page still answers 200."""
-    node = shutil.which("node")
-    if not node:
-        pytest.skip("node is not installed")
-    config = json.dumps({"mode": "hub", "title": "Private Office", "children": []})
-    proc = subprocess.run([node, "--check", "-"],
-                          input=_client_source().replace("%%CONFIG%%", config),
-                          capture_output=True, text=True)
-    assert proc.returncode == 0, proc.stderr
-
-
-def test_client_never_renders_a_failure_as_an_empty_office(tmp_path):
-    """The invariant that matters most: error and empty must not co-render.
-
-    A member whose fetch failed and a member with an empty Office must not see
-    the same screen, and a member whose tier resolver fell over must never be
-    told they do not have the product.
-    """
-    node = shutil.which("node")
-    if not node:
-        pytest.skip("node is not installed")
-    extracted = tmp_path / "client.js"
-    extracted.write_text(_client_source(), encoding="utf-8")
-    proc = subprocess.run([node, HARNESS, str(extracted)],
-                          capture_output=True, text=True)
-    assert proc.returncode == 0, proc.stdout + proc.stderr

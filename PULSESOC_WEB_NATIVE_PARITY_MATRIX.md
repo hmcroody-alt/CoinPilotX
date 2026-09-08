@@ -18,8 +18,8 @@ a per-system review that actually inspects the surface.
 
 | Verdict | Count |
 |---|---|
-| MISSING | 6 |
-| PAGE | 42 |
+| MISSING | 4 |
+| PAGE | 44 |
 | PARTIAL | 3 |
 
 ## Matrix
@@ -36,11 +36,12 @@ a per-system review that actually inspects the surface.
 | PAGE | Creator / Business | Content Planner | `/dashboard/creator/content-planner` | `/dashboard/creator/<subsystem_key>` | html | bot.py:10741 | html page served, source=dashboard_creator_shell(); matched via a parameterised rule — the page is reached as a route parameter, so confirm it renders this feature rather than treating the segment as an id |
 | PAGE | Creator / Business | Draft Studio | `/dashboard/creator/draft-studio` | `/dashboard/creator/<subsystem_key>` | html | bot.py:10741 | html page served, source=dashboard_creator_shell(); matched via a parameterised rule — the page is reached as a route parameter, so confirm it renders this feature rather than treating the segment as an id |
 | PAGE | Creator / Business | Growth Center | `/pulse/growth` | `/pulse/growth` | html | bot.py:11520 | html page served, source=pulse_advertiser_portal.html |
-| PAGE | Creator / Business | Courses | `/pulse/courses` | `/pulse/courses` | html | bot.py:80294 | html page served, source=ios_paid_digital_unavailable_response()+pulse_social_shell() |
+| PAGE | Creator / Business | Courses | `/pulse/courses` | `/pulse/courses` | html | bot.py:80766 | html page served, source=ios_paid_digital_unavailable_response()+pulse_social_shell() |
 | PAGE | Creator / Business | Events | `/pulse/events` | `/pulse/events` | html | bot.py:79391 | html page served, source=pulse_social_shell() |
 | PAGE | Economy | Marketplace | `/pulse/marketplace` | `/pulse/marketplace` | html | bot.py:53302 | html page served, source=pulse_social_shell() |
 | PAGE | Economy | Create Listing | `/pulse/marketplace/create` | `/pulse/marketplace/create` | html | bot.py:54730 | html page served, source=pulse_social_shell() |
 | PAGE | Economy | Seller Inventory | `/dashboard/economy/seller-tools` | `/dashboard/economy/<subsystem_key>` | html | bot.py:9993 | html page served, source=dashboard_economy_shell(); matched via a parameterised rule — the page is reached as a route parameter, so confirm it renders this feature rather than treating the segment as an id |
+| PAGE | Economy | Buyer Orders | `/pulse/orders` | `/pulse/orders` | html | bot.py:80413 | html page served, source=pulse_web_section_shell() |
 | PAGE | Economy | Premium | `/pulse/premium` | `/pulse/premium` | html | bot.py:54874 | html page served, source=ios_paid_digital_unavailable_response()+pulse_social_shell() |
 | PAGE | Intelligence | UNDX | `/pulse/ai` | `/pulse/ai` | html | bot.py:10848 | html page served, source=dashboard_ai_page() |
 | PAGE | Intelligence | Intelligence Center | `/pulse/intelligence` | `/pulse/intelligence` | html | pulse_communications_v2/routes.py:301 | html page served, source=_render_pulse_signal_surface() |
@@ -53,27 +54,26 @@ a per-system review that actually inspects the surface.
 | PAGE | Primary | Dashboard | `/pulse/dashboard` | `/pulse/dashboard` | html | bot.py:10843 | html page served, source=dashboard_page() |
 | PAGE | Primary | Search | `/pulse/search` | `/pulse/search` | html | bot.py:41435 | html page served, source=pulse_social_shell() |
 | PAGE | Primary | Settings | `/pulse/settings` | `/pulse/settings` | html | bot.py:79451 | html page served, source=pulse_social_shell() |
-| PAGE | Social | Messages | `/pulse/messages` | `/pulse/messages` | html | bot.py:81426 | html page served, source=pulse_messages_v2.html |
-| PAGE | Social | Profile Edit | `/pulse/profile/edit` | `/pulse/profile/edit` | html | bot.py:81488 | html page served, source=pulse_social_shell() |
-| PAGE | Social | Groups | `/pulse/groups` | `/pulse/groups` | html | bot.py:81851 | html page served, source=pulse_social_shell() |
+| PAGE | Social | Messages | `/pulse/messages` | `/pulse/messages` | html | bot.py:81898 | html page served, source=pulse_messages_v2.html |
+| PAGE | Social | Profile Edit | `/pulse/profile/edit` | `/pulse/profile/edit` | html | bot.py:81960 | html page served, source=pulse_social_shell() |
+| PAGE | Social | Groups | `/pulse/groups` | `/pulse/groups` | html | bot.py:82323 | html page served, source=pulse_social_shell() |
 | PAGE | Social | Saved | `/pulse/saved` | `/pulse/saved` | html | bot.py:54827 | html page served, source=pulse_social_shell() |
 | PAGE | Trust | Account Center | `/dashboard/account/settings` | `/dashboard/account/settings` | html | bot.py:11009 | html page served, source=dashboard_account_shell() |
 | PAGE | Trust | Security Center | `/dashboard/account/security` | `/dashboard/account/security` | html | bot.py:11004 | html page served, source=pulse_security_settings_page() |
-| PAGE | Trust | Privacy Center | `/pulse/settings/privacy` | `/pulse/settings/privacy` | html | bot.py:81685 | html page served, source=pulse_security_settings_page() |
+| PAGE | Trust | Privacy Center | `/pulse/settings/privacy` | `/pulse/settings/privacy` | html | bot.py:82157 | html page served, source=pulse_security_settings_page() |
 | PAGE | Trust | Verification | `/pulse/verification` | `/pulse/verification` | html | bot.py:10886 | html page served, source=dashboard_account_verification_page() |
+| PAGE | Trust | Account Health | `/pulse/account-health` | `/pulse/account-health` | html | bot.py:80578 | html page served, source=dashboard_account_health_page() |
 | PAGE | Trust | Safety Hub | `/pulse/safety` | `/pulse/safety` | html | bot.py:10929 | html page served, source=dashboard_network_subsystem_page() |
 | PAGE | Trust | Support | `/pulse/support` | `/pulse/support` | html | bot.py:1714 | html page served, source=support.html |
-| PAGE | Utility | Notifications | `/pulse/notifications` | `/pulse/notifications` | html | bot.py:80427 | html page served, source=pulse_social_shell() |
+| PAGE | Utility | Notifications | `/pulse/notifications` | `/pulse/notifications` | html | bot.py:80899 | html page served, source=pulse_social_shell() |
 | PAGE | Utility | Notification Preferences | `/dashboard/network/notifications` | `/dashboard/network/notifications` | html | bot.py:10424 | html page served, source=dashboard_network_shell() |
 | PAGE | Utility | Terms | `/terms` | `/terms` | html | bot.py:1914 | html page served, source=terms.html |
 | PAGE | Utility | Privacy Policy | `/privacy` | `/privacy` | html | bot.py:1909 | html page served, source=privacy.html |
 | PAGE | Utility | System Status | `/dashboard/system/feed` | `/dashboard/system/<module_key>` | html | bot.py:8290 | html page served, source=dashboard_system_shell(); matched via a parameterised rule — the page is reached as a route parameter, so confirm it renders this feature rather than treating the segment as an id |
 | PARTIAL | Content | Add Status | `/pulse/status/create` | `/pulse/status/<path:status_id>` | redirect | bot.py:38565 | route redirects rather than rendering a web surface; SHADOWED by the parameterised rule `/pulse/status/<path:status_id>` — the last segment is being read as an id, not as a page name |
 | PARTIAL | Creator / Business | Create Post | `/pulse/compose` | `/pulse/compose` | redirect | bot.py:10909 | route redirects rather than rendering a web surface |
-| PARTIAL | Social | Profile | `/pulse/profile` | `/pulse/profile` | redirect | bot.py:81479 | route redirects rather than rendering a web surface |
+| PARTIAL | Social | Profile | `/pulse/profile` | `/pulse/profile` | redirect | bot.py:81951 | route redirects rather than rendering a web surface |
 | MISSING | Economy | Seller Store | `/pulse/seller-store` | — | — | — | no Flask route serves this path |
-| MISSING | Economy | Buyer Orders | `/pulse/orders` | — | — | — | no Flask route serves this path |
 | MISSING | Intelligence | UNDX Action Center | `/pulse/undx/actions` | — | — | — | no Flask route serves this path |
 | MISSING | Primary | Activity Inbox | `/pulse/activity` | — | — | — | no Flask route serves this path |
 | MISSING | Social | Calls | `/pulse/activity?category=calls` | — | — | — | no Flask route serves this path |
-| MISSING | Trust | Account Health | `/pulse/account-health` | — | — | — | no Flask route serves this path |

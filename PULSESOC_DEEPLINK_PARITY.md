@@ -9,9 +9,9 @@ using Werkzeug's own matcher, so a BROKEN row means no rule exists at all —
 not that the visitor was signed out.
 
 - Deep-link paths: **111**
-- Resolve on the web: **86**
+- Resolve on the web: **93**
 - Hub served, item links 404: **8**
-- No web surface at all: **17**
+- No web surface at all: **10**
 
 ## Broken share links (no web surface)
 
@@ -21,15 +21,8 @@ not that the visitor was signed out.
 | `/pulse/calls/:callId?` | Call |
 | `/pulse/messages/new` | NewChat |
 | `/pulse/seller-store` | SellerStore |
-| `/pulse/orders` | BuyerOrders |
-| `/pulse/orders/:orderId` | BuyerOrderDetail |
-| `/dashboard/orders` | BuyerOrdersDashboard |
 | `/pulse/presence` | Presence |
-| `/pulse/pages/create` | PageCreate |
-| `/pulse/pages` | PagesHub |
-| `/pulse/pages/:handle` | Page |
 | `/pulse/undx/actions` | UndxActionCenter |
-| `/pulse/account-health` | AccountHealth |
 | `/pulse/activity/:category?` | ActivityInbox |
 | `/pulse/inbox` | ActivityInboxLegacyInbox |
 | `/dashboard/activity` | ActivityInboxWebActivity |
@@ -78,7 +71,10 @@ Browsing works; sharing a specific item does not. Either the web needs the detai
 | `/pulse/marketplace/create` | MarketplaceCreateGateway |
 | `/pulse/reels/:reelId` | ReelDetail |
 | `/pulse/status/:statusId` | StatusDetail |
+| `/pulse/orders` | BuyerOrders |
+| `/pulse/orders/:orderId` | BuyerOrderDetail |
 | `/pulse/purchases` | BuyerPurchases |
+| `/dashboard/orders` | BuyerOrdersDashboard |
 | `/pulse/merchant/apply` | MerchantApply |
 | `/pulse/merchant/dashboard` | MerchantDashboard |
 | `/pulse/merchant/:sellerId` | MerchantProfile |
@@ -91,6 +87,9 @@ Browsing works; sharing a specific item does not. Either the web needs the detai
 | `/pulse/live/events/create` | LiveEventCreateGateway |
 | `/pulse/profile/edit` | ProfileEdit |
 | `/pulse/profile/:profileKey` | ProfileDetail |
+| `/pulse/pages/create` | PageCreate |
+| `/pulse/pages` | PagesHub |
+| `/pulse/pages/:handle` | Page |
 | `/pulse/premium` | Premium |
 | `/pulse/creator-studio` | CreatorStudio |
 | `/pulse/creator` | CreatorStudioAlias |
@@ -128,6 +127,7 @@ Browsing works; sharing a specific item does not. Either the web needs the detai
 | `/account/security` | AccountWebSecurity |
 | `/privacy-center` | AccountPrivacy |
 | `/pulse/settings/devices` | AccountDevices |
+| `/pulse/account-health` | AccountHealth |
 | `/dashboard/account/health` | AccountHealthWeb |
 | `/pulse/safety/:section?` | SafetyHub |
 | `/pulse/dashboard/network-safety/:section?` | SafetyWebHub |

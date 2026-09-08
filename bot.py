@@ -79678,7 +79678,8 @@ PULSE_WEB_SECTION_JS = r"""
     show(panel(title, "<p>" + esc(message) + "</p>", retryButton()));
   }
   function signedOut() {
-    show(panel("Sign in", "<p>Your Private Office is only reachable while you are signed in.</p>",
+    show(panel("Sign in", "<p>" + esc(CFG.signed_out ||
+      "This page is only reachable while you are signed in.") + "</p>",
       "<p><a class='button' href='/login?next=" +
       encodeURIComponent(window.location.pathname) + "'>Sign in</a></p>"));
   }
@@ -79710,52 +79711,124 @@ PULSE_WEB_SECTION_JS = r"""
     if (v === false) { return "No"; }
     return String(v);
   }
-  function itemCard(item) {
-    if (isScalar(item)) { return "<li>" + esc(scalarText(item)) + "</li>"; }
-    if (!item || typeof item !== "object") { return ""; }
-    var heading = "";
+  function headingOf(item) {
     for (var i = 0; i < TITLE_KEYS.length; i++) {
       var candidate = item[TITLE_KEYS[i]];
       if (typeof candidate === "string" && candidate.trim()) {
-        heading = candidate.trim();
-        break;
+        return candidate.trim();
       }
     }
-    if (!heading) { heading = item.id ? "#" + item.id : "Record"; }
-    var rows = "";
-    Object.keys(item).forEach(function (key) {
-      var value = item[key];
-      if (!isScalar(value)) { return; }
-      if (typeof value === "string" && value.trim() === heading) { return; }
-      if (HIDE_KEYS[key]) { return; }
-      rows += "<div><dt>" + esc(humanise(key)) + "</dt><dd>" +
-        esc(scalarText(value)) + "</dd></div>";
-    });
-    return "<li class='card'><h3>" + esc(heading) + "</h3>" +
-      (rows ? "<dl>" + rows + "</dl>" : "") + "</li>";
+    return item.id ? "#" + item.id : "Record";
   }
-  function collectionHtml(items) {
-    if (!items.length) {
-      return "<p>Nothing here yet. This is an empty Office, not a failed one — " +
-        "we reached the store and it had no rows.</p>";
+  function isEmptyValue(value) {
+    if (value === undefined) { return true; }
+    if (Array.isArray(value)) { return !value.length; }
+    if (value && typeof value === "object") { return !Object.keys(value).length; }
+    return false;
+  }
+  // Depth is capped rather than trusted. A payload that nests further than this
+  // is a payload nobody designed a page for, and a runaway recursion would
+  // present as a blank page -- the one failure mode this client exists to stop.
+  function valueHtml(value, depth) {
+    if (isScalar(value)) { return esc(scalarText(value)); }
+    if (depth >= 4) { return "<span class='muted'>Nested detail</span>"; }
+    if (Array.isArray(value)) { return collectionHtml(value, depth + 1); }
+    if (value && typeof value === "object") {
+      return fieldsHtml(value, null, depth + 1) || "—";
     }
-    return "<ul class='grid office-list'>" + items.map(itemCard).join("") + "</ul>";
+    return "—";
   }
-  function scalarsHtml(body, skip) {
+  /** Every field of `body`, nested ones included. Nothing is dropped in
+      silence: a value this client did not anticipate still gets a labelled
+      row, because an invisible field reads to a member as a missing one. */
+  function fieldsHtml(body, skip, depth) {
+    depth = depth || 0;
     var rows = "";
     Object.keys(body || {}).forEach(function (key) {
       if (skip && skip[key]) { return; }
       if (HIDE_KEYS[key]) { return; }
       var value = body[key];
-      if (isScalar(value)) {
-        rows += "<div><dt>" + esc(humanise(key)) + "</dt><dd>" +
-          esc(scalarText(value)) + "</dd></div>";
-      } else if (Array.isArray(value) && value.length) {
-        rows += "<div><dt>" + esc(humanise(key)) + "</dt><dd>" +
-          collectionHtml(value) + "</dd></div>";
-      }
+      if (isEmptyValue(value)) { return; }
+      rows += "<div><dt>" + esc(humanise(key)) + "</dt><dd>" +
+        valueHtml(value, depth) + "</dd></div>";
     });
     return rows ? "<dl>" + rows + "</dl>" : "";
+  }
+  function scalarsHtml(body, skip) { return fieldsHtml(body, skip, 0); }
+
+  function itemCard(item, depth) {
+    if (isScalar(item)) { return "<li>" + esc(scalarText(item)) + "</li>"; }
+    if (!item || typeof item !== "object") { return ""; }
+    var heading = headingOf(item);
+    var skip = {};
+    Object.keys(item).forEach(function (key) {
+      if (typeof item[key] === "string" && item[key].trim() === heading) { skip[key] = 1; }
+    });
+    return "<li class='card'><h3>" + esc(heading) + "</h3>" +
+      fieldsHtml(item, skip, (depth || 0) + 1) + "</li>";
+  }
+  function emptyHtml() {
+    return "<p>" + esc(CFG.empty || "Nothing here yet.") +
+      " We reached PulseSoc and it had no rows to show — this is an empty " +
+      "list, not a failed one.</p>";
+  }
+  function collectionHtml(items, depth) {
+    if (!items.length) { return emptyHtml(); }
+    return "<ul class='grid office-list'>" + items.map(function (item) {
+      return CFG.row && !depth ? summaryCard(item) : itemCard(item, depth);
+    }).join("") + "</ul>";
+  }
+
+  /* --- product-shaped rows ------------------------------------------------
+     `CFG.row` names the handful of fields a member actually reads on a list:
+     the same ones the native screen puts on its card. It is a presentation
+     choice over data the server already sent, never a second opinion about
+     it. Anything the spec does not name is still reachable -- on the record
+     page, under a disclosure -- so choosing a shape never hides a field.   */
+
+  function pick(item, path) {
+    var parts = String(path).split(".");
+    var value = item;
+    for (var i = 0; i < parts.length; i++) {
+      if (!value || typeof value !== "object") { return undefined; }
+      value = value[parts[i]];
+    }
+    return value;
+  }
+  function money(item) {
+    var spec = CFG.row && CFG.row.money;
+    if (!spec) { return ""; }
+    var cents = Number(pick(item, spec[0]));
+    if (!isFinite(cents)) { return ""; }
+    var currency = String(pick(item, spec[1]) || "USD").toUpperCase();
+    return currency + " " + (cents / 100).toFixed(2);
+  }
+  function summaryCard(item) {
+    if (isScalar(item)) { return "<li>" + esc(scalarText(item)) + "</li>"; }
+    var spec = CFG.row || {};
+    var heading = String(pick(item, spec.title) || headingOf(item));
+    var href = spec.href ? pick(item, spec.href) : "";
+    // A row links only when the server gave us something to link to. Composing
+    // a URL out of a field that came back empty would manufacture a 404 out of
+    // missing data, which is the failure this whole client is built to avoid.
+    if (href && spec.href_prefix) { href = spec.href_prefix + encodeURIComponent(href); }
+    var head = href
+      ? "<a href='" + esc(href) + "'>" + esc(heading) + "</a>"
+      : esc(heading);
+    var status = spec.status ? pick(item, spec.status) : "";
+    var bits = [];
+    (spec.meta || []).forEach(function (path) {
+      var value = pick(item, path);
+      if (isScalar(value) && value !== null && value !== "") {
+        bits.push(String(value));
+      }
+    });
+    var amount = money(item);
+    if (amount) { bits.unshift(amount); }
+    return "<li class='card'><h3>" + head + "</h3>" +
+      (status ? "<p><span class='pill'>" + esc(humanise(status)) + "</span></p>" : "") +
+      (bits.length ? "<p class='muted'>" + esc(bits.join(" · ")) + "</p>" : "") +
+      "</li>";
   }
   function providerNote(body) {
     var status = body && body.provider_status;
@@ -79780,8 +79853,16 @@ PULSE_WEB_SECTION_JS = r"""
     }
     if (res.status === 403) {
       show(panel(title,
-        "<p>" + esc(body.message || "This part of the Office is not open to your account.") + "</p>",
+        "<p>" + esc(body.message || "This is not open to your account.") + "</p>",
         backLink(true)));
+      return true;
+    }
+    if (res.status === 404) {
+      // A missing record is a real answer about one record. It says nothing
+      // about the rest, so it must not be dressed up as a fault.
+      show(panel(title, "<p>" + esc(body.message ||
+        "We could not find that record. It may have been removed, or it may " +
+        "belong to another account.") + "</p>", backLink(true)));
       return true;
     }
     if (res.status >= 500 || body.state === "unavailable") {
@@ -79937,6 +80018,33 @@ PULSE_WEB_SECTION_JS = r"""
 
   /* --- a list section ---------------------------------------------------- */
 
+  // Which tab is showing. A tab is a filter over rows the server already sent,
+  // so switching one never refetches and never asks a second question.
+  var activeTab = CFG.tabs && CFG.tabs.length ? CFG.tabs[0].key : "";
+
+  function tabsHtml(items) {
+    if (!CFG.tabs || !CFG.tabs.length) { return ""; }
+    return "<p class='office-tabs'>" + CFG.tabs.map(function (tab) {
+      var count = filterRows(items, tab).length;
+      return "<button type='button' data-office-tab='" + esc(tab.key) + "'" +
+        (tab.key === activeTab ? " aria-current='true'" : "") + ">" +
+        esc(tab.label) + " (" + count + ")</button>";
+    }).join(" ") + "</p>";
+  }
+  function filterRows(items, tab) {
+    if (!tab || !tab.groups) { return items; }
+    return items.filter(function (item) {
+      return tab.groups.indexOf(String(pick(item, CFG.tabs_field) || "")) >= 0;
+    });
+  }
+  function currentTab() {
+    var found = null;
+    (CFG.tabs || []).forEach(function (tab) {
+      if (tab.key === activeTab) { found = tab; }
+    });
+    return found;
+  }
+
   function renderSection() {
     busy(CFG.title);
     api(CFG.api).then(function (res) {
@@ -79945,20 +80053,148 @@ PULSE_WEB_SECTION_JS = r"""
       var items = CFG.collection ? body[CFG.collection] : null;
       if (CFG.collection && !Array.isArray(items)) {
         // Success that does not contain the collection is a contract change,
-        // not an empty Office. Never draw confident zeros over real data.
+        // not an empty list. Never draw confident zeros over real data.
         errorPanel(CFG.title,
           "PulseSoc answered, but not with the records this page expects. " +
           "Nothing has been lost — this page cannot read the answer.");
         return;
       }
       var extra = scalarsHtml(body, CFG.collection ? mkSkip(CFG.collection) : null);
+      var visible = CFG.collection ? filterRows(items, currentTab()) : [];
       show(panel(CFG.title,
         "<p>" + esc(CFG.blurb) + "</p>" + providerNote(body) +
-        (CFG.collection ? collectionHtml(items) : "") + extra,
+        (CFG.collection ? tabsHtml(items) + collectionHtml(visible) : "") + extra,
         backLink(true)));
+      wireTabs(items, body);
+    });
+  }
+  function wireTabs(items, body) {
+    if (!CFG.tabs || !CFG.tabs.length) { return; }
+    root.querySelectorAll("[data-office-tab]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        activeTab = button.getAttribute("data-office-tab");
+        var visible = filterRows(items, currentTab());
+        show(panel(CFG.title,
+          "<p>" + esc(CFG.blurb) + "</p>" + providerNote(body) +
+          tabsHtml(items) + collectionHtml(visible) +
+          scalarsHtml(body, mkSkip(CFG.collection)),
+          backLink(true)));
+        wireTabs(items, body);
+      });
     });
   }
   function mkSkip(key) { var s = {}; s[key] = 1; s.provider_status = 1; return s; }
+
+  /* --- one record -------------------------------------------------------- */
+
+  function renderRecord() {
+    busy(CFG.title);
+    api(CFG.api).then(function (res) {
+      if (handledRefusal(res, CFG.title)) { return; }
+      var body = res.body || {};
+      var record = body[CFG.record];
+      // Same rule as a list: a 200 that does not carry the record is a fault,
+      // not an empty record. Rendering a blank page here would tell a member
+      // their order is empty when the truth is that we could not read it.
+      if (!record || typeof record !== "object" || Array.isArray(record)) {
+        errorPanel(CFG.title,
+          "PulseSoc answered, but not with the record this page expects. " +
+          "Nothing has been lost — this page cannot read the answer.");
+        return;
+      }
+      var heading = headingOf(record);
+      var spec = CFG.row || {};
+      var summary = "";
+      if (spec.status && pick(record, spec.status)) {
+        summary += "<p><span class='pill'>" +
+          esc(humanise(pick(record, spec.status))) + "</span></p>";
+      }
+      var amount = money(record);
+      if (amount) { summary += "<p><strong>" + esc(amount) + "</strong></p>"; }
+      show(panel(heading, summary +
+        "<details open><summary>All recorded fields</summary>" +
+        fieldsHtml(record, null, 0) + "</details>" +
+        scalarsHtml(body, mkSkip(CFG.record)),
+        backLink(true)));
+    });
+  }
+
+  /* --- a create form ------------------------------------------------------
+     The fields come from the server's own contract, so the browser asks for
+     exactly what the endpoint validates. Validation itself is not repeated
+     here beyond `required`: the endpoint is the authority on what a good
+     value is, and a second opinion in the client is how the two drift.     */
+
+  function fieldHtml(field) {
+    var id = "f-" + field.name;
+    var label = "<label for='" + esc(id) + "'>" + esc(field.label) +
+      (field.required ? " *" : "") + "</label>";
+    var input;
+    if (field.type === "select") {
+      input = "<select id='" + esc(id) + "' name='" + esc(field.name) + "'>" +
+        (field.options || []).map(function (option) {
+          return "<option value='" + esc(option[0]) + "'>" + esc(option[1]) + "</option>";
+        }).join("") + "</select>";
+    } else if (field.type === "textarea") {
+      input = "<textarea id='" + esc(id) + "' name='" + esc(field.name) + "' rows='4'></textarea>";
+    } else if (field.type === "checkbox") {
+      input = "<input type='checkbox' id='" + esc(id) + "' name='" + esc(field.name) + "'>";
+    } else {
+      input = "<input type='text' id='" + esc(id) + "' name='" + esc(field.name) + "'" +
+        (field.placeholder ? " placeholder='" + esc(field.placeholder) + "'" : "") + ">";
+    }
+    return "<p>" + (field.type === "checkbox" ? input + " " + label : label + input) +
+      (field.help ? "<small>" + esc(field.help) + "</small>" : "") + "</p>";
+  }
+
+  function readForm() {
+    var payload = {};
+    (CFG.fields || []).forEach(function (field) {
+      var node = document.getElementById("f-" + field.name);
+      if (!node) { return; }
+      payload[field.name] = field.type === "checkbox" ? !!node.checked : (node.value || "");
+    });
+    return payload;
+  }
+
+  function renderForm(errorMessage) {
+    var fields = (CFG.fields || []).map(fieldHtml).join("");
+    show(panel(CFG.title,
+      "<p>" + esc(CFG.blurb) + "</p>" +
+      (errorMessage ? "<p role='alert'>" + esc(errorMessage) + "</p>" : "") +
+      "<form id='section-form'>" + fields +
+      "<p><button type='submit' id='section-submit'>" +
+      esc(CFG.submit_label || "Create") + "</button></p></form>",
+      backLink(false)));
+    var form = document.getElementById("section-form");
+    if (!form) { return; }
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      var button = document.getElementById("section-submit");
+      if (button) { button.disabled = true; }
+      api(CFG.api, { method: "POST", body: readForm() }).then(function (res) {
+        var body = res.body || {};
+        if (res.status === 401) { signedOut(); return; }
+        if (res.status === 0) {
+          renderForm("We could not reach PulseSoc just now. Nothing was created.");
+          return;
+        }
+        if (res.status >= 400 || body.ok === false) {
+          // The endpoint's own words. Rewriting them here would mean guessing
+          // which rule was broken, and guessing wrong reads as a bug in the
+          // member's input rather than in ours.
+          renderForm(body.message || body.error ||
+            "That could not be created. Nothing was saved.");
+          return;
+        }
+        var created = body[CFG.record] || {};
+        var target = CFG.created_prefix && created[CFG.created_key]
+          ? CFG.created_prefix + encodeURIComponent(created[CFG.created_key])
+          : (CFG.back ? CFG.back[0] : window.location.pathname);
+        window.location.href = target;
+      });
+    });
+  }
 
   /* --- security ---------------------------------------------------------- */
 
@@ -79990,6 +80226,8 @@ PULSE_WEB_SECTION_JS = r"""
   function start() {
     if (CFG.mode === "hub") { renderHub(); }
     else if (CFG.mode === "security") { renderSecurity(); }
+    else if (CFG.mode === "record") { renderRecord(); }
+    else if (CFG.mode === "form") { renderForm(""); }
     else { renderSection(); }
   }
   root.addEventListener("click", function (event) {
@@ -80130,6 +80368,216 @@ def pulse_private_office_capital_entity_page(node_id):
                 "/relationships",
          "collection": "relationships"},
     )
+
+
+# --- Orders on the web ------------------------------------------------------
+#
+# `/dashboard/orders` is not a nice-to-have. `pulse_buyer_order_response` mints
+# `receipt_url = "/dashboard/orders?order_id=...&source=..."` into every order
+# payload it serialises, and that URL has never resolved: every receipt link
+# PulseSoc has ever handed a buyer is a 404. The app publishes `/pulse/orders`,
+# `/pulse/orders/:orderId` and `/dashboard/orders` as universal links on top of
+# that, so a shared purchase died the same way.
+#
+# The tabs mirror `BuyerOrdersScreen`'s, minus Returns. Returns come from a
+# different endpoint (`/api/pulse/marketplace/returns`) with its own opening
+# flow, so a Returns tab here would either be empty and misleading or a second
+# half-built surface. It is absent on purpose, and this page is PARTIAL rather
+# than parity until it exists.
+
+PULSE_ORDER_TABS = [
+    {"key": "all", "label": "All"},
+    {"key": "open", "label": "Processing", "groups": ["pending", "paid", "processing"]},
+    {"key": "shipped", "label": "Shipped", "groups": ["shipped"]},
+    {"key": "delivered", "label": "Delivered", "groups": ["delivered"]},
+    {"key": "cancelled", "label": "Cancelled", "groups": ["cancelled", "refunded", "failed"]},
+]
+
+#: The fields a buyer reads on an order card, named the way the API sends them.
+#: The native card shows the same five, which is the point -- this is one
+#: product's order row rendered twice, not two products.
+PULSE_ORDER_ROW = {
+    "title": "title",
+    "status": "status_group",
+    "href": "detail_url",
+    "money": ["amount_cents", "currency"],
+    "meta": ["seller.store_name", "created_at"],
+}
+
+PULSE_ORDERS_BLURB = (
+    "Everything you have bought on PulseSoc, newest first. Marketplace orders "
+    "and creator purchases in one list, exactly as the app shows them."
+)
+
+
+@webhook_app.route("/pulse/orders", methods=["GET"])
+@webhook_app.route("/dashboard/orders", methods=["GET"])
+def pulse_orders_page():
+    """The buyer's own purchase history.
+
+    One order can be singled out with `?order_id=`, because that is the shape
+    of the receipt URL the API already hands out. It redirects to the record
+    page rather than rendering a variant here, so a receipt link and a shared
+    order link land on the same page.
+    """
+    blocked = pulse_web_section_guard()
+    if blocked:
+        return blocked
+    order_id = safe_int(request.args.get("order_id"), 0)
+    if order_id > 0:
+        target = "/pulse/orders/" + str(order_id)
+        # `source` rides along. The receipt URL always carries it, and the two
+        # transaction tables have independent id sequences -- dropping it here
+        # would let a creator purchase and a marketplace order with the same id
+        # resolve to each other.
+        source = str(request.args.get("source") or "").strip()
+        if source in {"seller_transactions", "creator_transactions"}:
+            target += "?source=" + source
+        return redirect(target)
+    return pulse_web_section_shell(
+        "Your orders", PULSE_ORDERS_BLURB,
+        {"mode": "section", "title": "Your orders", "blurb": PULSE_ORDERS_BLURB,
+         "api": "/api/pulse/orders", "collection": "orders",
+         "tabs": PULSE_ORDER_TABS, "tabs_field": "status_group",
+         "row": PULSE_ORDER_ROW,
+         "empty": "You have not bought anything on PulseSoc yet.",
+         "signed_out": "Your orders are only visible while you are signed in."},
+    )
+
+
+@webhook_app.route("/pulse/orders/<int:order_id>", methods=["GET"])
+def pulse_order_detail_page(order_id):
+    """One order.
+
+    `source` is forwarded because the API needs it to tell a `seller_transactions`
+    row from a `creator_transactions` row with the same id -- the two tables have
+    independent id sequences, so dropping it would sometimes serve the wrong
+    purchase. The endpoint scopes every lookup to the signed-in buyer, so the
+    worst a wrong `source` can do is miss.
+    """
+    blocked = pulse_web_section_guard()
+    if blocked:
+        return blocked
+    api_path = "/api/pulse/orders/" + str(int(order_id))
+    source = str(request.args.get("source") or "").strip()
+    if source in {"seller_transactions", "creator_transactions"}:
+        api_path += "?source=" + source
+    return pulse_web_section_shell(
+        "Order", "One PulseSoc order and everything recorded against it.",
+        {"mode": "record", "title": "Order", "api": api_path, "record": "order",
+         "row": {"status": "status_group", "money": ["amount_cents", "currency"]},
+         "back": ["/pulse/orders", "All your orders"],
+         "signed_out": "This order is only visible while you are signed in."},
+    )
+
+
+# --- Pages on the web -------------------------------------------------------
+
+PULSE_PAGES_BLURB = (
+    "Pages you own or help run. A Page is a PulseSoc presence separate from "
+    "your personal profile, with its own followers, posts, and team."
+)
+
+
+@webhook_app.route("/pulse/pages", methods=["GET"])
+def pulse_pages_hub_page():
+    blocked = pulse_web_section_guard()
+    if blocked:
+        return blocked
+    return pulse_web_section_shell(
+        "Your Pages", PULSE_PAGES_BLURB,
+        {"mode": "section", "title": "Your Pages", "blurb": PULSE_PAGES_BLURB,
+         "api": "/api/pages", "collection": "pages",
+         "row": {"title": "name", "status": "status", "href": "handle",
+                 "href_prefix": "/pulse/pages/", "meta": ["handle", "category"]},
+         "empty": "You do not run any Pages yet.",
+         "signed_out": "Your Pages are only visible while you are signed in."},
+    )
+
+
+#: Exactly the values `pulsesoc_pages.PAGE_TYPES` accepts. Read from the module
+#: rather than retyped, so a new page type reaches this form the moment the
+#: server accepts it and a removed one stops being offered.
+def pulse_page_type_options():
+    return [[value, value.replace("_", " ").title()]
+            for value in pulsesoc_pages.PAGE_TYPES]
+
+
+# Registered ahead of `<handle>` so "create" is never read as a handle. Werkzeug
+# prefers a static rule over a dynamic one whatever the order, but the two are
+# adjacent here so the reason is visible to whoever edits either.
+@webhook_app.route("/pulse/pages/create", methods=["GET"])
+def pulse_page_create_page():
+    """Create a Page.
+
+    The four fields are the four `pulsesoc_pages.create_page` refuses without.
+    Handle availability is checked by the server on submit and reported in its
+    own words; the app additionally checks as you type, which this does not, so
+    a taken handle costs a round trip here that it does not cost there.
+    """
+    blocked = pulse_web_section_guard()
+    if blocked:
+        return blocked
+    blurb = ("A Page is a PulseSoc presence separate from your personal "
+             "profile. You will be its owner.")
+    return pulse_web_section_shell(
+        "Create a Page", blurb,
+        {"mode": "form", "title": "Create a Page", "blurb": blurb,
+         "api": "/api/pages", "record": "page",
+         "created_prefix": "/pulse/pages/", "created_key": "handle",
+         "submit_label": "Create Page",
+         "back": ["/pulse/pages", "Your Pages"],
+         "signed_out": "Sign in to create a Page.",
+         "fields": [
+             {"name": "name", "label": "Page name", "required": True,
+              "help": "At least two characters."},
+             {"name": "handle", "label": "Handle", "required": True,
+              "placeholder": "yourpage",
+              "help": "How people will find and @-mention this Page."},
+             {"name": "page_type", "label": "Type", "type": "select",
+              "options": pulse_page_type_options()},
+             {"name": "category", "label": "Category"},
+             {"name": "description", "label": "Description", "type": "textarea"},
+             {"name": "confirm_owner", "type": "checkbox", "required": True,
+              "label": "I confirm I will be the owner of this Page."},
+         ]},
+    )
+
+
+@webhook_app.route("/pulse/pages/<handle>", methods=["GET"])
+def pulse_page_by_handle_page(handle):
+    """One Page, addressed the way it is shared: by handle.
+
+    `/api/pages/by-handle/<handle>` is the only lookup that takes a handle, and
+    it is the one the app uses for the same link, so a Page opened from a share
+    resolves identically in both places.
+    """
+    blocked = pulse_web_section_guard()
+    if blocked:
+        return blocked
+    clean_handle = str(handle or "").lstrip("@")
+    return pulse_web_section_shell(
+        "Page", "A PulseSoc Page.",
+        {"mode": "record", "title": "Page",
+         "api": "/api/pages/by-handle/" + quote(clean_handle, safe=""),
+         "record": "page", "back": ["/pulse/pages", "Your Pages"],
+         "signed_out": "Sign in to see this Page."},
+    )
+
+
+# --- Account Health ---------------------------------------------------------
+#
+# Not a new page. `/dashboard/account/health` has rendered warnings, strikes and
+# restrictions server-side for a long time, and `AccountHealthAppealsScreen`
+# links to that exact path as "the full account health details". The app also
+# publishes `/pulse/account-health`, which resolved nowhere -- so the same screen
+# had a working web URL and a dead one. This gives the dead one the live page
+# rather than building a second Account Health with its own opinion of the data.
+
+
+@webhook_app.route("/pulse/account-health", methods=["GET"])
+def pulse_account_health_alias_page():
+    return dashboard_account_health_page()
 
 
 @webhook_app.route("/admin/premium-command", methods=["GET", "POST"])
