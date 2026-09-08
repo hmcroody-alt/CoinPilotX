@@ -388,7 +388,13 @@ def classify_body(body: str, html_producers: set[str]) -> tuple[str, str]:
         # A CSV export or an image stream is neither a page nor an API payload;
         # counting it as either one distorts both sides of the parity ratio.
         return "file", mimetype.group("value")
-    if re.search(r'\breturn\s+redirect\(', body) and "jsonify" not in body:
+    # `json` is the fallback bucket, so a redirect this misses is not merely
+    # unlabelled -- it is counted as a JSON API, inflating the API side of the
+    # parity ratio with routes that serve no payload at all. The blueprints in
+    # `pulse_communications_v2` reach Flask through a late-bound accessor and
+    # write `return _bot().redirect(...)`, which the bare-name pattern missed.
+    if (re.search(r'\breturn\s+(?:[A-Za-z_][\w.]*\(\s*\)\.)?redirect\(', body)
+            and "jsonify" not in body):
         return "redirect", ""
     return "json", ""
 

@@ -105,6 +105,65 @@ def _base_path(path: str) -> str:
     return head.rstrip("/") or "/"
 
 
+NATIVE_LITERAL_SOURCES = (
+    os.path.join("mobile-native", "src", "navigation", "nativeRouteActions.ts"),
+    os.path.join("mobile-native", "src", "navigation", "notificationRouting.ts"),
+)
+NATIVE_LITERAL = re.compile(r'"(/[A-Za-z0-9][A-Za-z0-9/_-]*)"')
+
+
+def native_literal_paths() -> set[str]:
+    """Every concrete URL path spelled out in the app's own routing sources.
+
+    These are real values, not invented ones: they are the paths the app itself
+    matches on when a link arrives. Used to answer "does this hub-only row mean
+    a broken share link, or did we only fail a made-up test value".
+    """
+    found: set[str] = set()
+    for relative in NATIVE_LITERAL_SOURCES:
+        path = os.path.join(REPO, relative)
+        if not os.path.exists(path):
+            raise SystemExit(
+                f"{relative} is gone; the hub-only rows are classified from the "
+                "literal paths it contains, so that classification would "
+                "silently weaken to 'unproven' for every row.")
+        found |= set(NATIVE_LITERAL.findall(census._read(path)))
+    if not found:
+        raise SystemExit(
+            "no literal paths found in " + ", ".join(NATIVE_LITERAL_SOURCES)
+            + " — the extractor has stopped matching rather than the app having "
+            "stopped routing.")
+    return found
+
+
+def native_sample_values(link_path: str, every_link_path: set[str],
+                         literals: set[str]) -> list[str]:
+    """Real single-segment values the app can produce for one parameterised link.
+
+    A literal sitting under the same base is *not* automatically a value for the
+    parameter. `/pulse/marketplace/create` is its own registered deep link
+    (MarketplaceCreateGateway) — a sibling route, not a listing id. Counting it
+    would have "proved" the marketplace row fine while sharing a listing still
+    404s, which is the exact false clearance this whole census exists to stop.
+    So anything that is itself a declared deep-link path is excluded.
+    """
+    base = _base_path(link_path)
+    if base == link_path or len(PARAM.findall(link_path)) != 1:
+        return []
+    prefix = base.rstrip("/") + "/"
+    values = []
+    for literal in literals:
+        if not literal.startswith(prefix):
+            continue
+        tail = literal[len(prefix):]
+        if not tail or "/" in tail:
+            continue
+        if literal in every_link_path:
+            continue
+        values.append(tail)
+    return sorted(values)
+
+
 def deep_link_status(app) -> tuple[list, list, list]:
     """Resolve every `linking.ts` path against the live routing table.
 
@@ -159,6 +218,46 @@ def deep_link_status(app) -> tuple[list, list, list]:
     return resolved, hub_only, broken
 
 
+def classify_hub_only(app, hub_only: list, every_link_path: set[str]) -> dict:
+    """Re-test each hub-only row with values the app can really produce.
+
+    HUB_ONLY is assigned when a *dummy* parameter fails, which conflates two
+    different things:
+
+      the web enumerates its valid values, and only the invented one 404s
+      the web genuinely has no detail route, and sharing an item is broken
+
+    Telling them apart was prose in this document ("check before building") and
+    prose does not get re-checked when the routing table moves. Where the app's
+    own sources spell out real values, they are probed instead.
+
+    Returns path -> (verdict, [(value, resolved)]). `unproven` is deliberately
+    not `fine`: it means no real value could be derived, so the row still needs
+    a human.
+    """
+    adapter = app.url_map.bind("pulsesoc.com")
+    literals = native_literal_paths()
+
+    def resolves(path: str) -> bool:
+        try:
+            adapter.match(path, method="GET")
+        except Exception:
+            return False
+        return True
+
+    verdicts = {}
+    for link in hub_only:
+        values = native_sample_values(link.path, every_link_path, literals)
+        if not values:
+            verdicts[link.path] = ("unproven", [])
+            continue
+        base = _base_path(link.path).rstrip("/")
+        probed = [(value, resolves(f"{base}/{value}")) for value in values]
+        verdicts[link.path] = (
+            "enumerated" if all(ok for _, ok in probed) else "gap", probed)
+    return verdicts
+
+
 DEEP_LINK_DOC = os.path.join(REPO, "PULSESOC_DEEPLINK_PARITY.md")
 
 # Broken links that must never be built, and why.
@@ -183,7 +282,8 @@ BLOCKED_DEEP_LINKS = {
 }
 
 
-def write_deep_link_doc(resolved: list, hub_only: list, broken: list) -> str:
+def write_deep_link_doc(resolved: list, hub_only: list, broken: list,
+                        verdicts: dict) -> str:
     """Record the share-link gap as a reviewable artifact.
 
     Kept separate from the census documents because it can only be produced by
@@ -202,6 +302,9 @@ def write_deep_link_doc(resolved: list, hub_only: list, broken: list) -> str:
             "thing the entry forbids.")
     blocked = [link for link in broken if link.path in BLOCKED_DEEP_LINKS]
     pending = [link for link in broken if link.path not in BLOCKED_DEEP_LINKS]
+    enumerated = [l for l in hub_only
+                  if verdicts.get(l.path, ("unproven",))[0] == "enumerated"]
+    still_open = [l for l in hub_only if l not in enumerated]
     lines = [
         "# PulseSoc deep-link parity (native -> web)",
         "",
@@ -215,7 +318,12 @@ def write_deep_link_doc(resolved: list, hub_only: list, broken: list) -> str:
         "",
         f"- Deep-link paths: **{total}**",
         f"- Resolve on the web: **{len(resolved)}**",
-        f"- Hub served, item links 404: **{len(hub_only)}**",
+        f"- Hub served, item links 404: **{len(still_open)}** "
+        f"({sum(1 for l in still_open if verdicts.get(l.path, ('unproven',))[0] == 'gap')}"
+        f" confirmed, "
+        f"{sum(1 for l in still_open if verdicts.get(l.path, ('unproven',))[0] == 'unproven')}"
+        f" unproven)",
+        f"- Hub served, all real values resolve: **{len(enumerated)}**",
         f"- No web surface at all: **{len(broken)}** "
         f"({len(pending)} pending, {len(blocked)} blocked by policy)",
         "",
@@ -238,18 +346,40 @@ def write_deep_link_doc(resolved: list, hub_only: list, broken: list) -> str:
     ]
     lines += [f"| `{link.path}` | {link.screen} | {BLOCKED_DEEP_LINKS[link.path]} |"
               for link in blocked]
+    def evidence(link) -> str:
+        probed = verdicts.get(link.path, ("unproven", []))[1]
+        if not probed:
+            return "no real value derivable from the app's sources"
+        return ", ".join(f"`{v}` {'ok' if ok else '**404**'}" for v, ok in probed)
+
+    lines += [
+        "",
+        "## Hub served — but every value the app can produce resolves",
+        "",
+        "These land in the hub-only bucket only because the pattern is probed with "
+        "an invented parameter. Re-probed with the literal paths the app's own "
+        "`nativeRouteActions.ts` / `notificationRouting.ts` match on, they pass. "
+        "Not gaps — do not build detail routes for these.",
+        "",
+        "| Path | Native screen | Values probed |",
+        "|---|---|---|",
+    ]
+    lines += [f"| `{link.path}` | {link.screen} | {evidence(link)} |"
+              for link in enumerated]
     lines += [
         "",
         "## Hub served, deep links into it 404",
         "",
-        "Browsing works; sharing a specific item does not. Either the web needs the "
-        "detail route, or it enumerates valid values and only the made-up test value "
-        "fails — check before building.",
+        "Browsing works; sharing a specific item does not. A row with values probed "
+        "is a confirmed gap: the app produces that value and the web 404s on it. A "
+        "row with none is unproven — the parameter is an id or a value no source "
+        "spells out, so it still needs a human before anyone builds anything.",
         "",
-        "| Path | Native screen |",
-        "|---|---|",
+        "| Path | Native screen | Values probed |",
+        "|---|---|---|",
     ]
-    lines += [f"| `{link.path}` | {link.screen} |" for link in hub_only]
+    lines += [f"| `{link.path}` | {link.screen} | {evidence(link)} |"
+              for link in still_open]
     lines += ["", "## Resolving", "", "| Path | Native screen |", "|---|---|"]
     lines += [f"| `{link.path}` | {link.screen} |" for link in resolved]
     with open(DEEP_LINK_DOC, "w", encoding="utf-8") as handle:
@@ -298,13 +428,18 @@ def main() -> int:
         for link in broken:
             mark = " [BLOCKED]" if link.path in BLOCKED_DEEP_LINKS else ""
             print(f"   {link.path:52} {link.screen}{mark}")
+    every_link_path = {link.path for link in resolved + hub_only + broken}
+    verdicts = classify_hub_only(app, hub_only, every_link_path)
     if hub_only:
         print("\n-- hub served, deep links into it 404:")
         for link in hub_only:
-            print(f"   {link.path:52} {link.screen}")
+            verdict, probed = verdicts.get(link.path, ("unproven", []))
+            detail = ",".join(f"{v}={'ok' if ok else '404'}" for v, ok in probed)
+            print(f"   {link.path:52} {link.screen:24} [{verdict}]"
+                  + (f" {detail}" if detail else ""))
 
     if not args.check:
-        print("\nwrote " + write_deep_link_doc(resolved, hub_only, broken))
+        print("\nwrote " + write_deep_link_doc(resolved, hub_only, broken, verdicts))
 
     failures = []
     if unseen:
