@@ -51,7 +51,7 @@ FRAMEWORK_RULES = {"/static/<path:filename>"}
 
 # Deep links that currently 404 on the web. Lower this as gaps close; the gate
 # fails if it rises. Measured 2026-09-08 against the live url_map.
-BROKEN_DEEP_LINK_BUDGET = 53
+BROKEN_DEEP_LINK_BUDGET = 42
 
 
 def boot_app():

@@ -1707,6 +1707,11 @@ def send_support_ticket_confirmation_email(to_email, name, reference, issue_type
 @webhook_app.route("/help", methods=["GET", "POST"])
 @webhook_app.route("/pulse/help", methods=["GET", "POST"])
 @webhook_app.route("/support", methods=["GET", "POST"])
+# linking.ts publishes /pulse/support as a shareable URL. It joins the decorator
+# stack rather than getting its own alias function because this page posts its
+# form back to request.path -- a GET-only alias renders perfectly and then 405s
+# on submit, which is worse than the 404 it replaced.
+@webhook_app.route("/pulse/support", methods=["GET", "POST"])
 def support_page():
     current_user = None
     try:
@@ -10814,6 +10819,75 @@ def pulse_dashboard_draft_studio_alias():
 @webhook_app.route("/pulse/dashboard/ai-creator-assistant", methods=["GET"])
 def pulse_dashboard_ai_creator_assistant_alias():
     return dashboard_creator_subsystem_page("ai-creator-assistant")
+
+
+# ---------------------------------------------------------------------------
+# Deep-link aliases for URLs the native app publishes.
+#
+# mobile-native/src/navigation/linking.ts registers https://pulsesoc.com as a
+# universal-link prefix, so every path it lists is a URL the app can put on a
+# user's clipboard. The paths below were all 404 on the web while the page they
+# name was already being served under a different spelling -- so sharing your
+# dashboard from the app produced a dead link to your own site.
+#
+# These call the page function directly rather than redirecting, matching the
+# aliases above: one view, one authority, one behaviour. A redirect would also
+# work, but it changes the URL in the address bar to the non-canonical form and
+# costs a round trip on the exact links most likely to be opened cold on a
+# phone.
+#
+# Verify with: .venv/bin/python scripts/parity/reconcile_urlmap.py
+# ---------------------------------------------------------------------------
+
+
+@webhook_app.route("/pulse/dashboard", methods=["GET"])
+def pulse_dashboard_alias():
+    return dashboard_page()
+
+
+@webhook_app.route("/pulse/ai", methods=["GET"])
+def pulse_ai_alias():
+    return dashboard_ai_page()
+
+
+@webhook_app.route("/pulse/creator", methods=["GET"])
+def pulse_creator_alias():
+    return dashboard_creator_page()
+
+
+@webhook_app.route("/pulse/crypto", methods=["GET"])
+def pulse_crypto_alias():
+    return dashboard_crypto_page()
+
+
+# linking.ts carries both a `-web` form and a bare form for the creator tools;
+# only the bare form was served.
+@webhook_app.route("/pulse/content-planner", methods=["GET"])
+@webhook_app.route("/pulse/dashboard/content-planner-web", methods=["GET"])
+def pulse_content_planner_web_alias():
+    return dashboard_creator_subsystem_page("content-planner")
+
+
+@webhook_app.route("/pulse/dashboard/post-scheduler-web", methods=["GET"])
+def pulse_post_scheduler_web_alias():
+    return dashboard_creator_subsystem_page("post-scheduler")
+
+
+@webhook_app.route("/pulse/dashboard/draft-studio-web", methods=["GET"])
+def pulse_draft_studio_web_alias():
+    return dashboard_creator_subsystem_page("draft-studio")
+
+
+# The native VerificationCenter takes an optional `track`; the web page does not
+# branch on it yet, so the segment is accepted and ignored rather than 404ing.
+# Accepting a parameter the page ignores is the lesser evil: the link resolves
+# to the right product and the track can be honoured later without changing the
+# URL contract the app has already shipped.
+@webhook_app.route("/pulse/verification", methods=["GET"])
+@webhook_app.route("/pulse/verification/<track>", methods=["GET"])
+@webhook_app.route("/pulse/dashboard/account-verification", methods=["GET"])
+def pulse_verification_alias(track=None):
+    return dashboard_account_verification_page()
 
 
 @webhook_app.route("/dashboard/account/profile", methods=["GET"])

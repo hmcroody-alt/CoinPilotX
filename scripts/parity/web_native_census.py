@@ -632,6 +632,32 @@ def _normalise(path: str) -> str:
     return path.split("?")[0].split("#")[0]
 
 
+RULE_PARAM = re.compile(r'<(?:(?P<conv>[a-z_]+)(?:\([^)]*\))?:)?(?P<name>[A-Za-z_][A-Za-z0-9_]*)>')
+
+
+def _rule_regex(rule: str):
+    """Compile a Flask rule into a matcher, or None if it takes no parameters.
+
+    Comparing destination paths literally makes every parameterised route
+    invisible, and the web leans on them heavily: `/dashboard/creator/
+    <subsystem_key>` alone serves the Content Planner and Draft Studio pages
+    that the matrix was reporting as MISSING. Six of nineteen gaps were this,
+    which would have meant rebuilding six pages that already work.
+
+    Only `path` converters may span a `/`; every other converter matches a
+    single segment, which is what keeps `/pulse/a/b` from matching `/pulse/<x>`.
+    """
+    if "<" not in rule:
+        return None
+    out, last = [], 0
+    for match in RULE_PARAM.finditer(rule):
+        out.append(re.escape(rule[last:match.start()]))
+        out.append(r'(?:.+)' if match.group("conv") == "path" else r'(?:[^/]+)')
+        last = match.end()
+    out.append(re.escape(rule[last:]))
+    return re.compile("^" + "".join(out) + "$")
+
+
 def build_matrix(destinations: list[NativeDestination],
                  web_routes: list[WebRoute]) -> list[ParityRow]:
     by_path: dict[str, list[WebRoute]] = {}
@@ -646,10 +672,19 @@ def build_matrix(destinations: list[NativeDestination],
         if route.kind == "html" and not normalised.startswith("/admin"):
             by_leaf.setdefault(normalised.rsplit("/", 1)[-1], []).append(route)
 
+    # Parameterised rules, kept in declaration order so the reported match is
+    # stable rather than dictionary-order.
+    dynamic = [(rx, route) for rx, route in
+               ((_rule_regex(_normalise(r.path)), r) for r in web_routes) if rx]
+
     rows: list[ParityRow] = []
     for dest in destinations:
         target = _normalise(dest.route)
         matches = by_path.get(target, [])
+        via_param = False
+        if not matches:
+            matches = [route for rx, route in dynamic if rx.match(target)]
+            via_param = bool(matches)
         html = [r for r in matches if r.kind == "html"]
         redirect = [r for r in matches if r.kind == "redirect"]
         row = ParityRow(
@@ -673,18 +708,36 @@ def build_matrix(destinations: list[NativeDestination],
                 row.note += (f"; NOTE also declared as a redirect at "
                              f"{redirect[0].file}:{redirect[0].line} — duplicate "
                              "registration, page wins only by ordering")
+            if via_param:
+                row.note += ("; matched via a parameterised rule — the page is "
+                             "reached as a route parameter, so confirm it "
+                             "renders this feature rather than treating the "
+                             "segment as an id")
         elif redirect:
             row.web_route = redirect[0].path
             row.web_kind = "redirect"
             row.web_source = f"{redirect[0].file}:{redirect[0].line}"
             row.verdict = PARTIAL
             row.note = "route redirects rather than rendering a web surface"
+            if via_param:
+                # Not a page under another name -- a dynamic rule eating a
+                # literal one. `/pulse/status/create` is meant to open the
+                # composer but matches `/pulse/status/<status_id>`, so the app
+                # asks for a status with the id "create" and the user gets a
+                # redirect instead of the create screen. A literal route added
+                # ahead of it fixes this; Werkzeug prefers the static rule.
+                row.note += (f"; SHADOWED by the parameterised rule "
+                             f"`{redirect[0].path}` — the last segment is being "
+                             "read as an id, not as a page name")
         elif matches:
             row.web_route = matches[0].path
             row.web_kind = matches[0].kind
             row.web_source = f"{matches[0].file}:{matches[0].line}"
             row.verdict = PARTIAL
             row.note = "path exists but serves JSON, not a web page"
+            if via_param:
+                row.note += (f"; matched only via the parameterised rule "
+                             f"`{matches[0].path}`")
         else:
             row.verdict = MISSING
             row.note = "no Flask route serves this path"

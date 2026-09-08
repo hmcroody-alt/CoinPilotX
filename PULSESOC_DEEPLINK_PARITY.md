@@ -9,15 +9,13 @@ using Werkzeug's own matcher, so a BROKEN row means no rule exists at all —
 not that the visitor was signed out.
 
 - Deep-link paths: **111**
-- Resolve on the web: **58**
-- Return 404 on the web: **53**
+- Resolve on the web: **69**
+- Return 404 on the web: **42**
 
 ## Broken share links
 
 | Path | Native screen |
 |---|---|
-| `/pulse/dashboard` | Dashboard |
-| `/pulse/ai` | PulseAI |
 | `/dashboard/:legacyGroup/:legacyModule/:legacySubmodule?` | DashboardLegacyModule |
 | `/dashboard/home` | UserDashboardWeb |
 | `/pulse/compose` | DashboardComposeAlias |
@@ -36,16 +34,10 @@ not that the visitor was signed out.
 | `/pulse/pages/create` | PageCreate |
 | `/pulse/pages` | PagesHub |
 | `/pulse/pages/:handle` | Page |
-| `/pulse/creator` | CreatorStudioAlias |
-| `/pulse/content-planner` | ContentPlanner |
-| `/pulse/dashboard/content-planner-web` | ContentPlannerWeb |
-| `/pulse/dashboard/post-scheduler-web` | PostScheduler |
-| `/pulse/dashboard/draft-studio-web` | DraftStudio |
 | `/pulse/intelligence/:subsystem?` | IntelligenceCenter |
 | `/pulse/undx/actions` | UndxActionCenter |
 | `/pulse/crypto/alerts` | CryptoAlertManagement |
 | `/pulse/watchlists` | Watchlists |
-| `/pulse/crypto` | MarketPulse |
 | `/pulse/private-office` | PrivateOffice |
 | `/pulse/private-office/facts` | PrivateFacts |
 | `/pulse/private-office/security` | PrivateOfficeSecurity |
@@ -61,10 +53,7 @@ not that the visitor was signed out.
 | `/pulse/account-health` | AccountHealth |
 | `/pulse/safety/:section?` | SafetyHub |
 | `/pulse/dashboard/network-safety/:section?` | SafetyWebHub |
-| `/pulse/support` | TrustSafetySupport |
 | `/scam-shield/:mode?` | ScamShield |
-| `/pulse/verification/:track?` | VerificationCenter |
-| `/pulse/dashboard/account-verification` | VerificationWebCenter |
 | `/pulse/activity/:category?` | ActivityInbox |
 | `/pulse/inbox` | ActivityInboxLegacyInbox |
 | `/dashboard/activity` | ActivityInboxWebActivity |
@@ -74,6 +63,7 @@ not that the visitor was signed out.
 
 | Path | Native screen |
 |---|---|
+| `/pulse/dashboard` | Dashboard |
 | `/pulse` | Home |
 | `/pulse/search` | Search |
 | `/pulse/saved` | Saved |
@@ -83,6 +73,7 @@ not that the visitor was signed out.
 | `/pulse/status` | Status |
 | `/pulse/messages` | Messenger |
 | `/pulse/notifications` | Notifications |
+| `/pulse/ai` | PulseAI |
 | `/pulse/profile` | Profile |
 | `/pulse/marketplace` | Marketplace |
 | `/pulse/settings` | Settings |
@@ -108,8 +99,13 @@ not that the visitor was signed out.
 | `/pulse/profile/:profileKey` | ProfileDetail |
 | `/pulse/premium` | Premium |
 | `/pulse/creator-studio` | CreatorStudio |
+| `/pulse/creator` | CreatorStudioAlias |
+| `/pulse/content-planner` | ContentPlanner |
+| `/pulse/dashboard/content-planner-web` | ContentPlannerWeb |
 | `/pulse/dashboard/content-planner` | ContentPlannerPulseAlias |
+| `/pulse/dashboard/post-scheduler-web` | PostScheduler |
 | `/pulse/dashboard/post-scheduler` | PostSchedulerPulseAlias |
+| `/pulse/dashboard/draft-studio-web` | DraftStudio |
 | `/pulse/dashboard/draft-studio` | DraftStudioPulseAlias |
 | `/pulse/courses` | Courses |
 | `/pulse/courses/:courseId` | CourseDetail |
@@ -119,6 +115,7 @@ not that the visitor was signed out.
 | `/pulse/growth` | GrowthCenter |
 | `/pulse/alerts/:alertId?` | AlertManagement |
 | `/pulse/portfolio` | Portfolio |
+| `/pulse/crypto` | MarketPulse |
 | `/dashboard/account/settings` | AccountSettings |
 | `/dashboard/account/security` | AccountSecurity |
 | `/account/settings` | AccountWebSettings |
@@ -127,8 +124,11 @@ not that the visitor was signed out.
 | `/pulse/settings/devices` | AccountDevices |
 | `/dashboard/account/health` | AccountHealthWeb |
 | `/pulse/help` | TrustSafety |
+| `/pulse/support` | TrustSafetySupport |
 | `/help` | TrustSafetyHelp |
 | `/trust-center` | TrustCenter |
 | `/security` | SecurityReport |
+| `/pulse/verification/:track?` | VerificationCenter |
+| `/pulse/dashboard/account-verification` | VerificationWebCenter |
 | `/notifications` | NotificationCenter |
 | `/pulse/settings/notifications` | NotificationPreferences |
