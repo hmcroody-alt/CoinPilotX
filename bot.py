@@ -81307,6 +81307,67 @@ def pulse_new_chat_page():
     )
 
 
+# --- Dashboard module deep links --------------------------------------------
+#
+# `DashboardModuleDetailScreen` is a native meta surface, and reading what it
+# renders is what decides this route. It shows the module's card, a "Module route
+# parity" block naming the *production route*, a "Where it opens" line, and then
+# tells the member in as many words: "Its more advanced workflows are available
+# on pulsesoc.com." It exists because the app cannot render every dashboard
+# module natively, so it explains the module and hands off to the web.
+#
+# On the web there is nothing to hand off to -- the visitor is already there. The
+# web equivalent of "open the production route" is being at the production route,
+# which is a richer page than the card describing it. So this is a router.
+#
+# What it deliberately does not do is carry a copy of the module map.
+# `mobile-native/src/data/dashboardModules.ts` looks like the authority because
+# it is what the screen reads, but it is itself a mirror: every one of its 135
+# modules is in `pulse_dashboard_mission_control.WIDGETS`, with the same key, the
+# same category and the same route. Transcribing 135 rows into bot.py would have
+# created a third copy, and the first one to drift would send members to the
+# wrong page. Resolving against the registry the server already owns means new
+# modules are routable the day they are registered, with nothing to keep in step.
+PULSE_DASHBOARD_MODULE_SLUG = re.compile(r"[^a-z0-9]+")
+
+
+def _pulse_dashboard_group_slug(category: str) -> str:
+    """Slugify a registry category the way the app names its groups.
+
+    "Account Command Center" -> "account-command-center", "Economy & Earnings"
+    -> "economy-earnings". The app stores the slug and the server stores the
+    title, so one of them has to derive the other; deriving here keeps the
+    server's own wording as the single spelling of a category name.
+    """
+    return PULSE_DASHBOARD_MODULE_SLUG.sub("-", str(category or "").lower()).strip("-")
+
+
+@webhook_app.route("/pulse/dashboard/module/<group_key>/<module_key>", methods=["GET"])
+def pulse_dashboard_module_link(group_key, module_key):
+    try:
+        from services import pulse_dashboard_mission_control as mission_control
+    except Exception:
+        abort(404)
+    wanted = (_pulse_dashboard_group_slug(group_key), str(module_key or "").strip())
+    for row in mission_control.registry_rows():
+        route = str(row.get("route") or "")
+        if not route.startswith("/"):
+            # Never redirect to something the registry did not spell as a local
+            # path. An absolute URL here would turn a PulseSoc link into an open
+            # redirect, which is worth refusing even though no row has one today.
+            continue
+        if (_pulse_dashboard_group_slug(row.get("category")),
+                str(row.get("widget_key") or "")) == wanted:
+            return redirect(route, code=302)
+    # Unlike `/pulse/seller-store`, an unrecognised key is NOT sent to the
+    # dashboard. That router falls back because the app falls back -- an unknown
+    # `mode` still yields a working store. This screen does the opposite: it
+    # refuses, with "This dashboard card could not be matched to the production
+    # module map." Redirecting anyway would claim a link worked when the app
+    # would have told the member it did not.
+    abort(404)
+
+
 @webhook_app.route("/admin/premium-command", methods=["GET", "POST"])
 def admin_premium_command_page():
     init_db()
