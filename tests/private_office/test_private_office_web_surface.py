@@ -168,9 +168,9 @@ def _client_source() -> str:
 
     `import bot` would boot the monolith; this assertion is about a string.
     """
-    match = re.search(r'PRIVATE_OFFICE_WEB_JS = r"""(.*?)"""',
+    match = re.search(r'PULSE_WEB_SECTION_JS = r"""(.*?)"""',
                       open(BOT, encoding="utf-8").read(), re.S)
-    assert match, "PRIVATE_OFFICE_WEB_JS is no longer a module-level raw string"
+    assert match, "PULSE_WEB_SECTION_JS is no longer a module-level raw string"
     return match.group(1)
 
 

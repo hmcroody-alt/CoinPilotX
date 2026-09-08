@@ -79606,7 +79606,7 @@ PRIVATE_OFFICE_SECTIONS = {
 }
 
 
-PRIVATE_OFFICE_WEB_JS = r"""
+PULSE_WEB_SECTION_JS = r"""
 (function () {
   "use strict";
   var CFG = %%CONFIG%%;
@@ -79636,7 +79636,7 @@ PRIVATE_OFFICE_WEB_JS = r"""
   function api(path, options) {
     var opts = options || {};
     var headers = { "Accept": "application/json" };
-    var token = grant();
+    var token = CFG.lockable ? grant() : "";
     if (token) { headers["X-Office-Grant"] = token; }
     if (opts.body) { headers["Content-Type"] = "application/json"; }
     return fetch(path, {
@@ -79657,6 +79657,11 @@ PRIVATE_OFFICE_WEB_JS = r"""
     });
   }
 
+  function backLink(asButton) {
+    if (!CFG.back) { return ""; }
+    return "<p><a class='" + (asButton ? "button" : "") + "' href='" +
+      esc(CFG.back[0]) + "'>" + esc(CFG.back[1]) + "</a></p>";
+  }
   function panel(title, bodyHtml, actionsHtml) {
     return "<article class='card'><h2>" + esc(title) + "</h2>" + bodyHtml +
       (actionsHtml || "") + "</article>";
@@ -79769,14 +79774,14 @@ PRIVATE_OFFICE_WEB_JS = r"""
     }
     if (res.status === 401) { signedOut(); return true; }
     var body = res.body || {};
-    if (body.locked || res.status === 423) {
+    if (CFG.lockable && (body.locked || res.status === 423)) {
       renderLocked(!!body.setup_required);
       return true;
     }
     if (res.status === 403) {
       show(panel(title,
         "<p>" + esc(body.message || "This part of the Office is not open to your account.") + "</p>",
-        "<p><a class='button' href='/pulse/private-office'>Back to the Office</a></p>"));
+        backLink(true)));
       return true;
     }
     if (res.status >= 500 || body.state === "unavailable") {
@@ -79950,7 +79955,7 @@ PRIVATE_OFFICE_WEB_JS = r"""
       show(panel(CFG.title,
         "<p>" + esc(CFG.blurb) + "</p>" + providerNote(body) +
         (CFG.collection ? collectionHtml(items) : "") + extra,
-        "<p><a class='button' href='/pulse/private-office'>Back to the Office</a></p>"));
+        backLink(true)));
     });
   }
   function mkSkip(key) { var s = {}; s[key] = 1; s.provider_status = 1; return s; }
@@ -79969,7 +79974,7 @@ PRIVATE_OFFICE_WEB_JS = r"""
       show(panel("Office security",
         "<p>Your Office passcode is separate from your PulseSoc password.</p>" +
         scalarsHtml(body, { setup_required: 1 }), actions +
-        "<p><a href='/pulse/private-office'>Back to the Office</a></p>"));
+        backLink(false)));
       var lock = document.getElementById("office-lock");
       if (lock) {
         lock.addEventListener("click", function () {
@@ -79996,35 +80001,54 @@ PRIVATE_OFFICE_WEB_JS = r"""
 """
 
 
-def private_office_web_shell(title, description, config):
-    """Render one Private Office page: an empty root plus the shared client.
+def pulse_web_section_shell(title, description, config):
+    """Render one API-backed web page: an empty root plus the shared client.
 
-    The page carries no member data in its markup. Everything a member sees is
-    fetched by the browser from `/api/private-office/*` with the session cookie,
-    which is the same authority the native app talks to and the reason this
-    surface cannot drift away from it.
+    The page carries no member data in its markup at all. Everything a visitor
+    sees is fetched by the browser, with the session cookie, from the same
+    endpoint the native screen calls. That is what keeps these surfaces from
+    drifting: there is no second copy of the data, the shape, or the rules.
     """
     main = ("<section id='office-root' aria-live='polite'>"
             "<article class='card'><h2>" + clean_html(title) +
             "</h2><p>Loading…</p></article></section>")
     script = ("<script>" +
-              PRIVATE_OFFICE_WEB_JS.replace("%%CONFIG%%", json.dumps(config)) +
+              PULSE_WEB_SECTION_JS.replace("%%CONFIG%%", json.dumps(config)) +
               "</script>")
     return pulse_social_shell(title, description, main, script_html=script)
 
 
-def private_office_web_guard():
-    """Signed-out visitors get the login page, not an Office-shaped 401.
+def private_office_web_shell(title, description, config):
+    """A Private Office page.
 
-    Entitlement is deliberately *not* checked here. The page renders whatever
-    `/api/private-office/overview` says, including "you do not have this" and
-    including "we could not tell" — a server-side tier check in this function
-    would be exactly the second authority the subsystem is built to avoid.
+    Adds the two things that are true of the Office and of nothing else: it
+    sits behind a second lock (so the client may hold an unlock grant and may
+    render an unlock door), and its pages lead back to the Office hub.
+    """
+    config = dict(config)
+    config["lockable"] = True
+    config.setdefault("back", ["/pulse/private-office", "Back to the Office"])
+    return pulse_web_section_shell(title, description, config)
+
+
+def pulse_web_section_guard():
+    """Signed-out visitors get the login page, not an API-shaped 401.
+
+    Entitlement is deliberately *not* checked here. Each page renders whatever
+    its endpoint says, including "you do not have this" and including "we could
+    not tell" — a server-side tier check in this function would be a second
+    authority on access, which is the thing these surfaces exist to avoid.
     """
     user = require_account()
     if not user:
         return redirect(url_for("login_page", next=request.path))
     return None
+
+
+#: Kept as the Office's own name for the shared guard, because the Private
+#: Office route pack reads as a unit and its docstring above is about the
+#: Office's particular reason for not gating here.
+private_office_web_guard = pulse_web_section_guard
 
 
 @webhook_app.route("/pulse/private-office", methods=["GET"])

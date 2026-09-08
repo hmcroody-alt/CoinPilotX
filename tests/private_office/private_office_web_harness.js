@@ -1,5 +1,5 @@
 /**
- * Runs the Private Office web client (`bot.PRIVATE_OFFICE_WEB_JS`) against a
+ * Runs the shared PulseSoc web client (`bot.PULSE_WEB_SECTION_JS`) against a
  * stub DOM and stub responses.
  *
  * The client's whole job is to turn one API answer into one honest screen, and
@@ -68,9 +68,10 @@ const CHILDREN = [
   ["human_concierge", "Concierge", "/pulse/private-office/concierge"]
 ];
 
-const HUB = { mode: "hub", title: "Private Office", children: CHILDREN };
+const HUB = { mode: "hub", title: "Private Office", children: CHILDREN, lockable: true };
 const SECTION = {
-  mode: "section", title: "Facts", blurb: "b",
+  mode: "section", title: "Facts", blurb: "b", lockable: true,
+  back: ["/pulse/private-office", "Back to the Office"],
   api: "/api/private-office/facts", collection: "facts"
 };
 
