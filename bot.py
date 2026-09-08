@@ -81406,6 +81406,100 @@ def pulse_dashboard_module_link(group_key, module_key):
     abort(404)
 
 
+# --- The legacy dashboard alias shape ----------------------------------------
+#
+# `/dashboard/<group>/<module>` is the *other* spelling of the route above, and
+# the one the app actually puts on a clipboard: the registered universal link is
+# `/dashboard/:legacyGroup/:legacyModule/:legacySubmodule?`, and the native Home
+# screen's "Videos" command item is literally `/dashboard/media/video-library`.
+# Native resolves it with `findLegacyDashboardAlias` and lands on the same
+# `DashboardModuleDetailScreen` the route above mirrors, so the web answer is the
+# same one, for the same reason: be at the production route.
+#
+# Only two segments are served here. The other nine legacy groups already have
+# their own `/dashboard/<group>/<subsystem_key>` pages, which are richer than a
+# redirect; taking them over would be a downgrade dressed as parity. `media` and
+# `safety` are the two the web never built, and their seventeen module links are
+# the whole of the gap this closes.
+#
+# The short names are the app's, not the server's -- "media" is not derivable
+# from "Pulse Radio & Media" -- so this map is a copy of app data, which is a
+# thing worth admitting rather than hiding. It is pinned:
+# `tests/web_parity/test_dashboard_legacy_aliases.py` reads
+# `DASHBOARD_LEGACY_GROUPS` out of `dashboardRouting.ts` and fails if either
+# entry stops agreeing, or if a group leaves the served nine and lands here
+# unserved.
+PULSE_DASHBOARD_LEGACY_ALIAS_GROUPS = {
+    "media": "Pulse Radio & Media",
+    "safety": "Moderation / Safety",
+}
+
+
+def _pulse_dashboard_module_alias_slug(value: str) -> str:
+    """`slugify` from `dashboardRouting.ts`, which is NOT the group slugifier
+    above.
+
+    The difference is one line -- native turns "&" into the word "and" -- and it
+    is the reason these are two functions instead of one. Group keys are written
+    by hand in `dashboardModules.ts` and drop the word ("Pulse Radio & Media" is
+    keyed `pulse-radio-media`), so the group slugifier must not add it. Module
+    aliases are minted by `slugify`, so they must. No module title contains "&"
+    today, which is exactly why sharing one function would look correct for as
+    long as it took someone to add one.
+    """
+    return PULSE_DASHBOARD_MODULE_SLUG.sub(
+        "-", str(value or "").lower().replace("&", "and")).strip("-")
+
+
+def _pulse_dashboard_legacy_aliases(row, legacy_group):
+    """`legacyModuleAliases` from `dashboardRouting.ts`, over a registry row.
+
+    Mirrored rather than narrowed. The census enumerates only `slugify(key)`,
+    because that is the alias it can prove every module answers to -- but native
+    accepts the title and the route tail as well, and serving the subset would
+    leave links the app resolves 404ing on the web while the count said the row
+    was closed.
+    """
+    route = str(row.get("route") or "")
+    aliases = {_pulse_dashboard_module_alias_slug(row.get("widget_key")),
+               _pulse_dashboard_module_alias_slug(row.get("display_name"))}
+    prefix = "/dashboard/" + legacy_group + "/"
+    if route.startswith(prefix):
+        aliases.add(route[len(prefix):])
+    parts = [p for p in route.split("/") if p]
+    if parts:
+        aliases.add(parts[-1])
+    if len(parts) > 1:
+        aliases.add("/".join(parts[-2:]))
+    return {a for a in aliases if a}
+
+
+@webhook_app.route("/dashboard/<any('media', 'safety'):legacy_group>/<path:module_alias>",
+                   methods=["GET"])
+def pulse_dashboard_legacy_alias(legacy_group, module_alias):
+    try:
+        from services import pulse_dashboard_mission_control as mission_control
+    except Exception:
+        abort(404)
+    category = PULSE_DASHBOARD_LEGACY_ALIAS_GROUPS[legacy_group]
+    wanted = str(module_alias or "").strip().strip("/").lower()
+    for row in mission_control.registry_rows():
+        if str(row.get("category") or "") != category:
+            continue
+        route = str(row.get("route") or "")
+        # Same refusal as the route above: the registry has no absolute URLs
+        # today, and a PulseSoc link must not become an open redirect if one
+        # ever appears.
+        if not route.startswith("/"):
+            continue
+        if wanted in _pulse_dashboard_legacy_aliases(row, legacy_group):
+            return redirect(route, code=302)
+    # An unmatched alias 404s, for the reason the route above 404s: native tells
+    # the member the card could not be matched, and a redirect to /dashboard
+    # would claim the link worked.
+    abort(404)
+
+
 @webhook_app.route("/admin/premium-command", methods=["GET", "POST"])
 def admin_premium_command_page():
     init_db()

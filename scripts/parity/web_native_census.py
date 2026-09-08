@@ -248,6 +248,22 @@ def _join_decorator(lines: list[str], index: int) -> tuple[str, int] | None:
     return None
 
 
+# A Python string literal, quoted either way, allowing the *other* quote inside
+# it. Writing this as `["\'][^"\']*["\']` is the obvious thing and it is wrong:
+# Flask's `any` converter spells its options in quotes, so
+# `"/dashboard/<any('media', 'safety'):legacy_group>"` contains single quotes
+# inside a double-quoted string and the route silently stopped being scanned.
+# That is the same failure the docstring below already describes -- an extractor
+# bug that reads as a parity gap -- and it went the other way here: the
+# reconciler reported a live rule as invisible to the scan, which is the only
+# reason it was noticed at all.
+_STR = r'(?:"(?P<dq{n}>[^"]*)"|\'(?P<sq{n}>[^\']*)\')'
+
+
+def _string_value(match: "re.Match", suffix: str) -> str:
+    return match.group("dq" + suffix) or match.group("sq" + suffix) or ""
+
+
 def _literal_path(raw: str, prefix_values: dict[str, str]) -> str | None:
     """Resolve the decorator's first argument to a literal path when possible.
 
@@ -260,19 +276,19 @@ def _literal_path(raw: str, prefix_values: dict[str, str]) -> str | None:
     returns None rather than guessing.
     """
     raw = raw.strip()
-    simple = re.fullmatch(r'["\'](?P<value>[^"\']*)["\']', raw)
+    simple = re.fullmatch(_STR.format(n="v"), raw)
     if simple:
-        return simple.group("value")
+        return _string_value(simple, "v")
     joined = re.fullmatch(
-        r'(?P<name>[A-Z_][A-Z0-9_]*)\s*\+\s*["\'](?P<tail>[^"\']*)["\']', raw)
+        r'(?P<name>[A-Z_][A-Z0-9_]*)\s*\+\s*' + _STR.format(n="t"), raw)
     if joined and joined.group("name") in prefix_values:
-        return prefix_values[joined.group("name")] + joined.group("tail")
+        return prefix_values[joined.group("name")] + _string_value(joined, "t")
     bare = re.fullmatch(r'[A-Z_][A-Z0-9_]*', raw)
     if bare and raw in prefix_values:
         return prefix_values[raw]
-    fstring = re.fullmatch(r'f["\'](?P<body>[^"\']*)["\']', raw)
+    fstring = re.fullmatch(r'f' + _STR.format(n="b"), raw)
     if fstring:
-        body = fstring.group("body")
+        body = _string_value(fstring, "b")
         names = re.findall(r'\{([A-Za-z_][A-Za-z0-9_]*)\}', body)
         if names and all(name in prefix_values for name in names):
             for name in names:

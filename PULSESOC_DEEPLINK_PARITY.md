@@ -10,9 +10,9 @@ not that the visitor was signed out.
 
 - Deep-link paths: **111**
 - Resolve on the web: **102**
-- Hub served, item links 404: **3** (0 confirmed, 3 unproven)
+- Hub served, item links 404: **2** (0 confirmed, 2 unproven)
 - Hub served, all real values resolve: **3**
-- Hub served, cleared by a test elsewhere: **1**
+- Hub served, cleared by a test elsewhere: **2**
 - No web surface at all: **2** (1 pending, 1 blocked by policy)
 
 ## Broken share links — pending work
@@ -47,6 +47,7 @@ This script's evidence is concrete paths scraped from the app's sources, so a pa
 
 | Path | Native screen | Proof | Why this script cannot say |
 |---|---|---|---|
+| `/dashboard/:legacyGroup/:legacyModule/:legacySubmodule?` | DashboardLegacyModule | `tests/web_parity/test_dashboard_legacy_aliases.py` | Two parameters, so single-segment sampling declines it rather than guessing. The values are still derivable, just not by scraping paths: native resolves these through `findLegacyDashboardAlias`, so the set of URLs it answers is the product of `DASHBOARD_LEGACY_GROUPS` and each group's module aliases. The test enumerates all 135 and probes the responses — which found two groups the web had never served. |
 | `/pulse/private-office/:view` | PrivateOperations | `tests/web_parity/test_private_office_views.py` | `:view` takes the six-entry RECORD_VIEWS vocabulary, not a path. The web serves all six via an `any(...)` enumeration that the test compares member-for-member against the app's own list. |
 
 ## Hub served, deep links into it 404
@@ -55,7 +56,6 @@ Browsing works; sharing a specific item does not. A row with values probed is a 
 
 | Path | Native screen | Values probed |
 |---|---|---|
-| `/dashboard/:legacyGroup/:legacyModule/:legacySubmodule?` | DashboardLegacyModule | no real value derivable from the app's sources |
 | `/pulse/marketplace/:listingId` | MarketplaceDetail | no real value derivable from the app's sources |
 | `/pulse/events/:eventId` | EventDetail | no real value derivable from the app's sources |
 

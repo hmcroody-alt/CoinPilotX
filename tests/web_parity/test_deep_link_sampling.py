@@ -102,6 +102,49 @@ def test_paths_that_only_appear_in_comments_are_not_treated_as_real(reconcile):
         "has stopped working")
 
 
+def test_a_route_literal_may_contain_the_other_quote(reconcile):
+    """The scanner's own blind spot, found by the reconciler rather than by a
+    test — which is the only reason it was found at all.
+
+    Flask's `any` converter spells its options in quotes, so a double-quoted
+    route path can legitimately contain single quotes. The path matcher was
+    written as `["\\']...[^"\\']*...["\\']`, which rejects exactly that and
+    returns None, and a None literal is *skipped* rather than reported. The
+    route then simply is not in the census: no error, no wrong number, just a
+    live rule the scan cannot see.
+
+    Only one route in the repo has this shape today, so the cost was one path.
+    The reason to pin it is the failure mode, not the count — this is the same
+    silent-skip that once hid the whole Private Office blueprint.
+    """
+    literal = reconcile.census._literal_path(
+        '"/dashboard/<any(\'media\', \'safety\'):legacy_group>"', {})
+    assert literal == "/dashboard/<any('media', 'safety'):legacy_group>", (
+        "a double-quoted route path containing single quotes no longer "
+        "resolves; every `any(...)` route has dropped out of the census")
+    assert reconcile.census._literal_path("'/single/quoted'", {}) == \
+        "/single/quoted", "single-quoted route paths stopped resolving"
+    assert reconcile.census._literal_path("PREFIX + '/tail'",
+                                          {"PREFIX": "/p"}) == "/p/tail"
+    assert reconcile.census._literal_path('some_variable', {}) is None, (
+        "an unresolvable first argument must stay None rather than being "
+        "guessed at; the widened quote matching must not have widened this")
+
+
+def test_the_scan_and_the_live_url_map_still_agree_on_the_any_route(reconcile):
+    """The check that would have caught the above on its own. `reconcile --check`
+    compares both directions, and "live but unseen by scan" is always a scanner
+    bug — so the route that exposed the bug is worth naming here, because a
+    regression in the matcher would otherwise show up only as a number moving in
+    a report nobody diffs."""
+    paths = {route.path for route in reconcile.census.collect_web_routes()}
+    assert "/dashboard/<any('media', 'safety'):legacy_group>/<path:module_alias>" \
+        in paths, (
+            "the legacy dashboard alias route is invisible to the static scan "
+            "again. It is live in the url_map, so the census now undercounts "
+            "the web surface and the reconciler will report it as a scanner bug.")
+
+
 def test_a_missing_source_tree_fails_loudly(reconcile, monkeypatch):
     monkeypatch.setattr(reconcile, "NATIVE_LITERAL_ROOT",
                         os.path.join("mobile-native", "nope"))

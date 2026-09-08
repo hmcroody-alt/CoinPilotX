@@ -325,6 +325,14 @@ PROVEN_ELSEWHERE = {
         "`:view` takes the six-entry RECORD_VIEWS vocabulary, not a path. The "
         "web serves all six via an `any(...)` enumeration that the test "
         "compares member-for-member against the app's own list."),
+    "/dashboard/:legacyGroup/:legacyModule/:legacySubmodule?": (
+        "tests/web_parity/test_dashboard_legacy_aliases.py",
+        "Two parameters, so single-segment sampling declines it rather than "
+        "guessing. The values are still derivable, just not by scraping paths: "
+        "native resolves these through `findLegacyDashboardAlias`, so the set "
+        "of URLs it answers is the product of `DASHBOARD_LEGACY_GROUPS` and "
+        "each group's module aliases. The test enumerates all 135 and probes "
+        "the responses — which found two groups the web had never served."),
 }
 
 
