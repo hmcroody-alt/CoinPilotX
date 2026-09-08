@@ -222,6 +222,46 @@ export function DropshippingStateView({
         </View>
       );
 
+    // The three below are not the merchant's doing and not retryable, so none of
+    // them gets a button. A "Try again" on a feature this server does not have
+    // turned on is an invitation to keep tapping.
+    case "SUPPLIER_DISABLED":
+      return (
+        <StoreSectionError
+          message="Supplier connections are available in the PulseSoc sandbox but aren't enabled on this server yet."
+          onRetry={null}
+          reducedMotion={reducedMotion}
+        />
+      );
+
+    case "PROVIDER_NETWORK_DISABLED":
+      return (
+        <StoreSectionError
+          message="PulseSoc isn't cleared to talk to this supplier from this server yet, so nothing can be imported."
+          onRetry={null}
+          reducedMotion={reducedMotion}
+        />
+      );
+
+    case "STORE_NOT_APPROVED":
+      return (
+        <StoreSectionError
+          message="Your store isn't approved to sell yet, so it can't import supplier products."
+          onRetry={null}
+          reducedMotion={reducedMotion}
+        />
+      );
+
+    case "INVALID_CREDENTIAL":
+      return (
+        <StoreSectionError
+          message="Your supplier didn't accept that access key."
+          onRetry={onFixConnection || onRetry}
+          actionLabel={onFixConnection ? "Check suppliers" : "Try again"}
+          reducedMotion={reducedMotion}
+        />
+      );
+
     case "SUPPLIER_DISCONNECTED":
       return (
         <StoreSectionError

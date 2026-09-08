@@ -95,45 +95,56 @@ export type DropshippingScope = {
 };
 
 /**
- * Why a merchant has no usable scope. Each one is a different screen, and a
- * single "couldn't load" would send a merchant with no storefront off to check
- * their internet connection.
+ * Why a merchant has no usable scope.
+ *
+ * These are the server's words, not a client interpretation, and they are three
+ * different screens. `NO_STORE` is "you have never applied to sell";
+ * `STORE_PENDING_REVIEW` is "we have your application" — telling that merchant
+ * to go and set a store up is telling them to do something they already did.
  */
-export type ScopeGap = "NO_BUSINESS" | "NO_STOREFRONT";
-
-export type ScopeResolution =
-  | { status: "ok"; scope: DropshippingScope; businessName: string }
-  | { status: "missing"; gap: ScopeGap };
+export const SCOPE_GAPS = ["NO_STORE", "STORE_PENDING_REVIEW", "NO_STOREFRONT"] as const;
+export type ScopeGap = (typeof SCOPE_GAPS)[number];
 
 /**
- * Find the business and storefront these routes have to be scoped to.
+ * Which authority owns the merchant's store. Carried so a screen can explain
+ * the right next step; it is not a permission and must not gate anything, since
+ * the server decides access on every request regardless of what this says.
+ */
+export type ScopeSource = "MARKETPLACE_SELLER" | "BUSINESS_OS";
+
+export type ScopeResolution =
+  | { status: "ok"; scope: DropshippingScope; storeName: string; source: ScopeSource }
+  | { status: "missing"; gap: ScopeGap };
+
+function scopeGap(value: unknown): ScopeGap {
+  const gap = text(value);
+  return (SCOPE_GAPS as readonly string[]).includes(gap) ? (gap as ScopeGap) : "NO_STORE";
+}
+
+/**
+ * Find the store these routes have to be scoped to.
  *
- * Two calls rather than one because the app has no combined endpoint, and the
- * gap between them is a real merchant state: someone can own a business and not
- * yet have a storefront, which is a setup step and not an error.
- *
- * Takes the first business the merchant owns. Multi-business merchants exist
- * and will need a picker; until one is built, silently choosing the newest is
- * the honest behaviour — it is what every other business surface in this app
- * does, and inventing a different rule here would show two screens two
- * different businesses.
+ * One call, to one endpoint, because the answer is one decision. This used to
+ * ask Business OS for a business and then that business for a storefront, which
+ * quietly made a Business OS workspace the definition of "has a store" — so a
+ * merchant already trading on PulseSoc was told to go and set a business up
+ * before they could connect a supplier. The server now answers from whichever
+ * authority actually owns the merchant's store, and the client does not get to
+ * hold a second opinion about it.
  */
 export async function resolveDropshippingScope(): Promise<ScopeResolution> {
-  const businesses = await pulseApi<{ businesses?: unknown[] }>("/api/business-os/business");
-  const first = list<Record<string, unknown>>(businesses.businesses)[0];
-  const businessId = first ? text(first.business_id) : "";
-  if (!businessId) return { status: "missing", gap: "NO_BUSINESS" };
+  const raw = await pulseApi<Record<string, unknown>>(`${BASE}/scope`);
+  if (text(raw.status) !== "ok") return { status: "missing", gap: scopeGap(raw.gap) };
 
-  const storefront = await pulseApi<{ storefront?: Record<string, unknown> }>(
-    `/api/business-os/store/${encodeURIComponent(businessId)}/storefront`
-  );
-  const storeId = text(storefront.storefront?.storefront_id);
-  if (!storeId) return { status: "missing", gap: "NO_STOREFRONT" };
+  const businessId = text(raw.business_id);
+  const storeId = text(raw.store_id);
+  if (!businessId || !storeId) return { status: "missing", gap: "NO_STORE" };
 
   return {
     status: "ok",
     scope: { businessId, storeId },
-    businessName: text(first?.display_name || first?.legal_name)
+    storeName: text(raw.store_name),
+    source: text(raw.source) === "BUSINESS_OS" ? "BUSINESS_OS" : "MARKETPLACE_SELLER"
   };
 }
 
@@ -148,6 +159,60 @@ function scopeQuery(scope: DropshippingScope, extra: Record<string, string | num
 function scopeBody(scope: DropshippingScope, extra: Record<string, unknown> = {}): string {
   return JSON.stringify({ business_id: scope.businessId, store_id: scope.storeId, ...extra });
 }
+
+/* ------------------------------------------------------------------ *
+ * Suppliers the merchant can choose from
+ * ------------------------------------------------------------------ */
+
+/**
+ * A supplier the merchant can connect, and where to get its key.
+ *
+ * `helpPath` is the supplier's own menu, written as they write it. It is kept as
+ * a short label rather than folded into a sentence because it is a thing the
+ * merchant reads off their screen and matches by eye, not a phrase we composed.
+ */
+export type SupplierProviderInfo = {
+  id: string;
+  name: string;
+  /** Shown on the CJ-specific step, in the supplier's own words. */
+  blurb: string;
+  helpPath: string;
+  helpSteps: readonly string[];
+};
+
+/**
+ * The suppliers this app can actually connect today.
+ *
+ * A list rather than a hardcoded CJ screen because the second adapter must add
+ * an entry, not a screen. Everything downstream of the picker — the key step,
+ * the shop list, the connection — is written against whichever entry the
+ * merchant chose, so nothing here says CJ except the data.
+ */
+export const SUPPLIER_PROVIDERS: readonly SupplierProviderInfo[] = [
+  {
+    id: "CJ",
+    name: "CJ Dropshipping",
+    blurb:
+      "Connect your CJ account to browse supplier products and import them into your PulseSoc Store.",
+    helpPath: "Account → API",
+    helpSteps: [
+      "Sign in to your CJ Dropshipping account on their website.",
+      "Open your account settings and find the access section below.",
+      "Create a new access key there, then copy the whole thing.",
+      "Paste it here. PulseSoc stores it encrypted and never shows it to anyone again."
+    ]
+  }
+];
+
+/**
+ * Suppliers that are planned and cannot be connected yet.
+ *
+ * Named, and visibly not connectable. A merchant who is waiting for Printful
+ * deserves to know it is coming; a merchant who taps a live-looking button and
+ * lands nowhere learns the app is unreliable. Listing them without a control is
+ * the only version of this that is true today.
+ */
+export const PLANNED_SUPPLIER_PROVIDERS: readonly string[] = ["Printful", "Printify"];
 
 /* ------------------------------------------------------------------ *
  * Vocabulary
@@ -1119,6 +1184,10 @@ export const DROPSHIPPING_STATES = [
   "EMPTY",
   "READY",
   "STALE",
+  "SUPPLIER_DISABLED",
+  "PROVIDER_NETWORK_DISABLED",
+  "STORE_NOT_APPROVED",
+  "INVALID_CREDENTIAL",
   "SUPPLIER_DISCONNECTED",
   "PROVIDER_UNAVAILABLE",
   "UNAUTHORIZED",
@@ -1158,8 +1227,21 @@ const PROVIDER_CODES = [
  */
 export function stateForError(error: unknown): DropshippingState {
   if (!(error instanceof PulseApiError)) return "ERROR";
-  if (error.status === 401 || error.status === 403) return "UNAUTHORIZED";
   const code = String(error.code || "").toLowerCase();
+
+  // Checked before the status classes below, because every one of these arrives
+  // with a status that would otherwise be read as something else entirely:
+  // `disabled` is a 404, and a store awaiting approval is a 403. A merchant told
+  // "not found" when the truth is "this server has the supplier feature turned
+  // off" goes looking for a bug in their own account.
+  if (code === "disabled") return "SUPPLIER_DISABLED";
+  if (code === "provider_network_disabled" || code === "provider_approval_required") {
+    return "PROVIDER_NETWORK_DISABLED";
+  }
+  if (code === "store_not_approved") return "STORE_NOT_APPROVED";
+  if (code === "invalid_api_key") return "INVALID_CREDENTIAL";
+
+  if (error.status === 401 || error.status === 403) return "UNAUTHORIZED";
   if (DISCONNECTED_CODES.includes(code)) return "SUPPLIER_DISCONNECTED";
   if (PROVIDER_CODES.includes(code)) return "PROVIDER_UNAVAILABLE";
   if (error.status === 429 || error.status === 503 || error.status === 504) return "PROVIDER_UNAVAILABLE";

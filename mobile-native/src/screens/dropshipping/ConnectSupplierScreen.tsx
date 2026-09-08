@@ -1,7 +1,16 @@
 /**
- * Connect a supplier — credential in, shop chosen, connection made.
+ * Connect a supplier — supplier chosen, credential in, shop chosen, connected.
  *
- * ## Two steps, because "connected to shop 4471" means nothing
+ * ## The supplier is picked, not assumed
+ *
+ * The first step lists the suppliers this app can connect and the ones it
+ * cannot yet, and the merchant chooses. CJ is the only connectable entry today,
+ * so this step could be skipped — and skipping it is how a feature ends up with
+ * a provider's name welded into a screen title, a route param and six strings.
+ * Everything after this step reads from the chosen {@link SupplierProviderInfo},
+ * so adding Printful is a data change.
+ *
+ * ## Two more steps, because "connected to shop 4471" means nothing
  *
  * The merchant pastes their supplier API key, this screen asks the provider
  * which shops that key can act for, and the merchant picks one. Collapsing that
@@ -36,7 +45,10 @@ import {
   connectSupplier,
   discoverSupplierShops,
   stateForError,
+  PLANNED_SUPPLIER_PROVIDERS,
+  SUPPLIER_PROVIDERS,
   type DropshippingState,
+  type SupplierProviderInfo,
   type SupplierShop
 } from "../../api/dropshipping";
 import { StoreHeader, StoreSectionError } from "../../components/store";
@@ -51,7 +63,16 @@ type Props = {
   navigation: { navigate: (...args: any[]) => void; goBack?: () => void };
 };
 
-type Step = "credential" | "shop" | "connecting";
+type Step = "provider" | "credential" | "shop" | "connecting";
+
+/** States a second attempt cannot change. */
+const NOT_RETRYABLE: readonly DropshippingState[] = [
+  "EMPTY",
+  "UNAUTHORIZED",
+  "SUPPLIER_DISABLED",
+  "PROVIDER_NETWORK_DISABLED",
+  "STORE_NOT_APPROVED"
+];
 
 export function ConnectSupplierScreen({ route, navigation }: Props) {
   const reducedMotion = useLogiNexusReducedMotion();
@@ -59,7 +80,9 @@ export function ConnectSupplierScreen({ route, navigation }: Props) {
   const scopeStatus = useDropshippingScope();
 
   const [apiKey, setApiKey] = useState("");
-  const [step, setStep] = useState<Step>("credential");
+  const [step, setStep] = useState<Step>("provider");
+  const [provider, setProvider] = useState<SupplierProviderInfo | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
   const [shops, setShops] = useState<SupplierShop[]>([]);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<{ state: DropshippingState; message: string } | null>(null);
@@ -75,6 +98,28 @@ export function ConnectSupplierScreen({ route, navigation }: Props) {
    */
   const describe = useCallback((error: unknown, during: "discover" | "connect") => {
     const state = stateForError(error);
+    // The three below are conditions of this deployment, not of the merchant's
+    // key. Saying "that key didn't work" to someone whose key is fine sends them
+    // back to their supplier's dashboard to re-copy a correct credential.
+    if (state === "SUPPLIER_DISABLED") {
+      return {
+        state,
+        message:
+          "Supplier connections are available in the PulseSoc sandbox but aren't enabled on this server yet."
+      };
+    }
+    if (state === "PROVIDER_NETWORK_DISABLED") {
+      return {
+        state,
+        message: "PulseSoc isn't cleared to talk to this supplier from this server yet. Your key wasn't the problem."
+      };
+    }
+    if (state === "STORE_NOT_APPROVED") {
+      return { state, message: "Your store isn't approved to sell yet, so it can't connect a supplier." };
+    }
+    if (state === "INVALID_CREDENTIAL") {
+      return { state, message: "Your supplier didn't accept that key. Check you copied the whole thing." };
+    }
     if (state === "PROVIDER_UNAVAILABLE") {
       return { state, message: "Your supplier isn't responding. Nothing was connected — try again shortly." };
     }
@@ -138,6 +183,25 @@ export function ConnectSupplierScreen({ route, navigation }: Props) {
 
   const canSubmit = Boolean(scope) && apiKey.trim().length > 0 && !busy;
 
+  /**
+   * Why the scope did not resolve, in the merchant's terms.
+   *
+   * A supplier feature that is switched off on this server answers 404 to the
+   * scope lookup, and reporting that as "we couldn't work out which store" would
+   * be the same class of lie this whole change exists to remove — blaming the
+   * merchant's setup for a server condition.
+   */
+  const scopeFailure =
+    scopeStatus.status.phase === "failed" ? scopeStatus.status.state : null;
+  const scopeFailureMessage =
+    scopeFailure === "SUPPLIER_DISABLED"
+      ? "Supplier connections are available in the PulseSoc sandbox but aren't enabled on this server yet."
+      : scopeFailure === "STORE_NOT_APPROVED"
+        ? "Your store isn't approved to sell yet, so it can't connect a supplier."
+        : scopeFailure === "UNAUTHORIZED"
+          ? "You're not signed in to this store any more."
+          : "We couldn't work out which store to connect this supplier to.";
+
   return (
     <View style={styles.root}>
       <StoreHeader
@@ -171,21 +235,71 @@ export function ConnectSupplierScreen({ route, navigation }: Props) {
             </Text>
           </View>
 
-          {scopeStatus.status.phase === "failed" ? (
+          {scopeFailure ? (
             <StoreSectionError
-              message="We couldn't work out which store to connect this supplier to."
-              onRetry={scopeStatus.reload}
+              message={scopeFailureMessage}
+              // Nothing to retry when the feature is off or the store is not
+              // approved — the second attempt fails identically.
+              onRetry={
+                scopeFailure === "SUPPLIER_DISABLED" ||
+                scopeFailure === "STORE_NOT_APPROVED" ||
+                scopeFailure === "UNAUTHORIZED"
+                  ? null
+                  : scopeStatus.reload
+              }
               reducedMotion={reducedMotion}
             />
           ) : null}
 
-          {step === "credential" || step === "connecting" ? (
+          {step === "provider" ? (
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>Your supplier access key</Text>
-              <Text style={styles.cardBody}>
-                Copy it from your supplier's own dashboard. PulseSoc stores it encrypted and never
-                shows it again.
-              </Text>
+              <Text style={styles.cardTitle}>Available suppliers</Text>
+              {SUPPLIER_PROVIDERS.map((entry) => (
+                <Pressable
+                  key={entry.id}
+                  style={styles.shopRow}
+                  onPress={() => {
+                    setProvider(entry);
+                    setStep("credential");
+                    setFailure(null);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Connect ${entry.name}`}
+                >
+                  <View style={styles.flex}>
+                    <Text style={styles.shopName}>{entry.name}</Text>
+                  </View>
+                  <Text style={styles.shopAction}>Connect</Text>
+                </Pressable>
+              ))}
+              {/* Named, and deliberately without a control. See the note on
+                  PLANNED_SUPPLIER_PROVIDERS. */}
+              <Text style={styles.plannedLabel}>Coming later</Text>
+              <Text style={styles.cardBody}>{PLANNED_SUPPLIER_PROVIDERS.join(", ")}</Text>
+            </View>
+          ) : null}
+
+          {(step === "credential" || step === "connecting") && provider ? (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Connect {provider.name}</Text>
+              <Text style={styles.cardBody}>{provider.blurb}</Text>
+              <Pressable
+                onPress={() => setShowHelp((shown) => !shown)}
+                accessibilityRole="button"
+                accessibilityLabel="Where do I find this?"
+              >
+                <Text style={styles.helpToggle}>Where do I find this?</Text>
+              </Pressable>
+              {showHelp ? (
+                <View style={styles.help}>
+                  <Text style={styles.helpPath}>{provider.helpPath}</Text>
+                  {provider.helpSteps.map((line) => (
+                    <Text key={line} style={styles.cardBody}>
+                      {line}
+                    </Text>
+                  ))}
+                </View>
+              ) : null}
               <TextInput
                 style={styles.input}
                 value={apiKey}
@@ -213,6 +327,22 @@ export function ConnectSupplierScreen({ route, navigation }: Props) {
                 accessibilityLabel="Find my shops"
               >
                 <Text style={styles.primaryText}>{busy ? "Checking…" : "Find my shops"}</Text>
+              </Pressable>
+              <Pressable
+                style={styles.secondary}
+                onPress={() => {
+                  setStep("provider");
+                  setProvider(null);
+                  setApiKey("");
+                  setShowHelp(false);
+                  setFailure(null);
+                }}
+                disabled={busy}
+                accessibilityRole="button"
+                accessibilityState={{ disabled: busy }}
+                accessibilityLabel="Choose a different supplier"
+              >
+                <Text style={styles.secondaryText}>Choose a different supplier</Text>
               </Pressable>
             </View>
           ) : null}
@@ -259,14 +389,11 @@ export function ConnectSupplierScreen({ route, navigation }: Props) {
           {failure ? (
             <StoreSectionError
               message={failure.message}
-              // Nothing to retry when the account genuinely has no shops, and
-              // no retry for a signed-out session either — both fail identically
-              // the second time.
-              onRetry={
-                failure.state === "EMPTY" || failure.state === "UNAUTHORIZED"
-                  ? null
-                  : () => void discover()
-              }
+              // Nothing to retry when the account genuinely has no shops, when
+              // the session is gone, or when the blocker is this deployment
+              // rather than the key. All of them fail identically the second
+              // time, and a retry button says otherwise.
+              onRetry={NOT_RETRYABLE.includes(failure.state) ? null : () => void discover()}
               reducedMotion={reducedMotion}
             />
           ) : null}
@@ -290,6 +417,10 @@ const styles = StyleSheet.create({
   },
   cardTitle: { fontSize: 15, fontWeight: "700", color: storeLight.text.primary },
   cardBody: { fontSize: 13, color: storeLight.text.muted, lineHeight: 18 },
+  plannedLabel: { fontSize: 11, fontWeight: "700", color: storeLight.text.muted, letterSpacing: 0.6 },
+  helpToggle: { fontSize: 13, fontWeight: "700", color: storeLight.text.link },
+  help: { gap: 6 },
+  helpPath: { fontSize: 13, fontWeight: "700", color: storeLight.text.primary },
   input: {
     minHeight: storeLight.size.tapTarget,
     paddingHorizontal: 12,

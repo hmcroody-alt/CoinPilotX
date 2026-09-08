@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 
 from services import db
 from services.business_os.store import service as store_service
-from services.business_os.suppliers import schema, vault
+from services.business_os.suppliers import merchant_scope, schema, vault
 
 STATUSES = frozenset({"CONNECTED", "API_SUSPENDED", "REACTIVATION_REQUIRED",
                       "RATE_LIMITED", "AUTH_EXPIRED", "REAUTH_REQUIRED",
@@ -59,6 +59,15 @@ def _enabled():
 
 
 def _canonical_scope(conn, business_id, store_id):
+    # A seller-backed store has no Business OS row to join to; the seller record
+    # is its canonical owner. Resolved here rather than only in _authorize so the
+    # worker and hydrate paths, which have no actor, agree on the merchant id.
+    owner = merchant_scope.seller_scope_owner(business_id, store_id)
+    if owner is not None:
+        try:
+            return merchant_scope.seller_merchant(conn, owner)
+        except merchant_scope.ScopeError as exc:
+            raise SupplierConnectionError(str(exc), exc.http_status, exc.code) from None
     row = conn.execute("SELECT b.owner_user_id, b.status AS business_status, "
                        "s.status AS store_status FROM business_os_business b "
                        "JOIN business_os_store_storefront s ON s.business_id=b.business_id "
@@ -75,10 +84,20 @@ def _authorize(conn, business_id, store_id, actor_user_id, *, context=None, writ
     _enabled()
     if actor_user_id is None or not str(actor_user_id).strip():
         raise SupplierConnectionError("Authentication required.", 401, "unauthorized")
+    # A merchant whose store is a marketplace seller record has no Business OS
+    # row for RBAC to consult, and demanding one is the defect this branch
+    # fixes. Ownership is still proved — against the authority that actually
+    # owns the store — so a caller cannot reach another merchant's scope.
+    owner = merchant_scope.seller_scope_owner(business_id, store_id)
     try:
         store_service._require_not_held(context)
-        store_service._require_biz_permission(conn, business_id, actor_user_id,
-                                             "store.manage" if write else "store.read")
+        if owner is not None:
+            merchant_scope.verify_seller_scope(conn, owner, actor_user_id)
+        else:
+            store_service._require_biz_permission(conn, business_id, actor_user_id,
+                                                 "store.manage" if write else "store.read")
+    except merchant_scope.ScopeError as exc:
+        raise SupplierConnectionError(str(exc), exc.http_status, exc.code) from None
     except store_service.StoreError as exc:
         raise SupplierConnectionError("Supplier access denied.", exc.http_status, exc.code) from None
     return _canonical_scope(conn, business_id, store_id)

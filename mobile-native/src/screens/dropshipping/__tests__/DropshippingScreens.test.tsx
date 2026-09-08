@@ -68,6 +68,8 @@ const mockImportSelected = jest.fn();
 const mockGetImportedProduct = jest.fn();
 const mockListImportedProducts = jest.fn();
 const mockPreviewPricing = jest.fn();
+const mockDiscoverShops = jest.fn();
+const mockConnectSupplier = jest.fn();
 
 jest.mock("../../../api/dropshipping", () => ({
   ...jest.requireActual("../../../api/dropshipping"),
@@ -77,7 +79,9 @@ jest.mock("../../../api/dropshipping", () => ({
   importSelected: (...args: unknown[]) => mockImportSelected(...args),
   getImportedProduct: (...args: unknown[]) => mockGetImportedProduct(...args),
   listImportedProducts: (...args: unknown[]) => mockListImportedProducts(...args),
-  previewPricing: (...args: unknown[]) => mockPreviewPricing(...args)
+  previewPricing: (...args: unknown[]) => mockPreviewPricing(...args),
+  discoverSupplierShops: (...args: unknown[]) => mockDiscoverShops(...args),
+  connectSupplier: (...args: unknown[]) => mockConnectSupplier(...args)
 }));
 
 import { PulseApiError } from "../../../api/pulseApi";
@@ -89,6 +93,8 @@ import {
   type SupplierConnection
 } from "../../../api/dropshipping";
 import { DropshippingStateView } from "../../../components/dropshipping/DropshippingStates";
+import { ConnectSupplierScreen } from "../ConnectSupplierScreen";
+import { DropshippingHubScreen } from "../DropshippingHubScreen";
 import { DropshippingProductsScreen } from "../DropshippingProductsScreen";
 import { ImportCartScreen } from "../ImportCartScreen";
 import { ReviewImportedProductScreen } from "../ReviewImportedProductScreen";
@@ -195,7 +201,8 @@ beforeEach(() => {
   mockResolveScope.mockResolvedValue({
     status: "ok",
     scope: { businessId: "biz-1", storeId: "store-1" },
-    businessName: "Bright Coffee Co"
+    storeName: "Bright Coffee Co",
+    source: "BUSINESS_OS"
   });
   // Nothing under test asks for a live preview quote; a screen that does gets a
   // resolved promise rather than an unhandled rejection in the background.
@@ -309,6 +316,249 @@ describe("no screen tests a JSX element for truthiness", () => {
     );
     expect(source).toContain("stateOwnsScreen(state) ? (");
     expect(source).not.toContain("const stateBlock = (");
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 1b — the hub's scope gate
+ * ------------------------------------------------------------------ */
+
+describe("DropshippingHubScreen", () => {
+  async function hub(nav = navigation()) {
+    const view = render(<DropshippingHubScreen navigation={nav} route={{ params: {} }} />);
+    await settle();
+    return { view, nav };
+  }
+
+  /**
+   * The reported bug, as a test. A merchant trading as "M&W Store · Open for
+   * orders" was shown "Dropshipping needs a business first" — the supplier
+   * gateway asked Business OS, which is a different identity from the one that
+   * made them a seller. Owning a store is the whole requirement.
+   */
+  it("lets an existing seller-backed store straight through to Connect", async () => {
+    mockResolveScope.mockResolvedValue({
+      status: "ok",
+      scope: { businessId: "mkt-seller:7001", storeId: "mkt-seller:7001" },
+      storeName: "M&W Store",
+      source: "MARKETPLACE_SELLER"
+    });
+    mockListConnections.mockResolvedValue([]);
+    const { view } = await hub();
+
+    await waitFor(() =>
+      expect(view.getByText("Sell products you don't have to stock.")).toBeTruthy()
+    );
+    expect(view.getByText("Dropshipping · No supplier connected")).toBeTruthy();
+    expect(view.getByText("Connect a supplier")).toBeTruthy();
+    expect(view.queryByText(/business/i)).toBeNull();
+  });
+
+  /**
+   * The other half of the same requirement: a merchant with no store must not
+   * get the seller's screen. If these two ever converge, one of them is lying.
+   */
+  it("sends a merchant with no store to set one up, never to a supplier key form", async () => {
+    mockResolveScope.mockResolvedValue({ status: "missing", gap: "NO_STORE" });
+    mockListConnections.mockResolvedValue([]);
+    const { view, nav } = await hub();
+
+    await waitFor(() =>
+      expect(view.getByText("You need a store before you can import products.")).toBeTruthy()
+    );
+    expect(view.queryByText("Dropshipping · No supplier connected")).toBeNull();
+    expect(view.getByText("Dropshipping · No store yet")).toBeTruthy();
+    expect(view.queryByText("Connect a supplier")).toBeNull();
+
+    fireEvent.press(view.getByText("Set up"));
+    expect(nav.navigate).toHaveBeenCalledWith("MerchantApply", expect.anything());
+    expect(nav.navigate).not.toHaveBeenCalledWith("DropshippingConnect", expect.anything());
+  });
+
+  /**
+   * A merchant awaiting review has already done the thing "Set up" would ask
+   * them to do again, so the action re-checks rather than sending them back.
+   */
+  it("offers a re-check, not a setup form, while the store is under review", async () => {
+    mockResolveScope.mockResolvedValue({ status: "missing", gap: "STORE_PENDING_REVIEW" });
+    mockListConnections.mockResolvedValue([]);
+    const { view, nav } = await hub();
+
+    await waitFor(() =>
+      expect(view.getByText("Your store is still being reviewed.")).toBeTruthy()
+    );
+    expect(view.getByText("Dropshipping · Store in review")).toBeTruthy();
+    expect(view.queryByText("Set up")).toBeNull();
+
+    fireEvent.press(view.getByText("Refresh"));
+    expect(nav.navigate).not.toHaveBeenCalled();
+  });
+
+  it("keeps sending a Business OS merchant with no storefront to Business OS", async () => {
+    mockResolveScope.mockResolvedValue({ status: "missing", gap: "NO_STOREFRONT" });
+    mockListConnections.mockResolvedValue([]);
+    const { view, nav } = await hub();
+
+    await waitFor(() =>
+      expect(view.getByText("Your business doesn't have a store yet.")).toBeTruthy()
+    );
+    fireEvent.press(view.getByText("Set up"));
+    expect(nav.navigate).toHaveBeenCalledWith("BusinessOs", expect.anything());
+  });
+
+  /**
+   * Caught on a simulator, not in this file: with the scope endpoint unreachable
+   * the body said "Dropshipping didn't load" while the strip above it said "No
+   * supplier connected". The second is a claim about the merchant's account, and
+   * a request that never came back cannot support it.
+   */
+  it("does not report an absent supplier when the store check itself failed", async () => {
+    mockResolveScope.mockRejectedValue(new PulseApiError("down", 500, "server_error"));
+    mockListConnections.mockResolvedValue([]);
+    const { view } = await hub();
+
+    await waitFor(() =>
+      expect(view.getByText("Dropshipping · Couldn't check your store")).toBeTruthy()
+    );
+    expect(view.queryByText("Dropshipping · No supplier connected")).toBeNull();
+    expect(view.queryByText("Connect")).toBeNull();
+    expect(view.getAllByText("Try again").length).toBeGreaterThan(0);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 1c — connecting a supplier
+ * ------------------------------------------------------------------ */
+
+describe("ConnectSupplierScreen", () => {
+  async function connectScreen(nav = navigation()) {
+    const view = render(<ConnectSupplierScreen navigation={nav} route={{ params: {} }} />);
+    await settle();
+    return { view, nav };
+  }
+
+  it("asks which supplier before asking for a key, and does not pretend the rest work", async () => {
+    const { view } = await connectScreen();
+
+    expect(view.getByText("Available suppliers")).toBeTruthy();
+    expect(view.getByText("CJ Dropshipping")).toBeTruthy();
+    // Named so a merchant knows they are coming, with no control — a button
+    // that lands nowhere teaches them the app cannot be trusted.
+    expect(view.getByText(/Printful/)).toBeTruthy();
+    expect(view.queryByLabelText("Supplier access key")).toBeNull();
+  });
+
+  it("names the supplier on the key step and explains where its key lives", async () => {
+    const { view } = await connectScreen();
+    fireEvent.press(view.getByLabelText("Connect CJ Dropshipping"));
+
+    expect(view.getByText("Connect CJ Dropshipping")).toBeTruthy();
+    expect(view.getByLabelText("Supplier access key")).toBeTruthy();
+    // The help is opt-in, so it does not push the field off the first screen.
+    expect(view.queryByText("Account → API")).toBeNull();
+    fireEvent.press(view.getByLabelText("Where do I find this?"));
+    expect(view.getByText("Account → API")).toBeTruthy();
+  });
+
+  /**
+   * §7: the key is a conduit, not a value the screen owns. It must never be
+   * rendered back, and no provider account identifier may surface either.
+   */
+  it("never renders the key back, and never shows a raw provider account id", async () => {
+    mockDiscoverShops.mockResolvedValue([{ externalShopId: "shop-9", name: "M&W Shop" }]);
+    const { view } = await connectScreen();
+    fireEvent.press(view.getByLabelText("Connect CJ Dropshipping"));
+
+    const field = view.getByLabelText("Supplier access key");
+    expect(field.props.secureTextEntry).toBe(true);
+    fireEvent.changeText(field, "cj-secret-key");
+    await act(async () => {
+      fireEvent.press(view.getByLabelText("Find my shops"));
+    });
+
+    await waitFor(() => expect(view.getByText("Choose a shop")).toBeTruthy());
+    expect(view.queryByText(/cj-secret-key/)).toBeNull();
+    expect(view.getByText("M&W Shop")).toBeTruthy();
+  });
+
+  /**
+   * §9: a key that merely exists is not a connection. Nothing is saved until
+   * the merchant names the shop the store should import from.
+   */
+  it("saves nothing until a shop is chosen", async () => {
+    mockDiscoverShops.mockResolvedValue([
+      { externalShopId: "shop-9", name: "M&W Shop" },
+      { externalShopId: "shop-10", name: "Second Shop" }
+    ]);
+    mockConnectSupplier.mockResolvedValue({ id: "conn-1" });
+    const { view, nav } = await connectScreen();
+    fireEvent.press(view.getByLabelText("Connect CJ Dropshipping"));
+    fireEvent.changeText(view.getByLabelText("Supplier access key"), "cj-secret-key");
+    await act(async () => {
+      fireEvent.press(view.getByLabelText("Find my shops"));
+    });
+    await waitFor(() => expect(view.getByText("Choose a shop")).toBeTruthy());
+    expect(mockConnectSupplier).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent.press(view.getByLabelText("Connect Second Shop"));
+    });
+    await waitFor(() => expect(mockConnectSupplier).toHaveBeenCalledTimes(1));
+    expect(mockConnectSupplier).toHaveBeenCalledWith(
+      { businessId: "biz-1", storeId: "store-1" },
+      { apiKey: "cj-secret-key", externalShopId: "shop-10" }
+    );
+    expect(nav.navigate).toHaveBeenCalledWith("DropshippingSuppliers", expect.anything());
+  });
+
+  /**
+   * §10: a feature this deployment has switched off answers 404, and the old
+   * reading of that was "we couldn't work out which store" — blaming the
+   * merchant's setup for a server condition. Neither may the screen offer a
+   * retry that cannot change the answer.
+   */
+  it("states a disabled supplier feature as a server condition, with no retry", async () => {
+    mockResolveScope.mockRejectedValue(new PulseApiError("nope", 404, "disabled"));
+    const { view } = await connectScreen();
+
+    await waitFor(() =>
+      expect(view.getByText(/aren't enabled on this server yet/)).toBeTruthy()
+    );
+    expect(view.queryByText(/which store/)).toBeNull();
+    expect(view.queryByText("Try again")).toBeNull();
+  });
+
+  it("does not blame the merchant's key when the provider network is switched off", async () => {
+    mockDiscoverShops.mockRejectedValue(
+      new PulseApiError("nope", 503, "provider_network_disabled")
+    );
+    const { view } = await connectScreen();
+    fireEvent.press(view.getByLabelText("Connect CJ Dropshipping"));
+    fireEvent.changeText(view.getByLabelText("Supplier access key"), "cj-secret-key");
+    await act(async () => {
+      fireEvent.press(view.getByLabelText("Find my shops"));
+    });
+
+    await waitFor(() => expect(view.getByText(/Your key wasn't the problem/)).toBeTruthy());
+    expect(view.queryByText(/didn't work/)).toBeNull();
+  });
+
+  it("keeps a rejected key apart from an account with no shops", async () => {
+    mockDiscoverShops.mockRejectedValue(new PulseApiError("nope", 400, "invalid_api_key"));
+    const { view } = await connectScreen();
+    fireEvent.press(view.getByLabelText("Connect CJ Dropshipping"));
+    fireEvent.changeText(view.getByLabelText("Supplier access key"), "wrong");
+    await act(async () => {
+      fireEvent.press(view.getByLabelText("Find my shops"));
+    });
+    await waitFor(() => expect(view.getByText(/didn't accept that key/)).toBeTruthy());
+
+    mockDiscoverShops.mockResolvedValue([]);
+    await act(async () => {
+      fireEvent.press(view.getByLabelText("Find my shops"));
+    });
+    await waitFor(() => expect(view.getByText(/no shops we can sell through/)).toBeTruthy());
+    expect(view.queryByText(/didn't accept that key/)).toBeNull();
   });
 });
 

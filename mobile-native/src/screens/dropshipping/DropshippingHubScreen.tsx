@@ -145,6 +145,21 @@ export function DropshippingHubScreen({ route, navigation }: Props) {
     [navigation]
   );
 
+  const openConnect = useCallback(
+    () => navigation.navigate("DropshippingConnect", { title: "Connect a supplier" }),
+    [navigation]
+  );
+
+  const openStorefrontSetup = useCallback(
+    () => navigation.navigate("BusinessOs", { title: "Business OS" }),
+    [navigation]
+  );
+
+  const openStoreSetup = useCallback(
+    () => navigation.navigate("MerchantApply", { title: "Set up your store" }),
+    [navigation]
+  );
+
   const withConnection = useCallback(
     (routeName: string, title: string) => () => {
       if (!active) {
@@ -171,22 +186,27 @@ export function DropshippingHubScreen({ route, navigation }: Props) {
       reducedMotion={reducedMotion}
       skeletonRows={3}
       empty={
-        missingScope === "NO_BUSINESS"
+        missingScope === "NO_STORE"
           ? {
-              title: "Dropshipping needs a business first.",
-              body: "Set up your business in Business OS, then come back here to connect a supplier."
+              title: "You need a store before you can import products.",
+              body: "Set your store up on PulseSoc, then come back here to connect a supplier."
             }
-          : missingScope === "NO_STOREFRONT"
+          : missingScope === "STORE_PENDING_REVIEW"
             ? {
-                title: "Your business doesn't have a store yet.",
-                body: "Create your storefront, then connect a supplier to import products into it."
+                title: "Your store is still being reviewed.",
+                body: "You can connect a supplier as soon as your store is approved to sell."
               }
-            : {
-                title: "Sell products you don't have to stock.",
-                body:
-                  "Connect a supplier, browse their catalogue, and import products as drafts. " +
-                  "You set your own price and nothing goes live until you publish it."
-              }
+            : missingScope === "NO_STOREFRONT"
+              ? {
+                  title: "Your business doesn't have a store yet.",
+                  body: "Create your storefront, then connect a supplier to import products into it."
+                }
+              : {
+                  title: "Sell products you don't have to stock.",
+                  body:
+                    "Connect a supplier, browse their catalogue, and import products as drafts. " +
+                    "You set your own price and nothing goes live until you publish it."
+                }
       }
     />
   ) : null;
@@ -255,14 +275,44 @@ export function DropshippingHubScreen({ route, navigation }: Props) {
     />
   ) : null;
 
+  /**
+   * The strip names the blocker the merchant actually has. Saying "No supplier
+   * connected" while the body says a store is missing sends them to a key form
+   * that cannot succeed — the supplier is not the thing standing in the way.
+   */
   const stripText = (() => {
     if (scopeStatus.status.phase === "ready" && active) {
-      return `${scopeStatus.status.businessName || "Your store"} · ${
+      return `${scopeStatus.status.storeName || "Your store"} · ${
         connectionIsUsable(active) ? "Supplier connected" : "Supplier needs attention"
       }`;
     }
+    if (missingScope === "NO_STORE") return "Dropshipping · No store yet";
+    if (missingScope === "STORE_PENDING_REVIEW") return "Dropshipping · Store in review";
+    if (missingScope === "NO_STOREFRONT") return "Dropshipping · No storefront yet";
+    // "No supplier connected" is a claim about the merchant's account, and it can
+    // only be made once the scope actually came back. Saying it while the check is
+    // in flight or after it failed puts an absence next to a body that is still
+    // loading or reporting an error.
+    if (scopeStatus.status.phase === "loading") return "Dropshipping · Checking your store";
+    if (scopeStatus.status.phase === "failed") return "Dropshipping · Couldn't check your store";
     return "Dropshipping · No supplier connected";
   })();
+
+  /**
+   * A merchant waiting on review has nothing to set up, so the action re-checks
+   * instead of sending them to a form they already submitted.
+   */
+  const stripAction = active
+    ? { label: "Suppliers", onPress: openSuppliers }
+    : missingScope === "NO_STORE"
+      ? { label: "Set up", onPress: openStoreSetup }
+      : missingScope === "STORE_PENDING_REVIEW"
+        ? { label: "Refresh", onPress: refresh }
+        : missingScope === "NO_STOREFRONT"
+          ? { label: "Set up", onPress: openStorefrontSetup }
+          : scopeStatus.status.phase === "loading" || scopeStatus.status.phase === "failed"
+            ? { label: "Try again", onPress: refresh }
+            : { label: "Connect", onPress: openConnect };
 
   return (
     <View style={styles.root}>
@@ -284,8 +334,8 @@ export function DropshippingHubScreen({ route, navigation }: Props) {
         <StoreStatusStrip
           text={stripText}
           open={Boolean(active && connectionIsUsable(active))}
-          actionLabel={active ? "Suppliers" : "Connect"}
-          onAction={active ? openSuppliers : () => navigation.navigate("DropshippingConnect", { title: "Connect a supplier" })}
+          actionLabel={stripAction.label}
+          onAction={stripAction.onPress}
           reducedMotion={reducedMotion}
         />
       </Animated.View>
@@ -303,9 +353,7 @@ export function DropshippingHubScreen({ route, navigation }: Props) {
               a supplier exists, "Connect a supplier" is a Suppliers-screen
               action, not the hub's headline. */}
           {state === "EMPTY" && !missingScope ? (
-            <ConnectCta
-              onPress={() => navigation.navigate("DropshippingConnect", { title: "Connect a supplier" })}
-            />
+            <ConnectCta onPress={openConnect} />
           ) : null}
         </Animated.View>
 

@@ -29,9 +29,11 @@ import re
 
 from flask import Blueprint, request
 
+from services import db
 from services.business_os_commerce_routes import _bot, _csrf_ok, _json
 from services.business_os.commerce_gateway import context_from_user
-from services.business_os.suppliers import discovery, drafts, import_cart, importer, policy, pricing
+from services.business_os.suppliers import (discovery, drafts, import_cart, importer,
+                                            merchant_scope, policy, pricing)
 from services.business_os.suppliers.errors import SupplierError
 
 
@@ -122,6 +124,35 @@ def _provider(source):
     if not isinstance(value, str) or not re.fullmatch(r"[a-z0-9_]{1,32}", value):
         raise SupplierError("invalid_input", http_status=400)
     return value
+
+
+# ---------------------------------------------------------------------------
+# Layer 0 — which store am I acting for
+# ---------------------------------------------------------------------------
+
+@dropshipping_blueprint.route(PREFIX + "/scope", methods=["GET"])
+def merchant_scope_route():
+    """The store this merchant's dropshipping work belongs to.
+
+    One server-side answer instead of the client stitching a business list to a
+    storefront lookup and inferring a gap from two empty responses. That
+    inference is what told a merchant trading as "M&W Store · Open for orders"
+    to go and create a business first: their store is a marketplace seller
+    record, and the client was only ever asking Business OS.
+
+    Read-only and never creates anything — a merchant without a store gets a
+    reason, not a silently provisioned second identity.
+    """
+    try:
+        actor, _context = _request_context()
+        conn = db.connect()
+        try:
+            result = merchant_scope.resolve(conn, actor)
+        finally:
+            conn.close()
+        return _respond({"ok": True, **result})
+    except Exception as exc:
+        return _error(exc)
 
 
 # ---------------------------------------------------------------------------

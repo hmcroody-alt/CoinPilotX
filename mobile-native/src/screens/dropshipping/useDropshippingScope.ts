@@ -1,14 +1,13 @@
 /**
- * Resolving the business + storefront every dropshipping route is scoped to.
+ * Resolving the store every dropshipping route is scoped to.
  *
  * ## Why this is cached at module scope
  *
- * The scope costs two round trips (`/business`, then that business's
- * `/storefront`) and nine screens need it. Resolving it per screen would put
- * eighteen requests behind a merchant walking from the hub to a product draft,
- * and — worse — a screen that resolved *later* could pick a different business
- * than the one the hub used if the merchant owns more than one. Caching the
- * promise makes the whole navigation stack agree by construction.
+ * Nine screens need the scope. Resolving it per screen would put nine requests
+ * behind a merchant walking from the hub to a product draft, and — worse — a
+ * screen that resolved *later* could pick a different store than the one the hub
+ * used if the merchant owns more than one. Caching the promise makes the whole
+ * navigation stack agree by construction.
  *
  * The cache holds the in-flight promise, not just the value, so two screens
  * mounting in the same frame share one pair of requests rather than racing.
@@ -25,6 +24,7 @@ import {
   type DropshippingScope,
   type DropshippingState,
   type ScopeGap,
+  type ScopeSource,
   type ScopeResolution
 } from "../../api/dropshipping";
 
@@ -53,7 +53,7 @@ export function resetDropshippingScopeCache(): void {
 
 export type ScopeStatus =
   | { phase: "loading" }
-  | { phase: "ready"; scope: DropshippingScope; businessName: string }
+  | { phase: "ready"; scope: DropshippingScope; storeName: string; source: ScopeSource }
   | { phase: "missing"; gap: ScopeGap }
   | { phase: "failed"; state: DropshippingState };
 
@@ -75,7 +75,12 @@ export function useDropshippingScope(): { status: ScopeStatus; reload: () => voi
         if (!mounted.current) return;
         setStatus(
           resolution.status === "ok"
-            ? { phase: "ready", scope: resolution.scope, businessName: resolution.businessName }
+            ? {
+                phase: "ready",
+                scope: resolution.scope,
+                storeName: resolution.storeName,
+                source: resolution.source
+              }
             : { phase: "missing", gap: resolution.gap }
         );
       },
