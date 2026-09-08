@@ -112,23 +112,51 @@ def parse_linking(text: str) -> list[NativeDeepLink]:
     """Extract the deep-link path map.
 
     Two shapes appear in the file: `ScreenName: "pulse/x"` and an expanded
-    `{ path: "pulse/x" }` for screens that also carry params. The expanded form
-    does not name its screen on the same line, so those are recorded against the
-    nearest preceding identifier key.
+    `ScreenName: { path: "pulse/x", parse: {...} }` for screens that also carry
+    params. A `path:` key belongs to the object that encloses it, so the screen
+    name is tracked with a brace stack rather than by proximity.
+
+    Reading the nearest preceding string key instead -- the obvious shortcut --
+    silently attributes every expanded entry to whichever simple entry happened
+    to sit above it: `BuyerOrders: { path: "pulse/orders" }` was being reported
+    as `MarketplaceCreateGateway`. The paths stayed correct, so the counts
+    looked fine and only the names were wrong, which is the sort of error that
+    survives review and then sends someone to the wrong screen.
     """
     links: list[NativeDeepLink] = []
-    pattern = re.compile(r'(?P<key>[A-Za-z][A-Za-z0-9_]*)\s*:\s*"(?P<path>[a-z0-9/:?_-]+)"')
-    last_screen = "?"
-    for match in pattern.finditer(text):
-        key = match.group("key")
-        path = match.group("path")
-        if key == "path":
-            screen = last_screen
-        else:
-            screen = key
-            last_screen = key
+    # Ordered scan of the three tokens that matter: a key opening an object, a
+    # closing brace, and a key bound to a string.
+    token = re.compile(
+        r'(?P<open>[A-Za-z][A-Za-z0-9_]*)\s*:\s*\{'
+        r'|(?P<close>\})'
+        r'|(?P<key>[A-Za-z][A-Za-z0-9_]*)\s*:\s*"(?P<path>[^"]*)"')
+    # Keys that group screens rather than name one; a `path:` nested under these
+    # would otherwise be attributed to the container.
+    CONTAINERS = {"screens", "config", "parse", "stringify", "initialRouteName"}
+    # These bind a *screen name*, not a URL -- `name: "Tabs"`, `screen:
+    # "Settings"`. They look identical to a one-line deep link and would be
+    # counted as four extra paths that no server could ever serve.
+    NON_PATH_KEYS = {"name", "screen", "initialRouteName"}
+    stack: list[str] = []
+    for match in token.finditer(text):
+        if match.group("open"):
+            stack.append(match.group("open"))
+            continue
+        if match.group("close"):
+            if stack:
+                stack.pop()
+            continue
+        key, path = match.group("key"), match.group("path")
         if not path or path.startswith("http"):
             continue
+        if key == "path":
+            owner = next((name for name in reversed(stack)
+                          if name not in CONTAINERS), "?")
+            screen = owner
+        elif key in CONTAINERS or key in NON_PATH_KEYS:
+            continue
+        else:
+            screen = key
         links.append(NativeDeepLink(screen=screen, path="/" + path.lstrip("/")))
     return links
 
