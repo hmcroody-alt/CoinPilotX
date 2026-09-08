@@ -53655,10 +53655,24 @@ def pulse_marketplace_page():
     cur = conn.cursor()
     cur.execute("SELECT * FROM marketplace_sellers WHERE user_id=? LIMIT 1", (user["user_id"],))
     seller = dict(cur.fetchone() or {})
+    # `discovery_visible_sql` is applied here as well as the lifecycle rule.
+    # Without it this grid was the one buyer-side surface in the product that
+    # showed listings from QA and deactivated sellers: the search endpoint below
+    # applies both predicates, the app only ever reads marketplace through that
+    # endpoint, and this page applied only the first. So the same catalogue
+    # answered differently depending on whether you scrolled it or searched it,
+    # and the looser answer was the one App Review item 4 is about.
+    #
+    # It is also what keeps a card's link honest. The cards now link to
+    # `/pulse/marketplace/<id>`, which applies both predicates, so a grid that
+    # applied fewer would have rendered its own links as 404s.
+    from services.discovery_visibility import discovery_visible_sql
     cur.execute(f"""SELECT l.*, {marketplace_seller_identity.store_name_select('ms')}
         FROM marketplace_listings l
+        LEFT JOIN users u ON u.user_id=l.seller_user_id
         LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
         WHERE {marketplace_listing_lifecycle.public_sql('l', 'ms')}
+          AND {discovery_visible_sql('u')}
         ORDER BY l.featured DESC, l.id DESC LIMIT 40""")
     listings = [dict(row) for row in cur.fetchall()]
     conn.close()
@@ -53668,7 +53682,7 @@ def pulse_marketplace_page():
         promote = ""
         if seller_id == int(user.get("user_id") or 0):
             promote = f"<button data-promote-content='marketplace_listing' data-content-id='{listing_id}' data-content-label='{clean_html(row.get('title') or 'Marketplace listing')}'>Promote Listing</button>"
-        return f"<article class='card'><h2>{clean_html(row.get('title'))}</h2><p>{clean_html(row.get('description'))}</p><p><span class='pill'>{clean_html(row.get('category') or 'Education')}</span> <span class='pill'>{clean_html(row.get('price_label') or 'Request access')}</span> <span class='pill'>Safety {int(row.get('safety_score') or 0)}</span></p><p>Seller: {clean_html(marketplace_seller_identity.display_store_name(row))}</p><p>Safety notice: educational products only. Payments and payout release are staged for compliance.</p><div class='actions'><button data-contact-seller='{seller_id}'>Contact Seller</button><button data-save-listing='{listing_id}'>Save</button><button data-report-listing='{listing_id}'>Report</button>{promote}</div></article>"
+        return f"<article class='card'><h2><a href='/pulse/marketplace/{listing_id}'>{clean_html(row.get('title'))}</a></h2><p>{clean_html(row.get('description'))}</p><p><span class='pill'>{clean_html(row.get('category') or 'Education')}</span> <span class='pill'>{clean_html(row.get('price_label') or 'Request access')}</span> <span class='pill'>Safety {int(row.get('safety_score') or 0)}</span></p><p>Seller: {clean_html(marketplace_seller_identity.display_store_name(row))}</p><p>Safety notice: educational products only. Payments and payout release are staged for compliance.</p><div class='actions'><button data-contact-seller='{seller_id}'>Contact Seller</button><button data-save-listing='{listing_id}'>Save</button><button data-report-listing='{listing_id}'>Report</button>{promote}</div></article>"
 
     listing_html = "".join(marketplace_card(row) for row in listings)
     seller_form = "<section class='card'><h2>Merchant Access</h2><p class='muted'>Apply, verify, and wait for approval before listing products.</p><div class='actions'><a class='button primary' href='/pulse/merchant/apply'>Apply as Merchant</a><a class='button' href='/pulse/merchant/dashboard'>Merchant Dashboard</a></div></section>"
@@ -53682,7 +53696,7 @@ def pulse_marketplace_page():
     const marketplaceSearch=document.querySelector('[data-marketplace-search]');
     const marketplaceCurrentUserId=%d;
     const marketplaceEsc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-    function marketplaceListingHtml(row){const listingId=Number(row.id||0),owned=Number(row.seller_user_id||0)===marketplaceCurrentUserId;const promote=owned?`<button data-promote-content="marketplace_listing" data-content-id="${listingId}" data-content-label="${marketplaceEsc(row.title||'Marketplace listing')}">Promote Listing</button>`:'';return `<article class="card"><h2>${marketplaceEsc(row.title||'Marketplace listing')}</h2><p>${marketplaceEsc(row.description||row.short_description||'')}</p><p><span class="pill">${marketplaceEsc(row.category||'Education')}</span> <span class="pill">${marketplaceEsc(row.price_label||'Request access')}</span> <span class="pill">Safety ${Number(row.safety_score||0)}</span></p><p>Seller: ${marketplaceEsc(row.seller_store_name||row.seller_name||'PulseSoc Store')}</p><p>Safety notice: educational products only. Payments and payout release are staged for compliance.</p><div class="actions"><button data-contact-seller="${Number(row.seller_user_id||0)}">Contact Seller</button><button data-save-listing="${listingId}">Save</button><button data-report-listing="${listingId}">Report</button>${promote}</div></article>`}
+    function marketplaceListingHtml(row){const listingId=Number(row.id||0),owned=Number(row.seller_user_id||0)===marketplaceCurrentUserId;const promote=owned?`<button data-promote-content="marketplace_listing" data-content-id="${listingId}" data-content-label="${marketplaceEsc(row.title||'Marketplace listing')}">Promote Listing</button>`:'';return `<article class="card"><h2><a href="/pulse/marketplace/${listingId}">${marketplaceEsc(row.title||'Marketplace listing')}</a></h2><p>${marketplaceEsc(row.description||row.short_description||'')}</p><p><span class="pill">${marketplaceEsc(row.category||'Education')}</span> <span class="pill">${marketplaceEsc(row.price_label||'Request access')}</span> <span class="pill">Safety ${Number(row.safety_score||0)}</span></p><p>Seller: ${marketplaceEsc(row.seller_store_name||row.seller_name||'PulseSoc Store')}</p><p>Safety notice: educational products only. Payments and payout release are staged for compliance.</p><div class="actions"><button data-contact-seller="${Number(row.seller_user_id||0)}">Contact Seller</button><button data-save-listing="${listingId}">Save</button><button data-report-listing="${listingId}">Report</button>${promote}</div></article>`}
     let marketplaceSearchTimer=0;
     async function runMarketplaceSearch(query=''){if(!marketplaceResults)return;marketplaceResults.innerHTML='<article class="card"><p class="muted">Searching marketplace...</p></article>';try{const d=await pulseApi('/api/pulse/marketplace/search?q='+encodeURIComponent(query||''));marketplaceResults.innerHTML=(d.items||[]).map(marketplaceListingHtml).join('')||'<article class="card"><h2>No marketplace matches.</h2><p class="muted">Try another item, category, or seller.</p></article>'}catch(err){marketplaceResults.innerHTML=`<article class="card"><p class="muted">${marketplaceEsc(err.message||'Marketplace search failed.')}</p></article>`}}
     marketplaceSearch?.addEventListener('submit',e=>{e.preventDefault();runMarketplaceSearch(e.target.q.value.trim())});
@@ -53695,6 +53709,122 @@ def pulse_marketplace_page():
     listing_empty = '<article class="card"><h2>Marketplace is warming up.</h2><p>Create the first educational listing or teacher service. Payments are coming later after compliance readiness.</p></article>'
     main = f"{seller_form}{listing_form}{search_bar}<section class='grid' data-marketplace-results>{listing_html or listing_empty}</section>{pulse_promotion_modal_html()}<link rel='stylesheet' href='/static/css/pulsesoc_promotions.css'><script src='/static/js/pulsesoc_promotions.js' defer></script>"
     return pulse_social_shell("PulseSoc Marketplace", "Creator products, educational services, templates, books, scam-prevention guides, and coaching foundations. No risky financial products.", main, "", script)
+
+
+# --- A shared marketplace listing link ---------------------------------------
+#
+# `/pulse/marketplace/:listingId` is a registered universal link, so it is a URL
+# the app puts on clipboards, and the web had no rule for it at all: sharing a
+# product 404ed.
+#
+# Reading the native side is what decides the shape. `MarketplaceDetail` is not a
+# detail screen -- it renders `MarketplaceScreen`, the grid -- and the grid's
+# `openInitialListing` says in as many words: "A deep link or notification that
+# names a listing wants the product page, not the grid with that listing nudged
+# to the front." So the destination is the product page.
+#
+# It also exposes a limit worth stating, because it is the reason this route
+# does not simply call an API. `MarketplaceProductScreen` says: "The listing
+# travels in the route params rather than being refetched. There is no read-one
+# endpoint -- /api/pulse/marketplace/search is the only buyer-side read." A deep
+# link carries no params, only an id, so native can only open the product page
+# when the listing happens to be inside the 40 rows search just returned.
+# Anything older silently leaves the member on the grid. That is a shared
+# product gap, not a web one.
+#
+# The web does not have to inherit it, and closing it needs no new authority:
+# this *is* the server. The page reads `marketplace_listings` for one id under
+# the same two predicates the search endpoint applies -- the lifecycle rule in
+# `marketplace_listing_lifecycle.public_sql` and `discovery_visible_sql` -- and
+# shapes the row with `pulse_marketplace_listing_payload`, the same function the
+# API returns. Nothing here decides what is public; it asks the things that
+# already do.
+#
+# Note that both predicates are used, not just the first. The grid above applies
+# only `public_sql`, so it can show listings from QA or deactivated sellers that
+# search hides. A deep link is reached from search on native, so it inherits the
+# stricter pair; matching the looser grid would have made a shared link show
+# something the app would not.
+@webhook_app.route("/pulse/marketplace/<int:listing_id>", methods=["GET"])
+def pulse_marketplace_listing_page(listing_id):
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    from services.discovery_visibility import discovery_visible_sql
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute(
+        f"""SELECT l.*, {marketplace_seller_identity.store_name_select('ms')},
+                   COALESCE(u.username,'') AS seller_username
+            FROM marketplace_listings l
+            LEFT JOIN users u ON u.user_id=l.seller_user_id
+            LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
+            WHERE l.id=? AND {marketplace_listing_lifecycle.public_sql('l', 'ms')}
+              AND {discovery_visible_sql('u')}
+            LIMIT 1""",
+        (listing_id,))
+    row = cur.fetchone()
+    if not row:
+        conn.close()
+        # A withdrawn, paused, rejected or never-approved listing is not
+        # distinguished from one that never existed, and deliberately so: saying
+        # "this was removed" about an id the visitor guessed would confirm the
+        # row exists. It is also what the app shows -- such a listing is not in
+        # search, so the product page is unreachable there too.
+        abort(404)
+    row = dict(row)
+    media_by_listing = pulse_marketplace_media_rows_for_listings(cur, [listing_id])
+    conn.close()
+    listing = pulse_marketplace_listing_payload(row, media_by_listing.get(listing_id, []))
+
+    seller_id = int(row.get("seller_user_id") or 0)
+    owned = seller_id == int(user.get("user_id") or 0)
+    gallery = "".join(
+        f"<img src='{clean_html(entry.get('media_url'))}' alt='' loading='lazy'>"
+        if (entry.get("media_type") or "image") == "image"
+        else f"<video src='{clean_html(entry.get('media_url'))}' controls preload='none'"
+             f" poster='{clean_html(entry.get('poster_url') or '')}'></video>"
+        for entry in (listing.get("media") or []))
+    gallery_block = f"<div class='grid'>{gallery}</div>" if gallery else ""
+    promote = ""
+    if owned:
+        promote = (f"<button data-promote-content='marketplace_listing' "
+                   f"data-content-id='{listing_id}' "
+                   f"data-content-label='{clean_html(row.get('title') or 'Marketplace listing')}'>"
+                   f"Promote Listing</button>")
+    main = (
+        f"<section class='card'>"
+        f"<p><a href='/pulse/marketplace'>&larr; Marketplace</a></p>"
+        f"<h1>{clean_html(row.get('title'))}</h1>"
+        f"<p><span class='pill'>{clean_html(row.get('category') or 'Education')}</span> "
+        f"<span class='pill'>{clean_html(row.get('price_label') or 'Request access')}</span> "
+        f"<span class='pill'>Safety {int(row.get('safety_score') or 0)}</span></p>"
+        f"<p>Seller: {clean_html(marketplace_seller_identity.display_store_name(row))}</p>"
+        f"{gallery_block}"
+        f"<p>{clean_html(row.get('description') or row.get('short_description') or '')}</p>"
+        f"<p>Safety notice: educational products only. Payments and payout release "
+        f"are staged for compliance.</p>"
+        f"<div class='actions'>"
+        f"<button data-contact-seller='{seller_id}'>Contact Seller</button>"
+        f"<button data-save-listing='{listing_id}'>Save</button>"
+        f"<button data-report-listing='{listing_id}'>Report</button>{promote}"
+        f"</div></section>"
+        f"{pulse_promotion_modal_html()}"
+        f"<link rel='stylesheet' href='/static/css/pulsesoc_promotions.css'>"
+        f"<script src='/static/js/pulsesoc_promotions.js' defer></script>")
+    # The same three buyer actions the grid card offers, bound the same way, so a
+    # member who arrives by link is not on a page with fewer verbs than the one
+    # they would have reached by browsing.
+    script = """
+    document.addEventListener('click',async e=>{const c=e.target.closest('[data-contact-seller]');const r=e.target.closest('[data-report-listing]');const s=e.target.closest('[data-save-listing]');try{if(c){const d=await pulseApi('/api/pulse/messages/start',{method:'POST',body:JSON.stringify({user_id:c.dataset.contactSeller})});location.href=d.next_url} if(r){await pulseApi('/api/pulse/marketplace/listings/report',{method:'POST',body:JSON.stringify({listing_id:r.dataset.reportListing,reason:'Needs review'})});toast('Listing reported.')} if(s){await pulseApi('/api/pulse/marketplace/listings/save',{method:'POST',body:JSON.stringify({listing_id:s.dataset.saveListing})});toast('Saved.')}}catch(err){toast(err.message)}})
+    """
+    return pulse_social_shell(
+        clean_html(row.get("title") or "Marketplace listing"),
+        clean_html(row.get("short_description") or row.get("category") or
+                   "PulseSoc Marketplace listing"),
+        main, "", script)
 
 
 def pulse_marketplace_gallery_urls(value):

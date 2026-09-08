@@ -9,8 +9,8 @@ using Werkzeug's own matcher, so a BROKEN row means no rule exists at all —
 not that the visitor was signed out.
 
 - Deep-link paths: **111**
-- Resolve on the web: **102**
-- Hub served, item links 404: **2** (0 confirmed, 2 unproven)
+- Resolve on the web: **103**
+- Hub served, item links 404: **1** (0 confirmed, 1 unproven)
 - Hub served, all real values resolve: **3**
 - Hub served, cleared by a test elsewhere: **2**
 - No web surface at all: **2** (1 pending, 1 blocked by policy)
@@ -56,7 +56,6 @@ Browsing works; sharing a specific item does not. A row with values probed is a 
 
 | Path | Native screen | Values probed |
 |---|---|---|
-| `/pulse/marketplace/:listingId` | MarketplaceDetail | no real value derivable from the app's sources |
 | `/pulse/events/:eventId` | EventDetail | no real value derivable from the app's sources |
 
 ## Resolving
@@ -89,6 +88,7 @@ Browsing works; sharing a specific item does not. A row with values probed is a 
 | `/pulse/marketplace/create` | MarketplaceCreateGateway |
 | `/pulse/reels/:reelId` | ReelDetail |
 | `/pulse/status/:statusId` | StatusDetail |
+| `/pulse/marketplace/:listingId` | MarketplaceDetail |
 | `/pulse/seller-store` | SellerStore |
 | `/pulse/orders` | BuyerOrders |
 | `/pulse/orders/:orderId` | BuyerOrderDetail |
