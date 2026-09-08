@@ -9,9 +9,9 @@ using Werkzeug's own matcher, so a BROKEN row means no rule exists at all —
 not that the visitor was signed out.
 
 - Deep-link paths: **111**
-- Resolve on the web: **93**
+- Resolve on the web: **97**
 - Hub served, item links 404: **8**
-- No web surface at all: **10**
+- No web surface at all: **6**
 
 ## Broken share links (no web surface)
 
@@ -23,10 +23,6 @@ not that the visitor was signed out.
 | `/pulse/seller-store` | SellerStore |
 | `/pulse/presence` | Presence |
 | `/pulse/undx/actions` | UndxActionCenter |
-| `/pulse/activity/:category?` | ActivityInbox |
-| `/pulse/inbox` | ActivityInboxLegacyInbox |
-| `/dashboard/activity` | ActivityInboxWebActivity |
-| `/dashboard/inbox` | ActivityInboxWebInbox |
 
 ## Hub served, deep links into it 404
 
@@ -138,5 +134,9 @@ Browsing works; sharing a specific item does not. Either the web needs the detai
 | `/security` | SecurityReport |
 | `/pulse/verification/:track?` | VerificationCenter |
 | `/pulse/dashboard/account-verification` | VerificationWebCenter |
+| `/pulse/activity/:category?` | ActivityInbox |
+| `/pulse/inbox` | ActivityInboxLegacyInbox |
+| `/dashboard/activity` | ActivityInboxWebActivity |
+| `/dashboard/inbox` | ActivityInboxWebInbox |
 | `/notifications` | NotificationCenter |
 | `/pulse/settings/notifications` | NotificationPreferences |

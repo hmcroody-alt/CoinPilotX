@@ -240,6 +240,67 @@ function check(name, condition, html) {
   check("a row with no handle is not linked to a composed 404",
     /Nameless/.test(html) && !/href='\/pulse\/pages\/'/.test(html), html);
 
+  /* --- an aggregated page -------------------------------------------------
+     The Activity inbox is built from three feeds at once, which gives it a
+     failure mode the single-source pages do not have: one feed falls over and
+     the list still looks complete. `sources_field` names where the server says
+     which of them answered, and nothing below may claim emptiness while any of
+     them is down.                                                           */
+
+  const FEED = {
+    mode: "section", title: "Activity", blurb: "b", api: "/api/activity",
+    collection: "items", sources_field: "sources",
+    tabs: [{ key: "all", label: "All" },
+           { key: "messages", label: "Messages", groups: ["messages"] },
+           { key: "calls", label: "Calls", groups: ["calls"] }],
+    tabs_field: "category",
+    row: { title: "title", status: "category", href: "web_url" },
+    empty: "Nothing is waiting for you."
+  };
+
+  const ALL_OK = { notifications: "ok", messages: "ok", calls: "ok" };
+
+  html = await run(FEED, () => ({
+    status: 200, body: { ok: true, sources: ALL_OK, items: [] }
+  }));
+  check("an empty inbox may say it is empty when every source answered",
+    /Nothing is waiting for you/.test(html) && !/could not read/.test(html), html);
+
+  html = await run(FEED, () => ({
+    status: 200,
+    body: { ok: true, sources: { notifications: "ok", messages: "failed", calls: "ok" },
+            items: [] }
+  }));
+  check("a dead source is never rendered as an empty inbox",
+    !/Nothing is waiting for you/.test(html) &&
+    /at least one source did not answer/i.test(html), html);
+  check("the dead source is named, not just hinted at",
+    /could not read messages/i.test(html), html);
+
+  html = await run(FEED, () => ({
+    status: 200,
+    body: { ok: true, sources: { notifications: "ok", messages: "ok", calls: "failed" },
+            items: [{ id: "n-1", title: "New reaction", category: "social",
+                      web_url: "/pulse/post/42" }] }
+  }));
+  check("a list that is missing a source still says so",
+    /New reaction/.test(html) && /could not read calls/i.test(html), html);
+
+  html = await run(FEED, () => ({
+    status: 200,
+    body: { ok: true, sources: ALL_OK, items: [
+      { id: "c-1", title: "Voice call in progress", category: "calls", web_url: "" },
+      { id: "m-1", title: "New message from Ada", category: "messages",
+        web_url: "/pulse/messages/7" }
+    ] }
+  }));
+  check("a row the web cannot serve is shown but not linked",
+    /Voice call in progress/.test(html) && !/href='\/pulse\/calls/.test(html), html);
+  check("a row the web can serve is linked",
+    /href='\/pulse\/messages\/7'/.test(html), html);
+  check("categories become tabs that count without asking again",
+    /All \(2\)/.test(html) && /Messages \(1\)/.test(html) && /Calls \(1\)/.test(html), html);
+
   /* --- one record -------------------------------------------------------- */
 
   const RECORD = { mode: "record", title: "Order", api: "/api/pulse/orders/1",

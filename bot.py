@@ -38209,6 +38209,313 @@ def api_pulse_notifications_unread_count():
     return response
 
 
+# ---------------------------------------------------------------------------
+# Activity: one aggregated feed, built where both clients can reach it.
+#
+# `mobile-native/src/api/activityFeed.ts` records the absence of this endpoint as
+# its top-priority finding: there is no backend service that returns one
+# aggregated, typed, read-stateful feed, so `mobile-native/src/api/activity.ts`
+# fans out to notifications, messenger and calls and merges them inside the app.
+#
+# That merge is product logic, not plumbing. It decides which notification counts
+# as a safety notification, how many unread conversations are worth surfacing,
+# and which calls are still live enough to show. Today it exists in one client
+# only, and rebuilding it in web JavaScript would make a second copy with no way
+# to notice the two drifting apart -- which is exactly the "two implementations,
+# two chances to disagree" failure the parity work is meant to remove.
+#
+# So it is built here, from the handlers the app already calls, and
+# `tests/web_surface/test_activity_feed.py` reads `activity.ts` and fails if the
+# two rule tables stop agreeing. This is not a web-only authority: it is the
+# shared one the native code asked for, and the app can adopt it without any
+# member seeing a different feed.
+# ---------------------------------------------------------------------------
+
+#: Categories in the order the app lists them. Mirrors `activityCategories`.
+ACTIVITY_CATEGORIES = [
+    ("all", "All"),
+    ("messages", "Messages"),
+    ("calls", "Calls"),
+    ("social", "Social"),
+    ("safety", "Safety"),
+    ("verification", "Verification"),
+    ("marketplace", "Marketplace"),
+    ("creator_growth", "Creator/Growth"),
+    ("intelligence_alerts", "Intelligence"),
+]
+
+#: Ordered tests against one lowercased string built from a notification's
+#: category, type, title, body, message, deep link and target URL. Mirrors
+#: `classifyNotification`, first match wins.
+#:
+#: The order carries meaning that the patterns alone do not. "order" is in the
+#: marketplace vocabulary and "report" is in the safety one, and a shipping
+#: notification mentioning both must read as safety -- so safety is tested
+#: first. Reordering this list silently recategorises real notifications, which
+#: is why the test pins the sequence and not just the membership.
+ACTIVITY_CATEGORY_PATTERNS = [
+    ("messages", r"(message|messenger|chat|conversation|dm)"),
+    ("calls", r"(call|ring|voice|video)"),
+    ("safety", r"(safety|trust|report|appeal|strike|block|mute|scam|moderation|enforcement)"),
+    ("verification", r"(verification|verified|badge|identity|kyc|document)"),
+    ("marketplace", r"(marketplace|listing|seller|order|checkout|purchase|product)"),
+    ("creator_growth", r"(creator|growth|campaign|promotion|promote|analytics|studio)"),
+    ("social", r"(post|like|comment|mention|follow|reaction|share|repost|social)"),
+    ("intelligence_alerts", r"(intelligence|alert|crypto|market|forecast|signal|price)"),
+]
+
+#: What a notification matching nothing is called. Mirrors the final `return`
+#: of `classifyNotification`.
+ACTIVITY_DEFAULT_CATEGORY = "social"
+
+#: How much of each summary source the app surfaces. These are product
+#: judgements about how much of an inbox is someone else's list, not tuning
+#: constants, so they are mirrored exactly rather than rounded.
+ACTIVITY_CONVERSATION_LIMIT = 8
+ACTIVITY_CALL_LIMIT = 4
+
+#: Call states the app drops before showing anything. A finished call is history,
+#: and history belongs in the call log rather than in an inbox of live things.
+ACTIVITY_CALL_DEAD_STATUSES = ("ended", "declined", "missed")
+
+
+def activity_classify_notification(notification):
+    """The category one notification belongs to.
+
+    Mirrors `classifyNotification`. Everything the notification carries is joined
+    into a single haystack because the useful signal moves between fields
+    depending on who wrote the notification: some set `category`, some set only
+    a `deep_link`, and older ones set neither.
+    """
+    signal = " ".join(str(notification.get(key) or "") for key in (
+        "category", "type", "title", "body", "message", "deep_link", "target_url",
+    )).lower()
+    for category, pattern in ACTIVITY_CATEGORY_PATTERNS:
+        if re.search(pattern, signal):
+            return category
+    return ACTIVITY_DEFAULT_CATEGORY
+
+
+def _activity_web_url(adapter, target_url):
+    """The web URL an activity row should link to, or "" if the site cannot serve it.
+
+    A row linking to a 404 is worse than a row that does not link: the member
+    clicks, lands nowhere, and learns to distrust the whole list. Only the
+    routing table knows which of the app's targets the web can serve today, so it
+    is asked directly rather than compared against a hand-kept list that would go
+    stale the moment a page is added.
+
+    Asking per row also means links light up on their own. When `/pulse/messages`
+    grows a web surface, every message row in this feed starts linking to it
+    without anything here changing.
+    """
+    path = str(target_url or "").strip()
+    if not path.startswith("/"):
+        return ""
+    path = path.split("#", 1)[0].split("?", 1)[0]
+    try:
+        adapter.match(path, method="GET")
+    except Exception:
+        return ""
+    return str(target_url)
+
+
+def _activity_call_source(endpoint):
+    """Run one of the app's own API handlers and hand back its JSON.
+
+    Composition, not reimplementation. If `/api/activity` learned to query
+    conversations itself it would become a second opinion about what a
+    conversation is, and the two would drift the same way the two copies of the
+    merge rules would have.
+
+    Optional route packs register inside `except Exception`, so a handler that is
+    simply not there is a missing source rather than a crash -- and the caller
+    records that difference instead of smoothing it away.
+
+    Every way of failing collapses to None on purpose: not registered, raised,
+    answered non-200, answered something that is not JSON. The caller turns None
+    into `"failed"` for that source, so one sick subsystem costs the member the
+    rows it owns and nothing else. Letting it raise would 500 the whole feed and
+    take the working two thirds of the inbox down with it.
+    """
+    view = webhook_app.view_functions.get(endpoint)
+    if view is None:
+        return None
+    try:
+        response = webhook_app.make_response(view())
+        if response.status_code != 200:
+            return None
+        return response.get_json(silent=True)
+    except Exception:
+        return None
+
+
+def activity_notification_item(notification, adapter):
+    """One notification, in the shape the inbox renders. Mirrors `notificationToActivityItem`."""
+    target = notification.get("target_url") or notification.get("deep_link") or "/pulse/notifications"
+    metadata = notification.get("metadata")
+    return {
+        "id": "notification-%s" % notification.get("id"),
+        "source": "notification",
+        "category": activity_classify_notification(notification),
+        "title": notification.get("title") or "PulseSoc update",
+        "body": notification.get("body") or notification.get("message") or "Open activity",
+        "created_at": notification.get("created_at"),
+        "unread": not notification.get("read"),
+        "target_url": target,
+        "web_url": _activity_web_url(adapter, target),
+        "notification_id": safe_int(notification.get("id"), 0),
+        "raw_type": str(notification.get("type") or notification.get("category") or ""),
+        "priority": str((metadata or {}).get("priority") or "") if isinstance(metadata, dict) else "",
+    }
+
+
+def activity_conversation_items(conversations, adapter):
+    """Unread conversations, as inbox rows. Mirrors `conversationsToActivityItems`.
+
+    Read conversations are left out entirely: the inbox is what is waiting for
+    you, and a thread you have already read is not waiting.
+    """
+    items = []
+    for conversation in conversations:
+        if safe_int(conversation.get("unread_count"), 0) <= 0:
+            continue
+        if len(items) >= ACTIVITY_CONVERSATION_LIMIT:
+            break
+        unread = safe_int(conversation.get("unread_count"), 0)
+        target = "/pulse/messages/%s" % conversation.get("conversation_id")
+        items.append({
+            "id": "message-%s" % conversation.get("conversation_id"),
+            "source": "message_summary",
+            "category": "messages",
+            "title": conversation.get("title") or "Messenger",
+            "body": (conversation.get("last_message_preview")
+                     or conversation.get("latest_message")
+                     or "%s unread message%s" % (unread, "" if unread == 1 else "s")),
+            "created_at": conversation.get("last_activity_at") or conversation.get("updated_at"),
+            "unread": True,
+            "target_url": target,
+            "web_url": _activity_web_url(adapter, target),
+            "conversation_id": safe_int(conversation.get("conversation_id"), 0),
+            "raw_type": "messenger_unread",
+        })
+    return items
+
+
+def activity_call_items(calls, adapter):
+    """Live calls, as inbox rows. Mirrors `callsToActivityItems`.
+
+    Read-only: this reports that a call exists and never joins, starts or
+    negotiates one. `docs/realtime_audio_change_policy.md` forbids a second
+    publication path, and listing a call is not one -- but the `web_url` of a
+    call row will be empty until the web has a call surface, which that policy
+    means it will not get.
+    """
+    items = []
+    for call in calls:
+        if str(call.get("status") or "").lower() in ACTIVITY_CALL_DEAD_STATUSES:
+            continue
+        if len(items) >= ACTIVITY_CALL_LIMIT:
+            break
+        target = "/pulse/calls/%s" % call.get("call_id")
+        items.append({
+            "id": "call-%s" % call.get("call_id"),
+            "source": "call_summary",
+            "category": "calls",
+            "title": ("Video call in progress" if call.get("call_type") == "video"
+                      else "Voice call in progress"),
+            "body": "Status: %s" % re.sub(r"[_-]", " ", str(call.get("status") or "active")),
+            "created_at": call.get("created_at") or call.get("started_at"),
+            "unread": str(call.get("status") or "").lower() == "ringing",
+            "target_url": target,
+            "web_url": _activity_web_url(adapter, target),
+            "call_id": str(call.get("call_id") or ""),
+            "raw_type": "active_call",
+        })
+    return items
+
+
+def _activity_sort_key(item):
+    """Newest first, by the same parse the app uses.
+
+    An item with no timestamp sorts last rather than first. Undated rows are
+    usually the oldest imports, and floating them to the top would push live
+    activity below them.
+    """
+    stamp = str(item.get("created_at") or "")
+    return (1 if stamp else 0, stamp)
+
+
+@webhook_app.route("/api/activity", methods=["GET"])
+def api_activity_feed():
+    init_db()
+    user = api_account_user()
+    if not user:
+        response = jsonify({"ok": False, "message": "Login required.", "items": []})
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response, 401
+
+    limit = max(1, min(safe_int(request.args.get("limit"), 100), 100))
+    adapter = webhook_app.url_map.bind(request.host or "pulsesoc.com")
+
+    # Each source is recorded as ok or failed, never smoothed into an empty
+    # list. "You have no unread conversations" and "we could not read your
+    # conversations" are different answers, and this is the last point at which
+    # the difference is still known -- past here they are both `[]`.
+    sources = {}
+
+    try:
+        notifications = list(
+            (_pulse_notification_combined_list(user["user_id"], limit=limit) or {})
+            .get("notifications") or [])
+        sources["notifications"] = "ok"
+    except Exception:
+        notifications, sources["notifications"] = [], "failed"
+
+    conversations_payload = _activity_call_source("pulse_communications_v2.conversations")
+    sources["messages"] = "failed" if conversations_payload is None else "ok"
+    conversations = list((conversations_payload or {}).get("conversations")
+                         or (conversations_payload or {}).get("items") or [])
+
+    calls_payload = _activity_call_source("pulse_communications_v2.api_active_calls")
+    sources["calls"] = "failed" if calls_payload is None else "ok"
+    calls = list((calls_payload or {}).get("calls") or (calls_payload or {}).get("items") or [])
+
+    try:
+        counts = _pulse_notification_os_badge_counts(user["user_id"])
+    except Exception:
+        counts = {}
+
+    items = (activity_call_items(calls, adapter)
+             + activity_conversation_items(conversations, adapter)
+             + [activity_notification_item(note, adapter) for note in notifications])
+    items.sort(key=_activity_sort_key, reverse=True)
+
+    category_counts = {key: 0 for key, _label in ACTIVITY_CATEGORIES if key != "all"}
+    for item in items:
+        if item["unread"] and item["category"] in category_counts:
+            category_counts[item["category"]] += 1
+
+    requested = str(request.args.get("category") or "all").lower()
+    if requested != "all" and requested in category_counts:
+        items = [item for item in items if item["category"] == requested]
+
+    response = jsonify({
+        "ok": True,
+        "items": items,
+        "count": len(items),
+        "category": requested if requested in category_counts else "all",
+        "categories": [{"key": key, "label": label} for key, label in ACTIVITY_CATEGORIES],
+        "category_counts": category_counts,
+        "counts": counts,
+        "unread_total": safe_int(counts.get("total_unread_count"), 0),
+        "sources": sources,
+        "server_authoritative": True,
+    })
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
 @webhook_app.route("/api/pulse/badge-counts", methods=["GET"])
 def api_pulse_badge_counts():
     init_db()
@@ -79767,7 +80074,42 @@ PULSE_WEB_SECTION_JS = r"""
     return "<li class='card'><h3>" + esc(heading) + "</h3>" +
       fieldsHtml(item, skip, (depth || 0) + 1) + "</li>";
   }
+  /* --- how much of the answer we actually got ------------------------------
+     A page built from several sources has a failure mode a single-source page
+     does not: one source falls over and the list still looks complete. An
+     inbox missing its messages is indistinguishable from a quiet inbox unless
+     the server says which parts it managed to read, so `CFG.sources_field`
+     names the object where it does, and nothing below claims emptiness while
+     any of them is down.                                                    */
+
+  // Set from the last answer, so the empty state can tell "you have nothing"
+  // apart from "we could not read part of it" however deep the render is.
+  var lastDown = [];
+
+  function downSources(body) {
+    var health = CFG.sources_field ? (body || {})[CFG.sources_field] : null;
+    if (!health || typeof health !== "object") { return []; }
+    return Object.keys(health).filter(function (key) {
+      var state = health[key];
+      if (state && typeof state === "object") { state = state.status; }
+      return String(state) !== "ok";
+    });
+  }
+  function sourcesNote() {
+    if (!lastDown.length) { return ""; }
+    return "<p class='pill'>Partial view — we could not read " +
+      esc(lastDown.map(function (key) { return key.replace(/[_-]/g, " "); }).join(", ")) +
+      ". Anything from there is missing here, so read this as incomplete " +
+      "rather than as empty.</p>";
+  }
   function emptyHtml() {
+    if (lastDown.length) {
+      // Not "nothing here yet". Some of PulseSoc did not answer, and telling a
+      // member their inbox is clear when we could not read half of it is the
+      // same lie as drawing a zero over a failed fetch.
+      return "<p>Nothing to show from the parts of PulseSoc we could reach. " +
+        "At least one source did not answer, so this is not an empty inbox.</p>";
+    }
     return "<p>" + esc(CFG.empty || "Nothing here yet.") +
       " We reached PulseSoc and it had no rows to show — this is an empty " +
       "list, not a failed one.</p>";
@@ -80059,10 +80401,11 @@ PULSE_WEB_SECTION_JS = r"""
           "Nothing has been lost — this page cannot read the answer.");
         return;
       }
+      lastDown = downSources(body);
       var extra = scalarsHtml(body, CFG.collection ? mkSkip(CFG.collection) : null);
       var visible = CFG.collection ? filterRows(items, currentTab()) : [];
       show(panel(CFG.title,
-        "<p>" + esc(CFG.blurb) + "</p>" + providerNote(body) +
+        "<p>" + esc(CFG.blurb) + "</p>" + providerNote(body) + sourcesNote() +
         (CFG.collection ? tabsHtml(items) + collectionHtml(visible) : "") + extra,
         backLink(true)));
       wireTabs(items, body);
@@ -80075,7 +80418,7 @@ PULSE_WEB_SECTION_JS = r"""
         activeTab = button.getAttribute("data-office-tab");
         var visible = filterRows(items, currentTab());
         show(panel(CFG.title,
-          "<p>" + esc(CFG.blurb) + "</p>" + providerNote(body) +
+          "<p>" + esc(CFG.blurb) + "</p>" + providerNote(body) + sourcesNote() +
           tabsHtml(items) + collectionHtml(visible) +
           scalarsHtml(body, mkSkip(CFG.collection)),
           backLink(true)));
@@ -80578,6 +80921,93 @@ def pulse_page_by_handle_page(handle):
 @webhook_app.route("/pulse/account-health", methods=["GET"])
 def pulse_account_health_alias_page():
     return dashboard_account_health_page()
+
+
+# --- Activity / Inbox -------------------------------------------------------
+#
+# Four published app URLs pointed here and all four 404'd: `/pulse/activity`,
+# `/pulse/activity/<category>`, `/pulse/inbox` and the two `/dashboard` spellings
+# of the same thing. They are one product with several front doors, so they get
+# one page rather than four.
+#
+# Everything the page shows comes from `/api/activity`, the aggregation added
+# alongside the notification endpoints. The web does no merging of its own: if it
+# classified notifications here, PulseSoc would have two answers to "is this a
+# safety notification" and no way to notice them parting company.
+
+
+#: Category tabs. Each category is its own group because `/api/activity` already
+#: hands back one category per row -- the tab is a filter over rows the server
+#: sent, not a second question about them.
+def pulse_activity_tabs():
+    return [{"key": key, "label": label,
+             **({} if key == "all" else {"groups": [key]})}
+            for key, label in ACTIVITY_CATEGORIES]
+
+
+#: `web_url` rather than `target_url`. The server sets it only for targets the
+#: routing table can actually serve, so a row about a live call -- which the web
+#: has no surface for, and under the real-time audio policy will not get -- shows
+#: up in the list and simply is not a link. Manufacturing a 404 out of it would
+#: teach members that the rows here do not work.
+PULSE_ACTIVITY_ROW = {
+    "title": "title",
+    "status": "category",
+    "href": "web_url",
+    "meta": ["body", "created_at"],
+}
+
+
+def pulse_activity_page_response(title, category=""):
+    denied = pulse_web_section_guard()
+    if denied:
+        return denied
+    api = "/api/activity?limit=100"
+    if category:
+        api += "&category=" + quote(category, safe="")
+    return pulse_web_section_shell(
+        title,
+        "Everything waiting for you on PulseSoc: notifications, unread "
+        "conversations and live calls, in one list.",
+        {
+            "mode": "section",
+            "title": title,
+            "blurb": "Notifications, unread conversations and live calls, "
+                     "newest first — the same feed the app shows.",
+            "api": api,
+            "collection": "items",
+            "tabs": pulse_activity_tabs(),
+            "tabs_field": "category",
+            "row": PULSE_ACTIVITY_ROW,
+            # `sources` is why this page can say "nothing here" honestly. It
+            # names which of the three feeds answered, and the client refuses to
+            # call the list empty while any of them is missing.
+            "sources_field": "sources",
+            "empty": "Nothing is waiting for you.",
+            "signed_out": "Your activity is only reachable while you are signed in.",
+            "back": ["/pulse", "Back to PulseSoc"],
+        })
+
+
+@webhook_app.route("/pulse/activity", methods=["GET"])
+@webhook_app.route("/pulse/inbox", methods=["GET"])
+@webhook_app.route("/dashboard/activity", methods=["GET"])
+@webhook_app.route("/dashboard/inbox", methods=["GET"])
+def pulse_activity_page():
+    return pulse_activity_page_response("Activity")
+
+
+@webhook_app.route("/pulse/activity/<category>", methods=["GET"])
+def pulse_activity_category_page(category):
+    # The app's own vocabulary, enumerated. A catch-all would answer 200 for a
+    # typo and render a confident empty inbox, which is the failure this whole
+    # surface is built to refuse.
+    known = {key: label for key, label in ACTIVITY_CATEGORIES}
+    if category not in known:
+        abort(404)
+    if category == "all":
+        return pulse_activity_page_response("Activity")
+    return pulse_activity_page_response(known[category] + " activity", category)
 
 
 @webhook_app.route("/admin/premium-command", methods=["GET", "POST"])
