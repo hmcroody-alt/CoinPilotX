@@ -21,6 +21,13 @@ on 404ing. A false clearance is strictly worse than the vague bucket it
 replaced: the vague bucket said "go and look", and a false clearance says "this
 one is done".
 
+The other half of the same question is what to do with a row the sampler
+*cannot* speak for. `PROVEN_ELSEWHERE` lets a row point at a test that settles
+it instead, which is the only escape from `unproven` that does not involve
+loosening the rule above — and is therefore the obvious place to smuggle a
+clearance in. Its guards are tested here for that reason: an entry may silence
+`unproven` and nothing else.
+
 These are static tests. They import the script's pure helpers and never boot the
 app or touch the database.
 """
@@ -172,3 +179,87 @@ def test_the_base_prefix_is_matched_on_a_boundary_not_a_substring(reconcile):
         "/pulse/events/:eventId", every_link_path=set(),
         literals={"/pulse/eventsomething/x", "/pulse/events/live"})
     assert values == ["live"]
+
+
+# --- pointing a row at a proof is not the same as clearing it ----------------
+
+
+def _link(reconcile, path, screen="Screen"):
+    return reconcile.census.NativeDeepLink(screen=screen, path=path)
+
+
+def _write(reconcile, tmp_path, monkeypatch, hub_only, verdicts, broken=()):
+    """Generate the doc into a temp file and return it. The real
+    `PULSESOC_DEEPLINK_PARITY.md` is a committed artifact; a test must not
+    rewrite it with fixture data."""
+    out = os.path.join(str(tmp_path), "doc.md")
+    monkeypatch.setattr(reconcile, "DEEP_LINK_DOC", out)
+    monkeypatch.setattr(reconcile, "BLOCKED_DEEP_LINKS", {})
+    reconcile.write_deep_link_doc([], list(hub_only), list(broken), verdicts)
+    return open(out, encoding="utf-8").read()
+
+
+def test_a_proven_row_is_annotated_and_leaves_the_open_bucket(reconcile,
+                                                              tmp_path,
+                                                              monkeypatch):
+    monkeypatch.setattr(reconcile, "PROVEN_ELSEWHERE",
+                        {"/a/:b": ("tests/web_parity/test_deep_link_sampling.py",
+                                   "because reasons")})
+    doc = _write(reconcile, tmp_path, monkeypatch,
+                 [_link(reconcile, "/a/:b")], {"/a/:b": ("unproven", [])})
+    assert "- Hub served, item links 404: **0**" in doc, (
+        "a row with a proof is still being counted as an open gap")
+    assert "- Hub served, cleared by a test elsewhere: **1**" in doc
+    assert "because reasons" in doc, (
+        "the rationale is not rendered, so the row reads as cleared by fiat")
+
+
+def test_a_proof_that_names_a_missing_test_file_fails_loudly(reconcile,
+                                                             tmp_path,
+                                                             monkeypatch):
+    """A dangling pointer is worse than no pointer: the row still leaves the
+    open bucket, but nothing is checking the claim any more."""
+    monkeypatch.setattr(reconcile, "PROVEN_ELSEWHERE",
+                        {"/a/:b": ("tests/web_parity/deleted.py", "why")})
+    with pytest.raises(SystemExit) as excinfo:
+        _write(reconcile, tmp_path, monkeypatch,
+               [_link(reconcile, "/a/:b")], {"/a/:b": ("unproven", [])})
+    assert "does not exist" in str(excinfo.value)
+
+
+def test_a_proof_may_not_silence_a_row_this_script_proved_broken(reconcile,
+                                                                 tmp_path,
+                                                                 monkeypatch):
+    """The one that matters. If the sampler finds a value the app really
+    produces and the web 404s on it, that is a confirmed gap — and an entry
+    written back when the row merely looked unresolvable would quietly move it
+    into the cleared section. The verdict has to be `unproven`, not just
+    hub-only."""
+    monkeypatch.setattr(reconcile, "PROVEN_ELSEWHERE",
+                        {"/a/:b": ("tests/web_parity/test_deep_link_sampling.py",
+                                   "why")})
+    with pytest.raises(SystemExit) as excinfo:
+        _write(reconcile, tmp_path, monkeypatch, [_link(reconcile, "/a/:b")],
+               {"/a/:b": ("gap", [("real", False)])})
+    assert "hiding a gap" in str(excinfo.value)
+
+
+def test_a_proof_for_a_row_that_is_no_longer_hub_only_fails_loudly(reconcile,
+                                                                   tmp_path,
+                                                                   monkeypatch):
+    monkeypatch.setattr(reconcile, "PROVEN_ELSEWHERE",
+                        {"/gone/:b": ("tests/web_parity/test_deep_link_sampling.py",
+                                      "why")})
+    with pytest.raises(SystemExit) as excinfo:
+        _write(reconcile, tmp_path, monkeypatch, [], {})
+    assert "no longer an unproven hub-only link" in str(excinfo.value)
+
+
+def test_the_private_office_entry_still_names_a_test_that_exists(reconcile):
+    """The live entry, checked without generating anything. `--check` skips doc
+    generation entirely, so the guards above do not run in the gate."""
+    assert "/pulse/private-office/:view" in reconcile.PROVEN_ELSEWHERE
+    for path, (test, why) in reconcile.PROVEN_ELSEWHERE.items():
+        assert os.path.exists(os.path.join(REPO, test)), (
+            "%s points at %s, which is gone" % (path, test))
+        assert why.strip(), "%s has an empty rationale" % path

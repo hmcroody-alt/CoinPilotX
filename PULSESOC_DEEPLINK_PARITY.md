@@ -10,8 +10,9 @@ not that the visitor was signed out.
 
 - Deep-link paths: **111**
 - Resolve on the web: **102**
-- Hub served, item links 404: **4** (0 confirmed, 4 unproven)
+- Hub served, item links 404: **3** (0 confirmed, 3 unproven)
 - Hub served, all real values resolve: **3**
+- Hub served, cleared by a test elsewhere: **1**
 - No web surface at all: **2** (1 pending, 1 blocked by policy)
 
 ## Broken share links — pending work
@@ -40,6 +41,14 @@ This is evidence of no gap, not proof of none: a scan can only speak for values 
 | `/pulse/settings/:section` | AccountCenter | `account` ok, `privacy` ok, `security` ok |
 | `/scam-shield/:mode?` | ScamShield | `scan` ok |
 
+## Hub served — cleared by a test, not by this script
+
+This script's evidence is concrete paths scraped from the app's sources, so a parameter whose values are a *vocabulary* rather than paths is structurally invisible to it and lands in `unproven` — correctly, but permanently. These rows were resolved by comparing the two authorities directly instead. The named test is what keeps the answer true; it is run by the normal suite, and this document fails to generate if the file is gone or if the row stops being unproven.
+
+| Path | Native screen | Proof | Why this script cannot say |
+|---|---|---|---|
+| `/pulse/private-office/:view` | PrivateOperations | `tests/web_parity/test_private_office_views.py` | `:view` takes the six-entry RECORD_VIEWS vocabulary, not a path. The web serves all six via an `any(...)` enumeration that the test compares member-for-member against the app's own list. |
+
 ## Hub served, deep links into it 404
 
 Browsing works; sharing a specific item does not. A row with values probed is a confirmed gap: the app produces that value and the web 404s on it. A row with none is unproven — the parameter is an id or a value no source spells out, so it still needs a human before anyone builds anything.
@@ -49,7 +58,6 @@ Browsing works; sharing a specific item does not. A row with values probed is a 
 | `/dashboard/:legacyGroup/:legacyModule/:legacySubmodule?` | DashboardLegacyModule | no real value derivable from the app's sources |
 | `/pulse/marketplace/:listingId` | MarketplaceDetail | no real value derivable from the app's sources |
 | `/pulse/events/:eventId` | EventDetail | no real value derivable from the app's sources |
-| `/pulse/private-office/:view` | PrivateOperations | no real value derivable from the app's sources |
 
 ## Resolving
 

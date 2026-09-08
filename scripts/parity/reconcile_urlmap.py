@@ -313,6 +313,21 @@ BLOCKED_DEEP_LINKS = {
 }
 
 
+#: Hub-only rows this script cannot clear on its own, cleared elsewhere by a
+#: test that re-checks the claim. The scraper's evidence is concrete paths, so a
+#: parameter whose values are a *vocabulary* rather than paths is invisible to
+#: it and lands in `unproven` — correct, but it would leave a resolved row
+#: reading like an open question forever. An entry here is not an assertion that
+#: the row is fine; it is a pointer to the thing that keeps checking.
+PROVEN_ELSEWHERE = {
+    "/pulse/private-office/:view": (
+        "tests/web_parity/test_private_office_views.py",
+        "`:view` takes the six-entry RECORD_VIEWS vocabulary, not a path. The "
+        "web serves all six via an `any(...)` enumeration that the test "
+        "compares member-for-member against the app's own list."),
+}
+
+
 def write_deep_link_doc(resolved: list, hub_only: list, broken: list,
                         verdicts: dict) -> str:
     """Record the share-link gap as a reviewable artifact.
@@ -336,6 +351,30 @@ def write_deep_link_doc(resolved: list, hub_only: list, broken: list,
     enumerated = [l for l in hub_only
                   if verdicts.get(l.path, ("unproven",))[0] == "enumerated"]
     still_open = [l for l in hub_only if l not in enumerated]
+
+    # The same reasoning, for a pointer at a proof instead of a prohibition —
+    # with one extra condition. A pointer may only silence `unproven`, never a
+    # `gap`: if this script probed a value the app really produces and the web
+    # 404ed on it, an entry here would be hiding a concrete failure behind a
+    # test that was written when the row still looked fine. That is the false
+    # clearance the whole sampling rule exists to prevent, so it fails loudly.
+    unproven = {l.path for l in still_open
+                if verdicts.get(l.path, ("unproven",))[0] == "unproven"}
+    for path, (test, _why) in sorted(PROVEN_ELSEWHERE.items()):
+        if path not in unproven:
+            raise SystemExit(
+                "PROVEN_ELSEWHERE names " + path + ", which is no longer an "
+                "unproven hub-only link. Either it resolves outright now and the "
+                "entry is dead weight, or this script found a real value that "
+                "404s on it — in which case the entry would be hiding a gap it "
+                "was never written to cover. Delete it, or re-check " + test + ".")
+        if not os.path.exists(os.path.join(REPO, test)):
+            raise SystemExit(
+                "PROVEN_ELSEWHERE points " + path + " at " + test + ", which "
+                "does not exist. The row would read as cleared with nothing left "
+                "doing the checking.")
+    proven = [l for l in still_open if l.path in PROVEN_ELSEWHERE]
+    still_open = [l for l in still_open if l.path not in PROVEN_ELSEWHERE]
     lines = [
         "# PulseSoc deep-link parity (native -> web)",
         "",
@@ -355,6 +394,7 @@ def write_deep_link_doc(resolved: list, hub_only: list, broken: list,
         f"{sum(1 for l in still_open if verdicts.get(l.path, ('unproven',))[0] == 'unproven')}"
         f" unproven)",
         f"- Hub served, all real values resolve: **{len(enumerated)}**",
+        f"- Hub served, cleared by a test elsewhere: **{len(proven)}**",
         f"- No web surface at all: **{len(broken)}** "
         f"({len(pending)} pending, {len(blocked)} blocked by policy)",
         "",
@@ -405,6 +445,23 @@ def write_deep_link_doc(resolved: list, hub_only: list, broken: list,
     ]
     lines += [f"| `{link.path}` | {link.screen} | {evidence(link)} |"
               for link in enumerated]
+    lines += [
+        "",
+        "## Hub served — cleared by a test, not by this script",
+        "",
+        "This script's evidence is concrete paths scraped from the app's sources, "
+        "so a parameter whose values are a *vocabulary* rather than paths is "
+        "structurally invisible to it and lands in `unproven` — correctly, but "
+        "permanently. These rows were resolved by comparing the two authorities "
+        "directly instead. The named test is what keeps the answer true; it is "
+        "run by the normal suite, and this document fails to generate if the file "
+        "is gone or if the row stops being unproven.",
+        "",
+        "| Path | Native screen | Proof | Why this script cannot say |",
+        "|---|---|---|---|",
+    ]
+    lines += [f"| `{link.path}` | {link.screen} | `{PROVEN_ELSEWHERE[link.path][0]}` "
+              f"| {PROVEN_ELSEWHERE[link.path][1]} |" for link in proven]
     lines += [
         "",
         "## Hub served, deep links into it 404",
@@ -474,6 +531,8 @@ def main() -> int:
         for link in hub_only:
             verdict, probed = verdicts.get(link.path, ("unproven", []))
             detail = ",".join(f"{v}={'ok' if ok else '404'}" for v, ok in probed)
+            if not detail and link.path in PROVEN_ELSEWHERE:
+                detail = "proven in " + PROVEN_ELSEWHERE[link.path][0]
             print(f"   {link.path:52} {link.screen:24} [{verdict}]"
                   + (f" {detail}" if detail else ""))
 
