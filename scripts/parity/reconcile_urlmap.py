@@ -105,34 +105,65 @@ def _base_path(path: str) -> str:
     return head.rstrip("/") or "/"
 
 
-NATIVE_LITERAL_SOURCES = (
-    os.path.join("mobile-native", "src", "navigation", "nativeRouteActions.ts"),
-    os.path.join("mobile-native", "src", "navigation", "notificationRouting.ts"),
-)
-NATIVE_LITERAL = re.compile(r'"(/[A-Za-z0-9][A-Za-z0-9/_-]*)"')
+#: The whole app, not just the navigation folder. Scanning only the two routing
+#: files misses where most values are actually minted: the camera's five modes
+#: live on `providerRoute` fields in CameraStudioScreen, and dashboard module
+#: lists carry `route:` targets. A narrow scan is not merely incomplete, it is
+#: unsound in the dangerous direction -- the verdict below clears a row when
+#: every value found resolves, so a value the scan cannot see is a value that
+#: cannot contribute its 404, and the row clears on a subset.
+NATIVE_LITERAL_ROOT = os.path.join("mobile-native", "src")
+NATIVE_LITERAL_EXCLUDED_DIRS = ("__tests__", "__mocks__", "node_modules")
+
+#: A quoted absolute path, with any query string or fragment dropped the same
+#: way the app drops them (`notificationRouting.ts` does
+#: `.split("?")[0].split("#")[0]`). Without this, `"/pulse/camera/photo?target=
+#: feed"` matches nothing at all and a real, produced value is silently lost.
+NATIVE_LITERAL = re.compile(r'"(/[A-Za-z0-9][A-Za-z0-9/_-]*)(?:[?#][^"\s]*)?"')
+
+_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
+#: `(?<!:)` so the `//` in a `https://` literal is not read as a comment.
+_LINE_COMMENT = re.compile(r"(?<!:)//[^\n]*")
+
+#: Known-good samples. Each must survive the scan or the extractor has quietly
+#: stopped matching something it used to match -- a failure that produces no
+#: error and no wrong number, just a census that looks more uncertain than it is.
+NATIVE_LITERAL_CANARIES = ("/scam-shield/scan", "/pulse/camera/photo",
+                           "/pulse/settings/devices")
 
 
 def native_literal_paths() -> set[str]:
-    """Every concrete URL path spelled out in the app's own routing sources.
+    """Every concrete URL path spelled out anywhere in the app's own source.
 
-    These are real values, not invented ones: they are the paths the app itself
-    matches on when a link arrives. Used to answer "does this hub-only row mean
-    a broken share link, or did we only fail a made-up test value".
+    These are real values, not invented ones: they are paths the app itself
+    navigates to or matches on. Used to answer "does this hub-only row mean a
+    broken share link, or did we only fail a made-up test value".
+
+    Comments are stripped first. `notificationRouting.ts` explains itself with
+    the example `"/pulse/foo/123?token=x"`, and an illustration in prose is not
+    a route the app can produce.
     """
-    found: set[str] = set()
-    for relative in NATIVE_LITERAL_SOURCES:
-        path = os.path.join(REPO, relative)
-        if not os.path.exists(path):
-            raise SystemExit(
-                f"{relative} is gone; the hub-only rows are classified from the "
-                "literal paths it contains, so that classification would "
-                "silently weaken to 'unproven' for every row.")
-        found |= set(NATIVE_LITERAL.findall(census._read(path)))
-    if not found:
+    root = os.path.join(REPO, NATIVE_LITERAL_ROOT)
+    if not os.path.isdir(root):
         raise SystemExit(
-            "no literal paths found in " + ", ".join(NATIVE_LITERAL_SOURCES)
-            + " — the extractor has stopped matching rather than the app having "
-            "stopped routing.")
+            f"{NATIVE_LITERAL_ROOT} is gone; the hub-only rows are classified "
+            "from the literal paths under it, so that classification would "
+            "silently weaken to 'unproven' for every row.")
+    found: set[str] = set()
+    for folder, subdirs, names in os.walk(root):
+        subdirs[:] = [d for d in subdirs if d not in NATIVE_LITERAL_EXCLUDED_DIRS]
+        for name in names:
+            if not name.endswith((".ts", ".tsx")):
+                continue
+            text = census._read(os.path.join(folder, name))
+            text = _LINE_COMMENT.sub("", _BLOCK_COMMENT.sub("", text))
+            found |= set(NATIVE_LITERAL.findall(text))
+    missing = [c for c in NATIVE_LITERAL_CANARIES if c not in found]
+    if missing:
+        raise SystemExit(
+            "these known paths are no longer extracted from "
+            f"{NATIVE_LITERAL_ROOT}: {missing} — the extractor has stopped "
+            "matching rather than the app having stopped routing.")
     return found
 
 
@@ -354,12 +385,20 @@ def write_deep_link_doc(resolved: list, hub_only: list, broken: list,
 
     lines += [
         "",
-        "## Hub served — but every value the app can produce resolves",
+        "## Hub served — and every value found in the app's source resolves",
         "",
         "These land in the hub-only bucket only because the pattern is probed with "
-        "an invented parameter. Re-probed with the literal paths the app's own "
-        "`nativeRouteActions.ts` / `notificationRouting.ts` match on, they pass. "
-        "Not gaps — do not build detail routes for these.",
+        "an invented parameter. Re-probed with the concrete paths spelled out in "
+        "`mobile-native/src`, they pass. The web often enumerates its values as "
+        "separate routes rather than taking a wildcard — `/pulse/settings/account` "
+        "is its own Flask rule, not a `<section>` match — which is exactly why a "
+        "made-up value proves nothing here.",
+        "",
+        "This is evidence of no gap, not proof of none: a scan can only speak for "
+        "values it can see spelled out. A value the app computes at runtime, or "
+        "one that only ever arrives from the server, would not appear above. Treat "
+        "these as \"no reason to build a detail route\", not as \"verified "
+        "complete\".",
         "",
         "| Path | Native screen | Values probed |",
         "|---|---|---|",

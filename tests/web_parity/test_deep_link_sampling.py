@@ -54,19 +54,64 @@ def test_the_app_sources_still_yield_literal_paths(reconcile):
     `unproven` and the census looks *more* uncertain than it is — a failure
     mode that produces no error and no wrong number, just quiet blindness."""
     literals = reconcile.native_literal_paths()
-    assert len(literals) >= 50, (
-        "only %d literal paths found in the app's routing sources; the "
-        "extractor has probably stopped matching" % len(literals))
+    assert len(literals) >= 300, (
+        "only %d literal paths found under mobile-native/src; the extractor "
+        "has probably stopped matching" % len(literals))
     assert "/scam-shield/scan" in literals, (
         "the known-good sample /scam-shield/scan is no longer extracted")
 
 
-def test_a_missing_source_file_fails_loudly(reconcile, monkeypatch):
-    monkeypatch.setattr(reconcile, "NATIVE_LITERAL_SOURCES",
-                        (os.path.join("mobile-native", "src", "nope.ts"),))
+def test_values_are_scraped_from_the_whole_app_not_just_the_routing_files(
+        reconcile):
+    """The scan must reach beyond `navigation/`. The camera's five modes are
+    declared as `providerRoute` fields on a screen, and scanning only the two
+    routing files found none of them — which left the row `unproven` while the
+    web served all five. Worse than incomplete: the verdict clears a row when
+    every value found resolves, so a value the scan cannot see is a value that
+    cannot contribute its 404, and the row would clear on a subset."""
+    literals = reconcile.native_literal_paths()
+    for path in ("/pulse/camera/post", "/pulse/camera/reel",
+                 "/pulse/camera/status"):
+        assert path in literals, (
+            "%s is declared on CameraStudioScreen and is missing; the scan has "
+            "narrowed back to the navigation folder" % path)
+
+
+def test_a_path_with_a_query_string_is_still_seen(reconcile):
+    """`masterNavigation.ts` spells the camera as
+    `/pulse/camera/photo?target=feed`. A pattern that requires the closing quote
+    to follow the path matches that string *not at all*, silently dropping a
+    real value rather than merely mis-reading it."""
+    assert "/pulse/camera/photo" in reconcile.native_literal_paths()
+
+
+def test_paths_that_only_appear_in_comments_are_not_treated_as_real(reconcile):
+    """`notificationRouting.ts` illustrates itself with `"/pulse/foo/123?token=
+    x"`. An example in prose is not a route the app can produce, and counting
+    one would let a comment clear a real gap."""
+    literals = reconcile.native_literal_paths()
+    assert "/pulse/foo/123" not in literals, (
+        "a path from a code comment reached the value set; comment stripping "
+        "has stopped working")
+
+
+def test_a_missing_source_tree_fails_loudly(reconcile, monkeypatch):
+    monkeypatch.setattr(reconcile, "NATIVE_LITERAL_ROOT",
+                        os.path.join("mobile-native", "nope"))
     with pytest.raises(SystemExit) as excinfo:
         reconcile.native_literal_paths()
     assert "classification" in str(excinfo.value)
+
+
+def test_a_canary_that_stops_being_extracted_fails_loudly(reconcile,
+                                                          monkeypatch):
+    """The guard that catches a half-broken extractor — one still returning
+    hundreds of paths, just no longer the ones a row was cleared on."""
+    monkeypatch.setattr(reconcile, "NATIVE_LITERAL_CANARIES",
+                        ("/this/path/is/nowhere",))
+    with pytest.raises(SystemExit) as excinfo:
+        reconcile.native_literal_paths()
+    assert "no longer extracted" in str(excinfo.value)
 
 
 # --- the rule itself ---------------------------------------------------------

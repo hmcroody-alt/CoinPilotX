@@ -28,14 +28,16 @@ Still broken, and still counted above: a member following one of these gets a 40
 |---|---|---|
 | `/pulse/calls/:callId?` | Call | BLOCKED, not pending — do not build. A web call surface would be a second real-time audio publication path, which `docs/realtime_audio_change_policy.md` forbids regardless of justification. This is why the broken-link budget cannot honestly reach zero: its floor is 1. |
 
-## Hub served — but every value the app can produce resolves
+## Hub served — and every value found in the app's source resolves
 
-These land in the hub-only bucket only because the pattern is probed with an invented parameter. Re-probed with the literal paths the app's own `nativeRouteActions.ts` / `notificationRouting.ts` match on, they pass. Not gaps — do not build detail routes for these.
+These land in the hub-only bucket only because the pattern is probed with an invented parameter. Re-probed with the concrete paths spelled out in `mobile-native/src`, they pass. The web often enumerates its values as separate routes rather than taking a wildcard — `/pulse/settings/account` is its own Flask rule, not a `<section>` match — which is exactly why a made-up value proves nothing here.
+
+This is evidence of no gap, not proof of none: a scan can only speak for values it can see spelled out. A value the app computes at runtime, or one that only ever arrives from the server, would not appear above. Treat these as "no reason to build a detail route", not as "verified complete".
 
 | Path | Native screen | Values probed |
 |---|---|---|
-| `/pulse/marketplace/:listingId` | MarketplaceDetail | `create` ok |
-| `/pulse/settings/:section` | AccountCenter | `account` ok, `devices` ok, `privacy` ok, `security` ok |
+| `/pulse/camera/:mode?` | CameraStudio | `photo` ok, `post` ok, `reel` ok, `status` ok, `video` ok |
+| `/pulse/settings/:section` | AccountCenter | `account` ok, `privacy` ok, `security` ok |
 | `/scam-shield/:mode?` | ScamShield | `scan` ok |
 
 ## Hub served, deep links into it 404
@@ -45,7 +47,7 @@ Browsing works; sharing a specific item does not. A row with values probed is a 
 | Path | Native screen | Values probed |
 |---|---|---|
 | `/dashboard/:legacyGroup/:legacyModule/:legacySubmodule?` | DashboardLegacyModule | no real value derivable from the app's sources |
-| `/pulse/camera/:mode?` | CameraStudio | no real value derivable from the app's sources |
+| `/pulse/marketplace/:listingId` | MarketplaceDetail | no real value derivable from the app's sources |
 | `/pulse/events/:eventId` | EventDetail | no real value derivable from the app's sources |
 | `/pulse/private-office/:view` | PrivateOperations | no real value derivable from the app's sources |
 
