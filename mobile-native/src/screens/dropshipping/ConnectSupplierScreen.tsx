@@ -69,10 +69,41 @@ type Step = "provider" | "credential" | "shop" | "connecting";
 const NOT_RETRYABLE: readonly DropshippingState[] = [
   "EMPTY",
   "UNAUTHORIZED",
+  "SESSION_EXPIRED",
   "SUPPLIER_DISABLED",
   "PROVIDER_NETWORK_DISABLED",
-  "STORE_NOT_APPROVED"
+  "STORE_NOT_APPROVED",
+  "STORE_NOT_FOUND",
+  "STORE_ACCESS_REVOKED",
+  "STORE_MAPPING_MISSING",
+  "SUPPLIER_CONNECTION_FORBIDDEN"
 ];
+
+/**
+ * The four failures that used to arrive as one sentence.
+ *
+ * "You're not signed in to this store any more" was shown for a rejected write
+ * token, an expired session, a store the server could not match, and a store
+ * whose selling access had been withdrawn. Three of those four are things a
+ * signed-in merchant cannot fix by signing in again, so the one sentence sent
+ * every merchant to the same dead end.
+ *
+ * Each says what happened and what the merchant can do about it. None of them
+ * asserts anything about a store that is not theirs.
+ */
+const STORE_AUTHORITY_MESSAGES: Partial<Record<DropshippingState, string>> = {
+  SESSION_EXPIRED: "Your session has expired. Sign in again to connect a supplier.",
+  CSRF_INVALID:
+    "This device couldn't prove the request came from you. Nothing was sent to your supplier — try again.",
+  STALE_STORE_CONTEXT:
+    "Your store details moved on while this screen was open. We've refreshed them — try again.",
+  STORE_NOT_FOUND: "We couldn't match this store to your account.",
+  STORE_ACCESS_REVOKED: "This store can no longer sell, so it can't connect a supplier.",
+  STORE_NOT_APPROVED: "Your store isn't approved to sell yet, so it can't connect a supplier.",
+  STORE_MAPPING_MISSING:
+    "Your store isn't linked to a seller account yet, so there's nothing to connect a supplier to.",
+  SUPPLIER_CONNECTION_FORBIDDEN: "Your role in this store can't connect suppliers."
+};
 
 export function ConnectSupplierScreen({ route, navigation }: Props) {
   const reducedMotion = useLogiNexusReducedMotion();
@@ -117,9 +148,8 @@ export function ConnectSupplierScreen({ route, navigation }: Props) {
         message: "PulseSoc isn't cleared to talk to this supplier from this server yet. Your key wasn't the problem."
       };
     }
-    if (state === "STORE_NOT_APPROVED") {
-      return { state, message: "Your store isn't approved to sell yet, so it can't connect a supplier." };
-    }
+    const storeAuthority = STORE_AUTHORITY_MESSAGES[state];
+    if (storeAuthority) return { state, message: storeAuthority };
     if (state === "INVALID_CREDENTIAL") {
       return { state, message: `That ${credential} wasn't accepted. Check you copied the whole thing.` };
     }
@@ -137,6 +167,21 @@ export function ConnectSupplierScreen({ route, navigation }: Props) {
     }
     return { state, message: "That connection couldn't be created. Nothing was saved." };
   }, [provider]);
+
+  /**
+   * Describe the failure, and repair the one kind that is repairable here.
+   *
+   * A stale store context is the app holding a store the server has since
+   * stopped treating as canonical. Dropping the cached scope makes the next
+   * attempt use the current one, so the merchant retries a screen rather than
+   * restarting the app — which is what "sign in again" used to cost them.
+   */
+  const reload = scopeStatus.reload;
+  const reportFailure = useCallback((error: unknown, during: "discover" | "connect") => {
+    const outcome = describe(error, during);
+    if (outcome.state === "STALE_STORE_CONTEXT") reload();
+    return outcome;
+  }, [describe, reload]);
 
   const discover = useCallback(async () => {
     if (!scope || !apiKey.trim()) return;
@@ -156,11 +201,11 @@ export function ConnectSupplierScreen({ route, navigation }: Props) {
       setShops(found);
       setStep("shop");
     } catch (error) {
-      setFailure(describe(error, "discover"));
+      setFailure(reportFailure(error, "discover"));
     } finally {
       setBusy(false);
     }
-  }, [apiKey, describe, provider, scope]);
+  }, [apiKey, provider, reportFailure, scope]);
 
   const connect = useCallback(
     async (shop: SupplierShop) => {
@@ -175,13 +220,13 @@ export function ConnectSupplierScreen({ route, navigation }: Props) {
         setApiKey("");
         navigation.navigate("DropshippingSuppliers", { title: "Suppliers" });
       } catch (error) {
-        setFailure(describe(error, "connect"));
+        setFailure(reportFailure(error, "connect"));
         setStep("shop");
       } finally {
         setBusy(false);
       }
     },
-    [apiKey, describe, navigation, scope]
+    [apiKey, navigation, reportFailure, scope]
   );
 
   const canSubmit = Boolean(scope) && apiKey.trim().length > 0 && !busy;
@@ -199,11 +244,10 @@ export function ConnectSupplierScreen({ route, navigation }: Props) {
   const scopeFailureMessage =
     scopeFailure === "SUPPLIER_DISABLED"
       ? "Supplier connections are available in the PulseSoc sandbox but aren't enabled on this server yet."
-      : scopeFailure === "STORE_NOT_APPROVED"
-        ? "Your store isn't approved to sell yet, so it can't connect a supplier."
-        : scopeFailure === "UNAUTHORIZED"
+      : (scopeFailure && STORE_AUTHORITY_MESSAGES[scopeFailure]) ||
+        (scopeFailure === "UNAUTHORIZED"
           ? "You're not signed in to this store any more."
-          : "We couldn't work out which store to connect this supplier to.";
+          : "We couldn't work out which store to connect this supplier to.");
 
   return (
     <View style={styles.root}>
@@ -244,9 +288,7 @@ export function ConnectSupplierScreen({ route, navigation }: Props) {
               // Nothing to retry when the feature is off or the store is not
               // approved — the second attempt fails identically.
               onRetry={
-                scopeFailure === "SUPPLIER_DISABLED" ||
-                scopeFailure === "STORE_NOT_APPROVED" ||
-                scopeFailure === "UNAUTHORIZED"
+                scopeFailure === "SUPPLIER_DISABLED" || NOT_RETRYABLE.includes(scopeFailure)
                   ? null
                   : scopeStatus.reload
               }

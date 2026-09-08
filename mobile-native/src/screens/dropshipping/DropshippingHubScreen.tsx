@@ -301,6 +301,11 @@ export function DropshippingHubScreen({ route, navigation }: Props) {
       if (scopeStatus.status.state === "SUPPLIER_DISABLED") return "Dropshipping · Not enabled here yet";
       if (scopeStatus.status.state === "PROVIDER_NETWORK_DISABLED") return "Dropshipping · Supplier network off";
       if (scopeStatus.status.state === "STORE_NOT_APPROVED") return "Dropshipping · Store not approved to sell";
+      if (scopeStatus.status.state === "STORE_ACCESS_REVOKED") return "Dropshipping · Store can no longer sell";
+      if (scopeStatus.status.state === "STORE_NOT_FOUND") return "Dropshipping · Store not matched";
+      if (scopeStatus.status.state === "STORE_MAPPING_MISSING") return "Dropshipping · Store not linked yet";
+      if (scopeStatus.status.state === "SUPPLIER_CONNECTION_FORBIDDEN") return "Dropshipping · No supplier access";
+      if (scopeStatus.status.state === "SESSION_EXPIRED") return "Dropshipping · Sign in again";
       return "Dropshipping · Couldn't check your store";
     }
     return "Dropshipping · No supplier connected";

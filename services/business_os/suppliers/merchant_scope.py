@@ -59,6 +59,11 @@ SELLER_SCOPE_PREFIX = "mkt-seller:"
 #: The one seller status that means "may sell" (``seller_lifecycle``).
 APPROVED = "approved"
 
+#: Statuses that mean access the merchant *had* was taken away, as opposed to
+#: an application that has not been granted yet. The merchant needs to be told
+#: which of the two it is; one is waiting, the other is an appeal.
+REVOKED = ("suspended", "rejected", "banned", "closed")
+
 #: Why a merchant cannot enter dropshipping. Each is a different screen; see
 #: the mission note in the mobile client. Collapsing them is how "you need a
 #: business" came to be shown to someone who had a store.
@@ -128,8 +133,11 @@ def seller_merchant(conn, owner_user_id):
     """
     row = _seller_row(conn, owner_user_id)
     if row is None:
-        raise ScopeError("Supplier connection not found.", 404, "not_found")
-    if str(row["status"] or "").lower() != APPROVED:
+        raise ScopeError("Store not found.", 404, "store_not_found")
+    status = str(row["status"] or "").lower()
+    if status in REVOKED:
+        raise ScopeError("Your store can no longer sell.", 403, "store_access_revoked")
+    if status != APPROVED:
         raise ScopeError("Your store is not approved to sell yet.", 403, "store_not_approved")
     return str(owner_user_id)
 
@@ -142,9 +150,15 @@ def verify_seller_scope(conn, owner_user_id, actor_user_id):
     caller owns the store named in the request, or refuse. Merchant A sending
     merchant B's scope fails here — and fails as 404, so the response cannot be
     used to learn whether another merchant's store exists.
+
+    Ownership is checked before the seller row is read, so this branch and the
+    missing-row branch in :func:`seller_merchant` must answer identically.
+    Their shared ``store_not_found`` is what keeps existence unobservable; it
+    is distinct from the ``not_found`` of a missing *connection* only because
+    those two are never reachable from the same request.
     """
     if str(owner_user_id) != str(actor_user_id or ""):
-        raise ScopeError("Supplier connection not found.", 404, "not_found")
+        raise ScopeError("Store not found.", 404, "store_not_found")
     return seller_merchant(conn, owner_user_id)
 
 

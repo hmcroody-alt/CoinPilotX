@@ -177,7 +177,11 @@ export function stateIsUnactionable(state: DropshippingState): boolean {
   return (
     state === "SUPPLIER_DISABLED" ||
     state === "PROVIDER_NETWORK_DISABLED" ||
-    state === "STORE_NOT_APPROVED"
+    state === "STORE_NOT_APPROVED" ||
+    state === "STORE_NOT_FOUND" ||
+    state === "STORE_ACCESS_REVOKED" ||
+    state === "STORE_MAPPING_MISSING" ||
+    state === "SUPPLIER_CONNECTION_FORBIDDEN"
   );
 }
 
@@ -302,12 +306,71 @@ export function DropshippingStateView({
         />
       );
 
+    // Everything below used to arrive here as `UNAUTHORIZED` and be reported as
+    // "you're not signed in". Only the first of them is about being signed in;
+    // the rest are about which store the request was for, and a merchant told
+    // to sign in again for any of them signs in and sees the same screen.
+    case "SESSION_EXPIRED":
     case "UNAUTHORIZED":
       return (
         <StoreSectionError
           message="You're not signed in to this store any more."
           onRetry={onRetry}
           actionLabel="Sign in"
+          reducedMotion={reducedMotion}
+        />
+      );
+
+    case "CSRF_INVALID":
+      return (
+        <StoreSectionError
+          message={`This device couldn't prove the request came from you, so ${subject.toLowerCase()} didn't load.`}
+          onRetry={onRetry}
+          reducedMotion={reducedMotion}
+        />
+      );
+
+    case "STALE_STORE_CONTEXT":
+      return (
+        <StoreSectionError
+          message="Your store details moved on while this screen was open."
+          onRetry={onRetry}
+          reducedMotion={reducedMotion}
+        />
+      );
+
+    case "STORE_NOT_FOUND":
+      return (
+        <StoreSectionError
+          message="We couldn't match this store to your account."
+          onRetry={null}
+          reducedMotion={reducedMotion}
+        />
+      );
+
+    case "STORE_ACCESS_REVOKED":
+      return (
+        <StoreSectionError
+          message="This store can no longer sell, so supplier products aren't available."
+          onRetry={null}
+          reducedMotion={reducedMotion}
+        />
+      );
+
+    case "STORE_MAPPING_MISSING":
+      return (
+        <StoreSectionError
+          message="Your store isn't linked to a seller account yet."
+          onRetry={null}
+          reducedMotion={reducedMotion}
+        />
+      );
+
+    case "SUPPLIER_CONNECTION_FORBIDDEN":
+      return (
+        <StoreSectionError
+          message="Your role in this store can't manage suppliers."
+          onRetry={null}
           reducedMotion={reducedMotion}
         />
       );

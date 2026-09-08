@@ -264,6 +264,58 @@ describe("stateForError separates causes that have different fixes", () => {
     expect(stateForError(new PulseApiError("no", 403))).toBe("UNAUTHORIZED");
   });
 
+  /**
+   * The store-session bug in full. A merchant who owned an approved, open store
+   * tapped "Connect to CJ" and was told they were not signed in to it. Three
+   * things stacked up to produce that: the write gate refused the native app's
+   * bearer, the supplier pack answered with a field the client does not read,
+   * and — with no code left to read — this function fell through to the status
+   * check, where a 403 is indistinguishable from a dead session.
+   *
+   * The status fallback still stands (the two assertions above), because a
+   * server that genuinely says nothing has told us nothing. What is pinned here
+   * is that each cause the server *does* name survives the trip: seven codes,
+   * seven different things for a merchant to do about them. Collapsing any of
+   * them back into UNAUTHORIZED sends a merchant to sign in again and land on
+   * the identical screen.
+   */
+  it.each([
+    ["csrf", 403, "CSRF_INVALID"],
+    ["login_required", 401, "SESSION_EXPIRED"],
+    ["unauthorized", 401, "SESSION_EXPIRED"],
+    ["store_not_found", 404, "STORE_NOT_FOUND"],
+    ["store_access_revoked", 403, "STORE_ACCESS_REVOKED"],
+    ["account_hold", 403, "STORE_ACCESS_REVOKED"],
+    ["stale_store_context", 409, "STALE_STORE_CONTEXT"],
+    ["merchant_identity_unresolved", 409, "STORE_MAPPING_MISSING"],
+    ["forbidden", 403, "SUPPLIER_CONNECTION_FORBIDDEN"],
+    ["store_not_approved", 403, "STORE_NOT_APPROVED"]
+  ])("reads %s as its own cause, not as a signed-out session", (code, status, state) => {
+    expect(stateForError(new PulseApiError("no", status as number, code as string))).toBe(state);
+  });
+
+  /**
+   * `store_not_found` is deliberately not the generic `not_found` the rest of
+   * the Business OS pack answers with. A missing *connection*, draft or cart
+   * item is a 404 too, and reading those as a store the server could not match
+   * would tell a merchant their store is broken when a row they deleted is
+   * simply gone.
+   */
+  it("does not read a missing row as a missing store", () => {
+    expect(stateForError(new PulseApiError("no", 404, "not_found"))).toBe("ERROR");
+  });
+
+  /**
+   * A server that names no cause is the one case where the status is all there
+   * is, and it must stay that way: the fix for the store-session bug was to
+   * make the server name the cause, not to invent one here. An error with no
+   * code and a 403 is still just "refused".
+   */
+  it("invents no cause when the server named none", () => {
+    expect(stateForError(new PulseApiError("no", 403, ""))).toBe("UNAUTHORIZED");
+    expect(stateForError(new PulseApiError("no", 409))).toBe("ERROR");
+  });
+
   it("maps supplier credential problems to SUPPLIER_DISCONNECTED", () => {
     expect(stateForError(new PulseApiError("x", 400, "supplier_disconnected"))).toBe("SUPPLIER_DISCONNECTED");
   });

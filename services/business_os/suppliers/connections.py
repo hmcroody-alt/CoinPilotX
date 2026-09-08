@@ -74,10 +74,37 @@ def _canonical_scope(conn, business_id, store_id):
                        "WHERE b.business_id=? AND s.storefront_id=?",
                        (business_id, store_id)).fetchone()
     if row is None:
-        raise SupplierConnectionError("Supplier connection not found.", 404, "not_found")
+        raise SupplierConnectionError("Store not found.", 404, "store_not_found")
     if row["business_status"] in {"archived", "suspended"} or row["store_status"] in {"archived", "suspended"}:
         raise SupplierConnectionError("Business or store access is on hold.", 403, "account_hold")
     return str(row["owner_user_id"])
+
+
+def _stale_scope_denial(conn, business_id, store_id, actor_user_id):
+    """Is this refusal a stale client store context rather than a tenancy breach?
+
+    Only ever asked about a scope that names the caller themselves, so the
+    answer can describe nobody else's store: a request carrying another
+    merchant's scope keeps its 404 and learns nothing. When the caller's own
+    canonical store has moved on — the app cached a seller-backed scope and the
+    merchant has since created a Business OS workspace — "your store context is
+    out of date" is the true answer, and the client can repair it by resolving
+    the scope again instead of making the merchant sign in again.
+
+    The scope that was sent is still refused. This only names the refusal.
+    """
+    if merchant_scope.seller_scope_owner(business_id, store_id) != str(actor_user_id or ""):
+        return None
+    try:
+        canonical = merchant_scope.resolve(conn, actor_user_id)
+    except merchant_scope.ScopeError:
+        return None
+    if canonical.get("status") != "ok":
+        return None
+    if (canonical["business_id"], canonical["store_id"]) == (str(business_id), str(store_id)):
+        return None
+    return SupplierConnectionError("Your store context is out of date.",
+                                   409, "stale_store_context")
 
 
 def _authorize(conn, business_id, store_id, actor_user_id, *, context=None, write=False):
@@ -97,7 +124,8 @@ def _authorize(conn, business_id, store_id, actor_user_id, *, context=None, writ
             store_service._require_biz_permission(conn, business_id, actor_user_id,
                                                  "store.manage" if write else "store.read")
     except merchant_scope.ScopeError as exc:
-        raise SupplierConnectionError(str(exc), exc.http_status, exc.code) from None
+        raise (_stale_scope_denial(conn, business_id, store_id, actor_user_id)
+               or SupplierConnectionError(str(exc), exc.http_status, exc.code)) from None
     except store_service.StoreError as exc:
         raise SupplierConnectionError("Supplier access denied.", exc.http_status, exc.code) from None
     return _canonical_scope(conn, business_id, store_id)
@@ -524,7 +552,9 @@ def health_connection(connection_id, business_id, store_id, actor_user_id, *, co
         adapter_for(business_id, store_id, actor_user_id, connection_id, context=context, adapter=adapter)
     except Exception as exc:
         # Never conceal denied authorization behind an apparently valid status.
-        if getattr(exc, "code", "") in {"not_found", "forbidden", "unauthorized", "disabled", "account_hold"}:
+        if getattr(exc, "code", "") in {"not_found", "store_not_found", "forbidden", "unauthorized",
+                                        "disabled", "account_hold", "store_not_approved",
+                                        "store_access_revoked", "stale_store_context"}:
             raise
         if getattr(exc, "code", "") not in {"refresh_in_progress", "refresh_superseded"}:
             conn = db.connect()

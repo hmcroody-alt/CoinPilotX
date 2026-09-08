@@ -57,7 +57,13 @@ def _error(exc):
     status = getattr(exc, "http_status", 503)
     if type(status) is not int or status < 400 or status > 599:
         status = 503
-    return _respond({"ok": False, "code": code}, status, getattr(exc, "retry_after", None))
+    # `error_code` is the field the mobile client reads a rejection's code out
+    # of. Answering only `code` reached it as no code at all, so every
+    # distinction below collapsed into the status check and every 401/403 —
+    # csrf, login_required, store_not_approved, forbidden — was rendered as
+    # "you're not signed in to this store any more".
+    return _respond({"ok": False, "code": code, "error_code": code}, status,
+                    getattr(exc, "retry_after", None))
 
 
 def _body():

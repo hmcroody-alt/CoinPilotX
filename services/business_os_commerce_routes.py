@@ -43,14 +43,48 @@ def _json(payload, status=200):
     return resp
 
 
+def _verified_bearer_write_authority():
+    """Re-verify the Authorization bearer for a write, server-side.
+
+    ``g.mobile_access_user_id`` is only set when ``bot.account_user_id()``
+    actually reaches its bearer branch, and that branch is skipped whenever a
+    session cookie is present. The native app sends both a cookie and a
+    bearer, so the flag stays unset — and the app has no CSRF token to echo,
+    which left every Business OS write refused while every read succeeded.
+
+    This re-runs the real verifier (signature, expiry, device hash, and an
+    active non-revoked ``mobile_security_sessions`` row), so authority comes
+    from the database, never from the client's say-so. Anything short of a
+    verified bearer naming the same user the cookie does denies."""
+    header = (request.headers.get("Authorization") or "").strip()
+    if not header.lower().startswith("bearer "):
+        return False
+    resolve = getattr(_bot(), "account_user_id_from_mobile_access_token", None)
+    if not callable(resolve):
+        return False
+    try:
+        bearer_user_id = resolve()
+    except Exception:
+        return False
+    if not bearer_user_id:
+        return False
+    cookie_user_id = session.get("account_user_id")
+    if cookie_user_id and str(cookie_user_id) != str(bearer_user_id):
+        return False
+    return True
+
+
 def _csrf_ok():
     """Default-deny CSRF gate for cookie-authenticated writes.
 
     Native app requests carry a signed Authorization bearer (inherently
-    CSRF-safe — set as ``g.mobile_access_user_id`` upstream). Web requests
-    must echo the session token via ``X-CSRF-Token`` (the console page does)
-    or a classic ``csrf_token`` form field."""
+    CSRF-safe — ``g.mobile_access_user_id`` upstream, or re-verified here when
+    a session cookie short-circuited that branch). Web requests must echo the
+    session token via ``X-CSRF-Token`` (the console page does) or a classic
+    ``csrf_token`` form field."""
     if getattr(g, "mobile_access_user_id", None):
+        return True
+    if _verified_bearer_write_authority():
         return True
     session_token = session.get("csrf_token")
     header_token = (request.headers.get("X-CSRF-Token")

@@ -1209,6 +1209,13 @@ export const DROPSHIPPING_STATES = [
   "SUPPLIER_DISABLED",
   "PROVIDER_NETWORK_DISABLED",
   "STORE_NOT_APPROVED",
+  "STORE_NOT_FOUND",
+  "STORE_ACCESS_REVOKED",
+  "STALE_STORE_CONTEXT",
+  "STORE_MAPPING_MISSING",
+  "SUPPLIER_CONNECTION_FORBIDDEN",
+  "CSRF_INVALID",
+  "SESSION_EXPIRED",
   "INVALID_CREDENTIAL",
   "SUPPLIER_DISCONNECTED",
   "PROVIDER_UNAVAILABLE",
@@ -1262,6 +1269,20 @@ export function stateForError(error: unknown): DropshippingState {
   }
   if (code === "store_not_approved") return "STORE_NOT_APPROVED";
   if (code === "invalid_api_key") return "INVALID_CREDENTIAL";
+
+  // Four different things used to reach the merchant as "you're not signed in
+  // to this store any more": a rejected write token, an expired session, a
+  // store the server could not find, and a store whose access was withdrawn.
+  // Only the second of those is about being signed in, and the merchant can
+  // only act on the one they are actually in. They are matched ahead of the
+  // status classes below because every one of them is a 401 or a 403.
+  if (code === "csrf") return "CSRF_INVALID";
+  if (code === "login_required" || code === "unauthorized") return "SESSION_EXPIRED";
+  if (code === "store_access_revoked" || code === "account_hold") return "STORE_ACCESS_REVOKED";
+  if (code === "stale_store_context") return "STALE_STORE_CONTEXT";
+  if (code === "merchant_identity_unresolved") return "STORE_MAPPING_MISSING";
+  if (code === "store_not_found") return "STORE_NOT_FOUND";
+  if (code === "forbidden") return "SUPPLIER_CONNECTION_FORBIDDEN";
 
   if (error.status === 401 || error.status === 403) return "UNAUTHORIZED";
   if (DISCONNECTED_CODES.includes(code)) return "SUPPLIER_DISCONNECTED";

@@ -23,6 +23,7 @@
  */
 
 import React from "react";
+import { Text } from "react-native";
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 
 jest.mock("react-native-safe-area-context", () => ({
@@ -223,6 +224,30 @@ async function settle() {
 describe("DropshippingStateView", () => {
   const EMPTY_COPY = { title: "Nothing here yet.", body: "Add something." };
 
+  /** The states that report a failure — everything that is not data or waiting. */
+  const FAILURE_STATES = DROPSHIPPING_STATES.filter(
+    (state) => !["LOADING", "EMPTY", "READY", "STALE"].includes(state)
+  );
+
+  /**
+   * The sentence on the failure card, or `null` when no failure was drawn.
+   *
+   * Found by the card's live region rather than by matching a list of known
+   * phrases. An alternation of sentences cannot tell "this state drew no error"
+   * apart from "this state drew an error whose wording nobody has added to the
+   * regex yet", and the second is exactly how a new state ships broken: it
+   * falls to `default:`, says "Products didn't load", and every assertion here
+   * still passes.
+   */
+  function failureMessage(view: ReturnType<typeof render>): string | null {
+    const [card] = view.UNSAFE_root.findAll(
+      (node) => node.props?.accessibilityLiveRegion === "polite"
+    );
+    if (!card) return null;
+    const [text] = card.findAllByType(Text);
+    return typeof text?.props.children === "string" ? text.props.children : null;
+  }
+
   function renderState(state: DropshippingState) {
     return render(
       <DropshippingStateView
@@ -241,8 +266,65 @@ describe("DropshippingStateView", () => {
     for (const state of DROPSHIPPING_STATES) {
       const view = renderState(state);
       const sawEmpty = view.queryByText(EMPTY_COPY.title) !== null;
-      const sawError = view.queryByText(/didn't load|isn't responding|needs attention|not signed in/i) !== null;
+      const sawError = failureMessage(view) !== null;
       expect(sawEmpty && sawError).toBe(false);
+      view.unmount();
+    }
+  });
+
+  /**
+   * Every failure gets its own sentence, with one deliberate exception.
+   *
+   * The bug this whole change came out of was four different failures — a
+   * refused write token, a dead session, a store the server could not match,
+   * and a store whose selling access was withdrawn — arriving at the merchant
+   * as the single sentence "You're not signed in to this store any more". Three
+   * of the four merchants reading that signed in again and saw the same screen.
+   *
+   * So a shared sentence is treated as the defect it was. `SESSION_EXPIRED` and
+   * `UNAUTHORIZED` are allowed to share one, and only they: `UNAUTHORIZED` is
+   * what an unnamed 401/403 falls back to, and "you may not be signed in" is
+   * the honest reading of a refusal the server declined to explain.
+   */
+  it("gives every failure its own sentence, and shares one only where the cause is one", () => {
+    const byMessage = new Map<string, DropshippingState[]>();
+    for (const state of FAILURE_STATES) {
+      const view = renderState(state);
+      const message = failureMessage(view);
+      expect(message).toBeTruthy();
+      byMessage.set(message as string, [...(byMessage.get(message as string) || []), state]);
+      view.unmount();
+    }
+
+    const shared = [...byMessage.values()].filter((states) => states.length > 1);
+    expect(shared).toEqual([["SESSION_EXPIRED", "UNAUTHORIZED"]]);
+  });
+
+  /**
+   * A retry button is a claim that pressing it could change the answer. It
+   * cannot for a store that is not this merchant's, one whose selling access
+   * was withdrawn, or one with no seller record behind it — those need a person,
+   * not a second request. A refused write token or a store context that moved on
+   * *are* worth another attempt, and they keep theirs.
+   */
+  it("offers a retry only where a second attempt could answer differently", () => {
+    const retryable = new Set<DropshippingState>([
+      "SESSION_EXPIRED",
+      "UNAUTHORIZED",
+      "CSRF_INVALID",
+      "STALE_STORE_CONTEXT",
+      "INVALID_CREDENTIAL",
+      "SUPPLIER_DISCONNECTED",
+      "PROVIDER_UNAVAILABLE",
+      "ERROR"
+    ]);
+
+    for (const state of FAILURE_STATES) {
+      const view = renderState(state);
+      const hasButton = view.UNSAFE_root.findAll(
+        (node) => node.props?.accessibilityRole === "button"
+      ).length > 0;
+      expect([state, hasButton]).toEqual([state, retryable.has(state)]);
       view.unmount();
     }
   });
@@ -652,6 +734,87 @@ describe("ConnectSupplierScreen", () => {
     });
     await waitFor(() => expect(view.getByText(/no shops we can sell through/)).toBeTruthy());
     expect(view.queryByText(/CJ API key wasn't accepted/)).toBeNull();
+  });
+
+  /**
+   * The reported bug, from the merchant's side.
+   *
+   * The owner of an approved, open store tapped "Connect to CJ" and read "You're
+   * not signed in to this store anymore." They were signed in; the store was
+   * theirs; CJ was never contacted. What the server had actually refused was the
+   * write token, and with the cause stripped off in transit the screen had only
+   * a 403 to go on and guessed the one thing a 403 usually means.
+   *
+   * Each cause the server can now name is checked here against the sentence a
+   * merchant would act on. The sign-in sentence is barred from all of them: it
+   * is the one instruction that is useless for every case except a real
+   * expired session.
+   */
+  async function failConnectWith(error: PulseApiError) {
+    mockDiscoverShops.mockRejectedValue(error);
+    const { view } = await connectScreen();
+    fireEvent.press(view.getByLabelText("Connect CJ Dropshipping"));
+    fireEvent.changeText(view.getByLabelText("CJ API key"), "cj-secret-key");
+    await act(async () => {
+      fireEvent.press(view.getByLabelText("Connect to CJ"));
+    });
+    return view;
+  }
+
+  it.each([
+    ["csrf", 403, /couldn't prove the request came from you/],
+    ["store_not_found", 404, /couldn't match this store to your account/],
+    ["store_access_revoked", 403, /can no longer sell/],
+    ["store_not_approved", 403, /isn't approved to sell yet/],
+    ["merchant_identity_unresolved", 409, /isn't linked to a seller account yet/],
+    ["forbidden", 403, /role in this store can't connect suppliers/]
+  ])("does not tell an owner they are signed out when the cause is %s", async (code, status, copy) => {
+    const view = await failConnectWith(new PulseApiError("no", status as number, code as string));
+
+    await waitFor(() => expect(view.getByText(copy as RegExp)).toBeTruthy());
+    expect(view.queryByText(/not signed in to this store/i)).toBeNull();
+    // Whatever went wrong, the key the merchant pasted is not part of the answer.
+    expect(view.queryByText(/cj-secret-key/)).toBeNull();
+  });
+
+  /** A session that really has expired is still the one case that says so. */
+  it("still says to sign in when the session is the thing that failed", async () => {
+    const view = await failConnectWith(new PulseApiError("no", 401, "login_required"));
+
+    await waitFor(() => expect(view.getByText(/session has expired/i)).toBeTruthy());
+  });
+
+  /**
+   * §10: a store context that moved on is repaired in place. The merchant cached
+   * a scope, their store gained a workspace behind them, and the scope they are
+   * holding no longer names their canonical store. That is a client-cache
+   * problem with a client-side fix — re-resolve and try again — so the screen
+   * does it rather than sending the merchant out to restart the app or sign in
+   * again for a session that was never the problem.
+   */
+  it("refreshes a store context that moved on instead of sending the merchant to sign in", async () => {
+    const view = await failConnectWith(new PulseApiError("no", 409, "stale_store_context"));
+
+    await waitFor(() => expect(view.getByText(/store details moved on/i)).toBeTruthy());
+    expect(view.queryByText(/not signed in to this store/i)).toBeNull();
+    // Once on mount, once because the screen repaired itself.
+    await waitFor(() => expect(mockResolveScope).toHaveBeenCalledTimes(2));
+  });
+
+  /**
+   * A store failure found while resolving scope — before a supplier is even
+   * chosen — reads the same way, and offers no retry where a retry cannot help.
+   * This is the path that used to answer "we couldn't work out which store to
+   * connect this supplier to" for every one of them.
+   */
+  it("names a store-authority failure found before the supplier was chosen", async () => {
+    mockResolveScope.mockRejectedValue(new PulseApiError("no", 403, "store_access_revoked"));
+    const { view } = await connectScreen();
+
+    await waitFor(() => expect(view.getByText(/can no longer sell/)).toBeTruthy());
+    expect(view.queryByText(/couldn't work out which store/)).toBeNull();
+    expect(view.queryByText(/not signed in to this store/i)).toBeNull();
+    expect(view.queryByText("Try again")).toBeNull();
   });
 });
 
