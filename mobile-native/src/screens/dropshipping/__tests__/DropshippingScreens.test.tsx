@@ -424,6 +424,32 @@ describe("DropshippingHubScreen", () => {
     expect(view.queryByText("Connect")).toBeNull();
     expect(view.getAllByText("Try again").length).toBeGreaterThan(0);
   });
+
+  /**
+   * §10. Caught in production, not here: the server answered `disabled` — the
+   * feature is off on this deployment — and the merchant was shown "Couldn't
+   * check your store" above "Dropshipping didn't load". Their store was fine.
+   * Naming the deployment is the whole point of that code, and a retry beside it
+   * only invites tapping at something no merchant can change.
+   */
+  it("names the deployment, not the merchant's store, when suppliers are switched off", async () => {
+    mockResolveScope.mockRejectedValue(new PulseApiError("off", 404, "disabled"));
+    mockListConnections.mockResolvedValue([]);
+    const { view } = await hub();
+
+    await waitFor(() =>
+      expect(view.getByText("Dropshipping · Not enabled here yet")).toBeTruthy()
+    );
+    expect(view.queryByText("Dropshipping · Couldn't check your store")).toBeNull();
+    expect(view.queryByText("Dropshipping · No supplier connected")).toBeNull();
+    expect(view.queryByText("Try again")).toBeNull();
+    expect(view.queryByText("Connect")).toBeNull();
+    expect(
+      view.getByText(
+        "Supplier connections are available in the PulseSoc sandbox but aren't enabled on this server yet."
+      )
+    ).toBeTruthy();
+  });
 });
 
 /* ------------------------------------------------------------------ *

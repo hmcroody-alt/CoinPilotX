@@ -78,7 +78,13 @@ def _error(exc):
     status = getattr(exc, "http_status", 503)
     if type(status) is not int or status < 400 or status > 599:
         status = 503
-    return _respond({"ok": False, "code": code}, status, getattr(exc, "retry_after", None))
+    # `error_code` is the field the mobile client reads a rejection's code out of.
+    # Answering only `code` reached it as no code at all, so every distinction
+    # this module makes — the feature being off here, a rejected key, a store
+    # awaiting approval — arrived as one generic failure and the merchant was
+    # told "Dropshipping didn't load" instead of the actual blocker.
+    return _respond(
+        {"ok": False, "code": code, "error_code": code}, status, getattr(exc, "retry_after", None))
 
 
 def _body():

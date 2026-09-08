@@ -166,6 +166,21 @@ export function stateOwnsScreen(state: DropshippingState): boolean {
   return state !== "READY" && state !== "STALE";
 }
 
+/**
+ * States nothing the merchant does can clear: a deployment switch, a provider
+ * PulseSoc isn't cleared to reach, a store still awaiting approval. The switch
+ * below gives each of these `onRetry={null}`; this exports the same judgement so
+ * a screen's own chrome — the status strip — can't offer a retry the body has
+ * just refused, or describe the answer as a failure to get one.
+ */
+export function stateIsUnactionable(state: DropshippingState): boolean {
+  return (
+    state === "SUPPLIER_DISABLED" ||
+    state === "PROVIDER_NETWORK_DISABLED" ||
+    state === "STORE_NOT_APPROVED"
+  );
+}
+
 export type DropshippingStateViewProps = {
   state: DropshippingState;
   /** The thing that did not load, named. "Products", "Your import cart". */

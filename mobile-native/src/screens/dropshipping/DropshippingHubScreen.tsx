@@ -36,7 +36,7 @@ import {
   type SupplierConnection
 } from "../../api/dropshipping";
 import { StoreHeader, StoreQuickLinkGrid, StoreStatusStrip } from "../../components/store";
-import { DropshippingStateView, EnvironmentBadge, ProviderBadge, stateOwnsScreen } from "../../components/dropshipping/DropshippingStates";
+import { DropshippingStateView, EnvironmentBadge, ProviderBadge, stateIsUnactionable, stateOwnsScreen } from "../../components/dropshipping/DropshippingStates";
 import { useDropshippingScope } from "./useDropshippingScope";
 import { useFormatters } from "../../i18n/hooks";
 import { BOTTOM_NAV_CONTENT_CLEARANCE } from "../../navigation/BottomNavVisibility";
@@ -294,7 +294,15 @@ export function DropshippingHubScreen({ route, navigation }: Props) {
     // in flight or after it failed puts an absence next to a body that is still
     // loading or reporting an error.
     if (scopeStatus.status.phase === "loading") return "Dropshipping · Checking your store";
-    if (scopeStatus.status.phase === "failed") return "Dropshipping · Couldn't check your store";
+    if (scopeStatus.status.phase === "failed") {
+      // The server answering "this deployment has suppliers switched off" is an
+      // answer, not a failure to get one. Calling it "couldn't check your store"
+      // sends the merchant looking for a fault in a store that is fine.
+      if (scopeStatus.status.state === "SUPPLIER_DISABLED") return "Dropshipping · Not enabled here yet";
+      if (scopeStatus.status.state === "PROVIDER_NETWORK_DISABLED") return "Dropshipping · Supplier network off";
+      if (scopeStatus.status.state === "STORE_NOT_APPROVED") return "Dropshipping · Store not approved to sell";
+      return "Dropshipping · Couldn't check your store";
+    }
     return "Dropshipping · No supplier connected";
   })();
 
@@ -302,7 +310,10 @@ export function DropshippingHubScreen({ route, navigation }: Props) {
    * A merchant waiting on review has nothing to set up, so the action re-checks
    * instead of sending them to a form they already submitted.
    */
-  const stripAction = active
+  const unactionable =
+    scopeStatus.status.phase === "failed" && stateIsUnactionable(scopeStatus.status.state);
+
+  const stripAction: { label: string; onPress: () => void } | null = active
     ? { label: "Suppliers", onPress: openSuppliers }
     : missingScope === "NO_STORE"
       ? { label: "Set up", onPress: openStoreSetup }
@@ -310,9 +321,11 @@ export function DropshippingHubScreen({ route, navigation }: Props) {
         ? { label: "Refresh", onPress: refresh }
         : missingScope === "NO_STOREFRONT"
           ? { label: "Set up", onPress: openStorefrontSetup }
-          : scopeStatus.status.phase === "loading" || scopeStatus.status.phase === "failed"
-            ? { label: "Try again", onPress: refresh }
-            : { label: "Connect", onPress: openConnect };
+          : unactionable
+            ? null
+            : scopeStatus.status.phase === "loading" || scopeStatus.status.phase === "failed"
+              ? { label: "Try again", onPress: refresh }
+              : { label: "Connect", onPress: openConnect };
 
   return (
     <View style={styles.root}>
@@ -334,8 +347,8 @@ export function DropshippingHubScreen({ route, navigation }: Props) {
         <StoreStatusStrip
           text={stripText}
           open={Boolean(active && connectionIsUsable(active))}
-          actionLabel={stripAction.label}
-          onAction={stripAction.onPress}
+          actionLabel={stripAction?.label}
+          onAction={stripAction?.onPress}
           reducedMotion={reducedMotion}
         />
       </Animated.View>

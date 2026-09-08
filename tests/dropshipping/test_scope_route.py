@@ -166,7 +166,12 @@ def test_a_server_without_the_supplier_feature_says_so(client, monkeypatch):
     response = scope(client)
 
     assert response.status_code == 404
-    assert response.get_json()["code"] == "disabled"
+    body = response.get_json()
+    assert body["code"] == "disabled"
+    # The client reads a rejection's code out of `error_code`. Answering only
+    # `code` reached it as no code at all, and the merchant — on a server with
+    # the feature switched off — was shown a generic "didn't load" instead.
+    assert body["error_code"] == "disabled"
 
 
 def test_the_route_leaks_no_credential_shaped_field(client):

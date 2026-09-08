@@ -234,8 +234,13 @@ export type StoreStatusStripProps = {
   /** e.g. "Bright Coffee Co · Open for orders" — already assembled by the caller. */
   text: string;
   open: boolean;
-  actionLabel: string;
-  onAction: () => void;
+  /**
+   * Omitted together when the state has no action the merchant could take —
+   * a feature switched off server-side, say. A button there is an invitation to
+   * keep tapping something that cannot change.
+   */
+  actionLabel?: string;
+  onAction?: () => void;
   reducedMotion: boolean;
 };
 
@@ -258,14 +263,16 @@ export function StoreStatusStrip({
       <Text style={styles.stripText} numberOfLines={1}>
         {text}
       </Text>
-      <Pressable
-        onPress={onAction}
-        hitSlop={10}
-        accessibilityRole="link"
-        accessibilityLabel={`${actionLabel}. ${text}`}
-      >
-        <Text style={styles.stripAction}>{actionLabel}</Text>
-      </Pressable>
+      {actionLabel && onAction ? (
+        <Pressable
+          onPress={onAction}
+          hitSlop={10}
+          accessibilityRole="link"
+          accessibilityLabel={`${actionLabel}. ${text}`}
+        >
+          <Text style={styles.stripAction}>{actionLabel}</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
