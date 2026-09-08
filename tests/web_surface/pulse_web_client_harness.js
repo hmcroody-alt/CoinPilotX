@@ -24,13 +24,57 @@ const vm = require("vm");
 
 const CORE = fs.readFileSync(process.argv[2], "utf8");
 
-/** Render the client once with `cfg`, answering every fetch via `responder`. */
-function run(cfg, responder) {
+// Let the stubbed promise chain drain. Three turns covers fetch -> json ->
+// render; the client never chains deeper than that.
+function drain() {
+  return new Promise((resolve) => {
+    setImmediate(() => setImmediate(() => setImmediate(resolve)));
+  });
+}
+
+/** Render the client once with `cfg`, answering every fetch via `responder`.
+ *
+ * Most pages render once and are done, so most checks only need the returned
+ * html. A search page is not done after one render — it has to be typed into
+ * and clicked, and what it *sends* matters as much as what it draws. The
+ * optional `trace` object is filled in with that: every request the client
+ * made, where it navigated, and hooks to submit the form or choose a result.
+ */
+function run(cfg, responder, trace) {
   let html = "";
+  const t = trace || {};
+  t.calls = [];
+  const held = [];
+  const location = { pathname: "/pulse/private-office", href: "" };
+  t.location = location;
+  t.html = () => html;
+
+  // One stub node per id, reused across renders. The search box's value has to
+  // survive a re-render or the client could never read back what was typed.
+  const stubs = {};
+  function stubNode(id) {
+    if (!stubs[id]) {
+      stubs[id] = {
+        id: id, value: "", textContent: "", checked: false, handlers: {},
+        // Last handler wins. In a browser each render replaces the element, so
+        // an accumulating list here would let the harness fire a handler that
+        // belongs to markup no longer on the page.
+        addEventListener(type, fn) { this.handlers[type] = fn; },
+        // A real input can take focus and move its caret, and the client does
+        // both after every search render to keep the caret from being thrown
+        // out of the box. Without these no-ops it throws here on a path that
+        // works perfectly well in a browser.
+        focus() {}, setSelectionRange() {}
+      };
+    }
+    return stubs[id];
+  }
+
+  let rootClick = null;
   const root = {
     set innerHTML(value) { html = value; },
     get innerHTML() { return html; },
-    addEventListener() {},
+    addEventListener(type, fn) { if (type === "click") { rootClick = fn; } },
     // Tab buttons are wired by query after each render. Returning the real
     // count matters: a stub that always found nothing would make a broken
     // selector look fine here and dead in a browser.
@@ -46,36 +90,71 @@ function run(cfg, responder) {
   };
   const sandbox = {
     document: {
+      // Nothing holds focus unless a test arranges it. The client reads this to
+      // decide whether to *restore* the caret, and has to cope with either.
+      activeElement: null,
       getElementById(id) {
         if (id === "office-root") { return root; }
         // Nodes written into root by innerHTML have to be findable, or the
         // unlock form wiring throws here while working fine in a browser.
-        if (html.indexOf("id='" + id + "'") >= 0) {
-          return { addEventListener() {}, value: "", textContent: "", checked: false };
-        }
+        if (html.indexOf("id='" + id + "'") >= 0) { return stubNode(id); }
         return null;
       }
     },
     window: {
       sessionStorage: { getItem: () => "", setItem() {}, removeItem() {} },
-      location: { pathname: "/pulse/private-office" }
+      location: location
     },
-    fetch: (path) => {
-      const answer = responder(path);
-      return Promise.resolve({
+    fetch: (path, options) => {
+      const opts = options || {};
+      t.calls.push({
+        path: path,
+        method: opts.method || "GET",
+        body: opts.body ? JSON.parse(opts.body) : null
+      });
+      const answer = responder(path, opts) || {};
+      const settle = () => ({
         status: answer.status,
         json: () => Promise.resolve(answer.body)
       });
+      // `hold: true` leaves the request in flight until a test releases it, so
+      // the order two answers come back in can be chosen. Without that there is
+      // no way to prove a slow earlier search cannot overwrite a newer one.
+      if (answer.hold) {
+        return new Promise((resolve) => { held.push(() => resolve(settle())); });
+      }
+      return Promise.resolve(settle());
     },
     encodeURIComponent
   };
+
+  /** Answer the n-th held request, oldest first. */
+  t.release = (index) => { held[index](); return drain().then(() => html); };
+  /** Type `value` into the search box and submit the form, as a member would. */
+  t.submit = (value) => {
+    const box = stubNode("search-q");
+    if (value !== undefined) { box.value = value; }
+    const form = stubs["search-form"];
+    const handler = form && form.handlers.submit;
+    if (!handler) { throw new Error("the search form registered no submit handler"); }
+    handler({ preventDefault() {} });
+    return drain().then(() => html);
+  };
+  /** Click the choose button on the n-th result row. */
+  t.choose = (index) => {
+    if (!rootClick) { throw new Error("the client wired no click delegate"); }
+    rootClick({
+      target: {
+        closest: (selector) => selector === "[data-search-pick]"
+          ? { getAttribute: () => String(index) } : null
+      }
+    });
+    return drain().then(() => html);
+  };
+
   vm.createContext(sandbox);
   vm.runInContext(CORE.replace("%%CONFIG%%", JSON.stringify(cfg)), sandbox);
-  // Let the stubbed promise chain drain. Three turns covers fetch -> json ->
-  // render; the client never chains deeper than that.
-  return new Promise((resolve) => {
-    setImmediate(() => setImmediate(() => setImmediate(() => resolve(html))));
-  });
+  return drain().then(() => html);
 }
 
 const CHILDREN = [
@@ -349,6 +428,121 @@ function check(name, condition, html) {
     /value='ARTIST'/.test(html) && /value='BUSINESS'/.test(html), html);
   check("a form never renders an empty list instead of itself",
     !/Nothing here yet/.test(html), html);
+
+  /* --- searching for someone ----------------------------------------------
+     A search page has a state the list pages do not: nothing has been asked
+     yet. "not asked", "asked and nobody matched", and "could not ask" collapse
+     into the same blank screen unless the client keeps them apart, and exactly
+     one of the three is allowed to say nobody was found.
+
+     The other half of this is what the page *sends*. Choosing a result opens a
+     conversation that did not exist a moment ago, which is a write, so it must
+     happen on a click and never as a consequence of the page loading.        */
+
+  const SEARCH = {
+    mode: "search", title: "Start a chat", blurb: "b",
+    api: "/api/pulse/communications/v2/people/search",
+    search_param: "q", collection: "people", initial_query: "",
+    // The server's own threshold, not a number the client picked.
+    min_query: 2, search_prompt: "Type a name or username to begin.",
+    row: { title: "display_name", meta: ["username"] },
+    action: { api: "/api/pulse/communications/v2/direct/open",
+              from: "user_id", field: "target_user_id",
+              goto_key: "conversation_id", goto_prefix: "/pulse/messages/",
+              label: "Message", busy_label: "Opening…" }
+  };
+  // A page reached by a link that already carries the query, so the search runs
+  // on arrival and each failure mode below can be tested in one render.
+  const SEARCHED = Object.assign({}, SEARCH, { initial_query: "ada" });
+  const ADA = [{ user_id: 7, display_name: "Ada Lovelace", username: "ada" }];
+  const NOBODY = "Nobody matched";
+
+  let trace = {};
+  html = await run(SEARCH, () => ({ status: 200, body: { ok: true, people: [] } }), trace);
+  check("an unasked search invites a query instead of claiming nobody exists",
+    /Type a name or username to begin/.test(html) && !new RegExp(NOBODY).test(html), html);
+  check("an unasked search asks the server nothing",
+    trace.calls.length === 0, JSON.stringify(trace.calls));
+
+  html = await trace.submit("a");
+  check("a query shorter than the server will run says keep typing, not 'nobody'",
+    /Keep typing/.test(html) && /from 2 characters/.test(html) &&
+    !new RegExp(NOBODY).test(html), html);
+  check("a query too short to run is never sent",
+    trace.calls.length === 0, JSON.stringify(trace.calls));
+
+  html = await trace.submit("ada");
+  check("the query reaches the server under the parameter the page declared",
+    trace.calls.length === 1 && /[?&]q=ada$/.test(trace.calls[0].path),
+    JSON.stringify(trace.calls));
+  check("a search that ran and matched nobody says so in those terms",
+    new RegExp(NOBODY).test(html), html);
+
+  html = await run(SEARCHED, () => ({ status: 0, body: null }));
+  check("a transport failure is never an answer about who exists",
+    !new RegExp(NOBODY).test(html) && /could not reach PulseSoc/.test(html), html);
+
+  html = await run(SEARCHED, () => ({ status: 500, body: { ok: false, message: "boom" } }));
+  check("a server fault rules nobody out",
+    !new RegExp(NOBODY).test(html) && /boom/.test(html), html);
+
+  html = await run(SEARCHED, () => ({ status: 200, body: { ok: true } }));
+  check("a 200 that forgot its results is a fault, not an absence of people",
+    !new RegExp(NOBODY).test(html) && /Nobody has been ruled out/.test(html), html);
+
+  html = await run(SEARCHED, () => ({ status: 401, body: { ok: false } }));
+  check("a signed-out visitor is asked to sign in, not told nobody exists",
+    /Sign in/.test(html) && !new RegExp(NOBODY).test(html), html);
+
+  /* --- choosing a result is a write --------------------------------------- */
+
+  trace = {};
+  html = await run(SEARCHED, (path) => path.indexOf("/direct/open") >= 0
+    ? { status: 200, body: { ok: true, conversation_id: "c-9" } }
+    : { status: 200, body: { ok: true, people: ADA } }, trace);
+  check("a match renders with its own fields and a way to choose it",
+    /Ada Lovelace/.test(html) && /ada/.test(html) &&
+    /data-search-pick='0'/.test(html) && !new RegExp(NOBODY).test(html), html);
+  check("the query stays in the box after results arrive",
+    /value='ada'/.test(html), html);
+  check("loading a search page never opens a conversation",
+    trace.calls.every((call) => call.method === "GET") && trace.location.href === "",
+    JSON.stringify(trace.calls));
+
+  html = await trace.choose(0);
+  const opened = trace.calls.filter((call) => call.method === "POST");
+  check("choosing someone asks the server to open the chat, keyed by that person",
+    opened.length === 1 &&
+    opened[0].path === "/api/pulse/communications/v2/direct/open" &&
+    opened[0].body.target_user_id === 7, JSON.stringify(trace.calls));
+  check("the browser is sent to the conversation the server minted",
+    trace.location.href === "/pulse/messages/c-9", trace.location.href);
+
+  trace = {};
+  await run(SEARCHED, (path) => path.indexOf("/direct/open") >= 0
+    ? { status: 503, body: { ok: false } }
+    : { status: 200, body: { ok: true, people: ADA } }, trace);
+  html = await trace.choose(0);
+  check("a chat that could not be opened says nothing was started, and stays put",
+    /Nothing was started/.test(html) && /Ada Lovelace/.test(html) &&
+    trace.location.href === "", html);
+
+  /* --- a slow answer must not outrank a newer one -------------------------- */
+
+  trace = {};
+  await run(SEARCH, (path) => ({
+    status: 200, hold: true,
+    body: { ok: true, people: /q=adam$/.test(path)
+      ? [{ user_id: 2, display_name: "Adam Smith", username: "adam" }] : ADA }
+  }), trace);
+  trace.submit("ada");
+  trace.submit("adam");
+  html = await trace.release(1);
+  check("the newest search is the one that renders",
+    /Adam Smith/.test(html), html);
+  html = await trace.release(0);
+  check("a slower earlier search cannot overwrite the newer one's results",
+    /Adam Smith/.test(html) && !/Ada Lovelace/.test(html), html);
 
   console.log(failures ? "\n" + failures + " FAILED" : "\nall green");
   process.exit(failures ? 1 : 0);

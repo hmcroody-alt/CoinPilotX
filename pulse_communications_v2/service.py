@@ -66,6 +66,15 @@ def _dispatch_command_center_async(method_name: str, *args, **kwargs) -> bool:
         return False
 
 
+#: Shortest query `search_people` will actually run. Below it the search returns
+#: an empty list, which reads exactly like "no such person" -- so any surface
+#: that offers people search has to be able to say "keep typing" instead, and it
+#: can only do that if it knows the number. Named here rather than repeated at
+#: the call sites, because a second copy is a second thing to forget when the
+#: threshold moves.
+PEOPLE_SEARCH_MIN_QUERY = 2
+
+
 def _public_id(prefix: str) -> str:
     return f"{prefix}_{secrets.token_urlsafe(12)}"
 
@@ -3014,8 +3023,9 @@ def search_people(user_id: int, query: str = "", filters: dict | None = None) ->
     if disabled:
         return disabled
     query = _clean(query, 160)
-    if len(query) < 2:
-        return _ok({"people": [], "items": [], "query": query})
+    if len(query) < PEOPLE_SEARCH_MIN_QUERY:
+        return _ok({"people": [], "items": [], "query": query,
+                    "min_query": PEOPLE_SEARCH_MIN_QUERY, "searched": False})
     filters = filters or {}
     limit = max(1, min(int(filters.get("limit") or 12), 25))
     like = f"%{query.lower()}%"
@@ -3058,7 +3068,10 @@ def search_people(user_id: int, query: str = "", filters: dict | None = None) ->
                 "avatar_url": item.get("avatar_url") or "",
                 "matched_email": bool(item.get("matched_email")),
             })
-        return _ok({"people": items, "items": items, "query": query})
+        # `searched` separates "we ran it and nobody matched" from "the query was
+        # too short to run", which are the same empty list without it.
+        return _ok({"people": items, "items": items, "query": query,
+                    "min_query": PEOPLE_SEARCH_MIN_QUERY, "searched": True})
     finally:
         conn.close()
 

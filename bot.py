@@ -80539,6 +80539,150 @@ PULSE_WEB_SECTION_JS = r"""
     });
   }
 
+  /* --- searching for someone ----------------------------------------------
+     A search page has an empty state a list page does not: nothing has been
+     asked yet. Three outcomes have to stay apart or the page lies —
+
+       not asked      the box is empty, or shorter than the server will run.
+                      `CFG.min_query` is the server's own threshold, read off
+                      the endpoint's answer rather than guessed here.
+       asked, none    the search ran and matched nobody.
+       could not ask  the request failed. Never drawn as "nobody".
+
+     Choosing a result is a *write*: it opens a conversation that did not exist
+     a moment ago. So it happens on a click and never on page load, no matter
+     what the query string says. A URL that silently created a conversation
+     would be a side effect anyone could trigger by sending a link.           */
+
+  var searchSeq = 0;
+  var searchBusyId = "";
+
+  function searchUrl(query) {
+    var join = CFG.api.indexOf("?") >= 0 ? "&" : "?";
+    return CFG.api + join + encodeURIComponent(CFG.search_param || "q") +
+      "=" + encodeURIComponent(query);
+  }
+  function searchShell(query, resultsHtml, note) {
+    return panel(CFG.title,
+      "<p>" + esc(CFG.blurb) + "</p>" +
+      "<form id='search-form' role='search'><p>" +
+      "<label for='search-q'>" + esc(CFG.search_label || "Search") + "</label>" +
+      "<input type='search' id='search-q' autocomplete='off' value='" + esc(query) + "'" +
+      (CFG.search_placeholder ? " placeholder='" + esc(CFG.search_placeholder) + "'" : "") +
+      "><button type='submit'>" + esc(CFG.search_action || "Search") + "</button></p></form>" +
+      (note ? "<p role='status'>" + esc(note) + "</p>" : "") +
+      "<div id='search-results'>" + (resultsHtml || "") + "</div>",
+      backLink(true));
+  }
+  function searchRows(items) {
+    if (!items.length) { return ""; }
+    return "<ul class='grid office-list'>" + items.map(function (item, index) {
+      var spec = CFG.row || {};
+      var heading = String(pick(item, spec.title) || headingOf(item));
+      var bits = [];
+      (spec.meta || []).forEach(function (path) {
+        var value = pick(item, path);
+        if (isScalar(value) && value !== null && value !== "") { bits.push(String(value)); }
+      });
+      var key = String(pick(item, (CFG.action || {}).from || "id") || "");
+      var busyThis = searchBusyId && searchBusyId === key;
+      return "<li class='card'><h3>" + esc(heading) + "</h3>" +
+        (bits.length ? "<p class='muted'>" + esc(bits.join(" · ")) + "</p>" : "") +
+        "<p><button type='button' data-search-pick='" + esc(String(index)) + "'" +
+        (searchBusyId ? " disabled" : "") + ">" +
+        esc(busyThis ? (CFG.action || {}).busy_label || "Opening…"
+                     : (CFG.action || {}).label || "Choose") +
+        "</button></p></li>";
+    }).join("") + "</ul>";
+  }
+  function renderSearch(query, resultsHtml, note) {
+    // Whether the member was typing when this render happened. Every render
+    // replaces the input element, so without this the caret jumps out of the
+    // box the moment results arrive and the next keystroke goes nowhere.
+    var hadFocus = document.activeElement &&
+      document.activeElement.id === "search-q";
+    show(searchShell(query, resultsHtml, note));
+    var form = document.getElementById("search-form");
+    if (form) {
+      form.addEventListener("submit", function (event) {
+        event.preventDefault();
+        var box = document.getElementById("search-q");
+        runSearch(box ? box.value : "");
+      });
+    }
+    var input = document.getElementById("search-q");
+    if (input && (hadFocus || !searchOpened)) {
+      searchOpened = true;
+      input.focus();
+      try { input.setSelectionRange(query.length, query.length); } catch (e) { /* type=search */ }
+    }
+  }
+  // Focus is taken once, on arrival, the way the native screen autofocuses its
+  // box. After that it is only ever *restored*, so a result list rendering
+  // underneath never yanks the page back to the top.
+  var searchOpened = false;
+  function runSearch(raw) {
+    var query = String(raw || "").trim();
+    var min = Number(CFG.min_query || 0);
+    if (query.length < min) {
+      renderSearch(query, "", query
+        ? "Keep typing — PulseSoc searches from " + min + " characters."
+        : (CFG.search_prompt || "Type a name to begin."));
+      return;
+    }
+    var sequence = ++searchSeq;
+    renderSearch(query, "", "Searching…");
+    api(searchUrl(query)).then(function (res) {
+      // A slower earlier search must never overwrite a newer one's results.
+      if (sequence !== searchSeq) { return; }
+      if (res.status === 401) { signedOut(); return; }
+      if (res.status === 0) {
+        renderSearch(query, "", "We could not reach PulseSoc just now. " +
+          "This is not an answer about who exists.");
+        return;
+      }
+      var body = res.body || {};
+      var items = body[CFG.collection];
+      if (res.status >= 400 || body.ok === false || !Array.isArray(items)) {
+        renderSearch(query, "", body.message || body.error ||
+          "PulseSoc could not run that search. Nobody has been ruled out.");
+        return;
+      }
+      lastSearch = items;
+      renderSearch(query, searchRows(items), items.length ? "" :
+        "Nobody matched that. PulseSoc ran the search — check the spelling, or try their username.");
+    });
+  }
+  var lastSearch = [];
+
+  function pickResult(index) {
+    var item = lastSearch[index];
+    var action = CFG.action || {};
+    if (!item || !action.api || searchBusyId) { return; }
+    var key = pick(item, action.from || "id");
+    if (!key) { return; }
+    searchBusyId = String(key);
+    var box = document.getElementById("search-q");
+    var query = box ? box.value : "";
+    renderSearch(query, searchRows(lastSearch), "");
+    var payload = {};
+    payload[action.field || "id"] = key;
+    api(action.api, { method: "POST", body: payload }).then(function (res) {
+      searchBusyId = "";
+      var body = res.body || {};
+      if (res.status === 401) { signedOut(); return; }
+      var target = action.goto_key ? body[action.goto_key] : "";
+      if (res.status === 0 || res.status >= 400 || body.ok === false || !target) {
+        renderSearch(query, searchRows(lastSearch), body.message || body.error ||
+          (res.status === 0
+            ? "We could not reach PulseSoc just now. Nothing was started."
+            : "That could not be opened. Nothing was started."));
+        return;
+      }
+      window.location.href = (action.goto_prefix || "") + encodeURIComponent(target);
+    });
+  }
+
   /* --- security ---------------------------------------------------------- */
 
   function renderSecurity() {
@@ -80571,10 +80715,15 @@ PULSE_WEB_SECTION_JS = r"""
     else if (CFG.mode === "security") { renderSecurity(); }
     else if (CFG.mode === "record") { renderRecord(); }
     else if (CFG.mode === "form") { renderForm(""); }
+    else if (CFG.mode === "search") { runSearch(CFG.initial_query || ""); }
     else { renderSection(); }
   }
   root.addEventListener("click", function (event) {
-    var button = event.target.closest && event.target.closest("[data-office-retry]");
+    var target = event.target;
+    if (!target.closest) { return; }
+    var choice = target.closest("[data-search-pick]");
+    if (choice) { pickResult(Number(choice.getAttribute("data-search-pick"))); return; }
+    var button = target.closest("[data-office-retry]");
     if (button) { start(); }
   });
   start();
@@ -81008,6 +81157,154 @@ def pulse_activity_category_page(category):
     if category == "all":
         return pulse_activity_page_response("Activity")
     return pulse_activity_page_response(known[category] + " activity", category)
+
+
+# --- Presence ---------------------------------------------------------------
+#
+# `PresenceHubScreen` says of itself: "Underneath it is the canonical Page OS
+# (`/api/pages/*`): this screen creates and lists pages, it does not own a second
+# backend, social graph or permission engine." So neither does this. It is the
+# same endpoint `/pulse/pages` reads, with Presence's framing over it, and rows
+# open the Page pages that already exist.
+#
+# It is a second page rather than a redirect to `/pulse/pages` because the app
+# ships both -- `Presence` and `PagesHub` are two registered screens with two
+# published URLs -- and collapsing them on the web would be the web deciding the
+# product has one door where it has two.
+
+PULSE_PRESENCE_BLURB = (
+    "Your public identities on PulseSoc — an artist, brand, organization or "
+    "business you run. Your personal account stays exactly as it is."
+)
+
+
+@webhook_app.route("/pulse/presence", methods=["GET"])
+def pulse_presence_page():
+    blocked = pulse_web_section_guard()
+    if blocked:
+        return blocked
+    return pulse_web_section_shell(
+        "Presence", PULSE_PRESENCE_BLURB,
+        {"mode": "section", "title": "Presence", "blurb": PULSE_PRESENCE_BLURB,
+         "api": "/api/pages", "collection": "pages",
+         # `page_type` as the status pill rather than `status`: on this screen
+         # the question a member is answering is "which of my identities is
+         # this", and the app leads with the type for the same reason.
+         "row": {"title": "name", "status": "page_type", "href": "handle",
+                 "href_prefix": "/pulse/pages/", "meta": ["handle", "role"]},
+         "empty": "You have not created a Presence yet.",
+         "signed_out": "Your presences are only visible while you are signed in.",
+         "back": ["/pulse/pages/create", "Create a Presence"]},
+    )
+
+
+# --- Seller / Store ---------------------------------------------------------
+#
+# `/pulse/seller-store` is published by the app but is not a page on the web. The
+# native `SellerStoreScreen` is one screen that shows a different subset of seven
+# panels per `mode`; the web already split those same panels across pages that
+# have existed for years -- application, dashboard, payouts, listing composer.
+#
+# So this is a router, not a surface. Building a web Seller Store would mean a
+# second merchant console with its own opinion of a seller's status, which is
+# exactly the drift this work exists to remove. `sellerStoreWebUrl()` in
+# `mobile-native/src/api/marketplace.ts` already sends members to these same
+# pages; this makes the app's other published URL agree with it.
+#
+# `tests/web_surface/test_seller_store_router.py` reads both TypeScript files and
+# fails if a mode is added, renamed, or pointed somewhere else.
+
+#: Every mode in `sellerStoreMode.ts`, mapped to the web page holding that mode's
+#: panels. `orders` and `overview` are the two the app's own `sellerStoreWebUrl`
+#: does not name: `orders` shows the `orders` panel, which on the web lives on
+#: the payouts page beside the transactions it is about, and `overview` is the
+#: everything-at-once view, whose nearest web equivalent is the dashboard that
+#: links to all the others.
+PULSE_SELLER_STORE_MODES = {
+    "overview": "/pulse/merchant/dashboard",
+    "dashboard": "/pulse/merchant/dashboard",
+    "apply": "/pulse/merchant/apply",
+    "create": "/pulse/marketplace/create",
+    "payouts": "/pulse/merchant/payouts",
+    "orders": "/pulse/merchant/payouts",
+    # `profile` is the one mode that depends on a parameter; see below.
+    "profile": "/pulse/merchant/dashboard",
+}
+
+
+@webhook_app.route("/pulse/seller-store", methods=["GET"])
+def pulse_seller_store_router():
+    mode = str(request.args.get("mode") or "").strip().lower()
+    seller_id = str(request.args.get("sellerId")
+                    or request.args.get("seller_id") or "").strip()
+    # A mode the app does not have falls to the same place the app falls to:
+    # `sellerStorePanels` answers ALL_PANELS for anything unknown, and
+    # `sellerStoreWebUrl` returns the dashboard. Refusing with a 404 would turn a
+    # stale link into a dead end instead of a working store.
+    if mode == "profile" and seller_id:
+        return redirect("/pulse/merchant/" + quote(seller_id, safe=""), code=302)
+    return redirect(PULSE_SELLER_STORE_MODES.get(mode, "/pulse/merchant/dashboard"),
+                    code=302)
+
+
+# --- Start a chat -----------------------------------------------------------
+#
+# `NewChatScreen` searches people and opens a direct conversation with whoever is
+# chosen. Both halves are existing endpoints -- `/people/search` and
+# `/direct/open` on the communications v2 blueprint -- so the web asks the same
+# two questions the app asks, in the same order.
+#
+# What it deliberately does not do is act on `targetUserId`. `linking.ts` declares
+# the parameter and the native screen never reads it, and opening a conversation
+# is a write: a URL that created one on load would be a side effect anybody could
+# trigger by sending a link. The choice stays a click.
+
+
+@webhook_app.route("/pulse/messages/new", methods=["GET"])
+def pulse_new_chat_page():
+    blocked = pulse_web_section_guard()
+    if blocked:
+        return blocked
+    # The messenger is an optional route pack, registered inside an
+    # `except Exception` like every other one, so on a deployment where it failed
+    # to load neither endpoint below exists. Serving the page anyway would put a
+    # search box in front of a member that can only ever fail. A 404 is the
+    # truthful answer: this PulseSoc is not running a messenger.
+    try:
+        from pulse_communications_v2 import service as comm_v2_service
+    except Exception:
+        abort(404)
+    if "pulse_communications_v2.search_people" not in webhook_app.view_functions:
+        abort(404)
+    # `initialQuery` is the name `linking.ts` publishes; `q` is what a person
+    # typing in the address bar would reach for. Both mean the same thing.
+    initial = str(request.args.get("initialQuery")
+                  or request.args.get("q") or "").strip()[:160]
+    blurb = ("Find someone on PulseSoc and start a conversation. Choosing a "
+             "person opens a chat with them.")
+    return pulse_web_section_shell(
+        "Start a chat", blurb,
+        {"mode": "search", "title": "Start a chat", "blurb": blurb,
+         "api": "/api/pulse/communications/v2/people/search",
+         "search_param": "q", "collection": "people",
+         "initial_query": initial,
+         # The server's own threshold, imported rather than retyped, so the page
+         # can say "keep typing" instead of showing a short query an empty list
+         # that reads as "no such person".
+         "min_query": comm_v2_service.PEOPLE_SEARCH_MIN_QUERY,
+         "search_label": "Name or username",
+         "search_placeholder": "Name or username",
+         "search_action": "Search",
+         "search_prompt": "Type a name or username to begin.",
+         "row": {"title": "display_name", "meta": ["username"]},
+         "action": {"api": "/api/pulse/communications/v2/direct/open",
+                    "from": "user_id", "field": "target_user_id",
+                    "goto_key": "conversation_id",
+                    "goto_prefix": "/pulse/messages/",
+                    "label": "Message", "busy_label": "Opening…"},
+         "signed_out": "Sign in to start a conversation.",
+         "back": ["/pulse/messages", "Your messages"]},
+    )
 
 
 @webhook_app.route("/admin/premium-command", methods=["GET", "POST"])
