@@ -50,8 +50,14 @@ REPO = census.REPO
 FRAMEWORK_RULES = {"/static/<path:filename>"}
 
 # Deep links that currently 404 on the web. Lower this as gaps close; the gate
-# fails if it rises. Measured 2026-09-08 against the live url_map.
-BROKEN_DEEP_LINK_BUDGET = 28
+# fails if it rises. Measured 2026-09-08 against the live url_map, after the
+# Private Office web surface took ten of them.
+#
+# One of the seventeen -- `/pulse/calls/:callId?` -- is not a gap to close.
+# A web call surface would be a second real-time audio publication path, which
+# `docs/realtime_audio_change_policy.md` forbids outright, so this number
+# cannot honestly reach zero by building. It is BLOCKED, not pending.
+BROKEN_DEEP_LINK_BUDGET = 17
 
 
 def boot_app():

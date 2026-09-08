@@ -9,9 +9,9 @@ using Werkzeug's own matcher, so a BROKEN row means no rule exists at all —
 not that the visitor was signed out.
 
 - Deep-link paths: **111**
-- Resolve on the web: **76**
-- Hub served, item links 404: **7**
-- No web surface at all: **28**
+- Resolve on the web: **86**
+- Hub served, item links 404: **8**
+- No web surface at all: **17**
 
 ## Broken share links (no web surface)
 
@@ -29,17 +29,6 @@ not that the visitor was signed out.
 | `/pulse/pages` | PagesHub |
 | `/pulse/pages/:handle` | Page |
 | `/pulse/undx/actions` | UndxActionCenter |
-| `/pulse/private-office` | PrivateOffice |
-| `/pulse/private-office/facts` | PrivateFacts |
-| `/pulse/private-office/security` | PrivateOfficeSecurity |
-| `/pulse/private-office/documents` | PrivateDocuments |
-| `/pulse/private-office/people` | PrivatePeople |
-| `/pulse/private-office/briefings` | PrivateBriefings |
-| `/pulse/private-office/shield` | PrivateShield |
-| `/pulse/private-office/concierge` | PrivateConcierge |
-| `/pulse/private-office/:view` | PrivateOperations |
-| `/pulse/private-office/capital-graph` | CapitalGraph |
-| `/pulse/private-office/capital-graph/:id` | CapitalEntity |
 | `/pulse/account-health` | AccountHealth |
 | `/pulse/activity/:category?` | ActivityInbox |
 | `/pulse/inbox` | ActivityInboxLegacyInbox |
@@ -57,6 +46,7 @@ Browsing works; sharing a specific item does not. Either the web needs the detai
 | `/pulse/marketplace/:listingId` | MarketplaceDetail |
 | `/pulse/events/:eventId` | EventDetail |
 | `/pulse/intelligence/:subsystem?` | IntelligenceCenter |
+| `/pulse/private-office/:view` | PrivateOperations |
 | `/pulse/settings/:section` | AccountCenter |
 | `/scam-shield/:mode?` | ScamShield |
 
@@ -122,6 +112,16 @@ Browsing works; sharing a specific item does not. Either the web needs the detai
 | `/pulse/portfolio` | Portfolio |
 | `/pulse/watchlists` | Watchlists |
 | `/pulse/crypto` | MarketPulse |
+| `/pulse/private-office` | PrivateOffice |
+| `/pulse/private-office/facts` | PrivateFacts |
+| `/pulse/private-office/security` | PrivateOfficeSecurity |
+| `/pulse/private-office/documents` | PrivateDocuments |
+| `/pulse/private-office/people` | PrivatePeople |
+| `/pulse/private-office/briefings` | PrivateBriefings |
+| `/pulse/private-office/shield` | PrivateShield |
+| `/pulse/private-office/concierge` | PrivateConcierge |
+| `/pulse/private-office/capital-graph` | CapitalGraph |
+| `/pulse/private-office/capital-graph/:id` | CapitalEntity |
 | `/dashboard/account/settings` | AccountSettings |
 | `/dashboard/account/security` | AccountSecurity |
 | `/account/settings` | AccountWebSettings |

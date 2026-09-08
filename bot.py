@@ -79498,6 +79498,616 @@ def pulse_creator_analytics_page():
     return pulse_social_shell("Creator Analytics", "Premium analytics previews grounded in real PulseSoc activity, never fake performance claims.", body)
 
 
+# ---------------------------------------------------------------------------
+# Private Office — the web surface
+#
+# `mobile-native/src/navigation/linking.ts` publishes eleven
+# `https://pulsesoc.com/pulse/private-office/...` universal links, and until now
+# every single one of them 404'd. The subsystem had 88 API endpoints and
+# thirteen native screens and no web page at all: a member who shared anything
+# from inside the Office handed the recipient a dead link, and a member who
+# opened pulsesoc.com simply did not have an Office.
+#
+# These pages are deliberately thin. Every entitlement question — does this
+# member have the Office, which children open, why a child does not open,
+# whether the second lock is engaged — is answered by
+# `/api/private-office/overview`, the same endpoint `PrivateOfficeScreen`
+# consumes. Nothing here recomputes any of it. That is the entire point.
+# `PrivateOfficeScreen`'s own docstring explains why it refuses to keep a local
+# capability list: it "would also be a second authority on what exists, and the
+# first time a capability ships or is killed the two would disagree — with the
+# client winning, because the client is what the member sees." A server-rendered
+# web copy of that logic would be a third authority, and the worst kind, because
+# it would look the most official.
+#
+# So the markup is a shell and the state arrives over the wire. The only local
+# tables are copy and destinations, exactly as on native, and a capability
+# missing from the destination table renders as an untappable row rather than a
+# link into a page that does not exist.
+#
+# Meetings are absent on purpose, and not quietly. `private_meetings` resolves
+# to TEMPORARILY_DISABLED at every tier including PRIVATE_OFFICE, so the server
+# already refuses it and the hub draws it as a disabled row with the server's
+# own reason. Building a web meeting room would also mean a second real-time
+# audio publication path, which `docs/realtime_audio_change_policy.md` forbids
+# outright. It is recorded as BLOCKED in the parity report rather than counted
+# as a gap someone should close.
+# ---------------------------------------------------------------------------
+
+#: The six operations record views. Mirrors `RECORD_VIEWS` in
+#: `services/private_office/retrieval.py`; `/api/private-office/records/<view>`
+#: 400s on anything else, so the URL space is closed with an `any(...)`
+#: converter rather than a catch-all that would render an empty page for junk.
+PRIVATE_OFFICE_RECORD_VIEWS = (
+    "obligations", "events", "decisions", "requests", "risks", "opportunities",
+)
+
+#: feature id -> (label, web destination or None).
+#:
+#: A ``None`` destination is a capability with no web page. It still renders —
+#: the member is told it exists and why it is shut — but it never becomes a
+#: link. That is the native `DESTINATIONS` rule: a missing destination is a
+#: client bug, and "the honest failure is a row that does not move rather than
+#: a tap into a screen that is not registered."
+PRIVATE_OFFICE_CHILDREN = (
+    ("private_facts", "Facts", "/pulse/private-office/facts"),
+    ("private_office.document.extraction", "Documents", "/pulse/private-office/documents"),
+    ("relationship_intelligence", "People", "/pulse/private-office/people"),
+    ("private_briefings", "Briefings", "/pulse/private-office/briefings"),
+    ("private_office.operations", "Operations", "/pulse/private-office/obligations"),
+    ("capital_graph", "Capital Graph", "/pulse/private-office/capital-graph"),
+    ("private_shield", "Shield", "/pulse/private-office/shield"),
+    ("private_shield.breach_monitoring", "Breach Monitoring", None),
+    ("human_concierge", "Concierge", "/pulse/private-office/concierge"),
+    ("private_meetings", "Meetings", None),
+)
+
+#: section key -> render config. ``collection`` names the array the endpoint
+#: returns; when it is absent from an otherwise-successful response the page
+#: says so instead of drawing an empty list, because an unreadable store is not
+#: an empty store.
+PRIVATE_OFFICE_SECTIONS = {
+    "facts": {
+        "title": "Facts",
+        "blurb": "The private fact store. Every row is something you recorded or approved.",
+        "api": "/api/private-office/facts",
+        "collection": "facts",
+    },
+    "documents": {
+        "title": "Documents",
+        "blurb": "Documents held in the Office, and the facts extracted from them.",
+        "api": "/api/private-office/documents",
+        "collection": "documents",
+    },
+    "people": {
+        "title": "People",
+        "blurb": "Relationship intelligence: who is connected to what you hold.",
+        "api": "/api/private-office/relationships",
+        "collection": "people",
+    },
+    "briefings": {
+        "title": "Briefings",
+        "blurb": "Prepared briefings drawn from your own records.",
+        "api": "/api/private-office/briefings",
+        "collection": "briefings",
+    },
+    "shield": {
+        "title": "Shield",
+        "blurb": "Exposure posture and findings.",
+        "api": "/api/private-office/shield/findings",
+        "collection": "findings",
+    },
+    "concierge": {
+        "title": "Concierge",
+        "blurb": "Requests handled by a person, not a model.",
+        "api": "/api/private-office/concierge",
+        "collection": "requests",
+    },
+}
+
+
+PRIVATE_OFFICE_WEB_JS = r"""
+(function () {
+  "use strict";
+  var CFG = %%CONFIG%%;
+  // The unlock grant is bounded (15 minutes by default) and bound to this
+  // session, so it is worthless in another tab-session or to another account.
+  // sessionStorage rather than localStorage so closing the tab ends it too.
+  var GRANT_KEY = "pulse.office.grant";
+  var root = document.getElementById("office-root");
+  if (!root) { return; }
+
+  function esc(value) {
+    return String(value === null || value === undefined ? "" : value)
+      .replace(/[&<>"']/g, function (ch) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch];
+      });
+  }
+  function grant() {
+    try { return window.sessionStorage.getItem(GRANT_KEY) || ""; } catch (e) { return ""; }
+  }
+  function setGrant(token) {
+    try {
+      if (token) { window.sessionStorage.setItem(GRANT_KEY, token); }
+      else { window.sessionStorage.removeItem(GRANT_KEY); }
+    } catch (e) { /* private browsing: the member just unlocks again */ }
+  }
+
+  function api(path, options) {
+    var opts = options || {};
+    var headers = { "Accept": "application/json" };
+    var token = grant();
+    if (token) { headers["X-Office-Grant"] = token; }
+    if (opts.body) { headers["Content-Type"] = "application/json"; }
+    return fetch(path, {
+      method: opts.method || "GET",
+      credentials: "same-origin",
+      headers: headers,
+      body: opts.body ? JSON.stringify(opts.body) : undefined
+    }).then(function (res) {
+      return res.json().then(function (body) {
+        return { status: res.status, body: body };
+      }, function () {
+        return { status: res.status, body: null };
+      });
+    }, function () {
+      // A transport failure is not an empty result. status 0 is rendered as an
+      // error further down; it must never fall through to "you have nothing".
+      return { status: 0, body: null };
+    });
+  }
+
+  function panel(title, bodyHtml, actionsHtml) {
+    return "<article class='card'><h2>" + esc(title) + "</h2>" + bodyHtml +
+      (actionsHtml || "") + "</article>";
+  }
+  function show(html) { root.innerHTML = html; }
+  function busy(label) {
+    show(panel(label || CFG.title, "<p>Loading…</p>"));
+  }
+  function retryButton(label) {
+    return "<p><button type='button' data-office-retry>" +
+      esc(label || "Try again") + "</button></p>";
+  }
+  function errorPanel(title, message) {
+    show(panel(title, "<p>" + esc(message) + "</p>", retryButton()));
+  }
+  function signedOut() {
+    show(panel("Sign in", "<p>Your Private Office is only reachable while you are signed in.</p>",
+      "<p><a class='button' href='/login?next=" +
+      encodeURIComponent(window.location.pathname) + "'>Sign in</a></p>"));
+  }
+
+  /* --- honest generic rendering -----------------------------------------
+     These pages render the API's own response rather than a hand-written
+     mirror of it. A field we did not anticipate shows up as a labelled row
+     instead of being dropped, and a collection the endpoint stopped
+     returning reads as an explicit fault instead of an empty list.        */
+
+  var HIDE_KEYS = { ok: 1, message: 1, state: 1, limit: 1, offset: 1, count: 1 };
+  var TITLE_KEYS = ["title", "name", "label", "subject", "headline", "summary",
+                    "question", "display_name", "document_name", "filename", "view"];
+
+  function humanise(key) {
+    return String(key).replace(/[_.]/g, " ").replace(/\b\w/g, function (c) {
+      return c.toUpperCase();
+    });
+  }
+  // Tier ids arrive as PRIVATE_OFFICE. Passed through humanise() unchanged they
+  // stay upper case, and the upgrade line shouts "Included with PRIVATE OFFICE".
+  function tierName(tier) { return humanise(String(tier || "").toLowerCase()); }
+  function isScalar(v) {
+    return v === null || ["string", "number", "boolean"].indexOf(typeof v) >= 0;
+  }
+  function scalarText(v) {
+    if (v === null || v === "") { return "—"; }
+    if (v === true) { return "Yes"; }
+    if (v === false) { return "No"; }
+    return String(v);
+  }
+  function itemCard(item) {
+    if (isScalar(item)) { return "<li>" + esc(scalarText(item)) + "</li>"; }
+    if (!item || typeof item !== "object") { return ""; }
+    var heading = "";
+    for (var i = 0; i < TITLE_KEYS.length; i++) {
+      var candidate = item[TITLE_KEYS[i]];
+      if (typeof candidate === "string" && candidate.trim()) {
+        heading = candidate.trim();
+        break;
+      }
+    }
+    if (!heading) { heading = item.id ? "#" + item.id : "Record"; }
+    var rows = "";
+    Object.keys(item).forEach(function (key) {
+      var value = item[key];
+      if (!isScalar(value)) { return; }
+      if (typeof value === "string" && value.trim() === heading) { return; }
+      if (HIDE_KEYS[key]) { return; }
+      rows += "<div><dt>" + esc(humanise(key)) + "</dt><dd>" +
+        esc(scalarText(value)) + "</dd></div>";
+    });
+    return "<li class='card'><h3>" + esc(heading) + "</h3>" +
+      (rows ? "<dl>" + rows + "</dl>" : "") + "</li>";
+  }
+  function collectionHtml(items) {
+    if (!items.length) {
+      return "<p>Nothing here yet. This is an empty Office, not a failed one — " +
+        "we reached the store and it had no rows.</p>";
+    }
+    return "<ul class='grid office-list'>" + items.map(itemCard).join("") + "</ul>";
+  }
+  function scalarsHtml(body, skip) {
+    var rows = "";
+    Object.keys(body || {}).forEach(function (key) {
+      if (skip && skip[key]) { return; }
+      if (HIDE_KEYS[key]) { return; }
+      var value = body[key];
+      if (isScalar(value)) {
+        rows += "<div><dt>" + esc(humanise(key)) + "</dt><dd>" +
+          esc(scalarText(value)) + "</dd></div>";
+      } else if (Array.isArray(value) && value.length) {
+        rows += "<div><dt>" + esc(humanise(key)) + "</dt><dd>" +
+          collectionHtml(value) + "</dd></div>";
+      }
+    });
+    return rows ? "<dl>" + rows + "</dl>" : "";
+  }
+  function providerNote(body) {
+    var status = body && body.provider_status;
+    if (!status || status === "ready" || status === "ok") { return ""; }
+    return "<p class='muted'>Data provider: " + esc(humanise(status)) +
+      ". Anything an unconnected provider would have told us is missing, not clear.</p>";
+  }
+
+  /* --- shared refusal handling ------------------------------------------ */
+
+  // Returns true when it has already rendered a terminal state.
+  function handledRefusal(res, title) {
+    if (res.status === 0) {
+      errorPanel(title, "We could not reach PulseSoc just now.");
+      return true;
+    }
+    if (res.status === 401) { signedOut(); return true; }
+    var body = res.body || {};
+    if (body.locked || res.status === 423) {
+      renderLocked(!!body.setup_required);
+      return true;
+    }
+    if (res.status === 403) {
+      show(panel(title,
+        "<p>" + esc(body.message || "This part of the Office is not open to your account.") + "</p>",
+        "<p><a class='button' href='/pulse/private-office'>Back to the Office</a></p>"));
+      return true;
+    }
+    if (res.status >= 500 || body.state === "unavailable") {
+      errorPanel(title, body.message ||
+        "We could not load your information just now. Your records are not gone — we could not read them.");
+      return true;
+    }
+    // `ok` on the overview is the *resolver's* confidence, not the request's:
+    // a degraded resolve answers 200 with ok:false and a real ENTRY_UNKNOWN
+    // product state. Swallowing that here would throw away the one distinction
+    // the server took the most trouble to make, so a payload carrying a product
+    // state is handed back to the hub to render.
+    if ((!body || body.ok === false) && !(body && body.private_office)) {
+      errorPanel(title, (body && body.message) ||
+        "We could not load this just now.");
+      return true;
+    }
+    return false;
+  }
+
+  /* --- the second lock --------------------------------------------------- */
+
+  function renderLocked(setupRequired) {
+    var heading = setupRequired ? "Set an Office passcode" : "Your Office is locked";
+    var blurb = setupRequired
+      ? "Your Private Office is protected by a passcode separate from your PulseSoc password. Set one to continue."
+      : "Enter your Office passcode to continue. This is separate from your PulseSoc password.";
+    var fields = "<label>Passcode <input type='password' id='office-passcode' " +
+      "autocomplete='off' inputmode='numeric'></label>";
+    if (setupRequired) {
+      fields += "<label>Confirm passcode <input type='password' id='office-passcode-confirm' " +
+        "autocomplete='off' inputmode='numeric'></label>";
+    }
+    show(panel(heading,
+      "<p>" + esc(blurb) + "</p><form id='office-unlock'>" + fields +
+      "<p><button type='submit'>" + (setupRequired ? "Set passcode" : "Unlock") +
+      "</button></p><p id='office-unlock-error' role='alert'></p></form>"));
+
+    var form = document.getElementById("office-unlock");
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      var note = document.getElementById("office-unlock-error");
+      var passcode = (document.getElementById("office-passcode") || {}).value || "";
+      note.textContent = "";
+      if (setupRequired) {
+        var confirmValue = (document.getElementById("office-passcode-confirm") || {}).value || "";
+        api("/api/private-office/security/setup", {
+          method: "POST",
+          body: { passcode: passcode, confirm_passcode: confirmValue }
+        }).then(function (res) {
+          if (res.status === 201) { start(); return; }
+          var body = res.body || {};
+          note.textContent = body.error === "confirm_mismatch"
+            ? "Those two passcodes do not match."
+            : (body.message || "We could not set that passcode.");
+        });
+        return;
+      }
+      api("/api/private-office/security/unlock", {
+        method: "POST", body: { passcode: passcode }
+      }).then(function (res) {
+        var body = res.body || {};
+        if (res.status === 200 && body.grant_token) {
+          setGrant(body.grant_token);
+          start();
+          return;
+        }
+        if (res.status === 429) {
+          note.textContent = "Too many attempts. Try again in " +
+            (body.retry_after_seconds || 0) + " seconds.";
+          return;
+        }
+        note.textContent = body.message || "That passcode was not correct.";
+      });
+    });
+  }
+
+  /* --- the hub ----------------------------------------------------------- */
+
+  var REASON_COPY = {
+    PROVIDER_REQUIRED: "Needs an outside data provider that is not connected. " +
+      "Nothing is being monitored on your behalf yet.",
+    NOT_IMPLEMENTED: "Not built yet.",
+    TEMPORARILY_DISABLED: "Temporarily switched off.",
+    UPGRADE_REQUIRED: ""
+  };
+
+  function childRow(child, label, href) {
+    var opens = !!child.opens;
+    var note = "";
+    if (!opens) {
+      note = REASON_COPY[child.reason];
+      if (child.reason === "UPGRADE_REQUIRED") {
+        note = "Included with " + tierName(child.minimum_tier) + ".";
+      }
+      if (note === undefined || note === null) { note = ""; }
+    }
+    // `opens` is the only question a tile asks. A row without a web page stays
+    // untappable even when the server says it opens, because the honest
+    // failure is a row that does not move.
+    if (opens && href) {
+      return "<li class='card'><h3><a href='" + esc(href) + "'>" + esc(label) + "</a></h3></li>";
+    }
+    var why = opens
+      ? "Available in the PulseSoc app. No web page for this one yet."
+      : note;
+    return "<li class='card office-shut'><h3>" + esc(label) + "</h3>" +
+      (why ? "<p>" + esc(why) + "</p>" : "") + "</li>";
+  }
+
+  function renderHub() {
+    busy("Private Office");
+    api("/api/private-office/overview").then(function (res) {
+      if (handledRefusal(res, "Private Office")) { return; }
+      var body = res.body || {};
+      var product = body.private_office || {};
+
+      // A degraded resolve is not "you do not have this". Saying so to the one
+      // member most likely to have paid for it is the worst available answer.
+      if (product.state === "ENTRY_UNKNOWN") {
+        show(panel("Private Office",
+          "<p>We could not confirm your Office access just now. This is our problem, " +
+          "not a statement about your account.</p>", retryButton("Check again")));
+        return;
+      }
+
+      var byId = {};
+      (product.available || []).concat(product.unavailable || []).forEach(function (child) {
+        byId[child.feature_id] = child;
+      });
+
+      var rows = CFG.children.map(function (entry) {
+        var child = byId[entry[0]];
+        if (!child) { return ""; }
+        return childRow(child, entry[1], entry[2]);
+      }).join("");
+
+      var head = "";
+      if (product.state === "ENTRY_UPGRADE_REQUIRED" && product.upgrade_tier) {
+        head = "<p>Your Private Office opens with " +
+          esc(tierName(product.upgrade_tier)) + ".</p>";
+      }
+      var domains = body.domains && body.domains.length
+        ? "<h2>Your records</h2>" + collectionHtml(body.domains) : "";
+
+      show(panel("Private Office", head + "<ul class='grid office-list'>" + rows + "</ul>") +
+        (domains ? "<article class='card'>" + domains + "</article>" : "") +
+        "<article class='card'><h2>Security</h2><p>Your Office passcode and locked " +
+        "sessions.</p><p><a class='button' href='/pulse/private-office/security'>" +
+        "Office security</a></p></article>");
+    });
+  }
+
+  /* --- a list section ---------------------------------------------------- */
+
+  function renderSection() {
+    busy(CFG.title);
+    api(CFG.api).then(function (res) {
+      if (handledRefusal(res, CFG.title)) { return; }
+      var body = res.body || {};
+      var items = CFG.collection ? body[CFG.collection] : null;
+      if (CFG.collection && !Array.isArray(items)) {
+        // Success that does not contain the collection is a contract change,
+        // not an empty Office. Never draw confident zeros over real data.
+        errorPanel(CFG.title,
+          "PulseSoc answered, but not with the records this page expects. " +
+          "Nothing has been lost — this page cannot read the answer.");
+        return;
+      }
+      var extra = scalarsHtml(body, CFG.collection ? mkSkip(CFG.collection) : null);
+      show(panel(CFG.title,
+        "<p>" + esc(CFG.blurb) + "</p>" + providerNote(body) +
+        (CFG.collection ? collectionHtml(items) : "") + extra,
+        "<p><a class='button' href='/pulse/private-office'>Back to the Office</a></p>"));
+    });
+  }
+  function mkSkip(key) { var s = {}; s[key] = 1; s.provider_status = 1; return s; }
+
+  /* --- security ---------------------------------------------------------- */
+
+  function renderSecurity() {
+    busy("Office security");
+    api("/api/private-office/security/status").then(function (res) {
+      if (handledRefusal(res, "Office security")) { return; }
+      var body = res.body || {};
+      if (body.setup_required) { renderLocked(true); return; }
+      var actions = body.unlocked
+        ? "<p><button type='button' id='office-lock'>Lock now</button></p>"
+        : "<p><a class='button' href='/pulse/private-office'>Unlock the Office</a></p>";
+      show(panel("Office security",
+        "<p>Your Office passcode is separate from your PulseSoc password.</p>" +
+        scalarsHtml(body, { setup_required: 1 }), actions +
+        "<p><a href='/pulse/private-office'>Back to the Office</a></p>"));
+      var lock = document.getElementById("office-lock");
+      if (lock) {
+        lock.addEventListener("click", function () {
+          api("/api/private-office/security/lock", { method: "POST", body: {} })
+            .then(function () { setGrant(""); renderSecurity(); });
+        });
+      }
+    });
+  }
+
+  /* --- entry ------------------------------------------------------------- */
+
+  function start() {
+    if (CFG.mode === "hub") { renderHub(); }
+    else if (CFG.mode === "security") { renderSecurity(); }
+    else { renderSection(); }
+  }
+  root.addEventListener("click", function (event) {
+    var button = event.target.closest && event.target.closest("[data-office-retry]");
+    if (button) { start(); }
+  });
+  start();
+})();
+"""
+
+
+def private_office_web_shell(title, description, config):
+    """Render one Private Office page: an empty root plus the shared client.
+
+    The page carries no member data in its markup. Everything a member sees is
+    fetched by the browser from `/api/private-office/*` with the session cookie,
+    which is the same authority the native app talks to and the reason this
+    surface cannot drift away from it.
+    """
+    main = ("<section id='office-root' aria-live='polite'>"
+            "<article class='card'><h2>" + clean_html(title) +
+            "</h2><p>Loading…</p></article></section>")
+    script = ("<script>" +
+              PRIVATE_OFFICE_WEB_JS.replace("%%CONFIG%%", json.dumps(config)) +
+              "</script>")
+    return pulse_social_shell(title, description, main, script_html=script)
+
+
+def private_office_web_guard():
+    """Signed-out visitors get the login page, not an Office-shaped 401.
+
+    Entitlement is deliberately *not* checked here. The page renders whatever
+    `/api/private-office/overview` says, including "you do not have this" and
+    including "we could not tell" — a server-side tier check in this function
+    would be exactly the second authority the subsystem is built to avoid.
+    """
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    return None
+
+
+@webhook_app.route("/pulse/private-office", methods=["GET"])
+def pulse_private_office_page():
+    blocked = private_office_web_guard()
+    if blocked:
+        return blocked
+    return private_office_web_shell(
+        "Private Office",
+        "Your Private Office on the web.",
+        {"mode": "hub", "title": "Private Office",
+         "children": [list(entry) for entry in PRIVATE_OFFICE_CHILDREN]},
+    )
+
+
+@webhook_app.route("/pulse/private-office/security", methods=["GET"])
+def pulse_private_office_security_page():
+    blocked = private_office_web_guard()
+    if blocked:
+        return blocked
+    return private_office_web_shell(
+        "Office security", "Your Private Office passcode and locked sessions.",
+        {"mode": "security", "title": "Office security"},
+    )
+
+
+@webhook_app.route(
+    "/pulse/private-office/<any(facts,documents,people,briefings,shield,concierge):section>",
+    methods=["GET"])
+def pulse_private_office_section_page(section):
+    blocked = private_office_web_guard()
+    if blocked:
+        return blocked
+    config = dict(PRIVATE_OFFICE_SECTIONS[section])
+    config["mode"] = "section"
+    return private_office_web_shell(config["title"], config["blurb"], config)
+
+
+@webhook_app.route(
+    "/pulse/private-office/<any(obligations,events,decisions,requests,risks,opportunities):view>",
+    methods=["GET"])
+def pulse_private_office_operations_page(view):
+    blocked = private_office_web_guard()
+    if blocked:
+        return blocked
+    title = view.replace("_", " ").title()
+    return private_office_web_shell(
+        title, "Private Office operations: " + title.lower() + ".",
+        {"mode": "section", "title": title,
+         "blurb": "Operations records drawn from your own Office.",
+         "api": "/api/private-office/records/" + view,
+         "collection": "records"},
+    )
+
+
+@webhook_app.route("/pulse/private-office/capital-graph", methods=["GET"])
+def pulse_private_office_capital_graph_page():
+    blocked = private_office_web_guard()
+    if blocked:
+        return blocked
+    return private_office_web_shell(
+        "Capital Graph", "How what you hold connects.",
+        {"mode": "section", "title": "Capital Graph",
+         "blurb": "How what you hold connects. Gated separately from the fact store.",
+         "api": "/api/private-office/capital-graph", "collection": None},
+    )
+
+
+@webhook_app.route("/pulse/private-office/capital-graph/<node_id>", methods=["GET"])
+def pulse_private_office_capital_entity_page(node_id):
+    blocked = private_office_web_guard()
+    if blocked:
+        return blocked
+    return private_office_web_shell(
+        "Capital Graph entity", "One entity in your Capital Graph.",
+        {"mode": "section", "title": "Capital Graph entity",
+         "blurb": "One entity in your Capital Graph, and what it is connected to.",
+         "api": "/api/private-office/entities/" + quote(str(node_id), safe="") +
+                "/relationships",
+         "collection": "relationships"},
+    )
+
+
 @webhook_app.route("/admin/premium-command", methods=["GET", "POST"])
 def admin_premium_command_page():
     init_db()
