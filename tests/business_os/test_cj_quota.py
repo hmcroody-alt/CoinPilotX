@@ -282,9 +282,6 @@ def test_a_stale_reading_of_an_unknown_budget_leaves_it_unknown(controller):
     never sent, it reads as EXHAUSTED to the merchant, and it satisfies the
     `remaining is None` guards that exist to let bootstrap calls through while
     still failing every costed one.
-
-    Staging reached exactly this state -- two accounts pinned at zero by a
-    response reporting five figures of headroom.
     """
     quota, clock = controller
     assert quota.snapshot("account-a")["remaining"] is None

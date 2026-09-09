@@ -168,13 +168,12 @@ class DurableCJQuota:
             # When we already hold a figure, taking the lower of the two is
             # right: the stale reading cannot raise it, and the debits the newer
             # request applied stay applied. When we hold nothing there is no
-            # such arithmetic to do, and this used to record a hard zero -- an
-            # invented fact, and the stickiest kind. Zero reads as EXHAUSTED to
-            # the merchant ("no points left") on the strength of a response that
-            # said the opposite, and it outlives the unknown it replaced because
-            # it satisfies every `remaining is None` guard while still failing
-            # every costed admission. Staging sat in exactly that state: two
-            # accounts pinned at zero by a reading of five figures.
+            # such arithmetic to do, and this used to record a hard zero -- a
+            # number the provider never sent, and the stickiest kind of
+            # invention. It reads as EXHAUSTED to the merchant on the strength
+            # of a response that may have said the opposite, and it outlives the
+            # unknown it replaced because it satisfies every `remaining is None`
+            # guard while still failing every costed admission.
             #
             # Unknown is both the honest answer and the self-healing one. It
             # refuses costed calls just as firmly, but zero-point health calls
