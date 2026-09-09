@@ -350,3 +350,36 @@ def test_the_shell_frame_does_not_reuse_the_feeds_class_names():
             f"pulse_social_shell renders {feed_class!r}, which the feed stylesheet "
             f"styles on feed-specific assumptions"
         )
+
+
+def test_the_top_bar_appears_exactly_where_the_stylesheet_stops_hiding_it():
+    """Two files have to agree on one number, and nothing links them.
+
+    `pulse_desktop_feed.css` hides `.pulse-desktop-topbar` below 1024px with
+    `!important`, and the shell's own inline CSS reveals it at `min-width:
+    1024px`. The `!important` means the stylesheet always wins the overlap, so
+    the two failure modes are silent in opposite directions: raise the shell's
+    number and there is a band of widths with no top bar and -- above 900px --
+    no phone navigation either, which is a page with no way out; lower the
+    stylesheet's and the bar renders on phones on top of the dock.
+
+    Neither shows up in a page's markup, because both are pure CSS. So the
+    numbers are read out of the two files and compared directly. Verified in a
+    real viewport at 375, 950, 1050 and 1200 when this was written.
+    """
+    hide = re.search(r"@media\s*\(max-width:\s*(\d+)px\)\s*\{[^@]*?\.pulse-desktop-topbar",
+                     _css("pulse_desktop_feed.css"), re.S)
+    assert hide, "pulse_desktop_feed.css no longer hides the top bar by width"
+
+    with open(BOT, encoding="utf-8") as handle:
+        shell = handle.read().split("def pulse_social_shell", 1)[1]
+    # Braces are doubled: this CSS lives inside an f-string in `bot.py`.
+    show = re.search(r"@media\(min-width:(\d+)px\)\{\{[^@]*?\.pulse-desktop-topbar\{\{display:grid\}\}",
+                     shell, re.S)
+    assert show, "pulse_social_shell no longer reveals the top bar at a min-width"
+
+    assert int(hide.group(1)) + 1 == int(show.group(1)), (
+        f"the stylesheet hides the top bar up to {hide.group(1)}px but the shell "
+        f"only shows it from {show.group(1)}px, leaving a band of widths with no "
+        f"top bar; above 900px the phone navigation is hidden too"
+    )
