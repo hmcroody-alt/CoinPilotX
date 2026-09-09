@@ -498,6 +498,44 @@ def fund_fulfillment(*args, **kwargs):
     raise FulfillmentError("supplier_funding_locked")
 
 
+def real_order_activity(conn, connection_id):
+    """Count orders that reach CJ as *real*, and when the last one did.
+
+    CJ's inactivity rule counts real orders only, and this deployment sends
+    none: `assert_sandbox` rejects any payload without an integral
+    ``isSandbox=1``, on every path, so the count returned here is structurally
+    zero rather than incidentally zero. That is the correct answer and the
+    whole reason the caller needs it -- an integration that never places a real
+    order is exactly the one CJ eventually disables.
+
+    Counted from the snapshot rather than from a column, because the snapshot
+    is what was actually sent. A column would be a second place for the sandbox
+    flag to live, and the two could disagree; the payload cannot disagree with
+    itself. ``LINKED`` is the only state where CJ acknowledged an order, so
+    intents that never left the outbox are correctly not counted.
+    """
+    rows = conn.execute(
+        "SELECT i.snapshot_json, i.created_at FROM business_os_supplier_intents i "
+        "JOIN business_os_supplier_outbox o ON o.intent_id=i.id "
+        "WHERE i.connection_id=? AND o.state='LINKED' ORDER BY i.created_at DESC",
+        (connection_id,)).fetchall()
+    count, last_at = 0, None
+    for row in rows:
+        try:
+            sandbox = json.loads(row["snapshot_json"]).get("isSandbox")
+        except (ValueError, TypeError):
+            # Unreadable snapshot: we cannot show it was a sandbox order, and
+            # guessing "real" would silence the warning this function exists to
+            # raise. Not counted, and it does not move the clock.
+            continue
+        if type(sandbox) is int and sandbox == 1:
+            continue
+        count += 1
+        if last_at is None:
+            last_at = row["created_at"]
+    return count, last_at
+
+
 def get_intent(intent_id, connection_id, business_id, store_id, actor_user_id, *, context=None):
     from . import connections
     connections.get_connection(connection_id, business_id, store_id, actor_user_id, context=context)

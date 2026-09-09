@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 import json
 import threading
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -535,3 +536,96 @@ def test_admin_health_worker_and_cj_only_inbox_lag():
     assert result["worker"]["reconciliation_lag_seconds"] > 0 and not result["worker"]["execution_observed"]
     assert result["webhook_inbox"]["counts"]["received"] == 1
     assert result["webhook_inbox"]["oldest_pending_lag_seconds"] >= 0
+
+
+def _link_order(connection_id, *, sandbox, created_at, order_id, ref):
+    """Write an intent CJ acknowledged, with the sandbox flag as actually sent."""
+    from services.business_os.suppliers import fulfillment
+    conn = db.connect()
+    fulfillment.ensure_schema(conn)
+    conn.execute(
+        "INSERT INTO business_os_supplier_intents (id,connection_id,business_id,store_id,merchant_id,"
+        "order_id,external_account_id,external_shop_id,idempotency_key,external_order_ref,"
+        "snapshot_json,snapshot_hash,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (ref, connection_id, "biz-a", "store-a", "100", order_id, "acct", "shop", ref, ref,
+         json.dumps({"isSandbox": sandbox}), "hash-" + ref, created_at))
+    conn.execute("INSERT INTO business_os_supplier_outbox (intent_id,state,provider_order_id,available_at,updated_at) "
+                 "VALUES (?,'LINKED',?,0,0)", (ref, "cj-" + ref))
+    conn.commit()
+    conn.close()
+
+
+def test_a_sandbox_only_connection_is_on_cj_s_inactivity_clock_from_day_one():
+    """Sandbox orders do not reset CJ's thirty-day clock, so this must not pretend they do.
+
+    Every payload this deployment sends carries isSandbox=1 -- `assert_sandbox`
+    permits nothing else -- so the real-order count is structurally zero and the
+    connection is counting down from the moment it exists. A merchant finding
+    that out from CJ instead of from us is the failure this reports around.
+    """
+    row = connect()
+    _link_order(row["id"], sandbox=1, created_at=time.time(), order_id="ord-1", ref="intent-sandbox")
+    forecast = svc.inactivity_forecast(row["id"], "biz-a", "store-a", "100")
+    assert forecast["real_orders"] == 0
+    assert forecast["last_real_order_at"] is None
+    assert forecast["reference"] == "connection_created"
+    assert forecast["state"] == "OK"
+    assert forecast["sandbox_orders_count_toward_this"] is False
+    # A connection made moments ago has very nearly the full window left.
+    assert 29.9 < forecast["days_until_disable_estimate"] <= 30
+
+
+def test_the_countdown_admits_it_may_be_late_until_a_real_order_anchors_it():
+    """`estimate_may_be_late` is the load-bearing field, not the day count.
+
+    Counting from connection creation assumes CJ's clock started when ours did.
+    If the merchant's CJ account was already idle when they connected, CJ's
+    started earlier and CJ disables before the day we name -- an optimistic
+    error, which is the dangerous direction for a deadline. The flag says so,
+    and it clears only when we are counting from an order we actually sent.
+    """
+    row = connect()
+    forecast = svc.inactivity_forecast(row["id"], "biz-a", "store-a", "100")
+    assert forecast["estimate_may_be_late"] is True
+
+    real = time.time() - 9 * 86400
+    _link_order(row["id"], sandbox=0, created_at=real, order_id="ord-2", ref="intent-real")
+    forecast = svc.inactivity_forecast(row["id"], "biz-a", "store-a", "100")
+    assert forecast["real_orders"] == 1
+    assert forecast["reference"] == "last_real_order"
+    assert forecast["estimate_may_be_late"] is False
+    assert 8.9 < forecast["days_since_reference"] < 9.1
+    assert forecast["state"] == "WARNING"  # past seven days, short of thirty
+    assert 20.9 < forecast["days_until_disable_estimate"] < 21.1
+
+
+def test_an_unreadable_order_snapshot_does_not_silence_the_warning():
+    """A snapshot we cannot parse is not evidence of a real order.
+
+    Counting it as real would reset the clock on the strength of a record we
+    could not read, which is exactly backwards: the whole function exists to
+    raise a warning, so an unreadable row must not be able to suppress one.
+    """
+    row = connect()
+    conn = db.connect()
+    conn.execute("UPDATE business_os_supplier_connections SET created_at=? WHERE id=?",
+                 ((datetime.now(timezone.utc) - timedelta(days=40)).isoformat(), row["id"]))
+    conn.commit()
+    conn.close()
+    _link_order(row["id"], sandbox=0, created_at=time.time(), order_id="ord-3", ref="intent-broken")
+    conn = db.connect()
+    conn.execute("UPDATE business_os_supplier_intents SET snapshot_json='{not json' WHERE id=?", ("intent-broken",))
+    conn.commit()
+    conn.close()
+    forecast = svc.inactivity_forecast(row["id"], "biz-a", "store-a", "100")
+    assert forecast["real_orders"] == 0
+    assert forecast["state"] == "DISABLE_EXPECTED"
+    assert forecast["days_until_disable_estimate"] == 0  # floored, never negative
+
+
+@pytest.mark.parametrize("business,store,actor", [("biz-a", "store-a", "200"), ("biz-b", "store-a", "100"),
+                                                  ("biz-a", "store-a", None)])
+def test_the_inactivity_forecast_is_behind_the_same_tenant_gate(business, store, actor):
+    row = connect()
+    with pytest.raises(svc.SupplierConnectionError):
+        svc.inactivity_forecast(row["id"], business, store, actor)

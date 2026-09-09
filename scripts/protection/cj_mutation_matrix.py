@@ -92,6 +92,30 @@ MUTATIONS = [
                 "tests/business_os/test_cj_routes.py"],
     ),
     dict(
+        name="sandbox-orders-counted-as-real-activity",
+        control=(
+            "Sandbox orders do not reset CJ's thirty-day inactivity clock. Counting "
+            "them would report a healthy connection right up until CJ disables it."
+        ),
+        path="services/business_os/suppliers/fulfillment.py",
+        old="        if type(sandbox) is int and sandbox == 1:\n            continue",
+        new="        pass",
+        suites=["tests/business_os/test_cj_connections.py",
+                "tests/business_os/test_cj_routes.py"],
+    ),
+    dict(
+        name="inactivity-estimate-claims-false-precision",
+        control=(
+            "The countdown admits it may be late whenever it counts from connection "
+            "creation, because CJ's clock may have started before ours."
+        ),
+        path=CONNECTIONS,
+        old='        reference, may_be_late = "connection_created", True',
+        new='        reference, may_be_late = "connection_created", False',
+        suites=["tests/business_os/test_cj_connections.py",
+                "tests/business_os/test_cj_routes.py"],
+    ),
+    dict(
         name="sandbox-flag-requirement-removed",
         control=(
             "CJ has no account-level sandbox switch; safety rests entirely on "

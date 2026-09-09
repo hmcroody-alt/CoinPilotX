@@ -103,6 +103,26 @@ def test_connect_server_resolves_actor_context_and_does_not_cache_secret_request
     assert response.headers["Pragma"] == "no-cache" and response.headers["Referrer-Policy"] == "no-referrer"
 
 
+def test_inactivity_forecast_is_reachable_and_tenant_scoped(client):
+    """The countdown is worthless if a merchant cannot see it, and dangerous if
+    the wrong one can. Both halves are checked here rather than only the first."""
+    row = connect()
+    login(client, "100")
+    url = BASE + "/connections/" + row["id"] + "/inactivity?business_id=biz-a&store_id=store-a"
+    response = client.get(url)
+    assert response.status_code == 200
+    forecast = response.get_json()["inactivity"]
+    # Sandbox-only, so structurally zero real orders and the full window ahead.
+    assert forecast["real_orders"] == 0 and forecast["state"] == "OK"
+    assert forecast["sandbox_orders_count_toward_this"] is False
+    # The caveat travels with the number over the wire, not just in Python.
+    assert forecast["estimate_may_be_late"] is True
+
+    login(client, "200")
+    denied = client.get(url)
+    assert denied.status_code == 404 and row["id"] not in denied.get_data(as_text=True)
+
+
 @pytest.mark.parametrize("method,url", [("get", BASE + "/connections?business_id=biz-a&store_id=store-a"),
     ("get", BASE + "/connections/{id}?business_id=biz-a&store_id=store-a")])
 def test_actual_connection_read_denies_other_merchant(client, method, url):

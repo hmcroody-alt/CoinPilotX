@@ -589,6 +589,73 @@ def worker_adapter(connection_id, business_id, store_id, *, adapter=None):
     return _hydrate(connection_id, business_id, store_id, adapter=adapter)
 
 
+INACTIVITY_WARNING_DAYS = 7
+INACTIVITY_DISABLE_DAYS = 30
+
+
+def inactivity_forecast(connection_id, business_id, store_id, actor_user_id, *, context=None):
+    """When CJ is likely to disable this connection for having no real orders.
+
+    CJ warns after seven days without a real order and disables API access
+    after thirty. Sandbox orders do not count, and this deployment sends
+    nothing else -- so a connected merchant is on that clock from the moment
+    they connect, and will reach the end of it. Surfacing that is the whole
+    point: the alternative is a merchant discovering it from CJ.
+
+    ## The estimate can be late, and says so
+
+    We count from our own reference, and CJ counts from theirs. Ours is the
+    last real order we sent, or failing that the moment the connection was
+    created. CJ's is whatever activity they attribute to the account, which
+    may include orders placed before PulseSoc existed, from a different tool,
+    or through the CJ dashboard.
+
+    Those differ in a direction that matters. If the account was already idle
+    when the merchant connected, CJ's clock started earlier than ours and CJ
+    will disable *before* the day we name. The error is optimistic, which is
+    the unsafe kind, so `estimate_may_be_late` is True whenever we are counting
+    from connection creation rather than from an order we actually sent -- and
+    in this deployment that is always. It is not a hedge; it is the single most
+    important field here, and a caller that renders the number without it is
+    showing a deadline we cannot stand behind.
+
+    Never used to justify placing an order. Manufacturing a real order to reset
+    this clock is prohibited outright (see docs/cj/CJ_PROVIDER_POLICY_CONFIRMATION.md);
+    this function reports the consequence of not doing so, and reporting it
+    is not the same as recommending the way out.
+    """
+    from . import fulfillment
+    connection = get_connection(connection_id, business_id, store_id, actor_user_id, context=context)
+    conn = db.connect()
+    try:
+        fulfillment.ensure_schema(conn)
+        count, last_at = fulfillment.real_order_activity(conn, connection_id)
+    finally:
+        conn.close()
+    if last_at is not None:
+        since = datetime.fromtimestamp(float(last_at), timezone.utc)
+        reference, may_be_late = "last_real_order", False
+    else:
+        since = _date(connection["created_at"])
+        reference, may_be_late = "connection_created", True
+    days = (_now() - since).total_seconds() / 86400
+    state = ("DISABLE_EXPECTED" if days >= INACTIVITY_DISABLE_DAYS
+             else "WARNING" if days >= INACTIVITY_WARNING_DAYS else "OK")
+    return {
+        "state": state,
+        "real_orders": count,
+        "last_real_order_at": _iso(since) if last_at is not None else None,
+        "reference": reference,
+        "days_since_reference": round(days, 2),
+        # Floored at zero: a negative countdown would read as time remaining.
+        "days_until_disable_estimate": round(max(0.0, INACTIVITY_DISABLE_DAYS - days), 2),
+        "estimate_may_be_late": may_be_late,
+        "warning_days": INACTIVITY_WARNING_DAYS,
+        "disable_days": INACTIVITY_DISABLE_DAYS,
+        "sandbox_orders_count_toward_this": False,
+    }
+
+
 def health_connection(connection_id, business_id, store_id, actor_user_id, *, context=None, adapter=None):
     try:
         adapter_for(business_id, store_id, actor_user_id, connection_id, context=context, adapter=adapter)

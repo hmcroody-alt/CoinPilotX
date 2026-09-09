@@ -188,6 +188,23 @@ def cj_connection(connection_id):
         return _error(exc)
 
 
+@supplier_blueprint.route(PREFIX + "/connections/<connection_id>/inactivity", methods=["GET"])
+def cj_connection_inactivity(connection_id):
+    """CJ's thirty-day no-real-orders clock, as it applies to this connection.
+
+    A separate resource rather than a field on the connection: it costs a join
+    over the intent and outbox tables, and `list_connections` would pay that
+    per row to render a number nobody is looking at yet. Read-only, so GET.
+    """
+    try:
+        actor, context = _request_context()
+        result = connections.inactivity_forecast(connection_id, _required(request.args, "business_id"),
+                                                 _required(request.args, "store_id"), actor, context=context)
+        return _respond({"ok": True, "inactivity": result})
+    except Exception as exc:
+        return _error(exc)
+
+
 @supplier_blueprint.route(PREFIX + "/connections/<connection_id>/<action>", methods=["POST"])
 def cj_scoped_action(connection_id, action):
     try:
