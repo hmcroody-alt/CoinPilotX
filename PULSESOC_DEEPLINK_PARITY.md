@@ -10,9 +10,10 @@ not that the visitor was signed out.
 
 - Deep-link paths: **111**
 - Resolve on the web: **103**
-- Hub served, item links 404: **1** (0 confirmed, 1 unproven)
+- Hub served, item links 404: **0** (0 confirmed, 0 unproven)
 - Hub served, all real values resolve: **3**
 - Hub served, cleared by a test elsewhere: **2**
+- Hub served, item link BLOCKED — no data source exists: **1**
 - No web surface at all: **2** (1 pending, 1 blocked by policy)
 
 ## Broken share links — pending work
@@ -50,13 +51,22 @@ This script's evidence is concrete paths scraped from the app's sources, so a pa
 | `/dashboard/:legacyGroup/:legacyModule/:legacySubmodule?` | DashboardLegacyModule | `tests/web_parity/test_dashboard_legacy_aliases.py` | Two parameters, so single-segment sampling declines it rather than guessing. The values are still derivable, just not by scraping paths: native resolves these through `findLegacyDashboardAlias`, so the set of URLs it answers is the product of `DASHBOARD_LEGACY_GROUPS` and each group's module aliases. The test enumerates all 135 and probes the responses — which found two groups the web had never served. |
 | `/pulse/private-office/:view` | PrivateOperations | `tests/web_parity/test_private_office_views.py` | `:view` takes the six-entry RECORD_VIEWS vocabulary, not a path. The web serves all six via an `any(...)` enumeration that the test compares member-for-member against the app's own list. |
 
+## Hub served — item link BLOCKED, no data source exists
+
+Not pending work. The parameter names a thing the product has no data for on *either* platform, so a web page for it could only be populated by inventing a backend authority the app does not have — the one thing the parity mission forbids outright, because a web-only authority is how the two clients start disagreeing about what a thing is.
+
+Worth reading the reason before treating the app as the reference: on these rows the native screen is not a specification, it is a symptom. The named test is what notices if the missing source ever appears, at which point the row becomes buildable and this document stops generating until someone removes the entry.
+
+| Path | Native screen | Proof | Why building it is blocked |
+|---|---|---|---|
+| `/pulse/events/:eventId` | EventDetail | `tests/web_parity/test_events_have_no_source.py` | There is no scheduled-events data anywhere in the product. `/api/pulse/live-now` returns only `items`, built from a query filtered to `status IN ('live','publishing','reconnecting')`, and `pulse_live_sessions` has no `scheduled_at` column at all. Native's `listLiveNow` reads `data.scheduled || data.events || []`, so its scheduled bucket is unconditionally empty and `listScheduledLiveEvents` always returns zero items. The app is not merely missing this link — it answers it with `emptyEvent(eventId)`, a fabricated 'PulseSoc Event' by 'PulseSoc Creator'. The web must not mirror that: a page invented to match a placeholder would be faking parity twice over. The web hub is currently the more honest of the two surfaces, and the fix belongs on the native side. |
+
 ## Hub served, deep links into it 404
 
 Browsing works; sharing a specific item does not. A row with values probed is a confirmed gap: the app produces that value and the web 404s on it. A row with none is unproven — the parameter is an id or a value no source spells out, so it still needs a human before anyone builds anything.
 
 | Path | Native screen | Values probed |
 |---|---|---|
-| `/pulse/events/:eventId` | EventDetail | no real value derivable from the app's sources |
 
 ## Resolving
 

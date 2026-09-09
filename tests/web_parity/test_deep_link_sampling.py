@@ -22,11 +22,13 @@ replaced: the vague bucket said "go and look", and a false clearance says "this
 one is done".
 
 The other half of the same question is what to do with a row the sampler
-*cannot* speak for. `PROVEN_ELSEWHERE` lets a row point at a test that settles
-it instead, which is the only escape from `unproven` that does not involve
-loosening the rule above — and is therefore the obvious place to smuggle a
-clearance in. Its guards are tested here for that reason: an entry may silence
-`unproven` and nothing else.
+*cannot* speak for. Two annotations answer it. `PROVEN_ELSEWHERE` points the row
+at a test that settles it; `NO_DATA_SOURCE` says there is nothing in the product
+to build the row against, so it is blocked rather than pending. Both are escapes
+from `unproven` that do not involve loosening the rule above, and are therefore
+the obvious places to smuggle a clearance in. Their guards are tested here for
+that reason: an entry may silence `unproven` and nothing else, must name a test
+file that exists, and must fail the moment its premise stops holding.
 
 These are static tests. They import the script's pure helpers and never boot the
 app or touch the database.
@@ -231,25 +233,54 @@ def _link(reconcile, path, screen="Screen"):
     return reconcile.census.NativeDeepLink(screen=screen, path=path)
 
 
-def _write(reconcile, tmp_path, monkeypatch, hub_only, verdicts, broken=()):
+def _write(reconcile, tmp_path, monkeypatch, hub_only, verdicts, broken=(),
+           proven=None, sourceless=None):
     """Generate the doc into a temp file and return it. The real
     `PULSESOC_DEEPLINK_PARITY.md` is a committed artifact; a test must not
-    rewrite it with fixture data."""
+    rewrite it with fixture data.
+
+    Every annotation dict is replaced here, not just the one under test. These
+    tests describe a two-row world; a live entry left in place is validated
+    against that world and fails on a path it never named. This helper used to
+    neutralize only `BLOCKED_DEEP_LINKS`, and adding `NO_DATA_SOURCE` to the
+    script duly broke four tests that had nothing to do with it. So the
+    annotations are passed in rather than monkeypatched by each test: a third
+    kind cannot repeat the failure, because it will have to be listed here to
+    exist at all.
+    """
     out = os.path.join(str(tmp_path), "doc.md")
     monkeypatch.setattr(reconcile, "DEEP_LINK_DOC", out)
     monkeypatch.setattr(reconcile, "BLOCKED_DEEP_LINKS", {})
+    monkeypatch.setattr(reconcile, "PROVEN_ELSEWHERE", dict(proven or {}))
+    monkeypatch.setattr(reconcile, "NO_DATA_SOURCE", dict(sourceless or {}))
     reconcile.write_deep_link_doc([], list(hub_only), list(broken), verdicts)
     return open(out, encoding="utf-8").read()
+
+
+def test_the_helper_neutralizes_every_annotation_the_script_defines(reconcile):
+    """The guard on the paragraph above.
+
+    If a fourth annotation dict is added to the reconciler and `_write` is not
+    taught about it, this fails immediately rather than in four unrelated tests
+    whose failure message names the wrong subject.
+    """
+    neutralized = {"BLOCKED_DEEP_LINKS", "PROVEN_ELSEWHERE", "NO_DATA_SOURCE"}
+    defined = {name for name in dir(reconcile)
+               if name.isupper() and name.endswith(("_DEEP_LINKS", "_ELSEWHERE",
+                                                    "_SOURCE"))}
+    assert defined == neutralized, (
+        "the reconciler's annotation dicts are %s but _write only neutralizes "
+        "%s; add the new one to _write before it starts failing other tests"
+        % (sorted(defined), sorted(neutralized)))
 
 
 def test_a_proven_row_is_annotated_and_leaves_the_open_bucket(reconcile,
                                                               tmp_path,
                                                               monkeypatch):
-    monkeypatch.setattr(reconcile, "PROVEN_ELSEWHERE",
-                        {"/a/:b": ("tests/web_parity/test_deep_link_sampling.py",
-                                   "because reasons")})
     doc = _write(reconcile, tmp_path, monkeypatch,
-                 [_link(reconcile, "/a/:b")], {"/a/:b": ("unproven", [])})
+                 [_link(reconcile, "/a/:b")], {"/a/:b": ("unproven", [])},
+                 proven={"/a/:b": ("tests/web_parity/test_deep_link_sampling.py",
+                                   "because reasons")})
     assert "- Hub served, item links 404: **0**" in doc, (
         "a row with a proof is still being counted as an open gap")
     assert "- Hub served, cleared by a test elsewhere: **1**" in doc
@@ -262,11 +293,10 @@ def test_a_proof_that_names_a_missing_test_file_fails_loudly(reconcile,
                                                              monkeypatch):
     """A dangling pointer is worse than no pointer: the row still leaves the
     open bucket, but nothing is checking the claim any more."""
-    monkeypatch.setattr(reconcile, "PROVEN_ELSEWHERE",
-                        {"/a/:b": ("tests/web_parity/deleted.py", "why")})
     with pytest.raises(SystemExit) as excinfo:
         _write(reconcile, tmp_path, monkeypatch,
-               [_link(reconcile, "/a/:b")], {"/a/:b": ("unproven", [])})
+               [_link(reconcile, "/a/:b")], {"/a/:b": ("unproven", [])},
+               proven={"/a/:b": ("tests/web_parity/deleted.py", "why")})
     assert "does not exist" in str(excinfo.value)
 
 
@@ -278,23 +308,21 @@ def test_a_proof_may_not_silence_a_row_this_script_proved_broken(reconcile,
     written back when the row merely looked unresolvable would quietly move it
     into the cleared section. The verdict has to be `unproven`, not just
     hub-only."""
-    monkeypatch.setattr(reconcile, "PROVEN_ELSEWHERE",
-                        {"/a/:b": ("tests/web_parity/test_deep_link_sampling.py",
-                                   "why")})
     with pytest.raises(SystemExit) as excinfo:
         _write(reconcile, tmp_path, monkeypatch, [_link(reconcile, "/a/:b")],
-               {"/a/:b": ("gap", [("real", False)])})
+               {"/a/:b": ("gap", [("real", False)])},
+               proven={"/a/:b": ("tests/web_parity/test_deep_link_sampling.py",
+                                 "why")})
     assert "hiding a gap" in str(excinfo.value)
 
 
 def test_a_proof_for_a_row_that_is_no_longer_hub_only_fails_loudly(reconcile,
                                                                    tmp_path,
                                                                    monkeypatch):
-    monkeypatch.setattr(reconcile, "PROVEN_ELSEWHERE",
-                        {"/gone/:b": ("tests/web_parity/test_deep_link_sampling.py",
-                                      "why")})
     with pytest.raises(SystemExit) as excinfo:
-        _write(reconcile, tmp_path, monkeypatch, [], {})
+        _write(reconcile, tmp_path, monkeypatch, [], {},
+               proven={"/gone/:b": ("tests/web_parity/test_deep_link_sampling.py",
+                                    "why")})
     assert "no longer an unproven hub-only link" in str(excinfo.value)
 
 
@@ -306,3 +334,89 @@ def test_the_private_office_entry_still_names_a_test_that_exists(reconcile):
         assert os.path.exists(os.path.join(REPO, test)), (
             "%s points at %s, which is gone" % (path, test))
         assert why.strip(), "%s has an empty rationale" % path
+
+
+# --- declaring a row unbuildable is the strongest claim on offer -------------
+#
+# `PROVEN_ELSEWHERE` says "someone else checked this". `NO_DATA_SOURCE` says
+# "there is nothing to build against", which excuses the row from the work list
+# rather than pointing at work already done. It gets the same guards, tested the
+# same way, because it is the annotation most worth abusing.
+
+
+def test_a_sourceless_row_is_counted_separately_from_a_proven_one(
+        reconcile, tmp_path, monkeypatch):
+    """Two rows, one of each kind, in the same document.
+
+    Folding them into one bucket would be the quiet failure: "cleared by a test
+    elsewhere" and "blocked, nothing to build against" are opposite states, and
+    a reader who saw the wrong one would either go looking for a proof that does
+    not exist or skip a row that is genuinely done.
+    """
+    doc = _write(reconcile, tmp_path, monkeypatch,
+                 [_link(reconcile, "/a/:b"), _link(reconcile, "/c/:d")],
+                 {"/a/:b": ("unproven", []), "/c/:d": ("unproven", [])},
+                 proven={"/a/:b": ("tests/web_parity/test_deep_link_sampling.py",
+                                   "checked over there")},
+                 sourceless={"/c/:d": ("tests/web_parity/test_deep_link_sampling.py",
+                                       "no such table exists")})
+    assert "- Hub served, item links 404: **0**" in doc
+    assert "- Hub served, cleared by a test elsewhere: **1**" in doc
+    assert "- Hub served, item link BLOCKED — no data source exists: **1**" in doc
+    assert "no such table exists" in doc, (
+        "the rationale is not rendered, so the row reads as blocked by fiat")
+
+
+def test_a_sourceless_entry_that_names_a_missing_test_fails_loudly(
+        reconcile, tmp_path, monkeypatch):
+    with pytest.raises(SystemExit) as excinfo:
+        _write(reconcile, tmp_path, monkeypatch,
+               [_link(reconcile, "/a/:b")], {"/a/:b": ("unproven", [])},
+               sourceless={"/a/:b": ("tests/web_parity/deleted.py", "why")})
+    assert "does not exist" in str(excinfo.value)
+
+
+def test_a_sourceless_entry_may_not_silence_a_row_proved_broken(
+        reconcile, tmp_path, monkeypatch):
+    """The `PROVEN_ELSEWHERE` rule, restated for the stronger claim.
+
+    If the sampler found a real value and the web 404ed on it, the row is a
+    confirmed gap and "there is no data source" is refuted by the sample itself.
+    """
+    with pytest.raises(SystemExit) as excinfo:
+        _write(reconcile, tmp_path, monkeypatch, [_link(reconcile, "/a/:b")],
+               {"/a/:b": ("gap", [("real", False)])},
+               sourceless={"/a/:b": ("tests/web_parity/test_deep_link_sampling.py",
+                                     "why")})
+    assert "no longer an unproven hub-only link" in str(excinfo.value)
+
+
+def test_a_sourceless_entry_for_a_row_that_now_resolves_fails_loudly(
+        reconcile, tmp_path, monkeypatch):
+    """The self-clearing half. When the source arrives and the web surface gets
+    built, the row leaves the hub-only bucket and this refuses to regenerate —
+    so the block cannot outlive the reason for it."""
+    with pytest.raises(SystemExit) as excinfo:
+        _write(reconcile, tmp_path, monkeypatch, [], {},
+               sourceless={"/gone/:b": ("tests/web_parity/test_deep_link_sampling.py",
+                                        "why")})
+    assert "no longer an unproven hub-only link" in str(excinfo.value)
+
+
+def test_the_events_entry_still_names_a_test_that_exists(reconcile):
+    """The live entry, checked in the gate for the reason given above."""
+    assert "/pulse/events/:eventId" in reconcile.NO_DATA_SOURCE
+    for path, (test, why) in reconcile.NO_DATA_SOURCE.items():
+        assert os.path.exists(os.path.join(REPO, test)), (
+            "%s points at %s, which is gone" % (path, test))
+        assert why.strip(), "%s has an empty rationale" % path
+
+
+def test_a_row_may_not_carry_both_annotations(reconcile):
+    """"Cleared" and "blocked" cannot both be true, and the document renders
+    each row in exactly one section — so an overlap would silently drop the row
+    from whichever section ran second, taking its rationale with it."""
+    overlap = sorted(set(reconcile.PROVEN_ELSEWHERE) & set(reconcile.NO_DATA_SOURCE))
+    assert not overlap, (
+        "%s is annotated as both proven elsewhere and blocked for want of a "
+        "data source; decide which it is" % overlap)

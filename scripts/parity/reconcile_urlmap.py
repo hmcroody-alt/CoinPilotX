@@ -336,6 +336,40 @@ PROVEN_ELSEWHERE = {
 }
 
 
+#: Hub-only rows where the web cannot be built because *no client can populate
+#: the page* — there is no data source behind the parameter, on either platform.
+#:
+#: This is a third kind of annotation, and it exists because the other two would
+#: both be lies here. `PROVEN_ELSEWHERE` would say the row is fine. Leaving it in
+#: the open list would say someone should build it. Neither is true: building it
+#: means inventing an authority the product does not have, and the parity mission
+#: forbids web-only backend authorities precisely so the website cannot grow a
+#: second, divergent definition of what an event is.
+#:
+#: An entry is a claim about the *backend*, so it carries the same obligations as
+#: the other two: it may only silence `unproven`, it must name a test, and that
+#: test must be the thing that notices if the data source ever appears. The point
+#: is that the row unblocks itself — the day the API grows the missing bucket,
+#: the named test fails and says so, rather than this entry quietly outliving the
+#: reason it was written.
+NO_DATA_SOURCE = {
+    "/pulse/events/:eventId": (
+        "tests/web_parity/test_events_have_no_source.py",
+        "There is no scheduled-events data anywhere in the product. "
+        "`/api/pulse/live-now` returns only `items`, built from a query filtered "
+        "to `status IN ('live','publishing','reconnecting')`, and "
+        "`pulse_live_sessions` has no `scheduled_at` column at all. Native's "
+        "`listLiveNow` reads `data.scheduled || data.events || []`, so its "
+        "scheduled bucket is unconditionally empty and `listScheduledLiveEvents` "
+        "always returns zero items. The app is not merely missing this link — it "
+        "answers it with `emptyEvent(eventId)`, a fabricated 'PulseSoc Event' by "
+        "'PulseSoc Creator'. The web must not mirror that: a page invented to "
+        "match a placeholder would be faking parity twice over. The web hub is "
+        "currently the more honest of the two surfaces, and the fix belongs on "
+        "the native side."),
+}
+
+
 def write_deep_link_doc(resolved: list, hub_only: list, broken: list,
                         verdicts: dict) -> str:
     """Record the share-link gap as a reviewable artifact.
@@ -381,6 +415,25 @@ def write_deep_link_doc(resolved: list, hub_only: list, broken: list,
                 "PROVEN_ELSEWHERE points " + path + " at " + test + ", which "
                 "does not exist. The row would read as cleared with nothing left "
                 "doing the checking.")
+    # Same two guards again, for the same reason: an annotation must never be
+    # able to outlive its premise. If the backend grows the missing source, the
+    # row stops being unproven and this fails, which is the intended way for a
+    # blocked row to come back onto the work list.
+    for path, (test, _why) in sorted(NO_DATA_SOURCE.items()):
+        if path not in unproven:
+            raise SystemExit(
+                "NO_DATA_SOURCE names " + path + ", which is no longer an "
+                "unproven hub-only link. If a data source now exists, delete the "
+                "entry and build the web surface — that is what it was waiting "
+                "for. Re-check " + test + ".")
+        if not os.path.exists(os.path.join(REPO, test)):
+            raise SystemExit(
+                "NO_DATA_SOURCE points " + path + " at " + test + ", which does "
+                "not exist. The row would read as blocked with nothing left "
+                "checking whether it still is.")
+    sourceless = [l for l in still_open if l.path in NO_DATA_SOURCE]
+    still_open = [l for l in still_open if l.path not in NO_DATA_SOURCE]
+
     proven = [l for l in still_open if l.path in PROVEN_ELSEWHERE]
     still_open = [l for l in still_open if l.path not in PROVEN_ELSEWHERE]
     lines = [
@@ -403,6 +456,8 @@ def write_deep_link_doc(resolved: list, hub_only: list, broken: list,
         f" unproven)",
         f"- Hub served, all real values resolve: **{len(enumerated)}**",
         f"- Hub served, cleared by a test elsewhere: **{len(proven)}**",
+        f"- Hub served, item link BLOCKED — no data source exists: "
+        f"**{len(sourceless)}**",
         f"- No web surface at all: **{len(broken)}** "
         f"({len(pending)} pending, {len(blocked)} blocked by policy)",
         "",
@@ -470,6 +525,27 @@ def write_deep_link_doc(resolved: list, hub_only: list, broken: list,
     ]
     lines += [f"| `{link.path}` | {link.screen} | `{PROVEN_ELSEWHERE[link.path][0]}` "
               f"| {PROVEN_ELSEWHERE[link.path][1]} |" for link in proven]
+    lines += [
+        "",
+        "## Hub served — item link BLOCKED, no data source exists",
+        "",
+        "Not pending work. The parameter names a thing the product has no data "
+        "for on *either* platform, so a web page for it could only be populated "
+        "by inventing a backend authority the app does not have — the one thing "
+        "the parity mission forbids outright, because a web-only authority is how "
+        "the two clients start disagreeing about what a thing is.",
+        "",
+        "Worth reading the reason before treating the app as the reference: on "
+        "these rows the native screen is not a specification, it is a symptom. "
+        "The named test is what notices if the missing source ever appears, at "
+        "which point the row becomes buildable and this document stops "
+        "generating until someone removes the entry.",
+        "",
+        "| Path | Native screen | Proof | Why building it is blocked |",
+        "|---|---|---|---|",
+    ]
+    lines += [f"| `{link.path}` | {link.screen} | `{NO_DATA_SOURCE[link.path][0]}` "
+              f"| {NO_DATA_SOURCE[link.path][1]} |" for link in sourceless]
     lines += [
         "",
         "## Hub served, deep links into it 404",
@@ -541,6 +617,12 @@ def main() -> int:
             detail = ",".join(f"{v}={'ok' if ok else '404'}" for v, ok in probed)
             if not detail and link.path in PROVEN_ELSEWHERE:
                 detail = "proven in " + PROVEN_ELSEWHERE[link.path][0]
+            # Without this the console reports a `NO_DATA_SOURCE` row as a bare
+            # `[unproven]`, which reads as "nobody has looked at it yet" -- the
+            # opposite of the truth, and exactly the misreading the annotation
+            # exists to prevent. The document says so; so should the terminal.
+            if not detail and link.path in NO_DATA_SOURCE:
+                detail = "BLOCKED, no data source; see " + NO_DATA_SOURCE[link.path][0]
             print(f"   {link.path:52} {link.screen:24} [{verdict}]"
                   + (f" {detail}" if detail else ""))
 
