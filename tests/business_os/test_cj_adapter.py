@@ -227,6 +227,32 @@ def test_list_v2_bounded_search_captures_points_and_request_cost():
     assert assert_call(transport, "product/listV2")["params"] == {"keyWord": "fixture", "countryCode": "US", "page": 2, "size": 5}
 
 
+@pytest.mark.parametrize("points", [{"remaining": 0, "usedToday": 0, "total": 0},
+                                    {"remaining": 0, "usedToday": 4000, "total": 0}])
+def test_a_points_block_with_no_ceiling_is_not_recorded_as_an_empty_budget(points):
+    """A `total` of zero is no reading, and must not become a zero balance.
+
+    Recording it would set `remaining` to 0, and `reserve_request` refuses
+    every costed call at that value before reaching the network -- so the only
+    responses that could revise the figure are the ones we would stop making.
+    Leaving it unset keeps costed calls refused (as `QUOTA_UNKNOWN`) while
+    leaving the zero-point calls that can still resolve it able to do so.
+
+    The request itself is unaffected: a response we cannot read a budget out of
+    is still a response, and its products are returned normally.
+    """
+    body = {"code": 200, "result": True, "data": {"content": [{"productList": [{"id": PID, "nameEn": "Search fixture",
+            "sku": "FIX", "sellPrice": "2.00-3.00"}]}], "totalRecords": 1, "totalPages": 1},
+            "pointsInfo": {**points, "openId": OPEN_ID}}
+    adapter, transport, quota, _ = make_adapter(Response(body=body))
+    result = adapter.search_products({"keyWord": "fixture"})
+    assert result["products"][0]["pid"] == PID
+    assert result["points_info"] is None
+    assert quota.observations == []
+    assert quota.calls[0][1]["cost"] == 50
+    assert_call(transport, "product/listV2")
+
+
 @pytest.mark.parametrize("kwargs", [{"size": 101}, {"page": 0}, {"page": True}, {"filters": {"accessToken": ACCESS}},
                                    {"filters": {"keyWord": ["not-string"]}}])
 def test_search_rejects_unbounded_or_unsupported_input_before_network(kwargs):

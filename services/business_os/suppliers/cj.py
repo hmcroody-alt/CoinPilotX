@@ -215,8 +215,37 @@ class CJAdapter:
         return value
 
     def _observe_points(self, body, sequence):
+        """Record a points budget only when the response actually carries one.
+
+        A `total` of zero is treated as no reading rather than as a ceiling of
+        nothing. Two things support that, and they are not equally strong.
+
+        The weaker one is documentation: CJ describes a base allowance of
+        50,000 points per day per account, replenished per minute and reset in
+        UTC (reports/cj-discovery/CJ_API_REQUIREMENTS.md), so a live account
+        having a ceiling of zero is implausible. That is an inference from what
+        CJ published, not something CJ told us about this account, and staging
+        really did receive `0/0/0` from CJ -- the rows there were written by
+        this method, which only runs on a well-formed `pointsInfo`. Whether CJ
+        meant "exhausted" or "this response carries no points figure" is not
+        settled by anything we hold.
+
+        The stronger one does not depend on which of those CJ meant. A recorded
+        zero is asymmetric with an absent reading in exactly one direction:
+        `remaining <= 0` refuses every costed call in `reserve_request` before
+        it reaches the network, so no costed response can ever arrive to revise
+        the figure. Only zero-point health calls stay admissible, and if the
+        zero came from a response that was not reporting points at all, we have
+        recorded a number CJ never asserted and made it expensive to unlearn.
+
+        So declining to record it is not the more permissive reading. An
+        unknown budget refuses costed calls exactly as firmly -- `reserve_request`
+        raises `QUOTA_UNKNOWN` on any cost when `remaining is None`. It differs
+        only in telling the merchant we do not know rather than that they have
+        none, and in being a state the next reading can simply overwrite.
+        """
         points = body.get("pointsInfo") if isinstance(body, dict) else None
-        if isinstance(points, dict) and all(type(points.get(k)) is int and points[k] >= 0 for k in ("remaining", "usedToday", "total")) and points["remaining"] <= points["total"]:
+        if isinstance(points, dict) and all(type(points.get(k)) is int and points[k] >= 0 for k in ("remaining", "usedToday", "total")) and 0 < points["total"] and points["remaining"] <= points["total"]:
             self.points_info = {k: points[k] for k in ("remaining", "usedToday", "total")}
             self.quota.observe(self.account_ref, self.points_info, sequence=sequence)
 
