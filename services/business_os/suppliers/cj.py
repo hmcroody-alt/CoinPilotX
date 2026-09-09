@@ -55,6 +55,35 @@ def _text(value, maximum=500, *, required=False):
     return value
 
 
+def _secret_text(value, maximum=4096):
+    """A provider-issued credential, which is not display text and is not ours to size.
+
+    These went through `_text(..., 200)`, and 200 was an invented number: no CJ
+    document states a token length, and a real account's `accessToken` exceeds
+    it. So a correct key, which CJ had already authenticated (HTTP 200, `code`
+    200, `result` true, a token pair in hand), was thrown away by our own
+    validator and surfaced as a 502 -- the merchant was told their supplier was
+    unreachable about a call that had in fact succeeded.
+
+    A bound still belongs here, because an unbounded provider string must not
+    reach persistence; it just has to be a credential's bound rather than a
+    label's. 4096 is the cap the route already applies to the API key a merchant
+    submits, so the value derived from that key is held to the same size.
+
+    The three rejections are deliberately separate statements. They are
+    indistinguishable in a response -- all three are MALFORMED_PROVIDER_RESPONSE
+    -- so giving them their own lines is what lets the diagnostic say which one
+    fired instead of costing another live provider call to find out.
+    """
+    if not isinstance(value, str):
+        raise SupplierError("MALFORMED_PROVIDER_RESPONSE")
+    if not value.strip():
+        raise SupplierError("MALFORMED_PROVIDER_RESPONSE")
+    if len(value) > maximum:
+        raise SupplierError("MALFORMED_PROVIDER_RESPONSE")
+    return value
+
+
 def _id(value, *, provider=False):
     # CJ documents UUIDs and decimal identifiers. Never accept floats/bools.
     if type(value) is int and provider:
@@ -262,8 +291,8 @@ class CJAdapter:
 
     def _auth(self, path, payload, *, refresh=False):
         data = _dict(self._request("POST", path, payload=payload, authentication=True))
-        bundle = AuthBundle(_text(data.get("accessToken"), 200, required=True),
-            _text(data.get("refreshToken"), 200, required=True),
+        bundle = AuthBundle(_secret_text(data.get("accessToken")),
+            _secret_text(data.get("refreshToken")),
             _id(data["openId"], provider=True) if data.get("openId") is not None else None,
             _expiry(data.get("accessTokenExpiryDate")), _expiry(data.get("refreshTokenExpiryDate")))
         if not refresh and not bundle.open_id:
@@ -280,7 +309,11 @@ class CJAdapter:
         return self._auth("authentication/getAccessToken", {"apiKey": api_key})
 
     def refresh_authentication(self, refresh_token):
-        if not isinstance(refresh_token, str) or not 1 <= len(refresh_token) <= 200:
+        # Bounded by the same cap `_secret_text` accepted it under. A tighter
+        # number here would reject our own stored token and turn every refresh
+        # into a reauth prompt -- the failure would surface at expiry, long
+        # after the connect that looked fine.
+        if not isinstance(refresh_token, str) or not 1 <= len(refresh_token) <= 4096:
             raise SupplierError("REAUTH_REQUIRED", http_status=401)
         self.register_secrets([refresh_token])
         return self._auth("authentication/refreshAccessToken", {"refreshToken": refresh_token}, refresh=True)

@@ -140,6 +140,37 @@ def test_invalid_auth_metadata_fails(change):
         adapter.authenticate(API_KEY)
 
 
+def test_provider_token_longer_than_a_label_is_accepted_and_reusable():
+    """A real CJ token is far longer than the 200 chars we used to allow.
+
+    That cap was ours, not CJ's -- no CJ document states a token length -- and it
+    rejected a key CJ had already authenticated, surfacing to the merchant as a
+    502 "supplier unreachable" about a call that had succeeded.
+
+    The refresh leg is asserted in the same test on purpose. Widening only the
+    parse would have moved the failure rather than fixed it: the long token would
+    be stored, and the next `refresh_authentication` would refuse our own value
+    and demand reauth -- at expiry, hours after a connect that looked healthy.
+    """
+    long_access, long_refresh = "a" * 900, "r" * 1200
+    adapter, _, _, _ = make_adapter(Response(token_data(accessToken=long_access, refreshToken=long_refresh)),
+                                    Response(token_data(accessToken=long_access, refreshToken=long_refresh, openId=None)))
+    bundle = adapter.authenticate(API_KEY)
+    assert bundle.access_token == long_access and bundle.refresh_token == long_refresh
+    # The token we just stored must be one this adapter will take back.
+    assert adapter.refresh_authentication(bundle.refresh_token).access_token == long_access
+    assert long_access not in repr(bundle) and long_refresh not in repr(adapter)
+
+
+@pytest.mark.parametrize("change", [{"accessToken": "a" * 4097}, {"refreshToken": "r" * 4097},
+                                    {"accessToken": "   "}, {"refreshToken": 12345}])
+def test_provider_token_is_still_bounded_and_typed(change):
+    """Widened, not removed: an unbounded provider string must not reach the vault."""
+    adapter, _, _, _ = make_adapter(Response(token_data(**change)))
+    with pytest.raises(SupplierError):
+        adapter.authenticate(API_KEY)
+
+
 def test_settings_identity_and_active_shop_health():
     adapter, transport, _, _ = make_adapter(Response({"openId": OPEN_ID, "isSandbox": 1, "setting": {"qpsLimit": 2}}),
         Response([{"id": SHOP, "name": "Fixture shop", "type": "API", "status": 1}]))
