@@ -108,6 +108,39 @@ def _card(provider, entry) -> dict | None:
     }
 
 
+#: Provider-neutral search filter names, and the CJ parameter each becomes.
+#:
+#: Only the response half of this module was ever normalized. Requests were
+#: passed through untouched, so a caller that sent the documented neutral name
+#: -- `keyword` -- reached CJ's own parameter allowlist, which knows only
+#: `keyWord`, and was refused with a 400 naming a spelling no caller had been
+#: given. An empty filter set was the one that worked, which is why the browse
+#: screen could load and then fail on the merchant's first word.
+#:
+#: Both halves were internally consistent, which is how this survived: every
+#: backend test called the adapter with CJ's spelling, and the mobile test
+#: asserted the neutral one against a mocked backend. Neither exercised the
+#: boundary between them.
+#:
+#: CJ's own spellings stay accepted so that callers already sending them keep
+#: working. This map decides only what a merchant may ask for in words that
+#: name no provider; `cj.search_products` still holds the allowlist that decides
+#: what may actually reach CJ, and it is unchanged.
+_NEUTRAL_FILTERS = {"keyword": "keyWord", "category_id": "categoryId", "country_code": "countryCode"}
+
+
+def _provider_filters(filters) -> dict:
+    translated: dict = {}
+    for name, value in (filters or {}).items():
+        key = _NEUTRAL_FILTERS.get(name, name)
+        # One filter asked for twice under two spellings has no right answer,
+        # and picking a winner would search for something nobody requested.
+        if key in translated:
+            raise SupplierError("invalid_input", http_status=400)
+        translated[key] = value
+    return translated
+
+
 def search(business_id, store_id, actor_user_id, connection_id, *,
            filters=None, page=1, size=20, provider="cj", context=None):
     """A page of normalized catalogue results for one connection."""
@@ -116,6 +149,7 @@ def search(business_id, store_id, actor_user_id, connection_id, *,
         raise SupplierError("unsupported_provider", http_status=400)
     if not isinstance(filters, dict) and filters is not None:
         raise SupplierError("invalid_input", http_status=400)
+    filters = _provider_filters(filters)
     try:
         page, size = int(page), int(size)
     except (TypeError, ValueError):

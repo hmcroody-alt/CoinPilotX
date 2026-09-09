@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+from services.business_os.suppliers import discovery
 from services.business_os.suppliers.cj import AuthBundle, BASE_URL, CJAdapter, RequestsTransport
 from services.business_os.suppliers.errors import SupplierError
 
@@ -257,6 +258,34 @@ def test_a_points_block_with_no_ceiling_is_not_recorded_as_an_empty_budget(point
     assert quota.observations == []
     assert quota.calls[0][1]["cost"] == 50
     assert_call(transport, "product/listV2")
+
+
+def test_the_filter_names_the_screens_send_arrive_as_cj_parameters():
+    """The two halves of the search contract, exercised against each other.
+
+    The catalogue screen sends `keyword`; CJ's parameter allowlist knows only
+    `keyWord`, so every search with a word in the box was refused with a 400 and
+    the merchant was told products didn't load. It survived because each half
+    was tested alone -- the backend suite called this adapter with CJ's
+    spelling, the mobile suite asserted the neutral one against a mocked
+    backend -- and nothing drove one into the other.
+
+    So this drives one into the other. It goes through `_provider_filters`
+    rather than restating the mapping, which is the point: a translation that
+    stops matching the allowlist below it fails here.
+    """
+    adapter, transport, _, _ = make_adapter(Response({"content": [], "totalRecords": 0, "totalPages": 0}))
+    adapter.search_products(discovery._provider_filters(
+        {"keyword": "fixture", "country_code": "US", "category_id": "42"}))
+    assert assert_call(transport, "product/listV2")["params"] == {
+        "keyWord": "fixture", "countryCode": "US", "categoryId": "42", "page": 1, "size": 20}
+
+
+def test_one_filter_under_two_spellings_is_refused_rather_than_resolved():
+    """Neither spelling wins, because either choice searches for the wrong thing."""
+    with pytest.raises(SupplierError) as failure:
+        discovery._provider_filters({"keyword": "asked-for", "keyWord": "not-asked-for"})
+    assert failure.value.http_status == 400
 
 
 @pytest.mark.parametrize("kwargs", [{"size": 101}, {"page": 0}, {"page": True}, {"filters": {"accessToken": ACCESS}},
