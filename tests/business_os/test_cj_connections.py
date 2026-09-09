@@ -120,6 +120,46 @@ def test_connect_verifies_settings_and_explicit_shop_before_secure_store(caplog)
     conn.close()
 
 
+def test_a_connection_response_carries_only_its_allowlisted_keys():
+    """The serializer's allowlist is a control, so something must observe it.
+
+    `_public` builds its output by naming keys rather than by copying the row,
+    and the reason is stated in a comment there: a column added to
+    `business_os_supplier_connections` later must not reach a response just by
+    existing. That is a promise about code nobody has written yet, which makes
+    it precisely the kind of promise that rots unnoticed -- the test above
+    checks that today's *secret values* do not leak, and it would keep passing
+    if the allowlist were replaced by `dict(row)` tomorrow, because today's
+    secrets live encrypted in the vault table rather than in this row.
+
+    So this asserts the shape instead of the contents. It fails on any widening,
+    including a widening that leaks nothing, and that is the intended cost: the
+    allowlist is only worth having if changing it requires saying so out loud.
+    Adding a field here is a one-line edit; adding one by accident is not.
+    """
+    result = connect()
+    assert set(result) == {
+        "id", "merchant_id", "business_id", "store_id", "provider", "connection_type",
+        "external_account_id", "external_shop_id", "status", "access_expires_at",
+        "refresh_expires_at", "quota_state", "last_verified_at", "last_sync_at",
+        "created_at", "updated_at",
+        # Derived, never columns: the first three are computed, and `points_info`
+        # is itself a nested allowlist over `quota_json` rather than that column.
+        "credential_present", "environment", "production_fulfillment_enabled", "points_info",
+    }
+    # The allowlist is only doing work if the row it filters is genuinely wider.
+    # `credential_reference` is the vault lookup key and `refresh_lease_token` a
+    # concurrency lease -- neither is a secret on its own, and neither has any
+    # business being handed to a client.
+    conn = db.connect()
+    row = dict(conn.execute("SELECT * FROM business_os_supplier_connections WHERE id=?",
+                            (result["id"],)).fetchone())
+    conn.close()
+    assert {"credential_reference", "refresh_lease_token", "quota_json", "version"} <= set(row)
+    assert set(row) - set(result), "row is no wider than the response; the allowlist filters nothing"
+    assert not {"credential_reference", "refresh_lease_token", "quota_json"} & set(result)
+
+
 @pytest.mark.parametrize("business,store,actor", [("biz-a", "store-a", "200"), ("biz-a", "store-b", "100"),
                                                     ("biz-b", "store-a", "200"), ("biz-a", "store-a", None)])
 def test_authorization_before_provider_or_secret_lookup(business, store, actor):
