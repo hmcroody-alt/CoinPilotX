@@ -79,6 +79,17 @@ export function SupplierCatalogScreen({ route, navigation }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [adding, setAdding] = useState<string | null>(null);
   const [added, setAdded] = useState<string[]>([]);
+  /**
+   * The term `products` is the answer to — not the term in the box.
+   *
+   * Searching runs on submit, so between typing and submitting the box holds a
+   * word nothing has been asked about yet. Captioning the empty state from
+   * `query` told the merchant "Nothing matched 'phone'" while the only search
+   * ever run was the blank one, which is a claim about a result we did not
+   * have. Written when a search lands, so it can only ever name a term the
+   * provider actually answered.
+   */
+  const [resultQuery, setResultQuery] = useState("");
 
   const scope = scopeStatus.status.phase === "ready" ? scopeStatus.status.scope : null;
 
@@ -95,17 +106,21 @@ export function SupplierCatalogScreen({ route, navigation }: Props) {
     async (nextPage: number, mode: "replace" | "append" | "refresh") => {
       if (!scope) return;
       const ticket = ++requestId.current;
+      // Read once, here: the box can change while this request is in flight,
+      // and the results belong to the term that was sent, not the later one.
+      const term = query.trim();
       if (mode === "refresh") setRefreshing(true);
       else if (mode === "replace") setState("LOADING");
       try {
         const result = await searchSupplierProducts(scope, connectionId, {
-          filters: query.trim() ? { keyword: query.trim() } : {},
+          filters: term ? { keyword: term } : {},
           page: nextPage,
           size: PAGE_SIZE
         });
         if (ticket !== requestId.current) return;
         const next = mode === "append" ? [...products, ...result.products] : result.products;
         setProducts(next);
+        setResultQuery(term);
         setPage(result.page);
         setHasMore(result.hasMore);
         setTotal(result.total);
@@ -179,8 +194,8 @@ export function SupplierCatalogScreen({ route, navigation }: Props) {
       onFixConnection={() => navigation.navigate("DropshippingSuppliers", { title: "Suppliers" })}
       reducedMotion={reducedMotion}
       empty={{
-        title: query.trim() ? `Nothing matched “${query.trim()}”.` : "This supplier has no products to show.",
-        body: query.trim()
+        title: resultQuery ? `Nothing matched “${resultQuery}”.` : "This supplier has no products to show.",
+        body: resultQuery
           ? "Try a shorter phrase, or a product type rather than a brand."
           : "Try searching for a product type to see what your supplier stocks."
       }}

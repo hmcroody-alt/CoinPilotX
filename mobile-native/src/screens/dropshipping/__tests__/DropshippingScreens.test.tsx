@@ -71,6 +71,7 @@ const mockListImportedProducts = jest.fn();
 const mockPreviewPricing = jest.fn();
 const mockDiscoverShops = jest.fn();
 const mockConnectSupplier = jest.fn();
+const mockSearchProducts = jest.fn();
 
 jest.mock("../../../api/dropshipping", () => ({
   ...jest.requireActual("../../../api/dropshipping"),
@@ -82,7 +83,8 @@ jest.mock("../../../api/dropshipping", () => ({
   listImportedProducts: (...args: unknown[]) => mockListImportedProducts(...args),
   previewPricing: (...args: unknown[]) => mockPreviewPricing(...args),
   discoverSupplierShops: (...args: unknown[]) => mockDiscoverShops(...args),
-  connectSupplier: (...args: unknown[]) => mockConnectSupplier(...args)
+  connectSupplier: (...args: unknown[]) => mockConnectSupplier(...args),
+  searchSupplierProducts: (...args: unknown[]) => mockSearchProducts(...args)
 }));
 
 import { PulseApiError } from "../../../api/pulseApi";
@@ -99,6 +101,7 @@ import { DropshippingHubScreen } from "../DropshippingHubScreen";
 import { DropshippingProductsScreen } from "../DropshippingProductsScreen";
 import { ImportCartScreen } from "../ImportCartScreen";
 import { ReviewImportedProductScreen } from "../ReviewImportedProductScreen";
+import { SupplierCatalogScreen } from "../SupplierCatalogScreen";
 import { SuppliersScreen } from "../SuppliersScreen";
 import { resetDropshippingScopeCache } from "../useDropshippingScope";
 
@@ -398,6 +401,94 @@ describe("no screen tests a JSX element for truthiness", () => {
     );
     expect(source).toContain("stateOwnsScreen(state) ? (");
     expect(source).not.toContain("const stateBlock = (");
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 1a — an empty result names the search that produced it
+ * ------------------------------------------------------------------ */
+
+describe("SupplierCatalogScreen", () => {
+  async function catalogue() {
+    mockSearchProducts.mockResolvedValue({
+      products: [],
+      page: 1,
+      size: 24,
+      total: 0,
+      hasMore: false,
+      cached: false
+    });
+    const view = render(
+      <SupplierCatalogScreen navigation={navigation()} route={{ params: { connectionId: "c1" } }} />
+    );
+    await settle();
+    return view;
+  }
+
+  /**
+   * Observed on a live simulator against staging. Searching runs on submit, so
+   * typing "phone" and pausing leaves a box that says "phone" and a result set
+   * that answers the blank search. The screen captioned the empty state from the
+   * box and reported `Nothing matched "phone"` — a finding about a request that
+   * had never been made, and one that reads exactly like the provider stocking
+   * nothing.
+   *
+   * The distinction matters beyond tidiness: the merchant's next move after
+   * "nothing matched" is to try a different word, which is the wrong move when
+   * the word was never sent.
+   */
+  it("does not report a verdict on a term that has not been searched", async () => {
+    const view = await catalogue();
+    expect(view.getByText("This supplier has no products to show.")).toBeTruthy();
+
+    fireEvent.changeText(view.getByLabelText("Search your supplier's catalogue"), "phone");
+    await settle();
+
+    expect(view.queryByText("Nothing matched “phone”.")).toBeNull();
+    expect(view.getByText("This supplier has no products to show.")).toBeTruthy();
+    expect(mockSearchProducts).toHaveBeenCalledTimes(1);
+  });
+
+  it("names the term once that term is the one the provider answered", async () => {
+    const view = await catalogue();
+    fireEvent.changeText(view.getByLabelText("Search your supplier's catalogue"), "phone");
+    fireEvent.press(view.getByLabelText("Search your store"));
+    await settle();
+
+    expect(mockSearchProducts).toHaveBeenLastCalledWith(
+      expect.anything(),
+      "c1",
+      expect.objectContaining({ filters: { keyword: "phone" } })
+    );
+    expect(view.getByText("Nothing matched “phone”.")).toBeTruthy();
+  });
+
+  /**
+   * The in-flight case the captured term exists for: the merchant edits the box
+   * while a search is still running. The answer that lands belongs to the word
+   * that was sent, and must be captioned with it.
+   */
+  it("captions a landing result with the term that was sent, not the box's later contents", async () => {
+    const view = await catalogue();
+    let release: (value: unknown) => void = () => undefined;
+    mockSearchProducts.mockReturnValueOnce(
+      new Promise((resolve) => {
+        release = resolve;
+      })
+    );
+    fireEvent.changeText(view.getByLabelText("Search your supplier's catalogue"), "phone");
+    fireEvent.press(view.getByLabelText("Search your store"));
+    await settle();
+
+    fireEvent.changeText(view.getByLabelText("Search your supplier's catalogue"), "kettle");
+    await act(async () => {
+      release({ products: [], page: 1, size: 24, total: 0, hasMore: false, cached: false });
+      await Promise.resolve();
+    });
+    await settle();
+
+    expect(view.getByText("Nothing matched “phone”.")).toBeTruthy();
+    expect(view.queryByText("Nothing matched “kettle”.")).toBeNull();
   });
 });
 
