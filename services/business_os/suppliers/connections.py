@@ -162,13 +162,33 @@ def _public(row):
                               and type(value) in (int, float) and math.isfinite(value) and value >= 0}
     except (ValueError, TypeError, AttributeError):
         out["points_info"] = {}
+    # `status` is the provider's verdict on this merchant's account, and every
+    # value in STATUSES names something the merchant can act on at CJ. Only
+    # facts of that kind may be projected onto it here.
+    #
+    # A previous version also mapped "we have not re-verified in five minutes"
+    # onto VERIFICATION_REQUIRED -- "Your supplier account needs verifying on
+    # their site." That is a claim about CJ, made from a local clock, and it was
+    # inescapable: `last_verified_at` is only written on connect and on token
+    # refresh, and CJ access tokens run six months, so every connection began
+    # reporting a broken CJ account five minutes after setup and kept reporting
+    # it until the token expired. `connectionIsUsable` requires CONNECTED, so
+    # the whole dropshipping hub went to "can't load" while search, detail and
+    # import all kept working. The one remedy offered -- Check connection --
+    # calls `health_connection`, which on a healthy connection hydrates locally
+    # and writes nothing, so tapping it could never clear the label.
+    #
+    # Staleness is not deleted, it is just no longer disguised: `last_verified_at`
+    # is in this payload already and the Suppliers screen renders it as
+    # "Checked 7m". That is the honest form of the same fact, and unlike a
+    # status it does not disable the feature.
     if out["status"] == "CONNECTED":
         try:
             if _date(out["access_expires_at"]) <= _now():
                 out["status"] = "AUTH_EXPIRED"
-            elif not out["last_verified_at"] or _date(out["last_verified_at"]) < _now() - timedelta(minutes=5):
-                out["status"] = "VERIFICATION_REQUIRED"
         except SupplierConnectionError:
+            # An unreadable expiry means we cannot establish the credential is
+            # still good, which is a genuine local fact and errs toward caution.
             out["status"] = "REAUTH_REQUIRED"
     if out["status"] in {"API_SUSPENDED", "REACTIVATION_REQUIRED"}:
         out["message"] = "CJ API access requires reactivation in your CJ account."

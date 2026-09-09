@@ -418,6 +418,50 @@ def test_expired_credentials_are_not_healthy_merely_because_stored():
     assert not svc.admin_health()["provider_reachable_recently"]
 
 
+def unverified_for(connection_id, minutes):
+    conn = db.connect()
+    conn.execute("UPDATE business_os_supplier_connections SET last_verified_at=? WHERE id=?",
+                 ((datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat(), connection_id))
+    conn.commit()
+    conn.close()
+
+
+def test_time_since_the_last_check_is_not_a_verdict_about_the_cj_account():
+    """Staleness is ours. VERIFICATION_REQUIRED is a claim about CJ.
+
+    The serializer used to turn "not re-verified in five minutes" into
+    VERIFICATION_REQUIRED, which the app renders as "Your supplier account
+    needs verifying on their site." Nothing at CJ had asked for anything.
+
+    It was also inescapable. `last_verified_at` is written on connect and on
+    token refresh, and CJ access tokens run six months, so the label arrived
+    five minutes after setup and stayed for half a year. Because
+    `connectionIsUsable` requires CONNECTED, the entire dropshipping hub went
+    to "can't load" while search, detail and import kept working -- and the
+    only remedy on offer, Check connection, hydrates locally and writes
+    nothing, so it could not clear the label either.
+
+    A month of silence is therefore still CONNECTED here, and the age is
+    served as the plain fact it is.
+    """
+    row = connect()
+    unverified_for(row["id"], 60 * 24 * 30)
+
+    served = svc.get_connection(row["id"], "biz-a", "store-a", "100")
+    assert served["status"] == "CONNECTED", "silence is not a report from the provider"
+    assert served["last_verified_at"], "the staleness fact must survive as itself"
+
+    # The trap in full: the button the merchant is sent to must not leave them
+    # exactly where they started.
+    checked = svc.health_connection(row["id"], "biz-a", "store-a", "100", adapter=FakeAdapter())
+    assert checked["status"] == "CONNECTED"
+
+    # Removing the clock must not cost us the facts that are real. An expired
+    # token is not merely unverified, and it still lands.
+    expire(row["id"])
+    assert svc.get_connection(row["id"], "biz-a", "store-a", "100")["status"] == "AUTH_EXPIRED"
+
+
 def test_missing_vault_or_ciphertext_tamper_makes_health_unavailable():
     row = connect()
     conn = db.connect()
