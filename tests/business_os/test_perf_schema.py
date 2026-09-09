@@ -2,13 +2,15 @@
 
 Proves: the four canonical tables are created; ensure_schema is idempotent; UNIQUE
 (source, external_ref) dedupes both input logs while NULL external_ref is exempt; the
-UNIQUE (org_id, metric_key, window) summary key is exactly-once; and no legacy table is
-touched (only the four business_os_perf_* tables exist).
+UNIQUE (org_id, metric_key, window_key) summary key is exactly-once; the emitted DDL uses
+no PostgreSQL reserved identifier; and no legacy table is touched (only the four
+business_os_perf_* tables exist).
 
     python tests/business_os/test_perf_schema.py   # no pytest needed
 """
 
 import os
+import re
 import sys
 import tempfile
 
@@ -59,7 +61,7 @@ def test_sample_source_ref_dedupe_and_null_exempt():
     try:
         conn.execute(
             "INSERT INTO business_os_perf_samples "
-            "(sample_id,org_id,metric_key,window,value,captured_at,source,external_ref,"
+            "(sample_id,org_id,metric_key,window_key,value,captured_at,source,external_ref,"
             "created_at) VALUES (?,?,?,?,?,?,?,?,?)",
             ("s1", "o1", "latency_ms", "", 100.0, "t", "feed", "SR1", "t"))
         conn.commit()
@@ -67,7 +69,7 @@ def test_sample_source_ref_dedupe_and_null_exempt():
         try:
             conn.execute(
                 "INSERT INTO business_os_perf_samples "
-                "(sample_id,org_id,metric_key,window,value,captured_at,source,"
+                "(sample_id,org_id,metric_key,window_key,value,captured_at,source,"
                 "external_ref,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
                 ("s2", "o1", "latency_ms", "", 120.0, "t", "feed", "SR1", "t"))
             conn.commit()
@@ -77,12 +79,12 @@ def test_sample_source_ref_dedupe_and_null_exempt():
         assert dup, "duplicate (source, external_ref) should be rejected"
         conn.execute(
             "INSERT INTO business_os_perf_samples "
-            "(sample_id,org_id,metric_key,window,value,captured_at,source,external_ref,"
+            "(sample_id,org_id,metric_key,window_key,value,captured_at,source,external_ref,"
             "created_at) VALUES (?,?,?,?,?,?,?,?,?)",
             ("s3", "o1", "latency_ms", "", 130.0, "t", "manual", None, "t"))
         conn.execute(
             "INSERT INTO business_os_perf_samples "
-            "(sample_id,org_id,metric_key,window,value,captured_at,source,external_ref,"
+            "(sample_id,org_id,metric_key,window_key,value,captured_at,source,external_ref,"
             "created_at) VALUES (?,?,?,?,?,?,?,?,?)",
             ("s4", "o1", "latency_ms", "", 140.0, "t", "manual", None, "t"))
         conn.commit()
@@ -160,7 +162,7 @@ def test_summary_key_exactly_once():
     try:
         conn.execute(
             "INSERT INTO business_os_perf_summaries "
-            "(row_id,org_id,metric_key,window,count,min_value,max_value,mean_value,"
+            "(row_id,org_id,metric_key,window_key,count,min_value,max_value,mean_value,"
             "p50_value,p95_value,target_stat,status,rank,computed_at) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             ("r1", "oX", "latency_ms", "", 3, 1.0, 3.0, 2.0, 2.0, 3.0, 2.0, "ok", 1,
@@ -170,7 +172,7 @@ def test_summary_key_exactly_once():
         try:
             conn.execute(
                 "INSERT INTO business_os_perf_summaries "
-                "(row_id,org_id,metric_key,window,count,min_value,max_value,mean_value,"
+                "(row_id,org_id,metric_key,window_key,count,min_value,max_value,mean_value,"
                 "p50_value,p95_value,target_stat,status,rank,computed_at) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 ("r2", "oX", "latency_ms", "", 3, 1.0, 3.0, 2.0, 2.0, 3.0, 2.0, "ok", 1,
@@ -179,9 +181,52 @@ def test_summary_key_exactly_once():
         except Exception:
             dup = True
             conn.rollback()
-        assert dup, "duplicate (org_id, metric_key, window) should be rejected"
+        assert dup, "duplicate (org_id, metric_key, window_key) should be rejected"
     finally:
         conn.close()
+
+
+class _RecordingConn:
+    """Captures the DDL ``ensure_schema`` emits without executing any of it."""
+
+    def __init__(self):
+        self.statements = []
+
+    def execute(self, sql, params=None):
+        self.statements.append(str(sql))
+        return self
+
+    def fetchall(self):
+        return []
+
+    def fetchone(self):
+        return None
+
+    def commit(self):
+        pass
+
+    def close(self):
+        pass
+
+
+def test_emitted_ddl_has_no_postgres_reserved_identifier():
+    """The real proof, since SQLite would accept the broken DDL either way.
+
+    ``window`` is reserved in PostgreSQL; declaring it unquoted made this ensure_schema
+    raise on every production boot, so none of the four tables were ever created there.
+    Asserting on the emitted SQL text catches that on a SQLite-only run.
+    """
+    from tests.test_sql_reserved_identifiers import scan_sql
+
+    rec = _RecordingConn()
+    sch.ensure_schema(conn=rec)
+    ddl = "\n".join(rec.statements)
+
+    assert "window_key" in ddl
+    assert not re.search(r"\bwindow\b(?!_)", ddl), \
+        "bare `window` identifier is back in the performance DDL"
+    for statement in rec.statements:
+        assert scan_sql(statement) == [], statement
 
 
 def test_legacy_untouched():
@@ -206,6 +251,7 @@ def _run_standalone():
         test_target_source_ref_dedupe_and_null_exempt,
         test_direction_check_enforced,
         test_summary_key_exactly_once,
+        test_emitted_ddl_has_no_postgres_reserved_identifier,
         test_legacy_untouched,
     ]
     passed = 0

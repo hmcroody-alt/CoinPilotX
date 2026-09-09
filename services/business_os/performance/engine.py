@@ -122,6 +122,13 @@ def _round(value: Optional[float]) -> Optional[float]:
     return None if value is None else round(value, _PRECISION)
 
 
+def _wire_row(row) -> dict:
+    """Row dict with the storage column ``window_key`` presented under its API key
+    ``window``. The column cannot be named ``window`` (reserved in PostgreSQL) but the
+    JSON contract predates that fix, so the rename stops at the database boundary."""
+    return {("window" if k == "window_key" else k): v for k, v in dict(row).items()}
+
+
 # ---------------------------------------------------------------------------
 # ingest (append-only, idempotent)
 # ---------------------------------------------------------------------------
@@ -154,7 +161,7 @@ def record_sample(org_id: str, metric_key: str, value: Any, *, window: Any = "",
         sid = _schema.new_id()
         conn.execute(
             "INSERT INTO business_os_perf_samples "
-            "(sample_id,org_id,metric_key,window,value,unit,captured_at,source,"
+            "(sample_id,org_id,metric_key,window_key,value,unit,captured_at,source,"
             "external_ref,meta_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (sid, org_id, metric, win, val, unit, cap, source, external_ref,
              _meta_json(meta), _now()))
@@ -240,12 +247,12 @@ def _newest_targets(conn, org_id: str) -> dict:
 def _sample_cells(conn, org_id: str) -> dict:
     """``{(metric_key, window): [values...]}`` for an org."""
     rows = conn.execute(
-        "SELECT metric_key,window,value FROM business_os_perf_samples "
+        "SELECT metric_key,window_key,value FROM business_os_perf_samples "
         "WHERE org_id = ?", (org_id,)).fetchall()
     cells: dict = {}
     for r in rows:
         d = dict(r)
-        cells.setdefault((d["metric_key"], d["window"]), []).append(float(d["value"]))
+        cells.setdefault((d["metric_key"], d["window_key"]), []).append(float(d["value"]))
     return cells
 
 
@@ -317,7 +324,7 @@ def summarize_org(org_id: str, *, conn=None) -> dict:
         for rank, d in enumerate(summaries, start=1):
             conn.execute(
                 "INSERT INTO business_os_perf_summaries "
-                "(row_id,org_id,metric_key,window,count,min_value,max_value,mean_value,"
+                "(row_id,org_id,metric_key,window_key,count,min_value,max_value,mean_value,"
                 "p50_value,p95_value,target_stat,status,rank,computed_at) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (_schema.new_id(), org_id, d["metric_key"], d["window"], d["count"],
@@ -354,11 +361,11 @@ def get_summaries(org_id: str, *, limit: int = 500, conn=None) -> list:
         conn = db.connect()
     try:
         rows = conn.execute(
-            "SELECT metric_key,window,count,min_value,max_value,mean_value,p50_value,"
+            "SELECT metric_key,window_key,count,min_value,max_value,mean_value,p50_value,"
             "p95_value,target_stat,status,rank FROM business_os_perf_summaries "
             "WHERE org_id = ? ORDER BY rank ASC LIMIT ?",
             (str(org_id), int(limit))).fetchall()
-        return [dict(r) for r in rows]
+        return [_wire_row(r) for r in rows]
     finally:
         if owned:
             conn.close()
@@ -388,11 +395,11 @@ def list_samples(org_id: str, *, limit: int = 1000, conn=None) -> list:
         conn = db.connect()
     try:
         rows = conn.execute(
-            "SELECT sample_id,metric_key,window,value,unit,captured_at,created_at "
+            "SELECT sample_id,metric_key,window_key,value,unit,captured_at,created_at "
             "FROM business_os_perf_samples WHERE org_id = ? "
             "ORDER BY created_at DESC, sample_id ASC LIMIT ?",
             (str(org_id), int(limit))).fetchall()
-        return [dict(r) for r in rows]
+        return [_wire_row(r) for r in rows]
     finally:
         if owned:
             conn.close()
