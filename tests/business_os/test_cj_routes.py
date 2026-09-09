@@ -262,3 +262,64 @@ def test_diagnostic_origin_cannot_carry_provider_text_or_a_credential(client, mo
     # Raised outside the supplier package, so there is no frame to attribute and
     # the field stays empty rather than reaching for the nearest other frame.
     assert json.loads(text)["origin"] == ""
+
+
+def test_diagnostic_origin_is_recorded_where_an_operator_can_read_it(client, monkeypatch):
+    # The caller that actually hits these failures is a mobile screen that
+    # renders a sentence and throws the body away, so returning the field is not
+    # by itself enough to make it observable on a deployment.
+    from services import db
+    from services.business_os.suppliers import diagnostics
+
+    login(client)
+    monkeypatch.setenv("CJ_SUPPLIER_DIAGNOSTIC_ORIGIN", "on")
+    _raise_from_adapter(monkeypatch, lambda cj: cj._text("x" * 201, 200, required=True))
+    returned = post(client, BASE + "/discover-shops").get_json()["origin"]
+
+    conn = db.connect()
+    try:
+        diagnostics.ensure_schema(conn)
+        rows = conn.execute("SELECT code, status, origin FROM business_os_cj_diagnostic_origin").fetchall()
+    finally:
+        conn.close()
+    assert [(r["code"], r["status"], r["origin"]) for r in rows] == [
+        ("MALFORMED_PROVIDER_RESPONSE", 502, returned)]
+
+
+def test_diagnostic_record_stores_a_raise_site_and_refuses_anything_else(monkeypatch):
+    from services import db
+    from services.business_os.suppliers import diagnostics
+
+    for code, status, origin in (("MALFORMED_PROVIDER_RESPONSE", 502, "cj.py:54"),
+                                 ("<script>", 502, "cj.py:54"),
+                                 ("MALFORMED_PROVIDER_RESPONSE", 999, "APIkey is wrong"),
+                                 ("MALFORMED_PROVIDER_RESPONSE", 502, "")):
+        diagnostics.record(code, status, origin)
+    conn = db.connect()
+    try:
+        rows = conn.execute("SELECT code, status, origin FROM business_os_cj_diagnostic_origin "
+                            "ORDER BY observed_at").fetchall()
+    finally:
+        conn.close()
+    stored = [(r["code"], r["status"], r["origin"]) for r in rows]
+    # Provider text cannot become an origin, and a bad code cannot become one
+    # either: everything that is not a raise site collapses to a placeholder.
+    assert stored == [("MALFORMED_PROVIDER_RESPONSE", 502, "cj.py:54"),
+                      ("?", 502, "cj.py:54"),
+                      ("MALFORMED_PROVIDER_RESPONSE", 0, "?"),
+                      ("MALFORMED_PROVIDER_RESPONSE", 502, "")]
+
+
+def test_diagnostic_table_cannot_grow_without_bound(monkeypatch):
+    from services import db
+    from services.business_os.suppliers import diagnostics
+
+    monkeypatch.setattr(diagnostics, "KEEP_ROWS", 5)
+    for line in range(20):
+        diagnostics.record("MALFORMED_PROVIDER_RESPONSE", 502, f"cj.py:{line}")
+    conn = db.connect()
+    try:
+        rows = conn.execute("SELECT origin FROM business_os_cj_diagnostic_origin").fetchall()
+    finally:
+        conn.close()
+    assert len(rows) <= 5 and "cj.py:19" in {r["origin"] for r in rows}

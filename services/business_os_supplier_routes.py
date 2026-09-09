@@ -17,7 +17,7 @@ from flask import Blueprint, request
 
 from services.business_os_commerce_routes import _bot, _csrf_ok, _json
 from services.business_os.commerce_gateway import context_from_user
-from services.business_os.suppliers import connections, gateway, policy
+from services.business_os.suppliers import connections, diagnostics, gateway, policy
 from services.business_os.suppliers.errors import SupplierError
 
 
@@ -91,7 +91,13 @@ def _error(exc):
     # "you're not signed in to this store any more".
     payload = {"ok": False, "code": code, "error_code": code}
     if policy.enabled("CJ_SUPPLIER_DIAGNOSTIC_ORIGIN"):
-        payload["origin"] = _origin(exc)
+        origin = _origin(exc)
+        payload["origin"] = origin
+        # Recorded as well as returned, because the caller that reaches this in
+        # practice is a mobile screen that renders a sentence and discards the
+        # body -- an operator who turned the flag on would otherwise never see
+        # the field they asked for.
+        diagnostics.record(code, status, origin)
     return _respond(payload, status, getattr(exc, "retry_after", None))
 
 
