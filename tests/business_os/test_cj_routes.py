@@ -82,6 +82,58 @@ def test_cookie_write_uses_real_csrf_gate_and_forged_bearer_does_not_bypass(clie
     assert calls == []
 
 
+def test_a_csrf_refusal_says_which_half_of_the_gate_refused(client, monkeypatch):
+    """A 403 here is indistinguishable from the outside, and self-sustaining.
+
+    The cookie authenticates the request, so the access log records a signed-in
+    user being refused and nothing about why. Three different faults land on this
+    one status -- no bearer sent, a bearer that will not resolve, and a bearer
+    belonging to a different user than the cookie -- and the client cannot climb
+    out of any of them, because `pulseApi` refreshes on 401 and this is a 403.
+
+    So the gate records which of its terms failed. Asserted through the
+    persisted row rather than the response alone, because the encoding exists
+    specifically to survive `diagnostics.record`'s `name:number` validator; a
+    string that reached the operator as `?` would be worse than none.
+    """
+    from services import db
+    from services.business_os.suppliers import diagnostics
+
+    login(client)
+    with client.session_transaction() as state:
+        # The key the gate itself reads. `login` sets `user_id` for this file's
+        # account stub; the cookie leg of the CSRF check is a different name, and
+        # conflating them is how the bit under test would read as always-zero.
+        state["account_user_id"] = "100"
+    monkeypatch.setenv("CJ_SUPPLIER_DIAGNOSTIC_ORIGIN", "on")
+    calls = []
+    monkeypatch.setattr(connections, "connect_cj", lambda *a, **k: calls.append(a))
+
+    # Cookie present, no bearer at all: the shape a native client has when its
+    # access token expired and only the cookie leg is still being sent.
+    no_bearer = client.post(BASE + "/connect", json=payload()).get_json()
+    # Same, plus an unverifiable bearer -- the header is there, it resolves to
+    # nobody. Must not read the same as "no header".
+    forged = client.post(BASE + "/connect", json=payload(),
+                         headers={"Authorization": "Bearer forged-not-verified"}).get_json()
+
+    assert no_bearer["code"] == forged["code"] == "csrf"
+    assert no_bearer["origin"] == "csrf_gate:00100"
+    assert forged["origin"] == "csrf_gate:10100"
+    assert calls == []
+
+    conn = db.connect()
+    try:
+        diagnostics.ensure_schema(conn)
+        rows = conn.execute("SELECT origin FROM business_os_cj_diagnostic_origin "
+                            "ORDER BY observed_at").fetchall()
+    finally:
+        conn.close()
+    stored = [r["origin"] for r in rows]
+    assert stored == ["csrf_gate:00100", "csrf_gate:10100"], (
+        f"{stored}: the encoding must survive the record validator, not arrive as '?'")
+
+
 def test_connect_server_resolves_actor_context_and_does_not_cache_secret_request_body(client, monkeypatch):
     login(client)
     observed = {}

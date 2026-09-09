@@ -13,7 +13,7 @@ import json
 import math
 import re
 
-from flask import Blueprint, request
+from flask import Blueprint, request, session
 
 from services.business_os_commerce_routes import _bot, _csrf_ok, _json
 from services.business_os.commerce_gateway import context_from_user
@@ -73,7 +73,44 @@ def _origin(exc):
         if "/business_os/suppliers/" in path:
             frame = f"{path.rsplit('/', 1)[-1]}:{tb.tb_lineno}"
         tb = tb.tb_next
-    return frame
+    # A refusal raised in this module -- csrf, login_required -- has no frame
+    # inside the supplier package and would otherwise record as "". Anything
+    # that supplies its own coordinate says so explicitly.
+    return frame or str(getattr(exc, "origin_hint", "") or "")
+
+
+def _csrf_gate_bits():
+    """Which half of the CSRF gate refused, as five booleans and nothing else.
+
+    A 403 on a write is the failure this integration keeps reproducing and
+    cannot diagnose from the outside. The cookie authenticates the request, so
+    the access log says `user_id=1` and reads as a signed-in merchant refused
+    for no reason -- the distinction that matters is invisible: bearer absent,
+    bearer present but not resolvable, or bearer resolving to a different user
+    than the cookie. Each has a different fix and two of them are client-side.
+
+    It is worth recording rather than reasoning about because the client cannot
+    recover on its own: `pulseApi` refreshes on 401, and this is a 403, so a
+    merchant in this state stays in it until something else rotates the token.
+
+    Digits rather than words so the value satisfies `diagnostics.record`'s
+    `name:number` validator, which exists to keep free text out of that table.
+    Reading order: bearer header present, bearer resolves, cookie present,
+    bearer and cookie agree, X-CSRF-Token present. Five booleans about our own
+    gate -- no token, no user id, no header value, nothing provider-derived.
+    """
+    header = (request.headers.get("Authorization") or "").lower()
+    resolve = getattr(_bot(), "account_user_id_from_mobile_access_token", None)
+    try:
+        bearer = resolve() if callable(resolve) else None
+    except Exception:
+        bearer = None
+    cookie = session.get("account_user_id")
+    return "csrf_gate:%d%d%d%d%d" % (
+        header.startswith("bearer "), bool(bearer), bool(cookie),
+        bool(bearer and cookie and str(bearer) == str(cookie)),
+        bool(request.headers.get("X-CSRF-Token") or request.headers.get("X-CSRFToken")),
+    )
 
 
 def _error(exc):
@@ -140,7 +177,10 @@ def _request_context(write=False):
     if not user or not user.get("user_id"):
         raise SupplierError("login_required", http_status=401)
     if write and not _csrf_ok():
-        raise SupplierError("csrf", http_status=403)
+        error = SupplierError("csrf", http_status=403)
+        if policy.enabled("CJ_SUPPLIER_DIAGNOSTIC_ORIGIN"):
+            error.origin_hint = _csrf_gate_bits()
+        raise error
     return user["user_id"], context_from_user(user)
 
 
