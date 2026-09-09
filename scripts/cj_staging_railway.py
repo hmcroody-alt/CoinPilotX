@@ -66,8 +66,19 @@ def provision():
         "BUSINESS_OS_SUPPLIERS_CJ": "ON", "CJ_NETWORK_ENABLED": "ON",
         "CJ_RECONCILIATION_ENABLED": "ON", "CJ_ENVIRONMENT_MODE": "SANDBOX",
         "PRODUCTION_CJ_FULFILLMENT_ENABLED": "OFF", "REAL_CJ_FUNDING_ENABLED": "OFF",
-        "CJ_SUBSCRIPTION_MUTATIONS_ENABLED": "OFF", "CJ_HOSTED_CREDENTIALS_APPROVED": "OFF",
+        "CJ_SUBSCRIPTION_MUTATIONS_ENABLED": "OFF",
+        # `CJ_HOSTED_CREDENTIALS_APPROVED` used to be written here. CJ confirmed
+        # on 2026-09-09 that a merchant's own API key held server-side is the
+        # standard model needing no approval, so no code reads that name any
+        # more and provisioning stops writing it. Upserts here do not replace,
+        # so an already-provisioned environment keeps its inert copy; that is
+        # accepted rather than deleted, because deleting variables is a
+        # different and more dangerous operation than this helper performs.
         "CJ_EGRESS_GROUP": "pulsesoc-isolated-staging-sfo-pool",
+        # Deliberately absent: `CJ_EGRESS_IP_ATTESTED`. Railway's outbound
+        # address is not documented as static anywhere in this repository, so
+        # staging must keep reporting BLOCKED_BY_EGRESS_ARCHITECTURE until
+        # someone actually verifies which IP these calls leave from.
         "COINPILOTX_DISABLE_LOCAL_ENV": "1", "COINPILOTX_INIT_DB_ON_IMPORT": "0",
         "DB_POOL_SIZE": "2", "DB_MAX_OVERFLOW": "2", "DB_CONNECT_TIMEOUT_SECONDS": "10",
         "CJ_STAGING_ACCEPTANCE": "1", "WEB_CONCURRENCY": "1", "WEB_THREADS": "2",
@@ -92,11 +103,15 @@ def verify():
         assert values["DATABASE_URL"] == postgres["DATABASE_URL"]
         assert values["PRODUCTION_CJ_FULFILLMENT_ENABLED"] == "OFF"
         assert values["REAL_CJ_FUNDING_ENABLED"] == "OFF"
-        assert values["CJ_HOSTED_CREDENTIALS_APPROVED"] == "OFF"
+        assert values["CJ_ENVIRONMENT_MODE"] == "SANDBOX"
+        # Replaces an assertion on the retired approval flag. Attestation is
+        # the thing still genuinely unproven, and staging must not claim it.
+        assert not values.get("CJ_EGRESS_IP_ATTESTED")
     assert all(backend[name] == worker[name] for name in VAULT_NAMES)
     print(json.dumps({"vault_configured": True, "service_keyrings_match": True,
                       "database_reference_is_staging_only": True, "production_fulfillment": False,
-                      "funding": False, "global_cj_key": False, "provider_approval": False}))
+                      "funding": False, "global_cj_key": False,
+                      "multi_merchant_scale_blocker": "BLOCKED_BY_EGRESS_ARCHITECTURE"}))
 
 
 def pgremote():

@@ -417,22 +417,27 @@ def test_balance_read_is_not_authorization_to_pay():
     assert_call(transport, "shopping/pay/getBalance")
 
 
-def test_default_requests_transport_cannot_reach_network_without_both_gates(monkeypatch):
+def test_default_requests_transport_cannot_reach_network_without_the_switch(monkeypatch):
+    """`CJ_NETWORK_ENABLED` is the last thing between this process and CJ.
+
+    It used to share the job with a provider-approval flag. CJ has since
+    confirmed no approval is required, so that flag is gone and this switch now
+    carries the whole weight -- which is why the retired name is set here to
+    prove it grants nothing on its own.
+    """
     monkeypatch.delenv("CJ_NETWORK_ENABLED", raising=False)
-    monkeypatch.delenv("CJ_HOSTED_CREDENTIALS_APPROVED", raising=False)
     transport = RequestsTransport()
     calls = []
     monkeypatch.setattr(transport.session, "request", lambda *a, **k: calls.append(a))
-    for approve in (False, True):
-        if approve:
+    for retired_flag_set in (False, True):
+        if retired_flag_set:
             monkeypatch.setenv("CJ_HOSTED_CREDENTIALS_APPROVED", "true")
         with pytest.raises(SupplierError):
             transport.request("GET", BASE_URL + "/setting/get")
     assert calls == [] and transport.session.trust_env is False
 
 
-def test_transport_does_not_allow_arbitrary_endpoint_even_when_gates_enabled(monkeypatch):
-    monkeypatch.setenv("CJ_HOSTED_CREDENTIALS_APPROVED", "true")
+def test_transport_does_not_allow_arbitrary_endpoint_even_when_enabled(monkeypatch):
     monkeypatch.setenv("CJ_NETWORK_ENABLED", "true")
     transport = RequestsTransport()
     calls = []

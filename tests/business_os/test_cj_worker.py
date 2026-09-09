@@ -9,8 +9,13 @@ from tests.business_os.test_cj_connections import database
 from tests.business_os.test_cj_fulfillment import MERCHANT, ready, outbox
 
 
-def test_worker_dark_without_provider_approval(ready, monkeypatch):
-    monkeypatch.delenv("CJ_HOSTED_CREDENTIALS_APPROVED", raising=False)
+def test_worker_dark_until_the_deployment_enables_the_network(ready, monkeypatch):
+    """A background loop is the worst place for a missing gate.
+
+    The worker runs unattended, so it calls `require_network()` for the same
+    reason the request path does. This asserts the default -- nothing
+    configured -- stops it before it makes a single call.
+    """
     with pytest.raises(SupplierError):
         worker.run_once(adapter_factory=lambda _: ready[0])
     assert ready[0].created == []
@@ -18,7 +23,6 @@ def test_worker_dark_without_provider_approval(ready, monkeypatch):
 
 def test_bounded_worker_seeds_only_owned_selected_resources(ready, monkeypatch):
     monkeypatch.setenv("CJ_NETWORK_ENABLED", "true")
-    monkeypatch.setenv("CJ_HOSTED_CREDENTIALS_APPROVED", "true")
     result = fulfillment.create_intent(**ready[2])
     now = time.time()
     counts = worker.run_once(adapter_factory=lambda _: ready[0], limit=1, now=now)
@@ -37,7 +41,6 @@ def test_bounded_worker_seeds_only_owned_selected_resources(ready, monkeypatch):
 
 def test_retry_after_not_shortened_by_worker(ready, monkeypatch):
     monkeypatch.setenv("CJ_NETWORK_ENABLED", "true")
-    monkeypatch.setenv("CJ_HOSTED_CREDENTIALS_APPROVED", "true")
     def unavailable(bundle):
         raise SupplierError("RATE_LIMITED", http_status=429, retry_after=7200)
     now = time.time()
@@ -94,7 +97,6 @@ def test_seeding_advances_beyond_first_page(ready):
 def test_worker_uses_refreshed_connection_status(ready, monkeypatch):
     from services.business_os.suppliers import connections
     monkeypatch.setenv("CJ_NETWORK_ENABLED", "true")
-    monkeypatch.setenv("CJ_HOSTED_CREDENTIALS_APPROVED", "true")
     result = fulfillment.create_intent(**ready[2])
     conn = db.connect()
     conn.execute("UPDATE business_os_supplier_connections SET status='AUTH_EXPIRED'")
@@ -108,7 +110,6 @@ def test_worker_uses_refreshed_connection_status(ready, monkeypatch):
 
 def test_successful_selected_read_persists_snapshot_and_sync_time(ready, monkeypatch):
     monkeypatch.setenv("CJ_NETWORK_ENABLED", "true")
-    monkeypatch.setenv("CJ_HOSTED_CREDENTIALS_APPROVED", "true")
     worker.schedule(connection_id=ready[1]["id"], business_id="biz-a", store_id="store-a", kind="inventory", resource_id="10001", now=time.time() - 1)
     counts = worker.run_once(adapter_factory=lambda _: ready[0], limit=1)
     assert counts["reads"] == 1 and counts["deferred"] == 0

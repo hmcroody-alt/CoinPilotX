@@ -8,7 +8,6 @@ from tests.business_os.test_cj_adapter import make_adapter, Response
 
 def test_streamed_download_closes_and_preserves_bounded_body(monkeypatch):
     monkeypatch.setenv("CJ_NETWORK_ENABLED", "true")
-    monkeypatch.setenv("CJ_HOSTED_CREDENTIALS_APPROVED", "true")
     transport = RequestsTransport()
     closed, kwargs_seen = [], []
     response = requests.Response()
@@ -25,7 +24,6 @@ def test_streamed_download_closes_and_preserves_bounded_body(monkeypatch):
 
 def test_oversized_decompressed_stream_stops_and_marks_write_ambiguous(monkeypatch):
     monkeypatch.setenv("CJ_NETWORK_ENABLED", "true")
-    monkeypatch.setenv("CJ_HOSTED_CREDENTIALS_APPROVED", "true")
     transport = RequestsTransport()
     closed = []
     response = requests.Response()
