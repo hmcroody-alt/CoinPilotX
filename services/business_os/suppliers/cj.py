@@ -55,6 +55,51 @@ def _text(value, maximum=500, *, required=False):
     return value
 
 
+#: Ceiling on image URLs carried out of one product payload. CJ sent nine for
+#: the product this was measured against; twenty is `normalize.MAX_MEDIA`, which
+#: is the layer that decides how many actually reach a listing.
+MAX_MEDIA_URLS = 20
+MAX_URL_LENGTH = 2048
+
+
+def _display(value, maximum):
+    """Provider display text, truncated rather than refused.
+
+    `_text` refuses an over-long value because an over-long *identifier* or
+    *reference* means a malformed response. A description is neither: CJ sends
+    merchant-authored HTML of no documented length, and failing the whole read
+    over its size would turn one verbose listing into a failed import of the
+    other forty-nine on the page. `normalize.clean_text` strips markup and
+    re-caps this for display; the cap here only bounds what we hold in memory.
+    """
+    return value[:maximum] if isinstance(value, str) and value else None
+
+
+def _media(*values, maximum=MAX_MEDIA_URLS):
+    """Provider image URLs: bounded and de-duplicated, but not validated.
+
+    Deliberately lenient where the rest of this module is strict. These are
+    display URLs, and one unusable entry among nine must not fail the read that
+    carries the other eight -- `normalize.safe_media_url` is the SSRF boundary
+    that decides which are safe to fetch, and it drops what it refuses rather
+    than raising. Raising here would move that decision to a layer that cannot
+    see it, and would do so by turning a bad thumbnail into a 502.
+
+    Accepts singles and lists together because CJ spells the same fact three
+    ways: `bigImage` (one URL, search), `productImageSet` (a list, detail) and
+    `productImage` (detail's comma-joined string, which normalize discards).
+    """
+    out: list[str] = []
+    for value in values:
+        for item in (value if isinstance(value, list) else [value]):
+            item = _display(item, MAX_URL_LENGTH)
+            if item and item not in out:
+                out.append(item)
+                if len(out) >= maximum:
+                    return out
+    return out
+
+
 def _secret_text(value, maximum=4096):
     """A provider-issued credential, which is not display text and is not ours to size.
 
@@ -419,14 +464,50 @@ class CJAdapter:
             "sku": _text(data.get("variantSku"), 200), "title": _text(data.get("variantNameEn"), 500),
             "options": _text(data.get("variantKey"), 500), "price": _money(data.get("variantSellPrice")),
             "currency": "USD", "weight_grams": _money(data.get("variantWeight")),
+            # Carried because the pipeline needs them and this projection is the
+            # only thing that ever sees them: `image` is the variant swatch a
+            # merchant picks from, and `inventory` is what lets a detail page
+            # say something about stock before the separate inventory read
+            # lands. Neither had a home here, so both were being dropped.
+            "image": _display(data.get("variantImage"), MAX_URL_LENGTH),
+            "inventory": _number(data.get("inventoryNum")),
             "untrusted_content": True}
 
     def _product(self, data, *, detail=False):
+        """CJ's product payload as the pipeline's facts.
+
+        ## Why this carries more than it looks like it needs
+
+        Everything above this module reads the *normalized* shape, and
+        `normalize` builds that shape out of whatever keys this dict has. So a
+        fact this projection drops is not merely absent from the adapter's
+        output -- it is unreachable, permanently, by every layer above.
+
+        That is not hypothetical. This returned no images, no description and
+        no category at all, and range prices ("12.79-14.32") became None
+        because `_money` correctly refuses a range as a *payable amount*. The
+        visible result was a catalogue screen reading "This supplier has no
+        products to show" while CJ was answering with twenty real ones:
+        `normalize` found no title, `discovery._card` dropped every entry that
+        had none, and a page of products became an empty state. An import would
+        have failed a step later on `NO_MEDIA` for the same reason.
+
+        So `price_range` sits beside `supplier_price` on purpose. They answer
+        different questions: `supplier_price` is what one unit costs and is
+        None when CJ will not say, while `price_range` is the "from" string a
+        card shows. Collapsing them would either fabricate a payable price out
+        of a range or keep hiding the only price a search result has.
+        """
         data = _dict(data)
         pid = _id(data.get("pid") if detail else data.get("id"), provider=True)
         return {"pid": pid, "title": _text(data.get("productNameEn") if detail else data.get("nameEn"), 2000),
             "sku": _text(data.get("productSku") if detail else data.get("sku"), 200),
             "supplier_price": _money(data.get("sellPrice")), "currency": "USD",
+            "price_range": _display(data.get("sellPrice"), 100),
+            "images": _media(data.get("productImageSet"), data.get("bigImage"), data.get("productImage")),
+            "description": _display(data.get("description"), 40000),
+            "category": _display(data.get("categoryName"), 200),
+            "weight": _display(data.get("productWeight"), 100),
             "variants": [self._variant(v, pid) for v in _list(data.get("variants", []))],
             "logistics_properties": [_text(v, 100) for v in _list(data.get("productProEnSet", []), maximum=50)],
             "snapshot_at": _now(), "untrusted_content": True}

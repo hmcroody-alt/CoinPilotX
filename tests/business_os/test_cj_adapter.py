@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from services.business_os.suppliers import discovery
+from services.business_os.suppliers import discovery, importer, normalize
 from services.business_os.suppliers.cj import AuthBundle, BASE_URL, CJAdapter, RequestsTransport
 from services.business_os.suppliers.errors import SupplierError
 
@@ -286,6 +286,128 @@ def test_one_filter_under_two_spellings_is_refused_rather_than_resolved():
     with pytest.raises(SupplierError) as failure:
         discovery._provider_filters({"keyword": "asked-for", "keyWord": "not-asked-for"})
     assert failure.value.http_status == 400
+
+
+#: One `product/listV2` row and one `product/query` payload, spelled as CJ
+#: actually spells them. Both key sets were read off a live response rather than
+#: written from the docs, because the bug these guard was a disagreement about
+#: spelling and a fixture invented from memory would have agreed with whichever
+#: side wrote it.
+def search_row(**changes):
+    data = {"id": PID, "nameEn": "Korean Style Slim-fitting Short Exposed Navel Ins Red Top",
+            "sku": "CJCS2141425", "sellPrice": "12.79-14.32", "categoryId": "1101",
+            "bigImage": "https://cbu01.alicdn.com/img/ibank/fixture-cover.jpg",
+            "warehouseInventoryNum": 402, "totalVerifiedInventory": 8, "verifiedWarehouse": 1}
+    data.update(changes)
+    return data
+
+
+def detail_payload(**changes):
+    data = {"pid": PID, "productNameEn": "Fixture product", "productName": "固定产品",
+            "productSku": "CJCS2141425", "sellPrice": "12.79", "productWeight": "245.00-260.00",
+            "categoryName": "Women's Clothing", "description": "<p>95% cotton</p>",
+            "productImage": "https://cbu01.alicdn.com/a.jpg,https://cbu01.alicdn.com/b.jpg",
+            "productImageSet": ["https://cbu01.alicdn.com/a.jpg", "https://cbu01.alicdn.com/b.jpg"],
+            "productProEnSet": ["ORDINARY"],
+            "variants": [variant(), variant(vid="2002", variantSku="FIX-SKU-2", variantKey="blue-small")]}
+    data.update(changes)
+    return data
+
+
+def test_a_page_of_real_products_reaches_the_catalogue_instead_of_an_empty_state():
+    """The seam that turned twenty CJ products into "no products to show".
+
+    `gateway.read` returns this adapter's projection, not CJ's JSON, and
+    `discovery._card` normalizes whatever it is handed. The projection renames
+    what it coerces, so `normalize` -- whose chains knew only CJ's spellings --
+    read no title, `_card` returned None for every entry on the guard that a
+    card the merchant can tap but not import is worse than no card, and a full
+    page filtered down to nothing. Staging was serving `total: 6000` behind
+    that empty state.
+
+    Both halves were individually correct and individually tested, which is why
+    this asserts on the *composition*: the adapter's real output driven into the
+    real `_entries`/`_card` pair, with nothing restating either side's shape.
+    """
+    body = {"code": 200, "result": True,
+            "data": {"content": [{"productList": [search_row()]}], "totalRecords": 6000, "totalPages": 300}}
+    adapter, _, _, _ = make_adapter(Response(body=body))
+
+    result = adapter.search_products(discovery._provider_filters({"keyword": "top"}))
+    cards = [c for c in (discovery._card("cj", e) for e in discovery._entries(result)) if c]
+
+    assert len(cards) == 1, "a real product page must not normalize to an empty catalogue"
+    card = cards[0]
+    assert card["external_product_id"] == PID
+    assert card["title"] == "Korean Style Slim-fitting Short Exposed Navel Ins Red Top"
+    assert card["cover_image_url"] == "https://cbu01.alicdn.com/img/ibank/fixture-cover.jpg"
+    # The low end of "12.79-14.32". `_money` refuses a range as a payable
+    # amount, correctly; a card's "from" price is a different question.
+    assert card["cost_low_cents"] == 1279
+
+
+def test_a_product_the_adapter_fetched_still_satisfies_the_import_gate():
+    """Everything `importer._validate` requires must survive the projection.
+
+    Title and identity were the visible failure. Media was the next wall behind
+    it: this adapter carried no images at all, so every import that got past the
+    title would have been refused `NO_MEDIA` -- a truthful error about a product
+    that has nine photographs.
+
+    Options are the silent one. `_cj_options` warns that a variant normalizing
+    to zero options makes `marketplace_variants.variant_key` hash every variant
+    of a product to the same key, importing twelve as one. The adapter spells
+    the hyphenated key `options`, a string in the slot the structured list
+    occupies, so both branches missed and every variant came out bare.
+    """
+    adapter, _, _, _ = make_adapter(Response(detail_payload()))
+    product = normalize.product("cj", adapter.get_product(PID))
+
+    chosen = importer._validate(product, selection=None)
+
+    assert product["title"] == "Fixture product"
+    assert product["description"] == "95% cotton"
+    assert product["category"] == "Women's Clothing"
+    assert product["media"] == ["https://cbu01.alicdn.com/a.jpg", "https://cbu01.alicdn.com/b.jpg"]
+    assert product["weight_grams"] == 245
+    assert len(chosen) == 2
+    assert [v["options"] for v in chosen] == [
+        [{"name": "option1", "value": "red"}, {"name": "option2", "value": "large"}],
+        [{"name": "option1", "value": "blue"}, {"name": "option2", "value": "small"}]]
+    assert {v["external_variant_id"] for v in chosen} == {VID, "2002"}
+    assert [v["cost_cents"] for v in chosen] == [425, 425]
+
+
+def test_a_raw_search_row_keeps_the_only_image_it_has():
+    """``bigImage`` is a search result's entire gallery.
+
+    A ``product/listV2`` row carries no ``productImageSet`` and no
+    ``productImage`` — just ``bigImage`` — so a cover chain that does not name it
+    leaves every card in the grid coverless. The adapter lineage is covered
+    above; this is the raw one, which ``normalize.product`` is a public surface
+    for and which no test in this repository was driving.
+    """
+    product = normalize.product("cj", search_row())
+    assert product["external_product_id"] == PID
+    assert product["title"] == "Korean Style Slim-fitting Short Exposed Navel Ins Red Top"
+    assert product["cover_image_url"] == "https://cbu01.alicdn.com/img/ibank/fixture-cover.jpg"
+    assert product["from_cost_cents"] == 1279
+
+
+def test_a_raw_provider_payload_normalizes_exactly_as_it_did_before():
+    """The adapter spellings are additive, not a replacement.
+
+    Every other test in the suite feeds raw CJ shapes, and this module is not
+    the only caller: a payload that never passed through the projection must
+    still normalize, or the fix for one lineage has quietly broken the other.
+    """
+    product = normalize.product("cj", detail_payload())
+    assert product["title"] == "Fixture product"
+    assert product["external_product_id"] == PID
+    assert product["from_cost_cents"] == 1279
+    assert product["media"] == ["https://cbu01.alicdn.com/a.jpg", "https://cbu01.alicdn.com/b.jpg"]
+    assert product["variants"][0]["options"] == [
+        {"name": "option1", "value": "red"}, {"name": "option2", "value": "large"}]
 
 
 @pytest.mark.parametrize("kwargs", [{"size": 101}, {"page": 0}, {"page": True}, {"filters": {"accessToken": ACCESS}},

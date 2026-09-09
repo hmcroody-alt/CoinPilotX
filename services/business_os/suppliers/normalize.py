@@ -383,6 +383,18 @@ def _first(payload: dict, *names, default=None):
     CJ alone spells the same product name ``productNameEn``, ``productName`` and
     ``nameEn`` across three endpoints. A lookup chain here is cheaper and far
     more legible than a per-endpoint adapter class.
+
+    A fourth spelling per fact comes from *us*. ``gateway.read`` does not return
+    CJ's JSON — it returns ``cj.CJAdapter``'s bounded projection of it, which
+    renames what it coerces (``productNameEn`` becomes ``title``). This module's
+    docstring describing a raw CJ dict was written against a contract that has
+    not held, and the mismatch was invisible from either side: every test here
+    feeds raw CJ payloads, and every adapter test asserts the projection, so
+    nothing drove one into the other. In production the chains missed on every
+    renamed key and a page of real products normalized to a page of nothing.
+
+    Adapter spellings are therefore listed *after* the provider's own in each
+    chain: a raw payload still normalizes exactly as it did before.
     """
     for name in names:
         if name in payload:
@@ -392,24 +404,54 @@ def _first(payload: dict, *names, default=None):
     return default
 
 
+def _cj_image_candidates(*values) -> list:
+    """CJ's image fields, flattened. ``productImage`` is comma-joined.
+
+    ``product/query`` answers with ``productImageSet`` as a list and
+    ``productImage`` as those same URLs joined by commas. A comma is legal in a
+    path, so the joined string is a syntactically *valid* URL that
+    :func:`safe_media_url` accepts and that resolves to nothing — and it is read
+    first, so it became the cover image of every imported CJ product. A broken
+    cover is the one image failure that cannot be ignored, because the cover is
+    the whole card in a marketplace grid.
+
+    Splitting is refused unless every part is itself a URL, so a legitimate
+    query string containing a comma is left intact rather than shredded.
+    """
+    out = []
+    for value in values:
+        for item in (value if isinstance(value, (list, tuple)) else [value]):
+            if isinstance(item, str) and "," in item:
+                parts = [part.strip() for part in item.split(",")]
+                if len(parts) > 1 and all(p.lower().startswith(("http://", "https://")) for p in parts):
+                    out.extend(parts)
+                    continue
+            out.append(item)
+    return out
+
+
 def _cj_product(payload: dict) -> dict:
     data = _mapping(payload, "product")
     gallery = _first(data, "productImageSet", "productImages", "images", default=[])
-    if isinstance(gallery, str):
-        gallery = [gallery]
-    cover = _first(data, "productImage", "productMainImage", "image")
-    media = media_list([cover, *(gallery if isinstance(gallery, (list, tuple)) else [])])
+    # ``bigImage`` is the only image a search result carries, so without it a
+    # whole catalogue grid renders coverless even when the payload is raw CJ.
+    cover = _first(data, "productImage", "productMainImage", "bigImage", "image")
+    media = media_list(_cj_image_candidates(cover, gallery))
     return {
         "provider": "cj",
         "external_product_id": external_id(_first(data, "pid", "productId", "id")),
-        "title": clean_text(_first(data, "productNameEn", "productName", "nameEn", "name"), MAX_TITLE),
+        "title": clean_text(_first(data, "productNameEn", "productName", "nameEn", "name", "title"), MAX_TITLE),
         "description": clean_text(_first(data, "description", "productDescription", "descriptionEn"), MAX_DESCRIPTION),
         "category": clean_text(_first(data, "categoryName", "categoryNameEn", "category"), 120),
         "brand": clean_text(_first(data, "brandName", "brand"), 120),
         "external_sku": external_id(_first(data, "productSku", "sku"), 120),
         "media": media,
         "cover_image_url": media[0] if media else None,
-        "from_cost_cents": cents(_first(data, "sellPrice", "productPrice", "price")),
+        # ``price_range`` before ``supplier_price``: the adapter sets the latter
+        # to None for a range, which is right for a payable amount and wrong for
+        # the "from" price a card shows. ``cents`` takes a range's low end.
+        "from_cost_cents": cents(_first(data, "sellPrice", "productPrice", "price",
+                                        "price_range", "supplier_price")),
         "currency": currency(_first(data, "currency", "sellPriceCurrency")) or "USD",
         "origin": clean_text(_first(data, "productProCountry", "sourceFrom", "countryCode"), 60),
         "weight_grams": grams(_first(data, "productWeight", "weight")),
@@ -448,7 +490,7 @@ def _cj_variant(entry: dict, position: int = 0) -> dict:
         "currency": currency(_first(entry, "currency")) or "USD",
         "stock_state": state,
         "stock_quantity": quantity,
-        "weight_grams": grams(_first(entry, "variantWeight", "weight")),
+        "weight_grams": grams(_first(entry, "variantWeight", "weight", "weight_grams")),
         "length_mm": grams(_first(entry, "variantLength", "length")),
         "width_mm": grams(_first(entry, "variantWidth", "width")),
         "height_mm": grams(_first(entry, "variantHeight", "height")),
@@ -479,7 +521,11 @@ def _cj_options(entry: dict) -> list[dict]:
                 out.append({"name": name, "value": value})
     if out:
         return out
-    key = _first(entry, "variantKey", "variantNameEn", "variantName")
+    # The adapter spells the hyphenated key ``options`` — a string sitting in
+    # the slot the structured list occupies above. Without this it falls past
+    # both branches and every variant of a product normalizes to zero options,
+    # which is precisely the silent 12-variants-into-1 collapse described above.
+    key = raw if isinstance(raw, str) else _first(entry, "variantKey", "variantNameEn", "variantName", "title")
     if isinstance(key, str) and key.strip():
         parts = [clean_text(part, 120) for part in key.split("-")]
         return [{"name": f"option{index + 1}", "value": part}
