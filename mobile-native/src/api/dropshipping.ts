@@ -1284,9 +1284,20 @@ export function stateForError(error: unknown): DropshippingState {
   if (code === "store_not_found") return "STORE_NOT_FOUND";
   if (code === "forbidden") return "SUPPLIER_CONNECTION_FORBIDDEN";
 
-  if (error.status === 401 || error.status === 403) return "UNAUTHORIZED";
+  // Both lists are matched ahead of the bare status classes for the same reason
+  // the block above is: a named code is the server being specific, and a status
+  // is the server being generic, so letting the status win discards the only
+  // information the merchant can act on. This ordering is load-bearing rather
+  // than tidy -- `auth_expired` and `reauth_required` both arrive as 401, so
+  // behind a `status === 401` catch-all every entry in DISCONNECTED_CODES that
+  // matters here is unreachable. That is not hypothetical: a CJ key CJ itself
+  // rejects ("APIkey is wrong") comes back as `reauth_required` 401 and reached
+  // the merchant as "You're not signed in to this store any more", which sends
+  // someone whose PulseSoc session is perfectly healthy off to sign in again
+  // while the supplier connection stays broken.
   if (DISCONNECTED_CODES.includes(code)) return "SUPPLIER_DISCONNECTED";
   if (PROVIDER_CODES.includes(code)) return "PROVIDER_UNAVAILABLE";
+  if (error.status === 401 || error.status === 403) return "UNAUTHORIZED";
   if (error.status === 429 || error.status === 503 || error.status === 504) return "PROVIDER_UNAVAILABLE";
   return "ERROR";
 }

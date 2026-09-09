@@ -295,6 +295,36 @@ describe("stateForError separates causes that have different fixes", () => {
   });
 
   /**
+   * The same collapse, one list further down, and the reason the ordering in
+   * `stateForError` is load-bearing rather than cosmetic.
+   *
+   * `DISCONNECTED_CODES` sits below the bare `status === 401 || 403` check, so
+   * every entry in it that actually arrives as a 401 was unreachable: the
+   * catch-all matched first and answered UNAUTHORIZED. This was found live --
+   * a CJ key that CJ itself rejected ("APIkey is wrong, please check and try
+   * again", provider code 1600005) maps to `reauth_required` with HTTP 401, and
+   * the merchant was told "You're not signed in to this store any more".
+   *
+   * That is the worst possible sentence for this cause. The PulseSoc session is
+   * fine; signing out and back in changes nothing and costs the merchant their
+   * place. The thing that needs re-authorizing is the *supplier* connection.
+   */
+  it.each([
+    ["reauth_required", 401],
+    ["auth_expired", 401],
+    ["credential_missing", 401],
+    ["supplier_disconnected", 403]
+  ])("reads %s as a broken supplier connection, not a dead PulseSoc session", (code, status) => {
+    expect(stateForError(new PulseApiError("no", status as number, code as string)))
+      .toBe("SUPPLIER_DISCONNECTED");
+  });
+
+  /** A named provider fault likewise outranks the status it happens to carry. */
+  it("keeps a named provider fault out of UNAUTHORIZED", () => {
+    expect(stateForError(new PulseApiError("no", 403, "provider_unavailable"))).toBe("PROVIDER_UNAVAILABLE");
+  });
+
+  /**
    * `store_not_found` is deliberately not the generic `not_found` the rest of
    * the Business OS pack answers with. A missing *connection*, draft or cart
    * item is a 404 too, and reading those as a store the server could not match
