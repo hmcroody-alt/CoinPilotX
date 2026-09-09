@@ -4,6 +4,7 @@ The bot resolver is replaced by a minimal session-backed authority so tests do
 not boot the monolith; authorization, CSRF gate, parsers and handlers are real.
 """
 import json
+import re
 from types import SimpleNamespace
 
 from flask import Flask, jsonify, request, session
@@ -206,3 +207,58 @@ def test_missing_sandbox_stops_at_route_before_fulfillment_handler(client, monke
         {"business_id": "biz-a", "store_id": "store-a", "order_id": "order-fixture", "idempotency_key": "idem-fixture"})
     assert result.status_code == 400 and result.get_json()["code"] == "sandbox_flag_required"
     assert called == []
+
+
+# `_error` answers every one of a dozen validators with the same opaque 502, so
+# a real provider response we refuse arrives with no way to ask which field was
+# refused. `CJ_SUPPLIER_DIAGNOSTIC_ORIGIN` returns that one coordinate. These
+# pin what it may and may not carry -- the point of the flag is that it buys a
+# raise site and nothing else, so a later "while we're here" widening that let
+# provider text through would have to break one of these first.
+
+def _raise_from_adapter(monkeypatch, factory):
+    def boom(*args, **kwargs):
+        from services.business_os.suppliers import cj
+        factory(cj)
+    monkeypatch.setattr(connections, "discover_shops", boom)
+
+
+def test_diagnostic_origin_is_absent_unless_a_deployment_asks_for_it(client, monkeypatch):
+    login(client)
+    monkeypatch.delenv("CJ_SUPPLIER_DIAGNOSTIC_ORIGIN", raising=False)
+    _raise_from_adapter(monkeypatch, lambda cj: cj._dict(None))
+    response = post(client, BASE + "/discover-shops")
+    body = response.get_json()
+    assert response.status_code == 502 and body["error_code"] == "MALFORMED_PROVIDER_RESPONSE"
+    assert "origin" not in body
+
+
+def test_diagnostic_origin_separates_validators_that_share_one_error_code(client, monkeypatch):
+    login(client)
+    monkeypatch.setenv("CJ_SUPPLIER_DIAGNOSTIC_ORIGIN", "on")
+    seen = {}
+    for label, factory in (("dict", lambda cj: cj._dict(None)),
+                           ("text", lambda cj: cj._text("x" * 201, 200, required=True)),
+                           ("id", lambda cj: cj._id("not-an-id", provider=True))):
+        _raise_from_adapter(monkeypatch, factory)
+        body = post(client, BASE + "/discover-shops").get_json()
+        assert body["error_code"] == "MALFORMED_PROVIDER_RESPONSE"
+        seen[label] = body["origin"]
+    # One code, three raise sites: distinguishing them is the whole purpose.
+    assert len(set(seen.values())) == 3
+    assert all(re.fullmatch(r"[a-z_]+\.py:\d+", value) for value in seen.values())
+
+
+def test_diagnostic_origin_cannot_carry_provider_text_or_a_credential(client, monkeypatch):
+    login(client)
+    monkeypatch.setenv("CJ_SUPPLIER_DIAGNOSTIC_ORIGIN", "on")
+
+    def boom(*args, **kwargs):
+        raise SupplierError("MALFORMED_PROVIDER_RESPONSE")
+
+    monkeypatch.setattr(connections, "discover_shops", boom)
+    text = post(client, BASE + "/discover-shops").get_data(as_text=True)
+    assert "fixture-route-api-key" not in text
+    # Raised outside the supplier package, so there is no frame to attribute and
+    # the field stays empty rather than reaching for the nearest other frame.
+    assert json.loads(text)["origin"] == ""

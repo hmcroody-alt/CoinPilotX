@@ -3,6 +3,8 @@
 Uses the same canonical user/admin and CSRF authorities as Commerce. Credential
 request bodies are consumed without Flask's JSON/body cache. No exception detail,
 provider response object, body, or credential is logged or passed to analytics.
+Under `CJ_SUPPLIER_DIAGNOSTIC_ORIGIN` (default off) `_error` adds our own raise
+site as `file:line` -- a constant of this source, never provider or caller data.
 """
 
 from __future__ import annotations
@@ -49,6 +51,31 @@ def _respond(payload, status=200, retry_after=None):
     return response
 
 
+def _origin(exc):
+    """Innermost frame raised inside the supplier package, as `file:line`.
+
+    These modules are barred from every log sink on purpose, and that stays --
+    a supplier credential must not be one careless format string away from a log
+    aggregator. But the ban left a class of failure undiagnosable:
+    `MALFORMED_PROVIDER_RESPONSE` is raised from a dozen separate validators that
+    all answer with the same opaque 502, so "CJ returned something we refused"
+    arrives with no way to ask *which field* -- and the only alternative was to
+    guess and loosen validators one at a time against a live provider call.
+
+    So the coordinate goes back to the operator on the response instead of into
+    a log, and only when a deployment asks for it. A basename and a line number
+    are compile-time constants of our own source: they cannot carry provider
+    content, a credential, or a request body no matter what CJ returns.
+    """
+    frame, tb = "", getattr(exc, "__traceback__", None)
+    while tb is not None:
+        path = tb.tb_frame.f_code.co_filename.replace("\\", "/")
+        if "/business_os/suppliers/" in path:
+            frame = f"{path.rsplit('/', 1)[-1]}:{tb.tb_lineno}"
+        tb = tb.tb_next
+    return frame
+
+
 def _error(exc):
     # No str(exc), repr(exc), traceback locals, provider message, or request body.
     code = str(getattr(exc, "code", "supplier_unavailable"))
@@ -62,8 +89,10 @@ def _error(exc):
     # distinction below collapsed into the status check and every 401/403 —
     # csrf, login_required, store_not_approved, forbidden — was rendered as
     # "you're not signed in to this store any more".
-    return _respond({"ok": False, "code": code, "error_code": code}, status,
-                    getattr(exc, "retry_after", None))
+    payload = {"ok": False, "code": code, "error_code": code}
+    if policy.enabled("CJ_SUPPLIER_DIAGNOSTIC_ORIGIN"):
+        payload["origin"] = _origin(exc)
+    return _respond(payload, status, getattr(exc, "retry_after", None))
 
 
 def _body():
