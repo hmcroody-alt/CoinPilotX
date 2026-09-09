@@ -15611,7 +15611,7 @@ def admin_page_html(title, body, admin=None):
         "<meta name='robots' content='noindex,nofollow'/>"
         f"<title>{clean_html(title)} | CoinPlotXAI Admin</title>"
         "<link rel='stylesheet' href='/static/css/pulsesoc-tokens.css?v=parity-20260806a'/>"
-        "<link rel='stylesheet' href='/static/css/pulse_design_system.css'/>"
+        "<link rel='stylesheet' href='/static/css/pulse_design_system.css?v=shell-nav-20260909a'/>"
         "<link rel='stylesheet' href='/static/css/pulse_mobile_system.css'/>"
         "<link rel='stylesheet' href='/static/css/admin_ops_center.css?v=opsv2-20260722i'/>"
         "</head><body>"
@@ -39780,11 +39780,20 @@ def pulse_desktop_top_nav_html(user=None):
     display_name = shell_user.get("display_name") or shell_user.get("username") or "Me"
     initials = "".join(part[:1] for part in str(display_name).strip().split()[:2]).upper() or "ME"
     avatar_html = f"<img src='{clean_html(avatar_url)}' alt='Profile picture'>" if avatar_url else clean_html(initials[:2])
+    # The top bar used to be a feed-only ornament, so nothing marked the current
+    # page and a stylesheet lit Home unconditionally. It now renders on every
+    # shell page, where a fixed highlight is simply wrong, so the current
+    # destination is marked here with the same matcher the rail uses.
+    active_path = (request.path or "").split("?")[0]
     nav_html = ""
     for label, href in nav:
         badge = "<span class='pulse-notification-badge' data-chat-unread hidden>0</span>" if href == "/pulse/messages" else ""
-        nav_html += f"<a href='{clean_html(href)}'>{clean_html(label)}{badge}</a>"
-    apps_html = "".join(f"<a href='{clean_html(href)}'>{clean_html(label)}</a>" for label, href in apps)
+        current = " aria-current='page'" if pulse_nav_is_current(href, active_path) else ""
+        nav_html += f"<a{current} href='{clean_html(href)}'>{clean_html(label)}{badge}</a>"
+    apps_html = ""
+    for label, href in apps:
+        current = " aria-current='page'" if pulse_nav_is_current(href, active_path) else ""
+        apps_html += f"<a{current} href='{clean_html(href)}'>{clean_html(label)}</a>"
     return (
         "<header class='pulse-desktop-topbar' data-desktop-feed-nav>"
         "<a class='pulse-desktop-brand' href='/pulse'><img src='/static/brand/pulsesoc-logo-20260813.png' alt='PulseSoc logo'>PulseSoc</a>"
@@ -39804,10 +39813,19 @@ def pulse_desktop_top_nav_html(user=None):
     )
 
 
-def pulse_desktop_left_rail_html(is_admin=False, user=None):
-    shell_user = load_account_by_id((user or {}).get("user_id")) or (user or {})
-    rail_name = shell_user.get("display_name") or shell_user.get("username") or "Me"
-    rail_initials = "".join(part[:1] for part in str(rail_name).strip().split()[:2]).upper() or "ME"
+def pulse_shell_rail_items(user=None, is_admin=False):
+    """The one navigation catalogue every web shell renders.
+
+    This used to be a literal list inside ``pulse_desktop_left_rail_html``, which
+    only the feed calls. ``pulse_social_shell`` -- the other 96 pages -- carried a
+    separate seven-link row, so the site had two navigations and the smaller one
+    was the one most pages got. Both now read this list, so a destination added
+    here appears everywhere or nowhere; it can no longer appear on the feed alone.
+
+    Mirrors the sections of ``mobile-native/src/navigation/masterNavigation.ts``.
+    That file is the product reference; this is the web's adaptation of it, not a
+    copy -- the web drops the native-only entries and keeps web-reachable ones.
+    """
     items = [
         ("Home", "/pulse", "⌂"),
         ("Dashboard", "/dashboard", "▦"),
@@ -39837,10 +39855,80 @@ def pulse_desktop_left_rail_html(is_admin=False, user=None):
         items.insert(5, ("PulseSoc Labs", "/pulse/labs", "△"))
     if is_admin:
         items.append(("Admin", "/admin/global-command", "!"))
-    links = "".join(
-        f"<a class='desktop-rail-link' href='{clean_html(href)}'><span class='desktop-rail-ico'>{clean_html(icon)}</span><span>{clean_html(label)}</span></a>"
-        for label, href, icon in items
+    return items
+
+
+def pulse_nav_is_current(href, active_path):
+    """Does ``href`` name the destination the request is already on?
+
+    Shared by the rail and the top bar so the two cannot disagree about where
+    you are -- a top bar lighting Home while the rail lights Settings would be a
+    worse answer than the no-active-state this replaces.
+
+    Prefix matching is deliberate, so a detail page lights its section rather
+    than nothing. ``/pulse`` is excluded from the prefix branch because it is a
+    prefix of almost every other route, and including it would light Home
+    everywhere, which is exactly the always-on highlight being removed here.
+    """
+    base = (href or "").split("#")[0].split("?")[0]
+    active = (active_path or "").split("?")[0]
+    if not base or not active:
+        return False
+    return active == base or (base != "/pulse" and active.startswith(base.rstrip("/") + "/"))
+
+
+def pulse_rail_nav_links_html(user=None, is_admin=False, active_path=""):
+    """Render the rail's links, marking the current destination.
+
+    The rail previously rendered no active state at all, so on every page it
+    looked identical and gave no clue where you were -- one of the concrete ways
+    the site read as older than the app, which highlights the selected tab.
+    """
+    active = (active_path or request.path or "").split("?")[0]
+    out = ""
+    for label, href, icon in pulse_shell_rail_items(user, is_admin):
+        selected = pulse_nav_is_current(href, active)
+        cls = "desktop-rail-link is-active" if selected else "desktop-rail-link"
+        current = " aria-current='page'" if selected else ""
+        out += (
+            f"<a class='{cls}'{current} href='{clean_html(href)}'>"
+            f"<span class='desktop-rail-ico'>{clean_html(icon)}</span>"
+            f"<span>{clean_html(label)}</span></a>"
+        )
+    return out
+
+
+def pulse_desktop_rail_nav_html(user=None, is_admin=False, active_path=""):
+    """A navigation-only left rail, for the 96 pages that are not the feed.
+
+    Deliberately not ``pulse_desktop_left_rail_html``: that one also carries the
+    radio dock, an ad slot and the Fast Lanes card, which are feed furniture. A
+    settings page does not want a radio player bolted to it. The navigation is
+    the part that must be identical everywhere, so the navigation is the part
+    that is shared.
+
+    The wrapper is ``pulse-shell-rail``, not ``pulse-desktop-left``, on purpose.
+    ``pulse_desktop_feed.css`` carries unscoped decisions about ``.pulse-desktop-left``
+    that are true of the *feed* rather than of the product -- notably hiding it
+    outright between 1024px and 1279px, where a feed sheds its rails to protect one
+    wide reading column. A settings page has no such column to protect, and
+    inheriting that rule cost the rail on every ordinary laptop. The card and link
+    classes are kept, because their appearance is exactly what should be shared.
+    """
+    return (
+        "<aside class='pulse-shell-rail' aria-label='PulseSoc navigation rail'>"
+        "<section class='desktop-rail-card desktop-rail-nav'>"
+        f"{pulse_rail_nav_links_html(user, is_admin, active_path)}"
+        "</section>"
+        "</aside>"
     )
+
+
+def pulse_desktop_left_rail_html(is_admin=False, user=None):
+    shell_user = load_account_by_id((user or {}).get("user_id")) or (user or {})
+    rail_name = shell_user.get("display_name") or shell_user.get("username") or "Me"
+    rail_initials = "".join(part[:1] for part in str(rail_name).strip().split()[:2]).upper() or "ME"
+    links = pulse_rail_nav_links_html(user, is_admin)
     return (
         "<aside class='pulse-desktop-left' aria-label='PulseSoc navigation rail'>"
         "<section class='desktop-rail-card desktop-rail-profile'>"
@@ -40575,9 +40663,9 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
 <title>__TITLE__ | CoinPlotXAI</title>
 <link rel="manifest" href="/manifest.json"><link rel="icon" href="/static/brand/pulsesoc-logo-20260813.png">
 <link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=parity-20260806a">
-<link rel="stylesheet" href="/static/css/pulse_desktop_feed.css?v=static-bg-20260806a">
+<link rel="stylesheet" href="/static/css/pulse_desktop_feed.css?v=shell-nav-20260909a">
 <link rel="stylesheet" href="/static/css/pulse_status_system.css?v=status-v4-20260703b">
-<link rel="stylesheet" href="/static/css/pulse_home_os.css?v=static-bg-20260806a">
+<link rel="stylesheet" href="/static/css/pulse_home_os.css?v=shell-nav-20260909a">
 <link rel="stylesheet" href="/static/css/pulse_reaction_system.css?v=status-v3-20260629b">
 <script src="/static/js/pulse_reaction_system.js?v=feed-actions-v2-20260629b" defer></script>
 <script src="/static/js/pulse_media_renderer.js?v=global-media-ui-20260628g" defer></script>
@@ -46790,6 +46878,19 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
     shell_body_class = "pulse-home-os pulse-social-os pulse-live-shell-mode" if live_shell_mode else "pulse-home-os pulse-social-os"
     shell_layout_class = "layout pulse-live-shell-layout" if live_shell_mode else "layout"
     shell_side_html = "" if live_shell_mode and not side_html else f"<aside>{default_side}</aside>"
+    # The desktop chrome the feed has always had, now on every page that uses this
+    # shell. Until now `/pulse` rendered a topbar carrying search, notifications,
+    # an account menu and a 24-destination rail, while these 96 pages rendered a
+    # seven-link row with no search, no notifications and no route to a profile at
+    # all above 900px -- the drawer holding those links is `display:none` on
+    # desktop and its only opener lives inside the mobile top bar. Two products on
+    # one domain, and the smaller one was what most pages got.
+    #
+    # Immersive surfaces keep the top bar but drop the rail, which is the same
+    # call the app makes in `bottomNavPolicy`: chrome you can escape by, without
+    # navigation furniture crowding a full-bleed surface.
+    desktop_top_nav_html = pulse_desktop_top_nav_html(user)
+    desktop_rail_html = "" if live_shell_mode else pulse_desktop_rail_nav_html(user, bool(admin_current_user()))
     shell_intro_html = ""
     if show_intro and not live_shell_mode:
         shell_intro_html = f"<section class=\"card\"><span class=\"pill\">PulseSoc Social Ecosystem</span><h1>{clean_html(title)}</h1><p>{clean_html(description)}</p><p>{clean_html(PULSE_DISCLAIMER)}</p></section>"
@@ -46810,7 +46911,7 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
   </div>
 </section>
 """
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>{clean_html(title)} | PulseSoc</title><link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=parity-20260806a"><link rel="stylesheet" href="/static/css/pulse_design_system.css"><link rel="stylesheet" href="/static/css/pulse_mobile_system.css"><link rel="stylesheet" href="/static/css/pulse_reels_experience.css"><link rel="stylesheet" href="/static/css/pulse_cinematic_media.css?v=static-bg-20260806a"><link rel="stylesheet" href="/static/css/pulse_home_os.css?v=static-bg-20260806a"><link rel="stylesheet" href="/static/css/pulse_reaction_system.css?v=status-v3-20260629b"><style>:root{{color-scheme:dark;--line:var(--border-subtle,rgba(110,223,246,.22));--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f)}}*{{box-sizing:border-box;max-width:100%}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;word-break:break-word}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:max(18px,env(safe-area-inset-top)) 0 calc(90px + env(safe-area-inset-bottom))}}.nav,.actions{{display:flex;gap:8px;flex-wrap:wrap}}.nav{{overflow-x:auto;flex-wrap:nowrap;padding-bottom:6px;margin-bottom:12px;scrollbar-width:thin}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}}.layout>div,.layout>aside{{min-width:0}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));padding:15px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);min-width:0;overflow-wrap:anywhere}}h1{{font-size:clamp(28px,7vw,56px);line-height:1;margin:8px 0}}p,.muted,small{{color:var(--muted);line-height:1.55}}a{{color:inherit}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;white-space:nowrap}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}input,select,textarea{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:#f2fbff;padding:10px}}textarea{{min-height:96px;resize:vertical}}.avatar,.pulse-topnav-avatar{{width:44px;height:44px;border-radius:14px;background:rgba(5,15,28,.46);border:1px solid rgba(110,230,255,.28);display:grid;place-items:center;color:#f2fbff;font-weight:950;overflow:hidden;flex:0 0 auto;text-decoration:none;position:relative;box-shadow:inset 0 0 18px rgba(255,255,255,.04),0 0 20px rgba(0,220,255,.12)}}.avatar img,.pulse-topnav-avatar img{{width:100%;height:100%;object-fit:cover}}.pulse-topnav-control{{position:relative;width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;display:grid;place-items:center;background:rgba(5,15,28,.46);border:1px solid rgba(110,230,255,.28);color:#f2fbff;text-decoration:none;box-shadow:inset 0 0 18px rgba(255,255,255,.04),0 0 20px rgba(0,220,255,.12)}}.pulse-bell-icon{{width:21px;height:21px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}}.pulse-topnav-presence{{position:absolute;right:4px;bottom:4px;width:10px;height:10px;border-radius:999px;background:#36e58f;box-shadow:0 0 0 2px rgba(5,11,20,.92),0 0 14px rgba(54,229,143,.72)}}.mobile-actions{{display:flex;align-items:center;gap:6px}}.pill{{display:inline-flex;max-width:100%;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;font-size:12px;color:#dffcff;background:rgba(110,223,246,.08);white-space:normal}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}.mobile-topbar,.mobile-bottom-nav,.drawer-backdrop,.pulse-drawer,.pulse-fab{{display:none}}.mobile-topbar{{align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:24;margin:calc(-1 * max(18px,env(safe-area-inset-top))) -12px 12px;padding:max(24px,env(safe-area-inset-top)) 12px 10px;background:rgba(5,11,20,.88);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.14)}}.icon-btn{{width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;font-size:21px}}.mobile-brand{{display:flex;align-items:center;gap:8px;font-weight:950;text-decoration:none}}.mobile-brand img{{width:34px;height:34px;border-radius:10px}}.drawer-backdrop{{position:fixed;inset:0;background:rgba(1,6,14,.54);backdrop-filter:blur(8px);z-index:48;opacity:0;pointer-events:none;transition:opacity .22s ease}}.pulse-drawer{{position:fixed;inset:0 auto 0 0;width:min(86vw,356px);z-index:49;background:linear-gradient(180deg,rgba(8,19,35,.98),rgba(5,11,20,.98));border-right:1px solid rgba(110,223,246,.18);box-shadow:24px 0 80px rgba(0,0,0,.45);transform:translate3d(-104%,0,0);transition:transform .24s ease;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));will-change:transform}}.drawer-link{{min-height:46px;border:1px solid rgba(110,223,246,.13);border-radius:12px;background:rgba(255,255,255,.045);padding:10px 12px;text-decoration:none;display:flex;align-items:center;font-weight:900;margin:7px 0}}.drawer-open .drawer-backdrop{{display:block;opacity:1;pointer-events:auto}}.drawer-open .pulse-drawer{{display:block;transform:translate3d(0,0,0)}}.mobile-bottom-nav{{position:fixed;left:0;right:0;bottom:0;z-index:23;min-height:calc(64px + env(safe-area-inset-bottom));padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:rgba(5,11,20,.94);backdrop-filter:blur(10px);border-top:1px solid rgba(110,223,246,.16);grid-template-columns:repeat(5,minmax(0,1fr));gap:2px;overflow:hidden}}.mobile-bottom-nav a,.mobile-bottom-nav button{{min-width:0;min-height:50px;border:0;border-radius:10px;text-decoration:none;display:grid;grid-template-rows:20px 14px;place-items:center;text-align:center;font-size:10px;line-height:1;font-weight:900;color:#dffcff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:transparent;padding:0}}.mobile-bottom-nav .nav-ico{{font-size:17px;line-height:1;display:grid;place-items:center}}.pulse-fab{{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom) + 88px);z-index:25;width:54px;height:54px;min-height:54px;border-radius:18px;border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-size:27px;box-shadow:0 14px 38px rgba(54,229,143,.24)}}@media(max-width:900px){{.mobile-topbar{{display:flex}}.mobile-bottom-nav{{display:grid}}.pulse-fab{{display:none!important}}.nav{{display:none}}.wrap{{width:100%;max-width:100vw;padding:12px 12px calc(160px + env(safe-area-inset-bottom))}}.layout{{grid-template-columns:1fr}}.button,button{{white-space:normal;min-height:46px}}.actions .button,.actions button{{flex:1 1 150px}}}}</style></head><body class="{shell_body_class}"><div class="drawer-backdrop" id="drawerBackdrop"></div><aside class="pulse-drawer" id="pulseDrawer"><header><a class="mobile-brand" href="/pulse">PulseSoc</a><button class="icon-btn" id="drawerClose" type="button">×</button></header>{drawer_html}</aside><main class="wrap"><nav class="mobile-topbar"><button class="icon-btn pulse-topnav-control" id="drawerOpen" type="button" aria-label="Open PulseSoc menu">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/brand/pulsesoc-logo-20260813.png" alt="">PulseSoc</a><div class="mobile-actions"><a class="pulse-topnav-control" href="/pulse/search" aria-label="Search PulseSoc">⌕</a><a class="pulse-topnav-control pulse-topnav-alert" data-header-notifications href="/pulse/notifications" aria-label="Notifications">{PULSE_NOTIFICATION_BELL_ICON}<span class="pulse-notification-badge" data-alert-unread data-notification-unread hidden>0</span></a><a class="pulse-topnav-avatar" href="/pulse/profile" aria-label="Profile">{shell_avatar_html}<span class="pulse-topnav-presence" aria-hidden="true"></span></a></div></nav><nav class="nav">{nav_html}</nav>{shell_intro_html}<section class="{shell_layout_class}"><div>{main_html}</div>{shell_side_html}</section></main><nav class="mobile-bottom-nav">{mobile_bottom_html}</nav><a class="pulse-fab" href="/pulse#create" aria-label="Create PulseSoc">+</a>{create_sheet_html}<div class="toast" id="toast"></div><script src="/static/js/time.js"></script><script src="/static/js/pulseshell_bridge.js?v=pulseshell-20260630a" defer></script><script src="/static/notifications.js?v=brand-20260813" defer></script><script src="/static/js/pulse_reaction_system.js?v=feed-actions-v2-20260629a"></script><script src="/static/js/pulse_media_renderer.js?v=global-media-ui-20260628g"></script><script src="/static/js/pulse_status_viewer.js?v=status-v4-20260703b"></script><script>const toast=m=>{{const t=document.getElementById('toast');if(!t)return;t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};const drawer=document.getElementById('pulseDrawer');function setDrawer(open){{document.body.classList.toggle('drawer-open',open)}}document.getElementById('drawerOpen')?.addEventListener('click',()=>setDrawer(true));document.getElementById('drawerClose')?.addEventListener('click',()=>setDrawer(false));document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setDrawer(false));drawer?.addEventListener('click',e=>{{if(e.target.closest('a'))setDrawer(false)}});async function pulseApi(url,opts={{}}){{const isForm=opts.body instanceof FormData;const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:isForm?{{}}:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{ok:false,message:'Server returned an unreadable response.'}}));if(!r.ok||d.ok===false){{const err=new Error(d.message||d.error||'Request failed.');Object.assign(err,d);throw err}}return d}}{script_html};window.CoinPilotTime?.hydrate(document);window.PulseMediaRenderer?.hydrate(document);window.PulseReactionSystem?.hydrate(document);</script></body></html>""")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>{clean_html(title)} | PulseSoc</title><link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=parity-20260806a"><link rel="stylesheet" href="/static/css/pulse_desktop_feed.css?v=shell-nav-20260909a"><link rel="stylesheet" href="/static/css/pulse_design_system.css?v=shell-nav-20260909a"><link rel="stylesheet" href="/static/css/pulse_mobile_system.css"><link rel="stylesheet" href="/static/css/pulse_reels_experience.css"><link rel="stylesheet" href="/static/css/pulse_cinematic_media.css?v=static-bg-20260806a"><link rel="stylesheet" href="/static/css/pulse_home_os.css?v=shell-nav-20260909a"><link rel="stylesheet" href="/static/css/pulse_reaction_system.css?v=status-v3-20260629b"><style>:root{{color-scheme:dark;--line:var(--border-subtle,rgba(110,223,246,.22));--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f)}}*{{box-sizing:border-box;max-width:100%}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;word-break:break-word}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:max(18px,env(safe-area-inset-top)) 0 calc(90px + env(safe-area-inset-bottom))}}.nav,.actions{{display:flex;gap:8px;flex-wrap:wrap}}.nav{{overflow-x:auto;flex-wrap:nowrap;padding-bottom:6px;margin-bottom:12px;scrollbar-width:thin}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}}.layout>div,.layout>aside{{min-width:0}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));padding:15px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);min-width:0;overflow-wrap:anywhere}}h1{{font-size:clamp(28px,7vw,56px);line-height:1;margin:8px 0}}p,.muted,small{{color:var(--muted);line-height:1.55}}a{{color:inherit}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;white-space:nowrap}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}input,select,textarea{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:#f2fbff;padding:10px}}textarea{{min-height:96px;resize:vertical}}.avatar,.pulse-topnav-avatar{{width:44px;height:44px;border-radius:14px;background:rgba(5,15,28,.46);border:1px solid rgba(110,230,255,.28);display:grid;place-items:center;color:#f2fbff;font-weight:950;overflow:hidden;flex:0 0 auto;text-decoration:none;position:relative;box-shadow:inset 0 0 18px rgba(255,255,255,.04),0 0 20px rgba(0,220,255,.12)}}.avatar img,.pulse-topnav-avatar img{{width:100%;height:100%;object-fit:cover}}.pulse-topnav-control{{position:relative;width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;display:grid;place-items:center;background:rgba(5,15,28,.46);border:1px solid rgba(110,230,255,.28);color:#f2fbff;text-decoration:none;box-shadow:inset 0 0 18px rgba(255,255,255,.04),0 0 20px rgba(0,220,255,.12)}}.pulse-bell-icon{{width:21px;height:21px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}}.pulse-topnav-presence{{position:absolute;right:4px;bottom:4px;width:10px;height:10px;border-radius:999px;background:#36e58f;box-shadow:0 0 0 2px rgba(5,11,20,.92),0 0 14px rgba(54,229,143,.72)}}.mobile-actions{{display:flex;align-items:center;gap:6px}}.pill{{display:inline-flex;max-width:100%;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;font-size:12px;color:#dffcff;background:rgba(110,223,246,.08);white-space:normal}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}.mobile-topbar,.mobile-bottom-nav,.drawer-backdrop,.pulse-drawer,.pulse-fab{{display:none}}.mobile-topbar{{align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:24;margin:calc(-1 * max(18px,env(safe-area-inset-top))) -12px 12px;padding:max(24px,env(safe-area-inset-top)) 12px 10px;background:rgba(5,11,20,.88);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.14)}}.icon-btn{{width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;font-size:21px}}.mobile-brand{{display:flex;align-items:center;gap:8px;font-weight:950;text-decoration:none}}.mobile-brand img{{width:34px;height:34px;border-radius:10px}}.drawer-backdrop{{position:fixed;inset:0;background:rgba(1,6,14,.54);backdrop-filter:blur(8px);z-index:48;opacity:0;pointer-events:none;transition:opacity .22s ease}}.pulse-drawer{{position:fixed;inset:0 auto 0 0;width:min(86vw,356px);z-index:49;background:linear-gradient(180deg,rgba(8,19,35,.98),rgba(5,11,20,.98));border-right:1px solid rgba(110,223,246,.18);box-shadow:24px 0 80px rgba(0,0,0,.45);transform:translate3d(-104%,0,0);transition:transform .24s ease;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));will-change:transform}}.drawer-link{{min-height:46px;border:1px solid rgba(110,223,246,.13);border-radius:12px;background:rgba(255,255,255,.045);padding:10px 12px;text-decoration:none;display:flex;align-items:center;font-weight:900;margin:7px 0}}.drawer-open .drawer-backdrop{{display:block;opacity:1;pointer-events:auto}}.drawer-open .pulse-drawer{{display:block;transform:translate3d(0,0,0)}}.mobile-bottom-nav{{position:fixed;left:0;right:0;bottom:0;z-index:23;min-height:calc(64px + env(safe-area-inset-bottom));padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:rgba(5,11,20,.94);backdrop-filter:blur(10px);border-top:1px solid rgba(110,223,246,.16);grid-template-columns:repeat(5,minmax(0,1fr));gap:2px;overflow:hidden}}.mobile-bottom-nav a,.mobile-bottom-nav button{{min-width:0;min-height:50px;border:0;border-radius:10px;text-decoration:none;display:grid;grid-template-rows:20px 14px;place-items:center;text-align:center;font-size:10px;line-height:1;font-weight:900;color:#dffcff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:transparent;padding:0}}.mobile-bottom-nav .nav-ico{{font-size:17px;line-height:1;display:grid;place-items:center}}.pulse-fab{{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom) + 88px);z-index:25;width:54px;height:54px;min-height:54px;border-radius:18px;border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-size:27px;box-shadow:0 14px 38px rgba(54,229,143,.24)}}@media(max-width:900px){{.mobile-topbar{{display:flex}}.mobile-bottom-nav{{display:grid}}.pulse-fab{{display:none!important}}.nav{{display:none}}.wrap{{width:100%;max-width:100vw;padding:12px 12px calc(160px + env(safe-area-inset-bottom))}}.layout{{grid-template-columns:1fr}}.button,button{{white-space:normal;min-height:46px}}.actions .button,.actions button{{flex:1 1 150px}}}}.pulse-desktop-topbar{{display:none}}.pulse-shell-rail{{display:none}}.pulse-shell-center{{min-width:0}}.desktop-rail-link.is-active{{background:rgba(110,223,246,.14);border-color:rgba(110,223,246,.42);color:#eafcff}}@media(min-width:1024px){{.pulse-social-os .pulse-desktop-topbar{{display:grid}}.pulse-social-os .wrap{{padding-top:86px}}.pulse-social-os .nav{{display:none}}}}@media(min-width:1100px){{.pulse-social-os .pulse-shell-frame{{width:min(100%,1760px);margin:0 auto;display:grid;gap:18px;align-items:start;grid-template-columns:minmax(184px,214px) minmax(0,1fr)}}.pulse-social-os .pulse-shell-rail{{display:grid;gap:12px;position:sticky;top:86px;max-height:calc(100dvh - 104px);overflow:auto;scrollbar-width:thin}}.pulse-social-os .pulse-shell-rail .desktop-rail-card{{content-visibility:visible;contain-intrinsic-size:auto}}}}</style></head><body class="{shell_body_class}"><div class="drawer-backdrop" id="drawerBackdrop"></div><aside class="pulse-drawer" id="pulseDrawer"><header><a class="mobile-brand" href="/pulse">PulseSoc</a><button class="icon-btn" id="drawerClose" type="button">×</button></header>{drawer_html}</aside>{desktop_top_nav_html}<main class="wrap"><nav class="mobile-topbar"><button class="icon-btn pulse-topnav-control" id="drawerOpen" type="button" aria-label="Open PulseSoc menu">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/brand/pulsesoc-logo-20260813.png" alt="">PulseSoc</a><div class="mobile-actions"><a class="pulse-topnav-control" href="/pulse/search" aria-label="Search PulseSoc">⌕</a><a class="pulse-topnav-control pulse-topnav-alert" data-header-notifications href="/pulse/notifications" aria-label="Notifications">{PULSE_NOTIFICATION_BELL_ICON}<span class="pulse-notification-badge" data-alert-unread data-notification-unread hidden>0</span></a><a class="pulse-topnav-avatar" href="/pulse/profile" aria-label="Profile">{shell_avatar_html}<span class="pulse-topnav-presence" aria-hidden="true"></span></a></div></nav><nav class="nav">{nav_html}</nav><section class="pulse-shell-frame">{desktop_rail_html}<div class="pulse-shell-center">{shell_intro_html}<section class="{shell_layout_class}"><div>{main_html}</div>{shell_side_html}</section></div></section></main><nav class="mobile-bottom-nav">{mobile_bottom_html}</nav><a class="pulse-fab" href="/pulse#create" aria-label="Create PulseSoc">+</a>{create_sheet_html}<div class="toast" id="toast"></div><script src="/static/js/time.js"></script><script src="/static/js/pulseshell_bridge.js?v=pulseshell-20260630a" defer></script><script src="/static/notifications.js?v=brand-20260813" defer></script><script src="/static/js/pulse_reaction_system.js?v=feed-actions-v2-20260629a"></script><script src="/static/js/pulse_media_renderer.js?v=global-media-ui-20260628g"></script><script src="/static/js/pulse_status_viewer.js?v=status-v4-20260703b"></script><script>const toast=m=>{{const t=document.getElementById('toast');if(!t)return;t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};const drawer=document.getElementById('pulseDrawer');function setDrawer(open){{document.body.classList.toggle('drawer-open',open)}}document.getElementById('drawerOpen')?.addEventListener('click',()=>setDrawer(true));document.getElementById('drawerClose')?.addEventListener('click',()=>setDrawer(false));document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setDrawer(false));drawer?.addEventListener('click',e=>{{if(e.target.closest('a'))setDrawer(false)}});async function pulseApi(url,opts={{}}){{const isForm=opts.body instanceof FormData;const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:isForm?{{}}:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{ok:false,message:'Server returned an unreadable response.'}}));if(!r.ok||d.ok===false){{const err=new Error(d.message||d.error||'Request failed.');Object.assign(err,d);throw err}}return d}}{script_html};window.CoinPilotTime?.hydrate(document);window.PulseMediaRenderer?.hydrate(document);window.PulseReactionSystem?.hydrate(document);</script></body></html>""")
 
 
 def pulse_emit_event(event_type, payload=None, actor_user_id=0, post_id=0):

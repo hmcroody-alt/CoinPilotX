@@ -1862,6 +1862,16 @@ body,
 .pulse-desktop-center,
 .pulse-desktop-center > .layout,
 .pulse-desktop-center > .layout > div,
+/* The social shell's frame carries its own class names rather than the feed's,
+   because the feed's rules encode feed decisions -- flattening the inner layout,
+   dropping the side column, hiding the rail between 1024 and 1279. This guard is
+   not one of those; it is a plain "never let anything push the page sideways on a
+   phone", which is true of every page. So the shell's wrappers are listed here
+   too, and only here. */
+.pulse-shell-frame,
+.pulse-shell-center,
+.pulse-shell-center > .layout,
+.pulse-shell-center > .layout > div,
 .feed,
 .card,
 .post,

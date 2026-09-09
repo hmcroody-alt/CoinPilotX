@@ -378,7 +378,12 @@ html[data-pulseshell-performance="reduced-motion"] .pulse-home-os .pulse-media-a
   transition: background .18s ease, color .18s ease, box-shadow .18s ease;
 }
 
-.pulse-home-os .pulse-desktop-nav > a[href="/pulse"] {
+/* Keyed on `[href="/pulse"]` this lit Home in the top bar on every page. That
+   was harmless while the bar only ever appeared on the feed, where Home *was*
+   the current page; now that all 96 shell pages render it, a fixed highlight is
+   an outright lie about where you are. Keyed on `aria-current` instead, set by
+   `pulse_desktop_top_nav_html` from the request path. */
+.pulse-home-os .pulse-desktop-nav > a[aria-current="page"] {
   color: #dffff3;
   background: rgba(49, 230, 161, .1);
   box-shadow: inset 0 0 0 1px rgba(49, 230, 161, .14), 0 0 22px rgba(49, 230, 161, .06);
@@ -613,8 +618,20 @@ html[data-pulseshell-performance="reduced-motion"] .pulse-home-os .pulse-media-a
   line-height: 1.35;
 }
 
+/* This rule used to read `display: none`, re-enabled by an allowlist of nine
+   hardcoded hrefs below it. The effect was a second, invisible navigation: the
+   rail's markup offered every destination, and CSS showed a curated nine. A
+   destination added to the rail in `bot.py` therefore did not appear, with no
+   error anywhere -- the link was in the DOM, laid out at zero height.
+
+   The allowlist is deleted rather than extended because an href allowlist can
+   only ever go stale: it has to be edited in a stylesheet every time the
+   product gains a page, and nothing fails when it isn't. The rail scrolls
+   (`.pulse-desktop-left` is sticky with `overflow: auto`), so length is not a
+   layout problem. `pulse_shell_rail_items` is now the single place that decides
+   what the web navigates to. */
 .pulse-home-os .desktop-rail-link {
-  display: none;
+  display: grid;
   min-height: 43px;
   grid-template-columns: 32px minmax(0, 1fr);
   gap: 8px;
@@ -625,25 +642,14 @@ html[data-pulseshell-performance="reduced-motion"] .pulse-home-os .pulse-media-a
   font-weight: 760;
 }
 
-.pulse-home-os .desktop-rail-link[href="/pulse"],
-.pulse-home-os .desktop-rail-link[href="/dashboard"],
-.pulse-home-os .desktop-rail-link[href="/pulse/profile"],
-.pulse-home-os .desktop-rail-link[href="/pulse/reels"],
-.pulse-home-os .desktop-rail-link[href="/pulse/videos"],
-.pulse-home-os .desktop-rail-link[href="/pulse/groups"],
-.pulse-home-os .desktop-rail-link[href="/pulse/saved"],
-.pulse-home-os .desktop-rail-link[href="/pulse/creator/dashboard"],
-.pulse-home-os .desktop-rail-link[href="/pulse/premium"] {
-  display: grid;
-}
-
-.pulse-home-os .desktop-rail-link[href="/pulse"] {
-  color: #dffff3;
-  background: rgba(49, 230, 161, .1);
-  box-shadow: inset 0 0 0 1px rgba(49, 230, 161, .1);
-}
-
-.pulse-home-os .desktop-rail-link[href="/dashboard"] {
+/* Home and Dashboard used to carry these highlights unconditionally, which read
+   as a selected state and was one on nine pages out of a hundred. Now that the
+   rail marks the real current destination, a permanent highlight on two fixed
+   links is worse than none: on `/pulse/settings` it says you are on Home.
+   The treatment is kept and attached to `.is-active` instead, so it means what
+   it looks like. */
+.pulse-home-os .desktop-rail-link.is-active,
+.pulse-home-os .desktop-rail-link[aria-current="page"] {
   color: #f3fffb;
   background: linear-gradient(135deg, rgba(49, 230, 161, .14), rgba(83, 224, 245, .08));
   box-shadow: inset 0 0 0 1px rgba(83, 224, 245, .12), 0 0 24px rgba(49, 230, 161, .06);
