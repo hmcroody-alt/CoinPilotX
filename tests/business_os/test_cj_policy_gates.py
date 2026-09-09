@@ -214,3 +214,90 @@ def test_funding_is_refused_regardless_of_any_flag(monkeypatch):
         monkeypatch.setenv(name, "ON")
     with pytest.raises(SupplierError):
         policy.require_funding_disabled()
+
+
+def test_the_canonical_policy_doc_never_names_an_identifier_that_does_not_exist():
+    """The doc declares itself the authority; a fabricated symbol defeats that.
+
+    `docs/cj/CJ_PROVIDER_POLICY_CONFIRMATION.md` opens by saying that if it and
+    the code disagree, the code is wrong and this file is what to check it
+    against. That only works while every symbol it cites is real. It once named
+    an error code `CJ_EGRESS_CAPACITY_EXHAUSTED` that appears nowhere in the
+    repository -- an operator grepping for the account-cap control would have
+    found nothing and concluded there wasn't one, which is a worse failure than
+    the doc simply being out of date.
+
+    So: every SCREAMING_SNAKE_CASE token in backticks must exist somewhere in
+    the supplier package, and every `module.attribute` reference must be defined
+    in *that* module -- naming the wrong module is its own way of sending a
+    reader to a dead end. Deliberately a weak check on the prose side --
+    existence, not correctness of the surrounding sentence -- because a strong
+    one would need to parse English and would be turned off the first time it
+    was wrong. Names that are environment variables or provider concepts rather
+    than code are listed explicitly, so adding to that list is a visible act.
+
+    `CJ_EGRESS_CAPACITY_EXHAUSTED` is on that list even though it is exactly the
+    fiction this test exists to catch. The doc now names it in a correction note,
+    spelled out rather than escaped, so that an operator who read the old line
+    and grepped for it finds the correction instead of nothing -- which was the
+    original failure. Suppressing the name to satisfy this check would have
+    recreated it.
+    """
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    doc = (root / "docs/cj/CJ_PROVIDER_POLICY_CONFIRMATION.md").read_text()
+    package = root / "services/business_os/suppliers"
+    modules = {path.stem: path.read_text() for path in sorted(package.glob("*.py"))}
+    source = "\n".join(modules.values())
+
+    # Read by os.getenv or set by an operator, so they are not expected to
+    # appear as defined symbols; several are deliberately *absent* from the
+    # code because they were retired, and the doc says so.
+    not_code = {
+        "CJ_NETWORK_ENABLED", "CJ_ENVIRONMENT_MODE", "PRODUCTION_CJ_FULFILLMENT_ENABLED",
+        "REAL_CJ_FUNDING_ENABLED", "CJ_EGRESS_IP_ATTESTED", "CJ_EGRESS_GROUP",
+        "BUSINESS_OS_SUPPLIERS_CJ", "CJ_HOSTED_CREDENTIALS_APPROVED",
+        "CJ_MULTI_MERCHANT_SAAS_APPROVED", "CJ_SINGLE_MERCHANT_SANDBOX_ALLOWED",
+        "CJ_CONTENT_REDISPLAY_APPROVED",
+        # Retired, and named in the doc's own correction note so a grep for it
+        # lands somewhere. See the docstring.
+        "CJ_EGRESS_CAPACITY_EXHAUSTED",
+        # CJ's own vocabulary, not ours.
+        "OFF", "PRODUCT", "VARIANT", "STOCK", "ORDER", "LOGISTIC",
+    }
+    spans = re.findall(r"`([^`\n]+)`", doc)
+
+    cited = {span for span in spans if re.fullmatch(r"[A-Z][A-Z0-9_]{4,}", span)} - not_code
+    missing = sorted(token for token in cited if token not in source)
+    assert not missing, (
+        f"{missing} cited in CJ_PROVIDER_POLICY_CONFIRMATION.md but absent from "
+        f"services/business_os/suppliers/. Either the doc invented it or the code "
+        f"renamed it; both make the doc unusable as the authority it claims to be."
+    )
+
+    # `policy.PARTNER_AGREEMENT_HELD`, `connections.inactivity_forecast` and the
+    # like. A bare-token pattern cannot see these -- the backtick is followed by
+    # a lowercase module name -- and they are the doc's most load-bearing
+    # citations, so the first version of this check silently ignored them.
+    members = set()
+    for span in spans:
+        match = re.fullmatch(r"([a-z_]+)\.([A-Za-z_][A-Za-z0-9_]*)(?:\(\))?", span)
+        if match and match.group(1) in modules and match.group(2) != "py":
+            members.add((match.group(1), match.group(2)))
+    undefined = sorted(
+        f"{module}.{attr}"
+        for module, attr in members
+        if not re.search(rf"^\s*(?:def\s+{re.escape(attr)}\b|{re.escape(attr)}\s*[:=])",
+                         modules[module], re.M)
+    )
+    assert not undefined, (
+        f"{undefined} cited in CJ_PROVIDER_POLICY_CONFIRMATION.md but not defined in the "
+        f"module the doc names. A reader sent to the wrong file is no better off than one "
+        f"sent to a name that does not exist."
+    )
+
+    # The check is worthless if it matched nothing, so prove both halves bite.
+    assert len(cited) >= 3, f"only matched constants {cited}; the extraction pattern has drifted"
+    assert len(members) >= 3, f"only matched members {members}; the extraction pattern has drifted"

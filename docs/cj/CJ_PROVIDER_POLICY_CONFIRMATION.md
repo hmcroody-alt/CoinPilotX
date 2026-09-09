@@ -36,6 +36,13 @@ confirm, and things that are ours to decide per deployment.
    but it is still required to verify inbound webhook signatures.
 7. **Inactivity policy.** Seven days without a real order produces a warning;
    thirty days disables API access. Sandbox orders do not count toward this.
+   Surfaced by `connections.inactivity_forecast` at
+   `GET /connections/<id>/inactivity`. Because this deployment sends only
+   sandbox orders, every connection is on that clock from the moment it is
+   made — that is the expected reading, not a defect. The forecast sets
+   `estimate_may_be_late` whenever it counts from connection creation rather
+   than from a real order we sent, because CJ's clock may have started before
+   ours; the error is optimistic, so the flag matters more than the day count.
 
 ## Explicitly NOT confirmed — never claim these
 
@@ -66,18 +73,42 @@ These are CJ's, not ours, and there is **no whitelist exemption**:
 Both are enforced in `services/business_os/suppliers/quota.py`, in the
 database rather than in process memory, so that multiple gunicorn workers
 cannot each believe they hold the whole budget. A fourth account on one egress
-group fails closed with `CJ_EGRESS_CAPACITY_EXHAUSTED`.
+group fails closed with `EGRESS_ACCOUNT_CAPACITY` (HTTP 503).
 
-**The open gap is attestation, not enforcement.** `quota.py` counts per
-`CJ_EGRESS_GROUP`, which is a label a human types into an environment variable.
-CJ counts actual outbound IP addresses. Those two agree only if somebody
-checked, and Railway's outbound address is not documented as static or
-dedicated anywhere in this repository. A second region, a rotated address, or a
-reused label would all keep our counter happy while CJ sees a fourth account on
-one IP. Until an operator sets `CJ_EGRESS_IP_ATTESTED`,
-`policy.multi_merchant_scale_blocker()` returns
-`BLOCKED_BY_EGRESS_ARCHITECTURE`. Single-merchant use is unaffected: one
-account cannot exceed a three-account ceiling however the IPs fall.
+*Corrected 2026-09-09: this line previously named the error code
+`CJ_EGRESS_CAPACITY_EXHAUSTED`, which appears nowhere in the codebase. This
+document declares itself the thing to check the code against, so an identifier
+invented here is worse than one merely out of date: an operator grepping for it
+would have found nothing and concluded the control was missing. The dead name is
+spelled out here in full on purpose — anyone who read the old line and searched
+for it should land on this correction rather than on silence — and it is carried
+as a retired name in `tests/business_os/test_cj_policy_gates.py`, which otherwise
+asserts that every code identifier this file cites in backticks actually exists
+in `services/business_os/suppliers/`.*
+
+The call rate is paced at **8.5/second, not 10**. The headroom is deliberate:
+our clock and CJ's do not agree on where a second begins, so two calls admitted
+0.1s apart can land inside one CJ second, and a single 429 pauses the entire
+egress group for at least thirty seconds. See `EGRESS_MIN_INTERVAL`, which is
+derived from the ceiling above rather than written as a separate literal so the
+two cannot drift apart.
+
+**The open gap is attestation, not enforcement — and it is now measured, not
+suspected.** `quota.py` counts per `CJ_EGRESS_GROUP`, a label a human types into
+an environment variable. CJ counts actual outbound IP addresses. On Railway
+those demonstrably differ: under one label, the backend and the supplier worker
+were observed egressing from two different addresses at the same moment, and the
+backend's address changed across a redeploy. The measurement, what it does and
+does not break, and the four things that would clear the flag are in
+[`CJ_EGRESS_ARCHITECTURE.md`](CJ_EGRESS_ARCHITECTURE.md).
+
+Today the gap is conservative *by accident* — one label spanning several
+addresses puts fewer accounts on each than the counter believes — but an
+accident of topology is not a control, and it says nothing about whether the
+address is shared with other Railway tenants who also use CJ. Until an operator
+sets `CJ_EGRESS_IP_ATTESTED`, `policy.multi_merchant_scale_blocker()` returns
+`BLOCKED_BY_EGRESS_ARCHITECTURE`. Single-merchant use is unaffected: one account
+cannot exceed a three-account ceiling however the IPs fall.
 
 ## What remains a deployment switch
 

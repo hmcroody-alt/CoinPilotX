@@ -104,6 +104,30 @@ healthy connection.
 |---|---|---|
 | `shop/getShops` | GET | The shops this credential may act for |
 
+> **SUPERSEDED 2026-09-09.** The paragraph below was accurate when written and is
+> no longer true of the first sentence. Left in place rather than rewritten, for
+> the same reason the rest of this directory is: it records what was believed,
+> and the reason it changed is the useful part.
+>
+> **What changed.** A CJ "shop" is an external storefront — Shopify, Woo —
+> authorized inside the merchant's CJ account. PulseSoc *is* the storefront, so a
+> merchant who sells only here legitimately owns none, and `shop/getShops`
+> returns nothing or refuses outright. Requiring a shop to connect made that
+> merchant's correct account unusable, and the mobile screen told them their key
+> was wrong — which it was not.
+>
+> **Current behaviour.** `connect_cj` accepts a connection with no shop and
+> records `""`. `connection_health` skips `getShops` when nothing is bound. The
+> second sentence still holds and is now the whole of the control: when a shop
+> *is* selected, an unreadable shop list is fatal, and the binding is re-checked
+> against the live active list on every hydrate. Fulfillment fails closed with
+> `SHOP_BINDING_REQUIRED` — binding is required to *ship*, not to connect.
+>
+> **Merchant A / Merchant B is still prevented**, and by the same check, because
+> the risk was never that a shop was absent. It was that an absent one could be
+> confused for someone else's, and the empty-string binding is not a shop.
+> See commit `ff4325eb`.
+
 Shop selection is explicit and mandatory (`connect_cj` refuses with `shop_required`), and the
 chosen shop is re-checked against the live list on every hydrate. This is what stops Merchant
 A binding Merchant B's CJ shop.

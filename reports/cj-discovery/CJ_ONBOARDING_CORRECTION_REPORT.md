@@ -80,7 +80,7 @@ copy or keep dead entries.
 | 5–7 | V2.0 auth contract | `cj.py:280` sends exactly `{"apiKey": …}`; `cj.py:286` sends `{"refreshToken": …}`. Matches CJ's documented request bodies |
 | 6 | Identity validated | `connections._verify:227-229` requires `setting/get`'s `openId` to equal the token bundle's, else `identity_mismatch`. First auth without an `openId` is refused (`ACCOUNT_IDENTITY_UNRESOLVED`) |
 | 7 | "Key exists" ≠ "healthy" | `health_connection` → `adapter_for` → `_hydrate`, which refreshes inside the expiry window and re-runs `_verify` against CJ live on every hydrate. A stored credential is never read as health |
-| 8 | Shop binding | Selection is explicit and mandatory (`shop_required`); the chosen shop is re-checked against the live active list, so Merchant A cannot bind Merchant B's shop |
+| 8 | Shop binding | ~~Selection is explicit and mandatory (`shop_required`)~~ **superseded 2026-09-09, see note below**; the chosen shop is re-checked against the live active list, so Merchant A cannot bind Merchant B's shop |
 | 12 | No V2→V3 rewrite | `createOrderV2` untouched |
 | 13 | Payment locked | `fund_fulfillment` and its aliases refuse unconditionally; `payBalance`/`payBalanceV2` are not in the allowlist |
 | 14 | Sandbox at both layers | `policy.require_sandbox` checks env mode, the production flag, and a literal `isSandbox == 1`, independently of the adapter |
@@ -89,6 +89,23 @@ copy or keep dead entries.
 
 **No backend file was modified by this mission.** `cj.py` and `connections.py` are byte-identical
 to their pre-mission state.
+
+> **Superseding note, 2026-09-09 — row 8 only.** Requiring a shop to connect was
+> wrong, and the finding above records it as a control. A CJ "shop" is an
+> external storefront (Shopify, Woo) authorized inside the merchant's CJ
+> account; PulseSoc *is* the storefront, so a merchant selling only here owns
+> none and `shop/getShops` returns nothing or refuses. The requirement made
+> those merchants' correct accounts unusable and reported it as a bad API key.
+>
+> `connect_cj` now accepts a shopless connection and stores `""`. What row 8
+> describes as the anti-cross-binding control — re-checking a selected shop
+> against the live active list — is unchanged and still enforced, and an
+> unreadable shop list remains fatal *when a shop was selected*. Fulfillment
+> refuses with `SHOP_BINDING_REQUIRED`: a shop is required to ship, not to
+> connect. Commit `ff4325eb`; the mutation guarding it is
+> `test_a_shop_list_we_cannot_read_is_fatal_when_a_shop_was_selected`.
+>
+> The rest of this report stands. It is left unedited on purpose.
 
 ---
 
