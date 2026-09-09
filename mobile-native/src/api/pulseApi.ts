@@ -198,7 +198,14 @@ async function pulseApiRequest<T>(path: string, options: RequestInit, allowRefre
   const responseCookie = response.headers.get("set-cookie");
   if (responseCookie) await setSessionCookie(mergeSessionCookies(cookie || "", responseCookie));
 
-  if (response.status === 401 && allowRefresh && shouldRefresh(path)) {
+  // Read before the refresh decision below, not after it. Whether a 401 is even
+  // *about* this device's PulseSoc session is a fact only the body carries, and
+  // the block below has to know that before it acts.
+  const text = await response.text();
+  const data = parseJson(text);
+  const code = errorCodeOf(data);
+
+  if (response.status === 401 && allowRefresh && shouldRefresh(path) && !isForeignAuthFailure(code)) {
     const refreshResult = await refreshNativeSession(cookie || "");
     if (refreshResult === "refreshed") return pulseApiRequest<T>(path, options, false);
     if (refreshResult === "temporary") {
@@ -212,18 +219,55 @@ async function pulseApiRequest<T>(path: string, options: RequestInit, allowRefre
     }
   }
 
-  const text = await response.text();
-  const data = parseJson(text);
   if (!response.ok || data.ok === false) {
     throw new PulseApiError(
       String(data.message || data.error || "PulseSoc request failed."),
       response.status,
-      typeof data.error_code === "string" ? data.error_code : typeof data.error === "string" ? data.error : undefined,
+      code || undefined,
       data && typeof data === "object" ? (data as Record<string, unknown>) : undefined
     );
   }
 
   return data as T;
+}
+
+/** The one rule for reading a rejection's code, shared by every reader of one. */
+function errorCodeOf(data: any): string {
+  if (typeof data?.error_code === "string") return data.error_code;
+  if (typeof data?.error === "string") return data.error;
+  return "";
+}
+
+/**
+ * Codes that mean a 401 is about some *other* credential than this device's
+ * PulseSoc session -- today, a merchant's supplier credential that the provider
+ * itself rejected.
+ *
+ * The refresh-and-replay below reads a bare 401 as "our access token aged out",
+ * which is right for almost every route and wrong for these. A CJ key CJ says is
+ * wrong comes back as `REAUTH_REQUIRED` 401; the session refresh then succeeds,
+ * because the session was never the problem, and the original POST is replayed.
+ * That is worse than a wasted round trip in two specific ways: it spends a
+ * second call against CJ's tightest-quota auth endpoint, and the replay comes
+ * back `RATE_LIMITED`, so the merchant is shown "your supplier isn't responding"
+ * for a credential the provider answered about clearly the first time.
+ *
+ * Deliberately a deny-list, not an allow-list of session codes. Plenty of older
+ * routes answer 401 with no code at all, and those must keep recovering exactly
+ * as they do now -- an unrecognised or absent code still refreshes.
+ */
+const FOREIGN_AUTH_FAILURE_CODES = new Set([
+  "reauth_required",
+  "auth_expired",
+  "credential_missing",
+  "supplier_disconnected",
+  "connection_not_found",
+  "not_connected",
+  "invalid_api_key"
+]);
+
+function isForeignAuthFailure(code: string) {
+  return FOREIGN_AUTH_FAILURE_CODES.has(code.toLowerCase());
 }
 
 /**
