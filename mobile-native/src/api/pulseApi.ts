@@ -147,7 +147,7 @@ async function pulseApiRequest<T>(path: string, options: RequestInit, allowRefre
   applyNativeClientHeaders(headers);
 
   let [cookie, envelope] = await Promise.all([getSessionCookie(), getSessionEnvelope()]);
-  if (allowRefresh && shouldRefresh(path) && envelope?.refreshToken && (!envelope.accessToken || envelope.accessTokenExpiresAt <= Date.now() + 5000)) {
+  if (allowRefresh && shouldRefresh(path) && bearerUnusable(envelope) && canRecoverSession(envelope, cookie)) {
     const refreshResult = await refreshNativeSession(cookie || "");
     if (refreshResult === "refreshed") {
       [cookie, envelope] = await Promise.all([getSessionCookie(), getSessionEnvelope()]);
@@ -216,6 +216,23 @@ async function pulseApiRequest<T>(path: string, options: RequestInit, allowRefre
       await setCachedSessionUser(null);
       console.warn("PULSESOC_SESSION_INVALID", { path, status: response.status });
       sessionInvalidationHandler?.({ path, code: "session_expired" });
+    }
+  }
+
+  // A CSRF refusal is the one rejection that a *successfully authenticated*
+  // request can get, and it is self-sustaining. The gate needs a bearer the
+  // server can resolve; the cookie alone satisfies authentication but not the
+  // gate, so the request is admitted, attributed to the right user, and then
+  // refused -- with no 401 anywhere to trigger the recovery above. Left alone
+  // the app stays write-blind until something unrelated rotates the token.
+  //
+  // Narrow on purpose. Only this code, only once (the replay cannot refresh
+  // again), and only where a refresh is meaningful at all -- a genuine CSRF
+  // failure that a new token cannot fix costs one extra round trip and then
+  // surfaces exactly as it does today.
+  if (response.status === 403 && code === "csrf" && allowRefresh && shouldRefresh(path)) {
+    if ((await refreshNativeSession(cookie || "", { serverConfirmedSession: true })) === "refreshed") {
+      return pulseApiRequest<T>(path, options, false);
     }
   }
 
@@ -357,29 +374,97 @@ function shouldRefresh(path: string) {
   );
 }
 
+function bearerUnusable(envelope: NativeSessionEnvelope | null) {
+  return !envelope?.accessToken || envelope.accessTokenExpiresAt <= Date.now() + 5000;
+}
+
+/**
+ * May we try to recover a session, given what we can actually read right now?
+ *
+ * This used to be spelled `envelope?.refreshToken` inline, which is a stricter
+ * test than the thing it guards: `performNativeSessionRefresh` accepts *either*
+ * a stored refresh token or a cookie, and the server reads the persistent
+ * session cookie as a refresh token when the body omits one
+ * (`bot.py` `api_mobile_auth_refresh`). So the one state where recovery was both
+ * possible and necessary -- cookie alive, envelope gone -- was the exact state
+ * the guard excluded.
+ *
+ * That state is not hypothetical and not only a simulator artifact. `setSecureValue`
+ * deliberately swallows a failed keychain write off-QA rather than crash, so any
+ * device that cannot write the keychain keeps a working session cookie and loses
+ * the envelope. The result is invisible in the worst way: reads keep succeeding,
+ * because the cookie authenticates them, so the app looks signed in -- while no
+ * bearer is ever attached, `g.mobile_access_user_id` is never set, and every write
+ * is refused by the CSRF gate. Measured on the CJ staging simulator: dozens of
+ * authenticated GETs at `user_id=1` over 45 minutes with an access token that had
+ * expired, zero refresh attempts, and every write 403.
+ *
+ * The failure could not self-clear either, because the response-side recovery
+ * below keys on 401 and this arrives as 403.
+ */
+function canRecoverSession(envelope: NativeSessionEnvelope | null, cookie: string | null) {
+  if (envelope?.refreshToken) return true;
+  // Cookie-only recovery runs in a degraded environment by definition, so bound
+  // it. A refusal clears the cookie and the precondition goes false on its own;
+  // a *temporary* failure does not, and without this every poll on a screen that
+  // refreshes every few seconds would post its own refresh.
+  return Boolean(cookie) && Date.now() - lastCookieOnlyRecoveryFailure > COOKIE_ONLY_RECOVERY_BACKOFF_MS;
+}
+
+const COOKIE_ONLY_RECOVERY_BACKOFF_MS = 30000;
+let lastCookieOnlyRecoveryFailure = 0;
+
 export async function recoverNativeSession(): Promise<RefreshResult> {
   const cookie = await getSessionCookie();
   return refreshNativeSession(cookie || "");
 }
 
-async function refreshNativeSession(cookie: string): Promise<RefreshResult> {
+/**
+ * `serverConfirmedSession` means the server has just told us, in this exchange,
+ * that it authenticated the request -- it accepted a session and refused only on
+ * a second term. That is better evidence than anything we can read locally, and
+ * it is the only evidence available when the keychain is empty but the platform
+ * cookie jar is not. Without it the attempt below would bail on "unavailable"
+ * for the exact device that most needs to recover.
+ */
+async function refreshNativeSession(
+  cookie: string,
+  options: { serverConfirmedSession?: boolean } = {}
+): Promise<RefreshResult> {
   if (refreshPromise) return refreshPromise;
-  refreshPromise = performNativeSessionRefresh(cookie).finally(() => {
+  refreshPromise = performNativeSessionRefresh(cookie, options.serverConfirmedSession === true).finally(() => {
     refreshPromise = null;
   });
   return refreshPromise;
 }
 
-async function performNativeSessionRefresh(cookie: string): Promise<RefreshResult> {
+async function performNativeSessionRefresh(cookie: string, serverConfirmedSession: boolean): Promise<RefreshResult> {
+  // Declared out here so the catch below can see it: a network fault on a
+  // cookie-only attempt has to arm the backoff too, and that is precisely the
+  // fault most likely to repeat on the next request.
+  let cookieOnly = false;
+  const temporary = (): RefreshResult => {
+    if (cookieOnly) lastCookieOnlyRecoveryFailure = Date.now();
+    return "temporary";
+  };
   try {
     const envelope = await getSessionEnvelope();
-    if (!envelope?.refreshToken && !cookie) return "unavailable";
+    // `credentials: "include"` means the platform cookie jar attaches the
+    // session cookie whether or not we can read one ourselves, and the server
+    // accepts that cookie as a refresh token. So "nothing readable here" is not
+    // the same as "nothing to try" -- only the absence of *any* signal is.
+    if (!envelope?.refreshToken && !cookie && !serverConfirmedSession) return "unavailable";
+    cookieOnly = !envelope?.refreshToken;
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (NATIVE_CLIENT_PLATFORM) {
       headers["X-PulseSoc-Platform"] = NATIVE_CLIENT_PLATFORM;
       headers["User-Agent"] = NATIVE_CLIENT_USER_AGENT;
     }
-    if (Platform.OS !== "web") headers.Cookie = cookie;
+    // Only when we have one. Setting `Cookie: ""` is not a no-op -- an explicit
+    // empty header suppresses what the platform cookie jar would otherwise have
+    // attached, which on the cookie-only recovery path is the entire credential
+    // we are recovering with.
+    if (cookie && Platform.OS !== "web") headers.Cookie = cookie;
     const response = await fetchWithTimeout(`${PULSE_API_BASE_URL}/api/mobile/auth/refresh`, {
       method: "POST",
       headers,
@@ -392,12 +477,12 @@ async function performNativeSessionRefresh(cookie: string): Promise<RefreshResul
         await setCachedSessionUser(null);
         return "invalid";
       }
-      return "temporary";
+      return temporary();
     }
     const data = parseJson(await response.text());
     const user = data.user as Record<string, unknown> | undefined;
     const userId = Number(user?.user_id ?? user?.id ?? 0);
-    if (data.authenticated !== true || userId <= 0 || !data.refresh_token) return "temporary";
+    if (data.authenticated !== true || userId <= 0 || !data.refresh_token) return temporary();
     if (shouldRejectTemporaryQaUser(user)) {
       await clearNativeSessionCredentials();
       await setCachedSessionUser(null);
@@ -421,9 +506,10 @@ async function performNativeSessionRefresh(cookie: string): Promise<RefreshResul
     const merged = next ? mergeSessionCookies(cookie, next) : cookie;
     await setSessionEnvelope(nextEnvelope);
     await Promise.all([merged ? setSessionCookie(merged) : Promise.resolve(), setCachedSessionUser(user)]);
+    lastCookieOnlyRecoveryFailure = 0;
     return "refreshed";
   } catch {
-    return "temporary";
+    return temporary();
   }
 }
 
