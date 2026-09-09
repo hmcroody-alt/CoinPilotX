@@ -246,7 +246,7 @@ class CJAdapter:
         except SupplierError:
             raise
         except Exception:
-            raise SupplierError("PROVIDER_UNAVAILABLE", ambiguous_write=write) from None
+            raise SupplierError("PROVIDER_UNAVAILABLE", ambiguous_write=write, endpoint=path) from None
         status = response.status_code
         if status == 429:
             try:
@@ -255,11 +255,11 @@ class CJAdapter:
             except Exception:
                 pass  # A malformed 429 body cannot suppress its backoff.
             delay = self.quota.penalize(self.account_ref, response.headers.get("Retry-After"))
-            raise SupplierError("RATE_LIMITED", http_status=429, retry_after=delay, ambiguous_write=write)
+            raise SupplierError("RATE_LIMITED", http_status=429, retry_after=delay, ambiguous_write=write, endpoint=path)
         if status in (401, 403):
-            raise SupplierError("REAUTH_REQUIRED", http_status=401, ambiguous_write=write)
+            raise SupplierError("REAUTH_REQUIRED", http_status=401, ambiguous_write=write, endpoint=path)
         if not 200 <= status < 300:
-            raise SupplierError("PROVIDER_UNAVAILABLE", ambiguous_write=write)
+            raise SupplierError("PROVIDER_UNAVAILABLE", ambiguous_write=write, endpoint=path, provider_code=status)
         try:
             # Bound response parsing before allowing snapshots into persistence.
             if len(response.content) > 5_000_000:
@@ -267,25 +267,26 @@ class CJAdapter:
             body = response.json()
             _dict(body)
         except Exception:
-            raise SupplierError("MALFORMED_PROVIDER_RESPONSE", ambiguous_write=write) from None
+            raise SupplierError("MALFORMED_PROVIDER_RESPONSE", ambiguous_write=write, endpoint=path) from None
         self._observe_points(body, sequence)
         code = body.get("code")
         if code in (429, 1600200, 1600201, 16900500):
             delay = self.quota.penalize(self.account_ref, response.headers.get("Retry-After"))
-            raise SupplierError("RATE_LIMITED", http_status=429, retry_after=delay, ambiguous_write=write)
+            raise SupplierError("RATE_LIMITED", http_status=429, retry_after=delay, ambiguous_write=write, endpoint=path, provider_code=code)
         if code in (1600001, 1600002, 1600003, 1600004, 1600005, 1600006, 1600008, 1601000):
-            raise SupplierError("REAUTH_REQUIRED", http_status=401, ambiguous_write=write)
+            raise SupplierError("REAUTH_REQUIRED", http_status=401, ambiguous_write=write, endpoint=path, provider_code=code)
         # Inactivity has no stable published code. Only recognize an explicit
         # suspension/reactivation message, never echo it or invent an error code.
         message = str(body.get("message", "")).lower()
         if code != 200 and ("reactivat" in message or "suspend" in message and "api" in message):
-            raise SupplierError("REACTIVATION_REQUIRED", http_status=409, ambiguous_write=write)
+            raise SupplierError("REACTIVATION_REQUIRED", http_status=409, ambiguous_write=write, endpoint=path, provider_code=code)
         if code in (1602000, 1602001, 1603100):
-            raise SupplierError("SUPPLIER_NOT_FOUND", http_status=404)
+            raise SupplierError("SUPPLIER_NOT_FOUND", http_status=404, endpoint=path, provider_code=code)
         if code == 1603003:
-            raise SupplierError("DUPLICATE_SUPPLIER_ORDER", http_status=409, ambiguous_write=True)
+            raise SupplierError("DUPLICATE_SUPPLIER_ORDER", http_status=409, ambiguous_write=True, endpoint=path, provider_code=code)
         if code != 200 or (body.get("result") is not True and body.get("success") is not True) or body.get("result") is False or body.get("success") is False:
-            raise SupplierError("SUPPLIER_REJECTED", http_status=422, ambiguous_write=write and code in (1600000, 1600301))
+            raise SupplierError("SUPPLIER_REJECTED", http_status=422, ambiguous_write=write and code in (1600000, 1600301),
+                                endpoint=path, provider_code=code)
         data = body.get("data")
         return data if authentication or path == "setting/get" else self._safe_data(data)
 

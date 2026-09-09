@@ -310,6 +310,51 @@ def test_diagnostic_record_stores_a_raise_site_and_refuses_anything_else(monkeyp
                       ("MALFORMED_PROVIDER_RESPONSE", 502, "")]
 
 
+def test_diagnostic_names_the_endpoint_because_one_line_serves_a_dozen_of_them(client, monkeypatch):
+    """`_request` rejects every CJ call from a single line, so a line is not enough.
+
+    A raise site told us which validator refused a response. It could not tell us
+    which *call* was refused, because `SUPPLIER_REJECTED` is raised once for all
+    of `PATHS`. The endpoint is one of our own approved constants -- checked
+    against PATHS before the request is issued -- so naming it costs no provider
+    data, and it is the difference between "CJ rejected something" and "CJ
+    rejected shop/getShops".
+    """
+    from services import db
+    from services.business_os.suppliers import diagnostics
+
+    login(client)
+    monkeypatch.setenv("CJ_SUPPLIER_DIAGNOSTIC_ORIGIN", "on")
+    _raise_from_adapter(monkeypatch, lambda cj: (_ for _ in ()).throw(
+        SupplierError("SUPPLIER_REJECTED", http_status=422, endpoint="shop/getShops", provider_code=1600300)))
+    body = post(client, BASE + "/discover-shops").get_json()
+    assert body["endpoint"] == "shop/getShops" and body["provider_code"] == 1600300
+
+    conn = db.connect()
+    try:
+        diagnostics.ensure_schema(conn)
+        row = conn.execute("SELECT endpoint, provider_code FROM business_os_cj_diagnostic_origin").fetchall()[-1]
+    finally:
+        conn.close()
+    assert (row["endpoint"], row["provider_code"]) == ("shop/getShops", 1600300)
+
+
+@pytest.mark.parametrize("endpoint,provider_code", [
+    ("https://evil.example/steal?k=SECRET", 200),        # not one of our paths
+    ("shop/getShops", "APIkey is wrong"),                # a message is not a code
+    ("shop/getShops", 1.5),                              # nor is a float
+    ("shop/getShops", True),                             # nor a bool wearing an int's clothes
+])
+def test_diagnostic_endpoint_and_provider_code_refuse_anything_but_a_coordinate(endpoint, provider_code):
+    """The integer is the whole safety argument -- so nothing else may pass as one."""
+    error = SupplierError("SUPPLIER_REJECTED", endpoint=endpoint, provider_code=provider_code)
+    assert error.endpoint in (None, "shop/getShops") and error.provider_code in (None, 200)
+    if endpoint.startswith("https"):
+        assert error.endpoint is None
+    if not (type(provider_code) is int and type(provider_code) is not bool):
+        assert error.provider_code is None
+
+
 def test_diagnostic_table_cannot_grow_without_bound(monkeypatch):
     from services import db
     from services.business_os.suppliers import diagnostics

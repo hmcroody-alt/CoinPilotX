@@ -92,12 +92,21 @@ def _error(exc):
     payload = {"ok": False, "code": code, "error_code": code}
     if policy.enabled("CJ_SUPPLIER_DIAGNOSTIC_ORIGIN"):
         origin = _origin(exc)
+        # `endpoint` and `provider_code` are validated by SupplierError itself
+        # and again by `diagnostics.record`; both are None on anything that is
+        # not a provider call. A line number alone could not separate the dozen
+        # endpoints that share `_request`'s single rejection line.
+        endpoint, provider_code = getattr(exc, "endpoint", None), getattr(exc, "provider_code", None)
         payload["origin"] = origin
+        if endpoint:
+            payload["endpoint"] = endpoint
+        if provider_code is not None:
+            payload["provider_code"] = provider_code
         # Recorded as well as returned, because the caller that reaches this in
         # practice is a mobile screen that renders a sentence and discards the
         # body -- an operator who turned the flag on would otherwise never see
         # the field they asked for.
-        diagnostics.record(code, status, origin)
+        diagnostics.record(code, status, origin, endpoint, provider_code)
     return _respond(payload, status, getattr(exc, "retry_after", None))
 
 
