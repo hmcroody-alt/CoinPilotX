@@ -108,6 +108,16 @@ function AppRoot() {
     recordDuration("app.interactive", perfNow() - APP_MODULE_START, { status: authState.status });
   }, [authState.status]);
 
+  // Measured against `app.interactive` because both gate the same spinner below.
+  // This one is a local catalog read and that one waits on a network session
+  // restore, so this is what says whether localization costs launch anything.
+  const i18nReadyRecorded = useRef(false);
+  useEffect(() => {
+    if (!i18nReady || i18nReadyRecorded.current) return;
+    i18nReadyRecorded.current = true;
+    recordDuration("app.i18nReady", perfNow() - APP_MODULE_START);
+  }, [i18nReady]);
+
   const requestReauthentication = useCallback((redirectTarget = "") => {
     if (redirectTarget) setPendingQaRedirectTarget(redirectTarget.slice(0, 240));
     // Reauth is always triggered by an invalidated/expired live session, so mark
@@ -250,9 +260,11 @@ function AppRoot() {
 
   const auth = useMemo(() => ({ authState, setAuthState, requestReauthentication }), [authState, requestReauthentication]);
 
-  // Holding the splash until the core catalogs are resident is what guarantees
-  // the first rendered frame is already in the user's language — no screen ever
-  // paints English and then swaps.
+  // This is where the i18n first-frame guarantee is actually enforced: the
+  // provider renders its children immediately (so the session restore above can
+  // start), and nothing translatable reaches the screen until the core catalogs
+  // are resident. The spinner carries no copy, so it is language-neutral.
+  // Pinned by src/i18n/__tests__/launchGate.test.ts.
   if (!i18nReady || authState.phase === "BOOTSTRAPPING") {
     return (
       <View

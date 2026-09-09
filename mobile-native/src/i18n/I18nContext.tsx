@@ -36,9 +36,13 @@ import {
  *
  * Responsibilities, in launch order:
  *   1. Read the saved preference and run the detection chain.
- *   2. Load the core catalog tier for the resolved language *before* rendering
- *      children, so the first frame is already translated and no screen ever
- *      flashes English then swaps.
+ *   2. Load the core catalog tier for the resolved language, and only then flip
+ *      `ready`. No screen ever paints English and swaps, but note where that is
+ *      enforced: children render from the first frame, and `App.tsx` holds the
+ *      first *visible* frame on `ready` behind a text-free spinner. Gating here
+ *      instead would also withhold the children's effects, which is where the
+ *      session restore starts — a network round trip would then be queued
+ *      behind a local catalog read that never outlasts it.
  *   3. Render, then warm the extended tier in the background.
  *   4. Re-run detection when the app returns to foreground, so a user who
  *      changed their device language in Settings sees PulseSoc follow — unless
@@ -64,7 +68,10 @@ export interface I18nContextValue {
   followingDevice: boolean;
   /** Which detection tier chose the current language. */
   detectionSource: DetectionResult["source"];
-  /** True once core catalogs are loaded and it is safe to render text. */
+  /**
+   * True once core catalogs are loaded and it is safe to render text. `App.tsx`
+   * is the consumer that matters: it withholds the first visible frame on this.
+   */
   ready: boolean;
   /** True while a language change is being applied. */
   switching: boolean;
