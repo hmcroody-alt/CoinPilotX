@@ -3,7 +3,9 @@
 All API workers sharing an egress IP MUST use the same database and configured
 egress group. No in-memory limiter, IP rotation, or automatic account eviction.
 PostgreSQL row locks and SQLite BEGIN IMMEDIATE serialize admissions across
-processes. Unknown points admit only zero-point bootstrap/health operations.
+processes. Unknown points admit costed operations at a reduced pace rather than
+refusing them: CJ's zero-point endpoints do not reliably report a budget, so a
+refusal there is a state nothing can leave. See `reserve_request`.
 
 The two ceilings enforced here -- three CJ accounts and ten business calls per
 second, both per outbound IP -- are the provider's, and live in `policy.py`.
@@ -45,6 +47,12 @@ EGRESS_TARGET_CALLS_PER_SECOND = (
     MAX_CJ_BUSINESS_CALLS_PER_SECOND_PER_EGRESS_IP - EGRESS_HEADROOM_CALLS_PER_SECOND
 )
 EGRESS_MIN_INTERVAL = 1 / EGRESS_TARGET_CALLS_PER_SECOND
+
+# How slowly an account may make costed calls while its point budget is unknown.
+# Deliberately far below any account's real pace: this is the rate at which we
+# are willing to spend points we cannot yet count, and the first response that
+# carries a readable `pointsInfo` ends it.
+UNKNOWN_BUDGET_MIN_INTERVAL = 5.0
 
 
 def ensure_schema(conn=None):
@@ -130,14 +138,44 @@ class DurableCJQuota:
             if retry > .000001:
                 raise SupplierError("RATE_LIMITED", http_status=429, retry_after=retry)
             remaining = row["remaining"]
-            if cost and remaining is None:
-                raise SupplierError("QUOTA_UNKNOWN", http_status=503, retry_after=60)
-            if cost and remaining - cost < (0 if critical else self.reserve):
+            unknown = cost and remaining is None
+            if cost and not unknown and remaining - cost < (0 if critical else self.reserve):
                 raise SupplierError("POINT_BUDGET_RESERVED", http_status=429, retry_after=60)
             seq = row["sequence"] + 1
             qps = 1 if authentication else min(6, max(1, row["qps"]))
+            # An unknown budget paces; it no longer refuses.
+            #
+            # This used to raise QUOTA_UNKNOWN for any cost while `remaining` was
+            # None, on the stated reasoning that zero-point health calls stay
+            # admissible and the first of those resolves the budget. That premise
+            # does not hold against a live account: CJ answered `setting/get` and
+            # `shop/getShops` -- both zero-point -- with `0/0/0`, which
+            # `_observe_points` correctly declines to record as a ceiling of
+            # nothing. `remaining` therefore stays None forever, and the only
+            # responses that carry a real budget are the costed ones this branch
+            # refused. The endpoints that could answer the question were exactly
+            # the endpoints gated behind knowing the answer.
+            #
+            # Note `usedToday` is 0 in that block too. Exhaustion reads
+            # `remaining=0, usedToday=total>0`; a 0/0/0 block is a response not
+            # reporting a budget, not an account out of points. So admitting here
+            # is not spending a balance we were told was empty.
+            #
+            # Refusing was never the safer half either. CJ enforces its own
+            # allowance with HTTP 429, which `penalize` already handles -- honored
+            # Retry-After, exponential backoff to an hour, and a pause across the
+            # whole egress group. What this guard added on top was the ability to
+            # reach a state that could not end.
+            #
+            # Unknown is still degraded, so it is paced rather than trusted:
+            # while the budget is unresolved an account gets one call per
+            # UNKNOWN_BUDGET_MIN_INTERVAL instead of its usual qps. That bounds
+            # what an account whose budget never resolves can spend, and it costs
+            # nothing once a reading lands -- `observe` writes `remaining`, this
+            # branch stops applying, and normal pacing resumes on the next call.
+            interval = UNKNOWN_BUDGET_MIN_INTERVAL if unknown else 1 / qps
             conn.execute("UPDATE business_os_cj_egress_quota SET next_at=? WHERE egress_group=?", (now + EGRESS_MIN_INTERVAL, self.egress_group))
-            conn.execute("UPDATE business_os_cj_account_quota SET next_at=?,remaining=?,sequence=? WHERE egress_group=? AND account_ref=?", (now + 1 / qps, None if remaining is None else remaining - cost, seq, self.egress_group, account_ref))
+            conn.execute("UPDATE business_os_cj_account_quota SET next_at=?,remaining=?,sequence=? WHERE egress_group=? AND account_ref=?", (now + interval, None if remaining is None else remaining - cost, seq, self.egress_group, account_ref))
             return seq
 
     def rebind_account(self, old_ref, new_ref):
@@ -160,6 +198,17 @@ class DurableCJQuota:
         values = [points_info.get(k) for k in ("remaining", "usedToday", "total")]
         if any(type(v) is not int or v < 0 for v in values) or values[0] > values[2]:
             return
+        # A ceiling of zero is not a budget, and `remaining` cannot exceed it.
+        #
+        # CJ's zero-point endpoints answer a live account with `0/0/0`. The
+        # adapter already declines to forward that, but the guard belongs here
+        # too, because the two states are no longer equally bad: unknown is
+        # paced and self-healing, while a recorded zero reads EXHAUSTED and is
+        # only ever lowered by the `min` below -- nothing else in this class
+        # raises `remaining`. One call site forwarding a 0/0/0 would end an
+        # account permanently, and it would look like the provider's answer.
+        if values[2] <= 0:
+            return
         with self._locked() as conn:
             row = self._account(conn, account_ref)
             remaining, used, total = values
@@ -176,14 +225,32 @@ class DurableCJQuota:
             # guard while still failing every costed admission.
             #
             # Unknown is both the honest answer and the self-healing one. It
-            # refuses costed calls just as firmly, but zero-point health calls
-            # still go out, and the first of those returns a reading whose
-            # sequence matches -- resolving the budget instead of guessing it.
+            # still holds costed calls to a crawl, but they go out, and the
+            # first response whose sequence matches carries a reading that
+            # resolves the budget instead of guessing it.
             if sequence is not None and row["sequence"] != sequence:
                 if row["remaining"] is None:
                     return
                 remaining = min(remaining, row["remaining"])
-            conn.execute("UPDATE business_os_cj_account_quota SET remaining=?,used_today=?,total=?,observed_at=?,failures=0 WHERE egress_group=? AND account_ref=?", (remaining, used, total, self.clock(), self.egress_group, account_ref))
+            now = self.clock()
+            # Resolving the budget also ends the slow lane it was scheduled into.
+            #
+            # `reserve_request` pushes `next_at` out by UNKNOWN_BUDGET_MIN_INTERVAL
+            # when it admits a costed call against an unknown budget. That delay
+            # was priced against not knowing; the response now in hand is exactly
+            # what it was waiting for. Leaving it in place would charge the
+            # account five seconds for a question already answered -- and on the
+            # merchant-visible path, the search that resolves the budget would be
+            # followed by one that still stalls.
+            #
+            # Only the unknown-budget delay is pulled back, and only down to the
+            # normal pace: `blocked_until` is a different column, so a provider
+            # 429 recorded by `penalize` is untouched, and so is the shared
+            # egress interval.
+            paced = row["next_at"]
+            if row["remaining"] is None:
+                paced = min(paced, now + 1 / min(6, max(1, row["qps"])))
+            conn.execute("UPDATE business_os_cj_account_quota SET remaining=?,used_today=?,total=?,observed_at=?,next_at=?,failures=0 WHERE egress_group=? AND account_ref=?", (remaining, used, total, now, paced, self.egress_group, account_ref))
 
     def penalize(self, account_ref, retry_after=None):
         now = self.clock()

@@ -13,6 +13,7 @@ from services.business_os.suppliers.quota import (
     DurableCJQuota,
     EGRESS_MIN_INTERVAL,
     EGRESS_TARGET_CALLS_PER_SECOND,
+    UNKNOWN_BUDGET_MIN_INTERVAL,
     budget_state,
     ensure_schema,
 )
@@ -54,15 +55,53 @@ def test_budget_states(remaining, total, state):
     assert budget_state(remaining, total) == state
 
 
-def test_unknown_points_admit_only_zero_cost_bootstrap(controller):
+def test_unknown_points_pace_costed_calls_instead_of_refusing_them(controller):
+    """The budget is only ever readable from the calls this used to refuse.
+
+    CJ's zero-point endpoints answered a live account with `0/0/0`, which is not
+    a ceiling and is correctly not recorded as one -- so `remaining` stays None
+    and only a costed response can resolve it. Refusing every costed call at
+    that point made the state permanent, and the merchant saw a supplier that
+    never responded.
+    """
     quota, clock = controller
-    with pytest.raises(SupplierError) as failure:
-        quota.reserve_request("account-a", cost=50)
-    assert failure.value.code == "QUOTA_UNKNOWN"
-    quota.reserve_request("account-a", cost=0, authentication=True)
-    clock.advance()
+    assert quota.reserve_request("account-a", cost=50) == 1
     assert quota.snapshot("account-a")["state"] == "UNKNOWN"
     assert quota.snapshot("account-a")["remaining"] is None
+
+
+def test_an_unknown_budget_is_paced_far_below_the_accounts_normal_rate(controller):
+    """Admitting is not trusting: unresolved spending stays bounded."""
+    quota, clock = controller
+    quota.reserve_request("account-a", cost=50)
+    clock.advance(UNKNOWN_BUDGET_MIN_INTERVAL - .05)
+    with pytest.raises(SupplierError) as failure:
+        quota.reserve_request("account-a", cost=50)
+    assert failure.value.code == "RATE_LIMITED"
+    clock.advance(.1)
+    assert quota.reserve_request("account-a", cost=50) == 2
+
+
+def test_the_first_real_reading_restores_normal_pacing(controller):
+    """The slow lane must end by itself, or the fix is just a slower deadlock."""
+    quota, clock = controller
+    quota.reserve_request("account-a", cost=50)
+    # The reading arrives while the five-second delay that call scheduled is
+    # still outstanding. It answers the question that delay was priced against,
+    # so it also cancels it -- one second later this is admissible, not six.
+    observe(quota)
+    clock.advance(1.01)
+    assert quota.reserve_request("account-a", cost=50) == 2
+    clock.advance(1.01)
+    assert quota.reserve_request("account-a", cost=50) == 3
+
+
+def test_a_zero_ceiling_never_becomes_a_spendable_budget(controller):
+    """Pacing unknown budgets must not smuggle 0/0/0 in as a real reading."""
+    quota, _ = controller
+    quota.observe("account-a", {"remaining": 0, "usedToday": 0, "total": 0})
+    assert quota.snapshot("account-a")["remaining"] is None
+    assert quota.snapshot("account-a")["state"] == "UNKNOWN"
 
 
 def test_known_remaining_debits_atomically_and_preserves_fulfillment_reserve(controller):

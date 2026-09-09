@@ -235,8 +235,14 @@ def test_a_points_block_with_no_ceiling_is_not_recorded_as_an_empty_budget(point
     Recording it would set `remaining` to 0, and `reserve_request` refuses
     every costed call at that value before reaching the network -- so the only
     responses that could revise the figure are the ones we would stop making.
-    Leaving it unset keeps costed calls refused (as `QUOTA_UNKNOWN`) while
-    leaving the zero-point calls that can still resolve it able to do so.
+    Nothing in the quota controller raises `remaining` either; the stale-reading
+    branch only ever lowers it. Leaving it unset keeps the account in UNKNOWN,
+    where costed calls are paced rather than refused and the first readable
+    `pointsInfo` ends the pacing.
+
+    This is the live case, not a hypothetical: CJ answered a real account's
+    zero-point calls with `0/0/0`, which is why the resolution cannot be left
+    to them.
 
     The request itself is unaffected: a response we cannot read a budget out of
     is still a response, and its products are returned normally.

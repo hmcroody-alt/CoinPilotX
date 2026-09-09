@@ -239,10 +239,17 @@ class CJAdapter:
         recorded a number CJ never asserted and made it expensive to unlearn.
 
         So declining to record it is not the more permissive reading. An
-        unknown budget refuses costed calls exactly as firmly -- `reserve_request`
-        raises `QUOTA_UNKNOWN` on any cost when `remaining is None`. It differs
-        only in telling the merchant we do not know rather than that they have
-        none, and in being a state the next reading can simply overwrite.
+        unknown budget is still a degraded one: `reserve_request` paces costed
+        calls to one per `UNKNOWN_BUDGET_MIN_INTERVAL` while `remaining is None`.
+        It differs from a recorded zero in telling the merchant we do not know
+        rather than that they have none, and -- decisively -- in being a state
+        the next reading can simply overwrite, because costed calls still go out
+        and costed responses are the ones that carry a real budget.
+
+        That last point is why `reserve_request` no longer refuses outright. It
+        used to, on the reasoning that the zero-point health calls would resolve
+        the budget instead; against a live account they did not, answering 0/0/0
+        themselves and leaving nothing that could ever revise the figure.
         """
         points = body.get("pointsInfo") if isinstance(body, dict) else None
         if isinstance(points, dict) and all(type(points.get(k)) is int and points[k] >= 0 for k in ("remaining", "usedToday", "total")) and 0 < points["total"] and points["remaining"] <= points["total"]:
