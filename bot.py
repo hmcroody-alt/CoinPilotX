@@ -39843,6 +39843,10 @@ def pulse_shell_rail_items(user=None, is_admin=False):
         ("Creator Studio", "/pulse/creator-studio", "✦"),
         ("Business OS", "/business-os", "◈"),
         ("UNDX AI", "/pulse/assistant", "AI"),
+        # Gated on the same flag as the page and every /api/business-os/undx
+        # route, so the rail never offers a destination that dark-404s.
+        *([("Action Center", "/pulse/undx/actions", "§")]
+          if _business_os_undx_actions_enabled() else []),
         ("Seller Tools", "/pulse/seller-tools", "$"),
         ("Premium", "/pulse/premium", "◆"),
         ("Promote", "/pulse/promote", "↗"),
@@ -39856,6 +39860,32 @@ def pulse_shell_rail_items(user=None, is_admin=False):
     if is_admin:
         items.append(("Admin", "/admin/global-command", "!"))
     return items
+
+
+def pulse_shell_drawer_extras(existing, user=None, is_admin=False):
+    """Catalogue destinations a hand-written drawer does not already carry.
+
+    ``pulse_shell_rail_items`` unified the desktop rail and the desktop top bar,
+    but the two mobile drawers -- the feed's grouped one and the social shell's
+    flat one -- are still hand-maintained lists that predate it. So a
+    destination added to the catalogue reached desktop and stopped at the
+    phone, which is the surface most people actually use, and the catalogue's
+    "appears everywhere or nowhere" promise was true of two navigations out of
+    four.
+
+    Rewriting either drawer would throw away editorial groupings that are worth
+    keeping -- the feed's drawer is deliberately sectioned, and its ordering is
+    not the rail's. This appends only what is missing instead, keyed by the
+    href with any fragment or query stripped, so ``/pulse/discover#apps`` does
+    not re-list Discover. The drawers keep their shape and can no longer fall
+    behind the catalogue.
+    """
+    seen = {str(href or "").split("#")[0].split("?")[0] for href in existing}
+    return [
+        (label, href)
+        for label, href, _icon in pulse_shell_rail_items(user, is_admin)
+        if str(href or "").split("#")[0].split("?")[0] not in seen
+    ]
 
 
 def pulse_nav_is_current(href, active_path):
@@ -40618,6 +40648,11 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
         ("Content", [("Events", "/pulse/events"), ("Scam Alerts", "/pulse/scam-alerts"), ("Arena Highlights", "/pulse/arena"), ("Roast Clips", "/pulse/roast-clips"), ("Saved", "/pulse/saved"), ("Collections", "/pulse/collections")]),
         ("Utility", [("Dashboard", "/dashboard"), ("Invite", "/pulse/invite"), ("Camera", "/pulse/camera/post"), ("Settings", "/pulse/settings"), ("Help", "/help"), ("Log Out", "/logout")]),
     ]
+    drawer_extras = pulse_shell_drawer_extras(
+        [href for _group, links in drawer_groups for _label, href in links],
+        user, bool(admin_current_user()))
+    if drawer_extras:
+        drawer_groups.insert(len(drawer_groups) - 1, ("More", drawer_extras))
     drawer_html = "".join(
         "<section><h3>{}</h3>{}</section>".format(
             clean_html(group),
@@ -46855,7 +46890,12 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
     if user_is_super_user(user):
         apps_nav.insert(0, ("PulseSoc Labs", "/pulse/labs"))
     nav_html = "".join(f"<a class='button {'primary' if request.path == href else ''}' href='{href}'>{label}</a>" for label, href in nav)
-    drawer_html = "".join(f"<a class='drawer-link' href='{href}'>{label}</a>" for label, href in nav + apps_nav + [("Status", "/pulse/status"), ("Invite", "/pulse/invite"), ("Camera", "/pulse/camera"), ("Settings", "/pulse/profile/edit"), ("Help", "/help"), ("Log Out", "/logout")])
+    drawer_tail = [("Status", "/pulse/status"), ("Invite", "/pulse/invite"), ("Camera", "/pulse/camera"), ("Settings", "/pulse/profile/edit"), ("Help", "/help"), ("Log Out", "/logout")]
+    drawer_items = nav + apps_nav
+    drawer_items += pulse_shell_drawer_extras(
+        [href for _label, href in drawer_items + drawer_tail], user, bool(admin_current_user()))
+    drawer_items += drawer_tail
+    drawer_html = "".join(f"<a class='drawer-link' href='{href}'>{label}</a>" for label, href in drawer_items)
     chat_icon_svg = "<svg viewBox='0 0 24 24' aria-hidden='true' focusable='false'><path d='M5.5 18.5c-1.7-1.45-2.5-3.24-2.5-5.37C3 8.12 7.03 4.5 12 4.5s9 3.62 9 8.63-4.03 8.62-9 8.62c-1.05 0-2.05-.16-2.98-.47L4.5 22l1-3.5Z'/><path d='M8 12.5h8M8 9.5h6'/></svg>"
     mobile_bottom_icons = {"chat": chat_icon_svg, "profile": shell_avatar_html}
     mobile_bottom_html = ""
@@ -55036,6 +55076,437 @@ def pulse_assistant_page():
     })();
     """
     return pulse_social_shell("PulseSoc Assistant", "A conversational AI guide for PulseSoc, learning, creators, marketplace safety, and scam protection.", main, "", script)
+
+
+UNDX_ACTION_CENTER_PAGE_STYLE = """
+<style>
+.undx-hero{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:center}
+.undx-eyebrow{margin:0;font-size:12px;font-weight:950;letter-spacing:.18em;color:var(--cyan)}
+.undx-hero h1{font-size:clamp(26px,4.2vw,40px)}
+.undx-signal{display:grid;place-items:center;gap:2px;min-width:92px;padding:12px 14px;border:1px solid rgba(110,223,246,.34);border-radius:16px;background:rgba(110,223,246,.08)}
+.undx-signal strong{font-size:26px;line-height:1}
+.undx-signal span{font-size:11px;font-weight:900;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.undx-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:12px 0}
+.undx-metric{border:1px solid var(--line);border-radius:14px;padding:12px;background:rgba(255,255,255,.03);display:grid;gap:3px}
+.undx-metric strong{font-size:24px;line-height:1}
+.undx-metric span{font-size:11px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.undx-metric.tone-intelligence{border-color:rgba(168,119,255,.4)}.undx-metric.tone-intelligence strong{color:#a877ff}
+.undx-metric.tone-accent{border-color:rgba(110,223,246,.4)}.undx-metric.tone-accent strong{color:var(--cyan)}
+.undx-metric.tone-economy{border-color:rgba(255,209,102,.4)}.undx-metric.tone-economy strong{color:#ffd166}
+.undx-metric.tone-safety{border-color:rgba(54,229,143,.4)}.undx-metric.tone-safety strong{color:var(--green)}
+.undx-section h2{font-size:17px;margin:0 0 10px}
+.undx-rows{display:grid;gap:8px}
+.undx-row{border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:rgba(255,255,255,.025);display:grid;gap:5px}
+.undx-row.is-danger{border-color:rgba(255,95,125,.46);background:rgba(255,95,125,.07)}
+.undx-row-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.undx-row-head strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.undx-row.is-danger .pill{border-color:rgba(255,95,125,.5);background:rgba(255,95,125,.14);color:#ffd8e0}
+.undx-row p{margin:0;font-size:13px}
+.undx-row small{color:var(--muted);font-size:11px}
+.undx-empty,.undx-note{margin:0;font-size:13px}
+.undx-error{border-color:rgba(255,95,125,.5);background:linear-gradient(180deg,rgba(255,95,125,.12),rgba(255,95,125,.05))}
+.undx-error h2{margin:0 0 6px;font-size:17px}
+.undx-plan{border:1px solid rgba(255,209,102,.44);border-radius:12px;background:rgba(255,209,102,.08);padding:11px 12px;display:grid;gap:5px;margin:10px 0}
+.undx-plan-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.undx-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:10px 0}
+.undx-fields label{display:grid;gap:5px;font-size:12px;font-weight:900;color:var(--muted)}
+.undx-fields label.wide{grid-column:1/-1}
+.undx-workflow-message{margin:8px 0 0;font-size:13px}
+.undx-workflow-message.is-error{color:#ffb3c1}
+.undx-workflow-message.is-ok{color:var(--green)}
+@media(max-width:760px){.undx-hero{grid-template-columns:minmax(0,1fr)}.undx-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-fields{grid-template-columns:minmax(0,1fr)}}
+</style>
+"""
+
+
+
+#: The page's client, kept at module scope so a test can run it against a stub
+#: DOM instead of only reading it. What this client can get wrong is invisible
+#: to a Python assertion -- rendering "UNDX has nothing waiting for you." when
+#: the fetch in fact failed is a behaviour, not a string -- so it is exercised
+#: in JavaScript by ``tests/web_surface/undx_action_center_harness.js``.
+UNDX_ACTION_CENTER_PAGE_JS = r"""
+    (function(){
+      const root = document.querySelector('[data-undx-root]');
+      if (!root) return;
+      const pick = selector => root.querySelector(selector);
+      const loadingPanel = pick('[data-undx-loading]');
+      const errorPanel = pick('[data-undx-error]');
+      const errorMessage = pick('[data-undx-error-message]');
+      const bodyPanel = pick('[data-undx-body]');
+      const signal = pick('[data-undx-signal]');
+      const workflowMessage = pick('[data-undx-workflow-message]');
+      const planPanel = pick('[data-undx-plan]');
+      const executeButton = root.querySelector('[data-undx-action="execute"]');
+      let busy = false;
+      let confirmationToken = '';
+      let publishPlan = null;
+
+      const text = value => (value === undefined || value === null) ? '' : String(value);
+      const escape = value => text(value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+      const record = value => (value && typeof value === 'object' && !Array.isArray(value)) ? value : {};
+      const list = value => Array.isArray(value) ? value.filter(item => item && typeof item === 'object' && !Array.isArray(item)) : [];
+      const field = name => root.querySelector('[data-undx-field="' + name + '"]');
+      const value = name => text(field(name) && field(name).value).trim();
+
+      function firstOf(item, keys){
+        for (const key of keys) {
+          const found = text(item[key]).trim();
+          if (found) return found;
+        }
+        return '';
+      }
+
+      function rowHtml(item, danger){
+        const title = firstOf(item, ['action_type','tool_name','request_id','policy_id','receipt_id','reason']) || 'Governed action';
+        const status = firstOf(item, ['effect','status','decision','risk','product_area']) || 'server state';
+        const detail = firstOf(item, ['reason','subject_ref','canonical_ref','feature_flag','external_ref','actor']);
+        const meta = firstOf(item, ['request_id','tool_name','org_id','created_at']) || 'canonical';
+        return '<article class="undx-row' + (danger ? ' is-danger' : '') + '">'
+          + '<div class="undx-row-head"><strong>' + escape(title) + '</strong>'
+          + '<span class="pill">' + escape(status) + '</span></div>'
+          + (detail ? '<p class="muted">' + escape(detail) + '</p>' : '')
+          + '<small>' + escape(meta) + '</small></article>';
+      }
+
+      function paint(key, items, isDanger){
+        const host = root.querySelector('[data-undx-section="' + key + '"]');
+        if (!host) return;
+        const rows = items.map(item => rowHtml(item, Boolean(isDanger && isDanger(item))));
+        host.innerHTML = rows.length
+          ? rows.join('')
+          : '<p class="muted undx-empty">' + escape(host.dataset.undxEmpty || '') + '</p>';
+      }
+
+      function metric(key, count){
+        const node = root.querySelector('[data-undx-metric="' + key + '"]');
+        if (node) node.textContent = String(count);
+      }
+
+      // One owner for the three read states, so "unavailable" and "nothing
+      // waiting for you" can never be on screen at the same time.
+      function setState(state, message){
+        loadingPanel.hidden = state !== 'loading';
+        errorPanel.hidden = state !== 'error';
+        bodyPanel.hidden = state !== 'ready';
+        signal.hidden = state !== 'ready';
+        if (state === 'error') errorMessage.textContent = message || 'The Action Center could not be read.';
+      }
+
+      async function api(url, options){
+        const settings = Object.assign({ credentials: 'same-origin', cache: 'no-store' }, options || {});
+        settings.headers = Object.assign({ 'Accept': 'application/json' }, settings.headers || {});
+        if (settings.body) {
+          settings.headers['Content-Type'] = 'application/json';
+          settings.headers['X-CSRF-Token'] = UNDX_CSRF;
+        }
+        const response = await fetch(url, settings);
+        const payload = await response.json().catch(() => null);
+        if (!payload) throw new Error('The Action Center returned an unreadable response.');
+        if (!response.ok || payload.ok === false) {
+          throw new Error(payload.message || payload.error || ('The Action Center returned ' + response.status + '.'));
+        }
+        return payload;
+      }
+
+      async function load(){
+        setState('loading');
+        try {
+          const [centerReply, toolsReply, permissionsReply] = await Promise.all([
+            api('/api/business-os/undx/action-center?limit=80'),
+            api('/api/business-os/undx/tools?product_area=marketplace&limit=80'),
+            // Permissions are additive context, so a failure here degrades the
+            // Permissions count rather than taking down the whole page. Native
+            // does the same.
+            api('/api/business-os/undx/permissions?limit=80').catch(() => ({ result: {} }))
+          ]);
+          const snapshot = record(centerReply.result);
+          const pending = list(snapshot.requests || snapshot.pending || snapshot.action_requests);
+          const decisions = list(snapshot.decisions);
+          const receipts = list(snapshot.receipts);
+          const stops = list(snapshot.active_stops || snapshot.emergency_stops);
+          const tools = list(record(toolsReply.result).tools);
+          const permissions = list(record(permissionsReply.result).permissions);
+
+          pick('[data-undx-pending]').textContent = String(pending.length);
+          metric('decisions', decisions.length);
+          metric('requests', pending.length);
+          metric('tools', tools.length);
+          metric('permissions', permissions.length);
+
+          paint('pending', pending.slice(0, 12));
+          paint('decisions', decisions.slice(0, 12));
+          paint('tools', tools.slice(0, 12));
+          paint('permissions', permissions.slice(0, 12));
+          paint('receipts', receipts.slice(0, 8).concat(stops.slice(0, 4)),
+                item => text(item.active) === 'true' || Boolean(text(item.reason)));
+          setState('ready');
+        } catch (error) {
+          setState('error', error.message);
+        }
+      }
+
+      function expiry(raw){
+        const stamp = text(raw);
+        if (!stamp) return 'soon';
+        const parsed = new Date(stamp);
+        return Number.isNaN(parsed.getTime()) ? stamp : parsed.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      }
+
+      function say(message, tone){
+        workflowMessage.hidden = !message;
+        workflowMessage.textContent = message || '';
+        workflowMessage.classList.toggle('is-error', tone === 'error');
+        workflowMessage.classList.toggle('is-ok', tone === 'ok');
+      }
+
+      function showPlan(plan){
+        publishPlan = plan;
+        planPanel.hidden = !plan;
+        if (!plan) return;
+        pick('[data-undx-plan-risk]').textContent = (text(plan.risk) || 'high') + ' risk';
+        pick('[data-undx-plan-summary]').textContent = text(plan.summary) || 'Publish this Marketplace product.';
+        pick('[data-undx-plan-expiry]').textContent = 'Single use \u00b7 expires ' + expiry(plan.expires_at);
+      }
+
+      function syncExecuteButton(){
+        executeButton.disabled = busy || !confirmationToken || !value('request_id');
+      }
+
+      function setBusy(state){
+        busy = state;
+        root.querySelectorAll('[data-undx-action]').forEach(button => { button.disabled = state; });
+        syncExecuteButton();
+      }
+
+      async function run(work){
+        if (busy) return;
+        setBusy(true);
+        say('');
+        try {
+          await work();
+        } catch (error) {
+          say(error.message || 'The governed workflow did not complete.', 'error');
+        } finally {
+          setBusy(false);
+        }
+      }
+
+      async function createDraft(){
+        const reply = await api('/api/business-os/undx/marketplace/listings/draft', {
+          method: 'POST',
+          body: JSON.stringify({ listing: {
+            title: value('title'),
+            description: value('description'),
+            price_cents: Number(value('price_cents') || 0),
+            fulfillment_type: 'physical',
+            inventory_qty: Number(value('inventory_qty') || 0)
+          } })
+        });
+        const product = record(record(reply.result).product);
+        const productId = text(product.product_id || product.id || record(reply.result).product_id);
+        if (productId) field('product_id').value = productId;
+        say('Governed draft request completed. Refreshing Action Center.', 'ok');
+        await load();
+      }
+
+      async function planPublish(){
+        const reply = await api('/api/business-os/undx/marketplace/listings/publish/plan', {
+          method: 'POST',
+          body: JSON.stringify({ product_id: value('product_id') })
+        });
+        const result = record(reply.result);
+        const plan = record(result.plan);
+        const confirmation = record(result.confirmation);
+        confirmationToken = text(plan.confirmation_token || plan.token);
+        const requestId = text(confirmation.request_id || record(result.request).request_id);
+        if (requestId) field('request_id').value = requestId;
+        showPlan(confirmationToken ? plan : null);
+        say('Publish plan created. Review confirmation token before execute.', 'ok');
+        syncExecuteButton();
+        await load();
+      }
+
+      async function executePublish(){
+        const reply = await api('/api/business-os/undx/marketplace/listings/publish/execute', {
+          method: 'POST',
+          body: JSON.stringify({
+            request_id: value('request_id'),
+            product_id: value('product_id'),
+            confirmation_token: confirmationToken
+          })
+        });
+        confirmationToken = '';
+        showPlan(null);
+        syncExecuteButton();
+        say('Publish execution verified by Marketplace.', 'ok');
+        await load();
+        return reply;
+      }
+
+      // Publishing makes a product visible and orderable, so it asks first --
+      // the same confirmation the native screen puts behind Alert.alert.
+      function confirmExecute(){
+        if (!confirmationToken || !value('request_id')) return;
+        const summary = text(publishPlan && publishPlan.summary) || 'This makes the product visible and orderable.';
+        const detail = summary + '\n\nProduct ' + value('product_id')
+          + '\nApproval expires ' + expiry(publishPlan && publishPlan.expires_at) + '.';
+        if (!window.confirm('Publish Marketplace listing?\n\n' + detail)) return;
+        run(executePublish);
+      }
+
+      root.addEventListener('click', event => {
+        if (event.target.closest('[data-undx-retry]')) { load(); return; }
+        const action = event.target.closest('[data-undx-action]');
+        if (!action) return;
+        if (action.dataset.undxAction === 'draft') run(createDraft);
+        else if (action.dataset.undxAction === 'plan') run(planPublish);
+        else if (action.dataset.undxAction === 'execute') confirmExecute();
+      });
+      field('request_id').addEventListener('input', syncExecuteButton);
+      // The markup ships the publish button disabled, but say so from here too:
+      // one owner for that state beats an initial value in the HTML and every
+      // later value in the client, which is how a button ends up enabled with
+      // no confirmation token behind it.
+      syncExecuteButton();
+      load();
+    })();
+"""
+
+def _undx_action_center_section_html(key, title, empty):
+    return (
+        f"<section class='card undx-section'><h2>{clean_html(title)}</h2>"
+        f"<div class='undx-rows' data-undx-section='{key}' "
+        f"data-undx-empty=\"{clean_html(empty)}\"></div></section>"
+    )
+
+
+@webhook_app.route("/pulse/undx/actions")
+def pulse_undx_action_center_page():
+    """The web half of a URL the native app has always claimed.
+
+    ``mobile-native/src/navigation/linking.ts`` registers ``pulse/undx/actions``
+    as UndxActionCenter's deep link and ``nativeRouteActions.ts`` routes that
+    exact path, so every share sheet, push payload and in-app link that names
+    this URL resolves on a phone. On the web it was a 404 — the one place a
+    shared PulseSoc link is most likely to be opened. The page below is the
+    same product, adapted; ``UndxActionCenterScreen.tsx`` is the reference.
+
+    Two deliberate departures from the native screen, both because the native
+    screen is wrong rather than because the web is different:
+
+    Error and empty are mutually exclusive here. Native renders the "Action
+    Center unavailable" panel *in addition to* the five sections, so a failed
+    first load tells you both that the fetch failed and that "UNDX has nothing
+    waiting for you." — a claim about your governance queue that nothing has
+    established. ``setState`` below owns all three of loading/ready/error and
+    can only be in one of them, so a count is shown only when a payload
+    actually arrived. The Marketplace workflow form stays visible during an
+    error on purpose: it makes no claim about server state, so hiding it would
+    remove something still true rather than something misleading.
+
+    Emergency stops are read from ``active_stops``. That is the key
+    ``engine.action_center`` emits; native reads ``emergency_stops`` and falls
+    back to ``emergency_stop``, neither of which the backend has ever sent, so
+    native's "Receipts and emergency stops" section silently drops the one item
+    in it that is safety-critical. This is not new web surface — it is the
+    section native already ships, showing the rows it already meant to show.
+    The native fallback chain is kept alongside so the two clients still agree
+    if the payload is ever renamed.
+
+    ``confirmations`` is in the snapshot and is deliberately *not* rendered:
+    native has no section for it, and inventing one here would be exactly the
+    web-only surface this program exists to remove.
+
+    Dark 404 when the feature is off, matching every
+    ``/api/business-os/undx/*`` route rather than explaining to a stranger that
+    a feature they cannot reach exists.
+    """
+    if not _business_os_undx_actions_enabled():
+        abort(404)
+    main = UNDX_ACTION_CENTER_PAGE_STYLE + """
+    <div data-undx-root>
+      <section class="card undx-hero">
+        <div>
+          <p class="undx-eyebrow">UNDX GOVERNANCE</p>
+          <h1>Action Center</h1>
+          <p class="muted">Decisions, approvals, receipts, and Marketplace workflow, all recorded and confirmed by PulseSoc.</p>
+        </div>
+        <div class="undx-signal" data-undx-signal hidden>
+          <strong data-undx-pending>0</strong>
+          <span>pending</span>
+        </div>
+      </section>
+
+      <section class="card" data-undx-loading>
+        <p class="muted undx-note">Loading your governed actions...</p>
+      </section>
+
+      <section class="card undx-error" data-undx-error role="alert" hidden>
+        <h2>Action Center unavailable</h2>
+        <p class="muted undx-note" data-undx-error-message></p>
+        <div class="actions" style="margin-top:10px"><button class="button primary" type="button" data-undx-retry>Retry</button></div>
+      </section>
+
+      <div data-undx-body hidden>
+        <section class="undx-metrics" aria-label="Action Center summary">
+          <article class="undx-metric tone-intelligence"><strong data-undx-metric="decisions">0</strong><span>Decisions</span></article>
+          <article class="undx-metric tone-accent"><strong data-undx-metric="requests">0</strong><span>Requests</span></article>
+          <article class="undx-metric tone-economy"><strong data-undx-metric="tools">0</strong><span>Tools</span></article>
+          <article class="undx-metric tone-safety"><strong data-undx-metric="permissions">0</strong><span>Permissions</span></article>
+        </section>
+    """ + "".join([
+        _undx_action_center_section_html(
+            "pending", "Pending actions",
+            "UNDX has nothing waiting for you."),
+        _undx_action_center_section_html(
+            "decisions", "Governance decisions",
+            "No decisions returned yet. Run evaluation after requests are recorded."),
+        _undx_action_center_section_html(
+            "tools", "Marketplace tools",
+            "No registered Marketplace tools returned."),
+        _undx_action_center_section_html(
+            "permissions", "Permissions",
+            "No actor permissions returned."),
+        _undx_action_center_section_html(
+            "receipts", "Receipts and emergency stops",
+            "No receipts or active emergency stops returned."),
+    ]) + """
+      </div>
+
+      <section class="card undx-section">
+        <h2>Governed Marketplace workflow</h2>
+        <p class="muted undx-note">Creates drafts and publishes only through UNDX governance, Marketplace assistant confirmation, and canonical Marketplace verification.</p>
+        <p class="undx-workflow-message" data-undx-workflow-message hidden></p>
+        <div class="undx-fields">
+          <label class="wide">Listing title<input type="text" data-undx-field="title" autocomplete="off" placeholder="Listing title"></label>
+          <label class="wide">Listing description<textarea data-undx-field="description" placeholder="Listing description"></textarea></label>
+          <label>Price cents<input type="number" inputmode="numeric" min="0" step="1" data-undx-field="price_cents" placeholder="Price cents"></label>
+          <label>Inventory<input type="number" inputmode="numeric" min="0" step="1" data-undx-field="inventory_qty" placeholder="Inventory"></label>
+        </div>
+        <div class="actions"><button class="button primary" type="button" data-undx-action="draft">Create governed draft</button></div>
+        <div class="undx-fields">
+          <label>Product ID<input type="text" data-undx-field="product_id" autocapitalize="none" autocomplete="off" placeholder="Product ID"></label>
+          <label>Request ID<input type="text" data-undx-field="request_id" autocapitalize="none" autocomplete="off" placeholder="Request ID"></label>
+        </div>
+        <div class="undx-plan" data-undx-plan hidden>
+          <div class="undx-plan-head"><strong>Publish approval ready</strong><span class="pill" data-undx-plan-risk>high risk</span></div>
+          <p class="undx-note" data-undx-plan-summary></p>
+          <small class="muted" data-undx-plan-expiry></small>
+        </div>
+        <div class="actions">
+          <button class="button" type="button" data-undx-action="plan">Plan publish</button>
+          <button class="button primary" type="button" data-undx-action="execute" disabled>Review and publish</button>
+        </div>
+      </section>
+    </div>
+    """
+    script = ("const UNDX_CSRF=" + json.dumps(get_csrf_token()) + ";"
+              + UNDX_ACTION_CENTER_PAGE_JS)
+    return pulse_social_shell(
+        "UNDX Action Center",
+        "Decisions, approvals, receipts, and Marketplace workflow, all recorded and confirmed by PulseSoc.",
+        main, "", script)
 
 
 @webhook_app.route("/pulse/merchant/apply", methods=["GET", "POST"])
