@@ -533,6 +533,57 @@ def _cj_options(entry: dict) -> list[dict]:
     return out
 
 
+def _cj_inventory_from_warehouses(rows) -> dict:
+    """``{external_variant_id: (state, quantity)}`` from the adapter's shape.
+
+    ``cj.CJAdapter.get_inventory`` returns ``{"pid", "variants": [{"vid",
+    "warehouses": [...]}]}``, not CJ's ``variantInventories`` rows — so the
+    branch below found no ``vid`` at the top level, returned ``{}``, and
+    :func:`apply_inventory` left every variant at whatever the catalogue said.
+    The read succeeded, so nothing reported a failure; the merchant simply saw
+    ``UNKNOWN`` stock forever on a product CJ had counted precisely.
+
+    Aggregation is deliberately asymmetric, and only two claims are ever made:
+
+    * **In stock** requires a warehouse the adapter already judged ``IN_STOCK``,
+      which under CJ's rules means stocked *and* verified. Summing counts across
+      warehouses without that check would present unverified stock as sellable.
+    * **Out of stock** requires *every* warehouse to say so. One zeroed
+      warehouse among several is not a sold-out variant, and sold-out is the
+      claim nobody escalates.
+
+    Anything else stays ``UNKNOWN``, per this module's second refusal.
+    """
+    out = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        vid = external_id(_first(row, "vid", "variantId", "id"))
+        if vid is None:
+            continue
+        houses = row.get("warehouses")
+        counts, states = [], []
+        for house in (houses if isinstance(houses, (list, tuple)) else ()):
+            if not isinstance(house, dict):
+                continue
+            state = str(house.get("state") or STOCK_UNKNOWN)
+            states.append(state)
+            count = _quantity_or_none(house.get("total"))
+            # Only sellable stock is counted. A warehouse the adapter left
+            # UNKNOWN holds unverified units, and adding those to the total is
+            # how a variant with two sellable pieces reads as fully in stock.
+            if count is not None and state == STOCK_IN_STOCK:
+                counts.append(count)
+        if STOCK_IN_STOCK in states:
+            # Summed across warehouses so that LOW_STOCK still reads as low.
+            out[vid] = stock_state(quantity=sum(counts)) if counts else (STOCK_IN_STOCK, None)
+        elif states and all(state == STOCK_OUT_OF_STOCK for state in states):
+            out[vid] = (STOCK_OUT_OF_STOCK, 0)
+        else:
+            out[vid] = (STOCK_UNKNOWN, None)
+    return out
+
+
 def _cj_inventory(payload) -> dict:
     """``{external_variant_id: (state, quantity)}`` from an inventory read."""
     data = payload
@@ -541,6 +592,10 @@ def _cj_inventory(payload) -> dict:
             if isinstance(payload.get(key), (list, dict)):
                 data = payload[key]
                 break
+    # CJ spells its own rows ``variantInventories``; ``variants`` is only ever
+    # the adapter's projection, so the two shapes cannot be confused.
+    if isinstance(data, dict) and isinstance(data.get("variants"), (list, tuple)):
+        return _cj_inventory_from_warehouses(data["variants"])
     rows = data if isinstance(data, (list, tuple)) else [data]
     out = {}
     for row in rows:

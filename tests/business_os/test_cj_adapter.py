@@ -410,6 +410,64 @@ def test_a_raw_provider_payload_normalizes_exactly_as_it_did_before():
         {"name": "option1", "value": "red"}, {"name": "option2", "value": "large"}]
 
 
+def test_a_successful_inventory_read_actually_reaches_the_variants():
+    """The same seam a third time, and the quietest of the three.
+
+    `get_inventory` returns `{"variants": [{"vid", "warehouses": [...]}]}`, not
+    CJ's `variantInventories` rows, so `_cj_inventory` found no `vid` at the top
+    level and returned `{}`. `apply_inventory` treats an empty reading as a
+    partial read and leaves each variant alone -- correctly, for its own
+    contract -- so nothing failed and nothing logged: staging reported
+    `inventory_fresh: True` beside every variant reading UNKNOWN forever.
+
+    The counting is the other half. CJ calls a warehouse verified or not, and
+    only verified units are sellable; adding the unverified ones would turn the
+    three sellable pieces below into 903 and hide LOW_STOCK entirely.
+    """
+    def house(total, verified, country="US"):
+        return {"countryCode": country, "areaId": 1, "totalInventory": total,
+                "cjInventory": 2, "factoryInventory": 3, "verifiedWarehouse": verified}
+
+    detail = detail_payload(variants=[
+        variant(), variant(vid="2002", variantKey="blue-small"),
+        variant(vid="2003", variantKey="green-small"),
+        variant(vid="2004", variantKey="black-small", inventoryNum=50),
+        variant(vid="2005", variantKey="white-small")])
+    stock = {"variantInventories": [
+        # Three sellable units beside nine hundred unverified ones.
+        {"pid": PID, "vid": VID, "inventory": [house(3, 1), house(900, 2, "CN")]},
+        # Every warehouse zeroed: the one negative claim worth making.
+        {"pid": PID, "vid": "2002", "inventory": [house(0, 1), house(0, 1, "CN")]},
+        # Unverified only. Never sellable, and never a confirmed sell-out either.
+        {"pid": PID, "vid": "2003", "inventory": [house(900, 2)]},
+        # One warehouse empty, one unverified. The tempting read is sold out,
+        # and it is wrong: nothing here has confirmed the variant unavailable.
+        {"pid": PID, "vid": "2005", "inventory": [house(0, 1), house(900, 2, "CN")]}]}
+    adapter, _, _, _ = make_adapter(Response(detail), Response(stock))
+
+    product = normalize.product("cj", adapter.get_product(PID))
+    readings = normalize.inventory("cj", adapter.get_inventory(PID))
+    applied = normalize.apply_inventory(product["variants"], readings)
+
+    assert readings, "a successful inventory read must not normalize to no readings at all"
+    by_id = {v["external_variant_id"]: v for v in applied}
+    assert (by_id[VID]["stock_state"], by_id[VID]["stock_quantity"]) == ("LOW_STOCK", 3)
+    assert (by_id["2002"]["stock_state"], by_id["2002"]["stock_quantity"]) == ("OUT_OF_STOCK", 0)
+    assert (by_id["2003"]["stock_state"], by_id["2003"]["stock_quantity"]) == ("UNKNOWN", None)
+    assert (by_id["2005"]["stock_state"], by_id["2005"]["stock_quantity"]) == ("UNKNOWN", None)
+    # Omitted by the read, so it keeps the catalogue's fifty rather than
+    # becoming out of stock -- `apply_inventory`'s partial-read contract.
+    assert (by_id["2004"]["stock_state"], by_id["2004"]["stock_quantity"]) == ("IN_STOCK", 50)
+
+
+def test_a_raw_inventory_payload_still_normalizes_after_the_dispatch():
+    """`variantInventories` rows must keep working beside the adapter shape."""
+    readings = normalize.inventory("cj", {"data": [
+        {"vid": VID, "totalInventoryNum": 12}, {"vid": "2002", "totalInventoryNum": 0}]})
+    assert readings[VID] == ("IN_STOCK", 12)
+    assert readings["2002"] == ("OUT_OF_STOCK", 0)
+
+
 @pytest.mark.parametrize("kwargs", [{"size": 101}, {"page": 0}, {"page": True}, {"filters": {"accessToken": ACCESS}},
                                    {"filters": {"keyWord": ["not-string"]}}])
 def test_search_rejects_unbounded_or_unsupported_input_before_network(kwargs):
