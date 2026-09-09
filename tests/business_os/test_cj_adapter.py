@@ -182,6 +182,21 @@ def test_settings_identity_and_active_shop_health():
     assert_call(transport, "shop/getShops", index=1)
 
 
+def test_health_without_a_bound_shop_proves_identity_and_asks_nothing_else():
+    """No binding to re-prove means no call to spend proving it.
+
+    CJ's ceiling is ten business calls per second per outbound IP, so a periodic
+    health check that fetches a shop list it will not read is not merely
+    redundant -- it consumes budget every connection shares.
+    """
+    adapter, transport, _, _ = make_adapter(Response({"openId": OPEN_ID}))
+    result = adapter.connection_health(shop_id="")
+    assert result["status"] == "CONNECTED" and result["shop_bound"] is False
+    assert result["shop_id"] == ""
+    assert_call(transport, "setting/get")
+    assert len(transport.calls) == 1
+
+
 @pytest.mark.parametrize("shop,status", [(SHOP, 0), ("4001", 1), (SHOP, None)])
 def test_shop_health_rejects_unowned_inactive_unknown(shop, status):
     adapter, _, _, _ = make_adapter(Response({"openId": OPEN_ID}),

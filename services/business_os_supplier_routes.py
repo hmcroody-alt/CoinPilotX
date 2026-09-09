@@ -153,7 +153,13 @@ def cj_connection_action(action):
         body = _body()
         args = [_required(body, "business_id"), _required(body, "store_id"), actor, _required(body, "api_key")]
         if action == "connect":
-            result = connections.connect_cj(*args, _required(body, "external_shop_id"), context=context)
+            # Optional: a CJ "shop" is an external storefront authorized inside
+            # the merchant's CJ account, and importing products needs none. When
+            # sent it is still validated live against that credential, so an
+            # absent field widens who can connect, not what a connection may do.
+            shop = body.get("external_shop_id")
+            result = connections.connect_cj(*args, _required(body, "external_shop_id") if shop is not None else None,
+                                            context=context)
         else:
             result = connections.discover_shops(*args, context=context)
         body.clear()

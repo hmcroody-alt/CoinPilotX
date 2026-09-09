@@ -339,12 +339,26 @@ class CJAdapter:
                  "platform": _text(s.get("type"), 50), "status": _number(s.get("status"))} for s in data]
 
     def connection_health(self, *, shop_id=None):
+        """Health is identity plus, if a shop was bound, that the binding holds.
+
+        `setting/get` is the check that cannot be skipped: it independently
+        resolves the authenticated account, which is what stops one merchant's
+        credential answering for another's. A CJ shop is a different thing -- an
+        external storefront authorization -- and a merchant selling through
+        PulseSoc has no reason to own one, so its absence is a shape of account,
+        not a failure. What must never weaken is the case where a shop *was*
+        bound: then it is re-proved live, and an unreadable shop list fails
+        closed rather than being read as "no shop".
+        """
         settings = self.get_settings()
+        if not shop_id:
+            return {"status": "CONNECTED", "verified_at": _now(), "shop_id": "",
+                    "shop_bound": False, "points_info": self.points_info, "reachable": True}
         shops = self.get_shops()
-        if shop_id is None or not any(s["shop_id"] == shop_id and s["status"] == 1 for s in shops):
+        if not any(s["shop_id"] == shop_id and s["status"] == 1 for s in shops):
             raise SupplierError("SHOP_BINDING_REQUIRED", http_status=409)
         return {"status": "CONNECTED", "verified_at": _now(), "shop_id": shop_id,
-                "points_info": self.points_info, "reachable": True}
+                "shop_bound": True, "points_info": self.points_info, "reachable": True}
 
     def get_categories(self):
         data = _list(self._request("GET", "product/getCategory"), maximum=1000)

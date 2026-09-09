@@ -10,14 +10,24 @@
  * Everything after this step reads from the chosen {@link SupplierProviderInfo},
  * so adding Printful is a data change.
  *
- * ## Two more steps, because "connected to shop 4471" means nothing
+ * ## The shop step appears only when there is a choice to make
  *
- * The merchant pastes their supplier API key, this screen asks the provider
- * which shops that key can act for, and the merchant picks one. Collapsing that
- * into a single "Connect" would silently bind the store to whichever shop the
- * provider happened to list first — and a merchant who runs two shops through
- * one supplier account would not find out until their orders went to the wrong
- * warehouse.
+ * The merchant pastes their supplier API key and this screen asks the provider
+ * which shops that key can act for. When it names more than none, the merchant
+ * picks one: collapsing that into a single "Connect" would silently bind the
+ * store to whichever shop the provider happened to list first, and a merchant
+ * running two shops through one supplier account would not find out until their
+ * orders went to the wrong warehouse.
+ *
+ * When it names none, the connection is made without one. A supplier "shop" is
+ * an external storefront — Shopify, Woo — authorized inside the merchant's
+ * supplier account, and importing products into PulseSoc needs no such thing,
+ * because PulseSoc is the storefront. Zero shops is therefore the expected
+ * answer for a merchant who sells only here, and the screen used to answer it
+ * with "your account connected, but it has no shops we can sell through yet"
+ * and no way forward. That was false about the thing they came to do. Binding a
+ * shop is still required before anything is *fulfilled* — the server refuses an
+ * order it cannot trace back to a bound shop — but that is a later step.
  *
  * ## The credential does not live on this device
  *
@@ -159,10 +169,23 @@ export function ConnectSupplierScreen({ route, navigation }: Props) {
     if (state === "UNAUTHORIZED") {
       return { state, message: "You're not signed in to this store any more." };
     }
-    if (state === "SUPPLIER_DISCONNECTED" || during === "discover") {
+    if (state === "SUPPLIER_DISCONNECTED") {
       return {
         state,
         message: `That ${credential} didn't work. Check you copied the whole thing.`
+      };
+    }
+    // Everything left is unclassified: the server, or the supplier through it,
+    // refused for a reason nobody named. This branch used to say "that key
+    // didn't work" for any failure during discovery, which is the exact lie
+    // this screen was reported for — a merchant whose key authenticates fine
+    // was sent back to their supplier's dashboard to re-copy a correct
+    // credential. The state we have does not mention the credential, so
+    // neither does the sentence.
+    if (during === "discover") {
+      return {
+        state,
+        message: `Your ${provider?.name ?? "supplier"} account turned that request down. Nothing was connected — try again shortly.`
       };
     }
     return { state, message: "That connection couldn't be created. Nothing was saved." };
@@ -183,6 +206,36 @@ export function ConnectSupplierScreen({ route, navigation }: Props) {
     return outcome;
   }, [describe, reload]);
 
+  /**
+   * Create the connection, with or without a supplier shop.
+   *
+   * `null` means this account has no external storefront to bind, which is the
+   * ordinary shape for a merchant who sells only through PulseSoc. On failure
+   * the merchant goes back to the step they actually came from — sending them
+   * to a shop list that was empty would strand them on a blank screen.
+   */
+  const connect = useCallback(
+    async (shop: SupplierShop | null) => {
+      if (!scope) return;
+      setStep("connecting");
+      setBusy(true);
+      setFailure(null);
+      try {
+        await connectSupplier(scope, { apiKey: apiKey.trim(), externalShopId: shop?.externalShopId ?? null });
+        // Cleared before navigating, so the credential does not survive in a
+        // state tree behind the screen the merchant lands on.
+        setApiKey("");
+        navigation.navigate("DropshippingSuppliers", { title: "Suppliers" });
+      } catch (error) {
+        setFailure(reportFailure(error, "connect"));
+        setStep(shop ? "shop" : "credential");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [apiKey, navigation, reportFailure, scope]
+  );
+
   const discover = useCallback(async () => {
     if (!scope || !apiKey.trim()) return;
     setBusy(true);
@@ -190,12 +243,14 @@ export function ConnectSupplierScreen({ route, navigation }: Props) {
     try {
       const found = await discoverSupplierShops(scope, apiKey.trim());
       if (found.length === 0) {
-        // A valid key with no shops is a real supplier state and not an error.
-        // It needs a different sentence, so it is not routed through `describe`.
-        setFailure({
-          state: "EMPTY",
-          message: `Your ${provider?.name ?? "supplier"} account connected, but it has no shops we can sell through yet.`
-        });
+        // A valid key with no shops used to stop here and tell the merchant
+        // their working account had nothing we could sell through — with no
+        // way forward. That was never true of what they were trying to do: a
+        // supplier "shop" is an external storefront authorized inside their
+        // supplier account, and importing products needs none, because PulseSoc
+        // is the storefront. Zero shops is the expected answer for a merchant
+        // who sells only here, so the right response is to finish connecting.
+        await connect(null);
         return;
       }
       setShops(found);
@@ -205,29 +260,7 @@ export function ConnectSupplierScreen({ route, navigation }: Props) {
     } finally {
       setBusy(false);
     }
-  }, [apiKey, provider, reportFailure, scope]);
-
-  const connect = useCallback(
-    async (shop: SupplierShop) => {
-      if (!scope) return;
-      setStep("connecting");
-      setBusy(true);
-      setFailure(null);
-      try {
-        await connectSupplier(scope, { apiKey: apiKey.trim(), externalShopId: shop.externalShopId });
-        // Cleared before navigating, so the credential does not survive in a
-        // state tree behind the screen the merchant lands on.
-        setApiKey("");
-        navigation.navigate("DropshippingSuppliers", { title: "Suppliers" });
-      } catch (error) {
-        setFailure(reportFailure(error, "connect"));
-        setStep("shop");
-      } finally {
-        setBusy(false);
-      }
-    },
-    [apiKey, navigation, reportFailure, scope]
-  );
+  }, [apiKey, connect, reportFailure, scope]);
 
   const canSubmit = Boolean(scope) && apiKey.trim().length > 0 && !busy;
 
@@ -437,10 +470,10 @@ export function ConnectSupplierScreen({ route, navigation }: Props) {
           {failure ? (
             <StoreSectionError
               message={failure.message}
-              // Nothing to retry when the account genuinely has no shops, when
-              // the session is gone, or when the blocker is this deployment
-              // rather than the key. All of them fail identically the second
-              // time, and a retry button says otherwise.
+              // Nothing to retry when the session is gone, when the store
+              // cannot sell, or when the blocker is this deployment rather
+              // than the key. All of them fail identically the second time,
+              // and a retry button says otherwise.
               onRetry={NOT_RETRYABLE.includes(failure.state) ? null : () => void discover()}
               reducedMotion={reducedMotion}
             />

@@ -26,10 +26,14 @@ def auth(**overrides):
 
 
 class FakeAdapter:
-    def __init__(self, bundle=None, shops=None, fail=None):
+    def __init__(self, bundle=None, shops=None, fail=None, shops_error=None):
         self.bundle = bundle or auth()
         self.shops = shops if shops is not None else [{"shop_id": "cj-shop-a", "name": "Same name", "platform": "API", "status": 1}]
         self.fail = fail
+        # Separate from `fail` on purpose: the interesting cases are the ones
+        # where authentication and identity succeed and only the shop list does
+        # not, which is what a real CJ account without a storefront does.
+        self.shops_error = shops_error
         self.calls = []
         self.settings_account = self.bundle.open_id
 
@@ -52,6 +56,8 @@ class FakeAdapter:
 
     def get_shops(self):
         self.calls.append("get_shops")
+        if self.shops_error:
+            raise self.shops_error
         return self.shops
 
     def refresh_authentication(self, refresh_token):
@@ -244,6 +250,75 @@ def test_inactive_or_unknown_cj_shop_cannot_be_bound(status):
     with pytest.raises(svc.SupplierConnectionError) as failure:
         connect(fake)
     assert failure.value.code == "shop_not_authorized"
+
+
+def test_a_cj_account_that_owns_no_storefront_can_still_connect():
+    """The case that made a real merchant unconnectable.
+
+    A CJ "shop" is an external storefront (Shopify, Woo) authorized inside the
+    merchant's CJ account. Selling through PulseSoc means PulseSoc *is* the
+    storefront, so the shop list is legitimately empty -- and importing products
+    never needed one. The absence is recorded as "" rather than NULL because
+    every downstream binding check compares this column as a string.
+    """
+    adapter = FakeAdapter(shops=[])
+    result = svc.connect_cj("biz-a", "store-a", "100", SECRETS["api_key"], None, adapter=adapter)
+    assert result["status"] == "CONNECTED"
+    assert result["external_shop_id"] == ""
+    # Identity was still proven. That is the check that keeps one merchant's
+    # credential from answering for another's, and it is not the optional half.
+    assert adapter.calls == ["authenticate", "set_credentials", "get_settings", "get_shops"]
+
+
+def test_a_shop_list_we_cannot_read_does_not_block_a_connection_that_selects_none():
+    """CJ answers `shop/getShops` for such an account with an undocumented code.
+
+    We refuse to interpret business codes CJ does not publish -- correctly -- so
+    the call raises. With no shop selected there is nothing that answer would
+    have authorized, so it must not take the whole connection down with it.
+    """
+    adapter = FakeAdapter(shops_error=svc.SupplierError("SUPPLIER_REJECTED", http_status=422))
+    result = svc.connect_cj("biz-a", "store-a", "100", SECRETS["api_key"], adapter=adapter)
+    assert result["status"] == "CONNECTED" and result["external_shop_id"] == ""
+
+
+def test_a_shop_list_we_cannot_read_is_fatal_when_a_shop_was_selected():
+    """The security half. "We could not ask" must never mean "you are allowed".
+
+    This is the mutation that matters: if the survivable case were widened to
+    cover a selected shop, an unreadable list would silently bind a shop that
+    was never proved to belong to this credential.
+    """
+    adapter = FakeAdapter(shops_error=svc.SupplierError("SUPPLIER_REJECTED", http_status=422))
+    with pytest.raises(svc.SupplierError):
+        connect(adapter)
+
+
+def test_selecting_a_shop_is_still_checked_against_an_empty_live_list():
+    adapter = FakeAdapter(shops=[])
+    with pytest.raises(svc.SupplierConnectionError) as failure:
+        connect(adapter)
+    assert failure.value.code == "shop_not_authorized"
+
+
+def test_a_shopless_connection_cannot_quietly_acquire_a_shop_or_lose_one():
+    """Rebinding is still refused in both directions.
+
+    Making the shop optional widened who may connect, not what an existing
+    connection may become: a reauthentication rotates credentials underneath the
+    same account and shop, and changing either is a different operation with
+    persisted fulfillment intents already pointing at the old binding.
+    """
+    svc.connect_cj("biz-a", "store-a", "100", SECRETS["api_key"], None, adapter=FakeAdapter(shops=[]))
+    with pytest.raises(svc.SupplierConnectionError) as failure:
+        connect(FakeAdapter())
+    assert failure.value.code == "connection_binding_conflict"
+
+
+def test_discovery_reports_no_shops_rather_than_failing_when_cj_refuses():
+    adapter = FakeAdapter(shops_error=svc.SupplierError("SUPPLIER_REJECTED", http_status=422))
+    result = svc.discover_shops("biz-a", "store-a", "100", SECRETS["api_key"], adapter=adapter)
+    assert result["shops"] == [] and result["requires_explicit_shop_selection"] is True
 
 
 @pytest.mark.parametrize("secret", list(SECRETS.values()))

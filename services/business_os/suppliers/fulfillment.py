@@ -131,6 +131,13 @@ def create_intent(*, connection_id, business_id, store_id, actor_user_id, order_
     meta = bundle["connection"]
     if metadata.get("id") != meta.get("id") or metadata.get("status") != "CONNECTED":
         raise FulfillmentError("connection_not_ready")
+    # Connecting no longer requires choosing a CJ shop, because importing
+    # products does not need one. Fulfilment does: `_validate_observed` proves a
+    # placed order came back on the shop we bound, and with nothing bound there
+    # is no such proof to make. Refusing here is not a policy preference -- it
+    # is declining to place an order whose provenance we could not check.
+    if not meta.get("external_shop_id"):
+        raise FulfillmentError("shop_binding_required", 409)
     _text(idempotency_key, "idempotency_key", 128)
     if type(expected_supplier_cost_cents) is not int or expected_supplier_cost_cents < 0:
         raise FulfillmentError("invalid_expected_supplier_cost", 400)

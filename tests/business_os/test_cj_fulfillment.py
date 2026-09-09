@@ -347,3 +347,21 @@ def test_orders_and_funding_remain_canonical_unchanged(ready):
     assert before["status"] == "paid"
     with pytest.raises(connections.SupplierConnectionError):
         f.get_intent(result["intent_id"], ready[1]["id"], "biz-a", "store-a", "200")
+
+
+def test_a_connection_with_no_bound_cj_shop_cannot_place_an_order(ready):
+    """Connecting no longer needs a CJ shop. Fulfilling still does.
+
+    `_validate_observed` proves a placed order came back on the shop we bound.
+    With nothing bound there is no such proof available, so the honest answer is
+    to decline rather than to skip the check -- the skipped-check version looks
+    identical in every green test and differs only in what it would accept.
+    """
+    _, connection, request = ready
+    conn = db.connect()
+    conn.execute("UPDATE business_os_supplier_connections SET external_shop_id='' WHERE id=?",
+                 (connection["id"],))
+    conn.commit()
+    conn.close()
+    with pytest.raises(f.FulfillmentError, match="shop_binding_required"):
+        f.create_intent(**request)

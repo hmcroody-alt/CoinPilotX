@@ -195,6 +195,11 @@ def read(operation, *, business_id, store_id, actor_user_id, connection_id,
         if operation == "shipping":
             return cj.estimate_shipping(params)
         if operation == "subscriptions":
+            # Addressed to a CJ shop. Asking without one would send an empty
+            # shop id to CJ and read whatever it chose to answer; refusing says
+            # what is actually true instead.
+            if not connection["external_shop_id"]:
+                raise SupplierError("SHOP_BINDING_REQUIRED", http_status=409)
             return cj.get_subscriptions(connection["external_shop_id"], page=1, size=20)
         return cj.get_balance()
     ttl = {"inventory": 10, "shipping": 30, "balance": 5, "subscriptions": 30}.get(operation, 300)

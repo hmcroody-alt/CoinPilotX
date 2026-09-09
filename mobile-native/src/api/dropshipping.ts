@@ -393,11 +393,17 @@ export async function discoverSupplierShops(
  */
 export async function connectSupplier(
   scope: DropshippingScope,
-  input: { apiKey: string; externalShopId: string }
+  input: { apiKey: string; externalShopId?: string | null }
 ): Promise<void> {
+  // The shop is omitted, not sent empty, when there is none. A supplier "shop"
+  // is an external storefront authorized inside the merchant's own supplier
+  // account; selling here means PulseSoc is the storefront, so a valid account
+  // may have none. An empty string would read as "a shop, named nothing" and be
+  // checked against a live list it cannot possibly appear in.
+  const shop = input.externalShopId?.trim();
   await pulseApi(`${SUPPLIERS_BASE}/connect`, {
     method: "POST",
-    body: scopeBody(scope, { api_key: input.apiKey, external_shop_id: input.externalShopId })
+    body: scopeBody(scope, shop ? { api_key: input.apiKey, external_shop_id: shop } : { api_key: input.apiKey })
   });
 }
 

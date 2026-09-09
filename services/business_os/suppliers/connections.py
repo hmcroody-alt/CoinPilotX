@@ -17,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 from services import db
 from services.business_os.store import service as store_service
 from services.business_os.suppliers import merchant_scope, schema, vault
+from services.business_os.suppliers.errors import SupplierError
 
 STATUSES = frozenset({"CONNECTED", "API_SUSPENDED", "REACTIVATION_REQUIRED",
                       "RATE_LIMITED", "AUTH_EXPIRED", "REAUTH_REQUIRED",
@@ -247,6 +248,24 @@ def _safe_shops(shops, sensitive_values=()):
 
 
 def _verify(adapter, auth, selected_shop=None, *, sensitive_values=()):
+    """Prove the credential resolves to this account; list shops if it can.
+
+    Identity is the mandatory half and is unchanged: `setting/get` must return
+    the same account the token authenticated as, which is the check that keeps
+    one merchant's credential from answering for another's.
+
+    Shop listing is the optional half, and used not to be. Requiring it meant a
+    real CJ account that owns no external storefront could never connect, even
+    though importing products needs no CJ shop at all -- and in practice CJ
+    answers `shop/getShops` for such an account with a business code its own
+    documentation does not list, which we correctly refuse to interpret and
+    which therefore killed the whole connection.
+
+    So an unreadable shop list is survivable *only when nothing was selected*.
+    If a shop was selected, an unreadable list is fatal: the alternative is
+    treating "we could not ask" as "you are authorized", which is exactly the
+    tenant check this function exists to perform.
+    """
     adapter.set_credentials(auth, account_ref=account_reference(auth.open_id))
     settings = adapter.get_settings()
     if not isinstance(settings, dict):
@@ -255,8 +274,15 @@ def _verify(adapter, auth, selected_shop=None, *, sensitive_values=()):
     identity = settings.get("account_id")
     if not isinstance(identity, str) or identity != auth.open_id:
         raise SupplierConnectionError("CJ account verification failed.", 502, "identity_mismatch")
-    shops = _safe_shops(adapter.get_shops(), sensitive_values)
-    if selected_shop is not None and selected_shop not in {shop["shop_id"] for shop in shops if shop["status"] == 1}:
+    try:
+        shops = _safe_shops(adapter.get_shops(), sensitive_values)
+    except SupplierConnectionError:
+        raise  # Our own refusal of an unsafe or malformed list is never survivable.
+    except SupplierError:
+        if selected_shop:
+            raise
+        shops = []
+    if selected_shop and selected_shop not in {shop["shop_id"] for shop in shops if shop["status"] == 1}:
         raise SupplierConnectionError("Select a shop belonging to this CJ connection.", 403,
                                       "shop_not_authorized")
     return shops
@@ -309,9 +335,25 @@ def discover_shops(business_id, store_id, actor_user_id, api_key, *, context=Non
     return {"shops": _verify(adapter, auth, sensitive_values=secrets.values()), "requires_explicit_shop_selection": True}
 
 
-def connect_cj(business_id, store_id, actor_user_id, api_key, external_shop_id, *, context=None, adapter=None):
-    if not isinstance(external_shop_id, str) or not external_shop_id.strip() or len(external_shop_id) > 256:
+def connect_cj(business_id, store_id, actor_user_id, api_key, external_shop_id=None, *, context=None, adapter=None):
+    """Bind a merchant's own CJ credential to this store. A CJ shop is optional.
+
+    A CJ "shop" is an external storefront (Shopify, Woo, ...) authorized inside
+    the merchant's CJ account. Importing CJ products into PulseSoc needs none of
+    that -- PulseSoc *is* the storefront -- so demanding one made a normal CJ
+    account unconnectable. The empty string, not NULL, records its absence:
+    every downstream binding check compares this column as a string, and a NULL
+    would make those comparisons quietly true-ish instead of plainly unequal.
+
+    Selecting a shop remains as strict as it was. It is still validated against
+    the live list under this credential, and an existing binding still cannot be
+    silently replaced -- including replacing a bound shop with no shop.
+    """
+    if external_shop_id is None:
+        external_shop_id = ""
+    if not isinstance(external_shop_id, str) or len(external_shop_id) > 256:
         raise SupplierConnectionError("Choose an explicit CJ shop.", 400, "shop_required")
+    external_shop_id = external_shop_id.strip()
     merchant, adapter, auth, secrets, access, refresh = _bootstrap(
         business_id, store_id, actor_user_id, api_key, context=context, adapter=adapter)
     _verify(adapter, auth, external_shop_id, sensitive_values=secrets.values())

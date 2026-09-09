@@ -131,12 +131,21 @@ def _read_job(job, adapter, meta):
     if kind == "health":
         return adapter.connection_health(shop_id=meta["external_shop_id"])
     if kind == "shops":
+        # A connection with no bound CJ shop has no binding to re-prove, and
+        # spending a call to confirm that would burn quota to learn nothing.
+        if not meta["external_shop_id"]:
+            return {"bound_shop_verified": None, "shop_bound": False}
         shops = adapter.get_shops()
         rows = shops.get("shops", []) if isinstance(shops, dict) else shops
         if not any(str(s.get("shop_id")) == str(meta["external_shop_id"]) and s.get("status") == 1 for s in rows):
             raise fulfillment.FulfillmentError("bound_shop_unverified")
         return {"bound_shop_verified": True}
     if kind == "subscriptions":
+        # Product subscriptions are addressed to a CJ shop; without one there is
+        # nothing to subscribe on, so this is genuinely not applicable rather
+        # than a failure to retry every hour.
+        if not meta["external_shop_id"]:
+            return {"subscriptions": [], "shop_bound": False}
         # Read one bounded page only; absence is not interpreted as unsubscribe.
         return adapter.get_subscriptions(meta["external_shop_id"], page=1, size=20)
     if kind == "product":

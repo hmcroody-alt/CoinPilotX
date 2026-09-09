@@ -718,22 +718,72 @@ describe("ConnectSupplierScreen", () => {
     expect(view.queryByText(/didn't work/)).toBeNull();
   });
 
-  it("keeps a rejected key apart from an account with no shops", async () => {
+  /**
+   * A rejected key and a working key that owns no shops used to be told apart
+   * only by which dead end they reached. They are still told apart — but the
+   * second is no longer a dead end.
+   *
+   * A CJ "shop" is an external storefront (Shopify, Woo) authorized inside the
+   * merchant's CJ account. Importing products into PulseSoc needs none, because
+   * PulseSoc *is* the storefront. So zero shops is the ordinary answer for a
+   * merchant who sells only here, and the old copy — "your account connected,
+   * but it has no shops we can sell through yet" — was false about the very
+   * thing they were trying to do, and offered no way forward.
+   *
+   * The rejected key still says so, still says nothing about shops, and still
+   * connects nothing.
+   */
+  it("connects an account that owns no shops, and still names a rejected key", async () => {
     mockDiscoverShops.mockRejectedValue(new PulseApiError("nope", 400, "invalid_api_key"));
-    const { view } = await connectScreen();
+    mockConnectSupplier.mockResolvedValue({ id: "conn-1" });
+    const { view, nav } = await connectScreen();
     fireEvent.press(view.getByLabelText("Connect CJ Dropshipping"));
     fireEvent.changeText(view.getByLabelText("CJ API key"), "wrong");
     await act(async () => {
       fireEvent.press(view.getByLabelText("Connect to CJ"));
     });
     await waitFor(() => expect(view.getByText(/CJ API key wasn't accepted/)).toBeTruthy());
+    expect(mockConnectSupplier).not.toHaveBeenCalled();
 
     mockDiscoverShops.mockResolvedValue([]);
     await act(async () => {
       fireEvent.press(view.getByLabelText("Connect to CJ"));
     });
-    await waitFor(() => expect(view.getByText(/no shops we can sell through/)).toBeTruthy());
+    await waitFor(() => expect(mockConnectSupplier).toHaveBeenCalledTimes(1));
+    // Omitted rather than sent empty: an empty string would read as "a shop,
+    // named nothing" and be checked against a list it cannot appear in.
+    expect(mockConnectSupplier).toHaveBeenCalledWith(
+      { businessId: "biz-1", storeId: "store-1" },
+      { apiKey: "wrong", externalShopId: null }
+    );
+    expect(nav.navigate).toHaveBeenCalledWith("DropshippingSuppliers", expect.anything());
+    // No shop chooser is shown for an account with no shops to choose between.
+    expect(view.queryByText("Choose a shop")).toBeNull();
     expect(view.queryByText(/CJ API key wasn't accepted/)).toBeNull();
+  });
+
+  /**
+   * The shopless connect can still fail, and when it does the merchant must
+   * land on the step they came from.
+   *
+   * Sending them to the shop list would strand them: that list is empty, which
+   * is exactly why the connect was attempted without one. They would see a
+   * blank card and an error, with the key field nowhere on screen.
+   */
+  it("returns to the key step when a shopless connection fails", async () => {
+    mockDiscoverShops.mockResolvedValue([]);
+    mockConnectSupplier.mockRejectedValue(new PulseApiError("nope", 503, "provider_unavailable"));
+    const { view, nav } = await connectScreen();
+    fireEvent.press(view.getByLabelText("Connect CJ Dropshipping"));
+    fireEvent.changeText(view.getByLabelText("CJ API key"), "cj-secret-key");
+    await act(async () => {
+      fireEvent.press(view.getByLabelText("Connect to CJ"));
+    });
+
+    await waitFor(() => expect(view.getByText(/isn't responding/)).toBeTruthy());
+    expect(nav.navigate).not.toHaveBeenCalledWith("DropshippingSuppliers", expect.anything());
+    expect(view.queryByText("Choose a shop")).toBeNull();
+    expect(view.getByLabelText("CJ API key")).toBeTruthy();
   });
 
   /**
