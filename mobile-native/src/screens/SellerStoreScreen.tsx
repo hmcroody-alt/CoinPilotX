@@ -185,7 +185,10 @@ export function SellerStoreScreen({ route, navigation }: Props) {
     setEditShortDescription(listing.short_description || "");
     setEditDescription(listing.description || "");
     setEditCategory(listing.category || "Education");
-    setEditPriceLabel(listing.price_label || "Request access");
+    // An unpriced listing opens with an empty price field, because that is what
+    // it has. Pre-filling prose here put words in the seller's mouth that the
+    // save below then committed as their price.
+    setEditPriceLabel(listing.price_label || "");
     setEditQuantity(String(listing.quantity || 0));
     setMessage("");
   }
@@ -217,7 +220,13 @@ export function SellerStoreScreen({ route, navigation }: Props) {
         short_description: editShortDescription.trim(),
         description: editDescription.trim(),
         category: editCategory.trim() || "Education",
-        price_label: editPriceLabel.trim() || "Request access",
+        // Never substitute here. This runs on every save, including saves that
+        // only touched the title or the stock count, so the substitution wrote
+        // a price the seller never typed onto a listing they were editing for
+        // another reason -- and on a dropship draft, whose price is blank by
+        // design, the first edit of any kind published "Request access" as the
+        // price. Blank is a state the backend accepts and the UI can render.
+        price_label: editPriceLabel.trim(),
         quantity: Number(editQuantity || 0)
       });
       applyListingResponse(result.listing);
@@ -368,7 +377,10 @@ export function SellerStoreScreen({ route, navigation }: Props) {
             >
               <View style={styles.inventoryCopy}>
                 <Text style={styles.listingTitle} numberOfLines={1}>{listing.title || t("commerce:marketplace.listingTitleFallback")}</Text>
-                <Text style={styles.listingMeta} numberOfLines={1}>{listing.price_label || t("commerce:marketplace.priceFallback")} · {listing.category || t("commerce:marketplace.title")}</Text>
+                {/* An unpriced listing shows its category alone. "Request access"
+                    is buyer prose and this is the seller's own shelf; the newer
+                    store row makes the same call by omitting the price element. */}
+                <Text style={styles.listingMeta} numberOfLines={1}>{[listing.price_label, listing.category || t("commerce:marketplace.title")].filter(Boolean).join(" · ")}</Text>
               </View>
               <StatusPill listing={listing} />
             </Pressable>
@@ -594,7 +606,8 @@ function ListingRow({ listing, onOpen }: { listing: MarketplaceListing; onOpen: 
       {cover ? <Image source={{ uri: cover }} style={styles.listingImage} /> : <View style={styles.listingImageFallback} />}
       <View style={styles.listingBody}>
         <Text style={styles.listingTitle} numberOfLines={1}>{listing.title || t("commerce:marketplace.listingTitleFallback")}</Text>
-        <Text style={styles.listingMeta} numberOfLines={1}>{listing.price_label || t("commerce:marketplace.priceFallback")} · {listing.status || listing.approval_status || "review"}</Text>
+        {/* Same as above: no price means no price segment, not a phrase. */}
+        <Text style={styles.listingMeta} numberOfLines={1}>{[listing.price_label, listing.status || listing.approval_status || "review"].filter(Boolean).join(" · ")}</Text>
       </View>
       <Text style={styles.chevron}>{t("common:actions.open")}</Text>
     </Pressable>

@@ -589,7 +589,24 @@ export function normalizeMarketplaceListing(item: MarketplaceListing): Marketpla
     short_description: String(item.short_description || ""),
     description: String(item.description || ""),
     category: String(item.category || "Education"),
-    price_label: String(item.price_label || "Request access"),
+    // Empty stays empty. "Request access" is one thing a seller may *choose* to
+    // put here, so inventing it for a listing that has no price at all makes
+    // that choice for them and then shows it to buyers as if they had made it.
+    //
+    // It also silently disabled every fallback downstream. Five surfaces have
+    // one -- the Marketplace card's "Price at checkout", the product screen's
+    // "Price shown at checkout", the Page block that renders no price line at
+    // all, and the seller row that omits the price element entirely -- and none
+    // of them could ever run, because this line guaranteed the field was
+    // non-empty before they saw it. A dropship import leaves the price blank on
+    // purpose (seeding it with the supplier cost would print the seller's own
+    // margin on their storefront), so those drafts arrived in the seller's own
+    // store priced "Request access", which is the one place that prose is
+    // meaningless: the seller is not going to request access to their own item.
+    //
+    // Checkout is unaffected -- `marketplaceListingPriceMinor` already maps
+    // both "" and "Request access" to null, so neither makes a dollar promise.
+    price_label: String(item.price_label || ""),
     quantity: Number(item.quantity || 0),
     product_type: String(item.product_type || ""),
     saved: Boolean(item.saved || item.is_saved),

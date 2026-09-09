@@ -4401,10 +4401,19 @@ def marketplace_normalize_price_label(value, default_currency="USD"):
     Returns ``(label, cents, currency, error)``. The stored label is rebuilt
     from the parsed minor units so the text the seller sees and the amount the
     buyer is charged can never drift apart.
+
+    An empty label is returned empty. It used to come back as "Request access",
+    which is a phrase a seller may well choose but had not chosen here, and the
+    substitution reached the database: a dropship import writes a blank price on
+    purpose, so the seller's first edit of any kind -- a typo in the title, a
+    stock count -- published "Request access" as the price of a product they had
+    not priced yet. It also made that edit look like a price change to
+    ``changed_fields`` below, sending an untouched listing back through review.
+    Both spellings parse to zero cents, so nothing about checkout moves.
     """
     text = str(value or "").strip()
     if not text or text.lower() in PRICE_LABEL_UNPRICED:
-        return (text or "Request access"), 0, (default_currency or "USD").upper(), ""
+        return text, 0, (default_currency or "USD").upper(), ""
     if text.lstrip().startswith("-"):
         return "", 0, default_currency, "Enter a price of zero or more."
     if not re.search(r"[0-9]", text):
@@ -54549,7 +54558,10 @@ def api_pulse_marketplace_seller_listing_update(listing_id):
             conn.close()
             return api_error(price_error, 400)
     else:
-        price = str(existing.get("price_label") or "Request access")[:80]
+        # The seller did not send a price, so carry the stored one across
+        # unchanged -- including when the stored one is blank. Substituting here
+        # meant an edit that never mentioned the price still wrote one.
+        price = str(existing.get("price_label") or "")[:80]
         price_cents, currency = parse_price_label_to_cents(price, currency)
 
     if "quantity" in payload:

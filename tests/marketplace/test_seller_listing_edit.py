@@ -71,6 +71,34 @@ class PriceLabelParsingTest(unittest.TestCase):
         self.assertTrue(bot.marketplace_normalize_price_label("abc")[3])
         self.assertTrue(bot.marketplace_normalize_price_label("0")[3])
 
+    def test_a_blank_price_stays_blank_instead_of_becoming_a_phrase(self):
+        """No price is a state. It must not be answered with words.
+
+        This returned "Request access" for an empty label. That is a phrase a
+        seller may well pick, which is exactly the problem: picking it for them
+        and then storing it is indistinguishable, afterwards, from their having
+        picked it. A dropship import writes a blank price deliberately -- the
+        supplier cost is the seller's own margin and does not belong on their
+        storefront -- so the substitution turned "not priced yet" into a public
+        pricing decision the seller never made.
+
+        Unpriced words the seller *did* type are preserved as typed, because
+        those are a decision.
+        """
+        for blank in ["", "   ", None]:
+            label, cents, currency, error = bot.marketplace_normalize_price_label(blank)
+            self.assertEqual(label, "", repr(blank))
+            self.assertEqual(error, "", repr(blank))
+            self.assertEqual(cents, 0, repr(blank))
+
+        for chosen in ["Free", "Request access", "paid later"]:
+            self.assertEqual(bot.marketplace_normalize_price_label(chosen)[0], chosen)
+
+    def test_a_blank_price_promises_no_money_exactly_as_before(self):
+        """The safety property the old substitution was riding on is unchanged."""
+        for label in ["", "Request access"]:
+            self.assertEqual(bot.parse_price_label_to_cents(label)[0], 0, label)
+
 
 class SellerListingEditTest(unittest.TestCase):
     @classmethod
@@ -286,6 +314,65 @@ class SellerListingEditTest(unittest.TestCase):
     def test_an_explicitly_empty_field_is_still_cleared(self):
         self.patch_listing(self.owner, {"seller_notes": ""})
         self.assertEqual(self.stored()["seller_notes"], "")
+
+    # ------------------------------------------------------------------
+    # the imported draft, which arrives with no price on purpose
+    # ------------------------------------------------------------------
+    def _dropship_draft(self):
+        """What `suppliers/importer.py::_create_draft_listing` actually writes.
+
+        Blank `price_label` is that function's documented choice: the seller has
+        not set a price, and seeding it with the supplier's cost would print
+        their own margin on their storefront.
+        """
+        return self._make_listing(self.owner, price_label="", status="draft",
+                                  approval_status="pending_review", quantity=0,
+                                  title="Colored Glaze Neutral Red Beaded Bracelet")
+
+    def test_editing_an_imported_draft_does_not_price_it_for_the_seller(self):
+        """The importer's blank price survived until the first edit of any kind.
+
+        Not a price edit -- any edit. The route filled an absent `price_label`
+        with "Request access", so fixing a typo in the title published a pricing
+        decision the seller never made, on a product they had not priced yet.
+        """
+        draft = self._dropship_draft()
+        resp = self.patch_listing(self.owner, {"title": "Red beaded bracelet"}, listing_id=draft)
+        self.assertEqual(resp.status_code, 200, resp.get_data(as_text=True)[:400])
+        self.assertEqual(self.stored(draft)["price_label"], "")
+
+    def test_sending_a_blank_price_explicitly_also_leaves_it_blank(self):
+        """The client sends "" for an untouched price field. It must land as "".
+
+        Otherwise the fix only moves the substitution from the app to the route.
+        """
+        draft = self._dropship_draft()
+        resp = self.patch_listing(self.owner, {"title": "Red bracelet", "price_label": ""},
+                                  listing_id=draft)
+        self.assertEqual(resp.status_code, 200, resp.get_data(as_text=True)[:400])
+        self.assertEqual(self.stored(draft)["price_label"], "")
+
+    def test_an_unpriced_draft_can_still_be_given_a_real_price(self):
+        """Blank is a starting state, not a trap."""
+        draft = self._dropship_draft()
+        self.patch_listing(self.owner, {"price_label": "$18.50"}, listing_id=draft)
+        self.assertEqual(self.price_cents(draft), 1850)
+
+    def test_a_title_edit_on_an_unpriced_draft_is_not_recorded_as_a_price_change(self):
+        """The substitution made the route disagree with itself about the diff.
+
+        `changed_fields` compares stored against next, so "" becoming "Request
+        access" registered `price_label` as edited on a save that never
+        mentioned it -- and a price change is a material change, which sends the
+        listing back through review. The seller was penalised for the route's
+        own rewrite.
+        """
+        draft = self._dropship_draft()
+        before = self.stored(draft)
+        self.patch_listing(self.owner, {"title": "Red beaded bracelet"}, listing_id=draft)
+        after = self.stored(draft)
+        self.assertEqual(after["price_label"], before["price_label"])
+        self.assertNotEqual(after["title"], before["title"])
 
     # ------------------------------------------------------------------
     # ownership
