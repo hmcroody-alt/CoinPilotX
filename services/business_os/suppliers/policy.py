@@ -55,16 +55,21 @@ def egress_ip_attested() -> bool:
 
     `quota.py` enforces CJ's three-accounts-per-IP ceiling by counting rows per
     egress group -- but an egress group is a label a human types, and CJ counts
-    actual outbound IPs. Those agree only if someone checked. Railway's outbound
-    address is not documented as static or dedicated anywhere in this repository,
-    so on an unattested deployment the count is bookkeeping about a fiction: a
-    second region, a rotated address or a reused label all keep the counter
-    happy while CJ sees a fourth account on an IP.
+    actual outbound IPs. Those agree only if someone checked, and on Railway
+    they have been checked and they do not: under one label, the backend and the
+    supplier worker were observed egressing from two different addresses at the
+    same moment, and the backend's address changed across a redeploy. The
+    measurement is in `docs/cj/CJ_EGRESS_ARCHITECTURE.md`.
 
-    This flag is the difference between "we enforce the limit" and "we enforce
-    the limit against something we have verified". It gates multi-merchant
-    scale, not the single-merchant case, because one account cannot exceed a
-    three-account ceiling however the IPs fall.
+    Today that gap is conservative by accident -- one label spanning several
+    addresses puts *fewer* accounts on each than the counter believes -- but a
+    topology we did not design is not a control we can rely on, and it says
+    nothing about whether the address is shared with other tenants who also use
+    CJ. This flag is the difference between "we enforce the limit" and "we
+    enforce the limit against something we have verified".
+
+    It gates multi-merchant scale, not the single-merchant case, because one
+    account cannot exceed a three-account ceiling however the addresses fall.
     """
     return enabled("CJ_EGRESS_IP_ATTESTED")
 
