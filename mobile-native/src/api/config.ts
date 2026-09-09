@@ -9,6 +9,59 @@ const configuredBaseUrl =
   (typeof extra.pulseApiBaseUrl === "string" ? extra.pulseApiBaseUrl : "https://pulsesoc.com");
 
 export const PULSE_API_BASE_URL = normalizeApiBaseUrl(configuredBaseUrl);
+
+/** Which backend a build actually reached, classified from the resolved URL. */
+export type PulseEnvironment = "production" | "staging" | "local" | "custom";
+
+export const PULSE_ENVIRONMENT: PulseEnvironment = classifyEnvironment(PULSE_API_BASE_URL);
+
+/**
+ * Refuse to run against a backend this build was not built to reach.
+ *
+ * Pointing a QA build at a non-production backend is two separate wishes -- the
+ * URL, and the intent -- and until now only the URL was expressed. That is a
+ * problem here because *every* way this resolution can fail lands on
+ * production: an unset `EXPO_PUBLIC_PULSE_API_BASE_URL` falls through to the
+ * literal below, and `normalizeApiBaseUrl` also returns it for any value that
+ * does not parse. So a typo'd host, or a variable the bundler failed to inline,
+ * silently produces a build that looks like the staging build, is named like
+ * the staging build, and is talking to the live site.
+ *
+ * `EXPO_PUBLIC_PULSE_ENVIRONMENT` states the intent, and this compares the two.
+ * It is deliberately a throw rather than a warning: the whole failure mode is
+ * that nothing looks wrong. A production build sets nothing here and so cannot
+ * trip it -- the check only binds once someone has claimed an environment.
+ *
+ * Both variables are spelled as string literals on purpose. `babel-preset-expo`
+ * substitutes `process.env.X` only for a StringLiteral key, so a name reached
+ * through a computed lookup reads `undefined` in a release bundle -- which for
+ * this check would mean silently not running at all.
+ */
+const declaredEnvironment = normalizeOptionalString(
+  process.env.EXPO_PUBLIC_PULSE_ENVIRONMENT
+).toLowerCase();
+
+/** Non-secret build identity. Host only -- never tokens, keys or credentials. */
+export const PULSE_ENVIRONMENT_IDENTITY = {
+  appEnvironment: PULSE_ENVIRONMENT.toUpperCase(),
+  backendHost: PULSE_API_BASE_URL.replace(/^https?:\/\//i, ""),
+  declaredEnvironment: declaredEnvironment ? declaredEnvironment.toUpperCase() : "(undeclared)"
+} as const;
+
+// Logged unconditionally: this is the line that makes "which backend am I
+// talking to" answerable from a device log instead of by inference.
+console.log("[PulseSocEnvironment]", JSON.stringify(PULSE_ENVIRONMENT_IDENTITY));
+
+if (declaredEnvironment && declaredEnvironment !== PULSE_ENVIRONMENT) {
+  const detail =
+    `declared=${declaredEnvironment} resolved=${PULSE_ENVIRONMENT} host=${PULSE_ENVIRONMENT_IDENTITY.backendHost}`;
+  console.error(`[PulseSocEnvironment] MISMATCH ${detail}`);
+  throw new Error(
+    `PulseSoc build environment mismatch: ${detail}. ` +
+      "Refusing to start rather than fall back to the production backend."
+  );
+}
+
 // Digital purchases (Premium checkout/billing, marketplace checkout, payout onboarding)
 // currently route to external web/Stripe. Apple Guideline 3.1.1 requires StoreKit for
 // in-app digital goods, which is not yet implemented, so these entry points are hidden
@@ -73,6 +126,24 @@ function normalizeApiBaseUrl(value: string) {
   const url = String(value || "").trim().replace(/\/+$/, "");
   if (!/^https?:\/\//i.test(url)) return "https://pulsesoc.com";
   return url;
+}
+
+/**
+ * Classify a resolved base URL into the environment it belongs to.
+ *
+ * `production` is matched exactly rather than by substring: a host such as
+ * `pulsesoc.com.example.net` must not be read as the live site, and equally a
+ * staging host that merely contains `pulsesoc.com` must not be either. Anything
+ * unrecognised is `custom`, which is honest -- and because the mismatch check
+ * compares against a declared value, an unrecognised host still cannot
+ * masquerade as `staging`.
+ */
+function classifyEnvironment(baseUrl: string): PulseEnvironment {
+  const host = String(baseUrl || "").replace(/^https?:\/\//i, "").toLowerCase();
+  if (/^(127\.0\.0\.1|localhost|10\.0\.2\.2)(:\d+)?$/.test(host)) return "local";
+  if (/^(www\.)?pulsesoc\.com$/.test(host)) return "production";
+  if (/(^|[.-])(staging|stage|qa)([.-]|$)/.test(host)) return "staging";
+  return "custom";
 }
 
 function normalizeOptionalString(value: string) {

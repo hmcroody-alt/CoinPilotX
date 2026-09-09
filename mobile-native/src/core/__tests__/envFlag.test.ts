@@ -296,12 +296,20 @@ const APP_ENTRY = join(SRC, "..", "App.tsx");
 
 /**
  * The environment variables that are not booleans and are correctly read
- * directly: a base URL, a project id, and four free-form QA strings. Each has
- * its own validation and its own fallback chain, so passing one through a
- * truthiness reader would answer a question nobody asked of it.
+ * directly: a base URL, a declared environment name, a project id, and four
+ * free-form QA strings. Each has its own validation and its own fallback chain,
+ * so passing one through a truthiness reader would answer a question nobody
+ * asked of it.
+ *
+ * `EXPO_PUBLIC_PULSE_ENVIRONMENT` is the *declared* environment that
+ * `api/config.ts` compares against the one it classified from the resolved base
+ * URL. It is a name ("staging"), never a boolean, and a truthiness reader would
+ * turn every declared value into `true` -- which is precisely the mismatch the
+ * guard exists to catch.
  */
 const NON_BOOLEAN_VARS = [
   "EXPO_PUBLIC_PULSE_API_BASE_URL",
+  "EXPO_PUBLIC_PULSE_ENVIRONMENT",
   "EXPO_PUBLIC_EXPO_PROJECT_ID",
   "EXPO_PUBLIC_PULSESOC_QA_MESSENGER_FILTER",
   "EXPO_PUBLIC_PULSESOC_QA_CHAT_STATE",
