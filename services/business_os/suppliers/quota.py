@@ -4,6 +4,13 @@ All API workers sharing an egress IP MUST use the same database and configured
 egress group. No in-memory limiter, IP rotation, or automatic account eviction.
 PostgreSQL row locks and SQLite BEGIN IMMEDIATE serialize admissions across
 processes. Unknown points admit only zero-point bootstrap/health operations.
+
+The two ceilings enforced here -- three CJ accounts and ten business calls per
+second, both per outbound IP -- are the provider's, and live in `policy.py`.
+This module is where they are made true, at a deliberate margin below the
+stated rate; see `EGRESS_MIN_INTERVAL`. What it cannot do is verify that an
+egress *group* is one egress *IP*: that is a human attestation, and
+`policy.egress_ip_attested()` is where its absence is admitted.
 """
 from __future__ import annotations
 
@@ -17,6 +24,27 @@ from email.utils import parsedate_to_datetime
 
 from services import db
 from .errors import SupplierError
+from .policy import MAX_CJ_BUSINESS_CALLS_PER_SECOND_PER_EGRESS_IP
+
+# We pace below CJ's ceiling, not at it.
+#
+# CJ allows ten business calls per second per outbound IP. Admitting one every
+# 0.1s hits that exactly, which is only safe if our clock and CJ's agree on
+# where a second begins -- and they do not. Two calls we admit 0.1s apart can
+# land inside the same second at CJ, and network jitter can reorder them into a
+# tighter burst than we ever scheduled.
+#
+# The cost of being wrong is not one rejected call. `penalize` treats a 429 as
+# scope-unknown and pauses the *whole* egress group, so a single call over the
+# line stalls every merchant sharing this IP for at least thirty seconds. The
+# headroom buys back a few percent of throughput to avoid that; it is derived
+# from the provider ceiling rather than written as a second literal so the two
+# cannot drift apart.
+EGRESS_HEADROOM_CALLS_PER_SECOND = 1.5
+EGRESS_TARGET_CALLS_PER_SECOND = (
+    MAX_CJ_BUSINESS_CALLS_PER_SECOND_PER_EGRESS_IP - EGRESS_HEADROOM_CALLS_PER_SECOND
+)
+EGRESS_MIN_INTERVAL = 1 / EGRESS_TARGET_CALLS_PER_SECOND
 
 
 def ensure_schema(conn=None):
@@ -108,7 +136,7 @@ class DurableCJQuota:
                 raise SupplierError("POINT_BUDGET_RESERVED", http_status=429, retry_after=60)
             seq = row["sequence"] + 1
             qps = 1 if authentication else min(6, max(1, row["qps"]))
-            conn.execute("UPDATE business_os_cj_egress_quota SET next_at=? WHERE egress_group=?", (now + .1, self.egress_group))
+            conn.execute("UPDATE business_os_cj_egress_quota SET next_at=? WHERE egress_group=?", (now + EGRESS_MIN_INTERVAL, self.egress_group))
             conn.execute("UPDATE business_os_cj_account_quota SET next_at=?,remaining=?,sequence=? WHERE egress_group=? AND account_ref=?", (now + 1 / qps, None if remaining is None else remaining - cost, seq, self.egress_group, account_ref))
             return seq
 
@@ -136,8 +164,26 @@ class DurableCJQuota:
             row = self._account(conn, account_ref)
             remaining, used, total = values
             # A late response cannot replenish points reserved by a newer request.
+            #
+            # When we already hold a figure, taking the lower of the two is
+            # right: the stale reading cannot raise it, and the debits the newer
+            # request applied stay applied. When we hold nothing there is no
+            # such arithmetic to do, and this used to record a hard zero -- an
+            # invented fact, and the stickiest kind. Zero reads as EXHAUSTED to
+            # the merchant ("no points left") on the strength of a response that
+            # said the opposite, and it outlives the unknown it replaced because
+            # it satisfies every `remaining is None` guard while still failing
+            # every costed admission. Staging sat in exactly that state: two
+            # accounts pinned at zero by a reading of five figures.
+            #
+            # Unknown is both the honest answer and the self-healing one. It
+            # refuses costed calls just as firmly, but zero-point health calls
+            # still go out, and the first of those returns a reading whose
+            # sequence matches -- resolving the budget instead of guessing it.
             if sequence is not None and row["sequence"] != sequence:
-                remaining = min(remaining, row["remaining"]) if row["remaining"] is not None else 0
+                if row["remaining"] is None:
+                    return
+                remaining = min(remaining, row["remaining"])
             conn.execute("UPDATE business_os_cj_account_quota SET remaining=?,used_today=?,total=?,observed_at=?,failures=0 WHERE egress_group=? AND account_ref=?", (remaining, used, total, self.clock(), self.egress_group, account_ref))
 
     def penalize(self, account_ref, retry_after=None):

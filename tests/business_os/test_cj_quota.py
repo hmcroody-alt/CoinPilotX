@@ -8,7 +8,14 @@ import pytest
 
 from services import db
 from services.business_os.suppliers.errors import SupplierError
-from services.business_os.suppliers.quota import DurableCJQuota, budget_state, ensure_schema
+from services.business_os.suppliers.policy import MAX_CJ_BUSINESS_CALLS_PER_SECOND_PER_EGRESS_IP
+from services.business_os.suppliers.quota import (
+    DurableCJQuota,
+    EGRESS_MIN_INTERVAL,
+    EGRESS_TARGET_CALLS_PER_SECOND,
+    budget_state,
+    ensure_schema,
+)
 
 
 class Clock:
@@ -81,11 +88,63 @@ def test_two_instances_share_account_qps_and_egress_ip_limit(controller):
     assert same_account.value.retry_after == pytest.approx(1.0)
     with pytest.raises(SupplierError) as same_ip:
         second.reserve_request("account-b", cost=0)
-    assert same_ip.value.retry_after == pytest.approx(.1)
-    clock.advance(.101)
+    assert same_ip.value.retry_after == pytest.approx(EGRESS_MIN_INTERVAL)
+    clock.advance(EGRESS_MIN_INTERVAL + .001)
     second.reserve_request("account-b", cost=0)
     clock.advance(.91)
     second.reserve_request("account-a", cost=0)
+
+
+def test_the_egress_pace_stays_under_the_rate_the_provider_stated():
+    """Pacing at exactly ten calls a second is pacing at the line, not below it.
+
+    Our clock and CJ's do not agree on where a second begins, so two calls we
+    admit 0.1s apart can land in one second at CJ. The penalty for being wrong
+    is not one rejected call: `penalize` reads a 429 as scope-unknown and pauses
+    the entire egress group, so one call over the line stalls every merchant
+    sharing the IP. This pins the margin's existence, not its exact size.
+    """
+    assert EGRESS_TARGET_CALLS_PER_SECOND < MAX_CJ_BUSINESS_CALLS_PER_SECOND_PER_EGRESS_IP
+    # And not so much margin that the limiter becomes the bottleneck instead.
+    assert EGRESS_TARGET_CALLS_PER_SECOND >= MAX_CJ_BUSINESS_CALLS_PER_SECOND_PER_EGRESS_IP * .75
+    assert EGRESS_MIN_INTERVAL == pytest.approx(1 / EGRESS_TARGET_CALLS_PER_SECOND)
+
+
+def test_a_full_second_of_admissions_never_exceeds_the_provider_ceiling(controller):
+    """The property that matters, checked by counting rather than by arithmetic.
+
+    A margin expressed as a constant can be correct while the code that spends
+    it is not -- an off-by-one in the interval update, or a reset that forgets
+    the previous admission, would leave the constant untouched and the rate
+    wrong. So this drives the real limiter across a real second and counts what
+    it let through.
+    """
+    quota, clock = controller
+    # Three accounts is the per-IP maximum, and each is given the highest
+    # per-account rate CJ grants. Without that the *account* limiter is what
+    # binds -- three accounts at one call a second each never approach ten --
+    # and the test would pass while saying nothing about the egress limiter.
+    accounts = ("account-a", "account-b", "account-c")
+    for account in accounts:
+        quota.snapshot(account)
+    conn = db.connect()
+    conn.execute("UPDATE business_os_cj_account_quota SET qps=6")
+    conn.commit()
+    conn.close()
+
+    start = clock.now
+    admitted = 0
+    while clock.now - start < 1.0:
+        for account in accounts:
+            try:
+                quota.reserve_request(account, cost=0)
+                admitted += 1
+            except SupplierError as failure:
+                assert failure.code == "RATE_LIMITED"
+        clock.advance(.01)
+    assert admitted <= MAX_CJ_BUSINESS_CALLS_PER_SECOND_PER_EGRESS_IP
+    # Non-vacuous: the limiter is admitting near its target, not near zero.
+    assert admitted >= EGRESS_TARGET_CALLS_PER_SECOND - 1
 
 
 def test_ip_allows_only_three_verified_or_pending_cj_accounts(controller):
@@ -212,6 +271,36 @@ def test_stale_response_cannot_restore_points_reserved_by_new_request(controller
     assert newest > old and quota.snapshot("account-a")["remaining"] == 4940
     quota.observe("account-a", {"remaining": 4990, "usedToday": 10, "total": 50000}, sequence=old)
     assert quota.snapshot("account-a")["remaining"] == 4940
+
+
+def test_a_stale_reading_of_an_unknown_budget_leaves_it_unknown(controller):
+    """"We could not tell" must not be recorded as "you have none left".
+
+    A stale reading cannot be trusted to *raise* a budget, but when there is no
+    stored figure to lower there is nothing to compute, and this once wrote a
+    hard zero. That is worse than the unknown it replaced: it is a number CJ
+    never sent, it reads as EXHAUSTED to the merchant, and it satisfies the
+    `remaining is None` guards that exist to let bootstrap calls through while
+    still failing every costed one.
+
+    Staging reached exactly this state -- two accounts pinned at zero by a
+    response reporting five figures of headroom.
+    """
+    quota, clock = controller
+    assert quota.snapshot("account-a")["remaining"] is None
+    stale = quota.reserve_request("account-a", cost=0, authentication=True)
+    clock.advance()
+    quota.reserve_request("account-a", cost=0, authentication=True)
+
+    quota.observe("account-a", {"remaining": 49000, "usedToday": 1000, "total": 50000}, sequence=stale)
+    assert quota.snapshot("account-a")["remaining"] is None
+    assert quota.snapshot("account-a")["state"] == "UNKNOWN"
+
+    # And it resolves itself: the next reading that is not stale is believed.
+    clock.advance()
+    current = quota.reserve_request("account-a", cost=0, authentication=True)
+    quota.observe("account-a", {"remaining": 49000, "usedToday": 1000, "total": 50000}, sequence=current)
+    assert quota.snapshot("account-a")["remaining"] == 49000
 
 
 def test_new_valid_observation_can_prove_refill_but_wallclock_does_not(controller):
