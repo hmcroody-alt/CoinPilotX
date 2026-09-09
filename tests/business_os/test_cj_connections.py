@@ -285,6 +285,85 @@ def test_refresh_failure_requires_reauth_and_no_silent_retry():
     assert failure.value.code == "reauth_required" and another.calls == []
 
 
+class SlotRecorder:
+    """Stands in for the durable quota table; records what was handed back."""
+
+    def __init__(self, explode=False):
+        self.released = []
+        self.explode = explode
+
+    def release_pending(self, account_ref):
+        self.released.append(account_ref)
+        if self.explode:
+            raise RuntimeError("bookkeeping is down")
+
+
+def refused_by(code):
+    adapter = FakeAdapter(fail=svc.SupplierError(code, http_status=401))
+    adapter.quota = SlotRecorder()
+    adapter.account_ref = "pending_fingerprint-of-the-typed-key"
+    return adapter
+
+
+@pytest.mark.parametrize("code,given_back", [
+    # CJ itself saying no. The key is not an account and never will be.
+    ("REAUTH_REQUIRED", True),
+    # Everything else says nothing about the key. A slot released here is a
+    # way around a cap that exists to be hard.
+    ("PROVIDER_UNAVAILABLE", False),
+    ("RATE_LIMITED", False),
+    ("MALFORMED_PROVIDER_RESPONSE", False),
+])
+def test_a_key_cj_refused_gives_back_the_egress_slot_it_claimed(code, given_back):
+    """Authenticating spends a slot before anyone knows if the key is good.
+
+    CJ allows three accounts per egress IP, and the slot is taken under a
+    fingerprint of whatever was typed. `rebind_account` reclaims it when the
+    key turns out to be real. Nothing reclaimed it when the key turned out to
+    be a typo, so each wrong key held one of the three permanently -- three of
+    them anywhere in an egress pool exhausted it for every merchant sharing
+    that IP, and they got EGRESS_ACCOUNT_CAPACITY with nothing they could do.
+    Measured on staging, where two of my own wrong keys held two of the three
+    slots and the pool was full with a single real connection in it.
+    """
+    adapter = refused_by(code)
+    with pytest.raises(svc.SupplierError) as refusal:
+        svc.discover_shops("biz-a", "store-a", "100", "a-key-cj-will-not-take", adapter=adapter)
+
+    # The merchant's error is unchanged either way: reclaiming a slot is
+    # bookkeeping and must never edit what they are told.
+    assert refusal.value.code == code
+    assert adapter.quota.released == (["pending_fingerprint-of-the-typed-key"] if given_back else [])
+    assert adapter.calls == ["authenticate"], "a refused key must not go on to identity or shops"
+
+
+def test_a_failure_to_reclaim_the_slot_does_not_replace_cjs_own_error():
+    """The refusal is the useful message; a bookkeeping fault must not eat it."""
+    adapter = refused_by("REAUTH_REQUIRED")
+    adapter.quota.explode = True
+    with pytest.raises(svc.SupplierError) as refusal:
+        svc.discover_shops("biz-a", "store-a", "100", "a-key-cj-will-not-take", adapter=adapter)
+    assert refusal.value.code == "REAUTH_REQUIRED"
+
+
+def test_no_slot_is_released_before_authorization_or_for_a_rejected_key_shape():
+    """The release sits after the gate, so it cannot be reached by an outsider.
+
+    An unauthorized caller never touched the provider and so never claimed a
+    slot; a delete keyed on a fingerprint they chose would be a way to evict
+    somebody else's pending connection from the pool.
+    """
+    outsider = refused_by("REAUTH_REQUIRED")
+    with pytest.raises(svc.SupplierConnectionError):
+        svc.discover_shops("biz-a", "store-a", "200", "a-key-cj-will-not-take", adapter=outsider)
+    assert outsider.calls == [] and outsider.quota.released == []
+
+    malformed = refused_by("REAUTH_REQUIRED")
+    with pytest.raises(svc.SupplierConnectionError):
+        svc.discover_shops("biz-a", "store-a", "100", "   ", adapter=malformed)
+    assert malformed.calls == [] and malformed.quota.released == []
+
+
 @pytest.mark.parametrize("status", [0, 2, None, True])
 def test_inactive_or_unknown_cj_shop_cannot_be_bound(status):
     fake = FakeAdapter(shops=[{"shop_id": "cj-shop-a", "name": "Same name", "platform": "API", "status": status}])

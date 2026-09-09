@@ -198,6 +198,72 @@ def test_ip_allows_only_three_verified_or_pending_cj_accounts(controller):
     conn.close()
 
 
+def test_a_key_cj_refused_does_not_keep_one_of_the_three_slots(controller):
+    """A slot is claimed before anyone knows whether the key is any good.
+
+    `rebind_account` takes it back when the key turns out to be good. Nothing
+    took it back when the key turned out to be bad, so three typos anywhere in
+    an egress pool exhausted it permanently and every later merchant on that
+    IP got EGRESS_ACCOUNT_CAPACITY. Seen on staging: two wrong keys held two
+    slots and the pool was full with one real connection in it.
+    """
+    quota, _ = controller
+    quota.snapshot("cja_real-account")
+    quota.snapshot("pending_typo-one")
+    quota.snapshot("pending_typo-two")
+    with pytest.raises(SupplierError) as exhausted:
+        quota.snapshot("pending_someone-elses-first-attempt")
+    assert exhausted.value.code == "EGRESS_ACCOUNT_CAPACITY"
+
+    quota.release_pending("pending_typo-one")
+    quota.release_pending("pending_typo-two")
+
+    # The pool is usable again, and the verified account was never at risk.
+    assert quota.snapshot("pending_someone-elses-first-attempt")["state"] == "UNKNOWN"
+    conn = db.connect()
+    refs = sorted(row[0] for row in
+                  conn.execute("SELECT account_ref FROM business_os_cj_account_quota").fetchall())
+    conn.close()
+    assert refs == ["cja_real-account", "pending_someone-elses-first-attempt"]
+
+
+def test_a_verified_account_slot_is_never_released_as_if_it_were_pending(controller):
+    """CJ counts a verified account whether or not we do, so it is not ours."""
+    quota, _ = controller
+    quota.snapshot("cja_real-account")
+    quota.release_pending("cja_real-account")
+    quota.release_pending("account-b")  # no prefix at all
+    conn = db.connect()
+    assert conn.execute("SELECT COUNT(*) FROM business_os_cj_account_quota").fetchone()[0] == 1
+    conn.close()
+
+
+def test_releasing_a_slot_cannot_reach_into_another_egress_group(controller):
+    """The table is shared by every egress pool, so the delete must be scoped.
+
+    A pending reference is a fingerprint of a typed key, which means a caller
+    on one egress IP can name a reference held on another. Unscoped, a release
+    there would evict a stranger's in-flight connection from a pool that is
+    only three slots deep -- turning a repair into a way to keep other pools
+    empty. The `egress_group` predicate is the whole of that defence, and
+    nothing else in this file would notice if it went missing.
+    """
+    ours, _ = controller
+    theirs = DurableCJQuota(egress_group="another-egress", reserve=1000, clock=Clock())
+    shared_reference = "pending_same-fingerprint"
+    ours.snapshot(shared_reference)
+    theirs.snapshot(shared_reference)
+
+    ours.release_pending(shared_reference)
+
+    conn = db.connect()
+    groups = sorted(row[0] for row in conn.execute(
+        "SELECT egress_group FROM business_os_cj_account_quota WHERE account_ref=?",
+        (shared_reference,)).fetchall())
+    conn.close()
+    assert groups == ["another-egress"], "a release escaped its own egress pool"
+
+
 def test_pending_identity_promotion_does_not_consume_an_extra_account_slot(controller):
     quota, _ = controller
     quota.snapshot("pending-api-key")

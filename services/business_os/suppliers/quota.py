@@ -192,6 +192,34 @@ class DurableCJQuota:
                 conn.execute("UPDATE business_os_cj_account_quota SET next_at=?,blocked_until=?,remaining=NULL WHERE egress_group=? AND account_ref=?", (max(old["next_at"], new["next_at"]), max(old["blocked_until"], new["blocked_until"]), self.egress_group, new_ref))
                 conn.execute("DELETE FROM business_os_cj_account_quota WHERE egress_group=? AND account_ref=?", (self.egress_group, old_ref))
 
+    def release_pending(self, account_ref):
+        """Give a slot back when the provider has refused the key that took it.
+
+        Three accounts per egress IP is CJ's limit, and a slot is claimed by
+        the fingerprint of the key that was typed before anyone knows whether
+        CJ will accept it. `rebind_account` reclaims the slot when the key
+        turns out to be good. Nothing reclaimed it when the key turned out to
+        be bad, so a rejected key held one of the three forever: three typos
+        anywhere in an egress pool permanently exhausted it, and every later
+        merchant on that IP got EGRESS_ACCOUNT_CAPACITY with nothing they could
+        do about it. Measured on staging, where two wrong keys took two slots
+        and the pool was full with one real connection in it.
+
+        Only ever pending slots. A `cja_` reference is a verified account and
+        CJ counts it whether or not we do, so it is not ours to release.
+
+        The caller decides what counts as refusal, and it must be CJ actually
+        rejecting the credential. A timeout or a 429 says nothing about the
+        key, and freeing its slot would let a caller retry around the cap.
+        Brute-force pacing does not rest on this table either way: that lives
+        in the shared egress row, which this never touches.
+        """
+        if not isinstance(account_ref, str) or not account_ref.startswith("pending_"):
+            return
+        with self._locked() as conn:
+            conn.execute("DELETE FROM business_os_cj_account_quota WHERE egress_group=? AND account_ref=?",
+                         (self.egress_group, account_ref))
+
     def observe(self, account_ref, points_info, *, sequence=None):
         if not isinstance(points_info, dict):
             return

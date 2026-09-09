@@ -229,6 +229,19 @@ def _new_adapter(api_key=None):
     return CJAdapter(account_ref=pending, environment="SANDBOX")
 
 
+def _release_pending_slot(adapter):
+    """Best effort: failing to reclaim a slot must not replace CJ's own error.
+
+    The merchant is already being told their key was refused, which is the
+    true and useful thing. A bookkeeping failure on the way out must not
+    become the message they read instead.
+    """
+    try:
+        adapter.quota.release_pending(adapter.account_ref)
+    except Exception:
+        pass
+
+
 def _auth_fields(auth, *, previous_open_id=None):
     try:
         open_id = auth.open_id if auth.open_id is not None else previous_open_id
@@ -343,7 +356,20 @@ def _bootstrap(business_id, store_id, actor_user_id, api_key, *, context=None, a
     adapter = adapter or _new_adapter(api_key)
     if hasattr(adapter, "register_secrets"):
         adapter.register_secrets([api_key])
-    auth = adapter.authenticate(api_key)
+    try:
+        auth = adapter.authenticate(api_key)
+    except SupplierError as exc:
+        # Authenticating claimed one of this egress IP's three account slots
+        # under a fingerprint of the key. A key CJ has just refused is not an
+        # account and never will be, so it gives the slot back -- otherwise a
+        # merchant's typos accumulate until nobody on the IP can connect.
+        #
+        # Only on CJ's own refusal. Anything else leaves the slot held, because
+        # a key that timed out may be perfectly good and a released slot is a
+        # way around the cap.
+        if getattr(exc, "code", None) == "REAUTH_REQUIRED":
+            _release_pending_slot(adapter)
+        raise
     secrets, access, refresh = _auth_fields(auth)
     secrets["api_key"] = api_key
     return merchant, adapter, auth, secrets, access, refresh
