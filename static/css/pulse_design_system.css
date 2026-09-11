@@ -120,10 +120,16 @@ textarea {
   opacity: 0.42;
 }
 
+/* `a[href="/pulse/premium"]` selects by destination rather than by role, so it
+   also painted the navigation rail's Premium entry as a gold call-to-action:
+   permanently lit, and louder than the entry for the page you are actually on,
+   which made it read as the selected item on all 96 shell pages. A rail is a
+   list of places, not a list of offers. The `:not()` keeps the treatment on
+   every real upgrade button and leaves navigation looking like navigation. */
 .premium-button,
 .button.premium,
 .button.gold,
-a[href="/pulse/premium"] {
+a[href="/pulse/premium"]:not(.desktop-rail-link):not(.drawer-link) {
   border-color: transparent !important;
   color: #101304 !important;
   background: linear-gradient(135deg, var(--pulse-gold), var(--pulse-green), var(--pulse-cyan)) !important;

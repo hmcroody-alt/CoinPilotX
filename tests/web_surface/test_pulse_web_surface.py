@@ -70,7 +70,7 @@ SERVER_RENDERED = "/pulse/account-health"
 RECEIPT = "/dashboard/orders?order_id=5&source=creator_transactions"
 
 _PROBE = r"""
-import json, sys
+import json, re, sys
 sys.path.insert(0, %(repo)r)
 import bot
 
@@ -110,8 +110,17 @@ report["pages"] = pages
 
 health = client.get("/pulse/account-health")
 canonical = client.get("/dashboard/account/health")
-report["health"] = {"status": health.status_code,
-                    "same_as_canonical": health.get_data() == canonical.get_data()}
+# The navigation marks the destination you are actually on, so the two URLs
+# differ by exactly those markers and by nothing else. Stripping them by name
+# keeps the comparison exact -- anything a second implementation would change
+# still shows up -- while permitting the one difference that is meant to exist.
+_nav_marker = re.compile(rb" aria-current='page'| is-active")
+report["health"] = {
+    "status": health.status_code,
+    "same_as_canonical": (_nav_marker.sub(b"", health.get_data())
+                          == _nav_marker.sub(b"", canonical.get_data())),
+    "marks_its_own_url": b"aria-current='page' href='/dashboard'" in canonical.get_data(),
+}
 
 # The endpoints those pages fetch. A page that renders is worth nothing if the
 # API behind it does not answer with the collection the page asks for.
@@ -213,9 +222,25 @@ def test_account_health_alias_serves_the_page_that_already_existed(web_probe):
     for a long time, and the native screen links to that exact path. Building a
     parallel page for the app's other published URL would have given the same
     product two implementations and two chances to disagree.
+
+    This compared the two responses byte for byte until the shell learned to mark
+    the current destination. That was a free and exact proxy while every page's
+    chrome was identical, but it now asserts the opposite of what it means: two
+    URLs producing identical bytes would mean the navigation is lying on one of
+    them. So the comparison excludes the current-page markers by name and stays
+    exact everywhere else, and a second assertion pins the marking itself --
+    together they say "one page, and it knows which of its URLs you asked for"
+    rather than the weaker "one page".
+
+    The second assertion is deliberately only a liveness check: it passes if
+    either the rail or the top bar marks the page, because both spell the marker
+    the same way. It exists so the stripping above cannot go vacuous by way of a
+    shell that marks nothing at all. Which surface marks what, on which page, is
+    `test_shell_nav_parity.py`'s subject, and it distinguishes them there.
     """
     assert web_probe["health"]["status"] == 200
     assert web_probe["health"]["same_as_canonical"]
+    assert web_probe["health"]["marks_its_own_url"]
 
 
 def test_signed_out_visitors_get_the_login_page(web_probe):
