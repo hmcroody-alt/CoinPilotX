@@ -104,6 +104,35 @@ placed order came back on the shop we bound), sandbox assertion.
 
 ---
 
+## Where the real listing actually stands
+
+Production listing 14 — the CJ upholstered bed, SKU `CJFU2755187` — measured by
+running the real evaluator against production's own rows
+(`scripts/measure_listing14_readiness.py`, read-only):
+
+| gate | field | state |
+|---|---|---|
+| `_validate` | all twelve codes | **clear — `publishable: True`** |
+| variant | `price_cents` 46574 / `cost_cents` 29109 | priced, `HEALTHY` margin |
+| variant | `stock_state` `IN_STOCK`, qty 132 | `AVAILABLE` |
+| supplier | `sync_state` `SYNCED`, `DROPSHIP` | connected |
+| seller | `status` `approved`, store `M&W Store` | passes `public_sql` |
+| listing | `status` `draft` | **needs `drafts.publish`** |
+| listing | `approval_status` `pending_review` | **needs moderation** |
+| listing | `price_label` `''`, `quantity` 0, `cover_image_url` NULL | all three written by `publish` |
+
+So the product is not blocked on anything the merchant has failed to supply. It
+is two state transitions from a buyer: **publish**, which fills the three
+buyer-facing columns in one statement, and **moderation approval**, which is a
+separate authority on purpose. After both, `is_public` is `True`,
+`public_denial_code` is `""`, and the label parses to 46574 cents — the
+transition is asserted end to end by
+`test_a_published_approved_import_is_purchasable_on_every_field_a_buyer_reads`.
+
+Both transitions are production writes and neither has been made.
+
+---
+
 ## Things that are correct and easy to break
 
 - **Publish does not self-approve.** `is_public` needs status *and* approval;
