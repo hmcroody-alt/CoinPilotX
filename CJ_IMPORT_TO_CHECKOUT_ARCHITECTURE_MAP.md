@@ -118,6 +118,12 @@ placed order came back on the shop we bound), sandbox assertion.
   100%. `suppliers/pricing.py` returns `None` throughout and names margin states
   rather than returning bare numbers.
 - **Cost is merchant-private.** It reaches the draft screen and no buyer surface.
+- **The reviewer's risk number is reviewer-private**, and `safety_score` is that
+  number despite its name. It is stripped in
+  `MARKETPLACE_REVIEWER_ONLY_FIELDS`, not merely left out of a field list —
+  see the third seam for why those are not the same thing. Do not "restore" it
+  to a buyer surface in inverted form either: moderation's approval is what a
+  buyer is entitled to rely on, and a 0-100 integer they cannot check is not.
 
 ---
 
@@ -150,6 +156,51 @@ live in `mobile-native/src/api/__tests__/fixtures/priceLabelParity.json`, read b
 the app's suite and by `tests/test_marketplace_price_label_parity.py`. Changing
 either parser alone reddens one suite; changing the table alone reddens both,
 verified by doing it.
+
+---
+
+## The third seam: the number that meant the opposite of its name
+
+The first seam was between two tables, the second between two languages. This
+one is between a column and its own name, and it reached the buyer.
+
+`marketplace_listings.safety_score` holds **risk**. All three writers store
+`revenue_safety_engine.score_text(...)["risk_score"]` unchanged, the column
+defaults to `0`, and the admin queue counts `safety_score >= 30` as risky — the
+storage side is coherent. The teacher-application route, ~200 lines further down
+`bot.py`, writes `max(0, 100 - risk_score)` into a column of the same name on a
+different table. That is where the confusion came from.
+
+Four buyer paths read it as safety: the server-rendered grid card, its
+client-side twin used for search, the product page, and
+`pulse_marketplace_listing_payload`, which put the raw number on the app's wire.
+Measured over the real engine:
+
+```
+listing                                  risk   the pill said
+Handmade oak dining table                   0   Safety 0
+CJ upholstered bed (listing 14)             0   Safety 0
+Crypto seed phrase vault                   44   Safety 44
+Guaranteed profit trading bot (blocked)   100   Safety 100
+```
+
+The worst listing the engine can score advertised the best number. Production
+has 7 listings, all scoring 0, so the two published rows read "Safety 0" and the
+inversion was latent rather than realized.
+
+Fixed in `9e5eec71` by **removal, not inversion**: a raw moderation integer is
+not a buyer concept in either direction, and a listing only reaches these
+surfaces because moderation approved it — the approval *is* the signal. The
+merchant keeps the number, under a header that says "Review risk", on a page
+that already prints a correctly-named "Risk Score".
+
+One detail is worth more than the bug. `pulse_marketplace_listing_payload`
+returns `{**row, ...}` — **its explicit keys are additions to the database row,
+not a whitelist of it.** Deleting the `"safety_score"` line changed nothing;
+the column was still on the wire, because a caller's `SELECT` put it there.
+Only asserting against the served response caught that. Every column any future
+query names is buyer-visible by default, so the strip now lives in
+`MARKETPLACE_REVIEWER_ONLY_FIELDS` rather than in a field list.
 
 ---
 
@@ -187,8 +238,8 @@ verified by doing it.
 
 ## What kept coming back
 
-Three defects in this chain, three different subsystems, one shape: **a number
-was asserted rather than measured.**
+Four defects in this chain, four different subsystems, one shape: **a number was
+asserted rather than measured.**
 
 - `publish()` never wrote `price_label`, and the publish test asserted `status`
   and `published_at` and stopped one column short.
@@ -197,7 +248,24 @@ was asserted rather than measured.**
 - `canPurchaseMarketplaceListing` claimed to answer "can this be bought" while
   only ever consulting stock, and every unpriced fixture in the render suite was
   also out of stock.
+- `safety_score` was believed to be safety because of its name, and believed to
+  be off the buyer's wire because two source comments and a test said so — the
+  test asserting a key was absent from a fixture defined three lines above it.
 
-In all three the suite was green, and in all three the green was about the
-halves rather than the seam. Where a claim spans two components, this document
-now prefers a fixture both components read over a sentence describing them.
+In all four the suite was green, and in all four the green was about the halves
+rather than the seam. Where a claim spans two components, this document now
+prefers a fixture both components read over a sentence describing them.
+
+The fourth adds a corollary worth keeping separate, because it is about where a
+test looks rather than what it checks: **a claim about what a server sends can
+only be tested against a response.** Both native assertions on `safety_score`
+were about objects this repository constructs. The one that would have failed —
+reading the field off a served payload — did not exist, so a field that two
+comments called impossible shipped to every marketplace client for four
+endpoints at once. `tests/web_parity/` exists for exactly this, and the three
+surfaces it already covered were the three that had been fixed *before* anyone
+looked at bytes.
+
+A second corollary, narrower and sharper: **a serializer that spreads its input
+has no field list, only additions.** `{**row, ...}` reads like an allowlist and
+is the opposite of one. Removing a key from it removes nothing.
