@@ -415,25 +415,40 @@ def list_drafts(business_id, store_id, actor_user_id, connection_id, *,
         limit = max(1, min(int(limit), 100))
     except (TypeError, ValueError):
         limit = 50
+    wanted = str(status or "").strip().lower()
     conn = db.connect()
     try:
         _, seller_user_id = _scope(conn, business_id, store_id, actor_user_id,
                                    connection_id, context=context)
+        # The status filter belongs in the query, beside the LIMIT it has to
+        # survive. Filtering the page afterwards in Python searched only the
+        # newest `limit` imports and reported every older match as absent, so a
+        # merchant with more products than one page could open "Drafts" and be
+        # told they had none.
+        source = ("FROM marketplace_product_sources s "
+                  "JOIN marketplace_listings l ON l.id = s.listing_id "
+                  "WHERE s.seller_user_id=? AND s.supplier_connection_id=? "
+                  "AND s.business_id=? AND s.store_id=?")
+        params = [int(seller_user_id), connection_id, business_id, store_id]
+        if wanted:
+            source += " AND LOWER(l.status)=?"
+            params.append(wanted)
         cur = conn.cursor()
         cur.execute(
             "SELECT l.id, l.title, l.status, l.approval_status, l.currency, "
             "l.cover_image_url, l.updated_at, s.provider, s.sync_state, "
-            "s.supplier_cost_cents, s.provider_product_id "
-            "FROM marketplace_product_sources s "
-            "JOIN marketplace_listings l ON l.id = s.listing_id "
-            "WHERE s.seller_user_id=? AND s.supplier_connection_id=? "
-            "AND s.business_id=? AND s.store_id=? "
-            "ORDER BY l.id DESC LIMIT ?",
-            (int(seller_user_id), connection_id, business_id, store_id, limit))
+            "s.supplier_cost_cents, s.provider_product_id " + source +
+            " ORDER BY l.id DESC LIMIT ?", tuple(params) + (limit,))
         rows = [dict(row) for row in cur.fetchall()]
+        # `count` is how many match, not how many were just returned. It used to
+        # be len(rows) -- computed after the LIMIT -- which made it a restatement
+        # of the page size rather than a measurement of anything. The hub tile
+        # asks for limit=1 on purpose, wanting the number without paying for the
+        # rows, so it read back its own limit and told every merchant with a
+        # supplier connection that they had exactly "1 imported" product.
+        cur.execute("SELECT COUNT(*) " + source, tuple(params))
+        fetched = cur.fetchone()
+        total = int((fetched[0] if fetched else 0) or 0)
     finally:
         conn.close()
-    wanted = str(status or "").strip().lower()
-    if wanted:
-        rows = [r for r in rows if str(r.get("status") or "").lower() == wanted]
-    return {"items": rows, "count": len(rows)}
+    return {"items": rows, "count": total}

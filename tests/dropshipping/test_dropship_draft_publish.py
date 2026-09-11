@@ -185,6 +185,64 @@ def test_only_supplier_products_are_visible_as_drafts(provider):
     assert ids == [listing_id]
 
 
+def test_the_imported_count_is_a_total_not_the_size_of_the_page(provider):
+    """`count` has to measure the table, not restate the limit it was given.
+
+    It used to be len(rows) computed after the LIMIT, so it could only ever
+    equal the page size. The hub tile asks for limit=1 deliberately -- it wants
+    the number without paying to transfer the rows -- and therefore read its own
+    limit back and told every merchant they had exactly "1 imported" product,
+    no matter how many they had. That was visible on a real device: the store
+    showed two CJ drafts while the hub beside it said "Products · 1 imported".
+
+    Nothing asserted the field before now, which is how a number that was
+    structurally incapable of being right survived a green suite.
+    """
+    first = imported(provider, pid="PID-1")
+    second = imported(provider, pid="PID-2")
+    third = imported(provider, pid="PID-3")
+
+    one_page = drafts.list_drafts(BUSINESS, STORE, OWNER_ID, CONNECTION,
+                                  context=CONTEXT, limit=1)
+    assert len(one_page["items"]) == 1, "limit must still bound the rows returned"
+    assert one_page["count"] == 3, "count must survive the limit, not be set by it"
+
+    everything = drafts.list_drafts(BUSINESS, STORE, OWNER_ID, CONNECTION,
+                                    context=CONTEXT, limit=50)
+    assert [d["id"] for d in everything["items"]] == [third, second, first]
+    assert everything["count"] == 3
+
+
+def test_a_status_filter_searches_every_import_not_only_the_newest_page(provider):
+    """The filter has to run in the query, beside the LIMIT it must survive.
+
+    Applied afterwards in Python it filtered the page rather than the table, so
+    a match that fell outside the newest `limit` rows was reported as absent --
+    a merchant with more products than fit on one page could open a filter and
+    be told, wrongly and silently, that they had nothing there.
+    """
+    oldest = imported(provider, pid="PID-1")
+    imported(provider, pid="PID-2")
+    imported(provider, pid="PID-3")
+    conn = db.connect()
+    try:
+        conn.execute("UPDATE marketplace_listings SET status='published' WHERE id=?",
+                     (oldest,))
+        conn.commit()
+    finally:
+        conn.close()
+
+    # The one match is the OLDEST row, so it is not in a newest-first page of 1.
+    found = drafts.list_drafts(BUSINESS, STORE, OWNER_ID, CONNECTION,
+                               context=CONTEXT, status="published", limit=1)
+    assert [d["id"] for d in found["items"]] == [oldest]
+    assert found["count"] == 1
+
+    # And the filter still excludes what does not match.
+    assert drafts.list_drafts(BUSINESS, STORE, OWNER_ID, CONNECTION,
+                              context=CONTEXT, status="archived")["count"] == 0
+
+
 def test_another_merchant_cannot_read_the_draft(provider):
     listing_id = imported(provider)
     with pytest.raises(Exception) as exc:
