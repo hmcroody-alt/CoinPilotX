@@ -184,8 +184,8 @@ def test_recompute_idempotent_replace():
     conn = db.connect()
     try:
         rows = conn.execute(
-            "SELECT metric_key, window, COUNT(*) c FROM business_os_perf_summaries "
-            "WHERE org_id = ? GROUP BY metric_key, window", ("oR",)).fetchall()
+            "SELECT metric_key, window_key, COUNT(*) c FROM business_os_perf_summaries "
+            "WHERE org_id = ? GROUP BY metric_key, window_key", ("oR",)).fetchall()
         for r in rows:
             assert dict(r)["c"] == 1, dict(r)
     finally:

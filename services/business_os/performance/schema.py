@@ -10,20 +10,25 @@ Design invariants (informational-only summary projection — nothing renders/act
 
 * **Two append-only inputs are the truth.** ``business_os_perf_samples`` is the append-only
   measurement log (a numeric ``value`` for a ``metric_key`` at ``captured_at``, optionally
-  bucketed by a ``window`` label). ``business_os_perf_targets`` is the append-only target
-  catalog (a warn / breach threshold for a metric, with a ``direction`` and which summary
-  statistic to compare). Neither is updated in place — corrections are new rows, and the
-  newest active target for a ``metric_key`` is the governing one.
+  bucketed by a ``window_key`` label). ``business_os_perf_targets`` is the append-only
+  target catalog (a warn / breach threshold for a metric, with a ``direction`` and which
+  summary statistic to compare). Neither is updated in place — corrections are new rows,
+  and the newest active target for a ``metric_key`` is the governing one.
 * **The summary list is a projection.** ``business_os_perf_summaries`` holds the per-(org,
-  metric_key, window) rollup the engine computes: count/min/max/mean/p50/p95, the compared
-  target statistic, the status label, and a deterministic rank. It is always rebuildable by
-  replaying the two inputs, so it is never the authority.
+  metric_key, window_key) rollup the engine computes: count/min/max/mean/p50/p95, the
+  compared target statistic, the status label, and a deterministic rank. It is always
+  rebuildable by replaying the two inputs, so it is never the authority.
 * **Idempotent by construction.** UNIQUE ``(source, external_ref)`` on both input logs makes
   a replayed feed event a no-op (NULL ``external_ref`` — manual entries — is exempt);
-  UNIQUE ``(org_id, metric_key, window)`` on the projection makes a summary row exactly-once
-  so a recompute after a crash is deterministic and safe. ``window`` defaults to ``''``
-  (ungrouped) rather than NULL so the projection key never collides with SQLite's
-  distinct-NULL semantics.
+  UNIQUE ``(org_id, metric_key, window_key)`` on the projection makes a summary row
+  exactly-once so a recompute after a crash is deterministic and safe. ``window_key``
+  defaults to ``''`` (ungrouped) rather than NULL so the projection key never collides
+  with SQLite's distinct-NULL semantics.
+
+The bucket column is ``window_key``, not ``window``: ``window`` is a reserved word in
+PostgreSQL, and an unquoted one made this whole ``ensure_schema`` fail on every prod
+boot while SQLite accepted it. The JSON key the API emits is still ``window`` — the
+engine maps the two. See ``tests/test_sql_reserved_identifiers.py``.
 
 Text UUID primary keys everywhere to avoid engine-specific ``lastrowid`` semantics.
 """
@@ -72,15 +77,15 @@ def ensure_schema(conn=None) -> None:
         conn = db.connect()
     try:
         # --- Append-only measurement log (truth) -------------------------------
-        # One row per (metric_key, window, value) sample. NEVER updated in place —
-        # corrections are new rows. window '' means ungrouped (whole-metric rollup).
+        # One row per (metric_key, window_key, value) sample. NEVER updated in place —
+        # corrections are new rows. window_key '' means ungrouped (whole-metric rollup).
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS business_os_perf_samples (
                 sample_id TEXT PRIMARY KEY,
                 org_id TEXT NOT NULL,
                 metric_key TEXT NOT NULL,
-                window TEXT NOT NULL DEFAULT '',
+                window_key TEXT NOT NULL DEFAULT '',
                 value REAL NOT NULL,
                 unit TEXT,
                 captured_at TEXT NOT NULL,
@@ -93,7 +98,7 @@ def ensure_schema(conn=None) -> None:
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_perf_sample_metric "
-            "ON business_os_perf_samples (org_id, metric_key, window)"
+            "ON business_os_perf_samples (org_id, metric_key, window_key)"
         )
         conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_perf_sample_source_ref "
@@ -133,16 +138,16 @@ def ensure_schema(conn=None) -> None:
         )
 
         # --- Computed summary projection (rebuildable; never authority) --------
-        # One row per (org, metric_key, window). Rollup stats plus the compared target
+        # One row per (org, metric_key, window_key). Rollup stats plus the compared target
         # statistic, the status label (breach/warn/ok/none) and a deterministic 1-based rank
-        # (breach first, then warn, ok, none; then metric_key asc, window asc).
+        # (breach first, then warn, ok, none; then metric_key asc, window_key asc).
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS business_os_perf_summaries (
                 row_id TEXT PRIMARY KEY,
                 org_id TEXT NOT NULL,
                 metric_key TEXT NOT NULL,
-                window TEXT NOT NULL DEFAULT '',
+                window_key TEXT NOT NULL DEFAULT '',
                 count INTEGER NOT NULL,
                 min_value REAL,
                 max_value REAL,
@@ -158,7 +163,7 @@ def ensure_schema(conn=None) -> None:
         )
         conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_perf_summary_key "
-            "ON business_os_perf_summaries (org_id, metric_key, window)"
+            "ON business_os_perf_summaries (org_id, metric_key, window_key)"
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_perf_summary_rank "
