@@ -47,25 +47,50 @@ export function marketplaceListingFulfillment(
   return "shipping";
 }
 
+/** The checkout's ceiling, mirrored from `MAX_PRICE_LABEL_CENTS` in `bot.py`. */
+const MAX_PRICE_LABEL_MINOR = 99_999_999;
+
+/** Labels a seller may choose that deliberately name no price. */
+const UNPRICED_LABELS = ["free", "request access", "paid later", "premium later"];
+
 /**
  * The listing price in minor units, or `null` when the label cannot be read as
  * a price ("Free", "Request access", anything unparseable).
  *
- * Deliberately mirrors `parse_price_label_to_cents` in `bot.py` — the same
- * regex, the same currency-prefix handling — because this number is used to
- * state what the buyer will be charged. Returning `null` rather than 0 keeps
- * "I couldn't read this" distinct from "it's free": the checkout screen shows
- * an amount on its Pay button only when this returns a number, so a label this
- * function cannot parse produces no dollar promise at all.
+ * Mirrors `parse_price_label_to_cents` in `bot.py`, because this number is used
+ * to state what the buyer will be charged and the server charges from the same
+ * label. The mirror is not maintained by intention: every case lives in
+ * `__tests__/fixtures/priceLabelParity.json`, which both this app's suite and
+ * the backend's read, so the two implementations cannot drift quietly.
+ *
+ * They had already drifted. This regex used to be `[0-9]+(\.[0-9]{1,2})?` while
+ * the server's was `[0-9][0-9,]*(\.[0-9]{1,2})?`, and the server *writes* labels
+ * with thousands separators (`marketplace_normalize_price_label` formats with
+ * `,`). So the digit run stopped at the comma: a $12,345.67 listing put "$12.00"
+ * on the Pay button, above a sentence promising that figure *is* the charge, and
+ * then charged $12,345.67. Every listing under $1,000 was correct, which is why
+ * every test of this function was too.
+ *
+ * Returning `null` rather than 0 keeps "I couldn't read this" distinct from
+ * "it's free": the checkout screen shows an amount on its Pay button only when
+ * this returns a number, so a label this function cannot parse produces no
+ * dollar promise at all.
  */
 export function marketplaceListingPriceMinor(listing: MarketplaceListing): number | null {
   const text = String(listing.price_label || "").trim();
   if (!text) return null;
-  if (["free", "request access", "paid later", "premium later"].includes(text.toLowerCase())) return null;
-  const match = /([A-Z]{3})?\s*\$?\s*([0-9]+(?:\.[0-9]{1,2})?)/.exec(text.toUpperCase());
+  if (UNPRICED_LABELS.includes(text.toLowerCase())) return null;
+  // A leading minus is refused outright rather than read as its magnitude. The
+  // server does the same; without it "-$5.00" promised $5.00 and then failed at
+  // checkout, because the server had already read it as nothing.
+  if (text.startsWith("-")) return null;
+  const match = /([A-Z]{3})?\s*\$?\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/.exec(text.toUpperCase());
   if (!match) return null;
-  const minor = Math.round(Number(match[2]) * 100);
-  return Number.isFinite(minor) && minor > 0 ? minor : null;
+  const minor = Math.round(Number(match[2].replace(/,/g, "")) * 100);
+  if (!Number.isFinite(minor) || minor <= 0) return null;
+  // The server clamps above its ceiling instead of refusing, so showing the
+  // unclamped figure would understate nothing but overstate the charge.
+  return Math.min(minor, MAX_PRICE_LABEL_MINOR);
 }
 
 export function marketplaceFulfillmentCopy(listing: MarketplaceListing) {

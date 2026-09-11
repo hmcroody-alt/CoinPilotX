@@ -1,0 +1,38 @@
+{
+  "_": [
+    "One table, two readers. The app parses a price label in TypeScript to put an",
+    "amount on the Pay button; the server parses the same label in Python to build",
+    "the Stripe charge. Two implementations of one rule is a drift machine, and it",
+    "had already drifted: the TypeScript regex did not consume thousands",
+    "separators, so '$12,345.67' became $12.00 on the button while the card was",
+    "charged $12,345.67.",
+    "",
+    "A comment claiming the two were 'the same regex' is what let that survive, so",
+    "the claim now lives here as data instead. mobile-native reads this file in",
+    "marketplaceCheckoutIntegrity.test.ts; the backend reads it in",
+    "tests/test_marketplace_price_label_parity.py. Drift on either side turns one",
+    "of the two suites red.",
+    "",
+    "'minor' is the amount in minor units. null means 'this label names no price':",
+    "the server returns 0 cents and the app returns null, and both then decline to",
+    "promise the buyer a figure."
+  ],
+  "cases": [
+    { "label": "$5.00", "minor": 500, "why": "the ordinary case" },
+    { "label": "USD 12.5", "minor": 1250, "why": "explicit currency prefix, one decimal place" },
+    { "label": "$465.74", "minor": 46574, "why": "the real CJ listing's retail price" },
+    { "label": "$999.99", "minor": 99999, "why": "the last price the server writes without a separator" },
+    { "label": "$1,000.00", "minor": 100000, "why": "the first price the server writes with one" },
+    { "label": "$2,500.00", "minor": 250000, "why": "a separator mid-label" },
+    { "label": "$12,345.67", "minor": 1234567, "why": "a separator with more digits ahead of it than behind" },
+    { "label": "USD 1,200.00", "minor": 120000, "why": "a separator behind a currency prefix" },
+    { "label": "$999,999.99", "minor": 99999999, "why": "exactly the checkout ceiling" },
+    { "label": "$5,000,000.00", "minor": 99999999, "why": "above the ceiling: the server clamps rather than refusing, so the app must show the clamped figure it will actually charge" },
+    { "label": "", "minor": null, "why": "never priced" },
+    { "label": "Free", "minor": null, "why": "a deliberate unpriced label, not a price of zero" },
+    { "label": "Request access", "minor": null, "why": "a deliberate unpriced label" },
+    { "label": "make an offer", "minor": null, "why": "prose with no digits" },
+    { "label": "-$5.00", "minor": null, "why": "a negative label is refused, not read as its absolute value" },
+    { "label": "$0.00", "minor": null, "why": "zero is not a chargeable amount" }
+  ]
+}
