@@ -1092,6 +1092,7 @@
       "listingFallbackText": "PulseSocの出品",
       "listingTitleFallback": "マーケットプレイスの出品",
       "categoryFallback": "教育",
+      "priceFallback": "価格はお支払い時に表示",
       "safetyScore": "安全性 {{score}}",
       "noMediaLoaded": "メディアは読み込まれていません",
       "noDescription": "説明は読み込まれていません。",
