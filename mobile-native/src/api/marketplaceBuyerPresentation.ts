@@ -6,19 +6,67 @@ export function isStocklessMarketplaceListing(listing: MarketplaceListing) {
   );
 }
 
-export function canPurchaseMarketplaceListing(listing: MarketplaceListing) {
-  if (listing.buyer_visible === false) return false;
-  if (String(listing.inventory_state || "").toLowerCase() === "out_of_stock") return false;
-  return isStocklessMarketplaceListing(listing) || Number(listing.quantity || 0) > 0;
+/**
+ * Why a buyer cannot buy this listing, or `""` when they can.
+ *
+ * A boolean was not enough. Every caller rendered `!purchasable` as "Sold out",
+ * so the one state that is not a stock problem got the one word that says it
+ * is: a listing the seller has not priced offered an enabled "Add to cart",
+ * and the server answered 400 `ITEM_UNAVAILABLE` — or, from Buy Now, let the
+ * buyer fill in a delivery address first and refused after. Naming the reason
+ * here is what lets the button decline the tap and say something true.
+ *
+ * The order matches `public_denial_code` in
+ * `services/marketplace_listing_lifecycle.py`: the states the buyer can do
+ * least about are reported first.
+ */
+export type MarketplacePurchaseBlock = "" | "UNAVAILABLE" | "OUT_OF_STOCK" | "NOT_PRICED";
+
+export function marketplacePurchaseBlock(listing: MarketplaceListing): MarketplacePurchaseBlock {
+  if (listing.buyer_visible === false) return "UNAVAILABLE";
+  if (String(listing.inventory_state || "").toLowerCase() === "out_of_stock") return "OUT_OF_STOCK";
+  if (!isStocklessMarketplaceListing(listing) && Number(listing.quantity || 0) <= 0) return "OUT_OF_STOCK";
+  // Last, because it is the only one of these the seller can fix in a second,
+  // and because a sold-out unpriced listing is more usefully described as sold
+  // out. The checkout cannot charge an unreadable label either way.
+  if (marketplaceListingPriceMinor(listing) == null) return "NOT_PRICED";
+  return "";
 }
 
+export function canPurchaseMarketplaceListing(listing: MarketplaceListing) {
+  return marketplacePurchaseBlock(listing) === "";
+}
+
+/** The pill under a card: what is true about the listing, owner or not. */
 export function marketplaceAvailabilityCopy(listing: MarketplaceListing) {
-  if (!canPurchaseMarketplaceListing(listing)) return "Sold out";
+  const block = marketplacePurchaseBlock(listing);
+  if (block === "UNAVAILABLE") return "Unavailable";
+  if (block === "OUT_OF_STOCK") return "Sold out";
+  // Said plainly rather than as "Unavailable". The card already shows no price
+  // line, so the buyer can see something is missing; the useful difference
+  // between this and "Sold out" is that one is worth coming back for.
+  if (block === "NOT_PRICED") return "Not priced yet";
   if (isStocklessMarketplaceListing(listing)) return "Available";
   const quantity = Number(listing.quantity || 0);
   if (quantity === 1) return "Only 1 left";
   if (quantity > 10) return "In stock 10+";
   return `${quantity} available`;
+}
+
+/**
+ * The label on the buy button, which is a different question from the pill.
+ *
+ * "Sold out" was hard-coded at four call sites as the label for every disabled
+ * state, including a seller opening their own in-stock product page — the pill
+ * beside it read "In stock 10+" on the same screen.
+ */
+export function marketplacePurchaseCtaCopy(
+  listing: MarketplaceListing,
+  options: { isOwnListing?: boolean; action?: string } = {}
+) {
+  if (options.isOwnListing) return "Your listing";
+  const block = marketplacePurchaseBlock(listing);
+  return block === "" ? options.action || "Add to cart" : marketplaceAvailabilityCopy(listing);
 }
 
 /**

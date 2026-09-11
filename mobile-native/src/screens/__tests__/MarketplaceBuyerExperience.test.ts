@@ -2,7 +2,9 @@ import {
   marketplaceAvailabilityCopy as availabilityCopy,
   canPurchaseMarketplaceListing as canPurchaseListing,
   marketplaceFulfillmentCopy as fulfillmentCopy,
-  marketplaceListingFulfillment as fulfillmentLane
+  marketplaceListingFulfillment as fulfillmentLane,
+  marketplacePurchaseBlock as purchaseBlock,
+  marketplacePurchaseCtaCopy as ctaCopy
 } from "../../api/marketplaceBuyerPresentation";
 import type { MarketplaceListing } from "../../api/marketplace";
 
@@ -78,5 +80,66 @@ describe("Marketplace buyer purchase presentation", () => {
     // `safety_score` is a reviewer signal. It is absent from the client model
     // so no buyer surface can render it, even by accident.
     expect("safety_score" in listing()).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// An unpriced listing is browsable on purpose — the server serves `price_label`
+// as "" rather than inventing a phrase, and every card renders no price line.
+// What it was not is buyable, and nothing on the way to the card knew that: the
+// tile offered an enabled "Add to cart" over a full shelf, and the server
+// answered 400 ITEM_UNAVAILABLE. From Buy Now it was worse, because the refusal
+// came after the buyer had filled in a delivery address.
+//
+// These tests are about the gap between the two, so each one names both the
+// state and the sentence the buyer reads in it.
+// ---------------------------------------------------------------------------
+
+describe("a listing the seller has not priced", () => {
+  const unpriced = listing({ price_label: "", quantity: 4 });
+
+  it("is not offered for purchase", () => {
+    expect(canPurchaseListing(unpriced)).toBe(false);
+    expect(purchaseBlock(unpriced)).toBe("NOT_PRICED");
+  });
+
+  it("is not described as sold out, because the shelf is full", () => {
+    expect(availabilityCopy(unpriced)).toBe("Not priced yet");
+    expect(ctaCopy(unpriced)).toBe("Not priced yet");
+  });
+
+  it("covers the labels the seller may deliberately choose as well as a blank", () => {
+    // "Free" and "Request access" are labels a seller can pick; the checkout
+    // reads all three as no price, so all three have to block the same tap.
+    for (const label of ["", "Free", "Request access", "make an offer", "$0.00"]) {
+      expect(purchaseBlock(listing({ price_label: label }))).toBe("NOT_PRICED");
+    }
+  });
+
+  it("still reports an empty shelf as an empty shelf", () => {
+    // Order matters: unpriced *and* sold out reads as sold out, which is the
+    // more specific fact and the one a restock changes.
+    const both = listing({ price_label: "", quantity: 0, inventory_state: "out_of_stock" });
+    expect(purchaseBlock(both)).toBe("OUT_OF_STOCK");
+    expect(availabilityCopy(both)).toBe("Sold out");
+  });
+
+  it("does not disturb a priced listing", () => {
+    expect(purchaseBlock(listing())).toBe("");
+    expect(ctaCopy(listing())).toBe("Add to cart");
+  });
+});
+
+describe("the buy button says what is true about the buyer, not only the shelf", () => {
+  it("tells a seller opening their own product page whose listing it is", () => {
+    // The pill beside this button reads "Only 1 left". The button read "Sold
+    // out" — the same screen, disagreeing with itself about the same shelf.
+    expect(ctaCopy(listing(), { isOwnListing: true })).toBe("Your listing");
+    expect(availabilityCopy(listing())).toBe("Only 1 left");
+  });
+
+  it("separates a withdrawn listing from an empty one", () => {
+    expect(availabilityCopy(listing({ buyer_visible: false }))).toBe("Unavailable");
+    expect(availabilityCopy(listing({ quantity: 0, inventory_state: "out_of_stock" }))).toBe("Sold out");
   });
 });

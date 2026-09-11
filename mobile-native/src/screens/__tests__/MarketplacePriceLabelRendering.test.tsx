@@ -114,6 +114,26 @@ const UNPRICED = {
 
 const PRICED = { ...UNPRICED, id: 502, title: "Oak dining table", price_label: "$220.00" };
 
+/**
+ * The same missing price, on a full shelf.
+ *
+ * `UNPRICED` above carries no `quantity`, so it reads as sold out and the buy
+ * button is disabled for a reason that has nothing to do with the price. That
+ * is why the gap below survived this file: every unpriced fixture it had was
+ * also out of stock.
+ */
+const UNPRICED_IN_STOCK = {
+  ...UNPRICED,
+  id: 503,
+  title: "Imported walnut stool",
+  quantity: 4,
+  inventory_state: "available",
+  buyer_visible: true
+};
+
+/** The control: priced, in stock, and therefore genuinely on sale. */
+const PRICED_IN_STOCK = { ...UNPRICED_IN_STOCK, id: 504, title: "Linen armchair", price_label: "$1,240.00" };
+
 const navigation = { navigate: jest.fn(), goBack: jest.fn(), setOptions: jest.fn(), addListener: jest.fn(() => () => undefined) };
 
 function renderProduct(listing: Record<string, unknown>) {
@@ -187,5 +207,65 @@ describe("the two surfaces agree about one product", () => {
     const product = renderProduct(UNPRICED);
     expectInventsNoPrice(grid.queryByText, "marketplace grid card");
     expectInventsNoPrice(product.queryByText, "marketplace product page");
+  });
+});
+
+/**
+ * Not printing a price was only half the job. The other half is not offering to
+ * take money for it.
+ *
+ * Both screens derived every disabled state from one boolean and rendered it as
+ * "Sold out", so an unpriced listing on a full shelf showed an enabled "Add to
+ * cart" — and the server answered 400 `ITEM_UNAVAILABLE`. Buy Now was worse: it
+ * pushed the checkout screen, which promised "Shown at checkout", collected a
+ * delivery address, and only then hit the same refusal.
+ *
+ * Asserted on the rendered screens rather than on the helper, because the helper
+ * was already capable of saying so — nothing on the way to the button asked it.
+ */
+describe("an unpriced listing on a full shelf", () => {
+  /** Phrases that would mean the screen mistook "unpriced" for "sold out". */
+  const SOLD_OUT_PHRASES = ["SOLD OUT", "Sold out"];
+
+  function soldOutPhrasesOn(queryByText: (text: string) => unknown, where: string) {
+    return { where, saidSoldOut: SOLD_OUT_PHRASES.filter((p) => queryByText(p) !== null) };
+  }
+
+  it("does not offer the grid card's Add to cart", async () => {
+    const { getAllByText, getByText, queryByText } = await renderGrid(UNPRICED_IN_STOCK);
+    expect(getByText("Imported walnut stool")).toBeTruthy();
+    // Twice, deliberately: the availability pill and the button itself. The
+    // button used to read "Add to cart" beside a pill reading "4 available".
+    expect(getAllByText("Not priced yet")).toHaveLength(2);
+    // The shelf is full, so neither the scrim nor the button may say otherwise.
+    expect(soldOutPhrasesOn(queryByText, "grid card")).toEqual({ where: "grid card", saidSoldOut: [] });
+  });
+
+  it("does not offer the product page's Add to cart or Buy now", () => {
+    const { getAllByText, getByText, queryByText } = renderProduct(UNPRICED_IN_STOCK);
+    expect(getByText("Imported walnut stool")).toBeTruthy();
+    // Three sites on this screen — the pill, the "Availability" fact row, and
+    // the buy button — and the point is that they agree. Leaving the fact row
+    // on "4 available" beside a button that will not sell it is the same
+    // contradiction in a smaller font.
+    expect(getAllByText("Not priced yet")).toHaveLength(3);
+    expect(soldOutPhrasesOn(queryByText, "product page")).toEqual({ where: "product page", saidSoldOut: [] });
+  });
+
+  it("still offers to sell a listing that does have a price", async () => {
+    // Without this the whole block could be satisfied by a screen that never
+    // offers anything to anyone.
+    const grid = await renderGrid(PRICED_IN_STOCK);
+    expect(grid.getByText("Add to cart")).toBeTruthy();
+    const product = renderProduct(PRICED_IN_STOCK);
+    expect(product.getByText("Add to cart")).toBeTruthy();
+  });
+
+  it("still says sold out when the shelf is actually empty", async () => {
+    // "Not priced yet" must not become the new blanket answer either: UNPRICED
+    // carries no quantity, and out of stock is the more specific fact.
+    const grid = await renderGrid(UNPRICED);
+    expect(grid.getAllByText("Sold out").length).toBeGreaterThan(0);
+    expect(grid.queryByText("Not priced yet")).toBeNull();
   });
 });

@@ -49,6 +49,8 @@ import {
   canPurchaseMarketplaceListing as canPurchaseListing,
   isStocklessMarketplaceListing as isStockless,
   marketplaceAvailabilityCopy as availabilityCopy,
+  marketplacePurchaseBlock as purchaseBlock,
+  marketplacePurchaseCtaCopy as purchaseCtaCopy,
   marketplaceFulfillmentCopy as fulfillmentCopy,
   marketplaceListingFulfillment as listingFulfillment,
   marketplaceListingPriceMinor
@@ -145,6 +147,12 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
   // one selling it". Keeping them separate means an owner previewing their own
   // page still sees honest stock copy instead of a false "Sold out".
   const canBuy = purchasable && !isOwnListing;
+  // SOLD OUT belongs to an empty shelf and nothing else. A listing the seller
+  // has not priced is equally unbuyable and equally in stock.
+  const soldOut = purchaseBlock(listing) === "OUT_OF_STOCK";
+  // One label for the buy button, so a seller previewing their own in-stock
+  // product stops reading "Sold out" beside a pill that says "In stock 10+".
+  const ctaCopy = purchaseCtaCopy(listing, { isOwnListing });
   const stockCeiling = isStockless(listing) ? MAX_QTY : Math.min(MAX_QTY, Math.max(1, Number(listing.quantity || 1)));
   const canNavigateStore = Boolean(listing.seller_public_player_id || listing.seller_username);
 
@@ -334,7 +342,7 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
               <Text style={styles.galleryCountText}>{mediaIndex + 1}/{media.length}</Text>
             </View>
           ) : null}
-          {!purchasable ? (
+          {soldOut ? (
             <View style={styles.soldScrim}>
               <Text style={styles.soldScrimText}>SOLD OUT</Text>
             </View>
@@ -480,7 +488,7 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
         <View style={styles.purchaseBar}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={canBuy ? `Add ${qty} to cart` : "Sold out"}
+            accessibilityLabel={canBuy ? `Add ${qty} to cart` : ctaCopy}
             accessibilityState={{ disabled: busy || !canBuy, busy: pending === "cart" }}
             disabled={busy || !canBuy}
             style={[styles.addToCart, (busy || !canBuy) && styles.disabled]}
@@ -491,7 +499,7 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
                 wait…" made every control look stuck whenever any one of them
                 was working, which reads as a hang rather than as feedback. */}
             <Text style={styles.addToCartText}>
-              {pending === "cart" ? "Adding…" : canBuy ? "Add to cart" : "Sold out"}
+              {pending === "cart" ? "Adding…" : ctaCopy}
             </Text>
           </Pressable>
           <Pressable

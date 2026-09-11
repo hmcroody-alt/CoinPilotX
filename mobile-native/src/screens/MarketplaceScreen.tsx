@@ -43,7 +43,9 @@ import {
 import { addToCart, fetchCart } from "../api/marketplaceCommerce";
 import {
   canPurchaseMarketplaceListing as canPurchaseListing,
-  marketplaceAvailabilityCopy as availabilityCopy
+  marketplaceAvailabilityCopy as availabilityCopy,
+  marketplacePurchaseBlock as purchaseBlock,
+  marketplacePurchaseCtaCopy as purchaseCtaCopy
 } from "../api/marketplaceBuyerPresentation";
 import { mediaDisplayUrl } from "../api/feed";
 import { sellerStoreName } from "../api/sellerIdentity";
@@ -351,6 +353,11 @@ function ProductCard({ listing, busy, onOpen, onSave, onAddToCart }: {
   // product page or the Saved screen shows as saved here without a refetch.
   const savedState = useSavedState("marketplace", listing.id, listing.saved);
   const purchasable = canPurchaseListing(listing);
+  // The scrim is specifically about stock. An unpriced listing is also not
+  // purchasable, and stamping SOLD OUT across it would describe a shelf that is
+  // in fact full.
+  const soldOut = purchaseBlock(listing) === "OUT_OF_STOCK";
+  const ctaCopy = purchaseCtaCopy(listing);
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={listing.title || "Marketplace product"} style={styles.card} onPress={() => onOpen(listing)}>
       <View style={styles.cardMedia}>
@@ -362,7 +369,7 @@ function ProductCard({ listing, busy, onOpen, onSave, onAddToCart }: {
           </View>
         )}
         {isBoosted(listing) ? <Text style={styles.sponsoredBadge}>Sponsored</Text> : null}
-        {!purchasable ? (
+        {soldOut ? (
           <View style={styles.soldScrim}>
             <Text style={styles.soldScrimText}>SOLD OUT</Text>
           </View>
@@ -394,13 +401,13 @@ function ProductCard({ listing, busy, onOpen, onSave, onAddToCart }: {
         <Text style={styles.cardSeller} numberOfLines={1}>{sellerStoreName(listing)}</Text>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={purchasable ? `Add ${listing.title || "product"} to cart` : "Sold out"}
+          accessibilityLabel={purchasable ? `Add ${listing.title || "product"} to cart` : ctaCopy}
           accessibilityState={{ disabled: busy || !purchasable }}
           disabled={busy || !purchasable}
           style={[styles.cardCta, (busy || !purchasable) && styles.disabled]}
           onPress={() => onAddToCart(listing)}
         >
-          <Text style={styles.cardCtaText}>{purchasable ? "Add to cart" : "Sold out"}</Text>
+          <Text style={styles.cardCtaText}>{ctaCopy}</Text>
         </Pressable>
       </View>
     </Pressable>
