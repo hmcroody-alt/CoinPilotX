@@ -95,7 +95,19 @@ test -d "$APP" || { echo "MISSING APP BUNDLE at $APP"; exit 1; }
 if [ "$TARGET_BASE" != "https://pulsesoc.com" ]; then
   TARGET_HOST="${TARGET_BASE#https://}"
   echo "=== [sim] verifying '$TARGET_HOST' is inlined in the Hermes bundle ==="
-  if ! strings -a "$APP/main.jsbundle" | grep -q "$TARGET_HOST"; then
+  # `grep -q` must NOT be used here, and the reason is worth the paragraph.
+  # grep -q exits the instant it matches; `strings` is then killed by SIGPIPE
+  # (141); `set -o pipefail` promotes that to a failed pipeline; and `if !`
+  # inverts it into "not found". So a correct bundle is reported as having
+  # fallen back to production. It is a race against whether strings has finished
+  # writing, which makes it rare, cache-dependent, and non-reproducible on retry
+  # -- the device copy of this guard failed once on a cold cache and then matched
+  # six times in a row against the identical file. That is the worst possible
+  # shape for a safety check: it cries wolf about production, and the natural
+  # next move is to delete it. grep -c reads its input to the end, so nothing is
+  # ever SIGPIPEd.
+  MATCHES="$(strings -a "$APP/main.jsbundle" | grep -c "$TARGET_HOST" || true)"
+  if [ "${MATCHES:-0}" -eq 0 ]; then
     echo "BUNDLE DOES NOT CONTAIN '$TARGET_HOST' -- it fell back to production."
     echo "-- The app would look correct and talk to the live site."
     exit 1
