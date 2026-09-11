@@ -252,6 +252,68 @@ describe("LoginScreen", () => {
     expect(shown).not.toMatch(/separate accounts/i);
   });
 
+  it("reads the credential refusal from `invalid_credentials`, not the server's sentence", async () => {
+    // The named form of the bare 401 above. Pinned to the catalog sentence
+    // rather than the server's: both would satisfy a /incorrect|match/ matcher,
+    // so a loose one still passes when the code lookup is gone and the English
+    // message is being echoed through the unknown-code branch.
+    const shown = await submitAndReadError(
+      new PulseApiError("Email or password is incorrect.", 401, "invalid_credentials")
+    );
+    expect(shown).toBe("That email/username or password doesn't match our records.");
+  });
+
+  it("says the same thing whether or not the server named the credential refusal", async () => {
+    // A server predating `invalid_credentials` sends a bare 401 for the very
+    // same state. Two spellings of one refusal must not read as two outcomes.
+    const named = await submitAndReadError(
+      new PulseApiError("Email or password is incorrect.", 401, "invalid_credentials")
+    );
+    const bare = await submitAndReadError(new PulseApiError("Email or password is incorrect.", 401));
+    expect(named).toBe(bare);
+  });
+
+  it("keeps `invalid_credentials` silent about whether the account exists", async () => {
+    // The code is deliberately one value for unknown-identifier and for
+    // wrong-password. If the screen ever grows separate copy for those, it has
+    // undone the server's anti-enumeration policy from the client side.
+    const shown = await submitAndReadError(
+      new PulseApiError("Email or password is incorrect.", 401, "invalid_credentials")
+    );
+    expect(shown).not.toMatch(/no account|not found|unknown account|doesn't exist|not registered/i);
+  });
+
+  it("renders every known rejection as its own copy, never as the generic fallback", async () => {
+    // Mutual exclusion, asserted as a set rather than one case at a time. The
+    // regression this guards is one state collapsing onto another's sentence or
+    // onto "Unable to sign in.", which no single-case assertion above can catch.
+    //
+    // Literals are pinned rather than imported from the catalog on purpose:
+    // sharing the constant would let a rename move the UI and the expectation
+    // together, keeping the suite green while the screen regressed.
+    const cases: Array<[string, number, string]> = [
+      ["invalid_credentials", 401, "Email or password is incorrect."],
+      ["login_challenge_required", 403, "Complete the security challenge to continue."],
+      ["login_rate_limited", 429, "Too many failed login attempts."],
+      ["email_not_confirmed", 403, "Please confirm your email before logging in."],
+      ["account_restricted", 403, "This account is not active."]
+    ];
+    const shown: string[] = [];
+    for (const [code, status, message] of cases) {
+      shown.push(await submitAndReadError(new PulseApiError(message, status, code)));
+    }
+
+    expect(shown).toEqual([
+      "That email/username or password doesn't match our records.",
+      "For your security, confirm the challenge to continue signing in.",
+      "Too many attempts. Please wait a moment and try again.",
+      "Confirm your email address before signing in.",
+      "This account can't sign in right now. Contact support@pulsesoc.com."
+    ]);
+    expect(new Set(shown).size).toBe(shown.length);
+    expect(shown).not.toContain("Unable to sign in.");
+  });
+
   it("prevents a duplicate submission while one is already in flight", async () => {
     let resolveSignIn: (value: unknown) => void = () => undefined;
     mockedSignIn.mockReturnValue(

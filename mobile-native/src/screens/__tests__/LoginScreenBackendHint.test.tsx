@@ -131,6 +131,26 @@ describe("sign-in failure on a non-production build", () => {
     expect(shown).not.toMatch(/no account|not found|unknown account|doesn't exist|not registered/i);
   });
 
+  it("still names the environment once the server names the refusal", async () => {
+    // The regression that giving this state a code would otherwise cause, and
+    // the reason `invalid_credentials` had to be added to the rejection map in
+    // the same change rather than a later one.
+    //
+    // An unrecognised code falls to the branch that echoes the server's own
+    // sentence -- correct for a state this build predates, wrong here. The hint
+    // would have disappeared from the exact case it was written for: a QA build
+    // refusing production credentials, which is when the server sends this code.
+    const shown = await submitAndReadError(
+      new PulseApiError("Email or password is incorrect.", 401, "invalid_credentials")
+    );
+    expect(shown).toMatch(/doesn't match our records/i);
+    expect(shown).toContain("STAGING");
+    expect(shown).toContain("pulsesoc-staging-backend.up.railway.app");
+    expect(shown).toMatch(/separate accounts/i);
+    // Not the server's wording echoed through the unknown-code path.
+    expect(shown).not.toMatch(/Email or password is incorrect/);
+  });
+
   it("does not append the hint to states that already explain themselves", async () => {
     // A challenge, an unconfirmed email or a restriction all prove the account
     // is on this backend. Naming the environment there is noise, and worse,

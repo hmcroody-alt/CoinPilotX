@@ -6788,6 +6788,31 @@ def api_mobile_auth_refresh():
     return set_persistent_session_cookie(response, token_payload.get("refresh_token") or "")
 
 
+# The native app reads `error_code` first and falls back to `error`, so both are
+# sent: `error` keeps every existing consumer working, `error_code` is the stable
+# name new readers key on.
+#
+# `MOBILE_LOGIN_INVALID_CREDENTIALS` covers unknown-identifier *and* wrong-password
+# on purpose. /login answers those two with one identical sentence so the endpoint
+# cannot be used to enumerate accounts, and a code is machine-readable -- splitting
+# it here would hand out exactly the distinction the HTML surface refuses to, to a
+# caller who has proven nothing. The states below it are safe to name: each one
+# requires a correct password or is already visible to the account's owner.
+MOBILE_LOGIN_INVALID_CREDENTIALS = "invalid_credentials"
+
+
+def mobile_login_gate_error(gate):
+    """Wire form of a login security-gate refusal (challenge or rate limit)."""
+    code = "login_challenge_required" if gate.get("challenge") else "login_rate_limited"
+    return api_error(
+        gate.get("message") or "Security challenge required.",
+        int(gate.get("status") or 403),
+        error=code,
+        error_code=code,
+        challenge=gate.get("challenge") or {},
+    )
+
+
 @webhook_app.route("/api/mobile/auth/login", methods=["POST"])
 @webhook_app.route("/api/pulse/mobile/auth/login", methods=["POST"])
 def api_mobile_auth_login():
@@ -6799,39 +6824,27 @@ def api_mobile_auth_login():
     preferred_language = normalize_preferred_language(payload.get("preferred_language") or payload.get("language") or "", default="")
     security_gate = login_security_preflight(email, enforce_challenge=False)
     if not security_gate.get("allowed"):
-        payload = {
-            "error": "login_challenge_required" if security_gate.get("challenge") else "login_rate_limited",
-            "challenge": security_gate.get("challenge") or {},
-        }
-        return api_error(security_gate.get("message") or "Security challenge required.", int(security_gate.get("status") or 403), **payload)
+        return mobile_login_gate_error(security_gate)
     user = load_account_by_email_or_username(email)
     if not user:
         challenge_gate = login_security_preflight(email, enforce_challenge=True)
         if not challenge_gate.get("allowed"):
-            payload = {
-                "error": "login_challenge_required" if challenge_gate.get("challenge") else "login_rate_limited",
-                "challenge": challenge_gate.get("challenge") or {},
-            }
-            return api_error(challenge_gate.get("message") or "Security challenge required.", int(challenge_gate.get("status") or 403), **payload)
+            return mobile_login_gate_error(challenge_gate)
         register_failed_login(email, 0, "mobile_unknown_account")
-        return api_error("Email or password is incorrect.", 401)
+        return api_error("Email or password is incorrect.", 401, error=MOBILE_LOGIN_INVALID_CREDENTIALS, error_code=MOBILE_LOGIN_INVALID_CREDENTIALS)
     restriction_message = account_login_restriction_message(user)
     if restriction_message:
         log_auth_event("mobile_login_restricted", email, user["user_id"], status="blocked", details={"account_status": user.get("account_status") or "", "login_enabled": safe_int(user.get("login_enabled"), 1), "access_enabled": safe_int(user.get("access_enabled"), 1), "db_engine": db_service.ENGINE_NAME})
-        return api_error(restriction_message, 403, error="account_restricted")
+        return api_error(restriction_message, 403, error="account_restricted", error_code="account_restricted")
     if user.get("email") and not int(user.get("email_verified") or 0):
         log_auth_event("mobile_login_unconfirmed", email, user["user_id"], status="blocked", details={"db_engine": db_service.ENGINE_NAME})
-        return api_error("Please confirm your email before logging in.", 403, error="email_not_confirmed")
+        return api_error("Please confirm your email before logging in.", 403, error="email_not_confirmed", error_code="email_not_confirmed")
     if not user.get("password_hash") or not check_password_hash(user["password_hash"], password):
         challenge_gate = login_security_preflight(email, enforce_challenge=True)
         if not challenge_gate.get("allowed"):
-            payload = {
-                "error": "login_challenge_required" if challenge_gate.get("challenge") else "login_rate_limited",
-                "challenge": challenge_gate.get("challenge") or {},
-            }
-            return api_error(challenge_gate.get("message") or "Security challenge required.", int(challenge_gate.get("status") or 403), **payload)
+            return mobile_login_gate_error(challenge_gate)
         register_failed_login(email, user.get("user_id") if user else 0, "mobile_invalid_password")
-        return api_error("Email or password is incorrect.", 401)
+        return api_error("Email or password is incorrect.", 401, error=MOBILE_LOGIN_INVALID_CREDENTIALS, error_code=MOBILE_LOGIN_INVALID_CREDENTIALS)
     session.permanent = True
     session["account_user_id"] = user["user_id"]
     session["pulse_welcome_reason"] = "welcome_back" if user.get("last_login_at") else "first_login"
