@@ -4376,6 +4376,22 @@ def save_teacher_private_document(user_id, file_storage, document_type):
 PRICE_LABEL_UNPRICED = {"free", "request access", "paid later", "premium later"}
 MAX_PRICE_LABEL_CENTS = 99_999_999
 
+# What the web shows a buyer when a listing carries no price.
+#
+# This is presentation, not data, and the difference is the whole point. The
+# serializer deliberately hands out "" for an unpriced listing, because a phrase
+# invented there is stored-looking -- indistinguishable downstream from one the
+# seller typed. A card still has to put something in the pill, so the fallback
+# lives here, at the last possible moment, where it cannot be mistaken for the
+# seller's own words or read back in.
+#
+# The wording matters as much as the placement. The web said "Request access",
+# which describes a gated product the buyer must apply for -- a flow that does
+# not exist. The listing is simply not priced yet. Native already says "Price at
+# checkout" on the same card, so web saying anything else was a split-brain the
+# buyer could see by opening the same product twice.
+MARKETPLACE_PRICE_FALLBACK = "Price at checkout"
+
 
 def parse_price_label_to_cents(value, default_currency="USD"):
     text = (value or "").strip()
@@ -53691,7 +53707,7 @@ def pulse_marketplace_page():
         promote = ""
         if seller_id == int(user.get("user_id") or 0):
             promote = f"<button data-promote-content='marketplace_listing' data-content-id='{listing_id}' data-content-label='{clean_html(row.get('title') or 'Marketplace listing')}'>Promote Listing</button>"
-        return f"<article class='card'><h2><a href='/pulse/marketplace/{listing_id}'>{clean_html(row.get('title'))}</a></h2><p>{clean_html(row.get('description'))}</p><p><span class='pill'>{clean_html(row.get('category') or 'Education')}</span> <span class='pill'>{clean_html(row.get('price_label') or 'Request access')}</span> <span class='pill'>Safety {int(row.get('safety_score') or 0)}</span></p><p>Seller: {clean_html(marketplace_seller_identity.display_store_name(row))}</p><p>Safety notice: educational products only. Payments and payout release are staged for compliance.</p><div class='actions'><button data-contact-seller='{seller_id}'>Contact Seller</button><button data-save-listing='{listing_id}'>Save</button><button data-report-listing='{listing_id}'>Report</button>{promote}</div></article>"
+        return f"<article class='card'><h2><a href='/pulse/marketplace/{listing_id}'>{clean_html(row.get('title'))}</a></h2><p>{clean_html(row.get('description'))}</p><p><span class='pill'>{clean_html(row.get('category') or 'Education')}</span> <span class='pill'>{clean_html(row.get('price_label') or MARKETPLACE_PRICE_FALLBACK)}</span> <span class='pill'>Safety {int(row.get('safety_score') or 0)}</span></p><p>Seller: {clean_html(marketplace_seller_identity.display_store_name(row))}</p><p>Safety notice: educational products only. Payments and payout release are staged for compliance.</p><div class='actions'><button data-contact-seller='{seller_id}'>Contact Seller</button><button data-save-listing='{listing_id}'>Save</button><button data-report-listing='{listing_id}'>Report</button>{promote}</div></article>"
 
     listing_html = "".join(marketplace_card(row) for row in listings)
     seller_form = "<section class='card'><h2>Merchant Access</h2><p class='muted'>Apply, verify, and wait for approval before listing products.</p><div class='actions'><a class='button primary' href='/pulse/merchant/apply'>Apply as Merchant</a><a class='button' href='/pulse/merchant/dashboard'>Merchant Dashboard</a></div></section>"
@@ -53705,7 +53721,7 @@ def pulse_marketplace_page():
     const marketplaceSearch=document.querySelector('[data-marketplace-search]');
     const marketplaceCurrentUserId=%d;
     const marketplaceEsc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-    function marketplaceListingHtml(row){const listingId=Number(row.id||0),owned=Number(row.seller_user_id||0)===marketplaceCurrentUserId;const promote=owned?`<button data-promote-content="marketplace_listing" data-content-id="${listingId}" data-content-label="${marketplaceEsc(row.title||'Marketplace listing')}">Promote Listing</button>`:'';return `<article class="card"><h2><a href="/pulse/marketplace/${listingId}">${marketplaceEsc(row.title||'Marketplace listing')}</a></h2><p>${marketplaceEsc(row.description||row.short_description||'')}</p><p><span class="pill">${marketplaceEsc(row.category||'Education')}</span> <span class="pill">${marketplaceEsc(row.price_label||'Request access')}</span> <span class="pill">Safety ${Number(row.safety_score||0)}</span></p><p>Seller: ${marketplaceEsc(row.seller_store_name||row.seller_name||'PulseSoc Store')}</p><p>Safety notice: educational products only. Payments and payout release are staged for compliance.</p><div class="actions"><button data-contact-seller="${Number(row.seller_user_id||0)}">Contact Seller</button><button data-save-listing="${listingId}">Save</button><button data-report-listing="${listingId}">Report</button>${promote}</div></article>`}
+    function marketplaceListingHtml(row){const listingId=Number(row.id||0),owned=Number(row.seller_user_id||0)===marketplaceCurrentUserId;const promote=owned?`<button data-promote-content="marketplace_listing" data-content-id="${listingId}" data-content-label="${marketplaceEsc(row.title||'Marketplace listing')}">Promote Listing</button>`:'';return `<article class="card"><h2><a href="/pulse/marketplace/${listingId}">${marketplaceEsc(row.title||'Marketplace listing')}</a></h2><p>${marketplaceEsc(row.description||row.short_description||'')}</p><p><span class="pill">${marketplaceEsc(row.category||'Education')}</span> <span class="pill">${marketplaceEsc(row.price_label||'%s')}</span> <span class="pill">Safety ${Number(row.safety_score||0)}</span></p><p>Seller: ${marketplaceEsc(row.seller_store_name||row.seller_name||'PulseSoc Store')}</p><p>Safety notice: educational products only. Payments and payout release are staged for compliance.</p><div class="actions"><button data-contact-seller="${Number(row.seller_user_id||0)}">Contact Seller</button><button data-save-listing="${listingId}">Save</button><button data-report-listing="${listingId}">Report</button>${promote}</div></article>`}
     let marketplaceSearchTimer=0;
     async function runMarketplaceSearch(query=''){if(!marketplaceResults)return;marketplaceResults.innerHTML='<article class="card"><p class="muted">Searching marketplace...</p></article>';try{const d=await pulseApi('/api/pulse/marketplace/search?q='+encodeURIComponent(query||''));marketplaceResults.innerHTML=(d.items||[]).map(marketplaceListingHtml).join('')||'<article class="card"><h2>No marketplace matches.</h2><p class="muted">Try another item, category, or seller.</p></article>'}catch(err){marketplaceResults.innerHTML=`<article class="card"><p class="muted">${marketplaceEsc(err.message||'Marketplace search failed.')}</p></article>`}}
     marketplaceSearch?.addEventListener('submit',e=>{e.preventDefault();runMarketplaceSearch(e.target.q.value.trim())});
@@ -53713,7 +53729,7 @@ def pulse_marketplace_page():
     document.getElementById('sellerApply')?.addEventListener('click',async()=>{try{await pulseApi('/api/pulse/marketplace/seller/apply',{method:'POST',body:JSON.stringify({display_name:document.getElementById('sellerName').value,bio:document.getElementById('sellerBio').value})});toast('Seller application saved.');setTimeout(()=>location.reload(),700)}catch(err){toast(err.message)}});
     document.getElementById('listingCreate')?.addEventListener('click',async()=>{try{await pulseApi('/api/pulse/marketplace/listings/create',{method:'POST',body:JSON.stringify({title:document.getElementById('listingTitle').value,category:document.getElementById('listingCategory').value,description:document.getElementById('listingDescription').value,price_label:document.getElementById('listingPrice').value})});toast('Listing created.');setTimeout(()=>location.reload(),700)}catch(err){toast(err.message)}});
     document.addEventListener('click',async e=>{const c=e.target.closest('[data-contact-seller]');const r=e.target.closest('[data-report-listing]');const s=e.target.closest('[data-save-listing]');try{if(c){const d=await pulseApi('/api/pulse/messages/start',{method:'POST',body:JSON.stringify({user_id:c.dataset.contactSeller})});location.href=d.next_url} if(r){await pulseApi('/api/pulse/marketplace/listings/report',{method:'POST',body:JSON.stringify({listing_id:r.dataset.reportListing,reason:'Needs review'})});toast('Listing reported.')} if(s){await pulseApi('/api/pulse/marketplace/listings/save',{method:'POST',body:JSON.stringify({listing_id:s.dataset.saveListing})});toast('Saved.')}}catch(err){toast(err.message)}})
-    """ % int(user.get("user_id") or 0)
+    """ % (int(user.get("user_id") or 0), MARKETPLACE_PRICE_FALLBACK)
     search_bar = "<section class='card'><form data-marketplace-search role='search'><div class='actions'><input name='q' type='search' placeholder='Search marketplace items, categories, or sellers' autocomplete='off' aria-label='Search marketplace'><button class='primary' type='submit'>Search</button></div></form></section>"
     listing_empty = '<article class="card"><h2>Marketplace is warming up.</h2><p>Create the first educational listing or teacher service. Payments are coming later after compliance readiness.</p></article>'
     main = f"{seller_form}{listing_form}{search_bar}<section class='grid' data-marketplace-results>{listing_html or listing_empty}</section>{pulse_promotion_modal_html()}<link rel='stylesheet' href='/static/css/pulsesoc_promotions.css'><script src='/static/js/pulsesoc_promotions.js' defer></script>"
@@ -53808,7 +53824,7 @@ def pulse_marketplace_listing_page(listing_id):
         f"<p><a href='/pulse/marketplace'>&larr; Marketplace</a></p>"
         f"<h1>{clean_html(row.get('title'))}</h1>"
         f"<p><span class='pill'>{clean_html(row.get('category') or 'Education')}</span> "
-        f"<span class='pill'>{clean_html(row.get('price_label') or 'Request access')}</span> "
+        f"<span class='pill'>{clean_html(row.get('price_label') or MARKETPLACE_PRICE_FALLBACK)}</span> "
         f"<span class='pill'>Safety {int(row.get('safety_score') or 0)}</span></p>"
         f"<p>Seller: {clean_html(marketplace_seller_identity.display_store_name(row))}</p>"
         f"{gallery_block}"

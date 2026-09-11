@@ -547,5 +547,186 @@ class SellerListingEditTest(unittest.TestCase):
         self.assertEqual(row["quantity"], 2)
 
 
+class MarketplaceWebPriceFallbackTest(unittest.TestCase):
+    """The web pages a buyer actually loads, not the payload behind them.
+
+    Web was the last surface still answering a blank price with "Request
+    access". That phrase describes a gated product the buyer has to apply for,
+    and no such flow exists -- the listing is simply not priced yet. Native says
+    "Price at checkout" on the very same card, so the two clients disagreed
+    about the same row, and a buyer could see it by opening one product twice.
+
+    These render the real routes rather than inspecting source text. That is
+    deliberate: the JS card builds its own HTML inside a ``%``-formatted script
+    block, so the fallback reaches it through string interpolation, and a
+    mistake there is a 500 on the whole marketplace page rather than a wrong
+    word. Only rendering catches that.
+    """
+
+    # ------------------------------------------------------------------
+    # fixtures
+    #
+    # Deliberately its own, rather than subclassing the edit suite. Inheriting
+    # from SellerListingEditTest re-runs all 27 of its tests under a second
+    # name, which turns "5 web tests" into "32 passed" and hides whether these
+    # five actually ran. The parent's helpers are interleaved with its tests, so
+    # lifting them into a shared mixin would mean restructuring a passing file
+    # for no gain -- these need a seller, a listing, and a logged-in client, and
+    # that is short enough to state here.
+    # ------------------------------------------------------------------
+    @classmethod
+    def setUpClass(cls):
+        _use_module_database()
+        bot.webhook_app.config["TESTING"] = True
+        cls.client = bot.webhook_app.test_client()
+
+    def setUp(self):
+        _use_module_database()
+        self.now = datetime.utcnow().isoformat(timespec="seconds")
+        self._real_api_account_user = bot.api_account_user
+        self._real_require_account = bot.require_account
+        self._real_emit = bot.pulse_emit_event
+        bot.pulse_emit_event = lambda *a, **k: None
+        self.owner = self._make_seller()
+
+    def tearDown(self):
+        bot.api_account_user = self._real_api_account_user
+        bot.require_account = self._real_require_account
+        bot.pulse_emit_event = self._real_emit
+
+    def _make_seller(self):
+        conn = bot.db()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO users (username, display_name, email, account_status, created_at) "
+            "VALUES (?,?,?,?,?)",
+            ("mkweb_owner", "Web owner", "mkweb_owner@example.com", "active", self.now),
+        )
+        user_id = int(cur.lastrowid)
+        cur.execute(
+            "INSERT INTO marketplace_sellers (user_id, business_name, display_name, status, "
+            "created_at, updated_at) VALUES (?,?,?,?,?,?)",
+            (user_id, "Web store", "Web store", "approved", self.now, self.now),
+        )
+        conn.commit()
+        conn.close()
+        return {"user_id": user_id, "username": "mkweb_owner"}
+
+    def _make_listing(self, seller, **overrides):
+        row = {
+            "title": "Handmade lamp",
+            "short_description": "Warm brass lamp",
+            "description": "A brass desk lamp finished by hand.",
+            "category": "Home",
+            "price_label": "$40.00",
+            "currency": "USD",
+            "quantity": 5,
+            "product_type": "physical",
+            "listing_type": "physical",
+            "status": "published",
+            "approval_status": "approved",
+            "cover_image_url": "https://cdn.example.com/lamp.jpg",
+        }
+        row.update(overrides)
+        columns = ", ".join(row)
+        placeholders = ", ".join(["?"] * len(row))
+        conn = bot.db()
+        cur = conn.cursor()
+        cur.execute(
+            f"INSERT INTO marketplace_listings (seller_user_id, {columns}, created_at, updated_at) "
+            f"VALUES (?, {placeholders}, ?, ?)",
+            (int(seller["user_id"]), *row.values(), self.now, self.now),
+        )
+        listing_id = int(cur.lastrowid)
+        conn.commit()
+        conn.close()
+        return listing_id
+
+    @contextmanager
+    def acting_as(self, user):
+        previous_api, previous_require = bot.api_account_user, bot.require_account
+        bot.api_account_user = lambda: dict(user)
+        bot.require_account = lambda: dict(user)
+        try:
+            yield
+        finally:
+            bot.api_account_user, bot.require_account = previous_api, previous_require
+
+    def stored(self, listing_id):
+        conn = bot.db()
+        conn.row_factory = bot.sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM marketplace_listings WHERE id=?", (listing_id,))
+        row = dict(cur.fetchone() or {})
+        conn.close()
+        return row
+
+    def unpriced_listing(self):
+        return self._make_listing(self.owner, title="Unpriced web lamp", price_label="")
+
+    def test_the_marketplace_grid_renders_and_never_says_request_access(self):
+        listing_id = self.unpriced_listing()
+        with self.acting_as(self.owner):
+            response = self.client.get("/pulse/marketplace")
+        # A 500 here means the %-format broke when the fallback was threaded
+        # into the inline script -- the failure mode this test exists for.
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True)[:400])
+        html = response.get_data(as_text=True)
+        self.assertIn("Unpriced web lamp", html, "the unpriced listing never rendered")
+        self.assertNotIn("Request access", html)
+        self.assertIn(bot.MARKETPLACE_PRICE_FALLBACK, html)
+        del listing_id
+
+    def test_the_inline_card_script_carries_the_same_fallback(self):
+        """Same page, second renderer. Search results are drawn in JS.
+
+        The grid is server-rendered on load and re-rendered client-side after a
+        search, so the identical card exists twice in two languages. Fixing only
+        the Python half would leave a buyer who typed in the search box looking
+        at the old phrase.
+        """
+        with self.acting_as(self.owner):
+            html = self.client.get("/pulse/marketplace").get_data(as_text=True)
+        self.assertIn("function marketplaceListingHtml", html)
+        script = html[html.index("function marketplaceListingHtml"):]
+        script = script[:script.index("</script>")] if "</script>" in script else script
+        self.assertIn(bot.MARKETPLACE_PRICE_FALLBACK, script,
+                      "the JS card did not receive the shared fallback")
+        self.assertNotIn("Request access", script)
+
+    def test_the_product_page_renders_and_never_says_request_access(self):
+        listing_id = self.unpriced_listing()
+        with self.acting_as(self.owner):
+            response = self.client.get(f"/pulse/marketplace/{listing_id}")
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True)[:400])
+        html = response.get_data(as_text=True)
+        self.assertNotIn("Request access", html)
+        self.assertIn(bot.MARKETPLACE_PRICE_FALLBACK, html)
+
+    def test_a_price_the_seller_set_is_shown_instead_of_the_fallback(self):
+        """The fallback is for absence only. It must not overwrite a real price."""
+        priced = self._make_listing(self.owner, title="Priced web lamp",
+                                    price_label="$40.00")
+        with self.acting_as(self.owner):
+            html = self.client.get(f"/pulse/marketplace/{priced}").get_data(as_text=True)
+        self.assertIn("$40.00", html)
+        self.assertNotIn(bot.MARKETPLACE_PRICE_FALLBACK, html)
+
+    def test_the_fallback_is_presentation_only_and_never_reaches_the_row(self):
+        """Rendering a page must not write words into the seller's price.
+
+        This is the distinction the whole fix rests on: the serializer keeps an
+        unpriced listing empty so nothing downstream can mistake an invented
+        phrase for the seller's own, and the card supplies copy at the very last
+        moment. If loading a page could persist that copy, the web would simply
+        be reintroducing the original bug one GET at a time.
+        """
+        listing_id = self.unpriced_listing()
+        with self.acting_as(self.owner):
+            self.client.get("/pulse/marketplace")
+            self.client.get(f"/pulse/marketplace/{listing_id}")
+        self.assertEqual(self.stored(listing_id).get("price_label"), "")
+
+
 if __name__ == "__main__":
     unittest.main()
