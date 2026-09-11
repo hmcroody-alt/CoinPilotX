@@ -228,11 +228,14 @@ query names is buyer-visible by default, so the strip now lives in
    `external_shop_id` is unset, so `create_intent` raises
    `shop_binding_required`. This is an honest refusal, and §37 forbids placing a
    real CJ order regardless.
-6. **`bot.py:4379-4393` documents a constant that no longer exists**, and says
-   native "already says 'Price at checkout' on the same card" — which native
-   stopped doing. Comments that describe deleted code are how the parity claim
-   in gap-note above survived for as long as it did. Cosmetic, but the same
-   failure mode.
+6. ~~**`bot.py:4379-4393` documents a constant that no longer exists**~~, and
+   said native "already says 'Price at checkout' on the same card" — which
+   native had stopped doing. Rewritten: `PRICE_LABEL_UNPRICED` and
+   `MAX_PRICE_LABEL_CENTS` now each state what they are and name the file that
+   pins them, and the deleted comment is recorded rather than quietly dropped,
+   because a comment outliving its code is exactly how the parity claim above
+   survived. Cosmetic in isolation; it is in this list because it is the same
+   failure mode as the three seams.
 
 ---
 

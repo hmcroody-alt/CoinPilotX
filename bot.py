@@ -4373,23 +4373,36 @@ def save_teacher_private_document(user_id, file_storage, document_type):
     }
 
 
+#: Labels a seller may deliberately choose that name no price. Mirrored in
+#: `mobile-native/src/api/marketplaceBuyerPresentation.ts` as `UNPRICED_LABELS`;
+#: the two are pinned against each other by
+#: `mobile-native/src/api/__tests__/fixtures/priceLabelParity.json`, which both
+#: languages' suites read.
 PRICE_LABEL_UNPRICED = {"free", "request access", "paid later", "premium later"}
+
+#: The checkout ceiling. Note that `parse_price_label_to_cents` **clamps** to
+#: this rather than refusing above it, while `drafts._set_prices` accepts ten
+#: times as much -- so between the two limits a card would be charged
+#: $999,999.99 for a listing priced higher. `PRICE_ABOVE_CHECKOUT_LIMIT` in
+#: `suppliers/drafts._validate` is what closes that window at publication.
 MAX_PRICE_LABEL_CENTS = 99_999_999
 
-# What the web shows a buyer when a listing carries no price.
+# A comment describing a constant that no longer exists stood here, and it said
+# two things that had stopped being true: that a card "still has to put
+# something in the pill" for an unpriced listing, and that native "already says
+# 'Price at checkout' on the same card".
 #
-# This is presentation, not data, and the difference is the whole point. The
-# serializer deliberately hands out "" for an unpriced listing, because a phrase
-# invented there is stored-looking -- indistinguishable downstream from one the
-# seller typed. A card still has to put something in the pill, so the fallback
-# lives here, at the last possible moment, where it cannot be mistaken for the
-# seller's own words or read back in.
+# Neither survives. A listing with no price now renders *no price element* on
+# every surface -- the serializer hands out "", and the web grid, the web
+# product page, the client-side search card, the app's grid and the app's
+# product page all print nothing rather than prose. "Price at checkout" is in
+# the app suite's list of phrases that must not appear.
 #
-# The wording matters as much as the placement. The web said "Request access",
-# which describes a gated product the buyer must apply for -- a flow that does
-# not exist. The listing is simply not priced yet. Native already says "Price at
-# checkout" on the same card, so web saying anything else was a split-brain the
-# buyer could see by opening the same product twice.
+# It is recorded rather than simply deleted because this is the failure mode
+# that let the price-label parser claim parity with its TypeScript twin in a
+# docstring for as long as it did: a comment outlives the code it describes and
+# then gets believed. The rules above are stated as what they are, with the file
+# that pins each one named, so a future reader can check instead of trusting.
 
 
 def parse_price_label_to_cents(value, default_currency="USD"):
