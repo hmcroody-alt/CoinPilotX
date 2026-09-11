@@ -53856,7 +53856,20 @@ def pulse_marketplace_page():
         # reads as a price the seller set to nothing.
         price_label = clean_html(row.get("price_label"))
         price_pill = f"<span class='pill'>{price_label}</span> " if price_label else ""
-        return f"<article class='card'><h2><a href='/pulse/marketplace/{listing_id}'>{clean_html(row.get('title'))}</a></h2><p>{clean_html(row.get('description'))}</p><p><span class='pill'>{clean_html(row.get('category') or 'Education')}</span> {price_pill}<span class='pill'>Safety {int(row.get('safety_score') or 0)}</span></p><p>Seller: {clean_html(marketplace_seller_identity.display_store_name(row))}</p><p>Safety notice: educational products only. Payments and payout release are staged for compliance.</p><div class='actions'><button data-contact-seller='{seller_id}'>Contact Seller</button><button data-save-listing='{listing_id}'>Save</button><button data-report-listing='{listing_id}'>Report</button>{promote}</div></article>"
+        # No "Safety N" pill. `marketplace_listings.safety_score` is written by
+        # the submit-for-review route as the *risk* score `score_text` returns
+        # (`safety_score=int(review["risk_score"])`), where 0 is clean and 100 is
+        # "guaranteed profit, risk free, 100x". Printed as safety it was exactly
+        # inverted: the worst listing the engine can score advertised
+        # "Safety 100" and every honest one read "Safety 0". Measured over the
+        # real engine, not inferred from the name.
+        #
+        # Restored polarity is not the fix. A raw moderation integer is not a
+        # buyer concept in either direction, and a listing is only on this page
+        # because moderation approved it -- that approval is the signal. The
+        # reviewer's working number stays with the reviewer (§27/§95); the admin
+        # queue reads the same column as risk and is already correct.
+        return f"<article class='card'><h2><a href='/pulse/marketplace/{listing_id}'>{clean_html(row.get('title'))}</a></h2><p>{clean_html(row.get('description'))}</p><p><span class='pill'>{clean_html(row.get('category') or 'Education')}</span> {price_pill}</p><p>Seller: {clean_html(marketplace_seller_identity.display_store_name(row))}</p><p>Safety notice: educational products only. Payments and payout release are staged for compliance.</p><div class='actions'><button data-contact-seller='{seller_id}'>Contact Seller</button><button data-save-listing='{listing_id}'>Save</button><button data-report-listing='{listing_id}'>Report</button>{promote}</div></article>"
 
     listing_html = "".join(marketplace_card(row) for row in listings)
     seller_form = "<section class='card'><h2>Merchant Access</h2><p class='muted'>Apply, verify, and wait for approval before listing products.</p><div class='actions'><a class='button primary' href='/pulse/merchant/apply'>Apply as Merchant</a><a class='button' href='/pulse/merchant/dashboard'>Merchant Dashboard</a></div></section>"
@@ -53870,7 +53883,7 @@ def pulse_marketplace_page():
     const marketplaceSearch=document.querySelector('[data-marketplace-search]');
     const marketplaceCurrentUserId=%d;
     const marketplaceEsc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-    function marketplaceListingHtml(row){const listingId=Number(row.id||0),owned=Number(row.seller_user_id||0)===marketplaceCurrentUserId;const promote=owned?`<button data-promote-content="marketplace_listing" data-content-id="${listingId}" data-content-label="${marketplaceEsc(row.title||'Marketplace listing')}">Promote Listing</button>`:'';const priceText=String(row.price_label||'').trim();return `<article class="card"><h2><a href="/pulse/marketplace/${listingId}">${marketplaceEsc(row.title||'Marketplace listing')}</a></h2><p>${marketplaceEsc(row.description||row.short_description||'')}</p><p><span class="pill">${marketplaceEsc(row.category||'Education')}</span> ${priceText?`<span class="pill">${marketplaceEsc(priceText)}</span> `:''}<span class="pill">Safety ${Number(row.safety_score||0)}</span></p><p>Seller: ${marketplaceEsc(row.seller_store_name||row.seller_name||'PulseSoc Store')}</p><p>Safety notice: educational products only. Payments and payout release are staged for compliance.</p><div class="actions"><button data-contact-seller="${Number(row.seller_user_id||0)}">Contact Seller</button><button data-save-listing="${listingId}">Save</button><button data-report-listing="${listingId}">Report</button>${promote}</div></article>`}
+    function marketplaceListingHtml(row){const listingId=Number(row.id||0),owned=Number(row.seller_user_id||0)===marketplaceCurrentUserId;const promote=owned?`<button data-promote-content="marketplace_listing" data-content-id="${listingId}" data-content-label="${marketplaceEsc(row.title||'Marketplace listing')}">Promote Listing</button>`:'';const priceText=String(row.price_label||'').trim();return `<article class="card"><h2><a href="/pulse/marketplace/${listingId}">${marketplaceEsc(row.title||'Marketplace listing')}</a></h2><p>${marketplaceEsc(row.description||row.short_description||'')}</p><p><span class="pill">${marketplaceEsc(row.category||'Education')}</span> ${priceText?`<span class="pill">${marketplaceEsc(priceText)}</span> `:''}</p><p>Seller: ${marketplaceEsc(row.seller_store_name||row.seller_name||'PulseSoc Store')}</p><p>Safety notice: educational products only. Payments and payout release are staged for compliance.</p><div class="actions"><button data-contact-seller="${Number(row.seller_user_id||0)}">Contact Seller</button><button data-save-listing="${listingId}">Save</button><button data-report-listing="${listingId}">Report</button>${promote}</div></article>`}
     let marketplaceSearchTimer=0;
     async function runMarketplaceSearch(query=''){if(!marketplaceResults)return;marketplaceResults.innerHTML='<article class="card"><p class="muted">Searching marketplace...</p></article>';try{const d=await pulseApi('/api/pulse/marketplace/search?q='+encodeURIComponent(query||''));marketplaceResults.innerHTML=(d.items||[]).map(marketplaceListingHtml).join('')||'<article class="card"><h2>No marketplace matches.</h2><p class="muted">Try another item, category, or seller.</p></article>'}catch(err){marketplaceResults.innerHTML=`<article class="card"><p class="muted">${marketplaceEsc(err.message||'Marketplace search failed.')}</p></article>`}}
     marketplaceSearch?.addEventListener('submit',e=>{e.preventDefault();runMarketplaceSearch(e.target.q.value.trim())});
@@ -53978,8 +53991,11 @@ def pulse_marketplace_listing_page(listing_id):
         f"<p><a href='/pulse/marketplace'>&larr; Marketplace</a></p>"
         f"<h1>{clean_html(row.get('title'))}</h1>"
         f"<p><span class='pill'>{clean_html(row.get('category') or 'Education')}</span> "
-        f"{price_pill}"
-        f"<span class='pill'>Safety {int(row.get('safety_score') or 0)}</span></p>"
+        # No "Safety N" pill here either -- see `marketplace_card` on the grid
+        # for the measurement. The two surfaces printed the same inverted number
+        # for the same row, so fixing one would have moved the lie rather than
+        # removed it.
+        f"{price_pill}</p>"
         f"<p>Seller: {clean_html(marketplace_seller_identity.display_store_name(row))}</p>"
         f"{gallery_block}"
         f"<p>{clean_html(row.get('description') or row.get('short_description') or '')}</p>"
@@ -54070,8 +54086,30 @@ def pulse_marketplace_media_payload(row):
     }
 
 
+#: Columns of `marketplace_listings` that belong to moderation and must not be
+#: serialized to a client. Stripped rather than simply not-listed, because the
+#: payload below is built with `{**item, ...}`: the explicit keys are additions
+#: to the database row, not a whitelist of it. Every column a caller's SELECT
+#: names reaches the buyer by default, so the only durable place to say "not
+#: this one" is here.
+#:
+#: `safety_score` is the one that shipped. It holds the reviewer's *risk* number
+#: despite its name -- 0 clean, 100 for "guaranteed profit, risk free, 100x" --
+#: and the web cards printed it as "Safety N", exactly inverted. The rest are
+#: named now because they are one `SELECT *` away from the same trip.
+MARKETPLACE_REVIEWER_ONLY_FIELDS = (
+    "safety_score",
+    "safety_flags_json",
+    "moderation_reason",
+    "moderation_category",
+    "review_version",
+    "moderation_notes",
+)
+
+
 def pulse_marketplace_listing_payload(listing, media_rows=None):
-    item = dict(listing or {})
+    item = {key: value for key, value in dict(listing or {}).items()
+            if key not in MARKETPLACE_REVIEWER_ONLY_FIELDS}
     listing_id = safe_int(item.get("id"), 0)
     media = []
     seen = set()
@@ -54157,7 +54195,11 @@ def pulse_marketplace_listing_payload(listing, media_rows=None):
         "price_label": str(item.get("price_label") or ""),
         "listing_type": marketplace_listing_types_service.effective_listing_type(item.get("listing_type"), item.get("product_type")),
         "listing_metadata": marketplace_listing_types_service.parse_metadata(item.get("listing_metadata_json")),
-        "safety_score": safe_int(item.get("safety_score"), 0),
+        # `safety_score` used to be emitted here. It is gone via
+        # `MARKETPLACE_REVIEWER_ONLY_FIELDS` above, not by deleting this line:
+        # the row is spread into this dict, so dropping the explicit key left
+        # the column on the wire and changed nothing at all. Measured against
+        # the served response, which is the only reason that was noticed.
         "cover_image_url": cover.get("media_url") or cover_url,
         "image_url": cover.get("media_url") or cover_url,
         "thumbnail_url": cover.get("thumbnail_url") or cover.get("media_url") or cover_url,
@@ -55698,7 +55740,7 @@ def pulse_merchant_dashboard_page():
             msg = "Apply and complete verification before merchant tools unlock."
         return pulse_social_shell("Merchant Dashboard", "Merchant approval is required before seller tools unlock.", f"<section class='card'><h2>{status_text}</h2><p>{clean_html(msg)}</p><a class='button primary' href='/pulse/merchant/apply'>Open Merchant Application</a></section>")
     rows = "".join(f"<tr><td>{l.get('id')}</td><td>{clean_html(l.get('title') or '')}</td><td>{clean_html(l.get('status') or '')}</td><td>{int(l.get('safety_score') or 0)}</td></tr>" for l in listings)
-    main = f"<section class='grid'><div class='card'><h2>Status</h2><p class='metric'>{clean_html(seller.get('status') or 'not applied')}</p></div><div class='card'><h2>Products</h2><p class='metric'>{len(listings)}</p></div><div class='card'><h2>Risk Score</h2><p class='metric'>{int(seller.get('risk_score') or 0)}</p></div></section><section class='card'><h2>Merchant Tools</h2><div class='actions'><a class='button primary' href='/pulse/marketplace/create'>Create Product</a><a class='button' href='/pulse/merchant/payouts'>Payouts</a><a class='button' href='/pulse/merchant/apply'>Update Application</a></div></section><section class='card'><h2>Listings</h2><table class='table'><tr><th>ID</th><th>Title</th><th>Status</th><th>Safety</th></tr>{rows or '<tr><td colspan=4>No listings yet.</td></tr>'}</table></section>"
+    main = f"<section class='grid'><div class='card'><h2>Status</h2><p class='metric'>{clean_html(seller.get('status') or 'not applied')}</p></div><div class='card'><h2>Products</h2><p class='metric'>{len(listings)}</p></div><div class='card'><h2>Risk Score</h2><p class='metric'>{int(seller.get('risk_score') or 0)}</p></div></section><section class='card'><h2>Merchant Tools</h2><div class='actions'><a class='button primary' href='/pulse/marketplace/create'>Create Product</a><a class='button' href='/pulse/merchant/payouts'>Payouts</a><a class='button' href='/pulse/merchant/apply'>Update Application</a></div></section><section class='card'><h2>Listings</h2><table class='table'><tr><th>ID</th><th>Title</th><th>Status</th><th>Review risk</th></tr>{rows or '<tr><td colspan=4>No listings yet.</td></tr>'}</table></section>"
     return pulse_social_shell("Merchant Dashboard", "Manage approved listings, safety review, buyer messages, and merchant readiness.", main)
 
 
@@ -94326,6 +94368,20 @@ def api_pulse_marketplace_seller_listing_submit(listing_id):
     if int(dict(cur.fetchone() or {}).get("total") or 0) < 1:
         conn.close(); return api_error("Add a cover photo before submitting.", 400)
     review = revenue_safety_engine.marketplace_listing_review({"title": listing.get("title"), "description": listing.get("description"), "category": listing.get("category")})
+    # `marketplace_listings.safety_score` holds RISK, not safety: 0 is clean and
+    # 100 is "guaranteed profit, risk free, 100x". All three writers of this
+    # column (here, the edit route, the resume route) store `risk_score`
+    # unchanged, the column defaults to 0, and the admin queue counts
+    # `safety_score>=30` as risky -- so the storage side is consistent and must
+    # not be "corrected" by inverting it. The teacher application route stores
+    # `100 - risk_score` under the same column name on another table, which is
+    # where the confusion came from.
+    #
+    # It was the readers that lied: three buyer surfaces printed this as
+    # "Safety N", so the worst listing the engine can score advertised
+    # "Safety 100". They no longer print it at all. If you need a number a
+    # buyer can read, derive it here and give it a name that says which way up
+    # it is -- do not repoint a reader at this one.
     cur.execute("""UPDATE marketplace_listings SET status='pending_review', approval_status='pending_review',
         submitted_at=?, moderation_reason='', moderation_category='', safety_score=?, safety_flags_json=?,
         review_version=COALESCE(review_version,0)+1, updated_at=? WHERE id=? AND seller_user_id=?""",

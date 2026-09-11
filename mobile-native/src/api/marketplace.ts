@@ -37,11 +37,21 @@ export type MarketplaceListing = {
   quantity?: number;
   product_type?: string;
   /**
-   * Internal moderation fields. These are never buyer-facing — `safety_score`
-   * in particular is a reviewer signal, not a product attribute, and was
-   * dropped from the client model entirely so no screen can render it by
-   * accident. `approval_status` stays because the seller's own store rows
-   * legitimately show it back to the seller.
+   * Internal moderation fields. `safety_score` is deliberately absent from this
+   * interface: it is a reviewer signal, not a product attribute, so leaving it
+   * undeclared makes `listing.safety_score` a type error rather than a choice.
+   *
+   * That is all it does. It is a rule about this app's source, not about the
+   * response — the server sent the field regardless, for as long as
+   * `pulse_marketplace_listing_payload` spread the database row into its
+   * output, and the web cards printed it as "Safety N" (inverted: the column
+   * holds risk, so 100 is the worst listing the engine scores). The wire is
+   * pinned server-side now, in
+   * `tests/web_parity/test_marketplace_reviewer_signal_not_buyer_facing.py`,
+   * because that is the only place it can be measured rather than declared.
+   *
+   * `approval_status` stays because the seller's own store rows legitimately
+   * show it back to the seller.
    */
   status?: string;
   approval_status?: string;

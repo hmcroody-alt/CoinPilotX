@@ -76,10 +76,34 @@ describe("Marketplace buyer purchase presentation", () => {
     expect(fulfillmentLane(listing({ listing_metadata: { delivery_options: "shipping" } }))).toBe("shipping");
   });
 
-  it("keeps moderation signals out of the buyer listing model", () => {
-    // `safety_score` is a reviewer signal. It is absent from the client model
-    // so no buyer surface can render it, even by accident.
-    expect("safety_score" in listing()).toBe(false);
+  it("ignores a moderation signal even when the server sends one", () => {
+    // This test used to read `expect("safety_score" in listing()).toBe(false)`,
+    // which is true of the fixture three lines up and of nothing else. The
+    // field was on the wire the entire time: `pulse_marketplace_listing_payload`
+    // builds its response as `{**row, ...}`, so every column a caller's SELECT
+    // names was serialized whether or not it was listed. A claim about the
+    // server, asserted against a literal written in this file.
+    //
+    // What the wire carries is now pinned where it can be observed —
+    // `tests/web_parity/test_marketplace_reviewer_signal_not_buyer_facing.py`
+    // asserts it against the served response. What this file can honestly say
+    // is the other half: if one arrives anyway, from an older server or a
+    // cached payload, no presentation decision moves.
+    //
+    // The value matters. `marketplace_listings.safety_score` holds the
+    // reviewer's *risk* number despite the name — 0 clean, 100 for the worst
+    // copy the engine scores — so a helper that started consulting it "for
+    // safety" would rank listings exactly backwards.
+    const withSignal = (score: number) =>
+      listing({ safety_score: score } as Partial<MarketplaceListing>);
+    const clean = listing();
+    for (const score of [0, 44, 88, 100]) {
+      const item = withSignal(score);
+      expect(purchaseBlock(item)).toBe(purchaseBlock(clean));
+      expect(canPurchaseListing(item)).toBe(canPurchaseListing(clean));
+      expect(availabilityCopy(item)).toBe(availabilityCopy(clean));
+      expect(ctaCopy(item)).toBe(ctaCopy(clean));
+    }
   });
 });
 
