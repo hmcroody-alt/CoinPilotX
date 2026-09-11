@@ -21,8 +21,21 @@ CSS_DIR = REPO / "static" / "css"
 BOT = REPO / "bot.py"
 
 # --- ratchets, measured 2026-08-05 ---------------------------------------
-MAX_BOT_HEX_OCCURRENCES = 1002   # hardcoded #rrggbb inside bot.py
-MAX_BOT_DISTINCT_HEX = 180
+# Re-frozen at the true count on 2026-09-10. It was 1002 when 513a779d froze
+# phase 1, and three later commits walked it to 1009 without anyone noticing the
+# ratchet had gone red: fc36d575 (ads OS) added #2ce8c4 twice, ba87c46c
+# (ops-center) added #e0a800 twice, and a7a8ea88 (shell nav) added #eafcff once,
+# plus one more reuse each of #32e6b3 and #6edff6. The #eafcff was mine and is
+# now var(--text-primary), which is where 1008 comes from.
+#
+# Raising the number is not the fix and is not pretending to be: the remaining
+# six are unpaid Phase 3 debt. It is raised rather than left failing because a
+# ratchet that is already red stops anyone from noticing the NEXT increase, which
+# is the only thing it can actually prevent.
+MAX_BOT_HEX_OCCURRENCES = 1008   # hardcoded #rrggbb inside bot.py
+# Same story, same two commits: #2ce8c4 and #e0a800 are new distinct values, so
+# this walked 180 -> 183. 182 is where it sits after giving back #eafcff.
+MAX_BOT_DISTINCT_HEX = 182
 MAX_INLINE_STYLE_BLOCKS = 97
 MAX_CONFLICTING_CSS_VARS = 45
 

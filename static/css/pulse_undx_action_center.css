@@ -1,0 +1,195 @@
+/* UNDX Action Center (/pulse/undx/actions).
+ *
+ * Lives in a stylesheet rather than an inline <style> in bot.py because
+ * tests/web_parity/test_design_tokens.py ratchets both the inline-block count
+ * and the hardcoded-hex count in bot.py, and this page was the 98th block.
+ *
+ * The four metric tones mirror the native screen's Metric tones
+ * (mobile-native/src/screens/UndxActionCenterScreen.tsx), mapped onto the
+ * palette tokens that already name those exact roles rather than onto fresh
+ * hex values: intelligence, accent, economy, safety.
+ *
+ * Tints are color-mix over a token. The danger tints also carry an rgba
+ * fallback declaration, because a browser that cannot compute color-mix would
+ * otherwise drop the one colour on this page that means something -- the red on
+ * an active emergency stop -- and silently turn a warning row into an ordinary
+ * one. The non-semantic tints get no fallback; losing them is cosmetic.
+ */
+
+.undx-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+}
+
+.undx-eyebrow {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 950;
+  letter-spacing: .18em;
+  color: var(--cyan, var(--pulse-palette-accent-strong));
+}
+
+.undx-hero h1 { font-size: clamp(26px, 4.2vw, 40px); }
+
+.undx-signal {
+  display: grid;
+  place-items: center;
+  gap: 2px;
+  min-width: 92px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--cyan, var(--pulse-palette-accent-strong)) 34%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--cyan, var(--pulse-palette-accent-strong)) 8%, transparent);
+}
+
+.undx-signal strong { font-size: 26px; line-height: 1; }
+
+.undx-signal span,
+.undx-metric span {
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--muted, var(--text-secondary));
+}
+
+.undx-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.undx-metric {
+  border: 1px solid var(--line, var(--border-subtle));
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(255, 255, 255, .03);
+  display: grid;
+  gap: 3px;
+}
+
+.undx-metric strong { font-size: 24px; line-height: 1; }
+.undx-metric span { letter-spacing: .08em; }
+
+/* Native's four Metric tones, by the token that already names the role. */
+.undx-metric.tone-intelligence { border-color: color-mix(in srgb, var(--pulse-palette-intelligence) 40%, transparent); }
+.undx-metric.tone-intelligence strong { color: var(--pulse-palette-intelligence); }
+.undx-metric.tone-accent { border-color: color-mix(in srgb, var(--cyan, var(--pulse-palette-accent-strong)) 40%, transparent); }
+.undx-metric.tone-accent strong { color: var(--cyan, var(--pulse-palette-accent-strong)); }
+.undx-metric.tone-economy { border-color: color-mix(in srgb, var(--pulse-palette-economy) 40%, transparent); }
+.undx-metric.tone-economy strong { color: var(--pulse-palette-economy); }
+.undx-metric.tone-safety { border-color: color-mix(in srgb, var(--green, var(--pulse-palette-safety)) 40%, transparent); }
+.undx-metric.tone-safety strong { color: var(--green, var(--pulse-palette-safety)); }
+
+.undx-section h2 { font-size: 17px; margin: 0 0 10px; }
+
+.undx-rows { display: grid; gap: 8px; }
+
+.undx-row {
+  border: 1px solid var(--line, var(--border-subtle));
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, .025);
+  display: grid;
+  gap: 5px;
+}
+
+/* An active emergency stop. The rgba declarations are deliberate fallbacks. */
+.undx-row.is-danger {
+  border-color: rgba(255, 95, 126, .46);
+  border-color: color-mix(in srgb, var(--pulse-palette-danger) 46%, transparent);
+  background: rgba(255, 95, 126, .07);
+  background: color-mix(in srgb, var(--pulse-palette-danger) 7%, transparent);
+}
+
+.undx-row.is-danger .pill {
+  border-color: rgba(255, 95, 126, .5);
+  border-color: color-mix(in srgb, var(--pulse-palette-danger) 50%, transparent);
+  background: rgba(255, 95, 126, .14);
+  background: var(--pulse-palette-danger-soft, color-mix(in srgb, var(--pulse-palette-danger) 14%, transparent));
+  color: #ffd8e0;
+  color: color-mix(in srgb, var(--pulse-palette-danger) 26%, var(--text-primary));
+}
+
+.undx-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.undx-row-head strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.undx-row p { margin: 0; font-size: 13px; }
+.undx-row small { color: var(--muted, var(--text-secondary)); font-size: 11px; }
+
+.undx-empty,
+.undx-note { margin: 0; font-size: 13px; }
+
+.undx-error {
+  border-color: rgba(255, 95, 126, .5);
+  border-color: color-mix(in srgb, var(--pulse-palette-danger) 50%, transparent);
+  background: linear-gradient(180deg, rgba(255, 95, 126, .12), rgba(255, 95, 126, .05));
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--pulse-palette-danger) 12%, transparent),
+    color-mix(in srgb, var(--pulse-palette-danger) 5%, transparent));
+}
+
+.undx-error h2 { margin: 0 0 6px; font-size: 17px; }
+
+.undx-plan {
+  border: 1px solid color-mix(in srgb, var(--pulse-palette-economy) 44%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--pulse-palette-economy) 8%, transparent);
+  padding: 11px 12px;
+  display: grid;
+  gap: 5px;
+  margin: 10px 0;
+}
+
+.undx-plan-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.undx-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 10px 0;
+}
+
+.undx-fields label {
+  display: grid;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--muted, var(--text-secondary));
+}
+
+.undx-fields label.wide { grid-column: 1 / -1; }
+
+.undx-workflow-message { margin: 8px 0 0; font-size: 13px; }
+
+.undx-workflow-message.is-error {
+  color: #ffb3c1;
+  color: color-mix(in srgb, var(--pulse-palette-danger) 40%, var(--text-primary));
+}
+
+.undx-workflow-message.is-ok { color: var(--green, var(--pulse-palette-safety)); }
+
+@media (max-width: 760px) {
+  .undx-hero { grid-template-columns: minmax(0, 1fr); }
+  .undx-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .undx-fields { grid-template-columns: minmax(0, 1fr); }
+}
