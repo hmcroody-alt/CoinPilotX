@@ -222,17 +222,30 @@ def _create_draft_listing(cur, seller_user_id, product):
     ``price_label`` is left empty on purpose. It is the listing's public price
     prose and the merchant has not set a price yet; seeding it with the supplier
     cost would print the merchant's own cost on their storefront.
+
+    ``cover_image_url`` is written from the same list that goes into the
+    metadata, rather than left for a reader to derive. `_validate` already
+    refuses a product with no media — "better to refuse than to ship a black
+    card" — but that guard only held for readers that derive the cover from
+    ``listing_metadata_json`` the way ``get_draft`` does. Every reader of the
+    *column* (the products list, the merchant's store list, the buyer grid) got
+    NULL, so the black card the guard exists to prevent shipped anyway on every
+    import. Deriving both from one local list is what keeps the column and the
+    metadata from disagreeing later.
     """
     now = _iso()
+    media = [m for m in (product.get("media") or []) if isinstance(m, str)]
     cur.execute(
         "INSERT INTO marketplace_listings "
         "(seller_user_id, title, description, category, price_label, status, "
         " created_at, updated_at, approval_status, currency, quantity, "
-        " delivery_type, product_type, listing_type, listing_metadata_json) "
-        "VALUES (?,?,?,?,?,'draft',?,?,'pending_review',?,?,'physical','physical','',?)",
+        " delivery_type, product_type, listing_type, cover_image_url, "
+        " listing_metadata_json) "
+        "VALUES (?,?,?,?,?,'draft',?,?,'pending_review',?,?,'physical','physical','',?,?)",
         (int(seller_user_id), product.get("title"), product.get("description"),
          product.get("category"), "", now, now, product.get("currency") or "USD", 0,
-         json.dumps({"source": "dropship", "media": product.get("media") or []},
+         media[0] if media else None,
+         json.dumps({"source": "dropship", "media": media},
                     separators=(",", ":"))))
     cur.execute(
         "SELECT id FROM marketplace_listings WHERE seller_user_id=? AND status='draft' "
