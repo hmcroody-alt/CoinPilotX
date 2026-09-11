@@ -615,6 +615,89 @@ def test_the_published_label_charges_exactly_what_the_merchant_set(provider):
     assert drafts.MAX_CHECKOUT_PRICE_CENTS == bot.MAX_PRICE_LABEL_CENTS
 
 
+def test_a_published_approved_import_is_purchasable_on_every_field_a_buyer_reads(provider):
+    """The whole crossing, asserted once, positively.
+
+    Every half of this is already covered above and each half was green while
+    the seam was broken — that is the entire history of this file. `publish`
+    wrote `status` while `price_label` stayed empty; later it wrote the price
+    while `cover_image_url` stayed NULL. Both were found on production, not
+    here, because no test asked the one question a buyer asks: *can I buy this
+    thing, and is everything on the card real?*
+
+    So this one does not test `publish`. It tests the row `publish` leaves
+    behind, through the functions the buyer's own path calls — `is_public`,
+    `public_denial_code`, `parse_price_label_to_cents`, and the serializer every
+    marketplace read goes through. A future field that publication forgets to
+    join fails here even if nobody thinks to write a test for that field.
+
+    The seller state mirrors production: approved, with a store name. Moderation
+    is applied as the separate authority it is — a direct write to
+    `approval_status`, not anything this package can do to itself.
+
+    What this test is *not*: evidence about which writer filled a given field.
+    Measured — deleting `cover_image_url` from publish's UPDATE leaves this test
+    green, because `importer._insert_listing` also writes that column and the
+    normal path runs both. That is the correct division: this asserts the end
+    state a buyer meets, and `test_publishing_writes_the_cover_the_buyer_path_reads`
+    blanks the column first so publish is the only thing that can fill it. Read
+    a failure here as "the card is wrong", not as "publish is wrong", and check
+    the dedicated tests for which writer dropped it.
+    """
+    import bot
+
+    listing_id = imported(provider)
+    price_every_variant(listing_id, 2000)
+    drafts.publish(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id, context=CONTEXT)
+
+    conn = db.connect()
+    try:
+        conn.execute("UPDATE marketplace_listings SET approval_status='approved' WHERE id=?",
+                     (listing_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+    listing = rows("SELECT * FROM marketplace_listings WHERE id=?", (listing_id,))[0]
+    # The buyer's discovery query joins the seller for exactly these two columns;
+    # `public_sql` is the binding form and this is its in-Python twin.
+    listing["seller_status"] = "approved"
+    listing["display_name"] = "M&W Store"
+
+    assert lifecycle.is_public(listing) is True
+    assert lifecycle.public_denial_code(listing) == ""
+
+    charged, currency = bot.parse_price_label_to_cents(
+        listing["price_label"], listing["currency"] or "USD")
+    assert charged == 2000, "add-to-cart would price this at %s" % charged
+    assert currency == "USD"
+
+    payload = bot.pulse_marketplace_listing_payload(listing)
+    assert payload["buyer_visible"] is True
+    assert payload["inventory_state"] == "available"
+    assert payload["price_label"] == listing["price_label"]
+    # The card has a picture. Asserting the column alone would pass on a row the
+    # serializer then drops, so the claim is made where the client reads it.
+    assert payload["cover_image_url"], "the buyer's card has no image"
+    assert payload["media"], "the buyer's gallery is empty"
+    assert payload["cover_image_url"] == draft_of(listing_id)["media"][0]
+    assert payload["seller_store_name"] == "M&W Store"
+
+    # Supplier economics do not cross. Cost is merchant-private and this is the
+    # payload every buyer surface receives.
+    assert "cost_cents" not in payload
+    assert "supplier_cost_cents" not in payload
+    # Named outright as well as looped, because the loop reads the same constant
+    # the filter does: shrinking that tuple would make the loop assert less
+    # without failing. `safety_score` in particular holds the reviewer's *risk*
+    # number despite its name -- 0 clean, 100 worst -- and three buyer surfaces
+    # once printed it as "Safety N".
+    assert "safety_score" not in payload
+    assert "moderation_reason" not in payload
+    for reserved in bot.MARKETPLACE_REVIEWER_ONLY_FIELDS:
+        assert reserved not in payload, "%s reached the buyer" % reserved
+
+
 def test_an_unpriced_variant_is_not_sold_at_another_variants_price(provider):
     # The buyer cannot choose a variant, so publishing this would have sold the
     # blank one for whatever the priced one cost. The old gate asked only whether
