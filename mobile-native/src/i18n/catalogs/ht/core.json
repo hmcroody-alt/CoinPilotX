@@ -568,7 +568,11 @@
       "tooManyAttempts": "Twòp esè. Tanpri tann yon ti moman epi eseye ankò.",
       "serverTrouble": "PulseSoc gen yon pwoblèm kounye a. Tanpri eseye ankò talè.",
       "unableToSignIn": "Nou pa ka konekte w.",
-      "registerFailed": "Nou pa t ka kreye kont ou. Tanpri eseye ankò."
+      "registerFailed": "Nou pa t ka kreye kont ou. Tanpri eseye ankò.",
+      "challengeRequired": "Pou sekirite w, fini verifikasyon an pou kontinye konekte.",
+      "emailNotConfirmed": "Konfime adrès imèl ou anvan ou konekte.",
+      "accountRestricted": "Kont sa a pa ka konekte kounye a. Kontakte support@pulsesoc.com.",
+      "nonProductionBackend": "Bild sa a konekte ak {{environment}} ({{host}}), ki gen pwòp kont pa l."
     },
     "media": {
       "uploadFailed": "Fichye a pa t fin voye. Eseye ankò.",

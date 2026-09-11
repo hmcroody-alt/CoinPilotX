@@ -568,7 +568,11 @@
       "tooManyAttempts": "Muitas tentativas. Espere um pouco e tente de novo.",
       "serverTrouble": "O PulseSoc está com problemas agora. Tente de novo em instantes.",
       "unableToSignIn": "Não foi possível entrar.",
-      "registerFailed": "Não deu para criar sua conta. Tente de novo."
+      "registerFailed": "Não deu para criar sua conta. Tente de novo.",
+      "challengeRequired": "Por segurança, conclua a verificação para continuar.",
+      "emailNotConfirmed": "Confirme seu e-mail antes de entrar.",
+      "accountRestricted": "Esta conta não pode entrar agora. Fale com support@pulsesoc.com.",
+      "nonProductionBackend": "Esta versão está conectada a {{environment}} ({{host}}), que tem contas próprias."
     },
     "media": {
       "uploadFailed": "O envio não foi concluído. Tente de novo.",

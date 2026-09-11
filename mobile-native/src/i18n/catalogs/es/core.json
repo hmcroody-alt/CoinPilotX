@@ -568,7 +568,11 @@
       "tooManyAttempts": "Demasiados intentos. Espera un momento e inténtalo de nuevo.",
       "serverTrouble": "PulseSoc está teniendo problemas ahora mismo. Inténtalo de nuevo en breve.",
       "unableToSignIn": "No se pudo iniciar sesión.",
-      "registerFailed": "No se pudo crear tu cuenta. Inténtalo de nuevo."
+      "registerFailed": "No se pudo crear tu cuenta. Inténtalo de nuevo.",
+      "challengeRequired": "Por seguridad, completa la verificación para continuar.",
+      "emailNotConfirmed": "Confirma tu correo electrónico antes de iniciar sesión.",
+      "accountRestricted": "Esta cuenta no puede iniciar sesión ahora. Escribe a support@pulsesoc.com.",
+      "nonProductionBackend": "Esta versión se conecta a {{environment}} ({{host}}), que tiene sus propias cuentas."
     },
     "media": {
       "uploadFailed": "Esa subida no se completó. Inténtalo de nuevo.",

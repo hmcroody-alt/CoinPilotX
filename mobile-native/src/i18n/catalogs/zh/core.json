@@ -568,7 +568,11 @@
       "tooManyAttempts": "尝试次数过多。请稍等一会儿再试。",
       "serverTrouble": "PulseSoc 目前出现故障。请稍后重试。",
       "unableToSignIn": "无法登录。",
-      "registerFailed": "无法创建账号。请重试。"
+      "registerFailed": "无法创建账号。请重试。",
+      "challengeRequired": "为了您的安全，请完成验证以继续登录。",
+      "emailNotConfirmed": "登录前请先确认您的电子邮箱。",
+      "accountRestricted": "此账号目前无法登录。请联系 support@pulsesoc.com。",
+      "nonProductionBackend": "此版本连接的是 {{environment}}（{{host}}），其账号与正式环境相互独立。"
     },
     "media": {
       "uploadFailed": "上传未完成，请重试。",

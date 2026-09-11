@@ -568,7 +568,11 @@
       "tooManyAttempts": "시도 횟수가 너무 많아요. 잠시 후 다시 시도해 주세요.",
       "serverTrouble": "지금 PulseSoc에 문제가 있어요. 잠시 후 다시 시도해 주세요.",
       "unableToSignIn": "로그인할 수 없어요.",
-      "registerFailed": "계정을 만들지 못했어요. 다시 시도해 주세요."
+      "registerFailed": "계정을 만들지 못했어요. 다시 시도해 주세요.",
+      "challengeRequired": "보안을 위해 확인을 완료한 후 로그인을 계속하세요.",
+      "emailNotConfirmed": "로그인하기 전에 이메일 주소를 확인해 주세요.",
+      "accountRestricted": "이 계정은 지금 로그인할 수 없습니다. support@pulsesoc.com으로 문의하세요.",
+      "nonProductionBackend": "이 빌드는 {{environment}}({{host}})에 연결되어 있으며 계정이 별도로 관리됩니다."
     },
     "media": {
       "uploadFailed": "업로드를 마치지 못했어요. 다시 시도해 주세요.",

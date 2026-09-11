@@ -11,6 +11,7 @@ import { createQaSimulatorLocalSession, isQaSimulatorAutoLoginEnabled, tryHandle
 import { getCachedSessionUser } from "../session/sessionStore";
 import { PulseUser } from "../api/auth";
 import { PulseApiError } from "../api/pulseApi";
+import { PULSE_ENVIRONMENT, PULSE_ENVIRONMENT_IDENTITY } from "../api/config";
 import {
   authenticateWithBiometrics,
   confirmAndEnableBiometricLogin,
@@ -412,13 +413,72 @@ export function LoginScreen() {
   );
 }
 
+/**
+ * The five ways /api/mobile/auth/login can reject, keyed by the discriminator
+ * the backend already sends.
+ *
+ * `api_error(..., error="...")` puts these in the body; `errorCodeOf` in
+ * pulseApi.ts reads `error_code` then `error`, so they arrive as
+ * `PulseApiError.code`. Everything needed to tell these apart was already on
+ * the wire -- the screen was throwing it away and substituting a guess.
+ *
+ * That guess is wrong in a way that costs real time. Three failed attempts
+ * inside five minutes trip the velocity gate (FAILED_LOGIN_CHALLENGE_AFTER),
+ * after which the server answers 403 `login_challenge_required` -- "complete
+ * the security challenge" -- and the screen said the password didn't match.
+ * The user then retries the same correct password against a challenge that
+ * will refuse it every time, and each retry pushes the IP counter closer to
+ * its own limit.
+ */
+const LOGIN_REJECTION_KEYS: Record<string, string> = {
+  login_challenge_required: "errors:auth.challengeRequired",
+  login_rate_limited: "errors:auth.tooManyAttempts",
+  email_not_confirmed: "errors:auth.emailNotConfirmed",
+  account_restricted: "errors:auth.accountRestricted"
+};
+
+/**
+ * Name the backend a non-production build is actually talking to.
+ *
+ * A bare 401 is genuinely ambiguous by design -- the server returns the same
+ * "Email or password is incorrect." whether the account is unknown or the
+ * password is wrong, so it cannot be used to enumerate accounts, and this must
+ * not undo that. So we do not say anything about the account. We say something
+ * about *this build*, read from the resolved base URL rather than assumed: on a
+ * QA build the likeliest reason correct credentials are refused is that they
+ * belong to a different environment's database, and nothing on screen has ever
+ * said which one this is.
+ *
+ * Production builds classify as `production` and append nothing, so no ordinary
+ * user sees it. Being build identity rather than account state, this leaks
+ * nothing a request to the host would not already reveal.
+ */
+function withBackendHint(message: string): string {
+  if (PULSE_ENVIRONMENT === "production") return message;
+  return `${message} ${translate("errors:auth.nonProductionBackend", {
+    environment: PULSE_ENVIRONMENT_IDENTITY.appEnvironment,
+    host: PULSE_ENVIRONMENT_IDENTITY.backendHost
+  })}`;
+}
+
 function describeLoginError(error: unknown): string {
   if (error instanceof PulseApiError) {
     if (error.code === "request_unreachable" || error.status === 503) {
       return translate("errors:auth.unreachable");
     }
+    // Discriminator before status: `login_rate_limited` arrives as 429 and
+    // `login_challenge_required` as 403, but both are the security gate, and a
+    // future one should not be silently re-sorted by whichever status it picks.
+    const keyed = LOGIN_REJECTION_KEYS[error.code || ""];
+    if (keyed) return translate(keyed);
     if (error.status === 429) return translate("errors:auth.tooManyAttempts");
-    if (error.status === 401 || error.status === 403) return translate("errors:auth.identifierMismatch");
+    if (error.status === 401 || error.status === 403) {
+      // A rejection carrying a code we do not recognise is a state this build
+      // predates. The server's own words beat a guess we know is incomplete --
+      // substituting `identifierMismatch` here is what hid the challenge.
+      if (error.code) return error.message || translate("errors:auth.unableToSignIn");
+      return withBackendHint(translate("errors:auth.identifierMismatch"));
+    }
     if (error.status >= 500) return translate("errors:auth.serverTrouble");
     return error.message || translate("errors:auth.unableToSignIn");
   }

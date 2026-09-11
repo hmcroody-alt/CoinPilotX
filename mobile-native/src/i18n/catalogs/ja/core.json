@@ -568,7 +568,11 @@
       "tooManyAttempts": "試行回数が多すぎます。少し待ってからお試しください。",
       "serverTrouble": "PulseSocで問題が発生しています。しばらくしてからお試しください。",
       "unableToSignIn": "ログインできません。",
-      "registerFailed": "アカウントを作成できませんでした。もう一度お試しください。"
+      "registerFailed": "アカウントを作成できませんでした。もう一度お試しください。",
+      "challengeRequired": "セキュリティのため、確認を完了してサインインを続けてください。",
+      "emailNotConfirmed": "サインインする前にメールアドレスを確認してください。",
+      "accountRestricted": "このアカウントは現在サインインできません。support@pulsesoc.com までご連絡ください。",
+      "nonProductionBackend": "このビルドは {{environment}}（{{host}}）に接続しており、アカウントは別管理です。"
     },
     "media": {
       "uploadFailed": "アップロードが完了しませんでした。もう一度お試しください。",

@@ -568,7 +568,11 @@
       "tooManyAttempts": "Trop de tentatives. Patientez un instant et réessayez.",
       "serverTrouble": "PulseSoc rencontre un problème pour le moment. Réessayez dans un instant.",
       "unableToSignIn": "Connexion impossible.",
-      "registerFailed": "Nous n'avons pas pu créer votre compte. Réessayez."
+      "registerFailed": "Nous n'avons pas pu créer votre compte. Réessayez.",
+      "challengeRequired": "Par sécurité, complétez la vérification pour continuer.",
+      "emailNotConfirmed": "Confirmez votre adresse e-mail avant de vous connecter.",
+      "accountRestricted": "Ce compte ne peut pas se connecter pour le moment. Contactez support@pulsesoc.com.",
+      "nonProductionBackend": "Cette version est connectée à {{environment}} ({{host}}), qui possède ses propres comptes."
     },
     "media": {
       "uploadFailed": "L'importation n'a pas abouti. Réessayez.",

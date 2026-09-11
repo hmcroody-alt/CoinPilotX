@@ -568,7 +568,11 @@
       "tooManyAttempts": "Zu viele Versuche. Bitte warte kurz und versuch es erneut.",
       "serverTrouble": "PulseSoc hat gerade Probleme. Bitte versuch es gleich noch mal.",
       "unableToSignIn": "Anmeldung nicht möglich.",
-      "registerFailed": "Dein Konto konnte nicht erstellt werden. Bitte versuch es erneut."
+      "registerFailed": "Dein Konto konnte nicht erstellt werden. Bitte versuch es erneut.",
+      "challengeRequired": "Bestätige aus Sicherheitsgründen die Prüfung, um fortzufahren.",
+      "emailNotConfirmed": "Bestätige deine E-Mail-Adresse, bevor du dich anmeldest.",
+      "accountRestricted": "Dieses Konto kann sich derzeit nicht anmelden. Wende dich an support@pulsesoc.com.",
+      "nonProductionBackend": "Dieser Build ist mit {{environment}} ({{host}}) verbunden, das eigene Konten hat."
     },
     "media": {
       "uploadFailed": "Der Upload wurde nicht abgeschlossen. Versuch es erneut.",

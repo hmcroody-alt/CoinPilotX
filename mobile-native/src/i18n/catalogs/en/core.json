@@ -568,7 +568,11 @@
       "tooManyAttempts": "Too many attempts. Please wait a moment and try again.",
       "serverTrouble": "PulseSoc is having trouble right now. Please try again shortly.",
       "unableToSignIn": "Unable to sign in.",
-      "registerFailed": "Couldn't create your account. Please try again."
+      "registerFailed": "Couldn't create your account. Please try again.",
+      "challengeRequired": "For your security, confirm the challenge to continue signing in.",
+      "emailNotConfirmed": "Confirm your email address before signing in.",
+      "accountRestricted": "This account can't sign in right now. Contact support@pulsesoc.com.",
+      "nonProductionBackend": "This build is signed in to {{environment}} ({{host}}), which has its own separate accounts."
     },
     "media": {
       "uploadFailed": "That upload didn't finish. Try again.",

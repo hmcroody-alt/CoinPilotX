@@ -164,6 +164,94 @@ describe("LoginScreen", () => {
     );
   });
 
+  /**
+   * The backend rejects a sign-in five distinguishable ways. The screen used to
+   * answer four of them with "that email/username or password doesn't match our
+   * records", which is not a softer phrasing of the truth -- it is a different
+   * claim, and for the security-gate states it is a false one.
+   *
+   * The concrete cost: three failed attempts inside five minutes trip the
+   * velocity gate, after which a *correct* password is answered 403
+   * `login_challenge_required`. Told the password was wrong, the natural move is
+   * to retype the same correct password, which cannot succeed and which drives
+   * the shared per-IP counter toward its own limit.
+   */
+  async function submitAndReadError(error: PulseApiError) {
+    mockedSignIn.mockRejectedValue(error);
+    const screen = render(<LoginScreen />);
+    openPulseGate(screen);
+    const { getByTestId, findByTestId } = screen;
+    await waitFor(() => expect(getByTestId("login-identifier")).toBeTruthy());
+    fireEvent.changeText(getByTestId("login-identifier"), "user@example.com");
+    fireEvent.changeText(getByTestId("login-password"), "password123");
+    fireEvent.press(getByTestId("login-submit"));
+    const errorText = await findByTestId("login-form-error");
+    return String(errorText.props.children);
+  }
+
+  it("names the security challenge instead of blaming the password", async () => {
+    const shown = await submitAndReadError(
+      new PulseApiError("Complete the security challenge to continue.", 403, "login_challenge_required")
+    );
+    expect(shown).toMatch(/confirm the challenge/i);
+    expect(shown).not.toMatch(/match our records/i);
+  });
+
+  it("tells the user to confirm their email when that is what is missing", async () => {
+    const shown = await submitAndReadError(
+      new PulseApiError("Please confirm your email before logging in.", 403, "email_not_confirmed")
+    );
+    expect(shown).toMatch(/confirm your email/i);
+    expect(shown).not.toMatch(/match our records/i);
+  });
+
+  it("reports a restricted account as restricted", async () => {
+    const shown = await submitAndReadError(
+      new PulseApiError("This account is not active.", 403, "account_restricted")
+    );
+    expect(shown).toMatch(/can't sign in right now/i);
+    expect(shown).not.toMatch(/match our records/i);
+  });
+
+  it("reads the rate-limit state from the code, not only from the 429", async () => {
+    // `login_rate_limited` is issued at 429 today. Sorting on status alone would
+    // still work now and quietly mis-sort it the day the gate picks 403.
+    //
+    // Asserted against the catalog sentence, not the server's. Both contain
+    // "too many", so a looser matcher passes even when the code lookup is gone
+    // and the English message is being echoed through the unknown-code path --
+    // which is the exact regression this test exists to catch. "Wait a moment"
+    // appears only in the localized string.
+    const shown = await submitAndReadError(
+      new PulseApiError("Too many failed login attempts.", 403, "login_rate_limited")
+    );
+    expect(shown).toBe("Too many attempts. Please wait a moment and try again.");
+  });
+
+  it("shows the server's own words for a rejection code it does not know", async () => {
+    // A state added to the backend after this build shipped. Substituting a
+    // guess here is exactly what hid the challenge; the server's sentence is
+    // incomplete only in language, not in truth.
+    const shown = await submitAndReadError(
+      new PulseApiError("Your account needs manual review before sign-in.", 403, "pending_manual_review")
+    );
+    expect(shown).toBe("Your account needs manual review before sign-in.");
+  });
+
+  it("still says credentials for a bare 401, which the server left ambiguous on purpose", async () => {
+    // Unknown account and wrong password answer identically so the endpoint
+    // cannot enumerate accounts. The screen must not invent the distinction.
+    const shown = await submitAndReadError(new PulseApiError("Email or password is incorrect.", 401));
+    expect(shown).toMatch(/doesn't match our records/i);
+  });
+
+  it("adds no backend hint on a production build", async () => {
+    // The hint below is for QA builds only; jest resolves the default base URL,
+    // which classifies as production. An ordinary user must never see it.
+    const shown = await submitAndReadError(new PulseApiError("Email or password is incorrect.", 401));
+    expect(shown).not.toMatch(/separate accounts/i);
+  });
+
   it("prevents a duplicate submission while one is already in flight", async () => {
     let resolveSignIn: (value: unknown) => void = () => undefined;
     mockedSignIn.mockReturnValue(
