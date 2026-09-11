@@ -39,6 +39,33 @@ cd "$(dirname "$0")"
 SIM_ID="E859950D-B187-4897-B389-05447C5AD796"   # iPhone 17 Pro Max
 DERIVED="$HOME/Library/Developer/Xcode/DerivedData/pulsesoc-sim-build"
 
+# WHICH BACKEND THIS BUILD WILL TALK TO -- say it out loud, then prove it.
+#
+# This script carries no API base of its own, so running it bare bakes in the
+# production fallback from src/api/config.ts. That is a real trap and not a
+# hypothetical one: a staging build was replaced by a production one here simply
+# by re-running this file without the variable, and nothing about the resulting
+# app looked different -- same name, same icon, same screens -- until the store
+# it listed turned out to be the live one.
+#
+# config.ts says the same thing about itself: "every way this resolution can
+# fail lands on production". So the target is printed before the build and
+# verified in the artifact after it, because the failure is silent by nature.
+TARGET_BASE="${EXPO_PUBLIC_PULSE_API_BASE_URL:-https://pulsesoc.com}"
+echo "=== [sim] backend for this build: $TARGET_BASE ==="
+echo "=== [sim] declared environment: ${EXPO_PUBLIC_PULSE_ENVIRONMENT:-(undeclared)} ==="
+
+# A base URL without a declared environment is the dangerous half-expressed
+# wish config.ts warns about: the mismatch guard there only binds once an
+# environment has been claimed, so an un-inlined or typo'd URL would fall back
+# to production with nothing to catch it. Refuse rather than build that.
+if [ -n "${EXPO_PUBLIC_PULSE_API_BASE_URL:-}" ] && [ -z "${EXPO_PUBLIC_PULSE_ENVIRONMENT:-}" ]; then
+  echo "REFUSING: EXPO_PUBLIC_PULSE_API_BASE_URL is set but EXPO_PUBLIC_PULSE_ENVIRONMENT is not."
+  echo "-- config.ts can only catch a URL/intent mismatch when the intent is stated,"
+  echo "-- and every failure path in that resolution lands on production."
+  exit 1
+fi
+
 # No signing overrides: the project already carries DEVELOPMENT_TEAM
 # (87ZC69AGSR), CODE_SIGN_STYLE=Automatic and CODE_SIGN_ENTITLEMENTS, which is
 # exactly what build_device.sh relies on. For a simulator destination Xcode
@@ -57,6 +84,24 @@ xcodebuild \
 APP="$DERIVED/Build/Products/Release-iphonesimulator/PulseSoc.app"
 echo "=== [sim] built: $APP ==="
 test -d "$APP" || { echo "MISSING APP BUNDLE at $APP"; exit 1; }
+
+# Prove the backend above actually reached the artifact.
+#
+# Presence in the environment is not presence in the bundle: babel-preset-expo
+# substitutes `process.env.X` only for a string-literal key, so an inlining
+# failure leaves the production fallback in place while the shell still shows
+# the variable set. Only the built bytecode settles it. `strings -a` is required
+# -- main.jsbundle is Hermes bytecode and plain grep finds nothing in it.
+if [ "$TARGET_BASE" != "https://pulsesoc.com" ]; then
+  TARGET_HOST="${TARGET_BASE#https://}"
+  echo "=== [sim] verifying '$TARGET_HOST' is inlined in the Hermes bundle ==="
+  if ! strings -a "$APP/main.jsbundle" | grep -q "$TARGET_HOST"; then
+    echo "BUNDLE DOES NOT CONTAIN '$TARGET_HOST' -- it fell back to production."
+    echo "-- The app would look correct and talk to the live site."
+    exit 1
+  fi
+  echo "=== [sim] confirmed: bundle targets $TARGET_HOST ==="
+fi
 
 echo "=== [sim] re-signing frameworks (dyld rejects the unsigned Agora set) ==="
 count=0
