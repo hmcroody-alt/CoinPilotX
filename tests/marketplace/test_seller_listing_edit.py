@@ -550,18 +550,34 @@ class SellerListingEditTest(unittest.TestCase):
 class MarketplaceWebPriceFallbackTest(unittest.TestCase):
     """The web pages a buyer actually loads, not the payload behind them.
 
-    Web was the last surface still answering a blank price with "Request
-    access". That phrase describes a gated product the buyer has to apply for,
-    and no such flow exists -- the listing is simply not priced yet. Native says
-    "Price at checkout" on the very same card, so the two clients disagreed
-    about the same row, and a buyer could see it by opening one product twice.
+    Web answered a blank price first with "Request access" and then with "Price
+    at checkout". Both are the same mistake in different words: the seller set
+    no price, and the page states one anyway. "Request access" additionally
+    describes a gated product with an application flow that does not exist.
+
+    The rule these pin is the serializer's, established once and now applied
+    everywhere a price is drawn: an absent price renders as *nothing*. Not a
+    phrase, and not an empty pill either -- an empty pill reads as a price the
+    seller deliberately set to nothing. The category and safety pills still
+    render, so the card never collapses.
 
     These render the real routes rather than inspecting source text. That is
     deliberate: the JS card builds its own HTML inside a ``%``-formatted script
-    block, so the fallback reaches it through string interpolation, and a
+    block, so anything threaded into it travels by string interpolation, and a
     mistake there is a 500 on the whole marketplace page rather than a wrong
-    word. Only rendering catches that.
+    word. Only rendering catches that -- and removing the fallback changed that
+    block's argument count, which is exactly such a mistake.
     """
+
+    # Asserted as literals rather than through a constant. The constant these
+    # used to import no longer exists, and re-introducing one so the tests can
+    # name it would let a future edit rename the phrase and keep the suite green
+    # while the page still says it.
+    INVENTED = ("Price at checkout", "Request access", "Price shown at checkout")
+
+    def assertInventsNoPrice(self, text, where):
+        for phrase in self.INVENTED:
+            self.assertNotIn(phrase, text, f"{where} invented a price: {phrase!r}")
 
     # ------------------------------------------------------------------
     # fixtures
@@ -673,11 +689,14 @@ class MarketplaceWebPriceFallbackTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True)[:400])
         html = response.get_data(as_text=True)
         self.assertIn("Unpriced web lamp", html, "the unpriced listing never rendered")
-        self.assertNotIn("Request access", html)
-        self.assertIn(bot.MARKETPLACE_PRICE_FALLBACK, html)
+        self.assertInventsNoPrice(html, "the marketplace grid")
+        # The card must still be a card. Dropping the price pill must not take
+        # the row's other pills with it, or "no invented price" would be
+        # satisfied by rendering nothing at all.
+        self.assertIn("Safety", html)
         del listing_id
 
-    def test_the_inline_card_script_carries_the_same_fallback(self):
+    def test_the_inline_card_script_invents_no_price_either(self):
         """Same page, second renderer. Search results are drawn in JS.
 
         The grid is server-rendered on load and re-rendered client-side after a
@@ -690,9 +709,7 @@ class MarketplaceWebPriceFallbackTest(unittest.TestCase):
         self.assertIn("function marketplaceListingHtml", html)
         script = html[html.index("function marketplaceListingHtml"):]
         script = script[:script.index("</script>")] if "</script>" in script else script
-        self.assertIn(bot.MARKETPLACE_PRICE_FALLBACK, script,
-                      "the JS card did not receive the shared fallback")
-        self.assertNotIn("Request access", script)
+        self.assertInventsNoPrice(script, "the inline JS card")
 
     def test_the_product_page_renders_and_never_says_request_access(self):
         listing_id = self.unpriced_listing()
@@ -700,17 +717,21 @@ class MarketplaceWebPriceFallbackTest(unittest.TestCase):
             response = self.client.get(f"/pulse/marketplace/{listing_id}")
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True)[:400])
         html = response.get_data(as_text=True)
-        self.assertNotIn("Request access", html)
-        self.assertIn(bot.MARKETPLACE_PRICE_FALLBACK, html)
+        self.assertInventsNoPrice(html, "the product page")
 
-    def test_a_price_the_seller_set_is_shown_instead_of_the_fallback(self):
-        """The fallback is for absence only. It must not overwrite a real price."""
+    def test_a_price_the_seller_set_is_still_shown(self):
+        """Removing the invented phrase must not remove real prices with it.
+
+        The suppression is keyed on absence. A test that only proves "no
+        invented phrase" is satisfied by a page that never prints a price at
+        all, which would be a worse bug than the one being fixed.
+        """
         priced = self._make_listing(self.owner, title="Priced web lamp",
                                     price_label="$40.00")
         with self.acting_as(self.owner):
             html = self.client.get(f"/pulse/marketplace/{priced}").get_data(as_text=True)
         self.assertIn("$40.00", html)
-        self.assertNotIn(bot.MARKETPLACE_PRICE_FALLBACK, html)
+        self.assertInventsNoPrice(html, "a priced product page")
 
     def test_the_fallback_is_presentation_only_and_never_reaches_the_row(self):
         """Rendering a page must not write words into the seller's price.
