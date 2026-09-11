@@ -1092,7 +1092,6 @@
       "listingFallbackText": "PulseSoc 상품",
       "listingTitleFallback": "마켓플레이스 상품",
       "categoryFallback": "교육",
-      "priceFallback": "접근 요청",
       "safetyScore": "안전도 {{score}}",
       "noMediaLoaded": "불러온 미디어가 없어요",
       "noDescription": "불러온 설명이 없어요.",
