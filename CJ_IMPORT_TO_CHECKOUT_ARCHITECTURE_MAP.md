@@ -121,13 +121,49 @@ placed order came back on the shop we bound), sandbox assertion.
 
 ---
 
+## The second seam: the number the app promises
+
+The first seam was between two *tables*. The second is between two *languages*,
+and it was worse, because this one had a comment claiming it did not exist.
+
+`marketplaceListingPriceMinor` in the app puts an amount on the Pay button.
+`parse_price_label_to_cents` on the server builds the Stripe charge. Both read
+the same `price_label`, and the app's docstring said it used "the same regex".
+It did not: the server's consumed thousands separators and the app's stopped at
+the comma. The server *writes* separators —
+`marketplace_normalize_price_label` formats with `,` — so every listing at or
+above $1,000 was affected. Measured:
+
+```
+label          app shows      server charges
+$999.99        99999          99999          <- correct
+$1,000.00      100            100000         <- 1000x
+$12,345.67     1200           1234567        <- 1000x
+```
+
+Above a comment reading "that number *is* the charge, not a running estimate".
+Only Buy Now: the cart path totals `price_snapshot_minor`, a server number.
+Every existing test of the function used $5.00 and $12.50.
+
+Fixed in `4858385f`. The parity claim is no longer a comment — sixteen labels
+live in `mobile-native/src/api/__tests__/fixtures/priceLabelParity.json`, read by
+the app's suite and by `tests/test_marketplace_price_label_parity.py`. Changing
+either parser alone reddens one suite; changing the table alone reddens both,
+verified by doing it.
+
+---
+
 ## Known gaps, not yet fixed
 
-1. **`lifecycle.is_public` has no price condition.** A listing with an empty
-   `price_label` is publicly discoverable and then refused at add-to-cart. The
-   dropship path can no longer produce one (publish writes the label), but a
-   manual seller blanking their price still can. **Production check: zero such
-   listings today**, so this is latent, not active.
+1. ~~**`lifecycle.is_public` has no price condition.**~~ Resolved in `d5e68151`,
+   but not by adding one. Unpriced listings are browsable *on purpose* — the
+   serializer returns `""` rather than inventing a phrase, and both screens
+   print no price line. Hiding them would delete that. What was wrong is that
+   the app then offered to sell them: `canPurchaseMarketplaceListing` had no
+   price condition, so an unpriced listing on a full shelf showed an enabled
+   "Add to cart" and the server answered 400 `ITEM_UNAVAILABLE` — or, via Buy
+   Now, took a delivery address first. `is_public` is left alone deliberately;
+   *visible* and *buyable* are different questions and the code now says so.
 2. **No buyer-side variant selection.** A multi-variant product can only be sold
    at a single price; `VARIANT_PRICE_SPREAD` now refuses the alternative rather
    than guessing, but the real fix is a variant selector on the product page.
@@ -141,3 +177,27 @@ placed order came back on the shop we bound), sandbox assertion.
    `external_shop_id` is unset, so `create_intent` raises
    `shop_binding_required`. This is an honest refusal, and §37 forbids placing a
    real CJ order regardless.
+6. **`bot.py:4379-4393` documents a constant that no longer exists**, and says
+   native "already says 'Price at checkout' on the same card" — which native
+   stopped doing. Comments that describe deleted code are how the parity claim
+   in gap-note above survived for as long as it did. Cosmetic, but the same
+   failure mode.
+
+---
+
+## What kept coming back
+
+Three defects in this chain, three different subsystems, one shape: **a number
+was asserted rather than measured.**
+
+- `publish()` never wrote `price_label`, and the publish test asserted `status`
+  and `published_at` and stopped one column short.
+- The app's parser claimed parity with the server's in a comment, and every test
+  of it picked an example below the threshold where the formats diverge.
+- `canPurchaseMarketplaceListing` claimed to answer "can this be bought" while
+  only ever consulting stock, and every unpriced fixture in the render suite was
+  also out of stock.
+
+In all three the suite was green, and in all three the green was about the
+halves rather than the seam. Where a claim spans two components, this document
+now prefers a fixture both components read over a sentence describing them.
