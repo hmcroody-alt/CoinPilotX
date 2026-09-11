@@ -1092,7 +1092,6 @@
       "listingFallbackText": "PulseSoc 商品",
       "listingTitleFallback": "商城商品",
       "categoryFallback": "教育",
-      "priceFallback": "价格在结账时显示",
       "safetyScore": "安全评分 {{score}}",
       "noMediaLoaded": "未加载媒体",
       "noDescription": "未加载描述。",

@@ -1106,7 +1106,6 @@
       "listingFallbackText": "Anuncio de PulseSoc",
       "listingTitleFallback": "Anuncio de Marketplace",
       "categoryFallback": "Educación",
-      "priceFallback": "Precio al finalizar la compra",
       "safetyScore": "Seguridad {{score}}",
       "noMediaLoaded": "Sin contenido cargado",
       "noDescription": "No se cargó ninguna descripción.",
