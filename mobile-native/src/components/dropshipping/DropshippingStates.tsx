@@ -177,6 +177,7 @@ export function stateIsUnactionable(state: DropshippingState): boolean {
   return (
     state === "SUPPLIER_DISABLED" ||
     state === "PROVIDER_NETWORK_DISABLED" ||
+    state === "CREDENTIAL_STORAGE_UNAVAILABLE" ||
     state === "STORE_NOT_APPROVED" ||
     state === "STORE_NOT_FOUND" ||
     state === "STORE_ACCESS_REVOKED" ||
@@ -257,6 +258,20 @@ export function DropshippingStateView({
       return (
         <StoreSectionError
           message="PulseSoc isn't cleared to talk to this supplier from this server yet, so nothing can be imported."
+          onRetry={null}
+          reducedMotion={reducedMotion}
+        />
+      );
+
+    // Not "your supplier is down". The server refuses to hold a credential it
+    // cannot encrypt, and it checks that before it calls the supplier, so on
+    // this state the supplier was never reached. It arrives as a 503 and used
+    // to land on the generic failure below, which offered a "Try again" that
+    // could never succeed — the missing piece is configuration on this server.
+    case "CREDENTIAL_STORAGE_UNAVAILABLE":
+      return (
+        <StoreSectionError
+          message="PulseSoc can't store supplier credentials securely on this server yet, so supplier accounts can't be used here."
           onRetry={null}
           reducedMotion={reducedMotion}
         />

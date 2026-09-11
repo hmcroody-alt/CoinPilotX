@@ -1214,6 +1214,7 @@ export const DROPSHIPPING_STATES = [
   "STALE",
   "SUPPLIER_DISABLED",
   "PROVIDER_NETWORK_DISABLED",
+  "CREDENTIAL_STORAGE_UNAVAILABLE",
   "STORE_NOT_APPROVED",
   "STORE_NOT_FOUND",
   "STORE_ACCESS_REVOKED",
@@ -1273,6 +1274,21 @@ export function stateForError(error: unknown): DropshippingState {
   if (code === "provider_network_disabled" || code === "provider_approval_required") {
     return "PROVIDER_NETWORK_DISABLED";
   }
+  // Third condition of the deployment, and the one that hid the longest. The
+  // server refuses to store a credential it cannot encrypt, and it checks that
+  // *before* it calls the supplier -- `vault.require_available()` runs ahead of
+  // `adapter.authenticate()` precisely so a broken deployment cannot spend one
+  // of the egress IP's three account slots. So when this code arrives, the
+  // supplier was never contacted at all.
+  //
+  // It used to fall through to the `status === 503` catch-all below and reach
+  // the merchant as "Your supplier isn't responding ... try again shortly" --
+  // wrong about who failed, and wrong that waiting helps, since nothing about a
+  // missing key on our own server changes with time. It is the same mistake the
+  // two codes above exist to prevent, on a third deployment condition that was
+  // missed, so it is matched here beside them rather than added to
+  // PROVIDER_CODES.
+  if (code === "credential_vault_unavailable") return "CREDENTIAL_STORAGE_UNAVAILABLE";
   if (code === "store_not_approved") return "STORE_NOT_APPROVED";
   if (code === "invalid_api_key") return "INVALID_CREDENTIAL";
 

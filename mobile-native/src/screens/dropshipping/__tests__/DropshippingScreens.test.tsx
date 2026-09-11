@@ -810,6 +810,45 @@ describe("ConnectSupplierScreen", () => {
   });
 
   /**
+   * The production failure, on the screen.
+   *
+   * Production runs with none of SUPPLIER_CREDENTIAL_KEYS,
+   * SUPPLIER_CREDENTIAL_KEY_ACTIVE or SUPPLIER_ACCOUNT_INDEX_KEY set, while
+   * staging has all three. So `vault.require_available()` raises, and it raises
+   * inside `_bootstrap()` *before* `adapter.authenticate(api_key)` — deliberately,
+   * because authenticating claims one of the three CJ account slots this egress
+   * IP is allowed and a deployment that cannot persist the result must not spend
+   * one. The merchant's key therefore never left PulseSoc.
+   *
+   * What the merchant got was "Your supplier isn't responding ... try again
+   * shortly", because `credential_vault_unavailable` is a 503 and 503 was in the
+   * catch-all at the bottom of `stateForError`. Two false claims in one
+   * sentence: that CJ was asked, and that waiting would help.
+   *
+   * The three negative assertions are the load-bearing ones. Asserting only the
+   * new sentence would stay green if the old one were printed beside it, and the
+   * bug was never that the right words were missing — it was that the wrong ones
+   * were there.
+   */
+  it("does not blame the supplier when this server cannot store the credential", async () => {
+    mockDiscoverShops.mockRejectedValue(
+      new PulseApiError("nope", 503, "credential_vault_unavailable")
+    );
+    const { view } = await connectScreen();
+    fireEvent.press(view.getByLabelText("Connect CJ Dropshipping"));
+    fireEvent.changeText(view.getByLabelText("CJ API key"), "cj-secret-key");
+    await act(async () => {
+      fireEvent.press(view.getByLabelText("Connect to CJ"));
+    });
+
+    await waitFor(() => expect(view.getByText(/can't store supplier credentials/)).toBeTruthy());
+    // Not the supplier's fault, not the key's fault, and not worth retrying.
+    expect(view.queryByText(/isn't responding/)).toBeNull();
+    expect(view.queryByText(/didn't work/)).toBeNull();
+    expect(view.queryByText(/try again shortly/i)).toBeNull();
+  });
+
+  /**
    * A rejected key and a working key that owns no shops used to be told apart
    * only by which dead end they reached. They are still told apart — but the
    * second is no longer a dead end.

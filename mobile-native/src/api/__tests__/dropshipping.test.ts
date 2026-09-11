@@ -356,6 +356,47 @@ describe("stateForError separates causes that have different fixes", () => {
     }
   });
 
+  /**
+   * A server that cannot store a credential has not talked to the supplier.
+   *
+   * `vault.require_available()` runs in `_bootstrap()` *before*
+   * `adapter.authenticate(api_key)`, deliberately: authenticating claims one of
+   * the three CJ account slots this egress IP is allowed, and a deployment that
+   * cannot persist the result must not spend one. So `credential_vault_unavailable`
+   * is proof the key never left PulseSoc.
+   *
+   * It arrives as a 503, and a 503 is in the catch-all on the last line of
+   * `stateForError`, so it used to land on PROVIDER_UNAVAILABLE and the connect
+   * screen said "Your supplier isn't responding ... try again shortly". Both
+   * halves were false: the supplier was never asked, and retrying could not
+   * help, because the missing thing was three environment variables on our own
+   * server. That is what a real merchant hit on production, where
+   * SUPPLIER_CREDENTIAL_KEYS / _KEY_ACTIVE / SUPPLIER_ACCOUNT_INDEX_KEY are all
+   * unset while staging has them.
+   *
+   * The second assertion is the one that fails if someone "simplifies" the fix
+   * by adding the code to PROVIDER_CODES instead — that would restore exactly
+   * the wrong answer while keeping the first assertion green.
+   */
+  it("does not blame the supplier when our own credential storage is the problem", () => {
+    expect(stateForError(new PulseApiError("x", 503, "credential_vault_unavailable")))
+      .toBe("CREDENTIAL_STORAGE_UNAVAILABLE");
+    expect(stateForError(new PulseApiError("x", 503, "credential_vault_unavailable")))
+      .not.toBe("PROVIDER_UNAVAILABLE");
+  });
+
+  /**
+   * The named code has to outrank the status even if the status changes.
+   * Pinning only the 503 spelling would let a server that answered 500 or 502
+   * for the same condition fall back through to a generic ERROR.
+   */
+  it("reads the named cause regardless of the status it rides in on", () => {
+    for (const status of [500, 502, 503]) {
+      expect(stateForError(new PulseApiError("x", status, "credential_vault_unavailable")))
+        .toBe("CREDENTIAL_STORAGE_UNAVAILABLE");
+    }
+  });
+
   it("does not classify an unknown failure as anything specific", () => {
     expect(stateForError(new Error("boom"))).toBe("ERROR");
     expect(stateForError(new PulseApiError("x", 500))).toBe("ERROR");
