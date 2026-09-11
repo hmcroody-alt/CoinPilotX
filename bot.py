@@ -53970,7 +53970,21 @@ def pulse_marketplace_listing_payload(listing, media_rows=None):
         "short_description": item.get("short_description") or "",
         "description": item.get("description") or "",
         "category": item.get("category") or "Education",
-        "price_label": item.get("price_label") or "Request access",
+        # A listing with no price carries no price. This is the serializer every
+        # marketplace read goes through -- four endpoints, list and detail, buyer
+        # and seller -- so a phrase invented here is indistinguishable downstream
+        # from one the seller typed, and every client renders it as theirs.
+        #
+        # It also silently outranked the clients' own fallbacks. The app, the
+        # product screen and the Page block each answer a blank price with their
+        # own copy, and none of them could ever run, because this line guaranteed
+        # the field arrived non-empty. Fixing them without fixing this changed
+        # nothing at all: a dropship draft, whose price is blank by design, still
+        # reached the seller's own storefront priced "Request access".
+        #
+        # Checkout does not move: `parse_price_label_to_cents` maps both "" and
+        # "Request access" to zero cents, so neither spelling promises money.
+        "price_label": str(item.get("price_label") or ""),
         "listing_type": marketplace_listing_types_service.effective_listing_type(item.get("listing_type"), item.get("product_type")),
         "listing_metadata": marketplace_listing_types_service.parse_metadata(item.get("listing_metadata_json")),
         "safety_score": safe_int(item.get("safety_score"), 0),
@@ -93599,7 +93613,12 @@ def api_pulse_marketplace_listing_create():
     description = clean_html(payload.get("description") or "")[:1400]
     category = clean_html(payload.get("category") or "Education")[:80]
     subcategory = clean_html(payload.get("subcategory") or "")[:80]
-    price = clean_html(payload.get("price_label") or "Request access")[:80]
+    # A seller who submits no price has not priced the listing, and that is a
+    # state the rest of the system handles. Filling it in here writes words they
+    # never chose into the price column, where every later read treats them as
+    # the seller's own -- the same substitution that was removed from the update
+    # route and from the read serializer.
+    price = clean_html(payload.get("price_label") or "")[:80]
     currency = clean_html(payload.get("currency") or "USD")[:12]
     quantity = safe_int(payload.get("quantity"), 0)
     product_type = payload.get("product_type") if payload.get("product_type") in {"digital", "physical", "course", "service", "event", "booking"} else ""

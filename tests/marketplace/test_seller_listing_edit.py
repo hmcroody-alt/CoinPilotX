@@ -99,6 +99,39 @@ class PriceLabelParsingTest(unittest.TestCase):
         for label in ["", "Request access"]:
             self.assertEqual(bot.parse_price_label_to_cents(label)[0], 0, label)
 
+    def test_the_read_serializer_does_not_price_an_unpriced_listing(self):
+        """Every marketplace read goes through here, so this is where it counts.
+
+        Fixing the writers and the clients was not enough and the gap was
+        visible on a real device: the app, the product screen and the Page block
+        each answer a blank price with their own copy, but this function handed
+        them "Request access" first, so their fallbacks were unreachable and a
+        dropship draft -- blank by design -- still arrived in the seller's own
+        store carrying a price they had never set. Four endpoints share this
+        serializer, buyer and seller, list and detail, which is why a phrase
+        invented here cannot be told apart downstream from one the seller typed.
+
+        The whole earlier fix passed its tests while the bug stayed on screen,
+        because nothing asserted the shape of the payload itself. That is the
+        hole this closes.
+        """
+        served = bot.pulse_marketplace_listing_payload(
+            {"id": 7, "seller_user_id": 1, "title": "Beaded bracelet", "price_label": ""})
+        self.assertEqual(served["price_label"], "")
+        # The point of keeping it empty: a client fallback can now run at all.
+        self.assertEqual(served["price_label"] or "Price at checkout", "Price at checkout")
+
+        missing = bot.pulse_marketplace_listing_payload(
+            {"id": 7, "seller_user_id": 1, "title": "Beaded bracelet"})
+        self.assertEqual(missing["price_label"], "")
+
+    def test_the_read_serializer_still_reports_a_price_the_seller_chose(self):
+        """Including an unpriced phrase, when it is the seller's own words."""
+        for chosen in ["$18.50", "Free", "Request access"]:
+            served = bot.pulse_marketplace_listing_payload(
+                {"id": 7, "seller_user_id": 1, "title": "x", "price_label": chosen})
+            self.assertEqual(served["price_label"], chosen)
+
 
 class SellerListingEditTest(unittest.TestCase):
     @classmethod
@@ -194,6 +227,44 @@ class SellerListingEditTest(unittest.TestCase):
                 f"/api/pulse/marketplace/seller/listings/{listing_id or self.listing_id}",
                 json=payload,
             )
+
+    def test_creating_a_listing_without_a_price_does_not_invent_one(self):
+        """Submitting no price is not the same as choosing words for one.
+
+        The create route filled a missing `price_label` with "Request access"
+        before storing it, so a seller who left the field alone -- or any client
+        that omits it, which is how a dropship draft is built -- had a pricing
+        decision written into their listing under their name. Every later read
+        then presented it as theirs, because by then it genuinely was in their
+        row.
+
+        This is the third site in the same family, after the update route and
+        the read serializer, and it was the one still standing once the other
+        two were closed.
+        """
+        with self.acting_as(self.owner):
+            response = self.client.post(
+                "/api/pulse/marketplace/listings/create",
+                json={"title": "Unpriced lamp", "description": "No price yet.",
+                      "category": "Home", "product_type": "physical",
+                      "submission_action": "draft"},
+            )
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        created = int((response.get_json() or {}).get("listing_id") or 0)
+        self.assertTrue(created, "no listing id came back")
+        self.assertEqual(self.stored(created).get("price_label"), "")
+
+    def test_creating_a_listing_with_a_price_keeps_exactly_that_price(self):
+        """The other half: a price that was submitted is stored as submitted."""
+        with self.acting_as(self.owner):
+            response = self.client.post(
+                "/api/pulse/marketplace/listings/create",
+                json={"title": "Priced lamp", "description": "Has a price.",
+                      "category": "Home", "product_type": "physical",
+                      "price_label": "$40.00", "submission_action": "draft"},
+            )
+        created = int((response.get_json() or {}).get("listing_id") or 0)
+        self.assertEqual(self.stored(created).get("price_label"), "$40.00")
 
     def stored(self, listing_id=None):
         conn = bot.db()
