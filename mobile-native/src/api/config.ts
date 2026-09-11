@@ -58,7 +58,7 @@ if (declaredEnvironment && declaredEnvironment !== PULSE_ENVIRONMENT) {
   console.error(`[PulseSocEnvironment] MISMATCH ${detail}`);
   throw new Error(
     `PulseSoc build environment mismatch: ${detail}. ` +
-      "Refusing to start rather than fall back to the production backend."
+      "Refusing to start rather than fall back to live pulsesoc.com."
   );
 }
 
