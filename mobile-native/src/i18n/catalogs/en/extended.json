@@ -1106,6 +1106,7 @@
       "listingFallbackText": "PulseSoc listing",
       "listingTitleFallback": "Marketplace listing",
       "categoryFallback": "Education",
+      "priceFallback": "Price at checkout",
       "safetyScore": "Safety {{score}}",
       "noMediaLoaded": "No media loaded",
       "noDescription": "No description loaded.",

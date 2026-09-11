@@ -1186,6 +1186,7 @@
       "listingFallbackText": "إعلان PulseSoc",
       "listingTitleFallback": "إعلان في Marketplace",
       "categoryFallback": "التعليم",
+      "priceFallback": "السعر عند الدفع",
       "safetyScore": "السلامة {{score}}",
       "noMediaLoaded": "لم تُحمَّل أي وسائط",
       "noDescription": "لم يُحمَّل أي وصف.",

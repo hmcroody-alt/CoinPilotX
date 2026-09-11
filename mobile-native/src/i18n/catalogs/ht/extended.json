@@ -1092,6 +1092,7 @@
       "listingFallbackText": "Anons PulseSoc",
       "listingTitleFallback": "Anons Marketplace",
       "categoryFallback": "Edikasyon",
+      "priceFallback": "Pri a lè w peye",
       "safetyScore": "Sekirite {{score}}",
       "noMediaLoaded": "Pa gen medya ki chaje",
       "noDescription": "Pa gen deskripsyon ki chaje.",
