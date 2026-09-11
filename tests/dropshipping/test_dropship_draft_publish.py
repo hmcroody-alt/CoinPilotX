@@ -478,6 +478,208 @@ def test_an_all_unknown_inventory_draft_is_blocked(provider):
     assert drafts.UNKNOWN_INVENTORY in problems
 
 
+# ---------------------------------------------------------------------------
+# The price seam: merchant world -> buyer world
+# ---------------------------------------------------------------------------
+#
+# The merchant prices `marketplace_listing_variants.price_cents`. Every buyer
+# surface -- cart add, confirm-price, offers -- prices from
+# `marketplace_listings.price_label` via `bot.parse_price_label_to_cents`.
+# `marketplace_variants` is imported by the supplier package and by nothing else,
+# so the buyer has no variant selector and no way to reach the merchant's number.
+#
+# Nothing joined the two. A real CJ product, imported, priced at $20.00 a
+# variant, published and moderator-approved, measured as: is_public() True,
+# public_denial_code() "", price_label '', and a cart that charged 0 and
+# therefore refused the add with "This item is not priced for checkout." The
+# suite above stops one column short of that -- it asserts status and
+# published_at and never the price -- which is how it stayed green.
+
+def test_publishing_writes_the_price_the_buyer_path_reads(provider):
+    listing_id = imported(provider)
+    price_every_variant(listing_id, 2000)
+    result = drafts.publish(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id, context=CONTEXT)
+
+    listing = rows("SELECT price_label, currency FROM marketplace_listings WHERE id=?",
+                   (listing_id,))[0]
+    assert listing["price_label"], "published with no price for the buyer to see"
+    assert listing["price_label"] == result["price_label"]
+
+
+def test_the_published_label_charges_exactly_what_the_merchant_set(provider):
+    """The contract between this package and the monolith's checkout parser.
+
+    Two independent claims, because agreeing on a *format* and agreeing on an
+    *amount* are different failures. A label we render as "$2,000.00" for 2000
+    cents is well-formed and charges a hundred times too much; a label the parser
+    clamps is well-formed and charges too little. Only the parser's own opinion
+    of our string settles either, so this test imports the real one.
+    """
+    import bot
+
+    listing_id = imported(provider)
+    price_every_variant(listing_id, 2000)
+    drafts.publish(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id, context=CONTEXT)
+    listing = rows("SELECT price_label, currency FROM marketplace_listings WHERE id=?",
+                   (listing_id,))[0]
+
+    charged, currency = bot.parse_price_label_to_cents(
+        listing["price_label"], listing["currency"] or "USD")
+    assert charged == 2000, "the buyer would be charged %s, not the 2000 set" % charged
+    assert currency == "USD"
+
+    # And the label is the monolith's own spelling, so a later change to its
+    # format is a failure here rather than a silent divergence in the database.
+    expected, _, _, error = bot.marketplace_normalize_price_label("20.00", "USD")
+    assert not error and listing["price_label"] == expected
+
+    # The ceiling mirrored in this package must be the ceiling the parser
+    # actually enforces -- the parser *clamps* to it rather than refusing, so a
+    # stale copy here would publish a price that is quietly reduced at checkout.
+    assert drafts.MAX_CHECKOUT_PRICE_CENTS == bot.MAX_PRICE_LABEL_CENTS
+
+
+def test_an_unpriced_variant_is_not_sold_at_another_variants_price(provider):
+    # The buyer cannot choose a variant, so publishing this would have sold the
+    # blank one for whatever the priced one cost. The old gate asked only whether
+    # *something* was priced, and let it through.
+    listing_id = imported(provider)
+    draft = draft_of(listing_id)
+    drafts.update_draft(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id,
+                        fields={"price_cents": {str(draft["variants"][0]["variant_id"]): 2000}},
+                        context=CONTEXT)
+
+    problems = drafts.validate(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id,
+                               context=CONTEXT)["problems"]
+    assert drafts.MISSING_PRICE in problems
+    with pytest.raises(SupplierError):
+        drafts.publish(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id, context=CONTEXT)
+
+
+def test_variants_at_different_prices_cannot_be_published_as_one_price(provider):
+    # $20.00 and $35.00 with one listing-level price is a choice between
+    # overcharging and undercharging. Neither is ours to make silently.
+    listing_id = imported(provider)
+    draft = draft_of(listing_id)
+    first, second = (str(v["variant_id"]) for v in draft["variants"])
+    drafts.update_draft(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id,
+                        fields={"price_cents": {first: 2000, second: 3500}}, context=CONTEXT)
+
+    problems = drafts.validate(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id,
+                               context=CONTEXT)["problems"]
+    assert drafts.VARIANT_PRICE_SPREAD in problems
+    with pytest.raises(SupplierError):
+        drafts.publish(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id, context=CONTEXT)
+    assert rows("SELECT price_label FROM marketplace_listings WHERE id=?",
+                (listing_id,))[0]["price_label"] == ""
+
+
+def test_a_price_the_checkout_would_clamp_is_refused(provider):
+    # `_set_prices` accepts up to pricing.MAX_PRICE_CENTS ($10,000,000) and
+    # `parse_price_label_to_cents` ends in min(cents, MAX_PRICE_LABEL_CENTS).
+    # Between the two limits the buyer is charged $999,999.99 for a product
+    # priced far higher, and nothing anywhere says so.
+    listing_id = imported(provider)
+    price_every_variant(listing_id, drafts.MAX_CHECKOUT_PRICE_CENTS + 1)
+    problems = drafts.validate(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id,
+                               context=CONTEXT)["problems"]
+    assert drafts.PRICE_ABOVE_CHECKOUT_LIMIT in problems
+    with pytest.raises(SupplierError):
+        drafts.publish(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id, context=CONTEXT)
+
+
+def test_an_unavailable_variant_does_not_block_the_rest(provider):
+    # Publication already treats one confirmed variant as enough to sell. The
+    # price rules have to agree with that, or a sold-out colourway would take the
+    # whole product off sale.
+    listing_id = imported(provider)
+    draft = draft_of(listing_id)
+    first, second = (str(v["variant_id"]) for v in draft["variants"])
+    drafts.update_draft(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id,
+                        fields={"price_cents": {first: 2000, second: 3500}}, context=CONTEXT)
+    conn = db.connect()
+    try:
+        conn.execute(
+            f"UPDATE {variants.VARIANT_TABLE} SET status='archived' WHERE id=?", (int(second),))
+        conn.commit()
+    finally:
+        conn.close()
+
+    result = drafts.publish(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id, context=CONTEXT)
+    assert result["price_label"] == "$20.00"
+    assert result["sellable_variants"] == 1
+
+
+def test_a_sold_out_product_still_carries_its_price(provider):
+    # Every variant archived. The listing publishes sold out -- quantity 0 keeps
+    # it out of the buyer's reach -- but it must still be priced, or it becomes a
+    # priceless listing again the instant the supplier restocks, which is the
+    # state this whole section exists to prevent. Without the fallback in
+    # `_offered` there is no offered variant to take a price from at all, and
+    # publish raises IndexError instead: a 500 on a legitimate sold-out product.
+    listing_id = imported(provider)
+    price_every_variant(listing_id, 2000)
+    conn = db.connect()
+    try:
+        conn.execute(f"UPDATE {variants.VARIANT_TABLE} SET status='archived' "
+                     "WHERE listing_id=?", (listing_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+    result = drafts.publish(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id, context=CONTEXT)
+    assert result["sellable_variants"] == 0
+    assert result["price_label"] == "$20.00"
+    listing = rows("SELECT quantity, price_label FROM marketplace_listings WHERE id=?",
+                   (listing_id,))[0]
+    assert listing["quantity"] == 0, "an archived variant must not be sold"
+    assert listing["price_label"] == "$20.00"
+
+
+def test_repricing_a_live_product_reaches_the_buyer(provider):
+    # publish() is not the only way the price moves. A merchant raising the price
+    # of a listing that is already live must not leave the cart charging the old
+    # one -- the draft screen would show the new number while every buyer paid
+    # the old, and the merchant would have no way to see the difference.
+    listing_id = imported(provider)
+    price_every_variant(listing_id, 2000)
+    drafts.publish(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id, context=CONTEXT)
+    assert rows("SELECT price_label FROM marketplace_listings WHERE id=?",
+                (listing_id,))[0]["price_label"] == "$20.00"
+
+    price_every_variant(listing_id, 3000)
+    assert rows("SELECT price_label FROM marketplace_listings WHERE id=?",
+                (listing_id,))[0]["price_label"] == "$30.00"
+
+
+def test_repricing_a_draft_does_not_price_it_for_the_buyer(provider):
+    # The mirror of the test above, and the reason it is not simply "always write
+    # the label". A draft is not on sale; giving it a public price before the
+    # merchant has published it would put a number on a product they are still
+    # deciding about.
+    listing_id = imported(provider)
+    price_every_variant(listing_id, 2000)
+    assert rows("SELECT price_label, status FROM marketplace_listings WHERE id=?",
+                (listing_id,))[0] == {"price_label": "", "status": "draft"}
+
+
+def test_a_live_product_cannot_be_repriced_into_an_unchargeable_state(provider):
+    listing_id = imported(provider)
+    price_every_variant(listing_id, 2000)
+    drafts.publish(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id, context=CONTEXT)
+
+    draft = draft_of(listing_id)
+    first, second = (str(v["variant_id"]) for v in draft["variants"])
+    with pytest.raises(SupplierError) as exc:
+        drafts.update_draft(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id,
+                            fields={"price_cents": {first: 2000, second: 3500}},
+                            context=CONTEXT)
+    assert exc.value.http_status == 422
+    # Refused outright rather than left on sale at a price the merchant replaced.
+    assert rows("SELECT price_label FROM marketplace_listings WHERE id=?",
+                (listing_id,))[0]["price_label"] == "$20.00"
+
+
 def test_another_merchant_cannot_publish_this_draft(provider):
     listing_id = imported(provider)
     price_every_variant(listing_id, 2000)

@@ -30,8 +30,10 @@ from __future__ import annotations
 
 import json
 import time
+from decimal import Decimal
 
 from services import db, marketplace_variants as variants
+from services import marketplace_listing_lifecycle as lifecycle
 from services import marketplace_supplier_schema as supplier_schema
 from services.business_os.suppliers import connections, normalize, policy, pricing
 from services.business_os.suppliers.errors import SupplierError
@@ -48,6 +50,24 @@ NEGATIVE_MARGIN = "NEGATIVE_MARGIN"
 SUPPLIER_DISCONNECTED = "SUPPLIER_DISCONNECTED"
 PROVIDER_PRODUCT_UNAVAILABLE = "PROVIDER_PRODUCT_UNAVAILABLE"
 RESTRICTED_PRODUCT = "RESTRICTED_PRODUCT"
+#: Offered variants carry more than one retail price. The buyer's checkout
+#: charges one listing-level price and has no variant selector, so publishing
+#: this would pick one of the merchant's prices and charge it for all of them.
+VARIANT_PRICE_SPREAD = "VARIANT_PRICE_SPREAD"
+#: Priced above what the checkout's own label format can carry.
+PRICE_ABOVE_CHECKOUT_LIMIT = "PRICE_ABOVE_CHECKOUT_LIMIT"
+
+#: The checkout's ceiling, mirrored from ``bot.MAX_PRICE_LABEL_CENTS``.
+#:
+#: It is *lower* than :data:`pricing.MAX_PRICE_CENTS`, which is what makes it
+#: matter here: ``_set_prices`` accepts a variant price up to ten million
+#: dollars, and ``bot.parse_price_label_to_cents`` ends in
+#: ``min(cents, MAX_PRICE_LABEL_CENTS)``. A price between the two limits would
+#: therefore be *clamped* on the way to the buyer rather than refused — the
+#: merchant sets $5,000,000 and the card is charged $999,999.99. Refusing to
+#: publish is the only reading of that gap that does not quietly move money.
+#: ``test_dropship_draft_publish`` pins this against the monolith's own constant.
+MAX_CHECKOUT_PRICE_CENTS = 99_999_999
 
 #: Merchant-editable storefront fields. Anything not in this set cannot be
 #: written through this module — an allowlist, so that adding a column to
@@ -257,6 +277,13 @@ def update_draft(business_id, store_id, actor_user_id, connection_id, listing_id
         if "price_cents" in fields:
             _set_prices(cur, listing_id, seller_user_id, fields["price_cents"])
             touched.append("price_label")
+            # Repricing a *live* product has to reach the buyer, not only the
+            # draft screen. `publish` is the other writer of `price_label`; if it
+            # were the only one, a merchant raising the price of a published
+            # listing would see the new number everywhere they look while the
+            # cart went on charging the old one until they happened to republish.
+            if lifecycle.normalized(listing.get("status")) in lifecycle.PUBLIC_STATUSES:
+                updates["price_label"] = _live_price_label(cur, listing_id, listing)
 
         if updates:
             updates["updated_at"] = _iso()
@@ -273,6 +300,30 @@ def update_draft(business_id, store_id, actor_user_id, connection_id, listing_id
         conn.close()
     return get_draft(business_id, store_id, actor_user_id, connection_id, listing_id,
                      context=context)
+
+
+def _live_price_label(cur, listing_id, listing):
+    """The label a *published* listing should now carry, or a refusal.
+
+    Re-reads the variants after the write rather than working from the request
+    body, because the merchant may have repriced only some of them and it is the
+    resulting whole that has to be chargeable.
+
+    A live listing that would be left in a state the checkout cannot represent is
+    refused outright instead of being quietly taken off sale or left at its old
+    price. Both alternatives are worse: one hides a merchant's mistake behind a
+    dead product page, the other keeps charging a price they have replaced.
+    """
+    rows = variants.variants_for(cur, listing_id)
+    priced = [{"retail_cents": _retail_of(v),
+               "availability": variants.availability(v)} for v in rows]
+    offered = _offered(priced)
+    if not offered or any(v["retail_cents"] is None for v in offered):
+        raise SupplierError("publication_blocked", http_status=422)
+    distinct = {v["retail_cents"] for v in offered}
+    if len(distinct) > 1 or max(distinct) > MAX_CHECKOUT_PRICE_CENTS:
+        raise SupplierError("publication_blocked", http_status=422)
+    return _checkout_price_label(offered[0]["retail_cents"], listing.get("currency"))
 
 
 def _set_prices(cur, listing_id, seller_user_id, payload):
@@ -305,6 +356,46 @@ def _set_prices(cur, listing_id, seller_user_id, payload):
 # Publication
 # ---------------------------------------------------------------------------
 
+def _offered(priced):
+    """The variants a buyer could actually end up receiving.
+
+    An ``UNAVAILABLE`` variant is not on sale, so its price is not a promise to
+    anybody and must not block the rest of the product. The fallback is the part
+    worth keeping: when *nothing* is available the listing still publishes, sold
+    out, and it still needs a price written on it — otherwise it becomes a
+    priceless listing again the moment the supplier restocks, which is the exact
+    state this whole section exists to prevent.
+    """
+    return [v for v in priced
+            if v.get("availability") != variants.UNAVAILABLE] or list(priced)
+
+
+def _checkout_price_label(cents, currency):
+    """Render the agreed retail price as the label the buyer's checkout parses.
+
+    This is the seam the pipeline was missing. The merchant prices variants in
+    ``marketplace_listing_variants.price_cents``; every buyer surface — the cart,
+    ``confirm-price``, offers — reads ``marketplace_listings.price_label`` and
+    runs it through ``bot.parse_price_label_to_cents``. Nothing joined the two,
+    so a published dropship product reached the buyer with an empty label, which
+    parses to zero, and add-to-cart answered "This item is not priced for
+    checkout" for a product the merchant had priced.
+
+    The format mirrors ``bot.marketplace_normalize_price_label`` rather than
+    calling it: no module in this package imports the monolith, and doing it here
+    would run ``bot``'s import-time schema work inside a publish. The duplication
+    is safe only because a test asserts this function agrees with that one
+    character for character, and that the label parses back to exactly the cents
+    passed in — the number written here is the number a stranger's card is
+    charged, so equality is the only acceptable evidence.
+    """
+    currency = (str(currency or "USD").strip() or "USD").upper()
+    # Decimal, not float, for the same reason the monolith uses it: money divided
+    # by 100 in binary floating point is a rounding argument waiting to happen.
+    amount = "{:,.2f}".format(Decimal(int(cents)) / 100)
+    return ("$" + amount) if currency == "USD" else (currency + " " + amount)
+
+
 def _validate(listing, priced, source, media):
     """Every reason this draft cannot be published, as specific codes.
 
@@ -322,8 +413,24 @@ def _validate(listing, priced, source, media):
     if not priced:
         problems.append(NO_VARIANTS_SELECTED)
 
-    if priced and all(v.get("retail_cents") is None for v in priced):
+    # The buyer's checkout charges one listing-level price for the whole listing
+    # and offers no variant selector at all -- `marketplace_variants` is imported
+    # by this package and nowhere else. So the question publication has to answer
+    # is not "is anything priced" but "is there exactly one price we could honour
+    # for whichever variant this buyer ends up with".
+    #
+    # This used to be `all(... is None)`, which asked only whether the merchant
+    # had priced *something*. A product with one variant at $20 and another left
+    # blank published happily, and the blank one was then sold at $20.
+    offered = _offered(priced)
+    if offered and any(v.get("retail_cents") is None for v in offered):
         problems.append(MISSING_PRICE)
+    elif offered:
+        distinct = {v["retail_cents"] for v in offered}
+        if len(distinct) > 1:
+            problems.append(VARIANT_PRICE_SPREAD)
+        elif max(distinct) > MAX_CHECKOUT_PRICE_CENTS:
+            problems.append(PRICE_ABOVE_CHECKOUT_LIMIT)
     if any(v.get("margin_state") == pricing.NEGATIVE_MARGIN for v in priced):
         problems.append(NEGATIVE_MARGIN)
     # Every variant indeterminate means we cannot say the product is buyable.
@@ -345,6 +452,13 @@ def _validate(listing, priced, source, media):
 
 def publish(business_id, store_id, actor_user_id, connection_id, listing_id, *, context=None):
     """Move a validated draft to ``published``. Moderation state is untouched.
+
+    ``price_label`` is written here because this is where a product crosses from
+    the merchant's world into the buyer's. The two halves keep price in different
+    places — the merchant prices variants, the buyer's cart reads the listing's
+    label — and until this line existed nothing joined them, so a fully priced,
+    published, moderator-approved dropship product was publicly listed and then
+    refused at add-to-cart with "This item is not priced for checkout."
 
     ``quantity`` is set from the count of variants we can positively confirm are
     available, because ``marketplace_listing_lifecycle.inventory_available``
@@ -378,10 +492,15 @@ def publish(business_id, store_id, actor_user_id, connection_id, listing_id, *, 
             raise SupplierError("publication_blocked", http_status=422)
 
         sellable = sum(1 for v in rows if variants.availability(v) == variants.AVAILABLE)
+        # `_validate` has just established that every offered variant carries the
+        # same price, so there is exactly one number here and it is the merchant's
+        # own -- nothing is being chosen on their behalf.
+        label = _checkout_price_label(_offered(priced)[0]["retail_cents"],
+                                      listing.get("currency"))
         cur.execute(
             "UPDATE marketplace_listings SET status='published', quantity=?, "
-            "published_at=?, updated_at=? WHERE id=? AND seller_user_id=?",
-            (sellable, _iso(), _iso(), listing_id, int(seller_user_id)))
+            "price_label=?, published_at=?, updated_at=? WHERE id=? AND seller_user_id=?",
+            (sellable, label, _iso(), _iso(), listing_id, int(seller_user_id)))
         conn.commit()
     finally:
         conn.close()
@@ -393,6 +512,7 @@ def publish(business_id, store_id, actor_user_id, connection_id, listing_id, *, 
         # looking for their product in a marketplace that is correctly hiding it.
         "awaiting_moderation": True,
         "sellable_variants": sellable,
+        "price_label": label,
     }
 
 
