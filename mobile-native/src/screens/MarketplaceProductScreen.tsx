@@ -343,7 +343,13 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
 
         <View style={styles.card}>
           <Text style={styles.title}>{listing.title || "Marketplace listing"}</Text>
-          <Text style={styles.price}>{listing.price_label || "Price shown at checkout"}</Text>
+          {/* Same rule as the grid card, and it mattered more here: this screen
+              said "Price shown at checkout" while the grid said "Price at
+              checkout" for the identical row, so the app disagreed with itself
+              about one product depending on how you reached it. */}
+          {listing.price_label ? (
+            <Text style={styles.price}>{listing.price_label}</Text>
+          ) : null}
           <View style={styles.pillRow}>
             {listing.category ? <Text style={styles.pill}>{listing.category}</Text> : null}
             {condition ? <Text style={styles.pill}>{humanize(condition)}</Text> : null}

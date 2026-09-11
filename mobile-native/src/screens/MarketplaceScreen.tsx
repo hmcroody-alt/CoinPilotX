@@ -380,7 +380,15 @@ function ProductCard({ listing, busy, onOpen, onSave, onAddToCart }: {
         </Pressable>
       </View>
       <View style={styles.cardBody}>
-        <Text style={styles.cardPrice} numberOfLines={1}>{listing.price_label || "Price at checkout"}</Text>
+        {/* An unpriced listing shows no price line at all. "Price at checkout"
+            is a claim about a checkout this card cannot see: a dropship draft
+            has no price anywhere, so the sentence promised a number that never
+            appears. The server stopped inventing one on the way out, and the
+            web grid stopped inventing one on the way in -- this is the same
+            card on the third surface. */}
+        {listing.price_label ? (
+          <Text style={styles.cardPrice} numberOfLines={1}>{listing.price_label}</Text>
+        ) : null}
         <Text style={styles.cardTitle} numberOfLines={2}>{listing.title || "Marketplace product"}</Text>
         <Text style={[styles.cardAvailability, !purchasable && styles.cardSold]} numberOfLines={1}>{availabilityCopy(listing)}</Text>
         <Text style={styles.cardSeller} numberOfLines={1}>{sellerStoreName(listing)}</Text>
