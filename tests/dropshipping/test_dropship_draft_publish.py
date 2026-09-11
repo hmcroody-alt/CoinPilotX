@@ -506,6 +506,82 @@ def test_publishing_writes_the_price_the_buyer_path_reads(provider):
     assert listing["price_label"] == result["price_label"]
 
 
+def test_publishing_writes_the_cover_the_buyer_path_reads(provider):
+    """The media half of the same seam the price test above guards.
+
+    Publication validates ``listing_metadata_json.media`` -- that is the list
+    ``_media_of`` returns and the only one ``_validate`` sees. Every buyer
+    surface renders the *column*: ``pulse_marketplace_listing_payload`` assembles
+    its media from ``marketplace_product_media``, ``cover_image_url``,
+    ``media_url`` and ``gallery_json``, and never looks at the metadata list. Two
+    representations of one fact, and until publish joined them a draft could
+    satisfy the media gate and still ship a card with no picture.
+
+    The blanking below is not a hypothetical. It reproduces the shape of
+    production listing 14, a real CJ import whose metadata carries five
+    ``cf.cjdropshipping.com`` URLs while the column is NULL, because it was
+    written before ``importer._insert_listing`` began setting the column.
+    """
+    listing_id = imported(provider)
+    price_every_variant(listing_id, 2000)
+
+    conn = db.connect()
+    try:
+        conn.execute("UPDATE marketplace_listings SET cover_image_url=NULL WHERE id=?",
+                     (listing_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+    # The pre-fix state is genuinely reached: the draft still validates as having
+    # media, so nothing on the merchant's side would report a problem.
+    draft = draft_of(listing_id)
+    assert draft["media"], "fixture no longer carries metadata media"
+    assert draft["validation"]["publishable"] is True
+    assert drafts.NO_VALID_MEDIA not in draft["validation"]["problems"]
+
+    drafts.publish(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id, context=CONTEXT)
+
+    listing = rows("SELECT cover_image_url FROM marketplace_listings WHERE id=?",
+                   (listing_id,))[0]
+    assert listing["cover_image_url"], "published with no cover for the buyer to see"
+    # Not merely non-empty: the same picture the merchant was shown as the cover.
+    assert listing["cover_image_url"] == draft["cover_image_url"] == draft["media"][0]
+
+
+def test_a_published_listing_leaves_the_two_media_stores_agreeing(provider):
+    # The column and the metadata are two spellings of one fact, written by three
+    # functions now (import, edit, publish). A test that only checked the column
+    # was populated would pass if publish wrote some other listing's picture.
+    listing_id = imported(provider)
+    price_every_variant(listing_id, 2000)
+    drafts.publish(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id, context=CONTEXT)
+
+    listing = rows("SELECT cover_image_url, listing_metadata_json FROM marketplace_listings "
+                   "WHERE id=?", (listing_id,))[0]
+    metadata_media = json.loads(listing["listing_metadata_json"])["media"]
+    assert metadata_media, "fixture no longer carries metadata media"
+    assert listing["cover_image_url"] == metadata_media[0]
+
+
+def test_publishing_does_not_overwrite_a_cover_the_merchant_reordered(provider):
+    # `update_draft` writes both stores, so a reorder moves the cover. Publish
+    # must land on the merchant's current first choice, not the import's.
+    listing_id = imported(provider)
+    price_every_variant(listing_id, 2000)
+    original = draft_of(listing_id)["media"]
+    assert len(original) > 1, "fixture needs more than one image to reorder"
+
+    reordered = list(reversed(original))
+    drafts.update_draft(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id,
+                        fields={"media": reordered}, context=CONTEXT)
+    drafts.publish(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id, context=CONTEXT)
+
+    listing = rows("SELECT cover_image_url FROM marketplace_listings WHERE id=?",
+                   (listing_id,))[0]
+    assert listing["cover_image_url"] == reordered[0] != original[0]
+
+
 def test_the_published_label_charges_exactly_what_the_merchant_set(provider):
     """The contract between this package and the monolith's checkout parser.
 

@@ -22,18 +22,18 @@ broken at the seam where the merchant's world hands off to the buyer's.
 
 | # | Stage | Source of truth | Owning service | Owning table |
 |---|-------|-----------------|----------------|--------------|
-| 1 | CJ catalog | CJ | `suppliers/cj.py`, `discovery.py` | — (remote) |
-| 2 | Supplier DTO | normalizer | `suppliers/normalize.py` | — (in memory) |
-| 3 | Import cart | merchant selection | `suppliers/import_cart.py` | `business_os_supplier_import_cart` |
-| 4 | Import | importer | `suppliers/importer.py` | `marketplace_listings` + `marketplace_product_sources` + `marketplace_listing_variants` |
-| 5 | Merchant review | merchant | `suppliers/drafts.py` | as above |
-| 6 | Publication gate | `drafts._validate` | `suppliers/drafts.py` | — |
-| 7 | Publish | `drafts.publish` | `suppliers/drafts.py` | `marketplace_listings.status/quantity/price_label` |
+| 1 | CJ catalog | CJ | `services/business_os/suppliers/cj.py`, `discovery.py` | — (remote) |
+| 2 | Supplier DTO | normalizer | `services/business_os/suppliers/normalize.py` | — (in memory) |
+| 3 | Import cart | merchant selection | `services/business_os/suppliers/import_cart.py` | `business_os_supplier_import_cart` |
+| 4 | Import | importer | `services/business_os/suppliers/importer.py` | `marketplace_listings` + `marketplace_product_sources` + `marketplace_listing_variants` |
+| 5 | Merchant review | merchant | `services/business_os/suppliers/drafts.py` | as above |
+| 6 | Publication gate | `drafts._validate` | `services/business_os/suppliers/drafts.py` | — |
+| 7 | Publish | `drafts.publish` | `services/business_os/suppliers/drafts.py` | `marketplace_listings.status/quantity/price_label/cover_image_url` |
 | 8 | Moderation | **separate authority** | admin surfaces | `marketplace_listings.approval_status` |
 | 9 | Buyer discovery | `lifecycle.is_public` / `public_sql` | `marketplace_listing_lifecycle.py` | `marketplace_listings` ⋈ `marketplace_sellers` |
 | 10 | Cart | `price_label` | `marketplace_cart_routes.py` | `marketplace_cart_items` |
 | 11 | Checkout → order | Stripe + `pulse_upsert_marketplace_order` | `bot.py`, `marketplace_cart_routes.py` | `seller_transactions` → `marketplace_orders` |
-| 12 | Supplier fulfillment | merchant-initiated | `suppliers/fulfillment.py` | `business_os_supplier_fulfillment_intents` |
+| 12 | Supplier fulfillment | merchant-initiated | `services/business_os/suppliers/fulfillment.py` | `business_os_supplier_fulfillment_intents` |
 
 ---
 
@@ -218,9 +218,16 @@ query names is buyer-visible by default, so the strip now lives in
 2. **No buyer-side variant selection.** A multi-variant product can only be sold
    at a single price; `VARIANT_PRICE_SPREAD` now refuses the alternative rather
    than guessing, but the real fix is a variant selector on the product page.
-3. **Production listing 14 has `cover_image_url = NULL`** — imported before
-   `2b9a36a2`. One-row backfill from `listing_metadata_json.media[0]` is
-   available and has not been run.
+3. ~~**Production listing 14 has `cover_image_url = NULL`**~~ — the column is
+   still NULL, but recording it that way described a symptom and hid the seam
+   underneath it; see "The fourth seam" below. The structural half is fixed:
+   `publish` now writes the column, so no dropship listing can become
+   buyer-visible with a cover the buyer cannot see. What remains is the window
+   *before* publication — `list_drafts` selects `l.cover_image_url` with no
+   fallback, so the merchant's own Dropshipping products list shows a blank tile
+   for a product that has five photos. `scripts/backfill_dropship_cover_image.py`
+   closes that, dry-run by default; the dry run reports exactly one affected row
+   in all of production. **Not run — it is a production write.**
 4. **`vault.seal`/`unseal` wrap everything in `except Exception: raise
    VaultError() from None`**, which turns a caller's mistake into what looks
    like an infrastructure failure. Cost me a false alarm already.
@@ -239,9 +246,56 @@ query names is buyer-visible by default, so the strip now lives in
 
 ---
 
+## The fourth seam: two media stores, and the gate watched the wrong one
+
+The merchant's side keeps media as an ordered list in
+`listing_metadata_json.media`. That is what `_media_of` returns, and it is the
+only thing `_validate` sees when it decides whether `NO_VALID_MEDIA` applies.
+
+Every buyer surface renders the **column**. `pulse_marketplace_listing_payload`
+assembles its media from `marketplace_product_media`, `cover_image_url`,
+`media_url` and `gallery_json`, and consults the metadata list for nothing.
+
+So the two halves were: a gate whose stated purpose is "better to refuse than to
+ship a black card", and a buyer surface it was not looking at. A draft with five
+photos passed the gate and published a card with none — the exact outcome
+`NO_VALID_MEDIA` exists to prevent, reached through a *passing* validation.
+
+Measured, not inferred. Running the real evaluator against production listing
+14 — a CJ upholstered bed, SKU `CJFU2755187` — over production's own rows:
+
+| what was asked | answer |
+|---|---|
+| `_media_of(listing)` | 5 `cf.cjdropshipping.com` URLs |
+| `_validate(...)["publishable"]` | **`True`** |
+| `marketplace_listings.cover_image_url` | **`NULL`** |
+| `marketplace_product_media` rows | **0** |
+| `gallery_json` / `media_url` / `video_url` | all `NULL` |
+
+`2b9a36a2` had already made `importer._insert_listing` write both from one list,
+and `update_draft` already did, so a draft imported by current code was safe.
+That fix addressed the writers. It did not stop the gate from validating a
+different store than the one it is guarding, which is why a row written by the
+*old* importer still walked through it.
+
+`publish` now writes `cover_image_url` from `media[0]`, by the same argument and
+in the same statement as `price_label`: publication is where a product crosses
+from the merchant's world into the buyer's, and both fields are one fact stored
+on either side of that crossing. Three tests pin it, and two mutants — dropping
+the column from the `UPDATE`, and writing `media[-1]` — are killed by them.
+
+A third media gate exists and reads a third store: the ordinary seller route
+`/api/pulse/marketplace/seller/listings/<id>/submit` requires a
+`marketplace_product_media` row with `is_cover=1`. Dropship listings do not go
+through it — `drafts.publish` is the only function in this pipeline that moves
+`status` off `draft` — but it is worth knowing that "does this product have a
+picture" currently has three implementations over three tables.
+
+---
+
 ## What kept coming back
 
-Four defects in this chain, four different subsystems, one shape: **a number was
+Five defects in this chain, five different subsystems, one shape: **a number was
 asserted rather than measured.**
 
 - `publish()` never wrote `price_label`, and the publish test asserted `status`
@@ -254,8 +308,11 @@ asserted rather than measured.**
 - `safety_score` was believed to be safety because of its name, and believed to
   be off the buyer's wire because two source comments and a test said so — the
   test asserting a key was absent from a fixture defined three lines above it.
+- `_validate` asserted a listing had media by reading the store the merchant
+  writes, never the column the buyer renders, and its own docstring — "better to
+  refuse than to ship a black card" — named an outcome it could not observe.
 
-In all four the suite was green, and in all four the green was about the halves
+In all five the suite was green, and in all five the green was about the halves
 rather than the seam. Where a claim spans two components, this document now
 prefers a fixture both components read over a sentence describing them.
 
@@ -268,6 +325,16 @@ comments called impossible shipped to every marketplace client for four
 endpoints at once. `tests/web_parity/` exists for exactly this, and the three
 surfaces it already covered were the three that had been fixed *before* anyone
 looked at bytes.
+
+The fifth adds its own: **when one fact has two spellings, a gate must read the
+spelling that ships.** Media had two — a metadata list and a column — and the
+gate read the one the merchant writes rather than the one the buyer renders. The
+tell is available without running anything: `_media_of` is called by `get_draft`
+and `publish` and by nothing in `bot.py`, while `cover_image_url` is read in
+`bot.py` at nine sites and written in this package at three. A guard whose input
+shares no reader with the surface it protects is not guarding that surface. Both
+corollaries reduce to the same instruction — **follow the value to the surface,
+and put the assertion there.**
 
 A second corollary, narrower and sharper: **a serializer that spreads its input
 has no field list, only additions.** `{**row, ...}` reads like an allowlist and

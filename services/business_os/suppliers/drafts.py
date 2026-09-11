@@ -469,6 +469,27 @@ def publish(business_id, store_id, actor_user_id, connection_id, listing_id, *, 
     This is a sellable-count policy, not a copy of the supplier's warehouse
     quantity — the two are different numbers and conflating them is how a store
     oversells a warehouse it does not control.
+
+    ``cover_image_url`` is written here for the same reason and by the same
+    argument as ``price_label``. The two halves keep media in different places:
+    the merchant's side stores an ordered list in ``listing_metadata_json.media``
+    and that is what ``_validate`` reads, while every buyer surface renders the
+    *column* — ``pulse_marketplace_listing_payload`` builds its media list from
+    ``marketplace_product_media``, ``cover_image_url``, ``media_url`` and
+    ``gallery_json``, and consults the metadata list for nothing. So a draft with
+    five photos validated as having media and published a card with none, which
+    is the black placeholder ``NO_VALID_MEDIA`` exists to prevent, arrived at
+    through a *passing* validation.
+
+    Both writers on the merchant side already set the column and the metadata
+    together (``importer._insert_listing`` and ``update_draft``), so a draft
+    imported by current code is not affected. What this line fixes is every row
+    written before they did — measured on production listing 14, a real CJ
+    upholstered bed whose metadata carries five ``cf.cjdropshipping.com`` URLs
+    with ``cover_image_url`` NULL, and which the real evaluator calls
+    ``publishable=True``. Repairing it at the crossing point costs the merchant
+    no action for a bug that was never theirs, and means no dropship listing can
+    become buyer-visible with a cover the buyer cannot see.
     """
     policy.require_enabled()
     conn = db.connect()
@@ -497,10 +518,16 @@ def publish(business_id, store_id, actor_user_id, connection_id, listing_id, *, 
         # own -- nothing is being chosen on their behalf.
         label = _checkout_price_label(_offered(priced)[0]["retail_cents"],
                                       listing.get("currency"))
+        # `_validate` has just established `media` is non-empty. `media[0]` is the
+        # cover by this package's own definition -- `get_draft` reports exactly
+        # this expression as `cover_image_url` -- so nothing is being chosen on
+        # the merchant's behalf here either.
+        cover = media[0]
         cur.execute(
             "UPDATE marketplace_listings SET status='published', quantity=?, "
-            "price_label=?, published_at=?, updated_at=? WHERE id=? AND seller_user_id=?",
-            (sellable, label, _iso(), _iso(), listing_id, int(seller_user_id)))
+            "price_label=?, cover_image_url=?, published_at=?, updated_at=? "
+            "WHERE id=? AND seller_user_id=?",
+            (sellable, label, cover, _iso(), _iso(), listing_id, int(seller_user_id)))
         conn.commit()
     finally:
         conn.close()
