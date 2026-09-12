@@ -1005,6 +1005,183 @@ def test_a_blocked_row_still_holding_a_provider_order_id_is_not_recoverable(read
     assert intent_row(dead)["superseded_at"] is None
 
 
+def test_an_order_can_be_recovered_more_than_once(ready):
+    """Two failed attempts in a row, because the second is where the filter bites.
+
+    `create_intent` looks up the intent holding this order with
+    ``AND i.superseded_at IS NULL``. Dropping that condition still lets the
+    *first* recovery through -- there is only one intent and it is live -- so a
+    single-recovery test cannot see the difference. On the second recovery the
+    lookup starts returning retired rows too, and `fetchone` gets whichever one
+    the engine hands back: if it is the dead one, the conditional UPDATE finds
+    nothing and a legitimate retry is refused.
+
+    A merchant can plausibly fail twice -- a missing SKU fixed, then a stale
+    quote -- so this is not a contrived path, and "recovery works once and then
+    stops" is a worse failure than no recovery at all, because it looks fixed.
+    """
+    first = a_blocked_never_sent_intent(ready)
+    second = retry(ready, key="merchant-retry-1")["intent_id"]
+
+    conn = db.connect()
+    conn.execute("UPDATE business_os_supplier_outbox SET state='BLOCKED',last_error=? "
+                 "WHERE intent_id=?", ("quote_expired", second))
+    conn.commit()
+    conn.close()
+
+    third = retry(ready, key="merchant-retry-2")["intent_id"]
+    assert len({first, second, third}) == 3, "three distinct intents, each its own offer"
+
+    conn = db.connect()
+    try:
+        live = [row["id"] for row in conn.execute(
+            "SELECT id FROM business_os_supplier_intents WHERE order_id=? "
+            "AND superseded_at IS NULL", (str(ready[2]["order_id"]),)).fetchall()]
+        total = conn.execute("SELECT count(*) FROM business_os_supplier_intents "
+                             "WHERE order_id=?", (str(ready[2]["order_id"]),)).fetchone()[0]
+    finally:
+        conn.close()
+    assert live == [third], "exactly one live intent, and it is the newest"
+    assert total == 3, "both failed attempts stay on file as audit rows"
+    assert ready[0].created == [], "two recoveries, still nothing sent to the supplier"
+
+
+def test_the_predicate_refuses_a_provider_order_id_on_its_own(ready):
+    """The same refusal as the test above, asked of the predicate directly.
+
+    The test above goes through `create_intent`, and `create_intent` checks the
+    id twice: once in `_recoverable_intent` and again in the conditional UPDATE's
+    `AND o.provider_order_id IS NULL`. That duplication is deliberate -- the
+    whole point of re-checking inside the write is that the read may be stale --
+    and it means deleting *either* copy leaves the other one refusing and the
+    suite green. The mutation battery found exactly that: dropping
+    `and not provider_order_id` from the predicate survived.
+
+    So the predicate is asked on its own, with no SQL underneath it to answer for
+    it. `_recoverable_intent` also feeds `list_obligations`, which has no second
+    guard at all, so a predicate that stops reading the id is not merely
+    redundant there -- it is the whole answer.
+    """
+    assert f._recoverable_intent("BLOCKED", None) is True
+    assert f._recoverable_intent("BLOCKED", "CJ-STRAY") is False, (
+        "a row holding a provider order id has a real supplier order behind it, "
+        "whatever its state now reads")
+
+
+def test_the_provider_order_id_guard_is_in_the_write_too(ready, monkeypatch):
+    """The other half of the duplicated check, isolated the same way.
+
+    Companion to `test_the_predicate_refuses_a_provider_order_id_on_its_own`:
+    that one removes the SQL from the picture, this one removes the Python. With
+    the predicate forced to say "recoverable" about a row holding a
+    `provider_order_id`, the only thing left that can refuse is the UPDATE's own
+    `AND o.provider_order_id IS NULL` -- which is the state a lost race actually
+    produces, since `settle` can write an id between the read and the write.
+    """
+    dead = a_blocked_never_sent_intent(ready)
+    conn = db.connect()
+    conn.execute("UPDATE business_os_supplier_outbox SET provider_order_id='CJ-RACED' "
+                 "WHERE intent_id=?", (dead,))
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(f, "_recoverable_intent", lambda state, provider_order_id: True)
+
+    with pytest.raises(f.FulfillmentError, match="immutable_intent_conflict"):
+        retry(ready)
+    assert intent_row(dead)["superseded_at"] is None, (
+        "an intent whose outbox row names a provider order must not be retired, "
+        "no matter what the Python in front of the statement believes")
+
+
+class _RowsAlreadyRead:
+    """The rows a lookup really returned, served back after the proxy moved on."""
+
+    def __init__(self, rows):
+        self.rows = list(rows)
+
+    def fetchone(self):
+        return self.rows[0] if self.rows else None
+
+    def fetchall(self):
+        return list(self.rows)
+
+
+class _RetiresBehindTheRead:
+    """A connection that stands in for the recovery which won the race.
+
+    `create_intent` reads the live intent, asks whether it is recoverable, and
+    then retires it. The `UPDATE` carries `AND superseded_at IS NULL` for the
+    interval between those statements: a second recovery can read the same live
+    row and retire it first, and the loser must then find nothing to retire.
+
+    That clause cannot be reached through the front door, because the lookup
+    above it filters retired rows out and so never hands the statement one --
+    which is exactly why deleting it leaves the suite green. SQLite will not run
+    a second writer inside the open transaction either, so the race is
+    reproduced from the inside: the proxy watches for the live lookup, lets it
+    return precisely what it really returns, and retires that row before the
+    caller acts on it. What `create_intent` then holds is what the losing
+    recovery holds -- proof about a row another transaction has already spent.
+    """
+
+    #: Matched by text because the interception has to happen between two
+    #: specific statements. If the query is reformatted this stops matching,
+    #: nothing is retired, and the assertions below fail loudly rather than
+    #: passing on a race that never happened.
+    LOOKUP = "WHERE i.connection_id=? AND i.order_id=? AND i.superseded_at IS NULL"
+
+    def __init__(self, inner):
+        self.inner = inner
+        self.retired = []
+
+    def __getattr__(self, name):
+        return getattr(self.inner, name)
+
+    def execute(self, sql, params=()):
+        cursor = self.inner.execute(sql, params)
+        if self.LOOKUP not in sql:
+            return cursor
+        rows = cursor.fetchall()
+        for row in rows:
+            self.retired.append(dict(row)["id"])
+            self.inner.execute("UPDATE business_os_supplier_intents SET superseded_at=? "
+                               "WHERE id=?", (time.time(), dict(row)["id"]))
+        return _RowsAlreadyRead(rows)
+
+
+def test_the_retirement_statement_refuses_an_already_retired_row(ready, monkeypatch):
+    """The third duplicated guard, exercised through the code that carries it."""
+    dead = a_blocked_never_sent_intent(ready)
+    raced = []
+    real_connect = db.connect
+    monkeypatch.setattr(db, "connect",
+                        lambda: raced.append(_RetiresBehindTheRead(real_connect())) or raced[-1])
+
+    # Retiring an intent a second time would give one customer order two live
+    # replacements, leaving the canonical-order invariant to the index rather
+    # than to the code. The recovery that lost the race has to refuse.
+    with pytest.raises(f.FulfillmentError, match="immutable_intent_conflict"):
+        retry(ready)
+
+    assert [proxy.retired for proxy in raced if proxy.retired] == [[dead]], (
+        "the race has to have actually happened: the proxy must have seen the "
+        "live lookup and retired the row it returned, or this test proves nothing")
+
+    # The simulated winner wrote inside the loser's transaction, so the refusal
+    # rolls its retirement back too. That costs nothing here: what matters is
+    # what the loser left behind, and the answer has to be nothing at all.
+    conn = real_connect()
+    try:
+        surviving = [dict(row)["id"] for row in conn.execute(
+            "SELECT id FROM business_os_supplier_intents WHERE order_id=?",
+            (str(ready[2]["order_id"]),)).fetchall()]
+    finally:
+        conn.close()
+    assert surviving == [dead], (
+        "and no replacement is written: an intent the loser could not retire "
+        "must not acquire a successor anyway")
+
+
 def test_the_guard_on_retiring_an_intent_is_in_the_write_not_only_the_read(ready, monkeypatch):
     """A stale "recoverable" verdict must not be enough to retire an intent.
 
@@ -1131,6 +1308,42 @@ def test_the_reshape_replaces_the_unconditional_canonical_index_with_a_condition
     assert "uq_supplier_canonical_order" not in names, (
         "an unconditional unique index on order_id refuses the replacement no matter "
         "what the table constraints say")
+
+
+def test_the_blocking_index_is_dropped_even_when_the_table_is_not_rebuilt(database, monkeypatch):
+    """Isolates the `DROP INDEX`, which the rebuild was silently doing for it.
+
+    `test_the_reshape_replaces_the_unconditional_canonical_index_with_a_conditional_one`
+    looks like it covers this and does not. On SQLite the reshape rebuilds the
+    table, and rebuilding a table destroys its indexes as a side effect -- so
+    that test passes with the explicit `DROP INDEX IF EXISTS` deleted. The
+    mutation battery caught it: the drop survived removal.
+
+    The drop is load-bearing on **PostgreSQL**, where the reshape takes the
+    `DROP CONSTRAINT` branch and no table is ever rebuilt. So the rebuild is
+    stubbed rather than induced by a special table shape. An earlier version of
+    this test tried the latter -- start from a table the rebuild would decline --
+    and could not then prove the decline: SQLite's `ADD COLUMN` inserts the new
+    column *ahead of* the trailing table constraints, so the resulting DDL is
+    indistinguishable from a rebuilt one. Forcing the branch is simpler and a
+    closer model of the engine this actually guards.
+    """
+    revert_to_the_old_shape()
+    declined = []
+    monkeypatch.setattr(f, "_drop_sqlite_order_uniqueness",
+                        lambda conn: declined.append(True))
+
+    f.ensure_schema()
+
+    assert declined == [True], (
+        "the stub has to be what ran -- if the real rebuild executed, this test "
+        "is back to proving what the other one already proves")
+    names = index_names()
+    assert "uq_supplier_canonical_order" not in names, (
+        "the unconditional index has to be dropped by name -- on PostgreSQL "
+        "there is no rebuild to remove it, and while it exists no order can "
+        "ever be attempted a second time")
+    assert "uq_supplier_live_canonical_order" in names
 
 
 def test_the_reshape_keeps_the_rows_it_found(database):
