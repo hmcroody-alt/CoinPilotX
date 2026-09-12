@@ -54010,6 +54010,7 @@ def pulse_marketplace_listing_page(listing_id):
     cur = conn.cursor()
     cur.execute(
         f"""SELECT l.*, {marketplace_seller_identity.store_name_select('ms')},
+                   COALESCE(ms.status,'missing') AS seller_status,
                    COALESCE(u.username,'') AS seller_username
             FROM marketplace_listings l
             LEFT JOIN users u ON u.user_id=l.seller_user_id
@@ -54275,6 +54276,16 @@ def pulse_marketplace_listing_payload(listing, media_rows=None):
         "media_assets": media,
         "publication_state": str(item.get("status") or "draft").lower(),
         "publication_label": publication_label,
+        # `publication_state` is one column and cannot answer "can a buyer reach
+        # this". The seller store screen used to re-derive publication from it
+        # and got "published" for a suspended seller, an unnamed store and an
+        # empty shelf alike -- the same neutral chip a genuinely live listing
+        # got, so nothing in the app distinguished sellable from unsellable.
+        # This is the stable key for the one blocker that is a surprise: the
+        # merchant published it, a moderator approved it, and it still is not
+        # reachable. "" for everything else, including drafts, which are
+        # described perfectly well by their own status.
+        "publication_blocker": marketplace_listing_lifecycle.live_blocker(item),
         "buyer_visible": marketplace_listing_lifecycle.is_public(item),
         "inventory_state": "available" if inventory_available else "out_of_stock",
     }
@@ -54384,6 +54395,12 @@ def pulse_marketplace_owned_listing_response(cur, listing_id, user_id):
                l.subcategory, l.created_at, l.updated_at, l.featured, l.delivery_type, l.listing_type, l.listing_metadata_json,
                l.tags_json, l.refund_policy, l.estimated_delivery, l.seller_notes,
                COALESCE(NULLIF(TRIM(ms.display_name),''), NULLIF(TRIM(ms.business_name),'')) AS seller_store_name,
+               -- Selected for `seller_label`, which answers "Live" from the
+               -- publication rules and not from the merchant's own two columns.
+               -- The seller-listings query beside this one already joined it;
+               -- without it here the same listing could read "Live" on the
+               -- detail view and "Store offline" in the list.
+               COALESCE(ms.status,'missing') AS seller_status,
                COALESCE(u.username,'') AS seller_username
         FROM marketplace_listings l
         LEFT JOIN users u ON u.user_id=l.seller_user_id
@@ -98646,6 +98663,49 @@ def admin_merchant_document_review(doc_id):
     return jsonify({"ok": True, "message": f"Document marked {allowed[action]}.", "document_id": doc_id, "status": allowed[action]})
 
 
+def admin_marketplace_decision_message(cur, action, listing_id):
+    """What to tell the moderator after their decision was written.
+
+    Approving is not publishing. The write this route performs sets ``status``
+    and ``approval_status``, which is two of the five conditions
+    ``marketplace_listing_lifecycle`` requires before a buyer can reach a
+    listing; the other three belong to the seller record and to stock. So
+    "Listing updated." was true and useless. Three of four approvals in the
+    measurement that produced this function returned 200, wrote an audit entry,
+    and left the listing invisible to every buyer -- one because the seller was
+    suspended, one because the seller had never named their storefront, one
+    because quantity was 0. Nothing on the page said so, and the moderator's
+    next signal would have been a merchant asking why an approved listing has no
+    orders.
+
+    The reason is not recomputed here. It comes from the same rule table that
+    decides discovery, so the sentence cannot drift away from the predicate that
+    actually hides the row.
+
+    Only the publishing actions get a visibility verdict. After a reject or a
+    suspend the listing is invisible on purpose, and reporting that as though it
+    were a problem would train reviewers to ignore the line.
+    """
+    if action not in {"approve", "feature"}:
+        return "Listing updated."
+    cur.execute(
+        f"""SELECT l.*, COALESCE(ms.status,'missing') AS seller_status,
+                   {marketplace_seller_identity.store_name_select('ms')}
+            FROM marketplace_listings l
+            LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
+            WHERE l.id=? LIMIT 1""",
+        (int(listing_id or 0),),
+    )
+    decided = dict(cur.fetchone() or {})
+    if not decided:
+        return "Listing updated."
+    blocker = marketplace_listing_lifecycle.publication_blocker(decided)
+    if not blocker:
+        return "Listing updated. It is now visible to buyers."
+    return ("Listing updated, but it is still not visible to buyers: "
+            + marketplace_listing_lifecycle.blocker_note(blocker) + ".")
+
+
 @webhook_app.route("/admin/marketplace-command", methods=["GET", "POST"])
 def admin_marketplace_command_page():
     admin, denied = require_admin_page("monetization.manage")
@@ -98706,7 +98766,7 @@ def admin_marketplace_command_page():
                 {"previous_status": previous_status, "previous_approval_status": previous_approval,
                  "new_status": status, "new_approval_status": approval, "reason": reason,
                  "reason_category": reason_category, "trace_id": request.headers.get("X-Request-ID") or request.environ.get("request_id") or ""})
-            message = "Listing updated."
+            message = admin_marketplace_decision_message(cur, action, listing_id)
         elif listing_id and action in reason_required and not reason:
             message = "A moderation reason is required for this action."
         conn.close()

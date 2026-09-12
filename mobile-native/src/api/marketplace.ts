@@ -57,6 +57,14 @@ export type MarketplaceListing = {
   approval_status?: string;
   publication_state?: string;
   publication_label?: string;
+  /**
+   * Why an approved, published listing is still unreachable — one of
+   * `seller_approved`, `seller_named`, `in_stock`, or `""`. Derived by
+   * `marketplace_listing_lifecycle.live_blocker` from the same rule table that
+   * filters buyer discovery, so the client must not re-derive it: publication
+   * has five conditions and only two of them are columns on the listing.
+   */
+  publication_blocker?: string;
   buyer_visible?: boolean;
   inventory_state?: string;
   saved?: boolean;
