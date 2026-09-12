@@ -33,7 +33,7 @@ broken at the seam where the merchant's world hands off to the buyer's.
 | 9 | Buyer discovery | `lifecycle.is_public` / `public_sql` | `marketplace_listing_lifecycle.py` | `marketplace_listings` ⋈ `marketplace_sellers` |
 | 10 | Cart | `price_label` | `marketplace_cart_routes.py` | `marketplace_cart_items` |
 | 11 | Checkout → order | Stripe + `pulse_upsert_marketplace_order` | `bot.py`, `marketplace_cart_routes.py` | `seller_transactions` → `marketplace_orders` |
-| 12 | Supplier fulfillment | merchant-initiated; destination + lane read from stage 11, never from the request | `services/business_os/suppliers/fulfillment.py` | `business_os_supplier_intents` + `business_os_supplier_outbox` |
+| 12 | Supplier fulfillment | merchant-initiated; destination + lane read from stage 11, never from the request | `services/business_os/suppliers/fulfillment.py` | `business_os_supplier_intents` (`superseded_at`) + `business_os_supplier_outbox` + `business_os_supplier_drain_ticks` |
 
 ---
 
@@ -2302,6 +2302,19 @@ thing that actually holds.
 
 ### What was deliberately not fixed here
 
+> **Closed by the twenty-first seam, and this section was wrong in one way worth
+> keeping visible.** The constraint analysis below is correct; the claim that
+> `create_intent` "refuses a replacement twice over" is not. It refuses a
+> replacement carrying a *new* idempotency key. Replaying the *original* key hit
+> the branch above the `prior` lookup and returned `duplicate: True` pointing at
+> the dead intent — a success that placed nothing, which is the more expensive of
+> the two answers and the one a retrying caller reaches first. Nothing here was
+> guessed from a UI; it was guessed from a schema, which turns out to be the same
+> mistake. The blocking constraint was also over-stated: three existed, and
+> `UNIQUE(connection_id, order_id)` was redundant against
+> `uq_supplier_canonical_order` all along. Read the twenty-first seam for what was
+> actually there.
+
 `BLOCKED` is terminal by construction, and a paid order that reaches it is
 permanently unfulfillable. `claim` selects only `state IN ('READY','UNKNOWN','RECONCILE')`;
 `settle` requires a `lease_token` a blocked row can never obtain;
@@ -2542,9 +2555,246 @@ protection suite 327 checks across 28 suites; RTC changes 0.
 
 ---
 
+## The twenty-first seam: the failure that told the merchant it had succeeded
+
+Gap 20 made the queue's silence audible. The next question is what a merchant can
+*do* about an order the queue refused, and the answer was nothing, forever, while
+every surface said the work was done.
+
+`list_obligations` derived its most consequential claim from one expression:
+
+```python
+if intent_id is not None:
+    blockers.append(SUPPLIER_ORDER_ALREADY_PLACED)
+```
+
+which renders as **"You have already ordered this from your supplier."**
+
+`BLOCKED` is the state `dispatch` settles to when it *refuses to send*: no
+`provider_order_id`, never through `SENDING`, nothing transmitted. And `claim`
+selects only `state IN ('READY','UNKNOWN','RECONCILE')`, so nothing ever picks a
+`BLOCKED` row up again. `BLOCKED` is terminal.
+
+Put those together. A buyer paid. Nothing was ordered. The merchant's screen said
+it had been. No process would revisit it. The sentence was not merely wrong — it
+was wrong in the direction that costs a customer, and it was permanent.
+
+### The half that only measurement found
+
+The document's own note said a retry was impossible because of a uniqueness
+constraint, and that was true of the path a merchant would take by hand — a fresh
+idempotency key gave `immutable_intent_conflict`. Actually running the other path
+found something the note did not contain. Retrying with the *original* key
+returned:
+
+```python
+return {"intent_id": replayed["id"], "duplicate": True}
+```
+
+`duplicate: True` means "the order your request asked for already exists". For a
+dead intent it does not exist. So the retry a well-behaved caller makes first —
+same request, same key — was a **success that placed nothing**: strictly more
+expensive than the refusal, and invisible to anyone reading the constraint rather
+than running the call.
+
+This is worth recording as method, not just as a finding. The note in this
+document was accurate and still understated the defect, because it described a
+constraint instead of exercising a path. *Do not guess from UI* has a companion:
+do not guess from your own map either.
+
+### Why proof of a non-send is narrower than it looks
+
+The fix needs a predicate for "this was never sent", and getting its edges right
+is the whole seam.
+
+`READY` and `BLOCKED` are the two states reachable through `dispatch`'s final
+handler without a write having happened — its first branch sends anything with
+`sent` set, already-unconfirmed, or ambiguously written to `UNKNOWN`. So arriving
+at either *is* the proof. Hence `NEVER_SENT_STATES = ("READY", "BLOCKED")`.
+
+But never-sent is necessary, not sufficient. `READY` is **live**: `claim` will
+pick it up the moment a drain exists. Offering a retry on it would queue the same
+purchase twice. So `RECOVERABLE_STATES = ("BLOCKED",)` — never sent, *and* never
+going to be.
+
+Everything else fails closed, and the reasons are individual rather than a blanket
+rule: `SENDING` may be mid-write; `UNKNOWN`'s own reason string is literally
+`absence_not_proven`; `RECONCILE` is the same family; `LINKED` is a confirmed
+provider order; and an intent with no outbox row at all cannot testify either way.
+Guessing "not sent" on any of those buys the same goods twice.
+
+The predicate also checks `provider_order_id` even though no path settles to
+`BLOCKED` while holding one. `settle` writes it with
+`COALESCE(?,provider_order_id)` and therefore never clears it, so if a row ever
+acquires an id and later reads `BLOCKED`, the id is the older and more expensive
+fact and it wins.
+
+### Why a fresh intent rather than an in-place rewrite
+
+The cheaper fix is to reuse the dead intent: rewrite its snapshot, reset its
+outbox row, no schema change. It was rejected, and the reason is the load-bearing
+design decision of this seam.
+
+`external_order_ref` is what `_validate_observed` uses to prove that a provider
+order belongs to *this* intent. Reusing one ref across two distinct commercial
+offers would let a stray order from attempt 1 authenticate against attempt 2 — the
+exact confusion the ref exists to prevent. A fresh intent with a fresh ref cannot
+be confused that way. Safety beat simplicity because the thing being protected is
+money.
+
+So an intent stays immutable and stays on file; what changes is whether it is
+still the *live* one for its order. That is one nullable column, `superseded_at`.
+Nullable with no default, because a `0` would make "still live" and "retired at
+the epoch" the same row.
+
+### The migration was the real work, and production decided its shape
+
+`CREATE TABLE IF NOT EXISTS` is a no-op on every database that has already run
+this code, and the test suite runs on a fresh SQLite file every time. So editing
+the `CREATE TABLE` alone would have produced a green suite proving a recovery path
+production does not have. **That is this mission's recurring defect with a schema
+in the subject position**, and it is the reason `_reshape_intents_for_supersession`
+exists and is tested by reverting a database to the old shape and migrating it
+forward.
+
+Measuring production before choosing a strategy changed the strategy:
+
+- `business_os_supplier_intents`: **0 rows**
+- `business_os_supplier_outbox`: **0 rows**
+- `business_os_supplier_drain_ticks`: **table absent** — expected; gap 20 had just
+  deployed and `ensure_schema()` runs lazily on first use.
+
+Zero data at risk. And the blocking constraint on PostgreSQL is
+`business_os_supplier_intents_connection_id_order_id_key`, which
+`ALTER TABLE ... DROP CONSTRAINT IF EXISTS` removes with **no table rebuild**.
+A single measurement turned a large risky rebuild into a small safe one and
+confined the rebuild to SQLite, where an inline `UNIQUE` genuinely cannot be
+dropped by name.
+
+One constraint turned out to have never earned its place:
+`UNIQUE(connection_id, order_id)` was always implied by the unconditional
+`uq_supplier_canonical_order` on `(order_id)` alone — if `order_id` is unique
+across the table then so is any pair containing it. It constrained nothing that
+index did not, while being the one constraint that could not be made conditional
+without a rebuild. Dropping it loses no invariant.
+
+`UNIQUE(connection_id, idempotency_key)` is deliberately **unchanged** and still
+spans retired intents. A key is the caller's promise that this is the same
+request; a spent key minting a second supplier order is the double purchase the
+outbox exists to prevent. A replayed key on a retired intent therefore gets a new
+refusal, `intent_superseded_use_new_key` (409) — not `duplicate: True`, because
+that answer is the defect.
+
+### Where the claim was derived twice
+
+`supplier_order_placed` was the *second* derivation of the same wrong fact, spelled
+the same wrong way. Both had to move together: two derivations of one claim
+disagreeing is how a screen renders a contradiction.
+
+The liveness filter sits in the **JOIN**, not the `WHERE`:
+
+```sql
+LEFT JOIN business_os_supplier_intents i ON i.order_id = CAST(o.id AS TEXT)
+  AND i.superseded_at IS NULL
+```
+
+In a `WHERE` it would discard the whole *order* whose only intent was retired —
+which is precisely the order that most needs to appear in this list.
+`uq_supplier_live_canonical_order` (unique on `order_id` where
+`superseded_at IS NULL`) keeps the join 1:1, so the fan-out it could otherwise
+cause cannot happen.
+
+### The guard is in the write, not only in the read
+
+`create_intent` checks the evidence twice: once in Python to decide whether to
+proceed, and again inside the conditional `UPDATE` that retires the row, with the
+outbox re-checked in the same statement rather than trusted from the row already
+read. A dispatch that moves the row out of `BLOCKED` between the two loses the
+race instead of being overwritten.
+
+The state list in that statement is expanded from `RECOVERABLE_STATES`
+(`placeholders = ",".join("?" for _ in RECOVERABLE_STATES)`) rather than spelled
+as a literal. A literal would have been a second, shorter vocabulary that agreed
+with the first only until someone edited one of them — which is the same latent
+shape this document keeps cataloguing, and it was caught in the draft of this very
+fix.
+
+### What the tests had to be
+
+The failing test was written **first** and used as the measurement instrument, so
+the fix and the regression test are one artifact. It went red exactly as predicted:
+`assert 'SUPPLIER_ORDER_ALREADY_PLACED' not in ['SUPPLIER_ORDER_ALREADY_PLACED']`.
+
+It sits one line below `test_a_blocked_supplier_order_carries_its_error`, and that
+adjacency is the lesson. The test above asks whether a `BLOCKED` row carries its
+reason. It never asked what *else* the row says, and what else it said was that
+the order had already been placed. Every test in the file that touched a failed
+send asserted on the state the row lands in; none asked what that state left the
+merchant able to do, and the answer was nothing.
+
+Three groups were added: the recovery behaviour (including a parametrized refusal
+across `SENDING`/`UNKNOWN`/`RECONCILE`/`LINKED`, a `READY` row that is never-sent
+but not recoverable, an intent with no outbox row, and a `BLOCKED` row still
+holding a `provider_order_id`); the migration, by reverting a live database to the
+pre-supersession DDL verbatim and migrating it forward — asserting that surviving
+rows come back with `superseded_at IS NULL`, since defaulting them to superseded
+would silently free every order in the table for a second supplier purchase; and
+the vocabularies, which assert the subset relation
+`RECOVERABLE_STATES ⊆ NEVER_SENT_STATES` and then pin `dispatch`'s ambiguous-write
+guard and `claim`'s due-state list as source text, because those two lines are the
+*only* reason the tuples are true and changing either evaporates the proof with
+every test still green.
+
+Two of those vocabulary tests were themselves written wrong and caught by running
+them: they asserted membership in `f.SUPPLIER_ORDER_STATES`, which is a
+**mobile-side** name. The backend has no tuple of every outbox state — `dispatch`
+and `settle` are the only code that names them, which is exactly why
+`test_supplier_obligation_copy.py` discovers states by scanning literals. The
+containment available on this side is against the module's own text.
+
+The race test had to be inverted after `sqlite3.OperationalError: database is
+locked` — a second connection cannot write inside `create_intent`'s transaction.
+Setting the row to `SENDING` *before* the call and monkeypatching
+`_recoverable_intent` to return `True` reproduces exactly the state a lost race
+leaves behind, and asserts the SQL refuses anyway. A test that cannot run is worse
+than no test.
+
+### What the mutation battery attacks
+
+`scripts/mutation_dropship_recovery_seam.py`, twenty-six mutations in five groups:
+the vocabulary (widening `NEVER_SENT_STATES` to include `UNKNOWN` is the most
+expensive single edit in the file), the obligation surface (both derivations of the
+placed claim, and the JOIN), the retirement gate (the `duplicate: True` path
+restored, a spent key narrowed to live rows, the conditional `UPDATE` collapsed to
+the stale Python verdict, the unread `rowcount`), the migration (the reshape never
+running, the old index surviving, the new index made unconditional, and a
+`DEFAULT 0` on the new column), and the screen (`!row.supplierOrderPlaced`
+re-derived as `!row.intentId`, which is this gap's defect one language over and
+immune to every backend test here).
+
+One inverted mutation is recorded honestly rather than comfortably: the `409` on
+`intent_superseded_use_new_key` is not pinned, because no surface calls
+`fulfillment-intents` yet — there is still no "place supplier order" control in any
+client. When one is built, the status becomes a fact a caller reads and the
+mutation should be reclassified rather than the test loosened.
+
+### What this does not do
+
+It does not give the merchant a button. The recovery path exists, is reachable
+through `fulfillment-intents`, and is correct; the obligation now reports
+`canPlaceSupplierOrder` truthfully for an order whose attempt failed. But the
+action still has no caller on any surface, which remains the seam recorded at gap
+19 and is unchanged here. What this seam removes is the *permanence*: the order is
+no longer sealed by a sentence claiming work that never happened.
+
+`tests/dropshipping/test_supplier_obligations.py` 55,
+`tests/business_os/test_cj_fulfillment.py` 75.
+
+---
+
 ## What kept coming back
 
-Twenty-one defects in this chain, twenty-one different subsystems, one shape:
+Twenty-two defects in this chain, twenty-two different subsystems, one shape:
 **a number was asserted rather than measured.**
 
 - `publish()` never wrote `price_label`, and the publish test asserted `status`
@@ -2658,6 +2908,18 @@ Twenty-one defects in this chain, twenty-one different subsystems, one shape:
   not a fact anything could read, contradict or test. The Procfile absence was
   already recorded in this very document, and still reached the merchant as a
   reassuring sentence, because a fact in a document is not a fact in a payload.
+- The obligation asserted that a supplier order had been placed by reading
+  `intent_id is not None` — the existence of a row, not any evidence of a send —
+  so an order `dispatch` had *refused* to send told the merchant **"You have
+  already ordered this from your supplier."** `BLOCKED` is terminal, so it said
+  so forever: a buyer paid, nothing was ordered, and nothing would ever revisit
+  it. `supplier_order_placed` derived the same wrong fact a second time from the
+  same expression. The test directly above the defect asked whether a `BLOCKED`
+  row carries its *reason* and never asked what else the row claimed. And the
+  note in this document explaining why no retry was possible was accurate about a
+  constraint while being wrong about the path: replaying the original idempotency
+  key returned `duplicate: True` on a dead intent — a success that placed
+  nothing, worse than the refusal, and findable only by making the call.
 
 In all of them the suite was green, and in all of them the green was about the
 halves rather than the seam. Where a claim spans two components, this document now
@@ -3034,3 +3296,25 @@ correct, specific, and preserved. One gap later a second header-drawn card
 appeared and the test did not cover it, because the assertion is a list of names
 and a list cannot notice an addition. This is the eleventh corollary recurring
 inside a test suite, which is the last place it is looked for.
+
+The twenty-first adds the one this document is least able to enforce on itself:
+**a finding recorded in this map is a description of a constraint, not a
+measurement of a path, and the two diverge.** The note explaining why a failed
+supplier order could not be retried named the right uniqueness constraint and
+was correct about the route a person would take by hand. Running the other route
+— same request, original idempotency key — returned `duplicate: True` on a dead
+intent, a success that placed nothing, which is strictly the more expensive
+answer and appears nowhere in a schema. *Do not guess from UI* therefore has a
+companion clause: **do not guess from this document either.** Where a section
+here explains why something is impossible, the section is a hypothesis until
+someone calls it.
+
+Its sub-tell is about terminality, and it generalises past this subsystem: **a
+state that nothing will revisit turns a wrong fact into a permanent one, so
+"which states are terminal" is a question every claim derived from a row has to
+answer.** `BLOCKED` was reachable, correct, and final — `claim` simply does not
+select it — and the blocker derived from its row's mere existence would have
+been a recoverable annoyance in any live state and was instead a sealed loss.
+Nothing in the code said "terminal"; it was a consequence of one `IN` list in a
+different function. The states a row can leave are part of the meaning of every
+sentence a screen draws from it.

@@ -142,6 +142,52 @@ DRAIN_STALL_SECONDS = 7200
 DRAIN_STATES = ("DRAINING", "DRAIN_STALLED", "TICKING_BUT_NOT_COMPLETING",
                 "NO_DRAIN_HAS_EVER_RUN")
 
+#: Outbox states that are positive proof this deployment never contacted the
+#: supplier about an intent.
+#:
+#: Both are reached only through `dispatch`'s final handler, whose first branch
+#: is ``if sent or intent["state"] in {"UNKNOWN", "RECONCILE"} or ambiguous_write:
+#: state = "UNKNOWN"``. So arriving at ``READY`` or ``BLOCKED`` *is* the proof:
+#: the send had not happened when the row was settled.
+#:
+#: The two differ in one way that matters and is not expressed here. ``BLOCKED``
+#: is terminal -- `claim` selects ``state IN ('READY','UNKNOWN','RECONCILE')``,
+#: so nothing ever picks a ``BLOCKED`` row up again -- while ``READY`` is live
+#: and will be sent the moment a drain exists. Never-sent is therefore necessary
+#: but not sufficient for recovery, and `_recoverable_intent` requires both.
+#:
+#: Everything absent from this tuple fails closed on purpose. ``SENDING`` may be
+#: mid-write, ``UNKNOWN`` is the state whose own reason string is
+#: ``absence_not_proven``, ``RECONCILE`` is the same family, ``LINKED`` is a
+#: confirmed provider order, and an intent with no outbox row at all cannot
+#: testify either way. Guessing "not sent" on any of those buys the same goods
+#: twice.
+NEVER_SENT_STATES = ("READY", "BLOCKED")
+
+#: The single state from which a merchant may be offered a fresh attempt:
+#: never sent, and never going to be.
+RECOVERABLE_STATES = ("BLOCKED",)
+
+
+def _recoverable_intent(state, provider_order_id):
+    """Whether a dead intent may be retired so its order can be ordered again.
+
+    One predicate, three callers -- `list_obligations` (does the merchant get a
+    button?), `create_intent` (may the old row be retired?) and the conditional
+    `UPDATE` inside `supersede` (is it still true at the moment of writing?).
+    Written once because the previous answer to all three questions was
+    ``intent_id is not None``: the existence of a row, not the evidence on it.
+    That is what told a merchant "You have already ordered this from your
+    supplier" about an order where nothing had been ordered.
+
+    `provider_order_id` is checked as well as the state, even though no path
+    settles to ``BLOCKED`` while holding one. `settle` writes it with
+    ``COALESCE(?,provider_order_id)``, so once set it is never cleared -- if a
+    row ever acquires an id and later reads ``BLOCKED``, the id is the older and
+    more expensive fact and it wins.
+    """
+    return state in RECOVERABLE_STATES and not provider_order_id
+
 
 def record_drain_tick(*, now=None, completed=False):
     """Record that a drain process reached this line. Called only by the worker.
@@ -216,17 +262,27 @@ def ensure_schema(conn=None):
     owned = conn is None
     conn = conn or db.connect()
     try:
+        # `superseded_at` is the whole recovery contract. An intent is immutable
+        # and stays immutable; what changes is whether it is still the live one
+        # for its order. Nullable with no default, for the reason
+        # `business_os_supplier_drain_ticks` gives below: a `0` would make "still
+        # live" and "retired at the epoch" the same row.
+        #
+        # `UNIQUE(connection_id, order_id)` used to be declared here and is gone.
+        # It was always implied by the canonical-order index below -- if
+        # `order_id` is unique across the table then so is any pair containing it
+        # -- so it constrained nothing that index did not, while being the one
+        # constraint that could not be made conditional without rebuilding the
+        # table. `_reshape_intents_for_supersession` drops it where it still
+        # exists.
         conn.execute("""CREATE TABLE IF NOT EXISTS business_os_supplier_intents (
             id TEXT PRIMARY KEY, connection_id TEXT NOT NULL, business_id TEXT NOT NULL,
             store_id TEXT NOT NULL, merchant_id TEXT NOT NULL, order_id TEXT NOT NULL,
             external_account_id TEXT NOT NULL, external_shop_id TEXT NOT NULL,
             idempotency_key TEXT NOT NULL, external_order_ref TEXT NOT NULL UNIQUE,
             snapshot_json TEXT NOT NULL, snapshot_hash TEXT NOT NULL,
-            created_at DOUBLE PRECISION NOT NULL, UNIQUE(connection_id, idempotency_key),
-            UNIQUE(connection_id, order_id))""")
-        # No split-allocation/replacement contract exists yet. The canonical
-        # customer order can have one supplier intent across ALL connections.
-        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_supplier_canonical_order ON business_os_supplier_intents(order_id)")
+            created_at DOUBLE PRECISION NOT NULL, superseded_at DOUBLE PRECISION,
+            UNIQUE(connection_id, idempotency_key))""")
         conn.execute("""CREATE TABLE IF NOT EXISTS business_os_supplier_outbox (
             intent_id TEXT PRIMARY KEY, state TEXT NOT NULL DEFAULT 'READY',
             provider_order_id TEXT, provider_status TEXT,
@@ -251,9 +307,135 @@ def ensure_schema(conn=None):
             completed_at DOUBLE PRECISION)""")
         if owned:
             conn.commit()
+            # Only on a connection this function owns. The reshape has to commit
+            # between statements -- a failed `ALTER` poisons the whole
+            # transaction on PostgreSQL -- and committing a caller's transaction
+            # underneath it is the hazard that already cost this package a hung
+            # route. Every caller that reads `superseded_at` (`create_intent`,
+            # `list_obligations`) calls `ensure_schema()` with no argument, so
+            # the column is in place before anything selects it.
+            _reshape_intents_for_supersession(conn)
     finally:
         if owned:
             conn.close()
+
+
+def _reshape_intents_for_supersession(conn):
+    """Bring an already-created intents table up to the supersession shape.
+
+    Idempotent and separate from the `CREATE TABLE` above because
+    `CREATE TABLE IF NOT EXISTS` is a no-op on a database that already has the
+    old shape -- which is every database that has ever run this code. Without
+    this, the new DDL would only ever apply to a fresh database, and the test
+    suite (fresh SQLite every run) would prove a behaviour production does not
+    have. That is this mission's recurring defect with a schema in the subject
+    position, so it is measured here rather than assumed to have applied.
+
+    There is no migration framework; schema is hand-rolled and must be safe to
+    run on every boot.
+    """
+    # `ADD COLUMN IF NOT EXISTS` is PostgreSQL-only -- `db._translate_alter_table`
+    # injects it there -- so on SQLite the duplicate is caught rather than
+    # declared away. Same shape as `diagnostics.ensure_schema`.
+    try:
+        conn.execute("ALTER TABLE business_os_supplier_intents "
+                     "ADD COLUMN superseded_at DOUBLE PRECISION")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+    # The unconditional canonical-order index is what makes a replacement
+    # impossible, so it goes before the conditional one arrives. Dropped by its
+    # own name rather than rebuilt: it is a standalone index on both engines.
+    try:
+        conn.execute("DROP INDEX IF EXISTS uq_supplier_canonical_order")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+    if db.IS_POSTGRES:
+        # A table constraint, not an index, so it needs the constraint spelling
+        # even though PostgreSQL backs it with an index of the same name.
+        try:
+            conn.execute("ALTER TABLE business_os_supplier_intents DROP CONSTRAINT "
+                         "IF EXISTS business_os_supplier_intents_connection_id_order_id_key")
+            conn.commit()
+        except Exception:
+            conn.rollback()
+    else:
+        _drop_sqlite_order_uniqueness(conn)
+    # Last, so it is never created against a table still missing the column it
+    # reads. One live intent per canonical customer order, exactly as before;
+    # the retired ones simply stop counting.
+    try:
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_supplier_live_canonical_order "
+                     "ON business_os_supplier_intents(order_id) WHERE superseded_at IS NULL")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+
+
+def _drop_sqlite_order_uniqueness(conn):
+    """Rebuild the table on SQLite, where an inline UNIQUE cannot be dropped.
+
+    Only reached on SQLite, and only when the old constraint is actually still
+    declared -- read out of `sqlite_master` rather than guessed at, so a fresh
+    database (which now gets the new shape from `ensure_schema`) is left alone.
+
+    This exists so a developer's long-lived `coinpilotx.db` behaves like
+    production rather than refusing every retry with `concurrent_intent_conflict`
+    while the test suite, on a fresh file, proves the opposite. A local database
+    that silently disagrees with prod is how this whole class of defect gets
+    written in the first place.
+    """
+    try:
+        row = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' "
+                           "AND name='business_os_supplier_intents'").fetchone()
+    except Exception:
+        return
+    declared = (row["sql"] if row and row["sql"] else "") if row else ""
+    if "connection_id, order_id" not in declared.replace("\n", " "):
+        return
+    # The replacement table below is a fixed shape, so the copy is the fixed
+    # column list -- not whatever the live table happens to have. Read the live
+    # columns only to refuse the rebuild when they are not a superset: copying a
+    # subset would write NOT NULL columns as NULL, and silently dropping a column
+    # this version has not heard of would lose data. Neither is worth doing
+    # automatically, and the fallback (keep the old table) is safe.
+    try:
+        live = {str(info[1]) for info in
+                conn.execute("PRAGMA table_info(business_os_supplier_intents)").fetchall()}
+    except Exception:
+        return
+    columns = ("id", "connection_id", "business_id", "store_id", "merchant_id", "order_id",
+               "external_account_id", "external_shop_id", "idempotency_key",
+               "external_order_ref", "snapshot_json", "snapshot_hash", "created_at",
+               "superseded_at")
+    if live != set(columns):
+        return
+    names = ",".join(columns)
+    try:
+        conn.execute("DROP TABLE IF EXISTS business_os_supplier_intents__reshape")
+        # Deliberately no UNIQUE(connection_id, order_id), which is the point of
+        # the rebuild, and deliberately no indexes: `_reshape_intents_for_supersession`
+        # creates the conditional one immediately after this returns.
+        conn.execute("""CREATE TABLE business_os_supplier_intents__reshape (
+            id TEXT PRIMARY KEY, connection_id TEXT NOT NULL, business_id TEXT NOT NULL,
+            store_id TEXT NOT NULL, merchant_id TEXT NOT NULL, order_id TEXT NOT NULL,
+            external_account_id TEXT NOT NULL, external_shop_id TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL, external_order_ref TEXT NOT NULL UNIQUE,
+            snapshot_json TEXT NOT NULL, snapshot_hash TEXT NOT NULL,
+            created_at DOUBLE PRECISION NOT NULL, superseded_at DOUBLE PRECISION,
+            UNIQUE(connection_id, idempotency_key))""")
+        conn.execute(f"INSERT INTO business_os_supplier_intents__reshape ({names}) "
+                     f"SELECT {names} FROM business_os_supplier_intents")
+        conn.execute("DROP TABLE business_os_supplier_intents")
+        conn.execute("ALTER TABLE business_os_supplier_intents__reshape "
+                     "RENAME TO business_os_supplier_intents")
+        conn.commit()
+    except Exception:
+        # Left as it was. The surviving constraint refuses a retry with
+        # `concurrent_intent_conflict`, which is a refusal and not a wrong
+        # success, so failing here cannot place or double-place an order.
+        conn.rollback()
 
 
 def _json(value):
@@ -434,16 +616,62 @@ def create_intent(*, connection_id, business_id, store_id, actor_user_id, order_
         canonical_items = {str(canonical["listing_id"]): int(canonical["quantity"])}
         if set(canonical_items) != {item["canonical_product_id"] for item in clean_items} or any(canonical_items.get(item["canonical_product_id"]) != item["quantity"] for item in clean_items):
             raise FulfillmentError("order_line_mismatch", 400)
-        prior = conn.execute("SELECT * FROM business_os_supplier_intents WHERE connection_id=? "
-                             "AND (idempotency_key=? OR order_id=?)",
-                             (connection_id, idempotency_key, str(order_id))).fetchone()
-        if prior:
-            prior = dict(prior)
-            if (prior["snapshot_hash"] != digest or prior["order_id"] != str(order_id)
-                    or prior["idempotency_key"] != idempotency_key):
+        # Two questions that used to be one `OR`, separated because they have
+        # different answers once an intent can be retired.
+        #
+        # The idempotency key is matched across every intent ever written,
+        # superseded or not: the key is the caller's promise that this is the
+        # same request, and a key that has been spent must never mint a second
+        # supplier order. The canonical order is matched against *live* intents
+        # only, because a retired one is precisely what recovery leaves behind.
+        replayed = conn.execute("SELECT * FROM business_os_supplier_intents "
+                                "WHERE connection_id=? AND idempotency_key=?",
+                                (connection_id, idempotency_key)).fetchone()
+        if replayed:
+            replayed = dict(replayed)
+            if (replayed["snapshot_hash"] != digest or replayed["order_id"] != str(order_id)):
                 raise FulfillmentError("immutable_intent_conflict")
+            if replayed["superseded_at"] is not None:
+                # Not `duplicate: True`. That answer means "the order your
+                # request asked for exists", and for a retired intent it does
+                # not -- this is the defect that made a retry look like a
+                # success while placing nothing. A spent key cannot be reused,
+                # and saying so is the only honest answer left.
+                raise FulfillmentError("intent_superseded_use_new_key", 409)
             webhook_inbox._commit(conn)
-            return {"intent_id": prior["id"], "duplicate": True}
+            return {"intent_id": replayed["id"], "duplicate": True}
+        live = conn.execute("SELECT i.*,o.state,o.provider_order_id FROM business_os_supplier_intents i "
+                            "LEFT JOIN business_os_supplier_outbox o ON o.intent_id=i.id "
+                            "WHERE i.connection_id=? AND i.order_id=? AND i.superseded_at IS NULL",
+                            (connection_id, str(order_id))).fetchone()
+        if live:
+            live = dict(live)
+            # A different key for the same order is only allowed to proceed when
+            # the intent holding that order can be proven never to have been
+            # sent *and* to be past retrying. Anything else -- in flight,
+            # unconfirmed, linked, or missing its outbox row entirely -- keeps
+            # the order and refuses, because the alternative is ordering the
+            # same goods a second time.
+            if not _recoverable_intent(live.get("state"), live.get("provider_order_id")):
+                raise FulfillmentError("immutable_intent_conflict")
+            # Conditional on the evidence a second time, inside the transaction
+            # that creates the replacement, so a concurrent dispatch that moved
+            # the row out of BLOCKED between the read above and this write loses
+            # the race instead of being overwritten. The outbox is re-checked in
+            # the same statement rather than trusted from the row just read.
+            # The state list is expanded from `RECOVERABLE_STATES` rather than
+            # spelled here, so a state added to that tuple reaches this statement
+            # too. A literal would have been a second, shorter vocabulary that
+            # agreed with the first only until someone edited it.
+            placeholders = ",".join("?" for _ in RECOVERABLE_STATES)
+            retired = conn.execute(
+                "UPDATE business_os_supplier_intents SET superseded_at=? WHERE id=? "
+                "AND superseded_at IS NULL AND EXISTS (SELECT 1 FROM business_os_supplier_outbox o "
+                f"WHERE o.intent_id=business_os_supplier_intents.id AND o.state IN ({placeholders}) "
+                "AND o.provider_order_id IS NULL)",
+                (time.time(), live["id"], *RECOVERABLE_STATES))
+            if retired.rowcount != 1:
+                raise FulfillmentError("immutable_intent_conflict")
         identity = "cjf_" + uuid.uuid4().hex
         external_ref = "pss_" + uuid.uuid4().hex
         now = time.time()
@@ -1257,7 +1485,19 @@ def list_obligations(connection_id, business_id, store_id, actor_user_id, *,
             # immediately below, where `create_intent` writes `str(order_id)`
             # into a TEXT column.
             "LEFT JOIN seller_transactions t ON t.id = o.seller_transaction_id "
+            # Live intents only. A retired one is an audit row about an attempt
+            # that was proven never to have been sent, and joining it would put
+            # its dead state and its dead reason on the obligation as though
+            # they described the order's present situation. The condition sits
+            # in the JOIN rather than the WHERE on purpose: in a `WHERE` it
+            # would discard the whole *order* whose only intent was retired,
+            # which is exactly the order that most needs to appear in this list.
+            #
+            # `uq_supplier_live_canonical_order` keeps this 1:1 -- it is unique
+            # on `order_id` among rows with `superseded_at IS NULL` -- so the
+            # fan-out this LEFT JOIN could otherwise cause cannot happen.
             "LEFT JOIN business_os_supplier_intents i ON i.order_id = CAST(o.id AS TEXT) "
+            "  AND i.superseded_at IS NULL "
             "LEFT JOIN business_os_supplier_outbox b ON b.intent_id = i.id "
             "WHERE s.supplier_connection_id = ? AND s.business_id = ? AND s.store_id = ? "
             "AND s.fulfillment_mode = ? AND LOWER(o.status) = 'paid' "
@@ -1297,7 +1537,18 @@ def list_obligations(connection_id, business_id, store_id, actor_user_id, *,
         blockers = []
         # Ordered by `BLOCKERS`, so the list reads the same way every time and a
         # merchant is told the thing they must act on first.
-        if intent_id is not None:
+        #
+        # Measured, not assumed. This used to be `if intent_id is not None` --
+        # the existence of a row -- which told a merchant "You have already
+        # ordered this from your supplier" about an intent that `dispatch` had
+        # refused to send. Nothing had been ordered, the buyer had paid, and
+        # because BLOCKED is terminal the row said it forever.
+        #
+        # A recoverable intent is one proven never sent and past retrying, and it
+        # blocks nothing: the merchant re-approves a current cost and
+        # `create_intent` retires it. Every other intent still blocks, including
+        # the ones that cannot testify -- see `NEVER_SENT_STATES`.
+        if intent_id is not None and not _recoverable_intent(outbox_state, item.get("provider_order_id")):
             blockers.append(SUPPLIER_ORDER_ALREADY_PLACED)
         blockers.extend(unbound)
         blockers.extend(destination_blockers)
@@ -1320,9 +1571,15 @@ def list_obligations(connection_id, business_id, store_id, actor_user_id, *,
             "listing_type": listing_type,
             # One field, derived once, in one place. A `placed` boolean *beside*
             # a state would be the same fact twice; `supplier_order_placed`
-            # below is instead a restatement of `intent_id is not None`, which
-            # `state` cannot express without the caller knowing which outbox
-            # names mean "already sent".
+            # below is instead the one thing `state` cannot express without the
+            # caller knowing which outbox names mean "already sent".
+            #
+            # It is no longer `intent_id is not None`. That spelling made the
+            # word "placed" mean "a row exists", so an intent this deployment
+            # had refused to send reported `placed: true` -- the same wrong fact
+            # as the `SUPPLIER_ORDER_ALREADY_PLACED` blocker above, and it has
+            # to move with it. Two derivations of one claim disagreeing is how a
+            # screen ends up rendering a contradiction.
             #
             # An intent with no outbox row should be impossible -- `create_intent`
             # writes both in one transaction, and rolls both back together --
@@ -1335,7 +1592,8 @@ def list_obligations(connection_id, business_id, store_id, actor_user_id, *,
             # invites a merchant to order the same goods twice. `UNKNOWN` is
             # exactly the state whose copy tells them not to.
             "state": outbox_state or ("UNKNOWN" if intent_id else AWAITING_SUPPLIER_ORDER),
-            "supplier_order_placed": intent_id is not None,
+            "supplier_order_placed": intent_id is not None and not _recoverable_intent(
+                outbox_state, item.get("provider_order_id")),
         })
     # Envelope-level, not per row, because it is one fact about the deployment
     # rather than a property of any sale -- the same reason `isSandbox` sits

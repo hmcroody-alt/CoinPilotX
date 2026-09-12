@@ -450,6 +450,32 @@ def test_a_blocked_supplier_order_carries_its_error(provider):
     assert only["last_error"] == "preflight_blocked"
 
 
+def test_a_supplier_order_that_was_never_sent_is_not_called_already_placed(provider):
+    """The test one line below the one that missed it for a whole gap.
+
+    `test_a_blocked_supplier_order_carries_its_error` sits directly above and
+    asks whether a BLOCKED row carries its reason. It never asked what else the
+    row says, and what else it says is
+    ``SUPPLIER_ORDER_ALREADY_PLACED`` -- "You have already ordered this from
+    your supplier" -- on an order where nothing was ordered.
+
+    BLOCKED is the state `dispatch` settles to when the send was *refused*,
+    before any provider write: no `provider_order_id`, and the row never passed
+    through SENDING. That is positive proof nothing was sent. The blocker was
+    derived from `intent_id is not None` instead -- the existence of a row
+    rather than the evidence on it -- so a fixable failure became permanent and
+    the merchant was told the work was done.
+    """
+    order_id = a_buyer_pays(publish_dropship_listing(provider, "SALE-NEVER-SENT"))
+    an_intent_exists_for(order_id, state="BLOCKED", last_error="supplier_sku_missing")
+    only = obligations()[0]
+    assert fulfillment.SUPPLIER_ORDER_ALREADY_PLACED not in only["blockers"], (
+        "nothing was sent to the supplier, so telling the merchant they already "
+        "ordered it is false and it is the expensive direction to be wrong in: "
+        "a paid buyer, no supplier order, and a screen saying it is handled")
+    assert only["supplier_order_placed"] is False
+
+
 def test_the_raw_outbox_column_never_travels_beside_the_derived_state(provider):
     # `outbox_state` is popped unconditionally. The first draft of this function
     # popped it only when an intent existed, so on the unplaced path a null

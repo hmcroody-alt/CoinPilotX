@@ -815,3 +815,447 @@ def test_a_quote_carries_no_supplier_account_identifier(ready):
     for forbidden in ("access_token", "refresh_token", "openId", "open_id",
                       "credential_reference", "external_account_id", "cj-shop-a"):
         assert forbidden not in serialized, f"{forbidden} reached the caller"
+
+
+# --------------------------------------------------------------------------
+# Recovering an order whose supplier order was never sent
+#
+# Nothing above this line could have caught gap 18, and the reason is worth
+# stating. Every test here that touches a failed send asserts on the *state*
+# the row lands in -- `test_dispatch_*` prove BLOCKED is reached and carries
+# its reason. None asked what that state left the merchant able to do, and the
+# answer was nothing: BLOCKED is terminal (`claim` selects only READY, UNKNOWN
+# and RECONCILE), `list_obligations` reported it as
+# `SUPPLIER_ORDER_ALREADY_PLACED`, and `create_intent` refused a retry under
+# both of its branches -- `immutable_intent_conflict` on a fresh key, and
+# `duplicate: True` on the original one, which is a *success* pointing at an
+# order that does not exist.
+#
+# So a buyer had paid, nothing had been ordered, and every surface said it was
+# handled. These tests are written from the merchant's position -- "can I still
+# get this order placed?" -- because that is the question the row-existence
+# checks were silently answering no to.
+# --------------------------------------------------------------------------
+
+def a_blocked_never_sent_intent(ready, *, reason="supplier_sku_missing"):
+    """Settle a real intent to the state `dispatch` reaches when it refuses to send."""
+    first = f.create_intent(**ready[2])
+    conn = db.connect()
+    conn.execute("UPDATE business_os_supplier_outbox SET state='BLOCKED',last_error=? "
+                 "WHERE intent_id=?", (reason, first["intent_id"]))
+    conn.commit()
+    conn.close()
+    return first["intent_id"]
+
+
+def retry(ready, *, key="merchant-retry-1"):
+    request = copy.deepcopy(ready[2])
+    request["idempotency_key"] = key
+    return f.create_intent(**request)
+
+
+def intent_row(intent_id):
+    conn = db.connect()
+    try:
+        return dict(conn.execute("SELECT * FROM business_os_supplier_intents WHERE id=?",
+                                 (intent_id,)).fetchone())
+    finally:
+        conn.close()
+
+
+def test_an_order_whose_supplier_order_was_never_sent_can_be_ordered_again(ready):
+    """The gap, from the merchant's side: a fixable failure stops being permanent."""
+    dead = a_blocked_never_sent_intent(ready)
+    result = retry(ready)
+    assert result["duplicate"] is False
+    assert result["intent_id"] != dead, "a retry has to be a new intent, not the dead one"
+    assert outbox(result["intent_id"])["state"] == "READY"
+    assert ready[0].created == [], "recovery must not contact the supplier"
+
+
+def test_the_failed_attempt_survives_as_an_audit_row(ready):
+    """Retired, not deleted, and not rewritten.
+
+    The alternative design -- reuse the dead intent and overwrite its snapshot --
+    needs no schema change and was rejected for what it does to
+    `external_order_ref`. That value is what `_validate_observed` uses to prove a
+    provider order belongs to this intent, so reusing it across two different
+    commercial offers would let a stray order from the first attempt
+    authenticate against the second. A fresh intent cannot be confused that way.
+    """
+    dead = a_blocked_never_sent_intent(ready)
+    before = intent_row(dead)
+    result = retry(ready)
+    after = intent_row(dead)
+
+    assert after["superseded_at"] is not None, "the dead intent has to be marked retired"
+    assert after["snapshot_json"] == before["snapshot_json"], "an intent stays immutable"
+    assert after["snapshot_hash"] == before["snapshot_hash"]
+    assert after["external_order_ref"] == before["external_order_ref"]
+    # The one that matters: the replacement must not inherit the identity the
+    # supplier could still answer the first attempt on.
+    assert intent_row(result["intent_id"])["external_order_ref"] != before["external_order_ref"]
+    assert intent_row(result["intent_id"])["superseded_at"] is None
+
+
+def test_replaying_the_spent_key_is_refused_rather_than_called_a_duplicate(ready):
+    """The sharpest half of the defect, and the one a caller could not see.
+
+    Before this, retrying with the *original* idempotency key returned
+    `{"duplicate": True}` pointing at the BLOCKED intent. `duplicate: True`
+    means "the order your request asked for already exists" -- a caller shows
+    "already placed" and stops. For a retired intent nothing exists, so the
+    reply was a success that had placed nothing, which is strictly worse than
+    the error the fresh-key path gave.
+    """
+    a_blocked_never_sent_intent(ready)
+    retry(ready)
+    with pytest.raises(f.FulfillmentError, match="intent_superseded_use_new_key"):
+        f.create_intent(**ready[2])
+
+
+def test_a_spent_key_cannot_mint_a_second_supplier_order(ready):
+    """Why the idempotency match still spans retired intents.
+
+    The order match was narrowed to live intents; this one deliberately was not.
+    A key is the caller's promise that this is the same request, and a spent key
+    minting a second order is the double-purchase the whole outbox exists to
+    prevent.
+    """
+    a_blocked_never_sent_intent(ready)
+    retry(ready)
+    conn = db.connect()
+    live = conn.execute("SELECT count(*) FROM business_os_supplier_intents "
+                        "WHERE order_id=? AND superseded_at IS NULL", (ORDER_ID,)).fetchone()[0]
+    total = conn.execute("SELECT count(*) FROM business_os_supplier_intents "
+                         "WHERE order_id=?", (ORDER_ID,)).fetchone()[0]
+    conn.close()
+    assert (live, total) == (1, 2), "one live intent, one retired, never two live"
+
+
+@pytest.mark.parametrize("state", ["SENDING", "UNKNOWN", "RECONCILE", "LINKED"])
+def test_an_order_that_may_have_been_sent_is_never_recoverable(ready, state):
+    """Fail closed, which is the entire safety argument.
+
+    `SENDING` may be mid-write. `UNKNOWN` is the state whose own reason string
+    is `absence_not_proven`. `RECONCILE` is the same family. `LINKED` is a
+    confirmed provider order. Recovering any of them buys the same goods twice,
+    so only positive proof of a non-send unlocks a retry -- never the absence of
+    proof of one.
+    """
+    first = f.create_intent(**ready[2])
+    conn = db.connect()
+    conn.execute("UPDATE business_os_supplier_outbox SET state=? WHERE intent_id=?",
+                 (state, first["intent_id"]))
+    conn.commit()
+    conn.close()
+    with pytest.raises(f.FulfillmentError, match="immutable_intent_conflict"):
+        retry(ready)
+    assert intent_row(first["intent_id"])["superseded_at"] is None
+
+
+def test_a_queued_order_is_not_recoverable_merely_because_nothing_was_sent(ready):
+    """Never-sent is necessary and not sufficient, and READY is the proof.
+
+    A READY row has contacted nobody -- it satisfies `NEVER_SENT_STATES` -- but
+    it is live: `claim` will pick it up the moment a drain exists. Offering a
+    retry here would queue the same purchase twice, so recovery needs the row to
+    be past retrying as well as unsent, which is what `RECOVERABLE_STATES` says
+    and `READY` is deliberately not in.
+    """
+    first = f.create_intent(**ready[2])
+    assert outbox(first["intent_id"])["state"] == "READY"
+    assert "READY" in f.NEVER_SENT_STATES and "READY" not in f.RECOVERABLE_STATES
+    with pytest.raises(f.FulfillmentError, match="immutable_intent_conflict"):
+        retry(ready)
+    assert intent_row(first["intent_id"])["superseded_at"] is None
+
+
+def test_an_intent_with_no_outbox_row_cannot_testify_and_so_blocks(ready):
+    """`create_intent` writes both rows in one transaction, so this is unreachable.
+
+    The LEFT JOIN can still express it, and a row that cannot say whether it was
+    sent must not be treated as saying no.
+    """
+    first = f.create_intent(**ready[2])
+    conn = db.connect()
+    conn.execute("DELETE FROM business_os_supplier_outbox WHERE intent_id=?", (first["intent_id"],))
+    conn.commit()
+    conn.close()
+    with pytest.raises(f.FulfillmentError, match="immutable_intent_conflict"):
+        retry(ready)
+    assert intent_row(first["intent_id"])["superseded_at"] is None
+
+
+def test_a_blocked_row_still_holding_a_provider_order_id_is_not_recoverable(ready):
+    """Why the predicate reads the id as well as the state.
+
+    `settle` writes `provider_order_id=COALESCE(?,provider_order_id)`, so once
+    set it is never cleared. A row that acquired an id and later reads BLOCKED is
+    reporting two things, and the id is the older and far more expensive one.
+    """
+    dead = a_blocked_never_sent_intent(ready)
+    conn = db.connect()
+    conn.execute("UPDATE business_os_supplier_outbox SET provider_order_id='CJ-STRAY' "
+                 "WHERE intent_id=?", (dead,))
+    conn.commit()
+    conn.close()
+    with pytest.raises(f.FulfillmentError, match="immutable_intent_conflict"):
+        retry(ready)
+    assert intent_row(dead)["superseded_at"] is None
+
+
+def test_the_guard_on_retiring_an_intent_is_in_the_write_not_only_the_read(ready, monkeypatch):
+    """A stale "recoverable" verdict must not be enough to retire an intent.
+
+    `create_intent` reads the outbox, asks `_recoverable_intent`, and then
+    retires the row. Between the read and the write a dispatch can reclaim the
+    intent, so the `UPDATE` re-checks the outbox in its own `WHERE` instead of
+    trusting the verdict it was given.
+
+    Tested by making the verdict lie rather than by racing two connections --
+    SQLite will not let a second connection write inside `create_intent`'s
+    transaction, and a test that cannot run is worse than no test. Forcing the
+    predicate to return True against a row that is really SENDING reproduces
+    exactly the state a lost race leaves behind, and the assertion is that the
+    SQL refuses anyway.
+    """
+    dead = a_blocked_never_sent_intent(ready)
+    conn = db.connect()
+    conn.execute("UPDATE business_os_supplier_outbox SET state='SENDING' WHERE intent_id=?", (dead,))
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(f, "_recoverable_intent", lambda state, provider_order_id: True)
+
+    with pytest.raises(f.FulfillmentError, match="immutable_intent_conflict"):
+        retry(ready)
+    assert intent_row(dead)["superseded_at"] is None, (
+        "the conditional UPDATE has to refuse a row that moved, not retire it anyway")
+    conn = db.connect()
+    live = conn.execute("SELECT count(*) FROM business_os_supplier_intents "
+                        "WHERE order_id=? AND superseded_at IS NULL", (ORDER_ID,)).fetchone()[0]
+    conn.close()
+    assert live == 1, "the in-flight intent keeps the order"
+
+
+def test_recovery_places_no_order_and_spends_nothing(ready):
+    """Section 37. Retiring an intent is a local bookkeeping write."""
+    a_blocked_never_sent_intent(ready)
+    before = canonical_order()
+    retry(ready)
+    assert ready[0].created == []
+    assert canonical_order() == before, "the customer order is untouched by recovery"
+
+
+# --------------------------------------------------------------------------
+# Whether the new shape reaches a database that already exists
+#
+# `CREATE TABLE IF NOT EXISTS` is a no-op on every database that has ever run
+# this code, so a DDL edit alone would only ever apply to a fresh one -- and the
+# suite above runs on a fresh SQLite file every time, so it would prove a
+# recovery path production does not have. That is this mission's recurring
+# defect with a schema in the subject position, so the reshape is measured on a
+# deliberately old-shaped table rather than assumed to have applied.
+# --------------------------------------------------------------------------
+
+OLD_SHAPE = """CREATE TABLE business_os_supplier_intents (
+    id TEXT PRIMARY KEY, connection_id TEXT NOT NULL, business_id TEXT NOT NULL,
+    store_id TEXT NOT NULL, merchant_id TEXT NOT NULL, order_id TEXT NOT NULL,
+    external_account_id TEXT NOT NULL, external_shop_id TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL, external_order_ref TEXT NOT NULL UNIQUE,
+    snapshot_json TEXT NOT NULL, snapshot_hash TEXT NOT NULL,
+    created_at DOUBLE PRECISION NOT NULL, UNIQUE(connection_id, idempotency_key),
+    UNIQUE(connection_id, order_id))"""
+
+
+def revert_to_the_old_shape():
+    """Rebuild the table exactly as it was declared before supersession existed."""
+    conn = db.connect()
+    conn.execute("DROP TABLE IF EXISTS business_os_supplier_intents")
+    conn.execute(OLD_SHAPE)
+    conn.execute("CREATE UNIQUE INDEX uq_supplier_canonical_order "
+                 "ON business_os_supplier_intents(order_id)")
+    conn.execute("DROP INDEX IF EXISTS uq_supplier_live_canonical_order")
+    conn.execute(
+        "INSERT INTO business_os_supplier_intents (id,connection_id,business_id,store_id,"
+        "merchant_id,order_id,external_account_id,external_shop_id,idempotency_key,"
+        "external_order_ref,snapshot_json,snapshot_hash,created_at) "
+        "VALUES ('cjf_legacy','conn-legacy','biz-a','store-a','100','9999','acct','shop',"
+        "'legacy-key','pss_legacy','{\"items\": []}','legacyhash',1.0)")
+    conn.commit()
+    conn.close()
+
+
+def table_sql():
+    conn = db.connect()
+    try:
+        row = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' "
+                           "AND name='business_os_supplier_intents'").fetchone()
+        return (row["sql"] or "").replace("\n", " ") if row else ""
+    finally:
+        conn.close()
+
+
+def index_names():
+    conn = db.connect()
+    try:
+        return {r["name"] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' "
+            "AND tbl_name='business_os_supplier_intents'").fetchall()}
+    finally:
+        conn.close()
+
+
+def test_an_existing_database_is_reshaped_rather_than_left_behind(database):
+    """The migration, measured on the shape production actually has."""
+    revert_to_the_old_shape()
+    assert "connection_id, order_id" in table_sql(), "this test is only meaningful on the old shape"
+
+    f.ensure_schema()
+
+    declared = table_sql()
+    assert "superseded_at" in declared, "the recovery column has to reach an existing table"
+    assert "connection_id, order_id" not in declared, (
+        "the unconditional pair uniqueness is what makes a replacement impossible, "
+        "so the reshape has to drop it -- on SQLite that needs a table rebuild")
+    # Still enforced, and still the caller's promise: a spent key may never mint
+    # a second order, retired intent or not.
+    assert "connection_id, idempotency_key" in declared
+
+
+def test_the_reshape_replaces_the_unconditional_canonical_index_with_a_conditional_one(database):
+    revert_to_the_old_shape()
+    f.ensure_schema()
+    names = index_names()
+    assert "uq_supplier_live_canonical_order" in names
+    assert "uq_supplier_canonical_order" not in names, (
+        "an unconditional unique index on order_id refuses the replacement no matter "
+        "what the table constraints say")
+
+
+def test_the_reshape_keeps_the_rows_it_found(database):
+    """A migration that loses an intent loses the record of a real purchase."""
+    revert_to_the_old_shape()
+    f.ensure_schema()
+    row = intent_row("cjf_legacy")
+    assert row["external_order_ref"] == "pss_legacy"
+    assert row["snapshot_hash"] == "legacyhash"
+    assert row["order_id"] == "9999"
+    # Live, not retired. Defaulting existing rows to superseded would silently
+    # free every order in the table for a second supplier purchase.
+    assert row["superseded_at"] is None
+
+
+def test_one_live_intent_per_order_survives_the_reshape(database):
+    """The invariant the dropped constraint used to carry has to still hold."""
+    revert_to_the_old_shape()
+    f.ensure_schema()
+    conn = db.connect()
+    try:
+        with pytest.raises(Exception):
+            conn.execute(
+                "INSERT INTO business_os_supplier_intents (id,connection_id,business_id,store_id,"
+                "merchant_id,order_id,external_account_id,external_shop_id,idempotency_key,"
+                "external_order_ref,snapshot_json,snapshot_hash,created_at) "
+                "VALUES ('cjf_second','conn-other','biz-a','store-a','100','9999','acct','shop',"
+                "'other-key','pss_second','{}','h',2.0)")
+            conn.commit()
+    finally:
+        conn.rollback()
+        conn.close()
+
+
+def test_a_retired_intent_frees_the_order_after_the_reshape(database):
+    """End to end on a migrated table: the conditional index is what allows recovery."""
+    revert_to_the_old_shape()
+    f.ensure_schema()
+    conn = db.connect()
+    conn.execute("UPDATE business_os_supplier_intents SET superseded_at=5.0 WHERE id='cjf_legacy'")
+    conn.execute(
+        "INSERT INTO business_os_supplier_intents (id,connection_id,business_id,store_id,"
+        "merchant_id,order_id,external_account_id,external_shop_id,idempotency_key,"
+        "external_order_ref,snapshot_json,snapshot_hash,created_at) "
+        "VALUES ('cjf_replacement','conn-legacy','biz-a','store-a','100','9999','acct','shop',"
+        "'replacement-key','pss_replacement','{}','h2',6.0)")
+    conn.commit()
+    live = conn.execute("SELECT count(*) FROM business_os_supplier_intents "
+                        "WHERE order_id='9999' AND superseded_at IS NULL").fetchone()[0]
+    conn.close()
+    assert live == 1, "exactly one live intent, with the retired one still on file beside it"
+
+
+def test_the_reshape_is_safe_to_run_twice(database):
+    """It runs on every boot, so running it again has to be a no-op."""
+    revert_to_the_old_shape()
+    f.ensure_schema()
+    first, first_indexes = table_sql(), index_names()
+    f.ensure_schema()
+    f.ensure_schema()
+    assert table_sql() == first
+    assert index_names() == first_indexes
+    assert intent_row("cjf_legacy")["external_order_ref"] == "pss_legacy"
+
+
+# --------------------------------------------------------------------------
+# The vocabularies that decide whether money can be spent twice
+# --------------------------------------------------------------------------
+
+def test_every_recoverable_state_is_also_a_never_sent_state():
+    """The subset relation is the safety argument, so it is asserted not assumed.
+
+    `RECOVERABLE_STATES` unlocks a second supplier purchase for an order. If a
+    state ever entered it without also being in `NEVER_SENT_STATES`, this
+    deployment would offer a retry on an order it cannot prove was never placed,
+    which is the double-purchase the outbox exists to prevent.
+    """
+    assert set(f.RECOVERABLE_STATES) <= set(f.NEVER_SENT_STATES)
+    # There is no backend tuple of every outbox state -- `dispatch` and `settle`
+    # are the only code that names them, which is why
+    # `tests/dropshipping/test_supplier_obligation_copy.py` finds them by
+    # scanning literals. So the containment that can be checked here is against
+    # the module's own text: a never-sent state this module never writes would be
+    # a name with nothing behind it, and a name with nothing behind it is how a
+    # vocabulary forks.
+    source = open(f.__file__, encoding="utf-8").read()
+    for state in f.NEVER_SENT_STATES:
+        assert f"'{state}'" in source or f'"{state}"' in source, (
+            f"{state} is in NEVER_SENT_STATES but this module never writes it")
+
+
+def test_no_state_that_may_have_reached_the_supplier_is_never_sent():
+    """Stated as an absolute list rather than relative to the tuple.
+
+    Every test above is written in terms of `NEVER_SENT_STATES`, so widening it
+    leaves them all green -- a test written relative to a constant cannot detect
+    a change to that constant. These four names are the ones whose meaning is
+    "a write may have happened", and none of them may ever appear there.
+    """
+    source = open(f.__file__, encoding="utf-8").read()
+    for state in ("SENDING", "UNKNOWN", "RECONCILE", "LINKED"):
+        # Spelled here as a literal and confirmed against the module text, so a
+        # rename does not quietly turn this loop into four assertions about
+        # states that no longer exist -- which would pass.
+        assert f"'{state}'" in source or f'"{state}"' in source, (
+            f"{state} is no longer a state this module writes -- re-derive the "
+            "may-have-been-sent list before trusting these assertions")
+        assert state not in f.NEVER_SENT_STATES, (
+            f"{state} can follow a send, so treating it as proof of a non-send "
+            "buys the same goods twice")
+        assert state not in f.RECOVERABLE_STATES
+
+
+def test_the_never_sent_claim_is_derived_from_the_guard_that_makes_it_true():
+    """`READY` and `BLOCKED` prove a non-send only because of one branch in `dispatch`.
+
+    That branch sends anything with `sent` set, or already unconfirmed, or an
+    ambiguous write, to `UNKNOWN` -- so the two remaining states are reachable
+    only when no write had happened. Change the guard and the proof evaporates
+    silently, with every test above still green, so the guard itself is pinned.
+    """
+    source = open(f.__file__, encoding="utf-8").read()
+    assert 'if sent or intent["state"] in {"UNKNOWN", "RECONCILE"}' in source, (
+        "dispatch's ambiguous-write guard changed -- re-derive NEVER_SENT_STATES "
+        "from the new one before trusting it")
+    assert 'state IN (\'READY\',\'UNKNOWN\',\'RECONCILE\')' in source, (
+        "claim's due-state list changed -- BLOCKED may no longer be terminal, "
+        "which is half of what makes it recoverable")

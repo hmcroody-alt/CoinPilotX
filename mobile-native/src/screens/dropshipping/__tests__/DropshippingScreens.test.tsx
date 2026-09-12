@@ -2309,6 +2309,35 @@ describe("DropshippingOrdersScreen", () => {
     expect(view.queryByText(/could not be ordered as things stand/)).toBeNull();
   });
 
+  it("does not count an order that was never sent as one that was placed", async () => {
+    // A row combination the server could not previously produce. `BLOCKED` is
+    // what `dispatch` settles to when it refuses to send — nothing reached the
+    // supplier — yet the obligation arrived with `supplierOrderPlaced: true`
+    // and `SUPPLIER_ORDER_ALREADY_PLACED`, because both were derived from an
+    // intent row existing rather than from any evidence of a send. The buyer
+    // had paid, nothing had been ordered, and this screen said it was handled.
+    //
+    // Now it is an obligation again: no supplier order yet, and orderable.
+    const { view } = await renderOrders([
+      obligation({
+        state: "BLOCKED",
+        supplierOrderPlaced: false,
+        intentId: "cjf_dead",
+        providerOrderId: null,
+        lastError: "supplier_sku_missing",
+        blockers: [],
+        canPlaceSupplierOrder: true
+      })
+    ]);
+    await waitFor(() => expect(view.getByText("Not sent — needs your attention")).toBeTruthy());
+    expect(view.queryByText(/1 of these have no supplier order yet/)).toBeTruthy();
+    // And not in the blocked count. The previous attempt failed, but the order
+    // is actionable, so calling it un-orderable would send the merchant looking
+    // for a reason that is no longer there.
+    expect(view.queryByText(/could not be ordered as things stand/)).toBeNull();
+    expect(view.queryByText(SUPPLIER_OBLIGATION_BLOCKER_COPY.SUPPLIER_ORDER_ALREADY_PLACED)).toBeNull();
+  });
+
   it("renders a blocker it has never heard of as unrecognised, not as nothing", async () => {
     // Dropping it would leave a merchant a row that cannot be ordered with no
     // reason on it, which reads as a bug in the screen rather than as something
