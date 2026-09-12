@@ -9,7 +9,10 @@ it.
 
 from __future__ import annotations
 
+import os
+import tempfile
 import unittest
+from unittest import mock
 
 from services import undx_capabilities as cap
 from services import undx_cost, undx_embedding_service
@@ -308,6 +311,159 @@ class NoDuplicateDefaultsTest(unittest.TestCase):
         self.assertEqual(undx_embedding_service.DEFAULT_MODEL, "pplx-embed-v1-0.6b")
         self.assertEqual(undx_embedding_service.DEFAULT_ENDPOINT,
                          "https://api.perplexity.ai/v1/embeddings")
+
+
+class RecordSpendTest(unittest.TestCase):
+    """`record_spend` against a real ledger file, because the claim being made is
+    about what a spend report will say — not about what the pricing function
+    returns, which :class:`PriceArithmeticTest` already covers.
+
+    Every assertion here reads the ledger back through `month_snapshot`, since
+    that is the only path any consumer uses. A test that asserted on
+    `record_spend`'s return value alone would pass with the upsert broken.
+    """
+
+    def setUp(self):
+        self._dir = tempfile.TemporaryDirectory()
+        undx_cost.reset_for_tests()
+        env = mock.patch.dict(
+            os.environ,
+            {"DATABASE_URL": "sqlite:///" + os.path.join(self._dir.name, "ledger.db")})
+        env.start()
+        self.addCleanup(env.stop)
+        self.addCleanup(self._dir.cleanup)
+        self.addCleanup(undx_cost.reset_for_tests)
+
+    def _kinds(self):
+        snapshot = undx_cost.month_snapshot()
+        self.assertEqual(snapshot["source"], "ledger",
+                         "these assertions are about the durable row, not the mirror")
+        return snapshot["kinds"]
+
+    #: A priced model that is deliberately *not* the configured default. The
+    #: default is pinned as a literal exactly once in this file, inside
+    #: :class:`NoDuplicateDefaultsTest`, because it is a component of the
+    #: embedding cache key; repeating it here would make that pin stop being the
+    #: single place a rename has to be noticed. Using a non-default model also
+    #: exercises the branch that looks a model up rather than falling through to
+    #: a single unnamed rate.
+    PRICED_MODEL = "pplx-embed-context-v1-4b"  # $0.05 per million tokens
+
+    def test_a_priced_call_lands_as_money_under_its_own_kind(self):
+        """Perplexity embeddings are the only priced non-chat provider in the
+        table, so this is the one place the money can be asserted rather than
+        just the row. 1,000,000 tokens at $0.05/M = $0.05 = 50,000 micro-USD."""
+        cap.record_spend(cap.CALL_KIND_EMBEDDING, "perplexity",
+                         units=1_000_000, model=self.PRICED_MODEL,
+                         input_tokens=1_000_000)
+        row = self._kinds()[cap.CALL_KIND_EMBEDDING]
+        self.assertEqual((row["calls"], row["cost_micro_usd"], row["uncosted_calls"]),
+                         (1, 50_000, 0))
+        self.assertEqual(row["input_tokens"], 1_000_000)
+
+    def test_an_unpriced_provider_is_recorded_and_counted_as_uncosted(self):
+        """§34, at the point where it would be easiest to cheat. `gpt-image-1`
+        has no published price in this table, and the tempting shapes are both
+        wrong: skipping the call loses the count, and pricing it at 0 reports a
+        free image. The row exists, contributes nothing to the dollar total, and
+        says so."""
+        cap.record_spend(cap.CALL_KIND_IMAGE, "openai", units=1, model="gpt-image-1")
+        row = self._kinds()[cap.CALL_KIND_IMAGE]
+        self.assertEqual((row["calls"], row["cost_micro_usd"], row["uncosted_calls"]),
+                         (1, 0, 1))
+
+    def test_free_and_unknown_stay_distinguishable_within_one_kind(self):
+        """Both DuckDuckGo and Tavily are `research`, both add $0.00, and only
+        `uncosted_calls` separates them. Asserted inside a single kind because
+        that is where they are summed together and where the distinction would
+        actually be lost — two calls, one dollar total of zero, but exactly one
+        of them unknown.
+        """
+        cap.record_spend(cap.CALL_KIND_RESEARCH, "duckduckgo_instant", units=1)
+        cap.record_spend(cap.CALL_KIND_RESEARCH, "tavily", units=1)
+        kinds = self._kinds()[cap.CALL_KIND_RESEARCH]
+        self.assertEqual((kinds["calls"], kinds["cost_micro_usd"],
+                          kinds["uncosted_calls"]), (2, 0, 1))
+
+        providers = undx_cost.month_snapshot()["providers"]
+        self.assertEqual(providers["duckduckgo_instant"]["uncosted_calls"], 0)
+        self.assertEqual(providers["tavily"]["uncosted_calls"], 1)
+
+    def test_a_provider_not_in_the_table_is_still_recorded(self):
+        """Fails open on the *accounting* side deliberately. An adapter calling
+        with a name the table has not heard of is a table defect, and the useful
+        outcome is a row flagged unknown-price that someone can find, not a
+        silently dropped call. `unpriced_providers()` is the declared-gap list;
+        this is the undeclared-gap case."""
+        cap.record_spend(cap.CALL_KIND_RESEARCH, "some_new_search_api", units=3)
+        row = self._kinds()[cap.CALL_KIND_RESEARCH]
+        self.assertEqual((row["calls"], row["uncosted_calls"]), (1, 1))
+
+    def test_an_unrecognised_kind_is_not_laundered_into_chat(self):
+        """The failure §22 is about. A typo in a `call_kind` must not make
+        non-chat spend arrive inside the chat total, where it would be invisible
+        precisely because chat is the number everyone already looks at."""
+        cap.record_spend("embeddings", "perplexity", units=1_000)
+        kinds = self._kinds()
+        self.assertIn(undx_cost.CALL_KIND_UNKNOWN, kinds)
+        self.assertNotIn(undx_cost.CALL_KIND_CHAT, kinds)
+
+    def test_one_provider_billed_under_two_kinds_accumulates_separately(self):
+        """OpenAI is the realistic case: images today, and the obvious next
+        non-chat kinds (transcription, moderation) are declared empty against it
+        already. The ledger's key is (month, provider, kind), so this is the
+        assertion that the third column is actually part of it."""
+        cap.record_spend(cap.CALL_KIND_IMAGE, "openai", units=1, model="gpt-image-1")
+        cap.record_spend(cap.CALL_KIND_IMAGE, "openai", units=1, model="gpt-image-1")
+        cap.record_spend(cap.CALL_KIND_MODERATION, "openai", units=1)
+        kinds = self._kinds()
+        self.assertEqual(kinds[cap.CALL_KIND_IMAGE]["calls"], 2)
+        self.assertEqual(kinds[cap.CALL_KIND_MODERATION]["calls"], 1)
+        self.assertEqual(undx_cost.month_snapshot()["providers"]["openai"]["calls"], 3,
+                         "the provider axis must still be the total across kinds")
+
+    def test_a_bookkeeping_failure_does_not_raise_into_the_caller(self):
+        """Adapters call this after the provider has already been paid. If it
+        could throw, metering a working request would be a way to break it."""
+        with mock.patch.object(undx_cost, "_connect", side_effect=RuntimeError("gone")):
+            result = cap.record_spend(cap.CALL_KIND_EMBEDDING, "perplexity",
+                                      units=1_000_000, model=self.PRICED_MODEL)
+        self.assertEqual(result["cost_micro_usd"], 50_000,
+                         "the mirror still has to know what was spent")
+        self.assertGreaterEqual(undx_cost.stats()["write_failures"], 1)
+
+    def test_zero_units_is_a_call_at_zero_cost_not_an_unknown(self):
+        """A priced provider asked for nothing costs nothing, and that is known.
+        Distinguished from the unknown case because a retry loop that records
+        units=0 on a failed attempt would otherwise inflate `uncosted_calls` and
+        make the priced provider look unpriced."""
+        cap.record_spend(cap.CALL_KIND_EMBEDDING, "perplexity",
+                         units=0, model=self.PRICED_MODEL)
+        row = self._kinds()[cap.CALL_KIND_EMBEDDING]
+        self.assertEqual((row["calls"], row["cost_micro_usd"], row["uncosted_calls"]),
+                         (1, 0, 0))
+
+    def test_an_unknown_model_on_a_priced_provider_is_uncosted(self):
+        """Written because the first draft of this class got it wrong: every
+        money assertion used a model name that does not exist, and all of them
+        failed with `uncosted_calls=1`. The behaviour was correct and the test
+        was not — a priced provider does not make its models priced, and falling
+        back to a sibling's rate would report a figure nobody measured.
+
+        Pinned with the same invented name, because the value of the finding is
+        that a model *rename* (a new Perplexity generation, a typo in an env
+        override) silently moves spend into the unpriced column instead of
+        raising. `unpriced_providers()` will not show it either — the provider is
+        priced. This is the one uncosted case with no declared home, and the only
+        signal is the count itself going up.
+        """
+        cap.record_spend(cap.CALL_KIND_EMBEDDING, "perplexity",
+                         units=1_000_000, model="pplx-embed-large")
+        row = self._kinds()[cap.CALL_KIND_EMBEDDING]
+        self.assertEqual((row["calls"], row["cost_micro_usd"], row["uncosted_calls"]),
+                         (1, 0, 1))
+        self.assertNotIn((cap.CALL_KIND_EMBEDDING, "perplexity"),
+                         cap.unpriced_providers())
 
 
 if __name__ == "__main__":  # pragma: no cover

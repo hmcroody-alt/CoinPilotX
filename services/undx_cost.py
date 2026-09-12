@@ -404,13 +404,60 @@ def _empty_bucket() -> dict[str, int]:
             "reasoning_tokens": 0, "cost_micro_usd": 0, "uncosted_calls": 0}
 
 
+def _cost_fields(usage: dict[str, Any]) -> tuple[int, int]:
+    """`(cost_micro_usd, uncosted)` for one call, from whichever form it arrived in.
+
+    Two forms exist because the two kinds of caller genuinely know different things.
+    A chat provider reports a price in dollars and `cost_usd` is the honest field for
+    it. Non-chat spend is priced from `undx_capabilities`, which computes in integer
+    micro-USD already, and routing that back through a float only to convert it again
+    would add a rounding step for nothing.
+
+    Extracted into one function rather than written twice because the ledger and the
+    process mirror both have to answer this question, and answering it separately is
+    how the degraded path would start disagreeing with the durable one about what a
+    call cost. Before this, `_apply` and `record` each derived the pair from
+    `cost_usd` independently, so adding the micro form to one of them would have
+    silently created that split.
+
+    Absent is uncosted, and uncosted is not free — a call whose price nobody knows
+    contributes 0 to the dollar total and 1 to the count of calls that total excludes.
+    An explicit `cost_micro_usd=0` is a *known* zero (a keyless free endpoint) and is
+    not counted as uncosted, which is the distinction §34 turns on.
+
+    A *malformed* price is an unknown price, in both forms. This is why the dollar
+    branch does its own float conversion instead of leaning on :func:`to_micro_usd`,
+    which returns 0 for junk by documented contract and leaves the uncosted decision
+    to its caller. Deferring to it here would have made the two forms disagree about
+    the same bad input: `cost_micro_usd="?"` recorded as unknown while
+    `cost_usd="?"` recorded as free. Nothing produces junk today — `_normalise_usage`
+    already rejects a provider-reported cost it cannot parse — but `record()` is a
+    public entry point, and "unparseable therefore $0.00" is exactly the reading §34
+    forbids.
+    """
+    micro = usage.get("cost_micro_usd")
+    if micro is not None:
+        try:
+            return int(micro), 0
+        except (TypeError, ValueError):
+            return 0, 1
+    usd = usage.get("cost_usd")
+    if usd is None:
+        return 0, 1
+    try:
+        return int(round(float(usd) * MICRO_PER_USD)), 0
+    except (TypeError, ValueError):
+        return 0, 1
+
+
 def _apply(bucket: dict[str, int], usage: dict[str, Any]) -> None:
+    cost_micro, uncosted = _cost_fields(usage)
     bucket["calls"] += 1
     bucket["input_tokens"] += int(usage.get("input_tokens") or 0)
     bucket["output_tokens"] += int(usage.get("output_tokens") or 0)
     bucket["reasoning_tokens"] += int(usage.get("reasoning_tokens") or 0)
-    bucket["cost_micro_usd"] += to_micro_usd(usage.get("cost_usd"))
-    bucket["uncosted_calls"] += 0 if usage.get("cost_usd") is not None else 1
+    bucket["cost_micro_usd"] += cost_micro
+    bucket["uncosted_calls"] += uncosted
 
 
 def _bump_local(month: str, provider: str, kind: str, usage: dict[str, Any]) -> dict[str, Any]:
@@ -460,8 +507,7 @@ def record(usage: dict[str, Any]) -> dict[str, Any]:
     if not ledger_enabled():
         return local
 
-    cost_micro = to_micro_usd(usage.get("cost_usd"))
-    uncosted = 0 if usage.get("cost_usd") is not None else 1
+    cost_micro, uncosted = _cost_fields(usage)
     inputs = int(usage.get("input_tokens") or 0)
     outputs = int(usage.get("output_tokens") or 0)
     reasoning = int(usage.get("reasoning_tokens") or 0)

@@ -870,5 +870,100 @@ class RecordingTest(_LedgerCase):
         self.assertGreaterEqual(undx_cost.stats()["write_failures"], 1)
 
 
+class CostFieldsTest(_LedgerCase):
+    """How one call's price is read, and why there is only one function doing it.
+
+    Two input forms exist: chat providers report dollars (`cost_usd`), non-chat
+    spend is priced by `undx_capabilities` in integer micro-USD already
+    (`cost_micro_usd`). Both must produce the same two numbers the ledger stores —
+    a micro amount, and whether this call counts as one the amount excludes.
+
+    The reason this is one function rather than two is the subject of
+    :meth:`test_the_mirror_and_the_ledger_agree_about_the_micro_form`. `_apply`
+    feeds the process mirror and `record` feeds the durable row; before the
+    extraction each derived the pair separately from `cost_usd`, so teaching only
+    one of them the micro form would have left the degraded path and the durable
+    path disagreeing about what a call cost — visible only during a database
+    outage, which is the worst moment to discover it.
+    """
+
+    def test_a_known_zero_and_an_unknown_price_are_not_the_same_row(self):
+        """The whole §34 distinction, at the narrowest point it exists.
+
+        DuckDuckGo is keyless and free, so 0 is a *measurement*. `gpt-image-1`
+        has no price in the table, so 0 would be a *guess*. Both add nothing to
+        the dollar total, and if that were all the ledger stored they would be
+        indistinguishable — the difference is entirely in `uncosted_calls`.
+        """
+        self.assertEqual(undx_cost._cost_fields({"cost_micro_usd": 0}), (0, 0))
+        self.assertEqual(undx_cost._cost_fields({"cost_micro_usd": None}), (0, 1))
+        self.assertNotEqual(undx_cost._cost_fields({"cost_micro_usd": 0}),
+                            undx_cost._cost_fields({"cost_micro_usd": None}))
+
+    def test_an_absent_price_is_unknown_rather_than_free(self):
+        """Five of seven chat providers reach here with no price at all."""
+        self.assertEqual(undx_cost._cost_fields({}), (0, 1))
+        self.assertEqual(undx_cost._cost_fields({"cost_usd": None}), (0, 1))
+
+    def test_the_two_forms_agree_on_the_same_amount(self):
+        """$0.001873 is the figure `_usage()` defaults to, i.e. a real Meta call."""
+        self.assertEqual(undx_cost._cost_fields({"cost_usd": 0.001873}), (1873, 0))
+        self.assertEqual(undx_cost._cost_fields({"cost_micro_usd": 1873}), (1873, 0))
+
+    def test_the_micro_form_wins_when_both_are_present(self):
+        """Deliberate precedence, not an accident of ordering. A caller that
+        computed micro-USD did so from the capability table, which is the
+        authority for non-chat prices; a chat caller never sets the micro field.
+        Pinned so that if the two ever do arrive together the winner is the one
+        that was chosen rather than the one that happened to be checked first."""
+        self.assertEqual(
+            undx_cost._cost_fields({"cost_usd": 99.0, "cost_micro_usd": 7}), (7, 0))
+
+    def test_a_malformed_price_is_unknown_in_both_forms(self):
+        """`to_micro_usd` returns 0 for junk by contract and leaves the uncosted
+        decision to its caller, so a dollar branch that delegated to it would
+        record an unparseable price as $0.00 spent — the one reading §34 rules
+        out — while the micro branch recorded the same junk as unknown."""
+        for form in ("cost_usd", "cost_micro_usd"):
+            with self.subTest(form=form):
+                self.assertEqual(undx_cost._cost_fields({form: "not a number"}), (0, 1))
+                self.assertEqual(undx_cost._cost_fields({form: object()}), (0, 1))
+
+    def test_the_mirror_and_the_ledger_agree_about_the_micro_form(self):
+        """Record the same call twice — once with the database reachable, once
+        with `_connect` broken so only the mirror answers — and require the two
+        replies to carry the same money. This is the split-brain the extraction
+        exists to prevent, and it fails if `record` and `_apply` stop sharing
+        `_cost_fields`.
+
+        Two providers rather than one because the mirror accumulates within a
+        process and would otherwise report the second call on top of the first.
+        """
+        usage = {"provider": "perplexity", "model": "sonar", "call_kind": "embedding",
+                 "input_tokens": 1000, "output_tokens": 0, "cost_micro_usd": 4000}
+        from_ledger = undx_cost.record(usage)
+
+        degraded_usage = dict(usage, provider="brave")
+        with mock.patch.object(undx_cost, "_connect",
+                               side_effect=sqlite3.OperationalError("gone")):
+            from_mirror = undx_cost.record(degraded_usage)
+
+        for field in ("calls", "cost_micro_usd", "uncosted_calls"):
+            with self.subTest(field=field):
+                self.assertEqual(from_ledger[field], from_mirror[field])
+        self.assertEqual(from_ledger["cost_micro_usd"], 4000)
+
+    def test_an_unknown_price_reaches_the_durable_row_as_uncosted(self):
+        """Through `record`, not just `_cost_fields`, because the pair has to
+        survive the upsert's arithmetic to be readable in a spend report."""
+        undx_cost.record({"provider": "openai", "model": "gpt-image-1",
+                          "call_kind": "image", "cost_micro_usd": None})
+        snapshot = undx_cost.month_snapshot()
+        self.assertEqual(snapshot["source"], "ledger")
+        row = snapshot["kinds"]["image"]
+        self.assertEqual((row["calls"], row["cost_micro_usd"], row["uncosted_calls"]),
+                         (1, 0, 1))
+
+
 if __name__ == "__main__":
     unittest.main()

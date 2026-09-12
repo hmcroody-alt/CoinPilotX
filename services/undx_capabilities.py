@@ -61,6 +61,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
+from services import undx_cost
 from services.undx_cost import (
     CALL_KIND_EMBEDDING,
     CALL_KIND_IMAGE,
@@ -339,6 +340,43 @@ def unpriced_providers() -> tuple[tuple[str, str], ...]:
             if not provider.prices:
                 out.append((kind, provider.name))
     return tuple(out)
+
+
+def record_spend(kind: str, provider: str, *, units: float = 0, model: str = "",
+                 input_tokens: int = 0, output_tokens: int = 0) -> dict[str, Any]:
+    """Record one non-chat call in the shared ledger under its own `call_kind`.
+
+    This is the whole point of the table: an adapter calls it with the count it
+    already has - tokens, characters, images, queries - and does not need to know
+    what a unit costs, whether the price is known, or how the ledger represents an
+    unknown. Four modules metering themselves would have produced four slightly
+    different answers to those questions, which is how "no unclassified AI spend"
+    becomes true in each module and false overall.
+
+    `units` is in the provider's own billing unit for this kind. The conversion is
+    `_UNITS_PER_PRICED_UNIT`'s job, so a per-image charge cannot be read as
+    per-token.
+
+    Never raises. `undx_cost.record` already guarantees that a bookkeeping failure
+    does not fail a request that succeeded - the money is spent either way - and
+    this adds nothing that could throw on top of it. Specifically: an unknown price
+    is not an error, it is a recorded call with `cost_micro_usd=0` and
+    `uncosted_calls=1`.
+    """
+    cost_micro = price_micro_usd(kind, provider, units, model=model)
+    return undx_cost.record({
+        "provider": provider,
+        "model": model,
+        "call_kind": kind,
+        "input_tokens": int(input_tokens or 0),
+        "output_tokens": int(output_tokens or 0),
+        "reasoning_tokens": 0,
+        # None here is load-bearing and must not become 0: it is what makes the
+        # ledger count this call under `uncosted_calls` instead of adding a dollar
+        # amount nobody was charged. A genuinely free endpoint reaches this line
+        # with an integer 0 instead, and the two are recorded differently.
+        "cost_micro_usd": cost_micro,
+    })
 
 
 def describe_for_report(env: dict[str, str] | None = None) -> dict[str, Any]:
