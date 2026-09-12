@@ -329,6 +329,12 @@ query names is buyer-visible by default, so the strip now lives in
    button 409'd on every listing `drafts.publish` produces, which is why listing
    14 needed a hand-written UPDATE. Fixed via `lifecycle.awaiting_moderation`;
    see "The fifth seam" below. The route now has tests, which it did not before.
+   ~~That fix left the opposite half standing: Approve **accepting**, answering
+   200, writing an audit entry, and producing nothing.~~ Three of four approval
+   shapes went that way — suspended seller, unnamed storefront, quantity 0 —
+   while the merchant's own dashboard read "Live" and no surface named the
+   reason, which `public_denial_code` had known all along. See "The eleventh
+   seam" below.
 
 ---
 
@@ -998,9 +1004,154 @@ the buyer the reason.**
 
 ---
 
+## The eleventh seam: the approval that succeeded and changed nothing
+
+Gap 7 was filed as *a published dropship listing cannot be approved*, and the
+Approve-409 half was fixed: the guard now reads `lifecycle.awaiting_moderation`
+instead of `status`, and the route has tests, which it did not before.
+
+The residual is the same defect reflected. Approve no longer refuses wrongly —
+it **accepts** wrongly. `/admin/marketplace-command` writes two columns:
+
+```sql
+UPDATE marketplace_listings SET status=?, approval_status=? WHERE id=?
+```
+
+Publication needs five. `marketplace_listing_lifecycle.is_public` requires the
+seller account approved, the storefront named, the listing released
+(published + approved), and stock available. The moderator's decision moves two
+of those and the response says `"Listing updated."` regardless.
+
+### What the measurement showed
+
+Four listings, one moderator, one Approve each:
+
+| listing | seller | stock | HTTP | message | visible to buyers after |
+|---|---|---|---|---|---|
+| healthy | approved, named | 3 | 200 | Listing updated. | **yes** |
+| unnamed storefront | approved, no name | 3 | 200 | Listing updated. | no |
+| suspended seller | suspended | 3 | 200 | Listing updated. | no |
+| empty shelf | approved, named | 0 | 200 | Listing updated. | no |
+
+Three of four approvals returned 200, wrote an audit entry, and produced
+nothing. `public_denial_code` already knew the reason in all three cases —
+`SELLER_UNAVAILABLE`, `SELLER_UNAVAILABLE`, `OUT_OF_STOCK` — and nobody on the
+moderation path asked it.
+
+### Refusing would have been the wrong fix
+
+The obvious repair is to block Approve until all five conditions hold, and it
+recreates gap 7's original bug one layer up. A moderator judges *content*. An
+out-of-stock listing that can never be approved can never become sellable when
+stock returns, because approval is the input to the stock check and not the
+other way round. So the decision still lands; the response stops lying about
+what it accomplished:
+
+> Listing updated, but it is still not visible to buyers: the listing has no stock.
+
+### The half that did more damage
+
+The merchant's own dashboard read the same two columns and drew the same
+conclusion the route did. `SellerStoreScreen`'s pill derived its state from
+`publication_state` — `marketplace_listings.status`, lowercased, one of the five
+conditions — and two independent defects fell out of that:
+
+- The `out_of_stock` branch was **unreachable**. It searched for the substring
+  `"stock"` in a column that only ever holds a listing status, so no payload in
+  any shape could produce it. A branch nothing can satisfy is not a feature.
+- `"published"` was missing from the screen's own list of live-ish values
+  (`["active", "approved", "live"]`), so it fell through every branch and was
+  returned unchanged — a lowercase neutral chip. **The live pill never rendered
+  for the value `drafts.publish` actually writes.**
+
+Net effect on the surface the merchant uses: all four rows above rendered
+identically, and none of them rendered as live. Nothing in the app distinguished
+a selling listing from a dead one.
+
+### One table, three projections
+
+The fix is not a second derivation. `PUBLICATION_RULES` is now the single
+ordered table, and each rule carries the three strings its three consumers read:
+
+| rule | buyer `denial_code` | merchant `seller_label` | moderator `moderator_note` |
+|---|---|---|---|
+| `seller_approved` | `SELLER_UNAVAILABLE` | Store offline | the seller account is not approved |
+| `seller_named` | `SELLER_UNAVAILABLE` | Store name needed | the seller has no public store name |
+| `released` | `ITEM_UNAVAILABLE` | Not published | the listing is not both published and approved |
+| `in_stock` | `OUT_OF_STOCK` | Out of stock | the listing has no stock |
+
+The buyer codes are the ones already on the wire; nothing on that column
+changed. `seller_label` and `blocker_note` are new projections of a table that
+already existed, which is the whole point — the merchant's chip and the
+moderator's sentence are now downstream of the function that filters discovery,
+not re-derivations beside it.
+
+The server ships the verdict as `publication_blocker` and the screen reads it.
+`live_blocker` answers only the *surprising* question — published and approved
+but still unreachable — and returns `""` for drafts, paused and in-review
+listings, which already have accurate labels and must keep them. A draft with
+quantity 0 is a draft, not "out of stock": running every row through the
+publication rules would replace the state the merchant needs to act on with one
+that is true and useless.
+
+### Absence of a column is not evidence
+
+The trap in this fix is the naive version of it. `is_public` is a **gate** and
+`seller_label` is a **description**, and they read silence in opposite
+directions. Four payload call sites project different column sets, and only two
+of them originally joined `marketplace_sellers` — so a rule evaluated against an
+unprojected row has no evidence either way.
+
+The predicates are three-valued: `True` (met), `False` (the row proves it
+unmet), `None` (the row was not projected with the columns needed to judge).
+`None` cannot be the sentinel for "absent", because the queries select
+`COALESCE(ms.status,'missing')` — a falsy value there is real evidence, while a
+missing key is none — hence `_UNPROJECTED`.
+
+The gate's default is "no" and the description's default is "do not deny what
+you cannot see". But the gate does **not** uniformly block on silence either:
+`seller_named` deliberately passes when the store-name column is unprojected,
+because that invariant binds in SQL via `public_sql`. So each rule carries an
+explicit `passes_when_unknown` flag rather than one global policy — a uniform
+"None means blocked" would have silently changed `is_public`'s pre-existing
+behaviour for two of the four call sites.
+
+Downgrading "Live" on a rule the row is merely *silent* about would have made
+the live pill vanish for every merchant served by a query without a seller join.
+That is the same bug as the one being fixed, pointed the other way.
+
+### What the tests had to be
+
+`tests/marketplace/test_marketplace_approval_visibility.py` (20 tests) posts
+real decisions and then re-reads the row: every shape stays approvable, the
+healthy one actually goes public (the control that makes the negatives mean
+something), and each invisible one is reported as such. A stockless digital
+listing with quantity 0 must stay public, which is why `DIGITAL` is in the
+fixture set.
+
+`SellerStorePublicationPill.test.tsx` (7 tests) renders the screen. One harness
+line is load-bearing and is commented as such: the snapshot mock must carry
+`live: true`, because the screen keeps its cached copy otherwise — without it no
+listing reaches the tree and all seven assertions pass vacuously.
+
+`scripts/mutation_approval_visibility.py` runs 17 real mutations plus a no-op
+control across **both** runtimes, pytest and jest, in one script. All 17 caught,
+control survives.
+
+One survivor on the first run, and it was load-bearing in a way no test I had
+written could see: removing the `STOCKLESS_TYPES` early return from
+`_is_in_stock` changes nothing for any row that has a `quantity` key, because
+`inventory_available` checks stockless types too. Its only effect is on a
+digital row projected *without* `quantity` — where, absent the early return, the
+rule returns `None`, the gate's default applies, and a digital product becomes
+unpurchasable. The mutation was reporting a real gap in the fixtures, not a
+redundant line.
+
+---
+
 ## What kept coming back
 
-Eleven defects in this chain, eleven different subsystems, one shape: **a number
+Twelve defects in this chain, twelve different subsystems, one shape: **a number
 was asserted rather than measured.**
 
 - `publish()` never wrote `price_label`, and the publish test asserted `status`
@@ -1042,6 +1193,13 @@ was asserted rather than measured.**
   The list was six long, every entry correct, and the checkout screen was the
   seventh — filling "Amount paid" with a sentence. Nothing could fail, because
   the claim was prose and the surface it omitted had no test of its own.
+- The moderation route asserted that a listing it approved was now sellable, by
+  writing the two columns it owns out of the five publication requires, and
+  answering `"Listing updated."` either way. Three of four approval shapes
+  returned 200 and produced nothing. The merchant's dashboard made the same
+  two-column inference and called them all the same thing — and `"published"`,
+  the value publication actually writes, was not on its list of live values, so
+  the live chip never rendered at all.
 
 In all of them the suite was green, and in all of them the green was about the
 halves rather than the seam. Where a claim spans two components, this document now
@@ -1140,3 +1298,28 @@ Then close the two ways a walking check passes without looking: prove it read a
 non-empty set, and prove its filter still lets a known-present string through. A
 guard that fails open is worse than the prose it replaced, because prose does
 not claim to have run.
+
+The twelfth is the seventh seen in a mirror. That one said *a guard is only
+finished when something can satisfy it*; this one says **an action is only
+finished when its success means something.** `shop_binding_required` was a
+refusal nothing could satisfy; Approve is an acceptance that satisfied nothing.
+Both pass every test written about them, because a test of a refusal asserts the
+refusal and a test of an acceptance asserts the 200 — and in each case the
+assertion is on the half that works. The greppable form: **count the columns the
+write touches against the columns the outcome requires.** Two against five here,
+and the gap was not hidden anywhere; `public_denial_code` had been able to name
+the reason the whole time, and no caller on the moderation path had ever asked
+it.
+
+Its sub-tell is where the naive fix goes wrong, and is worth more than the
+corollary itself: **a gate and a description are different functions, and
+sharing a rule table is not sharing a default.** Both consume the same four
+rules, and they must read *silence* in opposite directions — a gate that cannot
+see a column refuses, a label that cannot see a column declines to claim
+anything about it. Collapse them and you get one of two new defects for free:
+either an unjoined row becomes unbuyable, or a live listing is labelled broken
+because nobody selected the column that would have proved it fine. Which is why
+the predicates here are three-valued and every rule states its own
+`passes_when_unknown` — the absence of a column is not evidence, and a uniform
+policy for absence is an assertion about all four rules that only two of them
+support.

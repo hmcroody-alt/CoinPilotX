@@ -92,6 +92,7 @@ _PROBE = r"""
 import json, sys, sqlite3
 sys.path.insert(0, %(repo)r)
 import bot
+from services import marketplace_listing_lifecycle as lifecycle
 
 app = bot.webhook_app
 app.config["SECRET_KEY"] = "marketplace-moderation-reachability-test"
@@ -148,15 +149,32 @@ for lid in %(ids)r:
         "csrf_token": "moderation-probe-token",
     })
     conn = bot.db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    cur.execute("SELECT status, approval_status, reviewed_by FROM marketplace_listings "
-                "WHERE id=? LIMIT 1", (lid,))
+    # Joined exactly as buyer discovery joins, so `is_public` below is answered
+    # from the same columns the real predicate reads. A row fetched from
+    # `marketplace_listings` alone cannot answer it -- three of the five
+    # conditions live on the seller record and on stock.
+    cur.execute("SELECT l.*, COALESCE(ms.status,'missing') AS seller_status, "
+                + bot.marketplace_seller_identity.store_name_select("ms")
+                + " FROM marketplace_listings l "
+                  "LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id "
+                  "WHERE l.id=? LIMIT 1", (lid,))
     row = dict(cur.fetchone() or {})
+    # And independently: would a buyer's own query return it? `is_public` and
+    # `public_sql` are two hand-written derivations of one rule, so a test that
+    # trusted only the Python one could pass while the marketplace stayed empty.
+    cur.execute("SELECT COUNT(*) AS n FROM marketplace_listings l "
+                "LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id "
+                "WHERE l.id=? AND " + lifecycle.public_sql("l", "ms"), (lid,))
+    discoverable = int(dict(cur.fetchone() or {}).get("n") or 0)
     conn.close()
     decisions[str(lid)] = {
+        "discoverable": discoverable,
         "http": response.status_code,
         "status": row.get("status"),
         "approval_status": row.get("approval_status"),
         "reviewed_by": row.get("reviewed_by"),
+        "is_public": lifecycle.is_public(row),
+        "seller_label": lifecycle.seller_label(row),
     }
 report["decisions"] = decisions
 
@@ -207,12 +225,26 @@ def test_a_published_dropship_listing_can_be_approved(moderation_probe):
         "and leaves moderation untouched on purpose, because `is_public` needs "
         "both axes. If the Approve button refuses it, a CJ import can never go "
         "live without a hand-written UPDATE.")
-    assert decision["approval_status"] == "approved", (
-        "the route accepted the decision but left approval_status=%r, so the "
-        "listing is still not public" % decision["approval_status"])
+    assert decision["approval_status"] == "approved"
     assert decision["status"] == "published"
     assert decision["reviewed_by"], (
         "no reviewer was recorded against the decision")
+    # The two columns above are what the route writes, and asserting only those
+    # is how this test used to claim "so the listing is still not public" from a
+    # read that could not tell. Publication has five conditions; the seeded
+    # seller is approved and named and the listing has stock, so all five are
+    # met and the only honest check is the predicate itself -- plus the SQL
+    # twin, because it is the one buyers are actually filtered by.
+    assert decision["is_public"] is True, (
+        "approve wrote both of its columns but the listing is still not public. "
+        "The remaining conditions are the seller's status, the seller's store "
+        "name, and stock -- see marketplace_listing_lifecycle.PUBLICATION_RULES.")
+    assert decision["discoverable"] == 1, (
+        "`is_public` says yes but `public_sql` does not return the row, so the "
+        "two derivations of one rule have drifted and buyers see nothing.")
+    assert decision["seller_label"] == "Live", (
+        "the merchant's own dashboard reads %r for a listing that is genuinely "
+        "public" % decision["seller_label"])
 
 
 def test_an_ordinary_submitted_listing_is_still_approvable(moderation_probe):

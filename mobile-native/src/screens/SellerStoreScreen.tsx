@@ -546,7 +546,29 @@ export function SellerStoreScreen({ route, navigation }: Props) {
   );
 }
 
+/**
+ * Server blocker key -> the pill this screen shows for it.
+ *
+ * The server answers "why can nobody buy this" once, from the same rule table
+ * that filters buyer discovery. Mapping it here rather than re-deriving is the
+ * point: three of publication's five conditions live on the seller record and
+ * on stock, none of which this screen has.
+ */
+const BLOCKER_STATUS_KEYS: Record<string, string> = {
+  seller_approved: "store_offline",
+  seller_named: "store_name_needed",
+  in_stock: "out_of_stock",
+};
+
 function statusKey(listing: MarketplaceListing) {
+  // Asked first, and only ever non-empty for a listing whose own status and
+  // approval say it should be live. Without it this function read `published`
+  // off one column and returned it unchanged — falling past every branch below,
+  // including `live` — so a suspended seller, an unnamed store, an empty shelf
+  // and a healthy listing all drew the same neutral "published" chip, and
+  // nothing in the app told a merchant which of their listings were selling.
+  const blocker = String(listing.publication_blocker || "");
+  if (blocker) return BLOCKER_STATUS_KEYS[blocker] ?? "pending";
   const raw = String(listing.publication_state || listing.status || listing.approval_status || "draft").toLowerCase();
   if (raw.includes("delete") || raw.includes("removed")) return "removed";
   if (raw.includes("reject") || raw.includes("blocked")) return "rejected";
@@ -554,23 +576,19 @@ function statusKey(listing: MarketplaceListing) {
   if (raw.includes("sold")) return "sold";
   if (raw.includes("stock")) return "out_of_stock";
   if (raw.includes("pending") || raw.includes("review")) return "pending";
-  if (["active", "approved", "live"].includes(raw)) return "live";
+  // `published` belongs here: it is the value `drafts.publish` writes and the
+  // one `PUBLIC_STATUSES` is built around. Leaving it out is why a live listing
+  // never once drew the live pill.
+  if (["active", "approved", "live", "published"].includes(raw)) return "live";
   if (raw.includes("draft")) return "draft";
   return raw || "draft";
 }
 
-function statusLabel(listing: MarketplaceListing) {
-  if (listing.publication_label) return listing.publication_label;
-  const key = statusKey(listing);
-  if (key === "live") return "Published";
-  if (key === "pending") return "Pending review";
-  if (key === "out_of_stock") return "Out of stock";
-  if (key === "removed") return "Removed";
-  return key.replace(/_/g, " ");
-}
-
 function statusLabelKey(key: string): string | null {
-  const supported = ["live", "pending", "out_of_stock", "removed", "rejected", "paused", "sold", "draft"];
+  const supported = [
+    "live", "pending", "out_of_stock", "removed", "rejected", "paused", "sold", "draft",
+    "store_offline", "store_name_needed",
+  ];
   return supported.includes(key) ? `commerce:marketplace.status.${key}` : null;
 }
 
@@ -581,7 +599,11 @@ function StatusPill({ listing }: { listing: MarketplaceListing }) {
   const style =
     key === "live"
       ? styles.statusLive
-      : key === "pending"
+      : // A listing the merchant published and a moderator approved, held back
+        // by something the merchant can fix, is work waiting on them — not a
+        // neutral state of affairs. Same tone as "pending" so it reads as an
+        // open item rather than as a rejection they cannot appeal.
+        key === "pending" || Object.values(BLOCKER_STATUS_KEYS).includes(key)
         ? styles.statusPending
         : key === "rejected" || key === "removed"
           ? styles.statusDanger
