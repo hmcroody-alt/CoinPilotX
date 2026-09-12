@@ -342,33 +342,111 @@ class DomainReorderIsNotWideningTest(unittest.TestCase):
             with self.subTest(func=func.__name__):
                 self.assertIn("call_domain", inspect.signature(func).parameters)
 
-    def test_the_domain_is_consulted_after_the_privacy_ceiling(self):
-        """Order of operations, read off the source rather than assumed.
+    @staticmethod
+    def _call_lines(tree: ast.AST, name: str) -> dict[str, list[int]]:
+        """Line numbers of every simple-name call inside the named function.
 
-        `_domain_ordered` must run on a plan the kill switch and any explicit
-        `providers=` list have already settled, and before the loop that refuses
-        providers — so the list it partitions is the list that will actually be
-        tried. Ordering is compared by line number, not by position in `ast.walk`,
-        which is breadth-first and would have made this assertion pass for reasons
+        Ordering is compared by line number, not by position in `ast.walk`, which
+        is breadth-first and would have made these assertions pass for reasons
         unrelated to source order.
+        """
+        func = next(node for node in ast.walk(tree)
+                    if isinstance(node, ast.FunctionDef) and node.name == name)
+        lines: dict[str, list[int]] = {}
+        for node in ast.walk(func):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                lines.setdefault(node.func.id, []).append(node.lineno)
+        return lines
+
+    def test_the_domain_is_consulted_before_the_gate_ladder(self):
+        """`_domain_ordered` must run on a plan that is already settled.
+
+        It has to come after the kill switch and any explicit `providers=` list,
+        and before the ladder that refuses providers — so the list it partitions
+        is the list that will actually be tried.
+
+        This used to assert `_domain_ordered` preceded `_privacy_refusal` *inside*
+        each entry point. The ladder now lives in `_gate`, so a direct
+        `_privacy_refusal` call here would mean the extraction had been partly
+        undone. The property is unchanged; only the name of the thing that must
+        come second has moved, and it is pinned in `_gate` by the test below.
         """
         source = pathlib.Path(undx_router.__file__).read_text(encoding="utf-8")
         tree = ast.parse(source)
         for name in ("route_undx_request", "route_structured_request"):
-            func = next(node for node in tree.body
-                        if isinstance(node, ast.FunctionDef) and node.name == name)
-            lines: dict[str, list[int]] = {}
-            for node in ast.walk(func):
-                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-                    lines.setdefault(node.func.id, []).append(node.lineno)
+            lines = self._call_lines(tree, name)
             with self.subTest(func=name):
                 self.assertIn("_domain_ordered", lines,
                               f"{name} does not reorder by declared domain at all")
-                self.assertIn("_privacy_refusal", lines)
-                self.assertLess(min(lines["_domain_ordered"]),
-                                min(lines["_privacy_refusal"]),
-                                "the plan must be reordered before the loop that "
+                self.assertIn("_gate", lines,
+                              f"{name} does not consult the shared gate ladder; a "
+                              f"hand-written copy is how the four transcriptions "
+                              f"drifted apart in the first place")
+                self.assertLess(min(lines["_domain_ordered"]), min(lines["_gate"]),
+                                "the plan must be reordered before the ladder that "
                                 "refuses providers, not after it")
+
+    def test_the_gate_ladder_checks_privacy_before_it_reads_a_credential(self):
+        """§5's rule, pinned where the ladder actually lives.
+
+        Privacy first so that a provider which must not see this content is never
+        consulted about whether it could have, and the capability check second for
+        the same reason — a provider that cannot answer the question being asked is
+        not asked for its key either. Budget, credential and breaker follow.
+
+        Asserting the whole order here rather than one pair is only possible
+        because there is now one ladder. While it was transcribed four times this
+        test could pin two entry points and say nothing about the two surfaces that
+        predicted them, one of which had already dropped the privacy gate entirely
+        for callers that declared no class.
+        """
+        source = pathlib.Path(undx_router.__file__).read_text(encoding="utf-8")
+        lines = self._call_lines(ast.parse(source), "_gate")
+
+        for gate in ("_privacy_refusal", "_budget_refusal", "_api_key",
+                     "_breaker_should_skip"):
+            self.assertIn(gate, lines, f"_gate does not consult {gate}")
+
+        privacy = min(lines["_privacy_refusal"])
+        for later in ("_budget_refusal", "_api_key", "_breaker_should_skip"):
+            self.assertLess(privacy, min(lines[later]),
+                            f"the privacy ceiling must be checked before {later}")
+        self.assertLess(min(lines["_budget_refusal"]), min(lines["_api_key"]),
+                        "the budget is checked before a credential is read")
+        self.assertLess(min(lines["_api_key"]), min(lines["_breaker_should_skip"]),
+                        "the credential is read before the breaker is consulted")
+
+    def test_the_gate_ladder_never_makes_the_privacy_check_conditional(self):
+        """An omitted class must reach `_privacy_refusal`, not skip it.
+
+        `undx_privacy.normalise(None)` is CONFIDENTIAL, so guarding the call with
+        `if privacy_class` is not defensive handling of a missing value — it is what
+        throws the default ceiling away. `undx_routing_evidence.explain` carried
+        exactly that guard and therefore predicted Perplexity as the first choice
+        for requests the real loop refuses there.
+
+        Measured rather than read: with every provider keyed and no breaker resting,
+        `_gate` must still refuse the PUBLIC-ceiling providers when the caller
+        declared nothing at all.
+        """
+        with mock.patch.object(undx_router, "_api_key", lambda provider: "sk-test"), \
+                mock.patch.object(undx_router, "_breaker_should_skip", lambda provider: False), \
+                mock.patch.object(undx_router, "_budget_refusal",
+                                  lambda snapshot, provider: ""):
+            refused = {
+                name: (undx_router._gate(name, privacy_class=None, budget={}) or {})
+                for name in undx_router.PROVIDERS
+            }
+
+        ceiling_refused = sorted(n for n, entry in refused.items()
+                                 if entry.get("status") == "privacy_refused")
+        self.assertEqual(ceiling_refused,
+                         ["deepseek", "gemini", "groq", "perplexity"],
+                         "an omitted privacy class must be treated as CONFIDENTIAL, "
+                         "which the PUBLIC-ceiling providers cannot receive")
+        self.assertEqual(
+            sorted(n for n, entry in refused.items() if not entry),
+            ["claude", "meta", "openai"])
 
 
 if __name__ == "__main__":

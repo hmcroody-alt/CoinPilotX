@@ -123,6 +123,7 @@ def _reconstruct(router, category: str) -> tuple[list[str], dict[str, str]]:
 
 
 def explain(message: str = "", *, privacy_class: str | None = None,
+            call_domain: str | None = None, require_json: bool = False,
             detail: bool = False) -> dict[str, Any]:
     """The routing decision this request would get, with a reason per provider.
 
@@ -132,6 +133,34 @@ def explain(message: str = "", *, privacy_class: str | None = None,
     an operator surface without them. It is *not* safe on an unauthenticated
     one in either mode: the plan itself discloses which vendors this deployment
     uses and which are switched off.
+
+    `privacy_class`, `call_domain` and `require_json` are the three things a
+    caller declares about a request, and this function has to accept all three or
+    it explains a *different* request than the one the caller will make. It
+    previously accepted only the first, and mishandled that:
+
+      * The privacy gate was called only `if privacy_class`. An omitted class
+        normalises to CONFIDENTIAL, so the guard that looked like it was tolerating
+        a missing value was discarding the default ceiling. With everything keyed,
+        this reported Perplexity as the first choice for requests the routing loop
+        refuses there — naming a provider the request cannot reach.
+      * `require_json` did not exist here, so the `capability_unmet` refusals that
+        the loop applies *before reading a credential* were invisible. Both
+        `scam_shield` and `undx_capability_planner` route with it.
+      * `_domain_ordered` was never applied, so the order shown was the pre-domain
+        lane. This one is **latent, not live**, and the distinction is worth keeping:
+        `undx_call_domain._PREFERENCE` is currently empty, `routing_preference`
+        returns `()` for every domain, and `_domain_ordered` is therefore a no-op
+        today — so the omission produced no wrong output. It is wired up here so
+        that the first domain to declare a preference does not silently make this
+        surface wrong, which is the failure mode an absent call has and a present
+        one does not.
+
+    All three are now delegated to `undx_router._gate`, the same function the
+    routing loops call, so a predicted chain and an executed chain cannot disagree
+    about a gate by construction. That is the point of this change: the ladder was
+    transcribed four times and the two copies whose only job was to be accurate
+    about the other two were the ones that had drifted.
     """
     router = _router()
     classification = router.classify_request(message or "")
@@ -139,8 +168,14 @@ def explain(message: str = "", *, privacy_class: str | None = None,
     lane = category if category in router.LANE_PRIORITIES else router.DEFAULT_LANE
 
     reconstructed, reasons = _reconstruct(router, category)
-    actual = router.provider_priority(classification)
-    consistent = reconstructed == actual
+    # `_domain_ordered` last, exactly as both routing loops apply it: on a plan the
+    # kill switch and any explicit `providers=` list have already settled. The
+    # consistency check below compares the *lane* reconstruction, so it is taken
+    # before the domain permutation rather than after — a reconstruction that
+    # reordered too would agree with itself and say nothing.
+    lane_plan = router.provider_priority(classification)
+    consistent = reconstructed == lane_plan
+    actual = router._domain_ordered(lane_plan, call_domain)
 
     excluded: list[dict[str, str]] = []
     for name in router.PROVIDERS:
@@ -157,17 +192,15 @@ def explain(message: str = "", *, privacy_class: str | None = None,
     budget = router._budget_snapshot()
 
     for position, name in enumerate(actual, start=1):
-        gate, note = "", ""
-        refusal = router._privacy_refusal(name, privacy_class) if privacy_class else ""
-        over = router._budget_refusal(budget, name)
-        if refusal:
-            gate, note = "privacy_refused", refusal
-        elif over:
-            gate, note = "budget_exceeded", over
-        elif not router._api_key(name):
-            gate, note = "not_configured", "no API key is set for this provider"
-        elif router._breaker_should_skip(name):
-            gate, note = "circuit_open", "the breaker is resting this provider"
+        # One ladder, the router's own. Not a transcription of it: an `if/elif`
+        # chain here is how this surface came to disagree with the loop it
+        # describes about three separate gates. `privacy_class` is passed straight
+        # through, including when it is None — that is the whole fix, not a
+        # simplification.
+        refused = router._gate(name, privacy_class=privacy_class, budget=budget,
+                               require_json=require_json) or {}
+        gate = refused.get("status", "")
+        note = refused.get("detail", "")
         row: dict[str, Any] = {
             "provider": name,
             "label": router.PROVIDERS[name].label,
