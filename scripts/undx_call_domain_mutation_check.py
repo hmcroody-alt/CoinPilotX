@@ -178,10 +178,17 @@ MUTATIONS = [
         "test_the_domain_is_consulted_after_the_privacy_ceiling",
     ),
     (
+        # Re-anchored. The original anchor ended at `) -> dict[str, Any]:`, which assumed
+        # `call_domain` was the last parameter of `route_structured_request`. A later phase
+        # added `history`, `require_json` and `json_schema` after it, so the anchor matched
+        # 0x and this mutation silently stopped being run — reported as a harness problem
+        # rather than as a pass, which is the only reason it was noticed. An anchor pinned
+        # to an exact adjacency has a shelf life of one edit to its neighbourhood; this one
+        # holds the two lines it is actually about plus the next, and no closing paren.
         "drop the declared domain from the structured signature",
         ROUTER,
-        '    privacy_class: str | None = None,\n    call_domain: str | None = None,\n) -> dict[str, Any]:',
-        '    privacy_class: str | None = None,\n) -> dict[str, Any]:',
+        '    privacy_class: str | None = None,\n    call_domain: str | None = None,\n    history: Any = None,',
+        '    privacy_class: str | None = None,\n    history: Any = None,',
         "test_both_router_entry_points_accept_a_declared_domain",
     ),
 ]
@@ -190,29 +197,62 @@ MUTATIONS = [
 def build_sandbox(root: pathlib.Path, target: str) -> pathlib.Path:
     """Symlink the repo, except the one file that gets mutated.
 
-    Works for a root-level module and for one inside a package: the directory on the
-    path to the target becomes real, everything beside it stays a symlink. Nothing
-    under the repo is opened for writing at any point.
+    Every directory on the path to the target becomes real; everything beside it at each
+    level stays a symlink. Nothing under the repo is opened for writing at any point, and
+    the assertion at the end is what makes that sentence true rather than intended.
+
+    **It was not true before.** The first version handled exactly two shapes — a
+    root-level module, and `package/module.py` — and the `else` branch assumed depth two
+    by building `parts[0]/parts[-1]`. Handed
+    `services/command_center_worker/ai_messaging.py`, it made `services/` real, found no
+    entry named `ai_messaging.py` beside it, and so symlinked
+    `services/command_center_worker` straight back at the repo. The caller then wrote to
+    `sandbox/services/command_center_worker/ai_messaging.py`, which resolved *through* that
+    symlink, and `write_text` truncated and rewrote the real file. Six harnesses share this
+    function and all six happened to target depth one or two, so the bound held by luck
+    while the docstring asserted it unconditionally.
+
+    The cost was an hour of uncommitted work: each iteration wrote the repo, and the next
+    iteration read what the previous one had written, so the mutations accumulated into the
+    file under test. Worth stating plainly because it is the same mistake this mission keeps
+    finding in the code it is migrating — a claim made in prose that nothing evaluates. A
+    docstring is not a guarantee. The `raise` below is.
     """
     sandbox = root / "repo"
     sandbox.mkdir()
     parts = pathlib.Path(target).parts
-    for entry in REPO.iterdir():
-        if entry.name in {".git", parts[0]}:
-            continue
-        (sandbox / entry.name).symlink_to(entry)
+    if not parts:
+        raise ValueError("build_sandbox needs a target path")
 
-    if len(parts) == 1:
-        shutil.copy2(REPO / target, sandbox / parts[0])
-        return sandbox
+    # Walk the path one component at a time. At each level the component leading to the
+    # target is skipped and everything else is symlinked, so only the chain of directories
+    # above the mutated file is ever a real directory.
+    for depth, name in enumerate(parts[:-1]):
+        source_dir = REPO.joinpath(*parts[:depth])
+        sandbox_dir = sandbox.joinpath(*parts[:depth])
+        for entry in source_dir.iterdir():
+            if entry.name == name or (depth == 0 and entry.name == ".git"):
+                continue
+            (sandbox_dir / entry.name).symlink_to(entry)
+        (sandbox_dir / name).mkdir()
 
-    package = sandbox / parts[0]
-    package.mkdir()
-    for entry in (REPO / parts[0]).iterdir():
-        if entry.name == parts[-1]:
+    leaf_source = REPO.joinpath(*parts[:-1])
+    leaf_sandbox = sandbox.joinpath(*parts[:-1])
+    for entry in leaf_source.iterdir():
+        if entry.name == parts[-1] or (len(parts) == 1 and entry.name == ".git"):
             continue
-        (package / entry.name).symlink_to(entry)
-    shutil.copy2(REPO / target, package / parts[-1])
+        (leaf_sandbox / entry.name).symlink_to(entry)
+    shutil.copy2(REPO / target, leaf_sandbox / parts[-1])
+
+    # The guarantee, evaluated. A mutated path that resolves outside the sandbox — because
+    # some component of it turned out to be a symlink back at the repo — must stop the run
+    # rather than overwrite a real file. This is cheap and it is the only thing standing
+    # between a new target shape and destroyed uncommitted work.
+    written = sandbox / target
+    if written.is_symlink() or not str(written.resolve()).startswith(str(sandbox.resolve())):
+        raise RuntimeError(
+            f"sandbox for {target!r} resolves to {written.resolve()}, outside the sandbox; "
+            "refusing to mutate the real repository")
     return sandbox
 
 

@@ -44,8 +44,10 @@ def configure_env(db_path: Path, *, ai_enabled: bool = False) -> None:
     os.environ["PULSE_AI_ENABLED"] = "true" if ai_enabled else "false"
     os.environ["PULSE_AI_INTERNAL_ONLY"] = "true"
     os.environ["PULSE_AI_MAX_CONTEXT_MESSAGES"] = "30"
-    os.environ.pop("PULSE_AI_PROVIDER", None)
-    os.environ.pop("PULSE_AI_MODEL", None)
+    # PULSE_AI_PROVIDER and PULSE_AI_MODEL used to be cleared here so the audit ran against
+    # an unconfigured provider seam. `ai_messaging` no longer reads either one — which vendor
+    # answers and which model answered are both undx_router's to decide and to report — so
+    # there is nothing left to clear.
     os.environ.pop("REDIS_URL", None)
 
 
@@ -98,7 +100,14 @@ def audit_worker_endpoints() -> dict:
         expect(accepted.status_code == 200, f"AI endpoint returned {accepted.status_code}")
         accepted_json = accepted.get_json() or {}
         expect(accepted_json.get("available") is False, "AI endpoint should return safe disabled/unavailable response without provider")
-        expect(accepted_json.get("reason") in {"provider_not_configured", "internal_only_adapter_pending"}, "AI endpoint unavailable reason mismatch")
+        # `configure_env` sets PULSE_AI_INTERNAL_ONLY=true, so this is the privacy gate
+        # refusing, not a missing configuration. The two old accepted values were
+        # "provider_not_configured" and "internal_only_adapter_pending": the first is gone
+        # with the PULSE_AI_PROVIDER read, and the second said "pending" because the adapter
+        # was a stub that returned before calling anything. It no longer is, so a reason that
+        # still claimed to be pending would be the same false attribution this phase removed
+        # from the audit table.
+        expect(accepted_json.get("reason") == "internal_only", "AI endpoint unavailable reason mismatch")
         replies = client.post(
             "/internal/command-center/ai/smart-replies",
             headers={"Authorization": f"Bearer {AUDIT_TOKEN}"},

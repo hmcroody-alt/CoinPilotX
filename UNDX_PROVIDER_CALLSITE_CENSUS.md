@@ -577,6 +577,59 @@ surface with an empty provider seam and its own third model namespace (`PULSE_AI
 seam points at `undx_router` first. Cheap to do now, and the reason Phase 9's structural
 gate matters more than the count it currently reports.
 
+### P-a, resolved: the seam now points at the router (U10)
+
+`_provider_adapter` calls `undx_router.route_structured_request` with a declared privacy
+class and a declared call domain, and `PULSE_AI_PROVIDER` / `PULSE_AI_MODEL` are no longer
+read anywhere in the repo. Both are gone from `.env.example`.
+
+Three things were found in the filling that the census above could not see, because they
+were not about a transport.
+
+**The stub had already made two claims about calls that never happened.** `_run_ai_task`
+did `response.setdefault("model", ai_model())` and then recorded the literal status
+`"unavailable"`, so every row in `command_center_ai_events` carried an operator-set model
+name under a hardcoded status. The status was *true* when written — the adapter could not
+succeed — and became false at the commit that made success possible, which is the version
+of this defect that ships. An audit table is what you read when you no longer remember, so
+it is the worst place in this repo for the confusion between declaring and executing. This
+was the fifth appearance of that confusion in this mission.
+
+**The prompt asserted evidence the payload never carried.** `scam_explanation`'s only
+production caller is `bot.py:28335`, the admin security centre, which sends
+`{"security_event": {event_id, event_type, severity, details}}`. `_input_summary` searched
+`messages` plus five *string* keys, and `security_event` is a dict, so nothing matched and
+the summary fell through to "scam_explanation requested with no raw message body stored" —
+underneath a system prompt stating that a deterministic check "has already produced the
+verdict and signals recorded below". That does not fail loudly. It asks a model to explain
+signals it cannot see, and the obliging answer is an invented one. Fixed with
+`STRUCTURED_INPUT_KEYS` and a `_record_lines` renderer that applies the same
+`SECRET_KEY_MARKERS` exclusion the stored-payload sanitiser does.
+
+**The prompt was addressed to the wrong person.** The draft said "Explain, for the member"
+about a route no member can reach. Both this and the defect above came from writing the
+prompt from the task's *name* instead of reading its *call site* — the generalisable lesson
+of U10, and worth more than the migration itself.
+
+Two vestigial reads on the main-app side were found and removed while confirming the
+variables were dead: `services/command_center_client.py`'s `ai_configured()` (zero callers,
+and it gated the feature on `PULSE_AI_PROVIDER`) and the `ai_provider_configured` /
+`ai_model_configured` fields in `status()`, which reported the presence of strings nothing
+reads. Every live gate goes through `ai_enabled()`, which reads only `PULSE_AI_ENABLED`.
+
+Still true, and still the reason this was the cheapest of the migrations:
+`command_center_worker` is **not in the Procfile**, so all five tasks are unreachable in
+production. Nothing breaks if this is wrong, which is exactly the condition under which a
+suite quietly stops measuring anything — hence
+`tests/test_command_center_ai_routing.py` (56 tests) and
+`scripts/undx_command_center_ai_mutation_check.py` (45 mutations, all behaving as
+specified) rather than confirmation by inspection. Three of those mutations earned their
+place by surviving or misfiring first: a deleted `sorted()` that the stability test could
+not see because it compared one dict with itself, a deleted `if record:` guard that the
+fallback test never reached because its empty dict was rejected one guard earlier, and a
+module-scope `import openai` that died during collection instead of on the assertion it was
+meant to prove.
+
 ## Counts
 
 | Classification | Call expressions | Note |
@@ -589,7 +642,7 @@ gate matters more than the count it currently reports.
 | RESEARCH (search) | 5 | previously uncounted as AI spend |
 | ADMIN_TEST_ONLY | 1 | live acceptance script, spend-gated |
 | DEAD_CODE | 1 | `generate_task_response` |
-| Pending seam | 1 | command-center stub |
+| Pending seam | **1 → 0** | command-center stub, now routed (U10) |
 | UNKNOWN | **0** | every credential read is accounted for |
 
 Net correction to the previous census: **+1** unrouted chat call (composed URL), **+5**

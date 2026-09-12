@@ -103,27 +103,59 @@ def env_wrappers(tree: ast.AST) -> set[str]:
 
     Detected rather than declared, so a second wrapper added later is covered without
     anyone having to remember that a test depends on it.
+
+    **Transitive, because one level was not enough.** The first version of this function
+    only recognised a wrapper that called `os.getenv` *itself*, and
+    `services/command_center_worker/ai_messaging.py` has two tiers:
+
+        def _env_text(key, default=""):  return os.getenv(key, default)
+        def _env_bool(key, default=False):
+            if key in os.environ: return _env_text(key).lower() in TRUE_VALUES
+            return default
+
+    `_env_text` was found, `_env_bool` was not, so the probe reported
+    `PULSE_AI_MAX_CONTEXT_MESSAGES` and stayed blind to `PULSE_AI_ENABLED` and
+    `PULSE_AI_INTERNAL_ONLY` — the feature switch and the privacy gate, the two reads in
+    that module most worth being able to see. Worse, the assertion shape these names are
+    used in is `assertNotIn`: a vendor variable restored through a second-tier wrapper
+    would have been invisible to the test written to forbid it, which is the same
+    measuring-nothing failure the paragraph above describes fixing at one tier and no
+    further. So the search now runs to a fixed point, and a third tier is covered too.
     """
     wrappers: set[str] = set()
-    for node in ast.walk(tree):
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            continue
-        positional = [arg.arg for arg in node.args.posonlyargs + node.args.args]
-        if not positional:
-            continue
-        first = positional[0]
-        for call in (n for n in ast.walk(node) if isinstance(n, ast.Call)):
-            target = call.func
-            if not isinstance(target, ast.Attribute):
+    functions = [node for node in ast.walk(tree)
+                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    while True:
+        found = False
+        for node in functions:
+            if node.name in wrappers:
                 continue
-            reads_env = target.attr == "getenv" or (
-                target.attr == "get" and isinstance(target.value, ast.Attribute)
-                and target.value.attr == "environ")
-            if reads_env and call.args and isinstance(call.args[0], ast.Name) \
-                    and call.args[0].id == first:
-                wrappers.add(node.name)
-                break
-    return wrappers
+            positional = [arg.arg for arg in node.args.posonlyargs + node.args.args]
+            if not positional:
+                continue
+            first = positional[0]
+            for call in (n for n in ast.walk(node) if isinstance(n, ast.Call)):
+                target = call.func
+                # Tier one: this function hands its own first parameter to os.getenv or
+                # os.environ.get.
+                if isinstance(target, ast.Attribute):
+                    reads_env = target.attr == "getenv" or (
+                        target.attr == "get" and isinstance(target.value, ast.Attribute)
+                        and target.value.attr == "environ")
+                # Tier two and beyond: it hands that parameter to a wrapper already known
+                # to be an environment read. Self-recursion is excluded so a function is
+                # never promoted by its own recursive call.
+                elif isinstance(target, ast.Name):
+                    reads_env = target.id in wrappers and target.id != node.name
+                else:
+                    continue
+                if reads_env and call.args and isinstance(call.args[0], ast.Name) \
+                        and call.args[0].id == first:
+                    wrappers.add(node.name)
+                    found = True
+                    break
+        if not found:
+            return wrappers
 
 
 def environment_reads(tree: ast.AST) -> list[str]:
