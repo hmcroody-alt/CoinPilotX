@@ -88,6 +88,20 @@ import undx_execution_kernel
 # cleared traffic it should have refused.
 from services import undx_call_domain, undx_privacy
 
+# Wraps the HTTP entry points so a chat call that reaches a vendor without passing
+# the router increments `undx_unrouted_provider_calls_total` and says where it came
+# from. `undx_config_drift.scan_source` answers the same question from the source
+# and answers it more completely, but it needs a checkout and this needs a running
+# process — the two miss in opposite directions, which is why both exist.
+#
+# Counts, does not block: deciding from a stack walk that a provider call in
+# production is illegitimate would fail a user's request to enforce a policy about
+# where code lives. `install()` swallows its own failures, so the worst case is no
+# guard rather than no boot.
+from services import undx_call_guard
+
+undx_call_guard.install()
+
 COINPILOTX_ENV_MODE = os.getenv("ENV") or os.getenv("FLASK_ENV") or os.getenv("RAILWAY_ENVIRONMENT") or ("production" if _deployment_environment_enabled() else "local")
 COINPILOTX_CONFIGURED_SECRET_KEY = os.getenv("FLASK_SECRET_KEY") or os.getenv("SECRET_KEY") or os.getenv("SESSION_SECRET")
 COINPILOTX_RANDOM_SECRET_USED = not bool(COINPILOTX_CONFIGURED_SECRET_KEY)

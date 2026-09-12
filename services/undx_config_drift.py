@@ -339,8 +339,21 @@ def _unusable(detail: str) -> dict[str, Any]:
 #: Environment variables whose name says they select a model.
 _MODEL_VAR_RE = re.compile(r"^[A-Z0-9_]*MODEL[A-Z0-9_]*$")
 
-#: Files allowed to hold a model default. Exactly one, which is the point.
-_CONFIG_AUTHORITY = ("undx_router.py",)
+#: Files allowed to hold a model default or a provider base URL: the adapters, and
+#: nothing else. Repository-*relative* paths, listed one per line, because the
+#: earlier form compared bare basenames — so `services/vendor/undx_router.py`, or
+#: any other file that happened to be called `undx_router.py`, was exempt without
+#: anyone adding it here. A name-shaped allowlist is still a wildcard; §19 asks
+#: for an explicit one, and the only way to be explicit about a file is to say
+#: where it is.
+_ADAPTER_ALLOWLIST: tuple[str, ...] = (
+    "undx_router.py",
+)
+
+#: Not an adapter — the detector, whose own source names the hosts and paths it
+#: looks for. Kept separate from `_ADAPTER_ALLOWLIST` so the allowlist stays
+#: readable as the answer to "what may call a vendor", which this file may not.
+_SELF = "services/undx_config_drift.py"
 
 _SKIP_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__", "mobile",
               "mobile-native", "tests", "scripts", ".claude"}
@@ -406,9 +419,142 @@ _CHAT_PATHS: tuple[str, ...] = (
 )
 
 
-def _provider_urls_in(tree: "ast.AST") -> list[tuple[int, str]]:
-    """String constants naming a vendor endpoint, as (line, url)."""
+#: Provider SDKs. None of them is installed here and none is in
+#: `requirements.txt`: every AI call in this repository is hand-rolled HTTP, which
+#: is why the URL checks above are the ones that find things. That makes this the
+#: cheap half of §11 to satisfy and the easy half to leave unwritten — a guarantee
+#: nothing currently violates still needs a detector, or the day someone adds
+#: `openai` to `requirements.txt` the fabric loses the base URL, the model default,
+#: the retry policy and the timeout to a library at once, and none of it appears
+#: as a URL literal for `_provider_urls_in` to find.
+#:
+#: Proving this one required care. The obvious mutation — a module-scope
+#: `import openai` — died during collection with `ModuleNotFoundError` instead of
+#: on the assertion, which is no evidence at all: a suite with the detector
+#: deleted "catches" it identically. The mutation that proves anything is a lazy
+#: import inside a function nobody calls, so the module still imports cleanly and
+#: only an AST walk can see it.
+_PROVIDER_SDKS: tuple[str, ...] = (
+    "openai", "anthropic", "google.generativeai", "google.genai", "groq",
+    "cohere", "mistralai", "litellm", "langchain", "langchain_openai",
+    "llama_index", "transformers", "vertexai", "boto3.bedrock",
+)
+
+#: Callables that put bytes on the wire. Both halves must match: the last segment
+#: names the verb and some earlier segment names a client, so `self.session.post`
+#: and `urllib.request.urlopen` are calls while `requests.map` — a local list
+#: named `requests` — is not. This repo has 67 `requests.post`, 32
+#: `requests.get`, 11 `urllib.request.urlopen` and 9 `urllib.request.Request`,
+#: and no SDK client, so the two sets below are an inventory rather than a guess.
+_HTTP_VERBS = {"post", "get", "put", "patch", "delete", "head", "options",
+               "request", "send", "urlopen", "Request", "stream"}
+_HTTP_CLIENTS = {"requests", "httpx", "urllib", "aiohttp", "http", "client",
+                 "session", "Session", "opener", "pool", "http_client"}
+
+
+def _dotted(node: "ast.AST") -> list[str]:
+    """`urllib.request.urlopen` -> ['urllib', 'request', 'urlopen']."""
+    parts: list[str] = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    if isinstance(node, ast.Name):
+        parts.append(node.id)
+    elif isinstance(node, ast.Call):
+        # `requests.Session().post(...)` — the client is constructed inline.
+        parts.extend(reversed(_dotted(node.func)))
+    return list(reversed(parts))
+
+
+def _is_http_call(node: "ast.AST") -> bool:
+    if not isinstance(node, ast.Call):
+        return False
+    parts = _dotted(node.func)
+    return bool(parts) and parts[-1] in _HTTP_VERBS and any(
+        part in _HTTP_CLIENTS for part in parts[:-1])
+
+
+def _performs_http(tree: "ast.AST") -> bool:
+    return any(_is_http_call(node) for node in ast.walk(tree))
+
+
+def _request_url_nodes(tree: "ast.AST") -> set[int]:
+    """ids of string nodes sitting in an HTTP client's URL argument.
+
+    Resolves one hop through a name, because `URL = "https://..."` followed by
+    `requests.post(URL, ...)` is how most of the call sites this subsystem has
+    already migrated were actually written — the literal and the call are never
+    on the same line.
+
+    One hop and no further, deliberately. The remaining shape here is
+    `requests.post(configured_endpoint(), ...)` in
+    `services/undx_embedding_service.py`, where the URL arrives through a function
+    that reads a flag; nothing short of interprocedural analysis connects that
+    literal to that call. So the *module* is the unit this distinction is honest
+    at, and `scan_source` uses it that way: a module that performs no HTTP at all
+    is declaring a URL for someone else to call, and saying it "calls" the vendor
+    would be false.
+    """
+    literals: dict[str, list[int]] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        if not isinstance(node.value, (ast.Constant, ast.JoinedStr, ast.BinOp)):
+            continue
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                literals.setdefault(target.id, []).extend(
+                    id(part) for part in ast.walk(node.value)
+                    if isinstance(part, (ast.Constant, ast.JoinedStr)))
+    marked: set[int] = set()
+    for node in ast.walk(tree):
+        if not _is_http_call(node):
+            continue
+        targets = list(node.args[:1]) + [
+            kw.value for kw in node.keywords if kw.arg in ("url", "endpoint")]
+        for target in targets:
+            if isinstance(target, ast.Name):
+                marked.update(literals.get(target.id, ()))
+                continue
+            marked.update(id(part) for part in ast.walk(target)
+                          if isinstance(part, (ast.Constant, ast.JoinedStr)))
+    return marked
+
+
+def _sdk_usage_in(tree: "ast.AST") -> list[tuple[int, str]]:
+    """Provider SDK imports, as (line, module). Walks, so lazy imports count."""
     found: list[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+            names = [node.module]
+        else:
+            continue
+        for name in names:
+            root = name.split(".")[0]
+            if name in _PROVIDER_SDKS or root in _PROVIDER_SDKS:
+                found.append((node.lineno, name))
+    return found
+
+
+def _provider_urls_in(tree: "ast.AST") -> list[tuple[int, str, bool]]:
+    """Vendor endpoints, as (line, url, reaches_an_http_client).
+
+    A host match is one of two ways in. The other is a chat *path* with no host
+    at all — `f"{base}/chat/completions"`, where `base` comes from an environment
+    variable — which §12 names explicitly and which this repo has really had:
+    `services/pulse_ai_provider_router.py` composed exactly that shape from
+    `UNDX_CANDIDATE_BASE_URL`. Against the previous version of this function that
+    call was invisible, because `_CHAT_PATHS` was only consulted to pick a
+    severity *after* a host had already matched. An env-pointable base URL is the
+    case where the host is the part that is missing, so keying the whole check on
+    the host meant the configurable call sites — the ones that can be pointed
+    anywhere, including at a vendor's training tier — were the ones that did not
+    count.
+    """
+    request_nodes = _request_url_nodes(tree)
+    found: list[tuple[int, str, bool]] = []
     # An f-string's literal segments are Constant nodes *inside* the JoinedStr,
     # so walking naively reports the same URL twice — and reports the truncated
     # half at a lower severity, because the path that decides it is a chat call
@@ -439,8 +585,17 @@ def _provider_urls_in(tree: "ast.AST") -> list[tuple[int, str]]:
         else:
             continue
         lowered = value.lower()
-        if any(host in lowered for host in _PROVIDER_HOSTS) and "/" in value:
-            found.append((node.lineno, value))
+        in_request = id(node) in request_nodes
+        names_host = any(host in lowered for host in _PROVIDER_HOSTS) and "/" in value
+        # A bare path only means a provider call when something sends it. Without
+        # that condition `"/v1/messages"` in a list of strings a test asserts on
+        # would read as a call, and a detector that reports its own test suite is
+        # one people learn to skip — the failure this module's other docstring
+        # already describes, arrived at from the opposite direction.
+        names_chat_path = in_request and any(
+            part in lowered for part in _CHAT_PATHS)
+        if names_host or names_chat_path:
+            found.append((node.lineno, value, in_request))
     return found
 
 
@@ -461,22 +616,48 @@ def scan_source(root: str) -> list[dict[str, Any]]:
     Reported by inspection rather than by import: these modules are not safe to
     import for a side-effect-free audit, and a check that had to import
     `bot.py` to run would not run.
+
+    Declaring a URL and calling one are reported as different things, because the
+    fix is different and because the older wording was simply untrue of two of the
+    three sites it named. `services/undx_brain/config.py` holds
+    `UNDX_EMBEDDING_ENDPOINT` in its flag catalog and performs no HTTP anywhere in
+    the module — it was being told it "calls the vendor directly... outside the
+    circuit breaker", and advised to "meter it through undx_cost.record", which
+    cannot be done at a constant. Both of those declarations are deliberate and
+    documented as deliberate: the catalog is where a deployment can point at a
+    proxy without a code change. They are still worth listing, because an
+    env-pointable base URL is the thing §12 is about, but the finding has to say
+    what it found.
     """
     out: list[dict[str, Any]] = []
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")]
         for filename in sorted(filenames):
-            if not filename.endswith(".py") or filename in _CONFIG_AUTHORITY:
+            if not filename.endswith(".py"):
                 continue
             path = os.path.join(dirpath, filename)
+            relative = os.path.relpath(path, root)
+            if relative in _ADAPTER_ALLOWLIST or relative == _SELF:
+                continue
             try:
                 with open(path, "r", encoding="utf-8", errors="replace") as handle:
                     tree = ast.parse(handle.read(), filename=path)
             except (OSError, SyntaxError):
                 continue
-            relative = os.path.relpath(path, root)
-            if relative.startswith("services/undx_config_drift"):
-                continue  # the detector names the hosts it looks for
+            sends = _performs_http(tree)
+            for number, module in _sdk_usage_in(tree):
+                out.append(_finding(
+                    CRITICAL, "provider_sdk_import",
+                    f"{relative}:{number} imports the {module!r} SDK. Every AI "
+                    f"call in this deployment is hand-rolled HTTP through an "
+                    f"adapter, and an SDK takes the base URL, the model default, "
+                    f"the timeout and the retry policy out of the fabric's hands "
+                    f"in one step — without leaving a URL literal behind for "
+                    f"anything else here to find",
+                    "Call undx_router.route_structured_request. If a capability "
+                    "genuinely needs the SDK, it belongs behind an adapter in "
+                    f"{_ADAPTER_ALLOWLIST[0]}, added to _ADAPTER_ALLOWLIST by path",
+                    where=f"{relative}:{number}"))
             for number, var, default in _model_defaults_in(tree):
                 out.append(_finding(
                     WARNING, "duplicate_model_default",
@@ -488,8 +669,23 @@ def scan_source(root: str) -> list[dict[str, Any]]:
                     "through undx_router.route_structured_request so it is "
                     "also metered and breaker-protected",
                     where=f"{relative}:{number}"))
-            for number, url in _provider_urls_in(tree):
+            for number, url, in_request in _provider_urls_in(tree):
                 chat = any(path_part in url.lower() for path_part in _CHAT_PATHS)
+                if not (in_request or sends):
+                    out.append(_finding(
+                        WARNING, "provider_url_declared",
+                        f"{relative}:{number} declares the provider endpoint "
+                        f"{url} but performs no HTTP call itself, so some other "
+                        f"module sends it. A base URL that can be redirected by "
+                        f"configuration is the one place a deployment can be "
+                        f"pointed at a different vendor — or at a vendor's "
+                        f"training tier — without a code change",
+                        f"Move the endpoint behind an adapter in "
+                        f"{_ADAPTER_ALLOWLIST[0]} so the call that uses it is "
+                        f"metered and breaker-protected, and the redirect is "
+                        f"governed in one place",
+                        where=f"{relative}:{number}"))
+                    continue
                 out.append(_finding(
                     CRITICAL if chat else WARNING,
                     "unrouted_chat_call" if chat else "unmetered_provider_call",

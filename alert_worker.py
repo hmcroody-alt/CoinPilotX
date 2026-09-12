@@ -16,7 +16,14 @@ import time
 
 from services import alert_engine, auto_signals_service, live_market_service, market_observations
 from services import pulse_briefings
+from services import undx_call_guard
 from services.sentinel import runtime as sentinel_runtime
+
+# This worker imports neither `bot` nor `undx_router`, so nothing else installs the
+# guard in this interpreter. It is here precisely because there is no reason for
+# this process to call a chat provider: if the counter ever moves, that is the
+# finding.
+undx_call_guard.install()
 
 
 RUNNING = True

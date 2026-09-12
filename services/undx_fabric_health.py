@@ -187,6 +187,22 @@ def _drift() -> dict[str, Any]:
     }
 
 
+def _routing() -> dict[str, Any]:
+    """What the runtime guard saw, as opposed to what the source says.
+
+    `config` above reads the repository and answers "is there a call site that
+    bypasses the router". This answers "did a call bypass it", which is a
+    different question with a different failure mode: the source check cannot see
+    a module it skipped or could not parse, and this cannot see a call site that
+    did not fire. Published side by side rather than merged, because an operator
+    looking at a disagreement between them is looking at the most informative
+    thing this surface can show — one of the two is wrong about the deployment.
+    """
+    from services import undx_call_guard
+
+    return undx_call_guard.snapshot()
+
+
 def snapshot() -> dict[str, Any]:
     """The whole fabric in one payload. Never raises.
 
@@ -198,7 +214,7 @@ def snapshot() -> dict[str, Any]:
     out: dict[str, Any] = {"surface": SURFACE, "checked_at": time.time()}
     degraded: list[str] = []
     for section, collect in (("providers", _providers), ("cost", _cost),
-                             ("config", _drift)):
+                             ("config", _drift), ("routing", _routing)):
         try:
             out[section] = collect()
         except Exception as exc:  # noqa: BLE001
@@ -224,9 +240,14 @@ def snapshot() -> dict[str, Any]:
     # revoked key does, because waiting will not fix it. A section that failed
     # to collect counts too: an unverified guarantee is not a kept one, which is
     # the same rule `undx_config_drift` applies to a check that did not run.
+    # A chat call that bypassed the router counts the same way a CRITICAL drift
+    # finding does. The check that found it is weaker — it only sees what ran —
+    # but what it saw, ran: this is the one signal here that is evidence of a
+    # breach rather than of the conditions for one.
     out["ok"] = (not actionable and not degraded
                  and bool(reachable)
-                 and bool((out.get("config") or {}).get("ok", False)))
+                 and bool((out.get("config") or {}).get("ok", False))
+                 and bool((out.get("routing") or {}).get("ok", False)))
     return out
 
 

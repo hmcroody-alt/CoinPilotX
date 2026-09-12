@@ -16,10 +16,18 @@ import threading
 import undx_router
 from services import undx_agent_policy
 from services import undx_agent_runs
+from services import undx_call_guard
 from services import undx_mission_runtime
 from services import undx_worker_runtime
 from services.undx_brain import config as undx_config
 
+# Per process, not per deployment: the guard wraps this interpreter's `requests`
+# and `urllib`, so installing it in `bot.py` covers the web process and the two
+# workers that import `bot` — and covers nothing here. This worker is the one that
+# makes the most provider calls, so a guard that quietly did not apply to it would
+# hold `undx_unrouted_provider_calls_total` at zero for the least interesting
+# reason available.
+undx_call_guard.install()
 
 WORKER_NAME = "coinpilotx-undx-worker"
 STOP_EVENT = threading.Event()
