@@ -52,12 +52,14 @@ CAPS = "services/undx_capabilities.py"
 EMBED = "services/undx_embedding_service.py"
 IMAGE = "services/pulse_ai/automated_image_pipeline.py"
 SEARCH = "services/pulse_ai_web_search.py"
+TRANS = "services/translation_providers.py"
 
 COST_TESTS = "tests/test_undx_cost_budget.py"
 CAPS_TESTS = "tests/test_undx_capabilities.py"
 EMBED_TESTS = "tests/undx_agent/test_embedding_wire_contract.py"
 IMAGE_TESTS = "tests/test_pulse_insight_image_pipeline.py"
 SEARCH_TESTS = "tests/test_pulse_ai_web_search_spend.py"
+TRANS_TESTS = "tests/test_translation_spend.py"
 
 #: (label, file, old, new, test that must fail, test file)
 MUTATIONS = [
@@ -414,6 +416,120 @@ MUTATIONS = [
         '    key = _env("BRAVE_SEARCH_API_KEY")\n    if not key:\n',
         "test_an_unconfigured_provider_is_not_billed",
         SEARCH_TESTS,
+    ),
+    (
+        # The state this module was in before this phase.
+        "translation: stop metering translation entirely",
+        TRANS,
+        '    undx_capabilities.record_spend(\n'
+        '        undx_capabilities.CALL_KIND_TRANSLATION, provider, units=len(text or ""),\n'
+        '    )\n',
+        '    return\n',
+        "test_a_translation_is_recorded_as_translation_not_chat",
+        TRANS_TESTS,
+    ),
+    (
+        # Worse than dropping it. Google serves chat models elsewhere in this repo,
+        # so translation folded into `chat` lands in a plausible-looking row on a
+        # provider that genuinely has chat spend.
+        "translation: meter the request as chat",
+        TRANS,
+        'undx_capabilities.CALL_KIND_TRANSLATION, provider, units=len(text or ""),',
+        'undx_capabilities.CALL_KIND_CHAT, provider, units=len(text or ""),',
+        "test_a_translation_is_recorded_as_translation_not_chat",
+        TRANS_TESTS,
+    ),
+    (
+        # Count the request instead of the characters. Reads as a simplification and
+        # is *invisible today*, because the provider is unpriced so every call costs
+        # $0.00 either way. It becomes a silent 1000x understatement the moment
+        # someone reads Google's rate into the table - which is why the test installs
+        # a rate rather than asserting against the real one.
+        "translation: bill one unit per request instead of per character",
+        TRANS,
+        'units=len(text or ""),',
+        'units=1,',
+        "test_the_billed_characters_are_the_ones_we_sent",
+        TRANS_TESTS,
+    ),
+    (
+        # Bill the translated text. The expansion ratio varies by language pair, so
+        # the overstatement is largest on the pairs used most and no single wrong
+        # figure ever appears twice - there is nothing for a human to notice.
+        "translation: bill the translated text instead of the source",
+        TRANS,
+        '        _record_character_spend(self.name, text)\n'
+        '        translations = response.get("translations") or []\n',
+        '        translations = response.get("translations") or []\n'
+        '        _record_character_spend(\n'
+        '            self.name, str((translations[0] if translations else {}).get("translatedText") or ""))\n',
+        "test_the_billed_characters_are_the_ones_we_sent",
+        TRANS_TESTS,
+    ),
+    (
+        # Discount markup. Tidier number, wrong bill - Google charges for the tags.
+        "translation: strip html markup before counting characters",
+        TRANS,
+        '    undx_capabilities.record_spend(\n'
+        '        undx_capabilities.CALL_KIND_TRANSLATION, provider, units=len(text or ""),\n'
+        '    )\n',
+        '    import re\n'
+        '    billable = re.sub(r"<[^>]+>", "", text or "")\n'
+        '    undx_capabilities.record_spend(\n'
+        '        undx_capabilities.CALL_KIND_TRANSLATION, provider, units=len(billable),\n'
+        '    )\n',
+        "test_html_markup_counts_as_characters",
+        TRANS_TESTS,
+    ),
+    (
+        # Skip detection because "it is not a translation". It is billed per
+        # character at the same rate, and every piece of unknown-language content
+        # pays for both - so this halves the apparent cost of the most common path.
+        "translation: stop metering language detection",
+        TRANS,
+        '        _record_character_spend(self.name, text)\n'
+        '        languages = response.get("languages") or []\n',
+        '        languages = response.get("languages") or []\n',
+        "test_language_detection_is_billed_on_the_same_footing",
+        TRANS_TESTS,
+    ),
+    (
+        # Meter inside the retry loop. Multiplies the bill by the provider's
+        # flakiness, which is the opposite of what a cost report is for, and it does
+        # it only during incidents - so the report is wrong exactly when it is read.
+        "translation: bill every retry attempt rather than the accepted request",
+        TRANS,
+        '                if response.status_code < 400:\n                    return response.json()\n',
+        '                if response.status_code < 400:\n'
+        '                    return response.json()\n'
+        '                _record_character_spend("google", str(payload or ""))\n',
+        "test_a_retried_request_is_billed_once",
+        TRANS_TESTS,
+    ),
+    (
+        # Meter the metadata lookup too, "for completeness". `getSupportedLanguages`
+        # is free and is not a translation, and the ledger has no operation
+        # dimension - so this pollutes the call count, which is currently the *only*
+        # signal for this provider because the price is unknown and the character
+        # volume is not persisted.
+        "translation: count the free language list as translation spend",
+        TRANS,
+        '        response = self._request("GET", "/supportedLanguages", params={"displayLanguageCode": display_language})\n',
+        '        response = self._request("GET", "/supportedLanguages", params={"displayLanguageCode": display_language})\n'
+        '        _record_character_spend(self.name, display_language)\n',
+        "test_listing_supported_languages_is_not_translation_spend",
+        TRANS_TESTS,
+    ),
+    (
+        # Meter above the credential check, where a "record every attempt" reading
+        # would put it. Charges for requests that never leave the process.
+        "translation: bill a request that was never sent",
+        TRANS,
+        '        payload: dict[str, Any] = {\n            "contents": [text],\n',
+        '        _record_character_spend(self.name, text)\n'
+        '        payload: dict[str, Any] = {\n            "contents": [text],\n',
+        "test_an_unconfigured_provider_is_not_billed",
+        TRANS_TESTS,
     ),
 ]
 

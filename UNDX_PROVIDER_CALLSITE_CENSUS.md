@@ -1384,3 +1384,177 @@ Deliberately not fixed in this commit. Changing `82` to `140` would make it gree
 until the next capability lands, and the interesting question is whether an exact
 count of a registry that grows with every feature should be pinned at all. Split
 out as its own task rather than smuggled into a spend-accounting change.
+
+## 12. Metering translation, and the volume the ledger throws away
+
+`services/translation_providers.py` now records one `translation` call per accepted
+Google Cloud Translation v3 request, through a single helper
+`_record_character_spend(provider, text)`. This is the last of the four non-chat
+call sites named in §3, and like web search it is live code: PulseSoc content
+translation runs in production today, and until this wiring existed the only trace
+of a translation was the HTTP log — so a month that translated ten million
+characters and a month that translated none produced identical spend reports.
+
+The capability table needed no change. `('translation', 'google')` was already
+declared with `paid=True` and `prices={}`, so every call records as
+`uncosted_calls=1` with `cost_micro_usd=0` and the pair stays in
+`unpriced_providers()`. Google's per-million-character rate is public, but it has
+not been read and dated into `undx_capabilities`, and inventing a figure here would
+make the month's total look complete while being wrong by the entire translation
+bill. This is the §34 outcome, not a completed pricing job.
+
+### Two of the three operations are billed, and the flow that pays twice
+
+Google bills per character of submitted text. `translateText` and `detectLanguage`
+are both billed at the same per-character rate; `getSupportedLanguages` is free.
+So:
+
+* **The billed string is the input, not the output.** Translated text is routinely
+  30-40% longer than its source. Metering the response would have overstated spend
+  by the expansion ratio of the language pair — largest on the pairs used most,
+  varying by locale, so no single wrong number ever appears twice and nothing in a
+  totals report ever looks anomalous.
+* **Markup is not discounted**, by Google or here. Stripping tags before counting
+  would have produced a number that was tidier and wrong. Asserted with a payload
+  that is mostly markup, so a tag-stripping implementation cannot pass by accident.
+* **Detection is billed on the same footing.** A detect-then-translate flow over
+  unknown-language content — which is the flow taken for every piece of content
+  whose language is not already known — pays twice over the same characters.
+  Metering only `translate()` would have made the more expensive path look like the
+  cheaper one.
+* **`getSupportedLanguages` is deliberately not metered.** It is free, and the
+  ledger keys on `(month, provider, call_kind)` with no operation dimension, so a
+  free metadata lookup recorded here would be indistinguishable from a paid
+  translation in the call count — and that count is currently the *only* signal,
+  for the reason in the next subsection.
+
+Placement follows §11's rule: the helper is called after `self._request(...)`
+returns and **above** the response-shape check. A 401/403 raises before it and is
+not billed; an unconfigured provider raises before any HTTP call and is not billed;
+the retry loop lives below it, so two 503s and a 200 is one charge rather than
+three; and a 2xx carrying an empty `translatedText` **is** billed, because
+`invalid_provider_response` is our judgement about the body, not Google's about the
+bill.
+
+### The character count is used for pricing and then discarded
+
+Stated verbatim in the helper's docstring, because it is the kind of finding that
+gets quietly re-broken:
+
+> `input_tokens` is deliberately left at zero. The character count goes in as
+> `units`, which `record_spend` uses to price and does not persist — the ledger's
+> only volume columns are `input_tokens` / `output_tokens` / `reasoning_tokens`, and
+> a character is not a token. `month_snapshot` sums `input_tokens` across every kind
+> into one per-provider figure, so putting characters there would corrupt the token
+> total of a provider that also does chat.
+
+Google also serves chat models elsewhere in this repo, so that corruption would not
+have been hypothetical: a thousand-character translation would have added 1000 to
+Gemini's input-token total, and nothing would have flagged it.
+
+The consequence is real and is recorded here rather than hidden. **Until Google's
+per-million-character rate is in the price table, the character volume of a
+translation is used for pricing and discarded, and the durable row carries the call
+count alone.** A month in which the average translation doubled in length is
+indistinguishable, in the ledger, from a month in which it did not. Closing that
+needs either a rate in the table (which makes the volume visible as dollars) or a
+unit-neutral volume column (a schema change on the table §8 already had to widen).
+This is the second structural limitation found by trying to assert against the
+ledger rather than by reading it; the first was the absent `model` dimension in §10.
+
+### Installing a price to make an invisible property testable
+
+Neither the input-vs-output property nor the markup property is observable through
+the real table, because an unpriced provider records `$0.00` either way. So the
+character-count tests patch `undx_capabilities.provider_for` to return the real
+entry with `prices={'': 20.0}` — $20 per million characters, a deliberately round
+number so the arithmetic in an assertion is readable, and deliberately not close to
+any published figure so nobody mistakes it for one.
+
+This is not a workaround for an untestable design. It exercises the real pricing
+path with a real rate shape, which means the plumbing is already proven the day
+someone reads Google's published rate into the table — the only change needed then
+is the number. `dataclasses.replace` on the returned entry rather than mutation of
+`CAPABILITIES`: the table holds frozen dataclasses in a module-level dict, and
+editing it in place would leak into every test that ran afterwards in the same
+process.
+
+The tests that assert the §34 behaviour — `uncosted_calls=1`, and
+`('translation','google')` present in `unpriced_providers()` — deliberately run
+against the **real** table, with no rate installed. Both properties are asserted, so
+the suite fails if a price is added without updating it, which is the reminder the
+next person needs.
+
+### Mutation coverage
+
+`scripts/undx_spend_accounting_mutation_check.py` is now **36 mutations**, all
+verified (35 red, 1 required-green): "All 36 mutations behaved as specified." The
+nine added here:
+
+| Mutation | Caught by |
+|---|---|
+| stop metering translation entirely | `test_a_translation_is_recorded_as_translation_not_chat` |
+| meter the request as `chat` | `test_a_translation_is_recorded_as_translation_not_chat` |
+| bill one unit per request instead of per character | `test_the_billed_characters_are_the_ones_we_sent` |
+| bill the translated text instead of the source | `test_the_billed_characters_are_the_ones_we_sent` |
+| strip html markup before counting characters | `test_html_markup_counts_as_characters` |
+| stop metering language detection | `test_language_detection_is_billed_on_the_same_footing` |
+| bill every retry attempt rather than the accepted request | `test_a_retried_request_is_billed_once` |
+| count the free language list as translation spend | `test_listing_supported_languages_is_not_translation_spend` |
+| bill a request that was never sent | `test_an_unconfigured_provider_is_not_billed` |
+
+**"Bill one unit per request instead of per character"** is the shape that would
+have survived review. `units=1` reads perfectly naturally next to the image call
+site three modules away, where one unit really is one image. It is invisible in
+production today, because the provider is unpriced and both answers record $0.00.
+The day a rate lands in the table it becomes a silent 1000x understatement of the
+translation bill, with no error, no log line, and a report that still balances.
+That is precisely the defect a price-table entry cannot protect against and a
+mutation check can.
+
+The *bill-the-output* mutation deserves the same note for a different reason: the
+test asserts both `== MICRO_FOR_SOURCE` **and** `!= MICRO_FOR_OUTPUT`, with the
+fixture's output three times longer than its input, so the wrong answer cannot hide
+inside rounding on a short string.
+
+### Degraded, not silent
+
+As in §10 and §11, the ledger-failure test breaks `undx_cost._connect` rather than
+stubbing `record_spend` to raise. `record_spend` is documented never to raise, so a
+test that made it raise would exercise an impossible state — the unfalsifiable shape
+§50 rejects. A dead database connection is a state the system really enters. The
+test asserts both that the caller still gets its translation and that
+`month_snapshot()` still answers from the in-process mirror with
+`source != "ledger"`, which is what separates *degraded* from *silent*.
+
+### Non-chat metering is now complete, and what that does and does not mean
+
+With this commit all four non-chat kinds that §3 found to exist are metered:
+
+| Kind | Call site | Metered in | Priced? |
+|---|---|---|---|
+| EMBEDDING | `services/undx_embedding_service.py` | §9 | yes — real rate, dated |
+| IMAGE | `services/pulse_ai/automated_image_pipeline.py` | §10 | no — `uncosted_calls` |
+| RESEARCH | `services/pulse_ai_web_search.py` (5 providers) | §11 | 1 of 5 (measured zero) |
+| TRANSLATION | `services/translation_providers.py` | §12 | no — `uncosted_calls` |
+| TRANSCRIPTION | none exist | — | — |
+
+"No unclassified AI spend" (§20-27) is satisfied in the sense the brief asks for:
+every AI call in this repo now lands in the ledger under a declared kind, and
+nothing records a fabricated $0.00. It is **not** the same as "the month's total is
+correct." Three of the four kinds are unpriced, so the report reads as *"these calls
+happened and we do not know what they cost"* — which is the honest state and is
+strictly more useful than the previous state, where the calls did not appear at all.
+`unpriced_providers()` is the list that enumerates what remains, and it is now the
+authoritative one: before this work, a provider could be absent from that list purely
+because nothing had ever recorded a call against it.
+
+The two fully unpriced kinds are also the two where the durable row carries less than
+the call knew. Image loses *which model* produced the picture, because the ledger has
+no `model` dimension — `gpt-image-1` and a future model at a different price would be
+the same row (§10). Translation loses *how many characters* were submitted, because
+there is no unit-neutral volume column and `units` is pricing-only (§12). Both were
+found by trying to assert against the ledger rather than by reading its schema, and
+both are recorded as open rather than worked around: the first is a pending schema
+change on the table §8 already had to widen, the second resolves itself the day a rate
+makes the volume visible as dollars.
