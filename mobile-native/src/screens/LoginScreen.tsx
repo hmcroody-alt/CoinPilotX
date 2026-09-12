@@ -415,7 +415,7 @@ export function LoginScreen() {
 
 /**
  * The five ways /api/mobile/auth/login can reject, keyed by the discriminator
- * the backend already sends.
+ * the backend sends.
  *
  * `api_error(..., error="...")` puts these in the body; `errorCodeOf` in
  * pulseApi.ts reads `error_code` then `error`, so they arrive as
@@ -431,11 +431,28 @@ export function LoginScreen() {
  * its own limit.
  */
 const LOGIN_REJECTION_KEYS: Record<string, string> = {
+  invalid_credentials: "errors:auth.identifierMismatch",
   login_challenge_required: "errors:auth.challengeRequired",
   login_rate_limited: "errors:auth.tooManyAttempts",
   email_not_confirmed: "errors:auth.emailNotConfirmed",
   account_restricted: "errors:auth.accountRestricted"
 };
+
+/**
+ * Rejections whose copy carries the QA-build backend hint.
+ *
+ * Keyed by catalog string rather than by code, so the two spellings of one state
+ * cannot drift apart: `invalid_credentials` and a bare 401 from a server that
+ * predates it are the same refusal and have to read identically.
+ *
+ * Without this, naming the state would actively regress it. `invalid_credentials`
+ * has a truthy `code`, so before it was listed above it fell through to the
+ * unknown-code branch, echoed the server's "Email or password is incorrect." and
+ * dropped the hint -- the one line that explains a QA build refusing production
+ * credentials. Adding the discriminator would have broken the feature that only
+ * exists because the discriminator was missing.
+ */
+const BACKEND_HINT_KEYS = new Set(["errors:auth.identifierMismatch"]);
 
 /**
  * Name the backend a non-production build is actually talking to.
@@ -470,7 +487,7 @@ function describeLoginError(error: unknown): string {
     // `login_challenge_required` as 403, but both are the security gate, and a
     // future one should not be silently re-sorted by whichever status it picks.
     const keyed = LOGIN_REJECTION_KEYS[error.code || ""];
-    if (keyed) return translate(keyed);
+    if (keyed) return BACKEND_HINT_KEYS.has(keyed) ? withBackendHint(translate(keyed)) : translate(keyed);
     if (error.status === 429) return translate("errors:auth.tooManyAttempts");
     if (error.status === 401 || error.status === 403) {
       // A rejection carrying a code we do not recognise is a state this build

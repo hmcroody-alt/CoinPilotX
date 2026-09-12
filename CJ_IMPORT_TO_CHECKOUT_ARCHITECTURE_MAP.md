@@ -2778,6 +2778,97 @@ One inverted mutation is recorded honestly rather than comfortably: the `409` on
 client. When one is built, the status becomes a fact a caller reads and the
 mutation should be reclassified rather than the test loosened.
 
+### Defence in depth hides its own halves
+
+The first run caught twenty of twenty-six, and **three of the six survivors had
+one cause worth naming as its own finding: every guard in this seam is written
+twice, on purpose, and the duplication makes each copy untestable through the
+front door.**
+
+`provider_order_id` is checked in `_recoverable_intent` *and* in the conditional
+`UPDATE`'s `AND o.provider_order_id IS NULL`. `superseded_at IS NULL` appears in
+`create_intent`'s lookup *and* in the same `UPDATE`. That is not redundancy by
+accident — the entire reason to re-check inside the write is that the read may
+have gone stale — but the consequence is that deleting *either* copy leaves the
+other one refusing, the behaviour unchanged, and the suite green. A test that
+calls `create_intent` and asserts the refusal can never say which layer refused.
+
+The three fixes are all the same move, and it is the one the race test already
+used: **remove one layer from the picture and assert the other still holds.**
+
+- The predicate is asked directly, `_recoverable_intent("BLOCKED", "CJ-STRAY")`,
+  with no SQL underneath it. It also gets an obligation test, because
+  `list_obligations` has no second guard at all — there the predicate *is* the
+  whole decision, so a check lost from it is not redundant but total.
+- The statement is asked with the predicate monkeypatched to `True` against a row
+  holding a `provider_order_id` — precisely the state `settle` produces if it
+  writes an id between the read and the write.
+- The `superseded_at` guard in the `UPDATE` took three attempts, and the two
+  failures are the more instructive part — see immediately below.
+
+#### A test that restates the statement measures nothing
+
+The first attempt at the `superseded_at` guard reasoned that there was no seam to
+patch — the read and the write are one function, and SQLite will not run a second
+writer inside an open transaction — and so it *copied the statement into the test*
+and ran the copy against an already-retired row. `rowcount == 0`, assertion
+passes, suite green.
+
+The second mutation run caught the other five survivors and left that one alive,
+which is the only reason the mistake surfaced: **the test was pinning its own copy
+of the SQL, so mutating the real statement could not reach it.** This is the
+mission's recurring defect one level up — the test asserted the behaviour rather
+than measuring it — and it is a quiet form of it, because a copied statement reads
+as more rigorous than a call, not less.
+
+The seam did exist. `create_intent` takes its connection from `db.connect()`, so a
+proxy connection can watch for the live lookup, let it return exactly what it
+really returns, and retire that row before the caller acts on it. What
+`create_intent` then holds is precisely what the losing recovery holds: proof
+about a row another transaction has already spent, and the refusal is now produced
+by the code under test.
+
+Two details the proxy design has to own. The interception matches on the query's
+text, so reformatting that lookup would stop the retirement from happening — which
+is why the test also asserts the proxy *did* retire the row, turning a silent
+no-race into a loud failure instead of a false pass. And because the simulated
+winner writes inside the loser's transaction, the refusal rolls its retirement
+back too; the assertion that survives is therefore about what the loser left
+behind, which has to be nothing at all.
+
+The other three survivors were ordinary coverage gaps, and one of them is an
+engine-divergence worth recording. `DROP INDEX IF EXISTS uq_supplier_canonical_order`
+survived deletion because on SQLite `_drop_sqlite_order_uniqueness` rebuilds the
+table, and **rebuilding a table destroys its indexes as a side effect**. The
+explicit drop is load-bearing only on PostgreSQL, where the reshape takes the
+`DROP CONSTRAINT` branch and nothing is rebuilt. The first attempt at a test tried
+to *induce* that arrangement by starting from a table the rebuild would decline,
+and could not prove the decline had happened: SQLite's `ADD COLUMN` inserts the
+new column ahead of the trailing table constraints, so the resulting DDL is
+indistinguishable from a rebuilt one. Stubbing the rebuild is both simpler and a
+closer model of the engine the drop actually guards.
+
+`create_intent`'s lookup filter survived for a subtler reason: dropping
+`AND i.superseded_at IS NULL` still lets the *first* recovery through, because
+there is only one intent and it is live. Only the second breaks. "Recovery works
+once and then stops" is worse than no recovery, because it looks fixed — so the
+test now fails twice and recovers twice.
+
+Run record, kept because the shape of it is the finding: **20 of 26**, then
+**25 of 26** — the sixth being the copied statement above, which no amount of
+re-running would have caught, only re-reading — then **26 of 26** (23 real
+mutations caught, the two inverted and one control behaving as classified).
+
+One operational hazard, recorded because it nearly contaminated the next gap's
+measurement: **a battery edits the working tree, so while one is running the
+source on disk is a lie.** These scripts mutate in place and restore in a
+`finally`, which is correct for the run and useless for a reader. Anything read
+out of `fulfillment.py` during those minutes may be a mutant, and a mutant is
+specifically designed to look plausible. `git diff --stat` on the battery's
+targets is the cheap check — a clean path is trustworthy, a dirty one is not —
+and the discipline is to do unrelated reading somewhere else entirely until the
+run reports.
+
 ### What this does not do
 
 It does not give the merchant a button. The recovery path exists, is reachable
@@ -3318,3 +3409,16 @@ been a recoverable annoyance in any live state and was instead a sealed loss.
 Nothing in the code said "terminal"; it was a consequence of one `IN` list in a
 different function. The states a row can leave are part of the meaning of every
 sentence a screen draws from it.
+
+Its second sub-tell is aimed at the tests rather than the code, and it is the
+corollary turning on itself: **a guard written twice is unfalsifiable through the
+front door, and a test that restates a guard instead of running it is
+unfalsifiable in both directions.** Every defence in this seam is deliberately
+duplicated — the read decides, the write re-decides, because the read may have
+gone stale — so deleting either copy leaves behaviour unchanged and the suite
+green. The answer is to remove one layer from the picture and assert the other
+still holds: ask the predicate with no SQL under it, ask the statement with the
+predicate made to lie. What does *not* work is copying the statement into the
+test and running the copy, which is how the last of these survived a second
+mutation run while looking like the most rigorous test of the set. A test earns
+its keep by executing the artifact that ships, and nothing else.

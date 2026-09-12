@@ -275,24 +275,31 @@ def obligations(**kwargs):
 
 
 def an_intent_exists_for(order_id, *, state=None, provider_order_id=None,
-                         last_error=None, connection=CONNECTION):
+                         last_error=None, connection=CONNECTION, superseded=False):
     """Write the intent/outbox pair `create_intent` writes, without its approval gate.
 
     `create_intent` demands a fresh shipping quote and an approved spend, which
     is the whole reason it cannot run at checkout. These tests are about what
     `list_obligations` reports once an intent exists, so the pair is written
     directly -- with `str(order_id)`, which is the cast the join has to survive.
+
+    `superseded=True` writes the audit row a recovery leaves behind: an intent
+    that once held this order and no longer does. It takes a real timestamp
+    rather than a flag because `superseded_at` is nullable with no default --
+    "still live" and "retired at the epoch" must not be the same row -- and the
+    reader tests the column with `IS NULL`, so a `0` here would pass while
+    misrepresenting what the column means.
     """
     identity = "cjf_" + uuid.uuid4().hex
     now = time.time()
     execute(
         "INSERT INTO business_os_supplier_intents (id,connection_id,business_id,store_id,"
         "merchant_id,order_id,external_account_id,external_shop_id,idempotency_key,"
-        "external_order_ref,snapshot_json,snapshot_hash,created_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "external_order_ref,snapshot_json,snapshot_hash,created_at,superseded_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (identity, connection, BUSINESS, STORE, str(OWNER_ID), str(order_id),
          "cj-account-1", "cj-shop-1", "idem-" + identity, "pss_" + identity,
-         "{}", "hash", now))
+         "{}", "hash", now, now if superseded else None))
     if state is not None:
         execute(
             "INSERT INTO business_os_supplier_outbox (intent_id,state,provider_order_id,"
@@ -474,6 +481,77 @@ def test_a_supplier_order_that_was_never_sent_is_not_called_already_placed(provi
         "ordered it is false and it is the expensive direction to be wrong in: "
         "a paid buyer, no supplier order, and a screen saying it is handled")
     assert only["supplier_order_placed"] is False
+
+
+def test_a_blocked_row_holding_a_provider_order_id_is_still_placed(provider):
+    """The other direction, and the surface where the predicate stands alone.
+
+    `create_intent` checks `provider_order_id` twice -- in `_recoverable_intent`
+    and again in the conditional UPDATE that retires the row -- so a test that
+    goes through it cannot tell which copy did the refusing. The mutation
+    battery proved it: deleting the check from the predicate left that suite
+    green.
+
+    This reader has no second guard. `list_obligations` asks
+    `_recoverable_intent` and renders the answer, so on this path the predicate
+    *is* the whole decision. `settle` writes the id with
+    ``COALESCE(?,provider_order_id)`` and never clears it, so a row holding one
+    describes an order that did reach the supplier, whatever its state now says
+    -- and offering another attempt would buy the same goods twice.
+    """
+    order_id = a_buyer_pays(publish_dropship_listing(provider, "SALE-STRAY-ID"))
+    an_intent_exists_for(order_id, state="BLOCKED", last_error="supplier_sku_missing",
+                         provider_order_id="CJ-STRAY")
+    only = obligations()[0]
+    assert fulfillment.SUPPLIER_ORDER_ALREADY_PLACED in only["blockers"], (
+        "an id on the row is proof the supplier has this order, and it is the "
+        "older and more expensive fact than a later BLOCKED state")
+    assert only["supplier_order_placed"] is True
+
+
+def test_a_retired_attempt_does_not_describe_the_order_it_no_longer_holds(provider):
+    """A retired intent is an audit row, not a report on the order's present state.
+
+    After a recovery there are two intents for one order: the retired one, whose
+    outbox still reads BLOCKED with the error that stopped it, and the live
+    replacement. The JOIN filters on ``i.superseded_at IS NULL`` for exactly
+    this reason -- without it the dead row's state and dead error resurface on
+    the obligation as though they described the order now, and with two attempts
+    on file the LEFT JOIN fans the order out into duplicate rows.
+    """
+    order_id = a_buyer_pays(publish_dropship_listing(provider, "SALE-RECOVERED"))
+    an_intent_exists_for(order_id, state="BLOCKED", last_error="supplier_sku_missing",
+                         superseded=True)
+    live = an_intent_exists_for(order_id, state="READY")
+
+    rows = obligations()
+    assert len(rows) == 1, "one customer order is one obligation, however many attempts it took"
+    only = rows[0]
+    assert only["intent_id"] == live, "the live attempt is the one that describes the order"
+    assert only["state"] == "READY"
+    assert not only.get("last_error"), (
+        "the retired attempt's error stopped being true the moment it was retired")
+
+
+def test_an_order_whose_only_attempt_was_retired_still_appears(provider):
+    """Why the liveness condition cannot move into the WHERE clause.
+
+    An order with exactly one intent, retired, has no live intent to join to. In
+    a `WHERE` the `NULL` from the outer join would drop the order from the list
+    entirely -- silently retiring the merchant's obligation along with the
+    attempt. It is the single most important row in this reader: a paid order
+    with a failed attempt and nothing ordered.
+    """
+    order_id = a_buyer_pays(publish_dropship_listing(provider, "SALE-ONLY-RETIRED"))
+    an_intent_exists_for(order_id, state="BLOCKED", last_error="supplier_sku_missing",
+                         superseded=True)
+
+    rows = obligations()
+    assert len(rows) == 1, "the order must survive the retirement of its only attempt"
+    only = rows[0]
+    assert only["intent_id"] is None, "no live attempt, so no intent describes it"
+    assert only["supplier_order_placed"] is False
+    assert fulfillment.SUPPLIER_ORDER_ALREADY_PLACED not in only["blockers"]
 
 
 def test_the_raw_outbox_column_never_travels_beside_the_derived_state(provider):
