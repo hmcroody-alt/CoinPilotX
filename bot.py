@@ -54587,6 +54587,30 @@ def pulse_emit_payment_checkout_event(
         )
 
 
+def marketplace_order_line(details, amount_cents):
+    """How many units a paid transaction is for, and what one of them cost.
+
+    Both facts are stated exactly by the commercial quote frozen onto the
+    transaction at checkout, so they are read from it rather than derived a
+    second time. The previous pair — ``details["qty"]`` and
+    ``amount_cents // quantity`` — was the same fact computed twice and wrong
+    both ways: the division is not the unit price for any order carrying
+    shipping or tax, and ``qty`` is a key only the cart lane has ever written,
+    so every Buy Now order in the ledger claims a quantity of one.
+
+    Falls back to the old pair for transactions written before quotes existed.
+    An absent ``qty`` must keep meaning "one" rather than "unknown", because
+    that is what every single-unit order already in the ledger relies on.
+    """
+    quote = details.get("commercial_quote")
+    if isinstance(quote, dict):
+        quantity, unit = quote.get("quantity"), quote.get("unit_price_minor")
+        if (type(quantity) is int and quantity > 0 and type(unit) is int and unit >= 0):
+            return quantity, unit
+    quantity = max(1, safe_int(details.get("qty"), 1))
+    return quantity, int(amount_cents or 0) // quantity
+
+
 def pulse_upsert_marketplace_order(cur, tx, provider_payment_id="", now="", provider="stripe"):
     """Project one paid Marketplace transaction into exactly one order."""
     tx = dict(tx or {})
@@ -54596,9 +54620,9 @@ def pulse_upsert_marketplace_order(cur, tx, provider_payment_id="", now="", prov
         details = json.loads(tx.get("metadata_json") or "{}")
     except Exception:
         details = {}
-    quantity = max(1, safe_int(details.get("qty"), 1))
     timestamp = now or datetime.utcnow().isoformat(timespec="seconds")
     amount = int(tx.get("amount_cents") or 0)
+    quantity, unit_price_cents = marketplace_order_line(details, amount)
     cur.execute("""INSERT INTO marketplace_orders
         (seller_transaction_id,buyer_user_id,seller_user_id,listing_id,quantity,unit_price_cents,
          amount_cents,currency,status,payment_provider,provider_payment_id,created_at,paid_at,updated_at)
@@ -54606,7 +54630,7 @@ def pulse_upsert_marketplace_order(cur, tx, provider_payment_id="", now="", prov
         ON CONFLICT(seller_transaction_id) DO UPDATE SET status='paid',provider_payment_id=excluded.provider_payment_id,
             paid_at=COALESCE(marketplace_orders.paid_at,excluded.paid_at),updated_at=excluded.updated_at""",
         (int(tx["id"]), tx.get("buyer_user_id"), tx.get("seller_user_id"), tx.get("item_id"), quantity,
-         amount // quantity, amount, tx.get("currency") or "USD", str(provider or "stripe")[:40], provider_payment_id,
+         unit_price_cents, amount, tx.get("currency") or "USD", str(provider or "stripe")[:40], provider_payment_id,
          tx.get("created_at") or timestamp, timestamp, timestamp))
 
 
@@ -92618,11 +92642,31 @@ def api_pulse_payments_checkout():
             fee_bps,
             marketplace_payment_mode,
         )
+    # How many units the buyer actually asked for. This lane used to price
+    # exactly one, always: the request body had no quantity field at all, while
+    # the product screen's stepper multiplied the unit price out for display and
+    # the checkout summary showed the multiplied total. A buyer who picked three
+    # saw $75.00, was charged $25.00, and got an order row saying quantity 1 —
+    # which is also the number `fulfillment.create_intent` compares a supplier
+    # line against, so no multi-unit dropship order could ever be dispatched.
+    # The cart lane has always carried its quantity; only Buy Now guessed.
+    buy_quantity = 1
+    if item_type == "marketplace_product":
+        buy_quantity = max(1, min(safe_int(payload.get("quantity"), 1),
+                                  marketplace_cart_service.MAX_QTY_PER_LINE))
+        # Asked of the same function the cart and the buy button ask, so a
+        # quantity the shelf cannot cover is refused before anything is held.
+        if not marketplace_listing_lifecycle.inventory_available(item, buy_quantity):
+            conn.close()
+            return api_error("There are not that many left.", 409,
+                             error_code="OUT_OF_STOCK",
+                             requested_quantity=buy_quantity,
+                             available_quantity=safe_int(item.get("quantity"), 0))
     commercial_quote = None
     if item_type == "marketplace_product":
         from services import marketplace_quote_service
         commercial_quote = marketplace_quote_service.create_quote(
-            listing_id=item_id, seller_id=seller_user_id, quantity=1,
+            listing_id=item_id, seller_id=seller_user_id, quantity=buy_quantity,
             unit_price_minor=amount_cents, currency=currency, live_fee_bps=fee_bps,
         )
         amount_cents = commercial_quote["buyer_total_minor"]
@@ -92691,6 +92735,9 @@ def api_pulse_payments_checkout():
     transaction_details = {"title": title}
     if item_type == "marketplace_product":
         transaction_details["payment_method"] = marketplace_payment_mode
+        # The cart lane writes this key; Buy Now never did, which is how the
+        # order projection came to read an absent key and call it one.
+        transaction_details["qty"] = buy_quantity
     if fulfillment_snapshot:
         transaction_details["fulfillment"] = fulfillment_snapshot
     initial_status = "cash_pending" if marketplace_cash_payment else "created"
@@ -92734,9 +92781,11 @@ def api_pulse_payments_checkout():
     if item_type == "marketplace_product":
         inventory_limited = fulfillment_kind not in marketplace_fulfillment.STOCKLESS_KINDS
         if inventory_limited:
+            # Conditional on the whole amount, not on one unit: a shelf of two
+            # must refuse an order for three rather than go negative or ship short.
             cur.execute(
-                "UPDATE marketplace_listings SET quantity=quantity-1, updated_at=? WHERE id=? AND quantity>=1",
-                (now, item_id),
+                "UPDATE marketplace_listings SET quantity=quantity-?, updated_at=? WHERE id=? AND quantity>=?",
+                (buy_quantity, now, item_id, buy_quantity),
             )
             if not cur.rowcount:
                 cur.execute("UPDATE seller_transactions SET status='checkout_failed', updated_at=? WHERE id=?", (now, tx_id))
@@ -92746,7 +92795,7 @@ def api_pulse_payments_checkout():
                 """INSERT INTO marketplace_inventory_reservations
                 (seller_transaction_id,buyer_user_id,listing_id,quantity,status,created_at,updated_at)
                 VALUES (?,?,?,?, 'held',?,?) ON CONFLICT(seller_transaction_id) DO NOTHING""",
-                (tx_id, int(buyer["user_id"]), item_id, 1, now, now),
+                (tx_id, int(buyer["user_id"]), item_id, buy_quantity, now, now),
             )
     if marketplace_cash_payment and marketplace_payment_pause is not None:
         response_payload = marketplace_payment_pause.cash_checkout_payload(
@@ -92783,7 +92832,11 @@ def api_pulse_payments_checkout():
                 "cart_checkout": "1",
                 "seller_transaction_ids": str(tx_id),
                 "listing_ids": str(item_id),
-                "quantities": "1",
+                # Nothing reads this back — checked, three writers and no
+                # readers — so it is a record for the Stripe dashboard, not a
+                # control. The number a failed payment actually returns to the
+                # shelf comes from marketplace_inventory_reservations.quantity.
+                "quantities": str(buy_quantity),
                 "idempotency_key": idempotency_key,
             })
         payment_intent_data = {"metadata": checkout_metadata}

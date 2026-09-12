@@ -554,7 +554,18 @@ export async function openMarketplaceCheckout(
   // What the buyer told PulseSoc on the details step. The server re-derives the
   // order type from the listing row and re-validates this against it, so this is
   // the buyer's submission, not the decision.
-  fulfillmentDetails: Record<string, string> | null = null
+  fulfillmentDetails: Record<string, string> | null = null,
+  // How many units the buyer chose on the product screen's stepper.
+  //
+  // This argument did not exist. The stepper multiplied the unit price out for
+  // display, the checkout summary showed the multiplied total, and then this
+  // function sent no quantity at all — so the server priced one unit, charged
+  // one unit, took one unit off the shelf, and wrote `quantity: 1` into the
+  // order row that `fulfillment.create_intent` later compares a supplier line
+  // against. The cart lane has always carried its quantity; only Buy Now
+  // guessed. The server clamps this to the cart's per-line maximum and refuses
+  // outright when the shelf cannot cover it.
+  quantity = 1
 ): Promise<MarketplaceCheckoutResult> {
   const result = await pulseApi<MarketplaceActionResponse & CheckoutResponse>("/api/pulse/payments/checkout", {
     method: "POST",
@@ -566,6 +577,10 @@ export async function openMarketplaceCheckout(
       // Present only for a listing that offers pickup *or* shipping, where the
       // buyer's answer decides whether Stripe collects a delivery address.
       ...(fulfillment ? { fulfillment } : {}),
+      // Always sent, not only when it is greater than one: a server that sees no
+      // quantity has to assume one, and "the buyer chose one" and "this build
+      // cannot say" should not arrive looking identical.
+      quantity: Math.max(1, Math.floor(Number(quantity) || 1)),
       ...(paymentMode ? { payment_mode: paymentMode } : {})
     })
   });

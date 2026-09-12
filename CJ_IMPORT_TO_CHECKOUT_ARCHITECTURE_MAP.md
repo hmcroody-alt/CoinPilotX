@@ -335,6 +335,36 @@ query names is buyer-visible by default, so the strip now lives in
    while the merchant's own dashboard read "Live" and no surface named the
    reason, which `public_denial_code` had known all along. See "The eleventh
    seam" below.
+8. ~~**Buy Now charges for one unit no matter how many the buyer picked.**~~ Not
+   found by reading this list — there was no eighth entry to read. The product
+   screen's stepper multiplied the unit price out for display, the checkout
+   summary showed the multiplied total, and `openMarketplaceCheckout` sent a
+   body with no quantity field in it at all. The server had no parameter to
+   read: it priced one unit, charged one unit, took one unit off the shelf, held
+   one unit, and wrote `quantity: 1` into `marketplace_orders` — the column
+   `fulfillment.create_intent` compares a supplier line against, so no
+   multi-unit dropship order could ever be dispatched. Fixed in both lanes; see
+   "The twelfth seam" below.
+9. **`marketplace_listings.delivery_type` defaults to `'digital'`.** The column
+   is `TEXT DEFAULT 'digital'` (`bot.py:112382`) and `resolve_kind` reads it
+   before the metadata, so a row written without it is a digital order: no
+   address collected, no stock decrement, no reservation. Both production
+   writers do set it, so this reaches legacy rows only — but the default is the
+   wrong way round, and a new writer that forgets the column inherits silence
+   rather than an error. Found while building a fixture for gap 8, which is the
+   only reason it is written down: the probe listing was physical and the route
+   called it digital.
+10. **The delivery-options fallback in `resolve_kind` is unreachable.** Because
+    `delivery_type` is always populated, `option = delivery or meta.get("delivery_options")`
+    can never reach its right-hand side. A seller who sets `delivery_options: "both"`
+    can therefore never produce `shipping_or_pickup`, the lane chooser never
+    appears, and a pickup-only buyer is silently placed on shipping — precisely
+    the outcome `resolve_choice`'s own comment says it exists to prevent. The
+    docstring claims it reads the metadata "rather than the delivery column
+    alone", which the code cannot do. `mobile-native/src/api/marketplaceFulfillment.ts`
+    mirrors the bug faithfully, so the fix is a lockstep client and server
+    change and is buyer-visible. Not fixed here: it is a behaviour change, not a
+    defect in the quantity chain, and bundling it would have hidden both.
 
 ---
 
@@ -1149,10 +1179,191 @@ redundant line.
 
 ---
 
+## The twelfth seam: the number the screen showed and never sent
+
+There was no gap 8 on the list. Gaps 1 through 7 were struck through, and by the
+eleventh corollary's own rule — *an enumeration cannot notice what was never on
+it* — the next one had to be measured rather than read. So the measurement was
+the whole first half of this work: drive a buyer through the one lane nothing in
+the repository had ever exercised, and compare what each layer said the order
+was.
+
+A buyer opens a $25.00 listing with ten in stock, steps the quantity to three,
+and taps Buy Now.
+
+| Layer | What it said the order was |
+| --- | --- |
+| `MarketplaceProductScreen` stepper | 3 units |
+| `MarketplaceCheckoutScreen` summary | `×3`, **$75.00** |
+| `openMarketplaceCheckout` request body | *no quantity field at all* |
+| `/api/pulse/payments/checkout` charge | **$25.00** |
+| `marketplace_listings.quantity` after | 10 → **9** |
+| `marketplace_inventory_reservations.quantity` | **1** |
+| `marketplace_orders.quantity` | **1** |
+
+Every row below the second is a consequence of the third. The server had no
+parameter to read, so it did not read one — `quantity=1` was written into the
+quote, into the decrement, into the hold and into the metadata, four times, each
+of them locally correct given the line above it.
+
+### The damage is not the money
+
+The charge is the visible half and the least serious: the buyer is undercharged,
+notices, and complains. The other three are silent.
+
+The **shelf** is the first. Three units were sold and one left the count, so the
+other two stayed discoverable and buyable. Nothing reconciles this; the count is
+the only record of what is left.
+
+The **hold** is the second, and it is the one that bites on failure rather than
+success. `release_inventory_reservation` returns stock by reading
+`marketplace_inventory_reservations.quantity` — not the Stripe metadata, which
+has three writers and no readers at all. A hold of 1 against a charge for 3 means
+a declined card gives one unit back to a shelf that lost three, so a failed
+payment leaves the listing permanently short.
+
+The **order row** is the third, and it is the one that connects this to the CJ
+chain. `fulfillment.create_intent` compares a supplier line against
+`marketplace_orders.quantity` and refuses on `order_line_mismatch`. While that
+column said 1 for every Buy Now order, a three-unit order could only ever be
+dispatched as a one-unit order or refused outright. This gap sat directly on the
+path the whole mission is about, and every stage around it had been fixed.
+
+### The test that was the defect
+
+`tests/test_marketplace_buy_now_checkout_contract.py` was the only file covering
+this route, and it opens by explaining itself:
+
+> the safest narrow test inspects the function body without importing the full
+> application
+
+So it read `bot.py` as text and asserted on strings in it. One of the strings was
+`"quantity=quantity-1"`.
+
+The assertion and the bug were the same characters. The test passed because the
+defect was present, and would have failed had anyone fixed it. That is a
+different failure mode from every other seam in this document: not a test that
+could not see the defect, but a test holding it in place.
+
+It also had a sibling, `'"quantities": "1"'`, pinning a Stripe metadata field —
+and the same file's third test carries a long docstring about exactly this,
+written when an earlier literal broke on a refactor that improved the behaviour:
+
+> The literal left the route while the behaviour got strictly better — so the
+> assertion failed and reported a missing inventory release on a path that has
+> one, which is a worse outcome than no test at all.
+
+The lesson had been learned, written down, and applied to one assertion in the
+file while three others carried on reading source text. Both literals are now
+gone, and the file says why.
+
+Corroboration that nothing else could have caught it: **no test in the
+repository posted to `/api/pulse/payments/checkout`.** Not one. The route that
+takes money for every single-item purchase on the platform had exactly one test
+file, and that file never called it.
+
+### What the fix had to do that the obvious fix would not
+
+Reading `payload["quantity"]` and multiplying is four lines and is wrong in three
+ways.
+
+*It oversells.* A shelf of two must refuse an order for three, so the pre-flight
+asks `marketplace_listing_lifecycle.inventory_available(item, buy_quantity)` —
+the same function the cart and the buy button ask, so the three lanes cannot
+disagree about what "available" means — and the decrement itself is conditional
+on the whole amount (`WHERE id=? AND quantity>=?`), because the pre-flight reads
+a row fetched earlier in the request and another buyer can empty the shelf in
+between. The refusal is advisory; the predicate is what holds.
+
+*It invents a second ceiling.* `MAX_QTY_PER_LINE` is the cart's limit. Buy Now
+now clamps to it, so one listing does not have two maximums depending on which
+button was pressed.
+
+*It breaks every order already in the ledger.* `pulse_upsert_marketplace_order`
+derived its pair from `details["qty"]` and `amount_cents // quantity`, and both
+halves were wrong: `qty` is a key only the cart lane ever wrote, and the division
+is not a unit price for any order carrying shipping or tax. The replacement,
+`marketplace_order_line`, reads `commercial_quote` — which states `quantity` and
+`unit_price_minor` exactly, and is already frozen onto the transaction at
+checkout — and falls back to the old pair for rows written before quotes existed.
+An absent `qty` must keep meaning **one**, not "unknown", because that is what
+every single-unit order in the ledger relies on. Making absence mean zero would
+have been a larger bug than the one being fixed, shipped as its cure.
+
+`marketplace_orders.unit_price_cents` was write-only — grepped, no readers
+anywhere — which is why correcting it was safe to do in the same change.
+
+### Both lanes, or neither
+
+The server can now read a quantity that no client sends. `openMarketplaceCheckout`
+takes it as its sixth argument and always writes it into the body — not only when
+it is greater than one, because "the buyer chose one" and "this build cannot say"
+must not arrive looking identical.
+
+### What the tests had to be
+
+Sixteen backend tests in a new file that **posts to the route**, plus sixteen
+native tests across three files. The shape that matters is which file can see
+what:
+
+- `MarketplaceCheckoutQuantityHandoff.test.tsx` mocks `api/marketplace`
+  wholesale, so it proves the *screen* hands over the number it displayed — and
+  is structurally incapable of noticing what the API function does with it.
+- `marketplaceCheckoutQuantityBody.test.ts` therefore exists to read the posted
+  JSON. Deleting the `quantity` line from the request body survives the first
+  file completely.
+- The card lane is unreachable — `MARKETPLACE_CARD_PAYMENTS_PAUSED` returns
+  before its call site — so no test that drives the UI can get there. Dropping
+  the quantity from that one call site is invisible to every behavioural test
+  and reappears the day card payments resume. It is covered the only way dormant
+  code can be: by counting call sites against forwarded arguments, in
+  `MarketplaceCheckoutInformationOrder.test.ts`, beside the identical count that
+  file already keeps for `details`.
+
+Two fixtures are load-bearing and would have hollowed out the suite silently.
+`delivery_type='physical'` must be set explicitly — the column defaults to
+`'digital'`, which skips the address, the decrement and the reservation
+altogether. And a physical listing resolves to the `shipping` kind, which refuses
+checkout without a valid address, so an incomplete `fulfillment_details` makes
+every "did not oversell" assertion pass by way of HTTP 400. The first test
+asserts `200` explicitly for that reason.
+
+### What the battery caught that the suites did not
+
+Seventeen mutations, one no-op control, and one **inverted** entry — a mutation
+that reformats the decrement's SQL without changing its behaviour, which the
+contract file must *not* notice. A battery that only rewards catching cannot
+distinguish a test that measures behaviour from one that pins characters, and
+pinning characters is the specific thing that went wrong here.
+
+Five mutations survived the first run, and every one of them was a real hole
+rather than a redundant line:
+
+- the commit-time `quantity>=?` guard had no test, because the pre-flight refusal
+  always fired first; it is now tested by stubbing the pre-flight to approve, so
+  the last line of defence is exercised on its own;
+- the quote's type check was satisfiable by a malformed quote whose keys were
+  merely truthy, so the fixtures now carry a `"3"` and a `"2500"` and a `True`;
+- and three client mutations survived because two of them were aimed at a module
+  the screen suite mocks away and one at a lane the UI cannot reach — which is
+  how the second and third native files came to exist.
+
+The runner had its own version of the same bug. It dispatched to jest on
+`.tsx`, and two of the new suites are `.ts` — so they went to pytest, which
+collects nothing and exits 0, reporting every native mutation as a survivor for a
+reason with nothing to do with the code. A harness that answers "survived" when
+it never ran the suite is the measurement instrument making the assertion the
+document is about.
+
+Final run: 16 of 16 real mutations caught, the inverted mutation correctly
+ignored, the no-op control correctly survived.
+
+---
+
 ## What kept coming back
 
-Twelve defects in this chain, twelve different subsystems, one shape: **a number
-was asserted rather than measured.**
+Thirteen defects in this chain, thirteen different subsystems, one shape: **a
+number was asserted rather than measured.**
 
 - `publish()` never wrote `price_label`, and the publish test asserted `status`
   and `published_at` and stopped one column short.
@@ -1200,6 +1411,12 @@ was asserted rather than measured.**
   two-column inference and called them all the same thing — and `"published"`,
   the value publication actually writes, was not on its list of live values, so
   the live chip never rendered at all.
+- Buy Now asserted that the buyer wanted one of whatever they were looking at.
+  Not by computing it wrongly — by having no parameter at all, while the screen
+  two layers up displayed `×3` and a total to match. The only test of the route
+  read its source as text and asserted on the literal `quantity=quantity-1`,
+  which is the defect spelled out, so the suite was green *because* the bug was
+  there and would have gone red on the fix.
 
 In all of them the suite was green, and in all of them the green was about the
 halves rather than the seam. Where a claim spans two components, this document now
@@ -1323,3 +1540,27 @@ the predicates here are three-valued and every rule states its own
 `passes_when_unknown` — the absence of a column is not evidence, and a uniform
 policy for absence is an assertion about all four rules that only two of them
 support.
+
+The thirteenth is the one that indicts the tests rather than the code: **a test
+that reads a function's source text is satisfied by whatever that source says,
+including the bug.** Every other corollary here describes an assertion that
+could not see the defect. This one describes an assertion that held it in place:
+`assert "quantity=quantity-1" in CHECKOUT` passed because Buy Now hardcoded a
+single unit, and the day someone fixed it, the test would have gone red and
+reported the fix as the regression. The greppable tell is unusually literal —
+**a test that reads a source file and asserts on substrings of it** — and the
+question to ask of each such assertion is which way it fails: if the answer is
+"it fails when the behaviour changes", it is pinned to characters, not contract.
+Source-reading has one honest use, and the file that contained the worst
+assertion also contains the best example of it: counting call sites against
+forwarded arguments, to reach a lane the UI cannot execute. Structure is a fair
+subject for a source test. Values are not.
+
+Its sub-tell is about the instrument rather than the subject: **a harness that
+reports a result it never measured is the same defect, one level up.** The
+battery for this seam dispatched to jest on the `.tsx` extension, handed two
+`.ts` suites to pytest, and pytest collected nothing and exited 0 — so three
+client mutations came back "survived" without a single assertion having run.
+Survival and never-ran are the same observation unless something distinguishes
+them, which is what the no-op control is for in one direction; the other
+direction needs the runner to prove it executed the suite it named.

@@ -342,7 +342,10 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
             intentKey.current,
             mustChooseLane ? lane : "",
             paymentMode,
-            details
+            details,
+            // The same number this screen already prints as "x3" and already
+            // multiplied into the amount above. It was displayed and never sent.
+            Number(params.quantity || 1)
           );
           url = result.handoff.checkoutUrl;
           ids = [...result.handoff.transactionIds];
@@ -397,7 +400,10 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
             intentKey.current,
             mustChooseLane ? lane : "",
             paymentMode,
-            details
+            details,
+            // The same number this screen already prints as "x3" and already
+            // multiplied into the amount above. It was displayed and never sent.
+            Number(params.quantity || 1)
           );
           url = result.handoff.checkoutUrl;
           ids = [...result.handoff.transactionIds];
