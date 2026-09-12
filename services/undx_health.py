@@ -229,6 +229,7 @@ HEALTH_ENV_VARS: tuple[str, ...] = (
     "UNDX_PROVIDER_HEALTH_SHARED",
     "UNDX_BREAKER_THRESHOLD",
     "UNDX_BREAKER_COOLDOWN_S",
+    "UNDX_BREAKER_ACTIONABLE_COOLDOWN_S",
 )
 
 #: Consecutive failures before a provider is rested, and for how long.
@@ -239,6 +240,21 @@ HEALTH_ENV_VARS: tuple[str, ...] = (
 #: rather than per-worker) count too tight needs a dial that is not "off".
 DEFAULT_BREAKER_THRESHOLD = 3
 DEFAULT_BREAKER_COOLDOWN_SECONDS = 120
+
+#: Cooldown for a fault that time does not fix.
+#:
+#: A retired model, a revoked key and an unpaid invoice have this in common:
+#: the next probe will fail exactly like the last one, and so will every probe
+#: after it. At the standard cooldown that is a trial request every two minutes,
+#: forever, each one paying the full provider timeout — the breaker quietly
+#: converting a permanent fault into a permanent slow leak. Claude spent an
+#: unknown number of weeks in precisely that loop.
+#:
+#: Thirty minutes rather than "never", because the fix is a human action that
+#: happens outside this process — a key rotated, an invoice paid, a model ID
+#: corrected — and a breaker that could not notice would have to be restarted
+#: to clear, which is a worse failure than the one it replaced.
+DEFAULT_ACTIONABLE_COOLDOWN_SECONDS = 1800
 
 HEALTH_TABLE = "undx_provider_health"
 
@@ -272,6 +288,23 @@ def threshold() -> int:
 
 def cooldown_seconds() -> int:
     return _positive_int("UNDX_BREAKER_COOLDOWN_S", DEFAULT_BREAKER_COOLDOWN_SECONDS)
+
+
+def actionable_cooldown_seconds() -> int:
+    return _positive_int("UNDX_BREAKER_ACTIONABLE_COOLDOWN_S",
+                         DEFAULT_ACTIONABLE_COOLDOWN_SECONDS)
+
+
+def cooldown_for(row: dict[str, Any] | None) -> int:
+    """How long *this* provider rests, given why it is resting.
+
+    `max` rather than a plain substitution: an operator who raises the base
+    cooldown above the actionable one should not thereby make a dead key retry
+    sooner than a transient timeout, which is what a bare lookup would do.
+    """
+    if row is not None and failure_state(row) in ACTIONABLE_STATES:
+        return max(cooldown_seconds(), actionable_cooldown_seconds())
+    return cooldown_seconds()
 
 
 # ---------------------------------------------------------------------- schema
@@ -553,7 +586,7 @@ def record_failure(provider: str, status: str, error: str = "") -> dict[str, Any
 
     if not shared_enabled():
         if local["opened_at"] == now:
-            _log_opened(provider, local["consecutive_failures"], status)
+            _log_opened(provider, local, status)
         return local
 
     stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(now))
@@ -582,7 +615,7 @@ def record_failure(provider: str, status: str, error: str = "") -> dict[str, Any
             shared["consecutive_failures"] = int(row[0])
             shared["opened_at"] = float(row[1] or 0.0)
             if shared["opened_at"] == now:
-                _log_opened(provider, shared["consecutive_failures"], status)
+                _log_opened(provider, shared, status)
             return shared
         return local
     except Exception as exc:  # noqa: BLE001 - see docstring
@@ -590,19 +623,28 @@ def record_failure(provider: str, status: str, error: str = "") -> dict[str, Any
         log.warning("UNDX health write failed provider=%s error=%s",
                     provider, type(exc).__name__)
         if local["opened_at"] == now:
-            _log_opened(provider, local["consecutive_failures"], status)
+            _log_opened(provider, local, status)
         return local
     finally:
         _close(conn)
 
 
-def _log_opened(provider: str, count: int, status: str) -> None:
+def _log_opened(provider: str, row: dict[str, Any], status: str) -> None:
     # Louder than the per-request warning, and the only line that says a
     # provider is *out*. Claude and Gemini were each dead in production for an
     # unknown period behind nothing but repeated per-request warnings, because
     # failover meant every request still returned 200.
+    #
+    # `reason` and `cooldown_s` are read off the row rather than from config for
+    # the same reason the snapshot is: this line is where an operator decides
+    # whether to wait or to go fix something, and a cooldown printed from the
+    # base setting while the breaker enforced the actionable one would answer
+    # that question wrongly, in the direction of waiting.
+    reason = failure_state(row)
     log.error("UNDX provider circuit opened provider=%s consecutive_failures=%s "
-              "last_status=%s cooldown_s=%s", provider, count, status, cooldown_seconds())
+              "last_status=%s reason=%s actionable=%s cooldown_s=%s",
+              provider, row.get("consecutive_failures"), status, reason,
+              reason in ACTIONABLE_STATES, cooldown_for(row))
 
 
 # -------------------------------------------------------------------- decisions
@@ -688,9 +730,12 @@ def _should_skip_shared(provider: str, probe_timeout: float) -> bool | None:
         row = cur.fetchone()
         if not row or not float(row[_COLUMNS.index("opened_at")] or 0.0):
             return False
+        # The cooldown is read off the row rather than from config, because a
+        # provider resting on a revoked key must not be probed on the same
+        # schedule as one resting on a timeout.
         cur.execute(_CLAIM_PROBE_SQL, (
             _WORKER_ID, now, stamp, provider,
-            now, float(cooldown_seconds()),
+            now, float(cooldown_for(_row_to_dict(row))),
             now, float(probe_timeout),
         ))
         claimed = cur.rowcount == 1
@@ -724,7 +769,7 @@ def _should_skip_local(provider: str, probe_timeout: float) -> bool:
         bucket = _local.get(provider)
         if not bucket or not bucket["opened_at"]:
             return False
-        if now - bucket["opened_at"] < cooldown_seconds():
+        if now - bucket["opened_at"] < cooldown_for(bucket):
             return True
         if bucket["probe_owner"] and now - bucket["probe_started_at"] < probe_timeout:
             return True
@@ -767,10 +812,10 @@ def snapshot() -> dict[str, dict[str, Any]]:
             rows = {name: dict(bucket) for name, bucket in _local.items()}
 
     now = time.time()
-    cooldown = cooldown_seconds()
     out: dict[str, dict[str, Any]] = {}
     for provider, record in rows.items():
         open_for = now - record["opened_at"] if record["opened_at"] else 0.0
+        cooldown = cooldown_for(record)
         underlying = failure_state(record)
         out[provider] = {
             "state": state_for(record),
@@ -803,6 +848,7 @@ def stats() -> dict[str, Any]:
     out["shared_enabled"] = shared_enabled()
     out["threshold"] = threshold()
     out["cooldown_s"] = cooldown_seconds()
+    out["actionable_cooldown_s"] = actionable_cooldown_seconds()
     out["worker_id"] = _WORKER_ID
     return out
 
@@ -887,6 +933,8 @@ __all__ = [
     "BILLING_FAILED", "MODEL_RETIRED", "CIRCUIT_OPEN", "UNKNOWN",
     "HEALTH_STATES", "ACTIONABLE_STATES", "HEALTH_ENV_VARS", "HEALTH_TABLE",
     "DEFAULT_BREAKER_THRESHOLD", "DEFAULT_BREAKER_COOLDOWN_SECONDS",
+    "DEFAULT_ACTIONABLE_COOLDOWN_SECONDS", "actionable_cooldown_seconds",
+    "cooldown_for",
     "classify_failure", "state_for", "failure_state", "shared_enabled", "threshold",
     "cooldown_seconds", "ensure_schema", "record_success", "record_failure",
     "read", "is_open", "should_skip", "snapshot", "stats", "reset_for_tests",

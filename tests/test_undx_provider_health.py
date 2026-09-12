@@ -305,6 +305,144 @@ class BreakerTest(_Isolated):
             self.assertTrue(undx_health.is_open("groq"))
 
 
+# ------------------------------------------------- permanent faults rest longer
+
+class AdaptiveCooldownTest(_Isolated):
+    """A breaker on a fixed schedule turns a permanent fault into a slow leak.
+
+    The cooldown was one number for every reason a provider could be resting.
+    A revoked key, an unpaid invoice and a retired model ID therefore reprobed
+    every two minutes, indefinitely, and each probe paid the provider's full
+    timeout — up to sixty seconds on Meta — before failing in the identical way
+    it had failed the time before. Nothing about waiting fixes any of those;
+    the fix is a human action taken outside the process. So they still reprobe,
+    because a breaker that could not notice a rotated key would need a restart
+    to clear, but they reprobe on a schedule that matches how long a human
+    actually takes.
+    """
+
+    def _rest(self, provider, status, error):
+        self._fail(provider, times=undx_health.threshold(),
+                   status=status, error=error)
+        self.assertTrue(undx_health.should_skip(provider))
+
+    def test_the_cooldown_depends_on_why_the_provider_is_resting(self):
+        for status, error, expected in (
+            ("http_401", "invalid api key", undx_health.actionable_cooldown_seconds()),
+            ("http_402", "Insufficient Balance", undx_health.actionable_cooldown_seconds()),
+            ("http_404", "model does not exist", undx_health.actionable_cooldown_seconds()),
+            ("http_503", "service unavailable", undx_health.cooldown_seconds()),
+            ("timeout", "", undx_health.cooldown_seconds()),
+            ("http_429", "slow down", undx_health.cooldown_seconds()),
+        ):
+            with self.subTest(status=status):
+                row = {"consecutive_failures": 3, "last_status": status,
+                       "last_error": error, "last_success_at": 1.0}
+                self.assertEqual(undx_health.cooldown_for(row), expected)
+
+    def test_a_dead_key_is_still_resting_when_a_timeout_would_be_probed(self):
+        """The behaviour, not just the number — and through `should_skip`, which
+        is the function routing actually calls."""
+        for shared in ("true", "false"):
+            with self.subTest(shared=shared), \
+                    mock.patch.dict(os.environ,
+                                    {"UNDX_PROVIDER_HEALTH_SHARED": shared}):
+                undx_health.reset_for_tests()
+                self._rest("deepseek", "http_402", "Insufficient Balance")
+                self._rest("gemini", "http_503", "service unavailable")
+                past = undx_health.cooldown_seconds() + 1
+                undx_health.rewind_for_tests("deepseek", past)
+                undx_health.rewind_for_tests("gemini", past)
+                self.assertTrue(undx_health.should_skip("deepseek"))
+                # Anti-vacuity: the clock did move, and a transient rest ends.
+                # Without this the test above would pass for a breaker that
+                # simply never reopened anything.
+                self.assertFalse(undx_health.should_skip("gemini"))
+
+    def test_the_longer_rest_does_end(self):
+        """Anti-vacuity from the other side: ACTIONABLE is a longer wait, not a
+        permanent exclusion. A provider whose key was rotated an hour ago has to
+        be able to come back without a deploy."""
+        for shared in ("true", "false"):
+            with self.subTest(shared=shared), \
+                    mock.patch.dict(os.environ,
+                                    {"UNDX_PROVIDER_HEALTH_SHARED": shared}):
+                undx_health.reset_for_tests()
+                self._rest("deepseek", "http_402", "Insufficient Balance")
+                undx_health.rewind_for_tests(
+                    "deepseek", undx_health.actionable_cooldown_seconds() + 1)
+                self.assertFalse(undx_health.should_skip("deepseek"))
+
+    def test_raising_the_base_cooldown_cannot_invert_the_relationship(self):
+        """`max`, not a substitution. An operator who sets the base cooldown
+        above the actionable one is asking for longer rests generally; reading
+        the actionable value as an override would grant the opposite, and would
+        do it to exactly the providers that least deserve a fast retry."""
+        with mock.patch.dict(os.environ, {
+                "UNDX_BREAKER_COOLDOWN_S": "3600",
+                "UNDX_BREAKER_ACTIONABLE_COOLDOWN_S": "1800"}):
+            row = {"consecutive_failures": 3, "last_status": "http_402",
+                   "last_error": "Insufficient Balance", "last_success_at": 1.0}
+            self.assertEqual(undx_health.cooldown_for(row), 3600)
+
+    def test_both_cooldowns_are_configurable(self):
+        with mock.patch.dict(os.environ, {
+                "UNDX_BREAKER_COOLDOWN_S": "30",
+                "UNDX_BREAKER_ACTIONABLE_COOLDOWN_S": "90"}):
+            transient = {"consecutive_failures": 3, "last_status": "timeout",
+                         "last_error": "", "last_success_at": 1.0}
+            dead = dict(transient, last_status="http_401",
+                        last_error="invalid api key")
+            self.assertEqual(undx_health.cooldown_for(transient), 30)
+            self.assertEqual(undx_health.cooldown_for(dead), 90)
+
+    def test_the_snapshot_reports_the_rest_the_provider_is_actually_serving(self):
+        """`cooldown_remaining_s` is what an operator reads to decide whether to
+        wait. Computing it from the base cooldown while the breaker enforced a
+        longer one would make the dashboard disagree with the router."""
+        self._rest("deepseek", "http_402", "Insufficient Balance")
+        entry = undx_health.snapshot()["deepseek"]
+        self.assertGreater(entry["cooldown_remaining_s"],
+                           undx_health.cooldown_seconds())
+        self.assertLessEqual(entry["cooldown_remaining_s"],
+                             undx_health.actionable_cooldown_seconds())
+        self._rest("gemini", "http_503", "service unavailable")
+        self.assertLessEqual(undx_health.snapshot()["gemini"]["cooldown_remaining_s"],
+                             undx_health.cooldown_seconds())
+
+    def test_the_opened_log_states_the_rest_it_is_actually_imposing(self):
+        """That ERROR line is where an operator decides between waiting and
+        going to fix something. Printing the base cooldown for a provider the
+        breaker will rest for thirty minutes answers that question wrongly, in
+        the direction of waiting — which is the failure mode this whole change
+        exists to remove."""
+        with self.assertLogs(level="ERROR") as logs:
+            self._fail("deepseek", times=undx_health.threshold(),
+                       status="http_402", error="Insufficient Balance")
+        line = next(l for l in logs.output if "circuit opened" in l)
+        self.assertIn("reason=%s" % undx_health.BILLING_FAILED, line)
+        self.assertIn("actionable=True", line)
+        self.assertIn("cooldown_s=%d" % undx_health.actionable_cooldown_seconds(),
+                      line)
+
+    def test_the_opened_log_does_not_call_everything_actionable(self):
+        """Anti-vacuity for the line above."""
+        with self.assertLogs(level="ERROR") as logs:
+            self._fail("gemini", times=undx_health.threshold(),
+                       status="http_503", error="service unavailable")
+        line = next(l for l in logs.output if "circuit opened" in l)
+        self.assertIn("reason=%s" % undx_health.UNAVAILABLE, line)
+        self.assertIn("actionable=False", line)
+        self.assertIn("cooldown_s=%d" % undx_health.cooldown_seconds(), line)
+
+    def test_an_unknown_row_gets_the_ordinary_cooldown(self):
+        """`cooldown_for(None)` is reachable: a store read can return nothing
+        for a provider the mirror is resting. Defaulting to the long rest there
+        would silently extend every breaker that lost its row."""
+        self.assertEqual(undx_health.cooldown_for(None),
+                         undx_health.cooldown_seconds())
+
+
 # ------------------------------------------------------- actually distributed
 
 class SharedAcrossProcessesTest(unittest.TestCase):
