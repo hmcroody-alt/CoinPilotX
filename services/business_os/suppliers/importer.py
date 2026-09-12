@@ -223,6 +223,24 @@ def _create_draft_listing(cur, seller_user_id, product):
     prose and the merchant has not set a price yet; seeding it with the supplier
     cost would print the merchant's own cost on their storefront.
 
+    ``quantity`` is left NULL for the same reason, which this function used to
+    get right for the price and wrong for the stock one argument later. It was a
+    literal ``0``, and ``0`` is not "unknown" — it is a *count*, the merchant's
+    own assertion that they have none. Nobody made that assertion: an import has
+    not counted anything, and on a dropship listing the merchant never will,
+    because the units sit in the supplier's warehouse and arrive via
+    ``drafts.publish`` (``_sellable_units``) at publish time.
+
+    The cost of the lie was not theoretical. All seven physical drafts in
+    production carried ``quantity = 0``, so ``listing_readiness`` reported
+    OUT_OF_STOCK over UNKNOWN_INVENTORY and the seller's store row read
+    "Out of stock — hidden / Restock" — an instruction to reorder from a
+    supplier, for products that had simply never been counted. NULL is what the
+    column is for (it is nullable, the checkout decider refuses it, and every
+    ``quantity>=?`` decrement guard fails closed against it), and it is the
+    difference between telling a merchant "you are sold out" and "nobody has
+    counted this yet".
+
     ``cover_image_url`` is written from the same list that goes into the
     metadata, rather than left for a reader to derive. `_validate` already
     refuses a product with no media — "better to refuse than to ship a black
@@ -243,7 +261,7 @@ def _create_draft_listing(cur, seller_user_id, product):
         " listing_metadata_json) "
         "VALUES (?,?,?,?,?,'draft',?,?,'pending_review',?,?,'physical','physical','',?,?)",
         (int(seller_user_id), product.get("title"), product.get("description"),
-         product.get("category"), "", now, now, product.get("currency") or "USD", 0,
+         product.get("category"), "", now, now, product.get("currency") or "USD", None,
          media[0] if media else None,
          json.dumps({"source": "dropship", "media": media},
                     separators=(",", ":"))))

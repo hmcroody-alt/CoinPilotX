@@ -54985,7 +54985,19 @@ def api_pulse_marketplace_seller_listing_update(listing_id):
                 f"{held} unit(s) are reserved by buyers in checkout. Inventory cannot go below {held}.", 409
             )
     else:
-        quantity = safe_int(existing.get("quantity"), 0)
+        # PATCH semantics for a *nullable* column. The stored value is carried
+        # across as-is, including when it is NULL.
+        #
+        # This used to be ``safe_int(existing.get("quantity"), 0)``, which reads
+        # as a harmless cast and is not one: ``safe_int(None, 0)`` is 0, and the
+        # UPDATE below writes ``quantity=?`` unconditionally. So an edit that
+        # never mentioned inventory -- fixing a typo in the title -- converted
+        # "nobody has counted this" into "there are zero of these", and the
+        # seller's next look at their store told them to restock it. Exactly the
+        # failure the price branch above already guards against, one field down.
+        quantity = existing.get("quantity")
+        if quantity is not None:
+            quantity = safe_int(quantity, 0)
 
     if not title:
         conn.close()

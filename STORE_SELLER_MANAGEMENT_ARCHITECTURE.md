@@ -325,12 +325,90 @@ malformed mutant is not evidence. Mutants N, O, P and Q exist specifically to
 defend the binding above — N (drop the agreement), O (loosen `and` to `or`),
 P (restore the invented vocabulary), Q (stop isolating the type).
 
-### Still open on the client
+### Authority #4 is retired (FIXED on the client)
 
-The server now answers; the client still derives. Retiring authority #4 —
-`storeReadiness`, `listingHealth` and the client's private `LOW_STOCK_THRESHOLD`
-— and rendering `readiness` instead is the remaining half of §5, along with §12's
-"Price required" and §7's "N things left".
+`listingHealth` now reads `listing.readiness` and renders it; the client's
+`LOW_STOCK_THRESHOLD` survives only as a fallback for payloads that carry no
+verdict, and is documented as no longer an authority. §12's "Price required"
+(`listingPriceCopy`) and §7's "N things left · Add price + photo"
+(`listingRemainingCopy`) are implemented, and both are in the row's
+`accessibilityLabel` — a VoiceOver seller gets the same task list a sighted one
+does, rather than the silence a blank price used to leave.
+
+A sixth health state, `unknown_stock`, is wired end to end (LED, tab matcher,
+attention banner, row copy, screen-reader label). It exists because "nobody has
+counted this" and "the shelf is empty" are different situations with different
+fixes: the first needs a number, the second needs a purchase order.
+
+Three findings from doing it:
+
+* **A wholesale `jest.mock` deletes contracts.**
+  `jest.mock("../marketplace", () => ({ three, functions, only }))` made every
+  other export `undefined` at runtime while typechecking cleanly, so
+  `READINESS_CODES.OUT_OF_STOCK` threw. `...jest.requireActual(...)` is the fix.
+  A mock that silently deletes the rest of a module can only hide contracts.
+* **The client was wrong in *both* directions, depending on the path.** An
+  uncounted physical listing read `out_of_stock` through the normalizer (because
+  `Number(item.quantity || 0)` made it a 0) and `in_stock` when `listingHealth`
+  was called directly. One defect, two opposite lies.
+* **A fixture that agrees with the code's mistake proves nothing.** The test
+  asserting an uncounted listing is `in_stock` carried a comment about courses
+  and services — but its fixture set no `product_type`, so it described a
+  *physical* listing. The comment belonged to the test below it, and the
+  assertion was a false all-clear.
+
+Exhaustive `Record<Union, T>` is preferred over `switch` + `default:` for this
+reason: adding `unknown_stock` to `StoreListingHealth` made the compiler demand
+the new case in `StoreStatusLed`'s `DOT_COLOR`, whereas the `switch` in
+`listingStatusCopy` would have silently filed it under the default arm.
+
+## 3c. GAP 24 — the count nobody made (FIXED)
+
+Three sites turned "uncounted" into "zero", which readiness then reported as
+OUT_OF_STOCK and the store row rendered as **"Out of stock — hidden / Restock"**:
+an instruction to reorder from a supplier, for products nobody had ever counted.
+
+Measured in production: **all 14 listings, zero NULLs; 10 at `quantity = 0`,
+seven of them CJ-imported physical drafts.** `unknown_stock` was unreachable in
+production — the distinction was destroyed before readiness ever ran.
+
+| # | Site | Was | Now |
+|---|------|-----|-----|
+| 1 | `suppliers/importer.py` `_create_draft_listing` | literal `0` in the INSERT | `None` |
+| 2 | `bot.py` seller listing PATCH | `safe_int(existing["quantity"], 0)` on the unsent branch | stored value carried across, NULL included |
+| 3 | `SellerStoreScreen.tsx` | prefill `String(q \|\| 0)`, save `Number(editQuantity \|\| 0)` | empty field; key omitted from the payload |
+
+Site 2 is the one that made the others permanent: the UPDATE writes `quantity=?`
+unconditionally, so **an edit to a listing's title marked it sold out.** The
+price branch eight lines above already guarded against exactly this, with a
+comment explaining why. The stock field did not have one.
+
+Site 1 is the same omission in the same shape: `_create_draft_listing`'s
+docstring argues at length that `price_label` must be left empty because seeding
+it with supplier cost would print the merchant's own cost on their storefront —
+and then seeds a stock count one argument later. `0` is not "unknown"; it is the
+merchant's assertion that they have none.
+
+**Why NULL is safe.** The column is nullable. Every decrement carries a
+`quantity>=?` guard, and SQL comparison against NULL is not true, so checkout
+fails closed and releases the reservation; the restock path already used
+`COALESCE(quantity,0)`. The checkout decider refuses NULL and 0 alike — same
+decision, different reason — and readiness names them apart
+(`UNKNOWN_INVENTORY` vs `OUT_OF_STOCK`), both `checkout_ready: false`.
+
+**Why NULL is not permanent.** `drafts.publish` writes a real supplier-derived
+count via `_sellable_units`. NULL is the honest value *until someone counts*,
+and `test_a_draft_carries_no_stock_count_until_publish_supplies_one` asserts both
+halves together — because "never invent a number" is only correct if the real
+number still arrives.
+
+Eleven tests, each verified to fail against the original code: five in
+`tests/marketplace/test_seller_listing_edit.py` (whose 42 existing quantity tests
+all supplied an explicit number — the NULL case was the blind spot), two in
+`test_dropship_import_pipeline.py`, one in `test_dropship_draft_publish.py`, and
+three in `SellerStoreListingEditor.test.tsx`. Each is paired with its converse so
+that collapsing everything to NULL would fail just as loudly as collapsing it to
+zero.
 
 ---
 

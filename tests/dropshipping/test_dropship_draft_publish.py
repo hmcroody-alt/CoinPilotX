@@ -558,6 +558,31 @@ def test_a_published_but_unapproved_listing_is_not_publicly_visible(provider):
     assert lifecycle.is_public(listing) is False
 
 
+def test_a_draft_carries_no_stock_count_until_publish_supplies_one(provider):
+    """The seam between "nobody has counted" and "the supplier says 40".
+
+    Import writes NULL now, because an import has counted nothing and a
+    dropship merchant never will -- the units are in the supplier's warehouse.
+    It used to write a literal 0, which is not "unknown" but a count, and every
+    physical draft in production therefore told its seller "Out of stock --
+    hidden / Restock" for a product nobody had ever counted.
+
+    Both halves are asserted together on purpose. "Never invent a number" is
+    only correct if the real number still arrives; a change that left quantity
+    NULL through publish would satisfy the first assertion and ship a listing
+    nothing could be bought from.
+    """
+    listing_id = sellable(provider)
+    assert rows("SELECT quantity FROM marketplace_listings WHERE id=?",
+                (listing_id,))[0]["quantity"] is None, "the draft claimed a count nobody made"
+
+    price_every_variant(listing_id, 2000)
+    drafts.publish(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id, context=CONTEXT)
+
+    assert rows("SELECT quantity FROM marketplace_listings WHERE id=?",
+                (listing_id,))[0]["quantity"] == 40, "the supplier's count did not arrive"
+
+
 def test_published_quantity_is_units_of_the_bound_variant_not_a_count_of_variants(provider):
     # `marketplace_listings.quantity` is a unit ledger: the cart decrements it per
     # unit reserved and `lifecycle.inventory_available` answers "may this buyer

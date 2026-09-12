@@ -321,6 +321,99 @@ class SellerListingEditTest(unittest.TestCase):
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(self.stored()["quantity"], 0, "a rejected edit must not write anything")
 
+    # ------------------------------------------------------------------
+    # an inventory nobody has counted
+    #
+    # Every inventory test above hands the route a number. None of them ever
+    # asked what happens to a listing whose stock is NULL -- which is what an
+    # import creates, because an import has not counted anything -- and that is
+    # precisely where the route was wrong.
+    # ------------------------------------------------------------------
+    def test_an_unrelated_edit_does_not_invent_a_stock_count(self):
+        """Fixing a typo must not mark a listing sold out.
+
+        The route carried an unsent quantity across with
+        ``safe_int(existing.get("quantity"), 0)``. That reads like a cast and
+        behaves like an assignment: ``safe_int(None, 0)`` is 0, and the UPDATE
+        writes ``quantity=?`` on every save. So the first edit of any kind to an
+        uncounted listing -- the title, the description, anything -- wrote a
+        stock count of zero under the seller's name, and their store then told
+        them to restock a product nobody had ever counted.
+
+        The price branch one field up already guards against exactly this. This
+        is the same test, for the field that did not have one.
+        """
+        listing_id = self._make_listing(self.owner, quantity=None)
+        self.assertIsNone(self.stored(listing_id)["quantity"], "fixture must start uncounted")
+
+        response = self.patch_listing(self.owner, {"title": "Handmade lamp mk2"}, listing_id)
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        row = self.stored(listing_id)
+        self.assertEqual(row["title"], "Handmade lamp mk2", "the edit the seller asked for must land")
+        self.assertIsNone(
+            row["quantity"],
+            "an edit that never mentioned inventory turned 'uncounted' into 'zero'",
+        )
+
+    def test_uncounted_and_sold_out_stay_different_answers_after_an_edit(self):
+        """Zero is a count. NULL is the absence of one. The route must keep both.
+
+        Asserted as a pair on purpose: a fix that collapsed everything to NULL
+        would pass the test above and be just as wrong in the other direction.
+        """
+        uncounted = self._make_listing(self.owner, quantity=None)
+        sold_out = self._make_listing(self.owner, quantity=0)
+
+        for listing_id in (uncounted, sold_out):
+            self.assertEqual(
+                self.patch_listing(self.owner, {"short_description": "Same edit"}, listing_id).status_code,
+                200,
+            )
+
+        self.assertIsNone(self.stored(uncounted)["quantity"])
+        self.assertEqual(self.stored(sold_out)["quantity"], 0)
+
+    def test_an_uncounted_listing_reads_as_uncounted_rather_than_empty(self):
+        """What the seller is actually told, end to end.
+
+        The two assertions above are about a column. This one is about the
+        sentence the store row shows, which is the thing that was wrong in
+        production: ``OUT_OF_STOCK`` renders as "Out of stock -- hidden /
+        Restock", an instruction to reorder from a supplier. A listing nobody
+        counted needs a count, not a purchase order.
+
+        Both verdicts agree that checkout must refuse -- that is not the
+        difference, and the difference is not cosmetic either.
+        """
+        from services.business_os.marketplace import listing_readiness
+
+        uncounted = listing_readiness.evaluate(self.stored(self._make_listing(self.owner, quantity=None)))
+        sold_out = listing_readiness.evaluate(self.stored(self._make_listing(self.owner, quantity=0)))
+
+        self.assertIn("UNKNOWN_INVENTORY", uncounted["warnings"])
+        self.assertNotIn("OUT_OF_STOCK", uncounted["warnings"])
+        self.assertIn("OUT_OF_STOCK", sold_out["warnings"])
+        self.assertNotIn("UNKNOWN_INVENTORY", sold_out["warnings"])
+        self.assertFalse(uncounted["checkout_ready"])
+        self.assertFalse(sold_out["checkout_ready"])
+
+    def test_a_seller_can_still_count_an_uncounted_listing(self):
+        """Preserving NULL must not make the field unwritable."""
+        listing_id = self._make_listing(self.owner, quantity=None)
+        self.assertEqual(self.patch_listing(self.owner, {"quantity": 4}, listing_id).status_code, 200)
+        self.assertEqual(self.stored(listing_id)["quantity"], 4)
+
+    def test_counting_an_uncounted_listing_as_zero_is_allowed(self):
+        """A seller who genuinely has none may say so, and it must stick.
+
+        This is the one path that should produce a stored 0 on a listing that
+        began as NULL: the seller typed it.
+        """
+        listing_id = self._make_listing(self.owner, quantity=None)
+        self.assertEqual(self.patch_listing(self.owner, {"quantity": 0}, listing_id).status_code, 200)
+        self.assertEqual(self.stored(listing_id)["quantity"], 0)
+
     def test_inventory_cannot_drop_below_units_held_in_checkout(self):
         conn = bot.db()
         cur = conn.cursor()

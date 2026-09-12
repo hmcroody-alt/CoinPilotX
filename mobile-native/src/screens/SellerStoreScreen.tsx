@@ -189,7 +189,12 @@ export function SellerStoreScreen({ route, navigation }: Props) {
     // it has. Pre-filling prose here put words in the seller's mouth that the
     // save below then committed as their price.
     setEditPriceLabel(listing.price_label || "");
-    setEditQuantity(String(listing.quantity || 0));
+    // And an uncounted listing opens with an empty stock field, for the same
+    // reason. `String(listing.quantity || 0)` put "0" in the box for a listing
+    // nobody had counted, and `saveListingEdit` below then sent that 0 as the
+    // seller's own answer -- so opening the editor and saving anything at all
+    // marked the listing sold out. A null quantity is a question, not a zero.
+    setEditQuantity(listing.quantity == null ? "" : String(listing.quantity));
     setMessage("");
   }
 
@@ -227,7 +232,13 @@ export function SellerStoreScreen({ route, navigation }: Props) {
         // design, the first edit of any kind published "Request access" as the
         // price. Blank is a state the backend accepts and the UI can render.
         price_label: editPriceLabel.trim(),
-        quantity: Number(editQuantity || 0)
+        // Omitted, not zeroed, when the seller left the box empty. The PATCH
+        // route keys off key *presence* (`if "quantity" in payload`), so leaving
+        // it out is how the client says "I am not changing this" -- whereas
+        // `Number("" || 0)` said "set it to zero", which is a stock count the
+        // seller never typed. Spread conditionally so the key is genuinely
+        // absent rather than present-and-undefined.
+        ...(editQuantity.trim() === "" ? {} : { quantity: Number(editQuantity) })
       });
       applyListingResponse(result.listing);
       setMessage(result.message || "Listing updated and sent through review.");

@@ -119,6 +119,67 @@ describe("seller listing editor", () => {
     });
   });
 
+  /**
+   * A listing nobody has counted.
+   *
+   * `quantity` is nullable and an imported listing arrives NULL, because an
+   * import has counted nothing. The editor used to open such a listing with
+   * `String(listing.quantity || 0)` -- a "0" in the box -- and then save
+   * `Number(editQuantity || 0)`, so opening the editor to fix a typo and
+   * pressing Save wrote a stock count of zero under the seller's name and their
+   * store started telling them to restock it.
+   *
+   * The price field one line up already had this right, with a comment saying
+   * why. These are the same two tests for the field that did not.
+   */
+  describe("a listing with no stock count", () => {
+    const UNCOUNTED = { ...LISTING, id: 44, title: "Unweighed Sack", quantity: null };
+
+    beforeEach(() => {
+      mockSnapshot.mockResolvedValue({ live: true, listings: [UNCOUNTED], orders: [] });
+      mockUpdate.mockResolvedValue({ listing: UNCOUNTED, message: "Listing updated." });
+    });
+
+    async function openUncounted() {
+      const view = await renderEditor({ mode: "create", listingId: 44 });
+      await waitFor(() => expect(view.getByText("Edit listing #44")).toBeTruthy());
+      return view;
+    }
+
+    it("opens with an empty stock field rather than a zero", async () => {
+      const view = await openUncounted();
+      expect(view.queryByDisplayValue("0")).toBeNull();
+      expect(view.getByPlaceholderText("Inventory quantity").props.value).toBe("");
+    });
+
+    it("does not send a stock count the seller never typed", async () => {
+      const view = await openUncounted();
+      fireEvent.changeText(view.getByDisplayValue("Unweighed Sack"), "Unweighed Sack mk2");
+      await act(async () => {
+        fireEvent.press(view.getByText("Save and Review"));
+      });
+
+      await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
+      const payload = mockUpdate.mock.calls[0][1] as Record<string, unknown>;
+      expect(payload.title).toBe("Unweighed Sack mk2");
+      // Absent, not zero, and not present-and-undefined: the PATCH route keys
+      // off `"quantity" in payload`.
+      expect(Object.prototype.hasOwnProperty.call(payload, "quantity")).toBe(false);
+    });
+
+    it("still sends a zero the seller did type", async () => {
+      const view = await openUncounted();
+      fireEvent.changeText(view.getByPlaceholderText("Inventory quantity"), "0");
+      await act(async () => {
+        fireEvent.press(view.getByText("Save and Review"));
+      });
+
+      await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
+      const payload = mockUpdate.mock.calls[0][1] as Record<string, unknown>;
+      expect(payload.quantity).toBe(0);
+    });
+  });
+
   it("tells the buyer-facing surfaces the listing moved", async () => {
     const view = await renderEditor({ mode: "create", listingId: 42 });
     await waitFor(() => expect(view.getByText("Edit listing #42")).toBeTruthy());

@@ -340,6 +340,41 @@ def test_import_does_not_seed_the_public_price_label_with_supplier_cost(provider
     assert "8.20" not in str(label)
 
 
+def test_import_does_not_seed_a_stock_count_either(provider):
+    # The same rule as the price above, for the field that did not follow it.
+    # `quantity` was a literal 0 in the insert, and 0 is not "unknown" -- it is
+    # the merchant's own count, asserting an empty shelf. An import has counted
+    # nothing, and on a dropship listing the merchant never counts anything:
+    # the units are in the supplier's warehouse and arrive at publish time via
+    # `_sellable_units`.
+    #
+    # Measured in production before this was fixed: all seven physical drafts
+    # carried quantity=0, so every one of them told its seller "Out of stock --
+    # hidden / Restock". Restock what? Nobody had counted them.
+    provider.add(cj_product("PID-1"))
+    add_to_cart("PID-1")
+    run_import()
+    listing = rows("SELECT quantity FROM marketplace_listings")[0]
+    assert listing["quantity"] is None, "an uncounted import claimed a count of zero"
+
+
+def test_an_uncounted_import_reads_as_uncounted_not_sold_out(provider):
+    # The column is the mechanism; this is the sentence the seller is shown.
+    # Both verdicts stop checkout -- that part was never in question. The
+    # difference is whether the seller is asked for a number or sent to a
+    # supplier.
+    from services.business_os.marketplace import listing_readiness
+
+    provider.add(cj_product("PID-1"))
+    add_to_cart("PID-1")
+    run_import()
+    verdict = listing_readiness.evaluate(rows("SELECT * FROM marketplace_listings")[0])
+
+    assert "UNKNOWN_INVENTORY" in verdict["warnings"]
+    assert "OUT_OF_STOCK" not in verdict["warnings"]
+    assert verdict["checkout_ready"] is False
+
+
 def test_import_persists_the_cover_image_on_the_listing_row(provider):
     # `_validate` refuses a product with no media because a listing with no
     # image is a black card in the grid. That guard was defeated by the insert
