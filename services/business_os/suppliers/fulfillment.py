@@ -389,6 +389,31 @@ def observe_linked(meta, provider_order_id, observed):
         conn.close()
 
 
+def dispatch_shop(shops, shop_id):
+    """The one CJ shop a binding may place an order through, or a refusal.
+
+    Three conditions, and until now they lived only inside :func:`dispatch`. A
+    CJ "shop" can be a Shopify or Woo storefront the merchant authorized; only
+    the one CJ's own *API* app creates can receive an order placed over the API.
+    And CJ addresses an order by shop name, so two shops sharing a name make the
+    destination ambiguous no matter which id was bound.
+
+    Measuring them only at dispatch meant a merchant could choose a shop, see
+    the choice accepted, and learn at the first real order that it was never a
+    shop an order could go to. :func:`connections.bind_shop` calls this function
+    at bind time for exactly that reason -- same conditions, now also measured
+    where the choice is made and not only where it is spent.
+
+    Returns the selected shop so the caller can name it; raises otherwise.
+    """
+    selected = [s for s in shops if s.get("shop_id") == shop_id and s.get("status") == 1]
+    if len(selected) != 1 or not selected[0].get("name") or str(selected[0].get("platform")).lower() != "api":
+        raise FulfillmentError("api_shop_binding_required")
+    if len([s for s in shops if s.get("name") == selected[0]["name"]]) != 1:
+        raise FulfillmentError("ambiguous_shop_name")
+    return selected[0]
+
+
 def dispatch(intent, adapter, meta, *, now=None):
     """One worker attempt; no exception text/provider body is persisted or logged."""
     now = time.time() if now is None else now
@@ -419,12 +444,7 @@ def dispatch(intent, adapter, meta, *, now=None):
             conn.close()
         if not current_order or str(current_order["seller_user_id"]) != str(intent["merchant_id"]) or current_order["status"] in {"cancelled", "refunded", "disputed"}:
             raise FulfillmentError("order_not_eligible")
-        shops = adapter.get_shops()
-        selected = [s for s in shops if s.get("shop_id") == intent["external_shop_id"] and s.get("status") == 1]
-        if len(selected) != 1 or not selected[0].get("name") or str(selected[0].get("platform")).lower() != "api":
-            raise FulfillmentError("api_shop_binding_required")
-        if len([s for s in shops if s.get("name") == selected[0]["name"]]) != 1:
-            raise FulfillmentError("ambiguous_shop_name")
+        selected_shop = dispatch_shop(adapter.get_shops(), intent["external_shop_id"])
         # Backend provider validation, never labels/SKUs inferred from display text.
         item_total = Decimal(0)
         for item in snapshot["items"]:
@@ -458,7 +478,7 @@ def dispatch(intent, adapter, meta, *, now=None):
                         "payType": snapshot["payType"], "orderFlow": snapshot["orderFlow"],
                         "logisticName": snapshot["shipping_quote"]["logisticName"],
                         "fromCountryCode": snapshot["shipping_quote"]["fromCountryCode"],
-                        "storeName": selected[0]["name"],
+                        "storeName": selected_shop["name"],
                         "products": [{"vid": item["vid"], "quantity": item["quantity"]}
                                      for item in snapshot["items"]]})
         assert_sandbox(payload.get("isSandbox"))

@@ -272,10 +272,13 @@ query names is buyer-visible by default, so the strip now lives in
 4. **`vault.seal`/`unseal` wrap everything in `except Exception: raise
    VaultError() from None`**, which turns a caller's mistake into what looks
    like an infrastructure failure. Cost me a false alarm already.
-5. **Fulfillment is unreachable for the current connection** —
+5. ~~**Fulfillment is unreachable for the current connection**~~ —
    `external_shop_id` is unset, so `create_intent` raises
-   `shop_binding_required`. This is an honest refusal, and §37 forbids placing a
-   real CJ order regardless.
+   `shop_binding_required`. The refusal is honest and is unchanged. What was
+   wrong is that it was *terminal*: nothing could ever set the column on a
+   connection that already existed. Fixed via `connections.bind_shop`; see "The
+   sixth seam" below. §37 still forbids placing a real CJ order, and this
+   changes nothing about that — the sandbox path is what these tests exercise.
 6. ~~**`bot.py:4379-4393` documents a constant that no longer exists**~~, and
    said native "already says 'Price at checkout' on the same card" — which
    native had stopped doing. Rewritten: `PRICE_LABEL_UNPRICED` and
@@ -387,10 +390,97 @@ have accepted a decision for.
 
 ---
 
+## The sixth seam: a refusal with no way to satisfy it
+
+`create_intent` refuses to place a supplier order when the connection has no
+bound CJ shop, and the refusal is right. `_validate_observed` proves a placed
+order came back on *the shop we bound*; with nothing bound there is no such
+proof to make, and skipping the check would look identical in every green test
+and differ only in what it would accept.
+
+What was wrong is that nothing could satisfy it. `external_shop_id` had exactly
+one writer — `connect_cj` — and `connect_cj` refuses to change an existing
+binding:
+
+```python
+if (existing["merchant_id"] != merchant or existing["external_account_id"] != account_ref
+        or existing["external_shop_id"] != external_shop_id):
+    raise SupplierConnectionError("Existing CJ account or shop cannot be silently replaced.",
+                                  409, "connection_binding_conflict")
+```
+
+`""` is a value for the purpose of that comparison, so reconnecting *with* a
+shop is refused as a replacement. The two rules are each correct and together
+they close the door: the only account that could ever fulfil is one that named
+its shop in the connect form, before it had any reason to know which shop it
+wanted — and naming one there was made *optional* on purpose, because requiring
+it made an ordinary CJ account unconnectable. Every connection created the
+normal way could import, publish and sell, and then refuse every one of its own
+orders, permanently.
+
+Same shape as the fifth seam. One path produces a state; another path refuses to
+act on it; no transition exists between them. There the state was
+`status='published'`/`approval='pending_review'`; here it is
+`external_shop_id=''`.
+
+**The fix is `connections.bind_shop`** — bind a shop on an already-connected
+connection, none-to-one only, verified live against the credential already in
+the vault. The refusal in `create_intent` is untouched; this is its other half,
+establishing the provenance it demands instead of assuming it away. A companion
+`connection_shops` lists the choices, because `discover_shops` takes an API key
+and after connecting the merchant has no copy of theirs to retype.
+
+### The half that would have replaced one trap with another
+
+Verifying the shop is *listed and active* — the check `connect_cj` performs — is
+not enough, and shipping only that would have been the same defect one step
+later. `dispatch` demands three things of the bound shop, and it demanded them
+in a place nobody else could see:
+
+```python
+selected = [s for s in shops if s.get("shop_id") == intent["external_shop_id"] and s.get("status") == 1]
+if len(selected) != 1 or not selected[0].get("name") or str(selected[0].get("platform")).lower() != "api":
+    raise FulfillmentError("api_shop_binding_required")
+if len([s for s in shops if s.get("name") == selected[0]["name"]]) != 1:
+    raise FulfillmentError("ambiguous_shop_name")
+```
+
+A CJ "shop" may be a Shopify or Woo storefront. Only the one CJ's own API app
+creates can receive an order placed over the API, and CJ addresses the order by
+shop *name*, so two shops sharing a name have no unambiguous destination. A
+merchant binding their Shopify storefront would have been told yes, and would
+have found out at the first order — which is the wrong place to learn it.
+
+So the predicate is now `fulfillment.dispatch_shop`, called by `dispatch` where
+it always was and by `bind_shop` where the choice is made. Same conditions,
+measured at both surfaces.
+
+| shop shape | bind before | bind after | dispatch |
+|---|---|---|---|
+| listed, active, platform `API`, unique name | *unreachable* | accepted | sends |
+| listed, active, platform `Shopify` | *unreachable* | `api_shop_binding_required` | `BLOCKED` |
+| listed, `status != 1` | *unreachable* | `api_shop_binding_required` | `BLOCKED` |
+| two shops sharing a name | *unreachable* | `ambiguous_shop_name` | `BLOCKED` |
+| not listed under this credential | *unreachable* | `shop_not_authorized` | — |
+| connection already bound to another shop | *unreachable* | `connection_binding_conflict` | — |
+
+The write is conditional on the column still being empty
+(`AND COALESCE(external_shop_id,'')=''`), so two concurrent binds cannot both
+believe they won and "never silently replaced" is an atomic property rather than
+a read-then-write hope. None-to-one is safe precisely *because* of the refusal
+this seam is about: an intent cannot exist while the column is empty, so there
+is no persisted intent whose `external_shop_id` a first bind could invalidate.
+
+`tests/business_os/test_cj_shop_binding.py` asserts the whole path — refusal,
+the failed reconnect that proves the trap was closed, bind, order, dispatch —
+because that is the claim. Eleven tests; six mutations, six killed.
+
+---
+
 ## What kept coming back
 
-Six defects in this chain, six different subsystems, one shape: **a number was
-asserted rather than measured.**
+Seven defects in this chain, seven different subsystems, one shape: **a number
+was asserted rather than measured.**
 
 - `publish()` never wrote `price_label`, and the publish test asserted `status`
   and `published_at` and stopped one column short.
@@ -408,9 +498,13 @@ asserted rather than measured.**
 - The admin approve guard asserted "a decision has already been recorded" by
   reading `status`, a column that answers a different question, and no test
   existed for the route at all.
+- `bind_shop` did not exist, so the *only* assertion anyone had ever made about
+  a bound shop was `dispatch`'s — and the existing test asserted the refusal
+  (`shop_binding_required`) without ever asking whether the refusal could be
+  satisfied. A test that a door is locked is not a test that it opens.
 
-In all five the suite was green, and in all five the green was about the halves
-rather than the seam. Where a claim spans two components, this document now
+In all of them the suite was green, and in all of them the green was about the
+halves rather than the seam. Where a claim spans two components, this document now
 prefers a fixture both components read over a sentence describing them.
 
 The fourth adds a corollary worth keeping separate, because it is about where a
@@ -445,3 +539,11 @@ the fact that the state one half produces is not one the other accepts. Every
 seam in this document is the same story, which is why the working rule here is
 now: **when two components hand something to each other, the test belongs on
 the handoff, not in either component.**
+
+The seventh sharpens that into something checkable without running anything:
+**a guard is only finished when something can satisfy it.** `shop_binding_required`
+had a test, a docstring defending it, and a comment explaining why loosening it
+would be wrong — all true, all about the closed position. Grep for the writers
+of the column a guard reads; if the only writer cannot be reached from the state
+the guard rejects, the guard is not a guard, it is a dead end. Two of the seams
+here are that exact query returning one row.

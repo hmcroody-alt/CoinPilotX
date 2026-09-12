@@ -253,6 +253,13 @@ def cj_scoped_action(connection_id, action):
         business_id, store_id = _required(body, "business_id"), _required(body, "store_id")
         if action == "health":
             result = connections.health_connection(connection_id, business_id, store_id, actor, context=context)
+        elif action == "shops":
+            # POST, like the other provider reads here, so nothing about the
+            # merchant's CJ account lands in an access log's query string.
+            result = connections.connection_shops(connection_id, business_id, store_id, actor, context=context)
+        elif action == "bind-shop":
+            result = connections.bind_shop(connection_id, business_id, store_id, actor,
+                                           _required(body, "external_shop_id"), context=context)
         elif action == "bind-product":
             result = gateway.bind_product(connection_id=connection_id, business_id=business_id, store_id=store_id,
                                           actor_user_id=actor, canonical_product_id=_required(body, "canonical_product_id"),
