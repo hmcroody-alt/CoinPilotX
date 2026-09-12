@@ -345,26 +345,32 @@ query names is buyer-visible by default, so the strip now lives in
    `fulfillment.create_intent` compares a supplier line against, so no
    multi-unit dropship order could ever be dispatched. Fixed in both lanes; see
    "The twelfth seam" below.
-9. **`marketplace_listings.delivery_type` defaults to `'digital'`.** The column
-   is `TEXT DEFAULT 'digital'` (`bot.py:112382`) and `resolve_kind` reads it
+9. ~~**`marketplace_listings.delivery_type` defaults to `'digital'`.**~~ The column
+   is `TEXT DEFAULT 'digital'` (`bot.py:112435`) and `resolve_kind` read it
    before the metadata, so a row written without it is a digital order: no
-   address collected, no stock decrement, no reservation. Both production
-   writers do set it, so this reaches legacy rows only — but the default is the
-   wrong way round, and a new writer that forgets the column inherits silence
-   rather than an error. Found while building a fixture for gap 8, which is the
-   only reason it is written down: the probe listing was physical and the route
-   called it digital.
-10. **The delivery-options fallback in `resolve_kind` is unreachable.** Because
+   address collected, no stock decrement, no reservation. Found while building a
+   fixture for gap 8, which is the only reason it is written down: the probe
+   listing was physical and the route called it digital. Filed as a legacy-rows
+   concern; measuring it for the fix showed it was the smaller half of something
+   much larger, because the column does not hold a delivery lane *at all*.
+10. ~~**The delivery-options fallback in `resolve_kind` is unreachable.**~~ Because
     `delivery_type` is always populated, `option = delivery or meta.get("delivery_options")`
     can never reach its right-hand side. A seller who sets `delivery_options: "both"`
-    can therefore never produce `shipping_or_pickup`, the lane chooser never
-    appears, and a pickup-only buyer is silently placed on shipping — precisely
+    could therefore never produce `shipping_or_pickup`, the lane chooser never
+    appeared, and a pickup-only buyer was silently placed on shipping — precisely
     the outcome `resolve_choice`'s own comment says it exists to prevent. The
-    docstring claims it reads the metadata "rather than the delivery column
-    alone", which the code cannot do. `mobile-native/src/api/marketplaceFulfillment.ts`
-    mirrors the bug faithfully, so the fix is a lockstep client and server
-    change and is buyer-visible. Not fixed here: it is a behaviour change, not a
-    defect in the quantity chain, and bundling it would have hidden both.
+    docstring claimed it reads the metadata "rather than the delivery column
+    alone", which the code could not do. `mobile-native/src/api/marketplaceFulfillment.ts`
+    mirrored the bug faithfully. Fixed in lockstep across both languages and all
+    six derivations; see "The thirteenth seam" below.
+11. **The buyer's order timeline reads the same column.**
+    `mobile-native/src/api/ordersDashboard.ts:216-234` — `variantOf(deliveryType)`
+    switches on a `delivery_type` taken off the *order* payload, served from
+    `services/marketplace_returns_routes.py:295`, so every order's progress
+    strip reads as shipped whatever lane it was actually placed on. Not folded
+    into gap 10: the order payload does not carry a resolved lane, and inventing
+    one on the client would be a seventh derivation of the fact the thirteenth
+    seam exists to stop having seven of. The fix is a server field.
 
 ---
 
@@ -1360,9 +1366,120 @@ ignored, the no-op control correctly survived.
 
 ---
 
+## The thirteenth seam: one column, six readers, and no lane in it
+
+`marketplace_listings.delivery_type` has never contained a delivery lane.
+
+It is `TEXT DEFAULT 'digital'` (`bot.py:112435`), and every writer stores the
+**product type** in it. The publish route's INSERT (`bot.py:94434`) lists its
+columns as `..., delivery_type, product_type, listing_type, ...` and its values
+as `..., product_type, product_type, listing_type, ...` — the same bind twice.
+The CJ importer (`services/business_os/suppliers/importer.py:242`) hardcodes
+`'physical','physical'`. So for every listing in the table the column reads one
+of the five words in `LISTING_TYPES`, and for the overwhelming majority it reads
+`physical`.
+
+The seller's actual choice is `listing_metadata.delivery_options`, validated
+against `{pickup, shipping, both}` by `_take_enum`
+(`services/marketplace_listing_types.py:180`). That key is *optional* —
+`_take_enum` returns early when it is absent — so a physical listing with no lane
+is an ordinary row, not an error, and it ships.
+
+Six functions asked "how is this listing fulfilled". Asked of one real published
+row — the Ball listing, `delivery_options: "pickup"` — they answered:
+
+| reader | answer |
+| --- | --- |
+| grid card `listingFulfillment` | `unknown` |
+| detail page `marketplaceListingFulfillment` | `pickup` |
+| detail copy `marketplaceFulfillmentCopy` | `Local pickup` |
+| cart line `_fulfillment` | `shipping` |
+| server `resolve_kind` | `shipping` |
+| checkout `resolveFulfillmentKind` | `shipping` |
+
+Three measured damages, one root:
+
+**The buyer is put on the wrong lane.** `option = delivery or meta.get("delivery_options")`
+could not reach its right-hand side, because the left-hand side was always the
+non-empty string `physical`. Every physical listing resolved to `shipping`. A
+seller who chose local pickup only had their buyers asked for a delivery address
+for an item nobody was going to post. And `shipping_or_pickup` had no input that
+could produce it, which makes the checkout screen's lane chooser unreachable UI
+and `resolve_choice`'s pickup branch dead code — a branch with a comment
+explaining why it matters.
+
+**Every physical card in the marketplace lost its buy button.**
+`listingFulfillment` substring-matched the column for `ship`/`pickup`/`local`/
+`meetup`/`digital`/`download`. `physical` contains none of them, so it returned
+`unknown`, and `gridCardAction` returns `null` for `unknown`: no Add to cart, no
+Make offer, on the entire catalogue. This is the loudest symptom in the chain and
+it was invisible because the guard was firing on *everything*, which looks like a
+design decision rather than a bug.
+
+**Two contradictory lanes travelled in one payload.**
+`MarketplaceProductScreen.handleBuyNow` sent `fulfillment: listingFulfillment(listing)`
+and `fulfillmentKind: kind` two lines apart — the checkout screen reads the first
+for its lane chooser and the second for its fields — and `kindFromParams`
+(`if (kind) return kind;`) preferred the one that was wrong.
+
+The asymmetry that names the whole defect: `marketplaceFulfillmentCopy` read the
+metadata **first**, and special-cased the literal `"physical"` in the column.
+Somebody writing the *label* noticed the column held a product type and worked
+around it, locally, where they were standing. The function that decides what the
+buyer is actually charged for never got the same treatment. The knowledge was in
+the codebase the entire time, one file away from where it was needed.
+
+**Why every suite was green.** Every test of the rule built its own listing dict
+and put a lane word in `delivery_type`. No row in the database has ever looked
+like that. The fixtures described rows that cannot exist, and the suites passed
+on inputs production does not produce. One fixture contradicted *itself* —
+`listing({ delivery_type: "pickup" })` over a fixture whose metadata said `both` —
+and passed for the worst possible reason: the code read the column first, so the
+test silently pinned whichever field the bug happened to prefer.
+
+**The fix** is one rule per language. `delivery_lane` /
+`deliveryLane` reads `delivery_options` first, returns `""` for a row that
+declared a listing type (the column cannot outvote the seller), and falls back to
+the column only for a pre-types row that has no other signal. All six readers
+fold down from it; none derives anything. `_LANE_WORDS` and `LANE_WORDS` hold the
+legacy spellings, and `tests/test_marketplace_fulfillment.py` reads both files to
+prove they stay identical, because that is the one test that can.
+
+The tests are the point. `tests/test_marketplace_delivery_lane.py` supplies no
+listing dicts at all: it publishes through
+`/api/pulse/marketplace/listings/create` and reads the row back out of the table,
+so it asserts `row["delivery_type"] == "physical"` as a measured fact before
+asserting anything downstream of it.
+`marketplaceDeliveryLaneAgreement.test.ts` asserts the surfaces against *each
+other* — the sentence against the kind, the lane against the fold-down of the
+kind, `=== "both"` against `UNDECIDED_KINDS.includes(kind)` — rather than each
+against its own expectation, which is the only form that can fail when six
+readers drift.
+
+Two fixture families had to be corrected rather than satisfied, each with an
+in-test note saying what it had been asserting and why that was wrong.
+
+`scripts/mutation_delivery_lane.py`: 18 real mutations, 1 inverted, 1 no-op
+control. Two survived the first run and both were errors in the battery rather
+than gaps in the suites — and both were worth the trip. The `physical → digital`
+word-list mutation was pointed at the integration file, which publishes through
+the real route and therefore always writes a listing type, so the column is never
+consulted there and the mutation was invisible to it; the assertion that catches
+it is the unit-level `delivery_lane("physical", {}, "") == ""`, the single most
+load-bearing line in the rule. And the cart mutation *added* a column check in
+front of the function, which is a no-op on every row the route writes, because
+the column matches no lane word. The defect was never an extra branch. It was the
+function answering from the column instead of from the kind — and a mutation has
+to be the defect, not something adjacent to it, or its survival means nothing.
+
+Final run: 18 of 18 real mutations caught, the inverted mutation correctly
+ignored, the no-op control correctly survived.
+
+---
+
 ## What kept coming back
 
-Thirteen defects in this chain, thirteen different subsystems, one shape: **a
+Fourteen defects in this chain, fourteen different subsystems, one shape: **a
 number was asserted rather than measured.**
 
 - `publish()` never wrote `price_label`, and the publish test asserted `status`
@@ -1417,6 +1534,14 @@ number was asserted rather than measured.**
   read its source as text and asserted on the literal `quantity=quantity-1`,
   which is the defect spelled out, so the suite was green *because* the bug was
   there and would have gone red on the fix.
+- Six readers asserted a listing's delivery lane by reading a column that has
+  never held one. `delivery_type` is bound to `product_type` in the publish
+  INSERT and hardcoded to `'physical'` by the importer, so the fallback to the
+  seller's actual choice was unreachable and every physical listing shipped —
+  including the pickup-only ones. Every test of the rule supplied a lane word in
+  that column, describing a row the database cannot produce, and one fixture
+  contradicted itself so quietly that it pinned whichever field the bug read
+  first.
 
 In all of them the suite was green, and in all of them the green was about the
 halves rather than the seam. Where a claim spans two components, this document now
@@ -1555,6 +1680,27 @@ Source-reading has one honest use, and the file that contained the worst
 assertion also contains the best example of it: counting call sites against
 forwarded arguments, to reach a lane the UI cannot execute. Structure is a fair
 subject for a source test. Values are not.
+
+The fourteenth is the thirteenth's other half, and it indicts the fixtures:
+**a fixture describing a row the database cannot produce is not a test of the
+system.** Every suite covering the delivery lane invented a listing dict with a
+lane word in `delivery_type`, and the column has never held one in any row ever
+written. The suites were not weak; they were measuring a different program. The
+greppable tell is a question rather than a pattern — **for each field a fixture
+sets, name the writer that sets it in production** — and where the answer is "no
+writer does", the assertions downstream of it are unfalsifiable by anything real.
+The remedy used here is the one the fourth seam already pointed at from the other
+side: publish through the route and read the row back, so the fixture is a
+measurement.
+
+Its sub-tell is sharper and costs nothing to check: **when two fields in one
+fixture disagree, the test pins whichever field the bug reads first.**
+`listing({ delivery_type: "pickup" })` over metadata saying `both` passed for
+exactly the reason it should have failed. A self-contradicting fixture does not
+fail — it silently elects the current implementation as the specification, and it
+will go red on the fix. Which is the thirteenth corollary again, arrived at
+without reading a line of source: **ask which way an assertion fails, not whether
+it passes.**
 
 Its sub-tell is about the instrument rather than the subject: **a harness that
 reports a result it never measured is the same defect, one level up.** The

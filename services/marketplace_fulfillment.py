@@ -65,8 +65,6 @@ STOCKLESS_KINDS = frozenset({
 DETAILS_REQUIRED_CODE = "FULFILLMENT_DETAILS_REQUIRED"
 LANE_REQUIRED_CODE = "FULFILLMENT_REQUIRED"
 
-_PICKUP_OR_SHIPPING = {"both", "pickup_or_shipping", "shipping_or_pickup"}
-
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _HHMM_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 _TZ_RE = re.compile(r"^[A-Za-z0-9_+\-/]{1,64}$")
@@ -113,16 +111,60 @@ def shipping_countries() -> tuple[str, ...]:
 # Kind resolution
 # ---------------------------------------------------------------------------
 
+#: Every spelling of a delivery lane that has ever been stored, folded onto the
+#: four the rest of this module reasons about. ``listing_metadata`` is validated
+#: against ``{pickup, shipping, both}``; the rest are legacy column spellings.
+_LANE_WORDS = {
+    "pickup": "pickup", "local": "pickup", "meetup": "pickup",
+    "shipping": "shipping", "delivery": "shipping",
+    "both": "both", "pickup_or_shipping": "both", "shipping_or_pickup": "both",
+    "digital": "digital", "download": "digital",
+}
+
+
+def delivery_lane(delivery_type: Any, metadata: Any = None, listing_type: Any = None) -> str:
+    """The delivery lane the seller declared, or ``""`` if they declared none.
+
+    ``marketplace_listings.delivery_type`` does not hold one, and never has.
+    Every writer of that column stores the *product type* in it: the publish
+    route's INSERT lists ``delivery_type, product_type`` against
+    ``product_type, product_type`` (``bot.py``), the CJ importer hardcodes
+    ``'physical','physical'``, and the column's own DDL default is ``'digital'``.
+    So it reads ``physical`` for every physical listing in the table and it can
+    never read ``pickup``, ``shipping`` or ``both``.
+
+    The seller's actual answer is ``listing_metadata.delivery_options``, which
+    ``marketplace_listing_types._validate_physical`` validates against exactly
+    those three words. It is read first here.
+
+    The column is still consulted, but only for a row that declared no listing
+    type at all — a pre-types legacy row, where it is the only signal there is.
+    Consulting it for a *typed* row is what made every caller of this rule answer
+    ``shipping`` for every physical listing ever published, including the ones
+    whose sellers said pickup only, and made ``shipping_or_pickup`` unreachable:
+    ``option = delivery or meta.get("delivery_options")`` could never reach its
+    right-hand side, because the left-hand side was always the string
+    ``"physical"``.
+    """
+    meta = metadata if isinstance(metadata, dict) else {}
+    lane = _LANE_WORDS.get(str(meta.get("delivery_options") or "").strip().lower(), "")
+    if lane:
+        return lane
+    if str(listing_type or "").strip().lower():
+        return ""
+    return _LANE_WORDS.get(str(delivery_type or "").strip().lower(), "")
+
+
 def resolve_kind(listing_type: Any, delivery_type: Any, metadata: Any = None) -> str:
     """Canonical fulfilment kind for a stored listing row.
 
     Reads the seller's own declarations — the listing type and the type-specific
     metadata they filled in — rather than the delivery column alone, which for a
-    service or booking row carries no delivery meaning at all.
+    service or booking row carries no delivery meaning at all, and which for a
+    physical row carries the word ``physical``. See :func:`delivery_lane`.
     """
     meta = metadata if isinstance(metadata, dict) else {}
     kind = str(listing_type or "").strip().lower()
-    delivery = str(delivery_type or "").strip().lower()
 
     if kind == "digital":
         return "digital"
@@ -141,12 +183,12 @@ def resolve_kind(listing_type: Any, delivery_type: Any, metadata: Any = None) ->
         return "booking_in_person" if str(meta.get("meeting_mode") or "").strip().lower() == "in_person" else "booking_remote"
 
     # Physical, and anything legacy that never declared a type.
-    option = delivery or str(meta.get("delivery_options") or "").strip().lower()
-    if option == "digital":
+    lane = delivery_lane(delivery_type, meta, listing_type)
+    if lane == "digital":
         return "digital"
-    if option in _PICKUP_OR_SHIPPING:
+    if lane == "both":
         return "shipping_or_pickup"
-    if option == "pickup":
+    if lane == "pickup":
         return "pickup"
     return "shipping"
 
