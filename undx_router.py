@@ -65,7 +65,11 @@ class ProviderConfig:
 PROVIDERS = {
     "openai": ProviderConfig("openai", "OpenAI", "OPENAI_API_KEY", "OPENAI_MODEL", "gpt-4o-mini",
                              enable_env="UNDX_OPENAI_ENABLED"),
-    "claude": ProviderConfig("claude", "Claude", "CLAUDE_AI_API", "CLAUDE_MODEL", "claude-3-5-haiku-latest",
+    # `claude-3-5-haiku-latest` was retired upstream and 404s, which is the whole
+    # of the "Claude is dead in production" outage - the credential was always
+    # valid. `claude-haiku-4-5` is an alias that resolves live to
+    # claude-haiku-4-5-20251001; verified against GET /v1/models, not guessed.
+    "claude": ProviderConfig("claude", "Claude", "CLAUDE_AI_API", "CLAUDE_MODEL", "claude-haiku-4-5",
                              enable_env="UNDX_CLAUDE_ENABLED"),
     "gemini": ProviderConfig("gemini", "Gemini", "Gemini_AI_API", "GEMINI_MODEL", "gemini-1.5-flash"),
     "deepseek": ProviderConfig("deepseek", "DeepSeek", "DEEPSEEK_AI_API", "DEEPSEEK_MODEL", "deepseek-chat"),
@@ -672,6 +676,17 @@ def _call_claude(system_prompt: str, message: str, history: Any, timeout: int,
         "max_tokens": max_tokens,
         "temperature": temperature,
     }
+    # The endpoint is hardcoded, and deliberately does NOT honour
+    # ANTHROPIC_BASE_URL. That variable is set in this production environment -
+    # to `https://api.meta.ai`, alongside ANTHROPIC_MODEL=muse-spark-1.3-contributor.
+    # They are Claude Code CLI settings that leaked into the service. A router
+    # that honoured them would silently send every request routed to the "Claude"
+    # specialist to Meta's Contributor tier instead - the tier whose console
+    # states inputs and outputs are used to train Meta's models, and which
+    # UNDX_PROVIDER_DATA_POLICY.md restricts to SYNTHETIC traffic only. The
+    # provider a caller asked for is the provider that must answer, and an
+    # ambient environment variable does not get to redirect user content into a
+    # training corpus. Pinned by ClaudeEndpointTest.
     response = requests.post(
         "https://api.anthropic.com/v1/messages",
         headers={

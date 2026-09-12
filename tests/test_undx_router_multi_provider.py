@@ -427,5 +427,65 @@ class MalformedCredentialTest(unittest.TestCase):
             self.assertEqual(undx_router.provider_health("groq"), "Online")
 
 
+class ClaudeEndpointTest(unittest.TestCase):
+    """Claude must reach Anthropic, on a model ID that still exists.
+
+    Two independent faults were live in production at once, and only one of them
+    was visible. The router asked for `claude-3-5-haiku-latest`, which Anthropic
+    has retired, so every Claude call 404'd and the provider was dead in the
+    `security` and `research` chains - while the credential was valid the whole
+    time. That is the loud one.
+
+    The quiet one is that this environment also sets ANTHROPIC_BASE_URL to
+    `https://api.meta.ai` and ANTHROPIC_MODEL to `muse-spark-1.3-contributor`,
+    left behind by the Claude Code CLI. Honouring those - the obvious "make the
+    adapter configurable" refactor - would route everything addressed to Claude
+    into Meta's Contributor tier, whose console states inputs and outputs train
+    Meta's models. The 404 is what has been *preventing* that. Fixing the model
+    ID without pinning the endpoint would convert a dead provider into a silent
+    data-governance breach, which is the worse of the two outcomes.
+    """
+
+    ANSWER = {"content": [{"type": "text", "text": "ok"}], "stop_reason": "end_turn"}
+
+    def _capture(self):
+        return mock.patch.object(undx_router.requests, "post",
+                                 return_value=_FakeResponse(self.ANSWER))
+
+    def test_default_model_is_a_live_id_not_the_retired_one(self):
+        self.assertEqual(undx_router.PROVIDERS["claude"].default_model, "claude-haiku-4-5")
+        self.assertNotIn("3-5-haiku", undx_router.PROVIDERS["claude"].default_model)
+
+    def test_claude_posts_to_anthropic_even_when_base_url_redirects_elsewhere(self):
+        with _env(CLAUDE_AI_API="sk-ant-" + "y" * 40,
+                  ANTHROPIC_BASE_URL="https://api.meta.ai",
+                  CLAUDE_MODEL=""), self._capture() as post:
+            undx_router._call_claude("sys", "hello", [], 30)
+        url = post.call_args.args[0] if post.call_args.args else post.call_args.kwargs["url"]
+        self.assertEqual(url, "https://api.anthropic.com/v1/messages")
+        self.assertNotIn("meta.ai", url)
+
+    def test_ambient_anthropic_model_cannot_swap_in_the_contributor_tier(self):
+        """ANTHROPIC_MODEL is not CLAUDE_MODEL, and must not be read as it."""
+        with _env(CLAUDE_AI_API="sk-ant-" + "y" * 40,
+                  ANTHROPIC_MODEL="muse-spark-1.3-contributor",
+                  CLAUDE_MODEL=""), self._capture() as post:
+            undx_router._call_claude("sys", "hello", [], 30)
+        sent = post.call_args.kwargs["json"]["model"]
+        self.assertEqual(sent, "claude-haiku-4-5")
+        self.assertNotIn("contributor", sent)
+
+    def test_an_operator_can_still_override_the_model_through_claude_model(self):
+        """Pinning the endpoint must not also freeze the model ID.
+
+        The retired default is exactly why this override needs to keep working:
+        the next retirement should be fixable with an environment variable.
+        """
+        with _env(CLAUDE_AI_API="sk-ant-" + "y" * 40,
+                  CLAUDE_MODEL="claude-sonnet-4-5"), self._capture() as post:
+            undx_router._call_claude("sys", "hello", [], 30)
+        self.assertEqual(post.call_args.kwargs["json"]["model"], "claude-sonnet-4-5")
+
+
 if __name__ == "__main__":
     unittest.main()
