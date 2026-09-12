@@ -57,7 +57,7 @@ Seven distinct call expressions across five modules, carrying ten URL literals, 
 Each one is outside the cost ledger, the circuit breaker, provider health, and the privacy
 ceilings.
 
-**Two remain.** The census is kept as found and annotated with status, rather than shrunk
+**One remains.** The census is kept as found and annotated with status, rather than shrunk
 as sites are migrated: a table that only lists what is still broken cannot answer "was this
 ever a direct call, and when did it stop being one", which is the question an incident
 review asks.
@@ -66,7 +66,7 @@ review asks.
 |---|---|---|---|---|---|---|
 | U1 | ~~`bot.py:108625`~~ | `sports_edge_ai_analysis` | — | PUBLIC | **TELEGRAM** | **MIGRATED** |
 | U2 | ~~`services/intelligence.py:50`~~ | `assistant_response` | — | CONFIDENTIAL | *per caller* | **MIGRATED** |
-| U3 | `services/scam_shield.py:184` | `_openai_assessment` | 185 | CONFIDENTIAL | SCAM_SHIELD | pending |
+| U3 | ~~`services/scam_shield.py:184`~~ | `_ai_assessment` | — | CONFIDENTIAL | SCAM_SHIELD | **MIGRATED** |
 | U4 | `services/telegram_text_router.py:121` | `answer_telegram_with_openai` | 122 | CONFIDENTIAL | TELEGRAM | pending |
 | U5 | ~~`services/pulse_ai_provider_router.py:264`~~ | `_post_openai_compatible` | — | CONFIDENTIAL | **MESSAGING** | **MIGRATED** |
 | U6 | ~~`services/pulse_ai_provider_router.py:282`~~ | `_post_anthropic` | — | CONFIDENTIAL | **MESSAGING** | **MIGRATED** |
@@ -237,6 +237,96 @@ it would return prose, `json.loads` would raise, and the `except` would swallow 
 `{"error": ...}` — a security control silently degrading to "unavailable". §3 requires the
 response schema be preserved, so this call needs a structured-output *capability
 requirement*, not just a provider. This is a genuine design constraint, not a detail.
+
+**Resolved, and the capability table was measured rather than read.** `require_json` is now
+a parameter of `route_structured_request` that *filters the chain* — a provider whose
+`structured_output` dialect is empty is removed before its credential is even looked up, and
+the refusal is recorded as a `capability_unmet` attempt so the chain describes the request
+that actually ran. `scam_shield` passes `require_json=True` with the three-key schema it
+parses.
+
+Which providers are eligible could not be taken from documentation. This repository has
+already been burned twice by a vendor's own list: Gemini's ListModels advertises
+`gemini-2.5-flash` to this key and `generateContent` 404s on it, and `sonar-reasoning` is in
+Perplexity's docs and 400s. So `scripts/undx_structured_output_capability_probe.py` asks all
+seven providers, live, with production credentials. It records two results that are not the
+same question — **enforced** (the request carrying the parameter was *accepted*) and
+**parsed** (the reply happened to `json.loads`) — because a provider with no JSON mode will
+manage the second for a prompt this easy. Claiming a capability on a lucky parse is how a
+security control gets routed to a model that returns prose the first time the input is
+interesting. Only *enforced* makes a provider eligible.
+
+| Provider | Dialect | Evidence |
+|---|---|---|
+| openai | `response_format: {"type": "json_object"}` | enforced, 200 |
+| gemini | `generationConfig.responseMimeType` | enforced, 200 |
+| meta | `response_format: {"type": "json_object"}` | enforced, 200 |
+| perplexity | `response_format: {"type": "json_schema"}` | enforced, 200 |
+| claude | — | 400: `response_format: Extra inputs are not permitted` |
+| deepseek | — | **UNKNOWN**, 402 precedes parameter evaluation (§34) |
+| groq | — | no usable credential; see below |
+
+Four providers, three spellings. **A capability is a dialect, not a boolean**, and probing
+one spelling measures the spelling: the first run recorded Perplexity as incapable on a real
+400 that was rejecting `json_object` *by name* and listing `json_schema` as accepted. The
+translation lives in exactly one place, `undx_router._structured_output_payload`, because a
+caller asks for the capability and must never name the dialect.
+
+DeepSeek's line stays empty on §34's rule: a 402 is not evidence of absence, and re-running
+the probe after the account is funded is the only thing that should change it.
+
+**Recorded while migrating U3. Three latent bugs, none of them about scam_shield:**
+
+* **`GROQ_AI_API` does not hold a key, it holds a multi-line JSON document.** The probe died
+  in the HTTP client, not at the provider: `Invalid leading whitespace, reserved character(s),
+  or return character(s) in header value: 'Bearer {\n  "custom_models": [...`. So
+  `Bearer <value>` is not a legal header and Groq has never answered a request. This is worse
+  than the "compromised pending rotation" already on the books (§45) — it is not a provider
+  with a leaked key, it is a provider that has been non-functional, and every routed attempt
+  at it spends a chain slot and a breaker increment on a request that was never sent.
+* **`undx_router.META_REASONING_EFFORTS` admitted a value the API rejects.** It listed
+  `"none"` first, sourced from a 400 that was believed to name the full set. The live API
+  rejects it for `muse-spark-1.3` and names six values without it. Since
+  `_meta_reasoning_effort` validates against that tuple, an operator setting
+  `META_MUSE_REASONING_EFFORT=none` passed the router's own validation and then 400'd *every*
+  Meta call. **A validation list that admits an invalid value is worse than no validation,
+  because the fallback that would have rescued it never runs.** Removed.
+* **`source_status` was a stored false attribution waiting to happen.** The constant
+  `"Local rules + OpenAI AI review"` is written to `scam_scans` and rendered in the admin
+  "Source" column. True while the transport was hardcoded; a lie in a database the moment a
+  chain can answer from Gemini. It now comes from the envelope, and is *overwritten* onto the
+  parsed dict rather than `setdefault`, because everything else in that dict was produced by a
+  model reading text an attacker chose — a reply carrying its own `source` is a thing that
+  happens on purpose.
+
+**Also noticed and deliberately not changed:** the `"AI review unavailable"` note is appended
+to `red_flags`, and `confidence` is computed from `len(red_flags)` with a `+0.08` term above
+two flags. So a provider outage can *raise* the reported confidence of a scan. It is
+pre-existing, it is one line to fix, and fixing it changes a user-visible number and every
+stored `confidence` value — so it is recorded here for its own change rather than folded into
+a consolidation commit.
+
+**One behaviour deliberately changed, and it widens spend.** The old `_openai_assessment`
+did two contradictory things about length: it returned `None` for any input over 5000
+characters, *and* sliced the prompt to `text[:5000]`. The slice made the guard redundant and
+the guard made the slice unreachable, so one of the two was dead code whichever way you read
+it. The guard is the one removed, because "no AI review above 5000 characters" is an evasion
+an attacker can use deliberately — pad a scam message past the limit and the model layer
+switches itself off, silently, leaving only the local keyword rules, and a long message is the
+interesting case rather than the cheap one. The cost bound is now the slice, which is what a
+bound should be. This does mean spend on inputs the old code refused to look at, which is why
+it is here and not left to surface in a bill: it is a FinOps consequence accepted on security
+grounds, not an oversight.
+
+**The §16 ordering is the assertion, not the intention.** Score, risk level, red flags,
+domain findings and address findings are computed before the model is asked and are not sent
+to it. The reply may add a scam type, add safe actions and supply the explanation; it cannot
+lower a score, clear a flag or downgrade a level. `tests/test_scam_shield_routing.py` feeds a
+reply that tries all three. The mutation that guards this is `result.update(ai_note)` by
+another name — and the harness's *first* version of it spread `ai_note` at the top of the dict
+literal and survived, because in a dict display the later key wins. A mutation that does not
+invert the property it names proves nothing, and left in place it would have read like
+coverage.
 
 **Finding U-d — two routers disagree about which model to use.**
 `services/pulse_ai_provider_router.py` maintains its own five-provider table with its own

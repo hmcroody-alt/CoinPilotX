@@ -42,6 +42,16 @@ PROVIDER_ALIASES = {
 }
 
 
+#: The three ways a provider can be told its answer must be JSON. Named rather than
+#: inlined because a caller asks for the *capability* and never for the dialect — §5's
+#: separation between what a request needs and how a vendor spells it.
+JSON_OBJECT = "json_object"           # OpenAI, Meta: response_format={"type": ...}
+JSON_SCHEMA = "json_schema"           # Perplexity: rejects json_object by name
+JSON_MIME_TYPE = "response_mime_type"  # Gemini: generationConfig.responseMimeType
+
+STRUCTURED_OUTPUT_DIALECTS = (JSON_OBJECT, JSON_SCHEMA, JSON_MIME_TYPE)
+
+
 @dataclass(frozen=True)
 class ProviderConfig:
     name: str
@@ -63,15 +73,35 @@ class ProviderConfig:
     #: a reasoning model come out of the same `max_tokens` budget as the answer.
     #: See `_effective_max_tokens`.
     reasoning_overhead_tokens: int = 0
+    #: How this provider can be *required* to answer in JSON, or "" if it cannot be.
+    #: One of `JSON_OBJECT`, `JSON_SCHEMA`, `JSON_MIME_TYPE` — the dialect, not a
+    #: boolean, because three of the four eligible providers spell the same
+    #: requirement differently and a caller must not have to know which.
+    #:
+    #: Populated from `scripts/undx_structured_output_capability_probe.py` against the
+    #: live APIs, not from documentation. Empty means the probe could not *enforce* the
+    #: requirement, which is not the same as "the provider returns prose": every
+    #: provider here will return parseable JSON for an easy prompt if simply asked
+    #: nicely. Enforcement is the property, because a caller that parses the answer
+    #: needs the failure to be the provider's rather than its own optimism.
+    structured_output: str = ""
 
 
 PROVIDERS = {
     "openai": ProviderConfig("openai", "OpenAI", "OPENAI_API_KEY", "OPENAI_MODEL", "gpt-4o-mini",
-                             enable_env="UNDX_OPENAI_ENABLED"),
+                             enable_env="UNDX_OPENAI_ENABLED",
+                             structured_output=JSON_OBJECT),
     # `claude-3-5-haiku-latest` was retired upstream and 404s, which is the whole
     # of the "Claude is dead in production" outage - the credential was always
     # valid. `claude-haiku-4-5` is an alias that resolves live to
     # claude-haiku-4-5-20251001; verified against GET /v1/models, not guessed.
+    #
+    # No `structured_output`. The Messages API has no JSON mode and does not merely
+    # ignore the parameter — it 400s with `response_format: Extra inputs are not
+    # permitted`, which is the better of the two failures and still means Claude
+    # cannot be *required* to return an object. Anthropic's documented workaround is
+    # prefilling the assistant turn with `{`, which is a different mechanism with a
+    # different parse (the brace does not come back) and is not implemented here.
     "claude": ProviderConfig("claude", "Claude", "CLAUDE_AI_API", "CLAUDE_MODEL", "claude-haiku-4-5",
                              enable_env="UNDX_CLAUDE_ENABLED"),
     # `gemini-1.5-flash` was retired upstream and 404s. That part is fixed here.
@@ -98,8 +128,21 @@ PROVIDERS = {
     # Note also that ListModels is not an availability list: `gemini-2.5-flash`
     # and `gemini-2.5-flash-lite` are both advertised to this key and both 404 on
     # generateContent. Every candidate above was confirmed by a live call.
-    "gemini": ProviderConfig("gemini", "Gemini", "Gemini_AI_API", "GEMINI_MODEL", "gemini-flash-lite-latest"),
+    "gemini": ProviderConfig("gemini", "Gemini", "Gemini_AI_API", "GEMINI_MODEL", "gemini-flash-lite-latest",
+                             structured_output=JSON_MIME_TYPE),
+    # DeepSeek documents a JSON mode and this repository cannot confirm it: the account
+    # returns 402 Insufficient Balance before any parameter is evaluated, so the probe
+    # learns nothing about the capability. Left empty on §34's rule — an unknown is not
+    # a zero and it is not a yes. Funding the account and re-running the probe is the
+    # only thing that should change this line.
     "deepseek": ProviderConfig("deepseek", "DeepSeek", "DEEPSEEK_AI_API", "DEEPSEEK_MODEL", "deepseek-chat"),
+    # Groq cannot be probed for a different and worse reason: `GROQ_AI_API` does not
+    # hold a key. It holds a multi-line JSON document that happens to contain one, so
+    # `Bearer <value>` is not a legal header and the request dies in the client before
+    # it leaves the process. That is the same finding as the pending key rotation, seen
+    # from the other side — Groq is not "compromised but working", it has been
+    # non-functional, and every routed attempt at it spends a slot and a breaker
+    # increment on a request that was never sent.
     "groq": ProviderConfig("groq", "Groq", "GROQ_AI_API", "GROQ_MODEL", "llama-3.1-8b-instant"),
     # Meta Model API. Model IDs, base URL, reasoning enum and the 1M context are
     # from the live console for project 1656198352782001, not from documentation:
@@ -109,13 +152,20 @@ PROVIDERS = {
     "meta": ProviderConfig("meta", "Meta Muse", "META_MODEL_API_KEY", "META_MUSE_MODEL", "muse-spark-1.3",
                            enable_env="META_MUSE_ENABLED",
                            timeout_ms_env="META_MUSE_TIMEOUT_MS", default_timeout_ms=60000,
-                           reasoning_overhead_tokens=3000),
+                           reasoning_overhead_tokens=3000,
+                           structured_output=JSON_OBJECT),
     # Perplexity is the grounded-research lane: it answers from a live search and
     # returns the sources alongside the prose (§20/§59). `sonar-reasoning` is
     # retired upstream and 400s; `sonar` and `sonar-pro` are current.
+    #
+    # Perplexity is the reason `structured_output` is a dialect and not a boolean. It
+    # rejects `{"type": "json_object"}` with a 400 naming its own accepted set, so the
+    # first run of the probe recorded it as incapable on the strength of a real error
+    # about the wrong parameter. Asked in `json_schema` it enforces the shape fine.
     "perplexity": ProviderConfig("perplexity", "Perplexity", "PERPLEXITY_API_KEY", "PERPLEXITY_MODEL", "sonar",
                                  enable_env="UNDX_PERPLEXITY_ENABLED",
-                                 timeout_ms_env="PERPLEXITY_TIMEOUT_MS", default_timeout_ms=45000),
+                                 timeout_ms_env="PERPLEXITY_TIMEOUT_MS", default_timeout_ms=45000,
+                                 structured_output=JSON_SCHEMA),
 }
 
 COUNCIL_AGENT_PROVIDER_MAP = [
@@ -770,6 +820,14 @@ def _exhausted_reason(attempts: list[dict[str, str]], privacy_class: str | None)
     if _only(attempts, "budget_exceeded"):
         return (f"the monthly UNDX spend limit is reached; "
                 f"{len(attempts)} providers declined on budget")
+    if _only(attempts, "capability_unmet"):
+        # A configuration decision, and the only one of these four that is neither an
+        # outage nor a policy refusal: every provider in the chain is healthy, funded and
+        # permitted, and none of them can be held to the answer shape the caller needs.
+        # Escalated as an outage it produces a pager and no fix; read correctly it says
+        # either widen the chain or stop requiring JSON.
+        return (f"no provider in this chain can be required to return JSON; "
+                f"{len(attempts)} lack the capability")
     return "no configured provider answered"
 
 
@@ -1129,9 +1187,32 @@ def reset_provider_health() -> None:
     undx_health.reset_for_tests()
 
 
+def _structured_output_payload(provider: str, json_schema: dict[str, Any] | None) -> dict[str, Any]:
+    """The one place a structured-output requirement becomes a vendor's spelling.
+
+    Returns the payload fragment to merge, or `{}` when nothing was required. A provider
+    whose `structured_output` is empty returns `{}` even if asked, deliberately: this
+    function is not the gate. :func:`route_structured_request` refuses an ineligible
+    provider before the call, and if that check were ever removed, silently sending a
+    parameter Claude 400s on would at least fail loudly rather than quietly returning
+    prose to something about to `json.loads` it.
+    """
+    dialect = PROVIDERS[provider].structured_output
+    if dialect == JSON_OBJECT:
+        return {"response_format": {"type": "json_object"}}
+    if dialect == JSON_SCHEMA:
+        # Perplexity requires the schema, not just the word. An empty one is not
+        # accepted, so a caller that asked for JSON without describing it gets the
+        # loosest legal object rather than a 400.
+        return {"response_format": {"type": "json_schema",
+                                    "json_schema": {"schema": json_schema or {"type": "object"}}}}
+    return {}
+
+
 def _openai_compatible(provider: str, endpoint: str, system_prompt: str, message: str, history: Any, timeout: int,
                        *, user_content: str | None = None,
                        temperature: float = 0.35, max_tokens: int = 900,
+                       require_json: bool = False, json_schema: dict[str, Any] | None = None,
                        extra_payload: dict[str, Any] | None = None) -> dict[str, Any]:
     config = PROVIDERS[provider]
     payload = {
@@ -1140,6 +1221,8 @@ def _openai_compatible(provider: str, endpoint: str, system_prompt: str, message
         "max_tokens": _effective_max_tokens(provider, max_tokens),
         "temperature": temperature,
     }
+    if require_json:
+        payload.update(_structured_output_payload(provider, json_schema))
     payload.update(extra_payload or {})
     response = requests.post(
         endpoint,
@@ -1172,7 +1255,18 @@ META_BASE_URL = "https://api.meta.ai/v1"
 #: Accepted by the live API; anything else is rejected with HTTP 400 naming the
 #: full set, which is how this list was obtained rather than guessed. `max` is
 #: Standard-tier muse-spark-1.3 only.
-META_REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
+#:
+#: `"none"` used to be first in this tuple and is not accepted. Found by
+#: `scripts/undx_structured_output_capability_probe.py`, which sent it because this
+#: list said it was legal, and got back `reasoning_effort 'none' is not supported for
+#: model 'muse-spark-1.3'. Supported values: [minimal, low, medium, high, xhigh, max]`.
+#: The consequence of leaving it here was not cosmetic: `_meta_reasoning_effort`
+#: validates the operator's value against this tuple and falls back to `"high"` only
+#: for a value it does not recognise, so `META_MUSE_REASONING_EFFORT=none` passed
+#: validation and then 400'd every single Meta call. A validation list that admits an
+#: invalid value is worse than no validation, because the fallback that would have
+#: rescued it never runs.
+META_REASONING_EFFORTS = ("minimal", "low", "medium", "high", "xhigh", "max")
 
 
 def _meta_reasoning_effort() -> str:
@@ -1218,6 +1312,8 @@ def _call_perplexity(system_prompt: str, message: str, history: Any, timeout: in
         "max_tokens": kwargs.get("max_tokens", 900),
         "temperature": kwargs.get("temperature", 0.35),
     }
+    if kwargs.get("require_json"):
+        payload.update(_structured_output_payload("perplexity", kwargs.get("json_schema")))
     response = requests.post(
         "https://api.perplexity.ai/chat/completions",
         headers={"Authorization": f"Bearer {_api_key('perplexity')}", "Content-Type": "application/json"},
@@ -1245,7 +1341,20 @@ def _call_perplexity(system_prompt: str, message: str, history: Any, timeout: in
 
 def _call_claude(system_prompt: str, message: str, history: Any, timeout: int,
                  *, user_content: str | None = None,
-                 temperature: float = 0.35, max_tokens: int = 900) -> dict[str, Any]:
+                 temperature: float = 0.35, max_tokens: int = 900,
+                 require_json: bool = False, json_schema: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Anthropic's Messages API, which accepts every parameter here except one.
+
+    ``require_json`` is accepted and ignored, and that is the only honest option: this
+    API 400s on ``response_format`` and has no equivalent field, which is why
+    ``PROVIDERS["claude"].structured_output`` is empty and why
+    :func:`route_structured_request` will not reach this adapter for a request that
+    required JSON. The parameter exists in the signature so that the seven adapters
+    share one calling convention — an adapter that raised ``TypeError`` on a keyword
+    every other adapter takes would turn a capability question into a transport fault,
+    and the router's ``except Exception`` would record it as ``response_failed`` and
+    open Claude's breaker for a request it correctly declined.
+    """
     messages = [item for item in _messages(system_prompt, message, history, user_content=user_content)
                 if item["role"] != "system"]
     payload = {
@@ -1286,12 +1395,24 @@ def _call_claude(system_prompt: str, message: str, history: Any, timeout: int,
 
 def _call_gemini(system_prompt: str, message: str, history: Any, timeout: int,
                  *, user_content: str | None = None,
-                 temperature: float = 0.35, max_tokens: int = 900) -> dict[str, Any]:
+                 temperature: float = 0.35, max_tokens: int = 900,
+                 require_json: bool = False, json_schema: dict[str, Any] | None = None) -> dict[str, Any]:
     contents = []
     for item in clean_history(history):
         contents.append({"role": "model" if item["role"] == "assistant" else "user", "parts": [{"text": item["content"]}]})
     contents.append({"role": "user", "parts": [{"text": _messages(system_prompt, message, [], user_content=user_content)[1]["content"]}]})
     model = _model("gemini")
+    generation_config: dict[str, Any] = {
+        "temperature": temperature,
+        "maxOutputTokens": _effective_max_tokens("gemini", max_tokens),
+    }
+    if require_json:
+        # Gemini's dialect is a MIME type on the generation config rather than a
+        # `response_format` object, which is the whole reason `structured_output` stores
+        # a dialect name instead of a boolean.
+        generation_config["responseMimeType"] = "application/json"
+        if json_schema:
+            generation_config["responseSchema"] = json_schema
     response = requests.post(
         f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
         # The key travels as a header, never as `?key=`. Google accepts both, but
@@ -1304,10 +1425,7 @@ def _call_gemini(system_prompt: str, message: str, history: Any, timeout: int,
         json={
             "systemInstruction": {"parts": [{"text": _system_prompt(system_prompt)}]},
             "contents": contents,
-            "generationConfig": {
-                "temperature": temperature,
-                "maxOutputTokens": _effective_max_tokens("gemini", max_tokens),
-            },
+            "generationConfig": generation_config,
         },
         timeout=_timeout("gemini", timeout),
     )
@@ -1344,6 +1462,8 @@ def route_structured_request(
     privacy_class: str | None = None,
     call_domain: str | None = None,
     history: Any = None,
+    require_json: bool = False,
+    json_schema: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """One model turn whose answer is meant to be parsed, not read.
 
@@ -1377,6 +1497,17 @@ def route_structured_request(
     prompt past a token budget are enforced one layer down, in every adapter, and a
     test that asserts them against a fake ``CALLERS`` entry will pass while measuring
     nothing.
+
+    ``require_json`` is a *capability requirement*, not a provider preference, and the
+    difference is the whole reason it exists. `services/scam_shield.py` parses the reply
+    it gets back; routed to a provider with no JSON mode it would receive prose,
+    ``json.loads`` would raise, and its ``except`` would fold the result into
+    ``{"error": ...}`` — a security control degrading to "unavailable" without anything
+    logging that a control had degraded. So a provider that cannot be *made* to answer
+    in JSON is refused for such a request rather than tried and parsed hopefully.
+    Refused visibly: it appears in ``attempts`` as ``capability_unmet``, because a chain
+    that omits the providers it declined describes a different request than the one that
+    ran. ``json_schema`` is optional and only Perplexity and Gemini can use it.
     """
     ordered = [p for p in (providers or []) if p in PROVIDERS and provider_enabled(p)]
     if not ordered:
@@ -1397,6 +1528,14 @@ def route_structured_request(
             attempts.append({"provider": config.label, "status": "privacy_refused",
                              "detail": refusal})
             continue
+        if require_json and not config.structured_output:
+            # After privacy, before the credential — for the same reason privacy comes
+            # first. A provider that must not see this content is not asked whether it
+            # could have; a provider that cannot answer the question being asked is not
+            # asked for its key either.
+            attempts.append({"provider": config.label, "status": "capability_unmet",
+                             "detail": "cannot be required to return JSON"})
+            continue
         over_budget = _budget_refusal(budget, provider)
         if over_budget:
             attempts.append({"provider": config.label, "status": "budget_exceeded",
@@ -1415,6 +1554,7 @@ def route_structured_request(
             result = CALLERS[provider](
                 system_prompt, "", history, timeout,
                 user_content=user_content, temperature=temperature, max_tokens=max_tokens,
+                require_json=require_json, json_schema=json_schema,
             )
             text = _clean_text(result.get("text"), 4000)
             if not text:
@@ -1437,6 +1577,11 @@ def route_structured_request(
                 # lost its preference.
                 "call_domain": undx_call_domain.normalise(call_domain),
                 "call_domain_known": undx_call_domain.is_known(call_domain),
+                # Which dialect actually enforced the shape, or "" if nothing was
+                # required. Reported for the same reason `call_domain` is: a caller that
+                # asked for JSON can confirm it was required rather than hoped for, and
+                # "the answer parsed" is not evidence that it had to.
+                "structured_output": config.structured_output if require_json else "",
                 "latency_ms": int((time.time() - started) * 1000),
             }
         except requests.Timeout:
@@ -1463,6 +1608,7 @@ def route_structured_request(
         "attempts": attempts,
         "call_domain": undx_call_domain.normalise(call_domain),
         "call_domain_known": undx_call_domain.is_known(call_domain),
+        "structured_output": "",
         "latency_ms": int((time.time() - started) * 1000),
     }
 

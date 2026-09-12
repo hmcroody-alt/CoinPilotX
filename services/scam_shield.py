@@ -1,10 +1,19 @@
 import json
-import os
 import re
 from datetime import datetime
 from urllib.parse import urlparse
 
-import requests
+import undx_router
+
+from services import undx_call_domain
+from services import undx_privacy
+
+# `requests` and `os` are gone from this module, and their absence is the migration.
+# This file used to hold an API key lookup, a model default and a `requests.post` to
+# `api.openai.com`, which is why a security control was the one AI call in the product
+# outside the privacy ceiling, the spend ledger and the circuit breaker. The absence is
+# asserted structurally in `tests/test_scam_shield_routing.py` rather than trusted to
+# this comment: a module that imports no transport cannot grow a second one back.
 
 
 DISCLAIMER = "Do not share seed phrases, private keys, recovery phrases, wallet passwords, exchange passwords, or signing credentials."
@@ -167,32 +176,109 @@ def _address_findings(text):
     return findings, {"evm_addresses": eth[:10], "btc_addresses": btc[:10]}
 
 
-def _openai_assessment(text, local_level):
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key or not text or len(text) > 5000:
+#: What this call sends: free text a user pasted because they suspect it is a scam. It
+#: routinely contains the message, the wallet address and the amount, so CONFIDENTIAL is
+#: the floor and no routing convenience justifies lowering it (§4).
+SCAM_SHIELD_PRIVACY_CLASS = undx_privacy.SENSITIVITY_CONFIDENTIAL
+
+#: Provenance, not payload. Every caller reaches here through the Scam Shield surface,
+#: so the domain is a fact about where the request came from rather than a summary of
+#: what today's text happens to say.
+SCAM_SHIELD_CALL_DOMAIN = undx_call_domain.CALL_DOMAIN_SCAM_SHIELD
+
+#: The shape the rest of this module parses. Declared rather than merely described in
+#: the prompt, so `require_json` can hold a provider to it instead of asking politely:
+#: three keys, two of them strings, one a list of strings.
+SCAM_ASSESSMENT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "scam_type": {"type": "string"},
+        "explanation": {"type": "string"},
+        "safe_actions": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["scam_type", "explanation", "safe_actions"],
+}
+
+_ASSESSMENT_SYSTEM_PROMPT = (
+    "Classify crypto scam risk. Return compact JSON with scam_type, explanation, and "
+    "safe_actions. Do not provide exploit instructions."
+)
+
+
+def _ai_assessment(text, local_level):
+    """The model's opinion, which is advice to this module and never its verdict.
+
+    Routed through `undx_router` rather than posted to a vendor, so this call is inside
+    the privacy ceiling, the spend ledger, provider health and the circuit breaker like
+    everything else. Two things about it are specific to a security control and are the
+    reason this was the hardest of the migrations rather than the most mechanical.
+
+    **The answer has to be an object, so the requirement travels with the request.**
+    `require_json` is a capability the router filters providers on, not a preference it
+    tries to honour. Sent to a provider with no JSON mode this would come back as prose,
+    `json.loads` would raise, and the `except` below would fold it into
+    `{"error": ...}` — which `analyze_text` reports as "AI review unavailable". A scam
+    check quietly downgrading itself to local-rules-only, on every request, with a
+    reassuring "unavailable" note, is a worse outcome than the outage it imitates.
+
+    **Everything deterministic stays above this.** The score, the risk level, the domain
+    findings and the address findings are computed before this is called and are not
+    shown to the model. What comes back may add a scam type, add safe actions, and
+    supply the human-readable explanation; it cannot lower a score, clear a red flag or
+    downgrade a level. That ordering is the §16 control and it is asserted, because it
+    is one refactor away from "merge the AI's fields into the result" — which reads
+    tidier and hands a stranger's pasted text a vote on its own risk rating.
+
+    Returns `None` when there was nothing to ask about, or an error dict. The error is
+    deliberately specific about *which* failure happened: a provider outage and a reply
+    that was not the agreed shape need different responses from whoever reads the log,
+    and the old code reported both as whatever `str(exc)` said.
+
+    **One behaviour deliberately changed, and it is not a tidy-up.** The old code did two
+    contradictory things about length: it returned `None` for any input over 5000
+    characters, *and* sliced the prompt to `text[:5000]`. The slice made the guard
+    redundant and the guard made the slice unreachable, so one of them was dead either
+    way. The guard is the one that went, because "no AI review above 5000 characters" is
+    an evasion an attacker can use on purpose: pad a scam message past the limit and the
+    model layer switches itself off, silently, leaving only the local keyword rules — and
+    a long message is the interesting case, not the cheap one. The cost bound is the
+    slice, which is what a bound should be. This costs spend that the old code did not,
+    on inputs the old code refused to look at, which is why it is recorded here and in
+    the census rather than left for someone to discover in a bill.
+    """
+    if not text:
         return None
+    envelope = undx_router.route_structured_request(
+        None,
+        _ASSESSMENT_SYSTEM_PROMPT,
+        f"Local risk level: {local_level}\nText:\n{text[:5000]}",
+        timeout=12,
+        temperature=0.1,
+        privacy_class=SCAM_SHIELD_PRIVACY_CLASS,
+        call_domain=SCAM_SHIELD_CALL_DOMAIN,
+        require_json=True,
+        json_schema=SCAM_ASSESSMENT_SCHEMA,
+    )
+    if not envelope.get("ok"):
+        # The router's own reason, not a rewritten one. It already distinguishes a
+        # privacy refusal from a spend limit from an outage from a chain with no
+        # JSON-capable provider in it, and collapsing those back into one string here
+        # would throw away the only part of the envelope worth reading on failure.
+        return {"error": str(envelope.get("error") or "AI review unavailable")[:240]}
     try:
-        payload = {
-            "model": os.getenv("OPENAI_SCAM_MODEL", "gpt-4o-mini"),
-            "messages": [
-                {"role": "system", "content": "Classify crypto scam risk. Return compact JSON with scam_type, explanation, and safe_actions. Do not provide exploit instructions."},
-                {"role": "user", "content": f"Local risk level: {local_level}\nText:\n{text[:5000]}"},
-            ],
-            "temperature": 0.1,
-            "response_format": {"type": "json_object"},
-        }
-        response = requests.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            json=payload,
-            timeout=12,
-        )
-        if not response.ok:
-            return {"error": f"OpenAI unavailable: {response.status_code}"}
-        content = response.json()["choices"][0]["message"]["content"]
-        return json.loads(content)
-    except Exception as exc:
-        return {"error": str(exc)[:240]}
+        parsed = json.loads(envelope.get("response") or "")
+    except Exception:
+        # Reached only if a provider that was *required* to return JSON did not. That is
+        # a provider defect rather than this module guessing wrong, so it says so.
+        return {"error": "AI review returned an unparseable answer"}
+    if not isinstance(parsed, dict):
+        return {"error": "AI review returned a non-object answer"}
+    # Overwrite, never `setdefault`. Everything else in `parsed` came from a model that
+    # was reading text a stranger pasted, so a reply carrying its own `"source"` is a
+    # thing that can happen on purpose. Attribution is a fact about which provider ran,
+    # held by the envelope, and the payload does not get a vote on it.
+    parsed["source"] = str(envelope.get("source") or envelope.get("provider") or "")
+    return parsed
 
 
 def _level(score, flags_count=0, has_urls=False):
@@ -242,8 +328,20 @@ def analyze_text(text):
 
     score = max(0, min(100, score))
     risk_level = _level(score, len(red_flags), bool(urls))
-    ai_note = _openai_assessment(original, risk_level)
-    source_status = "Local rules + OpenAI AI review" if ai_note and not ai_note.get("error") else "Live threat intelligence unavailable; local scam rules were used."
+    ai_note = _ai_assessment(original, risk_level)
+    # Named from the envelope, not from a constant. This said "Local rules + OpenAI AI
+    # review" while the call was hard-wired to OpenAI; under the router the answer can
+    # come from any provider in the chain, and the string is written to `scam_scans` and
+    # shown in the admin "Source" column, so a hardcoded vendor name would be a stored
+    # false attribution rather than a cosmetic one. Falls back to the generic label
+    # `scam_shield_engine` already uses when the router reports no source.
+    source_status = (
+        f"Local rules + {ai_note['source']} AI review"
+        if ai_note and not ai_note.get("error") and ai_note.get("source")
+        else "Local rules + AI review"
+        if ai_note and not ai_note.get("error")
+        else "Live threat intelligence unavailable; local scam rules were used."
+    )
     if ai_note and not ai_note.get("error"):
         explanation_ai = ai_note.get("explanation") or ""
         scam_type = ai_note.get("scam_type") or ""
