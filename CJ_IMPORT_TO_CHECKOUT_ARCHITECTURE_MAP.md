@@ -320,12 +320,11 @@ query names is buyer-visible by default, so the strip now lives in
    changes nothing about that — the sandbox path is what these tests exercise.
 6. ~~**`bot.py:4379-4393` documents a constant that no longer exists**~~, and
    said native "already says 'Price at checkout' on the same card" — which
-   native had stopped doing. Rewritten: `PRICE_LABEL_UNPRICED` and
-   `MAX_PRICE_LABEL_CENTS` now each state what they are and name the file that
-   pins them, and the deleted comment is recorded rather than quietly dropped,
-   because a comment outliving its code is exactly how the parity claim above
-   survived. Cosmetic in isolation; it is in this list because it is the same
-   failure mode as the three seams.
+   native had stopped doing. Rewritten once as prose that enumerated the six
+   surfaces printing nothing instead, and the enumeration was accurate. It was
+   also incomplete, which is the only way a hand-written list ever fails. See
+   "The tenth seam" below: the checkout screen was a seventh surface, and it was
+   inventing an amount on the receipt. Filed as cosmetic; it was not.
 7. ~~**A published dropship listing cannot be approved.**~~ The admin Approve
    button 409'd on every listing `drafts.publish` produces, which is why listing
    14 needed a hand-written UPDATE. Fixed via `lifecycle.awaiting_moderation`;
@@ -887,9 +886,121 @@ including the `COALESCE(cover_image_url,'')` in the backfill script.
 
 ---
 
+## The tenth seam: the list that could not notice what was never on it
+
+Gap 6 was filed as cosmetic — a stale comment in `bot.py`, rewritten. Its own
+stated lesson is why it was worth re-opening: *a claim written in prose gets
+believed*. So every claim the rewrite makes was measured rather than re-read.
+
+Four of the five hold.
+
+- Both parity suites — Python and TypeScript — really do read
+  `priceLabelParity.json`. The fixture is the shared artefact, not a sentence.
+- The three ceiling constants (`bot.MAX_PRICE_LABEL_CENTS`,
+  `drafts.MAX_CHECKOUT_PRICE_CENTS`, `MAX_PRICE_LABEL_MINOR` in TypeScript) all
+  equal `99_999_999`, and each is pinned by something that fails if it moves —
+  the last by fixture cases either side of it.
+- The clamp window between `parse_price_label_to_cents` (which clamps) and
+  `_set_prices` (which accepts ten times as much) is closed on all three write
+  paths, not just the one the comment named: `_validate` at publication,
+  `_live_price_label` on a supplier reprice, and
+  `marketplace_normalize_price_label` on the seller edit.
+
+The fifth is the seam. The comment listed, in prose, the six surfaces that print
+nothing rather than prose for a listing with no price: the serializer, the web
+grid, the web product page, the client-side search card, the app's grid, the
+app's product page. Every entry was correct.
+
+`MarketplaceCheckoutScreen` was the seventh, and it was not on the list because
+nobody writing the list was thinking about checkout — an unpriced listing cannot
+be bought, so checkout felt out of scope. Line 225:
+
+```tsx
+params.subtotalMinor != null ? formatMinor(...) : params.priceLabel || "Shown at checkout"
+```
+
+Both halves of that fallback put something in the amount slot that is not the
+amount. `priceLabel` is the **unit** price — `handleBuyNow` multiplies it out
+for exactly this reason, and then this screen put the bare label back under
+"Item total", "Total" and "Amount paid", so an order for two displayed one
+item's price as its total. And "Shown at checkout" is a promise that names the
+screen the buyer is already standing on; on the confirmation view it rendered as
+the value of **Amount paid**, after the money had moved.
+
+Unreachable today — both callers pass `subtotalMinor`. Kept dead by convention
+only: the param is optional and nothing pinned it. That is the same shape as the
+sixth seam's `bind_shop`, in the mirror. There, a guard nothing could satisfy;
+here, a fallback nothing could reach. Both are held in place by a fact about the
+callers that no test states.
+
+Alongside it, `priceFallback: "Price at checkout"` was still shipping in eleven
+i18n catalogs, read by zero code — one `t()` call from returning the exact
+phrase the grid card was fixed to stop saying.
+
+### The half that would have replaced one claim with another
+
+The obvious fix is to add checkout to the list. That is the defect again with a
+longer list, and the next surface written will be missed the same way.
+
+So the claim stops being an enumeration. `MarketplacePriceLabelRendering.test.tsx`
+now walks `mobile-native/src/` and fails on any banned phrase in rendered copy,
+and separately fails on any catalog key whose *name* offers to stand in for a
+missing price. By key, not by phrase: ten translations of "Price at checkout"
+are invisible to anyone searching for the English, and the key name is the only
+language-independent part.
+
+Two things this required getting right, both of which would have made the scan
+lie rather than fail:
+
+- **Comments must be stripped, not skipped.** Three files that have to pass this
+  scan discuss the banned phrases in prose, including this fix's own
+  explanation. Stripping is by regex over block and line forms, and it handles
+  `{/* … */}`, because JSX writes its comments that way and a line-based check
+  that looks for a leading `//` reads straight past them.
+- **The scan must be proven to be reading something.** A stripper that returns
+  `""` makes every phrase vanish and every assertion pass — it fails *open*. So
+  a string that genuinely ships is looked for and must be found, in the file the
+  scan most needs to read.
+
+The heuristic was also deliberately narrowed. Its first draft caught
+`priceLabelPlaceholder` and `pricePlaceholder` across all eleven locales — 22
+hits, none of them defects. A field placeholder tells a seller what to type into
+an empty box; a fallback stands in for a price on a buyer surface. Widening the
+rule to cover both would have forced an exemption list, and an exemption list is
+where a rule starts negotiating.
+
+### What the tests had to be
+
+Rendering, not source-matching. The screen's guards were then driven through
+both stages a buyer reaches, including the confirmation receipt via the cash
+lane, because "Amount paid" is the row where the old fallback did the most
+damage and it is only worth guarding on the path that reaches it.
+
+Rows are asserted **absent**, not blank: a `SummaryRow` with an empty value
+still prints its label, so "Amount paid" over nothing is its own small lie. And
+every case also checks that a *known* amount still prints, because a screen that
+renders no amount ever would otherwise satisfy "invents nothing".
+
+`scripts/mutation_checkout_price_surface.py` runs 11 mutations plus one
+deliberate no-op control; all 11 are caught and the control survives. One real
+survivor on the first run, and it was the assertion's fault rather than a bad
+pairing: the product card's price guard, tested by searching for the price text,
+could not tell an omitted element from one rendered as an empty string — both
+find nothing — while an empty `<Text>` keeps the price font's weight and
+margins. The assertion moved to the element.
+
+The run also turned up a second live defect the guards had created. Removing the
+total row left the buyer with *no* account of the amount, because the sentence
+covering an unknown amount lived only on the card branch — and card payments are
+paused, so on the one lane a buyer can actually use, an order with no subtotal
+said nothing about the amount whatsoever. **A row removed for honesty still owes
+the buyer the reason.**
+
+---
+
 ## What kept coming back
 
-Ten defects in this chain, ten different subsystems, one shape: **a number
+Eleven defects in this chain, eleven different subsystems, one shape: **a number
 was asserted rather than measured.**
 
 - `publish()` never wrote `price_label`, and the publish test asserted `status`
@@ -927,6 +1038,10 @@ was asserted rather than measured.**
   reader returns what that reader computes — which it always did. Four
   independent copies of `media[0] if media else None` agreed at the time of
   writing, and nothing ever asked two of them the same question.
+- A comment asserted, by listing them, which surfaces refuse to invent a price.
+  The list was six long, every entry correct, and the checkout screen was the
+  seventh — filling "Amount paid" with a sentence. Nothing could fail, because
+  the claim was prose and the surface it omitted had no test of its own.
 
 In all of them the suite was green, and in all of them the green was about the
 halves rather than the seam. Where a claim spans two components, this document now
@@ -1013,3 +1128,15 @@ today are the ones nobody will notice diverging. Corollary to the corollary,
 learned from the battery: **do not make the writers share the reader's
 reconciliation.** A reader may consult both stores; a writer that does has merely
 made "preserve the stale value" its default.
+
+The eleventh is the one this document was most at risk from, since it is mostly
+prose: **an enumeration of surfaces cannot notice the surface it never had.**
+Counting copies of a derivation catches divergence between things you already
+know about; it says nothing about the seventh reader nobody listed. The tell is
+the form of the claim rather than its content — if a comment or a test names its
+subjects one by one, ask what would have to happen for a new one to be added to
+it, and the answer is always "somebody remembers". Prefer the check that walks.
+Then close the two ways a walking check passes without looking: prove it read a
+non-empty set, and prove its filter still lets a known-present string through. A
+guard that fails open is worse than the prose it replaced, because prose does
+not claim to have run.

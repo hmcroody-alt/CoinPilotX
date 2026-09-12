@@ -203,7 +203,11 @@ export type RootStackParamList = {
     sellerName?: string;
     listingId?: number;
     itemTitle?: string;
-    priceLabel?: string;
+    // No `priceLabel`. It carried the *unit* price and the checkout screen was
+    // the only reader, which used it to fill the amount slot when no subtotal
+    // was passed — printing one item's price as the total of an order for two.
+    // The amount is `subtotalMinor`, already multiplied out, or it is unknown
+    // and no amount is shown. A label here would only offer that mistake again.
     subtotalMinor?: number;
     currency?: string;
     quantity?: number;

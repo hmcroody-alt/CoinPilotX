@@ -4382,27 +4382,44 @@ PRICE_LABEL_UNPRICED = {"free", "request access", "paid later", "premium later"}
 
 #: The checkout ceiling. Note that `parse_price_label_to_cents` **clamps** to
 #: this rather than refusing above it, while `drafts._set_prices` accepts ten
-#: times as much -- so between the two limits a card would be charged
-#: $999,999.99 for a listing priced higher. `PRICE_ABOVE_CHECKOUT_LIMIT` in
-#: `suppliers/drafts._validate` is what closes that window at publication.
+#: times as much (`pricing.MAX_PRICE_CENTS`, 1_000_000_000) -- so between the
+#: two limits a card would be charged $999,999.99 for a listing priced higher.
+#:
+#: Three write paths close that window, and all three were checked rather than
+#: assumed: `PRICE_ABOVE_CHECKOUT_LIMIT` in `suppliers/drafts._validate` at
+#: publication, `_live_price_label` on a supplier reprice, and
+#: `marketplace_normalize_price_label` below on the seller edit path. The
+#: TypeScript twin's `MAX_PRICE_LABEL_MINOR` holds the same number and is
+#: pinned by fixture cases either side of it.
 MAX_PRICE_LABEL_CENTS = 99_999_999
 
-# A comment describing a constant that no longer exists stood here, and it said
-# two things that had stopped being true: that a card "still has to put
-# something in the pill" for an unpriced listing, and that native "already says
-# 'Price at checkout' on the same card".
+# A comment describing a constant that no longer exists stood here, claiming
+# among other things that native "already says 'Price at checkout' on the same
+# card" -- which native had stopped doing. Its replacement then made the
+# opposite mistake: it listed, in prose, the surfaces that print nothing rather
+# than prose for an unpriced listing, and the list was six long and correct.
 #
-# Neither survives. A listing with no price now renders *no price element* on
-# every surface -- the serializer hands out "", and the web grid, the web
-# product page, the client-side search card, the app's grid and the app's
-# product page all print nothing rather than prose. "Price at checkout" is in
-# the app suite's list of phrases that must not appear.
+# It was also incomplete, and incomplete in the way a hand-written list always
+# is: it could not notice the surface that was never on it.
+# `MarketplaceCheckoutScreen` was the seventh, filling its amount slot with
+# `params.priceLabel || "Shown at checkout"` -- a unit price under a row
+# labelled "Item total", or a promise naming the screen the buyer was already
+# standing on, rendered on the confirmation view as the value of "Amount paid".
 #
-# It is recorded rather than simply deleted because this is the failure mode
-# that let the price-label parser claim parity with its TypeScript twin in a
-# docstring for as long as it did: a comment outlives the code it describes and
-# then gets believed. The rules above are stated as what they are, with the file
-# that pins each one named, so a future reader can check instead of trusting.
+# So the claim is no longer an enumeration. The app suite walks its own source
+# tree and fails on any rendered copy containing one of these phrases, and
+# separately fails on any catalog key whose name offers to stand in for a
+# missing price -- by key rather than by phrase, because `priceFallback` shipped
+# "Price at checkout" in eleven languages and ten of them were invisible to a
+# search for the English. Both live in
+# `mobile-native/src/screens/__tests__/MarketplacePriceLabelRendering.test.tsx`;
+# the checkout screen's own behaviour is pinned next to it in
+# `MarketplaceCheckoutAmountRendering.test.tsx`.
+#
+# The history is kept because this is the failure mode that let the price-label
+# parser claim parity with its TypeScript twin in a docstring for as long as it
+# did. A comment outlives the code it describes and then gets believed; a list
+# of surfaces outlives the surface it never had. Prefer the check that runs.
 
 
 def parse_price_label_to_cents(value, default_currency="USD"):

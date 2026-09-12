@@ -260,7 +260,6 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
       itemTitle: listing.title || "Marketplace item",
       sellerUserId: Number(listing.seller_user_id || 0),
       sellerName: sellerStoreName(listing),
-      priceLabel: listing.price_label || "",
       ...(unitMinor != null ? { subtotalMinor: unitMinor * qty, currency: listing.currency || "USD" } : {}),
       quantity: qty,
       fulfillment: listingFulfillment(listing),

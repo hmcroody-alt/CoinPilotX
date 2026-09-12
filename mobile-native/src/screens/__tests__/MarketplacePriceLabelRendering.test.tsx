@@ -33,6 +33,8 @@
 
 import React from "react";
 import { render, waitFor } from "@testing-library/react-native";
+import { readdirSync, readFileSync, statSync } from "fs";
+import { extname, join, relative } from "path";
 
 jest.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 })
@@ -81,7 +83,14 @@ const INVENTED = [
   "Price shown at checkout",
   "Request access",
   "Contact for price",
-  "See price at checkout"
+  "See price at checkout",
+  // Added after this file's own header had recorded it as past tense. The
+  // header said Buy Now "pushed the checkout screen, which promised 'Shown at
+  // checkout'" — and the fix stopped at the buy gate, so the phrase was still
+  // on the checkout screen, still rendering, just harder to reach. It survived
+  // because this list was written from the two screens this file renders and
+  // the checkout screen is a third.
+  "Shown at checkout"
 ];
 
 /**
@@ -267,5 +276,142 @@ describe("an unpriced listing on a full shelf", () => {
     const grid = await renderGrid(UNPRICED);
     expect(grid.getAllByText("Sold out").length).toBeGreaterThan(0);
     expect(grid.queryByText("Not priced yet")).toBeNull();
+  });
+});
+
+/**
+ * The rule, asked of the whole tree instead of the two screens above.
+ *
+ * Everything before this point renders a surface and inspects it, which can
+ * only ever cover surfaces someone remembered to add here. That is how
+ * "Shown at checkout" survived: `bot.py` carried a comment enumerating the
+ * surfaces that no longer invent a price — the serializer, the web grid, the
+ * web product page, the client-side search card, the app's grid, the app's
+ * product page — and the enumeration was accurate about all six. The checkout
+ * screen was the seventh, and a list written by hand cannot notice the item
+ * that was never on it.
+ *
+ * So the claim stops being an enumeration. These two tests read the source and
+ * the catalogs, which means a surface written next year is covered on the day
+ * it is written rather than on the day somebody remembers this file.
+ */
+describe("no surface invents a price, including the ones this file never renders", () => {
+  const SRC = join(__dirname, "..", "..");
+
+  /**
+   * Comments are stripped before searching, not skipped line by line.
+   *
+   * Three of the files that must pass this scan discuss the banned phrases in
+   * prose — this file's own header, the checkout screen's explanation of what
+   * it removed, and the grid card's note about what it stopped saying. A
+   * detector that cannot tell a quoted phrase in a comment from a rendered one
+   * would either fail on documentation or force the documentation to be
+   * deleted, and the documentation is the part that explains why the rule
+   * exists. Block form is handled too, because JSX writes its comments as
+   * `{/* … *␣/}` and a line-based check reads straight past them.
+   */
+  function withoutComments(source: string) {
+    return source
+      .replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/(^|[^:])\/\/.*$/gm, "$1");
+  }
+
+  function sourceFiles(dir: string, out: string[] = []): string[] {
+    for (const name of readdirSync(dir)) {
+      const full = join(dir, name);
+      if (statSync(full).isDirectory()) {
+        if (name === "node_modules" || name === "__tests__") continue;
+        sourceFiles(full, out);
+        continue;
+      }
+      if ([".ts", ".tsx"].includes(extname(name)) && !/\.test\.tsx?$/.test(name)) out.push(full);
+    }
+    return out;
+  }
+
+  const files = sourceFiles(SRC);
+
+  /**
+   * Two ways for the scan below to pass without looking at anything, both
+   * closed here: an empty file list, and a comment stripper that eats the code
+   * along with the comments.
+   *
+   * The second is the one worth spelling out. `withoutComments` is the only
+   * moving part in the scan, and a regression there fails *open* — every phrase
+   * goes missing, every test stays green, and the guard reports success while
+   * guarding nothing. So a string that genuinely ships in rendered copy is
+   * looked for and must be found. It is deliberately one of the sentences the
+   * checkout screen prints, which puts the control in the same file the scan
+   * most needs to read.
+   */
+  it("is reading the source it is guarding", () => {
+    expect(files.length).toBeGreaterThan(200);
+
+    const CONTROL = "No card or Stripe charge will start.";
+    const survives = files.filter((file) => withoutComments(readFileSync(file, "utf8")).includes(CONTROL));
+    expect(survives.map((file) => relative(SRC, file).split("\\").join("/"))).toContain(
+      "screens/MarketplaceCheckoutScreen.tsx"
+    );
+  });
+
+  it("does not ship any of these phrases in rendered copy", () => {
+    const found: string[] = [];
+    for (const file of files) {
+      const source = withoutComments(readFileSync(file, "utf8"));
+      const lines = source.split("\n");
+      lines.forEach((line, index) => {
+        for (const phrase of INVENTED) {
+          if (!line.includes(phrase)) continue;
+          found.push(`${relative(SRC, file).split("\\").join("/")}:${index + 1} says "${phrase}"`);
+        }
+      });
+    }
+    expect(found).toEqual([]);
+  });
+
+  /**
+   * The catalogs, by key name rather than by phrase.
+   *
+   * `priceFallback` shipped in eleven languages, read by no code, one `t()`
+   * call away from putting "Price at checkout" back on a card — and the ten
+   * translations of it could not be caught by searching for English. What is
+   * language-independent is the key: a name that says "the price is missing, so
+   * print this instead" describes a thing this product does not do, whatever
+   * language the value is in.
+   *
+   * A field placeholder is deliberately NOT caught here, though the first draft
+   * of this rule caught twenty-two of them. `priceLabelPlaceholder` ("Price
+   * label") and `pricePlaceholder` ("0.00") sit inside seller-facing inputs and
+   * tell a seller what to type into an empty box; they are never rendered as a
+   * price to a buyer. Widening the rule to cover them would have forced an
+   * exemption list, and an exemption list is where a rule starts negotiating.
+   * The rule is narrow so that every hit is a real one.
+   */
+  it("ships no catalog string whose job is to stand in for a missing price", () => {
+    const catalogs = join(SRC, "i18n", "catalogs");
+    const offenders: string[] = [];
+
+    function walk(node: unknown, path: string, locale: string) {
+      if (!node || typeof node !== "object") return;
+      for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+        const here = path ? `${path}.${key}` : key;
+        const lowered = key.toLowerCase();
+        if (lowered.includes("price") && lowered.includes("fallback")) {
+          if (typeof value === "string") offenders.push(`${locale}: ${here} = ${JSON.stringify(value)}`);
+        }
+        walk(value, here, locale);
+      }
+    }
+
+    for (const locale of readdirSync(catalogs)) {
+      const dir = join(catalogs, locale);
+      if (!statSync(dir).isDirectory()) continue;
+      for (const name of readdirSync(dir)) {
+        if (extname(name) !== ".json") continue;
+        walk(JSON.parse(readFileSync(join(dir, name), "utf8")), "", locale);
+      }
+    }
+
+    expect(offenders).toEqual([]);
   });
 });
