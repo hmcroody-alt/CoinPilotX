@@ -91,6 +91,82 @@ def test_the_vocabulary_matches_the_supplier_evaluator():
         assert getattr(r, name) == name
 
 
+# --- the verdict must agree with the thing that actually decides --------------
+def test_checkout_ready_never_promises_what_checkout_refuses():
+    """The property that makes this verdict trustworthy rather than decorative.
+
+    `services/marketplace_listing_lifecycle.inventory_available` is what the
+    real checkout calls (`bot.py:92730`). It is the DECIDER; this module is a
+    REPORTER. Every gap fixed this session has the same shape -- a reporter and a
+    decider that disagree -- so the binding is asserted directly instead of being
+    left to the two staying in step by hand.
+
+    Note the direction. `checkout_ready` may be false while checkout would have
+    allowed the sale: a missing price blocks the verdict for reasons that have
+    nothing to do with stock. What must never happen is the opposite -- the
+    verdict saying a buyer can complete a purchase that checkout then refuses.
+
+    The two read the type columns in OPPOSITE order, which is the drift this
+    test exists to catch: `inventory_available` asks for
+    ``product_type or listing_type``, while this module asks the type authority,
+    which prefers ``listing_type``. Every production row agrees today (measured:
+    14 rows, 0 disagreements). A row where they disagree is what would break it,
+    so such rows are included below deliberately.
+    """
+    from services import marketplace_listing_lifecycle as life
+
+    cases = [
+        listing(), listing(quantity=0), listing(quantity=1), listing(quantity=None),
+        listing(quantity="oops"), listing(quantity=""),
+        listing(price_label=""), listing(title=""),
+        listing(listing_type="digital", product_type="digital", quantity=None),
+        listing(listing_type="service", product_type="service", quantity=0),
+        # The rows the two authorities read differently, because the columns
+        # disagree. Production has none of these today; a supplier import or a
+        # row left on the `TEXT DEFAULT 'digital'` columns would be one.
+        listing(listing_type="physical", product_type="digital", quantity=None),
+        listing(listing_type="physical", product_type="digital", quantity=0),
+        listing(listing_type="digital", product_type="physical", quantity=None),
+        listing(listing_type="", product_type="physical", quantity=0),
+        listing(listing_type=None, product_type=None, quantity=None),
+    ]
+    promised = refused = 0
+    for case in cases:
+        verdict = r.evaluate(case)
+        if verdict["checkout_ready"]:
+            promised += 1
+            assert life.inventory_available(case, 1), (
+                f"readiness says a buyer can check out, checkout says no: {case!r}")
+        else:
+            refused += 1
+    # Both branches must be exercised, or the property proved nothing.
+    assert promised and refused
+
+
+def test_a_row_the_two_authorities_read_differently_still_fails_closed():
+    """The specific divergent row, named so the reason is not lost.
+
+    `listing_type='physical'` with `product_type='digital'` is what a row gets if
+    it is written to the five-type column while the legacy columns keep their
+    `TEXT DEFAULT 'digital'`. Checkout reads product_type first and calls it
+    stockless -- it would allow the sale. This module reads listing_type first
+    and reports UNKNOWN_INVENTORY, closing checkout.
+
+    That is the safe direction of disagreement, and this test pins it so that a
+    future edit which "aligns" the two by copying checkout's precedence has to
+    argue with a test rather than silently opening a sale of a physical item
+    whose stock nobody has counted.
+    """
+    from services import marketplace_listing_lifecycle as life
+
+    row = listing(listing_type="physical", product_type="digital", quantity=None)
+    assert life.inventory_available(row, 1) is True, (
+        "premise changed: checkout no longer treats this row as stockless")
+    verdict = r.evaluate(row)
+    assert verdict["warnings"] == [r.UNKNOWN_INVENTORY]
+    assert verdict["checkout_ready"] is False
+
+
 # --- unknown is not zero ------------------------------------------------------
 @pytest.mark.parametrize("quantity,expected", [
     (None, r.UNKNOWN_INVENTORY),
@@ -205,6 +281,65 @@ def test_the_type_vocabulary_is_the_shared_one():
     # "physical" is the only type that tracks stock, so it must NOT be listed.
     assert "physical" not in r.STOCKLESS_LISTING_TYPES
     assert set(types.LISTING_TYPES) - set(r.STOCKLESS_LISTING_TYPES) == {"physical"}
+
+
+def test_nothing_is_called_stockless_here_that_checkout_still_counts():
+    """The invariant behind `LEGACY_STOCKLESS_PRODUCT_TYPES` being derived.
+
+    An earlier version of that tuple was written out by hand as
+    ("course", "membership", "music", "ebook") -- read off the admin dropdown at
+    `bot.py:8710` and never checked against anything. Three of the four were
+    fiction as far as checkout is concerned: `inventory_available` recognises
+    only `course`, so a membership with no quantity would have been reported
+    ready to buy and then refused at the till. That is a false clear, which is
+    the defect family this whole module exists to close.
+
+    So the rule is asserted rather than the list. Any name this module dismisses
+    as having no stock concept must be a name CHECKOUT also dismisses. Adding a
+    guess back fails here, whether or not it happens to be a plausible word.
+    """
+    from services import marketplace_listing_lifecycle as life
+
+    unknown_to_checkout = set(r.STOCKLESS_PRODUCT_TYPES) - set(life.STOCKLESS_TYPES)
+    assert not unknown_to_checkout, (
+        f"{sorted(unknown_to_checkout)} are treated as stockless here but checkout "
+        "still requires stock for them -- readiness would promise a sale the till "
+        "refuses")
+
+    # The converse is deliberately NOT asserted. Checkout may dismiss stock for
+    # something this module still reports on; that direction only over-reports to
+    # the merchant, and `_tracks_stock` requires both readings to agree before
+    # stock is dismissed, so it cannot produce a false clear.
+
+
+def test_the_checkout_probe_asks_whether_stock_applies_not_whether_it_is_in_stock():
+    """Why `_stockless_at_checkout` nulls the quantity before probing.
+
+    The probe borrows the DECIDER to answer one narrow question: does stock
+    matter for this row's type at all? `inventory_available` answers a wider
+    one -- can this row satisfy an order right now -- and those two only look
+    alike while the shelf is full. Handing it the row's real quantity makes a
+    well-stocked listing look stockless, because "yes, 2 in stock" and "stock is
+    not a concept here" both come back as True.
+
+    Nulling the quantity first removes the stock half of its answer, so only the
+    type half survives. Without that, a merchant loses the LOW_STOCK warning on
+    exactly the rows where it matters most -- the ones whose type columns
+    disagree, where the verdict is already doing the most work.
+    """
+    # A row the two authorities read differently: 'digital' to the type
+    # authority, 'physical' to checkout -- with two left on the shelf.
+    row = listing(listing_type="digital", product_type="physical", quantity=2)
+
+    assert r._stockless_at_checkout(row) is False, (
+        "the probe is answering 'is it in stock' rather than 'does stock apply'")
+
+    verdict = r.evaluate(row)
+    assert verdict["warnings"] == [r.LOW_STOCK], (
+        "a nearly-empty shelf was reported as having no stock concept")
+    # Low stock is a warning, not a refusal: the merchant is told, the buyer is
+    # not stopped.
+    assert verdict["checkout_ready"] is True
 
 
 # --- missing is not free ------------------------------------------------------

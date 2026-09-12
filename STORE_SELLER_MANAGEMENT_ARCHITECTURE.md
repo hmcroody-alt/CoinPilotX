@@ -26,14 +26,45 @@ different product tables.
 | 2 | `services/business_os/marketplace/listing_drafts.py:168` `_completeness` | `business_os_mkt_listing_drafts` scratchpad | `{ready: bool, missing: ["section.field"]}` | the native composer |
 | 3 | `services/business_os/marketplace/service.py:249` `_validate_product_input` + `:404` `transition_product` | `business_os_mkt_products` row | a raised `MarketplaceError(code, status)` | the real decider behind #2 |
 | 4 | `mobile-native/src/api/storeDashboard.ts:592` `storeReadiness` + `:147` `listingHealth` | a client-side copy of `marketplace_listings` rows | a 5-rung ladder + 5 health states | **the Store screen the merchant actually opens** |
+| 5 | `services/marketplace_listing_lifecycle.py:55` `inventory_available` | `marketplace_listings` row, at purchase time | `bool` | **checkout** (`bot.py:92730`) |
 
-A fifth authority judges the neighbouring question — whether a *paid sale* can be
+A sixth authority judges the neighbouring question — whether a *paid sale* can be
 ordered from the supplier — and is mapped in the CJ document:
 `suppliers/fulfillment.py:1016` `BLOCKERS` (`SUPPLIER_SKU_MISSING`,
 `SUPPLIER_COST_UNKNOWN`, …).
 
 Authority #4 is the one with merchant consequences, and it reads none of #1, #2
 or #3. It cannot: the endpoint it loads returns no verdict to read.
+
+### Authority #5 is different in kind, and that changes the job
+
+#1–#4 are all *reporters*: they tell somebody what they think will happen.
+Authority #5 is the **decider** — it is what runs when a buyer presses Buy, and
+its answer is the one that becomes true. It was found late, while asking a
+question that should have been asked first: *does `checkout_ready: false` for
+unknown stock actually match what checkout does?*
+
+That reframes §5 and §81. "One readiness engine" cannot mean five reporters
+collapsed into one reporter, because a single reporter that disagrees with the
+decider is still wrong — it is just wrong in one place instead of four. The
+verdict has to be **bound** to the decider, and the binding has to be asserted,
+not maintained by hand. A predictor kept manually in sync with a decider is a
+defect with a delay on it.
+
+It also revealed a trap. The two type authorities read the columns in **opposite
+precedence**:
+
+| Reader | Precedence | Consequence |
+|---|---|---|
+| `inventory_available` (checkout) | `product_type or listing_type` | a row written to `listing_type` with the legacy `TEXT DEFAULT 'digital'` intact reads as *digital* |
+| `marketplace_listing_types.effective_listing_type` | `listing_type or product_type` | the same row reads as *physical* |
+| `bot.py:19625` | `listing_type or product_type or delivery_type or "physical"` | a third rule again |
+
+Measured against production before acting (read-only, `railway run --service
+Postgres`): **14 listings, 0 rows where the two disagree, 0 rows with a NULL
+quantity.** So this is a latent correctness bug, not a live outage — recorded
+that way rather than dressed up. Worth noting separately: **7 of the 14 have
+`quantity = 0`**, so they are genuinely not checkout-ready today.
 
 ### Why the fourth authority exists
 
@@ -238,9 +269,61 @@ column defaults apply — failed. The fixture has since been corrected to carry
 both columns with the values a real row carries, and
 `test_the_default_column_values_do_not_make_everything_stockless` pins it.
 
-A 13-mutant battery over the engine (`scripts/mutate_listing_readiness.sh`) has
-no survivors; each mutant is `ast.parse`-verified, because a malformed mutant is
-not evidence.
+### A third bug, found by binding the reporter to the decider
+
+The two above were caught before the commit. This one was caught *after* it, by
+writing the test that should have existed first:
+`test_checkout_ready_never_promises_what_checkout_refuses` runs every verdict
+past authority #5 and asserts the one direction that must never happen — the
+verdict promising a purchase checkout will refuse. (The opposite is legitimate:
+a missing price closes checkout for reasons that have nothing to do with stock.)
+
+It failed immediately, on this module's own brand-new code:
+
+> `listing_type='digital'` over `product_type='physical'` with `quantity` NULL →
+> readiness said `checkout_ready: true`; `inventory_available` said no.
+
+That is **gap 21's exact shape in code written to close gap 21** — a reporter
+restating a decider's rule and drifting from it, this time within a day rather
+than over a year. The cause was `_tracks_stock` taking its own type reading as
+final while checkout used the opposite precedence.
+
+The fix does not align the precedences — picking either one would just move which
+rows are wrong. It **asks** instead:
+
+```python
+def _stockless_at_checkout(listing):
+    return bool(_life.inventory_available(dict(listing, quantity=None), 1))
+
+# stockless only when BOTH readings agree
+return not (stockless_here and _stockless_at_checkout(listing))
+```
+
+Two details carry weight. Nulling the quantity first isolates the *type* half of
+checkout's answer — handed a real quantity, `inventory_available` answers "is it
+in stock", and a well-stocked row would look stockless, costing the merchant
+their LOW_STOCK warning (mutant Q, now pinned). And requiring **agreement** fails
+closed in both directions: the verdict never promises a sale the till refuses,
+and at worst reports a stock state for something checkout would have sold anyway
+— which shows the merchant a real inconsistency instead of hiding it.
+
+A fourth issue fell out of the same fix: `LEGACY_STOCKLESS_PRODUCT_TYPES` had
+been hand-written as `("course", "membership", "music", "ebook")`, read off the
+admin dropdown at `bot.py:8710`. Checkout recognises only `course`; the other
+three were fiction that would each have become a false clear. It is now *derived*
+— `set(_life.STOCKLESS_TYPES) - set(_types.LISTING_TYPES)` — and
+`test_nothing_is_called_stockless_here_that_checkout_still_counts` asserts the
+rule rather than the list, so a guess cannot be reintroduced.
+
+The lesson, stated plainly: **a fixture that agrees with the code's mistake
+proves nothing, and a rule restated from another module is a guess until a test
+makes the other module answer.**
+
+A 17-mutant battery over the engine (`scripts/mutate_listing_readiness.sh`) has
+no survivors; each mutant is `ast.parse`-verified and no-op-detected, because a
+malformed mutant is not evidence. Mutants N, O, P and Q exist specifically to
+defend the binding above — N (drop the agreement), O (loosen `and` to `or`),
+P (restore the invented vocabulary), Q (stop isolating the type).
 
 ### Still open on the client
 

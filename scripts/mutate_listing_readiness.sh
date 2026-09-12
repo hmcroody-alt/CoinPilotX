@@ -129,6 +129,42 @@ open(p,'w').write(s)"
 # state and loses its checkout.
 run_mutant "M legacy stockless types dropped" .venv/bin/python3 -c "
 p='$SRC'; s=open(p).read()
-s=s.replace('''    if _text(listing.get(\"product_type\")).lower() in LEGACY_STOCKLESS_PRODUCT_TYPES:
-        return False''','''    pass''')
+s=s.replace('''LEGACY_STOCKLESS_PRODUCT_TYPES = tuple(
+    sorted(set(_life.STOCKLESS_TYPES) - set(_types.LISTING_TYPES)))''','''LEGACY_STOCKLESS_PRODUCT_TYPES = ()''')
+open(p,'w').write(s)"
+
+# --- mutants aimed at the reporter/decider binding added after the property
+# --- test found a false clear in this module's own first version -------------
+
+# N: the agreement requirement is dropped and only this module's reading counts.
+# This is the false clear the property test caught: listing_type='digital' over
+# product_type='physical' with no quantity was reported ready to buy while
+# checkout refused it.
+run_mutant "N agreement with checkout dropped" .venv/bin/python3 -c "
+p='$SRC'; s=open(p).read()
+s=s.replace('    return not (stockless_here and _stockless_at_checkout(listing))','    return not stockless_here')
+open(p,'w').write(s)"
+
+# O: agreement loosened from 'both' to 'either'. Fails open in the other
+# direction -- checkout's reading alone can now dismiss stock for a row this
+# module reads as physical.
+run_mutant "O either authority may dismiss stock" .venv/bin/python3 -c "
+p='$SRC'; s=open(p).read()
+s=s.replace('    return not (stockless_here and _stockless_at_checkout(listing))','    return not (stockless_here or _stockless_at_checkout(listing))')
+open(p,'w').write(s)"
+
+# P: the derived legacy vocabulary is hand-written again, with the three names
+# that were originally guessed from the admin dropdown. Checkout recognises none
+# of them, so each becomes a promise it will refuse.
+run_mutant "P invented vocabulary restored" .venv/bin/python3 -c "
+p='$SRC'; s=open(p).read()
+s=s.replace('''LEGACY_STOCKLESS_PRODUCT_TYPES = tuple(
+    sorted(set(_life.STOCKLESS_TYPES) - set(_types.LISTING_TYPES)))''','''LEGACY_STOCKLESS_PRODUCT_TYPES = (\"course\", \"membership\", \"music\", \"ebook\")''')
+open(p,'w').write(s)"
+
+# Q: the probe stops nulling the quantity, so it reports whatever the row's own
+# stock happens to be and the type question is never actually isolated.
+run_mutant "Q probe no longer isolates the type" .venv/bin/python3 -c "
+p='$SRC'; s=open(p).read()
+s=s.replace('    return bool(_life.inventory_available(dict(listing, quantity=None), 1))','    return bool(_life.inventory_available(dict(listing), 1))')
 open(p,'w').write(s)"

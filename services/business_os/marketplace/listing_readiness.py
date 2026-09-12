@@ -66,6 +66,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from services import marketplace_listing_types as _types
+from services import marketplace_listing_lifecycle as _life
 
 # --- vocabulary --------------------------------------------------------------
 # Spelled to match services/business_os/suppliers/drafts.py. See
@@ -107,10 +108,18 @@ CHECKOUT_BLOCKING = frozenset({
 STOCKLESS_LISTING_TYPES = ("digital", "service", "event", "booking")
 
 #: Legacy ``product_type`` values that predate the five-type vocabulary and are
-#: equally stockless. ``effective_listing_type`` resolves anything outside its own
-#: five names to "physical" -- the right default there, and the wrong one here,
-#: because it would give every course in the store an inventory state.
-LEGACY_STOCKLESS_PRODUCT_TYPES = ("course", "membership", "music", "ebook")
+#: stockless anyway -- today, just "course". DERIVED from checkout's own list
+#: rather than written out here: an earlier version of this line was a guess
+#: ("membership", "music", "ebook", read off an admin dropdown), and the guesses
+#: were inert at best and wrong at worst, because checkout does not treat any of
+#: them as stockless. Deriving it means this can never again claim something is
+#: stockless that checkout will refuse to sell without stock.
+#:
+#: ``effective_listing_type`` resolves anything outside its own five names to
+#: "physical", which is right for its purpose and would give every course in the
+#: store an inventory state if used alone here.
+LEGACY_STOCKLESS_PRODUCT_TYPES = tuple(
+    sorted(set(_life.STOCKLESS_TYPES) - set(_types.LISTING_TYPES)))
 
 #: Everything with no stock concept, under either vocabulary.
 STOCKLESS_PRODUCT_TYPES = STOCKLESS_LISTING_TYPES + LEGACY_STOCKLESS_PRODUCT_TYPES
@@ -133,6 +142,23 @@ def _has_price(price_label: Any) -> bool:
     return any(ch.isdigit() for ch in label)
 
 
+def _stockless_at_checkout(listing: dict) -> bool:
+    """Ask the checkout decider whether stock matters for this row at all.
+
+    ``marketplace_listing_lifecycle.inventory_available`` is what checkout calls
+    (``bot.py:92730``). It refuses a NULL quantity for anything that tracks
+    stock, so probing it with the quantity removed isolates exactly the type
+    half of its decision: a ``True`` means checkout will not consult stock for
+    this listing.
+
+    Asked rather than copied. The alternative — restating ``product_type or
+    listing_type`` and its ``STOCKLESS_TYPES`` here — is a forecast of another
+    authority's decision, and every gap fixed in this area has been a forecast
+    that drifted away from the decider it was forecasting.
+    """
+    return bool(_life.inventory_available(dict(listing, quantity=None), 1))
+
+
 def _tracks_stock(listing: dict) -> bool:
     """Whether stock is a fact about this listing at all.
 
@@ -151,11 +177,24 @@ def _tracks_stock(listing: dict) -> bool:
     """
     listing_type = _types.effective_listing_type(
         listing.get("listing_type"), listing.get("product_type"))
-    if listing_type in STOCKLESS_LISTING_TYPES:
-        return False
-    if _text(listing.get("product_type")).lower() in LEGACY_STOCKLESS_PRODUCT_TYPES:
-        return False
-    return True
+    stockless_here = (listing_type in STOCKLESS_LISTING_TYPES
+                      or _text(listing.get("product_type")).lower()
+                      in LEGACY_STOCKLESS_PRODUCT_TYPES)
+    # Both readings must agree before stock is dismissed as irrelevant.
+    #
+    # The two authorities read the type columns in opposite order -- checkout
+    # asks for `product_type or listing_type`, the type authority prefers
+    # `listing_type` -- so a row whose columns disagree gets two answers. Taking
+    # only this module's answer produced a verdict promising a purchase that
+    # checkout then refused (listing_type='digital' over product_type='physical'
+    # with no quantity): a false clear, which is the exact defect this whole
+    # module was written to remove, reintroduced one layer up.
+    #
+    # Requiring agreement fails closed in both directions of the disagreement:
+    # the verdict never promises a sale checkout would refuse, and at worst
+    # reports a stock state for something checkout would have sold regardless --
+    # which shows the merchant a real inconsistency rather than hiding it.
+    return not (stockless_here and _stockless_at_checkout(listing))
 
 
 def _stock_codes(listing: dict) -> list:
