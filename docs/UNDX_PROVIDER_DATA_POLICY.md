@@ -28,7 +28,7 @@ than filled in with a plausible sentence.
 | Provider | Trains on our data | Retention | May receive |
 |---|---|---|---|
 | OpenAI (`gpt-4o-mini`) | No, on the API tier | Not independently verified | `SYNTHETIC`, `PLATFORM_PUBLIC`, `PLATFORM_PRIVATE` |
-| Claude (`claude-3-5-haiku`) | No, on the API tier | Not independently verified | `SYNTHETIC`, `PLATFORM_PUBLIC`, `PLATFORM_PRIVATE` |
+| Claude (`claude-haiku-4-5`) | No, on the API tier | Not independently verified | `SYNTHETIC`, `PLATFORM_PUBLIC`, `PLATFORM_PRIVATE` |
 | **Meta Muse — Standard** (`muse-spark-1.3`) | **No** — console states prompts and completions are not used to train Meta models | Not independently verified | `SYNTHETIC`, `PLATFORM_PUBLIC`, `PLATFORM_PRIVATE` |
 | **Meta Muse — Contributor** (`muse-spark-1.3-contributor`) | **Yes** — console states inputs and outputs are used to train and improve Meta's AI models | Training corpus | `SYNTHETIC` **only** |
 | Perplexity (`sonar`) | Not independently verified | Not independently verified | `SYNTHETIC`, `PLATFORM_PUBLIC` |
@@ -57,6 +57,24 @@ Two further reasons, independent of the data question:
 
 Switching is `META_MUSE_MODEL`, one environment variable. It should only be done
 for traffic known to carry no user or customer data.
+
+### The Contributor tier is already configured elsewhere in this environment
+
+`META_MUSE_MODEL` is not the only route to it. The production service also
+carries `ANTHROPIC_BASE_URL=https://api.meta.ai` together with
+`ANTHROPIC_MODEL=muse-spark-1.3-contributor` and three
+`ANTHROPIC_DEFAULT_*_MODEL` variables set to the same Contributor ID — Claude
+Code CLI settings that leaked onto the deployed service.
+
+No UNDX code reads them. But any component added later that talks to Anthropic
+through the official SDK picks them up **by default, with no code change and no
+review**, and its traffic lands in Meta's training corpus while every log line
+and status page continues to say "Claude".
+
+`undx_router._call_claude` therefore hardcodes `https://api.anthropic.com` and
+reads `CLAUDE_MODEL` rather than `ANTHROPIC_MODEL`. That is a deliberate refusal
+to be configurable, pinned by `ClaudeEndpointTest`, and the variables themselves
+should be deleted from the service — see `UNDX_RAILWAY_PROVIDER_CONFIG.md`.
 
 ## `PRIVATE_OFFICE`
 
