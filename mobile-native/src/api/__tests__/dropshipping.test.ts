@@ -397,6 +397,45 @@ describe("stateForError separates causes that have different fixes", () => {
     }
   });
 
+  /**
+   * The vault's three answers are three different sentences.
+   *
+   * The server used to answer `credential_vault_unavailable` 503 for every way
+   * a credential could fail, including two that are not outages at all: a call
+   * site handing the vault something malformed, and a stored row that will not
+   * open under this scope. Splitting them server-side is only half the fix —
+   * the half a merchant sees is here, and adding a status the mapper has never
+   * met is how a fix becomes a regression.
+   *
+   * 409 matches none of the status classes at the bottom of `stateForError`, so
+   * without an entry in DISCONNECTED_CODES an unusable credential reads as a
+   * bare "Something went wrong". The merchant would be one button away from the
+   * fix — reconnect — and be shown no button at all.
+   *
+   * The 500 is deliberately generic and this test says so, so that a later
+   * reader does not "complete the set" by giving it a screen of its own. It
+   * means the bug is ours; there is nothing for the merchant to do.
+   */
+  it("tells the three credential failures apart the way the merchant acts on them", () => {
+    expect(stateForError(new PulseApiError("x", 503, "credential_vault_unavailable")))
+      .toBe("CREDENTIAL_STORAGE_UNAVAILABLE");
+    expect(stateForError(new PulseApiError("x", 409, "credential_unusable")))
+      .toBe("SUPPLIER_DISCONNECTED");
+    expect(stateForError(new PulseApiError("x", 500, "credential_request_invalid")))
+      .toBe("ERROR");
+  });
+
+  /**
+   * The anti-vacuity half of the test above: it is the *status* that has no
+   * answer, so the named code has to be what rescues it. A mapper that happened
+   * to classify 409 correctly by accident would keep the previous test green.
+   */
+  it("does not leave a 409 to the status classes, which have no case for it", () => {
+    expect(stateForError(new PulseApiError("x", 409))).toBe("ERROR");
+    expect(stateForError(new PulseApiError("x", 409, "credential_unusable")))
+      .not.toBe("ERROR");
+  });
+
   it("does not classify an unknown failure as anything specific", () => {
     expect(stateForError(new Error("boom"))).toBe("ERROR");
     expect(stateForError(new PulseApiError("x", 500))).toBe("ERROR");

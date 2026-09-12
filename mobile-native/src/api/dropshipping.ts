@@ -1236,6 +1236,16 @@ const DISCONNECTED_CODES = [
   "supplier_disconnected",
   "connection_not_found",
   "credential_missing",
+  // A stored credential the server cannot open: sealed under a key rotation has
+  // since retired, or written under a different store than the one asking. It
+  // sits beside `credential_missing` because the merchant's move is identical —
+  // reconnect the supplier account — and because the alternative is worse than
+  // it looks. It arrives as a 409, which matches none of the status classes
+  // below, so without this entry it reaches the merchant as "Something went
+  // wrong": no cause, no button, and no hint that reconnecting fixes it. That
+  // is the failure this whole function exists to prevent, and it would have
+  // been introduced by the server-side change that made 409 possible.
+  "credential_unusable",
   "auth_expired",
   "reauth_required",
   "not_connected"
@@ -1289,6 +1299,11 @@ export function stateForError(error: unknown): DropshippingState {
   // missed, so it is matched here beside them rather than added to
   // PROVIDER_CODES.
   if (code === "credential_vault_unavailable") return "CREDENTIAL_STORAGE_UNAVAILABLE";
+  // Its two siblings are deliberately elsewhere, because "the vault is down" is
+  // the only one of the three the merchant can wait out. `credential_unusable`
+  // is in DISCONNECTED_CODES (reconnect), and `credential_request_invalid` is a
+  // 500 that falls through to "ERROR" on purpose — it means the bug is ours, and
+  // there is no action to offer someone for a mistake they did not make.
   if (code === "store_not_approved") return "STORE_NOT_APPROVED";
   if (code === "invalid_api_key") return "INVALID_CREDENTIAL";
 

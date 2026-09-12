@@ -306,9 +306,10 @@ query names is buyer-visible by default, so the strip now lives in
    for a product that has five photos. `scripts/backfill_dropship_cover_image.py`
    closes that, dry-run by default; the dry run reports exactly one affected row
    in all of production. **Not run — it is a production write.**
-4. **`vault.seal`/`unseal` wrap everything in `except Exception: raise
-   VaultError() from None`**, which turns a caller's mistake into what looks
-   like an infrastructure failure. Cost me a false alarm already.
+4. ~~**`vault.seal`/`unseal` wrap everything in `except Exception: raise
+   VaultError() from None`**~~, which turned a caller's mistake into what looked
+   like an infrastructure failure. Cost me a false alarm already — and the false
+   alarm was the smaller half. See "The eighth seam" below.
 5. ~~**Fulfillment is unreachable for the current connection**~~ —
    `external_shop_id` is unset, so `create_intent` raises
    `shop_binding_required`. The refusal is honest and is unchanged. What was
@@ -641,9 +642,121 @@ all 15 are caught.
 
 ---
 
+## The eighth seam: the handler that blinded the diagnostic built for it
+
+Filed as gap #4, and the filing was accurate as far as it went: `vault.seal` and
+`vault.unseal` each wrapped their whole body in
+
+```python
+    except Exception:
+        raise VaultError() from None
+```
+
+so a caller's mistake came back as `credential_vault_unavailable`, 503, *try
+again later*. That is the half that cost a false alarm — a retry that cannot
+help, and an operator sent to check a deployment that was fine.
+
+The other half is worse, and it is only visible from inside this package.
+`business_os_supplier_routes._origin` exists, and its docstring says why: a code
+like `MALFORMED_PROVIDER_RESPONSE` "is raised from a dozen separate validators
+that all answer with the same opaque 502", so `_origin` walks the traceback and
+reports the innermost frame inside `business_os/suppliers/` as `file:line`. It
+is the mechanism this package already built for precisely the problem the vault
+had. **And a blanket `except` is the one shape it cannot see through** — when
+you re-raise at the handler, the handler *is* the innermost supplier frame, and
+the coordinate points at the `raise` statement rather than at the check that
+failed.
+
+Measured, through the real `_origin`, before any change:
+
+| cause | class | code / status | origin |
+|---|---|---|---|
+| bundle missing a field | `VaultError` | `credential_vault_unavailable` / 503 | `vault.py:127` |
+| scope value is not a string | `VaultError` | `credential_vault_unavailable` / 503 | `vault.py:127` |
+| wrong store (AAD refuses) | `VaultError` | `credential_vault_unavailable` / 503 | `vault.py:144` |
+| sealing key retired by rotation | `VaultError` | `credential_vault_unavailable` / 503 | `vault.py:144` |
+| corrupt ciphertext | `VaultError` | `credential_vault_unavailable` / 503 | `vault.py:144` |
+| keyring absent — a real outage | `VaultError` | `credential_vault_unavailable` / 503 | `vault.py:127` |
+
+Six causes, two coordinates, one answer. A genuine outage was byte-identical to
+a caller's typo, and the diagnostic flag an operator would turn on to tell them
+apart reported the two lines that catch rather than the six that fail.
+
+### The fix, in two halves
+
+**Raise where it happens.** Every check now raises on its own line, and the
+remaining `try` blocks cover only the operations that really are infrastructure
+— constructing the cipher, encrypting a validated bundle with a key from the
+ring. `_origin` then separates the causes for free: no new wire field, no route
+change, nothing for a caller to opt into.
+
+**Say what kind of failure it is.** Three classes that differ by what the reader
+does next, not by what went wrong:
+
+| class | code | status | the reader's next move |
+|---|---|---|---|
+| `VaultError` | `credential_vault_unavailable` | 503 | an operator fixes the deployment; retry |
+| `CredentialRequestInvalid` | `credential_request_invalid` | 500 | fix the call site; retrying is a promise that cannot come true |
+| `CredentialUnusable` | `credential_unusable` | 409 | re-establish the supplier connection; neither retry nor code change helps |
+
+All three remain `VaultError`, so every existing caller catches exactly what it
+caught before — the two `connections` call sites and nine assertions in the
+vault suite, unmodified and still green. `_error` already read `code` and
+`http_status` generically via `getattr`, so the routes needed no change either.
+
+The same probe now reports eleven causes at eleven distinct coordinates under
+three verdicts. What `CredentialUnusable` deliberately does *not* separate is
+"no such reference" from "that reference is someone else's": those share a code,
+a status and a message, because distinguishing them on the wire is a way to
+enumerate other tenants' credential references. Inside, they are two different
+lines, which is exactly the distinction `_origin` is for.
+
+### The half that would have made this a regression
+
+A new status code is a new thing the app has never seen, and
+`mobile-native/src/api/dropshipping.ts` classifies a failure before the screen
+renders a sentence. It already matched `credential_vault_unavailable` — from a
+previous fix, for a merchant told "your supplier isn't responding, try again
+shortly" when the supplier had never been contacted. The two new codes matched
+nothing, and 409 matches none of the status classes at the bottom of
+`stateForError` either, so an unusable credential would have arrived as a bare
+"Something went wrong": no cause, no button, and no hint that reconnecting fixes
+it — the exact failure that function's docstring exists to prevent.
+
+So `credential_unusable` joins `credential_missing` in `DISCONNECTED_CODES`,
+because the merchant's move is the same one. `credential_request_invalid` is
+deliberately left to fall through to `ERROR`, with a test saying so — it means
+the bug is ours, and there is no action to offer someone for a mistake they did
+not make. Server-side this change was an improvement in isolation; shipped
+without this file it would have replaced a wrong sentence with a useless one.
+
+### What the tests had to be
+
+A test that asserts `pytest.raises(vault.VaultError)` is *satisfied by the
+defect* — that is why nine of them existed while the defect did. So the suite
+now pins the two things that were never claimed: what a failure means
+(`tests/business_os/test_cj_vault.py`, one test per class, plus a real outage
+still saying 503), and where it is reported from — a test that drives seven
+causes through the routes' own `_origin` and asserts the seven coordinates are
+distinct. That last one is the anti-vacuity test: it is the assertion that would
+have failed before this change, and no other in the file would have.
+
+`scripts/marketplace/vault_classification_mutation_battery.py` pairs 18
+plausible tidy-ups with the suite meant to catch each — re-folding either
+function into one handler, each class quietly returning to 503, the subclass
+relationship being dropped, and `load` "helpfully" distinguishing *not yours*
+from *no such reference*. All 18 are caught. Two survived the first run and both
+were worth the run: one was a behaviour-preserving mutation that only *permitted*
+a leak (widening `__init__`, with nothing passing a detail), and one proved a
+pairing claim wrong — the `connections` assertions both delete an environment
+variable, so they are outages that can only ever see the base class. The claim
+was corrected rather than the judge widened.
+
+---
+
 ## What kept coming back
 
-Eight defects in this chain, eight different subsystems, one shape: **a number
+Nine defects in this chain, nine different subsystems, one shape: **a number
 was asserted rather than measured.**
 
 - `publish()` never wrote `price_label`, and the publish test asserted `status`
@@ -671,6 +784,11 @@ was asserted rather than measured.**
   read — and the publish tests asserted `quantity` equalled what that expression
   returns, which it always did. Nothing asked the buyer's own function whether
   132 units could be bought.
+- `vault.seal` and `vault.unseal` asserted that every failure was an outage, by
+  catching `Exception` and raising one class — and nine tests asserted
+  `pytest.raises(VaultError)`, which the defect satisfies. The number here is a
+  status code: 503, "try again later", returned for six causes of which four
+  were not outages and two could never succeed on retry.
 
 In all of them the suite was green, and in all of them the green was about the
 halves rather than the seam. Where a claim spans two components, this document now
@@ -728,3 +846,19 @@ assertion that would have caught it is not on `publish` at all, but on
 `lifecycle.inventory_available`. Generalised, and it is the same instruction the
 fourth and fifth seams arrived at from the other direction: **name the unit, and
 put the assertion at the surface that spends it.**
+
+The ninth is about the other kind of value a function returns. **An error's
+classification is a claim, and it decays the same way a number does.** "This
+failed, so the vault is down" was asserted by a handler and measured by nobody;
+the status code is the number, and it was wrong for four of the six things that
+produced it. Two tells, both greppable. First: **`except Exception` around a
+body with more than one way to fail is a classification, not a safety net** —
+count the `raise`-worthy statements inside the `try`, and that is how many
+distinct causes you have just collapsed into one answer. Second, and specific to
+this repository because it already built the tool: **a diagnostic that reports
+*where* an exception came from is defeated by re-raising it.** `_origin` was
+written for exactly the six-causes-one-code problem and could not see into the
+one module that had it worst. A test that only asserts `pytest.raises(SomeError)`
+cannot notice either tell — it is satisfied by the defect — so the assertion has
+to be on the pair the reader actually consumes: **the verdict and the
+coordinate.**
