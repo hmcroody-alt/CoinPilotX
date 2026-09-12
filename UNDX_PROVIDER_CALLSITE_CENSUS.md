@@ -488,7 +488,17 @@ require metering them without forcing them into a chat abstraction.
 |---|---|---|
 | NON_CHAT_IMAGE | `services/pulse_ai/automated_image_pipeline.py:167` | `urllib.request.urlopen`, `gpt-image-1`, 90 s timeout |
 | NON_CHAT_EMBEDDING | `services/undx_embedding_service.py:560` | endpoint from `configured_endpoint()` |
+| NON_CHAT_TRANSLATION | `services/translation_providers.py:88` | Google Cloud Translation v3, `requests.Session.request` |
 | NON_CHAT_TRANSCRIPTION | **none exist** | see below |
+
+**Finding N-d — translation is billed AI that no AI detector looks for.**
+`translation.googleapis.com/v3` is a per-character paid API, and the call is built from an
+f-string (`f"https://translation.googleapis.com/v3/{self.parent}{suffix}"`) so the host is
+a literal but the path is composed — §11-12's "including composed/env-pointable URLs"
+applies. It is absent from every provider-hostname sweep in this repo for the same reason
+the search providers are: Google Cloud Translation is not a model vendor, so a scanner
+looking for `api.openai.com`-shaped hosts cannot see it. Six `TRANSLATION_*` flags govern
+its behaviour and none of them governs its spend.
 
 **Finding N-a — two of the detector's three non-chat findings are not call sites.**
 It reports `services/undx_brain/config.py:710` and `services/undx_embedding_service.py:60`.
@@ -566,6 +576,82 @@ very different answers to "is research ready" and currently share one word.
 would have put a false claim about a correct line three pages from the section correcting a
 false claim about the workers — the same error, in the same phase, from the same cause:
 trusting a one-line note about a file over the file.)*
+
+**Finding R-c — the paid search keys are funded in production under names no file in this
+repo contains.** Findings R-a and R-b read the code. Reading the *deployment* changes what
+they mean. The Railway service holds a Tavily credential as `Tavily_AI_API` and a Serper
+credential as `Serper_AI_API`. A whole-repo grep for each of those two strings — every file
+type, `.env.example` included — returns **zero files**. Meanwhile all five names the
+adapters actually read are **absent** from the service:
+
+| Name | Read by code | Present in Railway |
+|---|---|---|
+| `TAVILY_API_KEY` | yes (`:223`) | no |
+| `SERPAPI_API_KEY` | yes (`:204`) | no |
+| `BRAVE_SEARCH_API_KEY` | yes (`:163`) | no |
+| `BING_SEARCH_API_KEY` | yes (`:181`) | no |
+| `BING_SEARCH_V7_SUBSCRIPTION_KEY` | yes (`:181`) | no |
+| `Tavily_AI_API` | **no file contains it** | yes, funded |
+| `Serper_AI_API` | **no file contains it** | yes, funded |
+
+Two separate things are wrong and they need separate fixes. Tavily is a **naming** problem:
+the adapter is correct and complete, so exporting the same value as `TAVILY_API_KEY` makes
+it work. Serper is a **product** problem: `serper.dev` and `serpapi.com` are different
+companies with different request and response shapes, and this repo has no Serper adapter
+at all. Renaming `Serper_AI_API` to `SERPAPI_API_KEY` would authenticate against the wrong
+vendor and fail — the tempting one-line "fix" is the wrong one.
+
+This is the same defect as `GROQ_AI_API` holding a multi-line JSON document instead of a
+key (§44): a credential that exists, is paid for, and is unreachable because nothing reads
+the name it was stored under. Both were invisible to `test_environment_contract.py` because
+that suite checks one direction — *every variable production code reads must be documented*
+— and this defect lives in the other: **a variable the deployment holds that no code
+reads.** That direction cannot be tested from the repo alone, which is why it belongs to
+config-drift verification against a checked-in snapshot of the deployed names rather than to
+the env contract.
+
+**Finding R-d — measured, not inferred: production web search has never once reached a paid
+provider, and fails 96% of the time.** R-a through R-c are static reads. `pulse_ai_web_search_logs`
+in production settles it:
+
+| provider | status | calls | first | last |
+|---|---|---|---|---|
+| *(empty)* | `failed` | **73** | 2026-07-03 | **2026-09-12** |
+| `duckduckgo_instant` | `success` | **3** | 2026-07-30 | 2026-07-31 |
+
+Every one of the 73 failures carries `reason = search_unavailable`, and the per-attempt
+breakdown inside `metadata_json` is identical each time: `brave config_missing`,
+`bing config_missing`, `serpapi config_missing`, `tavily config_missing`,
+`duckduckgo empty`. The most recent failure is today.
+
+Three consequences worth separating:
+
+1. **Paid search spend to date is $0 — by accident, not by control.** The §22 exposure is
+   therefore *latent*, not active, and that is an argument for metering this path **before**
+   the credential names are fixed rather than after. The day `TAVILY_API_KEY` is exported,
+   four paid providers begin serving an unflagged live route with no ledger row.
+2. **It is a product outage, not only a FinOps finding.** `should_search` fires on any
+   freshness term — `latest`, `price`, `news`, `bitcoin`, `weather`. So for 73 of 76 real
+   user questions in that class, Pulse AI answered *"I couldn't reach live sources right
+   now"*. DuckDuckGo's instant-answer endpoint is not a search API; it returns an abstract
+   only when one exists, which is why it succeeded 3 times out of 76 and not at all since
+   July. The free fallback is not a fallback for this workload.
+3. **The evidence was in production the whole time and nobody read it.** R-a already noted
+   that outcomes land in `pulse_ai_web_search_logs`. They did. Provider, status and the full
+   `config_missing` chain have been recorded on every request for ten weeks. So the accurate
+   description is not *silent* — it is **recorded and unread**, which is a different and
+   more tractable failure: the row exists, so the fix is a query and an alert, not new
+   instrumentation. R-b's `ok: True` is what stood between that data and anyone looking at
+   it — and `pulse_ai_web_search.provider_status()` turns out to have **no caller at all**,
+   in production or in tests, so even the dishonest surface was never rendered.
+
+**Finding R-e — the chat ledger's own production state, for scale.** `undx_cost_ledger`
+holds exactly one row: `('2026-09', 'openai', calls=13, cost_micro_usd=0,
+uncosted_calls=13)`. The zero dollars is §34 working correctly rather than a bug — OpenAI
+has no verified price in `PRICE_PER_MILLION_USD`, so all 13 calls are counted as uncosted
+and the total reads as a floor. It also means the `(month, provider)` unique index has one
+row behind it, so widening the key to `(month, provider, call_kind)` and backfilling
+`'chat'` is a one-row migration.
 
 ## 5. Not a call site (checked and cleared)
 
@@ -665,16 +751,26 @@ meant to prove.
 | UNROUTED_CHAT | **7 → 0** | 10 URL literals; detector saw 9. All seven migrated |
 | NON_CHAT_IMAGE | 1 | `urllib`, not `requests` |
 | NON_CHAT_EMBEDDING | 1 | 2 callers, 1 endpoint |
+| NON_CHAT_TRANSLATION | 1 | Google Cloud Translation v3, per-character paid |
 | NON_CHAT_TRANSCRIPTION | 0 | category genuinely empty |
-| RESEARCH (search) | 5 | previously uncounted as AI spend; 4 of the 5 are paid |
+| RESEARCH (search) | 5 | previously uncounted as AI spend; 4 of the 5 are paid — and **0 of the 5 have ever run in production** (R-d) |
 | ADMIN_TEST_ONLY | 1 | live acceptance script, spend-gated |
 | DEAD_CODE | 1 | `generate_task_response` |
 | Pending seam | **1 → 0** | command-center stub, now routed (U10) |
 | UNKNOWN | **0** | every credential read is accounted for |
 
 Net correction to the previous census: **+1** unrouted chat call (composed URL), **+5**
-unmetered research calls (**4** of them paid), **−1** non-chat call site (two of three were
-declarations), and one dead function whose audit passes by substring.
+unmetered research calls (**4** of them paid), **+1** non-chat call site (translation, N-d),
+**−1** non-chat call site (two of three detector findings were declarations), and one dead
+function whose audit passes by substring.
+
+One count deliberately absent from this table: **how much of this spend is actually being
+incurred.** A census of call *sites* answers a different question from a census of call
+*volume*, and R-d is the reason to keep them apart — five unmetered paid research adapters
+is the correct static count, and the production figure behind it is zero. Stating only the
+first would overstate the exposure; stating only the second would license leaving it
+unmetered. Both are true, and the pair is what makes "meter it before the credentials are
+fixed" the obvious order of work.
 
 ## 7. What the detector could not see, and what now counts the calls that run
 

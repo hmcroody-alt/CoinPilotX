@@ -140,6 +140,40 @@ resetting the variable to a bare key are account changes and are not done here.
 
 Out of credit. A billing matter, not a configuration one.
 
+### Web search — two funded keys stored under names nothing reads
+
+Same shape as `GROQ_AI_API`: the credential exists and is paid for, and the code
+cannot see it. The service holds `Tavily_AI_API` and `Serper_AI_API`. A whole-repo
+grep for either string — every file type, `.env.example` included — returns **zero
+files**. All five names `services/pulse_ai_web_search.py` actually reads
+(`TAVILY_API_KEY`, `SERPAPI_API_KEY`, `BRAVE_SEARCH_API_KEY`,
+`BING_SEARCH_API_KEY`, `BING_SEARCH_V7_SUBSCRIPTION_KEY`) are **absent** from the
+service.
+
+Measured consequence, from `pulse_ai_web_search_logs` in production: **76 searches
+since 2026-07-03, 73 failed** with all four paid adapters reporting
+`config_missing` and DuckDuckGo reporting `empty`; the 3 that succeeded were all
+`duckduckgo_instant`, none since 2026-07-31. The most recent failure is
+2026-09-12. So no paid search provider has ever served a request, and users asking
+anything with a freshness term have been told *"I couldn't reach live sources right
+now"* for ten weeks.
+
+Two account changes, and they are **not** the same change:
+
+1. **Tavily — a naming fix.** Export the existing value additionally as
+   `TAVILY_API_KEY`. The adapter at `:223` is correct and complete, so this alone
+   makes it work. Remove `Tavily_AI_API` afterwards so the service does not read
+   as configured twice.
+2. **Serper — not a naming fix.** `serper.dev` and `serpapi.com` are different
+   vendors with different request and response shapes, and this repo has **no
+   Serper adapter**. Renaming `Serper_AI_API` to `SERPAPI_API_KEY` would
+   authenticate against the wrong vendor and fail. Either write a Serper adapter
+   or drop the credential; do not rename it.
+
+Metering lands before either change (§22): the path is unmetered today and its
+real spend is zero, so instrumenting it now is free and instrumenting it after the
+rename is retroactive.
+
 ## Resolved
 
 ### Gemini — was 404, now resolves; intermittent 503 remains upstream
