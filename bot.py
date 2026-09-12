@@ -1286,6 +1286,14 @@ _load_route_pack("undx_agent_run_control", "services.undx_agent_run_control_rout
 # Unauthenticated by design and therefore counts only; kept out of both packs above so
 # neither loses its "every route here is owner-scoped" guarantee.
 _load_route_pack("undx_run_health", "services.undx_run_health_routes")
+# GET /health/undx/fabric — provider states, month-to-date spend and live config
+# drift, composed so the contradictions between them become visible (a provider
+# the breaker remembers as healthy whose key has since been removed reads as
+# fine on either surface alone). Same gate and same secret-free rules as the
+# route above. Contacts no provider: model availability is undx_model_audit, it
+# spends real money, and an endpoint anyone can GET on a 30-second interval is
+# the last place to put a paid call.
+_load_route_pack("undx_fabric_health", "services.undx_fabric_health_routes")
 # Market Pulse: GET-only read surface over the market foundation the dashboard
 # board and Pulse Briefings already poll. It adds no CoinGecko networking of its
 # own — every write (watchlist rows, alert rules) still goes through the
