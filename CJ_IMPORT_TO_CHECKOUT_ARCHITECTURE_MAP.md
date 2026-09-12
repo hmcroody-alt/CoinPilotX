@@ -143,16 +143,33 @@ discovery predicate rather than a page:
 The listing is live. Note what it took: the approval half could not be done
 through the admin UI at all, for the reason in "The fifth seam" below.
 
-Two numbers in that last row are the seventh seam, sitting in plain sight for
-three passes over this document: **`quantity` is 1 against 132 units in CJ's
-warehouse**, and `provider_variant_id` on its source row is NULL, which
-`create_intent` refuses outright. So the listing is live, approved, findable,
-buyable — and sells one unit of something nothing can ship. Both are fixed in
-the code as of this pass; **listing 14 itself is still in that state**, because
-repairing it is a production write. Under the current guard it is also no longer
-`publishable`, which is the correct answer to what it actually is. The repair is
-two statements — bind its single variant, re-publish to restock the shelf — and
-it needs the user's word before it runs.
+Two numbers in that last row were the seventh seam, sitting in plain sight for
+three passes over this document: **`quantity` was 1 against 132 units in CJ's
+warehouse**, and `provider_variant_id` on its source row was NULL, which
+`create_intent` refuses outright. So the listing was live, approved, findable,
+buyable — and sold one unit of something nothing could ship. Under the guard
+added in that pass it also stopped being `publishable`, which is the correct
+answer to what it was.
+
+**Repaired 2026-09-12, user-authorised, `scripts/repair_listing14_binding.py`**
+(dry-run by default; it refuses outright on a listing carrying more than one
+variant, because which one it sells is the merchant's choice). It binds through
+`gateway.bind_product` — which reads the product from CJ and refuses unless the
+pair really exists there, so the binding is verified against the supplier rather
+than asserted by the script — then re-publishes so the shelf's numbers are the
+package's own. No CJ order, no spend. Measured after, through the functions that
+gate the two things that were broken rather than through the script's own report:
+
+| asked | before | after |
+|---|---|---|
+| `get_product_binding` | `product_binding_required` | returns the vid — `create_intent` can resolve it |
+| `_validate` on production's rows | `['SUPPLIER_VARIANT_UNBOUND']` | `publishable: True`, no problems |
+| `inventory_available(listing, 132)` | `False` | `True` (and 133 still `False`) |
+| `public_sql` returns id 14 | yes | yes, `quantity` 132 |
+
+`published_at` was restored afterwards. `publish` stamps it with now, which is
+true of a new publication and false of this one — the product went on sale
+earlier and never came off.
 
 ---
 
