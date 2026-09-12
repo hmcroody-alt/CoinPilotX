@@ -506,6 +506,42 @@ def test_publishing_writes_the_price_the_buyer_path_reads(provider):
     assert listing["price_label"] == result["price_label"]
 
 
+def test_what_publish_leaves_behind_is_a_state_moderation_will_act_on(provider):
+    """The handoff, asserted from this side of it.
+
+    ``publish`` returns ``awaiting_moderation: True``, and for a long time that
+    was a promise the other authority did not keep: ``/admin/marketplace-command``
+    read "already decided" off ``status``, saw ``published``, and 409'd. The
+    state was terminal in both directions -- no moderator could decide it and
+    nothing here moves a published listing back to ``pending_review`` -- so every
+    CJ listing that reached this line needed a hand-written UPDATE to go live.
+
+    ``tests/marketplace/test_marketplace_moderation_reachability.py`` asserts the
+    route accepts that shape, but it *seeds* the shape as a literal. This test is
+    the other end: it asserts the row ``publish`` really leaves satisfies the
+    predicate that route is gated on. Without it the two halves agree only
+    because the same two strings were typed into both files -- which is the
+    failure this suite keeps finding, one component describing another rather
+    than measuring it.
+    """
+    listing_id = imported(provider)
+    price_every_variant(listing_id, 2000)
+    result = drafts.publish(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id,
+                            context=CONTEXT)
+    assert result["awaiting_moderation"] is True
+
+    listing = rows("SELECT * FROM marketplace_listings WHERE id=?", (listing_id,))[0]
+    assert lifecycle.awaiting_moderation(listing) is True, (
+        "publish left status=%r/approval_status=%r, which the only moderation "
+        "surface refuses to act on. The listing is now unreachable: not public "
+        "(is_public needs approval), and not approvable."
+        % (listing["status"], listing["approval_status"]))
+    # And it is genuinely not yet public -- otherwise "awaiting moderation" would
+    # be describing a listing buyers can already see.
+    assert lifecycle.is_public(dict(listing, seller_status="approved",
+                                    display_name="M&W Store")) is False
+
+
 def test_publishing_writes_the_cover_the_buyer_path_reads(provider):
     """The media half of the same seam the price test above guards.
 

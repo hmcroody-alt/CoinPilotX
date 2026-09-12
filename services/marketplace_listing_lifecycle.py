@@ -30,6 +30,16 @@ ARCHIVED = "archived"
 # cannot leak into buyer discovery.
 PUBLIC_STATUSES = frozenset({PUBLISHED, "live", "active"})
 APPROVED_STATES = frozenset({APPROVED})
+
+# The vocabulary both axes use for "no decision recorded yet". ``review_ready``
+# reaches both columns: ``revenue_safety_engine`` returns it as an approval
+# state, and the seller resume route copies it onto ``status`` as well.
+AWAITING_DECISION_STATES = frozenset({PENDING_REVIEW, "review_ready"})
+
+# The statuses that mean the merchant has released the listing for review --
+# either by submitting it or by publishing it. A ``draft`` is not among them,
+# which is the whole protection in :func:`awaiting_moderation`.
+MERCHANT_RELEASED_STATUSES = AWAITING_DECISION_STATES | PUBLIC_STATUSES
 STOCKLESS_TYPES = frozenset({"digital", "course", "service", "event", "booking"})
 MATERIAL_FIELDS = frozenset({
     "title", "description", "short_description", "category", "subcategory",
@@ -115,6 +125,47 @@ def public_sql(alias: str = "l", seller_alias: str = "ms") -> str:
         f"AND (LOWER(COALESCE({alias}.product_type,{alias}.listing_type,'')) "
         "IN ('digital','course','service','event','booking') "
         f"OR COALESCE({alias}.quantity,0)>0)"
+    )
+
+
+def awaiting_moderation(listing: Mapping[str, Any]) -> bool:
+    """True when a moderator may still record a first decision on this listing.
+
+    Two independent axes, and the question needs both. ``approval_status`` is
+    the moderation axis and answers "has a decision been recorded"; ``status``
+    is the merchant's axis and answers "has the merchant released this". A
+    moderator may act only where the answer is no-and-yes.
+
+    Asking only ``status`` -- which is what ``/admin/marketplace-command`` did,
+    and the reason this function exists -- gets the dropship path wrong. The
+    supplier package publishes through ``drafts.publish``, which sets
+    ``status='published'`` and deliberately leaves moderation untouched,
+    because :func:`is_public` requires *both* axes and so a published,
+    unapproved listing is correctly invisible. The admin guard read
+    ``status='published'`` as "already decided" and returned 409, which made
+    approval unreachable: the merchant could not submit their way back to
+    ``pending_review`` and the moderator could not approve. Every CJ listing
+    published this way needed a hand-written UPDATE to go live.
+
+    Asking only ``approval_status`` swaps one bug for a worse one. The column
+    is ``DEFAULT 'pending_review'``, so an untouched draft -- unpriced, no
+    cover, quantity 0, never seen by its own merchant's publish validation --
+    would read as awaiting review and a moderator could publish it in one
+    click. Hence the conjunction.
+    """
+    return (
+        normalized(listing.get("approval_status")) in AWAITING_DECISION_STATES
+        and normalized(listing.get("status")) in MERCHANT_RELEASED_STATUSES
+    )
+
+
+def awaiting_moderation_sql(alias: str = "l") -> str:
+    """SQL equivalent of :func:`awaiting_moderation` for the review queue."""
+    approval = "', '".join(sorted(AWAITING_DECISION_STATES))
+    released = "', '".join(sorted(MERCHANT_RELEASED_STATUSES))
+    return (
+        f"LOWER(COALESCE({alias}.approval_status,'')) IN ('{approval}') "
+        f"AND LOWER(COALESCE({alias}.status,'')) IN ('{released}')"
     )
 
 

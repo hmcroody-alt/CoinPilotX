@@ -129,7 +129,19 @@ separate authority on purpose. After both, `is_public` is `True`,
 transition is asserted end to end by
 `test_a_published_approved_import_is_purchasable_on_every_field_a_buyer_reads`.
 
-Both transitions are production writes and neither has been made.
+**Both transitions have since been made** (2026-09-11, user-authorised,
+`scripts/publish_and_approve_listing14.py`). Measured after, against the real
+discovery predicate rather than a page:
+
+| asked | answer |
+|---|---|
+| `public_sql` returns id 14 | **yes**, alongside 8 and 13 |
+| `is_public` | `True` |
+| `public_denial_code` | `""` |
+| `price_label` / `quantity` / `cover_image_url` | `$465.74` / 1 / set |
+
+The listing is live. Note what it took: the approval half could not be done
+through the admin UI at all, for the reason in "The fifth seam" below.
 
 ---
 
@@ -272,6 +284,10 @@ query names is buyer-visible by default, so the strip now lives in
    because a comment outliving its code is exactly how the parity claim above
    survived. Cosmetic in isolation; it is in this list because it is the same
    failure mode as the three seams.
+7. ~~**A published dropship listing cannot be approved.**~~ The admin Approve
+   button 409'd on every listing `drafts.publish` produces, which is why listing
+   14 needed a hand-written UPDATE. Fixed via `lifecycle.awaiting_moderation`;
+   see "The fifth seam" below. The route now has tests, which it did not before.
 
 ---
 
@@ -322,9 +338,58 @@ picture" currently has three implementations over three tables.
 
 ---
 
+## The fifth seam: publication produced a state moderation refused to act on
+
+Publication and moderation are two axes, and `is_public` requires both. So
+`drafts.publish` sets `status='published'` and leaves moderation untouched —
+correct, and it says so in its own return value, `awaiting_moderation: True`.
+The listing is invisible to buyers until a moderator approves.
+
+`/admin/marketplace-command` is the only moderation surface, and its approve
+action asked the wrong axis:
+
+```python
+if action in {"approve", "reject", "request_changes"} and \
+        previous_status not in {"pending_review", "review_ready"}:
+    return api_error("Listing review state changed. Reload before deciding.", 409)
+```
+
+`published` is not in that set. So the Approve button returned 409 on exactly
+the listings the supplier package produces, and nothing in that package moves a
+published listing back to `pending_review`. The state was terminal in both
+directions: no moderator could decide it, no merchant could leave it.
+
+| shape | who produces it | Approve, before | after |
+|---|---|---|---|
+| `pending_review` / `pending_review` | seller submit route | 200 | 200 |
+| `published` / `pending_review` | **`drafts.publish`** | **409** | **200** |
+| `draft` / `pending_review` (column default) | importer | 409 | 409 |
+| `published` / `approved` | already decided | 409 | 409 |
+
+The guard is a *staleness* guard — it stops a moderator deciding from a page
+loaded before someone else changed the row — and that is worth keeping. It was
+reading "has a decision been recorded" off `status`, where the answer does not
+live.
+
+The fix is `lifecycle.awaiting_moderation`, and it is a conjunction rather than
+the obvious swap. Keying on `approval_status` alone would be worse than the bug:
+the column is `DEFAULT 'pending_review'`, so every untouched draft — unpriced,
+no cover, quantity 0 — would read as awaiting review and a moderator could
+publish it in one click, bypassing `_validate` entirely. So: no decision
+recorded **and** the merchant has released it. Row 3 of that table is the line
+being held, and `test_an_untouched_draft_is_still_not_approvable` is what holds
+it.
+
+The same predicate now feeds the queue's pending count, which had the same bug
+independently: it asked `status` alone, so it could not see a dropship listing
+awaiting review and would show a moderator zero work beside a listing it would
+have accepted a decision for.
+
+---
+
 ## What kept coming back
 
-Five defects in this chain, five different subsystems, one shape: **a number was
+Six defects in this chain, six different subsystems, one shape: **a number was
 asserted rather than measured.**
 
 - `publish()` never wrote `price_label`, and the publish test asserted `status`
@@ -340,6 +405,9 @@ asserted rather than measured.**
 - `_validate` asserted a listing had media by reading the store the merchant
   writes, never the column the buyer renders, and its own docstring — "better to
   refuse than to ship a black card" — named an outcome it could not observe.
+- The admin approve guard asserted "a decision has already been recorded" by
+  reading `status`, a column that answers a different question, and no test
+  existed for the route at all.
 
 In all five the suite was green, and in all five the green was about the halves
 rather than the seam. Where a claim spans two components, this document now
@@ -368,3 +436,12 @@ and put the assertion there.**
 A second corollary, narrower and sharper: **a serializer that spreads its input
 has no field list, only additions.** `{**row, ...}` reads like an allowlist and
 is the opposite of one. Removing a key from it removes nothing.
+
+The sixth adds the one that is really about process: **a handoff between two
+authorities needs a test that crosses it.** Publish had tests. Moderation had
+none — not one test in the repository posted to `/admin/marketplace-command`
+before this. Each half was defensible alone, and the defect lived entirely in
+the fact that the state one half produces is not one the other accepts. Every
+seam in this document is the same story, which is why the working rule here is
+now: **when two components hand something to each other, the test belongs on
+the handoff, not in either component.**

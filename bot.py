@@ -98624,7 +98624,7 @@ def admin_marketplace_command_page():
             previous_approval = str(listing_row.get("approval_status") or "").lower()
             if not listing_row:
                 conn.close(); return api_error("Listing not found.", 404)
-            if action in {"approve", "reject", "request_changes"} and previous_status not in {"pending_review", "review_ready"}:
+            if action in {"approve", "reject", "request_changes"} and not marketplace_listing_lifecycle.awaiting_moderation(listing_row):
                 conn.close(); return api_error("Listing review state changed. Reload before deciding.", 409)
             if action == "feature" and (previous_status not in marketplace_listing_lifecycle.PUBLIC_STATUSES or previous_approval != "approved"):
                 conn.close(); return api_error("Only an approved published listing can be featured.", 409)
@@ -98661,7 +98661,13 @@ def admin_marketplace_command_page():
     counts = {}
     for key, sql in {
         "pending_merchants": "SELECT COUNT(*) AS total FROM marketplace_merchant_applications WHERE status IN ('pending_review','under_review')",
-        "pending_products": "SELECT COUNT(*) AS total FROM marketplace_listings WHERE status IN ('pending_review','review_ready')",
+        # Counted with the same predicate the Approve button is gated on, so the
+        # queue cannot advertise zero work while holding a listing it would
+        # accept a decision for. A dropship listing sits at
+        # status='published'/approval='pending_review' and the old count, which
+        # asked `status` alone, could not see it.
+        "pending_products": "SELECT COUNT(*) AS total FROM marketplace_listings l WHERE "
+                            + marketplace_listing_lifecycle.awaiting_moderation_sql("l"),
         "approved_merchants": "SELECT COUNT(*) AS total FROM marketplace_sellers WHERE status='approved'",
         "risky_products": "SELECT COUNT(*) AS total FROM marketplace_listings WHERE COALESCE(safety_score,0)>=30",
         "saved_products": "SELECT COUNT(*) AS total FROM marketplace_saved_products",
@@ -98680,7 +98686,8 @@ def admin_marketplace_command_page():
         COALESCE(ms.status,'missing') AS seller_status, COALESCE(ms.verification_status,'unverified') AS seller_verification_status
         FROM marketplace_listings l LEFT JOIN users u ON u.user_id=l.seller_user_id
         LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
-        ORDER BY CASE l.status WHEN 'pending_review' THEN 0 WHEN 'changes_requested' THEN 1 ELSE 2 END, l.id DESC LIMIT 100""")
+        ORDER BY CASE WHEN {marketplace_listing_lifecycle.awaiting_moderation_sql('l')} THEN 0
+            WHEN LOWER(COALESCE(l.status,''))='changes_requested' THEN 1 ELSE 2 END, l.id DESC LIMIT 100""")
     listings = [dict(row) for row in cur.fetchall()]
     listing_ids = [int(l.get("id") or 0) for l in listings]
     media_by_listing = {}
