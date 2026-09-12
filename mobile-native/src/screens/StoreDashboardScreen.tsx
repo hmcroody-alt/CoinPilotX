@@ -59,11 +59,24 @@ import {
   StoreQuickLinkGrid,
   StoreRowSkeleton,
   StoreSectionError,
+  StoreSelectionBar,
   StoreSetupChecklist,
   StoreSparkline,
   StoreStatusStrip,
   StoreTabBar
 } from "../components/store";
+import {
+  EMPTY_SELECTION,
+  partition,
+  reconcile,
+  selectAllLabel,
+  selectAllState,
+  selectedRows,
+  selectionSummary,
+  toggle,
+  toggleAll,
+  type StoreSelection
+} from "../marketplace/storeSelection";
 import { registerSyncInvalidation } from "../core/eventSync";
 import { refreshUnreadCounts, useBellCount } from "../core/unreadCounts";
 import { useFormatters } from "../i18n/hooks";
@@ -143,6 +156,19 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState(false);
 
+  /**
+   * Selection mode — §16–§20.
+   *
+   * `null` means not selecting. An *empty set* means selecting with nothing
+   * picked yet, which is a real state: the bar is up, the rows are checkboxes,
+   * and the seller has not tapped one. Collapsing the two into "is the set
+   * empty" would close selection mode under the seller the moment they
+   * deselected their last row.
+   */
+  const [selection, setSelection] = useState<StoreSelection | null>(null);
+  /** Which bulk action the row washes are previewing. §21 will let this change. */
+  const [pendingAction] = useState<"publish" | "hide">("publish");
+
   // The header bell reads the ONE shared unread store — the same number every
   // seller header and the Activity feed show. Pull the authoritative count on
   // mount; the eventSync wiring (initUnreadCountSync) keeps it fresh after that.
@@ -181,6 +207,25 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
   const snapshot = useMemo(() => (result ? snapshotFrom(result) : { listings: [], orders: [] }), [result]);
   const kpis = useMemo(() => deriveKpis(snapshot), [snapshot]);
   const allRows = useMemo(() => deriveRows(snapshot), [snapshot]);
+  /**
+   * Drop selected ids the reload no longer carries — the rule
+   * `marketplace/storeSelection` asks every caller for, wired to the one thing
+   * that changes on every load.
+   *
+   * `allRows` is memoised on the snapshot, so this fires exactly when a payload
+   * lands and not on unrelated re-renders. Without it a listing deleted on
+   * another device stays in the set, and the bulk action posts an id that no
+   * longer exists — a failure reported against a row the seller cannot see, on
+   * a screen that has already refreshed past it.
+   *
+   * `reconcile` returns the *same reference* when nothing changed, so the
+   * `setSelection` below bails out of a re-render on every poll rather than
+   * re-partitioning the whole list each time the dashboard refreshes.
+   */
+  useEffect(() => {
+    setSelection((current) => (current === null ? null : reconcile(current, allRows)));
+  }, [allRows]);
+
   const tabs = useMemo(() => deriveTabs(allRows), [allRows]);
   const attention = useMemo(() => deriveAttention(allRows), [allRows]);
   const status = useMemo(() => deriveStatus(allRows), [allRows]);
@@ -217,6 +262,55 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
   }, [allRows, query, tab]);
 
   const visible = expanded ? searched : searched.slice(0, PREVIEW_COUNT);
+
+  /* -------------------------------------------------------------- *
+   * Selection — §16–§20
+   * -------------------------------------------------------------- */
+
+  const selecting = selection !== null;
+
+  /**
+   * The blocked reason per selected id, for the pending action.
+   *
+   * Keyed by id rather than computed inside `renderItem` so the row and the
+   * confirm button read the *same* partition. Deriving it twice is how the
+   * button comes to say "4 blocked" while five rows wear the wash.
+   *
+   * It partitions `allRows`, not `visible`, and no test currently tells the two
+   * apart — measured, not assumed. Today only rendered rows ever look up a
+   * reason, so `visible` would give byte-identical output. That stops being
+   * true the moment §21's confirm button counts the blocked half: a selected
+   * row scrolled off by a tab filter is still going into the batch, and
+   * partitioning `visible` would drop it from the count while leaving it in the
+   * action. The list stays `allRows` because the selection does.
+   */
+  const blockedById = useMemo(() => {
+    if (!selection) return null;
+    const { blocked } = partition(selectedRows(selection, allRows), pendingAction);
+    return new Map(blocked.map((entry) => [entry.row.id, entry.reason]));
+  }, [selection, allRows, pendingAction]);
+
+  const enterSelection = useCallback((id: number) => {
+    // Long-press enters the mode *and* picks the row pressed. Entering with
+    // nothing selected would make the gesture cost two taps to do the obvious
+    // thing, and the row under the seller's finger is unambiguously the one
+    // they meant.
+    setSelection((current) => (current === null ? new Set([id]) : toggle(current, id)));
+  }, []);
+
+  const exitSelection = useCallback(() => setSelection(null), []);
+
+  const toggleRow = useCallback((id: number) => {
+    setSelection((current) => (current === null ? current : toggle(current, id)));
+  }, []);
+
+  const onToggleAll = useCallback(() => {
+    setSelection((current) => (current === null ? current : toggleAll(current, visible)));
+  }, [visible]);
+
+  // Note: selection is deliberately NOT cleared when `tab` or `query` changes.
+  // Gathering rows across tabs is the workflow, and `selectionSummary` names the
+  // part that scrolled off screen so nothing is selected invisibly.
 
   const sellerName = String(snapshot.listings[0]?.seller_name || "Your store");
   const listingsFailed = result?.listings.status === "error";
@@ -635,6 +729,20 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
               </Animated.View>
             ) : null}
 
+            {/* Below the tabs, not instead of them: Select All is scoped to the
+                rows the active tab is showing, so the seller has to be able to
+                see which tab that is while they tap it. */}
+            {selection ? (
+              <StoreSelectionBar
+                selectAllState={selectAllState(selection, visible)}
+                selectAllLabel={selectAllLabel(selection, visible)}
+                onToggleAll={onToggleAll}
+                summary={selectionSummary(selection, allRows, visible)}
+                onDone={exitSelection}
+                reducedMotion={reducedMotion}
+              />
+            ) : null}
+
             {listingsSection ? (
               <Animated.View style={entrance.styleFor(SLOT.list)}>{listingsSection}</Animated.View>
             ) : null}
@@ -650,6 +758,20 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
             onPress={() => openListing(item)}
             onEdit={() => openListing(item)}
             onAction={() => openListing(item)}
+            onLongPress={() => enterSelection(item.id)}
+            selection={
+              selection
+                ? {
+                    selected: selection.has(item.id),
+                    onToggle: () => toggleRow(item.id),
+                    // Only for rows actually in the selection. An unselected row
+                    // showing "1 thing left" would be previewing a bulk action
+                    // it is not part of, which reads as a warning about the row
+                    // rather than about the batch.
+                    blockedReason: blockedById?.get(item.id) ?? null
+                  }
+                : null
+            }
             reducedMotion={reducedMotion}
           />
         )}

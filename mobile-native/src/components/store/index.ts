@@ -21,7 +21,10 @@ export { StoreKpiCard } from "./StoreKpiCard";
 export type { StoreKpiCardProps, StoreKpiTrend } from "./StoreKpiCard";
 
 export { StoreListingRow, listingStatusCopy } from "./StoreListingRow";
-export type { StoreListingRowProps } from "./StoreListingRow";
+export type { StoreListingRowProps, StoreRowSelection } from "./StoreListingRow";
+
+export { StoreSelectionBar } from "./StoreSelectionBar";
+export type { StoreSelectionBarProps } from "./StoreSelectionBar";
 
 export { StoreAttentionBanner } from "./StoreAttentionBanner";
 export type { StoreAttentionBannerProps } from "./StoreAttentionBanner";

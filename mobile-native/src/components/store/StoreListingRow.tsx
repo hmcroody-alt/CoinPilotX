@@ -125,6 +125,29 @@ export function listingPriceCopy(
   return null;
 }
 
+/**
+ * How this row participates in selection mode — §16–§20.
+ *
+ * `null` is the normal list: no checkbox, tapping opens the listing. Anything
+ * else means the seller is picking rows, and the whole row becomes the target.
+ */
+export type StoreRowSelection = {
+  selected: boolean;
+  onToggle: () => void;
+  /**
+   * Why the pending bulk action cannot touch this row, or `null` if it can.
+   *
+   * A blocked row is still *selectable*. That is deliberate and it is the one
+   * decision here most likely to be read as a bug: the obvious design makes a
+   * blocked row unselectable, which quietly removes it from the seller's count
+   * and turns "Publish 18" into a surprise at 14. Instead the row stays
+   * pickable, wears the disabled wash, and says why — so the number on the
+   * confirm button and the number of rows the seller ticked describe the same
+   * set, and the shortfall is visible up front rather than in the result.
+   */
+  blockedReason: string | null;
+};
+
 export type StoreListingRowProps = {
   row: StoreListingRowData;
   /** Already formatted for the active locale. */
@@ -134,8 +157,28 @@ export type StoreListingRowProps = {
   onPress: () => void;
   onEdit: () => void;
   onAction?: () => void;
+  /** Enters selection mode without leaving the list — long-press on any row. */
+  onLongPress?: () => void;
+  /** Absent outside selection mode. */
+  selection?: StoreRowSelection | null;
   reducedMotion: boolean;
 };
+
+/**
+ * The tick box.
+ *
+ * Drawn rather than imported so the checked state is a *shape* (a tick) and not
+ * only a fill: selection must survive a seller who cannot distinguish the green
+ * from the white, which is the same reason `select.selectedBorder` is three
+ * steps deeper than the brand green.
+ */
+function StoreRowCheckbox({ selected }: { selected: boolean }) {
+  return (
+    <View style={[styles.checkbox, selected ? styles.checkboxOn : null]}>
+      {selected ? <Text style={styles.checkboxTick}>✓</Text> : null}
+    </View>
+  );
+}
 
 export function StoreListingRow({
   row,
@@ -144,6 +187,8 @@ export function StoreListingRow({
   onPress,
   onEdit,
   onAction,
+  onLongPress,
+  selection,
   reducedMotion
 }: StoreListingRowProps) {
   const { fontScale } = useWindowDimensions();
@@ -158,11 +203,23 @@ export function StoreListingRow({
   const remaining = listingRemainingCopy(row.readiness);
   const titleLines = fontScale > 1.15 ? 3 : 2;
 
+  const selecting = !!selection;
+  const blocked = selection?.blockedReason ?? null;
+
   return (
     <Animated.View style={rowPress.style}>
       <Pressable
-        style={styles.row}
-        onPress={onPress}
+        style={[
+          styles.row,
+          blocked ? styles.rowBlocked : null,
+          selection?.selected ? styles.rowSelected : null
+        ]}
+        // In selection mode the whole row is the checkbox. Routing the tap to
+        // the editor instead would make picking six listings a six-screen round
+        // trip, and tapping a row you meant to tick and landing in an edit form
+        // is the kind of thing that loses a half-built selection.
+        onPress={selecting ? selection!.onToggle : onPress}
+        onLongPress={onLongPress}
         onPressIn={() => {
           rowPress.onPressIn();
           thumbPress.onPressIn();
@@ -171,18 +228,27 @@ export function StoreListingRow({
           rowPress.onPressOut();
           thumbPress.onPressOut();
         }}
-        accessibilityRole="button"
+        accessibilityRole={selecting ? "checkbox" : "button"}
+        // `selected` rather than `checked` is what iOS VoiceOver announces for a
+        // row in a picking list; both are set so TalkBack reads the tick too.
+        accessibilityState={
+          selecting ? { selected: selection!.selected, checked: selection!.selected } : undefined
+        }
         // Everything the row conveys visually, in one announcement, in reading
         // order: what it is, what it costs, whether it can be bought, and how
         // it is doing.
         // "Price required" and "2 things left" are read out too. A seller using
         // VoiceOver gets the same task list a sighted seller sees, rather than
         // the silence the blank price used to leave behind.
-        accessibilityLabel={[row.title, price?.text, remaining, status.label, soldText]
+        // In selection mode the blocked reason joins them, because a seller who
+        // cannot see the wash has no other way to learn this row will not move.
+        accessibilityLabel={[row.title, price?.text, remaining, status.label, soldText, blocked]
           .filter(Boolean)
           .join(", ")}
-        accessibilityHint="Opens the listing"
+        accessibilityHint={selecting ? undefined : "Opens the listing"}
       >
+        {selecting ? <StoreRowCheckbox selected={selection!.selected} /> : null}
+
         <Animated.View style={thumbPress.style}>
           {row.thumbnailUrl ? (
             <Image source={{ uri: row.thumbnailUrl }} style={styles.thumb} />
@@ -209,9 +275,17 @@ export function StoreListingRow({
             </Text>
           ) : null}
           {remaining ? <Text style={styles.remaining}>{remaining}</Text> : null}
+          {/* Why this row will not move, stated on the row itself rather than
+              only in the confirm button's blocked count. "4 blocked" tells a
+              seller how many; only this tells them which, and which is what
+              they need to go fix. */}
+          {blocked ? <Text style={styles.blockedReason}>{blocked}</Text> : null}
           <View style={styles.statusRow}>
             <StoreStatusLed health={row.health} label={status.label} reducedMotion={reducedMotion} />
-            {status.action && onAction ? (
+            {/* The inline action navigates away, which would abandon a
+                half-built selection. Suppressed while picking; the row's own
+                status LED and label still render, so nothing is hidden. */}
+            {status.action && onAction && !selecting ? (
               <Pressable
                 onPress={onAction}
                 hitSlop={8}
@@ -230,18 +304,20 @@ export function StoreListingRow({
               {soldText}
             </Text>
           ) : null}
-          <Animated.View style={editPress.style}>
-            <Pressable
-              style={styles.edit}
-              onPress={onEdit}
-              onPressIn={editPress.onPressIn}
-              onPressOut={editPress.onPressOut}
-              accessibilityRole="button"
-              accessibilityLabel={`Edit ${row.title}`}
-            >
-              <Text style={styles.editText}>Edit</Text>
-            </Pressable>
-          </Animated.View>
+          {selecting ? null : (
+            <Animated.View style={editPress.style}>
+              <Pressable
+                style={styles.edit}
+                onPress={onEdit}
+                onPressIn={editPress.onPressIn}
+                onPressOut={editPress.onPressOut}
+                accessibilityRole="button"
+                accessibilityLabel={`Edit ${row.title}`}
+              >
+                <Text style={styles.editText}>Edit</Text>
+              </Pressable>
+            </Animated.View>
+          )}
         </View>
       </Pressable>
     </Animated.View>
@@ -259,6 +335,46 @@ const styles = StyleSheet.create({
     borderBottomColor: storeLight.border.hairline,
     // Comfortably above the 44pt minimum even with a one-line title.
     minHeight: 88
+  },
+  /**
+   * Selected. A left rule rather than a full border, because the row already
+   * has a hairline underneath it and boxing every picked row turns a list of
+   * six into six cards.
+   */
+  rowSelected: {
+    backgroundColor: storeLight.select.selected,
+    borderLeftWidth: 3,
+    borderLeftColor: storeLight.select.selectedBorder,
+    // Keeps the thumbnail aligned with unselected rows despite the new rule.
+    paddingLeft: storeLight.space.card - 3
+  },
+  /**
+   * Blocked for the pending action. Applied *under* `rowSelected`, so a
+   * selected-and-blocked row reads as selected first — which is honest, because
+   * it is in the seller's count.
+   */
+  rowBlocked: { backgroundColor: storeLight.select.disabled },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: storeLight.border.secondaryButton,
+    backgroundColor: storeLight.bg.card,
+    alignItems: "center",
+    justifyContent: "center",
+    // Centred against the 64pt thumbnail beside it.
+    alignSelf: "center"
+  },
+  checkboxOn: {
+    borderColor: storeLight.select.selectedBorder,
+    backgroundColor: storeLight.select.selectedBorder
+  },
+  checkboxTick: {
+    color: storeLight.text.onDark,
+    fontSize: 14,
+    fontWeight: "900",
+    lineHeight: 16
   },
   thumb: {
     width: storeLight.size.thumb,
@@ -281,6 +397,18 @@ const styles = StyleSheet.create({
   priceRequired: { color: storeLight.status.warning },
   /** "2 things left · Add price + photo". Quieter than the price above it. */
   remaining: { fontSize: 12, color: storeLight.status.warning, marginTop: 1 },
+  /**
+   * "No readiness check yet" / "1 thing left" — why the bulk action skips this
+   * row. Its own colour, measured against the disabled wash rather than the
+   * white card; see `storeLightContrast.test.ts` for why `status.warning` is
+   * not reused here.
+   */
+  blockedReason: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: storeLight.select.disabledReason,
+    marginTop: 1
+  },
   statusRow: { flexDirection: "row", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 2 },
   action: { fontSize: 12, color: storeLight.text.link, fontWeight: "600" },
   trailing: { alignItems: "flex-end", justifyContent: "space-between", gap: 8, minWidth: 64 },
