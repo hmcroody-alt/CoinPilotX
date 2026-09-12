@@ -369,6 +369,12 @@ def provider_health(provider: str, routing_available: bool = True) -> str:
         return "Malformed API Key" if _raw_api_key(provider) else "Missing API Key"
     if not provider_enabled(provider):
         return "Disabled"
+    # Configuration is not health. Claude and Gemini both read "Online" here
+    # throughout the entire period they were returning 404 to every request,
+    # because a key was present and no switch was off. If the breaker has taken
+    # a provider out, say so - that is the state an operator needs.
+    if _breaker_is_open(provider):
+        return "Circuit Open"
     return "Online" if routing_available else "Offline"
 
 
@@ -738,6 +744,161 @@ def reset_spend() -> None:
         _spend_state["providers"] = {}
 
 
+# ------------------------------------------------------------- circuit breaker
+
+#: Consecutive failures before a provider is rested, and for how long.
+#: Deliberately not aggressive: three strikes tolerates the transient upstream
+#: 503s that Gemini demonstrably produces, while still catching a provider that
+#: is genuinely down.
+BREAKER_THRESHOLD = 3
+BREAKER_COOLDOWN_SECONDS = 120
+
+_HEALTH_LOCK = threading.Lock()
+_health_state: dict[str, dict[str, Any]] = {}
+
+
+def _probe_timeout_seconds() -> float:
+    """How long to wait for a half-open probe before assuming its caller died.
+
+    Without this, a probe holder that is killed mid-request - deploy, OOM, worker
+    restart - leaves `probing` set forever and the provider rested forever. The
+    breaker would then be a permanent outage of its own making, which is strictly
+    worse than the intermittent failures it exists to absorb.
+
+    Derived rather than hardcoded so that raising a provider's own timeout cannot
+    silently make this shorter than one legitimate request. Meta's is 60s today.
+    """
+    return max(_timeout(provider, 25) for provider in PROVIDERS) + 15
+
+
+def _health_bucket(provider: str) -> dict[str, Any]:
+    return _health_state.setdefault(
+        provider, {"consecutive_failures": 0, "last_status": "", "last_error": "",
+                   "opened_at": 0.0, "last_success_at": 0.0, "successes": 0, "failures": 0,
+                   "probing": False, "probing_since": 0.0})
+
+
+def _record_provider_success(provider: str) -> None:
+    with _HEALTH_LOCK:
+        bucket = _health_bucket(provider)
+        was_open = bucket["opened_at"] > 0
+        bucket["consecutive_failures"] = 0
+        bucket["opened_at"] = 0.0
+        bucket["probing"] = False
+        bucket["probing_since"] = 0.0
+        bucket["last_status"] = "success"
+        bucket["last_error"] = ""
+        bucket["last_success_at"] = time.time()
+        bucket["successes"] += 1
+    if was_open:
+        logging.warning("UNDX provider recovered provider=%s", provider)
+
+
+def _record_provider_failure(provider: str, status: str, error: str = "") -> None:
+    with _HEALTH_LOCK:
+        bucket = _health_bucket(provider)
+        bucket["consecutive_failures"] += 1
+        bucket["failures"] += 1
+        bucket["last_status"] = status
+        bucket["last_error"] = error[:200]
+        was_probe = bucket["probing"]
+        bucket["probing"] = False
+        bucket["probing_since"] = 0.0
+        if was_probe:
+            # The trial request failed, so the provider is still down. Start the
+            # cooldown again from now instead of leaving the original timestamp,
+            # which is already expired and would admit the next caller instantly.
+            bucket["opened_at"] = time.time()
+        tripped = (bucket["consecutive_failures"] >= BREAKER_THRESHOLD
+                   and bucket["opened_at"] == 0.0)
+        if tripped:
+            bucket["opened_at"] = time.time()
+        count = bucket["consecutive_failures"]
+    if tripped:
+        # Louder than the per-request warning, and the only line that says a
+        # provider is *out*. Claude and Gemini were each dead in production for
+        # an unknown period behind nothing but repeated per-request warnings,
+        # because failover meant every request still returned 200.
+        logging.error(
+            "UNDX provider circuit opened provider=%s consecutive_failures=%s "
+            "last_status=%s cooldown_s=%s", provider, count, status, BREAKER_COOLDOWN_SECONDS)
+
+
+def _breaker_is_open(provider: str) -> bool:
+    """Read-only: is this provider currently rested?
+
+    Separate from `_breaker_should_skip` because that one claims the half-open
+    probe. A status endpoint that called it would spend the single trial request
+    the breaker allows, every other caller would go on resting behind a probe
+    nobody is going to resolve, and recovery would be delayed by the act of
+    looking at the dashboard.
+
+    "Open" here means the breaker took this provider out and has not yet seen it
+    answer - including while the cooldown has expired and a trial is pending.
+    Reporting that as closed would show an operator a provider back in service
+    before anything had confirmed it.
+    """
+    with _HEALTH_LOCK:
+        bucket = _health_state.get(provider)
+        return bool(bucket and bucket["opened_at"])
+
+
+def _breaker_should_skip(provider: str) -> bool:
+    """True if this request must not try the provider. Mutates: claims the probe.
+
+    When the cooldown expires the breaker does not simply close. It hands the
+    *first* caller a single trial request and keeps resting everyone else until
+    that trial resolves. Closing outright would let every request that happens to
+    arrive in that instant hit a provider nobody has yet confirmed is back - and
+    on Meta, where `META_MUSE_TIMEOUT_MS` is 60000, each of those pays a full
+    minute before failing over. The herd is the specific harm the breaker exists
+    to prevent, so it must not be reintroduced at the moment of recovery.
+    """
+    with _HEALTH_LOCK:
+        bucket = _health_state.get(provider)
+        if not bucket or not bucket["opened_at"]:
+            return False
+        now = time.time()
+        if now - bucket["opened_at"] < BREAKER_COOLDOWN_SECONDS:
+            return True
+        if bucket["probing"] and now - bucket["probing_since"] < _probe_timeout_seconds():
+            return True
+        bucket["probing"] = True
+        bucket["probing_since"] = now
+        return False
+
+
+def provider_runtime_health() -> dict[str, dict[str, Any]]:
+    """What each provider has actually been doing, as opposed to how it is configured.
+
+    `provider_health()` answers "is there a key and is it switched on", which was
+    true of Claude and Gemini throughout the entire period both were returning
+    404 to every request. This answers the different question.
+    """
+    now = time.time()
+    with _HEALTH_LOCK:
+        out = {}
+        for provider, bucket in _health_state.items():
+            open_for = now - bucket["opened_at"] if bucket["opened_at"] else 0.0
+            out[provider] = {
+                "state": "open" if bucket["opened_at"] else "closed",
+                "probing": bool(bucket["probing"]),
+                "consecutive_failures": bucket["consecutive_failures"],
+                "successes": bucket["successes"],
+                "failures": bucket["failures"],
+                "last_status": bucket["last_status"],
+                "last_error": bucket["last_error"],
+                "cooldown_remaining_s": max(0, int(BREAKER_COOLDOWN_SECONDS - open_for)) if open_for else 0,
+            }
+    return out
+
+
+def reset_provider_health() -> None:
+    """Test-only."""
+    with _HEALTH_LOCK:
+        _health_state.clear()
+
+
 def _openai_compatible(provider: str, endpoint: str, system_prompt: str, message: str, history: Any, timeout: int,
                        *, user_content: str | None = None,
                        temperature: float = 0.35, max_tokens: int = 900,
@@ -980,6 +1141,12 @@ def route_structured_request(
         if not _api_key(provider):
             attempts.append({"provider": config.label, "status": "not_configured"})
             continue
+        if _breaker_should_skip(provider):
+            # Recorded as an attempt, not skipped silently. A provider that is
+            # resting has to appear in the chain, or `attempts` describes a
+            # different request than the one that ran.
+            attempts.append({"provider": config.label, "status": "circuit_open"})
+            continue
         try:
             result = CALLERS[provider](
                 system_prompt, "", history, timeout,
@@ -990,6 +1157,7 @@ def route_structured_request(
                 raise ValueError("empty provider response")
             usage = result.get("usage") or _normalise_usage(provider, _model(provider), None)
             _record_usage(usage)
+            _record_provider_success(provider)
             return {
                 "ok": True,
                 "response": text,
@@ -1003,14 +1171,19 @@ def route_structured_request(
             }
         except requests.Timeout:
             logging.warning("UNDX structured provider timeout user_id=%s provider=%s", user_id, provider)
+            _record_provider_failure(provider, "timeout")
             attempts.append({"provider": config.label, "status": "timeout"})
         except requests.RequestException as exc:
+            detail = _safe_error(exc)
             logging.warning("UNDX structured provider request failed provider=%s error=%s",
-                            provider, _safe_error(exc))
+                            provider, detail)
+            _record_provider_failure(provider, "request_failed", detail)
             attempts.append({"provider": config.label, "status": "request_failed"})
         except Exception as exc:  # noqa: BLE001 - a transport fault must stay a typed miss
+            detail = _safe_error(exc)
             logging.warning("UNDX structured provider response failed provider=%s error=%s",
-                            provider, _safe_error(exc))
+                            provider, detail)
+            _record_provider_failure(provider, "response_failed", detail)
             attempts.append({"provider": config.label, "status": "response_failed"})
 
     return {
@@ -1035,6 +1208,12 @@ def route_undx_request(user_id: Any, message: str, history: Any = None, system_p
         if not _api_key(provider):
             attempts.append({"provider": config.label, "status": "not_configured"})
             continue
+        if _breaker_should_skip(provider):
+            # Recorded as an attempt, not skipped silently. A provider that is
+            # resting has to appear in the chain, or `attempts` describes a
+            # different request than the one that ran.
+            attempts.append({"provider": config.label, "status": "circuit_open"})
+            continue
         try:
             result = CALLERS[provider](system_prompt, message, history or [], timeout)
             text = _clean_text(result.get("text"), 5200)
@@ -1042,6 +1221,7 @@ def route_undx_request(user_id: Any, message: str, history: Any = None, system_p
                 raise ValueError("empty provider response")
             usage = result.get("usage") or _normalise_usage(provider, _model(provider), None)
             _record_usage(usage)
+            _record_provider_success(provider)
             return {
                 "ok": True,
                 "response": text,
@@ -1068,12 +1248,17 @@ def route_undx_request(user_id: Any, message: str, history: Any = None, system_p
             }
         except requests.Timeout:
             logging.warning("UNDX router provider timeout user_id=%s provider=%s", user_id, provider)
+            _record_provider_failure(provider, "timeout")
             attempts.append({"provider": config.label, "status": "timeout"})
         except requests.RequestException as exc:
-            logging.warning("UNDX router provider request failed provider=%s error=%s", provider, _safe_error(exc))
+            detail = _safe_error(exc)
+            logging.warning("UNDX router provider request failed provider=%s error=%s", provider, detail)
+            _record_provider_failure(provider, "request_failed", detail)
             attempts.append({"provider": config.label, "status": "request_failed"})
         except Exception as exc:
-            logging.warning("UNDX router provider response failed provider=%s error=%s", provider, _safe_error(exc))
+            detail = _safe_error(exc)
+            logging.warning("UNDX router provider response failed provider=%s error=%s", provider, detail)
+            _record_provider_failure(provider, "response_failed", detail)
             attempts.append({"provider": config.label, "status": "response_failed"})
 
     openai_configured = bool(_api_key("openai"))
