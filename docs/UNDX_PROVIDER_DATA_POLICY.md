@@ -10,34 +10,85 @@ than filled in with a plausible sentence.
 
 ## Data classes
 
-| Class | Examples |
-|---|---|
-| `SYNTHETIC` | Health-check prompts, benchmark fixtures. No real content. |
-| `PLATFORM_PUBLIC` | Published posts, public profiles, public listings. |
-| `PLATFORM_PRIVATE` | DMs, drafts, private groups, order history, seller data. |
-| `ACCOUNT` | Identity, contact details, entitlements, auth state. |
-| `PRIVATE_OFFICE` | Everything behind the Private Office second lock. |
-| `SECRET` | Credentials, tokens, internal service keys. |
+One ladder, low to high. It is defined in `services/undx_privacy.py` and the
+middle five rungs are **imported** from `services/private_office/model.py`,
+which owns them under `PRIVATE_OFFICE_OWNERSHIP_CONTRACT.md` §14. This document
+used to name a different set, and a second hardcoded copy would have kept
+working while meaning something else.
 
-`SECRET` never reaches any provider. That is enforced, not promised: see
-`undx_router._safe_error()` and `_api_key()`, and
-`tests/test_undx_router_multi_provider.py::CredentialRedactionTest`.
+| Rank | Class | Examples |
+|---|---|---|
+| 0 | `SYNTHETIC` | Health-check probes, benchmark fixtures. No real content. |
+| 1 | `PUBLIC` | Published posts, public profiles, public listings. |
+| 2 | `INTERNAL` | Operational detail that is not published and not personal. |
+| 3 | `CONFIDENTIAL` | DMs, drafts, private groups, order history, seller data. |
+| 4 | `HIGHLY_SENSITIVE` | Identity, contact details, entitlements, auth state. |
+| 5 | `RESTRICTED` | Everything behind the Private Office second lock. |
+| 6 | `SECRET` | Credentials, tokens, internal service keys. |
+
+The older names still resolve, so a caller using this document's previous
+vocabulary lands on the right rung rather than on the unknown-class refusal:
+`PLATFORM_PUBLIC`→`PUBLIC`, `PLATFORM_PRIVATE`→`CONFIDENTIAL`,
+`ACCOUNT`→`HIGHLY_SENSITIVE`, `PRIVATE_OFFICE`→`RESTRICTED`,
+`USER_PRIVATE`/`BUSINESS_PRIVATE`→`CONFIDENTIAL`. These are aliases, not rungs;
+the ladder stays seven long, because a ladder with two names for one height is
+one nobody can reason about.
+
+`SECRET` never reaches any provider. Enforced three ways, not promised:
+`undx_router._safe_error()` and `_api_key()` keep credentials out of logs and off
+the wire, `tests/.../CredentialRedactionTest` pins that, and no ceiling may be
+set to `SECRET` — asserted against the tables rather than against today's seven
+providers, so a provider added later cannot open the door by copying a
+neighbour's row (`test_no_ceiling_can_admit_secret`).
+
+### What an unclassified request is assumed to carry
+
+`CONFIDENTIAL`. The router cannot see what it is forwarding, and
+`undx_capability_planner` sends the user's own message verbatim to be
+classified. Assuming that is public because nobody said otherwise is precisely
+the failure this control exists to close.
+
+`UNDX_DEFAULT_REQUEST_PRIVACY` can raise that and is **ignored when it would
+lower it**. A data-protection ceiling that one environment variable switches off
+is not a ceiling.
 
 ## Provider matrix
 
-| Provider | Trains on our data | Retention | May receive |
+The **ceiling** column is the highest class the provider may receive. It is a
+value in `undx_privacy.PROVIDER_CEILINGS`, checked on every request, and a
+request above it is **refused** — not deprioritised, not logged and sent anyway.
+
+| Provider | Trains on our data | Retention | Ceiling |
 |---|---|---|---|
-| OpenAI (`gpt-4o-mini`) | No, on the API tier | Not independently verified | `SYNTHETIC`, `PLATFORM_PUBLIC`, `PLATFORM_PRIVATE` |
-| Claude (`claude-haiku-4-5`) | No, on the API tier | Not independently verified | `SYNTHETIC`, `PLATFORM_PUBLIC`, `PLATFORM_PRIVATE` |
-| **Meta Muse — Standard** (`muse-spark-1.3`) | **No** — console states prompts and completions are not used to train Meta models | Not independently verified | `SYNTHETIC`, `PLATFORM_PUBLIC`, `PLATFORM_PRIVATE` |
-| **Meta Muse — Contributor** (`muse-spark-1.3-contributor`) | **Yes** — console states inputs and outputs are used to train and improve Meta's AI models | Training corpus | `SYNTHETIC` **only** |
-| Perplexity (`sonar`) | Not independently verified | Not independently verified | `SYNTHETIC`, `PLATFORM_PUBLIC` |
-| Gemini (`gemini-flash-lite-latest`) | Not independently verified | Not independently verified | `SYNTHETIC`, `PLATFORM_PUBLIC` |
-| DeepSeek / Groq | Not independently verified | Not independently verified | Currently unreachable — see `UNDX_RAILWAY_PROVIDER_CONFIG.md` |
+| OpenAI (`gpt-4o-mini`) | No, on the API tier | Not independently verified | `CONFIDENTIAL` |
+| Claude (`claude-haiku-4-5`) | No, on the API tier | Not independently verified | `CONFIDENTIAL` |
+| **Meta Muse — Standard** (`muse-spark-1.3`) | **No** — console states prompts and completions are not used to train Meta models | Not independently verified | `CONFIDENTIAL` |
+| **Meta Muse — Contributor** (`muse-spark-1.3-contributor`) | **Yes** — console states inputs and outputs are used to train and improve Meta's AI models | Training corpus | `SYNTHETIC` |
+| Perplexity (`sonar`) | Not independently verified | Not independently verified | `PUBLIC` |
+| Gemini (`gemini-flash-lite-latest`) | Not independently verified | Not independently verified | `PUBLIC` |
+| DeepSeek (`deepseek-chat`) | Not independently verified | Not independently verified | `PUBLIC` |
+| Groq (`llama-3.1-8b-instant`) | Not independently verified | Not independently verified | `PUBLIC` |
+
+The split is not a quality ranking. `CONFIDENTIAL` means the vendor's own console
+or documentation states our data is not trained on, read there rather than
+inferred. `PUBLIC` means that has not been independently established.
 
 "Not independently verified" means exactly that. It is not a claim that the
-provider trains on our data, and not a claim that it does not. Where a cell below
-drives an actual restriction, the restriction is stated on its own terms.
+provider trains on our data, and not a claim that it does not — but it is also
+not a basis for sending somebody's unpublished content, which is why it caps the
+ceiling at `PUBLIC`.
+
+DeepSeek and Groq are currently unreachable for unrelated reasons (billing and a
+malformed credential — see `UNDX_RAILWAY_PROVIDER_CONFIG.md`). That is a health
+question, not a privacy one, and the two are kept on separate axes: giving them a
+lower ceiling because they happen to be down would encode an outage as a policy.
+
+**The Contributor row is enforced by model ID, not by provider name.** Both Meta
+tiers share one credential, one base URL and one adapter, and differ only by the
+model in the request body. A ceiling keyed on `"meta"` would be one environment
+variable away from blessing exactly what it forbids, so `provider_ceiling()`
+takes the model the router is about to send. Verified live: with
+`META_MUSE_MODEL=muse-spark-1.3-contributor`, `PUBLIC` is refused.
 
 ## The Meta tier decision
 
@@ -128,10 +179,13 @@ per-call prompt tax is the kind of thing that only looks small until traffic
 grows, and the cheapest place to shorten it is here, deliberately, with the live
 probe re-run afterwards — not by trimming words and assuming it still holds.
 
-## `PRIVATE_OFFICE`
+## `RESTRICTED` — Private Office
 
-**No provider in this matrix may receive `PRIVATE_OFFICE` data**, including
-Meta Standard tier.
+**No provider in this matrix may receive `RESTRICTED` data**, including Meta
+Standard tier. Enforced: the highest ceiling any provider carries is
+`CONFIDENTIAL`, two rungs below, and
+`test_no_provider_may_receive_private_office_data` asserts it against every
+entry in `PROVIDERS` rather than against a list that would need maintaining.
 
 This is not a judgement about any particular vendor. Private Office sits behind a
 second lock precisely because the first lock is not considered sufficient for it,
@@ -140,6 +194,11 @@ applied twice. Admitting a provider to that class requires a deliberate decision
 with the retention question actually answered, not assumed — and the router is
 not the right place to make it.
 
+One honest gap: the Office's unlock is binary and tags nothing, so no caller can
+currently *label* content as `RESTRICTED` on the way out. The ceiling would
+refuse it if they did. Until the Office emits a class, this rung is enforced and
+unexercised.
+
 ## Perplexity is different in kind
 
 Perplexity resolves a query by **searching the live web at request time**. The
@@ -147,7 +206,28 @@ query itself becomes a search engine query.
 
 That rules out sending it anything private regardless of its retention policy: a
 DM summarised into a Perplexity prompt has been typed into a search engine. Hence
-`PLATFORM_PUBLIC` and `SYNTHETIC` only.
+a `PUBLIC` ceiling — capped on mechanism, so no retention policy it might publish
+later would raise it.
+
+### The cost of that, which is real
+
+Perplexity leads the `current_web` lane in `provider_priority` because it is the
+only provider that can *see* today's answer. Capping it at `PUBLIC` means a
+freshness question carrying anything private is refused there and answered by a
+model reading from training data — which is the exact failure `classify_request`
+was written to avoid:
+
+> a question about what is true now, routed to a model answering from training
+> data, does not fail loudly — it returns a confident, well-formed, stale answer,
+> and the only reader able to detect it is the one who already knew.
+
+So two correct controls are in direct conflict, and the resolution is not to
+lower the ceiling: that would trade a disclosed staleness for an undisclosed
+disclosure. The request is still served, and the envelope carries
+`freshness_degraded: true` so a caller can say *I could not check this* instead
+of presenting stale text as current. Today that fires for any unclassified
+freshness question, because the default class is `CONFIDENTIAL` — which is the
+strongest argument for getting callers to classify.
 
 The reverse direction matters too. Perplexity returns content fetched from pages
 nobody vetted, which under §61 and §62 is **untrusted input**. It carries no
@@ -184,15 +264,31 @@ controls is worse than no document.
   provider added later cannot quietly omit it. Cost is only claimed for models
   with a vendor-verified price; everything else reports tokens and a null cost.
 
+- The per-provider privacy ceiling above. Checked in the routing loop of both
+  `route_structured_request` and `route_undx_request`, so neither naming
+  providers explicitly nor switching `UNDX_ROUTER_ENABLED` off routes around it.
+  A request above a provider's ceiling is refused and recorded in `attempts` as
+  `privacy_refused` with both heights named.
+- No provider may receive `RESTRICTED` (Private Office) data. Asserted against
+  every provider in `PROVIDERS`, so this cannot be lost by adding one.
+- An unrecognised privacy class is refused everywhere rather than treated as
+  harmless, and a provider with no declared ceiling may receive `SYNTHETIC` only.
+
 **Not enforced — policy only, at the time of writing:**
 
-- Nothing in the router inspects a *data class*. There is no mechanism that stops
-  `PRIVATE_OFFICE` content from being passed to `route_undx_request` and
-  forwarded to any configured provider. The restrictions in the matrix above are
-  currently upheld by the callers, and the context that reaches the router is
-  compiled upstream by `services/undx_policy.py` and the Private Office gate.
-- A per-provider `privacy_class` ceiling, checked in `provider_priority()`, is the
-  obvious next control and does not exist yet.
+- **Callers do not classify yet.** The ceiling is enforced on every request, but
+  almost every caller relies on the `CONFIDENTIAL` default rather than declaring
+  what it holds. That is safe in the direction that matters — the default is
+  higher than most traffic actually is — but it means the control is currently
+  protecting against a *presumed* class, not a known one. Two consequences:
+  genuinely public work is refused providers it could have used, and
+  `RESTRICTED` content would still be sent as `CONFIDENTIAL` if a caller passed
+  it in, because nothing upstream labels it. `router.privacy.declared_by_caller`
+  in the envelope is how to measure progress on this.
+- The Private Office gate does not tag what passes through it. It is a binary
+  unlock, so there is no label for the router to read even if a caller wanted to
+  forward it. Closing the previous item properly means the Office emitting a
+  class, not the router guessing one.
 - Spend is measured, not capped. `spend_state()` reports per-provider monthly
   totals, but nothing refuses a call for being over budget, and the totals are
   in-memory per process rather than durable.
