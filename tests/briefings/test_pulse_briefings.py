@@ -628,83 +628,6 @@ class TopicIndependenceTests(unittest.TestCase):
         self.assertEqual(pack["crypto_score"], 0)
 
 
-class TopicIndependenceTests(unittest.TestCase):
-    """Crypto market and watchlist are separate switches on the hub, so they must
-    be separate in the fact pack. Turning the market topic off used to skip the
-    whole crypto collector, which deleted the user's watchlist as a side effect:
-    the watchlist switch read ON while contributing nothing."""
-
-    def setUp(self):
-        _clear_provider_cache()
-        self.conn = _fresh_conn()
-        self.conn.execute(
-            "INSERT INTO crypto_alerts (user_id, asset_symbol, condition_type, target_value, status) "
-            "VALUES (1,'BTC','above',103.0,'active')"
-        )
-        self.conn.commit()
-
-    def tearDown(self):
-        self.conn.close()
-
-    def _build(self, *, crypto_enabled, watchlist_enabled):
-        # A big market move: 9% BTC. Whether it may score is the point of the test.
-        with mock.patch.object(facts.crypto_provider, "get_watchlist_snapshots",
-                               return_value=[{"symbol": "BTC", "price": 100.0, "change_24h": 1.0}]), \
-             mock.patch.object(facts.crypto_provider, "get_market_overview",
-                               return_value={"generated_at": _iso(datetime.now(timezone.utc)),
-                                             "provider": "coingecko",
-                                             "btc": {"price": 100.0, "change_24h": 9.0},
-                                             "eth": {"price": 50.0, "change_24h": 1.0},
-                                             "market_cap_change_24h_pct": 9.0}), \
-             mock.patch.object(facts.crypto_provider, "get_top_movers",
-                               return_value={"gainers": [], "losers": []}), \
-             mock.patch.object(facts.crypto_provider, "get_trending", return_value=[]):
-            return facts.build_briefing_facts(
-                self.conn.cursor(), 1, since_iso=_iso(datetime.now(timezone.utc)),
-                timezone_name="UTC", locale="en",
-                prefs={"network_enabled": False,
-                       "crypto_enabled": crypto_enabled,
-                       "watchlist_enabled": watchlist_enabled},
-            )
-
-    def test_market_off_with_watchlist_on_still_returns_watchlist(self):
-        pack = self._build(crypto_enabled=False, watchlist_enabled=True)
-        crypto = pack["crypto"]
-        self.assertIsNotNone(crypto, "watchlist ON must still produce a crypto fact block")
-        self.assertEqual(crypto["watchlist"], [{"symbol": "BTC", "price": 100.0, "change_24h": 1.0}])
-        self.assertEqual(crypto["alert_proximity"],
-                         [{"symbol": "BTC", "threshold": 103.0, "distance_pct": 3.0}])
-
-    def test_market_off_contributes_no_market_facts_or_score(self):
-        pack = self._build(crypto_enabled=False, watchlist_enabled=True)
-        crypto = pack["crypto"]
-        self.assertNotIn("btc_price", crypto)
-        self.assertNotIn("btc_change_24h", crypto)
-        self.assertFalse(crypto["market_enabled"])
-        # A 9% BTC move must score zero when the market topic is off; only the
-        # user's own alert proximity (8) may count.
-        self.assertEqual(pack["crypto_score"], 8)
-
-    def test_market_on_scores_the_move(self):
-        pack = self._build(crypto_enabled=True, watchlist_enabled=True)
-        self.assertTrue(pack["crypto"]["market_enabled"])
-        self.assertEqual(pack["crypto"]["btc_change_24h"], 9.0)
-        self.assertEqual(pack["crypto_score"], 10 + 6 + 8)
-
-    def test_watchlist_off_keeps_market_and_drops_personal_facts(self):
-        pack = self._build(crypto_enabled=True, watchlist_enabled=False)
-        crypto = pack["crypto"]
-        self.assertEqual(crypto["btc_change_24h"], 9.0)
-        self.assertEqual(crypto["watchlist"], [])
-        self.assertEqual(crypto["alert_proximity"], [])
-        self.assertEqual(pack["crypto_score"], 10 + 6)
-
-    def test_both_off_removes_the_crypto_block_entirely(self):
-        pack = self._build(crypto_enabled=False, watchlist_enabled=False)
-        self.assertIsNone(pack["crypto"])
-        self.assertEqual(pack["crypto_score"], 0)
-
-
 class SignificanceTests(unittest.TestCase):
     def test_network_significance_weights(self):
         net = {"security_alerts": 1, "unread_messages": 2, "new_followers": 3}
@@ -1788,6 +1711,102 @@ class SummarizerTests(unittest.TestCase):
         copy = summarizer.template_copy({"locale": "en", "network": {"unread_messages": 0},
                                          "crypto": {"available": False}})
         self.assertIn("quiet", copy["body"].lower())
+
+
+class WhatTheBriefingDeclaresToTheRouter(unittest.TestCase):
+    """What this call site tells `undx_router`, as opposed to what comes back.
+
+    Every other UNDX test in this file stubs the router with
+    ``lambda *a, **k: {...}`` and asserts on ``copy["source"]``. Those assertions are
+    correct and they are also blind to this class of defect by construction: a
+    ``**k`` swallows a missing privacy class, a missing domain and a routing subject
+    chosen from serialized JSON field names, and reports ``undx:fake`` either way.
+    The briefing shipped with none of the three declared and every test here was
+    green.
+
+    So these tests capture the call and assert on the **arguments handed to the
+    router**, never on the answer.
+    """
+
+    FACTS = {
+        "user_id": 7, "locale": "en", "urgency": "normal",
+        "network": {"unread_messages": 3, "security_alerts": 1, "friend_requests": 1,
+                    "new_followers": 0, "marketplace_orders": 2},
+        "crypto": {"available": True, "btc_price": 65000.0, "btc_change_24h": -2.5,
+                   "eth_change_24h": 1.4},
+    }
+
+    def _call(self):
+        """Return the call the summarizer made to the router."""
+        spy = mock.Mock(return_value={
+            "ok": True, "provider": "fake",
+            "response": '{"title": "3 new updates", "body": "BTC -2.5% over 24h."}'})
+        fake = types.ModuleType("undx_router")
+        fake.route_structured_request = spy
+        with mock.patch.dict(sys.modules, {"undx_router": fake}):
+            summarizer.undx_copy(self.FACTS)
+        self.assertEqual(spy.call_count, 1, "the summarizer did not reach the router")
+        return spy.call_args
+
+    def test_a_privacy_class_is_declared_rather_than_defaulted(self):
+        from services import undx_privacy
+
+        kwargs = self._call().kwargs
+        self.assertEqual(kwargs.get("privacy_class"),
+                         undx_privacy.SENSITIVITY_CONFIDENTIAL)
+        # A typo is the failure mode worth naming: `UNKNOWN_CLASS_RANK` ranks an
+        # unrecognised name as SECRET, so `CONFIDENTAIL` would read as *stricter*
+        # than intended and refuse every provider, disabling this path silently in
+        # favour of the template. Equality alone would not catch a renamed constant.
+        self.assertTrue(undx_privacy.is_known(kwargs["privacy_class"]),
+                        f"{kwargs['privacy_class']!r} is not a recognised class")
+
+    def test_a_call_domain_is_declared_rather_than_defaulted(self):
+        from services import undx_call_domain
+
+        kwargs = self._call().kwargs
+        self.assertEqual(kwargs.get("call_domain"),
+                         undx_call_domain.CALL_DOMAIN_GENERAL)
+
+    def test_the_routing_subject_is_the_job_and_not_the_serialized_payload(self):
+        """The payload's own field names used to choose the provider."""
+        args, kwargs = self._call()
+        sent = args[2]
+        # What is sent really is the JSON blob - this is not a test about the prompt.
+        self.assertIn('"marketplace_orders"', sent)
+        self.assertEqual(kwargs.get("classify_text"), summarizer.ROUTING_SUBJECT)
+        self.assertNotEqual(kwargs["classify_text"], sent)
+
+    def test_the_declared_subject_and_the_payload_route_to_different_lanes(self):
+        """Without this the constant could be arbitrary text and still pass above.
+
+        `marketplace_orders` contributes the token "market" and the crypto block
+        contributes "crypto", which is what pinned every briefing to `research` -
+        the lane that leads with Perplexity, a paid web-search provider, for a job
+        that must not source data at all. Asserting the two categories *differ* is
+        what makes the previous test a statement about routing rather than about
+        string equality.
+        """
+        import undx_router
+
+        args, kwargs = self._call()
+        self.assertEqual(undx_router.classify_request(args[2])["category"], "research")
+        self.assertEqual(
+            undx_router.classify_request(kwargs["classify_text"])["category"],
+            "fast_directive")
+
+    def test_json_is_not_required_so_claude_stays_in_the_chain(self):
+        """The inverse of the planner's declaration, and deliberate.
+
+        Pinned rather than left implicit because `require_json=True` reads as
+        strictly better: it is, where a parse failure silently drops work. Here the
+        parse lifts the object out of surrounding prose and a failure degrades to
+        `template_copy`, which is deterministic and grounded by construction - so
+        requiring a capability Claude lacks would refuse half the reachable chain at
+        CONFIDENTIAL to protect against an outcome that is already correct.
+        """
+        kwargs = self._call().kwargs
+        self.assertNotIn("require_json", kwargs)
 
 
 class PostgresCompatTests(unittest.TestCase):

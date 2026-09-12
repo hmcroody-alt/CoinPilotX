@@ -26,8 +26,10 @@ monolith with ~1,538 routes and live integrations.
 """
 
 import collections
+import io
 import pathlib
 import re
+import tokenize
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 ENV_EXAMPLE = ROOT / ".env.example"
@@ -109,6 +111,47 @@ def _production_sources():
                 yield pathlib.Path(directory) / filename
 
 
+def _without_comments(text):
+    """Blank out `#` comments in place, preserving every other character offset.
+
+    The scanner is a set of regexes over source text, and a regex cannot tell code
+    from prose *about* code. `services/command_center_client.py` documents a read it
+    deliberately removed:
+
+        # `ai_configured()` used to live here as
+        # `ai_enabled() and bool(_env_text("PULSE_AI_PROVIDER"))`.
+
+    Nothing evaluates that line, but `_env_text` is an indirect accessor and the
+    regex matched it, so the suite demanded that `.env.example` document a variable
+    whose entire purpose was to no longer be read. Adding it would have instructed
+    operators to set a dead key; deleting the comment would have deleted the
+    explanation. Neither is a fix, because the defect is in the scanner.
+
+    Comments only. String literals are left alone deliberately - `os.getenv("X")`
+    *is* a string literal, so dropping strings would blind the scanner completely.
+    That distinction is the whole point: a comment cannot be evaluated, a string
+    constant can be. Offsets are preserved rather than the comment excised so that
+    any future line/column reporting keeps pointing at the right place.
+
+    Falls back to the untouched text when a file will not tokenize. That direction
+    is chosen on purpose: an unparseable file then over-reports rather than silently
+    contributing nothing, and over-reporting fails loudly here while under-reporting
+    is invisible.
+    """
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO(text).readline))
+    except (tokenize.TokenError, IndentationError, SyntaxError, ValueError):
+        return text
+    lines = text.splitlines(keepends=True)
+    for token in tokens:
+        if token.type != tokenize.COMMENT:
+            continue
+        (row, start), (_, end) = token.start, token.end
+        line = lines[row - 1]
+        lines[row - 1] = line[:start] + " " * (end - start) + line[end:]
+    return "".join(lines)
+
+
 def _variables_read_by_production_code():
     read = collections.defaultdict(set)
     for path in _production_sources():
@@ -116,6 +159,7 @@ def _variables_read_by_production_code():
             text = path.read_text(encoding="utf-8", errors="ignore")
         except OSError:
             continue
+        text = _without_comments(text)
         relative = str(path.relative_to(ROOT))
         for match in READ_PATTERN.finditer(text):
             name = match.group(1) or match.group(2) or match.group(3)
@@ -168,6 +212,40 @@ def _declared_variables():
 
 
 # --- 1. The contract must be complete ----------------------------------------
+
+def test_the_comment_stripper_hides_prose_without_hiding_code():
+    """The stripper sits upstream of every count in this file, so it gets its own test.
+
+    A stripper that removed too much would make `undocumented` empty for the wrong
+    reason, and empty is exactly what this suite reports on success. The failure mode
+    is not hypothetical: the first version of this helper rebuilt the source by
+    joining tokens with spaces, which turned `getenv("X")` into `getenv ("X")`. The
+    regex requires `getenv(` with no gap, so 561 of 582 real reads vanished and the
+    suite went green having measured almost nothing.
+
+    So both directions are asserted on one fixture: the commented read must
+    disappear, and the live read beside it must survive byte-for-byte.
+    """
+    source = (
+        'import os\n'
+        'TIMEOUT = os.getenv("LIVE_REAL_VARIABLE")\n'
+        '# removed: os.getenv("COMMENTED_OUT_VARIABLE") is no longer read\n'
+        'OTHER = os.environ["SECOND_REAL_VARIABLE"]  # os.getenv("TRAILING_COMMENT_VAR")\n'
+    )
+    cleaned = _without_comments(source)
+    found = {m.group(1) or m.group(2) or m.group(3)
+             for m in READ_PATTERN.finditer(cleaned)}
+    assert found == {"LIVE_REAL_VARIABLE", "SECOND_REAL_VARIABLE"}, (
+        "The comment stripper is not separating evaluated reads from prose about "
+        f"reads. Expected the two live reads and neither commented one, got {found}. "
+        "If real names are missing the stripper is corrupting code and every count "
+        "in this file is understated."
+    )
+    assert len(cleaned) == len(source), (
+        "The stripper changed the length of the source, so character offsets no "
+        "longer line up with the original file."
+    )
+
 
 def test_every_variable_production_code_reads_is_documented():
     read = _variables_read_by_production_code()

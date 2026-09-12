@@ -30,6 +30,33 @@ SYSTEM_PROMPT = (
     f"Title <= {TITLE_MAX} chars. Body <= {BODY_MAX} chars."
 )
 
+#: What the *routing decision* is made from, which is not what gets sent.
+#:
+#: `undx_router.classify_request` reads the text it is given, and what this module
+#: sends is `json.dumps(payload)` - so before this constant existed the provider was
+#: chosen from serialized **field names**. `marketplace_orders` supplies the token
+#: "market" and the crypto block supplies "crypto", which together classify every
+#: briefing in this codebase as `research`. The `research` lane leads with Perplexity:
+#: a paid web-search provider, selected for a job that must not source data (see the
+#: module docstring) and whose output is rejected outright by `grounded()` if it
+#: contains a number absent from the payload. The correct lane is `fast_directive`,
+#: which leads with Groq - right for 178 characters at `max_tokens=220` under a 10s
+#: timeout, sent once per user per cycle.
+#:
+#: That misroute is currently *masked*, and the masking is the reason to fix it rather
+#: than a reason to leave it. CONFIDENTIAL refuses Perplexity and Gemini, so `research`
+#: collapses to [openai, claude, meta] and `fast_directive` to [openai, claude] - both
+#: lead with OpenAI, so no request is misrouted today. The privacy ceiling is doing the
+#: work here, not the routing policy, and the day any caller declares something below
+#: CONFIDENTIAL this call starts paying Perplexity to write push notifications.
+#:
+#: Phrased as a description of the task because this call site has no user question to
+#: route on: the work is the same shape on every invocation, so the honest subject is
+#: the job rather than the data. Pinned by a test that asserts the *category*, since a
+#: sentence that classifies correctly today is not self-evidently doing so after a
+#: change to the classifier's rules.
+ROUTING_SUBJECT = "summarize a bounded fact payload into notification copy"
+
 
 def _fmt_pct(value) -> str:
     return f"{value:+.1f}%".replace("+-", "-")
@@ -164,6 +191,8 @@ def undx_copy(facts: dict[str, Any]) -> dict[str, str] | None:
     """Governed UNDX summarization; None on any failure (caller falls back)."""
     try:
         from undx_router import route_structured_request
+
+        from services import undx_call_domain, undx_privacy
     except Exception:  # noqa: BLE001
         return None
     payload = {k: facts.get(k) for k in ("locale", "network", "crypto", "urgency")}
@@ -171,6 +200,36 @@ def undx_copy(facts: dict[str, Any]) -> dict[str, str] | None:
         result = route_structured_request(
             facts.get("user_id"), SYSTEM_PROMPT,
             json.dumps(payload, sort_keys=True), timeout=10, max_tokens=220,
+            # CONFIDENTIAL (§4). The payload is per-user activity - unread message
+            # counts, friend requests, marketplace orders, security alerts - which is
+            # personal even though every value is an integer. Not SECRET: no
+            # credentials, no message contents, no addresses, and SECRET would refuse
+            # every external provider and permanently disable this path in favour of
+            # the template. Declared rather than omitted: omission already normalises
+            # to CONFIDENTIAL, so this changes no behaviour and makes the
+            # classification reviewable, which §4 asks for precisely because a class
+            # that defaults correctly is indistinguishable from one nobody chose.
+            privacy_class=undx_privacy.SENSITIVITY_CONFIDENTIAL,
+            # GENERAL (§5), and load-bearing rather than a placeholder. A briefing
+            # aggregates messaging, commerce and security counts into one
+            # notification, so no narrower domain is true of it, and naming one would
+            # be a claim about content this caller cannot make. The domain may reorder
+            # providers and may never widen them, so the honest value costs nothing.
+            call_domain=undx_call_domain.CALL_DOMAIN_GENERAL,
+            # Route on the job, not on the serialized payload's field names. See
+            # ROUTING_SUBJECT above for the measurement.
+            classify_text=ROUTING_SUBJECT,
+            # Deliberately NOT require_json=True, which is the opposite of the call in
+            # `undx_capability_planner`. Two things differ. The parse here is tolerant
+            # by construction - `raw.index("{")` lifts the object out of surrounding
+            # prose - and Claude, which has no JSON mode in `PROVIDERS`, is half of the
+            # reachable chain at CONFIDENTIAL; requiring the capability would refuse it
+            # and leave OpenAI alone. And a parse failure here degrades to
+            # `template_copy`, which is deterministic, localized and grounded by
+            # construction, so the fallback is a correct answer rather than a missing
+            # one. In the planner the same failure became `_miss("unparseable")` - a
+            # silently dropped capability - which is why it pays a provider for the
+            # guarantee and this does not.
         )
         if not result.get("ok"):
             return None

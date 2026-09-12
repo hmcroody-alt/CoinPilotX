@@ -54,10 +54,14 @@ ROUTER = "undx_router.py"
 PLANNER = "services/undx_capability_planner.py"
 INTEL = "services/intelligence.py"
 RUNTIME = "services/undx_agent_runtime.py"
+SUMMARIZER = "services/pulse_briefings/summarizer.py"
+INTEGRITY = "tests/protection/test_protection_suite_integrity.py"
+ENV_CONTRACT = "tests/protection/test_environment_contract.py"
 
 ROUTER_TESTS = "tests/test_undx_router_multi_provider.py"
 PLANNER_TESTS = "tests/undx_agent/test_capability_planner.py"
 INTEL_TESTS = "tests/test_assistant_response_routing.py"
+BRIEFING_TESTS = "tests/briefings/test_pulse_briefings.py"
 
 #: (label, file, old, new, test that must fail, test file)
 MUTATIONS = [
@@ -149,6 +153,112 @@ MUTATIONS = [
         '            # Classify the question rather than the board. The\n',
         None,
         INTEL_TESTS,
+    ),
+
+    # ---- the briefing summarizer
+    #
+    # This call site declared none of the four and its suite was green, because every
+    # UNDX test in that file stubs the router as `lambda *a, **k` and asserts on
+    # `copy["source"]`. A `**k` cannot notice an argument that is absent. These
+    # mutations exist to prove the replacement assertions read the arguments.
+    (
+        "briefing: leave the privacy class to the default",
+        SUMMARIZER,
+        '            privacy_class=undx_privacy.SENSITIVITY_CONFIDENTIAL,\n',
+        '',
+        "test_a_privacy_class_is_declared_rather_than_defaulted",
+        BRIEFING_TESTS,
+    ),
+    (
+        "briefing: leave the call domain to the default",
+        SUMMARIZER,
+        '            call_domain=undx_call_domain.CALL_DOMAIN_GENERAL,\n',
+        '',
+        "test_a_call_domain_is_declared_rather_than_defaulted",
+        BRIEFING_TESTS,
+    ),
+    (
+        "briefing: classify the serialized payload again instead of the job",
+        SUMMARIZER,
+        '            classify_text=ROUTING_SUBJECT,\n',
+        '',
+        "test_the_routing_subject_is_the_job_and_not_the_serialized_payload",
+        BRIEFING_TESTS,
+    ),
+    (
+        # Not "delete the subject" — keep it and make it wrong. Dropping the argument is
+        # caught by the test above; this asks whether anything checks that the constant
+        # *routes somewhere different from the payload*. Without that assertion
+        # `ROUTING_SUBJECT` could be any string at all and the equality test would still
+        # pass, which would make it a test about a variable name rather than about
+        # routing. The replacement classifies as `research` — the same lane the payload
+        # already reached — so it restores the defect while keeping every other
+        # assertion in the class satisfied.
+        "briefing: word the routing subject so it lands back in the research lane",
+        SUMMARIZER,
+        'ROUTING_SUBJECT = "summarize a bounded fact payload into notification copy"\n',
+        'ROUTING_SUBJECT = "summarize the crypto market payload into notification copy"\n',
+        "test_the_declared_subject_and_the_payload_route_to_different_lanes",
+        BRIEFING_TESTS,
+    ),
+    (
+        # The mutation in the *strict* direction, which is the one a reviewer would wave
+        # through. `require_json=True` reads as unambiguously safer and is wrong here:
+        # Claude has no JSON mode, CONFIDENTIAL already narrows the chain to
+        # [openai, claude], and a parse failure at this call site degrades to a
+        # deterministic grounded template rather than dropping work. So the guarantee
+        # costs half the chain and buys nothing.
+        "briefing: require JSON, refusing half the reachable chain to no benefit",
+        SUMMARIZER,
+        '            # Deliberately NOT require_json=True, which is the opposite of the call in\n',
+        '            require_json=True,\n'
+        '            # Deliberately NOT require_json=True, which is the opposite of the call in\n',
+        "test_json_is_not_required_so_claude_stays_in_the_chain",
+        BRIEFING_TESTS,
+    ),
+
+    # ---- the guard against tests that cannot fail
+    (
+        # Self-referential on purpose. `test_no_test_module_defines_the_same_test_twice`
+        # reports a count of offending modules and passes on zero — the exact shape that
+        # cannot distinguish "clean repo" from "broken detector". Neutering the detector
+        # must therefore kill the paired test that feeds it a module known to be broken,
+        # and must *not* be survivable just because the repo happens to be clean.
+        "integrity: make the shadowed-definition detector always report nothing",
+        INTEGRITY,
+        '    tree = ast.parse(source)\n'
+        '    shadowed = []\n',
+        '    tree = ast.parse(source)\n'
+        '    shadowed = []\n'
+        '    return shadowed\n',
+        "test_the_shadowed_definition_check_can_actually_fail",
+        INTEGRITY,
+    ),
+    (
+        # Under-strip. The scanner then reads prose about code as code again, which is
+        # what demanded `.env.example` document `PULSE_AI_PROVIDER` — a variable whose
+        # only three appearances in the repo are comments explaining that it is no
+        # longer read.
+        "env contract: stop stripping comments before scanning for reads",
+        ENV_CONTRACT,
+        '        text = _without_comments(text)\n',
+        '',
+        "test_every_variable_production_code_reads_is_documented",
+        ENV_CONTRACT,
+    ),
+    (
+        # Over-strip, and the more dangerous direction of the two. `os.getenv("X")`
+        # holds the name in a *string literal*, so dropping strings blinds the scanner
+        # almost entirely — and a blind scanner reports zero undocumented variables,
+        # which is indistinguishable from a complete `.env.example`. The
+        # `len(read) > 300` guard is what should catch it; this mutation is how we find
+        # out whether it does.
+        "env contract: strip string literals as well as comments",
+        ENV_CONTRACT,
+        '        if token.type != tokenize.COMMENT:\n',
+        '        if token.type not in (tokenize.COMMENT, tokenize.STRING):\n',
+        "test_the_comment_stripper_hides_prose_without_hiding_code",
+        ENV_CONTRACT,
     ),
 ]
 
