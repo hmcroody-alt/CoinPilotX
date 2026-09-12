@@ -430,15 +430,64 @@ Mode→panel mapping: `navigation/sellerStoreMode.ts:27` `PANELS_BY_MODE`.
 
 ### Confirmed absences on the client
 
-- **No selection mode.** No checkbox, no Select All, no selection-mode toggle
-  anywhere in Store. The nearest relative is the dropshipping import cart, which
-  is sequential add/remove, not multi-select.
-- **No bulk anything** — no bulk edit, bulk publish, bulk pricing, bulk
-  visibility.
-- **No test coverage** for any of the above, because none of it exists.
+- ~~**No selection mode.**~~ **BUILT — §16–§20, `5eb3be01`.** See below.
+- **No bulk anything** — no bulk action sheet, bulk edit, bulk publish, bulk
+  pricing, bulk visibility. §21–§33 remain unbuilt.
+- **No test coverage** for the unbuilt half, because none of it exists.
 
 So §16-§33 (selection mode, bulk action sheet, bulk editors) is new construction
 rather than a rework. That is the cheaper half of this mission.
+
+### Selection mode — §16–§20 (BUILT, `5eb3be01`)
+
+| Piece | Path | Role |
+|---|---|---|
+| state model | `src/marketplace/storeSelection.ts` | pure functions over a `ReadonlySet<number>` — `toggle`, `toggleAll`, `selectAllState`, `selectAllLabel`, `reconcile`, `selectedRows`, `selectionSummary`, `partition`, `bulkActionLabel` |
+| the bar | `src/components/store/StoreSelectionBar.tsx` | replaces the tab bar while picking; owns no selection logic |
+| the row | `src/components/store/StoreListingRow.tsx` | checkbox, selected rule, disabled wash, blocked reason |
+| the wiring | `src/screens/StoreDashboardScreen.tsx:266-300, :743-769` | the only place selection state lives |
+| tests | `src/marketplace/__tests__/storeSelection.test.ts` (33), `src/screens/__tests__/StoreDashboardSelection.test.tsx` (18) | model vs. wiring, deliberately split |
+
+Four decisions here are load-bearing and easy to "simplify" into bugs:
+
+1. **The selection is not cleared by a tab or search change.** That is why
+   `selectionSummary` names the off-screen part ("4 selected · 2 not shown") and
+   why `selectAllLabel` says *shown*. Clearing on filter change would be the
+   safer-looking choice and would destroy a seller's work every time they
+   searched.
+2. **It *is* cleared of ids that no longer exist**, via `reconcile` on every
+   reload. A listing deleted on another device must not come back ticked. Note
+   that the displayed count is correct with or without `reconcile` — it filters
+   through `selectedRows` — so this is invisible until the row returns. That is
+   exactly the mutant that survived first time.
+3. **Blocked rows stay selectable.** Making them unselectable shrinks the count
+   silently and turns "Publish 18" into a surprise at 14. They wear the wash,
+   state the reason, and stay in the seller's count.
+4. **`blockedById` partitions `allRows`, not `visible`.** No test tells those
+   apart today. §21's confirm button will.
+
+The state model holds no React. The screen holds no partitioning rule. That
+split is what let the dangerous half be proven by 13 mutants without rendering
+anything.
+
+### The Store-wide i18n gap (OPEN, not introduced by this mission)
+
+**No file under the Store surface uses the i18n engine.** Every user-facing
+string in `StoreDashboardScreen`, `storeSelection.ts`, and all of
+`components/store/` is an English literal — including the new selection copy
+("Select all 6 shown", "2 not shown", "Tap listings to select", "Done").
+
+CLAUDE.md says "hardcoded strings fail CI". **That is stale.** Measured:
+`npm run i18n:hardcoded` exits 0 regardless of findings, it is not part of
+`npm run verify`, and no workflow invokes it — the only two workflows present are
+`crypto-alert-persistence.yml` and `realtime-audio.yml`. The scan is advisory.
+Its current backlog is ~2,832 strings.
+
+Recorded rather than silently grown: this mission adds to the pile, and the pile
+is not a CI failure, but a seller in a non-English locale gets an English Store.
+Localizing Store is its own mission — doing it halfway, one screen at a time,
+produces a surface that is half-translated, which reads worse than one that is
+honestly not.
 
 ### Design tokens — already centralized, do not add a second file
 
@@ -459,12 +508,32 @@ The mission's §3 token list maps onto it almost completely:
 | `store.warning` | `storeLight.status.warning` | present |
 | `store.danger` | `storeLight.status.error` | present |
 | `store.border` | `storeLight.border.hairline` | present |
-| `store.selected` | — | **missing** (nothing is selectable yet) |
-| `store.disabled` | — | **missing** (`theme/colors.ts:` dark theme has one; the light Store theme does not) |
+| `store.selected` | `storeLight.select.selected` / `selectedBorder` | **added** `5eb3be01` |
+| `store.disabled` | `storeLight.select.disabled` / `disabledText` / `disabledReason` | **added** `5eb3be01` |
 
-The token work is therefore **two additions to the existing file**, not a new
+The token work was therefore **one block added to the existing file**, not a new
 `storeTokens.ts`. Creating a parallel token module would be this codebase's
 signature mistake committed against its own palette.
+
+#### Two of those four tokens were wrong when measured
+
+`src/theme/__tests__/storeLightContrast.test.ts` computes the ratios rather than
+asserting them in a comment, because a comment claiming a measurement rots
+silently. It caught both of the obvious choices:
+
+- **`selectedBorder` as the brand green** (`STORE_CTA_PULSESOC.to`) measures
+  **2.25:1** against `bg.card` — under the **3:1** WCAG 1.4.11 requires of a
+  non-text UI boundary. The single mark distinguishing a selected row would have
+  been invisible to a low-vision seller. Shipped three steps deeper at 3.75:1.
+- **Reusing `status.warning` for the blocked reason** measures 4.54:1 on the
+  white card — passing with nothing spare — and falls to **4.16:1** on the
+  disabled wash. That is the one string telling the seller how to unblock the
+  row. Shipped as `disabledReason` at 5.52:1.
+
+The suite pins the **rejected** pairings too, so the reason each token exists
+cannot be deleted by a future simplifier. It also flags `status.warning`'s
+Store-wide 4.54:1 margin, which is pre-existing and out of scope here but now
+has a test that will notice if anything darkens the card beneath it.
 
 One caution recorded in the file itself (`storeLight.ts:105-111`):
 `accent.orange` is unused by Store but read by Insights through the `storeLight`
