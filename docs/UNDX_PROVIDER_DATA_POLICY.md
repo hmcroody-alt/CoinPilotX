@@ -119,6 +119,10 @@ controls is worse than no document.
   layer.
 - Per-provider kill switches; a disabled provider is not planned.
 - Meta defaults to the Standard tier.
+- Per-provider token and cost accounting. Every adapter returns a normalised
+  `usage` block, checked structurally by `EveryAdapterReportsUsageTest` so a
+  provider added later cannot quietly omit it. Cost is only claimed for models
+  with a vendor-verified price; everything else reports tokens and a null cost.
 
 **Not enforced — policy only, at the time of writing:**
 
@@ -129,6 +133,9 @@ controls is worse than no document.
   compiled upstream by `services/undx_policy.py` and the Private Office gate.
 - A per-provider `privacy_class` ceiling, checked in `provider_priority()`, is the
   obvious next control and does not exist yet.
+- Spend is measured, not capped. `spend_state()` reports per-provider monthly
+  totals, but nothing refuses a call for being over budget, and the totals are
+  in-memory per process rather than durable.
 
 Anyone relying on this document for a compliance answer should read the second
 list first.

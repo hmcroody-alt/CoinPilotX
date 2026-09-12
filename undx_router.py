@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -586,6 +587,157 @@ def _messages(system_prompt: str, message: str, history: Any,
     return messages
 
 
+# --------------------------------------------------------------------- usage
+
+#: USD per million tokens, as (input, output). Only models whose price was read
+#: from the vendor's own console or pricing page appear here. A model that is
+#: absent is reported with tokens and `cost_usd: None` rather than being costed
+#: against a plausible-looking number - an invented price is worse than no price,
+#: because it survives into a budget decision looking like a measurement.
+#: Meta's figures are from the live console for project 1656198352782001; see
+#: UNDX_META_MUSE_CONFIGURATION.md.
+PRICE_PER_MILLION_USD: dict[str, tuple[float, float]] = {
+    "muse-spark-1.3": (1.25, 4.25),
+    "muse-spark-1.3-contributor": (0.10, 0.20),
+}
+
+
+def _int(value: Any) -> int:
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _normalise_usage(provider: str, model: str, raw: Any) -> dict[str, Any]:
+    """One shape out of the four the providers actually return.
+
+    Measured on live responses rather than taken from documentation:
+
+      OpenAI / Meta / Perplexity  prompt_tokens, completion_tokens, total_tokens
+                                  completion_tokens_details.reasoning_tokens
+                                  prompt_tokens_details.cached_tokens
+      Claude                      input_tokens, output_tokens,
+                                  cache_read_input_tokens
+      Gemini                      promptTokenCount, candidatesTokenCount,
+                                  totalTokenCount  (camelCase, no output detail)
+
+    Two of these carry information that a token count alone gets badly wrong.
+
+    Meta spent 524 of 556 completion tokens on reasoning in the sample used to
+    build this - 94% of billed output, none of it visible in the answer. Costing
+    only the reply would understate Meta by more than an order of magnitude.
+
+    Perplexity bills a flat per-request search fee. In the same sample its
+    `request_cost` was $0.005 against $0.00006 of token cost: the tokens were
+    1.2% of the bill. So when a provider reports its own cost, that figure is
+    used and `cost_reported` is true; estimating it from tokens would have been
+    wrong by ~84x.
+    """
+    usage = raw if isinstance(raw, dict) else {}
+
+    if provider == "claude":
+        cached = _int(usage.get("cache_read_input_tokens"))
+        input_tokens = _int(usage.get("input_tokens")) + cached + _int(usage.get("cache_creation_input_tokens"))
+        output_tokens = _int(usage.get("output_tokens"))
+        reasoning = 0
+    elif provider == "gemini":
+        input_tokens = _int(usage.get("promptTokenCount"))
+        output_tokens = _int(usage.get("candidatesTokenCount"))
+        # Gemini reports thinking separately and does NOT include it in
+        # candidatesTokenCount, unlike the OpenAI-shaped providers.
+        reasoning = _int(usage.get("thoughtsTokenCount"))
+        output_tokens += reasoning
+        cached = _int(usage.get("cachedContentTokenCount"))
+    else:
+        input_tokens = _int(usage.get("prompt_tokens"))
+        output_tokens = _int(usage.get("completion_tokens"))
+        reasoning = _int((usage.get("completion_tokens_details") or {}).get("reasoning_tokens"))
+        cached = _int((usage.get("prompt_tokens_details") or {}).get("cached_tokens"))
+
+    total = _int(usage.get("total_tokens")) or _int(usage.get("totalTokenCount")) or (input_tokens + output_tokens)
+
+    reported = usage.get("cost")
+    cost_usd: float | None = None
+    cost_reported = False
+    if isinstance(reported, dict) and reported.get("total_cost") is not None:
+        try:
+            cost_usd = round(float(reported["total_cost"]), 6)
+            cost_reported = True
+        except (TypeError, ValueError):
+            cost_usd = None
+    if cost_usd is None:
+        price = PRICE_PER_MILLION_USD.get(model)
+        if price:
+            cost_usd = round((input_tokens * price[0] + output_tokens * price[1]) / 1_000_000, 6)
+
+    return {
+        "provider": provider,
+        "model": model,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total,
+        "reasoning_tokens": reasoning,
+        "cached_tokens": cached,
+        "cost_usd": cost_usd,
+        "cost_reported": cost_reported,
+    }
+
+
+_SPEND_LOCK = threading.Lock()
+_spend_state: dict[str, Any] = {"month": "", "providers": {}}
+
+
+def _current_month() -> str:
+    return time.strftime("%Y-%m", time.gmtime())
+
+
+def _record_usage(usage: dict[str, Any]) -> None:
+    """Accumulate per-provider spend for the current UTC month.
+
+    In memory, per process, exactly like `undx_embedding_service`'s budget guard
+    - the convention this codebase already uses. It is an observability figure,
+    not an accounting ledger: a restart resets it and workers each keep their
+    own. Writing it to a table would mean hand-rolled idempotent DDL in
+    `bot.init_db()` on the request path, which is a materially larger change than
+    the one being justified here. `spend_state()` exposes it; §70's real
+    per-provider budget enforcement can build on this once someone decides where
+    the durable copy belongs.
+    """
+    with _SPEND_LOCK:
+        month = _current_month()
+        if _spend_state["month"] != month:
+            _spend_state["month"] = month
+            _spend_state["providers"] = {}
+        bucket = _spend_state["providers"].setdefault(
+            usage["provider"], {"calls": 0, "input_tokens": 0, "output_tokens": 0,
+                                "reasoning_tokens": 0, "cost_usd": 0.0, "cost_known": True})
+        bucket["calls"] += 1
+        bucket["input_tokens"] += usage["input_tokens"]
+        bucket["output_tokens"] += usage["output_tokens"]
+        bucket["reasoning_tokens"] += usage["reasoning_tokens"]
+        if usage["cost_usd"] is None:
+            # One uncosted call makes the provider's total a floor, not a sum.
+            bucket["cost_known"] = False
+        else:
+            bucket["cost_usd"] = round(bucket["cost_usd"] + usage["cost_usd"], 6)
+
+
+def spend_state() -> dict[str, Any]:
+    """Per-provider token and cost totals for the current UTC month."""
+    with _SPEND_LOCK:
+        providers = {name: dict(bucket) for name, bucket in _spend_state["providers"].items()}
+        month = _spend_state["month"] or _current_month()
+    return {"month": month, "providers": providers}
+
+
+def reset_spend() -> None:
+    """Test-only."""
+    with _SPEND_LOCK:
+        _spend_state["month"] = ""
+        _spend_state["providers"] = {}
+
+
 def _openai_compatible(provider: str, endpoint: str, system_prompt: str, message: str, history: Any, timeout: int,
                        *, user_content: str | None = None,
                        temperature: float = 0.35, max_tokens: int = 900,
@@ -605,9 +757,11 @@ def _openai_compatible(provider: str, endpoint: str, system_prompt: str, message
         timeout=_timeout(provider, timeout),
     )
     response.raise_for_status()
-    choice = (response.json().get("choices") or [{}])[0]
+    data = response.json()
+    choice = (data.get("choices") or [{}])[0]
     text = _provider_text(provider, (choice.get("message") or {}).get("content"), choice.get("finish_reason"))
-    return {"text": text, "model": payload["model"], "source": config.label}
+    return {"text": text, "model": payload["model"], "source": config.label,
+            "usage": _normalise_usage(provider, payload["model"], data.get("usage"))}
 
 
 def _call_openai(system_prompt: str, message: str, history: Any, timeout: int, **kwargs: Any) -> dict[str, Any]:
@@ -688,6 +842,12 @@ def _call_perplexity(system_prompt: str, message: str, history: Any, timeout: in
         "text": text,
         "model": payload["model"],
         "source": config.label,
+        # Perplexity is the one provider that reports what it actually charged,
+        # and it is also the one whose bill token counts predict worst - the flat
+        # per-request search fee was ~84x the token cost in the sample this was
+        # built against. Dropping it here would replace the only exact cost figure
+        # in the router with no figure at all.
+        "usage": _normalise_usage("perplexity", payload["model"], data.get("usage")),
         "citations": sources if isinstance(sources, list) else [],
     }
 
@@ -729,7 +889,8 @@ def _call_claude(system_prompt: str, message: str, history: Any, timeout: int,
     data = response.json()
     joined = "".join(part.get("text") or "" for part in (data.get("content") or []) if part.get("type") == "text")
     text = _provider_text("claude", joined, data.get("stop_reason"))
-    return {"text": text, "model": payload["model"], "source": "Claude"}
+    return {"text": text, "model": payload["model"], "source": "Claude",
+            "usage": _normalise_usage("claude", payload["model"], data.get("usage"))}
 
 
 def _call_gemini(system_prompt: str, message: str, history: Any, timeout: int,
@@ -765,7 +926,8 @@ def _call_gemini(system_prompt: str, message: str, history: Any, timeout: int,
     parts = (candidate.get("content") or {}).get("parts") or []
     joined = "".join(part.get("text") or "" for part in parts)
     text = _provider_text("gemini", joined, candidate.get("finishReason"))
-    return {"text": text, "model": model, "source": "Gemini"}
+    return {"text": text, "model": model, "source": "Gemini",
+            "usage": _normalise_usage("gemini", model, data.get("usageMetadata"))}
 
 
 CALLERS = {
@@ -826,6 +988,8 @@ def route_structured_request(
             text = _clean_text(result.get("text"), 4000)
             if not text:
                 raise ValueError("empty provider response")
+            usage = result.get("usage") or _normalise_usage(provider, _model(provider), None)
+            _record_usage(usage)
             return {
                 "ok": True,
                 "response": text,
@@ -833,6 +997,7 @@ def route_structured_request(
                 "source": result.get("source") or config.label,
                 "model": result.get("model") or _model(provider),
                 "citations": result.get("citations") or [],
+                "usage": usage,
                 "attempts": attempts + [{"provider": config.label, "status": "success"}],
                 "latency_ms": int((time.time() - started) * 1000),
             }
@@ -875,6 +1040,8 @@ def route_undx_request(user_id: Any, message: str, history: Any = None, system_p
             text = _clean_text(result.get("text"), 5200)
             if not text:
                 raise ValueError("empty provider response")
+            usage = result.get("usage") or _normalise_usage(provider, _model(provider), None)
+            _record_usage(usage)
             return {
                 "ok": True,
                 "response": text,
@@ -886,6 +1053,7 @@ def route_undx_request(user_id: Any, message: str, history: Any = None, system_p
                 # answer, so a caller can render attribution without first
                 # knowing which provider served the request.
                 "citations": result.get("citations") or [],
+                "usage": usage,
                 "classification": classification,
                 "router": {
                     "name": "UNDX Intelligence Router",

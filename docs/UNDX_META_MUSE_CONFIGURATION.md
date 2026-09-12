@@ -141,6 +141,47 @@ the other name finds nothing, reports Meta unconfigured, and skips it forever
 without an error anywhere — pinned by
 `test_meta_reads_the_railway_variable_name_not_the_vendor_default`.
 
+## What a Muse call actually costs
+
+`undx_router` now normalises every provider's `usage` payload and returns it in
+the routing envelope. Measured live, asking *"Name three primary colours."*:
+
+| Provider | in | out | of which reasoning | cost |
+|---|---|---|---|---|
+| OpenAI | 22 | 7 | 0 | unpriced |
+| Claude | 18 | 15 | 0 | unpriced |
+| Gemini | 12 | 12 | 0 | unpriced |
+| **Meta Muse** | 22 | **387** | **367 (95%)** | **$0.001672** |
+| Perplexity | 11 | 16 | 0 | **$0.005030** (reported) |
+
+Two things follow, and neither is visible from a token count of the reply.
+
+**Meta's bill is reasoning, not answers.** 95% of billed output on a
+three-word question was thinking nobody reads. At $4.25/1M output on the
+Standard tier that is ~$1.67 per thousand trivial calls — roughly 20x what the
+visible answer costs. `META_MUSE_REASONING_EFFORT` is therefore a cost control
+as much as a quality one, and the default of `high` is the expensive end of the
+enum. This is the same measurement that justifies `_effective_max_tokens()`:
+reasoning is charged against `max_tokens`, so it both costs money and silently
+eats the answer's budget.
+
+**Perplexity charges per request, not per token.** Its 27 tokens cost about
+$0.00006; the call cost $0.005. The flat search fee is ~84x the token cost, so
+token-based estimation is meaningless for it. Perplexity reports its own
+`usage.cost.total_cost` and the router uses that figure, flagged
+`cost_reported: true`.
+
+Prices are only applied for models whose rate was read from the vendor's own
+console — currently the two Muse tiers. Every other provider reports tokens with
+`cost_usd: null`. That is deliberate: an invented price survives into a budget
+decision looking like a measurement. Adding a rate to
+`undx_router.PRICE_PER_MILLION_USD` is how a verified price gets used.
+
+`undx_router.spend_state()` returns per-provider monthly totals. It is in-memory
+per process, following `services/undx_embedding_service.py`'s budget guard — an
+observability figure, not a ledger. A provider with any unpriced call is marked
+`cost_known: false`, so its total reads as a floor rather than as a sum.
+
 ## Routing position
 
 Muse is registered as an **available specialist, not the default** (§7). It
@@ -170,9 +211,9 @@ vendor's uptime and nothing about this application.
 - **No spend limit is configured on the Meta project.** Pay-as-you-go is live
   with auto-recharge at $20. Setting a cap is an account change and needs an
   explicit decision.
-- **Usage is unmetered on our side.** Meta returns `usage` on every response,
-  including `reasoning_tokens` and `cached_tokens`, and the router currently
-  discards it. Cost accounting per §70 is not yet built.
+- ~~**Usage is unmetered on our side.**~~ Now captured — see "What a Muse call
+  actually costs" below. Enforcement (a budget that refuses a call) is still not
+  built; this is measurement only.
 - Muse Voice Transcribe and Muse Image are available on this project and are
   **not** integrated. Voice in particular must stay clear of the real-time audio
   subsystem — see `docs/realtime_audio_change_policy.md`.
