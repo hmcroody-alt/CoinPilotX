@@ -7,20 +7,31 @@
     python3 scripts/undx_benchmark.py --explain "debug this file"
     python3 scripts/undx_benchmark.py --coverage
     python3 scripts/undx_benchmark.py --compare results.json
+    python3 scripts/undx_benchmark.py --shadow      # what the shadow has seen
+    python3 scripts/undx_benchmark.py --canary      # who is in the experiment
 
 `--run` is required to make a single network call. Everything else here —
-estimating, explaining, coverage — is free and offline. The default has to be
-the free one: the alternative is a tool where typing the name of the script
-sends 147 paid completions, and somebody eventually types it in a loop.
+estimating, explaining, coverage, shadow, canary — is free and offline. The
+default has to be the free one: the alternative is a tool where typing the name
+of the script sends 147 paid completions, and somebody eventually types it in a
+loop.
 
 This is an operator action, not a request path. Do not wire it into a worker:
 nine processes each running it is a 1,323-call herd against providers that may
 already be failing, which is the harm the breaker exists to prevent.
 
-Exit status is 1 when a run produced no evidence, when `--explain` describes a
-request that would fail before reaching a vendor, or when the routing table
-contradicts the benchmark. Those are the three "look at this" conditions; a
-clean benchmark exits 0.
+`--shadow` and `--canary` live here rather than in scripts of their own because
+the question an operator actually has is "what is the fabric doing", and the
+answer is spread across five modules. A tool per module makes the operator the
+integration layer, and during an incident they will run one of the five.
+
+Exit status is 1 on a "look at this" condition: a run that produced no
+evidence, an `--explain` that would fail before reaching a vendor, a routing
+table the benchmark contradicts, a shadow that is switched on but structurally
+cannot observe anything, a shadow reporting numeric disagreements, or a canary
+that is enabled with nobody in it. Each of those is a state that reads as
+healthy from a distance, which is why it gets an exit code rather than a line
+of output somebody has to notice.
 """
 
 from __future__ import annotations
@@ -32,9 +43,12 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import undx_router  # noqa: E402
 from services import undx_benchmark as bench  # noqa: E402
+from services import undx_canary as canary  # noqa: E402
 from services import undx_eval_corpus as corpus  # noqa: E402
 from services import undx_routing_evidence as evidence  # noqa: E402
+from services import undx_shadow as shadow  # noqa: E402
 
 
 def _usd(value):
@@ -133,6 +147,61 @@ def _print_contradictions(report: dict) -> None:
     print(f"\n{report['note']}")
 
 
+def _print_shadow(ready: dict, report: dict) -> None:
+    on = "on" if ready["enabled"] else "off"
+    print(f"Shadow {on}, candidate {ready['candidate'] or '(none)'}, "
+          f"sample rate {ready['sample_rate']}")
+    ceiling = ready["max_privacy_class"]
+    if not ready["max_privacy_class_is_known"]:
+        # Named first because it is the one misconfiguration that looks like a
+        # deliberately strict setting from every other angle.
+        print(f"  CEILING  {ceiling!r} is not a privacy class; nothing is "
+              f"eligible. Check UNDX_SHADOW_MAX_PRIVACY_CLASS for a typo.")
+    else:
+        print(f"  ceiling  {ceiling} (an unclassified request is "
+              f"{ready['default_request_class']})")
+    if not ready["would_run_for_unclassified_traffic"]:
+        print(f"  gated    ordinary chat traffic is not shadowed: "
+              f"{ready['unclassified_blocked_by']}")
+
+    print(f"\n{report['observations']} observation(s) for "
+          f"{report['provider'] or '(none)'}, read from {report['source']}")
+    if not report["observations"]:
+        # An empty report is the ambiguous artefact this whole block exists to
+        # disambiguate, so it gets a sentence rather than a blank table.
+        print("  nothing observed — see the gates above for whether that is "
+              "because nothing ran or because nothing went wrong")
+        return
+    print(f"  answered {report['shadow_answered']}/{report['observations']}"
+          f"  availability {report['availability']}")
+    if report["failures"]:
+        print(f"  failures {report['failures']}")
+    print(f"  latency  shadow {report['median_shadow_latency_ms']}ms vs "
+          f"primary {report['median_primary_latency_ms']}ms (median)")
+    print(f"  numbers  {report['numeric_disagreements']} disagreement(s) in "
+          f"{report['numeric_comparisons']} comparison(s)")
+    print(f"  overlap  {report['mean_token_overlap']} mean token overlap "
+          f"(weak signal; not a quality measure)")
+    print(f"  cost     {_usd((report['cost_micro_usd'] or 0) / 1e6)}"
+          f"{'' if report['cost_complete'] else ' (floor: some calls unpriced)'}")
+    print(f"\nquality_verdict: {report['quality_verdict']}\n"
+          f"{report['quality_verdict_reason']}")
+
+
+def _print_canary(report: dict) -> None:
+    print(f"Omni router {'on' if report['omni_router_enabled'] else 'off'}, "
+          f"canary {'on' if report['canary_enabled'] else 'off'}")
+    print(f"  cohort   {report['cohort_size']} user(s) enrolled")
+    if report["canary_enabled"] and not report["has_cohort"]:
+        print("  EMPTY    the canary is switched on with nobody in it, which "
+              "produces the same silence as one that is working")
+    if not report["omni_router_enabled"] and report["has_cohort"]:
+        print("  gated    UNDX_OMNI_ROUTER_ENABLED is off, so every enrolled "
+              "user is in control")
+    print(f"  modes    {', '.join(report['modes'])}")
+    # The ids are deliberately absent. See `undx_canary.state`.
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--run", action="store_true",
@@ -152,6 +221,10 @@ def main(argv=None) -> int:
                         help="corpus cases per routing lane")
     parser.add_argument("--compare", default="",
                         help="a saved run to check the routing table against")
+    parser.add_argument("--shadow", action="store_true",
+                        help="what the shadow is configured to see and has seen")
+    parser.add_argument("--canary", action="store_true",
+                        help="canary cohort size and switch state; never the ids")
     parser.add_argument("--save", default="", help="write the run to this path")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
@@ -175,6 +248,30 @@ def main(argv=None) -> int:
         else:
             _print_coverage(report)
         return 0
+
+    if args.shadow:
+        ready = shadow.readiness(undx_router)
+        report = shadow.report()
+        if args.json:
+            print(json.dumps({"readiness": ready, "report": report}, indent=2))
+        else:
+            _print_shadow(ready, report)
+        # Three ways a shadow misleads: an unreadable ceiling, an experiment
+        # switched on that cannot observe anything, and two providers stating
+        # different numbers. The last is the only one worth a person's time,
+        # and the first two are what make it never arrive.
+        return 1 if (not ready["max_privacy_class_is_known"]
+                     or (ready["enabled"] and not report["observations"]
+                         and not ready["would_run_for_unclassified_traffic"])
+                     or report["numeric_disagreements"]) else 0
+
+    if args.canary:
+        report = canary.state(undx_router)
+        if args.json:
+            print(json.dumps(report, indent=2))
+        else:
+            _print_canary(report)
+        return 1 if report["canary_enabled"] and not report["has_cohort"] else 0
 
     if args.compare:
         with open(args.compare, encoding="utf-8") as handle:

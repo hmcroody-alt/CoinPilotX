@@ -181,6 +181,28 @@ def router_enabled() -> bool:
     return _flag("UNDX_ROUTER_ENABLED", False)
 
 
+def omni_router_enabled() -> bool:
+    """The §39 kill switch for behaviour added by the omni-agentic work.
+
+    Off means shadow traffic stops and canary cohort selection collapses to
+    control. It does **not** mean UNDX stops: `route_undx_request` still
+    routes, still fails over, still enforces the privacy ceiling and the budget.
+    That separation is the whole point of having a second switch — an operator
+    reaching for it during an incident wants the new, unproven behaviour gone,
+    not the assistant gone, and a kill switch that takes the product down with
+    the experiment is one nobody will pull in time.
+
+    Named here rather than in `undx_shadow` or `undx_canary` because both
+    consult it and a switch with two implementations is a switch that is on in
+    one of them. Consumers reach it through the router object they already
+    hold, so the dependency stays one-directional.
+
+    Defaults to false. New behaviour that has not been asked for should not
+    arrive because someone deployed.
+    """
+    return _flag("UNDX_OMNI_ROUTER_ENABLED", False)
+
+
 def multi_model_mode() -> bool:
     return _flag("UNDX_MULTI_MODEL_MODE", False)
 
