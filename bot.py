@@ -5858,6 +5858,39 @@ def upsert_failed_login_control(cur, control_type, control_value, reason, source
     )
 
 
+def create_security_alert_task(title, priority, source_type, source_id, description=""):
+    """Queue a security-department admin task on its own connection.
+
+    Separate connection on purpose: the caller is mid-transaction on the failed
+    login write, and on Postgres a failure here would abort that transaction and
+    lose the auth event.
+    """
+    try:
+        conn = db()
+        cur = conn.cursor()
+        now = datetime.now().isoformat()
+        cur.execute(
+            """
+            INSERT INTO admin_tasks
+            (department, title, description, priority, status, source_type, source_id, created_at, updated_at)
+            VALUES ('security', ?, ?, ?, 'open', ?, ?, ?, ?)
+            """,
+            (
+                clean_html(title)[:180],
+                clean_html(description or title)[:1200],
+                clean_html(priority)[:40],
+                clean_html(source_type)[:80],
+                str(source_id or "")[:120],
+                now,
+                now,
+            ),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as exc:
+        logging.warning("FAILED_LOGIN_ALERT_TASK_SKIPPED error=%s: %s", exc.__class__.__name__, exc)
+
+
 def create_failed_login_alert(cur, email, user_id, counts, latest_event_id=0):
     burst_count = max(int(counts.get("ip") or 0), int(counts.get("email") or 0), int(counts.get("domain") or 0))
     if burst_count < FAILED_LOGIN_CHALLENGE_AFTER:
@@ -5889,10 +5922,13 @@ def create_failed_login_alert(cur, email, user_id, counts, latest_event_id=0):
         "counts": counts,
         "window_seconds": FAILED_LOGIN_ALERT_WINDOW_SECONDS,
     })
-    try:
-        create_task("security", f"Failed login burst from {auth_email_domain(email) or 'unknown domain'}", "critical" if severity == "Critical" else "high", "auth_event", latest_event_id)
-    except Exception as exc:
-        logging.info("FAILED_LOGIN_ALERT_TASK_SKIPPED error=%s", exc)
+    create_security_alert_task(
+        f"Failed login burst from {auth_email_domain(email) or 'unknown domain'}",
+        "critical" if severity == "Critical" else "high",
+        "auth_event",
+        latest_event_id,
+        description=f"{burst_count} failed logins for {mask_email(email)} from {ip or 'unknown IP'} within {FAILED_LOGIN_ALERT_WINDOW_SECONDS}s.",
+    )
 
 
 def register_failed_login(email, user_id=0, reason="invalid_credentials"):
