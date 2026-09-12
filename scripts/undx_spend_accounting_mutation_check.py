@@ -50,10 +50,12 @@ from undx_call_domain_mutation_check import build_sandbox  # noqa: E402
 COST = "services/undx_cost.py"
 CAPS = "services/undx_capabilities.py"
 EMBED = "services/undx_embedding_service.py"
+IMAGE = "services/pulse_ai/automated_image_pipeline.py"
 
 COST_TESTS = "tests/test_undx_cost_budget.py"
 CAPS_TESTS = "tests/test_undx_capabilities.py"
 EMBED_TESTS = "tests/undx_agent/test_embedding_wire_contract.py"
+IMAGE_TESTS = "tests/test_pulse_insight_image_pipeline.py"
 
 #: (label, file, old, new, test that must fail, test file)
 MUTATIONS = [
@@ -241,6 +243,66 @@ MUTATIONS = [
         '                input_tokens=len(indices),\n',
         "test_the_metered_token_count_is_the_one_the_budget_restrains_on",
         EMBED_TESTS,
+    ),
+    (
+        # The state this call site was in before this phase: a paid image provider
+        # that billed without leaving a trace. The mutation is deletion rather than
+        # corruption because that is the real regression risk here - the site is
+        # behind `AUTOMATED_IMAGES_ENABLED = False`, so nothing in production
+        # notices if a future edit drops it.
+        "image: stop metering image generations entirely",
+        IMAGE,
+        '        undx_capabilities.record_spend(\n'
+        '            undx_capabilities.CALL_KIND_IMAGE, self.name, units=1, model=self.model,\n'
+        '        )\n',
+        '',
+        "test_a_generated_image_is_metered_under_its_own_kind",
+        IMAGE_TESTS,
+    ),
+    (
+        # Same laundering as the embedding case. An image folded into chat is
+        # invisible; an image missing from the report is at least a hole with a
+        # shape.
+        "image: meter the generation as chat",
+        IMAGE,
+        'undx_capabilities.CALL_KIND_IMAGE, self.name',
+        'undx_capabilities.CALL_KIND_CHAT, self.name',
+        "test_a_generated_image_is_metered_under_its_own_kind",
+        IMAGE_TESTS,
+    ),
+    (
+        # Move the metering above the base64 validation. Reads like an improvement
+        # - "count the request, we were billed for it either way" - and it is a
+        # defensible position, but it silently redefines the image count from
+        # "pictures we received" to "requests we sent" without renaming anything.
+        # The census records the billing edge as a known gap instead.
+        "image: count an attempt that decoded to nothing as an image received",
+        IMAGE,
+        '        try:\n'
+        '            content = base64.b64decode(encoded, validate=True)\n'
+        '        except Exception as exc:\n'
+        '            raise ImagePipelineError("image_provider_invalid_base64") from exc\n',
+        '        undx_capabilities.record_spend(\n'
+        '            undx_capabilities.CALL_KIND_IMAGE, self.name, units=1, model=self.model,\n'
+        '        )\n'
+        '        try:\n'
+        '            content = base64.b64decode(encoded, validate=True)\n'
+        '        except Exception as exc:\n'
+        '            raise ImagePipelineError("image_provider_invalid_base64") from exc\n',
+        "test_a_failed_generation_is_not_recorded_as_an_image_received",
+        IMAGE_TESTS,
+    ),
+    (
+        # Price the default model regardless of what the deploy is pointed at. Reads
+        # as a simplification and is invisible today, because OpenAI Images has an
+        # empty price table so every model is equally unpriced. It stops being
+        # invisible the day one image model is priced and another is not.
+        "image: price the default model instead of the configured one",
+        IMAGE,
+        'units=1, model=self.model,',
+        'units=1, model="gpt-image-1",',
+        "test_the_model_priced_is_the_effective_model_not_the_default",
+        IMAGE_TESTS,
     ),
 ]
 

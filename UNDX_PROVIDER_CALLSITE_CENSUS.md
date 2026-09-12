@@ -1179,3 +1179,84 @@ because the mistake generalises: a real model rename — a new Perplexity genera
 `UNDX_EMBEDDING_MODEL` — moves spend into the unpriced column with no error, and
 `unpriced_providers()` will not list it either, since the provider *is* priced. The only signal
 is `uncosted_calls` going up on a provider that should never produce one.
+
+## 10. Metering image generation, and what the ledger cannot tell you
+
+`OpenAIImageProvider.generate` in `services/pulse_ai/automated_image_pipeline.py` now records
+one `image` call per generation through `undx_capabilities.record_spend`.
+
+**This gap is latent, not active, and it must not be reported as anything else.**
+`AUTOMATED_IMAGES_ENABLED = False` at `automated_image_pipeline.py:46` is a module constant —
+deliberately not an env var, so a misconfigured deploy cannot re-enable it — and it is enforced
+at three separate boundaries (`decide_image`, `enqueue_for_post`, `process_job`). So this call
+site does not execute in production today, no image dollars are currently going unrecorded, and
+metering it changes nothing about this month's report. What it changes is what someone inherits
+the day they flip the constant: a paid provider that bills with a trace, instead of one that
+bills silently. The pre-existing `images_enabled` fixture in the test file exists for exactly
+that reason and this follows its precedent.
+
+`gpt-image-1` has no published price in `undx_capabilities` — `provider_for('image', 'openai')`
+has `prices={}` and `paid=True` — so a generation lands as `calls=1, cost_micro_usd=0,
+uncosted_calls=1`. That is the §34 answer, not an oversight: a fabricated per-image figure would
+make the month's dollar total look complete while being wrong by whatever the real price is.
+`('image', 'openai')` remains in `unpriced_providers()`, which is the list that enumerates the
+remaining work.
+
+### The ledger has no model dimension
+
+Found while trying to assert that an env-overridden model reaches the record. It does not, and
+it cannot: `undx_cost_ledger` keys on `(month, provider, call_kind)` and has no `model` column,
+so `record_spend(model=...)` uses the model **only** to look up a price. Per-model attribution
+does not survive into the durable row for any kind, chat included.
+
+Consequences worth stating plainly:
+
+* A month's report cannot answer "how much of our OpenAI spend was `gpt-4o` versus `gpt-4o-mini`".
+* The mistake recorded in §9 — spend silently moving to the unpriced column after a model
+  rename — is *also* undiagnosable from the ledger. `uncosted_calls` rises, and the row does not
+  say which model caused it.
+* Adding the column is a schema change on a table that four processes upsert into concurrently,
+  and it widens the unique index, which is the same migration shape §8 needed a throwaway
+  Postgres to verify. Not attempted here; listed as follow-up work rather than done badly.
+
+The effective model is pinned at the call site instead, by asserting the arguments handed to
+`record_spend`. That is a weaker test than a ledger assertion and is labelled as such in its
+docstring, but it is the only place the distinction is currently observable.
+
+### An image that arrives undecodable may still have been billed
+
+Metering sits after `base64.b64decode(..., validate=True)` succeeds, so the `image` count stays
+a count of pictures actually received. A response that reaches us as unusable base64 was still a
+request OpenAI may have charged for, and that call is not recorded.
+
+The alternative — metering before validation — was written as a mutation and is lethal. It reads
+as an improvement ("count it, we were billed either way") and it is a defensible position, but it
+redefines the number from *pictures received* to *requests sent* without renaming anything. A
+count that is checkable and narrow beats a count that is broad and ambiguous, so the billing edge
+is named here instead of absorbed into the metric.
+
+### Mutation coverage
+
+`scripts/undx_spend_accounting_mutation_check.py` is now 19 mutations, all verified lethal
+(18 red, 1 required-green). The four added here:
+
+| Mutation | Caught by |
+|---|---|
+| stop metering image generations entirely | `test_a_generated_image_is_metered_under_its_own_kind` |
+| meter the generation as `chat` | `test_a_generated_image_is_metered_under_its_own_kind` |
+| count an attempt that decoded to nothing as an image received | `test_a_failed_generation_is_not_recorded_as_an_image_received` |
+| price the default model instead of the configured one | `test_the_model_priced_is_the_effective_model_not_the_default` |
+
+The deletion mutation is the important one, and it is deletion rather than corruption on purpose:
+because the call site is behind a disabled constant, **production would not notice if a future
+edit dropped it**. The test is the only thing that would.
+
+### A test that was written and then deleted
+
+A "bookkeeping failure does not cost the caller its image" test originally stubbed `record_spend`
+to raise. `record_spend` is documented never to raise and structurally does not, so that test was
+exercising an impossible state — it could never fail for a real reason, which makes it the same
+unfalsifiable shape §50 rejects. Replaced with one that breaks `undx_cost._connect`, a state the
+database really does enter, and which additionally pins that the in-process mirror still answers:
+`source != 'ledger'` with `kinds['image']['calls'] == 1`. Degraded and silent are different
+failures and the test now distinguishes them.
