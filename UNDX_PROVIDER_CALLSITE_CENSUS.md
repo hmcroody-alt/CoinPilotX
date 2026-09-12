@@ -53,24 +53,46 @@ consequence: it is exactly the sort of record an incident review would trust.
 
 ## 2. UNROUTED_CHAT — reaches a provider directly, bypassing every control
 
-Seven distinct call expressions across five modules, carrying ten URL literals. Each one
-is outside the cost ledger, the circuit breaker, provider health, and the privacy
+Seven distinct call expressions across five modules, carrying ten URL literals, as found.
+Each one is outside the cost ledger, the circuit breaker, provider health, and the privacy
 ceilings.
 
-| # | Call expression | Function | URL literals | Privacy | Domain |
-|---|---|---|---|---|---|
-| U1 | `bot.py:108625` | `openai_sports_edge_analysis` | 108626 | PUBLIC | GENERAL |
-| U2 | `services/intelligence.py:50` | `assistant_response` | 51 | CONFIDENTIAL | GENERAL |
-| U3 | `services/scam_shield.py:184` | `_openai_assessment` | 185 | CONFIDENTIAL | SCAM_SHIELD |
-| U4 | `services/telegram_text_router.py:121` | `answer_telegram_with_openai` | 122 | CONFIDENTIAL | TELEGRAM |
-| U5 | `services/pulse_ai_provider_router.py:264` | `_post_openai_compatible` | 251, 253, **258**, 260 | CONFIDENTIAL | GENERAL |
-| U6 | `services/pulse_ai_provider_router.py:282` | `_post_anthropic` | 283 | CONFIDENTIAL | GENERAL |
-| U7 | `services/pulse_ai_provider_router.py:312` | `_post_gemini` | 313 | CONFIDENTIAL | GENERAL |
+**Six remain.** The census is kept as found and annotated with status, rather than shrunk
+as sites are migrated: a table that only lists what is still broken cannot answer "was this
+ever a direct call, and when did it stop being one", which is the question an incident
+review asks.
+
+| # | Call expression | Function | URL literals | Privacy | Domain | Status |
+|---|---|---|---|---|---|---|
+| U1 | ~~`bot.py:108625`~~ | `sports_edge_ai_analysis` | — | PUBLIC | **TELEGRAM** | **MIGRATED** |
+| U2 | `services/intelligence.py:50` | `assistant_response` | 51 | CONFIDENTIAL | GENERAL | pending |
+| U3 | `services/scam_shield.py:184` | `_openai_assessment` | 185 | CONFIDENTIAL | SCAM_SHIELD | pending |
+| U4 | `services/telegram_text_router.py:121` | `answer_telegram_with_openai` | 122 | CONFIDENTIAL | TELEGRAM | pending |
+| U5 | `services/pulse_ai_provider_router.py:264` | `_post_openai_compatible` | 251, 253, **258**, 260 | CONFIDENTIAL | GENERAL | pending |
+| U6 | `services/pulse_ai_provider_router.py:282` | `_post_anthropic` | 283 | CONFIDENTIAL | GENERAL | pending |
+| U7 | `services/pulse_ai_provider_router.py:312` | `_post_gemini` | 313 | CONFIDENTIAL | GENERAL | pending |
 
 Privacy classes are assigned by what the prompt actually carries, not by what would be
 convenient to route (§4). U1 is PUBLIC because the payload is public scoreboard data and a
 generated base read; the `user_id` is used only to gate on `is_pro` and is never sent. The
 other four carry free-text the user wrote, so CONFIDENTIAL is the floor.
+
+**Correction to this table, recorded rather than quietly overwritten — U1's domain was
+wrong when first written.** It said GENERAL, assigned by reading the function: the prompt
+carries a scoreboard feed and a generated read, so nothing in the text looks like it came
+from Telegram. Tracing the callers instead showed both are Telegram command handlers
+(`bot.py:122611`, `bot.py:122738`). A domain is a fact about *provenance*, not a summary of
+today's payload (`services/undx_call_domain.py` says so at length), and the difference is
+not academic: a content-derived label is a claim the next edit to the prompt invalidates
+silently, while a caller-derived one stays true. The mistake was safe here only because a
+domain cannot widen anything — §5's rule is what made a wrong label cheap.
+
+U1's migration is covered by `tests/test_sports_edge_routing.py` (21 tests) and each of its
+protections is proven to fail under mutation by
+`scripts/undx_sports_edge_mutation_check.py` (19 mutations, 2 of which must stay green).
+That test file is deliberately the template for U2-U7: declared privacy class, declared
+call domain, both as named constants rather than literals, preserved sampling parameters,
+preserved safety post-processing, and a failure that costs a paragraph rather than a reply.
 
 **Finding U-a — the detector misses `pulse_ai_provider_router.py:258`.**
 `scripts/undx_config_drift.py` reports nine unrouted chat calls and lines 251, 253, 260,

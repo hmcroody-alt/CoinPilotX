@@ -81,6 +81,13 @@ _load_local_environment()
 import undx_router
 import undx_execution_kernel
 
+# Imported for the constants, not for behaviour. A routed call site declares its
+# privacy class and its call domain by name so a misspelling is an AttributeError
+# here rather than a value the router has to interpret — which is the shape of the
+# `UNDX_SHADOW_MAX_PRIVACY_CLASS=PUBIC` bug, where a typo ranked as SECRET and
+# cleared traffic it should have refused.
+from services import undx_call_domain, undx_privacy
+
 COINPILOTX_ENV_MODE = os.getenv("ENV") or os.getenv("FLASK_ENV") or os.getenv("RAILWAY_ENVIRONMENT") or ("production" if _deployment_environment_enabled() else "local")
 COINPILOTX_CONFIGURED_SECRET_KEY = os.getenv("FLASK_SECRET_KEY") or os.getenv("SECRET_KEY") or os.getenv("SESSION_SECRET")
 COINPILOTX_RANDOM_SECRET_USED = not bool(COINPILOTX_CONFIGURED_SECRET_KEY)
@@ -108611,9 +108618,55 @@ def sports_edge_summary(user_id=None):
     return "\n".join(lines)
 
 
-def openai_sports_edge_analysis(user_id, game, base_text):
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key or not user_id or not is_pro(user_id):
+#: Hoisted out of the call below so a test can assert it survived the migration.
+#:
+#: The instruction is the whole safety posture of this feature — "never
+#: certainty-based" is what stops a model from turning a risk read into a tip — and
+#: an inline literal is the kind of thing a reformat quietly rewords.
+SPORTS_EDGE_SYSTEM_PROMPT = (
+    "You are CoinPilotX Sports Edge: cautious, ethical, analytical, and never "
+    "certainty-based."
+)
+
+
+def sports_edge_ai_analysis(user_id, game, base_text):
+    """Deepen a Sports Edge read, or return None and let the deterministic text stand.
+
+    Routed instead of posted to OpenAI directly. Renamed with it: a function called
+    `openai_*` that does not call OpenAI is a false positive in every future call-site
+    census and, worse, a false sense that a direct call still lives here.
+
+    Three things genuinely change. The `OPENAI_API_KEY` gate is gone, because
+    availability is the router's question — a deployment holding a Claude key and no
+    OpenAI key used to get no analysis at all, which is the duplication this mission
+    exists to remove. `OPENAI_MODEL` goes with it: `undx_router.PROVIDERS` is the
+    authority on which model a provider uses, and this was one of four competing
+    defaults. And the failure log no longer blames OpenAI for a failure that may have
+    come from any of seven providers.
+
+    Deliberately unchanged: the `is_pro` gate, the prompt text, the system
+    instruction, temperature 0.32, the 700-token budget, the 20s timeout, the
+    safety-line guarantee, and the graceful `None`. That `None` must stay cheap — the
+    caller renders a complete deterministic read without it, so there is nothing here
+    worth failing a Telegram reply over, including a router that refused every
+    provider.
+
+    PUBLIC (§4). The prompt carries a public scoreboard feed, generated analysis of a
+    public game, and a subscription footer that is invariant here because the `is_pro`
+    gate above means only the "Premium active" branch can reach it. It carries no
+    identifier: `user_id` is passed to the router for budgeting and attribution, never
+    interpolated into the text. Stated as a reviewable claim rather than a label,
+    because PUBLIC admits all seven providers where CONFIDENTIAL admits three, and
+    that gap is exactly where §4's "do not lower a classification to make routing
+    possible" gets violated.
+
+    TELEGRAM (§5). Both callers are Telegram handlers. Provenance is the honest basis
+    for a domain — calling this GENERAL because today's prompt happens to contain no
+    stranger-supplied text would be a claim about the prompt, and the next edit could
+    invalidate it silently. The domain can only reorder providers, never widen them,
+    so labelling it accurately costs nothing.
+    """
+    if not user_id or not is_pro(user_id):
         return None
     prompt = (
         "Deepen this CoinPilotX Sports Edge read without guaranteeing outcomes. "
@@ -108622,28 +108675,31 @@ def openai_sports_edge_analysis(user_id, game, base_text):
         f"Required safety line: {SPORTS_SAFETY_LINE}"
     )
     try:
-        response = requests.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            json={
-                "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-                "messages": [
-                    {"role": "system", "content": "You are CoinPilotX Sports Edge: cautious, ethical, analytical, and never certainty-based."},
-                    {"role": "user", "content": prompt},
-                ],
-                "max_tokens": 700,
-                "temperature": 0.32,
-            },
+        envelope = undx_router.route_structured_request(
+            user_id,
+            SPORTS_EDGE_SYSTEM_PROMPT,
+            prompt,
             timeout=20,
+            temperature=0.32,
+            max_tokens=700,
+            privacy_class=undx_privacy.SENSITIVITY_PUBLIC,
+            call_domain=undx_call_domain.CALL_DOMAIN_TELEGRAM,
         )
-        response.raise_for_status()
-        text = response.json()["choices"][0]["message"]["content"].strip()
-        if SPORTS_SAFETY_LINE not in text:
-            text += f"\n\n{SPORTS_SAFETY_LINE}"
-        return text
     except Exception as exc:
-        logging.info("Sports Edge OpenAI analysis failed: %s", exc)
+        # The router is not supposed to raise — it returns a typed miss. If it does,
+        # that is a bug in the router and not a reason to drop a Telegram reply.
+        logging.info("Sports Edge analysis transport failed: %s", exc)
         return None
+    if not envelope.get("ok"):
+        logging.info("Sports Edge analysis unavailable: %s attempts=%s",
+                     envelope.get("error"), envelope.get("attempts"))
+        return None
+    text = str(envelope.get("response") or "").strip()
+    if not text:
+        return None
+    if SPORTS_SAFETY_LINE not in text:
+        text += f"\n\n{SPORTS_SAFETY_LINE}"
+    return text
 
 
 def sports_edge_game_summary(game_id, user_id=None):
@@ -108706,7 +108762,7 @@ def sports_edge_game_summary(game_id, user_id=None):
         ])
     lines.extend(["", analysis["final_caution"], "", sports_edge_footer(user_id)])
     deterministic = "\n".join(lines)
-    ai_text = openai_sports_edge_analysis(user_id, game, deterministic)
+    ai_text = sports_edge_ai_analysis(user_id, game, deterministic)
     return f"{ai_text}\n\n{sports_edge_footer(user_id)}" if ai_text else deterministic
 
 
