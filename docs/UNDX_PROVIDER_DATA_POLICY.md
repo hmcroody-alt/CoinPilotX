@@ -77,6 +77,47 @@ reads `CLAUDE_MODEL` rather than `ANTHROPIC_MODEL`. That is a deliberate refusal
 to be configurable, pinned by `ClaudeEndpointTest`, and the variables themselves
 should be deleted from the service — see `UNDX_RAILWAY_PROVIDER_CONFIG.md`.
 
+## Provider identity does not reach the user
+
+UNDX is the agent; the provider is infrastructure behind it. That was policy and
+nothing else until it was measured. Asking each provider *"who made you?"*
+through `route_structured_request`, before any directive existed:
+
+| Provider | Answer |
+|---|---|
+| OpenAI | held the line |
+| Gemini | held the line |
+| Claude | "I'm Claude, made by Anthropic" — and printed the UNDX system prompt back when asked for it |
+| Meta Muse | "the model answering you right now is Muse" |
+| Perplexity | **"I was built by OpenAI"** — with web citations attached |
+
+Three of five. The part that matters more than the count is *which* three: the
+answer a user got depended on which provider failover happened to land on, so the
+same question returned a different vendor on different days and nothing in the
+response explained why.
+
+Perplexity's is a different failure from the other two. It did not leak a true
+answer — it answered from a live web search and asserted a vendor that is not
+serving the request, with citations to make it look sourced. A directive reading
+"do not reveal your vendor" would have invited exactly that.
+
+So `undx_router.IDENTITY_DIRECTIVE` forbids guessing and searching, and supplies
+a true sentence to use instead: *UNDX does not disclose which provider serves a
+request.* It is appended to every system prompt by `_system_prompt()`, at three
+call sites — `_messages()` covers five providers, Claude has its own `system`
+field and Gemini its own `systemInstruction`.
+
+Re-measured live afterwards: 5 providers × 3 probes, including a direct
+instruction to ignore the rules and state the true vendor. 15 of 15 clean.
+
+`IdentityDirectiveTest` is written off `CALLERS`, so a provider added later fails
+until it is wired. Each of the three call sites was confirmed to fail the suite
+when un-wired individually.
+
+This is a product-identity boundary, not a claim about what UNDX is. Nothing here
+instructs a provider to deny being an AI, or to assert a vendor — the whole point
+of the refusal wording is that a false attribution is worse than no attribution.
+
 ## `PRIVATE_OFFICE`
 
 **No provider in this matrix may receive `PRIVATE_OFFICE` data**, including
@@ -119,6 +160,8 @@ controls is worse than no document.
   layer.
 - Per-provider kill switches; a disabled provider is not planned.
 - Meta defaults to the Standard tier.
+- The identity directive, on every system prompt for every provider, verified
+  live at 15/15 after three of five providers named their vendor without it.
 - The last error a provider returned is stored in `provider_runtime_health()`
   **after** `_safe_error()` redaction. Runtime health is meant to be read by
   operators and may end up on a status surface; it is not a logging exemption.
