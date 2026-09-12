@@ -41,6 +41,7 @@ import {
   snapshotFrom,
   storeReadiness,
   storeReadinessEnabled,
+  type StoreAttention,
   type StoreListingRow as StoreListingRowData,
   type StoreLoadResult,
   type StoreSetupActionKey,
@@ -74,6 +75,32 @@ import { useStoreAmbient, useStoreEntrance, STORE_AMBIENT, STORE_STAGGER_MS } fr
 
 /** How many listings the section previews before "See all". */
 const PREVIEW_COUNT = 6;
+
+/**
+ * Banner copy per attention kind, as an exhaustive map.
+ *
+ * It was a two-way ternary on `kind === "out_of_stock"`, which meant every kind
+ * that was not out-of-stock rendered as "running low" — so adding
+ * `unknown_stock` would have told sellers to restock listings whose shelves are
+ * probably full. A `Record` keyed by the union makes the compiler demand an
+ * entry for each new kind instead of quietly picking the else branch.
+ *
+ * The headline fragment completes "N listings are …".
+ */
+const ATTENTION_COPY: Record<StoreAttention["kind"], { headline: string; detail: string }> = {
+  out_of_stock: {
+    headline: "out of stock",
+    detail: "Buyers can't order these until you restock them."
+  },
+  unknown_stock: {
+    headline: "missing a stock count",
+    detail: "Buyers can't order these until you say how many you have."
+  },
+  low_stock: {
+    headline: "running low",
+    detail: "Restock before they sell out and drop off the storefront."
+  }
+};
 
 /**
  * Entrance slots, in the order the spec choreographs them. Named so a section
@@ -574,16 +601,10 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
             {attention ? (
               <Animated.View style={[styles.bannerWrap, entrance.styleFor(SLOT.banner)]}>
                 <StoreAttentionBanner
-                  headline={
-                    attention.kind === "out_of_stock"
-                      ? `${formatters.count(attention.count)} ${attention.count === 1 ? "listing is" : "listings are"} out of stock`
-                      : `${formatters.count(attention.count)} ${attention.count === 1 ? "listing is" : "listings are"} running low`
-                  }
-                  detail={
-                    attention.kind === "out_of_stock"
-                      ? "Buyers can't order these until you restock them."
-                      : "Restock before they sell out and drop off the storefront."
-                  }
+                  headline={`${formatters.count(attention.count)} ${
+                    attention.count === 1 ? "listing is" : "listings are"
+                  } ${ATTENTION_COPY[attention.kind].headline}`}
+                  detail={ATTENTION_COPY[attention.kind].detail}
                   onPress={() => {
                     setTab(attention.target);
                     setExpanded(true);

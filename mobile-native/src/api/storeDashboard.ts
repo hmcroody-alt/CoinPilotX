@@ -25,6 +25,8 @@ import {
   listMarketplaceSellerListings,
   listMarketplaceSellerOrders,
   loadCachedSellerStore,
+  READINESS_CODES,
+  type ListingReadiness,
   type MarketplaceListing,
   type MarketplaceSellerOrder,
   type SellerStoreSnapshot
@@ -66,15 +68,13 @@ export const STORE_MOCK_DATA_GAPS: readonly StoreDataGap[] = [
   // there is no store-level switch, so the strip reports "open" unless every
   // listing is paused. A real flag would be authoritative.
   { field: "Store open / paused", needs: "seller-level storefront status flag" },
-  // MOCK-DATA: "no stock tracked" vs "zero in stock". `normalizeMarketplaceListing`
-  // coerces quantity with `Number(item.quantity || 0)`, so the two collapse into
-  // 0 before this module sees them. `product_type` is used as a stand-in below,
-  // which is right for digital, course and service listings but cannot express a
-  // physical listing whose seller simply does not track stock.
-  {
-    field: "Stock tracked / not tracked",
-    needs: "quantity preserved as null through listing normalization, or an explicit tracks_stock flag"
-  },
+  // RESOLVED -- "no stock tracked" vs "zero in stock". This entry named its own
+  // fix ("quantity preserved as null through listing normalization, or an
+  // explicit tracks_stock flag") and both halves now exist:
+  // `normalizeMarketplaceListing` no longer coerces the null away, and the
+  // seller route attaches a server verdict that says UNKNOWN_INVENTORY outright.
+  // `listingHealth` reports it as `unknown_stock`. Kept as a comment rather than
+  // deleted, because the gap being closeable at all was the useful finding.
   // MOCK-DATA: store restriction and suspension. `storeReadiness` has five rungs
   // where the review's ladder has seven; Restricted and Suspended are missing
   // because no seller-level enforcement flag reaches this app. Guessing them
@@ -95,11 +95,33 @@ export const STORE_MOCK_DATA_GAPS: readonly StoreDataGap[] = [
  * render site because the tab counts, the attention banner and the row LED all
  * have to agree on what "low" means.
  */
-export type StoreListingHealth = "in_stock" | "low_stock" | "out_of_stock" | "hidden" | "draft";
+export type StoreListingHealth =
+  | "in_stock"
+  | "low_stock"
+  | "out_of_stock"
+  /**
+   * Published, but nobody has counted the stock — so a buyer cannot complete a
+   * purchase and the seller has not been told why. Distinct from `out_of_stock`
+   * on purpose: the two have different fixes ("restock" vs "tell us how many you
+   * have"), and collapsing them is the defect this state exists to end.
+   */
+  | "unknown_stock"
+  | "hidden"
+  | "draft";
 
 /**
- * At or below this quantity a listing is "low". A single named threshold so the
- * banner, the tab count and the row never disagree.
+ * At or below this quantity a listing is "low".
+ *
+ * NO LONGER AN AUTHORITY. The server owns this number — it is
+ * `LOW_STOCK_THRESHOLD` in `services/business_os/marketplace/listing_readiness.py`
+ * — and `listingHealth` reads the server's `LOW_STOCK` code rather than
+ * comparing against this. It survives only as the FALLBACK used when a payload
+ * carries no verdict at all (an older cached snapshot), and is exported because
+ * `deriveRows`' callers and the tests still name the boundary.
+ *
+ * Keeping a second copy of a rule is what put a threshold the server had never
+ * heard of in front of merchants. If the two ever need to differ, that is a
+ * server change, not an edit here.
  */
 export const LOW_STOCK_THRESHOLD = 5;
 
@@ -116,19 +138,15 @@ const STOCKLESS_PRODUCT_TYPES = ["digital", "course", "service", "event", "booki
 /**
  * A listing's stock count, or `null` when the listing does not have one.
  *
- * Two traps, both of which turn "this listing has no stock concept" into
- * "out of stock" and hide the listing from the seller's own active tab:
+ * The trap this function was written around is now fixed upstream:
+ * `normalizeMarketplaceListing` used to apply `Number(item.quantity || 0)`
+ * before any listing reached this module, so an untracked quantity arrived
+ * indistinguishable from a real zero and `product_type` was the only signal
+ * left. The normalizer preserves the null now, so the count below is the true
+ * one and the type check is merely the first of two reasons to have none.
  *
- * 1. `Number(null)` is `0`, not `NaN`. A JSON payload reporting
- *    `"quantity": null` reads as zero unless it is checked before coercion.
- * 2. More importantly, `normalizeMarketplaceListing` has *already* applied
- *    `Number(item.quantity || 0)` by the time any listing reaches this module,
- *    so an absent quantity is indistinguishable from a real zero. The
- *    normalizer is shared with several screens and is left alone.
- *
- * `product_type` is the signal that survives normalization, so it is checked
- * first. A physical listing still falls through to its quantity, which is what
- * the tabs and the attention banner are counting.
+ * `Number(null)` is `0`, not `NaN`, so every not-a-number case is still caught
+ * before coercion rather than after it.
  */
 function stockCount(listing: MarketplaceListing): number | null {
   const productType = String(listing.product_type || "").toLowerCase();
@@ -141,8 +159,41 @@ function stockCount(listing: MarketplaceListing): number | null {
 }
 
 /**
+ * The stock half of the health state, taken from the SERVER'S verdict.
+ *
+ * Returns `null` when the payload carries no verdict, so the caller can fall
+ * back rather than read absence as "fine". An unrecognised code is likewise not
+ * a clean bill of health — only the explicit absence of every stock code is.
+ */
+function serverStockHealth(listing: MarketplaceListing): StoreListingHealth | null {
+  const verdict = listing.readiness;
+  if (!verdict || !Array.isArray(verdict.warnings)) return null;
+  const warnings = verdict.warnings;
+  if (warnings.includes(READINESS_CODES.OUT_OF_STOCK)) return "out_of_stock";
+  if (warnings.includes(READINESS_CODES.UNKNOWN_INVENTORY)) return "unknown_stock";
+  if (warnings.includes(READINESS_CODES.LOW_STOCK)) return "low_stock";
+  return "in_stock";
+}
+
+/**
  * Follows the same status vocabulary `SellerStoreScreen.statusKey` already uses,
  * so the two screens cannot disagree about what a listing is.
+ *
+ * Two halves, and only one of them is this module's business. Whether a listing
+ * is a draft, paused or hidden is a *presentation* question about the seller's
+ * own store, answered from the status columns here. Whether it can be sold is a
+ * *rule*, and the rule has an owner on the server —
+ * `services/business_os/marketplace/listing_readiness.py`, which is in turn
+ * bound by test to the checkout code that actually decides. So the stock state
+ * is read from `listing.readiness`, not recomputed.
+ *
+ * The local derivation stays only as a fallback for payloads with no verdict:
+ * cached snapshots from older builds, and the public search endpoint, which
+ * deliberately omits readiness because it is merchant-internal. Reaching that
+ * fallback means the answer is a guess, and the guess is the one that used to be
+ * wrong in both directions — through the old normalizer an untracked quantity
+ * read `out_of_stock` (a false alarm), and called directly with the field absent
+ * it read `in_stock` (a false all-clear).
  */
 export function listingHealth(listing: MarketplaceListing): StoreListingHealth {
   const status = normalizedStatus(listing);
@@ -160,17 +211,39 @@ export function listingHealth(listing: MarketplaceListing): StoreListingHealth {
   ) {
     return "hidden";
   }
+
+  const fromServer = serverStockHealth(listing);
+  if (fromServer) return fromServer;
+
   const quantity = stockCount(listing);
   // A digital or service listing has no meaningful stock count. Treating an
   // absent quantity as zero would mark every course in the store out of stock.
-  if (quantity === null) return status.includes("stock") ? "out_of_stock" : "in_stock";
+  if (quantity === null) {
+    if (status.includes("stock")) return "out_of_stock";
+    // A stockless TYPE is genuinely fine. A physical listing whose quantity
+    // simply did not arrive is not, and saying "in stock" about it is a promise
+    // this build cannot keep.
+    const productType = String(listing.product_type || "").toLowerCase();
+    const stockless = STOCKLESS_PRODUCT_TYPES.some((type) => productType.includes(type));
+    return stockless ? "in_stock" : "unknown_stock";
+  }
   if (quantity <= 0) return "out_of_stock";
   if (quantity <= LOW_STOCK_THRESHOLD) return "low_stock";
   return "in_stock";
 }
 
-/** Health states that need the seller to do something. Drives the banner. */
-const NEEDS_ATTENTION: readonly StoreListingHealth[] = ["low_stock", "out_of_stock"];
+/**
+ * Health states that need the seller to do something. Drives the banner.
+ *
+ * `unknown_stock` is here because the server refuses checkout for it: a listing
+ * nobody can buy is the seller's problem whether the cause is an empty shelf or
+ * an uncounted one.
+ */
+const NEEDS_ATTENTION: readonly StoreListingHealth[] = [
+  "low_stock",
+  "out_of_stock",
+  "unknown_stock"
+];
 
 /* ------------------------------------------------------------------ *
  * Rows
@@ -184,6 +257,15 @@ export type StoreListingRow = {
   currency: string;
   quantity: number | null;
   health: StoreListingHealth;
+  /**
+   * The server's verdict, carried through so the row can name what is missing
+   * instead of rendering a gap as silence.
+   *
+   * `null` when the payload carried none. A row must treat that as "not told",
+   * not as "nothing wrong" — the difference matters because the fallback path
+   * exists for cached snapshots, and an old snapshot has no news, not good news.
+   */
+  readiness: ListingReadiness | null;
   /** Units of this listing sold in the trailing 7 days. Derived from orders. */
   unitsSold7d: number;
   // MOCK-DATA: no review aggregate exists, so these stay null and the row
@@ -345,6 +427,7 @@ export function deriveRows(
       currency: String(listing.currency || "USD"),
       quantity: stockCount(listing),
       health: listingHealth(listing),
+      readiness: listing.readiness ?? null,
       unitsSold7d: sold.get(String(id)) || 0,
       rating: null,
       reviewCount: null
@@ -365,7 +448,14 @@ const TAB_MATCHERS: Record<StoreTabKey, (row: StoreListingRow) => boolean> = {
   all: () => true,
   active: (row) => row.health === "in_stock" || row.health === "low_stock",
   low: (row) => row.health === "low_stock",
-  out: (row) => row.health === "out_of_stock" || row.health === "hidden",
+  // `unknown_stock` sits here rather than under Active because the server will
+  // not let a buyer check it out. Filing a listing nobody can order under
+  // "Active" is the false all-clear that hides the problem; the row's own copy
+  // is what keeps it distinct from a genuine sell-out.
+  out: (row) =>
+    row.health === "out_of_stock" ||
+    row.health === "unknown_stock" ||
+    row.health === "hidden",
   drafts: (row) => row.health === "draft"
 };
 
@@ -391,7 +481,7 @@ export type StoreAttention = {
   count: number;
   /** The tab the "Fix now" link should open. */
   target: StoreTabKey;
-  kind: "out_of_stock" | "low_stock";
+  kind: "out_of_stock" | "unknown_stock" | "low_stock";
 };
 
 /**
@@ -405,6 +495,11 @@ export type StoreAttention = {
 export function deriveAttention(rows: StoreListingRow[]): StoreAttention | null {
   const out = rows.filter((row) => row.health === "out_of_stock").length;
   if (out > 0) return { count: out, target: "out", kind: "out_of_stock" };
+  // Ranked below a real sell-out and above low stock. Like a sell-out it is a
+  // live loss -- checkout refuses these -- but it outranks nothing, because a
+  // seller who genuinely has none left should hear that first.
+  const unknown = rows.filter((row) => row.health === "unknown_stock").length;
+  if (unknown > 0) return { count: unknown, target: "out", kind: "unknown_stock" };
   const low = rows.filter((row) => row.health === "low_stock").length;
   if (low > 0) return { count: low, target: "low", kind: "low_stock" };
   return null;

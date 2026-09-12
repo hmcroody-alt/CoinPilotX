@@ -13,6 +13,39 @@ import { sellerStoreName, sellerStoreNameOrEmpty } from "./sellerIdentity";
 const MARKETPLACE_CACHE_KEY = "pulsesoc.native.marketplace.search";
 const SELLER_STORE_CACHE_KEY = "pulsesoc.native.marketplace.seller_store";
 
+/**
+ * The server's readiness verdict for one listing, rendered rather than derived.
+ *
+ * Mirrors `services/business_os/marketplace/listing_readiness.evaluate` exactly.
+ * The two booleans are computed there because they are *rules*, and a rule
+ * restated on the client is a copy that drifts: that is precisely how this app
+ * came to believe an untracked quantity meant sold out. Render `publishable` and
+ * `checkout_ready`; do not recompute them from the code arrays.
+ *
+ * `blockers` stop the listing being published. `warnings` are true of it but do
+ * not — though some (an empty shelf, an uncounted one) still stop checkout,
+ * which is why `checkout_ready` is its own boolean and not `blockers.length === 0`.
+ */
+export type ListingReadiness = {
+  publishable: boolean;
+  checkout_ready: boolean;
+  blockers: string[];
+  warnings: string[];
+};
+
+/** Verdict codes this client understands. The server may send others; readers
+ *  must tolerate an unrecognised code rather than treating it as absent. */
+export const READINESS_CODES = {
+  MISSING_TITLE: "MISSING_TITLE",
+  MISSING_CATEGORY: "MISSING_CATEGORY",
+  NO_VALID_MEDIA: "NO_VALID_MEDIA",
+  MISSING_PRICE: "MISSING_PRICE",
+  RESTRICTED_PRODUCT: "RESTRICTED_PRODUCT",
+  UNKNOWN_INVENTORY: "UNKNOWN_INVENTORY",
+  OUT_OF_STOCK: "OUT_OF_STOCK",
+  LOW_STOCK: "LOW_STOCK"
+} as const;
+
 export type MarketplaceListing = {
   id: number;
   listing_id: number;
@@ -34,7 +67,32 @@ export type MarketplaceListing = {
   subcategory?: string;
   price_label?: string;
   currency?: string;
-  quantity?: number;
+  /**
+   * Units in stock, or `null`/absent when the seller does not track stock.
+   *
+   * The null is LOAD-BEARING and must survive every hop. "Nobody counted this"
+   * and "there are none left" are different facts with different fixes, and
+   * `Number(x || 0)` collapses them into the second one — which is what told
+   * sellers their untracked listings were sold out. `marketplace_listings.
+   * quantity` is nullable, the server preserves it, and
+   * `normalizeMarketplaceListing` now preserves it too.
+   *
+   * Prefer `readiness` over reading this directly: the server already says what
+   * the number means.
+   */
+  quantity?: number | null;
+  /**
+   * The server's verdict on whether this listing can be sold —
+   * `services/business_os/marketplace/listing_readiness.py`. Attached by the
+   * seller route only; a buyer-facing payload never carries it, and a test
+   * (`tests/marketplace/test_seller_listing_readiness_route.py`) asserts that.
+   *
+   * Optional because cached payloads written by older builds have none, and
+   * because the public endpoints legitimately omit it. Absence means "not sent",
+   * never "nothing wrong" — readers fall back to local derivation rather than
+   * assuming a clean bill of health.
+   */
+  readiness?: ListingReadiness;
   product_type?: string;
   /**
    * Internal moderation fields. `safety_score` is deliberately absent from this
@@ -608,6 +666,22 @@ export function normalizeMarketplaceListings(items: MarketplaceListing[]) {
   return items.map(normalizeMarketplaceListing).filter((listing) => listing.id > 0);
 }
 
+/**
+ * A stock count, or `null` when the payload does not carry one.
+ *
+ * Every branch that returns null is a distinct way of not knowing, and none of
+ * them is a zero: absent (an older cached payload), explicitly null (the seller
+ * does not track stock), empty string (some legacy rows store it that way), or
+ * unparseable. `Number("")` is `0` and `Number(null)` is `0`, so each of these
+ * has to be caught *before* coercion rather than after it.
+ */
+function normalizeQuantity(raw: MarketplaceListing["quantity"]): number | null {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw === "string" && String(raw).trim() === "") return null;
+  const quantity = Number(raw);
+  return Number.isFinite(quantity) ? quantity : null;
+}
+
 export function normalizeMarketplaceListing(item: MarketplaceListing): MarketplaceListing {
   const id = Number(item.listing_id || item.id || 0);
   return {
@@ -642,7 +716,17 @@ export function normalizeMarketplaceListing(item: MarketplaceListing): Marketpla
     // Checkout is unaffected -- `marketplaceListingPriceMinor` already maps
     // both "" and "Request access" to null, so neither makes a dollar promise.
     price_label: String(item.price_label || ""),
-    quantity: Number(item.quantity || 0),
+    // Null survives. This line used to read `Number(item.quantity || 0)`, and
+    // that coercion was the whole of GAP 22: the column is nullable, the server
+    // sends the null intact, and this normalizer -- the one hop every seller
+    // surface shares -- turned "no stock tracked" into a hard zero before any
+    // screen could tell the difference. The seller's own store then filed those
+    // listings under Out and raised the red banner over them.
+    //
+    // Note the same mistake is NOT made for `price_label` two lines up, for the
+    // same reason spelled out in that comment: a missing value is not a zero
+    // value, and inventing one makes a claim on the seller's behalf.
+    quantity: normalizeQuantity(item.quantity),
     product_type: String(item.product_type || ""),
     saved: Boolean(item.saved || item.is_saved),
     media: normalizeMarketplaceMedia(item)

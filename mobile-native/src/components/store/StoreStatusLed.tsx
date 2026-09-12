@@ -25,11 +25,21 @@ const DOT = 8;
  * Colour per health state. `hidden` and `out_of_stock` share the error red
  * because from the buyer's side they are the same thing — the item cannot be
  * bought — and the row's text says which.
+ *
+ * `unknown_stock` is amber rather than red on purpose. Checkout refuses it, so
+ * it is a real problem, but it is not the seller's stock that failed — it is the
+ * count that is missing. Red would say "you have none left" about a shelf that
+ * may well be full, and that is the false alarm this state was added to stop.
+ *
+ * Typed as an exhaustive `Record`, which is what forced this entry to be written
+ * when the state was added rather than letting it fall through to a default
+ * colour.
  */
 const DOT_COLOR: Record<StoreListingHealth, string> = {
   in_stock: storeLight.status.success,
   low_stock: storeLight.status.warning,
   out_of_stock: storeLight.status.error,
+  unknown_stock: storeLight.status.warning,
   hidden: storeLight.status.error,
   draft: storeLight.status.neutral
 };

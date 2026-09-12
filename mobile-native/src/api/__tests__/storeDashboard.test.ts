@@ -20,7 +20,17 @@ const mockListListings = jest.fn();
 const mockListOrders = jest.fn();
 const mockLoadCached = jest.fn();
 
+// Only the three network calls are replaced. `requireActual` keeps every other
+// export real -- constants included.
+//
+// It was a wholesale mock listing just these three, which meant any other export
+// `storeDashboard` imported came back `undefined` at runtime while still
+// typechecking perfectly. `READINESS_CODES.OUT_OF_STOCK` threw the moment the
+// module started reading the server's verdict, and the failure was in the mock,
+// not in the code. A mock that silently deletes the rest of a module can only
+// hide contracts; this one now deletes exactly what it means to.
 jest.mock("../marketplace", () => ({
+  ...jest.requireActual("../marketplace"),
   listMarketplaceSellerListings: (...args: unknown[]) => mockListListings(...args),
   listMarketplaceSellerOrders: (...args: unknown[]) => mockListOrders(...args),
   loadCachedSellerStore: (...args: unknown[]) => mockLoadCached(...args)
@@ -113,7 +123,7 @@ function rowsOf(listings: MarketplaceListing[], orders: MarketplaceSellerOrder[]
 describe("STORE_MOCK_DATA_GAPS", () => {
   it("names every field the design asks for that has no backend source", () => {
     // Pinned deliberately. Faking one of these changes a number a reviewer reads.
-    expect(STORE_MOCK_DATA_GAPS).toHaveLength(8);
+    expect(STORE_MOCK_DATA_GAPS).toHaveLength(7);
     expect(STORE_MOCK_DATA_GAPS.map((gap) => gap.field)).toEqual([
       "Views · 7 days",
       "Seller rating",
@@ -121,7 +131,10 @@ describe("STORE_MOCK_DATA_GAPS", () => {
       "Open orders — N ship today",
       "Listing rating and review count",
       "Store open / paused",
-      "Stock tracked / not tracked",
+      // "Stock tracked / not tracked" used to sit here. It is RESOLVED: the entry
+      // named its own fix -- quantity preserved as null through normalization --
+      // and both that and a server-side verdict now exist. The list shrinking is
+      // the intended result, so this count going down is a pass, not a regression.
       // Added with the readiness ladder: five rungs ship, two cannot be sourced.
       "Store restricted / suspended"
     ]);
@@ -164,11 +177,64 @@ describe("listingHealth", () => {
     expect(listingHealth(listing({ quantity: -3 }))).toBe("out_of_stock");
   });
 
-  it("does not mark a listing without a quantity out of stock", () => {
-    // A course or a service has no stock count. Reading an absent quantity as
-    // zero would hide every digital listing in the store.
-    expect(listingHealth(listing({ quantity: undefined }))).toBe("in_stock");
-    expect(listingHealth(listing({ quantity: null as never }))).toBe("in_stock");
+  it("does not mark a physical listing without a quantity out of stock", () => {
+    // Nor in stock. This test used to expect "in_stock", and its comment said "a
+    // course or a service has no stock count" -- but the fixture is neither: it
+    // carries no `product_type` at all, so it is a PHYSICAL listing whose
+    // quantity is simply missing. The comment described the case below this one;
+    // this case was quietly asserting a false all-clear over a different one.
+    //
+    // Through the real normalizer the same row came out the opposite way --
+    // `Number(undefined || 0)` made it a hard 0 and the seller's own store filed
+    // it under Out with a red banner. So the client was wrong in BOTH directions
+    // depending on which path a listing took to reach this function. That is
+    // what a locally derived verdict buys you.
+    expect(listingHealth(listing({ quantity: undefined }))).toBe("unknown_stock");
+    expect(listingHealth(listing({ quantity: null as never }))).toBe("unknown_stock");
+  });
+
+  it("renders the server's verdict rather than recomputing it", () => {
+    // The point of the whole exercise. A quantity that would locally read as a
+    // comfortable 40 still reports out-of-stock when the server says so, because
+    // the server is the side bound by test to what checkout actually does.
+    const verdict = (warnings: string[]) => ({
+      publishable: true,
+      checkout_ready: false,
+      blockers: [] as string[],
+      warnings
+    });
+    expect(listingHealth(listing({ quantity: 40, readiness: verdict(["OUT_OF_STOCK"]) }))).toBe(
+      "out_of_stock"
+    );
+    expect(
+      listingHealth(listing({ quantity: 40, readiness: verdict(["UNKNOWN_INVENTORY"]) }))
+    ).toBe("unknown_stock");
+    expect(listingHealth(listing({ quantity: 40, readiness: verdict(["LOW_STOCK"]) }))).toBe(
+      "low_stock"
+    );
+    // A verdict carrying no stock code is a positive statement that stock is
+    // fine, not an absence of information -- so it outranks the local count.
+    expect(listingHealth(listing({ quantity: 0, readiness: verdict([]) }))).toBe("in_stock");
+  });
+
+  it("keeps unknown stock distinct from an empty shelf", () => {
+    // The distinction the client used to lose. Different causes, different
+    // fixes, different words on the row -- so they must not share a state.
+    const unknown = listingHealth(listing({ quantity: null as never }));
+    const empty = listingHealth(listing({ quantity: 0 }));
+    expect(unknown).not.toBe(empty);
+    expect(unknown).toBe("unknown_stock");
+    expect(empty).toBe("out_of_stock");
+  });
+
+  it("does not read a missing verdict as a clean bill of health", () => {
+    // A cached snapshot from an older build carries no `readiness`. Falling back
+    // to the local reading is correct; treating the absence itself as "nothing
+    // wrong" would make every stale payload look healthy.
+    expect(listingHealth(listing({ quantity: 0, readiness: undefined }))).toBe("out_of_stock");
+    expect(listingHealth(listing({ quantity: null as never, readiness: undefined }))).toBe(
+      "unknown_stock"
+    );
   });
 
   it("does not mark a stockless product type out of stock at quantity zero", () => {
