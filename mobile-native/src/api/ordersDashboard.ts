@@ -44,6 +44,7 @@ import {
   listMarketplaceSellerOrders,
   loadCachedSellerStore
 } from "./marketplace";
+import { MarketplaceFulfillmentKind, isInPersonKind } from "./marketplaceFulfillment";
 import { isFlagValueOn } from "../core/envFlag";
 
 /* ------------------------------------------------------------------ *
@@ -85,7 +86,25 @@ export function ordersFulfillmentIsLive(): boolean {
  * ------------------------------------------------------------------ */
 
 export type OrderPerspective = "seller" | "buyer";
-export type OrderTimelineVariant = "shipping" | "pickup";
+
+/**
+ * Which progress strip an order gets.
+ *
+ * This was `"shipping" | "pickup"` — two strips for eleven fulfilment kinds, so
+ * everything that was not handed over in person was described as a parcel. A
+ * probe (`scripts/probe_order_timeline_kinds.py`) published one listing per lane
+ * and bought each through the real checkout route: four of the nine — a digital
+ * download, a remote service, an online event and a remote booking — came back
+ * on the parcel strip, telling the buyer their file was "Being packed" and then
+ * "On its way".
+ *
+ * The app already knew better one screen earlier. `marketplaceFulfillment`
+ * summarises a digital checkout as "Delivered to your PulseSoc account" and an
+ * online event as "Joined online". That module holds the whole vocabulary —
+ * `MarketplaceFulfillmentKind`, `isScheduledKind`, `isInPersonKind` — and this
+ * one now reads it instead of keeping a second, coarser copy.
+ */
+export type OrderTimelineVariant = "shipping" | "pickup" | "digital" | "scheduled";
 export type OrderSource = "store" | "marketplace";
 
 /** Overlays sit on top of the linear timeline, never inside it. */
@@ -122,6 +141,55 @@ export const PICKUP_STEPS: OrderStep[] = [
 ];
 
 /**
+ * A digital sale has no middle. `_validate_digital` in
+ * `services/marketplace_listing_types.py` refuses any delivery mode but
+ * `automatic`, and `pulse_buyer_order_response` attaches the download links to
+ * the order the moment `payment_status` reads "paid". So there is nothing
+ * between paying and having the file, and neither step is a Preview: both are
+ * read straight off the live status.
+ *
+ * The buyer-facing wording is `fulfillmentDestinationSummary`'s, verbatim: the
+ * checkout told this same buyer "Delivered to your PulseSoc account" a screen
+ * ago, and the order should not then invent a different account of where their
+ * purchase went. It also stops short of "Ready to download", which would imply a
+ * control that does not exist yet — the links are on the wire and no surface
+ * renders them. See the `digital_files` entry in `ORDERS_MOCK_DATA_GAPS`.
+ */
+export const DIGITAL_STEPS: OrderStep[] = [
+  { key: "paid", sellerLabel: "Paid", buyerLabel: "Order placed", mock: false },
+  { key: "available", sellerLabel: "Delivered", buyerLabel: "Delivered to your account", mock: false }
+];
+
+/**
+ * Services, bookings and events: something happens at an agreed time. The live
+ * surface knows the order was paid and, eventually, that it completed — the
+ * appointment itself is not a state it tracks, so the middle step is a Preview
+ * exactly like the pickup strip's.
+ *
+ * These used to be split between the two old strips by whether they were held in
+ * person, which meant a video consultation was "On its way" and a haircut was
+ * "Picked up". Neither describes an appointment.
+ */
+export const SCHEDULED_STEPS: OrderStep[] = [
+  { key: "paid", sellerLabel: "Paid", buyerLabel: "Booked", mock: false },
+  { key: "scheduled", sellerLabel: "Scheduled", buyerLabel: "Scheduled", mock: true },
+  { key: "complete", sellerLabel: "Complete", buyerLabel: "Complete", mock: false }
+];
+
+/**
+ * The steps for a variant. Exported because `OrderTimeline` needs exactly this
+ * and used to carry its own `variant === "pickup" ? … : …` — a second copy of
+ * the choice that `reachedStepIndex` makes, which is how a new variant gets
+ * drawn with one strip's dots and another strip's reached index.
+ */
+export function stepsForVariant(variant: OrderTimelineVariant): OrderStep[] {
+  if (variant === "pickup") return PICKUP_STEPS;
+  if (variant === "digital") return DIGITAL_STEPS;
+  if (variant === "scheduled") return SCHEDULED_STEPS;
+  return SHIPPING_STEPS;
+}
+
+/**
  * Deterministic map from a normalized live status to a reached step index, per
  * variant. `-1` means the timeline has not started (or the overlay owns the
  * card). Only real, live-derivable statuses advance the index; the mock steps
@@ -130,7 +198,7 @@ export const PICKUP_STEPS: OrderStep[] = [
  */
 export function reachedStepIndex(status: string, variant: OrderTimelineVariant): number {
   const s = normalizeStatus(status);
-  const steps = variant === "pickup" ? PICKUP_STEPS : SHIPPING_STEPS;
+  const steps = stepsForVariant(variant);
   if (s === "cancelled" || s === "refunded" || s === "failed") return -1;
   if (variant === "shipping") {
     if (s === "delivered") return indexOfKey(steps, "delivered");
@@ -138,7 +206,17 @@ export function reachedStepIndex(status: string, variant: OrderTimelineVariant):
     if (s === "paid" || s === "processing" || s === "pending") return indexOfKey(steps, "paid");
     return indexOfKey(steps, "paid");
   }
-  // Pickup: the live surface only distinguishes paid vs delivered/complete.
+  if (variant === "digital") {
+    // The server's own rule for attaching the files, mirrored rather than
+    // reinvented: `payment_status` reads "paid" for exactly this set
+    // (`bot.py`), and the files ride along whenever it does.
+    if (s === "paid" || s === "processing" || s === "shipped" || s === "delivered") {
+      return indexOfKey(steps, "available");
+    }
+    return indexOfKey(steps, "paid");
+  }
+  // Pickup and scheduled: the live surface only distinguishes paid vs
+  // delivered/complete.
   if (s === "delivered") return indexOfKey(steps, "complete");
   return indexOfKey(steps, "paid");
 }
@@ -180,8 +258,14 @@ export type UnifiedOrder = {
   thumbnailUrl?: string;
   tracking?: { number?: string; url?: string; available: boolean };
   /**
-   * True only when the escrow flag is on AND this is a pickup order. Drives the
-   * safety panel. When false the panel is withheld entirely.
+   * True only when the escrow flag is on AND buyer and seller meet in person —
+   * a collection, an in-person service, a booked appointment at an address, a
+   * ticket scanned at a venue. Drives the safety panel, which is advice about
+   * meeting a stranger. When false the panel is withheld entirely.
+   *
+   * Read from the order's kind rather than from `variant`: the strip answers
+   * "how do I describe this order's progress", which is a different question
+   * and, since the scheduled strip exists, a differently-shaped one.
    */
   escrowPresentable: boolean;
   /**
@@ -208,45 +292,72 @@ function referenceFor(id: number, explicit?: string): string {
 }
 
 /**
- * The kinds whose goods change hands in person rather than travelling.
+ * Every fulfilment kind, mapped to the strip that describes it.
  *
- * These get the pickup strip — Reserved, Pickup scheduled, Handed off — and
- * they are also exactly the orders for which the escrow/safety presentation is
- * meaningful, because that panel is advice about meeting a stranger.
+ * Typed as a total `Record` over `MarketplaceFulfillmentKind` on purpose: a
+ * twelfth kind added to that union fails the typecheck *here*, rather than
+ * silently defaulting to the parcel strip the way an open `Set` membership test
+ * does. An enumeration cannot notice what was never put on it.
+ *
+ * The two undecided kinds sit on the strip their settled form would most likely
+ * take; in practice checkout narrows them via `resolve_choice` before anything
+ * is frozen, so an order should never carry one.
  */
-const IN_PERSON_KINDS = new Set([
-  "pickup",
-  "service_in_person",
-  "booking_in_person",
-  "event_in_person"
-]);
+export const TIMELINE_VARIANT_BY_KIND: Record<MarketplaceFulfillmentKind, OrderTimelineVariant> = {
+  shipping: "shipping",
+  shipping_or_pickup: "shipping",
+  pickup: "pickup",
+  digital: "digital",
+  service_remote: "scheduled",
+  service_in_person: "scheduled",
+  service_choice: "scheduled",
+  event_online: "scheduled",
+  event_in_person: "scheduled",
+  booking_remote: "scheduled",
+  booking_in_person: "scheduled"
+};
+
+const KNOWN_KINDS = new Set<string>(Object.keys(TIMELINE_VARIANT_BY_KIND));
+
+/** The payload's `fulfillment_kind` as a kind, or null if it is not one. */
+function asFulfillmentKind(value?: string): MarketplaceFulfillmentKind | null {
+  const kind = String(value || "").trim().toLowerCase();
+  return KNOWN_KINDS.has(kind) ? (kind as MarketplaceFulfillmentKind) : null;
+}
 
 /**
  * Which timeline an order gets, from the lane it was actually placed on.
  *
- * This used to read `delivery_type` off the order payload. Two measurements
- * (see `scripts/probe_order_lane.py`) retired that:
+ * The input is `fulfillment_kind`: the settled kind checkout froze onto the
+ * transaction, after the buyer answered for a listing that offered both lanes.
+ * It is an order fact rather than a listing lookup, so it survives the seller
+ * editing or delisting the item. (It replaced `delivery_type`, which no order
+ * serializer has ever sent and which holds the *product type* anyway — see
+ * `scripts/probe_order_lane.py` and `deliveryLane`.)
  *
- * 1. No order serializer has ever served a `delivery_type`, at the top level or
- *    on the joined listing. The parameter was always `undefined`, so the
- *    `"pickup"` branch was unreachable, every order in the app rendered the
- *    shipping strip, and `escrowPresentable` was permanently false — the
- *    escrow panel was unreachable UI.
- * 2. The column would not have helped if it were served. It holds the *product
- *    type* for every row in the table, never a lane. See `deliveryLane`.
- *
- * The server now sends `fulfillment_kind`: the settled kind checkout froze onto
- * the transaction, after the buyer answered for a listing that offered both
- * lanes. It is the only field that can distinguish these orders, and it is an
- * order fact rather than a listing lookup, so it survives the seller editing or
- * delisting the item.
- *
- * An order with no kind still falls to shipping. That is the original comment's
- * one sound instinct, kept: pickup unlocks the safety panel, so it is the worst
- * possible thing to guess.
+ * An unrecognised kind falls to shipping. That is the safe end: shipping is the
+ * only strip that promises the buyer nothing the surface cannot show, and it no
+ * longer drags the safety panel along with it.
  */
-function variantOf(fulfillmentKind?: string): OrderTimelineVariant {
-  return IN_PERSON_KINDS.has(String(fulfillmentKind || "").toLowerCase()) ? "pickup" : "shipping";
+export function timelineVariantOf(fulfillmentKind?: string): OrderTimelineVariant {
+  const kind = asFulfillmentKind(fulfillmentKind);
+  return kind ? TIMELINE_VARIANT_BY_KIND[kind] : "shipping";
+}
+
+/**
+ * Whether this order puts the buyer and seller in the same room — the question
+ * the escrow safety panel is actually about.
+ *
+ * Kept apart from `timelineVariantOf` because they are different questions that
+ * happened to share an answer while there were only two strips. Fusing them cost
+ * both sides: a video consultation could not be described as an appointment
+ * without also being offered stranger-safety advice, and an in-person haircut
+ * could not get that advice without being described as a parcel awaiting
+ * collection.
+ */
+export function orderIsInPerson(fulfillmentKind?: string): boolean {
+  const kind = asFulfillmentKind(fulfillmentKind);
+  return kind ? isInPersonKind(kind) : false;
 }
 
 function sourceOf(order: BuyerOrder | MarketplaceSellerOrder): OrderSource {
@@ -259,7 +370,7 @@ function sourceOf(order: BuyerOrder | MarketplaceSellerOrder): OrderSource {
 
 export function unifyBuyerOrder(order: BuyerOrder): UnifiedOrder {
   const id = Number(order.id || order.transaction_id || 0);
-  const variant = variantOf(order.fulfillment_kind);
+  const variant = timelineVariantOf(order.fulfillment_kind);
   const status = normalizeStatus(order.status_group || order.status || order.payment_status);
   return {
     id,
@@ -283,7 +394,7 @@ export function unifyBuyerOrder(order: BuyerOrder): UnifiedOrder {
       number: order.tracking?.tracking_number || undefined,
       url: order.tracking?.tracking_url || undefined
     },
-    escrowPresentable: ordersEscrowIsLive() && variant === "pickup",
+    escrowPresentable: ordersEscrowIsLive() && orderIsInPerson(order.fulfillment_kind),
     awaitingCash: isAwaitingCash(order.status),
     returnWindowClosesAt:
       (order as BuyerOrder & { return_window_closes_at?: string }).return_window_closes_at || undefined,
@@ -298,7 +409,7 @@ export function unifySellerOrder(order: MarketplaceSellerOrder): UnifiedOrder {
   // "marketplace_product" on every marketplace row, which is neither "pickup"
   // nor "local", so the seller's copy of the timeline was shipping-only by
   // construction — a seller could not see that the buyer was coming to collect.
-  const variant = variantOf(order.fulfillment_kind);
+  const variant = timelineVariantOf(order.fulfillment_kind);
   const status = normalizeStatus(order.status);
   const cents = Number(order.amount_cents || order.gross_amount_cents || 0);
   const currency = String(order.currency || "USD").toUpperCase();
@@ -316,7 +427,7 @@ export function unifySellerOrder(order: MarketplaceSellerOrder): UnifiedOrder {
     quantity: 1,
     createdAt: order.created_at,
     counterpartyName: "Buyer",
-    escrowPresentable: ordersEscrowIsLive() && variant === "pickup",
+    escrowPresentable: ordersEscrowIsLive() && orderIsInPerson(order.fulfillment_kind),
     awaitingCash: isAwaitingCash(order.status),
     raw: { seller: order }
   };
@@ -435,6 +546,7 @@ export type SellerActionKey =
   | "mark_packed"
   | "mark_shipped"
   | "confirm_handoff"
+  | "mark_completed"
   | "view_payout";
 
 export type SellerActionState = {
@@ -450,9 +562,16 @@ export type SellerActionState = {
 
 /**
  * The next fulfillment action for a seller order, given its status. Packing,
- * shipping and handoff are previews until the canonical order routes are live
- * (`ordersFulfillmentIsLive`), and shipping additionally requires tracking per
- * policy. "View payout" is always a live navigation, never gated.
+ * shipping, handoff and completion are previews until the canonical order routes
+ * are live (`ordersFulfillmentIsLive`), and shipping additionally requires
+ * tracking per policy. "View payout" is always a live navigation, never gated.
+ *
+ * The branch is on the strip, so it follows the strip's correction: a digital
+ * sale is offered no fulfilment action at all, because there is none to take.
+ * It used to fall through to the shipping branch and be told "Add a tracking
+ * number before marking this order shipped" — a control whose one precondition
+ * a downloadable file can never meet, which is the same defect as a disabled
+ * button with no reachable enabling path.
  */
 export function sellerActionsFor(order: UnifiedOrder): SellerActionState[] {
   const live = ordersFulfillmentIsLive();
@@ -468,13 +587,23 @@ export function sellerActionsFor(order: UnifiedOrder): SellerActionState[] {
   if (!overlayBlocks && !order.awaitingCash) {
     if (order.variant === "pickup") {
       actions.push(previewOrDisabled("confirm_handoff", "Confirm handoff", live));
-    } else {
+    } else if (order.variant === "scheduled") {
+      // An appointment is finished, not handed off. Same dark `complete`
+      // transition behind it, so same Preview treatment.
+      if (order.status !== "delivered") {
+        actions.push(previewOrDisabled("mark_completed", "Mark completed", live));
+      }
+    } else if (order.variant === "shipping") {
       const idx = reachedStepIndex(order.status, "shipping");
       if (idx < indexOfKey(SHIPPING_STEPS, "shipped")) {
         actions.push(previewOrDisabled("mark_packed", "Mark packed", live));
         actions.push(shippedAction(live, order));
       }
     }
+    // "digital" deliberately falls through with no action: delivery is
+    // automatic by the listing validator's own rule, and the files are attached
+    // to the buyer's order the moment it reads paid. There is no seller step to
+    // offer, so none is drawn.
   }
   actions.push({ key: "view_payout", label: "View payout", enabled: true, preview: false });
   return actions;
@@ -562,6 +691,25 @@ export const ORDERS_MOCK_DATA_GAPS: OrdersMockGap[] = [
     field: "Buy-again availability",
     perspective: "buyer",
     backendWork: "a still-purchasable / relist signal per past order"
+  },
+  {
+    // The odd one out: the live surface DOES source this. `/api/pulse/orders`
+    // already returns `digital_files` — `[{name, download_url}]` — on every paid
+    // digital order, and `/api/pulse/marketplace/digital-files/<id>/download`
+    // streams the bytes after checking the requester actually bought it. A
+    // backend test pins that the payload carries the links.
+    //
+    // Nothing reads them. Not this app, not a template, not a static script.
+    // The buyer pays, the file sits on the wire, and the order screen used to
+    // say "Being packed". The strip now says "Delivered to your account", which
+    // is true, but there is still no control that fetches the file: the
+    // download route authenticates through `api_account_user()` and the native
+    // app holds its token in secure-store rather than a browser cookie, so
+    // handing the URL to `Linking.openURL` would open a 401 in Safari.
+    field: "Digital file download (links are served, nothing renders them)",
+    perspective: "buyer",
+    backendWork:
+      "a token-authenticated download the native app can call — either a short-lived signed URL on the order payload, or the bearer accepted on the existing download route"
   }
 ];
 

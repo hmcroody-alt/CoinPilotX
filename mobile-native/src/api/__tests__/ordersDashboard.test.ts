@@ -29,19 +29,27 @@ jest.mock("../marketplace", () => ({
 }));
 
 import {
+  DIGITAL_STEPS,
   ORDERS_MOCK_DATA_GAPS,
   ORDERS_MOCK_DATA_GAP_COUNT,
   PICKUP_STEPS,
+  SCHEDULED_STEPS,
   SHIPPING_STEPS,
+  TIMELINE_VARIANT_BY_KIND,
   loadBuyerOrdersModel,
   loadSellerOrdersModel,
+  orderIsInPerson,
   orderOverlay,
   reachedStepIndex,
   sellerActionsFor,
+  stepsForVariant,
+  timelineVariantOf,
   unifyBuyerOrder,
   unifySellerOrder,
+  type OrderTimelineVariant,
   type UnifiedOrder
 } from "../ordersDashboard";
+import { type MarketplaceFulfillmentKind } from "../marketplaceFulfillment";
 import { listBuyerOrders, loadCachedBuyerOrders } from "../orders";
 import { loadSellerStoreSnapshot, loadCachedSellerStore } from "../marketplace";
 
@@ -168,17 +176,12 @@ describe("cross-view consistency", () => {
     // its way", and never that it is ready.
     expect(unifyBuyerOrder({ id: 1, fulfillment_kind: "pickup" } as never).variant).toBe("pickup");
     expect(unifyBuyerOrder({ id: 1, fulfillment_kind: "shipping" } as never).variant).toBe("shipping");
-    // The in-person kinds are collected too — the goods change hands rather
-    // than travelling — so they get the same strip.
-    expect(unifyBuyerOrder({ id: 1, fulfillment_kind: "service_in_person" } as never).variant).toBe("pickup");
-    expect(unifyBuyerOrder({ id: 1, fulfillment_kind: "booking_in_person" } as never).variant).toBe("pickup");
-    expect(unifyBuyerOrder({ id: 1, fulfillment_kind: "event_in_person" } as never).variant).toBe("pickup");
   });
 
   it("does not invent a pickup from an order that declared no lane", () => {
     // Pickup unlocks the escrow/safety panel, so it is the worst thing to
     // guess. A legacy row the server could not resolve stays on shipping.
-    for (const kind of [undefined, "", "  ", "marketplace_product", "shipping_or_pickup", "digital"]) {
+    for (const kind of [undefined, "", "  ", "marketplace_product", "shipping_or_pickup"]) {
       expect(unifyBuyerOrder({ id: 1, fulfillment_kind: kind } as never).variant).toBe("shipping");
       expect(unifySellerOrder({ id: 1, item_type: "marketplace_product", fulfillment_kind: kind } as never).variant)
         .toBe("shipping");
@@ -199,6 +202,96 @@ describe("cross-view consistency", () => {
     const seller = unifySellerOrder({ id: 2384, item_type: "listing", amount_cents: 100 } as never);
     expect(buyer.reference).toBe("PL-2384");
     expect(seller.reference).toBe("PL-2384");
+  });
+});
+
+describe("timeline variant per fulfilment kind", () => {
+  // `variant` was `"shipping" | "pickup"` — two strips for eleven kinds — so
+  // every order that was not handed over in person was described as a parcel.
+  // `scripts/probe_order_timeline_kinds.py` published one listing per lane and
+  // bought each through the real checkout route: a digital download, a remote
+  // service, an online event and a remote booking all came back on the parcel
+  // strip. The buyer was told their file was "Being packed", then "On its way".
+
+  /** The only kinds that actually put goods in a box. */
+  const PARCEL_KINDS = new Set<string>(["shipping", "shipping_or_pickup"]);
+
+  const allKinds = Object.keys(TIMELINE_VARIANT_BY_KIND) as MarketplaceFulfillmentKind[];
+
+  it("covers every kind the server can freeze onto an order", () => {
+    // `services/marketplace_fulfillment.py` KINDS has eleven members and
+    // `resolve_kind` can emit any of them. The map is a total `Record` over the
+    // client's union, so a twelfth kind fails the typecheck rather than
+    // defaulting to the parcel strip — but nothing type-level counts the
+    // backend's list, so the number is pinned here too.
+    expect(allKinds).toHaveLength(11);
+    for (const kind of allKinds) {
+      expect(["shipping", "pickup", "digital", "scheduled"]).toContain(timelineVariantOf(kind));
+    }
+  });
+
+  it("never describes an order that ships no parcel as a parcel", () => {
+    // Asserted against the words the buyer reads, not the variant string: the
+    // variant is an internal name, "Being packed" is what appears on a phone.
+    for (const kind of allKinds) {
+      if (PARCEL_KINDS.has(kind)) continue;
+      const labels = stepsForVariant(timelineVariantOf(kind)).map((s) => s.buyerLabel);
+      expect(labels).not.toContain("Being packed");
+      expect(labels).not.toContain("On its way");
+      expect(stepsForVariant(timelineVariantOf(kind))).not.toBe(SHIPPING_STEPS);
+    }
+  });
+
+  it("sorts each kind onto the strip that describes it", () => {
+    expect(timelineVariantOf("shipping")).toBe("shipping");
+    expect(timelineVariantOf("pickup")).toBe("pickup");
+    expect(timelineVariantOf("digital")).toBe("digital");
+    for (const kind of ["service_remote", "service_in_person", "service_choice"]) {
+      expect(timelineVariantOf(kind)).toBe("scheduled");
+    }
+    for (const kind of ["event_online", "event_in_person", "booking_remote", "booking_in_person"]) {
+      expect(timelineVariantOf(kind)).toBe("scheduled");
+    }
+  });
+
+  it("tells a digital buyer their purchase arrived, the moment it is paid", () => {
+    const order = unifyBuyerOrder({ id: 1, amount_cents: 100, status: "paid", fulfillment_kind: "digital" } as never);
+    expect(order.variant).toBe("digital");
+    const steps = stepsForVariant(order.variant);
+    const reached = reachedStepIndex(order.status, order.variant);
+    expect(steps[reached].buyerLabel).toBe("Delivered to your account");
+    // And it says that rather than "Ready to download", because no surface can
+    // hand the file over yet — see the eighth ORDERS_MOCK_DATA_GAPS entry.
+    expect(steps.map((s) => s.buyerLabel)).not.toContain("Ready to download");
+  });
+
+  it("draws no provisional middle on a digital sale", () => {
+    // `_validate_digital` refuses any delivery mode but `automatic`, so there is
+    // nothing between paying and having the file. Every step is live-derivable.
+    expect(DIGITAL_STEPS.every((s) => s.mock === false)).toBe(true);
+    expect(DIGITAL_STEPS).toHaveLength(2);
+  });
+
+  it("marks the appointment itself as a Preview, since the surface cannot see it", () => {
+    expect(SCHEDULED_STEPS.find((s) => s.key === "scheduled")?.mock).toBe(true);
+    expect(SCHEDULED_STEPS.find((s) => s.key === "paid")?.mock).toBe(false);
+    expect(SCHEDULED_STEPS.find((s) => s.key === "complete")?.mock).toBe(false);
+  });
+
+  it("keeps the reached index inside the strip it is drawn on", () => {
+    // The defect this blocks: `OrderTimeline` used to choose its own steps with
+    // a second `variant === "pickup" ? … : …`, so a two-step digital strip would
+    // have been drawn against a four-step reached index and filled every dot.
+    const variants: OrderTimelineVariant[] = ["shipping", "pickup", "digital", "scheduled"];
+    const statuses = ["pending", "paid", "processing", "shipped", "delivered", "cancelled", "refunded", "weird"];
+    for (const variant of variants) {
+      const steps = stepsForVariant(variant);
+      for (const status of statuses) {
+        const reached = reachedStepIndex(status, variant);
+        expect(reached).toBeGreaterThanOrEqual(-1);
+        expect(reached).toBeLessThan(steps.length);
+      }
+    }
   });
 });
 
@@ -233,6 +326,47 @@ describe("escrow gating (money-critical)", () => {
     const shipping = unifyBuyerOrder({ id: 2, amount_cents: 100, status: "paid" } as never);
     expect(pickup.escrowPresentable).toBe(true);
     expect(shipping.escrowPresentable).toBe(false);
+  });
+
+  it("follows whether the two people meet, not which strip the order is on", () => {
+    // These were one derivation: `escrowPresentable = flag && variant === "pickup"`.
+    // That was right only while there were two strips and the two questions
+    // happened to have the same answer. The moment an appointment gets its own
+    // strip they diverge — an in-person haircut is "scheduled", and fusing the
+    // questions meant it could only get stranger-safety advice by also being
+    // described to the buyer as a parcel awaiting collection.
+    process.env.EXPO_PUBLIC_ORDERS_ESCROW = "1";
+    const inPerson: MarketplaceFulfillmentKind[] = [
+      "pickup",
+      "service_in_person",
+      "booking_in_person",
+      "event_in_person"
+    ];
+    for (const kind of inPerson) {
+      const buyer = unifyBuyerOrder({ id: 1, amount_cents: 100, status: "paid", fulfillment_kind: kind } as never);
+      const seller = unifySellerOrder({
+        id: 1, item_type: "marketplace_product", amount_cents: 100, status: "paid", fulfillment_kind: kind
+      } as never);
+      expect(orderIsInPerson(kind)).toBe(true);
+      expect(buyer.escrowPresentable).toBe(true);
+      expect(seller.escrowPresentable).toBe(true);
+    }
+    // ...and three of those four are NOT on the pickup strip, which is what
+    // makes the assertion above measure the decoupling rather than restate it.
+    expect(inPerson.map(timelineVariantOf)).toEqual(["pickup", "scheduled", "scheduled", "scheduled"]);
+  });
+
+  it("withholds the safety panel from every order the two never meet for", () => {
+    process.env.EXPO_PUBLIC_ORDERS_ESCROW = "1";
+    for (const kind of ["shipping", "shipping_or_pickup", "digital", "service_remote", "event_online", "booking_remote"]) {
+      const order = unifyBuyerOrder({ id: 1, amount_cents: 100, status: "paid", fulfillment_kind: kind } as never);
+      expect(orderIsInPerson(kind)).toBe(false);
+      expect(order.escrowPresentable).toBe(false);
+    }
+    // An unrecognised kind is not a meeting either. Guessing one here would
+    // offer handoff advice for an order with no handoff.
+    expect(orderIsInPerson(undefined)).toBe(false);
+    expect(orderIsInPerson("marketplace_product")).toBe(false);
   });
 
   it("is reachable at all, which it was not", () => {
@@ -284,6 +418,57 @@ describe("seller fulfillment actions", () => {
       tracking: { available: true, number: "1Z999" }
     }).find((a) => a.key === "mark_shipped");
     expect(withTracking?.enabled).toBe(true);
+  });
+
+  it("offers a digital seller no fulfilment action, because there is none to take", () => {
+    // This order used to fall through to the shipping branch, so the seller of a
+    // downloadable file was offered "Mark packed" and a "Mark shipped" disabled
+    // with "Add a tracking number before marking this order shipped" — a
+    // precondition a file can never meet. A control whose only enabling path is
+    // unreachable is the same defect as a button that no-ops.
+    process.env.EXPO_PUBLIC_ORDERS_FULFILLMENT = "1";
+    const digital = unifySellerOrder({
+      id: 8, item_type: "marketplace_product", amount_cents: 100, status: "paid", fulfillment_kind: "digital"
+    } as never);
+    const actions = sellerActionsFor(digital);
+    expect(actions.map((a) => a.key)).toEqual(["view_payout"]);
+    // And nothing is left on screen wearing a reason it can never satisfy.
+    expect(actions.every((a) => a.enabled)).toBe(true);
+  });
+
+  it("asks an appointment seller to complete it, not to hand it over", () => {
+    process.env.EXPO_PUBLIC_ORDERS_FULFILLMENT = "1";
+    for (const kind of ["service_remote", "service_in_person", "event_online", "booking_in_person"]) {
+      const order = unifySellerOrder({
+        id: 9, item_type: "marketplace_product", amount_cents: 100, status: "paid", fulfillment_kind: kind
+      } as never);
+      const keys = sellerActionsFor(order).map((a) => a.key);
+      expect(keys).toContain("mark_completed");
+      expect(keys).not.toContain("confirm_handoff");
+      expect(keys).not.toContain("mark_packed");
+      expect(keys).not.toContain("mark_shipped");
+    }
+  });
+
+  it("keeps the appointment action a Preview until the order service is live", () => {
+    // Same dark `complete` transition as handoff, so the same treatment: the
+    // control is present with its reason, never a button that silently no-ops.
+    delete process.env.EXPO_PUBLIC_ORDERS_FULFILLMENT;
+    const scheduled = unifySellerOrder({
+      id: 10, item_type: "marketplace_product", amount_cents: 100, status: "paid", fulfillment_kind: "booking_remote"
+    } as never);
+    const complete = sellerActionsFor(scheduled).find((a) => a.key === "mark_completed");
+    expect(complete?.enabled).toBe(false);
+    expect(complete?.preview).toBe(true);
+    expect(complete?.reason).toBeTruthy();
+  });
+
+  it("withdraws the appointment action once the order reads delivered", () => {
+    process.env.EXPO_PUBLIC_ORDERS_FULFILLMENT = "1";
+    const done = unifySellerOrder({
+      id: 11, item_type: "marketplace_product", amount_cents: 100, status: "delivered", fulfillment_kind: "service_remote"
+    } as never);
+    expect(sellerActionsFor(done).map((a) => a.key)).not.toContain("mark_completed");
   });
 
   it("blocks fulfillment actions on a cancelled or refunded order", () => {
@@ -375,8 +560,14 @@ describe("loaders", () => {
 
 describe("MOCK-DATA gap ledger", () => {
   it("pins the declared gap count so closing or adding one is deliberate", () => {
-    expect(ORDERS_MOCK_DATA_GAP_COUNT).toBe(7);
-    expect(ORDERS_MOCK_DATA_GAPS).toHaveLength(7);
+    // Eight since the digital-download gap was declared. That one is the odd
+    // entry: the live surface DOES source it — `/api/pulse/orders` already
+    // returns `digital_files` with a working, ownership-checked download route
+    // behind each link — and what is missing is a native-authenticated way to
+    // call it. It is listed as a gap because nothing renders those links, and
+    // an unread field is indistinguishable from an absent one to the buyer.
+    expect(ORDERS_MOCK_DATA_GAP_COUNT).toBe(8);
+    expect(ORDERS_MOCK_DATA_GAPS).toHaveLength(8);
   });
 
   it("declares every gap with the backend work it needs", () => {

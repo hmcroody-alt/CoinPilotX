@@ -326,6 +326,24 @@ export function isScheduledKind(kind: MarketplaceFulfillmentKind) {
   return kind.startsWith("service_") || kind.startsWith("booking_") || kind.startsWith("event_");
 }
 
+/**
+ * Whether buyer and seller end up in the same room.
+ *
+ * This is the question the escrow/safety presentation is actually about — it is
+ * advice about meeting a stranger — and it is NOT the same question as "which
+ * progress strip does this order get". `ordersDashboard` used to answer both
+ * with one set, which meant an in-person haircut could only get the safety panel
+ * by also being described to the buyer as a parcel awaiting collection.
+ */
+export function isInPersonKind(kind: MarketplaceFulfillmentKind) {
+  return (
+    kind === "pickup" ||
+    kind === "service_in_person" ||
+    kind === "booking_in_person" ||
+    kind === "event_in_person"
+  );
+}
+
 /** One-line destination for the review step: where this order is actually going. */
 export function fulfillmentDestinationSummary(
   kind: MarketplaceFulfillmentKind,

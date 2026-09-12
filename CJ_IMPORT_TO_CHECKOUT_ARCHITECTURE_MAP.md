@@ -1634,9 +1634,123 @@ the no-op control correctly survived.
 
 ---
 
+## The fifteenth seam: two strips for eleven kinds
+
+The fourteenth seam made the settled `fulfillment_kind` reachable by the orders
+dashboard. This is what the client did with it once it arrived.
+
+`OrderTimelineVariant` was `"shipping" | "pickup"`. The server can freeze eleven
+kinds onto an order — `services/marketplace_fulfillment.py` `KINDS` — so the fold
+from eleven to two put everything that is not handed over in person onto the
+parcel strip.
+
+`scripts/probe_order_timeline_kinds.py` published one listing per lane through
+`/api/pulse/marketplace/listings/create`, bought each through
+`/api/pulse/payments/checkout`, and printed the kind the server froze beside the
+words the app would put on the screen:
+
+| lane published | server kind | strip | buyer reads |
+| --- | --- | --- | --- |
+| physical shipping | `shipping` | shipping | Order placed → Being packed → On its way → Delivered |
+| physical pickup | `pickup` | pickup | Reserved → Pickup scheduled → Picked up → Complete |
+| digital download | `digital` | **shipping** | Order placed → **Being packed** → **On its way** → Delivered |
+| service remote | `service_remote` | **shipping** | Order placed → **Being packed** → **On its way** → Delivered |
+| service in person | `service_in_person` | pickup | Reserved → Pickup scheduled → Picked up → Complete |
+| event online | `event_online` | **shipping** | Order placed → **Being packed** → **On its way** → Delivered |
+| event in person | `event_in_person` | pickup | Reserved → … |
+| booking remote | `booking_remote` | **shipping** | Order placed → **Being packed** → **On its way** → Delivered |
+| booking in person | `booking_in_person` | pickup | Reserved → … |
+
+Four of nine measured, and enumerating all eleven kinds gives five that ship no
+parcel and were told they were in the post: `digital`, `service_remote`,
+`service_choice`, `event_online`, `booking_remote`.
+
+Three consequences, established by reading the consumers rather than guessing:
+
+1. The labels above. A buyer who downloaded a file was told it was being packed.
+2. `previewShipBy` in `OrdersManagerScreen.tsx` invents a three-day ship-by
+   countdown, and its only guard is `order.variant !== "shipping"` — so every
+   digital and remote order got a fabricated shipping deadline.
+3. `sellerActionsFor` offered the seller of a download "Mark packed" and a "Mark
+   shipped" disabled with *"Add a tracking number before marking this order
+   shipped"* — a precondition a downloadable file can never meet. The seventh
+   corollary in its action form: a control with no reachable path to being usable.
+
+### Two root causes, both already named in this document
+
+**One derivation answering two different questions.** `escrowPresentable` was
+`ordersEscrowIsLive() && variant === "pickup"`, which fused *which strip
+describes this order's progress* with *do the buyer and seller end up in the same
+room*. While there were exactly two strips the two questions had the same answer,
+so nothing distinguished them. The moment an appointment needs its own strip they
+diverge, and the fused version costs both sides: an in-person haircut can only be
+given stranger-safety advice by also being described to the buyer as a parcel
+awaiting collection, and a video consultation cannot be described as an
+appointment without losing advice it never needed. The fix splits them into
+`timelineVariantOf` and `orderIsInPerson`, which now disagree on three of the
+eleven kinds — and disagreeing is the whole point.
+
+**A second, coarser copy of a vocabulary that already existed.**
+`mobile-native/src/api/marketplaceFulfillment.ts` already held
+`MarketplaceFulfillmentKind`, `isScheduledKind`, `fulfillmentTypeLabel` and
+`fulfillmentDestinationSummary` — the last of which tells the buyer at checkout
+that a digital purchase is *"Delivered to your PulseSoc account"*, one screen
+before the orders list said *"Being packed"*. `ordersDashboard.ts` kept its own
+`IN_PERSON_KINDS` string `Set` instead, and the app contradicted itself across
+two screens. It now imports the vocabulary, and `DIGITAL_STEPS` reuses the
+checkout's exact wording rather than inventing a second account of where the
+purchase went.
+
+The map from kind to strip is typed as a total
+`Record<MarketplaceFulfillmentKind, OrderTimelineVariant>` on purpose: a twelfth
+kind added to the union fails the typecheck at the map, rather than falling
+through a `Set` membership test onto the parcel strip. That is the eleventh
+corollary — an enumeration cannot notice what was never put on it — bought with
+a type rather than with a walking check, because here the compiler can walk.
+
+`OrderTimeline.tsx` carried a second `variant === "pickup" ? … : …` of its own,
+which is how a two-step digital strip would have been drawn against a four-step
+reached index. Both now call `stepsForVariant`.
+
+### The half that was refused
+
+`pulse_buyer_order_response` already serves `digital_files` —
+`[{name, download_url}]` — on every paid digital order (bot.py:93318), backed by
+a real streaming route at
+`/api/pulse/marketplace/digital-files/<id>/download` that verifies the requester
+bought the listing, and pinned by a backend test at
+`tests/test_marketplace_listing_types.py:522`. Greps found **zero readers**: not
+in `mobile-native/src`, not in a template, not in a static script. The buyer
+pays, the file sits on the wire, and no surface hands it over.
+
+Shipping a download control anyway would have been the wrong fix. The route
+authenticates through `api_account_user()` and the native app holds its token in
+expo-secure-store rather than a browser cookie, so `Linking.openURL` would open a
+401 in Safari; `pulseApi.ts` exposes no token accessor, and adding one is a
+session-layer widening that has nothing to do with this seam. So the blocker is
+declared as the eighth `ORDERS_MOCK_DATA_GAPS` entry with the specific backend
+work named, and `DIGITAL_STEPS` says *"Delivered to your account"* rather than
+*"Ready to download"* — true, and implying no control that does not exist.
+
+### What the battery measured
+
+`scripts/mutation_order_timeline.py`, 19 real mutations plus one inverted rename
+and a no-op control, run against both suites at once — the derivation test and
+the render test — because the seam lives exactly between them. All 19 caught on
+the first run, which is the first time in this chain that has happened, and the
+reason is that the tests were written from the probe's table rather than from the
+code: the assertions are on the words a buyer reads, not on the variant string.
+
+Also recorded, not fixed: `ordersAwaitingSeller` filters
+`status !== "complete"`, and `normalizeStatus` never emits `"complete"` — plain
+"complete"/"completed" falls through to `"pending"`. A dead clause in a count,
+harmless today because the `"delivered"` clause covers the same orders.
+
+---
+
 ## What kept coming back
 
-Fifteen defects in this chain, fifteen different subsystems, one shape: **a
+Sixteen defects in this chain, sixteen different subsystems, one shape: **a
 number was asserted rather than measured.**
 
 - `publish()` never wrote `price_label`, and the publish test asserted `status`
