@@ -51,11 +51,13 @@ COST = "services/undx_cost.py"
 CAPS = "services/undx_capabilities.py"
 EMBED = "services/undx_embedding_service.py"
 IMAGE = "services/pulse_ai/automated_image_pipeline.py"
+SEARCH = "services/pulse_ai_web_search.py"
 
 COST_TESTS = "tests/test_undx_cost_budget.py"
 CAPS_TESTS = "tests/test_undx_capabilities.py"
 EMBED_TESTS = "tests/undx_agent/test_embedding_wire_contract.py"
 IMAGE_TESTS = "tests/test_pulse_insight_image_pipeline.py"
+SEARCH_TESTS = "tests/test_pulse_ai_web_search_spend.py"
 
 #: (label, file, old, new, test that must fail, test file)
 MUTATIONS = [
@@ -303,6 +305,115 @@ MUTATIONS = [
         'units=1, model="gpt-image-1",',
         "test_the_model_priced_is_the_effective_model_not_the_default",
         IMAGE_TESTS,
+    ),
+    (
+        # The state this module was in before this phase: four paid vendors billing
+        # per query with no record anywhere.
+        "search: stop metering search queries entirely",
+        SEARCH,
+        '    undx_capabilities.record_spend(\n'
+        '        undx_capabilities.CALL_KIND_RESEARCH, provider, units=1,\n'
+        '    )\n',
+        '    return\n',
+        "test_a_successful_query_is_recorded_as_research_not_chat",
+        SEARCH_TESTS,
+    ),
+    (
+        "search: meter the query as chat",
+        SEARCH,
+        'undx_capabilities.CALL_KIND_RESEARCH, provider, units=1,',
+        'undx_capabilities.CALL_KIND_CHAT, provider, units=1,',
+        "test_a_successful_query_is_recorded_as_research_not_chat",
+        SEARCH_TESTS,
+    ),
+    (
+        # Attribute every query to one vendor. Leaves the total call count and the
+        # total dollar figure *exactly* right, so nothing about the month's bottom
+        # line looks wrong - only the answer to "which vendor should we drop".
+        "search: attribute every query to a single provider",
+        SEARCH,
+        'undx_capabilities.CALL_KIND_RESEARCH, provider, units=1,',
+        'undx_capabilities.CALL_KIND_RESEARCH, "brave", units=1,',
+        "test_a_query_billed_before_a_later_provider_succeeded_is_still_recorded",
+        SEARCH_TESTS,
+    ),
+    (
+        # Meter before the status check. Reads as "count the attempt" and inflates
+        # the month with 401s, 429s and 5xxs - refusals nobody was billed for. The
+        # damage scales with how broken the vendor is, so it is worst during the
+        # incident when the number is being read.
+        "search: bill refusals as well as accepted queries",
+        SEARCH,
+        '    if not (200 <= response.status_code < 300):\n'
+        '        return {"ok": False, "reason": "provider_rejected", "status_code": response.status_code}\n'
+        '    # Before `response.json()`, not after: a 2xx whose body will not parse was\n'
+        '    # still a query Brave accepted and billed. Parsing is our problem, not theirs.\n'
+        '    _record_query_spend("brave")\n',
+        '    _record_query_spend("brave")\n'
+        '    if not (200 <= response.status_code < 300):\n'
+        '        return {"ok": False, "reason": "provider_rejected", "status_code": response.status_code}\n',
+        "test_a_rejected_query_is_not_recorded_as_spend",
+        SEARCH_TESTS,
+    ),
+    (
+        # Meter below the parse. Reads as tidier - record once the data is in hand -
+        # and it makes a vendor having a bad serialization day look like a vendor we
+        # stopped using, while they keep invoicing.
+        "search: drop a billed query whose response body would not parse",
+        SEARCH,
+        '    _record_query_spend("brave")\n    data = response.json()\n',
+        '    data = response.json()\n    _record_query_spend("brave")\n',
+        "test_a_two_hundred_whose_body_will_not_parse_is_still_billed",
+        SEARCH_TESTS,
+    ),
+    (
+        # The most plausible shape of all: meter the searches that worked. `ok` in
+        # this module means *results were found*, not *the vendor answered*, so this
+        # silently stops counting every 200-with-an-empty-body - and those are the
+        # queries most likely to be retried, which is where spend concentrates.
+        "search: meter only the queries that returned results",
+        SEARCH,
+        '    _record_query_spend("brave")\n'
+        '    data = response.json()\n'
+        '    results = [\n'
+        '        _clean_result(item.get("title"), item.get("url"), item.get("description"), "brave")\n'
+        '        for item in ((data.get("web") or {}).get("results") or [])[:MAX_RESULTS]\n'
+        '    ]\n',
+        '    data = response.json()\n'
+        '    results = [\n'
+        '        _clean_result(item.get("title"), item.get("url"), item.get("description"), "brave")\n'
+        '        for item in ((data.get("web") or {}).get("results") or [])[:MAX_RESULTS]\n'
+        '    ]\n'
+        '    if results:\n'
+        '        _record_query_spend("brave")\n',
+        "test_a_query_that_found_nothing_is_still_a_query_we_paid_for",
+        SEARCH_TESTS,
+    ),
+    (
+        # Skip the free provider because it costs nothing. Reads as an obvious
+        # optimisation and it destroys the call counts for the only search provider
+        # that has ever returned a result in production: a known zero is a
+        # measurement and belongs in the record, which is the distinction §34 rests
+        # on read in the other direction.
+        "search: skip the free provider because its price is zero",
+        SEARCH,
+        '    _record_query_spend("duckduckgo_instant")\n',
+        '',
+        "test_duckduckgo_is_a_measured_zero_and_not_an_unknown",
+        SEARCH_TESTS,
+    ),
+    (
+        # Meter above the credential check. Four of the five providers are
+        # unconfigured in production, so this charges four phantom queries for every
+        # real search - a 5x overstatement of the search bill, from a line that looks
+        # like it was simply placed at the top of the function.
+        "search: bill a query for a provider with no credentials",
+        SEARCH,
+        '    key = _env("BRAVE_SEARCH_API_KEY")\n    if not key:\n',
+        '    _record_query_spend("brave")\n'
+        '    key = _env("BRAVE_SEARCH_API_KEY")\n    if not key:\n',
+        "test_an_unconfigured_provider_is_not_billed",
+        SEARCH_TESTS,
     ),
 ]
 

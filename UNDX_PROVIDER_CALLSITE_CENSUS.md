@@ -1260,3 +1260,127 @@ unfalsifiable shape §50 rejects. Replaced with one that breaks `undx_cost._conn
 database really does enter, and which additionally pins that the in-process mirror still answers:
 `source != 'ledger'` with `kinds['image']['calls'] == 1`. Degraded and silent are different
 failures and the test now distinguishes them.
+
+## 11. Metering paid web search, and the difference between billed and useful
+
+All five providers in `services/pulse_ai_web_search.py` now record one `research`
+call per query through `undx_capabilities.record_spend`. This is the first *active*
+non-chat metering in the repo: unlike the image path, this code runs in production
+today, so four paid vendors that were billing with no record anywhere now appear in
+the month's report.
+
+The capability table needed no change — `('research', ...)` was already declared for
+all five, with `paid=True` and `prices={}` for Brave, Bing, SerpApi and Tavily, and
+`prices={'': 0.0}` with `price_source='keyless public endpoint, charges nothing'`
+for DuckDuckGo. So the four paid vendors land as `uncosted_calls=1` per query and
+stay in `unpriced_providers()`; DuckDuckGo lands as a measured `$0.00` with
+`uncosted_calls=0`.
+
+### The metering hangs off the HTTP status, not off `ok`
+
+This is the whole design decision and it is not obvious, because the obvious place
+to put the call is the wrong one.
+
+`ok` in this module means **results were found**. The billable event for every one
+of these vendors is an **accepted query**. Those are different things, and the gap
+between them is not a rounding error:
+
+* A 2xx carrying zero results is a charge. "No results for that string" is a
+  successful answer to a question the vendor was paid to answer. These are also the
+  queries most likely to be retried, so metering on `ok` would have undercounted
+  worst exactly where spend concentrates.
+* A non-2xx is not a charge. 401, 429 and 5xx are refusals. Counting them would
+  inflate the month with queries nobody was billed for, and the inflation would
+  scale with how broken the vendor was — worst during the incident when someone is
+  reading the number.
+* A missing credential is not a charge. The `_search_*` functions return before
+  `requests.get`, and four of the five providers are unconfigured in production, so
+  a metering call at the top of the function would bill four phantom queries per
+  real search — a 5x overstatement from a line that looks correctly placed.
+
+The call therefore sits immediately after the status check and **above**
+`response.json()`. A 2xx whose body will not parse was still a query the vendor
+accepted and billed; parsing is our problem, not theirs. Metering below the parse
+would make a vendor having a bad serialization day look like a vendor we had
+stopped using while they kept invoicing.
+
+Every one of those four boundaries is a separate mutation, and all four are lethal.
+
+### DuckDuckGo is recorded, and the reason is §34 read backwards
+
+Committed to in §4 of this document and honoured here. Its price is `0.0` as a
+*measurement*, not as a missing entry, so it belongs in the record. §34's rule is
+that an unknown must not look like zero; it does not say a known zero must be
+hidden. Skipping it would leave the call counts incomplete for the only search
+provider that has ever returned a result in production, and a dollar total is not
+the only thing this ledger is for.
+
+The pairing matters more than either row alone: Brave's row and DuckDuckGo's row
+carry the **same** `cost_micro_usd=0` and differ only in `uncosted_calls`. A test
+asserting both, side by side, is the only way "zero because we measured zero" and
+"zero because we do not know" can be shown to be distinguishable rather than
+merely claimed to be.
+
+### Fallback does not refund the hops before it
+
+The same property §41 requires of provider health, applied to money: a search that
+succeeds on the fourth vendor must still record what the first three cost. With all
+four paid providers configured and the first three answering 2xx-empty, the ledger
+shows four `research` calls, not one — a 4x difference on every such search, and
+the report would have been understating it silently because the payload only names
+the vendor that won.
+
+### Mutation coverage
+
+`scripts/undx_spend_accounting_mutation_check.py` is now **27 mutations**, all
+verified lethal (26 red, 1 required-green). The eight added here:
+
+| Mutation | Caught by |
+|---|---|
+| stop metering search queries entirely | `test_a_successful_query_is_recorded_as_research_not_chat` |
+| meter the query as `chat` | `test_a_successful_query_is_recorded_as_research_not_chat` |
+| attribute every query to a single provider | `test_a_query_billed_before_a_later_provider_succeeded_is_still_recorded` |
+| bill refusals as well as accepted queries | `test_a_rejected_query_is_not_recorded_as_spend` |
+| drop a billed query whose body would not parse | `test_a_two_hundred_whose_body_will_not_parse_is_still_billed` |
+| meter only the queries that returned results | `test_a_query_that_found_nothing_is_still_a_query_we_paid_for` |
+| skip the free provider because its price is zero | `test_duckduckgo_is_a_measured_zero_and_not_an_unknown` |
+| bill a query for a provider with no credentials | `test_an_unconfigured_provider_is_not_billed` |
+
+The *attribute-everything-to-one-provider* mutation is the one worth singling out.
+It leaves the total call count and the total dollar figure **exactly** right, so
+nothing about the month's bottom line looks wrong — only the answer to "which
+vendor should we drop" changes. A suite that asserted totals and not the provider
+breakdown would have passed it.
+
+### The credential problem is still open and now costs something visible
+
+`SERPAPI_API_KEY` and `TAVILY_API_KEY` are the names this module reads.
+Railway holds `Serper_AI_API` and `Tavily_AI_API`. Serper and SerpApi are
+**different companies**, so the first is not a rename. Until that is resolved, both
+providers are permanently `config_missing`, are never billed, and correctly do not
+appear in the ledger. The metering makes the consequence legible for the first time:
+a `research` report showing only `duckduckgo_instant` is now positive evidence that
+three of the four paid vendors are unreachable, rather than an absence that could
+mean anything. This is the §44 account work, unchanged and still requiring the
+owner.
+
+### Test-isolation note
+
+The new suite clears the four provider keys in its fixture rather than assuming the
+environment is empty. Without it the developer's own shell decides which providers
+the fallback chain reaches, so the test would assert something different on every
+machine — and on a machine with a real Brave key, the "unconfigured provider" test
+would have passed for the wrong reason.
+
+### A pre-existing failure found in the blast radius, and not fixed here
+
+`tests/undx_brain/test_foundation.py::test_the_specialist_coverage_numbers_are_the_real_ones`
+fails on a clean tree: it pins `len(undx_capability_registry.REGISTRY) == 82` and
+the registry now holds 140. Confirmed pre-existing — it fails identically at
+`fc846ab2` — and the pin dates from `ade1860b` (2026-08-01), when the module had
+about 32 `register(` calls. Six weeks of unrelated feature work outgrew it.
+
+Deliberately not fixed in this commit. Changing `82` to `140` would make it green
+until the next capability lands, and the interesting question is whether an exact
+count of a registry that grows with every feature should be pinned at all. Split
+out as its own task rather than smuggled into a spend-accounting change.

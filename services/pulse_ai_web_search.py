@@ -17,6 +17,7 @@ from urllib.parse import quote_plus
 
 import requests
 
+from services import undx_capabilities
 from services.undx_brain import envelope
 
 
@@ -160,6 +161,42 @@ def _clean_result(title: Any, url: Any, snippet: Any, source: str) -> dict[str, 
     }
 
 
+def _record_query_spend(provider: str) -> None:
+    """Record one billed search query against `provider`.
+
+    §22: a paid search API is AI spend. Four of the five providers here are paid
+    (`paid=True` in `undx_capabilities`) and none of them had ever appeared in a
+    spend report, because "AI cost" was read as "tokens" and a search query has
+    no tokens.
+
+    **Called only after a 2xx**, and that is the whole design decision. The
+    billable event for every one of these vendors is an accepted query, not a
+    useful one:
+
+    * A 2xx carrying zero results is still a charge. Brave, Bing, SerpApi and
+      Tavily bill per query; "no results for that string" is a successful answer
+      to a question they were paid to answer. Metering only on `ok` — which in
+      this module means *results were found* — would have undercounted exactly
+      the queries most likely to be retried.
+    * A non-2xx is not a charge. 401, 429 and 5xx are refusals, and counting them
+      would inflate the month with queries nobody was billed for.
+
+    DuckDuckGo is recorded too, despite being free, and that is deliberate rather
+    than an oversight in the price table: its price is `0.0` as a *measurement*
+    ("keyless public endpoint, charges nothing"), not as an unknown. Skipping it
+    would leave the call counts incomplete for the only search provider that has
+    ever returned a result in production, and a dollar total is not the only thing
+    this ledger is for. §34's rule is that unknown must not look like zero; a
+    known zero is allowed to look like zero.
+
+    Never raises — `undx_capabilities.record_spend` guarantees that, and a search
+    result must not be lost to a bookkeeping failure.
+    """
+    undx_capabilities.record_spend(
+        undx_capabilities.CALL_KIND_RESEARCH, provider, units=1,
+    )
+
+
 def _search_brave(query: str) -> dict[str, Any]:
     key = _env("BRAVE_SEARCH_API_KEY")
     if not key:
@@ -172,6 +209,9 @@ def _search_brave(query: str) -> dict[str, Any]:
     )
     if not (200 <= response.status_code < 300):
         return {"ok": False, "reason": "provider_rejected", "status_code": response.status_code}
+    # Before `response.json()`, not after: a 2xx whose body will not parse was
+    # still a query Brave accepted and billed. Parsing is our problem, not theirs.
+    _record_query_spend("brave")
     data = response.json()
     results = [
         _clean_result(item.get("title"), item.get("url"), item.get("description"), "brave")
@@ -192,6 +232,7 @@ def _search_bing(query: str) -> dict[str, Any]:
     )
     if not (200 <= response.status_code < 300):
         return {"ok": False, "reason": "provider_rejected", "status_code": response.status_code}
+    _record_query_spend("bing")
     data = response.json()
     results = [
         _clean_result(item.get("name"), item.get("url"), item.get("snippet"), "bing")
@@ -211,6 +252,7 @@ def _search_serpapi(query: str) -> dict[str, Any]:
     )
     if not (200 <= response.status_code < 300):
         return {"ok": False, "reason": "provider_rejected", "status_code": response.status_code}
+    _record_query_spend("serpapi")
     data = response.json()
     results = [
         _clean_result(item.get("title"), item.get("link"), item.get("snippet"), "serpapi")
@@ -230,6 +272,7 @@ def _search_tavily(query: str) -> dict[str, Any]:
     )
     if not (200 <= response.status_code < 300):
         return {"ok": False, "reason": "provider_rejected", "status_code": response.status_code}
+    _record_query_spend("tavily")
     data = response.json()
     results = [
         _clean_result(item.get("title"), item.get("url"), item.get("content"), "tavily")
@@ -246,6 +289,7 @@ def _search_duckduckgo(query: str) -> dict[str, Any]:
     )
     if not (200 <= response.status_code < 300):
         return {"ok": False, "reason": "provider_rejected", "status_code": response.status_code}
+    _record_query_spend("duckduckgo_instant")
     data = response.json()
     results: list[dict[str, str]] = []
     if data.get("AbstractText") or data.get("AbstractURL"):
