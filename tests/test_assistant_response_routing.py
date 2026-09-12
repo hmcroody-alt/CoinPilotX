@@ -267,6 +267,93 @@ class DeclaredIntentTest(_RoutedCase):
         self.assertEqual(captured["call_domain"], undx_call_domain.CALL_DOMAIN_TELEGRAM)
 
 
+class ClassificationSubjectTest(unittest.TestCase):
+    """The routing decision is made from the question, not the board in front of it.
+
+    ``_RoutedCase`` stubs a ~200-character board, which keeps the question comfortably
+    inside the classifier's 2,600-character window. That is why this class does not reuse
+    it: the fixture that makes the other tests readable is the one fixture under which
+    this defect cannot occur, so reusing it would produce a test that passes in both
+    trees. The live board measures ~8,850 characters against that window.
+
+    The assertion is on the argument handed to the router, not on the answer. The request
+    succeeded before this fix too — at CONFIDENTIAL the ceiling refuses four providers
+    and collapses most lanes onto the same reachable chain, which is precisely the
+    masking that let this run in production unnoticed. The one category it does not mask
+    is ``security``, which leads with Claude: "is this wallet address a scam" was
+    answered by OpenAI because a CoinGecko snapshot sat in front of the sentence.
+    """
+
+    #: Big enough to push the question out of the window, and carrying the cue the real
+    #: board actually carries. Measured against live CoinGecko data, the *only* freshness
+    #: term in an 8,864-character board is ``2026`` — out of its own ``updated_at``
+    #: timestamp. Freshness wins unconditionally in `classify_request`, so the year the
+    #: snapshot stamps on itself is what pinned every assistant request to `current_web`.
+    #:
+    #: Two things follow, and both are why this constant is written out rather than
+    #: stubbed with ``"now"``. First, a fixture without a year classifies on the board's
+    #: other words instead and reproduces a different bug than the one in production —
+    #: the first draft of this test used ``updated_at: "now"``, matched `risk` in
+    #: `risk_level`, classified `security`, and so agreed with the question by accident.
+    #: Second, the live defect is **date-dependent**: `2026` and `2027` are cues and
+    #: `2028` is not, so on 1 January 2028 this misroute changes category on its own with
+    #: no diff. The date here is therefore fixed, not generated.
+    BIG_BOARD = {"source": "test", "updated_at": "2026-09-12T14:39:53",
+                 "observed_epoch": 1789249193.24877, "age_seconds": 0, "warning": None,
+                 "summary": {"btc_price": 60000, "market_trend": "mixed",
+                             "risk_level": "Medium", "average_change_24h": 0.4},
+                 "markets": [{"id": f"coin-{i}", "symbol": f"SYM{i}",
+                              "name": f"Coin number {i} on the board",
+                              "price": 1000 + i, "change_24h": 0.1 * i,
+                              "market_cap": 10_000_000 + i} for i in range(80)]}
+
+    QUESTION = "is this wallet address a scam or is the token contract safe to approve"
+
+    def _sent(self):
+        captured = {}
+
+        def fake(*args, **kwargs):
+            captured["args"], captured["kwargs"] = args, kwargs
+            return _envelope("Answer body.")
+
+        with mock.patch.object(intelligence.market_data, "live_market_board",
+                              return_value=self.BIG_BOARD), \
+                mock.patch.object(intelligence.undx_router, "route_structured_request",
+                                  side_effect=fake):
+            intelligence.assistant_response_envelope(4242, self.QUESTION)
+        return captured
+
+    def test_the_fixture_actually_buries_the_question(self):
+        """Asserted, because the rest of this class is vacuous without it."""
+        sent = self._sent()["args"][2]
+        self.assertGreater(len(sent), 2600)
+        self.assertNotIn(self.QUESTION[:20], sent[:2600])
+
+    def test_the_question_is_what_gets_classified(self):
+        kwargs = self._sent()["kwargs"]
+        self.assertEqual(kwargs["classify_text"], self.QUESTION)
+
+    def test_the_two_subjects_route_to_different_providers(self):
+        """The consequence, spelled out, so that dropping `classify_text` is not merely
+        a cosmetic regression here. Read at PUBLIC because CONFIDENTIAL is what masks it
+        in production — asserting the masked version would be asserting that the privacy
+        gate works, which is a different test that already exists."""
+        import undx_router
+
+        captured = self._sent()
+        sent, subject = captured["args"][2], captured["kwargs"]["classify_text"]
+        with mock.patch.object(undx_router, "multi_model_mode", lambda: True), \
+                mock.patch.object(undx_router, "router_enabled", lambda: True), \
+                mock.patch.object(undx_router, "provider_enabled", lambda name: True):
+            from_prompt = undx_router.provider_priority(undx_router.classify_request(sent))
+            from_question = undx_router.provider_priority(undx_router.classify_request(subject))
+        self.assertEqual(undx_router.classify_request(sent)["category"], "current_web")
+        self.assertEqual(undx_router.classify_request(subject)["category"], "security")
+        self.assertNotEqual(from_prompt[0], from_question[0])
+        self.assertEqual(from_question[0], "claude")
+        self.assertEqual(from_prompt[0], "perplexity")
+
+
 class DisclosureTest(_RoutedCase):
     """The required disclosure, and the two-condition check that avoids duplicating it."""
 

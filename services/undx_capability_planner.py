@@ -106,6 +106,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from services import undx_call_domain, undx_privacy
 from services.undx_capability_registry import REGISTRY, CapabilitySpec, get
 
 logger = logging.getLogger(__name__)
@@ -432,11 +433,20 @@ def _miss(reason: str, **details: Any) -> PlannerResult:
     return PlannerResult(ok=False, reason=reason, details=dict(details))
 
 
-def plan(text: str, *, user_id: Any = None, timeout: int | None = None) -> PlannerResult:
+def plan(text: str, *, user_id: Any = None, timeout: int | None = None,
+         call_domain: str | None = None) -> PlannerResult:
     """Propose one registered capability for ``text``, or decline.
 
     Declining is the common answer and carries no cost: the caller falls back to the
     conversational reply it would have given anyway.
+
+    ``call_domain`` is a parameter rather than something read out of ``text`` for the
+    reason §5 gives: a domain may reorder providers and may never widen them, and the
+    only way to keep that true is for the domain to describe the *caller* and not the
+    content. ``text`` here is the user's own words, so deriving a domain from it would
+    let the person typing choose which provider sees what they typed. Defaults to
+    ``None``, which the router normalises; the one caller today passes GENERAL because
+    the agent runtime has no channel of its own to name.
     """
     if not enabled():
         return _miss("planner_disabled")
@@ -469,6 +479,30 @@ def plan(text: str, *, user_id: Any = None, timeout: int | None = None) -> Plann
             user_id, SYSTEM_PROMPT, user_content,
             timeout=timeout or seconds, temperature=0.0, max_tokens=320,
             providers=providers or None,
+            # CONFIDENTIAL (§4). `message` is free text the user wrote, which is the
+            # floor for this family of call sites. Declared rather than omitted: an
+            # omitted class already normalises to CONFIDENTIAL, so this changes no
+            # behaviour — it makes the classification reviewable. An undeclared class
+            # that happens to default correctly is indistinguishable from one nobody
+            # thought about, and §4 asks for the second not to be possible.
+            privacy_class=undx_privacy.SENSITIVITY_CONFIDENTIAL,
+            call_domain=call_domain,
+            # This function parses what comes back (`_parse` below) and folds a parse
+            # failure into `_miss("unparseable")`. Routed to a provider with no JSON
+            # mode that is the *expected* outcome rather than a fault, and the planner
+            # reports it as the model declining to choose a capability. Requiring the
+            # capability instead means such a provider is refused before its key is
+            # read and appears in `attempts` as `capability_unmet` — a visible refusal
+            # in place of an invisible degradation. It narrows the chain and that is
+            # the point: at CONFIDENTIAL the reachable set is openai/claude/meta, and
+            # Claude has no JSON mode, so this trades a provider for a guarantee.
+            require_json=True,
+            # Route on what the user asked, not on the 12,106-character catalog printed
+            # above it. The classifier's window is 2,600 characters, so `message` was
+            # never inside it and every request here classified as `current_web` —
+            # pinned there by the words "right now" and "recent" appearing in capability
+            # descriptions, since freshness wins unconditionally.
+            classify_text=message,
         )
     except Exception:  # noqa: BLE001 - a transport fault must never fail the turn
         logger.warning("undx_planner_transport_failed", exc_info=True)

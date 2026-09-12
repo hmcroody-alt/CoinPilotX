@@ -1531,6 +1531,7 @@ def route_structured_request(
     history: Any = None,
     require_json: bool = False,
     json_schema: dict[str, Any] | None = None,
+    classify_text: str | None = None,
 ) -> dict[str, Any]:
     """One model turn whose answer is meant to be parsed, not read.
 
@@ -1575,10 +1576,50 @@ def route_structured_request(
     Refused visibly: it appears in ``attempts`` as ``capability_unmet``, because a chain
     that omits the providers it declined describes a different request than the one that
     ran. ``json_schema`` is optional and only Perplexity and Gemini can use it.
+
+    ``classify_text`` is the text the *routing decision* should be made from, when that
+    is not the same string as the text being sent. Defaulting to ``None`` keeps every
+    existing call byte-identical; naming it fixes a real misroute.
+
+    :func:`classify_request` reads ``_clean_text(message, 2600)``, so it sees the first
+    2600 characters of whatever it is handed. Two callers assemble context *in front* of
+    the user's words, and both push them past that window entirely:
+
+      * ``services/undx_capability_planner.py`` prefixes a 12,106-character capability
+        catalog. The user's message is never inside the window.
+      * ``services/intelligence.py`` prefixes an 8,850-character live market board.
+        Likewise.
+
+    The classification is therefore not merely noisy, it is *constant*: the catalog
+    contains the freshness cues "right now" and "recent", and freshness wins
+    unconditionally above — correctly, for a real user message — so every planner
+    request classified as ``current_web`` regardless of what was asked. Measured:
+    "write me a python function ..." classified ``current_web`` where the question alone
+    gives ``repository``, and "is this wallet address a scam" gave ``current_web`` where
+    the question alone gives ``security``.
+
+    What that *cost* is narrower than what it broke, and the difference is worth
+    recording rather than rounding up. Both call sites route at CONFIDENTIAL, which
+    refuses DeepSeek, Gemini, Groq and Perplexity, so the lanes for ``current_web``,
+    ``repository`` and ``research`` all collapse to the same reachable chain
+    ``[openai, claude, meta]`` — the ceiling was masking the misroute. The exception is
+    the one category where the model choice was deliberate: ``security`` puts Claude
+    first, and reachable it stays ``[claude, openai, meta]``. So a user asking the
+    assistant a security question was answered by OpenAI instead of Claude because a
+    CoinGecko snapshot sat in front of their sentence. That masking is also not a
+    defence — it holds only while these callers declare CONFIDENTIAL, and §4's "do not
+    lower a classification to make routing possible" is the pressure that would remove
+    it.
+
+    ``is not None`` rather than ``or``: a caller that names the subject of the
+    classification and finds it empty has said "there is no user text here", and falling
+    back to the scaffolding would be this function second-guessing that. An empty string
+    classifies as ``fast_directive``, which is a default, not a claim about the prompt.
     """
     ordered = [p for p in (providers or []) if p in PROVIDERS and provider_enabled(p)]
     if not ordered:
-        ordered = provider_priority(classify_request(user_content)) if router_enabled() \
+        subject = user_content if classify_text is None else classify_text
+        ordered = provider_priority(classify_request(subject)) if router_enabled() \
             else [default_provider()]
     ordered = _domain_ordered(ordered, call_domain)
     attempts: list[dict[str, str]] = []
