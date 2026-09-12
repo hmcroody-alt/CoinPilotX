@@ -74,6 +74,7 @@ const mockListConnectionShops = jest.fn();
 const mockBindConnectionShop = jest.fn();
 const mockConnectSupplier = jest.fn();
 const mockSearchProducts = jest.fn();
+const mockBindDraftVariant = jest.fn();
 
 jest.mock("../../../api/dropshipping", () => ({
   ...jest.requireActual("../../../api/dropshipping"),
@@ -88,7 +89,8 @@ jest.mock("../../../api/dropshipping", () => ({
   listConnectionShops: (...args: unknown[]) => mockListConnectionShops(...args),
   bindConnectionShop: (...args: unknown[]) => mockBindConnectionShop(...args),
   connectSupplier: (...args: unknown[]) => mockConnectSupplier(...args),
-  searchSupplierProducts: (...args: unknown[]) => mockSearchProducts(...args)
+  searchSupplierProducts: (...args: unknown[]) => mockSearchProducts(...args),
+  bindDraftVariant: (...args: unknown[]) => mockBindDraftVariant(...args)
 }));
 
 import { PulseApiError } from "../../../api/pulseApi";
@@ -185,12 +187,22 @@ function draft(over: Partial<ImportedDraft> = {}): ImportedDraft {
     ],
     supplier: {
       provider: "cj",
-      fulfillmentMode: "SANDBOX",
+      // `DROPSHIP`, not `SANDBOX`. This said "SANDBOX" — an environment mode in
+      // a fulfilment-mode field, a value `marketplace_product_sources` cannot
+      // hold (`MODE_STOCKED` / `MODE_DROPSHIP` are the two). Every test built on
+      // it was therefore exercising a listing that is neither dropshipped nor
+      // stocked, which is why none of them noticed the variant binding.
+      fulfillmentMode: "DROPSHIP",
       syncState: "OK",
       lastSyncedAt: null,
       supplierCostCents: 450,
       supplierCostCurrency: "USD",
       externalSku: "CJ-1",
+      // Bound by default, because the default draft here is a publishable one
+      // and an unbound dropship draft is not publishable. Tests about the
+      // unbound state override these two.
+      providerProductId: "ext-1",
+      providerVariantId: "pv-1",
       merchantOwnedFields: []
     },
     pricingRule: { type: "COST_PLUS_PERCENT", value: 60 },
@@ -1519,6 +1531,217 @@ describe("ReviewImportedProductScreen", () => {
     // Unhelpful, but visible. A problem list that silently drops codes leaves a
     // merchant with a disabled Publish button and no reason for it.
     await waitFor(() => expect(view.getByText("SOME_FUTURE_PROBLEM")).toBeTruthy());
+  });
+
+  /* ---------------------------------------------------------------- *
+   * Which variant this product sells
+   *
+   * `SUPPLIER_VARIANT_UNBOUND` was a refusal with no answer. The supplier
+   * screen pre-selects every in-stock variant, so the ordinary import of a
+   * two-size t-shirt produced a draft the publish gate declined; the code had
+   * no merchant-readable copy, so it was rendered raw; and `bind-product` had
+   * no caller on any screen, so there was nothing to do about it. These tests
+   * are about the pair — the words, and the remedy.
+   * ---------------------------------------------------------------- */
+
+  /** An unbound dropship draft with two candidate variants — a default import. */
+  function unbound(): ImportedDraft {
+    const base = draft();
+    return {
+      ...base,
+      variants: [
+        base.variants[0],
+        {
+          ...base.variants[0],
+          variantId: 2,
+          options: { Colour: "Black" },
+          sku: "MUG-B",
+          providerVariantId: "pv-2"
+        }
+      ],
+      supplier: { ...base.supplier, providerVariantId: null },
+      validation: { publishable: false, problems: ["SUPPLIER_VARIANT_UNBOUND"] }
+    };
+  }
+
+  it("explains the unbound refusal in words instead of printing its code", async () => {
+    const { view } = await renderDraft(unbound());
+
+    await waitFor(() =>
+      expect(view.getByText(/Choose which variant you're selling/)).toBeTruthy()
+    );
+    // The regression this replaces: the code itself on the merchant's screen.
+    expect(view.queryByText("SUPPLIER_VARIANT_UNBOUND")).toBeNull();
+  });
+
+  it("offers the choice that answers the refusal", async () => {
+    const { view } = await renderDraft(unbound());
+
+    await waitFor(() => expect(view.getByText("Which variant are you selling?")).toBeTruthy());
+    expect(view.getByLabelText("Sell White")).toBeTruthy();
+    expect(view.getByLabelText("Sell Black")).toBeTruthy();
+  });
+
+  it("will not bind until the merchant has actually picked one", async () => {
+    // Two steps, because the server accepts nothing→one and refuses one→another.
+    // A single tap that bound immediately would make a mis-tap permanent.
+    const { view } = await renderDraft(unbound());
+
+    await waitFor(() => expect(view.getByLabelText(/Confirm the variant/)).toBeTruthy());
+    const confirm = view.getByLabelText("Confirm the variant this product sells");
+    expect(confirm.props.accessibilityState.disabled).toBe(true);
+
+    fireEvent.press(view.getByLabelText("Sell Black"));
+    await waitFor(() =>
+      expect(
+        view.getByLabelText("Confirm the variant this product sells").props.accessibilityState
+          .disabled
+      ).toBe(false)
+    );
+  });
+
+  it("binds the variant the merchant chose, named by its supplier id", async () => {
+    mockBindDraftVariant.mockResolvedValue(undefined);
+    const bound = {
+      ...unbound(),
+      supplier: { ...unbound().supplier, providerVariantId: "pv-2" },
+      validation: { publishable: true, problems: [] }
+    };
+    const { view } = await renderDraft(unbound());
+
+    await waitFor(() => expect(view.getByLabelText("Sell Black")).toBeTruthy());
+    fireEvent.press(view.getByLabelText("Sell Black"));
+    mockGetImportedProduct.mockResolvedValue(bound);
+    fireEvent.press(view.getByLabelText("Confirm the variant this product sells"));
+
+    await waitFor(() => expect(mockBindDraftVariant).toHaveBeenCalled());
+    // `pv-2`, not the listing's own variant id and not the first variant: the
+    // supplier's identifier for the row the merchant pressed.
+    expect(mockBindDraftVariant.mock.calls[0][2]).toEqual({
+      listingId: 77,
+      providerProductId: "ext-1",
+      providerVariantId: "pv-2"
+    });
+  });
+
+  it("takes the cleared verdict from the server rather than assuming it", async () => {
+    // Binding succeeding is not the same claim as the draft having become
+    // publishable — only the evaluator can make that one. So the screen re-reads
+    // the draft, and the problem disappears because the server stopped saying it.
+    mockBindDraftVariant.mockResolvedValue(undefined);
+    const { view } = await renderDraft(unbound());
+    await waitFor(() => expect(view.getByLabelText("Sell Black")).toBeTruthy());
+    const readsBefore = mockGetImportedProduct.mock.calls.length;
+    fireEvent.press(view.getByLabelText("Sell Black"));
+
+    mockGetImportedProduct.mockResolvedValue({
+      ...unbound(),
+      supplier: { ...unbound().supplier, providerVariantId: "pv-2" },
+      validation: { publishable: true, problems: [] }
+    });
+    fireEvent.press(view.getByLabelText("Confirm the variant this product sells"));
+
+    // The re-read is the mechanism, so it is asserted rather than inferred from
+    // the screen settling into the right state — a screen that wrote the cleared
+    // verdict into its own state would look identical here.
+    await waitFor(() =>
+      expect(mockGetImportedProduct.mock.calls.length).toBeGreaterThan(readsBefore)
+    );
+    await waitFor(() => expect(view.queryByText("Which variant are you selling?")).toBeNull());
+    expect(view.queryByText(/Choose which variant you're selling/)).toBeNull();
+    expect(view.getByText(/Orders go to your supplier for Black/)).toBeTruthy();
+  });
+
+  it("keeps the merchant's unsaved typing when they choose a variant", async () => {
+    // The chooser re-reads the draft, and re-reading used to mean `adopt`, which
+    // resets the form from the response. A merchant who retitled the product and
+    // then picked a variant would have watched their words vanish.
+    mockBindDraftVariant.mockResolvedValue(undefined);
+    const { view } = await renderDraft(unbound());
+
+    await waitFor(() => expect(view.getByLabelText("Title")).toBeTruthy());
+    fireEvent.changeText(view.getByLabelText("Title"), "My Own Mug Name");
+    fireEvent.press(view.getByLabelText("Sell Black"));
+
+    mockGetImportedProduct.mockResolvedValue({
+      ...unbound(),
+      title: "Ceramic Mug",
+      supplier: { ...unbound().supplier, providerVariantId: "pv-2" },
+      validation: { publishable: true, problems: [] }
+    });
+    fireEvent.press(view.getByLabelText("Confirm the variant this product sells"));
+
+    await waitFor(() => expect(mockBindDraftVariant).toHaveBeenCalled());
+    expect(view.getByLabelText("Title").props.value).toBe("My Own Mug Name");
+  });
+
+  it("changes nothing and says so when the bind is refused", async () => {
+    mockBindDraftVariant.mockRejectedValue(new Error("binding_conflict"));
+    const { view } = await renderDraft(unbound());
+
+    await waitFor(() => expect(view.getByLabelText("Sell Black")).toBeTruthy());
+    fireEvent.press(view.getByLabelText("Sell Black"));
+    fireEvent.press(view.getByLabelText("Confirm the variant this product sells"));
+
+    await waitFor(() => expect(view.getByText(/couldn't be set/)).toBeTruthy());
+    // Still unbound, still offering the choice. A failed write that hid the
+    // control would leave the merchant with a refusal and no way back to it.
+    expect(view.getByText("Which variant are you selling?")).toBeTruthy();
+    // And the pick itself survives, which is a separate claim from the card
+    // being on screen: clearing `pendingVariantId` in the catch leaves the
+    // chooser visible with the confirm button disabled again, so the words "try
+    // again" sit beside a control that cannot be pressed. Error and no way back
+    // to the action — the same shape as error-and-empty. It survived the
+    // mutation battery until these two lines existed.
+    expect(view.getByLabelText("Sell Black").props.accessibilityState.checked).toBe(true);
+    expect(
+      view.getByLabelText("Confirm the variant this product sells").props.accessibilityState
+        .disabled
+    ).toBe(false);
+  });
+
+  it("states the bound variant instead of offering a chooser that cannot change it", async () => {
+    const { view } = await renderDraft({
+      ...unbound(),
+      supplier: { ...unbound().supplier, providerVariantId: "pv-1" },
+      validation: { publishable: true, problems: [] }
+    });
+
+    await waitFor(() => expect(view.getByText("What this product sells")).toBeTruthy());
+    expect(view.getByText(/Orders go to your supplier for White/)).toBeTruthy();
+    expect(view.queryByText("Which variant are you selling?")).toBeNull();
+  });
+
+  it("asks a stocked listing nothing, because it places no supplier order", async () => {
+    // The merchant holds this inventory themselves. There is no supplier order
+    // and so nothing to bind; a chooser here would invent a decision.
+    const { view } = await renderDraft({
+      ...unbound(),
+      supplier: { ...unbound().supplier, fulfillmentMode: "STOCKED", providerVariantId: null },
+      validation: { publishable: true, problems: [] }
+    });
+
+    await waitFor(() => expect(view.getByText("Variants and pricing")).toBeTruthy());
+    expect(view.queryByText("Which variant are you selling?")).toBeNull();
+    expect(view.queryByText("What this product sells")).toBeNull();
+  });
+
+  it("puts the two newest price refusals in words too", async () => {
+    // Added in the same drift as the unbound one, and missing for the same
+    // reason: the mobile list is a second copy of a Python enumeration.
+    const { view } = await renderDraft(
+      draft({
+        validation: {
+          publishable: false,
+          problems: ["VARIANT_PRICE_SPREAD", "PRICE_ABOVE_CHECKOUT_LIMIT"]
+        }
+      })
+    );
+
+    await waitFor(() => expect(view.getByText(/Checkout charges one price per product/)).toBeTruthy());
+    expect(view.getByText(/above what checkout can charge/)).toBeTruthy();
+    expect(view.queryByText("VARIANT_PRICE_SPREAD")).toBeNull();
+    expect(view.queryByText("PRICE_ABOVE_CHECKOUT_LIMIT")).toBeNull();
   });
 
   it("blocks publish while the server says it is not publishable", async () => {

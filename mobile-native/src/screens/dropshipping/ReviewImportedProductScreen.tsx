@@ -53,6 +53,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
+  bindDraftVariant,
   getImportedProduct,
   publishImportedProduct,
   stateForError,
@@ -62,6 +63,7 @@ import {
   type DraftVariant,
   type DropshippingState,
   type ImportedDraft,
+  type PublishProblem,
   type PublishResult
 } from "../../api/dropshipping";
 import { StoreHeader, StoreSectionError } from "../../components/store";
@@ -89,11 +91,20 @@ type Props = {
 /**
  * Every publish problem, in the merchant's words, with what to do about it.
  *
- * The three at the bottom are not the merchant's to fix, and say so — telling
- * someone to "add a price" when their supplier has delisted the product wastes
- * their afternoon.
+ * The ones marked `fixable: false` are not the merchant's to fix, and say so —
+ * telling someone to "add a price" when their supplier has delisted the product
+ * wastes their afternoon.
+ *
+ * Keyed by `PublishProblem`, not by `string`, and that is the load-bearing part.
+ * As a `Record<string, …>` this table could fall behind `PUBLISH_PROBLEMS`
+ * without anything noticing, and it did: three codes the backend had been
+ * emitting for some time — `VARIANT_PRICE_SPREAD`, `PRICE_ABOVE_CHECKOUT_LIMIT`
+ * and `SUPPLIER_VARIANT_UNBOUND` — had no entry, and the fallthrough below
+ * renders an unknown code verbatim. A merchant whose import could not be
+ * published read the words "SUPPLIER_VARIANT_UNBOUND". Total over the union, the
+ * next added code fails the typecheck instead.
  */
-const PROBLEM_COPY: Record<string, { text: string; fixable: boolean }> = {
+const PROBLEM_COPY: Record<PublishProblem, { text: string; fixable: boolean }> = {
   MISSING_TITLE: { text: "Give this product a title.", fixable: true },
   MISSING_CATEGORY: { text: "Choose a category so buyers can find it.", fixable: true },
   NO_VALID_MEDIA: {
@@ -118,7 +129,26 @@ const PROBLEM_COPY: Record<string, { text: string; fixable: boolean }> = {
     text: "Your supplier no longer offers this product.",
     fixable: false
   },
-  RESTRICTED_PRODUCT: { text: "This product can't be sold on PulseSoc.", fixable: false }
+  RESTRICTED_PRODUCT: { text: "This product can't be sold on PulseSoc.", fixable: false },
+  // Checkout charges one price for the whole listing and shows buyers no variant
+  // picker, so two different prices cannot both be honoured. Named as a pricing
+  // problem rather than a checkout limitation because the merchant's action is
+  // the same either way: make them match.
+  VARIANT_PRICE_SPREAD: {
+    text: "Your variants have different prices. Checkout charges one price per product, so set them all to the same amount.",
+    fixable: true
+  },
+  PRICE_ABOVE_CHECKOUT_LIMIT: {
+    text: "That price is above what checkout can charge. Lower it to $999,999.99 or less.",
+    fixable: true
+  },
+  // Fixable, and fixable *here* — see the variant chooser below. Before that
+  // existed this was the one problem in this table with no remedy anywhere in
+  // the app, which is why it is worded as a question rather than an error.
+  SUPPLIER_VARIANT_UNBOUND: {
+    text: "Choose which variant you're selling, below. A product sells one variant, and orders go to your supplier for that one.",
+    fixable: true
+  }
 };
 
 /** Merchant-editable keys, mirroring `DraftEdits`. Nothing else is a field. */
@@ -186,6 +216,13 @@ export function ReviewImportedProductScreen({ route, navigation }: Props) {
   const [publishing, setPublishing] = useState(false);
   const [published, setPublished] = useState<PublishResult | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  // The variant the merchant has picked but not yet committed. Binding is close
+  // to one-way — the server accepts nothing→one and refuses one→another — so
+  // this is a two-step choice on purpose. A single tap that immediately bound
+  // would be a permanent decision made by a mis-tap.
+  const [pendingVariantId, setPendingVariantId] = useState<string | null>(null);
+  const [binding, setBinding] = useState(false);
 
   // Which keys the merchant actually touched. Ownership follows edits, so this
   // set is the difference between protecting a field and freezing it. It is
@@ -268,6 +305,50 @@ export function ReviewImportedProductScreen({ route, navigation }: Props) {
     }
   }, [adopt, connectionId, dirty, form, listingId, prices, scope]);
 
+  /**
+   * Commit the merchant's variant choice, then re-read the parts the server
+   * owns — *without* `adopt`.
+   *
+   * `adopt` resets `form`, `prices` and `dirty` from the response, which is
+   * right after a save and wrong here: a merchant who typed a new title, did not
+   * save it, and then chose a variant would watch their typing vanish. So the
+   * supplier block, the variants and the verdict are taken from the server, and
+   * the merchant's unsaved words are left alone.
+   *
+   * The verdict is re-read rather than assumed. Binding succeeding is not the
+   * same claim as `SUPPLIER_VARIANT_UNBOUND` having cleared — only the evaluator
+   * can make that one.
+   */
+  const confirmVariant = useCallback(async () => {
+    const pid = draft?.supplier.providerProductId;
+    if (!scope || !draft || !pendingVariantId || !pid) return;
+    setBinding(true);
+    setActionError(null);
+    try {
+      await bindDraftVariant(scope, connectionId, {
+        listingId,
+        providerProductId: pid,
+        providerVariantId: pendingVariantId
+      });
+      const fresh = await getImportedProduct(scope, connectionId, listingId);
+      setDraft((current) =>
+        current
+          ? { ...current, supplier: fresh.supplier, variants: fresh.variants, validation: fresh.validation }
+          : fresh
+      );
+      setPendingVariantId(null);
+    } catch (error) {
+      const failed = stateForError(error);
+      setActionError(
+        failed === "UNAUTHORIZED"
+          ? "You're not signed in to this store any more."
+          : "That variant couldn't be set. Nothing was changed — try again, or pick a different one."
+      );
+    } finally {
+      setBinding(false);
+    }
+  }, [connectionId, draft, listingId, pendingVariantId, scope]);
+
   const revalidate = useCallback(async () => {
     if (!scope || !draft) return;
     try {
@@ -302,6 +383,26 @@ export function ReviewImportedProductScreen({ route, navigation }: Props) {
 
   const hasEdits = dirty.size > 0;
   const problems = draft?.validation.problems || [];
+
+  // Which supplier variant this listing sells, and whether that is still open.
+  //
+  // Only `DROPSHIP` sources have the question: a `STOCKED` listing is fulfilled
+  // out of the merchant's own shelves, places no supplier order, and has nothing
+  // to bind — so showing them a chooser would be inventing a decision.
+  const isDropship = (draft?.supplier.fulfillmentMode || "").toUpperCase() === "DROPSHIP";
+  const boundVariantId = draft?.supplier.providerVariantId || null;
+  const bindableVariants = useMemo(
+    () => (draft?.variants || []).filter((variant) => Boolean(variant.providerVariantId)),
+    [draft]
+  );
+  const boundVariant = useMemo(
+    () => bindableVariants.find((variant) => variant.providerVariantId === boundVariantId) || null,
+    [bindableVariants, boundVariantId]
+  );
+  // Shown for an unbound dropship draft with something to choose between. Not
+  // shown once bound: the binding is not editable from here, and a control that
+  // cannot change anything is a control that lies about being one.
+  const showVariantChooser = isDropship && !boundVariantId && bindableVariants.length > 0;
   const merchantOwned = useMemo(
     () => new Set((draft?.supplier.merchantOwnedFields || []).map((field) => field.toLowerCase())),
     [draft]
@@ -375,7 +476,12 @@ export function ReviewImportedProductScreen({ route, navigation }: Props) {
                 <View style={styles.card}>
                   <Text style={styles.cardTitle}>Before this can go live</Text>
                   {problems.map((problem) => {
-                    const copy = PROBLEM_COPY[String(problem).toUpperCase()];
+                    // Still guarded at runtime even though the table is total
+                    // over `PublishProblem`: the union is this app's copy of a
+                    // list the server owns, and a server ahead of this build can
+                    // name a code the union has never heard of. The typecheck
+                    // stops the table drifting; this stops a blank line.
+                    const copy = PROBLEM_COPY[String(problem).toUpperCase() as PublishProblem];
                     return (
                       <Text
                         key={String(problem)}
@@ -385,6 +491,84 @@ export function ReviewImportedProductScreen({ route, navigation }: Props) {
                       </Text>
                     );
                   })}
+                </View>
+              ) : null}
+
+              {/* The answer to SUPPLIER_VARIANT_UNBOUND. A dropship listing
+                  sells one supplier variant, because the buyer's checkout has
+                  no variant picker and charges one listing price. The import
+                  screen pre-selects every in-stock variant, so this is the
+                  ordinary state of a multi-variant import — not an edge case. */}
+              {showVariantChooser ? (
+                <View style={styles.card}>
+                  <Text style={styles.cardTitle}>Which variant are you selling?</Text>
+                  <Text style={styles.cardBody}>
+                    A product sells one variant. When someone buys it, the order goes to your
+                    supplier for the one you pick here — so this can't be changed afterwards.
+                  </Text>
+
+                  {bindableVariants.map((variant) => {
+                    const id = variant.providerVariantId as string;
+                    const chosen = pendingVariantId === id;
+                    return (
+                      <Pressable
+                        key={id}
+                        onPress={() => setPendingVariantId(id)}
+                        disabled={binding}
+                        style={[styles.bindOption, chosen ? styles.bindOptionChosen : null]}
+                        accessibilityRole="radio"
+                        accessibilityState={{ checked: chosen, disabled: binding }}
+                        accessibilityLabel={`Sell ${variantLabel(variant)}`}
+                      >
+                        <Text style={styles.bindOptionName}>{variantLabel(variant)}</Text>
+                        <View style={styles.variantMeta}>
+                          <StockPill state={variant.stockState} quantity={variant.stockQuantity} />
+                        </View>
+                        <Text style={styles.variantCost}>
+                          {costText(variant.costCents, variant.currency || draft.currency, formatters)
+                            ? `Your cost ${costText(variant.costCents, variant.currency || draft.currency, formatters)}`
+                            : `Cost ${NO_VALUE} your supplier didn't give one`}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+
+                  <Pressable
+                    onPress={() => confirmVariant().catch(() => undefined)}
+                    disabled={binding || !pendingVariantId}
+                    style={[
+                      styles.bindConfirm,
+                      binding || !pendingVariantId ? styles.bindConfirmDisabled : null
+                    ]}
+                    accessibilityRole="button"
+                    // No explicit `accessibilityState` here, on purpose.
+                    // `Pressable` derives one from `disabled` and overrides
+                    // whatever it is handed, so a second copy of this condition
+                    // could only ever be the copy that loses — editing it would
+                    // change the source text and nothing a merchant or a screen
+                    // reader can observe. The mutation battery found exactly
+                    // that. The variant rows above do pass one, because
+                    // `checked` has no prop to be derived from.
+                    accessibilityLabel="Confirm the variant this product sells"
+                  >
+                    <Text style={styles.bindConfirmText}>
+                      {binding ? "Setting…" : "This is the one I'm selling"}
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : null}
+
+              {/* Bound, and therefore stated rather than offered. The merchant
+                  needs to know which of several variants a buyer receives; a
+                  chooser here would imply it were still open, and the server
+                  answers `binding_conflict` to a second choice. */}
+              {isDropship && boundVariant ? (
+                <View style={styles.card}>
+                  <Text style={styles.cardTitle}>What this product sells</Text>
+                  <Text style={styles.cardBody}>
+                    Orders go to your supplier for {variantLabel(boundVariant)}. The other variants
+                    are what your supplier offers, not what this product sells.
+                  </Text>
                 </View>
               ) : null}
 
@@ -653,6 +837,31 @@ const styles = StyleSheet.create({
     fontWeight: "700"
   },
   suggest: { fontSize: 12, fontWeight: "700", color: storeLight.text.link },
+  // A bordered box rather than a hairline-separated row, unlike `variant`: this
+  // is a choice being made, and a tappable option needs to look tappable and to
+  // meet the tap-target floor.
+  bindOption: {
+    gap: 6,
+    padding: 12,
+    minHeight: storeLight.size.tapTarget,
+    borderRadius: storeLight.radius.card,
+    borderWidth: 1,
+    borderColor: storeLight.border.hairline
+  },
+  bindOptionChosen: {
+    borderColor: storeLight.cta.from,
+    borderWidth: 2
+  },
+  bindOptionName: { fontSize: 14, fontWeight: "700", color: storeLight.text.primary },
+  bindConfirm: {
+    minHeight: storeLight.size.tapTarget,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: storeLight.radius.pill,
+    backgroundColor: storeLight.cta.from
+  },
+  bindConfirmDisabled: { opacity: 0.5 },
+  bindConfirmText: { fontSize: 13, fontWeight: "800", color: storeLight.cta.text },
   actions: { flexDirection: "row", gap: 10 },
   disabled: { opacity: 0.5 },
   secondary: {

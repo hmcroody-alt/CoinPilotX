@@ -189,6 +189,63 @@ def test_a_draft_shows_cost_retail_and_margin_per_variant(provider):
     assert variant["margin_state"] == pricing.UNKNOWN
 
 
+def test_a_draft_says_which_supplier_variant_it_sells(provider):
+    """The binding travels with the draft, because otherwise nothing can fix it.
+
+    ``SUPPLIER_VARIANT_UNBOUND`` refuses to publish a listing whose source row
+    names no supplier variant. The only operation that can satisfy that refusal
+    is ``bind-product``, which takes ``(canonical_product_id, pid, vid)``. The
+    variant list already carries every candidate ``vid``; the ``pid`` to bind
+    against, and whether anything is bound yet, were not served at all — so the
+    draft screen could report the problem and could not offer the fix.
+
+    Merchant-private, on a payload that already carries ``supplier_cost_cents``.
+    §27/§95 are about what reaches a buyer, and no buyer surface reads
+    ``get_draft``.
+    """
+    supplier = draft_of(sellable(provider))["supplier"]
+    assert supplier["provider_product_id"] == "PID-1"
+    assert supplier["provider_variant_id"] == "PID-1-V1"
+
+
+def test_a_draft_that_sells_nothing_yet_says_so_rather_than_guessing(provider):
+    # The import screen pre-selects every in-stock variant, so this is the
+    # ordinary shape of a multi-variant import, not an edge case. `None` is the
+    # honest answer and it is what lets the screen ask the merchant; a first
+    # variant substituted here would be a guess dressed as a fact, and the
+    # buyer would receive whichever variant we guessed.
+    draft = draft_of(imported(provider))
+    assert draft["supplier"]["provider_variant_id"] is None
+    assert draft["supplier"]["provider_product_id"] == "PID-1"
+    # The two halves of the same state, read from one draft: nothing is bound,
+    # and the gate says so. Read from two imports they would be two claims about
+    # two listings, and `imported` refuses a second import of one pid anyway.
+    assert drafts.SUPPLIER_VARIANT_UNBOUND in draft["validation"]["problems"]
+
+
+def test_binding_through_the_route_clears_the_refusal_it_answers(provider):
+    """The whole loop: refused, bound, accepted.
+
+    Asserted end to end rather than as two facts about two functions, because
+    what shipped broken was the *join* — a guard the backend enforced and a
+    remedy no reachable caller could invoke. `bind` here goes through
+    ``gateway.bind_product``, the same call the ``bind-product`` route makes.
+    """
+    listing_id = imported(provider)
+    price_every_variant(listing_id)
+    assert drafts.SUPPLIER_VARIANT_UNBOUND in draft_of(listing_id)["validation"]["problems"]
+
+    bind(listing_id, "PID-1", "PID-1-V2")
+
+    draft = draft_of(listing_id)
+    assert draft["supplier"]["provider_variant_id"] == "PID-1-V2"
+    assert drafts.SUPPLIER_VARIANT_UNBOUND not in draft["validation"]["problems"]
+    # And it is the variant the merchant named that the listing now sells, not
+    # the first one: `_sold_variant` matches on the bound id, and everything
+    # downstream — price label, unit count, inventory state — reads that variant.
+    assert draft["validation"]["publishable"] is True
+
+
 def test_a_draft_lists_its_publication_problems_all_at_once(provider):
     # Not the first failure. A merchant fixing one problem at a time and
     # re-submitting to discover the next is the experience this avoids — so the

@@ -1748,9 +1748,151 @@ harmless today because the `"delivered"` clause covers the same orders.
 
 ---
 
+## The sixteenth seam: a refusal nobody could answer
+
+This one is not in the orders half of the pipeline at all. It is at the very
+front — the step between importing a supplier product and having something that
+can be published — and it stopped the ordinary import of any multi-variant CJ
+product dead, with an error message that was the name of the error.
+
+`scripts/probe_dropship_multivariant_publish.py` runs the real importer and the
+real publish evaluator over the same product at three selection widths:
+
+| variants the merchant selected | `marketplace_product_sources.provider_variant_id` | publishable | problems |
+| --- | --- | --- | --- |
+| one (deselected by hand) | `'PROBE-1-V1'` | **True** | — |
+| two (the supplier screen's default) | `None` | **False** | `['SUPPLIER_VARIANT_UNBOUND']` |
+| four (a t-shirt in four sizes, default) | `None` | **False** | `['SUPPLIER_VARIANT_UNBOUND']` |
+
+The only case that worked was the one where the merchant had gone out of their
+way to deselect variants. `SupplierProductScreen.defaultSelection` pre-selects
+*every* in-stock variant, so the second and third rows are the ordinary path and
+the first is the exception.
+
+Five steps, each of them individually correct:
+
+1. The import screen pre-selects every in-stock variant.
+2. `importer._import_one` therefore passes `provider_variant_id=None` to
+   `link_source`, because `len(chosen) != 1`. It refuses to guess which variant a
+   buyer would receive, and that refusal is right.
+3. `drafts._validate` appends `SUPPLIER_VARIANT_UNBOUND`, because the buyer's
+   checkout has **no variant picker at all** and charges one listing-level price.
+   An unbound dropship listing is one a buyer can pay for and nobody can ship.
+   That refusal is also right.
+4. `SUPPLIER_VARIANT_UNBOUND` was absent from `PUBLISH_PROBLEMS` in
+   `mobile-native/src/api/dropshipping.ts` and from `PROBLEM_COPY` in
+   `ReviewImportedProductScreen.tsx`. The screen renders an unrecognised code
+   verbatim — deliberately, because a blank line is worse — so the merchant read
+   the string `SUPPLIER_VARIANT_UNBOUND` under the heading "Before this can go
+   live".
+5. `bind-product`, the one operation that can satisfy the refusal, had **zero
+   callers**. Greps across `mobile-native/src`, `templates/` and `static/`
+   returned nothing.
+
+So the guard was correct, its diagnosis was correct, and between them they
+produced a merchant holding a draft that could never be published, told so in a
+language they do not speak, with no control anywhere in the app that would have
+changed it.
+
+### Why the binding is not made per-variant
+
+The obvious fix is to stop having a single listing-level binding: every chosen
+variant already has its own `marketplace_listing_variants.provider_variant_id`,
+fully populated by `importer._write_variants`, and `fulfillment.create_intent`
+already receives `item["vid"]`. The payload supports it today.
+
+It was refused, and for the same reason the guard exists. The buyer's checkout
+offers no variant selector — `marketplace_variants` is imported by the suppliers
+package and by nothing else, and the purchase path charges one listing price.
+Per-variant fulfilment without a buyer-side picker would ship whichever variant
+the code happened to pick, which is precisely the defect
+`SUPPLIER_VARIANT_UNBOUND` was written to prevent. A one-variant-per-dropship-
+listing contract with a merchant who *chose* the variant is weaker than a variant
+picker and strictly stronger than a guess.
+
+Note the two `provider_variant_id` columns, because confusing them produces a
+listing that looks bound to every screen and is still NULL where `create_intent`
+reads: `marketplace_listing_variants` has one per chosen variant and is always
+populated; `marketplace_product_sources` has one per listing and is the binding.
+`gateway.get_product_binding` resolves only the second, keyed on `listing_id`
+with no variant argument.
+
+### What the fix had to be
+
+Not the guard. The answer to it:
+
+- `get_draft`'s `supplier` block now serves `provider_product_id` and
+  `provider_variant_id`. Merchant-private, on a payload that already carries
+  `supplier_cost_cents`; §27/§95 are about what reaches a buyer, and nothing
+  buyer-facing reads this function.
+- `bindDraftVariant` in the mobile API layer, returning `void` on purpose. The
+  draft is what every surface reads, and re-reading it is how the caller learns
+  the refusal cleared. Trusting the bind response would be trusting a second copy
+  of the verdict.
+- `ReviewImportedProductScreen` asks *"Which variant are you selling?"*, in two
+  steps — pick, then confirm — because `link_source` accepts NULL→a variant and
+  answers `binding_conflict` to variant A→variant B. A single tap would make a
+  mis-tap permanent. Once bound the screen *states* the answer instead of
+  offering a chooser that cannot change it.
+- The confirm path merges the server's `supplier`, `variants` and `validation`
+  rather than calling `adopt`, so a merchant who retitled the product and then
+  answered the refusal does not watch their typing vanish. And it re-reads the
+  verdict rather than assuming it: binding succeeding is not the same claim as
+  the draft being publishable.
+
+Two mechanisms now hold the enumeration together, because it exists in two
+languages and no compiler spans them. `PROBLEM_COPY` is a total
+`Record<PublishProblem, …>`, so a code added to the union without copy fails the
+typecheck — proved by injecting one, which produced `TS2741`, rather than
+asserted. And `tests/dropshipping/test_publish_problem_copy.py` crosses the
+boundary the compiler cannot: it enumerates the backend's codes from
+`_validate.__code__.co_names` — the global names that function actually reads,
+so a code declared and never appended does not count — and checks the mobile
+list and the copy table name exactly those. It also asserts that the remedy has
+a caller, because that is the half of this seam a copy check would have missed.
+
+### The fixture that was measuring a different program
+
+`DropshippingScreens.test.tsx` had `fulfillmentMode: "SANDBOX"` in its draft
+fixture — an environment mode in a fulfilment-mode field, a value
+`marketplace_product_sources` cannot hold; `MODE_STOCKED` and `MODE_DROPSHIP`
+are the two. So all eighty-five tests built on it were exercising a listing that
+is neither dropshipped nor stocked, which is exactly why none of them noticed
+that a dropship listing needs a binding. The fourteenth corollary, second
+sighting, three seams later.
+
+### What the battery measured
+
+`scripts/mutation_dropship_variant_binding.py`, 18 real mutations plus one
+inverted rename and a no-op control, run against four checks: the cross-language
+copy pin, the backend publish suite, the screen suite, and `tsc --noEmit`. Four
+rather than one because two of the new defences are typecheck-only and two are
+cross-language, and the report names which check caught each mutation — the
+distribution is the argument for all four existing: mutations 1–4 and 15 were
+caught only by the copy pin, 5–7 and 16–17 only by the publish suite, and 8–14
+and 18 only by the screen suite.
+
+Two survived the first run, and both were worth the run:
+
+- Clearing the merchant's pick in the `catch` of a failed bind. The test asserted
+  the error text and that the chooser was still on screen; it did not assert that
+  the pick survived. So *"try again"* appeared beside a button that had gone
+  disabled again — error with no way back to the action, the same shape as
+  error-and-empty. The test now asserts the radio is still checked and the
+  confirm button still enabled.
+- Editing the confirm button's explicit `accessibilityState={{ disabled: … }}`
+  changed nothing observable, because `Pressable` derives that state from the
+  `disabled` prop and overrides whatever it is handed. The mutation was aimed at
+  the copy that cannot win. That is the tenth corollary in miniature — two copies
+  of one derivation, where the framework guarantees which one loses — so the
+  redundant copy was deleted rather than tested, and the mutation re-aimed at
+  `disabled`, where it is caught.
+
+---
+
 ## What kept coming back
 
-Sixteen defects in this chain, sixteen different subsystems, one shape: **a
+Seventeen defects in this chain, seventeen different subsystems, one shape: **a
 number was asserted rather than measured.**
 
 - `publish()` never wrote `price_label`, and the publish test asserted `status`
@@ -1821,6 +1963,14 @@ number was asserted rather than measured.**
   `listing: { delivery_type: "pickup" }`, and the cross-view test that should
   have caught the disagreement passed because both perspectives were broken in
   the same direction.
+- The publish gate asserted, in a comment defending itself, that the ordinary
+  import satisfies `SUPPLIER_VARIANT_UNBOUND` without the merchant doing
+  anything. Every clause of that sentence was about a screen in another language,
+  and the screen does the opposite: it pre-selects every in-stock variant, so the
+  ordinary path is the refused one. The code was also missing from the mobile
+  copy of the problem enumeration, so the refusal reached the merchant as its own
+  identifier — and the only operation that could have answered it had no caller
+  on any surface.
 
 In all of them the suite was green, and in all of them the green was about the
 halves rather than the seam. Where a claim spans two components, this document now
@@ -2022,3 +2172,37 @@ This is its necessary companion — vary the input across the axis the two reade
 are supposed to be reading, and separately pin that they still differ where they
 must. Otherwise the cheapest way to satisfy the agreement is to delete one of the
 readers, which is a fix the suite will accept.
+
+The sixteenth is about where a claim is written rather than what it claims:
+**a claim about a screen, asserted in a backend comment, is not a measurement of
+the screen.** The guard that blocked every multi-variant import was defended by
+a comment saying the ordinary path satisfies it — a sentence about
+`SupplierProductScreen.defaultSelection`, written in Python, in a file that
+cannot import it, by someone who did not open it. It was false in the only
+direction that mattered. The tell is grammatical: **a comment whose subject lives
+in another language is a hypothesis, and the fix is a probe, not a rewording.**
+Twelve lines of script running the real importer against the real evaluator
+settled it in one run, and the comment there now quotes that output.
+
+Its sub-tell is the eleventh corollary crossing a language boundary, where the
+remedy the eleventh offers — prefer the check that walks — is unavailable:
+**a second copy of an enumeration in another language has no compiler spanning
+it, and the gap surfaces as a raw identifier on a user's screen.** Inside
+TypeScript the fix is a total `Record` over the union, which the compiler can
+walk. Across Python and TypeScript nothing can, so the check has to be written by
+hand, and the honest way to enumerate the Python side is
+`_validate.__code__.co_names` — the names the function actually reads — not a
+grep of the declarations above it. Reading the *other* language as source text is
+acceptable here for the same reason it was unacceptable in the thirteenth: what
+is read is a literal array and the keys of a literal object. Data, not logic. A
+test that read a function to decide what it does would be satisfied by whatever
+that function said.
+
+And its second sub-tell folds the seventh and twelfth into one sentence, because
+this seam had both at once: **a guard whose only remedy has zero callers stops
+the user exactly as hard as no guard — they just get a code instead of a broken
+order.** `bind-product` existed, was correct, was tested on the server, and was
+reachable from nothing. The seventh corollary says to grep for the writers of the
+column a guard reads; the addition here is to then grep for the *callers of those
+writers on a surface a user can touch*, because a writer reachable only from
+pytest is not reachable.

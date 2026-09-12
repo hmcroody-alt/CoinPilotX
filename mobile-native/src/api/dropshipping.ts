@@ -290,7 +290,22 @@ export const IMPORT_OUTCOMES = [
 ] as const;
 export type ImportOutcome = (typeof IMPORT_OUTCOMES)[number];
 
-/** Why a draft cannot be published yet. Every reason, not the first one. */
+/**
+ * Why a draft cannot be published yet. Every reason, not the first one.
+ *
+ * This is the second copy of an enumeration whose first copy is
+ * `services/business_os/suppliers/drafts.py`. The two are in different
+ * languages, so no compiler spans them, and they drifted: the backend grew
+ * `VARIANT_PRICE_SPREAD`, `PRICE_ABOVE_CHECKOUT_LIMIT` and
+ * `SUPPLIER_VARIANT_UNBOUND` and this list did not. A problem missing from here
+ * is missing from `PROBLEM_COPY` too, and `ReviewImportedProductScreen` renders
+ * an unknown code verbatim — so the merchant whose default import could not be
+ * published read the words "SUPPLIER_VARIANT_UNBOUND" and nothing else.
+ *
+ * `tests/dropshipping/test_publish_problem_copy.py` pins this list against the
+ * Python one, because a list only the backend can grow needs a check on the
+ * side that cannot see it growing.
+ */
 export const PUBLISH_PROBLEMS = [
   "MISSING_TITLE",
   "MISSING_CATEGORY",
@@ -301,7 +316,10 @@ export const PUBLISH_PROBLEMS = [
   "UNKNOWN_INVENTORY",
   "SUPPLIER_DISCONNECTED",
   "PROVIDER_PRODUCT_UNAVAILABLE",
-  "RESTRICTED_PRODUCT"
+  "RESTRICTED_PRODUCT",
+  "VARIANT_PRICE_SPREAD",
+  "PRICE_ABOVE_CHECKOUT_LIMIT",
+  "SUPPLIER_VARIANT_UNBOUND"
 ] as const;
 export type PublishProblem = (typeof PUBLISH_PROBLEMS)[number];
 
@@ -1020,6 +1038,23 @@ export type DraftSupplier = {
   supplierCostCurrency: string | null;
   externalSku: string | null;
   /**
+   * The supplier product this listing was imported from — the `pid` half of a
+   * binding. `null` should not happen for a dropship draft; treat it as "cannot
+   * bind from here" rather than substituting anything.
+   */
+  providerProductId: string | null;
+  /**
+   * The one supplier variant an order for this listing is placed for, or `null`
+   * while nothing is bound.
+   *
+   * A dropship listing does not sell "its variants". The buyer's checkout has no
+   * variant selector, so it sells exactly this one and the rest of the variant
+   * list is catalogue. `null` is why `SUPPLIER_VARIANT_UNBOUND` refuses
+   * publication, and it is the ordinary outcome of importing a product with more
+   * than one in-stock variant, which is what the supplier screen pre-selects.
+   */
+  providerVariantId: string | null;
+  /**
    * Fields the merchant has edited. A provider sync must not overwrite these —
    * this list is the mechanism, not a record of one.
    */
@@ -1088,6 +1123,8 @@ function normalizeDraft(raw: Record<string, unknown>): ImportedDraft {
       supplierCostCents: centsOrNull(supplier.supplier_cost_cents),
       supplierCostCurrency: textOrNull(supplier.supplier_cost_currency),
       externalSku: textOrNull(supplier.external_sku),
+      providerProductId: textOrNull(supplier.provider_product_id),
+      providerVariantId: textOrNull(supplier.provider_variant_id),
       merchantOwnedFields: list<unknown>(supplier.merchant_owned_fields).map(text).filter(Boolean)
     },
     pricingRule: normalizePricingRule(raw.pricing_rule),
@@ -1204,6 +1241,41 @@ export async function updateImportedProduct(
     { method: "PATCH", body: scopeBody(scope, { fields: editsToFields(edits) }) }
   );
   return normalizeDraft(response);
+}
+
+/**
+ * Name the one supplier variant this listing sells.
+ *
+ * The answer to `SUPPLIER_VARIANT_UNBOUND`. Without this call that problem code
+ * was a refusal nothing in the app could satisfy: `bind-product` existed on the
+ * server and had no caller on any screen, so a merchant whose import selected
+ * more than one in-stock variant — the supplier screen's own default — held a
+ * draft that could never be published.
+ *
+ * Binding is close to one-way. `marketplace_variants.link_source` accepts NULL →
+ * a variant and refuses variant A → variant B with `binding_conflict`, because a
+ * published listing that silently changed what it ships would keep selling a
+ * page describing the old product. So the caller must present this as a choice
+ * being made, not a setting being adjusted.
+ *
+ * Returns nothing, for the same reason `bindConnectionShop` does: the draft is
+ * what every surface reads, and re-reading it is how the caller learns that
+ * `SUPPLIER_VARIANT_UNBOUND` has cleared. Trusting this response instead would
+ * be trusting a second copy of the verdict.
+ */
+export async function bindDraftVariant(
+  scope: DropshippingScope,
+  connectionId: string,
+  input: { listingId: number | string; providerProductId: string; providerVariantId: string }
+): Promise<void> {
+  await pulseApi(`${SUPPLIERS_BASE}/connections/${encodeURIComponent(connectionId)}/bind-product`, {
+    method: "POST",
+    body: scopeBody(scope, {
+      canonical_product_id: String(input.listingId),
+      pid: input.providerProductId,
+      vid: input.providerVariantId
+    })
+  });
 }
 
 /** Dry-run the publish gate. Changes nothing. */

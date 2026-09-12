@@ -57,6 +57,7 @@ import {
   connectionNeedsAttention,
   listConnectionShops,
   getImportCart,
+  getImportedProduct,
   getSupplierProduct,
   importNeedsReview,
   importSelected,
@@ -772,10 +773,34 @@ describe("the vocabularies are closed and complete", () => {
     ]);
   });
 
-  it("covers every publish problem, so none is silently swallowed", () => {
-    expect(PUBLISH_PROBLEMS).toHaveLength(10);
-    expect([...PUBLISH_PROBLEMS]).toContain("NEGATIVE_MARGIN");
-    expect([...PUBLISH_PROBLEMS]).toContain("UNKNOWN_INVENTORY");
+  // This used to be `expect(PUBLISH_PROBLEMS).toHaveLength(10)` under the title
+  // "covers every publish problem". A count cannot make that claim: the list was
+  // ten long and three codes short, so the assertion passed for the whole time
+  // the defect existed — and then failed on the fix, reporting the repair as the
+  // regression. The claim it was reaching for spans Python and TypeScript and
+  // cannot be made from inside this file at all; it lives in
+  // `tests/dropshipping/test_publish_problem_copy.py`, which reads the codes
+  // `drafts._validate` can actually emit and checks this list names each one.
+  //
+  // What is left here are the two things this file can honestly measure.
+  it("names each publish problem once, so no entry is dead", () => {
+    // A duplicate is not cosmetic: `PROBLEM_COPY` is keyed by the union, so the
+    // second entry can never be reached and will be maintained anyway.
+    expect([...new Set(PUBLISH_PROBLEMS)]).toHaveLength(PUBLISH_PROBLEMS.length);
+  });
+
+  it("passes a problem it has never heard of through rather than swallowing it", async () => {
+    // The real "none is silently swallowed" claim, and the reason the screen
+    // keeps a runtime fallback beside a total `Record`: a server ahead of this
+    // build can name a code the union does not have. Dropping it here would
+    // leave the merchant a refusal with an empty reason list, which reads as a
+    // bug in the button rather than as something to fix about the product.
+    mockPulseApi.mockResolvedValue({
+      listing_id: 1,
+      validation: { publishable: false, problems: ["A_CODE_FROM_A_NEWER_SERVER"] }
+    });
+    const draft = await getImportedProduct(SCOPE, "c1", 1);
+    expect(draft.validation.problems).toEqual(["A_CODE_FROM_A_NEWER_SERVER"]);
   });
 
   it("counts the surfaces this app has no data for", () => {
