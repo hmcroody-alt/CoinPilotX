@@ -50,35 +50,61 @@ import unicodedata
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Sequence
 
+from services import undx_capabilities
+
 logger = logging.getLogger(__name__)
 
 # --------------------------------------------------------------------------- provider
 
+#: The capability entry this module is the adapter for. Declared once and reused
+#: below so the endpoint, the default model, the credential name and the prices all
+#: come from the same row of the same table — before this, four separate literals in
+#: this file each independently agreed with that row, which is three more chances to
+#: drift than the code needs.
+_CAPABILITY = undx_capabilities.provider_for(
+    undx_capabilities.CALL_KIND_EMBEDDING, "perplexity"
+)
+
 #: Verified against Perplexity's official embeddings documentation. Kept as a module
 #: constant rather than inlined so that the one place a base URL could be pointed at a
 #: proxy is visible.
-DEFAULT_ENDPOINT = "https://api.perplexity.ai/v1/embeddings"
+DEFAULT_ENDPOINT = _CAPABILITY.endpoint
 
 #: The model the owner authorised. Substituting another model silently would change
 #: both the cost per token and the vector space — vectors from two models are not
 #: comparable, so a silent substitution corrupts an index without failing anything.
 #: Selection is configurable through ``UNDX_EMBEDDING_MODEL``; it is not hardcoded at
 #: call sites, and the model name is part of every cache key.
-DEFAULT_MODEL = "pplx-embed-v1-0.6b"
+DEFAULT_MODEL = _CAPABILITY.default_model
 
-API_KEY_ENV = "PERPLEXITY_API_KEY"
+API_KEY_ENV = _CAPABILITY.key_envs[0]
 
 #: Published per-million-token prices, read from Perplexity's official pricing
 #: documentation on 2026-08-30. Used only for local cost *accounting* — this module
 #: never asserts these are current, and :func:`estimated_cost_usd` labels its output as
 #: an estimate. A model absent from this table accounts at the most expensive known
 #: rate rather than at zero, so an unrecognised model cannot look free.
-PRICE_PER_MILLION_TOKENS_USD: dict[str, float] = {
-    "pplx-embed-v1-0.6b": 0.004,
-    "pplx-embed-v1-4b": 0.03,
-    "pplx-embed-context-v1-0.6b": 0.008,
-    "pplx-embed-context-v1-4b": 0.05,
-}
+#:
+#: Sourced from `services.undx_capabilities` rather than written out here, because a
+#: price table that exists in two modules is a price table that will disagree with
+#: itself: §20-27 asks for the duplicate model defaults in this repository to be
+#: removed, and a second copy of these four figures would have been a new one. The
+#: capability table is the declared authority for what non-chat AI costs; this module
+#: stays the authority on how *this* endpoint is called. The name is kept because
+#: `scripts/undx_semantic_live_acceptance.py` reads it.
+PRICE_PER_MILLION_TOKENS_USD: dict[str, float] = dict(_CAPABILITY.prices)
+
+#: The rate charged to a model this table does not know, and the one place in the
+#: non-chat accounting where an unknown price is deliberately rounded **up**.
+#:
+#: That is the opposite of what `undx_capabilities.price_micro_usd` does, and both are
+#: correct, because they answer different questions. Here the unknown is used to
+#: decide whether to *block* a call against a budget, so assuming the worst is the
+#: safe direction — guessing low would let an unpriced model spend past the ceiling.
+#: In the ledger the same unknown is used to *report* what was spent, where assuming
+#: the worst would invent a cost nobody was charged; that path returns `None` and the
+#: call is counted under `uncosted_calls` instead. Rounding an unknown in the wrong
+#: direction for the question is how a budget either fails open or reports fiction.
 _UNKNOWN_MODEL_PRICE_USD = max(PRICE_PER_MILLION_TOKENS_USD.values())
 
 #: Provider request bounds, from the official documentation: at most 512 inputs per
