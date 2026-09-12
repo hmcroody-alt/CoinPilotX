@@ -24,9 +24,16 @@ from pathlib import Path
 
 from services import undx_call_guard
 
-# Same reasoning as `alert_worker.py`: no `bot`, no `undx_router`, so no guard
-# unless it is installed here. This process shells out to ffmpeg and talks to R2,
-# and has no business reaching a chat provider at all.
+# Same reasoning as `alert_worker.py`, which is ordering rather than absence: this
+# module *does* import `bot`, at module scope, 29 lines below (inside the `try` further
+# down). Installing here first means the guard is live for whatever `bot` does at its
+# own import time — module-scope work that `bot`'s own `install()` cannot cover, because
+# that call runs partway through the same import. `bot`'s call then no-ops on
+# `_installed`. An earlier version of this comment said "no `bot`, no `undx_router`",
+# which the import below contradicts outright.
+#
+# This process shells out to ffmpeg and talks to R2, and has no business reaching a chat
+# provider at all.
 undx_call_guard.install()
 
 print("CoinPilotX media engine boot starting", flush=True)

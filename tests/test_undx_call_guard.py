@@ -190,6 +190,26 @@ class RoutedCallTest(GuardTestCase):
             self.assertEqual(adapters,
                              frozenset({os.path.realpath("/tmp/vendor/undx_router.py")}))
 
+    def test_a_decoy_file_named_like_the_router_does_not_launder_a_call(self):
+        """The test above checks `_adapter_files`. This checks the comparison.
+
+        Those are two different places, and the mutation that swaps `_routed`'s
+        `os.path.realpath(...) in adapters` for a basename comparison touches only
+        the second — so it survived the test above completely, which asserts on the
+        set's *contents* and never walks a stack.
+
+        `compile` with an invented filename is the cheapest way to obtain a frame
+        whose `co_filename` is a path that does not exist, which is exactly the
+        adversary: a file named `undx_router.py` somewhere it has no business
+        being. The call must still be counted. Under a basename comparison it is
+        laundered into looking routed, and the metric §43 exists to hold at zero
+        goes quiet for the one reason nobody would check.
+        """
+        decoy = "/tmp/vendor/undx_router.py"
+        source = compile("observe(url)", decoy, "exec")
+        exec(source, {"observe": guard.observe, "url": CHAT_URL})
+        self.assertEqual(self.chat(), 1)
+
 
 class PostureTest(GuardTestCase):
 
@@ -246,6 +266,33 @@ class PostureTest(GuardTestCase):
         self.send(CHAT_URL, json={})
         self.assertEqual(self.chat(), 1)
 
+    def test_the_flag_is_not_the_only_thing_stopping_a_double_wrap(self):
+        """`_wrap` refuses to re-wrap even when `_installed` says nothing is.
+
+        The test above exercises the real path — `alert_worker.py` installs at
+        import and then `main()` does `import bot`, which installs again in the
+        same interpreter — but that path returns at `install()`'s `_installed`
+        check, so the second line of defence inside `_wrap` never runs, and a
+        mutation deleting it survived. Two guards in series with the test reaching
+        only the outer one: the same shape as the Phase 8 finding where a deleted
+        `if record:` was never reached because an empty dict was rejected one guard
+        earlier.
+
+        The path where the flag is *not* what stands in the way is `uninstall()`
+        clearing it while a wrapper is still live. Wrapping a wrapper would count
+        every call to that verb twice — the defect the re-entry guard exists to
+        prevent, arriving through a different door.
+        """
+        guard.install()
+        original = requests.post.__wrapped__
+        guard._installed = False      # only the flag, deliberately not `_original`
+        self.addCleanup(setattr, guard, "_installed", True)
+        guard.install()
+        self.assertIs(requests.post.__wrapped__, original,
+                      "a guard was wrapped in another guard")
+        self.send(CHAT_URL, json={})
+        self.assertEqual(self.chat(), 1)
+
 
 class SnapshotTest(GuardTestCase):
 
@@ -265,6 +312,21 @@ class SnapshotTest(GuardTestCase):
         of the surface an operator actually looks at."""
         self.assertTrue(guard.snapshot()["installed"])
 
+    def test_installed_is_read_from_the_state_and_not_asserted(self):
+        """The negative half. `assertTrue(snapshot()["installed"])` passes against a
+        hardcoded `True`, which is precisely the claim this field exists to refute —
+        a guard reporting that it is installed on the strength of nothing.
+
+        So the field has to be observed saying `False` at least once, and the only
+        honest way to arrange that is to actually uninstall. Restored immediately,
+        because leaving this process unwrapped would make every later test in the
+        file report an unearned zero.
+        """
+        guard.uninstall()
+        self.addCleanup(guard.install)
+        self.assertFalse(guard.snapshot()["installed"])
+        self.assertIsNone(getattr(requests.post, "__wrapped__", None))
+
     def test_the_fabric_is_not_ok_while_a_chat_call_is_bypassing_the_router(self):
         from services import undx_fabric_health
 
@@ -273,6 +335,32 @@ class SnapshotTest(GuardTestCase):
         self.assertFalse(whole["ok"])
         self.assertFalse(whole["routing"]["ok"])
         self.assertEqual(whole["routing"]["counters"][guard.UNROUTED_CHAT], 1)
+
+    def test_routing_is_the_reason_the_fabric_is_not_ok_and_not_the_weather(self):
+        """The test above asserts `whole["ok"]` is False and proves nothing by it.
+
+        `snapshot()` computes `ok` from five conjuncts, and one of them is
+        `bool(reachable)` — no provider has a key in a test process, so `ok` is
+        already False before the guard is consulted. Dropping the routing conjunct
+        entirely left that assertion green. It is the same unearned zero this file
+        was written to guard against, committed one level up, in the assertion
+        rather than in the counter.
+
+        The fix is the same as everywhere else here: show the value can be True, and
+        then change exactly one thing. The other three sections are mocked healthy
+        so that routing is the only remaining variable.
+        """
+        from services import undx_fabric_health as fabric
+
+        healthy = {"openai": {"enabled": True, "key_present": True,
+                              "actionable": False}}
+        with mock.patch.object(fabric, "_providers", lambda: healthy), \
+             mock.patch.object(fabric, "_cost", lambda: {"ok": True}), \
+             mock.patch.object(fabric, "_drift", lambda: {"ok": True}):
+            self.assertTrue(fabric.snapshot()["ok"],
+                            "ok is unreachable, so asserting it is False proves nothing")
+            self.send(CHAT_URL, json={})
+            self.assertFalse(fabric.snapshot()["ok"])
 
 
 if __name__ == "__main__":

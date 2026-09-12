@@ -19,10 +19,16 @@ from services import pulse_briefings
 from services import undx_call_guard
 from services.sentinel import runtime as sentinel_runtime
 
-# This worker imports neither `bot` nor `undx_router`, so nothing else installs the
-# guard in this interpreter. It is here precisely because there is no reason for
-# this process to call a chat provider: if the counter ever moves, that is the
-# finding.
+# The guard has to be live *before* `bot` is imported, and `main()` imports `bot`
+# lazily (see the `import bot` inside it below). Without this line the guard would not
+# exist during module import at all and would appear only once `main()` had run. The
+# reason is ordering, not absence — an earlier version of this comment claimed this
+# process "imports neither `bot` nor `undx_router`", which the lazy import contradicts.
+# Stating it as ordering also survives someone later hoisting that import to module
+# scope, which the absence claim did not.
+#
+# It is here precisely because there is no reason for this process to call a chat
+# provider: if the counter ever moves, that is the finding.
 undx_call_guard.install()
 
 

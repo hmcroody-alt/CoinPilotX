@@ -447,6 +447,77 @@ class SourceScanTest(unittest.TestCase):
         self.assertEqual([f["code"] for f in findings], ["provider_sdk_import"])
         self.assertEqual(findings[0]["severity"], drift.CRITICAL)
 
+    def test_an_sdk_reached_through_a_submodule_is_still_an_sdk(self):
+        """`import openai.types` names a module that is not in `_PROVIDER_SDKS`.
+
+        The list holds roots, so the check is `name in _PROVIDER_SDKS or root in
+        _PROVIDER_SDKS`, and the test above only exercises the first half — its
+        fixture imports plain `openai`, which matches by exact name. A mutation
+        deleting the `root` branch therefore survived it. Importing a submodule is
+        the ordinary way an SDK actually arrives (`from anthropic.types import
+        Message`), so the half that was untested is the half that matters.
+        """
+        findings = self._scan(**{"legacy.py": '''
+            def client():
+                import anthropic.types
+                from openai.lib import azure
+                return anthropic.types, azure
+        '''})
+        self.assertEqual([f["code"] for f in findings],
+                         ["provider_sdk_import", "provider_sdk_import"])
+        self.assertTrue(all(f["severity"] == drift.CRITICAL for f in findings))
+
+    def test_a_url_that_reaches_the_wire_indirectly_is_still_a_call(self):
+        """Two hops, because one hop is resolved by name and proves less.
+
+        `_provider_urls_in` marks a literal as `in_request` when it sits inside a
+        request call or in a variable handed straight to one. When the URL travels
+        any further than that — through a helper, a dict, a class attribute — that
+        one-hop resolution loses it, and the only remaining reason to call it a
+        call is that the module performs HTTP at all (`_performs_http`).
+
+        The embeddings test above cannot see this: its fixture passes the constant
+        directly to `requests.post`, so `in_request` is already true and `sends`
+        never decides anything. Replacing `_performs_http(tree)` with `False`
+        survived it. Here `sends` is the only thing standing between a declaration
+        and a call, which is the case the real
+        `services/pulse_ai/automated_image_pipeline.py` is closer to than the
+        fixture was.
+        """
+        findings = self._scan(**{"indirect.py": '''
+            import requests
+            ENDPOINT = "https://api.perplexity.ai/v1/embeddings"
+            def _target():
+                return ENDPOINT
+            def embed(rows):
+                return requests.post(_target(), json={"input": rows}, timeout=8)
+        '''})
+        self.assertEqual([f["code"] for f in findings], ["unmetered_provider_call"])
+
+    def test_a_dict_lookup_named_get_does_not_make_a_module_an_http_client(self):
+        """`_is_http_call` requires a verb *and* a client, and this is the `and`.
+
+        `config.get("timeout")` ends in a verb from `_HTTP_VERBS`. If the client
+        requirement is dropped, every module that reads a dict becomes a module
+        that sends requests — and every provider URL constant in one of them turns
+        from a declaration into a CRITICAL unrouted call. That is not a
+        hypothetical shape: `services/undx_brain/config.py` is a flag catalog full
+        of `.get` calls and a vendor endpoint, and it is the exact file whose
+        finding this phase had to correct.
+
+        `test_a_bare_chat_path_nobody_sends_is_not_a_call` could not catch the
+        mutation because its fixture contains no attribute call at all. The
+        receiver is the thing under test, so the fixture has to have one.
+        """
+        findings = self._scan(**{"catalog.py": '''
+            CONFIG = {"timeout": 8}
+            ENDPOINT = "https://api.openai.com/v1/chat/completions"
+            def timeout():
+                return CONFIG.get("timeout")
+        '''})
+        self.assertEqual([f["code"] for f in findings], ["provider_url_declared"])
+        self.assertEqual(findings[0]["severity"], drift.WARNING)
+
     def test_the_adapter_allowlist_is_a_path_not_a_name(self):
         """§19 asks for an explicit allowlist. The entry reads `undx_router.py`
         and was compared against the bare filename, so every file in the tree

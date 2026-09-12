@@ -517,7 +517,7 @@ records it empty rather than manufacturing a call site to fill the row.
 
 ## 4. RESEARCH — paid API spend nobody classified as AI
 
-**Finding R-a — five unmetered paid search providers.**
+**Finding R-a — five unmetered search providers, four of them paid.**
 `services/pulse_ai_web_search.py` reaches five external search APIs, four of which bill per
 query:
 
@@ -539,6 +539,33 @@ event logging is not cost accounting: the table records that Tavily was called a
 returned 200, never that the call cost money. The one comment in the module that mentions
 budget (`:359`, "budget spent to say nothing") is about rendering, not spend. This is the
 clearest instance of the mission's own aphorism — observability is not metering.
+
+**Finding R-b — `provider_status()["ok"]` is the literal `True` (`:138`).** A function
+whose whole purpose is to answer whether research is ready cannot answer no. Four of the
+five providers are paid and each can be absent, revoked or rate-limited, and `ok` says the
+same word in every one of those states as when all five are healthy.
+
+The narrow defence is that DuckDuckGo is keyless, so "at least one provider is available"
+is always true and `ok` is never *wrong*. That is what makes this worth recording rather
+than only fixing: it is the third appearance in this mission of a field that can only ever
+say `True` — after `"installed": True` hardcoded in the guard's health surface, and
+`assertFalse(whole["ok"])` in the fabric test passing because `bool(reachable)` was already
+falsy for an unrelated reason. **A field that can never say `False` is not evidence, even
+when the thing it asserts happens to be true.** And key presence is configuration, not
+health: `provider_status()` makes no request, so it cannot know DuckDuckGo is reachable.
+
+Two things this finding deliberately does *not* say. `:144`'s
+`{"provider": "duckduckgo_instant", "configured": True}` **is correct** — that endpoint is
+keyless, so a literal is the honest value and consulting an invented `DDG_API_KEY` would
+report `False` forever for a provider that works. And `ok` should not simply be inverted
+into something that reads `False` on a clean install; what the surface is missing is the
+distinction between *only the free fallback* and *paid providers configured*, which are
+very different answers to "is research ready" and currently share one word.
+
+*(An earlier draft of this section accused `:144` instead of `:138`. Recorded because that
+would have put a false claim about a correct line three pages from the section correcting a
+false claim about the workers — the same error, in the same phase, from the same cause:
+trusting a one-line note about a file over the file.)*
 
 ## 5. Not a call site (checked and cleared)
 
@@ -639,12 +666,217 @@ meant to prove.
 | NON_CHAT_IMAGE | 1 | `urllib`, not `requests` |
 | NON_CHAT_EMBEDDING | 1 | 2 callers, 1 endpoint |
 | NON_CHAT_TRANSCRIPTION | 0 | category genuinely empty |
-| RESEARCH (search) | 5 | previously uncounted as AI spend |
+| RESEARCH (search) | 5 | previously uncounted as AI spend; 4 of the 5 are paid |
 | ADMIN_TEST_ONLY | 1 | live acceptance script, spend-gated |
 | DEAD_CODE | 1 | `generate_task_response` |
 | Pending seam | **1 → 0** | command-center stub, now routed (U10) |
 | UNKNOWN | **0** | every credential read is accounted for |
 
 Net correction to the previous census: **+1** unrouted chat call (composed URL), **+5**
-unmetered research calls, **−1** non-chat call site (two of three were declarations), and
-one dead function whose audit passes by substring.
+unmetered research calls (**4** of them paid), **−1** non-chat call site (two of three were
+declarations), and one dead function whose audit passes by substring.
+
+## 7. What the detector could not see, and what now counts the calls that run
+
+Sections 1–6 were produced by a detector, so the honest question about the count in them is
+not "is it nine or ten" but "what shape of call would this detector miss entirely". Four
+answers, each confirmed against the real tree before any code changed.
+
+**A host was required before a path counted.** `_provider_urls_in` consulted `_CHAT_PATHS`
+only to pick a *severity* after `_PROVIDER_HOSTS` had already matched, so
+`f"{base}/chat/completions"` — where `base` is an environment variable — was invisible. §12
+names composed and env-pointable URLs explicitly, and this repo has really had that shape:
+`tests/test_pulse_ai_provider_reconciliation.py:241` pins it, composed from
+`UNDX_CANDIDATE_BASE_URL`. The host is the part that is missing in exactly the case the
+constraint is about, so keying the whole check on the host inverted it. A chat path inside a
+request call is now CRITICAL on its own.
+
+**Declaring an endpoint was reported as calling one.** Two of the three findings the scanner
+reported were false *in their wording*. `services/undx_brain/config.py:710` is a URL
+constant in a module that performs no HTTP at all, and it was being told it "calls the vendor
+directly … outside the circuit breaker" with the remediation "meter the call" — advice that
+cannot be followed at a constant. The finding was reclassified to `provider_url_declared`
+(WARNING) rather than suppressed, because §12 does care about an env-pointable base URL; what
+was wrong was the claim about execution, not the attention. This is the sixth appearance in
+this mission of declaration being mistaken for execution, and the first where the thing
+mistaken was a constant.
+
+**The SDK prohibition in §11 had no detector.** There was nothing looking for
+`import openai`. It is vacuously satisfied today — zero provider SDKs are in the tree or in
+`requirements.txt`, every call being hand-rolled HTTP — which is precisely why nothing would
+have noticed the first one. `_sdk_usage_in` walks with `ast.walk`, so an import inside a
+function body counts; a lazy import is still an import.
+
+**The adapter allowlist was keyed on a filename.** `os.path.basename(path) == "undx_router.py"`
+means any new file anywhere in the repo called `undx_router.py` inherits permission to call
+providers directly. §19 asks for a small explicit allowlist and forbids a wildcard one, and a
+name-keyed entry is a wildcard spelled specifically. Now a repo-relative path.
+
+### The metric (§42–43)
+
+A structural gate is a statement about source text, and §43 asks for a runtime guard rather
+than tests alone. `services/undx_call_guard.py` wraps this interpreter's
+`urllib.request.urlopen`, `requests.{post,get,put,patch,delete,head,request}` and
+`requests.sessions.Session.request`, classifies the destination, walks the stack for an
+adapter frame, and increments `undx_unrouted_provider_calls_total` when a provider URL is
+reached from outside one. It imports `_CHAT_PATHS` and `_PROVIDER_HOSTS` from the scanner so
+there is one list of hosts in the repo and not two that can drift apart.
+
+Four facts about it that were not obvious in advance:
+
+- **It had to be installed four times, not once — and only one of those four is about
+  coverage.** The guard patches module attributes in the interpreter that installs it. Five
+  of the six Procfile processes reach `bot`: `web` *is* `bot` (`gunicorn bot:app`),
+  `email_worker` (:13), `ads_worker` (:29) and `media_worker` (:59) import it at module
+  scope, and `alert_worker` imports it lazily inside `main()` (:63). Only `undx_worker`
+  never imports it, importing `undx_router` alone — so installing in `bot.py` alone would
+  have left exactly that one process, the one that makes the most provider calls,
+  uncovered, holding the counter at zero for the least interesting reason available. The
+  other two extra installs buy **ordering**, not coverage: `media_worker` installs at :30,
+  so the guard is live for whatever `bot` does at import time at :59 — module-scope work
+  that `bot`'s own `install()` cannot cover, because it runs partway through that same
+  import — and `bot`'s call then no-ops on `_installed`. `alert_worker`'s install means the
+  guard exists during module import at all, rather than appearing only once `main()` has
+  run. Both are worth having, and the honest reason is that the guard must be live *before*
+  `bot` is imported, which also survives someone later moving that import. Claiming all
+  three bought coverage would overstate by two. Install sites: `bot.py`, `undx_worker.py`,
+  `alert_worker.py`, `media_worker.py`.
+- **The URL is never logged.** Gemini carries the API key in a query parameter, so a witness
+  record containing the URL would write a credential to the logs in the course of reporting a
+  governance breach.
+- **`requests.post` and `Session.request` are both wrapped and both run** for a single
+  outbound call, so a `threading.local()` re-entry guard stops one call counting twice.
+  Whether the number this metric exists to hold at zero moves must not depend on which of
+  two equivalent spellings the caller chose.
+- **Counters are split by whether zero is achievable.** `undx_unrouted_provider_calls_total`
+  is watched for becoming non-zero. A count of *all* provider calls never can be zero, so it
+  cannot be watched the same way and is kept separate.
+
+### Why the zero is believable
+
+A guard that never installed, a classifier that never matched, and a wrapper around a
+function nobody calls all report zero. So every zero assertion in
+`tests/test_undx_call_guard.py` is paired with a one-assertion differing by exactly one
+neutered thing. The decisive pair drives the real `undx_router` against a mocked
+`Session.send`:
+
+- `test_a_routed_call_is_not_counted` — the call succeeds and the counter is 0.
+- `test_and_that_zero_is_because_of_the_frame_walk` — the *same* call, with only
+  `guard._routed` forced to `False`, still succeeds and the counter is 1.
+
+The first test alone would pass identically if the guard had never been installed. Together
+they establish that the zero is produced by the frame walk rather than by absence.
+
+`scripts/undx_call_guard_mutation_check.py` (39 mutations across the scanner, the guard and
+the health surface) runs both test files together, so a mutation cannot survive because the
+check that would have caught it lives in the other file. Four mutations are the opposite
+shape — prose additions that name every SDK and every host in comments and docstrings, which
+**must stay GREEN**. Those are what keep an AST gate from decaying into a word filter, and
+they are only meaningful because a comment is invisible to `ast.parse` while a docstring is an
+`ast.Constant`.
+
+### What the scanner now reports on the real tree
+
+Three findings, zero CRITICAL: one `provider_url_declared` (the brain config constant) and
+two `unmetered_provider_call` — the image pipeline
+(`services/pulse_ai/automated_image_pipeline.py:168`, `urllib.request.Request`) and
+embeddings (`services/undx_embedding_service.py:560`, via `configured_endpoint()`). Both are
+real, both are non-chat, and both are Phase 10–12's subject under §20–27's rule that there is
+no unclassified AI spend. They are reported honestly now, which is the change: previously one
+of them was a declaration wearing a call's finding text.
+
+"Unmetered" is the scanner's word for *does not pass through the ledger*, and that is the
+claim §20–27 is about. It is **not** the same claim as "nobody counted it", and reading the
+two modules shows why the distinction has to be kept. Both have a spend guard. They are
+wrong in mirror images of each other:
+
+| | embeddings | images |
+|---|---|---|
+| state lives in | a process-global dict (`_budget_state`, :455) | `pulse_generated_media` rows, via SQL |
+| survives a restart | **no** | yes |
+| shared across workers | **no** | yes |
+| unit of account | billed provider tokens → USD | **images per hour / per day** |
+| reaches `undx_cost` | no | no |
+
+The embedding module reads *real* billed usage — `body["usage"]` at :665-669, preferring
+`total_tokens` — checks a monthly budget before every call (:702, default $5.00) and counts
+blocks. What it does not have is anywhere to keep the number: the module imports no
+database at all, so `_budget_state` dies with the process. The budget therefore resets on
+every deploy and each gunicorn worker holds its own, making the effective ceiling
+`$5 × worker count`. The docstring at :361-365 is not dishonest about this — it says
+"as recorded locally" and calls itself a conservative approximation because the token
+estimator over-counts — but "locally" is carrying the whole weight: a reader takes it to
+mean *on this machine rather than asked of the provider*, and it means *in this process's
+memory since boot*. The stated conservatism is real and runs the safe way; the reset and
+the multiplication are not conservative and run the other way. **A claim true of the
+mechanism and false of the deployment** is the same defect shape this phase kept finding,
+one layer in.
+
+The image pipeline's `_budget_available` (:289) is the better mechanism on every axis
+except the one §20–27 asks about: durable, shared, with a failure-based circuit breaker —
+and it counts *images*, never money. A cap of 24/day is a spend ceiling only if something
+multiplies by a price, and nothing does, so changing the model moves the dollar figure
+behind the same cap with no code change and no signal.
+
+So the fix is not "add metering" to two call sites that already have some. It is one ledger
+keyed by `call_kind`, with the embedding path's real token figure recorded where it can
+survive a restart, and `_budget_available`'s design re-pointed at that ledger rather than
+replaced.
+
+### What the mutation harness found, which is the part worth reading
+
+The 39 mutations were run once with the suite as written. **Eight did not behave**: seven
+survived and one died on a different test than predicted. The suite looked complete and was
+measuring less than it appeared to in seven places.
+
+Three were in the scanner, and each had the same shape — the fixture reached the code under
+test through a path where the mutated line did not decide anything:
+
+- `sends = _performs_http(tree)` → `sends = False` survived, because the embeddings fixture
+  hands its URL constant *directly* to `requests.post`, so one-hop name resolution already set
+  `in_request` and `sends` never spoke. Closed by a fixture with two hops
+  (`requests.post(_target())`), which is closer to the real image pipeline than the old one.
+- dropping `_is_http_call`'s client requirement survived, because the fixture meant to catch
+  it contains no attribute call at all. The receiver is the thing under test, so the fixture
+  has to have one: `CONFIG.get("timeout")`. Without this, every module that reads a dict
+  becomes a module that sends requests, and every URL constant in one becomes CRITICAL — which
+  is exactly the false finding this phase spent its time correcting.
+- dropping the `root in _PROVIDER_SDKS` branch survived, because the lazy-import fixture uses
+  plain `import openai`, matching by exact name. `import anthropic.types` is how an SDK
+  actually arrives.
+
+Four were in the guard and the health surface:
+
+- **`_routed` matched by basename** survived the test named
+  `test_the_adapter_is_matched_by_path_not_by_filename`, because that test asserts on
+  `_adapter_files()`'s *contents* and never walks a stack. Two different places; the mutation
+  was in the other one. Closed with `compile(..., "/tmp/vendor/undx_router.py", "exec")`,
+  which is the cheapest way to obtain a frame whose filename is a decoy.
+- **double-install stacking a wrapper on a wrapper** survived, because `test_install_is_idempotent`
+  returns at `install()`'s `_installed` flag and never reaches `_wrap`'s own dedup. Two guards
+  in series with the test touching only the outer one — the second time this mission has found
+  that exact shape.
+- **`"installed": True` hardcoded** survived, because the test only ever asserted the field was
+  `True`. A field that exists to refute "installed on the strength of nothing" has to be
+  observed saying `False` once, which means actually calling `uninstall()` — until now, a
+  function with no caller anywhere, and therefore a function whose own earlier bug (it could
+  not restore a *class* attribute) had no regression test.
+- **routing dropped from the fabric's `ok`** survived, and this is the instructive one:
+  `snapshot()["ok"]` is a conjunction of five things, one of which is `bool(reachable)`. No
+  provider has a key in a test process, so `ok` was already `False` before routing was
+  consulted, and `assertFalse(whole["ok"])` passed for a reason that had nothing to do with the
+  assertion's name. The unearned zero this whole file was written to prevent, committed one
+  level up — in my own assertion rather than in the counter. Closed by mocking the other three
+  sections healthy, proving `ok` can be `True`, and then changing exactly one thing.
+
+The eighth was not a suite gap but a wrong prediction: forcing `_routed` to return `True` for
+every frame was expected to fail `test_and_that_zero_is_because_of_the_frame_walk`, which
+cannot see it, because that test replaces `_routed` wholesale. It fails thirteen other tests
+instead. The harness was right and the expectation was wrong, which is the one verdict that
+needed no code change.
+
+Two defects were also found in the harness before its first run and two more after: a mutation
+naming a test that did not exist, an anchor on a docstring this phase had rewritten, and — the
+one no pre-flight can catch — an expectation pointing at a test that *does* exist but is the
+wrong one, on the adjacent entry of a pair. A pre-flight can verify that a name resolves; only
+running it can verify the name is the right one.
