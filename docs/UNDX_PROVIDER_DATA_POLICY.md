@@ -118,6 +118,16 @@ This is a product-identity boundary, not a claim about what UNDX is. Nothing her
 instructs a provider to deny being an AI, or to assert a vendor — the whole point
 of the refusal wording is that a false attribution is worse than no attribution.
 
+**It is not free.** The directive adds ~110 input tokens to *every* call to
+*every* provider — visible in the health check, where input rose from 35 to 145
+tokens on the same two-letter probe. At Meta's Standard input rate that is about
+$0.00014 a call, against the ~$0.0012 the same call already spends on reasoning,
+so it is roughly a tenth of Muse's existing overhead and less than that
+elsewhere. Recorded here rather than left to be discovered in a bill: a fixed
+per-call prompt tax is the kind of thing that only looks small until traffic
+grows, and the cheapest place to shorten it is here, deliberately, with the live
+probe re-run afterwards — not by trimming words and assuming it still holds.
+
 ## `PRIVATE_OFFICE`
 
 **No provider in this matrix may receive `PRIVATE_OFFICE` data**, including
