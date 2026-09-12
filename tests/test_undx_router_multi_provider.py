@@ -550,5 +550,238 @@ class GeminiModelTest(unittest.TestCase):
         self.assertIn("gemini-flash-latest:generateContent", url)
 
 
+class UsageNormalisationTest(unittest.TestCase):
+    """Four vendor shapes, one shape out. Fixtures are real captured responses.
+
+    Every `raw` below was copied from a live 200, not written from documentation.
+    The reason that matters is that two of the four carry information a plain
+    token count gets badly wrong, and neither is obvious from the field names.
+    """
+
+    # Captured live, gpt-4o-mini.
+    OPENAI = {"prompt_tokens": 12, "completion_tokens": 12, "total_tokens": 24,
+              "prompt_tokens_details": {"cached_tokens": 0, "audio_tokens": 0},
+              "completion_tokens_details": {"reasoning_tokens": 0, "audio_tokens": 0}}
+
+    # Captured live, muse-spark-1.3. 524 of 556 output tokens were reasoning.
+    META = {"completion_tokens": 556, "prompt_tokens": 12, "total_tokens": 568,
+            "completion_tokens_details": {"reasoning_tokens": 524},
+            "prompt_tokens_details": {"cached_tokens": 0}}
+
+    # Captured live, sonar. request_cost dwarfs the token cost.
+    PERPLEXITY = {"completion_tokens": 54, "prompt_tokens": 5, "total_tokens": 59,
+                  "search_context_size": "low",
+                  "cost": {"input_tokens_cost": 1e-05, "output_tokens_cost": 5e-05,
+                           "request_cost": 0.005, "total_cost": 0.00506}}
+
+    # Captured live, claude-haiku-4-5.
+    CLAUDE = {"input_tokens": 12, "cache_creation_input_tokens": 0,
+              "cache_read_input_tokens": 0, "output_tokens": 54,
+              "service_tier": "standard"}
+
+    # Captured live, gemini-flash-lite-latest. camelCase, and no output detail.
+    GEMINI = {"promptTokenCount": 6, "candidatesTokenCount": 37, "totalTokenCount": 43,
+              "promptTokensDetails": [{"modality": "TEXT", "tokenCount": 6}],
+              "serviceTier": "standard"}
+
+    def test_openai_shape(self):
+        usage = undx_router._normalise_usage("openai", "gpt-4o-mini", self.OPENAI)
+        self.assertEqual(usage["input_tokens"], 12)
+        self.assertEqual(usage["output_tokens"], 12)
+        self.assertEqual(usage["total_tokens"], 24)
+
+    def test_claude_shape_uses_input_output_not_prompt_completion(self):
+        usage = undx_router._normalise_usage("claude", "claude-haiku-4-5", self.CLAUDE)
+        self.assertEqual(usage["input_tokens"], 12)
+        self.assertEqual(usage["output_tokens"], 54)
+        self.assertEqual(usage["total_tokens"], 66)
+
+    def test_gemini_camelcase_shape(self):
+        usage = undx_router._normalise_usage("gemini", "gemini-flash-lite-latest", self.GEMINI)
+        self.assertEqual(usage["input_tokens"], 6)
+        self.assertEqual(usage["output_tokens"], 37)
+        self.assertEqual(usage["total_tokens"], 43)
+
+    def test_gemini_thinking_tokens_are_added_to_output(self):
+        """Gemini reports thoughts SEPARATELY and excludes them from candidatesTokenCount.
+
+        The OpenAI-shaped providers include reasoning inside completion_tokens.
+        Treating the two the same way silently under-counts every Gemini call by
+        the entire cost of its reasoning.
+        """
+        raw = dict(self.GEMINI, thoughtsTokenCount=67, totalTokenCount=110)
+        usage = undx_router._normalise_usage("gemini", "gemini-flash-lite-latest", raw)
+        self.assertEqual(usage["reasoning_tokens"], 67)
+        self.assertEqual(usage["output_tokens"], 37 + 67)
+
+    def test_meta_reasoning_is_counted_and_not_double_counted(self):
+        """94% of Meta's billed output was reasoning, and it is already inside
+        completion_tokens - so it is reported, but must not be added again."""
+        usage = undx_router._normalise_usage("meta", "muse-spark-1.3", self.META)
+        self.assertEqual(usage["reasoning_tokens"], 524)
+        self.assertEqual(usage["output_tokens"], 556)
+
+    def test_meta_cost_uses_the_console_verified_price(self):
+        usage = undx_router._normalise_usage("meta", "muse-spark-1.3", self.META)
+        expected = round((12 * 1.25 + 556 * 4.25) / 1_000_000, 6)
+        self.assertEqual(usage["cost_usd"], expected)
+        self.assertFalse(usage["cost_reported"])
+
+    def test_reasoning_dominates_the_meta_bill(self):
+        """Guards the reason _effective_max_tokens and this accounting both exist.
+
+        Costing only the visible answer would understate this call by >10x.
+        """
+        usage = undx_router._normalise_usage("meta", "muse-spark-1.3", self.META)
+        answer_only = round((12 * 1.25 + (556 - 524) * 4.25) / 1_000_000, 6)
+        self.assertGreater(usage["cost_usd"], answer_only * 10)
+
+    def test_perplexity_reported_cost_wins_over_any_estimate(self):
+        """Perplexity charges a flat per-request search fee.
+
+        In this captured response the tokens cost $0.00006 and the request cost
+        $0.005 - the tokens are 1.2% of the bill. Estimating from tokens would be
+        wrong by ~84x, so the vendor's own figure is used and flagged as reported.
+        """
+        usage = undx_router._normalise_usage("perplexity", "sonar", self.PERPLEXITY)
+        self.assertEqual(usage["cost_usd"], 0.00506)
+        self.assertTrue(usage["cost_reported"])
+
+    def test_an_unpriced_model_reports_tokens_and_no_cost(self):
+        """A plausible invented price survives into a budget decision looking like
+        a measurement. None is the honest answer."""
+        usage = undx_router._normalise_usage("openai", "gpt-4o-mini", self.OPENAI)
+        self.assertIsNone(usage["cost_usd"])
+        self.assertEqual(usage["total_tokens"], 24)
+
+    def test_a_missing_usage_object_does_not_raise(self):
+        for raw in (None, {}, "nonsense", []):
+            usage = undx_router._normalise_usage("openai", "gpt-4o-mini", raw)
+            self.assertEqual(usage["total_tokens"], 0)
+
+    def test_garbage_token_values_are_clamped_not_propagated(self):
+        usage = undx_router._normalise_usage("openai", "gpt-4o-mini",
+                                             {"prompt_tokens": -5, "completion_tokens": "x"})
+        self.assertEqual(usage["input_tokens"], 0)
+        self.assertEqual(usage["output_tokens"], 0)
+
+
+class EveryAdapterReportsUsageTest(unittest.TestCase):
+    """Every adapter, not just the ones that share `_openai_compatible`.
+
+    This exists because the first version of the usage work shipped with
+    Perplexity reporting zeros. `_call_perplexity` has its own body - it has to,
+    because it carries citations - and it was the one adapter that never got the
+    usage line. Nothing caught it: the unit tests called `_normalise_usage`
+    directly, so they tested the normaliser rather than the wiring, and a live
+    run was what actually surfaced it.
+
+    So this test drives each adapter through its own code path with a canned
+    response and checks what comes out, rather than trusting that adapters were
+    all edited. It is written off `CALLERS`, so a provider added later is
+    included automatically and fails here until it is wired up.
+    """
+
+    #: A response carrying every vendor's usage key at once. Each adapter reads
+    #: only the shape it knows, so one fixture serves all of them.
+    RESPONSE = {
+        "choices": [{"message": {"content": "ok", "role": "assistant"}, "finish_reason": "stop"}],
+        "content": [{"type": "text", "text": "ok"}],
+        "stop_reason": "end_turn",
+        "candidates": [{"content": {"parts": [{"text": "ok"}]}, "finishReason": "STOP"}],
+        "usage": {"prompt_tokens": 11, "completion_tokens": 7, "total_tokens": 18,
+                  "input_tokens": 11, "output_tokens": 7},
+        "usageMetadata": {"promptTokenCount": 11, "candidatesTokenCount": 7, "totalTokenCount": 18},
+    }
+
+    def test_every_registered_provider_has_an_adapter(self):
+        self.assertEqual(set(undx_router.CALLERS), set(undx_router.PROVIDERS))
+
+    def test_every_adapter_returns_a_normalised_usage_block(self):
+        keys = {config.key_env: "k" * 40 for config in undx_router.PROVIDERS.values()}
+        keys["Gemini_AI_API"] = "k" * 40
+        for provider, caller in sorted(undx_router.CALLERS.items()):
+            with self.subTest(provider=provider):
+                with mock.patch.dict(os.environ, keys), mock.patch.object(
+                        undx_router.requests, "post",
+                        return_value=_FakeResponse(self.RESPONSE)):
+                    result = caller("sys", "hello", [], 30)
+                usage = result.get("usage")
+                self.assertIsInstance(usage, dict,
+                                      f"{provider} adapter returned no usage block")
+                self.assertEqual(usage["provider"], provider)
+                self.assertEqual(usage["input_tokens"], 11,
+                                 f"{provider} did not read its own usage shape")
+                self.assertEqual(usage["output_tokens"], 7)
+
+
+class SpendAccountingTest(unittest.TestCase):
+    """Per-provider monthly totals, following undx_embedding_service's pattern."""
+
+    def setUp(self):
+        undx_router.reset_spend()
+
+    tearDown = setUp
+
+    def test_totals_accumulate_per_provider(self):
+        undx_router._record_usage(undx_router._normalise_usage(
+            "meta", "muse-spark-1.3", UsageNormalisationTest.META))
+        undx_router._record_usage(undx_router._normalise_usage(
+            "meta", "muse-spark-1.3", UsageNormalisationTest.META))
+        undx_router._record_usage(undx_router._normalise_usage(
+            "perplexity", "sonar", UsageNormalisationTest.PERPLEXITY))
+
+        state = undx_router.spend_state()
+        self.assertEqual(state["providers"]["meta"]["calls"], 2)
+        self.assertEqual(state["providers"]["meta"]["reasoning_tokens"], 1048)
+        self.assertEqual(state["providers"]["perplexity"]["cost_usd"], 0.00506)
+        self.assertEqual(set(state["providers"]), {"meta", "perplexity"})
+
+    def test_an_uncosted_call_marks_the_total_as_a_floor(self):
+        """A provider total that silently omits unpriced calls reads as complete.
+
+        Someone comparing spend across providers would conclude the unpriced one
+        is cheap, when in fact it is unmeasured. cost_known says which it is.
+        """
+        undx_router._record_usage(undx_router._normalise_usage(
+            "meta", "muse-spark-1.3", UsageNormalisationTest.META))
+        self.assertTrue(undx_router.spend_state()["providers"]["meta"]["cost_known"])
+
+        undx_router._record_usage(undx_router._normalise_usage(
+            "openai", "gpt-4o-mini", UsageNormalisationTest.OPENAI))
+        openai_bucket = undx_router.spend_state()["providers"]["openai"]
+        self.assertFalse(openai_bucket["cost_known"])
+        self.assertEqual(openai_bucket["input_tokens"], 12)
+
+    def test_a_new_month_resets_the_totals(self):
+        undx_router._record_usage(undx_router._normalise_usage(
+            "meta", "muse-spark-1.3", UsageNormalisationTest.META))
+        with mock.patch.object(undx_router, "_current_month", return_value="1999-01"):
+            undx_router._record_usage(undx_router._normalise_usage(
+                "meta", "muse-spark-1.3", UsageNormalisationTest.META))
+            state = undx_router.spend_state()
+        self.assertEqual(state["month"], "1999-01")
+        self.assertEqual(state["providers"]["meta"]["calls"], 1)
+
+    def test_spend_state_returns_a_copy_callers_cannot_corrupt(self):
+        undx_router._record_usage(undx_router._normalise_usage(
+            "meta", "muse-spark-1.3", UsageNormalisationTest.META))
+        undx_router.spend_state()["providers"]["meta"]["calls"] = 9999
+        self.assertEqual(undx_router.spend_state()["providers"]["meta"]["calls"], 1)
+
+    def test_usage_reaches_the_routing_envelope(self):
+        answer = _chat("hello")
+        answer["usage"] = UsageNormalisationTest.META
+        with _env(META_MODEL_API_KEY="k" * 40, UNDX_ROUTER_ENABLED="true",
+                  UNDX_MULTI_MODEL_MODE="true"), \
+                mock.patch.object(undx_router.requests, "post",
+                                  return_value=_FakeResponse(answer)):
+            result = undx_router.route_structured_request(
+                "t", "sys", "hi", providers=["meta"], max_tokens=256)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["usage"]["reasoning_tokens"], 524)
+        self.assertEqual(undx_router.spend_state()["providers"]["meta"]["calls"], 1)
+
+
 if __name__ == "__main__":
     unittest.main()
