@@ -581,29 +581,48 @@ def classify_request(message: str) -> dict[str, Any]:
     }
 
 
+#: The routing table: request category -> provider order to try.
+#:
+#: A module constant rather than a local inside `provider_priority`, because
+#: `services/undx_routing_evidence.py` has to explain a routing decision and a
+#: second copy of this table would explain a decision that was never taken. One
+#: authority, for the same reason there is one price table and one privacy
+#: ladder.
+#:
+#: Nothing here is benchmark-derived. §1 of the mission brief forbids promoting
+#: a provider to the global default and requires evidence for routing changes,
+#: so every order below is either a structural claim or an incumbent left in
+#: place — `undx_routing_evidence.contradictions()` is where a benchmark result
+#: gets to argue with it, and a human decides.
+LANE_PRIORITIES: dict[str, list[str]] = {
+    # Perplexity leads exactly one lane, and leads it because it is the only
+    # provider here that can see the answer - it searches at request time and
+    # returns its sources. That is a structural difference, not a quality
+    # judgement, so it does not wait on benchmark evidence.
+    "current_web": ["perplexity", "openai", "claude", "gemini", "meta", "groq"],
+    "security": ["claude", "openai", "deepseek", "gemini", "meta", "groq"],
+    # Meta Muse is built for long-horizon multi-step work over a 1M-token
+    # context, which is what the repository and automation lanes are. It sits
+    # behind the incumbents on purpose: §7 of the integration brief admits it
+    # as an available specialist, and promoting it past a provider already
+    # serving production is a decision for benchmark evidence, not for the
+    # commit that first makes it reachable.
+    "repository": ["deepseek", "openai", "claude", "meta", "gemini", "groq"],
+    "automation": ["openai", "groq", "claude", "meta", "deepseek", "gemini"],
+    "research": ["perplexity", "gemini", "openai", "claude", "meta", "deepseek"],
+    "product": ["openai", "claude", "gemini", "groq", "deepseek"],
+    "fast_directive": ["groq", "openai", "claude", "gemini", "deepseek"],
+    "general_builder": ["openai", "claude", "gemini", "deepseek", "groq"],
+}
+
+#: The lane an unrecognised category falls back to.
+DEFAULT_LANE = "general_builder"
+
+
 def provider_priority(classification: dict[str, Any]) -> list[str]:
     category = classification.get("category")
-    priorities = {
-        # Perplexity leads exactly one lane, and leads it because it is the only
-        # provider here that can see the answer - it searches at request time and
-        # returns its sources. That is a structural difference, not a quality
-        # judgement, so it does not wait on benchmark evidence.
-        "current_web": ["perplexity", "openai", "claude", "gemini", "meta", "groq"],
-        "security": ["claude", "openai", "deepseek", "gemini", "meta", "groq"],
-        # Meta Muse is built for long-horizon multi-step work over a 1M-token
-        # context, which is what the repository and automation lanes are. It sits
-        # behind the incumbents on purpose: §7 of the integration brief admits it
-        # as an available specialist, and promoting it past a provider already
-        # serving production is a decision for benchmark evidence, not for the
-        # commit that first makes it reachable.
-        "repository": ["deepseek", "openai", "claude", "meta", "gemini", "groq"],
-        "automation": ["openai", "groq", "claude", "meta", "deepseek", "gemini"],
-        "research": ["perplexity", "gemini", "openai", "claude", "meta", "deepseek"],
-        "product": ["openai", "claude", "gemini", "groq", "deepseek"],
-        "fast_directive": ["groq", "openai", "claude", "gemini", "deepseek"],
-        "general_builder": ["openai", "claude", "gemini", "deepseek", "groq"],
-    }
-    selected = priorities.get(str(category), priorities["general_builder"])
+    priorities = LANE_PRIORITIES
+    selected = priorities.get(str(category), priorities[DEFAULT_LANE])
     preferred = default_provider()
     ordered = selected if multi_model_mode() else [preferred]
     ordered = [preferred, *ordered] if preferred not in ordered else ordered
