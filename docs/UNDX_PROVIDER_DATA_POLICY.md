@@ -119,6 +119,13 @@ controls is worse than no document.
   layer.
 - Per-provider kill switches; a disabled provider is not planned.
 - Meta defaults to the Standard tier.
+- The last error a provider returned is stored in `provider_runtime_health()`
+  **after** `_safe_error()` redaction. Runtime health is meant to be read by
+  operators and may end up on a status surface; it is not a logging exemption.
+  `GROQ_AI_API` is set to a JSON document containing a key and the transport
+  exception quoted it, so anything that stores an error string has to store the
+  redacted one. Pinned by
+  `CircuitBreakerTest::test_the_recorded_error_is_the_redacted_one`.
 - Per-provider token and cost accounting. Every adapter returns a normalised
   `usage` block, checked structurally by `EveryAdapterReportsUsageTest` so a
   provider added later cannot quietly omit it. Cost is only claimed for models
