@@ -16,7 +16,7 @@ from typing import Any
 
 import requests
 
-from services import undx_privacy
+from services import undx_cost, undx_privacy
 
 
 DEFAULT_UNDX_SYSTEM_PROMPT = (
@@ -597,19 +597,61 @@ def _privacy_refusal(provider: str, privacy_class: str | None) -> str:
     return undx_privacy.refusal_reason(provider, privacy_class, _model(provider))
 
 
+def _budget_snapshot() -> dict[str, Any]:
+    """The month's ledger, read once per request rather than once per provider.
+
+    A seven-provider plan checked against a fresh query each time would ask the
+    database the same question seven times for one answer that cannot change
+    mid-loop. Reading it up front also means every provider in one request is
+    judged against the same totals, so the chain's explanation is internally
+    consistent - a provider refused on a number a later provider was not shown
+    is an `attempts` list nobody can reconstruct.
+    """
+    if not undx_cost.budgets_configured():
+        # Nothing configured means nothing to enforce, and no reason to touch the
+        # database on the request path to prove it.
+        return {}
+    return undx_cost.month_snapshot()
+
+
+def _budget_refusal(snapshot: dict[str, Any], provider: str) -> str:
+    """Empty if the month can still afford this provider, else why not.
+
+    Same placement argument as `_privacy_refusal`, and for the same reason: the
+    routing loop is the only point every request passes through on its way to
+    `CALLERS[provider]`. It sits *after* the privacy check and *before* the
+    credential check, which is the order the three of them have to run in.
+    Privacy is about what may not leave at any price. Budget is about what we
+    decline to pay for. Asking "can we afford it" before "may it leave" would
+    let a spend limit be the reason a disclosure did not happen, and the day the
+    budget was raised the disclosure would happen instead.
+    """
+    if not snapshot:
+        return ""
+    return undx_cost.refusal(snapshot, provider, _model(provider))
+
+
+def _only(attempts: list[dict[str, str]], status: str) -> bool:
+    return bool(attempts) and all(a.get("status") == status for a in attempts)
+
+
 def _exhausted_reason(attempts: list[dict[str, str]], privacy_class: str | None) -> str:
     """What to say when the chain ran out, distinguishing refusal from failure.
 
-    "No configured provider answered" is true of both and useful for neither. A
-    request refused on every provider because it carries RESTRICTED content is
-    working exactly as designed and needs a classification decision; a request
-    that nobody answered is an outage and needs a pager. Collapsing the two
-    means the first gets escalated as the second, and the second eventually gets
-    ignored as the first.
+    "No configured provider answered" is true of all of these and useful for
+    none. A request refused on every provider because it carries RESTRICTED
+    content is working exactly as designed and needs a classification decision;
+    a request stopped by a spend limit needs a budget decision; a request nobody
+    answered is an outage and needs a pager. Collapsing them means the first two
+    get escalated as the third, and the third eventually gets ignored as one of
+    the first two.
     """
-    if attempts and all(a.get("status") == "privacy_refused" for a in attempts):
+    if _only(attempts, "privacy_refused"):
         return (f"no provider may receive {undx_privacy.normalise(privacy_class)} content; "
                 f"{len(attempts)} refused on privacy ceiling")
+    if _only(attempts, "budget_exceeded"):
+        return (f"the monthly UNDX spend limit is reached; "
+                f"{len(attempts)} providers declined on budget")
     return "no configured provider answered"
 
 
@@ -698,17 +740,13 @@ def _messages(system_prompt: str, message: str, history: Any,
 
 # --------------------------------------------------------------------- usage
 
-#: USD per million tokens, as (input, output). Only models whose price was read
-#: from the vendor's own console or pricing page appear here. A model that is
-#: absent is reported with tokens and `cost_usd: None` rather than being costed
-#: against a plausible-looking number - an invented price is worse than no price,
-#: because it survives into a budget decision looking like a measurement.
-#: Meta's figures are from the live console for project 1656198352782001; see
-#: UNDX_META_MUSE_CONFIGURATION.md.
-PRICE_PER_MILLION_USD: dict[str, tuple[float, float]] = {
-    "muse-spark-1.3": (1.25, 4.25),
-    "muse-spark-1.3-contributor": (0.10, 0.20),
-}
+#: Re-exported, not redefined. The table moved to `services.undx_cost` when the
+#: budget guard arrived, because the same model IDs are what the ledger, the
+#: retirement check and the drift check key on. Kept under the old name here so
+#: nothing that already reads `undx_router.PRICE_PER_MILLION_USD` has to learn a
+#: new address to get the same object - and it *is* the same object, so a second
+#: copy cannot drift away from the first.
+PRICE_PER_MILLION_USD = undx_cost.PRICE_PER_MILLION_USD
 
 
 def _int(value: Any) -> int:
@@ -776,9 +814,7 @@ def _normalise_usage(provider: str, model: str, raw: Any) -> dict[str, Any]:
         except (TypeError, ValueError):
             cost_usd = None
     if cost_usd is None:
-        price = PRICE_PER_MILLION_USD.get(model)
-        if price:
-            cost_usd = round((input_tokens * price[0] + output_tokens * price[1]) / 1_000_000, 6)
+        cost_usd = undx_cost.estimate_cost_usd(model, input_tokens, output_tokens)
 
     return {
         "provider": provider,
@@ -802,17 +838,23 @@ def _current_month() -> str:
 
 
 def _record_usage(usage: dict[str, Any]) -> None:
-    """Accumulate per-provider spend for the current UTC month.
+    """Accumulate per-provider spend for the current UTC month, twice.
 
-    In memory, per process, exactly like `undx_embedding_service`'s budget guard
-    - the convention this codebase already uses. It is an observability figure,
-    not an accounting ledger: a restart resets it and workers each keep their
-    own. Writing it to a table would mean hand-rolled idempotent DDL in
-    `bot.init_db()` on the request path, which is a materially larger change than
-    the one being justified here. `spend_state()` exposes it; §70's real
-    per-provider budget enforcement can build on this once someone decides where
-    the durable copy belongs.
+    The in-process tally below is the original and stays: it is what
+    `spend_state()` has always returned, it needs no database, and it is the
+    thing the budget falls back to when the ledger is unreachable.
+
+    `undx_cost.record` is the durable half, added when this stopped being an
+    observability figure and became the input to a refusal. The old docstring
+    here said the totals were "not an accounting ledger" - a restart reset them
+    and nine processes each kept their own - and that was a fair description of
+    something nothing depended on. It is not a fair basis for a budget, because
+    nine independent tallies against one limit is nine times the limit.
+
+    `undx_cost.record` never raises. A bookkeeping fault must not fail a request
+    that already succeeded and already spent the money.
     """
+    undx_cost.record(usage)
     with _SPEND_LOCK:
         month = _current_month()
         if _spend_state["month"] != month:
@@ -833,11 +875,33 @@ def _record_usage(usage: dict[str, Any]) -> None:
 
 
 def spend_state() -> dict[str, Any]:
-    """Per-provider token and cost totals for the current UTC month."""
+    """Per-provider token and cost totals for the current UTC month.
+
+    This process only. `budget_state()` is the shared figure and the one a
+    budget is enforced against; they are kept as separate functions because a
+    reader who cannot tell "what this worker spent" from "what the deployment
+    spent" will divide by nine or multiply by nine at some point.
+    """
     with _SPEND_LOCK:
         providers = {name: dict(bucket) for name, bucket in _spend_state["providers"].items()}
         month = _spend_state["month"] or _current_month()
     return {"month": month, "providers": providers}
+
+
+def configured_models() -> dict[str, str]:
+    """Every provider mapped to the model this deployment would actually send.
+
+    Read through `_model()`, so it reflects the environment rather than the
+    defaults - which is the only version of this question worth asking, and the
+    reason `uncovered_providers` takes a mapping instead of importing the
+    provider table itself.
+    """
+    return {name: _model(name) for name in PROVIDERS}
+
+
+def budget_state() -> dict[str, Any]:
+    """Deployment-wide spend against the configured limits, from the ledger."""
+    return undx_cost.budget_state(providers=configured_models())
 
 
 def reset_spend() -> None:
@@ -1239,6 +1303,7 @@ def route_structured_request(
             else [default_provider()]
     attempts: list[dict[str, str]] = []
     started = time.time()
+    budget = _budget_snapshot()
 
     for provider in ordered:
         config = PROVIDERS[provider]
@@ -1249,6 +1314,11 @@ def route_structured_request(
             # whether it could have.
             attempts.append({"provider": config.label, "status": "privacy_refused",
                              "detail": refusal})
+            continue
+        over_budget = _budget_refusal(budget, provider)
+        if over_budget:
+            attempts.append({"provider": config.label, "status": "budget_exceeded",
+                             "detail": over_budget})
             continue
         if not _api_key(provider):
             attempts.append({"provider": config.label, "status": "not_configured"})
@@ -1314,6 +1384,7 @@ def route_undx_request(user_id: Any, message: str, history: Any = None, system_p
     classification = classify_request(message)
     ordered = provider_priority(classification) if router_enabled() else ["openai"]
     attempts: list[dict[str, str]] = []
+    budget = _budget_snapshot()
 
     for provider in ordered:
         config = PROVIDERS[provider]
@@ -1324,6 +1395,11 @@ def route_undx_request(user_id: Any, message: str, history: Any = None, system_p
             # whether it could have.
             attempts.append({"provider": config.label, "status": "privacy_refused",
                              "detail": refusal})
+            continue
+        over_budget = _budget_refusal(budget, provider)
+        if over_budget:
+            attempts.append({"provider": config.label, "status": "budget_exceeded",
+                             "detail": over_budget})
             continue
         if not _api_key(provider):
             attempts.append({"provider": config.label, "status": "not_configured"})
@@ -1390,6 +1466,15 @@ def route_undx_request(user_id: Any, message: str, history: Any = None, system_p
                         "refused": [a["provider"] for a in attempts
                                     if a.get("status") == "privacy_refused"],
                     },
+                    # Present even when nothing is configured, carrying
+                    # `enforced: false`. An absent key would be indistinguishable
+                    # from an older deployment, and "no budget field" is exactly
+                    # what a budget that has quietly stopped running looks like.
+                    "budget": {
+                        "enforced": undx_cost.budgets_configured(),
+                        "refused": [a["provider"] for a in attempts
+                                    if a.get("status") == "budget_exceeded"],
+                    },
                 },
                 "latency_ms": int((time.time() - started) * 1000),
             }
@@ -1408,7 +1493,7 @@ def route_undx_request(user_id: Any, message: str, history: Any = None, system_p
             _record_provider_failure(provider, "response_failed", detail)
             attempts.append({"provider": config.label, "status": "response_failed"})
 
-    if attempts and all(a.get("status") == "privacy_refused" for a in attempts):
+    if _only(attempts, "privacy_refused"):
         # Not 502 and not 503. Nothing is unavailable and nothing is misconfigured:
         # the router did what it was built to do. Reporting a refusal as a
         # transient outage would send an operator to look at provider uptime, and
@@ -1418,6 +1503,16 @@ def route_undx_request(user_id: Any, message: str, history: Any = None, system_p
         status = 403
         error = (f"No provider is permitted to receive "
                  f"{undx_privacy.normalise(privacy_class)} content.")
+    elif _only(attempts, "budget_exceeded"):
+        # 402, and the wording says whose decision it was. DeepSeek returns a
+        # real 402 from upstream when its account is unfunded, so an operator
+        # seeing this code has to be able to tell "the vendor refused us" from
+        # "we refused ourselves" without opening the ledger. The second is a
+        # deliberate limit doing its job; the first is an account that needs
+        # money. The `detail` on each attempt names the limit and the figure.
+        status = 402
+        error = ("UNDX has reached the monthly spend limit configured for this "
+                 "deployment. No provider was called.")
     else:
         openai_configured = bool(_api_key("openai"))
         status = 502 if openai_configured else 503
