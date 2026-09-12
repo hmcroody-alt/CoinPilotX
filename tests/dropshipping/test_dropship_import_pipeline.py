@@ -94,6 +94,13 @@ def cj_product(pid="PID-1", *, title="Cotton Tee", variants_=None, media=True,
              "variantQuantity": 12, "variantSku": f"{pid}-SKU-2"},
         ],
     }
+    # CJ stamps the parent pid onto every variant, and `gateway.bind_product`
+    # checks it -- `any(v["vid"] == vid and v["pid"] == pid ...)` -- so a fake
+    # that omitted it made every binding answer `variant_mismatch`. Filled in
+    # rather than required of each caller: a variant without its own pid is not a
+    # payload CJ produces, so no test should be able to construct one by accident.
+    for variant in payload["variants"]:
+        variant.setdefault("pid", pid)
     if media:
         payload["productImage"] = f"https://cdn.example.com/{pid}.jpg"
         payload["productImageSet"] = [f"https://cdn.example.com/{pid}-2.jpg"]
@@ -391,6 +398,35 @@ def test_import_maps_the_listing_to_its_supplier_product(provider):
     assert source[0]["supplier_connection_id"] == CONNECTION
     listing_id = rows("SELECT id FROM marketplace_listings")[0]["id"]
     assert source[0]["listing_id"] == listing_id
+
+
+def test_one_selected_variant_is_recorded_as_the_variant_orders_are_placed_for(provider):
+    # `fulfillment.create_intent` resolves every line through
+    # `gateway.get_product_binding`, which raises `product_binding_required` when
+    # `provider_variant_id` is NULL. Until this was written the importer never set
+    # it, so every imported listing was one nothing could ship -- measured on
+    # production listing 14, live and moderator-approved with the column NULL.
+    #
+    # One chosen variant is not a choice made on the merchant's behalf. It is the
+    # only thing this listing can be.
+    provider.add(cj_product("PID-1"))
+    add_to_cart("PID-1", selected=["PID-1-V2"])
+    run_import()
+    assert rows("SELECT provider_variant_id FROM marketplace_product_sources")[0] \
+        == {"provider_variant_id": "PID-1-V2"}
+
+
+def test_several_selected_variants_leave_the_binding_unmade(provider):
+    # With two chosen there genuinely is a question about which variant a buyer
+    # receives, this import has no answer to it, and inventing one would ship a
+    # stranger whichever variant we guessed. Left NULL, and publication refuses
+    # the listing by name (`SUPPLIER_VARIANT_UNBOUND`) rather than putting an
+    # unshippable product on sale.
+    provider.add(cj_product("PID-1"))
+    add_to_cart("PID-1")
+    run_import()
+    assert rows("SELECT provider_variant_id FROM marketplace_product_sources")[0] \
+        == {"provider_variant_id": None}
 
 
 def test_a_successful_import_clears_its_cart_row(provider):

@@ -143,6 +143,17 @@ discovery predicate rather than a page:
 The listing is live. Note what it took: the approval half could not be done
 through the admin UI at all, for the reason in "The fifth seam" below.
 
+Two numbers in that last row are the seventh seam, sitting in plain sight for
+three passes over this document: **`quantity` is 1 against 132 units in CJ's
+warehouse**, and `provider_variant_id` on its source row is NULL, which
+`create_intent` refuses outright. So the listing is live, approved, findable,
+buyable — and sells one unit of something nothing can ship. Both are fixed in
+the code as of this pass; **listing 14 itself is still in that state**, because
+repairing it is a production write. Under the current guard it is also no longer
+`publishable`, which is the correct answer to what it actually is. The repair is
+two statements — bind its single variant, re-publish to restock the shelf — and
+it needs the user's word before it runs.
+
 ---
 
 ## Things that are correct and easy to break
@@ -256,9 +267,18 @@ query names is buyer-visible by default, so the strip now lives in
    "Add to cart" and the server answered 400 `ITEM_UNAVAILABLE` — or, via Buy
    Now, took a delivery address first. `is_public` is left alone deliberately;
    *visible* and *buyable* are different questions and the code now says so.
-2. **No buyer-side variant selection.** A multi-variant product can only be sold
-   at a single price; `VARIANT_PRICE_SPREAD` now refuses the alternative rather
-   than guessing, but the real fix is a variant selector on the product page.
+2. ~~**No buyer-side variant selection.**~~ Recorded as a missing UI, which was
+   the wrong diagnosis — it described the feature a shopper would notice and not
+   the thing that was broken. A dropshipped listing sells **exactly one**
+   supplier variant, the one `marketplace_product_sources.provider_variant_id`
+   names, and until now no layer said so: publish priced the whole set, stocked
+   the shelf with a count of that set, and the column that names the variant was
+   NULL on every listing in production. See "The seventh seam" below. What is
+   still owed is genuinely a selector — a merchant who wants to sell three
+   colours needs three listings today, and `VARIANT_PRICE_SPREAD` still refuses
+   the one-listing-many-prices shape rather than guessing — but that is a
+   feature, not a defect, and it is no longer what stands between an imported
+   product and a shippable order.
 3. ~~**Production listing 14 has `cover_image_url = NULL`**~~ — the column is
    still NULL, but recording it that way described a symptom and hid the seam
    underneath it; see "The fourth seam" below. The structural half is fixed:
@@ -514,9 +534,99 @@ action, not a deploy. Until it exists, `create_intent` will keep answering
 
 ---
 
+## The seventh seam: one integer, two meanings, one line apart
+
+This one was filed as gap #2, "no buyer-side variant selection", and that
+description survived three passes over this document because it is what a
+shopper would notice. It is not what was wrong. Two lines of `publish`:
+
+```python
+sellable = sum(1 for v in rows if variants.availability(v) == variants.AVAILABLE)
+"UPDATE marketplace_listings SET status='published', quantity=?, ..."
+return {..., "sellable_variants": sellable}
+```
+
+`sellable` is a count of **variants**. `quantity` is a ledger of **units** —
+`marketplace_cart_routes.py:820` decrements it per unit reserved, line 1159
+credits it back on release, and `lifecycle.inventory_available(listing, n)`
+answers "may this buyer take n units" by comparing `n` against it. The same
+integer fed both, and both readings were defensible at the line that produced
+it. The merchant's screen was even right:
+`ReviewImportedProductScreen.tsx:528` renders `sellableVariants` as *"N variants
+are on sale"*. The shelf rendered that same number as units.
+
+Production listing 14 is the measurement: one variant, **132 units in CJ's
+warehouse, `quantity = 1`**. 131 units that existed, were paid for by nobody,
+and no buyer could reach. Nothing errored. Nothing was red. The product simply
+sold out after one.
+
+### The half underneath it
+
+Beside that, a second fact nobody had measured: **`provider_variant_id` was NULL
+on every imported listing in production.** `fulfillment.create_intent` routes
+every line through `gateway.get_product_binding`, which refuses outright when
+that column is NULL. So every published dropship product was one a buyer could
+add to a cart, pay for, and never receive — the sixth seam's shape again, at the
+variant level instead of the shop level, and reachable by the same query: grep
+the writers of the column, ask whether the ordinary path reaches one.
+
+It did not. `bind-product` existed and had no caller. Import wrote NULL and the
+merchant was never asked. This is why the fix is not "stock the shelf
+correctly": stocking it correctly would have published 132 units of a thing that
+still could not ship.
+
+### The fix, and the one shape it had to avoid
+
+A dropship listing sells the variant it names, and every number on it reads that
+variant:
+
+- **Import binds.** `SupplierProductScreen` already sends the merchant's variant
+  selection, and `importer` now records it — but only when it is unambiguous
+  (`len(chosen) == 1`). Several variants chosen means the merchant has not said
+  which one this listing *is*, and a guess there is the defect wearing a
+  different hat.
+- **Publish writes units of the bound variant**, via `_sellable_units`, and
+  keeps `sellable_variants` as a variant count in the return value. The two
+  numbers are now two numbers.
+- **Publication refuses an unbound DROPSHIP listing** with
+  `SUPPLIER_VARIANT_UNBOUND`. That refusal is only fair to make because import
+  now satisfies it without the merchant doing anything extra — the seventh
+  corollary applied to the fix itself rather than discovered in the wreckage of
+  it. `STOCKED` sources are exempt; they ship from the seller's own shelf and
+  name no supplier variant.
+- **Price, availability and the live-reprice path all read the bound variant.**
+  A sibling at another price is catalogue, not an offer, so it can no longer
+  raise `VARIANT_PRICE_SPREAD` on a listing that was never selling it.
+
+The shape deliberately avoided: **binding at publish time from stock state.** It
+is the obvious convenience — "A is out of stock today, bind B" — and it is
+wrong, because `link_source` refuses to re-point an existing binding, so a
+transient warehouse fact would become the permanent identity of the product.
+Binding is a statement about *what the listing is*. Only the merchant's explicit
+choice makes it.
+
+`_sellable_units` has one deliberate asymmetry worth naming: "in stock, count
+unknown" yields **1**, not unlimited and not zero. `variants.availability`
+already trusts that state as AVAILABLE, so zero would discard a fact CJ gave us;
+any number above one would be a number nobody told us.
+
+### What the tests had to be
+
+Both halves survive any test that asserts the code returns what the code
+computes, so the assertions were put where the values land:
+`lifecycle.inventory_available(listing, 40) is True` and `(listing, 41) is
+False` read off the published row, and the binding is asserted by selecting
+`provider_variant_id` out of `marketplace_product_sources` after an ordinary
+import. `scripts/marketplace/dropship_binding_mutation_battery.py` pairs 15
+plausible "simplifications" with the one suite meant to catch each — including
+both readings of "no count" and both halves of import's `len(chosen) == 1` — and
+all 15 are caught.
+
+---
+
 ## What kept coming back
 
-Seven defects in this chain, seven different subsystems, one shape: **a number
+Eight defects in this chain, eight different subsystems, one shape: **a number
 was asserted rather than measured.**
 
 - `publish()` never wrote `price_label`, and the publish test asserted `status`
@@ -539,6 +649,11 @@ was asserted rather than measured.**
   a bound shop was `dispatch`'s — and the existing test asserted the refusal
   (`shop_binding_required`) without ever asking whether the refusal could be
   satisfied. A test that a door is locked is not a test that it opens.
+- `publish` asserted the shelf's stock by computing it — one integer that was a
+  count of variants where it was produced and a count of units where it was
+  read — and the publish tests asserted `quantity` equalled what that expression
+  returns, which it always did. Nothing asked the buyer's own function whether
+  132 units could be bought.
 
 In all of them the suite was green, and in all of them the green was about the
 halves rather than the seam. Where a claim spans two components, this document now
@@ -582,5 +697,17 @@ The seventh sharpens that into something checkable without running anything:
 had a test, a docstring defending it, and a comment explaining why loosening it
 would be wrong — all true, all about the closed position. Grep for the writers
 of the column a guard reads; if the only writer cannot be reached from the state
-the guard rejects, the guard is not a guard, it is a dead end. Two of the seams
+the guard rejects, the guard is not a guard, it is a dead end. Three of the seams
 here are that exact query returning one row.
+
+The eighth is the sharpest, because it needs no second component at all: **two
+meanings sharing one variable is a defect even while the value is right.**
+`sellable` was correct as a count of variants and correct as what the merchant's
+screen renders; it became false the moment it was stored in a column whose
+readers subtract from it. Neither line is wrong on its own, no handoff is
+crossed, and no test of either can fail. The tell is a unit mismatch, and the
+only place it is visible is where the value is consumed — which is why the
+assertion that would have caught it is not on `publish` at all, but on
+`lifecycle.inventory_available`. Generalised, and it is the same instruction the
+fourth and fifth seams arrived at from the other direction: **name the unit, and
+put the assertion at the surface that spends it.**

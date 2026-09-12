@@ -329,6 +329,20 @@ def _import_one(conn, *, merchant_id, seller_user_id, business_id, store_id,
         store_id=store_id,
         external_sku=product.get("external_sku"),
         source_snapshot_id=snapshot_id,
+        # The supplier variant an order for this listing will actually be placed
+        # for. `fulfillment.create_intent` can only order the variant named here
+        # (`gateway.get_product_binding` refuses outright when it is NULL), so a
+        # listing without one is a listing nothing can ship.
+        #
+        # Recorded here, and only when the merchant's selection leaves no room
+        # for interpretation. One chosen variant is not a choice we are making on
+        # their behalf -- it is the only thing this listing can be. With several
+        # chosen there genuinely is a question, this import has no answer to it,
+        # and inventing one would ship a buyer whichever variant we guessed.
+        # `link_source` refuses to re-point an existing binding, so this cannot
+        # silently override a merchant's later explicit choice either.
+        provider_variant_id=(chosen[0].get("external_variant_id")
+                             if len(chosen) == 1 else None),
         # The low end of the range, and ``None`` when no variant had a readable
         # cost. Never 0 — see ``normalize.cost_range``.
         supplier_cost_cents=low,

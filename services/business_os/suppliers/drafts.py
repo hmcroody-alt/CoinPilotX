@@ -56,6 +56,17 @@ RESTRICTED_PRODUCT = "RESTRICTED_PRODUCT"
 VARIANT_PRICE_SPREAD = "VARIANT_PRICE_SPREAD"
 #: Priced above what the checkout's own label format can carry.
 PRICE_ABOVE_CHECKOUT_LIMIT = "PRICE_ABOVE_CHECKOUT_LIMIT"
+#: No supplier variant is bound, so nothing can be ordered for this listing.
+#:
+#: ``marketplace_product_sources.provider_variant_id`` names the one variant an
+#: order is placed for. ``gateway.get_product_binding`` raises
+#: ``product_binding_required`` when it is NULL, and ``fulfillment.create_intent``
+#: goes through that function for every line -- so an unbound listing is one no
+#: supplier order can ever be created for. Publishing it produces a product a
+#: buyer can pay for and nobody can ship, which is the state §5's sellability
+#: contract exists to prevent. Measured on production listing 14: published,
+#: moderator-approved, on sale, and unbound.
+SUPPLIER_VARIANT_UNBOUND = "SUPPLIER_VARIANT_UNBOUND"
 
 #: The checkout's ceiling, mirrored from ``bot.MAX_PRICE_LABEL_CENTS``.
 #:
@@ -315,9 +326,10 @@ def _live_price_label(cur, listing_id, listing):
     dead product page, the other keeps charging a price they have replaced.
     """
     rows = variants.variants_for(cur, listing_id)
-    priced = [{"retail_cents": _retail_of(v),
+    priced = [{"provider_variant_id": v.get("provider_variant_id"),
+               "retail_cents": _retail_of(v),
                "availability": variants.availability(v)} for v in rows]
-    offered = _offered(priced)
+    offered = _offered(priced, variants.source_for(cur, listing_id))
     if not offered or any(v["retail_cents"] is None for v in offered):
         raise SupplierError("publication_blocked", http_status=422)
     distinct = {v["retail_cents"] for v in offered}
@@ -356,16 +368,81 @@ def _set_prices(cur, listing_id, seller_user_id, payload):
 # Publication
 # ---------------------------------------------------------------------------
 
-def _offered(priced):
+def _sold_variant(priced, source):
+    """The one supplier variant this listing sells, or ``None`` if unbound.
+
+    A dropshipped listing does not sell "its variants". It sells exactly the
+    variant named by ``marketplace_product_sources.provider_variant_id``, because
+    that is the only one an order can be placed for: ``create_intent`` resolves
+    every line through ``gateway.get_product_binding`` and then demands the
+    line's ``vid`` equal the bound one. The other rows are catalogue -- what the
+    supplier offers -- not stock this listing can sell.
+
+    Returns ``None`` both when nothing is bound and when the bound id names a
+    variant this listing does not have, which is drift rather than absence and is
+    reported as the same problem: there is no variant we can prove will ship.
+    """
+    bound = str((source or {}).get("provider_variant_id") or "").strip()
+    if not bound:
+        return None
+    for variant in priced:
+        if str(variant.get("provider_variant_id") or "").strip() == bound:
+            return variant
+    return None
+
+
+def _sellable_units(variant):
+    """How many *units* of the sold variant are on offer.
+
+    ``marketplace_listings.quantity`` is a unit ledger. The cart decrements it
+    per unit reserved (``marketplace_cart_routes``) and credits it back on
+    release, and ``lifecycle.inventory_available`` answers "may this buyer take
+    N" by comparing N against it.
+
+    Publishing used to seed it with ``sum(1 for v in rows if availability(v) ==
+    AVAILABLE)`` -- a count of *variants* -- and return that same integer as
+    ``sellable_variants``, which is what it honestly is; the mobile draft screen
+    renders it as "2 variants are on sale". One value, two meanings, one line
+    apart. Production listing 14 is the measurement: one variant, 132 units in
+    the supplier's warehouse, ``quantity = 1``. A three-colour product with 52
+    units behind it offered two.
+
+    ``None`` means available with no count, and becomes one unit at a time.
+    ``variants.availability`` deliberately trusts a provider that declares stock
+    without a number, so refusing to sell it would contradict that -- and any
+    number above 1 would be one nobody told us.
+    """
+    if variant.get("availability") != variants.AVAILABLE:
+        return 0
+    quantity = variant.get("stock_quantity")
+    if quantity is None:
+        return 1
+    try:
+        return max(0, int(quantity))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _offered(priced, source=None):
     """The variants a buyer could actually end up receiving.
 
-    An ``UNAVAILABLE`` variant is not on sale, so its price is not a promise to
+    When the listing is bound, that is the sold variant and nothing else -- see
+    :func:`_sold_variant`. Asking the whole variant set what price to charge only
+    ever made sense while no single variant was identifiable, and it is why
+    :data:`VARIANT_PRICE_SPREAD` had to exist.
+
+    Unbound, the old reading stands and is still right for a ``STOCKED`` source,
+    which the merchant fulfils themselves and which therefore needs no binding:
+    an ``UNAVAILABLE`` variant is not on sale, so its price is not a promise to
     anybody and must not block the rest of the product. The fallback is the part
     worth keeping: when *nothing* is available the listing still publishes, sold
     out, and it still needs a price written on it — otherwise it becomes a
     priceless listing again the moment the supplier restocks, which is the exact
     state this whole section exists to prevent.
     """
+    sold = _sold_variant(priced, source)
+    if sold is not None:
+        return [sold]
     return [v for v in priced
             if v.get("availability") != variants.UNAVAILABLE] or list(priced)
 
@@ -422,7 +499,8 @@ def _validate(listing, priced, source, media):
     # This used to be `all(... is None)`, which asked only whether the merchant
     # had priced *something*. A product with one variant at $20 and another left
     # blank published happily, and the blank one was then sold at $20.
-    offered = _offered(priced)
+    sold = _sold_variant(priced, source)
+    offered = _offered(priced, source)
     if offered and any(v.get("retail_cents") is None for v in offered):
         problems.append(MISSING_PRICE)
     elif offered:
@@ -433,10 +511,26 @@ def _validate(listing, priced, source, media):
             problems.append(PRICE_ABOVE_CHECKOUT_LIMIT)
     if any(v.get("margin_state") == pricing.NEGATIVE_MARGIN for v in priced):
         problems.append(NEGATIVE_MARGIN)
-    # Every variant indeterminate means we cannot say the product is buyable.
-    # One known-available variant is enough — the others are simply not offered.
-    if priced and all(v.get("availability") == variants.UNKNOWN for v in priced):
+    # Indeterminate stock is asked of the variant that will actually ship. While
+    # nothing was bound this had to be asked of the whole set, and "one known
+    # variant is enough" was the right reading of a question we could not aim.
+    # Bound, it is answerable exactly: the buyer receives that variant or nothing,
+    # so its state is the product's state and a sibling's cannot stand in for it.
+    inventory_pool = [sold] if sold is not None else priced
+    if inventory_pool and all(v.get("availability") == variants.UNKNOWN
+                              for v in inventory_pool):
         problems.append(UNKNOWN_INVENTORY)
+
+    # Nothing can be ordered for an unbound dropship listing. This is a refusal
+    # to publish a product that a buyer could pay for and nobody could ship --
+    # see `SUPPLIER_VARIANT_UNBOUND`. It is only a fair thing to demand because
+    # `importer` now binds at import when the merchant's selection names one
+    # variant, so the ordinary path satisfies it without the merchant doing
+    # anything. `STOCKED` sources are exempt: the merchant holds that inventory
+    # and places no supplier order, so there is nothing to bind.
+    if str(source.get("fulfillment_mode") or "").upper() == supplier_schema.MODE_DROPSHIP \
+            and priced and sold is None:
+        problems.append(SUPPLIER_VARIANT_UNBOUND)
 
     sync = str(source.get("sync_state") or "").upper()
     if sync == supplier_schema.SYNC_DISCONNECTED:
@@ -460,15 +554,14 @@ def publish(business_id, store_id, actor_user_id, connection_id, listing_id, *, 
     published, moderator-approved dropship product was publicly listed and then
     refused at add-to-cart with "This item is not priced for checkout."
 
-    ``quantity`` is set from the count of variants we can positively confirm are
-    available, because ``marketplace_listing_lifecycle.inventory_available``
-    gates purchasability on it for physical products. Confirmed-available only:
-    an indeterminate variant does not contribute, so a supplier outage lowers the
-    number toward zero rather than inventing stock.
-
-    This is a sellable-count policy, not a copy of the supplier's warehouse
-    quantity — the two are different numbers and conflating them is how a store
-    oversells a warehouse it does not control.
+    ``quantity`` is the number of *units* of the bound supplier variant that are
+    on offer, because ``marketplace_listing_lifecycle.inventory_available`` gates
+    purchasability on it for physical products and the cart decrements it per unit
+    reserved. It used to be a count of *variants* — see :func:`_sellable_units`
+    for the measurement, and note that the same integer is still returned as
+    ``sellable_variants``, where a count of variants is what it honestly means.
+    Confirmed-available only: an indeterminate variant contributes nothing, so a
+    supplier outage lowers the number to zero rather than inventing stock.
 
     ``cover_image_url`` is written here for the same reason and by the same
     argument as ``price_label``. The two halves keep media in different places:
@@ -503,6 +596,8 @@ def publish(business_id, store_id, actor_user_id, connection_id, listing_id, *, 
             raise SupplierError("not_a_supplier_product", http_status=404)
         rows = variants.variants_for(cur, listing_id)
         priced = [{
+            "provider_variant_id": v.get("provider_variant_id"),
+            "stock_quantity": v.get("stock_quantity"),
             "retail_cents": _retail_of(v),
             "availability": variants.availability(v),
             "margin_state": pricing.margin_state(_retail_of(v), v.get("cost_cents")),
@@ -512,11 +607,17 @@ def publish(business_id, store_id, actor_user_id, connection_id, listing_id, *, 
         if not verdict["publishable"]:
             raise SupplierError("publication_blocked", http_status=422)
 
+        # Two numbers, deliberately kept apart. `sellable` counts *variants* and
+        # is what the merchant's draft screen renders as "N variants are on sale";
+        # `units` is the buyer's stock ledger. They were one integer until now,
+        # which is why a product with 132 units in the warehouse offered one.
         sellable = sum(1 for v in rows if variants.availability(v) == variants.AVAILABLE)
+        offered = _offered(priced, source)
+        units = _sellable_units(offered[0])
         # `_validate` has just established that every offered variant carries the
         # same price, so there is exactly one number here and it is the merchant's
         # own -- nothing is being chosen on their behalf.
-        label = _checkout_price_label(_offered(priced)[0]["retail_cents"],
+        label = _checkout_price_label(offered[0]["retail_cents"],
                                       listing.get("currency"))
         # `_validate` has just established `media` is non-empty. `media[0]` is the
         # cover by this package's own definition -- `get_draft` reports exactly
@@ -527,7 +628,7 @@ def publish(business_id, store_id, actor_user_id, connection_id, listing_id, *, 
             "UPDATE marketplace_listings SET status='published', quantity=?, "
             "price_label=?, cover_image_url=?, published_at=?, updated_at=? "
             "WHERE id=? AND seller_user_id=?",
-            (sellable, label, cover, _iso(), _iso(), listing_id, int(seller_user_id)))
+            (units, label, cover, _iso(), _iso(), listing_id, int(seller_user_id)))
         conn.commit()
     finally:
         conn.close()

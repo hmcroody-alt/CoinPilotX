@@ -109,16 +109,60 @@ def rows(sql, args=()):
         conn.close()
 
 
-def imported(provider, pid="PID-1", **product_kwargs):
-    """Import one product and return its listing id."""
+def imported(provider, pid="PID-1", selection=None, **product_kwargs):
+    """Import one product and return its listing id.
+
+    ``selection`` is the merchant's per-variant choice, exactly as
+    ``SupplierProductScreen`` sends it. Left out, everything sellable is imported
+    — which is what the screen defaults to, and which produces a listing with no
+    single supplier variant behind it. See :func:`sellable`.
+    """
     provider.add(cj_product(pid, **product_kwargs))
     import_cart.add_item(BUSINESS, STORE, OWNER_ID, CONNECTION,
-                         external_product_id=pid, context=CONTEXT)
+                         external_product_id=pid, selected_variant_ids=selection,
+                         context=CONTEXT)
     result = importer.import_selected(BUSINESS, STORE, OWNER_ID, CONNECTION,
                                       context=CONTEXT)
     entry = result["results"][0]
     assert entry["outcome"] == importer.IMPORTED, entry
     return entry["listing_id"]
+
+
+def sellable(provider, pid="PID-1", vid=None, **product_kwargs):
+    """Import one product as something that can actually be sold.
+
+    A dropshipped listing sells exactly the supplier variant named by
+    ``marketplace_product_sources.provider_variant_id``: ``create_intent`` routes
+    every line through ``gateway.get_product_binding``, which refuses outright
+    when that column is NULL. So a listing with two variants and no binding is a
+    listing nothing can ship, and publication now says so
+    (``SUPPLIER_VARIANT_UNBOUND``).
+
+    Selecting one variant at import is how a merchant reaches that state through
+    the UI that exists — the import screen already sends the selection — and
+    ``importer`` records the binding from it. This helper is therefore the
+    ordinary path, and ``imported`` is the ambiguous one.
+    """
+    listing_id = imported(provider, pid=pid, selection=[vid or f"{pid}-V1"],
+                          **product_kwargs)
+    assert rows("SELECT provider_variant_id FROM marketplace_product_sources "
+                "WHERE listing_id=?", (listing_id,))[0]["provider_variant_id"] \
+        == (vid or f"{pid}-V1"), "import must bind the single chosen variant"
+    return listing_id
+
+
+def bind(listing_id, pid, vid, provider="cj"):
+    """Bind a supplier variant to an already-imported listing.
+
+    The same call ``POST .../cj/connections/<id>/bind-product`` makes. Used by the
+    multi-variant tests, which are about what publication does once the listing
+    names what it sells — reaching that through the real route rather than an
+    UPDATE keeps them honest about how a merchant would get there.
+    """
+    return gateway.bind_product(
+        connection_id=CONNECTION, business_id=BUSINESS, store_id=STORE,
+        actor_user_id=OWNER_ID, canonical_product_id=listing_id, pid=pid, vid=vid,
+        context=CONTEXT)
 
 
 def draft_of(listing_id):
@@ -428,7 +472,7 @@ def test_validate_changes_nothing(provider):
 
 
 def test_a_valid_draft_publishes(provider):
-    listing_id = imported(provider)
+    listing_id = sellable(provider)
     price_every_variant(listing_id, 2000)
     result = drafts.publish(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id, context=CONTEXT)
     assert result["status"] == "published"
@@ -440,7 +484,7 @@ def test_a_valid_draft_publishes(provider):
 def test_publishing_does_not_self_approve_moderation(provider):
     # is_public() requires status AND approval. A product that approved itself
     # skipped review, and nothing downstream would notice.
-    listing_id = imported(provider)
+    listing_id = sellable(provider)
     price_every_variant(listing_id, 2000)
     result = drafts.publish(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id, context=CONTEXT)
     assert result["awaiting_moderation"] is True
@@ -450,23 +494,143 @@ def test_publishing_does_not_self_approve_moderation(provider):
 
 
 def test_a_published_but_unapproved_listing_is_not_publicly_visible(provider):
-    listing_id = imported(provider)
+    listing_id = sellable(provider)
     price_every_variant(listing_id, 2000)
     drafts.publish(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id, context=CONTEXT)
     listing = rows("SELECT * FROM marketplace_listings WHERE id=?", (listing_id,))[0]
     assert lifecycle.is_public(listing) is False
 
 
-def test_published_quantity_counts_confirmed_variants_not_supplier_stock(provider):
-    # The supplier says 40 and 12. That is a warehouse we do not control; the
-    # listing's quantity is a count of variants we can positively confirm.
-    listing_id = imported(provider)
+def test_published_quantity_is_units_of_the_bound_variant_not_a_count_of_variants(provider):
+    # `marketplace_listings.quantity` is a unit ledger: the cart decrements it per
+    # unit reserved and `lifecycle.inventory_available` answers "may this buyer
+    # take N" by comparing N against it. Publish used to seed it with
+    # `sum(1 for v in rows if availability(v) == AVAILABLE)` -- a count of
+    # *variants* -- and return the same integer as `sellable_variants`, which is
+    # what it honestly is. One value, two meanings, one line apart.
+    #
+    # The supplier holds 40 units of V1. The buyer's shelf must offer 40, not 1.
+    listing_id = sellable(provider)
     price_every_variant(listing_id, 2000)
     result = drafts.publish(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id, context=CONTEXT)
     quantity = rows("SELECT quantity FROM marketplace_listings WHERE id=?",
                     (listing_id,))[0]["quantity"]
-    assert quantity == result["sellable_variants"] == 2
-    assert quantity != 52
+    assert quantity == 40, "the shelf must carry units, not a count of variants"
+    assert result["sellable_variants"] == 1, "and the merchant's count stays a count"
+
+    # Measured where it lands, not where it is written: the buyer surface.
+    listing = dict(rows("SELECT * FROM marketplace_listings WHERE id=?", (listing_id,))[0])
+    listing["listing_type"] = listing["product_type"] = "physical"
+    assert lifecycle.inventory_available(listing, 40) is True
+    assert lifecycle.inventory_available(listing, 41) is False
+
+
+def test_an_unbound_multi_variant_listing_cannot_be_published(provider):
+    # Two variants imported, nothing bound. `create_intent` resolves every line
+    # through `gateway.get_product_binding`, which raises `product_binding_required`
+    # when `provider_variant_id` is NULL -- so this listing is one a buyer could
+    # pay for and nobody could ship. Production listing 14 is exactly this state:
+    # published, moderator-approved, on sale, unbound.
+    listing_id = imported(provider)
+    price_every_variant(listing_id, 2000)
+    problems = drafts.validate(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id,
+                               context=CONTEXT)["problems"]
+    assert drafts.SUPPLIER_VARIANT_UNBOUND in problems
+    with pytest.raises(SupplierError):
+        drafts.publish(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id, context=CONTEXT)
+    assert rows("SELECT status FROM marketplace_listings WHERE id=?",
+                (listing_id,))[0]["status"] == "draft"
+
+
+def test_binding_a_variant_is_what_makes_the_unbound_listing_publishable(provider):
+    # A guard is only finished when something can satisfy it. This is that
+    # something, through the route a merchant would use: `bind-product`.
+    listing_id = imported(provider)
+    price_every_variant(listing_id, 2000)
+    assert drafts.SUPPLIER_VARIANT_UNBOUND in drafts.validate(
+        BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id, context=CONTEXT)["problems"]
+
+    bind(listing_id, "PID-1", "PID-1-V2")
+
+    assert drafts.validate(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id,
+                           context=CONTEXT) == {"publishable": True, "problems": []}
+    result = drafts.publish(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id, context=CONTEXT)
+    assert result["status"] == "published"
+    # V2, the bound one, holds 12 units. V1's 40 belong to a variant this listing
+    # does not sell and must not appear on the shelf.
+    assert rows("SELECT quantity FROM marketplace_listings WHERE id=?",
+                (listing_id,))[0]["quantity"] == 12
+
+
+def test_in_stock_with_no_count_offers_exactly_one_unit(provider):
+    # `variants.availability` deliberately trusts a provider that declares stock
+    # without a number -- demanding a count would make every such variant
+    # permanently unbuyable. The shelf still has to name a number, and any number
+    # above one would be one nobody told us.
+    listing_id = sellable(provider, pid="PID-3", variants_=[
+        {"vid": "PID-3-V1", "variantKey": "Black-S", "variantSellPrice": "8.20",
+         "stockStatus": "IN_STOCK"}])
+    assert draft_of(listing_id)["variants"][0]["stock_quantity"] is None
+    price_every_variant(listing_id, 2000)
+    drafts.publish(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id, context=CONTEXT)
+    assert rows("SELECT quantity FROM marketplace_listings WHERE id=?",
+                (listing_id,))[0]["quantity"] == 1
+
+
+def test_a_binding_that_names_a_variant_the_listing_no_longer_has_is_unbound(provider):
+    # Drift, not absence -- but the same problem. A supplier sync that dropped
+    # V1 leaves `provider_variant_id` pointing at nothing, and an order would be
+    # placed for a variant CJ no longer has. "Nearly bound" must not read as bound.
+    listing_id = imported(provider)
+    bind(listing_id, "PID-1", "PID-1-V2")
+    price_every_variant(listing_id, 2000)
+    conn = db.connect()
+    try:
+        conn.execute(f"DELETE FROM {variants.VARIANT_TABLE} WHERE listing_id=? "
+                     "AND provider_variant_id=?", (listing_id, "PID-1-V2"))
+        conn.commit()
+    finally:
+        conn.close()
+
+    assert drafts.SUPPLIER_VARIANT_UNBOUND in drafts.validate(
+        BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id, context=CONTEXT)["problems"]
+
+
+def test_an_available_sibling_cannot_answer_for_an_unknown_bound_variant(provider):
+    # `UNKNOWN_INVENTORY` used to ask the whole variant set, because nothing
+    # identified which variant the buyer would receive and one known-available
+    # variant was the best evidence available. Bound, the buyer receives V1 or
+    # nothing, so V1's 40-unit sibling says nothing about whether V1 can ship.
+    listing_id = imported(provider, pid="PID-4", variants_=[
+        {"vid": "PID-4-V1", "variantKey": "Black-S", "variantSellPrice": "8.20"},
+        {"vid": "PID-4-V2", "variantKey": "Black-M", "variantSellPrice": "8.20",
+         "variantQuantity": 40},
+    ])
+    bind(listing_id, "PID-4", "PID-4-V1")
+    price_every_variant(listing_id, 2000)
+
+    draft = draft_of(listing_id)
+    assert [v["availability"] for v in draft["variants"]] == ["UNKNOWN", "AVAILABLE"]
+    assert drafts.UNKNOWN_INVENTORY in draft["validation"]["problems"]
+
+
+def test_a_stocked_source_needs_no_supplier_binding():
+    # The merchant holds this inventory and places no supplier order, so there is
+    # nothing to bind and nothing `create_intent` would refuse. Demanding a
+    # binding here would make a whole fulfillment mode unpublishable to satisfy a
+    # guard that protects the other one.
+    listing = {"title": "Hand-thrown mug", "category": "Home", "approval_status": "approved"}
+    priced = [{"provider_variant_id": "V1", "stock_quantity": 3, "retail_cents": 2000,
+               "availability": variants.AVAILABLE, "margin_state": pricing.HEALTHY}]
+    stocked = {"fulfillment_mode": supplier_schema.MODE_STOCKED,
+               "sync_state": supplier_schema.SYNC_SYNCED}
+    assert drafts._validate(listing, priced, stocked, ["https://cdn.example.com/a.jpg"]) \
+        == {"publishable": True, "problems": []}
+
+    dropship = dict(stocked, fulfillment_mode=supplier_schema.MODE_DROPSHIP)
+    assert drafts._validate(listing, priced, dropship,
+                            ["https://cdn.example.com/a.jpg"])["problems"] \
+        == [drafts.SUPPLIER_VARIANT_UNBOUND]
 
 
 def test_an_all_unknown_inventory_draft_is_blocked(provider):
@@ -496,7 +660,7 @@ def test_an_all_unknown_inventory_draft_is_blocked(provider):
 # published_at and never the price -- which is how it stayed green.
 
 def test_publishing_writes_the_price_the_buyer_path_reads(provider):
-    listing_id = imported(provider)
+    listing_id = sellable(provider)
     price_every_variant(listing_id, 2000)
     result = drafts.publish(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id, context=CONTEXT)
 
@@ -524,7 +688,7 @@ def test_what_publish_leaves_behind_is_a_state_moderation_will_act_on(provider):
     failure this suite keeps finding, one component describing another rather
     than measuring it.
     """
-    listing_id = imported(provider)
+    listing_id = sellable(provider)
     price_every_variant(listing_id, 2000)
     result = drafts.publish(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id,
                             context=CONTEXT)
@@ -558,7 +722,7 @@ def test_publishing_writes_the_cover_the_buyer_path_reads(provider):
     ``cf.cjdropshipping.com`` URLs while the column is NULL, because it was
     written before ``importer._insert_listing`` began setting the column.
     """
-    listing_id = imported(provider)
+    listing_id = sellable(provider)
     price_every_variant(listing_id, 2000)
 
     conn = db.connect()
@@ -589,7 +753,7 @@ def test_a_published_listing_leaves_the_two_media_stores_agreeing(provider):
     # The column and the metadata are two spellings of one fact, written by three
     # functions now (import, edit, publish). A test that only checked the column
     # was populated would pass if publish wrote some other listing's picture.
-    listing_id = imported(provider)
+    listing_id = sellable(provider)
     price_every_variant(listing_id, 2000)
     drafts.publish(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id, context=CONTEXT)
 
@@ -603,7 +767,7 @@ def test_a_published_listing_leaves_the_two_media_stores_agreeing(provider):
 def test_publishing_does_not_overwrite_a_cover_the_merchant_reordered(provider):
     # `update_draft` writes both stores, so a reorder moves the cover. Publish
     # must land on the merchant's current first choice, not the import's.
-    listing_id = imported(provider)
+    listing_id = sellable(provider)
     price_every_variant(listing_id, 2000)
     original = draft_of(listing_id)["media"]
     assert len(original) > 1, "fixture needs more than one image to reorder"
@@ -629,7 +793,7 @@ def test_the_published_label_charges_exactly_what_the_merchant_set(provider):
     """
     import bot
 
-    listing_id = imported(provider)
+    listing_id = sellable(provider)
     price_every_variant(listing_id, 2000)
     drafts.publish(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id, context=CONTEXT)
     listing = rows("SELECT price_label, currency FROM marketplace_listings WHERE id=?",
@@ -682,7 +846,7 @@ def test_a_published_approved_import_is_purchasable_on_every_field_a_buyer_reads
     """
     import bot
 
-    listing_id = imported(provider)
+    listing_id = sellable(provider)
     price_every_variant(listing_id, 2000)
     drafts.publish(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id, context=CONTEXT)
 
@@ -783,15 +947,35 @@ def test_a_price_the_checkout_would_clamp_is_refused(provider):
         drafts.publish(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id, context=CONTEXT)
 
 
-def test_an_unavailable_variant_does_not_block_the_rest(provider):
-    # Publication already treats one confirmed variant as enough to sell. The
-    # price rules have to agree with that, or a sold-out colourway would take the
-    # whole product off sale.
+def test_a_sibling_variant_at_another_price_cannot_move_the_bound_price(provider):
+    # `VARIANT_PRICE_SPREAD` exists because nothing identified which variant the
+    # buyer would receive, so every price in the set was one we might have to
+    # honour. Bound, the question is answerable: the buyer receives V1 or nothing.
+    # V2 at $35.00 is then a catalogue fact about a variant this listing does not
+    # sell, and it must not take the product off sale or change what is charged.
     listing_id = imported(provider)
+    bind(listing_id, "PID-1", "PID-1-V1")
     draft = draft_of(listing_id)
     first, second = (str(v["variant_id"]) for v in draft["variants"])
     drafts.update_draft(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id,
                         fields={"price_cents": {first: 2000, second: 3500}}, context=CONTEXT)
+
+    assert drafts.validate(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id,
+                           context=CONTEXT)["problems"] == []
+    result = drafts.publish(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id, context=CONTEXT)
+    assert result["price_label"] == "$20.00"
+    assert rows("SELECT quantity FROM marketplace_listings WHERE id=?",
+                (listing_id,))[0]["quantity"] == 40
+
+
+def test_an_unavailable_sibling_does_not_block_the_bound_variant(provider):
+    # The old shape of this test: a sold-out colourway must not take the whole
+    # product off sale. Still true, and now for a structural reason rather than a
+    # policy one -- the sibling is not offered at all.
+    listing_id = imported(provider)
+    bind(listing_id, "PID-1", "PID-1-V1")
+    price_every_variant(listing_id, 2000)
+    second = str(draft_of(listing_id)["variants"][1]["variant_id"])
     conn = db.connect()
     try:
         conn.execute(
@@ -803,6 +987,8 @@ def test_an_unavailable_variant_does_not_block_the_rest(provider):
     result = drafts.publish(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id, context=CONTEXT)
     assert result["price_label"] == "$20.00"
     assert result["sellable_variants"] == 1
+    assert rows("SELECT quantity FROM marketplace_listings WHERE id=?",
+                (listing_id,))[0]["quantity"] == 40
 
 
 def test_a_sold_out_product_still_carries_its_price(provider):
@@ -812,7 +998,7 @@ def test_a_sold_out_product_still_carries_its_price(provider):
     # state this whole section exists to prevent. Without the fallback in
     # `_offered` there is no offered variant to take a price from at all, and
     # publish raises IndexError instead: a 500 on a legitimate sold-out product.
-    listing_id = imported(provider)
+    listing_id = sellable(provider)
     price_every_variant(listing_id, 2000)
     conn = db.connect()
     try:
@@ -836,7 +1022,7 @@ def test_repricing_a_live_product_reaches_the_buyer(provider):
     # of a listing that is already live must not leave the cart charging the old
     # one -- the draft screen would show the new number while every buyer paid
     # the old, and the merchant would have no way to see the difference.
-    listing_id = imported(provider)
+    listing_id = sellable(provider)
     price_every_variant(listing_id, 2000)
     drafts.publish(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id, context=CONTEXT)
     assert rows("SELECT price_label FROM marketplace_listings WHERE id=?",
@@ -845,6 +1031,24 @@ def test_repricing_a_live_product_reaches_the_buyer(provider):
     price_every_variant(listing_id, 3000)
     assert rows("SELECT price_label FROM marketplace_listings WHERE id=?",
                 (listing_id,))[0]["price_label"] == "$30.00"
+
+
+def test_repricing_a_sibling_on_a_live_bound_product_is_not_a_spread(provider):
+    # `_live_price_label` is the second price writer and it asks the same question
+    # `_validate` does. Left reading the whole variant set while `_validate` reads
+    # the bound one, the two disagree: the merchant corrects the price of a
+    # colourway this listing does not sell and the route answers 422 for a
+    # listing that is, by publication's own reckoning, perfectly chargeable.
+    listing_id = imported(provider)
+    bind(listing_id, "PID-1", "PID-1-V1")
+    price_every_variant(listing_id, 2000)
+    drafts.publish(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id, context=CONTEXT)
+
+    second = str(draft_of(listing_id)["variants"][1]["variant_id"])
+    drafts.update_draft(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id,
+                        fields={"price_cents": {second: 3500}}, context=CONTEXT)
+    assert rows("SELECT price_label FROM marketplace_listings WHERE id=?",
+                (listing_id,))[0]["price_label"] == "$20.00"
 
 
 def test_repricing_a_draft_does_not_price_it_for_the_buyer(provider):
@@ -859,15 +1063,17 @@ def test_repricing_a_draft_does_not_price_it_for_the_buyer(provider):
 
 
 def test_a_live_product_cannot_be_repriced_into_an_unchargeable_state(provider):
-    listing_id = imported(provider)
+    listing_id = sellable(provider)
     price_every_variant(listing_id, 2000)
     drafts.publish(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id, context=CONTEXT)
 
-    draft = draft_of(listing_id)
-    first, second = (str(v["variant_id"]) for v in draft["variants"])
+    # Clearing the bound variant's price is the unchargeable state a bound
+    # listing can still be repriced into: `parse_price_label_to_cents` reads an
+    # empty label as zero, so the buyer would be charged nothing.
+    first = str(draft_of(listing_id)["variants"][0]["variant_id"])
     with pytest.raises(SupplierError) as exc:
         drafts.update_draft(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id,
-                            fields={"price_cents": {first: 2000, second: 3500}},
+                            fields={"price_cents": {first: None}},
                             context=CONTEXT)
     assert exc.value.http_status == 422
     # Refused outright rather than left on sale at a price the merchant replaced.
