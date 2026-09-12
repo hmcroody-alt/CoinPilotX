@@ -53,13 +53,35 @@ describe("Marketplace buyer purchase presentation", () => {
 
   it("uses only configured fulfillment values and never invents an estimate", () => {
     expect(fulfillmentCopy(listing({ listing_metadata: { condition: "new", variants: [], delivery_options: "shipping", location: "", return_policy: "none" } }))).toBe("Shipping");
-    expect(fulfillmentCopy(listing({ delivery_type: undefined, listing_metadata: {} }))).toBe("Delivery details shown at checkout");
+    // Nothing configured means nothing configured. This case used to clear
+    // `delivery_type` and the metadata while leaving `listing_type: "physical"`
+    // in the fixture, so it described a physical listing and asserted the copy
+    // for an undeclared one.
+    expect(fulfillmentCopy(listing({
+      listing_type: undefined, product_type: undefined, delivery_type: undefined, listing_metadata: {}
+    }))).toBe("Delivery details shown at checkout");
+  });
+
+  it("says Shipping for a physical listing whose seller named no lane", () => {
+    // `delivery_options` is optional — `_take_enum` returns early when the key
+    // is absent — so a physical listing with no lane is an ordinary row, and the
+    // checkout asks such a buyer for a delivery address. Saying "Delivery
+    // details shown at checkout" above that form would be the drift this file
+    // exists to prevent, pointing the other way.
+    const bare = listing({ listing_metadata: { condition: "new" } });
+    expect(fulfillmentCopy(bare)).toBe("Shipping");
+    expect(fulfillmentLane(bare)).toBe("shipping");
   });
 
   it("routes the checkout lane from the same fields the buyer copy reads", () => {
     // The sentence and the lane must not drift: an item that reads "Local
     // pickup" cannot check out as shipping.
-    expect(fulfillmentLane(listing({ delivery_type: "pickup" }))).toBe("pickup");
+    //
+    // This assertion used to read `listing({ delivery_type: "pickup" })` over a
+    // fixture whose metadata said "both" — a row contradicting itself in a
+    // column the database never fills with a lane at all. It passed because the
+    // code read that column first, which is the defect. The seller's answer
+    // lives in the metadata, so that is what is asserted.
     expect(fulfillmentLane(listing({ listing_metadata: { delivery_options: "pickup" } }))).toBe("pickup");
     expect(fulfillmentLane(listing({ listing_type: "digital", product_type: "digital" }))).toBe("digital");
 

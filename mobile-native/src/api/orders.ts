@@ -31,6 +31,15 @@ export type BuyerOrder = {
   status?: string;
   status_group?: BuyerOrderStatus | string;
   payment_status?: string;
+  /**
+   * The lane this order was actually placed on, as settled at checkout and
+   * frozen onto the transaction. One of `MarketplaceFulfillmentKind`.
+   *
+   * This is the order's own historical fact, not a listing lookup: the seller
+   * may have edited or delisted the item since, and a listing that offered both
+   * lanes only became one of them when this buyer chose.
+   */
+  fulfillment_kind?: string;
   created_at?: string;
   updated_at?: string;
   receipt_url?: string;

@@ -33,6 +33,7 @@ rules, so the form the buyer fills in is the form the server will accept.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from typing import Any
@@ -64,8 +65,6 @@ STOCKLESS_KINDS = frozenset({
 
 DETAILS_REQUIRED_CODE = "FULFILLMENT_DETAILS_REQUIRED"
 LANE_REQUIRED_CODE = "FULFILLMENT_REQUIRED"
-
-_PICKUP_OR_SHIPPING = {"both", "pickup_or_shipping", "shipping_or_pickup"}
 
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _HHMM_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
@@ -109,20 +108,107 @@ def shipping_countries() -> tuple[str, ...]:
     return codes or ("US",)
 
 
+#: ISO-3166-1 alpha-2 -> country name. The same table the checkout's country
+#: picker holds in `mobile-native/src/api/checkoutCountries.ts`, whose comment
+#: says "The server never sees them; it sees the ISO-3166-1 alpha-2 code, which
+#: is the contract." That was true of the buyer's half of the wire and is not
+#: true of the supplier's: CJ's create-order takes `shippingCountryCode` *and*
+#: `shippingCountry`, and the latter is a name ("United States"), which the
+#: frozen address does not hold. `test_country_names_match_the_picker` pins the
+#: two tables to each other so they cannot drift apart.
+_COUNTRY_NAMES = {
+    "AE": "United Arab Emirates", "AR": "Argentina", "AT": "Austria",
+    "AU": "Australia", "BE": "Belgium", "BG": "Bulgaria", "BR": "Brazil",
+    "CA": "Canada", "CH": "Switzerland", "CL": "Chile", "CN": "China",
+    "CO": "Colombia", "CY": "Cyprus", "CZ": "Czechia", "DE": "Germany",
+    "DK": "Denmark", "EE": "Estonia", "EG": "Egypt", "ES": "Spain",
+    "FI": "Finland", "FR": "France", "GB": "United Kingdom", "GH": "Ghana",
+    "GR": "Greece", "HK": "Hong Kong SAR China", "HR": "Croatia",
+    "HU": "Hungary", "ID": "Indonesia", "IE": "Ireland", "IL": "Israel",
+    "IN": "India", "IS": "Iceland", "IT": "Italy", "JP": "Japan",
+    "KE": "Kenya", "KR": "South Korea", "LT": "Lithuania",
+    "LU": "Luxembourg", "LV": "Latvia", "MA": "Morocco", "MT": "Malta",
+    "MX": "Mexico", "MY": "Malaysia", "NG": "Nigeria", "NL": "Netherlands",
+    "NO": "Norway", "NZ": "New Zealand", "PE": "Peru", "PH": "Philippines",
+    "PL": "Poland", "PT": "Portugal", "RO": "Romania", "SA": "Saudi Arabia",
+    "SE": "Sweden", "SG": "Singapore", "SI": "Slovenia", "SK": "Slovakia",
+    "TH": "Thailand", "TR": "Türkiye", "TW": "Taiwan", "UA": "Ukraine",
+    "US": "United States", "VN": "Vietnam", "ZA": "South Africa",
+}
+
+
+def country_name(code: Any) -> str:
+    """The country's name, or ``""`` for a code this table does not know.
+
+    Deliberately the opposite fallback from the picker's ``countryName``, which
+    returns the code itself so that "an unrecognised country the server *does*
+    accept must still be selectable". That is right for a label a human reads
+    and wrong for a field a supplier ships against: `XK` is not the name of a
+    country, and sending it would be this repo's recurring defect -- asserting a
+    fact instead of admitting it is unknown. An empty answer lets the caller say
+    so.
+    """
+    return _COUNTRY_NAMES.get(str(code or "").strip().upper(), "")
+
+
 # ---------------------------------------------------------------------------
 # Kind resolution
 # ---------------------------------------------------------------------------
+
+#: Every spelling of a delivery lane that has ever been stored, folded onto the
+#: four the rest of this module reasons about. ``listing_metadata`` is validated
+#: against ``{pickup, shipping, both}``; the rest are legacy column spellings.
+_LANE_WORDS = {
+    "pickup": "pickup", "local": "pickup", "meetup": "pickup",
+    "shipping": "shipping", "delivery": "shipping",
+    "both": "both", "pickup_or_shipping": "both", "shipping_or_pickup": "both",
+    "digital": "digital", "download": "digital",
+}
+
+
+def delivery_lane(delivery_type: Any, metadata: Any = None, listing_type: Any = None) -> str:
+    """The delivery lane the seller declared, or ``""`` if they declared none.
+
+    ``marketplace_listings.delivery_type`` does not hold one, and never has.
+    Every writer of that column stores the *product type* in it: the publish
+    route's INSERT lists ``delivery_type, product_type`` against
+    ``product_type, product_type`` (``bot.py``), the CJ importer hardcodes
+    ``'physical','physical'``, and the column's own DDL default is ``'digital'``.
+    So it reads ``physical`` for every physical listing in the table and it can
+    never read ``pickup``, ``shipping`` or ``both``.
+
+    The seller's actual answer is ``listing_metadata.delivery_options``, which
+    ``marketplace_listing_types._validate_physical`` validates against exactly
+    those three words. It is read first here.
+
+    The column is still consulted, but only for a row that declared no listing
+    type at all — a pre-types legacy row, where it is the only signal there is.
+    Consulting it for a *typed* row is what made every caller of this rule answer
+    ``shipping`` for every physical listing ever published, including the ones
+    whose sellers said pickup only, and made ``shipping_or_pickup`` unreachable:
+    ``option = delivery or meta.get("delivery_options")`` could never reach its
+    right-hand side, because the left-hand side was always the string
+    ``"physical"``.
+    """
+    meta = metadata if isinstance(metadata, dict) else {}
+    lane = _LANE_WORDS.get(str(meta.get("delivery_options") or "").strip().lower(), "")
+    if lane:
+        return lane
+    if str(listing_type or "").strip().lower():
+        return ""
+    return _LANE_WORDS.get(str(delivery_type or "").strip().lower(), "")
+
 
 def resolve_kind(listing_type: Any, delivery_type: Any, metadata: Any = None) -> str:
     """Canonical fulfilment kind for a stored listing row.
 
     Reads the seller's own declarations — the listing type and the type-specific
     metadata they filled in — rather than the delivery column alone, which for a
-    service or booking row carries no delivery meaning at all.
+    service or booking row carries no delivery meaning at all, and which for a
+    physical row carries the word ``physical``. See :func:`delivery_lane`.
     """
     meta = metadata if isinstance(metadata, dict) else {}
     kind = str(listing_type or "").strip().lower()
-    delivery = str(delivery_type or "").strip().lower()
 
     if kind == "digital":
         return "digital"
@@ -141,12 +227,12 @@ def resolve_kind(listing_type: Any, delivery_type: Any, metadata: Any = None) ->
         return "booking_in_person" if str(meta.get("meeting_mode") or "").strip().lower() == "in_person" else "booking_remote"
 
     # Physical, and anything legacy that never declared a type.
-    option = delivery or str(meta.get("delivery_options") or "").strip().lower()
-    if option == "digital":
+    lane = delivery_lane(delivery_type, meta, listing_type)
+    if lane == "digital":
         return "digital"
-    if option in _PICKUP_OR_SHIPPING:
+    if lane == "both":
         return "shipping_or_pickup"
-    if option == "pickup":
+    if lane == "pickup":
         return "pickup"
     return "shipping"
 
@@ -354,6 +440,56 @@ def snapshot(kind: str, cleaned: Any) -> dict[str, Any]:
     when it was booked for, even if the seller has since edited the listing.
     """
     return {"kind": kind, "details": dict(cleaned or {})}
+
+
+def order_kind(metadata: Any, listing: Any = None) -> str:
+    """The lane an order was actually placed on.
+
+    The inverse of :func:`snapshot`, and the only function any order serializer
+    should ask. Two things make the frozen value the right answer rather than a
+    convenient one:
+
+    * it is *settled*. A listing offering both lanes resolves to
+      ``shipping_or_pickup``, and only the buyer's answer at checkout narrows
+      it. Re-deriving from the listing recovers the ambiguity, not the choice.
+    * it is *historical*. The listing can be edited, relisted, or deleted after
+      the sale; the order still has to say where that parcel went.
+
+    ``listing`` is consulted only for rows written before the snapshot existed,
+    and can still only reach an undecided kind — which is honest, because such a
+    row genuinely never recorded which lane was picked.
+
+    Note that ``listing["delivery_type"]`` is not worth selecting for this: an
+    order serializer normalises the listing type first, and
+    ``effective_listing_type`` never returns empty, so ``delivery_lane`` reaches
+    its column branch for no row a serializer can hand over. The seller's
+    ``delivery_options`` is the whole of the answer here.
+    """
+    frozen = metadata.get("fulfillment") if isinstance(metadata, dict) else None
+    if isinstance(frozen, dict):
+        kind = str(frozen.get("kind") or "").strip().lower()
+        if kind in KINDS:
+            return kind
+    if isinstance(listing, dict) and listing:
+        # The serializer may hand over either the parsed metadata or the raw
+        # column. `resolve_kind` ignores a string silently — and ignoring it
+        # here means losing `delivery_options`, which is the seller's entire
+        # declaration, and answering "shipping" for a pickup-only listing. So
+        # the string case is parsed rather than passed through.
+        meta = listing.get("listing_metadata")
+        if not isinstance(meta, dict):
+            try:
+                meta = json.loads(listing.get("listing_metadata_json") or "{}")
+            except Exception:
+                meta = {}
+            if not isinstance(meta, dict):
+                meta = {}
+        return resolve_kind(
+            listing.get("listing_type") or listing.get("product_type"),
+            listing.get("delivery_type"),
+            meta,
+        )
+    return ""
 
 
 def stripe_shipping(cleaned: Any) -> dict[str, Any]:

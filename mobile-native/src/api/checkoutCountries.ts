@@ -14,8 +14,14 @@
  * configuration, not a constant, and the client has to ask for it. That is what
  * `GET /api/pulse/marketplace/cart/checkout-options` returns.
  *
- * The names below are only the display half. The server never sees them; it
- * sees the ISO-3166-1 alpha-2 code, which is the contract.
+ * The names below are the display half of what the *buyer* sends: the server
+ * receives the ISO-3166-1 alpha-2 code, not the name. That is the whole of the
+ * buyer's contract and none of the supplier's. CJ's create-order takes
+ * `shippingCountryCode` *and* `shippingCountry`, and the latter is a name — so
+ * the server keeps its own copy of this table in
+ * `services/marketplace_fulfillment._COUNTRY_NAMES`, and
+ * `test_country_names_match_the_picker` pins the two together. Adding a country
+ * here alone is a checkout that completes into an order no supplier can fill.
  */
 
 import { pulseApi } from "./pulseApi";

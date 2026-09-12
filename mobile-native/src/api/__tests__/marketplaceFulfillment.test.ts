@@ -1,4 +1,5 @@
 import {
+  deliveryLane,
   firstMissingFulfillmentField,
   fulfillmentDestinationSummary,
   fulfillmentFields,
@@ -41,12 +42,92 @@ describe("the order type the buyer is checking out", () => {
       .toBe("event_in_person");
   });
 
-  it("keeps the physical lanes reading the same as before", () => {
+  it("reads a legacy row that declared no type from its delivery column", () => {
+    // These four have no `listing_type` and no `product_type`. That is the only
+    // shape for which the column is the seller's answer, because it is the only
+    // signal such a row has.
     expect(resolveFulfillmentKind(listing({ listing_type: "digital" }))).toBe("digital");
     expect(resolveFulfillmentKind(listing({ delivery_type: "pickup" }))).toBe("pickup");
     expect(resolveFulfillmentKind(listing({ delivery_type: "shipping" }))).toBe("shipping");
     expect(resolveFulfillmentKind(listing({ delivery_type: "both" }))).toBe("shipping_or_pickup");
-    expect(resolveFulfillmentKind(listing({ listing_metadata: { delivery_options: "pickup" } }))).toBe("pickup");
+  });
+
+  it("reads a published listing from the seller's declaration, not the column", () => {
+    // The shape the server actually stores: `delivery_type` carries the product
+    // type, because the publish INSERT writes `product_type` into it. Every
+    // assertion in this block used to be written the other way round — a lane
+    // word in the column — and passed for that reason.
+    const published = (delivery_options: string) =>
+      listing({
+        listing_type: "physical",
+        product_type: "physical",
+        delivery_type: "physical",
+        listing_metadata: { condition: "new", delivery_options }
+      });
+
+    expect(resolveFulfillmentKind(published("pickup"))).toBe("pickup");
+    expect(resolveFulfillmentKind(published("shipping"))).toBe("shipping");
+    expect(resolveFulfillmentKind(published("both"))).toBe("shipping_or_pickup");
+  });
+
+  it("does not let the column contradict the seller", () => {
+    const row = (delivery_type: string) =>
+      listing({ listing_type: "physical", delivery_type, listing_metadata: { delivery_options: "pickup" } });
+    // Including `digital`, the column's own DDL default, which would otherwise
+    // make a physical parcel a download: no address asked, no stock held.
+    for (const column of ["physical", "shipping", "digital", ""]) {
+      expect(resolveFulfillmentKind(row(column))).toBe("pickup");
+    }
+  });
+
+  it("answers shipping for a physical listing whose seller named no lane", () => {
+    // `delivery_options` is optional server-side, so this row is ordinary.
+    expect(resolveFulfillmentKind(listing({
+      listing_type: "physical", product_type: "physical", delivery_type: "digital", listing_metadata: {}
+    }))).toBe("shipping");
+  });
+});
+
+describe("the one lane rule", () => {
+  it("does not read a product type as a lane", () => {
+    // `physical` is what `delivery_type` actually contains. Reading it as
+    // anything at all is the defect; reading it as nothing is the fix.
+    expect(deliveryLane(listing({ delivery_type: "physical" }))).toBe("");
+    expect(deliveryLane(listing({ delivery_type: "service" }))).toBe("");
+  });
+
+  it("ignores the column entirely once a row has declared a type", () => {
+    for (const delivery_type of ["physical", "pickup", "shipping", "both", "digital"]) {
+      expect(deliveryLane(listing({ listing_type: "physical", delivery_type }))).toBe("");
+    }
+  });
+
+  it("takes the seller's declaration whatever the column says", () => {
+    expect(deliveryLane(listing({ listing_type: "physical", delivery_type: "digital", listing_metadata: { delivery_options: "both" } })))
+      .toBe("both");
+  });
+
+  it("treats junk as no declaration rather than as a lane", () => {
+    for (const junk of [undefined, "", " ", "yes", 3, true, [], {}]) {
+      expect(deliveryLane(listing({ listing_metadata: { delivery_options: junk } as never }))).toBe("");
+    }
+  });
+
+  it("folds every legacy spelling onto the four lanes", () => {
+    // Word-for-word parity with the server's `_LANE_WORDS` is checked by
+    // `tests/test_marketplace_fulfillment.py`, which can read both files. This
+    // pins the behaviour on this side so a drift shows up as a failure here too.
+    const folded: Record<string, string> = {};
+    for (const word of ["pickup", "local", "meetup", "shipping", "delivery", "both",
+      "pickup_or_shipping", "shipping_or_pickup", "digital", "download"]) {
+      folded[word] = deliveryLane(listing({ delivery_type: word }));
+    }
+    expect(folded).toEqual({
+      pickup: "pickup", local: "pickup", meetup: "pickup",
+      shipping: "shipping", delivery: "shipping",
+      both: "both", pickup_or_shipping: "both", shipping_or_pickup: "both",
+      digital: "digital", download: "digital"
+    });
   });
 });
 

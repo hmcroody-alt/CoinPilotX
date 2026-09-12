@@ -33,7 +33,7 @@ broken at the seam where the merchant's world hands off to the buyer's.
 | 9 | Buyer discovery | `lifecycle.is_public` / `public_sql` | `marketplace_listing_lifecycle.py` | `marketplace_listings` ⋈ `marketplace_sellers` |
 | 10 | Cart | `price_label` | `marketplace_cart_routes.py` | `marketplace_cart_items` |
 | 11 | Checkout → order | Stripe + `pulse_upsert_marketplace_order` | `bot.py`, `marketplace_cart_routes.py` | `seller_transactions` → `marketplace_orders` |
-| 12 | Supplier fulfillment | merchant-initiated | `services/business_os/suppliers/fulfillment.py` | `business_os_supplier_fulfillment_intents` |
+| 12 | Supplier fulfillment | merchant-initiated; destination + lane read from stage 11, never from the request | `services/business_os/suppliers/fulfillment.py` | `business_os_supplier_intents` (`superseded_at`) + `business_os_supplier_outbox` + `business_os_supplier_drain_ticks` |
 
 ---
 
@@ -345,26 +345,38 @@ query names is buyer-visible by default, so the strip now lives in
    `fulfillment.create_intent` compares a supplier line against, so no
    multi-unit dropship order could ever be dispatched. Fixed in both lanes; see
    "The twelfth seam" below.
-9. **`marketplace_listings.delivery_type` defaults to `'digital'`.** The column
-   is `TEXT DEFAULT 'digital'` (`bot.py:112382`) and `resolve_kind` reads it
+9. ~~**`marketplace_listings.delivery_type` defaults to `'digital'`.**~~ The column
+   is `TEXT DEFAULT 'digital'` (`bot.py:112435`) and `resolve_kind` read it
    before the metadata, so a row written without it is a digital order: no
-   address collected, no stock decrement, no reservation. Both production
-   writers do set it, so this reaches legacy rows only — but the default is the
-   wrong way round, and a new writer that forgets the column inherits silence
-   rather than an error. Found while building a fixture for gap 8, which is the
-   only reason it is written down: the probe listing was physical and the route
-   called it digital.
-10. **The delivery-options fallback in `resolve_kind` is unreachable.** Because
+   address collected, no stock decrement, no reservation. Found while building a
+   fixture for gap 8, which is the only reason it is written down: the probe
+   listing was physical and the route called it digital. Filed as a legacy-rows
+   concern; measuring it for the fix showed it was the smaller half of something
+   much larger, because the column does not hold a delivery lane *at all*.
+10. ~~**The delivery-options fallback in `resolve_kind` is unreachable.**~~ Because
     `delivery_type` is always populated, `option = delivery or meta.get("delivery_options")`
     can never reach its right-hand side. A seller who sets `delivery_options: "both"`
-    can therefore never produce `shipping_or_pickup`, the lane chooser never
-    appears, and a pickup-only buyer is silently placed on shipping — precisely
+    could therefore never produce `shipping_or_pickup`, the lane chooser never
+    appeared, and a pickup-only buyer was silently placed on shipping — precisely
     the outcome `resolve_choice`'s own comment says it exists to prevent. The
-    docstring claims it reads the metadata "rather than the delivery column
-    alone", which the code cannot do. `mobile-native/src/api/marketplaceFulfillment.ts`
-    mirrors the bug faithfully, so the fix is a lockstep client and server
-    change and is buyer-visible. Not fixed here: it is a behaviour change, not a
-    defect in the quantity chain, and bundling it would have hidden both.
+    docstring claimed it reads the metadata "rather than the delivery column
+    alone", which the code could not do. `mobile-native/src/api/marketplaceFulfillment.ts`
+    mirrored the bug faithfully. Fixed in lockstep across both languages and all
+    six derivations; see "The thirteenth seam" below.
+11. ~~**The buyer's order timeline reads a field that is never served.**~~
+    `mobile-native/src/api/ordersDashboard.ts:216-234` — `variantOf(deliveryType)`
+    switched on a `delivery_type` taken off the *order* payload. Measurement
+    (`scripts/probe_order_lane.py`) showed the field is absent at the top level
+    *and* on the joined listing: `pulse_buyer_order_response` names its listing
+    columns explicitly and `delivery_type` is not among them. So the argument was
+    always `undefined`, the `"pickup"` branch was unreachable, every order in the
+    app rendered the shipping strip, and `escrowPresentable` — which is
+    `variant === "pickup"` — was permanently false, making the escrow safety
+    panel unreachable UI. The seller's copy had its own version:
+    `variantOf(String(order.item_type || ""))` passed a row kind into a parameter
+    named `deliveryType`. Fixed by serving the lane checkout had already frozen
+    onto the order, not by adding a seventh derivation; see "The fourteenth seam"
+    below.
 
 ---
 
@@ -1360,10 +1372,1430 @@ ignored, the no-op control correctly survived.
 
 ---
 
+## The thirteenth seam: one column, six readers, and no lane in it
+
+`marketplace_listings.delivery_type` has never contained a delivery lane.
+
+It is `TEXT DEFAULT 'digital'` (`bot.py:112435`), and every writer stores the
+**product type** in it. The publish route's INSERT (`bot.py:94434`) lists its
+columns as `..., delivery_type, product_type, listing_type, ...` and its values
+as `..., product_type, product_type, listing_type, ...` — the same bind twice.
+The CJ importer (`services/business_os/suppliers/importer.py:242`) hardcodes
+`'physical','physical'`. So for every listing in the table the column reads one
+of the five words in `LISTING_TYPES`, and for the overwhelming majority it reads
+`physical`.
+
+The seller's actual choice is `listing_metadata.delivery_options`, validated
+against `{pickup, shipping, both}` by `_take_enum`
+(`services/marketplace_listing_types.py:180`). That key is *optional* —
+`_take_enum` returns early when it is absent — so a physical listing with no lane
+is an ordinary row, not an error, and it ships.
+
+Six functions asked "how is this listing fulfilled". Asked of one real published
+row — the Ball listing, `delivery_options: "pickup"` — they answered:
+
+| reader | answer |
+| --- | --- |
+| grid card `listingFulfillment` | `unknown` |
+| detail page `marketplaceListingFulfillment` | `pickup` |
+| detail copy `marketplaceFulfillmentCopy` | `Local pickup` |
+| cart line `_fulfillment` | `shipping` |
+| server `resolve_kind` | `shipping` |
+| checkout `resolveFulfillmentKind` | `shipping` |
+
+Three measured damages, one root:
+
+**The buyer is put on the wrong lane.** `option = delivery or meta.get("delivery_options")`
+could not reach its right-hand side, because the left-hand side was always the
+non-empty string `physical`. Every physical listing resolved to `shipping`. A
+seller who chose local pickup only had their buyers asked for a delivery address
+for an item nobody was going to post. And `shipping_or_pickup` had no input that
+could produce it, which makes the checkout screen's lane chooser unreachable UI
+and `resolve_choice`'s pickup branch dead code — a branch with a comment
+explaining why it matters.
+
+**Every physical card in the marketplace lost its buy button.**
+`listingFulfillment` substring-matched the column for `ship`/`pickup`/`local`/
+`meetup`/`digital`/`download`. `physical` contains none of them, so it returned
+`unknown`, and `gridCardAction` returns `null` for `unknown`: no Add to cart, no
+Make offer, on the entire catalogue. This is the loudest symptom in the chain and
+it was invisible because the guard was firing on *everything*, which looks like a
+design decision rather than a bug.
+
+**Two contradictory lanes travelled in one payload.**
+`MarketplaceProductScreen.handleBuyNow` sent `fulfillment: listingFulfillment(listing)`
+and `fulfillmentKind: kind` two lines apart — the checkout screen reads the first
+for its lane chooser and the second for its fields — and `kindFromParams`
+(`if (kind) return kind;`) preferred the one that was wrong.
+
+The asymmetry that names the whole defect: `marketplaceFulfillmentCopy` read the
+metadata **first**, and special-cased the literal `"physical"` in the column.
+Somebody writing the *label* noticed the column held a product type and worked
+around it, locally, where they were standing. The function that decides what the
+buyer is actually charged for never got the same treatment. The knowledge was in
+the codebase the entire time, one file away from where it was needed.
+
+**Why every suite was green.** Every test of the rule built its own listing dict
+and put a lane word in `delivery_type`. No row in the database has ever looked
+like that. The fixtures described rows that cannot exist, and the suites passed
+on inputs production does not produce. One fixture contradicted *itself* —
+`listing({ delivery_type: "pickup" })` over a fixture whose metadata said `both` —
+and passed for the worst possible reason: the code read the column first, so the
+test silently pinned whichever field the bug happened to prefer.
+
+**The fix** is one rule per language. `delivery_lane` /
+`deliveryLane` reads `delivery_options` first, returns `""` for a row that
+declared a listing type (the column cannot outvote the seller), and falls back to
+the column only for a pre-types row that has no other signal. All six readers
+fold down from it; none derives anything. `_LANE_WORDS` and `LANE_WORDS` hold the
+legacy spellings, and `tests/test_marketplace_fulfillment.py` reads both files to
+prove they stay identical, because that is the one test that can.
+
+The tests are the point. `tests/test_marketplace_delivery_lane.py` supplies no
+listing dicts at all: it publishes through
+`/api/pulse/marketplace/listings/create` and reads the row back out of the table,
+so it asserts `row["delivery_type"] == "physical"` as a measured fact before
+asserting anything downstream of it.
+`marketplaceDeliveryLaneAgreement.test.ts` asserts the surfaces against *each
+other* — the sentence against the kind, the lane against the fold-down of the
+kind, `=== "both"` against `UNDECIDED_KINDS.includes(kind)` — rather than each
+against its own expectation, which is the only form that can fail when six
+readers drift.
+
+Two fixture families had to be corrected rather than satisfied, each with an
+in-test note saying what it had been asserting and why that was wrong.
+
+`scripts/mutation_delivery_lane.py`: 18 real mutations, 1 inverted, 1 no-op
+control. Two survived the first run and both were errors in the battery rather
+than gaps in the suites — and both were worth the trip. The `physical → digital`
+word-list mutation was pointed at the integration file, which publishes through
+the real route and therefore always writes a listing type, so the column is never
+consulted there and the mutation was invisible to it; the assertion that catches
+it is the unit-level `delivery_lane("physical", {}, "") == ""`, the single most
+load-bearing line in the rule. And the cart mutation *added* a column check in
+front of the function, which is a no-op on every row the route writes, because
+the column matches no lane word. The defect was never an extra branch. It was the
+function answering from the column instead of from the kind — and a mutation has
+to be the defect, not something adjacent to it, or its survival means nothing.
+
+Final run: 18 of 18 real mutations caught, the inverted mutation correctly
+ignored, the no-op control correctly survived.
+
+---
+
+## The fourteenth seam: the order forgot which lane it was placed on
+
+The thirteenth seam fixed how a *listing* declares its lane. This is the order
+side, and it is a different mistake with the same shape — with one twist that
+makes it worse: the answer was already on the wire.
+
+`mobile-native/src/api/ordersDashboard.ts` picks which progress strip a buyer
+reads:
+
+```ts
+function variantOf(deliveryType?: string): OrderTimelineVariant {
+  const d = String(deliveryType || "").toLowerCase();
+  return d === "pickup" || d === "local" ? "pickup" : "shipping";
+}
+```
+
+and fed it `order.delivery_type || order.listing?.delivery_type`. Its own comment
+said the payloads "do not always carry" the field. `scripts/probe_order_lane.py`
+replaced *always* with a number. Publishing a pickup-only listing through
+`/api/pulse/marketplace/listings/create`, buying it through
+`/api/pulse/payments/checkout`, and reading `/api/pulse/orders`:
+
+| what the app asks for | what the payload has |
+| --- | --- |
+| `order.delivery_type` | absent |
+| `order.listing.delivery_type` | absent |
+| `order.fulfillment_kind` | absent |
+| `order.listing.listing_type` | `physical` |
+| `order.listing.listing_metadata.delivery_options` | `pickup` |
+| `metadata_json.fulfillment.kind` | `pickup` |
+
+Not "not always". Never. `pulse_buyer_order_response` names its listing columns
+explicitly and `delivery_type` is not among them, and nothing adds a top-level
+one. The argument was `undefined` for every order the app has ever rendered.
+
+So `variantOf` had one reachable branch. Three consequences, in increasing order
+of seriousness:
+
+1. Every order — pickup, shipping, digital, booking — drew the shipping strip.
+   A buyer who arranged to collect an item in person was told it was "Being
+   packed", then "On its way", and never that it was ready.
+2. `escrowPresentable` is `ordersEscrowIsLive() && variant === "pickup"`. With
+   the flag fully on it was still false for every order, so the escrow safety
+   panel was **unreachable UI** and the flag gating it gated nothing. The
+   seventh corollary again: a guard nothing can satisfy.
+3. The seller's copy was broken independently:
+   `variantOf(String(order.item_type || ""))` — a row kind passed into a
+   parameter named `deliveryType`. `item_type` reads `marketplace_product` on
+   every marketplace row, so that path was shipping-only by construction too.
+
+### Why the existing test could not have caught it
+
+`ordersDashboard.test.ts` had a whole `describe` block for escrow gating, built
+on this fixture:
+
+```ts
+const pickupBuyer = { id: 1, amount_cents: 100, status: "paid",
+                      listing: { delivery_type: "pickup" } };
+```
+
+The fourteenth corollary, unchanged and now on a second subsystem: a payload the
+server cannot produce. The block was green while the feature it covered was
+unreachable.
+
+The `cross-view consistency` test is the more interesting failure. It asserts
+that a buyer order and a seller order with the same id resolve to the same
+variant — exactly the right property — and it passed because *both* derivations
+were shipping-only. Two broken readers agreeing on the wrong answer is what it
+was measuring. An agreement assertion is only worth its name on an input that
+could make the two disagree, which is why the replacement iterates the lanes and
+also pins that the two sides differ where they must (`counterpartyName`,
+`raw.seller` vs `raw.buyer`) — otherwise the fix for the agreement is to have one
+function call the other, which the battery duly proposes as mutation 15.
+
+Nor was this on the ledger. `ORDERS_MOCK_DATA_GAPS` enumerates seven things the
+live payload cannot answer, and names "pickup lifecycle states" among them — the
+sub-phases *within* the pickup strip. That the strip itself could never be
+selected was not on the list. The eleventh corollary, exactly: an enumeration
+cannot notice what was never on it.
+
+### The fix is a read, not a derivation
+
+The obvious repair — send the listing's lane on the order — would have been a
+seventh derivation of the fact the thirteenth seam exists to stop having seven
+of, and it would have been wrong twice over.
+
+Checkout already freezes the answer. `bot.py` resolves the kind, then calls
+`resolve_choice` to settle it against the buyer's answer, then
+`marketplace_fulfillment.snapshot(kind, details)` into
+`seller_transactions.metadata_json`. That function's docstring already said why
+it exists: so an order read back next year "still says where it was going ...
+even if the seller has since edited the listing." `services/marketplace_cart_routes.py`
+writes the identical key from the cart lane.
+
+And `pulse_buyer_order_response` parses that metadata — `json.loads(raw["metadata_json"])`
+— and had never read the key.
+
+The frozen value is better than a fresh derivation on two counts that a listing
+lookup cannot recover:
+
+- **It is settled.** A listing offering both lanes resolves to
+  `shipping_or_pickup`; only the buyer's answer at checkout narrows it.
+  Re-deriving recovers the ambiguity, not the choice.
+- **It is historical.** The seller can edit, relist, or delete the item
+  afterwards. The order still has to say where that parcel went.
+
+So `marketplace_fulfillment.order_kind(metadata, listing)` is the inverse of
+`snapshot`: frozen kind first, validated against `KINDS` so a corrupt snapshot
+falls through rather than being echoed as fact; then the listing, for rows
+written before the snapshot existed; then `""` — *not* `"shipping"`, because an
+order that never recorded a lane should not have one invented for it at the
+server, which is how the client came to trust a field that meant nothing.
+
+Both serializers serve it as `fulfillment_kind`, and `variantOf` folds down from
+it. The in-person kinds — `pickup`, `service_in_person`, `booking_in_person`,
+`event_in_person` — take the pickup strip, because those are the orders whose
+goods change hands rather than travelling, and they are exactly the orders for
+which the escrow panel's advice about meeting a stranger is meaningful. Anything
+undecided or unrecognised stays on shipping: the original comment had one sound
+instinct, that pickup unlocks the safety panel and is therefore the worst thing
+to guess, and that is kept.
+
+One field was deliberately *not* added. `delivery_type` is still not selected for
+the order's listing join, and `order_kind`'s docstring says why: an order
+serializer normalises the listing type first, `effective_listing_type` never
+returns empty, so `delivery_lane` cannot reach its column branch for any row a
+serializer can hand over. Selecting it would put the misleading field back on the
+wire for a branch that cannot execute — and back within reach of the next reader.
+
+### What the battery measured
+
+`scripts/mutation_order_lane.py`, 15 real mutations plus one inverted rename and
+a no-op control. Two survived the first run, and unlike the thirteenth seam's two
+survivors these were gaps in the assertions, not errors in the battery:
+
+- **The client keeping `"local"` as a fallback survived.** No test passed a lane
+  word as a `fulfillment_kind`. `order_kind` only ever emits a member of `KINDS`,
+  and `local`/`meetup` are listing vocabulary, not kinds — so a client that
+  accepts them is still speaking the old language, and a payload that regressed
+  to sending them would be honoured silently instead of failing. Closed by
+  pinning the vocabulary boundary.
+- **Making `unifySellerOrder` delegate to `unifyBuyerOrder` survived**, which is
+  the mutation described above: it satisfies an agreement assertion by removing
+  one of the two things being compared. Closed by asserting the two sides still
+  differ where a perspective must.
+
+Final run: 15 of 15 real mutations caught, the inverted rename correctly ignored,
+the no-op control correctly survived.
+
+---
+
+## The fifteenth seam: two strips for eleven kinds
+
+The fourteenth seam made the settled `fulfillment_kind` reachable by the orders
+dashboard. This is what the client did with it once it arrived.
+
+`OrderTimelineVariant` was `"shipping" | "pickup"`. The server can freeze eleven
+kinds onto an order — `services/marketplace_fulfillment.py` `KINDS` — so the fold
+from eleven to two put everything that is not handed over in person onto the
+parcel strip.
+
+`scripts/probe_order_timeline_kinds.py` published one listing per lane through
+`/api/pulse/marketplace/listings/create`, bought each through
+`/api/pulse/payments/checkout`, and printed the kind the server froze beside the
+words the app would put on the screen:
+
+| lane published | server kind | strip | buyer reads |
+| --- | --- | --- | --- |
+| physical shipping | `shipping` | shipping | Order placed → Being packed → On its way → Delivered |
+| physical pickup | `pickup` | pickup | Reserved → Pickup scheduled → Picked up → Complete |
+| digital download | `digital` | **shipping** | Order placed → **Being packed** → **On its way** → Delivered |
+| service remote | `service_remote` | **shipping** | Order placed → **Being packed** → **On its way** → Delivered |
+| service in person | `service_in_person` | pickup | Reserved → Pickup scheduled → Picked up → Complete |
+| event online | `event_online` | **shipping** | Order placed → **Being packed** → **On its way** → Delivered |
+| event in person | `event_in_person` | pickup | Reserved → … |
+| booking remote | `booking_remote` | **shipping** | Order placed → **Being packed** → **On its way** → Delivered |
+| booking in person | `booking_in_person` | pickup | Reserved → … |
+
+Four of nine measured, and enumerating all eleven kinds gives five that ship no
+parcel and were told they were in the post: `digital`, `service_remote`,
+`service_choice`, `event_online`, `booking_remote`.
+
+Three consequences, established by reading the consumers rather than guessing:
+
+1. The labels above. A buyer who downloaded a file was told it was being packed.
+2. `previewShipBy` in `OrdersManagerScreen.tsx` invents a three-day ship-by
+   countdown, and its only guard is `order.variant !== "shipping"` — so every
+   digital and remote order got a fabricated shipping deadline.
+3. `sellerActionsFor` offered the seller of a download "Mark packed" and a "Mark
+   shipped" disabled with *"Add a tracking number before marking this order
+   shipped"* — a precondition a downloadable file can never meet. The seventh
+   corollary in its action form: a control with no reachable path to being usable.
+
+### Two root causes, both already named in this document
+
+**One derivation answering two different questions.** `escrowPresentable` was
+`ordersEscrowIsLive() && variant === "pickup"`, which fused *which strip
+describes this order's progress* with *do the buyer and seller end up in the same
+room*. While there were exactly two strips the two questions had the same answer,
+so nothing distinguished them. The moment an appointment needs its own strip they
+diverge, and the fused version costs both sides: an in-person haircut can only be
+given stranger-safety advice by also being described to the buyer as a parcel
+awaiting collection, and a video consultation cannot be described as an
+appointment without losing advice it never needed. The fix splits them into
+`timelineVariantOf` and `orderIsInPerson`, which now disagree on three of the
+eleven kinds — and disagreeing is the whole point.
+
+**A second, coarser copy of a vocabulary that already existed.**
+`mobile-native/src/api/marketplaceFulfillment.ts` already held
+`MarketplaceFulfillmentKind`, `isScheduledKind`, `fulfillmentTypeLabel` and
+`fulfillmentDestinationSummary` — the last of which tells the buyer at checkout
+that a digital purchase is *"Delivered to your PulseSoc account"*, one screen
+before the orders list said *"Being packed"*. `ordersDashboard.ts` kept its own
+`IN_PERSON_KINDS` string `Set` instead, and the app contradicted itself across
+two screens. It now imports the vocabulary, and `DIGITAL_STEPS` reuses the
+checkout's exact wording rather than inventing a second account of where the
+purchase went.
+
+The map from kind to strip is typed as a total
+`Record<MarketplaceFulfillmentKind, OrderTimelineVariant>` on purpose: a twelfth
+kind added to the union fails the typecheck at the map, rather than falling
+through a `Set` membership test onto the parcel strip. That is the eleventh
+corollary — an enumeration cannot notice what was never put on it — bought with
+a type rather than with a walking check, because here the compiler can walk.
+
+`OrderTimeline.tsx` carried a second `variant === "pickup" ? … : …` of its own,
+which is how a two-step digital strip would have been drawn against a four-step
+reached index. Both now call `stepsForVariant`.
+
+### The half that was refused
+
+`pulse_buyer_order_response` already serves `digital_files` —
+`[{name, download_url}]` — on every paid digital order (bot.py:93318), backed by
+a real streaming route at
+`/api/pulse/marketplace/digital-files/<id>/download` that verifies the requester
+bought the listing, and pinned by a backend test at
+`tests/test_marketplace_listing_types.py:522`. Greps found **zero readers**: not
+in `mobile-native/src`, not in a template, not in a static script. The buyer
+pays, the file sits on the wire, and no surface hands it over.
+
+Shipping a download control anyway would have been the wrong fix. The route
+authenticates through `api_account_user()` and the native app holds its token in
+expo-secure-store rather than a browser cookie, so `Linking.openURL` would open a
+401 in Safari; `pulseApi.ts` exposes no token accessor, and adding one is a
+session-layer widening that has nothing to do with this seam. So the blocker is
+declared as the eighth `ORDERS_MOCK_DATA_GAPS` entry with the specific backend
+work named, and `DIGITAL_STEPS` says *"Delivered to your account"* rather than
+*"Ready to download"* — true, and implying no control that does not exist.
+
+### What the battery measured
+
+`scripts/mutation_order_timeline.py`, 19 real mutations plus one inverted rename
+and a no-op control, run against both suites at once — the derivation test and
+the render test — because the seam lives exactly between them. All 19 caught on
+the first run, which is the first time in this chain that has happened, and the
+reason is that the tests were written from the probe's table rather than from the
+code: the assertions are on the words a buyer reads, not on the variant string.
+
+Also recorded, not fixed: `ordersAwaitingSeller` filters
+`status !== "complete"`, and `normalizeStatus` never emits `"complete"` — plain
+"complete"/"completed" falls through to `"pending"`. A dead clause in a count,
+harmless today because the `"delivered"` clause covers the same orders.
+
+---
+
+## The sixteenth seam: a refusal nobody could answer
+
+This one is not in the orders half of the pipeline at all. It is at the very
+front — the step between importing a supplier product and having something that
+can be published — and it stopped the ordinary import of any multi-variant CJ
+product dead, with an error message that was the name of the error.
+
+`scripts/probe_dropship_multivariant_publish.py` runs the real importer and the
+real publish evaluator over the same product at three selection widths:
+
+| variants the merchant selected | `marketplace_product_sources.provider_variant_id` | publishable | problems |
+| --- | --- | --- | --- |
+| one (deselected by hand) | `'PROBE-1-V1'` | **True** | — |
+| two (the supplier screen's default) | `None` | **False** | `['SUPPLIER_VARIANT_UNBOUND']` |
+| four (a t-shirt in four sizes, default) | `None` | **False** | `['SUPPLIER_VARIANT_UNBOUND']` |
+
+The only case that worked was the one where the merchant had gone out of their
+way to deselect variants. `SupplierProductScreen.defaultSelection` pre-selects
+*every* in-stock variant, so the second and third rows are the ordinary path and
+the first is the exception.
+
+Five steps, each of them individually correct:
+
+1. The import screen pre-selects every in-stock variant.
+2. `importer._import_one` therefore passes `provider_variant_id=None` to
+   `link_source`, because `len(chosen) != 1`. It refuses to guess which variant a
+   buyer would receive, and that refusal is right.
+3. `drafts._validate` appends `SUPPLIER_VARIANT_UNBOUND`, because the buyer's
+   checkout has **no variant picker at all** and charges one listing-level price.
+   An unbound dropship listing is one a buyer can pay for and nobody can ship.
+   That refusal is also right.
+4. `SUPPLIER_VARIANT_UNBOUND` was absent from `PUBLISH_PROBLEMS` in
+   `mobile-native/src/api/dropshipping.ts` and from `PROBLEM_COPY` in
+   `ReviewImportedProductScreen.tsx`. The screen renders an unrecognised code
+   verbatim — deliberately, because a blank line is worse — so the merchant read
+   the string `SUPPLIER_VARIANT_UNBOUND` under the heading "Before this can go
+   live".
+5. `bind-product`, the one operation that can satisfy the refusal, had **zero
+   callers**. Greps across `mobile-native/src`, `templates/` and `static/`
+   returned nothing.
+
+So the guard was correct, its diagnosis was correct, and between them they
+produced a merchant holding a draft that could never be published, told so in a
+language they do not speak, with no control anywhere in the app that would have
+changed it.
+
+### Why the binding is not made per-variant
+
+The obvious fix is to stop having a single listing-level binding: every chosen
+variant already has its own `marketplace_listing_variants.provider_variant_id`,
+fully populated by `importer._write_variants`, and `fulfillment.create_intent`
+already receives `item["vid"]`. The payload supports it today.
+
+It was refused, and for the same reason the guard exists. The buyer's checkout
+offers no variant selector — `marketplace_variants` is imported by the suppliers
+package and by nothing else, and the purchase path charges one listing price.
+Per-variant fulfilment without a buyer-side picker would ship whichever variant
+the code happened to pick, which is precisely the defect
+`SUPPLIER_VARIANT_UNBOUND` was written to prevent. A one-variant-per-dropship-
+listing contract with a merchant who *chose* the variant is weaker than a variant
+picker and strictly stronger than a guess.
+
+Note the two `provider_variant_id` columns, because confusing them produces a
+listing that looks bound to every screen and is still NULL where `create_intent`
+reads: `marketplace_listing_variants` has one per chosen variant and is always
+populated; `marketplace_product_sources` has one per listing and is the binding.
+`gateway.get_product_binding` resolves only the second, keyed on `listing_id`
+with no variant argument.
+
+### What the fix had to be
+
+Not the guard. The answer to it:
+
+- `get_draft`'s `supplier` block now serves `provider_product_id` and
+  `provider_variant_id`. Merchant-private, on a payload that already carries
+  `supplier_cost_cents`; §27/§95 are about what reaches a buyer, and nothing
+  buyer-facing reads this function.
+- `bindDraftVariant` in the mobile API layer, returning `void` on purpose. The
+  draft is what every surface reads, and re-reading it is how the caller learns
+  the refusal cleared. Trusting the bind response would be trusting a second copy
+  of the verdict.
+- `ReviewImportedProductScreen` asks *"Which variant are you selling?"*, in two
+  steps — pick, then confirm — because `link_source` accepts NULL→a variant and
+  answers `binding_conflict` to variant A→variant B. A single tap would make a
+  mis-tap permanent. Once bound the screen *states* the answer instead of
+  offering a chooser that cannot change it.
+- The confirm path merges the server's `supplier`, `variants` and `validation`
+  rather than calling `adopt`, so a merchant who retitled the product and then
+  answered the refusal does not watch their typing vanish. And it re-reads the
+  verdict rather than assuming it: binding succeeding is not the same claim as
+  the draft being publishable.
+
+Two mechanisms now hold the enumeration together, because it exists in two
+languages and no compiler spans them. `PROBLEM_COPY` is a total
+`Record<PublishProblem, …>`, so a code added to the union without copy fails the
+typecheck — proved by injecting one, which produced `TS2741`, rather than
+asserted. And `tests/dropshipping/test_publish_problem_copy.py` crosses the
+boundary the compiler cannot: it enumerates the backend's codes from
+`_validate.__code__.co_names` — the global names that function actually reads,
+so a code declared and never appended does not count — and checks the mobile
+list and the copy table name exactly those. It also asserts that the remedy has
+a caller, because that is the half of this seam a copy check would have missed.
+
+### The fixture that was measuring a different program
+
+`DropshippingScreens.test.tsx` had `fulfillmentMode: "SANDBOX"` in its draft
+fixture — an environment mode in a fulfilment-mode field, a value
+`marketplace_product_sources` cannot hold; `MODE_STOCKED` and `MODE_DROPSHIP`
+are the two. So all eighty-five tests built on it were exercising a listing that
+is neither dropshipped nor stocked, which is exactly why none of them noticed
+that a dropship listing needs a binding. The fourteenth corollary, second
+sighting, three seams later.
+
+### What the battery measured
+
+`scripts/mutation_dropship_variant_binding.py`, 18 real mutations plus one
+inverted rename and a no-op control, run against four checks: the cross-language
+copy pin, the backend publish suite, the screen suite, and `tsc --noEmit`. Four
+rather than one because two of the new defences are typecheck-only and two are
+cross-language, and the report names which check caught each mutation — the
+distribution is the argument for all four existing: mutations 1–4 and 15 were
+caught only by the copy pin, 5–7 and 16–17 only by the publish suite, and 8–14
+and 18 only by the screen suite.
+
+Two survived the first run, and both were worth the run:
+
+- Clearing the merchant's pick in the `catch` of a failed bind. The test asserted
+  the error text and that the chooser was still on screen; it did not assert that
+  the pick survived. So *"try again"* appeared beside a button that had gone
+  disabled again — error with no way back to the action, the same shape as
+  error-and-empty. The test now asserts the radio is still checked and the
+  confirm button still enabled.
+- Editing the confirm button's explicit `accessibilityState={{ disabled: … }}`
+  changed nothing observable, because `Pressable` derives that state from the
+  `disabled` prop and overrides whatever it is handed. The mutation was aimed at
+  the copy that cannot win. That is the tenth corollary in miniature — two copies
+  of one derivation, where the framework guarantees which one loses — so the
+  redundant copy was deleted rather than tested, and the mutation re-aimed at
+  `disabled`, where it is caught.
+
+---
+
+## The seventeenth seam: the sale that owed a supplier purchase to nobody
+
+Gap 13 left a merchant able to bind a variant and publish a dropship listing.
+That listing is for sale. This seam is the next question, and it is the one the
+whole feature exists to answer: somebody buys it — then what?
+
+`scripts/probe_dropship_paid_order_fulfillment.py` publishes a bound,
+single-variant dropship listing through the real importer and the real publish
+evaluator, then writes the paid `marketplace_orders` row exactly as
+`bot.pulse_upsert_marketplace_order` projects one from a paid transaction, and
+prints every supplier-side record that exists afterwards:
+
+| after a paid sale | rows |
+| --- | --- |
+| `marketplace_orders` (`status='paid'`, `amount_cents=2000`) | 1 |
+| `marketplace_product_sources` (`fulfillment_mode='DROPSHIP'`, variant bound) | 1 |
+| `business_os_supplier_intents` | **0** |
+| `business_os_supplier_outbox` | **0** |
+| intents naming that order | **0** |
+
+Nothing was missing from the sale. The binding a checkout path would need to
+resolve is right there in the same probe output, holding every field a supplier
+order requires — `supplier_connection_id`, `business_id`, `store_id`,
+`provider_product_id`, `provider_variant_id`, and `supplier_cost_cents: 820`
+against the buyer's `2000`. The money is collected, the margin is known, the
+supplier is identified, and no record anywhere says a purchase is owed.
+
+Six greps say why, and none of them is a bug on its own:
+
+1. `fulfillment.create_intent` is the only writer of
+   `business_os_supplier_intents`.
+2. Its one production call site is the `fulfillment-intents` action in
+   `services/business_os_supplier_routes.py`.
+3. That action has zero callers in `mobile-native/src`, `templates/` or
+   `static/` — the seventh corollary's second sub-tell, one seam after it was
+   written: a writer reachable only from pytest is not reachable.
+4. `worker.py` only claims intents that already exist; `supplier_worker.py` is
+   not in the Procfile.
+5. `bot.py` — where checkout lives — contains no reference to
+   `marketplace_product_sources`, `supplier_binding`, `get_product_binding` or
+   `fulfillment_mode`. The paid-order writer cannot see that a listing is
+   dropshipped.
+6. And the module could not be *asked*. Of what `fulfillment` exposes,
+   `get_intent`, `dispatch` and `settle` are each keyed on an intent that
+   already exists, and `claim` takes a lease over the same table. There was no
+   function answering "which of my orders needs a supplier order placed?", so
+   the absence was not observable from inside the layer that had it.
+
+### Why the obligation is derived on read
+
+The obvious fix is to call `create_intent` from the payment webhook. Measured
+off its own bytecode, it will not go: `__code__.co_consts` holds a `300`-second
+freshness window on the shipping quote, and the cost check is an exact
+`int(total) != expected_supplier_cost_cents`, with `invalid_quote`,
+`supplier_cost_unverified` and `supplier_cost_reapproval_required` among its
+refusals. A webhook holds none of that. It has an order id and a payment; it has
+no fresh quote and no merchant who has agreed to a number.
+
+That is not an oversight in `create_intent` — it is what the function is.
+It is a merchant *approval* action, and approval requires a merchant. So the
+obligation is not written at payment time at all; it is **derived on read**, by
+`list_obligations`, from the three records that already exist: the paid order,
+the dropship binding, and the intent if one has been made. This is the
+fifteenth corollary applied before the fact rather than after — the answer was
+already in the data, unread — and it keeps the approval where it belongs
+instead of manufacturing a fake one at checkout.
+
+Two things in that query are only correct because they were measured:
+
+- **`CAST(o.id AS TEXT)` on the join.** `marketplace_orders.id` is `INTEGER`;
+  `business_os_supplier_intents.order_id` is `TEXT`, because `create_intent`
+  writes `str(order_id)`. On PostgreSQL `i.order_id = o.id` is a type error; on
+  SQLite it is worse — it silently matches nothing, so every obligation would
+  read as never placed and the list would look right. No behavioural test on
+  SQLite can see that, which is why two tests in this seam read the SQL literal
+  rather than the result.
+- **`LOWER(o.status) = 'paid'` is the whole paid vocabulary.**
+  `pulse_upsert_marketplace_order` hardcodes `'paid'` in both its `VALUES` and
+  its `ON CONFLICT … DO UPDATE`, and the DDL default `'pending_payment'` is the
+  only other value the column has ever held. The tempting import was
+  `marketplace_listing_types.PAID_ORDER_STATUSES`, three states wide — and that
+  constant is the vocabulary of `seller_transactions` and
+  `creator_transactions`, not of this table. A shared constant that belongs to a
+  different table is the eighth corollary wearing a helpful name.
+
+The state a merchant reads is
+`outbox_state or ("UNKNOWN" if intent_id else "AWAITING_SUPPLIER_ORDER")`,
+deliberately outside the outbox's own six-state vocabulary, because "no
+supplier order has been placed" is not a state the outbox can hold — there is
+no row. An intent with no outbox row reads `UNKNOWN`, which is the honest answer
+and not the same answer.
+
+### A name collision, and the fix that was not an exemption
+
+The supplier's own word for where an order stands lives in the outbox column
+`provider_status`. Shipping it to the client under that name failed
+`mobile-native/src/entitlements/__tests__/noClientTierInference.test.ts`, which
+lists `provider_status` among the raw membership fields no unlisted file may
+hold — because on this platform that name means Stripe's *subscription* status.
+
+Both obvious repairs were refused. Allowlisting `api/dropshipping.ts` would
+exempt it for `premium_status` too, and narrowing the guard would trade a
+permanent hole for a naming convenience. The wire field was renamed instead:
+the column is still `provider_status`, the payload carries
+`supplier_order_status`, and the SELECT aliases it with the reason written
+above it. It is now pinned from three directions — the entitlement guard, a
+backend test asserting `provider_status` is absent from the obligation, and a
+battery mutation that removes the alias.
+
+### The comment that asserted a failure mode its own code could not exhibit
+
+The battery aimed a mutation at the `!connectionId` check in
+`DropshippingOrdersScreen`, which a comment of mine said "must be checked
+before the scope phases" or the screen would skeleton for ever. The mutation
+survived, and the comment was the thing that was wrong: `useDropshippingScope`
+always initialises to `{ phase: "loading" }` and reaches `ready` a microtask
+later, so the first effect pass cannot see `ready` and the reordering is
+behaviour-preserving in all four phases.
+
+The remedy was not a test. Catching that mutation would require the hook to
+answer synchronously, which it does not, and a test asserting the *order of
+lines* would be the thirteenth corollary. So the mutation is recorded as
+inverted with its reasoning, and the comment now says what is true — that the
+ordering is currently cosmetic, that it stops being cosmetic the day the hook
+answers from its cache, and that no test can hold it there meanwhile.
+
+### The screen that made every assertion in the file pass over nothing
+
+`DropshippingSyncScreen` had zero tests, while rendering the same gap list the
+supplier-orders screen does. Every defect that list was introduced to prevent
+could have been reintroduced there and nothing would have said so. It is the
+same shape the supplier-orders screen had before this seam — a surface over
+which a suite's assertions are all vacuously true — and the battery found it
+by mutating the gap prose and watching nothing fail.
+
+The gap note itself was the third root cause. `DROPSHIPPING_DATA_GAPS` claimed
+this layer "can create and read a single intent by id" and merely lacked an
+enumeration, when nothing reachable had ever created one; and it named the
+table `business_os_supplier_fulfillment_intents`, which does not exist. The real
+tables are `business_os_supplier_intents` and `business_os_supplier_outbox`. A
+gap note is a claim like any other, and this one had never been read against the
+schema.
+
+**And neither had this document.** The first draft of this section said that
+string "occurs exactly once in this repository — in that note", which was itself
+asserted rather than measured: the grep returns row 12 of the stage table at the
+top of this file, wrong since 2026-09-10 and propagated from the same note. The
+sixteenth corollary says a comment whose subject lives elsewhere is a
+hypothesis; a *count* of occurrences is the same kind of claim, and the cost of
+checking it is one grep. Row 12 now names both real tables.
+
+### What the battery measured
+
+`scripts/mutation_dropship_supplier_obligations.py`, 20 mutations against four
+checks: the cross-language copy pin, the backend obligation suite, the two jest
+suites, and `tsc --noEmit`. **16 real mutations caught, 3 inverted correctly
+ignored, 1 no-op control survived.** Four checks again because the distribution
+is the argument: the join cast and the four filters are caught only by the
+backend suite, the state enumeration only by the copy pin, the merchant-visible
+behaviour only by jest.
+
+Four findings the three suites had missed, and only two of them were test gaps:
+
+- The stale-backlog test was vacuous. It asserted a row was gone after a failed
+  refresh, but the list is rendered `data={stateBlock ? [] : rows}`, so the rows
+  disappear whenever an error owns the screen whether or not the state was
+  cleared. It now asserts the sandbox card — drawn from the header regardless of
+  state — is gone too.
+- `DropshippingSyncScreen`'s missing suite, above.
+- Two of my own comments overstating the code beside them: the `!connectionId`
+  ordering, and a client-side re-derivation of `supplier_order_placed`. The
+  second cannot be caught honestly either — the server writes
+  `supplier_order_placed = intent_id is not None`, so catching the mutation
+  needs a fixture with `intent_id` set and the flag false, a row the backend
+  cannot emit. The fourteenth corollary forbids exactly that fixture.
+
+The battery's own metadata was a defect of the same family. The inverted set was
+keyed by mutation *index*, so inserting the alias mutation mid-list renumbered
+everything after it and silently relabelled two real mutations as inverted —
+which is to say, stopped demanding that anything catch them. It is keyed by name
+now, with assertions that the names are unique and that every declared name
+exists.
+
+---
+
+## The eighteenth seam: an obligation nobody could discharge
+
+The seventeenth seam ended with a merchant able to *see* that a paid sale owed a
+supplier purchase. This one measured what they could do about it, and the answer
+was nothing. Four blockers, none of them a symptom of the others.
+
+**The destination was not on the obligation, and was one `json.loads` away.**
+`create_intent` needs `shippingCountryCode`, `shippingCountry`, `shippingProvince`,
+`shippingCity`, `shippingCustomerName` and `shippingAddress`. The buyer supplied
+every one of them at checkout and `marketplace_fulfillment.snapshot` froze them
+onto `seller_transactions.metadata_json` under `fulfillment.details`, already
+cleaned, length-capped and tag-stripped by `validate_details`. `list_obligations`
+joins `marketplace_orders` to that exact row — `seller_transaction_id` and
+`seller_transactions.id` are both INTEGER, so the join needs no cast, unlike the
+intent join four lines below it — and read past the column. The fourteenth
+corollary's own shape, second occurrence in three seams: the fact was frozen on
+the record the serializer was already holding.
+
+**The obligation reported the product's supplier code where its only consumer
+needs the variant's.** `marketplace_product_sources.external_sku` and
+`marketplace_listing_variants.sku` are two adjacent columns from two levels of
+one hierarchy, and the obligation reported the first while `create_intent`
+matches the second. The root cause is a two-line divergence in the importer:
+`_write_variants` reads `variant.get("external_sku")` (importer:286) and
+`link_source` reads `product.get("external_sku")` (importer:330). CJ states a SKU
+per variant, so in the ordinary single-variant import the product-level column is
+NULL — which means the obligation displayed nothing, the merchant had nothing to
+check against CJ, and the failure looked like missing data rather than the wrong
+column.
+
+**The endpoint that quotes freight had no server-side assembler, and therefore
+zero callers.** `gateway.read("shipping", …)` appears nowhere in
+`mobile-native/src`, `templates/` or `static/`. That is the seventh corollary's
+second sub-tell exactly as it was written one seam earlier — but with a cause
+worth separating: the request could only be assembled on the server, because it
+needs the frozen address, the bound variant, the parcel weight and the
+warehouse the stock actually sits in. A client cannot build it without being
+handed the supplier's cost basis, which §27 forbids. So the endpoint was not
+uncalled by oversight; it was uncallable by design, and the missing piece was
+`quote_for_order`.
+
+**And the destination `create_intent` did take, it took from the request body.**
+A merchant-authenticated call could name any address at all. The address the
+buyer paid to ship to was frozen on the transaction and nothing compared the
+two. This is the first defect in the chain that is not a wrong number but a
+wrong *authority*, and it is the same root cause wearing a different coat: the
+server asserted the destination on its caller's word instead of measuring the
+one the buyer paid for.
+
+### A fifth shape: the table that existed in one language
+
+`checkoutCountries.ts` held a 64-entry ISO-3166-1 → name map under a comment
+saying "The server never sees them; it sees the ISO-3166-1 alpha-2 code, which is
+the contract." True of the buyer's half of the wire and false of the supplier's:
+CJ's create-order takes `shippingCountryCode` *and* `shippingCountry`, and the
+second is a name. The sixteenth corollary again — a comment whose subject lives
+in another language — but the remedy is not a comment fix. The server needs its
+own copy of the table, and `test_country_names_match_the_picker`, named in the
+comment I wrote beside it, did not exist until this seam. It does now, and pins
+all 64 entries in both directions plus every spelling.
+
+The two fallbacks are deliberately opposite and a test says so.
+`countryName` in the picker answers the code itself, so an unrecognised country
+the server *does* accept stays selectable; `country_name` on the server answers
+`""`, so its caller can say the address is incomplete. Making the server match
+the picker would send `XK` to a supplier as the name of a country.
+
+### DESTINATION_INCOMPLETE is not defensive
+
+`marketplace_fulfillment._REGION_REQUIRED` holds ten countries, so a buyer in the
+United Kingdom completes an entirely valid checkout with no `address_region`,
+while CJ requires `shippingProvince` unconditionally. A UK dropship sale is
+therefore a real paid order that genuinely cannot be placed, and naming the
+field is the difference between a merchant fixing it and a merchant watching a
+row say "awaiting" forever. That is why there are seven blockers and not six.
+
+### What the battery measured, including in its own author
+
+Twenty-five mutations: twenty-two real, all caught; two inverted with their
+reasoning; one no-op control. Two gave the wrong answer on the first run and
+both were mine.
+
+- **A guard that could not fire, defended by a comment claiming it could.**
+  `supplier_destination` re-checked that the country code it was about to send
+  was two characters long, commented as "what distinguishes a country this
+  platform can ship to from one it can only spell". It distinguishes nothing:
+  `country_name` answers `""` for any code its table does not hold, every key in
+  that table is alpha-2, and the very next field assembled is that name — so a
+  misshapen code was already refused one line later with the same blocker. No
+  test could fail on its removal because its removal changes no outcome. The
+  check is gone; the invariant it gestured at is now one assertion on the table
+  itself, where it is true, and load-bearing on both sides because the picker's
+  `toCountryOptions` silently drops any code whose length is not two.
+- **A rename mutation reported as pinned when what it had found was its own
+  `NameError`.** `supplier_destination` names its local four times and my
+  companion-anchor tuple covered two. A half-done rename is caught for the wrong
+  reason and prints as a pass. The runner now counts the identifier inside that
+  one function and refuses to run the mutation while any reference survives —
+  and counts it in the *code*, because the first version counted the docstring
+  and reported a total rename as partial, which is the same error mirrored.
+
+### What the tests had to be
+
+The gap-14 obligation suite was not measuring the query that runs in production.
+Its helper wrote `marketplace_orders` alone, so once the obligation started
+reading the frozen address every sale in the file would have carried a
+manufactured `DESTINATION_MISSING`. Worse, the suite could not run at all —
+`seller_transactions` was absent from the fixture, and 24 of its 30 tests were
+erroring on `no such table` while the file was nominally part of a green
+directory. The helper now writes both halves, because production has both: the
+transaction Stripe settles and the order projected off it. `details=None`,
+`kind=` and `transaction=False` give every reachable database state a name, so a
+blocker appearing on the default paid sale is a finding rather than the fixture's
+fault.
+
+The two-call flow is pinned by composition rather than by description:
+`quote_for_order`'s `expected_supplier_cost_cents` is handed to `create_intent`
+unchanged and the intent is asserted non-duplicate. A test that asserted 500 on
+both sides separately would pass on two functions that disagree.
+
+`tests/dropshipping/test_supplier_obligations.py` 54, `test_supplier_obligation_copy.py`
+16, `tests/business_os/test_cj_fulfillment.py` 46. Directory total 384 with one
+file per process; `npm run verify` 383 suites / 6571 tests; protection suite 327
+checks across 28 suites.
+
+---
+
+## The nineteenth seam: the rule that could only be executed by waiting
+
+Gap 18 let a merchant place the supplier order a paid sale owes. Following that
+order through — claim it, dispatch it, read the outbox and the obligation back —
+found four defects, and the first one is the reason the other three survived.
+
+**`dispatch` accepted a clock and then read the wall one.** The signature is
+`dispatch(intent, adapter, meta, *, now=None)`, and every write inside it
+settles against that `now`. One line did not: the comparison of the frozen
+`quoted_at` against the present called `datetime.now(timezone.utc)`. The
+snapshot is pinned by `snapshot_hash`, so `quoted_at` cannot be edited to reach
+the branch, and the clock was the only other input. The consequence is not that
+the test was weak; it is that **the 300-second reapproval rule was executable
+only by letting 300 real seconds pass.** Nothing ever did. Neither side of the
+rule standing between a merchant and a freight price CJ has since changed had
+ever run — in either direction, once, in any environment.
+
+The existing coverage looked like it covered this. `test_queued_cost_change_blocks_create`
+exercises the *cost* half of what was one compound condition:
+
+```python
+if (datetime.now(timezone.utc) - quoted_at).total_seconds() > 300 or (item_total + freight) * 100 != expected:
+```
+
+Two rules sharing an `or`, one test, and the passing test belongs to the second
+rule. Splitting the condition is what made the first one testable; injecting the
+clock is what made it reachable.
+
+**A dozen causes were stored as one word.** `dispatch`'s handler resolved every
+non-retryable preflight failure to the single string `preflight_blocked`. The
+reason for the flattening is real and still holds — no provider message, body or
+URL may become persisted state, which is the entire purpose of
+`suppliers/errors.py`. But the codes being flattened were never the provider's.
+They are this module's own `FulfillmentError` constants, chosen on the lines that
+raise them: the same class of fact as a line number. At least six of them are
+things a merchant can act on — re-quote, re-approve a cost, re-bind a shop,
+re-import a product, wait for stock, nothing-to-do-because-the-sale-was-refunded
+— and all six arrived indistinguishable from the ones nobody can act on.
+
+`PREFLIGHT_REASONS` is a closed dict keyed by those constants. Closedness is the
+whole design: a `SupplierError` code that originated at CJ cannot be a key, so it
+can only miss and fall through to `preflight_blocked`. Persisting `exc.code`
+directly would have been the leak the flattening prevented, which is why the
+battery attacks that specific edit.
+
+**That word was rendered to the merchant.** `DropshippingOrdersScreen` printed
+`row.lastError` verbatim:
+
+```tsx
+{/* The supplier's own refusal text, when there is one. Shown verbatim
+    rather than summarised — a merchant chasing a blocked order needs the
+    words their supplier used. */}
+{row.lastError ? <Text style={styles.rowWarning}>{row.lastError}</Text> : null}
+```
+
+Neither half of that comment is true, and neither had ever been checked. It
+cannot be the supplier's text, by construction, in this package specifically. And
+it is not words — it is an identifier from a Python file. So a merchant with a
+blocked order read `preflight_blocked`, eight lines below a `blockers.map` that
+carefully translates every one of its own codes, and thirty lines below a
+`supplierOrderStateCopy` whose docstring says in as many words that *"rendering
+the raw identifier is what put `SUPPLIER_VARIANT_UNBOUND` on a merchant's
+screen."* The lesson was written down, in the same file, one component away.
+
+### The test that pinned the belief instead of the behaviour
+
+The jest coverage for that line was:
+
+```tsx
+it("shows a supplier's refusal in the supplier's own words", async () => {
+  ...  lastError: "preflight_blocked"
+  await waitFor(() => expect(view.getByText("preflight_blocked")).toBeTruthy());
+});
+```
+
+The name states the false belief and the assertion pins it. It is green, it has
+always been green, and it is the reason nobody looked: a reviewer scanning for
+untested rendering finds a test with a sentence for a name and moves on. This is
+the thirteenth corollary at its sharpest — the test reads back exactly what the
+code does, so it can never disagree with it — with the twist that the *name*
+carried the claim and the name is not executable.
+
+**`BLOCKED` said "Your supplier refused this order".** Every cause in
+`PREFLIGHT_REASONS` is raised before `_sending`, and the handler tests `sent`
+first, so anything already written becomes `UNKNOWN`. `BLOCKED` therefore means
+the supplier was never contacted and has no opinion about the order. The copy
+sent merchants to argue with their supplier about a message the supplier never
+sent. Measured, not reasoned: `PROVIDER CONTACTED: []` beside
+`{'state': 'BLOCKED', 'last_error': 'preflight_blocked'}`.
+
+Note where the fix's justification lives. It is tempting to defend the new copy
+by arguing which causes are common; the real guarantee is a branch ordering, so
+that is what the test asserts — `if sent or …` resolves before `BLOCKED` is
+reachable at all. An earlier version of that test tried to prove it by checking
+which codes appear textually before `_sending` in `dispatch`, and it was both
+wrong (four of them are raised in helpers `dispatch` calls) and a proxy for the
+thing that actually holds.
+
+### What was deliberately not fixed here
+
+> **Closed by the twenty-first seam, and this section was wrong in one way worth
+> keeping visible.** The constraint analysis below is correct; the claim that
+> `create_intent` "refuses a replacement twice over" is not. It refuses a
+> replacement carrying a *new* idempotency key. Replaying the *original* key hit
+> the branch above the `prior` lookup and returned `duplicate: True` pointing at
+> the dead intent — a success that placed nothing, which is the more expensive of
+> the two answers and the one a retrying caller reaches first. Nothing here was
+> guessed from a UI; it was guessed from a schema, which turns out to be the same
+> mistake. The blocking constraint was also over-stated: three existed, and
+> `UNIQUE(connection_id, order_id)` was redundant against
+> `uq_supplier_canonical_order` all along. Read the twenty-first seam for what was
+> actually there.
+
+`BLOCKED` is terminal by construction, and a paid order that reaches it is
+permanently unfulfillable. `claim` selects only `state IN ('READY','UNKNOWN','RECONCILE')`;
+`settle` requires a `lease_token` a blocked row can never obtain;
+`webhooks._mark_dirty`'s `RECONCILE` write is gated on `state='LINKED'`. And
+`create_intent` refuses a replacement twice over — the `prior` lookup raises
+`immutable_intent_conflict`, and `uq_supplier_canonical_order ON business_os_supplier_intents(order_id)`
+would refuse the insert anyway. Gap 18's `SUPPLIER_ORDER_ALREADY_PLACED` then
+removes the row from the merchant's actionable list entirely.
+
+An expired quote cannot self-heal: the snapshot is frozen with the stale price,
+so retrying dispatch expires again. Recovery needs a *new* intent against a new
+quote, which means superseding the old one. That is provably safe for exactly
+this failure — it occurs strictly before `_sending`, so the outbox state is
+itself the proof nothing was sent — but it needs the uniqueness constraint to
+become conditional, and the blocking one is an inline `UNIQUE(connection_id, order_id)`
+on the table rather than a standalone index. There is no migration framework
+here; schema is hand-rolled and idempotent. A table rebuild is not a thing to
+bundle into a copy fix, and the recovery path is a separate seam with its own
+tests. It is the next gap, not this one.
+
+The reason it is safe to defer at all: nothing drains the outbox in production.
+`fulfillment.dispatch` has exactly one caller, `suppliers/worker.py:215`,
+reachable only from `supplier_worker.py`, which is absent from the `Procfile` and
+gated on `CJ_RECONCILIATION_ENABLED`. So no order can reach `BLOCKED` today.
+That is a deployment change with real-money blast radius and belongs to the
+operator, not to a commit.
+
+### What the battery measured, including in itself
+
+Twenty real mutations, two inverted, one no-op control. Three groups, because a
+fix that is right in one place and absent in the next leaves the merchant where
+they were: the freshness window (its clock, both bounds, its size), the mapping
+(its closedness, its keys, its distinctions), and the rendering.
+
+One survivor on the first run, and it was a defect in my own tests:
+**"the freshness window is widened tenfold" — `QUOTE_MAX_AGE_SECONDS = 300` →
+`3000` — survived.** Every test of the window is written relative to the
+constant (`now + MAX + 1`, `now + MAX - 1`), which is what makes them tests of
+the mechanism rather than of the number, and also what makes them move with it.
+Widening the window to fifty minutes left all of them green. **A test written
+against a constant cannot detect a change to that constant** — so the size is
+now pinned once, absolutely, with the reason it is a policy rather than a
+tunable: it is how stale a freight price this deployment will spend real funds
+against.
+
+The second finding was about the battery's own bookkeeping.
+**"create_intent's window is spelled as a literal"** was written into the
+inverted set — behaviour-preserving today, because the constant *is* 300 — and
+the next run reported it `PINNED`, by the test written an hour earlier for the
+survivor above. That test asserts both enforcement sites read the shared
+constant, so the mutation now removes a real guarantee. It was moved out of the
+inverted set. Worth keeping: **a mutation's classification is a property of the
+current suite, not of the edit, so an inverted set is a claim that expires.** A
+battery that never re-examines its own exemptions will eventually be exempting
+the thing it exists to catch.
+
+### What the tests had to be
+
+The reason vocabulary is the *fourth* cross-language enumeration in this
+subsystem, and the only one that was being rendered before anyone decided it was
+an enumeration. It is pinned the same way as the other three, with one addition:
+`persisted_reasons()` collects every literal actually handed to a `last_error=`
+column or an `error=` keyword across the three modules that write the outbox, and
+checks it against the declared `OUTBOX_REASONS`. Reading the declaration alone
+would be checking mobile against a list that can drift from the writers — which
+is the defect the whole file exists to catch, one level up.
+
+`test_every_internal_code_mapped_to_a_reason_is_one_something_raises` is the
+guard against the eighteenth corollary's sub-tell recurring inside the fix
+itself: a `PREFLIGHT_REASONS` key with a typo, or one left behind after a rename,
+is an entry that can never match. The cause silently falls back to
+`preflight_blocked`, the map still appears to handle it, and nothing fails —
+because nothing raises. The keys are checked against the raises.
+
+`tests/dropshipping/test_supplier_obligation_copy.py` 22,
+`tests/business_os/test_cj_fulfillment.py` 53. Directory total 390 with one file
+per process, zero files with failures; `npm run verify` 383 suites / 6574 tests;
+protection suite 327 checks across 28 suites.
+
+---
+
+## The twentieth seam: the queue nothing drains
+
+Gap 16 made a *blocked* supplier order explain itself. The obvious next question
+is what happens to one that is not blocked, and the answer is nothing at all.
+
+`worker.run_once` is the only caller of `fulfillment.claim` and
+`fulfillment.dispatch`. Its only entry point is `supplier_worker.py`. That file
+is not in the `Procfile`. So no intent this platform has ever created can leave
+`READY` — and `SUPPLIER_ORDER_STATE_COPY` renders `READY` to the merchant as
+**"Queued to send to your supplier"**.
+
+That sentence is not wrong the way a miscalculation is wrong. It is a promise
+about a background process, made by a screen that cannot see whether the process
+exists, and it had no expiry: a merchant reading it on a paid order would read
+the same words a week later.
+
+### Why nothing could have caught it
+
+`run_once` returned its counts to its caller and persisted **nothing about
+itself**. "A drain ran" was not a fact in the database. So no read path could
+contradict the copy, no payload could carry the contradiction, and no test could
+assert one — there was no observable to assert against.
+
+This is gap 19's defect with the subject changed. There, a function took a clock
+and read the wall one, which made a real rule unexecutable; a rule nothing can
+execute has never been true or false. Here, a process reported its work to
+stdout, which made a real claim unmeasurable; and **a claim nothing can measure
+has never been right or wrong.** In both cases the missing thing is not a
+correct answer but an askable question.
+
+Note what this means about the previous nineteen seams: several of them were
+found by asking "who calls this?" and the Procfile absence was *recorded in the
+map itself* while deferring gap 16's recovery work. It was known. It was written
+down. It still reached the merchant as a reassuring sentence, because a fact in a
+document is not a fact in a payload.
+
+### The fix is a latch, not a rewording
+
+Rewording `READY` would be wrong in the other direction: once a worker *is*
+deployed, "Queued to send to your supplier" is exactly right. What was missing
+is the measurement, so that is what was added.
+
+`business_os_supplier_drain_ticks` is one row — `scope`, `started_at`,
+`completed_at`. `run_once` writes the start after its policy gates and before
+any work, and the completion after the loop. `drain_status()` reads the pair and
+returns one of four states, and `list_obligations` puts it on the envelope
+beside `isSandbox`, which is the precedent: a deployment-level fact the screen
+must be *told* rather than assume.
+
+**Two timestamps, not one**, and this is the load-bearing decision. A worker that
+starts every tick and dies inside it keeps `started_at` fresh forever. With one
+column that deployment reports as healthy — a live process draining nothing,
+indefinitely, with no notice — and it is the single most expensive failure this
+table can have, because it looks like success. With two, it reports
+`TICKING_BUT_NOT_COMPLETING`, which is distinct from `NO_DRAIN_HAS_EVER_RUN` for
+a reason a merchant does not care about but an operator does: one is an incident
+on a running process, the other is setup nobody finished, and collapsing them
+sends whoever reads it hunting for a process that is already there.
+
+Staleness is therefore judged on `completed_at`, never `started_at`. The
+mutation battery attacks that line directly.
+
+Both columns are nullable with no default. A `0` or a `now()` default would make
+a deployment that has never drained anything look exactly like one that just
+drained successfully, which is the entire fact the table exists to record —
+and is `UNKNOWN cost ≠ $0` (§8) in a new column.
+
+### Where the number came from
+
+`DRAIN_STALL_SECONDS = 7200` is derived, not chosen. `supplier_worker.main`
+clamps its sleep to `max(60, min(interval, 3600))`, so the slowest drain a
+deployment can legally configure completes a tick every 3600s; one missed tick at
+that ceiling is 3600s and two is 7200s. Below that, a stopped worker and a slow
+one are genuinely indistinguishable from outside, so the notice waits until they
+are not. The test states the number *and* greps the worker for the clamp it was
+derived from, so changing the clamp fails the test that owns the constant.
+
+### The copy, and the one state that stays silent
+
+`DRAINING` maps to no notice. A banner on a healthy queue is worse than none: it
+trains merchants to treat the card as furniture, and the card exists only for
+the case where it is the one true thing on the page. That silence is asserted
+rather than merely permitted, and so is its converse — every other state must
+contain "not being sent" or "have not been sent", because the notice's only job
+is to contradict the row above it and reassuring drift would let the row win.
+
+The notice is rendered above the list, since it qualifies every row in it, and
+it is cleared on a failed refresh. That last part is the battery's own find,
+below.
+
+### What the battery measured, including in itself
+
+24 mutations: 21 real, 2 inverted, 1 no-op control. All 21 caught, the control
+survived.
+
+One mutation survived the first run: **"a failed request leaves the last drain
+answer on screen."** Dropping `setDrainState(null)` from the error path broke
+nothing. The banner from a previous load would survive a failed refresh, so a
+merchant would read a drain verdict no live response was making — error and
+stale data co-rendering, which is a standing rule in this repo.
+
+The test that should have caught it already existed and already carried the
+lesson. `"clears a stale backlog when a refresh fails"` has a comment explaining
+that the *sandbox card* is the thing to assert on, because the rows themselves
+disappear whenever an error state owns the list's `data` — so asserting on rows
+passes whether or not the state was cleared. That comment was written because an
+earlier battery caught that same test missing that same case. One gap later, a
+second header-drawn card appeared and the test did not grow to cover it.
+
+Worth keeping: **a test hardened against a defect covers the surface it was
+hardened on, not the class.** The comment named the mechanism precisely and
+still did not generalise, because the assertion is a list of names and a list
+cannot notice an addition. The fix was to render the initial state with an
+unhealthy drain — asserting a card is absent after an error proves nothing
+unless it was present before — and then assert both cards.
+
+The two inverted mutations: the latch's `scope` key (a private single-row key,
+written and read in one module, pinned by no test on purpose) and a reworded
+notice that keeps its meaning and its "have not been sent". Copy has to stay
+editable; a test that pins exact prose makes every improvement a failure and
+teaches the next person to delete the test.
+
+### What the tests had to be
+
+The drain vocabulary is the *sixth* cross-language enumeration in this
+subsystem. Adding it produced the most useful failure of the session: declaring
+`DRAIN_STATES` in `fulfillment.py` immediately turned
+`test_mobile_names_every_state_the_backend_can_store` red, listing all four new
+names as outbox states mobile could not explain.
+
+That test collects every upper-case literal in the three outbox modules and
+subtracts what is provably something else. Its docstring claims this is why "a
+state added tomorrow needs no help from this file to be noticed: it will simply
+appear, unaccounted for, and fail. An enumeration cannot notice what was never on
+it, so this file does not keep an enumeration." It had never been tested against
+a genuinely new vocabulary. It was, and it worked. `DRAIN_STATES` joins
+`FUNDING_STATES` and `BLOCKERS` in the subtraction — *read*, never retyped, by
+the file's own rule.
+
+### What this does not do, and must be surfaced rather than landed
+
+**It does not deploy the worker.** The notice now tells the truth about a
+platform that cannot send supplier orders; it does not make it able to. Adding
+`supplier_worker` to the `Procfile` is a Railway process change that would start
+a loop whose purpose is to place orders with a supplier, and that decision is the
+user's, not this session's. It stays surfaced, not landed.
+
+What bounds the risk meanwhile is unchanged and independent of this seam:
+`run_tick` is gated on `CJ_RECONCILIATION_ENABLED`, `run_once` calls
+`policy.require_enabled()` and `policy.require_network()`, and
+`fund_fulfillment` raises `supplier_funding_locked` unconditionally.
+
+`tests/dropshipping/test_supplier_obligation_copy.py` 27,
+`tests/business_os/test_cj_worker.py` 15. Directory total 395 with one file per
+process, zero files with failures; `npm run verify` 383 suites / 6578 tests;
+protection suite 327 checks across 28 suites; RTC changes 0.
+
+---
+
+## The twenty-first seam: the failure that told the merchant it had succeeded
+
+Gap 20 made the queue's silence audible. The next question is what a merchant can
+*do* about an order the queue refused, and the answer was nothing, forever, while
+every surface said the work was done.
+
+`list_obligations` derived its most consequential claim from one expression:
+
+```python
+if intent_id is not None:
+    blockers.append(SUPPLIER_ORDER_ALREADY_PLACED)
+```
+
+which renders as **"You have already ordered this from your supplier."**
+
+`BLOCKED` is the state `dispatch` settles to when it *refuses to send*: no
+`provider_order_id`, never through `SENDING`, nothing transmitted. And `claim`
+selects only `state IN ('READY','UNKNOWN','RECONCILE')`, so nothing ever picks a
+`BLOCKED` row up again. `BLOCKED` is terminal.
+
+Put those together. A buyer paid. Nothing was ordered. The merchant's screen said
+it had been. No process would revisit it. The sentence was not merely wrong — it
+was wrong in the direction that costs a customer, and it was permanent.
+
+### The half that only measurement found
+
+The document's own note said a retry was impossible because of a uniqueness
+constraint, and that was true of the path a merchant would take by hand — a fresh
+idempotency key gave `immutable_intent_conflict`. Actually running the other path
+found something the note did not contain. Retrying with the *original* key
+returned:
+
+```python
+return {"intent_id": replayed["id"], "duplicate": True}
+```
+
+`duplicate: True` means "the order your request asked for already exists". For a
+dead intent it does not exist. So the retry a well-behaved caller makes first —
+same request, same key — was a **success that placed nothing**: strictly more
+expensive than the refusal, and invisible to anyone reading the constraint rather
+than running the call.
+
+This is worth recording as method, not just as a finding. The note in this
+document was accurate and still understated the defect, because it described a
+constraint instead of exercising a path. *Do not guess from UI* has a companion:
+do not guess from your own map either.
+
+### Why proof of a non-send is narrower than it looks
+
+The fix needs a predicate for "this was never sent", and getting its edges right
+is the whole seam.
+
+`READY` and `BLOCKED` are the two states reachable through `dispatch`'s final
+handler without a write having happened — its first branch sends anything with
+`sent` set, already-unconfirmed, or ambiguously written to `UNKNOWN`. So arriving
+at either *is* the proof. Hence `NEVER_SENT_STATES = ("READY", "BLOCKED")`.
+
+But never-sent is necessary, not sufficient. `READY` is **live**: `claim` will
+pick it up the moment a drain exists. Offering a retry on it would queue the same
+purchase twice. So `RECOVERABLE_STATES = ("BLOCKED",)` — never sent, *and* never
+going to be.
+
+Everything else fails closed, and the reasons are individual rather than a blanket
+rule: `SENDING` may be mid-write; `UNKNOWN`'s own reason string is literally
+`absence_not_proven`; `RECONCILE` is the same family; `LINKED` is a confirmed
+provider order; and an intent with no outbox row at all cannot testify either way.
+Guessing "not sent" on any of those buys the same goods twice.
+
+The predicate also checks `provider_order_id` even though no path settles to
+`BLOCKED` while holding one. `settle` writes it with
+`COALESCE(?,provider_order_id)` and therefore never clears it, so if a row ever
+acquires an id and later reads `BLOCKED`, the id is the older and more expensive
+fact and it wins.
+
+### Why a fresh intent rather than an in-place rewrite
+
+The cheaper fix is to reuse the dead intent: rewrite its snapshot, reset its
+outbox row, no schema change. It was rejected, and the reason is the load-bearing
+design decision of this seam.
+
+`external_order_ref` is what `_validate_observed` uses to prove that a provider
+order belongs to *this* intent. Reusing one ref across two distinct commercial
+offers would let a stray order from attempt 1 authenticate against attempt 2 — the
+exact confusion the ref exists to prevent. A fresh intent with a fresh ref cannot
+be confused that way. Safety beat simplicity because the thing being protected is
+money.
+
+So an intent stays immutable and stays on file; what changes is whether it is
+still the *live* one for its order. That is one nullable column, `superseded_at`.
+Nullable with no default, because a `0` would make "still live" and "retired at
+the epoch" the same row.
+
+### The migration was the real work, and production decided its shape
+
+`CREATE TABLE IF NOT EXISTS` is a no-op on every database that has already run
+this code, and the test suite runs on a fresh SQLite file every time. So editing
+the `CREATE TABLE` alone would have produced a green suite proving a recovery path
+production does not have. **That is this mission's recurring defect with a schema
+in the subject position**, and it is the reason `_reshape_intents_for_supersession`
+exists and is tested by reverting a database to the old shape and migrating it
+forward.
+
+Measuring production before choosing a strategy changed the strategy:
+
+- `business_os_supplier_intents`: **0 rows**
+- `business_os_supplier_outbox`: **0 rows**
+- `business_os_supplier_drain_ticks`: **table absent** — expected; gap 20 had just
+  deployed and `ensure_schema()` runs lazily on first use.
+
+Zero data at risk. And the blocking constraint on PostgreSQL is
+`business_os_supplier_intents_connection_id_order_id_key`, which
+`ALTER TABLE ... DROP CONSTRAINT IF EXISTS` removes with **no table rebuild**.
+A single measurement turned a large risky rebuild into a small safe one and
+confined the rebuild to SQLite, where an inline `UNIQUE` genuinely cannot be
+dropped by name.
+
+One constraint turned out to have never earned its place:
+`UNIQUE(connection_id, order_id)` was always implied by the unconditional
+`uq_supplier_canonical_order` on `(order_id)` alone — if `order_id` is unique
+across the table then so is any pair containing it. It constrained nothing that
+index did not, while being the one constraint that could not be made conditional
+without a rebuild. Dropping it loses no invariant.
+
+`UNIQUE(connection_id, idempotency_key)` is deliberately **unchanged** and still
+spans retired intents. A key is the caller's promise that this is the same
+request; a spent key minting a second supplier order is the double purchase the
+outbox exists to prevent. A replayed key on a retired intent therefore gets a new
+refusal, `intent_superseded_use_new_key` (409) — not `duplicate: True`, because
+that answer is the defect.
+
+### Where the claim was derived twice
+
+`supplier_order_placed` was the *second* derivation of the same wrong fact, spelled
+the same wrong way. Both had to move together: two derivations of one claim
+disagreeing is how a screen renders a contradiction.
+
+The liveness filter sits in the **JOIN**, not the `WHERE`:
+
+```sql
+LEFT JOIN business_os_supplier_intents i ON i.order_id = CAST(o.id AS TEXT)
+  AND i.superseded_at IS NULL
+```
+
+In a `WHERE` it would discard the whole *order* whose only intent was retired —
+which is precisely the order that most needs to appear in this list.
+`uq_supplier_live_canonical_order` (unique on `order_id` where
+`superseded_at IS NULL`) keeps the join 1:1, so the fan-out it could otherwise
+cause cannot happen.
+
+### The guard is in the write, not only in the read
+
+`create_intent` checks the evidence twice: once in Python to decide whether to
+proceed, and again inside the conditional `UPDATE` that retires the row, with the
+outbox re-checked in the same statement rather than trusted from the row already
+read. A dispatch that moves the row out of `BLOCKED` between the two loses the
+race instead of being overwritten.
+
+The state list in that statement is expanded from `RECOVERABLE_STATES`
+(`placeholders = ",".join("?" for _ in RECOVERABLE_STATES)`) rather than spelled
+as a literal. A literal would have been a second, shorter vocabulary that agreed
+with the first only until someone edited one of them — which is the same latent
+shape this document keeps cataloguing, and it was caught in the draft of this very
+fix.
+
+### What the tests had to be
+
+The failing test was written **first** and used as the measurement instrument, so
+the fix and the regression test are one artifact. It went red exactly as predicted:
+`assert 'SUPPLIER_ORDER_ALREADY_PLACED' not in ['SUPPLIER_ORDER_ALREADY_PLACED']`.
+
+It sits one line below `test_a_blocked_supplier_order_carries_its_error`, and that
+adjacency is the lesson. The test above asks whether a `BLOCKED` row carries its
+reason. It never asked what *else* the row says, and what else it said was that
+the order had already been placed. Every test in the file that touched a failed
+send asserted on the state the row lands in; none asked what that state left the
+merchant able to do, and the answer was nothing.
+
+Three groups were added: the recovery behaviour (including a parametrized refusal
+across `SENDING`/`UNKNOWN`/`RECONCILE`/`LINKED`, a `READY` row that is never-sent
+but not recoverable, an intent with no outbox row, and a `BLOCKED` row still
+holding a `provider_order_id`); the migration, by reverting a live database to the
+pre-supersession DDL verbatim and migrating it forward — asserting that surviving
+rows come back with `superseded_at IS NULL`, since defaulting them to superseded
+would silently free every order in the table for a second supplier purchase; and
+the vocabularies, which assert the subset relation
+`RECOVERABLE_STATES ⊆ NEVER_SENT_STATES` and then pin `dispatch`'s ambiguous-write
+guard and `claim`'s due-state list as source text, because those two lines are the
+*only* reason the tuples are true and changing either evaporates the proof with
+every test still green.
+
+Two of those vocabulary tests were themselves written wrong and caught by running
+them: they asserted membership in `f.SUPPLIER_ORDER_STATES`, which is a
+**mobile-side** name. The backend has no tuple of every outbox state — `dispatch`
+and `settle` are the only code that names them, which is exactly why
+`test_supplier_obligation_copy.py` discovers states by scanning literals. The
+containment available on this side is against the module's own text.
+
+The race test had to be inverted after `sqlite3.OperationalError: database is
+locked` — a second connection cannot write inside `create_intent`'s transaction.
+Setting the row to `SENDING` *before* the call and monkeypatching
+`_recoverable_intent` to return `True` reproduces exactly the state a lost race
+leaves behind, and asserts the SQL refuses anyway. A test that cannot run is worse
+than no test.
+
+### What the mutation battery attacks
+
+`scripts/mutation_dropship_recovery_seam.py`, twenty-six mutations in five groups:
+the vocabulary (widening `NEVER_SENT_STATES` to include `UNKNOWN` is the most
+expensive single edit in the file), the obligation surface (both derivations of the
+placed claim, and the JOIN), the retirement gate (the `duplicate: True` path
+restored, a spent key narrowed to live rows, the conditional `UPDATE` collapsed to
+the stale Python verdict, the unread `rowcount`), the migration (the reshape never
+running, the old index surviving, the new index made unconditional, and a
+`DEFAULT 0` on the new column), and the screen (`!row.supplierOrderPlaced`
+re-derived as `!row.intentId`, which is this gap's defect one language over and
+immune to every backend test here).
+
+One inverted mutation is recorded honestly rather than comfortably: the `409` on
+`intent_superseded_use_new_key` is not pinned, because no surface calls
+`fulfillment-intents` yet — there is still no "place supplier order" control in any
+client. When one is built, the status becomes a fact a caller reads and the
+mutation should be reclassified rather than the test loosened.
+
+### What this does not do
+
+It does not give the merchant a button. The recovery path exists, is reachable
+through `fulfillment-intents`, and is correct; the obligation now reports
+`canPlaceSupplierOrder` truthfully for an order whose attempt failed. But the
+action still has no caller on any surface, which remains the seam recorded at gap
+19 and is unchanged here. What this seam removes is the *permanence*: the order is
+no longer sealed by a sentence claiming work that never happened.
+
+`tests/dropshipping/test_supplier_obligations.py` 55,
+`tests/business_os/test_cj_fulfillment.py` 75.
+
+---
+
 ## What kept coming back
 
-Thirteen defects in this chain, thirteen different subsystems, one shape: **a
-number was asserted rather than measured.**
+Twenty-two defects in this chain, twenty-two different subsystems, one shape:
+**a number was asserted rather than measured.**
 
 - `publish()` never wrote `price_label`, and the publish test asserted `status`
   and `published_at` and stopped one column short.
@@ -1417,6 +2849,77 @@ number was asserted rather than measured.**
   read its source as text and asserted on the literal `quantity=quantity-1`,
   which is the defect spelled out, so the suite was green *because* the bug was
   there and would have gone red on the fix.
+- Six readers asserted a listing's delivery lane by reading a column that has
+  never held one. `delivery_type` is bound to `product_type` in the publish
+  INSERT and hardcoded to `'physical'` by the importer, so the fallback to the
+  seller's actual choice was unreachable and every physical listing shipped —
+  including the pickup-only ones. Every test of the rule supplied a lane word in
+  that column, describing a row the database cannot produce, and one fixture
+  contradicted itself so quietly that it pinned whichever field the bug read
+  first.
+- The order timeline asserted a buyer's lane from `order.delivery_type`, a field
+  no order endpoint has ever served — so the pickup branch was unreachable, every
+  order rendered as shipped, and the escrow safety panel could not be reached at
+  all. The settled lane was already frozen on the order, in the metadata the
+  serializer was parsing and not reading. The test covering it supplied
+  `listing: { delivery_type: "pickup" }`, and the cross-view test that should
+  have caught the disagreement passed because both perspectives were broken in
+  the same direction.
+- The publish gate asserted, in a comment defending itself, that the ordinary
+  import satisfies `SUPPLIER_VARIANT_UNBOUND` without the merchant doing
+  anything. Every clause of that sentence was about a screen in another language,
+  and the screen does the opposite: it pre-selects every in-stock variant, so the
+  ordinary path is the refused one. The code was also missing from the mobile
+  copy of the problem enumeration, so the refusal reached the merchant as its own
+  identifier — and the only operation that could have answered it had no caller
+  on any surface.
+- A note listing this layer's remaining gaps asserted that it "can create and
+  read a single intent by id" and only lacked an enumeration. Nothing reachable
+  had ever created one: the sole writer's only route had zero callers on any
+  surface, the dispatch worker is not in the Procfile, and checkout cannot see
+  that a listing is dropshipped at all. So a buyer's money was collected against
+  a known supplier cost and no record anywhere said a purchase was owed. The note
+  also named a table that does not exist — and so, until this seam was written,
+  did the stage table at the top of this document.
+- The obligation asserted a supplier code by reading the column one level up the
+  hierarchy from the one its only consumer matches on, which is NULL in the
+  ordinary import — and asserted a destination by taking it from the request
+  body, so a merchant-authenticated call could redirect a parcel the buyer paid
+  to have sent elsewhere. The address was frozen on the row the query already
+  reached. Meanwhile the endpoint that prices the freight had zero callers,
+  because its request could only be assembled on the server and no server-side
+  assembler existed. Every test was green: they asserted that a reader returns
+  what that reader reads.
+- `dispatch` took a clock as an argument and then read the wall clock on the one
+  line that decided whether a frozen freight price was still spendable. The
+  snapshot is hash-pinned, so the injected clock was the only remaining input,
+  and the 300-second reapproval rule could be executed only by letting 300 real
+  seconds pass. It never had been, in either direction. The same handler stored
+  a dozen distinct refusals as the single word `preflight_blocked`, and the
+  orders screen printed that word to the merchant under a comment calling it
+  "the supplier's own refusal text" — a field that cannot contain provider text
+  by construction. The jest test covering that line was named "shows a
+  supplier's refusal in the supplier's own words" and asserted
+  `getByText("preflight_blocked")`.
+- Every queued supplier order asserted "Queued to send to your supplier" — a
+  promise about a worker with no entry point in the `Procfile`, so no intent can
+  ever leave `READY`. Nothing could have caught it: `run_once` returned its
+  counts to its caller and persisted nothing about itself, so "a drain ran" was
+  not a fact anything could read, contradict or test. The Procfile absence was
+  already recorded in this very document, and still reached the merchant as a
+  reassuring sentence, because a fact in a document is not a fact in a payload.
+- The obligation asserted that a supplier order had been placed by reading
+  `intent_id is not None` — the existence of a row, not any evidence of a send —
+  so an order `dispatch` had *refused* to send told the merchant **"You have
+  already ordered this from your supplier."** `BLOCKED` is terminal, so it said
+  so forever: a buyer paid, nothing was ordered, and nothing would ever revisit
+  it. `supplier_order_placed` derived the same wrong fact a second time from the
+  same expression. The test directly above the defect asked whether a `BLOCKED`
+  row carries its *reason* and never asked what else the row claimed. And the
+  note in this document explaining why no retry was possible was accurate about a
+  constraint while being wrong about the path: replaying the original idempotency
+  key returned `duplicate: True` on a dead intent — a success that placed
+  nothing, worse than the refusal, and findable only by making the call.
 
 In all of them the suite was green, and in all of them the green was about the
 halves rather than the seam. Where a claim spans two components, this document now
@@ -1556,6 +3059,27 @@ assertion also contains the best example of it: counting call sites against
 forwarded arguments, to reach a lane the UI cannot execute. Structure is a fair
 subject for a source test. Values are not.
 
+The fourteenth is the thirteenth's other half, and it indicts the fixtures:
+**a fixture describing a row the database cannot produce is not a test of the
+system.** Every suite covering the delivery lane invented a listing dict with a
+lane word in `delivery_type`, and the column has never held one in any row ever
+written. The suites were not weak; they were measuring a different program. The
+greppable tell is a question rather than a pattern — **for each field a fixture
+sets, name the writer that sets it in production** — and where the answer is "no
+writer does", the assertions downstream of it are unfalsifiable by anything real.
+The remedy used here is the one the fourth seam already pointed at from the other
+side: publish through the route and read the row back, so the fixture is a
+measurement.
+
+Its sub-tell is sharper and costs nothing to check: **when two fields in one
+fixture disagree, the test pins whichever field the bug reads first.**
+`listing({ delivery_type: "pickup" })` over metadata saying `both` passed for
+exactly the reason it should have failed. A self-contradicting fixture does not
+fail — it silently elects the current implementation as the specification, and it
+will go red on the fix. Which is the thirteenth corollary again, arrived at
+without reading a line of source: **ask which way an assertion fails, not whether
+it passes.**
+
 Its sub-tell is about the instrument rather than the subject: **a harness that
 reports a result it never measured is the same defect, one level up.** The
 battery for this seam dispatched to jest on the `.tsx` extension, handed two
@@ -1564,3 +3088,233 @@ client mutations came back "survived" without a single assertion having run.
 Survival and never-ran are the same observation unless something distinguishes
 them, which is what the no-op control is for in one direction; the other
 direction needs the runner to prove it executed the suite it named.
+
+The fifteenth is the one that pays for all the others, because it turns the
+whole list from a catalogue of mistakes into a place to look first: **before
+adding a field, search the payload for the answer — it is often already there,
+unread.** The order's settled lane had been written to `metadata_json` at
+checkout by a function whose docstring existed to explain why, carried over the
+wire on every order, and parsed by the very serializer that did not surface it.
+The client, meanwhile, read a field that has never existed. Two components each
+doing their half of the job correctly, joined by a key nobody read.
+
+The greppable tell is a pair: **find the writer of a frozen record and count its
+readers.** `snapshot()` had one writer per checkout lane and zero readers — a
+value persisted for posterity that nothing had ever retrieved. A write with no
+read is either dead code or a missing feature, and the docstring usually says
+which; this one said, in as many words, that it was for reading an order back
+later.
+
+Its sub-tell is about the repair rather than the defect, and it is the reason
+this seam did not become a seventh derivation: **the inverse of a freeze is a
+read, not a recomputation.** Re-deriving a stored fact from its source looks
+equivalent and is strictly weaker, because a freeze captures two things a source
+cannot return — a *choice* that narrowed an ambiguity, and a *moment* before the
+source was edited. When the two disagree, the frozen value is not the stale one.
+It is the only one that was ever true.
+
+An agreement assertion earns its own line here, because the cross-view test is
+the second one in this document to pass for the wrong reason: **two readers
+agreeing proves nothing on an input that cannot make them disagree.** The tenth
+corollary said to assert that two surfaces agree rather than what either returns.
+This is its necessary companion — vary the input across the axis the two readers
+are supposed to be reading, and separately pin that they still differ where they
+must. Otherwise the cheapest way to satisfy the agreement is to delete one of the
+readers, which is a fix the suite will accept.
+
+The sixteenth is about where a claim is written rather than what it claims:
+**a claim about a screen, asserted in a backend comment, is not a measurement of
+the screen.** The guard that blocked every multi-variant import was defended by
+a comment saying the ordinary path satisfies it — a sentence about
+`SupplierProductScreen.defaultSelection`, written in Python, in a file that
+cannot import it, by someone who did not open it. It was false in the only
+direction that mattered. The tell is grammatical: **a comment whose subject lives
+in another language is a hypothesis, and the fix is a probe, not a rewording.**
+Twelve lines of script running the real importer against the real evaluator
+settled it in one run, and the comment there now quotes that output.
+
+Its sub-tell is the eleventh corollary crossing a language boundary, where the
+remedy the eleventh offers — prefer the check that walks — is unavailable:
+**a second copy of an enumeration in another language has no compiler spanning
+it, and the gap surfaces as a raw identifier on a user's screen.** Inside
+TypeScript the fix is a total `Record` over the union, which the compiler can
+walk. Across Python and TypeScript nothing can, so the check has to be written by
+hand, and the honest way to enumerate the Python side is
+`_validate.__code__.co_names` — the names the function actually reads — not a
+grep of the declarations above it. Reading the *other* language as source text is
+acceptable here for the same reason it was unacceptable in the thirteenth: what
+is read is a literal array and the keys of a literal object. Data, not logic. A
+test that read a function to decide what it does would be satisfied by whatever
+that function said.
+
+And its second sub-tell folds the seventh and twelfth into one sentence, because
+this seam had both at once: **a guard whose only remedy has zero callers stops
+the user exactly as hard as no guard — they just get a code instead of a broken
+order.** `bind-product` existed, was correct, was tested on the server, and was
+reachable from nothing. The seventh corollary says to grep for the writers of the
+column a guard reads; the addition here is to then grep for the *callers of those
+writers on a surface a user can touch*, because a writer reachable only from
+pytest is not reachable.
+
+The seventeenth turns the document on itself, because the last two seams were
+caught by a battery aimed at prose I had written: **a comment that asserts a
+failure mode its own code cannot exhibit is the same defect as a comment that
+asserts a screen it cannot import.** The sixteenth corollary caught a Python
+comment describing TypeScript. This one needs no second language — the
+`!connectionId` ordering comment described a skeleton-for-ever that
+`useDropshippingScope` makes unreachable, because the hook always initialises to
+`loading`. Both are hypotheses in the imperative mood. The tell is that the
+sentence contains a consequence: **if a comment says what *would* happen, either
+a test can produce it or the sentence is a guess** — and the honest third option,
+where no test can produce it because the code cannot, is to say so. Which is why
+three mutations in this seam's battery are recorded as inverted with their
+reasoning rather than deleted. A battery that quietly drops the mutations it
+cannot catch is reporting a pass rate, not a measurement; one that keeps them and
+explains each is the only kind whose "16 of 16" means anything.
+
+Its sub-tell is about the instrument again, and it is the eighth corollary
+reappearing inside a test harness: **metadata keyed by position silently
+relabels its subjects when one is inserted.** The inverted set was a set of
+indices; adding a mutation mid-list moved two real mutations into it, which is
+not a cosmetic bookkeeping error — it is the battery ceasing to demand that
+anything catch them, while still printing a clean report. Keyed by name, with
+assertions that names are unique and that every declared name exists, the same
+insertion is a no-op. **Anything that names a test's subjects by ordinal is one
+edit away from asserting about the wrong one.**
+
+And a small one worth its line because it cost a red suite: **a fixture value
+invented rather than looked up puts the test on the branch you were not
+testing.** A connection status of `NEEDS_REAUTH` is not a status this app knows
+— `REAUTH_REQUIRED` is — so the screen read the connection as healthy and the
+assertion landed on the happy path. The fourteenth corollary says to name the
+writer of every field a fixture sets; the cheap version for an enumerated field
+is to **ask the shared predicate about the fixture first**, in the test, so a
+renamed status fails where it is wrong instead of quietly relocating the test.
+
+The eighteenth is the first one about authority rather than arithmetic, and it is
+the same defect with the stakes changed: **a fact the server already owns must
+not arrive as a parameter, because a parameter is a claim and the owner is a
+measurement.** `create_intent` took `shipping_destination` from its caller and
+its caller took it from the request body, so the address the buyer paid to ship
+to sat frozen on the transaction with nothing comparing the two. Every other
+corollary here describes a green suite over a wrong number; this one was a green
+suite over an authorization hole, and it read as a parameter because parameters
+are how inputs look. The tell is ownership, not validation — no amount of
+sanitising the field makes the caller entitled to name it. **If the record
+answers the question, the request must not be allowed to.** The corresponding
+test is a signature assertion rather than a behavioural one, because the honest
+thing to pin is that the parameter cannot come back: `inspect.signature` over
+`create_intent`, refusing `shipping_destination`, `destination`, `address` and
+`shipping_address` by name.
+
+Its sub-tell is the one this seam's battery found in its own author, and it is
+the thirteenth corollary's inverse: **a branch no test can fail on is not
+covered, it is unreachable — and the comment explaining its purpose is the only
+evidence it ever had.** The thirteenth says a test that reads source text is
+satisfied by whatever the source says. This says the same of a *guard*: the
+two-character check on the country code was subsumed by the line after it, so
+removing it changed no outcome, no suite could go red, and the sentence beside
+it asserting what it distinguished was the entire case for its existence. Only
+the mutation battery could find it, because the finding is "nothing failed" and
+that is exactly what a passing suite looks like. Written while fixing an
+instance of this same family, three files away. **The instrument that measures
+whether an assertion is load-bearing is the only instrument that can tell you a
+guard is decoration**, which is the argument for running the battery over code
+written in the same commit rather than only over the code it was aimed at.
+
+The nineteenth is the sub-tell's opposite number and it is about the *inputs* a
+rule is allowed to read: **a function that takes a clock and then reads the wall
+one has made its own rule unexecutable, and a rule nothing can execute has never
+been true or false.** `dispatch` accepted `now` and compared a hash-pinned
+`quoted_at` against `datetime.now(timezone.utc)`, which left "was this price
+still current?" answerable only by letting the window elapse in real time. No
+suite waits 300 seconds, so nothing did, so the reapproval rule standing between
+a merchant and a changed freight price had never run in either direction. This
+generalises past clocks — it is any rule whose only remaining variable is
+something the function was handed and then ignored: an injected clock, an
+injected connection, a passed-in config. The tell is mechanical and worth
+grepping for: **a parameter that appears in the signature more times than it
+appears in the body.** The eighteenth corollary says a fact the server owns must
+not arrive as a parameter. This one says the reverse failure is equally silent —
+a parameter that arrives and is then not used is a rule that compiles, reads
+correctly, tests green, and has never fired.
+
+Its sub-tell is about the shape the rule was hiding in. The window check and the
+cost check shared an `or`, and one test covered the second disjunct:
+`test_queued_cost_change_blocks_create` passes, has always passed, and belongs
+entirely to the half that was reachable. **A compound condition is covered when
+every disjunct has failed a test on its own, and a suite cannot tell you which
+disjunct earned the green.** Splitting the condition is what made the dead half
+visible; the clock is what made it reachable. Both were needed, and neither
+would have been found by reading the function, because the function reads
+correctly.
+
+And a third note, on the instrument rather than the code, because the battery
+produced it about itself twice in two seams. First: **a test written relative to
+a constant cannot detect a change to that constant** — every window test here is
+`now + MAX ± 1`, which is right for testing the mechanism and blind to widening
+the window tenfold. Policy numbers with money attached need one absolute
+assertion, stated as a policy, beside the relative ones. Second: **a mutation's
+inverted classification is a claim about the current suite, not about the edit,
+so it expires.** One exemption in this battery became a genuine defect the
+moment an unrelated test was written, and the battery reported it as `PINNED`
+rather than as a failure — which is the only reason it was re-examined instead of
+quietly protecting the thing it was meant to exclude.
+
+The twentieth is the nineteenth with the subject changed from a rule to a claim:
+**a process that reports its work only to its caller has made every claim about
+it unmeasurable, and a claim nothing can measure has never been right or wrong.**
+`run_once` returned counts and persisted nothing, so "queued orders are being
+sent" could not be contradicted by a payload or asserted by a test — while the
+only thing that sends them had no entry point in the `Procfile`. The tell is
+worth grepping for and is the mirror of the previous one: **a background process
+whose only output is its return value, read by a `print`.** If the sole evidence
+a job ran is a log line, then every user-facing sentence that depends on it is
+prose. Fixing it is a latch, not a rewording — and the latch needs *two*
+moments, because one timestamp cannot distinguish a process that never started
+from one that starts and dies every cycle, and the second of those is the
+expensive one precisely because it looks like success.
+
+Its corollary is the harder half, and it is about this document. The Procfile
+absence was not undiscovered — it is written down twice in the seams above,
+noted while deferring other work. It was known, recorded, and still reached the
+merchant as "Queued to send to your supplier". **A fact in a document is not a
+fact in a payload.** The eleventh corollary said an enumeration of surfaces
+cannot notice the surface it never had; this is its companion for findings
+rather than surfaces: a deferral written into a map protects the next engineer
+and nobody else. If a known gap has a user-visible consequence, the deferral has
+to land as an observable — a column, a field, a failing test — or it is a
+comment that the product contradicts.
+
+And one more from the battery, about test maintenance rather than code: **a test
+hardened against a defect covers the surface it was hardened on, not the class.**
+`"clears a stale backlog when a refresh fails"` carried a comment, written after
+an earlier battery caught it, explaining exactly why the sandbox card is the
+thing to assert on — that the rows vanish whenever an error state owns the
+list's `data`, so asserting on rows passes either way. The reasoning was
+correct, specific, and preserved. One gap later a second header-drawn card
+appeared and the test did not cover it, because the assertion is a list of names
+and a list cannot notice an addition. This is the eleventh corollary recurring
+inside a test suite, which is the last place it is looked for.
+
+The twenty-first adds the one this document is least able to enforce on itself:
+**a finding recorded in this map is a description of a constraint, not a
+measurement of a path, and the two diverge.** The note explaining why a failed
+supplier order could not be retried named the right uniqueness constraint and
+was correct about the route a person would take by hand. Running the other route
+— same request, original idempotency key — returned `duplicate: True` on a dead
+intent, a success that placed nothing, which is strictly the more expensive
+answer and appears nowhere in a schema. *Do not guess from UI* therefore has a
+companion clause: **do not guess from this document either.** Where a section
+here explains why something is impossible, the section is a hypothesis until
+someone calls it.
+
+Its sub-tell is about terminality, and it generalises past this subsystem: **a
+state that nothing will revisit turns a wrong fact into a permanent one, so
+"which states are terminal" is a question every claim derived from a row has to
+answer.** `BLOCKED` was reachable, correct, and final — `claim` simply does not
+select it — and the blocker derived from its row's mere existence would have
+been a recoverable annoyance in any live state and was instead a sealed loss.
+Nothing in the code said "terminal"; it was a consequence of one `IN` list in a
+different function. The states a row can leave are part of the meaning of every
+sentence a screen draws from it.

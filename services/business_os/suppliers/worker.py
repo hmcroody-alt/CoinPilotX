@@ -198,6 +198,13 @@ def run_once(*, adapter_factory=None, limit=20, now=None):
     ensure_schema()
     fulfillment.ensure_schema()
     webhook_inbox.ensure_schema()
+    # Recorded before any work, and after the policy gates above, so the latch
+    # means "a process allowed to drain this outbox got here" -- which is the
+    # question the merchant-facing notice asks. Recording it only on success
+    # would leave a worker that crashes every tick indistinguishable from no
+    # worker at all; `fulfillment.drain_status` separates those two, and it can
+    # only do so if this write happens even when the tick below does not finish.
+    fulfillment.record_drain_tick(now=now)
     _seed_jobs(limit, now)
     # Existing inbox handler only performs idempotent scheduling; no financial write.
     inbox = webhook_inbox.reconcile_pending(webhooks.mark_dirty, provider="cj", limit=limit)
@@ -244,4 +251,8 @@ def run_once(*, adapter_factory=None, limit=20, now=None):
             _finish(job, now=now, retry_after=delay)
             counts["deferred"] += 1
         counts["reads"] += 1
+    # Only reached when the tick completed. Every per-item failure above is
+    # already caught and settled, so arriving here means the loop ran to its
+    # bound rather than that nothing went wrong.
+    fulfillment.record_drain_tick(now=now, completed=True)
     return counts

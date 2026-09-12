@@ -235,6 +235,18 @@ def get_draft(business_id, store_id, actor_user_id, connection_id, listing_id, *
             "supplier_cost_cents": source.get("supplier_cost_cents"),
             "supplier_cost_currency": source.get("supplier_cost_currency"),
             "external_sku": source.get("external_sku"),
+            # The binding, served because `SUPPLIER_VARIANT_UNBOUND` is
+            # otherwise a refusal nothing can answer. `bind-product` takes
+            # (canonical_product_id, pid, vid); the variant list above already
+            # carries every candidate `vid`, so the only missing halves were the
+            # `pid` to bind against and which variant — if any — is bound now.
+            #
+            # Merchant-private, on a merchant-private payload: this block
+            # already carries `supplier_cost_cents`, and §27/§95 are about what
+            # reaches a *buyer*. `pulse_buyer_order_response` does not read this
+            # function; nothing buyer-facing does.
+            "provider_product_id": source.get("provider_product_id"),
+            "provider_variant_id": source.get("provider_variant_id"),
             "merchant_owned_fields": source.get("overridden_fields") or [],
         },
         "pricing_rule": rule,
@@ -556,11 +568,26 @@ def _validate(listing, priced, source, media):
 
     # Nothing can be ordered for an unbound dropship listing. This is a refusal
     # to publish a product that a buyer could pay for and nobody could ship --
-    # see `SUPPLIER_VARIANT_UNBOUND`. It is only a fair thing to demand because
-    # `importer` now binds at import when the merchant's selection names one
+    # see `SUPPLIER_VARIANT_UNBOUND`. `STOCKED` sources are exempt: the merchant
+    # holds that inventory and places no supplier order, so there is nothing to
+    # bind.
+    #
+    # This used to be defended here with "it is only a fair thing to demand
+    # because `importer` binds at import when the merchant's selection names one
     # variant, so the ordinary path satisfies it without the merchant doing
-    # anything. `STOCKED` sources are exempt: the merchant holds that inventory
-    # and places no supplier order, so there is nothing to bind.
+    # anything." That was a claim about a screen, asserted in the backend, and it
+    # was false: `SupplierProductScreen.defaultSelection` pre-selects *every*
+    # in-stock variant, so the ordinary path is the multi-variant one and
+    # `importer` writes NULL for it. Measured by
+    # `scripts/probe_dropship_multivariant_publish.py` -- a two-variant import
+    # through the real importer and the real evaluator comes back
+    # `publishable: False, problems: ['SUPPLIER_VARIANT_UNBOUND']`.
+    #
+    # The guard is right and stays. What was missing is the answer to it: the
+    # draft now serves `supplier.provider_product_id` / `provider_variant_id`,
+    # and `ReviewImportedProductScreen` asks the merchant which variant this
+    # listing sells and calls `bind-product`. A guard is only finished when
+    # something reachable can satisfy it.
     if str(source.get("fulfillment_mode") or "").upper() == supplier_schema.MODE_DROPSHIP \
             and priced and sold is None:
         problems.append(SUPPLIER_VARIANT_UNBOUND)

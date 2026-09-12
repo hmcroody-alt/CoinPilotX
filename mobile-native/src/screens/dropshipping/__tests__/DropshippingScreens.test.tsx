@@ -20,10 +20,15 @@
  *    the provider. An input beside them implies the merchant can change them,
  *    and an unknown cost drawn as a zero is the number they would price
  *    against.
+ * 5. **A promise about fulfilment comes from the server, not the build.** The
+ *    "nothing is sent to your supplier" card is the most reassuring thing on
+ *    the supplier-orders screen, and the only thing on it that could become a
+ *    lie without any code changing. It is drawn from the response, so a screen
+ *    that hardcodes it fails here.
  */
 
 import React from "react";
-import { Text } from "react-native";
+import { FlatList, Text } from "react-native";
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 
 jest.mock("react-native-safe-area-context", () => ({
@@ -74,6 +79,8 @@ const mockListConnectionShops = jest.fn();
 const mockBindConnectionShop = jest.fn();
 const mockConnectSupplier = jest.fn();
 const mockSearchProducts = jest.fn();
+const mockBindDraftVariant = jest.fn();
+const mockListSupplierObligations = jest.fn();
 
 jest.mock("../../../api/dropshipping", () => ({
   ...jest.requireActual("../../../api/dropshipping"),
@@ -88,21 +95,30 @@ jest.mock("../../../api/dropshipping", () => ({
   listConnectionShops: (...args: unknown[]) => mockListConnectionShops(...args),
   bindConnectionShop: (...args: unknown[]) => mockBindConnectionShop(...args),
   connectSupplier: (...args: unknown[]) => mockConnectSupplier(...args),
-  searchSupplierProducts: (...args: unknown[]) => mockSearchProducts(...args)
+  searchSupplierProducts: (...args: unknown[]) => mockSearchProducts(...args),
+  bindDraftVariant: (...args: unknown[]) => mockBindDraftVariant(...args),
+  listSupplierObligations: (...args: unknown[]) => mockListSupplierObligations(...args)
 }));
 
 import { PulseApiError } from "../../../api/pulseApi";
 import {
+  DROPSHIPPING_DATA_GAPS,
   DROPSHIPPING_STATES,
+  SUPPLIER_OBLIGATION_BLOCKERS,
+  SUPPLIER_OBLIGATION_BLOCKER_COPY,
+  connectionNeedsAttention,
   type DropshippingState,
   type ImportCartItem,
   type ImportedDraft,
-  type SupplierConnection
+  type SupplierConnection,
+  type SupplierObligation
 } from "../../../api/dropshipping";
 import { DropshippingStateView } from "../../../components/dropshipping/DropshippingStates";
 import { ConnectSupplierScreen } from "../ConnectSupplierScreen";
 import { DropshippingHubScreen } from "../DropshippingHubScreen";
+import { DropshippingOrdersScreen } from "../DropshippingOrdersScreen";
 import { DropshippingProductsScreen } from "../DropshippingProductsScreen";
+import { DropshippingSyncScreen } from "../DropshippingSyncScreen";
 import { ImportCartScreen } from "../ImportCartScreen";
 import { ReviewImportedProductScreen } from "../ReviewImportedProductScreen";
 import { SupplierCatalogScreen } from "../SupplierCatalogScreen";
@@ -185,12 +201,22 @@ function draft(over: Partial<ImportedDraft> = {}): ImportedDraft {
     ],
     supplier: {
       provider: "cj",
-      fulfillmentMode: "SANDBOX",
+      // `DROPSHIP`, not `SANDBOX`. This said "SANDBOX" — an environment mode in
+      // a fulfilment-mode field, a value `marketplace_product_sources` cannot
+      // hold (`MODE_STOCKED` / `MODE_DROPSHIP` are the two). Every test built on
+      // it was therefore exercising a listing that is neither dropshipped nor
+      // stocked, which is why none of them noticed the variant binding.
+      fulfillmentMode: "DROPSHIP",
       syncState: "OK",
       lastSyncedAt: null,
       supplierCostCents: 450,
       supplierCostCurrency: "USD",
       externalSku: "CJ-1",
+      // Bound by default, because the default draft here is a publishable one
+      // and an unbound dropship draft is not publishable. Tests about the
+      // unbound state override these two.
+      providerProductId: "ext-1",
+      providerVariantId: "pv-1",
       merchantOwnedFields: []
     },
     pricingRule: { type: "COST_PLUS_PERCENT", value: 60 },
@@ -1521,6 +1547,217 @@ describe("ReviewImportedProductScreen", () => {
     await waitFor(() => expect(view.getByText("SOME_FUTURE_PROBLEM")).toBeTruthy());
   });
 
+  /* ---------------------------------------------------------------- *
+   * Which variant this product sells
+   *
+   * `SUPPLIER_VARIANT_UNBOUND` was a refusal with no answer. The supplier
+   * screen pre-selects every in-stock variant, so the ordinary import of a
+   * two-size t-shirt produced a draft the publish gate declined; the code had
+   * no merchant-readable copy, so it was rendered raw; and `bind-product` had
+   * no caller on any screen, so there was nothing to do about it. These tests
+   * are about the pair — the words, and the remedy.
+   * ---------------------------------------------------------------- */
+
+  /** An unbound dropship draft with two candidate variants — a default import. */
+  function unbound(): ImportedDraft {
+    const base = draft();
+    return {
+      ...base,
+      variants: [
+        base.variants[0],
+        {
+          ...base.variants[0],
+          variantId: 2,
+          options: { Colour: "Black" },
+          sku: "MUG-B",
+          providerVariantId: "pv-2"
+        }
+      ],
+      supplier: { ...base.supplier, providerVariantId: null },
+      validation: { publishable: false, problems: ["SUPPLIER_VARIANT_UNBOUND"] }
+    };
+  }
+
+  it("explains the unbound refusal in words instead of printing its code", async () => {
+    const { view } = await renderDraft(unbound());
+
+    await waitFor(() =>
+      expect(view.getByText(/Choose which variant you're selling/)).toBeTruthy()
+    );
+    // The regression this replaces: the code itself on the merchant's screen.
+    expect(view.queryByText("SUPPLIER_VARIANT_UNBOUND")).toBeNull();
+  });
+
+  it("offers the choice that answers the refusal", async () => {
+    const { view } = await renderDraft(unbound());
+
+    await waitFor(() => expect(view.getByText("Which variant are you selling?")).toBeTruthy());
+    expect(view.getByLabelText("Sell White")).toBeTruthy();
+    expect(view.getByLabelText("Sell Black")).toBeTruthy();
+  });
+
+  it("will not bind until the merchant has actually picked one", async () => {
+    // Two steps, because the server accepts nothing→one and refuses one→another.
+    // A single tap that bound immediately would make a mis-tap permanent.
+    const { view } = await renderDraft(unbound());
+
+    await waitFor(() => expect(view.getByLabelText(/Confirm the variant/)).toBeTruthy());
+    const confirm = view.getByLabelText("Confirm the variant this product sells");
+    expect(confirm.props.accessibilityState.disabled).toBe(true);
+
+    fireEvent.press(view.getByLabelText("Sell Black"));
+    await waitFor(() =>
+      expect(
+        view.getByLabelText("Confirm the variant this product sells").props.accessibilityState
+          .disabled
+      ).toBe(false)
+    );
+  });
+
+  it("binds the variant the merchant chose, named by its supplier id", async () => {
+    mockBindDraftVariant.mockResolvedValue(undefined);
+    const bound = {
+      ...unbound(),
+      supplier: { ...unbound().supplier, providerVariantId: "pv-2" },
+      validation: { publishable: true, problems: [] }
+    };
+    const { view } = await renderDraft(unbound());
+
+    await waitFor(() => expect(view.getByLabelText("Sell Black")).toBeTruthy());
+    fireEvent.press(view.getByLabelText("Sell Black"));
+    mockGetImportedProduct.mockResolvedValue(bound);
+    fireEvent.press(view.getByLabelText("Confirm the variant this product sells"));
+
+    await waitFor(() => expect(mockBindDraftVariant).toHaveBeenCalled());
+    // `pv-2`, not the listing's own variant id and not the first variant: the
+    // supplier's identifier for the row the merchant pressed.
+    expect(mockBindDraftVariant.mock.calls[0][2]).toEqual({
+      listingId: 77,
+      providerProductId: "ext-1",
+      providerVariantId: "pv-2"
+    });
+  });
+
+  it("takes the cleared verdict from the server rather than assuming it", async () => {
+    // Binding succeeding is not the same claim as the draft having become
+    // publishable — only the evaluator can make that one. So the screen re-reads
+    // the draft, and the problem disappears because the server stopped saying it.
+    mockBindDraftVariant.mockResolvedValue(undefined);
+    const { view } = await renderDraft(unbound());
+    await waitFor(() => expect(view.getByLabelText("Sell Black")).toBeTruthy());
+    const readsBefore = mockGetImportedProduct.mock.calls.length;
+    fireEvent.press(view.getByLabelText("Sell Black"));
+
+    mockGetImportedProduct.mockResolvedValue({
+      ...unbound(),
+      supplier: { ...unbound().supplier, providerVariantId: "pv-2" },
+      validation: { publishable: true, problems: [] }
+    });
+    fireEvent.press(view.getByLabelText("Confirm the variant this product sells"));
+
+    // The re-read is the mechanism, so it is asserted rather than inferred from
+    // the screen settling into the right state — a screen that wrote the cleared
+    // verdict into its own state would look identical here.
+    await waitFor(() =>
+      expect(mockGetImportedProduct.mock.calls.length).toBeGreaterThan(readsBefore)
+    );
+    await waitFor(() => expect(view.queryByText("Which variant are you selling?")).toBeNull());
+    expect(view.queryByText(/Choose which variant you're selling/)).toBeNull();
+    expect(view.getByText(/Orders go to your supplier for Black/)).toBeTruthy();
+  });
+
+  it("keeps the merchant's unsaved typing when they choose a variant", async () => {
+    // The chooser re-reads the draft, and re-reading used to mean `adopt`, which
+    // resets the form from the response. A merchant who retitled the product and
+    // then picked a variant would have watched their words vanish.
+    mockBindDraftVariant.mockResolvedValue(undefined);
+    const { view } = await renderDraft(unbound());
+
+    await waitFor(() => expect(view.getByLabelText("Title")).toBeTruthy());
+    fireEvent.changeText(view.getByLabelText("Title"), "My Own Mug Name");
+    fireEvent.press(view.getByLabelText("Sell Black"));
+
+    mockGetImportedProduct.mockResolvedValue({
+      ...unbound(),
+      title: "Ceramic Mug",
+      supplier: { ...unbound().supplier, providerVariantId: "pv-2" },
+      validation: { publishable: true, problems: [] }
+    });
+    fireEvent.press(view.getByLabelText("Confirm the variant this product sells"));
+
+    await waitFor(() => expect(mockBindDraftVariant).toHaveBeenCalled());
+    expect(view.getByLabelText("Title").props.value).toBe("My Own Mug Name");
+  });
+
+  it("changes nothing and says so when the bind is refused", async () => {
+    mockBindDraftVariant.mockRejectedValue(new Error("binding_conflict"));
+    const { view } = await renderDraft(unbound());
+
+    await waitFor(() => expect(view.getByLabelText("Sell Black")).toBeTruthy());
+    fireEvent.press(view.getByLabelText("Sell Black"));
+    fireEvent.press(view.getByLabelText("Confirm the variant this product sells"));
+
+    await waitFor(() => expect(view.getByText(/couldn't be set/)).toBeTruthy());
+    // Still unbound, still offering the choice. A failed write that hid the
+    // control would leave the merchant with a refusal and no way back to it.
+    expect(view.getByText("Which variant are you selling?")).toBeTruthy();
+    // And the pick itself survives, which is a separate claim from the card
+    // being on screen: clearing `pendingVariantId` in the catch leaves the
+    // chooser visible with the confirm button disabled again, so the words "try
+    // again" sit beside a control that cannot be pressed. Error and no way back
+    // to the action — the same shape as error-and-empty. It survived the
+    // mutation battery until these two lines existed.
+    expect(view.getByLabelText("Sell Black").props.accessibilityState.checked).toBe(true);
+    expect(
+      view.getByLabelText("Confirm the variant this product sells").props.accessibilityState
+        .disabled
+    ).toBe(false);
+  });
+
+  it("states the bound variant instead of offering a chooser that cannot change it", async () => {
+    const { view } = await renderDraft({
+      ...unbound(),
+      supplier: { ...unbound().supplier, providerVariantId: "pv-1" },
+      validation: { publishable: true, problems: [] }
+    });
+
+    await waitFor(() => expect(view.getByText("What this product sells")).toBeTruthy());
+    expect(view.getByText(/Orders go to your supplier for White/)).toBeTruthy();
+    expect(view.queryByText("Which variant are you selling?")).toBeNull();
+  });
+
+  it("asks a stocked listing nothing, because it places no supplier order", async () => {
+    // The merchant holds this inventory themselves. There is no supplier order
+    // and so nothing to bind; a chooser here would invent a decision.
+    const { view } = await renderDraft({
+      ...unbound(),
+      supplier: { ...unbound().supplier, fulfillmentMode: "STOCKED", providerVariantId: null },
+      validation: { publishable: true, problems: [] }
+    });
+
+    await waitFor(() => expect(view.getByText("Variants and pricing")).toBeTruthy());
+    expect(view.queryByText("Which variant are you selling?")).toBeNull();
+    expect(view.queryByText("What this product sells")).toBeNull();
+  });
+
+  it("puts the two newest price refusals in words too", async () => {
+    // Added in the same drift as the unbound one, and missing for the same
+    // reason: the mobile list is a second copy of a Python enumeration.
+    const { view } = await renderDraft(
+      draft({
+        validation: {
+          publishable: false,
+          problems: ["VARIANT_PRICE_SPREAD", "PRICE_ABOVE_CHECKOUT_LIMIT"]
+        }
+      })
+    );
+
+    await waitFor(() => expect(view.getByText(/Checkout charges one price per product/)).toBeTruthy());
+    expect(view.getByText(/above what checkout can charge/)).toBeTruthy();
+    expect(view.queryByText("VARIANT_PRICE_SPREAD")).toBeNull();
+    expect(view.queryByText("PRICE_ABOVE_CHECKOUT_LIMIT")).toBeNull();
+  });
+
   it("blocks publish while the server says it is not publishable", async () => {
     const { view } = await renderDraft(
       draft({ validation: { publishable: false, problems: ["MISSING_PRICE"] } })
@@ -1682,5 +1919,541 @@ describe("DropshippingProductsScreen", () => {
     await waitFor(() =>
       expect(view.getByText("Last sync from your supplier failed")).toBeTruthy()
     );
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 9 — supplier orders: the sale that owes a supplier purchase
+ * ------------------------------------------------------------------ */
+
+describe("DropshippingOrdersScreen", () => {
+  const route = { params: { connectionId: "conn-1" } };
+
+  function obligation(over: Partial<SupplierObligation> = {}): SupplierObligation {
+    return {
+      orderId: 41,
+      listingId: 14,
+      title: "Ceramic Mug",
+      quantity: 2,
+      amountCents: 4000,
+      currency: "USD",
+      orderStatus: "paid",
+      paidAt: null,
+      orderedAt: null,
+      provider: "cj",
+      providerProductId: "ext-1",
+      providerVariantId: "pv-1",
+      supplierSku: "CJ-1",
+      supplierCostCents: 820,
+      supplierCostCurrency: "USD",
+      intentId: null,
+      blockers: [],
+      canPlaceSupplierOrder: true,
+      state: "AWAITING_SUPPLIER_ORDER",
+      supplierOrderPlaced: false,
+      providerOrderId: null,
+      supplierOrderStatus: null,
+      lastError: null,
+      updatedAt: null,
+      ...over
+    };
+  }
+
+  async function renderOrders(
+    obligations: SupplierObligation[],
+    options: {
+      isSandbox?: boolean;
+      // Defaults to a healthy drain so the tests written before the drain
+      // existed keep asserting what they were written to assert. The banner is
+      // opt-in here, and its absence is itself asserted below.
+      drainState?: string | null;
+      params?: Record<string, unknown> | undefined;
+    } = {}
+  ) {
+    mockListSupplierObligations.mockResolvedValue({
+      obligations,
+      isSandbox: options.isSandbox ?? true,
+      drainState: options.drainState ?? "DRAINING"
+    });
+    const nav = navigation();
+    const view = render(
+      <DropshippingOrdersScreen
+        navigation={nav}
+        route={"params" in options ? ({ params: options.params } as any) : route}
+      />
+    );
+    await settle();
+    return { view, nav };
+  }
+
+  it("renders a row for each sale that owes a supplier purchase", async () => {
+    // The test that would have caught gap 14 at the screen. Before this list
+    // existed the screen rendered a permanent "no data" note, so every
+    // assertion about its other states passed over an empty surface.
+    const { view } = await renderOrders([obligation()]);
+    await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
+    expect(view.getByText(/Order #41 · 2 ×/)).toBeTruthy();
+  });
+
+  it("says no supplier order has been placed rather than leaving the row blank", async () => {
+    const { view } = await renderOrders([obligation()]);
+    await waitFor(() => expect(view.getByText("No supplier order yet")).toBeTruthy());
+  });
+
+  it("does not leave a queued order claiming it is about to be sent when nothing sends", async () => {
+    // The gap-17 defect at the screen. `READY` renders "Queued to send to your
+    // supplier" — a promise about a background worker that has no entry point
+    // in the Procfile, so the order sits there permanently. Nothing on the
+    // screen could contradict it, and nothing could even observe it: the worker
+    // returned its counts to stdout and recorded nothing, so the claim was
+    // unfalsifiable rather than merely wrong.
+    const { view } = await renderOrders([obligation({ state: "READY", supplierOrderPlaced: true })], {
+      drainState: "NO_DRAIN_HAS_EVER_RUN"
+    });
+    await waitFor(() => expect(view.getByText("Queued to send to your supplier")).toBeTruthy());
+    expect(view.getByText("Queued orders are not being sent")).toBeTruthy();
+    expect(view.getByText(/not running on this account yet/i)).toBeTruthy();
+  });
+
+  it("does not raise the banner when the server says the queue is moving", async () => {
+    // A banner on a healthy queue is worse than none: it teaches the merchant
+    // that this card is noise, and the card only exists for the case where it
+    // is the one true thing on the screen.
+    const { view } = await renderOrders([obligation({ state: "READY" })], {
+      drainState: "DRAINING"
+    });
+    await waitFor(() => expect(view.getByText("Queued to send to your supplier")).toBeTruthy());
+    expect(view.queryByText("Queued orders are not being sent")).toBeNull();
+  });
+
+  it("distinguishes a worker that is failing from one that was never started", async () => {
+    // Different next actions: one is an incident on a process that is running,
+    // the other is setup that was never finished. Collapsing them sends whoever
+    // reads this hunting for a process that is already there.
+    const { view } = await renderOrders([obligation({ state: "READY" })], {
+      drainState: "TICKING_BUT_NOT_COMPLETING"
+    });
+    await waitFor(() => expect(view.getByText(/failing on this account/i)).toBeTruthy());
+    expect(view.queryByText(/not running on this account yet/i)).toBeNull();
+  });
+
+  it("says nothing about the drain when the server does not report one", async () => {
+    // An older server sends no `drain`. Silence is correct — this build has
+    // genuinely not been told anything, which is not the same as the old defect
+    // of making a positive promise on no evidence.
+    const { view } = await renderOrders([obligation({ state: "READY" })], {
+      drainState: null
+    });
+    await waitFor(() => expect(view.getByText("Queued to send to your supplier")).toBeTruthy());
+    expect(view.queryByText("Queued orders are not being sent")).toBeNull();
+  });
+
+  it("shows the merchant what the supplier purchase will cost them", async () => {
+    const { view } = await renderOrders([obligation()]);
+    await waitFor(() => expect(view.getByText(/Your supplier cost/)).toBeTruthy());
+  });
+
+  it("reports an unknown supplier cost as unavailable rather than as zero", async () => {
+    // A merchant reading $0.00 here concludes the supplier purchase is free.
+    const { view } = await renderOrders([obligation({ supplierCostCents: null })]);
+    await waitFor(() => expect(view.getByText(/not available/)).toBeTruthy());
+    expect(view.queryByText(/\$0\.00/)).toBeNull();
+  });
+
+  it("never tells a merchant an unconfirmed order was not placed", async () => {
+    // UNKNOWN means the write to the supplier could not be confirmed, so a
+    // purchase may already exist. "No supplier order yet" here would invite a
+    // second one, and duplicate supplier orders are real money.
+    const { view } = await renderOrders([
+      obligation({ state: "UNKNOWN", supplierOrderPlaced: true, intentId: "cjf_1" })
+    ]);
+    await waitFor(() => expect(view.getByText(/do not re-order/i)).toBeTruthy());
+    expect(view.queryByText("No supplier order yet")).toBeNull();
+  });
+
+  it("says what the merchant can do about a refusal, not which code we raised", async () => {
+    // This test used to be called "shows a supplier's refusal in the supplier's
+    // own words" and asserted `getByText("preflight_blocked")`. Both halves of
+    // that name were false and the assertion pinned the falsehood: nothing a
+    // provider says can reach `last_error` — `suppliers/errors.py` exists to
+    // guarantee it — and the value is an identifier written in Python. The
+    // screen was showing a merchant `preflight_blocked`, and a green test was
+    // the reason nobody noticed.
+    //
+    // It was also one word for about a dozen causes, because `dispatch`
+    // flattened them before storing. So both halves of the fix are checked
+    // together: a distinguished cause arrives distinguished, and as a sentence.
+    const { view } = await renderOrders([
+      obligation({
+        state: "BLOCKED",
+        supplierOrderPlaced: true,
+        intentId: "cjf_2",
+        lastError: "supplier_quote_expired"
+      })
+    ]);
+    await waitFor(() => expect(view.getByText(/shipping quote expired/i)).toBeTruthy());
+    expect(view.queryByText("supplier_quote_expired")).toBeNull();
+  });
+
+  it("does not tell a merchant their supplier refused an order it never saw", async () => {
+    // Every cause `PREFLIGHT_REASONS` names is raised before `dispatch` calls
+    // `_sending`, and the handler turns anything already sent into `UNKNOWN`
+    // first — so `BLOCKED` means nothing went out. The copy said "Your supplier
+    // refused this order", which sends a merchant to argue with their supplier
+    // about a message the supplier never sent.
+    const { view } = await renderOrders([
+      obligation({
+        state: "BLOCKED",
+        supplierOrderPlaced: true,
+        intentId: "cjf_3",
+        lastError: "supplier_cost_changed"
+      })
+    ]);
+    await waitFor(() => expect(view.getByText(/review and approve the new cost/i)).toBeTruthy());
+    expect(view.queryByText(/refused/i)).toBeNull();
+  });
+
+  it("does not report an unconfirmed send as a failure", async () => {
+    // `awaiting_create_readback` is written *after* the write, when the outcome
+    // is unknown. Reason copy that reads like a failure here is an instruction
+    // to order the same goods twice, which is the one mistake in this subsystem
+    // that costs real money.
+    const { view } = await renderOrders([
+      obligation({
+        state: "UNKNOWN",
+        supplierOrderPlaced: true,
+        intentId: "cjf_4",
+        lastError: "awaiting_create_readback"
+      })
+    ]);
+    // The reason line says a send happened; the state line above it carries the
+    // "do not re-order" instruction. Two lines, one each, and neither repeating
+    // the other — the first version of this copy said "do not re-order" twice,
+    // which this assertion caught as an ambiguous match.
+    await waitFor(() =>
+      expect(view.getByText(/waiting for them to confirm it/i)).toBeTruthy()
+    );
+    expect(view.getByText(/do not re-order/i)).toBeTruthy();
+    expect(view.queryByText(/could not|failed|refused/i)).toBeNull();
+  });
+
+  it("renders a reason it has never heard of as unnamed, not as the code", async () => {
+    // The fallback that matters more than the state one: falling through here
+    // used to mean printing the identifier itself.
+    const { view } = await renderOrders([
+      obligation({ state: "BLOCKED", lastError: "supplier_ate_the_parcel" })
+    ]);
+    await waitFor(() => expect(view.getByText(/cannot name yet/i)).toBeTruthy());
+    expect(view.queryByText("supplier_ate_the_parcel")).toBeNull();
+  });
+
+  it("renders a state it has never heard of as unrecognised, not as good news", async () => {
+    // The gap-13 failure mode at a new seam: a state added on the Python side
+    // that this build predates. It must not read as "placed".
+    const { view } = await renderOrders([obligation({ state: "TELEPORTED" })]);
+    await waitFor(() => expect(view.getByText(/does not recognise/)).toBeTruthy());
+    expect(view.queryByText("Placed with your supplier")).toBeNull();
+  });
+
+  it("promises nothing is sent to the supplier only when the server says so", async () => {
+    const { view } = await renderOrders([obligation()], { isSandbox: true });
+    await waitFor(() => expect(view.getByText("Sandbox fulfilment")).toBeTruthy());
+  });
+
+  it("makes no sandbox promise the server did not make", async () => {
+    // The whole point of reading this from the payload. A hardcoded card would
+    // keep reassuring merchants after production fulfilment was switched on.
+    const { view } = await renderOrders([obligation()], { isSandbox: false });
+    await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
+    expect(view.queryByText("Sandbox fulfilment")).toBeNull();
+  });
+
+  it("asks for a supplier before claiming there are no sales to fulfil", async () => {
+    // Reached from a hub tile with no connection bound. "No sales to fulfil
+    // yet" would be a claim about the merchant's sales that this screen never
+    // checked, and it points them nowhere.
+    const { view } = await renderOrders([], { params: undefined });
+    await waitFor(() => expect(view.getByText("Connect a supplier first.")).toBeTruthy());
+    expect(mockListSupplierObligations).not.toHaveBeenCalled();
+  });
+
+  it("distinguishes an empty backlog from an unasked question", async () => {
+    const { view } = await renderOrders([]);
+    await waitFor(() => expect(view.getByText("No sales to fulfil yet.")).toBeTruthy());
+  });
+
+  it("never draws a failed request as an empty backlog", async () => {
+    // Rule 1 at the most expensive seam in the app: a merchant who reads "no
+    // sales to fulfil" through a failed request ships nothing.
+    mockListSupplierObligations.mockRejectedValue(new PulseApiError("nope", 500));
+    const view = render(<DropshippingOrdersScreen navigation={navigation()} route={route} />);
+    await settle();
+    await waitFor(() => expect(view.queryByText("No sales to fulfil yet.")).toBeNull());
+    expect(view.queryByText("Ceramic Mug")).toBeNull();
+  });
+
+  it("clears a stale backlog when a refresh fails", async () => {
+    // The rows on screen are money the merchant owes. Leaving them under a
+    // failed refresh is a backlog they may already have handled, or one that
+    // has grown without them being told.
+    // Rendered with an unhealthy drain on purpose, so the banner is genuinely
+    // on screen before the refresh fails. Asserting that a card is absent after
+    // an error proves nothing unless it was present beforehand.
+    const { view } = await renderOrders([obligation()], {
+      drainState: "NO_DRAIN_HAS_EVER_RUN"
+    });
+    await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
+    expect(view.getByText("Queued orders are not being sent")).toBeTruthy();
+
+    mockListSupplierObligations.mockRejectedValue(new PulseApiError("nope", 500));
+    const list = view.UNSAFE_getByType(FlatList as any);
+    await act(async () => {
+      await list.props.refreshControl.props.onRefresh();
+    });
+    await waitFor(() => expect(view.queryByText("Ceramic Mug")).toBeNull());
+    // The sandbox card is the part a mutation battery caught this test missing.
+    // The rows themselves also disappear because an error state owns the list's
+    // `data`, so asserting only on the rows passes whether or not the state was
+    // cleared. This card is drawn from the header regardless of that state, so
+    // it is the one thing on screen that reveals a stale response still held.
+    expect(view.queryByText("Sandbox fulfilment")).toBeNull();
+    // And the drain banner, which the next battery caught this test missing for
+    // exactly the same reason one gap later. A drain verdict is a claim about
+    // the server sourced from one response; holding it through a failed refresh
+    // tells the merchant something no live response is saying.
+    expect(view.queryByText("Queued orders are not being sent")).toBeNull();
+  });
+
+  it("states its remaining gap in the words the gap list holds", async () => {
+    // Not a sentence written here. A screen that renders its own prose beside a
+    // mapped gap entry is the enumeration copied twice, with the copy in prose.
+    const { view } = await renderOrders([obligation()]);
+    await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
+    DROPSHIPPING_DATA_GAPS.forEach((gap) => {
+      expect(view.getByText(gap.needs)).toBeTruthy();
+    });
+  });
+
+  it("reads out the bound variant's supplier SKU, which is what the order matches on", async () => {
+    // The gap-15 defect as a merchant met it. This line used to show the
+    // provider's variant id while the supplier order was matched on the SKU, so
+    // the identifier a merchant read out was not the identifier that had to
+    // agree for the order to be accepted.
+    const { view } = await renderOrders([obligation({ supplierSku: "CJ-VARIANT-1" })]);
+    await waitFor(() => expect(view.getByText(/CJ-VARIANT-1/)).toBeTruthy());
+  });
+
+  it("falls back to the variant id rather than showing a blank identifier", async () => {
+    const { view } = await renderOrders([
+      obligation({ supplierSku: null, blockers: ["SUPPLIER_SKU_MISSING"], canPlaceSupplierOrder: false })
+    ]);
+    await waitFor(() => expect(view.getByText(/pv-1/)).toBeTruthy());
+  });
+
+  it("gives every reason a sale cannot be ordered, not just the first", async () => {
+    // The shape of defect this repo keeps making: a merchant fixes the one
+    // reason shown, comes back, and finds another. They are independent
+    // conditions, so all of them are rendered.
+    const { view } = await renderOrders([
+      obligation({
+        supplierSku: null,
+        supplierCostCents: null,
+        blockers: ["SHOP_BINDING_REQUIRED", "SUPPLIER_SKU_MISSING", "SUPPLIER_COST_UNKNOWN"],
+        canPlaceSupplierOrder: false
+      })
+    ]);
+    await waitFor(() =>
+      expect(view.getByText(SUPPLIER_OBLIGATION_BLOCKER_COPY.SHOP_BINDING_REQUIRED)).toBeTruthy()
+    );
+    expect(view.getByText(SUPPLIER_OBLIGATION_BLOCKER_COPY.SUPPLIER_SKU_MISSING)).toBeTruthy();
+    expect(view.getByText(SUPPLIER_OBLIGATION_BLOCKER_COPY.SUPPLIER_COST_UNKNOWN)).toBeTruthy();
+  });
+
+  it("counts the sales that cannot be ordered separately from the ones merely waiting", async () => {
+    // "Waiting" and "cannot go" are different problems. Every row reads
+    // "no supplier order yet" while fulfilment is off, so a single count would
+    // hide the ones that need the merchant to change something.
+    const { view } = await renderOrders([
+      obligation(),
+      obligation({ orderId: 42, blockers: ["SUPPLIER_SKU_MISSING"], canPlaceSupplierOrder: false })
+    ]);
+    await waitFor(() => expect(view.getByText(/2 of these have no supplier order yet/)).toBeTruthy());
+    expect(view.getByText(/1 could not be ordered as things stand/)).toBeTruthy();
+  });
+
+  it("says nothing about blockers when there are none", async () => {
+    const { view } = await renderOrders([obligation()]);
+    await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
+    expect(view.queryByText(/could not be ordered as things stand/)).toBeNull();
+    SUPPLIER_OBLIGATION_BLOCKERS.forEach((blocker) => {
+      expect(view.queryByText(SUPPLIER_OBLIGATION_BLOCKER_COPY[blocker])).toBeNull();
+    });
+  });
+
+  it("does not call an already-placed order blocked", async () => {
+    // The server names `SUPPLIER_ORDER_ALREADY_PLACED` on a row it has already
+    // fulfilled, which is true and is not a problem. The state pill says it
+    // better, and repeating it as a warning reads as a fault.
+    const { view } = await renderOrders([
+      obligation({
+        state: "LINKED",
+        supplierOrderPlaced: true,
+        intentId: "cjf_3",
+        providerOrderId: "90001",
+        blockers: ["SUPPLIER_ORDER_ALREADY_PLACED"],
+        canPlaceSupplierOrder: false
+      })
+    ]);
+    await waitFor(() => expect(view.getByText("Placed with your supplier")).toBeTruthy());
+    expect(view.queryByText(SUPPLIER_OBLIGATION_BLOCKER_COPY.SUPPLIER_ORDER_ALREADY_PLACED)).toBeNull();
+    expect(view.queryByText(/could not be ordered as things stand/)).toBeNull();
+  });
+
+  it("does not count an order that was never sent as one that was placed", async () => {
+    // A row combination the server could not previously produce. `BLOCKED` is
+    // what `dispatch` settles to when it refuses to send — nothing reached the
+    // supplier — yet the obligation arrived with `supplierOrderPlaced: true`
+    // and `SUPPLIER_ORDER_ALREADY_PLACED`, because both were derived from an
+    // intent row existing rather than from any evidence of a send. The buyer
+    // had paid, nothing had been ordered, and this screen said it was handled.
+    //
+    // Now it is an obligation again: no supplier order yet, and orderable.
+    const { view } = await renderOrders([
+      obligation({
+        state: "BLOCKED",
+        supplierOrderPlaced: false,
+        intentId: "cjf_dead",
+        providerOrderId: null,
+        lastError: "supplier_sku_missing",
+        blockers: [],
+        canPlaceSupplierOrder: true
+      })
+    ]);
+    await waitFor(() => expect(view.getByText("Not sent — needs your attention")).toBeTruthy());
+    expect(view.queryByText(/1 of these have no supplier order yet/)).toBeTruthy();
+    // And not in the blocked count. The previous attempt failed, but the order
+    // is actionable, so calling it un-orderable would send the merchant looking
+    // for a reason that is no longer there.
+    expect(view.queryByText(/could not be ordered as things stand/)).toBeNull();
+    expect(view.queryByText(SUPPLIER_OBLIGATION_BLOCKER_COPY.SUPPLIER_ORDER_ALREADY_PLACED)).toBeNull();
+  });
+
+  it("renders a blocker it has never heard of as unrecognised, not as nothing", async () => {
+    // Dropping it would leave a merchant a row that cannot be ordered with no
+    // reason on it, which reads as a bug in the screen rather than as something
+    // to go and fix.
+    const { view } = await renderOrders([
+      obligation({ blockers: ["CUSTOMS_PAPERWORK_FROM_A_NEWER_SERVER"], canPlaceSupplierOrder: false })
+    ]);
+    await waitFor(() => expect(view.getByText(/stops it being sent to your supplier/)).toBeTruthy());
+    expect(view.queryByText(/CUSTOMS_PAPERWORK/)).toBeNull();
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 10 — sync & issues
+ *
+ * Added because a mutation battery found this screen had no tests at all
+ * while rendering the same gap list the supplier-orders screen does. Every
+ * defect that list was introduced to prevent could be reintroduced here and
+ * nothing would have said so — which is the same shape as the supplier-orders
+ * screen passing every assertion in this file over an empty surface.
+ * ------------------------------------------------------------------ */
+
+describe("DropshippingSyncScreen", () => {
+  const route = { params: { connectionId: "conn-1", title: "Sync & issues" } };
+
+  function product(over: Record<string, unknown> = {}) {
+    return {
+      listingId: 77,
+      title: "Ceramic Mug",
+      status: "draft",
+      approvalStatus: "pending",
+      currency: "USD",
+      coverImageUrl: null,
+      updatedAt: null,
+      provider: "cj",
+      syncState: "OK",
+      supplierCostCents: 450,
+      providerProductId: "ext-1",
+      ...over
+    };
+  }
+
+  async function renderSync(
+    options: {
+      items?: Record<string, unknown>[];
+      connections?: SupplierConnection[];
+      failProducts?: boolean;
+    } = {}
+  ) {
+    const items = options.items ?? [product()];
+    mockListConnections.mockResolvedValue(options.connections ?? [connection()]);
+    if (options.failProducts) {
+      mockListImportedProducts.mockRejectedValue(new PulseApiError("nope", 500));
+    } else {
+      mockListImportedProducts.mockResolvedValue({ items, count: items.length });
+    }
+    const nav = navigation();
+    const view = render(<DropshippingSyncScreen navigation={nav} route={route as any} />);
+    await settle();
+    return { view, nav };
+  }
+
+  it("says nothing is wrong only when both sources actually loaded", async () => {
+    const { view } = await renderSync();
+    await waitFor(() => expect(view.getByText("Nothing needs your attention")).toBeTruthy());
+  });
+
+  it("never claims a healthy catalogue when one of the two reads failed", async () => {
+    // The screen's own header comment promises this. A merchant who reads
+    // "nothing needs your attention" through a failed product read believes a
+    // catalogue is healthy while every import is silently broken.
+    const { view } = await renderSync({ failProducts: true });
+    await waitFor(() => expect(view.queryByText("Nothing needs your attention")).toBeNull());
+  });
+
+  it("puts the fixable problem in words rather than leaving its code on screen", async () => {
+    const { view } = await renderSync({ items: [product({ syncState: "UNAVAILABLE" })] });
+    await waitFor(() =>
+      expect(view.getByText("Your supplier no longer offers this product")).toBeTruthy()
+    );
+    expect(view.queryByText("UNAVAILABLE")).toBeNull();
+  });
+
+  it("reports no problem for a sync state it has never seen", async () => {
+    // An unrecognised state is not evidence of a problem. Reporting one would
+    // fill this screen with noise the day a provider adds a value.
+    const { view } = await renderSync({ items: [product({ syncState: "TELEPORTED" })] });
+    await waitFor(() => expect(view.getByText("Nothing needs your attention")).toBeTruthy());
+  });
+
+  it("states its remaining gap in the words the gap list holds", async () => {
+    // The mutation this test exists for: `body={gap.needs}` replaced by prose
+    // written here. The same defect was already fixed on the supplier-orders
+    // screen; leaving the second copy unpinned is how a ledger of recurring
+    // defects grows.
+    const { view } = await renderSync();
+    await waitFor(() => expect(view.getByText("Nothing needs your attention")).toBeTruthy());
+    DROPSHIPPING_DATA_GAPS.forEach((gap) => {
+      expect(view.getByText(gap.needs)).toBeTruthy();
+    });
+  });
+
+  it("says a broken connection needs attention instead of showing it as working", async () => {
+    const broken = connection({ status: "REAUTH_REQUIRED", message: "Key rejected by CJ" });
+    // The first draft of this test invented `NEEDS_REAUTH`, which is not a
+    // status the app knows, so the screen read the connection as healthy and
+    // the test asserted the wrong branch. Asking the shared predicate first
+    // means a renamed status fails here instead of quietly moving this test
+    // onto the happy path.
+    expect(connectionNeedsAttention(broken)).toBe(true);
+
+    const { view } = await renderSync({ connections: [broken] });
+    await waitFor(() =>
+      expect(view.getByText("Your supplier connection needs attention")).toBeTruthy()
+    );
+    expect(view.getByText("Key rejected by CJ")).toBeTruthy();
+    expect(view.queryByText("Connection is working")).toBeNull();
   });
 });
