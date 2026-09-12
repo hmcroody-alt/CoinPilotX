@@ -111,7 +111,13 @@ def python_states():
     found = set()
     for relative_path in STATE_MODULES:
         found |= set(re.findall(r"[\"']([A-Z][A-Z_]{2,})[\"']", _source(relative_path)))
-    return found - set(fulfillment.FUNDING_STATES) - set(NOT_A_STATE)
+    # Both subtracted sets are *read* rather than retyped, for the same reason:
+    # a vocabulary transcribed into this file is a copy that can drift from the
+    # one it describes, which is the defect the whole file exists to catch.
+    # `BLOCKERS` says why an order cannot be placed; the outbox's states say
+    # where one that was placed has got to. They share a module and nothing else.
+    return (found - set(fulfillment.FUNDING_STATES) - set(fulfillment.BLOCKERS)
+            - set(NOT_A_STATE))
 
 
 def mobile_states():
@@ -204,6 +210,102 @@ def test_the_list_has_no_duplicates():
     assert len(states) == len(set(states)), "SUPPLIER_ORDER_STATES lists a state twice"
 
 
+def mobile_blockers():
+    source = open(MOBILE_API, encoding="utf-8").read()
+    block = re.search(
+        r"export const SUPPLIER_OBLIGATION_BLOCKERS = \[(.*?)\] as const;", source, re.S)
+    assert block, ("SUPPLIER_OBLIGATION_BLOCKERS is no longer a literal array — "
+                   "this test can no longer read it")
+    return re.findall(r'"([A-Z_]+)"', block.group(1))
+
+
+def mobile_blocker_copy():
+    source = open(MOBILE_API, encoding="utf-8").read()
+    block = re.search(
+        r"export const SUPPLIER_OBLIGATION_BLOCKER_COPY: "
+        r"Record<SupplierObligationBlocker, string> = \{(.*?)\n\};", source, re.S)
+    assert block, (
+        "SUPPLIER_OBLIGATION_BLOCKER_COPY is no longer a total Record over "
+        "SupplierObligationBlocker. That annotation is the compile error that "
+        "catches a blocker added without copy; widening it removes it.")
+    return dict(re.findall(r'^  ([A-Z_]+): "([^"]*)"', block.group(1), re.M))
+
+
+# The blocker vocabulary is the third cross-language enumeration in this
+# subsystem, pinned the same way with one difference: the Python side *is* a
+# declared tuple, so it is read rather than reconstructed by subtraction. What
+# the first test below then has to prove is that the tuple is not itself another
+# copy — that it and the code that appends blockers have not drifted apart.
+
+def test_the_blocker_tuple_is_what_the_code_actually_appends():
+    # Read off `co_names` — the globals each function loads — rather than
+    # `co_consts`. The blockers are self-named module constants referenced by
+    # name, so they are not literals inside these functions; a `co_consts` read
+    # finds only the two inline strings and would pass by finding nothing.
+    declared = {name for name, value in vars(fulfillment).items()
+                if isinstance(value, str) and value == name}
+    found = {name for function in (fulfillment.list_obligations,
+                                   fulfillment.supplier_destination)
+             for name in function.__code__.co_names if name in declared}
+    # `AWAITING_SUPPLIER_ORDER` is a state, not a blocker: `list_obligations`
+    # derives it on the same row and it is deliberately not in `BLOCKERS`.
+    found -= {fulfillment.AWAITING_SUPPLIER_ORDER}
+    assert found == set(fulfillment.BLOCKERS), (
+        "fulfillment.BLOCKERS and the blockers the code can append disagree: "
+        f"only in BLOCKERS {sorted(set(fulfillment.BLOCKERS) - found)}, "
+        f"only in the code {sorted(found - set(fulfillment.BLOCKERS))}")
+
+
+def test_mobile_names_every_blocker_the_backend_can_emit():
+    # This has teeth the state version does not. Several blockers *are*
+    # merchant-actionable, so falling back to generic copy is not a wait — it is
+    # a dead end: the merchant is told the order cannot go and not told what to
+    # change about it.
+    missing = set(fulfillment.BLOCKERS) - set(mobile_blockers())
+    assert not missing, (
+        "These obligation blockers are emitted by the backend but absent from "
+        f"SUPPLIER_OBLIGATION_BLOCKERS: {sorted(missing)}")
+
+
+def test_mobile_invents_no_blocker_the_backend_cannot_emit():
+    invented = set(mobile_blockers()) - set(fulfillment.BLOCKERS)
+    assert not invented, (
+        "SUPPLIER_OBLIGATION_BLOCKERS names blockers nothing in the backend "
+        f"produces: {sorted(invented)}")
+
+
+def test_every_blocker_has_words_a_merchant_can_read():
+    copy = mobile_blocker_copy()
+    missing = set(mobile_blockers()) - set(copy)
+    assert not missing, f"No merchant-readable copy for: {sorted(missing)}"
+    for blocker, words in copy.items():
+        assert words.strip(), f"{blocker} has empty copy"
+        assert not re.search(r"[a-z]_[a-z]|[a-z][A-Z]", words), (
+            f"{blocker} copy reads like an identifier, not a sentence: {words!r}")
+        assert blocker not in words, f"{blocker} copy is just its own name: {words!r}"
+
+
+def test_no_blocker_asks_a_merchant_for_the_buyers_address():
+    # The two destination blockers are not things a merchant can fix. The
+    # address belongs to the buyer, the obligation deliberately does not carry
+    # it, and copy phrased as a prompt would have merchants inventing delivery
+    # addresses for other people's parcels.
+    copy = mobile_blocker_copy()
+    for blocker in ("DESTINATION_MISSING", "DESTINATION_INCOMPLETE"):
+        assert not re.search(r"\b(enter|add|type|provide|fill)\b", copy[blocker], re.I), (
+            f"{blocker} copy reads as a prompt for an address the merchant does "
+            f"not have: {copy[blocker]!r}")
+
+
+def test_a_blocker_and_a_state_are_never_the_same_word():
+    # They render in different places and mean different things: a state
+    # describes a supplier order that exists, a blocker describes why one does
+    # not. `SUPPLIER_ORDER_ALREADY_PLACED` sits close enough to `LINKED` to make
+    # merging them tempting, and merging them makes both lists unreadable.
+    overlap = set(mobile_blockers()) & set(mobile_states())
+    assert not overlap, f"Named as both a state and a blocker: {sorted(overlap)}"
+
+
 def test_the_worker_only_speaks_in_outbox_states():
     # The check on the subtraction method above. Every upper-case literal in
     # worker.py is an outbox state today, and it holds no env var names,
@@ -216,3 +318,115 @@ def test_the_worker_only_speaks_in_outbox_states():
     assert not unaccounted, (
         "worker.py names upper-case literals that are not supplier order "
         f"states: {sorted(unaccounted)}")
+
+
+# --------------------------------------------------------------------------
+# The country table: a fourth cross-language enumeration, and the one that
+# existed in TypeScript only
+# --------------------------------------------------------------------------
+
+CHECKOUT_COUNTRIES = os.path.join(REPO, "mobile-native", "src", "api", "checkoutCountries.ts")
+
+
+def picker_country_names():
+    """The checkout picker's code -> name table, read as data."""
+    with open(CHECKOUT_COUNTRIES, encoding="utf-8") as handle:
+        source = handle.read()
+    block = re.search(
+        r"const COUNTRY_NAMES: Record<string, string> = \{(.*?)\n\};", source, re.S)
+    assert block, ("COUNTRY_NAMES is no longer a literal object in "
+                   "checkoutCountries.ts -- this test can no longer read it")
+    return dict(re.findall(r'([A-Z]{2}): "([^"]*)"', block.group(1)))
+
+
+def test_country_names_match_the_picker():
+    """The two tables are one table, spelled twice.
+
+    Named in the `_COUNTRY_NAMES` comment because the table was TypeScript-only
+    for as long as the client was its only reader, under a comment asserting
+    "The server never sees them; it sees the ISO-3166-1 alpha-2 code, which is
+    the contract." That was true of the buyer's half of the wire and false of
+    the supplier's: CJ's create-order takes `shippingCountryCode` *and*
+    `shippingCountry`, and the latter is a name.
+
+    So a copy of the table had to exist server-side, and two copies of one fact
+    in two languages with no compiler between them is the defect family this
+    whole file is about. Divergence is not cosmetic here -- a code the server
+    can spell but not name is a paid order that cannot be sent to a supplier.
+    """
+    from services import marketplace_fulfillment as mf
+
+    server = dict(mf._COUNTRY_NAMES)
+    picker = picker_country_names()
+    assert picker, "read no countries out of the picker"
+    only_server = {code: server[code] for code in sorted(set(server) - set(picker))}
+    only_picker = {code: picker[code] for code in sorted(set(picker) - set(server))}
+    assert not only_server and not only_picker, (
+        "the two country tables have drifted. A code the picker offers and the "
+        "server cannot name is a checkout that completes into an order no "
+        "supplier can be given; a code the server names and the picker does not "
+        "offer is dead weight.\n"
+        f"  server only: {only_server}\n  picker only: {only_picker}")
+    disagreements = {code: (server[code], picker[code])
+                     for code in sorted(server) if server[code] != picker[code]}
+    assert not disagreements, (
+        "the same code is named differently on the two sides. The supplier is "
+        "given the server's spelling, so a mismatch ships against a name the "
+        f"buyer never saw: {disagreements}")
+
+
+def test_the_server_admits_it_cannot_name_an_unknown_country():
+    """The two sides fall back in opposite directions, on purpose.
+
+    `countryName` in the picker answers the code itself, so an unrecognised
+    country the server *does* accept stays selectable. `country_name` answers
+    "" so its caller can say the address is incomplete. Making the server match
+    the picker would send `XK` to CJ as the name of a country, which is this
+    repo's recurring defect -- asserting a fact rather than admitting it is
+    unknown -- in one line.
+    """
+    from services import marketplace_fulfillment as mf
+
+    assert mf.country_name("ZZ") == ""
+    assert mf.country_name("") == ""
+    assert mf.country_name(None) == ""
+    with open(CHECKOUT_COUNTRIES, encoding="utf-8") as handle:
+        source = handle.read()
+    assert "COUNTRY_NAMES[key] || key" in source, (
+        "the picker's fallback changed. If it stopped answering the code it "
+        "would drop a selectable country; if the server started answering the "
+        "code it would name a country it cannot name. They are not symmetric.")
+
+
+def test_every_country_this_platform_can_name_is_keyed_by_an_alpha_2_code():
+    """The shape invariant, asserted on the table instead of on every request.
+
+    `supplier_destination` used to re-check that the country *code* it was
+    about to send was two characters long, with a comment saying that check was
+    "what distinguishes a country this platform can ship to from one it can
+    only spell". It was not: `country_name` answers "" for any code its table
+    does not hold, and the very next field assembled is that name, so a
+    three-character code was already refused one line later with the same
+    blocker. The check could not fire, and the comment claiming it could was
+    this repo's recurring defect written while fixing an instance of it.
+
+    What is true is a property of the table: every key is an ISO-3166-1 alpha-2
+    code. That is worth one assertion here rather than a branch per request,
+    and it is load-bearing on both sides -- the picker's `toCountryOptions`
+    silently drops any code whose length is not two, so a three-character key
+    would name a country the buyer could never select.
+    """
+    from services import marketplace_fulfillment as mf
+
+    def misshapen(codes):
+        return sorted(code for code in codes
+                      if not (isinstance(code, str) and len(code) == 2
+                              and code.isalpha() and code.isupper()))
+
+    assert not misshapen(mf._COUNTRY_NAMES), (
+        f"_COUNTRY_NAMES is keyed by {misshapen(mf._COUNTRY_NAMES)}, which is "
+        "not an ISO-3166-1 alpha-2 code. `country_name` upper-cases before it "
+        "looks up, so a lowercase key is unreachable; and the checkout picker "
+        "drops anything that is not two characters. Either way the entry names "
+        "a country nobody can order to.")
+    assert not misshapen(picker_country_names())

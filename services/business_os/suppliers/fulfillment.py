@@ -114,14 +114,19 @@ def _canonical_order(conn, order_id):
 
 
 def create_intent(*, connection_id, business_id, store_id, actor_user_id, order_id,
-                  items, shipping_destination, shipping_quote,
-                  expected_supplier_cost_cents, isSandbox=None, idempotency_key,
-                  context=None):
+                  items, shipping_quote, expected_supplier_cost_cents,
+                  isSandbox=None, idempotency_key, context=None):
     """Authorize a merchant, reference canonical order lines, atomically enqueue.
 
     One sandbox intent per canonical order/connection. Splits/replacements need a
     later explicit revision contract; changing a replay's content is rejected.
     Snapshots are backend-only, never use this return value as a public DTO.
+
+    The destination is not a parameter. It used to be, taken straight from the
+    request body, which meant a merchant-authenticated call could name any
+    address while the one the buyer paid to ship to sat frozen on the
+    transaction with nothing comparing the two. `order_destination` now states
+    it, from that frozen record, and is the only thing that does.
     """
     from . import connections, gateway
     assert_sandbox(isSandbox)
@@ -170,16 +175,7 @@ def create_intent(*, connection_id, business_id, store_id, actor_user_id, order_
             supplier_items_cost += price * item["quantity"]
         except (InvalidOperation, TypeError, ValueError):
             raise FulfillmentError("supplier_cost_unverified") from None
-    required = ("shippingCountryCode", "shippingCountry", "shippingProvince",
-                "shippingCity", "shippingCustomerName", "shippingAddress")
-    if not isinstance(shipping_destination, dict):
-        raise FulfillmentError("invalid_destination", 400)
-    address = {k: _text(shipping_destination.get(k), k, 500) for k in required}
-    for key in ("shippingZip", "shippingPhone", "shippingAddress2", "shippingCounty"):
-        if shipping_destination.get(key):
-            address[key] = _text(shipping_destination[key], key, 500)
-    if len(address["shippingCountryCode"]) != 2:
-        raise FulfillmentError("invalid_country", 400)
+    address = order_destination(order_id)
     if not isinstance(shipping_quote, dict):
         raise FulfillmentError("invalid_quote", 400)
     quote_snapshot = gateway.get_snapshot(_text(shipping_quote.get("snapshot_id"), "quote_snapshot_id"), connection_id,
@@ -580,6 +576,338 @@ def get_intent(intent_id, connection_id, business_id, store_id, actor_user_id, *
 #: `dispatch`, which is the only code that decides those names.
 AWAITING_SUPPLIER_ORDER = "AWAITING_SUPPLIER_ORDER"
 
+#: Why one obligation cannot be discharged right now. Each names the fact that
+#: is absent, not the consequence -- a merchant told "cannot order" learns
+#: nothing, and neither does an operator reading a log.
+#:
+#: A shipping quote is deliberately absent from this list. Every obligation
+#: needs one and the server can obtain one on demand for nothing (it is a read),
+#: so "no quote yet" is the next step rather than an obstacle. `blockers` stays
+#: the set of things that cannot be resolved by asking this server again.
+SUPPLIER_ORDER_ALREADY_PLACED = "SUPPLIER_ORDER_ALREADY_PLACED"
+SHOP_BINDING_REQUIRED = "SHOP_BINDING_REQUIRED"
+NOT_SHIPPING_LANE = "NOT_SHIPPING_LANE"
+DESTINATION_MISSING = "DESTINATION_MISSING"
+DESTINATION_INCOMPLETE = "DESTINATION_INCOMPLETE"
+SUPPLIER_SKU_MISSING = "SUPPLIER_SKU_MISSING"
+SUPPLIER_COST_UNKNOWN = "SUPPLIER_COST_UNKNOWN"
+
+#: Every blocker, in the order a merchant should read them. `test_supplier_obligations`
+#: pins this against the mobile copy, and the mutation battery inverts each one.
+BLOCKERS = (SUPPLIER_ORDER_ALREADY_PLACED, SHOP_BINDING_REQUIRED, NOT_SHIPPING_LANE,
+            DESTINATION_MISSING, DESTINATION_INCOMPLETE, SUPPLIER_SKU_MISSING,
+            SUPPLIER_COST_UNKNOWN)
+
+#: Supplier destination field -> the frozen checkout field holding the same fact.
+#: `create_intent` requires all six; `marketplace_fulfillment` collects all six,
+#: under different names, and freezes them onto the transaction. This tuple is
+#: the entire bridge, and its absence is what gap 15 was.
+#:
+#: `shippingCountry` has no frozen counterpart because the checkout stores only
+#: the alpha-2 code; it is resolved through `marketplace_fulfillment.country_name`
+#: and so appears here as None.
+_DESTINATION_REQUIRED = (
+    ("shippingCountryCode", "address_country"),
+    ("shippingCountry", None),
+    ("shippingProvince", "address_region"),
+    ("shippingCity", "address_city"),
+    ("shippingCustomerName", "contact_name"),
+    ("shippingAddress", "address_line1"),
+)
+
+#: Fields the supplier will use when present and does not require. Omitted
+#: rather than sent empty: `_text` in `create_intent` rejects an empty string,
+#: and a blank phone number is not a phone number.
+_DESTINATION_OPTIONAL = (
+    ("shippingZip", "address_postal_code"),
+    ("shippingPhone", "contact_phone"),
+    ("shippingAddress2", "address_line2"),
+)
+
+
+def supplier_destination(metadata):
+    """Where the supplier must ship, read off the order the buyer actually paid.
+
+    Why this is derived and not passed in
+    -------------------------------------
+    `create_intent` used to take `shipping_destination` from its caller, and its
+    caller took it from the request body. Two things were wrong with that. The
+    smaller one is that no surface could build it, so the one action that
+    discharges an obligation had no caller outside a test that monkeypatched it
+    away. The larger one is that a merchant-authenticated request could name any
+    address at all -- the address the buyer paid to ship to was frozen on the
+    transaction and nothing compared the two.
+
+    So the destination is not an input. It is a fact of the order, and this is
+    the only function that states it.
+
+    What it reads
+    -------------
+    `marketplace_fulfillment.snapshot` freezes `{"kind", "details"}` onto
+    `seller_transactions.metadata_json` under `fulfillment`, and
+    `validate_details` has already cleaned, length-capped and tag-stripped every
+    value in `details`. Nothing is re-validated here; `create_intent`'s `_text`
+    remains the gate on what reaches the supplier.
+
+    Returns ``(destination, blockers)``. Exactly one is non-empty.
+
+    On `DESTINATION_INCOMPLETE` being reachable
+    -------------------------------------------
+    It is not defensive. `_REGION_REQUIRED` holds ten countries, so a buyer in
+    the United Kingdom completes a valid checkout with no `address_region` --
+    while CJ requires `shippingProvince` unconditionally. A UK dropship sale is
+    therefore a real order that genuinely cannot be placed, and saying which
+    field is missing is the difference between a merchant fixing it and a
+    merchant watching a row say "awaiting" forever.
+    """
+    from services import marketplace_fulfillment as mf
+
+    frozen = (metadata if isinstance(metadata, dict) else {}).get("fulfillment")
+    details = (frozen or {}).get("details") if isinstance(frozen, dict) else None
+    if not isinstance(details, dict) or not details:
+        return {}, [DESTINATION_MISSING]
+    # `order_kind` rather than `frozen["kind"]`: the stored value can be an
+    # undecided lane, and resolving it is that function's job, not this one's.
+    if mf.order_kind(metadata) != "shipping":
+        return {}, [NOT_SHIPPING_LANE]
+
+    destination = {}
+    for supplier_key, frozen_key in _DESTINATION_REQUIRED:
+        value = (mf.country_name(details.get("address_country"))
+                 if frozen_key is None else details.get(frozen_key))
+        value = value.strip() if isinstance(value, str) else ""
+        if not value:
+            return {}, [DESTINATION_INCOMPLETE]
+        destination[supplier_key] = value
+    for supplier_key, frozen_key in _DESTINATION_OPTIONAL:
+        value = details.get(frozen_key)
+        if isinstance(value, str) and value.strip():
+            destination[supplier_key] = value.strip()
+    return destination, []
+
+
+def _frozen_metadata(conn, order_id):
+    """The checkout record for one canonical order, or ``{}``.
+
+    `marketplace_orders.seller_transaction_id` and `seller_transactions.id` are
+    both INTEGER, so this join needs no cast -- unlike the intent join in
+    `list_obligations`, where `create_intent` writes `str(order_id)` into a TEXT
+    column. Worth stating because the two joins sit in the same function and
+    look like they should be written the same way.
+    """
+    row = conn.execute(
+        "SELECT t.metadata_json FROM marketplace_orders o "
+        "JOIN seller_transactions t ON t.id = o.seller_transaction_id WHERE o.id = ?",
+        (order_id,)).fetchone()
+    if row is None:
+        return {}
+    try:
+        metadata = json.loads(row["metadata_json"] or "{}")
+    except (TypeError, ValueError):
+        return {}
+    return metadata if isinstance(metadata, dict) else {}
+
+
+#: Blocker -> the refusal a caller asking to act on that order receives. Each
+#: is a statement about the order, not about the request, which is why they are
+#: 409s: the caller did nothing wrong and repeating the call cannot help until
+#: the order itself changes.
+_DESTINATION_REFUSALS = {
+    DESTINATION_MISSING: "order_destination_missing",
+    DESTINATION_INCOMPLETE: "order_destination_incomplete",
+    NOT_SHIPPING_LANE: "order_not_shipping_lane",
+}
+
+
+def order_destination(order_id):
+    """The supplier destination for one canonical order, or refuse and say why.
+
+    The single place anything server-side turns a paid order into an address a
+    supplier can ship to. `create_intent` and `quote_for_order` both call it, so
+    the quote is quoted for exactly the address the order will be placed to --
+    which is also what makes `create_intent`'s own quote cross-checks pass
+    rather than being a hurdle a caller has to guess its way over.
+
+    `_text` is still applied on the way out even though `validate_details` has
+    already cleaned and length-capped every value. It is cheap, it is the gate
+    this module has always had on what reaches a provider, and a frozen record
+    written by an older version of the checkout is not something to trust on
+    the strength of who wrote it.
+    """
+    try:
+        resolved = int(str(order_id).strip())
+    except (TypeError, ValueError):
+        raise FulfillmentError("order_not_found", 404) from None
+    conn = db.connect()
+    try:
+        metadata = _frozen_metadata(conn, resolved)
+    finally:
+        conn.close()
+    destination, blockers = supplier_destination(metadata)
+    if blockers:
+        raise FulfillmentError(_DESTINATION_REFUSALS[blockers[0]])
+    return {key: _text(value, key, 500) for key, value in destination.items()}
+
+
+def _stocked_origin(pid, vid, *, connection_id, business_id, store_id, actor_user_id,
+                    context=None, adapter=None):
+    """The warehouse country to quote freight from.
+
+    Not a hardcoded "CN". `reports/cj-discovery/CJ_DROPSHIPPING_FORENSIC_REPORT.md`
+    records what CJ's freight endpoint actually wants: "Product properties come
+    from productProEnSet and eligible origins from inventory." Quoting from a
+    country that holds none of the stock prices a shipment that will not happen.
+
+    Only a warehouse CJ has verified is eligible -- `_warehouse_stock` reports
+    IN_STOCK solely for `verifiedWarehouse == 1` with a positive total, and
+    everything else is UNKNOWN, which is not stock.
+    """
+    from . import gateway
+    result = gateway.read("inventory", business_id=business_id, store_id=store_id,
+                          actor_user_id=actor_user_id, connection_id=connection_id,
+                          params={"pid": pid, "vid": vid}, context=context, adapter=adapter)
+    for row in result["data"].get("variants", []):
+        if row.get("vid") != vid:
+            continue
+        for warehouse in row.get("warehouses", []):
+            country = warehouse.get("country")
+            if (warehouse.get("state") == "IN_STOCK" and isinstance(country, str)
+                    and len(country) == 2):
+                return country.upper()
+    raise FulfillmentError("supplier_origin_unknown")
+
+
+def quote_for_order(*, connection_id, business_id, store_id, actor_user_id, order_id,
+                    context=None, adapter=None):
+    """Freight options for one paid order, priced to the address it is going to.
+
+    Why this function is the other half of gap 15
+    ---------------------------------------------
+    `create_intent` demands a shipping-quote snapshot and then cross-checks five
+    of that snapshot's *request* fields against the destination and its line
+    list against the order's. The only writer of such a snapshot is
+    `gateway.read("shipping", ...)`, and that had zero callers in
+    `mobile-native/src`, `templates/` and `static/` -- measured, not assumed.
+
+    The reason is visible in the cross-checks themselves: the request is not a
+    lookup a screen can assemble out of what it holds. Origin comes from the
+    inventory, properties from the product, weight and SKU from the bound
+    variant, and every address field from a record frozen on the transaction
+    that no client has ever seen. So the server assembles it, which also means
+    the quote is necessarily for the address the order will be placed to rather
+    than for whatever a caller typed.
+
+    Each option carries the exact `expected_supplier_cost_cents` a merchant
+    approving it would hand to `create_intent`, so the two-call flow does not
+    ask the caller to reproduce this module's arithmetic. `create_intent`
+    recomputes it and refuses on disagreement regardless -- the field is a
+    convenience, never the authority.
+
+    Options CJ marked unavailable are returned rather than dropped, with a null
+    cost and CJ's own restrictions. A merchant who cannot see why the cheap
+    service is missing assumes the platform lost it.
+    """
+    from . import connections, gateway
+
+    destination = order_destination(order_id)
+    connection = connections.get_connection(connection_id, business_id, store_id,
+                                            actor_user_id, context=context)
+    conn = db.connect()
+    try:
+        canonical = _canonical_order(conn, order_id)
+    finally:
+        conn.close()
+    if canonical is None or str(canonical["seller_user_id"]) != str(connection.get("merchant_id")):
+        raise FulfillmentError("order_not_found", 404)
+    if (canonical["status"] in {"cancelled", "refunded", "disputed"}
+            or canonical["listing_type"] != "physical"):
+        raise FulfillmentError("order_not_eligible")
+    quantity = canonical["quantity"]
+    if not 1 <= quantity <= 10000:
+        raise FulfillmentError("invalid_quantity", 400)
+
+    binding = gateway.get_product_binding(connection_id, business_id, store_id,
+                                          str(canonical["listing_id"]))
+    detail = gateway.get_snapshot(binding["snapshot_id"], connection_id, business_id,
+                                  store_id, actor_user_id, context=context)
+    variant = next((v for v in detail["data"].get("variants", [])
+                    if v.get("pid") == binding["pid"] and v.get("vid") == binding["vid"]), None)
+    if not variant or variant.get("currency") != "USD":
+        raise FulfillmentError("product_binding_mismatch", 400)
+    sku = variant.get("sku")
+    if not isinstance(sku, str) or not sku:
+        raise FulfillmentError("supplier_sku_unknown")
+    try:
+        unit = Decimal(variant["price"])
+        grams = Decimal(variant["weight_grams"])
+        items_cost = (unit * quantity * 100)
+        if (not unit.is_finite() or unit < 0 or not grams.is_finite() or grams <= 0
+                or items_cost != items_cost.to_integral_value()):
+            raise InvalidOperation
+    except (InvalidOperation, KeyError, TypeError, ValueError):
+        # `_money` answers None for a price CJ stated as a range and for a
+        # weight it did not state at all. Either way the freight this would
+        # quote is for a parcel whose contents we cannot price.
+        raise FulfillmentError("supplier_shipping_inputs_unknown") from None
+    properties = [p for p in (detail["data"].get("logistics_properties") or [])
+                  if isinstance(p, str) and p]
+    if not properties:
+        # CJ routes batteries, liquids and magnets differently, and the adapter
+        # refuses a request with no `productProp` at all. Substituting a plausible
+        # "ORDINARY" would quote the wrong service for exactly the goods where it
+        # matters most.
+        raise FulfillmentError("supplier_logistics_properties_unknown")
+    origin = _stocked_origin(binding["pid"], binding["vid"], connection_id=connection_id,
+                             business_id=business_id, store_id=store_id,
+                             actor_user_id=actor_user_id, context=context, adapter=adapter)
+
+    # Every key here is dictated by a cross-check in `create_intent` or by
+    # `CJAdapter.estimate_shipping`'s allowlist. `zip` is set only when the
+    # destination carries one, because the cross-check compares the two and
+    # `None == None` is the correct match for an address in a country that has
+    # no postal codes.
+    line = {"srcAreaCode": origin, "destAreaCode": destination["shippingCountryCode"],
+            "province": destination["shippingProvince"], "city": destination["shippingCity"],
+            "recipientAddress": destination["shippingAddress"],
+            "weight": float(grams * quantity), "productProp": properties,
+            "skuList": [sku],
+            "freightTrialSkuList": [{"vid": binding["vid"], "sku": sku,
+                                     "skuQuantity": quantity}]}
+    if destination.get("shippingZip"):
+        line["zip"] = destination["shippingZip"]
+    result = gateway.read("shipping", business_id=business_id, store_id=store_id,
+                          actor_user_id=actor_user_id, connection_id=connection_id,
+                          params={"reqDTOS": [line]}, context=context, adapter=adapter)
+
+    options = []
+    for option in result["data"].get("quotes", []):
+        expected = None
+        if option.get("available") and option.get("currency") == "USD":
+            try:
+                freight = Decimal(option["provider_total"]) * 100
+                if freight.is_finite() and freight >= 0 and freight == freight.to_integral_value():
+                    expected = int(items_cost + freight)
+            except (InvalidOperation, KeyError, TypeError, ValueError):
+                expected = None
+        options.append({
+            "option_id": option.get("option_id"), "channel_id": option.get("channel_id"),
+            "service": option.get("service"), "origin": option.get("origin"),
+            "destination": option.get("destination"),
+            "freight_total": option.get("provider_total"), "currency": option.get("currency"),
+            "estimated_transit": option.get("estimated_transit"),
+            "restrictions": option.get("restrictions") or [],
+            "available": bool(option.get("available")),
+            "quoted_at": option.get("quoted_at"),
+            # None, not 0. An option whose landed cost we cannot state is not a
+            # free one, and `create_intent` will refuse it either way.
+            "expected_supplier_cost_cents": expected,
+        })
+    return {"snapshot_id": result["snapshot_id"], "order_id": canonical["id"],
+            "listing_id": canonical["listing_id"], "quantity": quantity,
+            "supplier_items_cost_cents": int(items_cost), "options": options,
+            "state": result["data"].get("state"), "cached": bool(result.get("cached")),
+            "isSandbox": 1, "production_fulfillment_enabled": False}
+
 
 def list_obligations(connection_id, business_id, store_id, actor_user_id, *,
                      limit=100, context=None):
@@ -636,8 +964,15 @@ def list_obligations(connection_id, business_id, store_id, actor_user_id, *,
 
     # Same authorization as `get_intent`: the connection read is what proves the
     # actor may see this scope at all. Nothing below re-derives ownership.
-    connections.get_connection(connection_id, business_id, store_id, actor_user_id,
-                               context=context)
+    connection = connections.get_connection(connection_id, business_id, store_id,
+                                            actor_user_id, context=context)
+    # One blocker that is a property of the connection rather than of any order,
+    # and blocks every one of them: `create_intent` refuses `shop_binding_required`
+    # with nothing bound, because `_validate_observed` proves a placed order came
+    # back on the shop we bound and there is no such proof to make. Evaluated once
+    # here rather than per row, but reported on every row, because the merchant
+    # reads rows.
+    unbound = [SHOP_BINDING_REQUIRED] if not connection.get("external_shop_id") else []
     try:
         capped = min(max(int(limit), 1), 200)
     except (TypeError, ValueError):
@@ -668,7 +1003,22 @@ def list_obligations(connection_id, business_id, store_id, actor_user_id, *,
             "o.amount_cents, o.currency, o.paid_at, o.created_at AS ordered_at, "
             "l.title, l.listing_type, l.product_type, "
             "s.provider AS provider, s.provider_product_id, s.provider_variant_id, "
-            "s.external_sku, s.supplier_cost_cents, s.supplier_cost_currency, "
+            # `v.sku`, not `s.external_sku`. Two adjacent columns on rows this
+            # query already joins, holding SKUs from two different levels of the
+            # supplier's hierarchy: `importer.link_source` writes the *product's*
+            # `external_sku` onto the source row, while `_write_variants` writes
+            # each *variant's* onto the variant row. `create_intent` matches the
+            # bound variant's, so the source column was never the answer -- and
+            # reporting it produced `invalid_sku` when it was NULL (which is the
+            # normal case) and `product_binding_mismatch` when it was not, a
+            # refusal that reads like a broken binding rather than a wrong field.
+            #
+            # The product-level column is not also carried: one obligation
+            # carrying two spellings of "the SKU" is an invitation to read the
+            # one that cannot work.
+            "v.sku AS supplier_sku, "
+            "s.supplier_cost_cents, s.supplier_cost_currency, "
+            "o.seller_transaction_id, t.metadata_json, "
             "i.id AS intent_id, i.created_at AS intent_created_at, "
             # `supplier_order_status`, not `provider_status`, on the way out.
             # The column keeps its name; the wire field does not, because
@@ -684,6 +1034,18 @@ def list_obligations(connection_id, business_id, store_id, actor_user_id, *,
             "FROM marketplace_orders o "
             "JOIN marketplace_listings l ON l.id = o.listing_id "
             "JOIN marketplace_product_sources s ON s.listing_id = o.listing_id "
+            # The bound variant, by the provider id the source row bound. A
+            # multi-variant import records no `provider_variant_id` on the
+            # source (see `importer.link_source`), and `NULL = NULL` matches
+            # nothing in SQL -- so those obligations arrive with no SKU and are
+            # blocked as such, which is the truth about them.
+            "LEFT JOIN marketplace_listing_variants v ON v.listing_id = o.listing_id "
+            "  AND v.provider_variant_id = s.provider_variant_id "
+            # The buyer's frozen address. No cast: `seller_transaction_id` and
+            # `seller_transactions.id` are both INTEGER, unlike the intent join
+            # immediately below, where `create_intent` writes `str(order_id)`
+            # into a TEXT column.
+            "LEFT JOIN seller_transactions t ON t.id = o.seller_transaction_id "
             "LEFT JOIN business_os_supplier_intents i ON i.order_id = CAST(o.id AS TEXT) "
             "LEFT JOIN business_os_supplier_outbox b ON b.intent_id = i.id "
             "WHERE s.supplier_connection_id = ? AND s.business_id = ? AND s.store_id = ? "
@@ -710,8 +1072,40 @@ def list_obligations(connection_id, business_id, store_id, actor_user_id, *,
         # and a caller free to read the one that is None.
         outbox_state = item.pop("outbox_state")
         intent_id = item.get("intent_id")
+        # Neither of these travels. `metadata_json` is the whole frozen checkout
+        # blob -- the buyer's address and the commercial quote -- read here only
+        # to answer "can this be ordered?", and `seller_transaction_id` is a
+        # payments-ledger key with nothing to do on a fulfilment screen.
+        try:
+            metadata = json.loads(item.pop("metadata_json") or "{}")
+        except (TypeError, ValueError):
+            metadata = {}
+        item.pop("seller_transaction_id", None)
+        _, destination_blockers = supplier_destination(
+            metadata if isinstance(metadata, dict) else {})
+        blockers = []
+        # Ordered by `BLOCKERS`, so the list reads the same way every time and a
+        # merchant is told the thing they must act on first.
+        if intent_id is not None:
+            blockers.append(SUPPLIER_ORDER_ALREADY_PLACED)
+        blockers.extend(unbound)
+        blockers.extend(destination_blockers)
+        if not item.get("supplier_sku"):
+            blockers.append(SUPPLIER_SKU_MISSING)
+        # UNKNOWN cost is not zero cost. A NULL here means the import never
+        # established what this variant costs, and placing an order whose price
+        # we cannot state is how a merchant discovers the margin afterwards.
+        if item.get("supplier_cost_cents") is None:
+            blockers.append(SUPPLIER_COST_UNKNOWN)
         obligations.append({
             **item,
+            "blockers": blockers,
+            # Not "nothing is wrong" -- "this server can finish this without
+            # asking anyone for anything it does not already have." The shipping
+            # quote is deliberately not a precondition: `quote_for_order` obtains
+            # one on demand and it costs nothing, so needing one is the next step
+            # rather than an obstacle.
+            "can_place_supplier_order": not blockers,
             "listing_type": listing_type,
             # One field, derived once, in one place. A `placed` boolean *beside*
             # a state would be the same fact twice; `supplier_order_placed`

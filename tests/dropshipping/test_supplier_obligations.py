@@ -44,6 +44,7 @@ Runs alone. `tests/dropshipping/` files each bind their own `DATABASE_URL` at
 import, so the suite is run one file per process.
 """
 
+import json
 import os
 import sys
 import tempfile
@@ -107,6 +108,46 @@ CREATE TABLE IF NOT EXISTS marketplace_orders (
 )
 """
 
+# Also verbatim from bot.init_db(), for the same reason. This is the record
+# checkout freezes the buyer's delivery address onto, and gap 15 made it the
+# only source of a supplier destination -- so a suite that omits it is not
+# measuring a cheaper version of the obligation list, it is measuring a
+# different query from the one that runs in production.
+SELLER_TRANSACTIONS_DDL = """
+CREATE TABLE IF NOT EXISTS seller_transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    buyer_user_id INTEGER,
+    seller_user_id INTEGER,
+    seller_type TEXT,
+    item_type TEXT,
+    item_id INTEGER,
+    amount_cents INTEGER DEFAULT 0,
+    currency TEXT DEFAULT 'USD',
+    platform_fee_cents INTEGER DEFAULT 0,
+    seller_net_cents INTEGER DEFAULT 0,
+    status TEXT DEFAULT 'created',
+    stripe_checkout_session_id TEXT,
+    stripe_payment_intent_id TEXT,
+    metadata_json TEXT,
+    created_at TEXT,
+    updated_at TEXT
+)
+"""
+
+#: A complete US delivery address, in the shape `marketplace_fulfillment.snapshot`
+#: writes and with keys spelled the way `validate_details` spells them. Complete
+#: on purpose: the default paid sale in this file is one a supplier could ship,
+#: so a blocker appearing on it is a finding rather than the fixture's fault.
+FROZEN_DETAILS = {
+    "contact_name": "Fixture Buyer",
+    "contact_phone": "+15550100",
+    "address_line1": "1 Fixture Way",
+    "address_city": "Fixture City",
+    "address_region": "CA",
+    "address_postal_code": "94000",
+    "address_country": "US",
+}
+
 
 @pytest.fixture(autouse=True)
 def database():
@@ -126,6 +167,7 @@ def database():
         _seed_connection(conn, CONNECTION, BUSINESS, STORE, OWNER_ID)
         _seed_connection(conn, OTHER_CONNECTION, OTHER_BUSINESS, OTHER_STORE, OTHER_OWNER_ID)
         cur.execute(MARKETPLACE_ORDERS_DDL)
+        cur.execute(SELLER_TRANSACTIONS_DDL)
         conn.commit()
     finally:
         conn.close()
@@ -187,16 +229,40 @@ def publish_dropship_listing(provider, pid="SALE-1", *, business=BUSINESS, store
 
 
 def a_buyer_pays(listing_id, *, quantity=1, unit_price_cents=2000, status="paid",
-                 seller_transaction_id=None):
-    """Project a paid transaction into an order, as `pulse_upsert_marketplace_order` does."""
+                 seller_transaction_id=None, details=FROZEN_DETAILS, kind="shipping",
+                 transaction=True):
+    """Project a paid transaction into an order, as `pulse_upsert_marketplace_order` does.
+
+    Writes both halves, because production has both: the transaction Stripe's
+    webhook settles and the canonical order projected off it. Gap 15 made the
+    second half read the first -- the delivery address lives only on the
+    transaction -- so a helper that wrote the order alone would manufacture a
+    `DESTINATION_MISSING` on every sale in the file.
+
+    `details=None` freezes a lane with no address; `transaction=False` writes an
+    order whose `seller_transaction_id` points at nothing. Both are states a
+    real database reaches, and both are the subject of their own test below.
+    """
     stamp = "2026-09-12T00:00:00"
+    transaction_id = (seller_transaction_id if seller_transaction_id is not None
+                      else int(uuid.uuid4().int % 10**8))
+    if transaction:
+        frozen = {"kind": kind}
+        if details is not None:
+            frozen["details"] = dict(details)
+        execute(
+            "INSERT INTO seller_transactions (id,buyer_user_id,seller_user_id,seller_type,"
+            "item_type,item_id,amount_cents,currency,status,stripe_payment_intent_id,"
+            "metadata_json,created_at,updated_at) VALUES (?,?,?,'user',?,?,?,?,?,?,?,?,?)",
+            (transaction_id, BUYER_ID, OWNER_ID, "marketplace_listing", listing_id,
+             unit_price_cents * quantity, "USD", status, "pi_test",
+             json.dumps({"fulfillment": frozen}), stamp, stamp))
     return execute(
         "INSERT INTO marketplace_orders (seller_transaction_id,buyer_user_id,seller_user_id,"
         "listing_id,quantity,unit_price_cents,amount_cents,currency,status,payment_provider,"
         "provider_payment_id,created_at,paid_at,updated_at) "
         "VALUES (?,?,?,?,?,?,?,?,?,'stripe',?,?,?,?)",
-        (seller_transaction_id if seller_transaction_id is not None else int(uuid.uuid4().int % 10**8),
-         BUYER_ID, OWNER_ID, listing_id, quantity, unit_price_cents,
+        (transaction_id, BUYER_ID, OWNER_ID, listing_id, quantity, unit_price_cents,
          unit_price_cents * quantity, "USD", status, "pi_test", stamp, stamp, stamp))
 
 
@@ -541,3 +607,297 @@ def test_the_suppliers_status_does_not_travel_under_the_payment_providers_name(p
         "the obligation carries `provider_status`, which names the payment "
         "provider's subscription status everywhere else in this platform")
     assert "supplier_order_status" in only
+
+
+# --------------------------------------------------------------------------
+# Gap 15: an obligation a merchant can see is not yet one they can discharge
+#
+# Gap 14 made the obligation visible. Measuring what could then be done with
+# it found four blockers, and every test below is one of them written down.
+# The theme is the same in all four: a fact needed by the next step already
+# existed somewhere the code had reached, and nothing carried it across.
+# --------------------------------------------------------------------------
+
+def a_blocker_on(order_id=None, **kwargs):
+    """The blockers of the single obligation, or of the one for `order_id`."""
+    found = obligations(**kwargs)
+    if order_id is not None:
+        found = [row for row in found if row["order_id"] == order_id]
+    assert len(found) == 1, f"expected exactly one obligation, got {len(found)}"
+    return found[0]
+
+
+def test_a_shippable_paid_sale_names_no_blocker_at_all(provider):
+    # The baseline the rest of this block is measured against. If a complete
+    # US address on a bound shop with a known cost and a bound variant still
+    # reports a blocker, every test below is measuring the fixture.
+    a_buyer_pays(publish_dropship_listing(provider, "SALE-READY"))
+    only = a_blocker_on()
+    assert only["blockers"] == []
+    assert only["can_place_supplier_order"] is True
+
+
+def test_the_obligation_reports_the_bound_variants_sku_not_the_products(provider):
+    # The measured root cause of gap 15's second blocker. `importer._write_variants`
+    # writes each variant's `external_sku` onto the variant row;
+    # `importer.link_source` writes the *product's* onto the source row. Two
+    # adjacent columns, two levels of one hierarchy, and `create_intent` matches
+    # only the variant's -- so reporting the source column answered `invalid_sku`
+    # when it was NULL and `product_binding_mismatch` when it was not.
+    listing_id = publish_dropship_listing(provider, "SALE-SKU")
+    execute("UPDATE marketplace_product_sources SET external_sku=? WHERE listing_id=?",
+            ("PRODUCT-LEVEL-SKU", listing_id))
+    a_buyer_pays(listing_id)
+    only = a_blocker_on()
+    assert only["supplier_sku"] == "SALE-SKU-SKU-1", (
+        "the obligation is reporting a SKU from the wrong level of the "
+        f"supplier's hierarchy: {rows('SELECT external_sku FROM marketplace_product_sources')}")
+    assert "PRODUCT-LEVEL-SKU" not in json.dumps(only), (
+        "the product-level SKU travels too. One obligation carrying two "
+        "spellings of `the SKU` is an invitation to read the one that cannot work")
+
+
+def test_a_variant_with_no_supplier_code_is_blocked_rather_than_silently_unorderable(provider):
+    # What a multi-variant import reaches: `link_source` records no
+    # `provider_variant_id`, `NULL = NULL` joins nothing, so the SKU is absent.
+    # That is the truth about the order, and it has to be said out loud.
+    listing_id = publish_dropship_listing(provider, "SALE-NOSKU")
+    execute("UPDATE marketplace_listing_variants SET sku=NULL WHERE listing_id=?", (listing_id,))
+    a_buyer_pays(listing_id)
+    only = a_blocker_on()
+    assert only["supplier_sku"] is None
+    assert fulfillment.SUPPLIER_SKU_MISSING in only["blockers"]
+    assert only["can_place_supplier_order"] is False
+
+
+def test_an_unknown_supplier_cost_blocks_the_order_instead_of_pricing_it_at_zero(provider):
+    # Section 8. A NULL cost means the import never established what this
+    # variant costs; ordering at a price we cannot state is how a merchant
+    # finds out the margin afterwards.
+    listing_id = publish_dropship_listing(provider, "SALE-NOCOST")
+    execute("UPDATE marketplace_product_sources SET supplier_cost_cents=NULL WHERE listing_id=?",
+            (listing_id,))
+    a_buyer_pays(listing_id)
+    only = a_blocker_on()
+    assert only["supplier_cost_cents"] is None
+    assert fulfillment.SUPPLIER_COST_UNKNOWN in only["blockers"]
+
+
+def test_a_sale_with_no_frozen_address_says_so_rather_than_waiting_forever(provider):
+    # Before gap 15 this row read `awaiting` indefinitely: the obligation
+    # carried no destination, so nothing could tell a merchant why their
+    # supplier order was never going to be placeable.
+    a_buyer_pays(publish_dropship_listing(provider, "SALE-NOADDR"), details=None)
+    only = a_blocker_on()
+    assert fulfillment.DESTINATION_MISSING in only["blockers"]
+    assert only["can_place_supplier_order"] is False
+
+
+def test_an_order_whose_payment_record_is_gone_is_blocked_not_ready(provider):
+    # The LEFT JOIN can express it, so it needs an answer, and the answer is
+    # not "no blockers". An order pointing at a transaction that is not there
+    # has no address, and has it for a reason worth investigating.
+    a_buyer_pays(publish_dropship_listing(provider, "SALE-ORPHAN"), transaction=False)
+    only = a_blocker_on()
+    assert fulfillment.DESTINATION_MISSING in only["blockers"]
+    assert only["can_place_supplier_order"] is False
+
+
+def test_a_sale_that_is_not_being_shipped_is_not_a_parcel_to_order(provider):
+    # A physical listing offering collection is still a physical listing, and
+    # still has a supplier source. What it does not have is a destination, and
+    # a supplier order for it would ship goods to nobody.
+    a_buyer_pays(publish_dropship_listing(provider, "SALE-PICKUP"), kind="pickup")
+    only = a_blocker_on()
+    assert fulfillment.NOT_SHIPPING_LANE in only["blockers"]
+    assert fulfillment.DESTINATION_MISSING not in only["blockers"], (
+        "a collection order has no missing address -- it has no address to miss")
+
+
+def test_an_undecided_lane_is_not_treated_as_shipping(provider):
+    # `shipping_or_pickup` is what a listing offering both freezes when nothing
+    # narrowed it. Reading it as shipping would order goods against a lane the
+    # buyer never chose.
+    a_buyer_pays(publish_dropship_listing(provider, "SALE-BOTH"), kind="shipping_or_pickup")
+    assert fulfillment.NOT_SHIPPING_LANE in a_blocker_on()["blockers"]
+
+
+def test_a_buyer_outside_the_ten_region_countries_is_incomplete_not_ready(provider):
+    # `marketplace_fulfillment._REGION_REQUIRED` holds ten countries, so a
+    # buyer in the United Kingdom completes a valid checkout with no
+    # `address_region` -- while CJ requires `shippingProvince` unconditionally.
+    # This is a real paid order that genuinely cannot be placed, which is why
+    # DESTINATION_INCOMPLETE is not defensive code.
+    details = dict(FROZEN_DETAILS, address_country="GB", address_region="")
+    a_buyer_pays(publish_dropship_listing(provider, "SALE-UK"), details=details)
+    only = a_blocker_on()
+    assert fulfillment.DESTINATION_INCOMPLETE in only["blockers"]
+    assert fulfillment.DESTINATION_MISSING not in only["blockers"], (
+        "the address is present and one field short of usable; calling it "
+        "missing tells the merchant to look for something that is there")
+
+
+def test_a_country_this_platform_can_spell_but_not_name_is_incomplete(provider):
+    # `country_name` answers "" for a code its table does not hold, and the
+    # supplier needs the name, not the code. Sending the code as the name would
+    # be this repo's recurring defect in one line.
+    details = dict(FROZEN_DETAILS, address_country="ZZ")
+    a_buyer_pays(publish_dropship_listing(provider, "SALE-ZZ"), details=details)
+    assert fulfillment.DESTINATION_INCOMPLETE in a_blocker_on()["blockers"]
+
+
+def test_an_unbound_supplier_shop_blocks_every_obligation(provider):
+    # A property of the connection, not of any order, and it blocks all of
+    # them: `create_intent` refuses `shop_binding_required` because
+    # `_validate_observed` proves a placed order came back on the shop we
+    # bound, and with nothing bound there is no such proof to make.
+    a_buyer_pays(publish_dropship_listing(provider, "SALE-UNBOUND-1"))
+    a_buyer_pays(publish_dropship_listing(provider, "SALE-UNBOUND-2"))
+    execute("UPDATE business_os_supplier_connections SET external_shop_id='' WHERE id=?",
+            (CONNECTION,))
+    found = obligations()
+    assert len(found) == 2
+    for row in found:
+        assert fulfillment.SHOP_BINDING_REQUIRED in row["blockers"], (
+            "the shop binding blocks every order, so it has to be reported on "
+            "every row -- a merchant reads rows, not connections")
+        assert row["can_place_supplier_order"] is False
+
+
+def test_an_already_placed_order_is_blocked_from_being_placed_again(provider):
+    # The one blocker that is about money already spent. Ordering the same
+    # goods twice is the error this list exists to prevent.
+    order_id = a_buyer_pays(publish_dropship_listing(provider, "SALE-DOUBLE"))
+    an_intent_exists_for(order_id, state="LINKED")
+    only = a_blocker_on()
+    assert fulfillment.SUPPLIER_ORDER_ALREADY_PLACED in only["blockers"]
+    assert only["can_place_supplier_order"] is False
+    assert only["supplier_order_placed"] is True
+
+
+def test_the_blockers_are_reported_in_the_vocabularys_own_order(provider):
+    # So the list reads the same way every time and the merchant is told the
+    # thing to act on first, rather than whichever check happened to run first.
+    listing_id = publish_dropship_listing(provider, "SALE-MANY")
+    a_buyer_pays(listing_id, details=None)
+    execute("UPDATE marketplace_listing_variants SET sku=NULL WHERE listing_id=?", (listing_id,))
+    execute("UPDATE marketplace_product_sources SET supplier_cost_cents=NULL WHERE listing_id=?",
+            (listing_id,))
+    execute("UPDATE business_os_supplier_connections SET external_shop_id='' WHERE id=?",
+            (CONNECTION,))
+    found = a_blocker_on()["blockers"]
+    assert len(found) > 1, "this test is only meaningful with several blockers"
+    order = [fulfillment.BLOCKERS.index(name) for name in found]
+    assert order == sorted(order), (
+        f"blockers arrived out of vocabulary order: {found}")
+
+
+def test_every_blocker_reported_is_one_the_vocabulary_names(provider):
+    # A blocker the mobile copy map has never heard of renders as a fallback
+    # string. That is the right answer to a newer server and the wrong answer
+    # to a typo, so the backend may only emit names it declares.
+    a_buyer_pays(publish_dropship_listing(provider, "SALE-VOCAB"), details=None)
+    for name in a_blocker_on()["blockers"]:
+        assert name in fulfillment.BLOCKERS, f"{name} is not a declared blocker"
+
+
+def test_readiness_is_the_absence_of_blockers_and_never_disagrees_with_them(provider):
+    # One evaluator, section 61. The screen counts unorderable sales off
+    # `can_place_supplier_order` rather than off `blockers.length`, so the two
+    # disagreeing would put a number above a list that contradicts it.
+    ready = publish_dropship_listing(provider, "SALE-INV-OK")
+    blocked = publish_dropship_listing(provider, "SALE-INV-NO")
+    ready_order = a_buyer_pays(ready)
+    blocked_order = a_buyer_pays(blocked, details=None)
+    by_order = {row["order_id"]: row for row in obligations()}
+    for row in by_order.values():
+        assert row["can_place_supplier_order"] == (not row["blockers"])
+    assert by_order[ready_order]["can_place_supplier_order"] is True
+    assert by_order[blocked_order]["can_place_supplier_order"] is False
+
+
+def test_the_buyers_address_never_travels_on_an_obligation(provider):
+    # The obligation is read to answer "can this be ordered?", which needs the
+    # frozen record -- and the answer must travel without the record. Sections
+    # 27 and 95 are about what a *buyer* sees, but a merchant fulfilment screen
+    # has no use for the payments-ledger key either, and a field nothing reads
+    # is a field that leaks the first time a payload is forwarded.
+    a_buyer_pays(publish_dropship_listing(provider, "SALE-PRIVACY"),
+                 details=dict(FROZEN_DETAILS, address_line1="1 Leak Street",
+                              address_city="Leakville", contact_phone="+15550199"))
+    only = a_blocker_on()
+    for forbidden in ("metadata_json", "seller_transaction_id", "shipping_destination",
+                      "address_line1", "contact_name", "contact_phone"):
+        assert forbidden not in only, f"{forbidden} travels to the caller"
+    serialized = json.dumps(only)
+    for value in ("1 Leak Street", "Leakville", "+15550199", "Fixture Buyer"):
+        assert value not in serialized, f"{value!r} reached the wire"
+
+
+# --------------------------------------------------------------------------
+# `order_destination`: the one server-side place an order becomes an address
+# --------------------------------------------------------------------------
+
+def test_the_destination_is_read_off_the_order_the_buyer_paid(provider):
+    order_id = a_buyer_pays(publish_dropship_listing(provider, "DEST-OK"))
+    assert fulfillment.order_destination(order_id) == {
+        "shippingCountryCode": "US",
+        "shippingCountry": "United States",
+        "shippingProvince": "CA",
+        "shippingCity": "Fixture City",
+        "shippingCustomerName": "Fixture Buyer",
+        "shippingAddress": "1 Fixture Way",
+        "shippingZip": "94000",
+        "shippingPhone": "+15550100",
+    }
+
+
+def test_an_absent_optional_field_is_omitted_rather_than_sent_empty(provider):
+    # `_text` in `create_intent` rejects an empty string, and a blank phone
+    # number is not a phone number.
+    details = {key: value for key, value in FROZEN_DETAILS.items()
+               if key not in ("contact_phone", "address_postal_code")}
+    order_id = a_buyer_pays(publish_dropship_listing(provider, "DEST-THIN"), details=details)
+    destination = fulfillment.order_destination(order_id)
+    assert "shippingPhone" not in destination
+    assert "shippingZip" not in destination
+    assert destination["shippingAddress"] == "1 Fixture Way"
+
+
+@pytest.mark.parametrize("kwargs,refusal", [
+    ({"details": None}, "order_destination_missing"),
+    ({"transaction": False}, "order_destination_missing"),
+    ({"kind": "pickup"}, "order_not_shipping_lane"),
+    ({"details": dict(FROZEN_DETAILS, address_country="GB", address_region="")},
+     "order_destination_incomplete"),
+])
+def test_a_destination_that_cannot_be_stated_is_refused_by_name(provider, kwargs, refusal):
+    # Each is a statement about the order rather than about the request, which
+    # is why none of them is a 4xx the caller can fix by retrying differently.
+    order_id = a_buyer_pays(publish_dropship_listing(provider, f"DEST-{refusal[-6:]}"), **kwargs)
+    with pytest.raises(fulfillment.FulfillmentError) as raised:
+        fulfillment.order_destination(order_id)
+    assert raised.value.code == refusal
+
+
+def test_an_order_that_does_not_exist_is_not_an_empty_address(provider):
+    with pytest.raises(fulfillment.FulfillmentError) as raised:
+        fulfillment.order_destination(999999)
+    assert raised.value.code == "order_destination_missing"
+    with pytest.raises(fulfillment.FulfillmentError) as raised:
+        fulfillment.order_destination("not-a-number")
+    assert raised.value.code == "order_not_found"
+
+
+def test_creating_an_intent_takes_no_destination_from_its_caller():
+    # The larger half of gap 15's fix. While `shipping_destination` was an
+    # argument, a merchant-authenticated request could name any address at all
+    # -- the address the buyer paid to ship to was frozen on the transaction
+    # and nothing compared the two. Removing the parameter is the fix; this is
+    # what stops it being added back for the convenience of a caller.
+    import inspect
+    parameters = inspect.signature(fulfillment.create_intent).parameters
+    for name in ("shipping_destination", "destination", "address", "shipping_address"):
+        assert name not in parameters, (
+            f"`create_intent` accepts `{name}` again, which lets the caller "
+            "redirect a parcel the buyer paid to have sent somewhere else")

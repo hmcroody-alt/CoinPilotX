@@ -44,6 +44,7 @@ import {
   DROPSHIPPING_DATA_GAPS,
   listSupplierObligations,
   stateForError,
+  supplierObligationBlockerCopy,
   supplierOrderStateCopy,
   type DropshippingState,
   type SupplierObligation
@@ -133,6 +134,9 @@ export function DropshippingOrdersScreen({ route, navigation }: Props) {
   }, [connectionId, load, scopeStatus.status]);
 
   const awaiting = rows.filter((row) => !row.supplierOrderPlaced).length;
+  // Counted off the server's own verdict rather than `blockers.length`, so this
+  // number cannot disagree with the per-row reasons underneath it.
+  const blocked = rows.filter((row) => !row.supplierOrderPlaced && !row.canPlaceSupplierOrder).length;
 
   const stateBlock = stateOwnsScreen(state) ? (
     <DropshippingStateView
@@ -216,6 +220,17 @@ export function DropshippingOrdersScreen({ route, navigation }: Props) {
               </Text>
             ) : null}
 
+            {/* Separate from the count above, because "waiting" and "cannot go"
+                are different problems. A sale with no supplier order is normal
+                while fulfilment is off; a sale that could not be ordered even
+                once it is on needs the merchant to change something, and the
+                rows say what. */}
+            {state === "READY" && blocked > 0 ? (
+              <Text style={styles.awaitingNote}>
+                {formatters.count(blocked)} could not be ordered as things stand — each row says why.
+              </Text>
+            ) : null}
+
             {/* Still rendered from the exported list, so the screen cannot claim
                 a gap has closed while the list says it is open — and cannot keep
                 claiming one after it closes. Two entries were removed here when
@@ -253,6 +268,10 @@ function ObligationRow({
   paidLabel: string | null;
 }) {
   const stateLabel = supplierOrderStateCopy(row.state);
+  // Suppressed once an order has been placed. The only blocker an already-placed
+  // row carries is that it is already placed, which the pill above says better,
+  // and re-stating it as a problem would read as one where there is none.
+  const blockers = row.supplierOrderPlaced ? [] : row.blockers;
 
   return (
     <View
@@ -274,12 +293,14 @@ function ObligationRow({
         </View>
       </View>
 
-      {/* The supplier's variant id, not the listing's: this is the line the
-          merchant would read out to their supplier, and the listing-level
-          variant is the only one a dropship sale can be for. */}
+      {/* The bound variant's supplier SKU first, then its id: this is the line
+          the merchant would read out to their supplier, and the SKU is the field
+          the supplier order is actually matched on. Falls back rather than
+          showing a blank, because a variant can be bound before its SKU is
+          known — which is what `SUPPLIER_SKU_MISSING` below says. */}
       <Text style={styles.rowMeta}>
         Order #{row.orderId} · {row.quantity} ×{" "}
-        {row.providerVariantId || row.providerProductId || NO_VALUE}
+        {row.supplierSku || row.providerVariantId || row.providerProductId || NO_VALUE}
       </Text>
 
       {/* "not available" rather than a zero: a merchant reading $0.00 here
@@ -287,6 +308,16 @@ function ObligationRow({
       <Text style={styles.rowCost}>
         {costLabel ? `Your supplier cost ${costLabel}` : `Supplier cost ${NO_VALUE} not available`}
       </Text>
+
+      {/* Every reason this sale cannot be turned into a supplier purchase, one
+          line each rather than only the first. They are independent conditions
+          and a merchant who fixes the one we chose to show would come back to
+          find another — which is the shape of problem this repo keeps making. */}
+      {blockers.map((blocker) => (
+        <Text key={blocker} style={styles.rowWarning}>
+          {supplierObligationBlockerCopy(blocker)}
+        </Text>
+      ))}
 
       {/* The supplier's own refusal text, when there is one. Shown verbatim
           rather than summarised — a merchant chasing a blocked order needs the

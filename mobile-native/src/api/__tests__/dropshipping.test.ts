@@ -59,10 +59,13 @@ import {
   DROPSHIPPING_DATA_GAPS,
   IMPORT_OUTCOMES,
   PUBLISH_PROBLEMS,
+  SUPPLIER_OBLIGATION_BLOCKERS,
+  SUPPLIER_OBLIGATION_BLOCKER_COPY,
   SUPPLIER_ORDER_STATES,
   SUPPLIER_ORDER_STATE_COPY,
   bindConnectionShop,
   listSupplierObligations,
+  supplierObligationBlockerCopy,
   supplierOrderStateCopy,
   centsOrNull,
   connectionCanFulfil,
@@ -830,11 +833,13 @@ describe("the vocabularies are closed and complete", () => {
       provider: "CJ",
       provider_product_id: "P1",
       provider_variant_id: "P1-V1",
-      external_sku: null,
+      supplier_sku: "P1-V1-SKU",
       supplier_cost_cents: 820,
       supplier_cost_currency: "USD",
       intent_id: null,
       intent_created_at: null,
+      blockers: [],
+      can_place_supplier_order: true,
       state: "AWAITING_SUPPLIER_ORDER",
       supplier_order_placed: false,
       provider_order_id: null,
@@ -922,6 +927,129 @@ describe("the vocabularies are closed and complete", () => {
       // And a known one still gets its own words, so the fallback has not
       // swallowed the whole map.
       expect(supplierOrderStateCopy("LINKED")).toBe(SUPPLIER_ORDER_STATE_COPY.LINKED);
+    });
+
+    it("reads the bound variant's SKU, not the product's", async () => {
+      // The gap-15 defect, on the wire. The obligation used to carry
+      // `external_sku` from `marketplace_product_sources`, which is the
+      // *product*-level column and is normally empty, while the supplier order
+      // is matched on the *variant*'s. The two columns sit one table apart and
+      // the wrong one was sent, so the honest case looked like a missing SKU and
+      // a populated one looked like a binding bug.
+      //
+      // The legacy key is supplied here alongside the new one, deliberately: a
+      // client that still preferred `external_sku` would pick the product's and
+      // pass this test's absence of a compile error while failing here.
+      mockPulseApi.mockResolvedValue({
+        obligations: [{ ...OBLIGATION, supplier_sku: "VARIANT-SKU", external_sku: "PRODUCT-SKU" }],
+        isSandbox: 1
+      });
+      const { obligations } = await listSupplierObligations(SCOPE, "c1");
+      expect(obligations[0].supplierSku).toBe("VARIANT-SKU");
+      expect(JSON.stringify(obligations[0])).not.toContain("PRODUCT-SKU");
+    });
+
+    it("carries the blockers and the server's own verdict on them", async () => {
+      mockPulseApi.mockResolvedValue({
+        obligations: [{
+          ...OBLIGATION,
+          supplier_sku: null,
+          blockers: ["SUPPLIER_SKU_MISSING", "SUPPLIER_COST_UNKNOWN"],
+          can_place_supplier_order: false
+        }],
+        isSandbox: 1
+      });
+      const { obligations } = await listSupplierObligations(SCOPE, "c1");
+      expect(obligations[0].blockers).toEqual(["SUPPLIER_SKU_MISSING", "SUPPLIER_COST_UNKNOWN"]);
+      expect(obligations[0].canPlaceSupplierOrder).toBe(false);
+    });
+
+    it("does not re-derive whether an order can be placed from the blocker list", async () => {
+      // A server that names no blocker but still refuses — because the reason is
+      // one this list does not model — must not be read as "ready". Recomputing
+      // `blockers.length === 0` on the device is the copy that can disagree, and
+      // the field it disagrees with is the one a merchant would act on.
+      mockPulseApi.mockResolvedValue({
+        obligations: [{ ...OBLIGATION, blockers: [], can_place_supplier_order: false }],
+        isSandbox: 1
+      });
+      const { obligations } = await listSupplierObligations(SCOPE, "c1");
+      expect(obligations[0].blockers).toEqual([]);
+      expect(obligations[0].canPlaceSupplierOrder).toBe(false);
+      // And the absent case is not read as permission either.
+      mockPulseApi.mockResolvedValue({ obligations: [OBLIGATION], isSandbox: 1 });
+      delete (OBLIGATION as Record<string, unknown>).can_place_supplier_order;
+      expect((await listSupplierObligations(SCOPE, "c1")).obligations[0].canPlaceSupplierOrder)
+        .toBe(false);
+      (OBLIGATION as Record<string, unknown>).can_place_supplier_order = true;
+    });
+
+    it("drops nothing but blanks out of a blocker list", async () => {
+      // Passed through, not narrowed: a blocker a newer server names has to
+      // reach the copy function, which says it does not recognise it. Empty
+      // strings are the one thing removed, because they render as a blank
+      // warning line under a paid order.
+      mockPulseApi.mockResolvedValue({
+        obligations: [{
+          ...OBLIGATION,
+          blockers: ["A_BLOCKER_FROM_A_NEWER_SERVER", "", null, 7],
+          can_place_supplier_order: false
+        }],
+        isSandbox: 1
+      });
+      const { obligations } = await listSupplierObligations(SCOPE, "c1");
+      expect(obligations[0].blockers).toEqual(["A_BLOCKER_FROM_A_NEWER_SERVER", "7"]);
+    });
+
+    it("has words for every blocker it can name, and none of them is the identifier", () => {
+      SUPPLIER_OBLIGATION_BLOCKERS.forEach((blocker) => {
+        expect(SUPPLIER_OBLIGATION_BLOCKER_COPY[blocker].length).toBeGreaterThan(20);
+        expect(SUPPLIER_OBLIGATION_BLOCKER_COPY[blocker]).not.toBe(blocker);
+        // Prose, not an identifier: these render as a warning line a merchant
+        // reads. Same check the data-gap copy gets, for the same reason.
+        expect(SUPPLIER_OBLIGATION_BLOCKER_COPY[blocker]).not.toMatch(/[a-z]_[a-z]|\(\)|[A-Z]{3}/);
+      });
+    });
+
+    it("says so about a blocker from a newer server rather than guessing", () => {
+      const copy = supplierObligationBlockerCopy("CUSTOMS_DECLARATION_MISSING_FROM_A_NEWER_SERVER");
+      expect(copy).not.toContain("CUSTOMS");
+      expect(copy).toBe(
+        "Something about this order stops it being sent to your supplier"
+      );
+      expect(supplierObligationBlockerCopy("SHOP_BINDING_REQUIRED"))
+        .toBe(SUPPLIER_OBLIGATION_BLOCKER_COPY.SHOP_BINDING_REQUIRED);
+    });
+
+    it("never asks a merchant to supply a buyer's address", () => {
+      // `DESTINATION_MISSING` and `DESTINATION_INCOMPLETE` are the two blockers a
+      // merchant cannot act on: the address belongs to the buyer and this screen
+      // is not shown one. Copy that read like a prompt would send merchants
+      // inventing delivery addresses for other people's parcels.
+      [SUPPLIER_OBLIGATION_BLOCKER_COPY.DESTINATION_MISSING,
+       SUPPLIER_OBLIGATION_BLOCKER_COPY.DESTINATION_INCOMPLETE].forEach((copy) => {
+        expect(copy.toLowerCase()).not.toMatch(/\b(enter|add|type|provide|fill)\b/);
+      });
+    });
+
+    it("carries no part of the buyer's address, however the server answers", async () => {
+      // §27/§95, on the field the fix reads. The server derives the destination
+      // to decide the blockers and must not forward it; this proves the client
+      // would not surface one even if a later server did.
+      mockPulseApi.mockResolvedValue({
+        obligations: [{
+          ...OBLIGATION,
+          metadata_json: '{"fulfillment":{"details":{"address_line1":"1 Leak Street"}}}',
+          seller_transaction_id: 7001,
+          shipping_destination: { shippingAddress: "1 Leak Street", shippingCity: "Leakville" }
+        }],
+        isSandbox: 1
+      });
+      const { obligations } = await listSupplierObligations(SCOPE, "c1");
+      const encoded = JSON.stringify(obligations[0]);
+      ["1 Leak Street", "Leakville", "7001", "metadata_json", "address_line1"].forEach((leak) => {
+        expect(encoded).not.toContain(leak);
+      });
     });
   });
 

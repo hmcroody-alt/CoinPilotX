@@ -217,10 +217,9 @@ def try_to_create_the_intent(order_id, listing_id):
               "vid": (binding or {}).get("vid") or "PROBE-SALE-V1",
               "sku": (binding or {}).get("sku") or "PROBE-SALE-SKU-1",
               "quantity": 1}]
-    destination = {"shippingCountryCode": "US", "shippingProvince": "CA",
-                   "shippingCity": "Oakland", "shippingAddress": "1 Probe Way",
-                   "shippingCustomerName": "A Buyer", "shippingPhone": "5550000000"}
-
+    # No destination is built here any more. When this probe was written a caller
+    # supplied one, which is the hole gap 15 closed: `create_intent` now reads the
+    # address off the buyer's frozen transaction and takes no such argument.
     print("\n--- create_intent, called the way a payment hook would ---")
     print("  Note: this probe reuses the *import pipeline* suite's connection")
     print("  fixture, which is seeded to import products, not to fulfil them. If")
@@ -231,7 +230,6 @@ def try_to_create_the_intent(order_id, listing_id):
         result = fulfillment.create_intent(
             connection_id=CONNECTION, business_id=BUSINESS, store_id=STORE,
             actor_user_id=OWNER_ID, order_id=order_id, items=items,
-            shipping_destination=destination,
             shipping_quote=None,                    # nobody quoted freight
             expected_supplier_cost_cents=None,      # nobody approved a spend
             isSandbox=1,                            # literal 1; assert_sandbox refuses True

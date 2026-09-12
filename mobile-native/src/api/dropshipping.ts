@@ -1435,6 +1435,64 @@ export function supplierOrderStateCopy(state: string): string {
 }
 
 /**
+ * Why a paid sale cannot yet be turned into a supplier purchase.
+ *
+ * Third copy of a Python enumeration, same shape and same risk as
+ * `SUPPLIER_ORDER_STATES` above, and pinned the same way — against the literals
+ * `fulfillment.BLOCKERS` actually holds, in
+ * `tests/dropshipping/test_supplier_obligation_copy.py`.
+ *
+ * `SHOP_BINDING_REQUIRED` is the one that is true of the connection rather than
+ * of any one sale, so it appears on every obligation at once. That is not a
+ * duplication bug: each obligation is separately unfulfillable, and hiding it
+ * from all but the first would leave a merchant fixing the sales one at a time.
+ */
+export const SUPPLIER_OBLIGATION_BLOCKERS = [
+  "SUPPLIER_ORDER_ALREADY_PLACED",
+  "SHOP_BINDING_REQUIRED",
+  "NOT_SHIPPING_LANE",
+  "DESTINATION_MISSING",
+  "DESTINATION_INCOMPLETE",
+  "SUPPLIER_SKU_MISSING",
+  "SUPPLIER_COST_UNKNOWN"
+] as const;
+export type SupplierObligationBlocker = (typeof SUPPLIER_OBLIGATION_BLOCKERS)[number];
+
+/**
+ * What each blocker means, and — where there is one — what the merchant can do.
+ *
+ * A total `Record` for the reason the state copy above is one: adding a blocker
+ * to the list without writing words for it has to fail the compiler here.
+ *
+ * Two of these have no merchant action at all. `NOT_SHIPPING_LANE` means the
+ * buyer chose collection or a digital delivery, so there is nothing to buy from
+ * a supplier and the sale is already complete — it is an explanation, not a
+ * problem. `DESTINATION_MISSING` means the address the buyer paid against is not
+ * on the record, which a merchant cannot supply on their behalf; asking them to
+ * type one would be inventing a delivery address for somebody else's parcel.
+ */
+export const SUPPLIER_OBLIGATION_BLOCKER_COPY: Record<SupplierObligationBlocker, string> = {
+  SUPPLIER_ORDER_ALREADY_PLACED: "You have already ordered this from your supplier",
+  SHOP_BINDING_REQUIRED: "Choose which of your supplier shops to order through in Connection settings",
+  NOT_SHIPPING_LANE: "This sale is not being shipped, so there is nothing to order",
+  DESTINATION_MISSING: "This order has no delivery address on record",
+  DESTINATION_INCOMPLETE: "The delivery address is missing something your supplier requires",
+  SUPPLIER_SKU_MISSING: "This listing is not linked to a supplier product code",
+  SUPPLIER_COST_UNKNOWN: "Your supplier has not quoted a cost for this variant"
+};
+
+/**
+ * Merchant-readable words for a blocker, including one this build has never
+ * heard of. Same fallback as `supplierOrderStateCopy`, same reason.
+ */
+export function supplierObligationBlockerCopy(blocker: string): string {
+  return (
+    SUPPLIER_OBLIGATION_BLOCKER_COPY[blocker as SupplierObligationBlocker] ||
+    "Something about this order stops it being sent to your supplier"
+  );
+}
+
+/**
  * One paid sale and the supplier purchase it owes.
  *
  * Two orders, deliberately: `orderId` is the customer's order, `intentId` is
@@ -1444,6 +1502,11 @@ export function supplierOrderStateCopy(state: string): string {
  * `supplierCostCents` is on this type because every route in this module is
  * merchant-authenticated (see the file header). It must never reach a buyer
  * surface.
+ *
+ * There is no delivery address on this type, and there must not be. The server
+ * reads one to decide `blockers`, and deliberately does not send it: a merchant
+ * needs to know whether the parcel can be shipped, not where to, and the
+ * address belongs to the buyer.
  */
 export type SupplierObligation = {
   orderId: number;
@@ -1458,10 +1521,37 @@ export type SupplierObligation = {
   provider: string;
   providerProductId: string | null;
   providerVariantId: string | null;
-  externalSku: string | null;
+  /**
+   * The supplier's code for the *bound variant*, not for the product.
+   *
+   * It used to be `externalSku`, read from `marketplace_product_sources`, which
+   * is the product-level column and is usually empty. The two live one table
+   * apart and the one that was sent was never the one the supplier order is
+   * matched on, so the honest case looked like a missing SKU and the populated
+   * case looked like a binding bug.
+   */
+  supplierSku: string | null;
   supplierCostCents: number | null;
   supplierCostCurrency: string | null;
   intentId: string | null;
+  /**
+   * Everything standing between this sale and a supplier purchase, empty when
+   * nothing is.
+   *
+   * Passed through as `string[]` rather than narrowed to the union for the same
+   * reason `state` is: a server ahead of this build can name a blocker this one
+   * has never heard of, and `supplierObligationBlockerCopy` says so rather than
+   * rendering the identifier.
+   */
+  blockers: string[];
+  /**
+   * The server's own answer, not `blockers.length === 0` recomputed here.
+   *
+   * It means every precondition an obligation can carry is satisfied — not that
+   * the order will certainly go through. Freight still has to be quoted, and
+   * that step can refuse on its own grounds.
+   */
+  canPlaceSupplierOrder: boolean;
   state: SupplierOrderState | string;
   supplierOrderPlaced: boolean;
   providerOrderId: string | null;
@@ -1493,10 +1583,14 @@ function normalizeObligation(raw: Record<string, unknown>): SupplierObligation {
     provider: text(raw.provider).toLowerCase(),
     providerProductId: textOrNull(raw.provider_product_id),
     providerVariantId: textOrNull(raw.provider_variant_id),
-    externalSku: textOrNull(raw.external_sku),
+    supplierSku: textOrNull(raw.supplier_sku),
     supplierCostCents: centsOrNull(raw.supplier_cost_cents),
     supplierCostCurrency: textOrNull(raw.supplier_cost_currency),
     intentId,
+    blockers: list<unknown>(raw.blockers)
+      .map((entry) => text(entry))
+      .filter((entry) => entry.length > 0),
+    canPlaceSupplierOrder: raw.can_place_supplier_order === true,
     // Passed through, not narrowed to the union: a state this build has not
     // heard of must survive to `supplierOrderStateCopy`, which says so.
     state: text(raw.state) || "AWAITING_SUPPLIER_ORDER",

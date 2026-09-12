@@ -104,6 +104,8 @@ import { PulseApiError } from "../../../api/pulseApi";
 import {
   DROPSHIPPING_DATA_GAPS,
   DROPSHIPPING_STATES,
+  SUPPLIER_OBLIGATION_BLOCKERS,
+  SUPPLIER_OBLIGATION_BLOCKER_COPY,
   connectionNeedsAttention,
   type DropshippingState,
   type ImportCartItem,
@@ -1941,10 +1943,12 @@ describe("DropshippingOrdersScreen", () => {
       provider: "cj",
       providerProductId: "ext-1",
       providerVariantId: "pv-1",
-      externalSku: "CJ-1",
+      supplierSku: "CJ-1",
       supplierCostCents: 820,
       supplierCostCurrency: "USD",
       intentId: null,
+      blockers: [],
+      canPlaceSupplierOrder: true,
       state: "AWAITING_SUPPLIER_ORDER",
       supplierOrderPlaced: false,
       providerOrderId: null,
@@ -2097,6 +2101,92 @@ describe("DropshippingOrdersScreen", () => {
     DROPSHIPPING_DATA_GAPS.forEach((gap) => {
       expect(view.getByText(gap.needs)).toBeTruthy();
     });
+  });
+
+  it("reads out the bound variant's supplier SKU, which is what the order matches on", async () => {
+    // The gap-15 defect as a merchant met it. This line used to show the
+    // provider's variant id while the supplier order was matched on the SKU, so
+    // the identifier a merchant read out was not the identifier that had to
+    // agree for the order to be accepted.
+    const { view } = await renderOrders([obligation({ supplierSku: "CJ-VARIANT-1" })]);
+    await waitFor(() => expect(view.getByText(/CJ-VARIANT-1/)).toBeTruthy());
+  });
+
+  it("falls back to the variant id rather than showing a blank identifier", async () => {
+    const { view } = await renderOrders([
+      obligation({ supplierSku: null, blockers: ["SUPPLIER_SKU_MISSING"], canPlaceSupplierOrder: false })
+    ]);
+    await waitFor(() => expect(view.getByText(/pv-1/)).toBeTruthy());
+  });
+
+  it("gives every reason a sale cannot be ordered, not just the first", async () => {
+    // The shape of defect this repo keeps making: a merchant fixes the one
+    // reason shown, comes back, and finds another. They are independent
+    // conditions, so all of them are rendered.
+    const { view } = await renderOrders([
+      obligation({
+        supplierSku: null,
+        supplierCostCents: null,
+        blockers: ["SHOP_BINDING_REQUIRED", "SUPPLIER_SKU_MISSING", "SUPPLIER_COST_UNKNOWN"],
+        canPlaceSupplierOrder: false
+      })
+    ]);
+    await waitFor(() =>
+      expect(view.getByText(SUPPLIER_OBLIGATION_BLOCKER_COPY.SHOP_BINDING_REQUIRED)).toBeTruthy()
+    );
+    expect(view.getByText(SUPPLIER_OBLIGATION_BLOCKER_COPY.SUPPLIER_SKU_MISSING)).toBeTruthy();
+    expect(view.getByText(SUPPLIER_OBLIGATION_BLOCKER_COPY.SUPPLIER_COST_UNKNOWN)).toBeTruthy();
+  });
+
+  it("counts the sales that cannot be ordered separately from the ones merely waiting", async () => {
+    // "Waiting" and "cannot go" are different problems. Every row reads
+    // "no supplier order yet" while fulfilment is off, so a single count would
+    // hide the ones that need the merchant to change something.
+    const { view } = await renderOrders([
+      obligation(),
+      obligation({ orderId: 42, blockers: ["SUPPLIER_SKU_MISSING"], canPlaceSupplierOrder: false })
+    ]);
+    await waitFor(() => expect(view.getByText(/2 of these have no supplier order yet/)).toBeTruthy());
+    expect(view.getByText(/1 could not be ordered as things stand/)).toBeTruthy();
+  });
+
+  it("says nothing about blockers when there are none", async () => {
+    const { view } = await renderOrders([obligation()]);
+    await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
+    expect(view.queryByText(/could not be ordered as things stand/)).toBeNull();
+    SUPPLIER_OBLIGATION_BLOCKERS.forEach((blocker) => {
+      expect(view.queryByText(SUPPLIER_OBLIGATION_BLOCKER_COPY[blocker])).toBeNull();
+    });
+  });
+
+  it("does not call an already-placed order blocked", async () => {
+    // The server names `SUPPLIER_ORDER_ALREADY_PLACED` on a row it has already
+    // fulfilled, which is true and is not a problem. The state pill says it
+    // better, and repeating it as a warning reads as a fault.
+    const { view } = await renderOrders([
+      obligation({
+        state: "LINKED",
+        supplierOrderPlaced: true,
+        intentId: "cjf_3",
+        providerOrderId: "90001",
+        blockers: ["SUPPLIER_ORDER_ALREADY_PLACED"],
+        canPlaceSupplierOrder: false
+      })
+    ]);
+    await waitFor(() => expect(view.getByText("Placed with your supplier")).toBeTruthy());
+    expect(view.queryByText(SUPPLIER_OBLIGATION_BLOCKER_COPY.SUPPLIER_ORDER_ALREADY_PLACED)).toBeNull();
+    expect(view.queryByText(/could not be ordered as things stand/)).toBeNull();
+  });
+
+  it("renders a blocker it has never heard of as unrecognised, not as nothing", async () => {
+    // Dropping it would leave a merchant a row that cannot be ordered with no
+    // reason on it, which reads as a bug in the screen rather than as something
+    // to go and fix.
+    const { view } = await renderOrders([
+      obligation({ blockers: ["CUSTOMS_PAPERWORK_FROM_A_NEWER_SERVER"], canPlaceSupplierOrder: false })
+    ]);
+    await waitFor(() => expect(view.getByText(/stops it being sent to your supplier/)).toBeTruthy());
+    expect(view.queryByText(/CUSTOMS_PAPERWORK/)).toBeNull();
   });
 });
 

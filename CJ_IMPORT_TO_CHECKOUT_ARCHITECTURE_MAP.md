@@ -33,7 +33,7 @@ broken at the seam where the merchant's world hands off to the buyer's.
 | 9 | Buyer discovery | `lifecycle.is_public` / `public_sql` | `marketplace_listing_lifecycle.py` | `marketplace_listings` ⋈ `marketplace_sellers` |
 | 10 | Cart | `price_label` | `marketplace_cart_routes.py` | `marketplace_cart_items` |
 | 11 | Checkout → order | Stripe + `pulse_upsert_marketplace_order` | `bot.py`, `marketplace_cart_routes.py` | `seller_transactions` → `marketplace_orders` |
-| 12 | Supplier fulfillment | merchant-initiated | `services/business_os/suppliers/fulfillment.py` | `business_os_supplier_intents` + `business_os_supplier_outbox` |
+| 12 | Supplier fulfillment | merchant-initiated; destination + lane read from stage 11, never from the request | `services/business_os/suppliers/fulfillment.py` | `business_os_supplier_intents` + `business_os_supplier_outbox` |
 
 ---
 
@@ -2075,9 +2075,136 @@ exists.
 
 ---
 
+## The eighteenth seam: an obligation nobody could discharge
+
+The seventeenth seam ended with a merchant able to *see* that a paid sale owed a
+supplier purchase. This one measured what they could do about it, and the answer
+was nothing. Four blockers, none of them a symptom of the others.
+
+**The destination was not on the obligation, and was one `json.loads` away.**
+`create_intent` needs `shippingCountryCode`, `shippingCountry`, `shippingProvince`,
+`shippingCity`, `shippingCustomerName` and `shippingAddress`. The buyer supplied
+every one of them at checkout and `marketplace_fulfillment.snapshot` froze them
+onto `seller_transactions.metadata_json` under `fulfillment.details`, already
+cleaned, length-capped and tag-stripped by `validate_details`. `list_obligations`
+joins `marketplace_orders` to that exact row — `seller_transaction_id` and
+`seller_transactions.id` are both INTEGER, so the join needs no cast, unlike the
+intent join four lines below it — and read past the column. The fourteenth
+corollary's own shape, second occurrence in three seams: the fact was frozen on
+the record the serializer was already holding.
+
+**The obligation reported the product's supplier code where its only consumer
+needs the variant's.** `marketplace_product_sources.external_sku` and
+`marketplace_listing_variants.sku` are two adjacent columns from two levels of
+one hierarchy, and the obligation reported the first while `create_intent`
+matches the second. The root cause is a two-line divergence in the importer:
+`_write_variants` reads `variant.get("external_sku")` (importer:286) and
+`link_source` reads `product.get("external_sku")` (importer:330). CJ states a SKU
+per variant, so in the ordinary single-variant import the product-level column is
+NULL — which means the obligation displayed nothing, the merchant had nothing to
+check against CJ, and the failure looked like missing data rather than the wrong
+column.
+
+**The endpoint that quotes freight had no server-side assembler, and therefore
+zero callers.** `gateway.read("shipping", …)` appears nowhere in
+`mobile-native/src`, `templates/` or `static/`. That is the seventh corollary's
+second sub-tell exactly as it was written one seam earlier — but with a cause
+worth separating: the request could only be assembled on the server, because it
+needs the frozen address, the bound variant, the parcel weight and the
+warehouse the stock actually sits in. A client cannot build it without being
+handed the supplier's cost basis, which §27 forbids. So the endpoint was not
+uncalled by oversight; it was uncallable by design, and the missing piece was
+`quote_for_order`.
+
+**And the destination `create_intent` did take, it took from the request body.**
+A merchant-authenticated call could name any address at all. The address the
+buyer paid to ship to was frozen on the transaction and nothing compared the
+two. This is the first defect in the chain that is not a wrong number but a
+wrong *authority*, and it is the same root cause wearing a different coat: the
+server asserted the destination on its caller's word instead of measuring the
+one the buyer paid for.
+
+### A fifth shape: the table that existed in one language
+
+`checkoutCountries.ts` held a 64-entry ISO-3166-1 → name map under a comment
+saying "The server never sees them; it sees the ISO-3166-1 alpha-2 code, which is
+the contract." True of the buyer's half of the wire and false of the supplier's:
+CJ's create-order takes `shippingCountryCode` *and* `shippingCountry`, and the
+second is a name. The sixteenth corollary again — a comment whose subject lives
+in another language — but the remedy is not a comment fix. The server needs its
+own copy of the table, and `test_country_names_match_the_picker`, named in the
+comment I wrote beside it, did not exist until this seam. It does now, and pins
+all 64 entries in both directions plus every spelling.
+
+The two fallbacks are deliberately opposite and a test says so.
+`countryName` in the picker answers the code itself, so an unrecognised country
+the server *does* accept stays selectable; `country_name` on the server answers
+`""`, so its caller can say the address is incomplete. Making the server match
+the picker would send `XK` to a supplier as the name of a country.
+
+### DESTINATION_INCOMPLETE is not defensive
+
+`marketplace_fulfillment._REGION_REQUIRED` holds ten countries, so a buyer in the
+United Kingdom completes an entirely valid checkout with no `address_region`,
+while CJ requires `shippingProvince` unconditionally. A UK dropship sale is
+therefore a real paid order that genuinely cannot be placed, and naming the
+field is the difference between a merchant fixing it and a merchant watching a
+row say "awaiting" forever. That is why there are seven blockers and not six.
+
+### What the battery measured, including in its own author
+
+Twenty-five mutations: twenty-two real, all caught; two inverted with their
+reasoning; one no-op control. Two gave the wrong answer on the first run and
+both were mine.
+
+- **A guard that could not fire, defended by a comment claiming it could.**
+  `supplier_destination` re-checked that the country code it was about to send
+  was two characters long, commented as "what distinguishes a country this
+  platform can ship to from one it can only spell". It distinguishes nothing:
+  `country_name` answers `""` for any code its table does not hold, every key in
+  that table is alpha-2, and the very next field assembled is that name — so a
+  misshapen code was already refused one line later with the same blocker. No
+  test could fail on its removal because its removal changes no outcome. The
+  check is gone; the invariant it gestured at is now one assertion on the table
+  itself, where it is true, and load-bearing on both sides because the picker's
+  `toCountryOptions` silently drops any code whose length is not two.
+- **A rename mutation reported as pinned when what it had found was its own
+  `NameError`.** `supplier_destination` names its local four times and my
+  companion-anchor tuple covered two. A half-done rename is caught for the wrong
+  reason and prints as a pass. The runner now counts the identifier inside that
+  one function and refuses to run the mutation while any reference survives —
+  and counts it in the *code*, because the first version counted the docstring
+  and reported a total rename as partial, which is the same error mirrored.
+
+### What the tests had to be
+
+The gap-14 obligation suite was not measuring the query that runs in production.
+Its helper wrote `marketplace_orders` alone, so once the obligation started
+reading the frozen address every sale in the file would have carried a
+manufactured `DESTINATION_MISSING`. Worse, the suite could not run at all —
+`seller_transactions` was absent from the fixture, and 24 of its 30 tests were
+erroring on `no such table` while the file was nominally part of a green
+directory. The helper now writes both halves, because production has both: the
+transaction Stripe settles and the order projected off it. `details=None`,
+`kind=` and `transaction=False` give every reachable database state a name, so a
+blocker appearing on the default paid sale is a finding rather than the fixture's
+fault.
+
+The two-call flow is pinned by composition rather than by description:
+`quote_for_order`'s `expected_supplier_cost_cents` is handed to `create_intent`
+unchanged and the intent is asserted non-duplicate. A test that asserted 500 on
+both sides separately would pass on two functions that disagree.
+
+`tests/dropshipping/test_supplier_obligations.py` 54, `test_supplier_obligation_copy.py`
+16, `tests/business_os/test_cj_fulfillment.py` 46. Directory total 384 with one
+file per process; `npm run verify` 383 suites / 6571 tests; protection suite 327
+checks across 28 suites.
+
+---
+
 ## What kept coming back
 
-Eighteen defects in this chain, eighteen different subsystems, one shape: **a
+Nineteen defects in this chain, nineteen different subsystems, one shape: **a
 number was asserted rather than measured.**
 
 - `publish()` never wrote `price_label`, and the publish test asserted `status`
@@ -2164,6 +2291,15 @@ number was asserted rather than measured.**
   a known supplier cost and no record anywhere said a purchase was owed. The note
   also named a table that does not exist — and so, until this seam was written,
   did the stage table at the top of this document.
+- The obligation asserted a supplier code by reading the column one level up the
+  hierarchy from the one its only consumer matches on, which is NULL in the
+  ordinary import — and asserted a destination by taking it from the request
+  body, so a merchant-authenticated call could redirect a parcel the buyer paid
+  to have sent elsewhere. The address was frozen on the row the query already
+  reached. Meanwhile the endpoint that prices the freight had zero callers,
+  because its request could only be assembled on the server and no server-side
+  assembler existed. Every test was green: they asserted that a reader returns
+  what that reader reads.
 
 In all of them the suite was green, and in all of them the green was about the
 halves rather than the seam. Where a claim spans two components, this document now
@@ -2434,3 +2570,34 @@ assertion landed on the happy path. The fourteenth corollary says to name the
 writer of every field a fixture sets; the cheap version for an enumerated field
 is to **ask the shared predicate about the fixture first**, in the test, so a
 renamed status fails where it is wrong instead of quietly relocating the test.
+
+The eighteenth is the first one about authority rather than arithmetic, and it is
+the same defect with the stakes changed: **a fact the server already owns must
+not arrive as a parameter, because a parameter is a claim and the owner is a
+measurement.** `create_intent` took `shipping_destination` from its caller and
+its caller took it from the request body, so the address the buyer paid to ship
+to sat frozen on the transaction with nothing comparing the two. Every other
+corollary here describes a green suite over a wrong number; this one was a green
+suite over an authorization hole, and it read as a parameter because parameters
+are how inputs look. The tell is ownership, not validation — no amount of
+sanitising the field makes the caller entitled to name it. **If the record
+answers the question, the request must not be allowed to.** The corresponding
+test is a signature assertion rather than a behavioural one, because the honest
+thing to pin is that the parameter cannot come back: `inspect.signature` over
+`create_intent`, refusing `shipping_destination`, `destination`, `address` and
+`shipping_address` by name.
+
+Its sub-tell is the one this seam's battery found in its own author, and it is
+the thirteenth corollary's inverse: **a branch no test can fail on is not
+covered, it is unreachable — and the comment explaining its purpose is the only
+evidence it ever had.** The thirteenth says a test that reads source text is
+satisfied by whatever the source says. This says the same of a *guard*: the
+two-character check on the country code was subsumed by the line after it, so
+removing it changed no outcome, no suite could go red, and the sentence beside
+it asserting what it distinguished was the entire case for its existence. Only
+the mutation battery could find it, because the finding is "nothing failed" and
+that is exactly what a passing suite looks like. Written while fixing an
+instance of this same family, three files away. **The instrument that measures
+whether an assertion is load-bearing is the only instrument that can tell you a
+guard is decoration**, which is the argument for running the battery over code
+written in the same commit rather than only over the code it was aimed at.

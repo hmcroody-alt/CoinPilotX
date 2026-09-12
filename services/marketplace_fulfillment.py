@@ -108,6 +108,49 @@ def shipping_countries() -> tuple[str, ...]:
     return codes or ("US",)
 
 
+#: ISO-3166-1 alpha-2 -> country name. The same table the checkout's country
+#: picker holds in `mobile-native/src/api/checkoutCountries.ts`, whose comment
+#: says "The server never sees them; it sees the ISO-3166-1 alpha-2 code, which
+#: is the contract." That was true of the buyer's half of the wire and is not
+#: true of the supplier's: CJ's create-order takes `shippingCountryCode` *and*
+#: `shippingCountry`, and the latter is a name ("United States"), which the
+#: frozen address does not hold. `test_country_names_match_the_picker` pins the
+#: two tables to each other so they cannot drift apart.
+_COUNTRY_NAMES = {
+    "AE": "United Arab Emirates", "AR": "Argentina", "AT": "Austria",
+    "AU": "Australia", "BE": "Belgium", "BG": "Bulgaria", "BR": "Brazil",
+    "CA": "Canada", "CH": "Switzerland", "CL": "Chile", "CN": "China",
+    "CO": "Colombia", "CY": "Cyprus", "CZ": "Czechia", "DE": "Germany",
+    "DK": "Denmark", "EE": "Estonia", "EG": "Egypt", "ES": "Spain",
+    "FI": "Finland", "FR": "France", "GB": "United Kingdom", "GH": "Ghana",
+    "GR": "Greece", "HK": "Hong Kong SAR China", "HR": "Croatia",
+    "HU": "Hungary", "ID": "Indonesia", "IE": "Ireland", "IL": "Israel",
+    "IN": "India", "IS": "Iceland", "IT": "Italy", "JP": "Japan",
+    "KE": "Kenya", "KR": "South Korea", "LT": "Lithuania",
+    "LU": "Luxembourg", "LV": "Latvia", "MA": "Morocco", "MT": "Malta",
+    "MX": "Mexico", "MY": "Malaysia", "NG": "Nigeria", "NL": "Netherlands",
+    "NO": "Norway", "NZ": "New Zealand", "PE": "Peru", "PH": "Philippines",
+    "PL": "Poland", "PT": "Portugal", "RO": "Romania", "SA": "Saudi Arabia",
+    "SE": "Sweden", "SG": "Singapore", "SI": "Slovenia", "SK": "Slovakia",
+    "TH": "Thailand", "TR": "Türkiye", "TW": "Taiwan", "UA": "Ukraine",
+    "US": "United States", "VN": "Vietnam", "ZA": "South Africa",
+}
+
+
+def country_name(code: Any) -> str:
+    """The country's name, or ``""`` for a code this table does not know.
+
+    Deliberately the opposite fallback from the picker's ``countryName``, which
+    returns the code itself so that "an unrecognised country the server *does*
+    accept must still be selectable". That is right for a label a human reads
+    and wrong for a field a supplier ships against: `XK` is not the name of a
+    country, and sending it would be this repo's recurring defect -- asserting a
+    fact instead of admitting it is unknown. An empty answer lets the caller say
+    so.
+    """
+    return _COUNTRY_NAMES.get(str(code or "").strip().upper(), "")
+
+
 # ---------------------------------------------------------------------------
 # Kind resolution
 # ---------------------------------------------------------------------------

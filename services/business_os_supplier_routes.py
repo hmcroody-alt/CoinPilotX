@@ -294,12 +294,28 @@ def cj_scoped_action(connection_id, action):
         elif action == "import-drafts":
             result = gateway.create_import_draft(_required(body, "snapshot_id"), connection_id, business_id, store_id, actor,
                                                  body.get("merchant_fields", {}), context=context)
+        elif action == "fulfillment-quotes":
+            # Freight for one paid order. A read: it spends nothing with the
+            # supplier and writes no intent, which is why it is not behind
+            # `require_sandbox` like the action below it. It exists because the
+            # snapshot `fulfillment-intents` demands could not be produced by
+            # any caller -- the request has to be built out of the frozen order,
+            # so the server builds it.
+            from services.business_os.suppliers import fulfillment
+            result = fulfillment.quote_for_order(connection_id=connection_id, business_id=business_id,
+                store_id=store_id, actor_user_id=actor, order_id=_required(body, "order_id"),
+                context=context)
         elif action == "fulfillment-intents":
             from services.business_os.suppliers import fulfillment
             policy.require_sandbox(body)
+            # No `shipping_destination`. It used to be read straight from this
+            # body, which let a merchant-authenticated request name any address
+            # while the one the buyer paid to ship to sat frozen on the
+            # transaction with nothing comparing the two. `order_destination`
+            # states it now, from that record.
             result = fulfillment.create_intent(connection_id=connection_id, business_id=business_id, store_id=store_id,
                 actor_user_id=actor, order_id=_required(body, "order_id"), items=body.get("items"),
-                shipping_destination=body.get("shipping_destination"), shipping_quote=body.get("shipping_quote"),
+                shipping_quote=body.get("shipping_quote"),
                 expected_supplier_cost_cents=body.get("expected_supplier_cost_cents"), isSandbox=body.get("isSandbox"),
                 idempotency_key=_required(body, "idempotency_key"), context=context)
         elif action in {"subscribe", "unsubscribe"}:
