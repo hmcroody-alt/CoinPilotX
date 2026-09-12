@@ -391,7 +391,13 @@ TELEGRAM_RUNTIME_STATE = {
     "last_handler": "",
     "last_handler_latency_ms": "",
     "last_webhook_status": "",
-    "last_openai_reply_status": "",
+    # Renamed from `last_openai_reply_status`. Typed Telegram questions now go through
+    # `undx_router`, so the answer can come from any of seven providers and a field named
+    # after one of them is a claim the value cannot keep. `last_ai_reply_source` records
+    # who actually answered, which is the fact the old name was pretending to carry.
+    "last_ai_reply_status": "",
+    "last_ai_reply_source": "",
+    "last_ai_reply_reason": "",
     "openai_key_present": bool(os.getenv("OPENAI_API_KEY")),
     "last_error": "",
 }
@@ -27816,8 +27822,21 @@ def admin_telegram_health_page():
         {"name": "Last successful reply", "value": metadata.get("last_successful_reply_at") or TELEGRAM_RUNTIME_STATE.get("last_successful_reply_at") or "", "detail": "Silent-bot protection heartbeat"},
         {"name": "Polling status", "value": "fresh polling" if not stale else "stale or offline", "detail": metadata.get("bot_username") or ""},
         {"name": "Webhook status", "value": metadata.get("webhook_status") or TELEGRAM_RUNTIME_STATE.get("last_webhook_status") or "unknown", "detail": "Webhook is cleared before polling"},
-        {"name": "OpenAI key loaded", "value": bool(os.getenv("OPENAI_API_KEY")), "detail": "Normal typed questions use OpenAI fallback"},
-        {"name": "Last OpenAI reply status", "value": metadata.get("last_openai_reply_status") or TELEGRAM_RUNTIME_STATE.get("last_openai_reply_status") or "", "detail": "success/fallback"},
+        # This row used to read "Normal typed questions use OpenAI fallback", which is no
+        # longer true: typed questions go through undx_router and any of its providers can
+        # answer, so an absent OPENAI_API_KEY no longer means the bot cannot think. The row
+        # stays because the key's presence is still worth seeing; the claim about what it
+        # gates is the part that had to go.
+        {"name": "OpenAI key loaded", "value": bool(os.getenv("OPENAI_API_KEY")), "detail": "One of several router providers; not required for typed questions"},
+        # Also renamed: this status is the router's own `ok`, not a substring search of the
+        # user-facing apology. `last_openai_reply_status` is read as a fallback so a heartbeat
+        # row written before this deploy still renders instead of blanking.
+        # The detail is the router's own reason when there is one. Without it the row says
+        # "fallback" and an operator has no way to tell a dead provider from an exhausted
+        # budget from a privacy refusal — three different problems with three different
+        # owners, which is exactly what a health panel is for.
+        {"name": "Last AI reply status", "value": metadata.get("last_ai_reply_status") or metadata.get("last_openai_reply_status") or TELEGRAM_RUNTIME_STATE.get("last_ai_reply_status") or "", "detail": TELEGRAM_RUNTIME_STATE.get("last_ai_reply_reason") or "success/fallback"},
+        {"name": "Last AI reply provider", "value": metadata.get("last_ai_reply_source") or TELEGRAM_RUNTIME_STATE.get("last_ai_reply_source") or "", "detail": "Which provider actually answered"},
         {"name": "Last error", "value": heartbeat.get("last_error") or TELEGRAM_RUNTIME_STATE.get("last_error") or "", "detail": ""},
         {"name": "Linked Telegram users", "value": linked_count, "detail": ""},
         {"name": "Pending link codes", "value": pending_codes, "detail": ""},
@@ -109451,7 +109470,8 @@ async def telegram_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, tex
             "last_inbound_update_at": TELEGRAM_RUNTIME_STATE.get("last_inbound_update_at"),
             "last_outbound_reply_at": now_iso,
             "last_successful_reply_at": now_iso,
-            "last_openai_reply_status": TELEGRAM_RUNTIME_STATE.get("last_openai_reply_status"),
+            "last_ai_reply_status": TELEGRAM_RUNTIME_STATE.get("last_ai_reply_status"),
+            "last_ai_reply_source": TELEGRAM_RUNTIME_STATE.get("last_ai_reply_source"),
             "chat_id_masked": _mask_telegram_id(chat_id),
         })
         return result
@@ -109516,12 +109536,34 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if intent == "reply" and routed.get("message"):
             await telegram_reply(update, context, routed["message"], reply_markup=account_reply_markup(update.effective_user.id))
             return
-        if intent == "openai":
-            telegram_trace("TELEGRAM_OPENAI_FALLBACK_START", update, handler=f"text:{intent}")
-            answer = telegram_text_router.answer_telegram_with_openai(original_text, {"linked_user": linked_user})
-            TELEGRAM_RUNTIME_STATE["last_openai_reply_status"] = "success" if "temporarily unavailable" not in answer.lower() else "fallback"
-            telegram_trace("TELEGRAM_OPENAI_RESPONSE_OK", update, handler=f"text:{intent}")
-            await telegram_reply(update, context, answer, reply_markup=account_reply_markup(update.effective_user.id))
+        if intent == telegram_text_router.INTENT_AI_REPLY:
+            telegram_trace("TELEGRAM_AI_REPLY_START", update, handler=f"text:{intent}")
+            answer = telegram_text_router.answer_telegram_question(original_text, {"linked_user": linked_user})
+            # `ok` is the router's own verdict. This line used to read
+            # `"temporarily unavailable" not in answer.lower()` — an admin health status
+            # derived from a substring of the user-facing apology, so rewording that
+            # sentence would have reported every failure as a success.
+            TELEGRAM_RUNTIME_STATE["last_ai_reply_status"] = "success" if answer.get("ok") else "fallback"
+            TELEGRAM_RUNTIME_STATE["last_ai_reply_source"] = answer.get("source") or ""
+            TELEGRAM_RUNTIME_STATE["last_ai_reply_reason"] = answer.get("reason") or ""
+            # Two event names rather than one. The old trace was `TELEGRAM_OPENAI_RESPONSE_OK`
+            # and was emitted whether or not a provider had answered, so a log search for
+            # failures found nothing and a search for successes found everything.
+            telegram_trace(
+                "TELEGRAM_AI_REPLY_OK" if answer.get("ok") else "TELEGRAM_AI_REPLY_UNAVAILABLE",
+                update, handler=f"text:{intent}",
+                # The router's own wording for why no provider answered. `exception_text` is
+                # the trace's only detail channel and is what carries `str(exc)` elsewhere;
+                # it is passed only on the failure path so the field never describes a
+                # success.
+                exception_text="" if answer.get("ok") else (answer.get("reason") or ""),
+            )
+            # Falls back to the sentence, not to "". If the envelope contract is ever broken
+            # the user should see an apology, not have `reply_text("")` raise inside a `try`
+            # whose `except` sends a different apology and logs an exception.
+            await telegram_reply(update, context,
+                                 answer.get("message") or telegram_text_router.AI_UNAVAILABLE_MESSAGE,
+                                 reply_markup=account_reply_markup(update.effective_user.id))
             return
     except Exception as exc:
         logging.exception("Telegram text router failed for user=%s: %s", update.effective_user.id, exc)
