@@ -475,6 +475,43 @@ is no persisted intent whose `external_shop_id` a first bind could invalidate.
 the failed reconnect that proves the trap was closed, bind, order, dispatch —
 because that is the claim. Eleven tests; six mutations, six killed.
 
+### Reachability, applied to the fix itself
+
+The rule this seam produced says a guard is unfinished until something can
+satisfy it, so it applies to `bind_shop` too. Grepping the callers of
+`suppliers/cj` found exactly one — `mobile-native/src/api/dropshipping.ts` — and
+it has no shop-binding call. A routed, tested service function nothing can reach
+is the same dead end one layer up.
+
+`scripts/cj_bind_shop.py` is the operator surface, on the
+`publish_and_approve_listing14.py` pattern: dry run by default, `--apply` to
+write, scope from argparse or environment and never a literal. It lists shops
+with the dispatch predicate's verdict already applied, refuses locally before
+calling `bind_shop` if the chosen shop is not fulfillable, and places no
+supplier order. A merchant-facing screen is still owed; this is what exists now.
+
+### What production actually answers
+
+Running that dry run against the live connection did not produce a shop list. It
+produced CJ's refusal:
+
+```
+CJ refused the shop list: SUPPLIER_REJECTED endpoint=shop/getShops provider_code=0
+```
+
+Everything on our side worked — authorization, vault unseal, credential
+hydration, the live call. CJ answered `shop/getShops` with business code `0`,
+which is the case `_verify`'s docstring already describes: an account owning no
+external storefront is answered with a code CJ's own documentation does not
+list. Connecting survives it deliberately (importing needs no shop). Binding
+cannot, because there is nothing to choose from.
+
+So the *code* blocker is closed and the remaining one is external: the CJ
+account owns no API-platform shop. Creating it is the same CJ console path the
+API key came from — Apps → install **API** → Add API — and it is a merchant
+action, not a deploy. Until it exists, `create_intent` will keep answering
+`shop_binding_required`, and that answer is now correct rather than terminal.
+
 ---
 
 ## What kept coming back
