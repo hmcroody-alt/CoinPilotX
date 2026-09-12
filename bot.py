@@ -54435,7 +54435,25 @@ def api_pulse_marketplace_seller_listings():
     )
     rows = [dict(row) for row in cur.fetchall()]
     media_by_listing = pulse_marketplace_media_rows_for_listings(cur, [row.get("id") for row in rows])
-    items = [pulse_marketplace_listing_payload(row, media_by_listing.get(int(row.get("id") or 0), [])) for row in rows]
+    from services.business_os.marketplace import listing_readiness as _readiness
+    items = []
+    for row in rows:
+        media_rows = media_by_listing.get(int(row.get("id") or 0), [])
+        payload = pulse_marketplace_listing_payload(row, media_rows)
+        # The readiness verdict is attached HERE and not inside
+        # `pulse_marketplace_listing_payload`, because that serializer also feeds
+        # the buyer endpoints, and "this listing has no price yet" is the
+        # merchant's own business. This route is the seller reading their own
+        # store -- `l.seller_user_id=?` above -- so the verdict cannot reach
+        # anyone else through it.
+        #
+        # Computed from `row`, the database row, rather than from `payload`: the
+        # serializer coerces `quantity` through a spread and a blank price to "",
+        # and readiness has to see the NULL that distinguishes "no stock tracked"
+        # from "none left". Losing exactly that distinction is what the client's
+        # own derivation did.
+        payload["readiness"] = _readiness.evaluate(row, media=media_rows)
+        items.append(payload)
     conn.close()
     return jsonify({"ok": True, "items": items, "limit": limit})
 

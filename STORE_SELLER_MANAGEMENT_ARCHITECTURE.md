@@ -90,7 +90,7 @@ is recorded here as known debt rather than quietly left unmentioned.
 
 ---
 
-## 3. GAP 21 — the honest checklist is not honest (measured today, unfixed)
+## 3. GAP 21 — the honest checklist is not honest (FIXED, `ddef7c03`)
 
 Probe: a native draft, every publish requirement satisfied, physical
 fulfilment, and the seller answers the inventory question truthfully with zero.
@@ -146,6 +146,108 @@ Put the two side by side:
 Two authorities, two directions, same cause: something that reports readiness is
 not the thing that enforces it. Both are in scope for this mission's §5/§81, and
 neither is fixed by writing a new evaluator beside them.
+
+### How gap 21 was fixed
+
+`service.publish_blockers(fulfillment_type=, inventory_qty=)` — one predicate,
+two callers. `transition_product` raises the first blocker it returns; the
+checklist lists all of them. Behaviour of the publish verb is unchanged (same
+code, same message, same 409); only the checklist stopped guessing.
+
+A note on what unification cost: once the checklist *asks* the engine, an
+agreement test between them goes green even if the engine's rule is wrong,
+because both sides move together. So the rule also needs a direct pin. Mutation D
+— engine forgets that zero is empty — confirmed that concern was real: it was
+caught by the direct pin, while the agreement test alone would have accepted it.
+
+---
+
+## 3b. GAP 22 / GAP 23 — the client's verdict (FIXED server-side)
+
+Both are symptoms of authority #4 existing at all, and both are cured at the
+source rather than patched on the client.
+
+**GAP 22 — unknown stock renders as sold out.** `marketplace_listings.quantity`
+is nullable, and a NULL means the seller does not track stock.
+`pulse_marketplace_listing_payload` passes it through untouched via `**item`. Then
+`mobile-native/src/api/marketplace.ts:645` does `quantity: Number(item.quantity || 0)`
+and the distinction is gone; `storeDashboard.ts:167` maps the resulting `0` to
+`"out_of_stock"`, which pushes the listing into the "out" tab, raises the red
+attention banner, and excludes it from "active". A merchant who simply does not
+count stock is told their product is unavailable. This is listed in the client's
+own `STORE_MOCK_DATA_GAPS` (entry 7), whose stated fix is *"quantity preserved as
+null through listing normalization"* — written down, never done.
+
+**GAP 23 — a missing price is silence.** `StoreListingRow.tsx:126` renders nothing
+when `price_label` is blank. That is safe from the "$0.00"/"Free" failure §12
+forbids, but it gives the merchant no name for the gap, which §12 and §7 both
+require.
+
+### The fix: one server-authoritative verdict
+
+`services/business_os/marketplace/listing_readiness.py` — `evaluate(listing, media=)`
+returns `{publishable, checkout_ready, blockers[], warnings[]}`, attached to each
+row by `/api/pulse/marketplace/seller/listings`.
+
+Design decisions worth keeping:
+
+- **It is not a fifth vocabulary.** Every code it shares with
+  `suppliers/drafts.py` is spelled identically, and
+  `test_the_vocabulary_matches_the_supplier_evaluator` fails if either side
+  renames one. That test is the cheapest available guard against the fifth
+  authority this map warned about.
+- **Unknown ≠ empty.** `UNKNOWN_INVENTORY` and `OUT_OF_STOCK` are separate codes.
+  Unknown blocks *checkout* without blocking *publication* — failing closed on the
+  promise to a buyer, open on the merchant's right to list.
+- **Stock never blocks publication.** A merchant restocking a live listing is the
+  ordinary case; unpublishing it would cost the listing its ranking and reviews
+  over a temporary fact.
+- **Computed from the database row, not the serialized payload.** The serializer
+  coerces `quantity` and defaults a blank price, so readiness must see the raw
+  NULL. `test_an_untracked_quantity_reaches_the_verdict_as_unknown` asserts this
+  through Flask against a row written as NULL, and would fail if anyone switched
+  the call to the payload.
+- **Attached in the seller route, not the serializer.**
+  `pulse_marketplace_listing_payload` also feeds the public listing page and
+  `/api/pulse/marketplace/search`. Attaching readiness there would have told every
+  shopper which sellers have unpriced drafts and empty shelves.
+  `test_a_buyer_facing_listing_carries_no_verdict` pins the separation.
+
+### Two bugs the tests caught before this shipped
+
+Recorded because both were *in the code written to prevent them*, which is the
+pattern worth recognising:
+
+1. **`_text(0)` is `""`.** The helper is `str(value or "").strip()`, so the blank
+   check `_text(raw) == ""` reported an integer `0` as blank and every genuinely
+   sold-out listing came back `UNKNOWN_INVENTORY`. That is `Number(x || 0)` — the
+   client bug this module exists to fix — wearing a different costume. The blank
+   test now runs on string spellings only.
+2. **`product_type` and `delivery_type` are both `TEXT DEFAULT 'digital'`.** The
+   first `_tracks_stock` matched on those two columns, so a physical lamp created
+   by the modern write path (which sets `listing_type`) looked digital, and the
+   entire inventory half of the verdict silently did nothing for every row in the
+   store. Fixed by asking `services/marketplace_listing_types.effective_listing_type`
+   — the existing owner of "which of the five types is this row" — instead of
+   inventing a third precedence rule beside it and `bot.py:19625`.
+
+Bug 2 is the more instructive: **the unit tests could not see it, because the
+fixture passed `product_type` directly and so agreed with the engine's wrong
+reading of the row.** Only the route test — which inserts a row and lets the
+column defaults apply — failed. The fixture has since been corrected to carry
+both columns with the values a real row carries, and
+`test_the_default_column_values_do_not_make_everything_stockless` pins it.
+
+A 13-mutant battery over the engine (`scripts/mutate_listing_readiness.sh`) has
+no survivors; each mutant is `ast.parse`-verified, because a malformed mutant is
+not evidence.
+
+### Still open on the client
+
+The server now answers; the client still derives. Retiring authority #4 —
+`storeReadiness`, `listingHealth` and the client's private `LOW_STOCK_THRESHOLD`
+— and rendering `readiness` instead is the remaining half of §5, along with §12's
+"Price required" and §7's "N things left".
 
 ---
 
