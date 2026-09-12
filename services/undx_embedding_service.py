@@ -699,6 +699,48 @@ def _parse(body: dict[str, Any], *, expected: int, dimensions: int) -> tuple[lis
     return vectors, tokens
 
 
+def _reported_cost_usd(body: dict[str, Any]) -> float | None:
+    """What the provider says this call cost, or `None` if it did not say.
+
+    Perplexity's embeddings response carries `usage.cost.total_cost`, in the same
+    shape the chat completions response uses, and until now this adapter threw it
+    away and priced the call from a table instead. A table is a figure someone read
+    on a date; this is a measurement of the call that just happened, and it stays
+    right through a price change nobody has noticed. `undx_router._normalise_usage`
+    already prefers it for chat, so preferring it here keeps the two accounting
+    paths from disagreeing about which source ranks higher.
+
+    Deliberately *not* folded into `_parse`. That function's contract is "vectors or
+    raise", it is called directly by the wire-contract tests, and widening its return
+    tuple would make a money question part of a correctness parse. It is also the
+    reason this returns `None` rather than raising: a response with a good vector and
+    a garbled cost block is a usable embedding, and refusing it to protect the
+    bookkeeping would be the wrong trade.
+    """
+    usage = body.get("usage")
+    if not isinstance(usage, dict):
+        return None
+    cost = usage.get("cost")
+    if not isinstance(cost, dict):
+        return None
+    raw = cost.get("total_cost")
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        logger.warning("undx_embedding: unparseable reported cost %r", raw)
+        return None
+    # Deliberately no range check here. A negative figure is unusable - a refund is
+    # not something the ledger can represent, and subtracting it would understate
+    # the month - but `undx_capabilities.record_spend` already rejects it and falls
+    # back to the price table. A second check would be unfalsifiable: every test
+    # that tried to exercise it would pass whether or not it existed, because the
+    # layer below produces the same outcome. This repo's own rule is that a guard
+    # no test can kill is a comment with a code shape, so the rule lives in exactly
+    # one place and it is the place that decides what gets recorded.
+
+
 def embed_texts(texts: Sequence[str], *, purpose: str = "unspecified") -> EmbeddingBatch:
     """Embed a list of texts. Returns L2-normalised vectors in input order.
 
@@ -773,6 +815,28 @@ def embed_texts(texts: Sequence[str], *, purpose: str = "unspecified") -> Embedd
             billed = tokens or sum(estimate_tokens(prepared[index]) for index in indices)
             total_tokens += billed
             _budget_record(billed)
+            # Metered on the same number the budget restrains on, at the same point,
+            # so the in-process budget and the durable ledger cannot end up
+            # disagreeing about how many tokens were bought. `billed` is the
+            # provider's own count when it reports one and an estimate otherwise;
+            # using the estimate in both places is honest, using it in one would not
+            # be. Per batch rather than per `embed_texts` call because a batch is what
+            # the provider charges for, and a run that fails on batch three has still
+            # paid for batches one and two.
+            #
+            # `model` is the *effective* model, including an env override. If that
+            # override names something the price table has not heard of, this records
+            # as an uncosted call rather than silently at the default model's rate -
+            # which is the behaviour `test_an_unknown_model_on_a_priced_provider_is_uncosted`
+            # pins, and the only signal that a rename happened.
+            undx_capabilities.record_spend(
+                undx_capabilities.CALL_KIND_EMBEDDING,
+                _CAPABILITY.name,
+                units=billed,
+                model=model,
+                input_tokens=billed,
+                reported_cost_usd=_reported_cost_usd(body),
+            )
             record_counter("embedding_texts_embedded", len(indices))
             record_counter("embedding_tokens_embedded", billed)
             for position, index in enumerate(indices):

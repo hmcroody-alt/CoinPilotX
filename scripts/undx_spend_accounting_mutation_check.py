@@ -49,9 +49,11 @@ from undx_call_domain_mutation_check import build_sandbox  # noqa: E402
 
 COST = "services/undx_cost.py"
 CAPS = "services/undx_capabilities.py"
+EMBED = "services/undx_embedding_service.py"
 
 COST_TESTS = "tests/test_undx_cost_budget.py"
 CAPS_TESTS = "tests/test_undx_capabilities.py"
+EMBED_TESTS = "tests/undx_agent/test_embedding_wire_contract.py"
 
 #: (label, file, old, new, test that must fail, test file)
 MUTATIONS = [
@@ -153,6 +155,92 @@ MUTATIONS = [
         '        # Passing None through matters here and it must not turn into 0: that is\n',
         None,
         CAPS_TESTS,
+    ),
+    (
+        # `if reported_cost_usd:` reads identically to `is not None` at a glance and
+        # differs on exactly one value. A provider stating it charged nothing has
+        # told us something; treating 0.0 as "said nothing" moves a measured zero
+        # into the unpriced column, which is the same collapse as the first
+        # mutation in this list arriving from the other direction.
+        "capabilities: read a reported zero as no report at all",
+        CAPS,
+        '    if reported_cost_usd is not None:\n',
+        '    if reported_cost_usd:\n',
+        "test_a_reported_zero_is_a_measured_zero",
+        CAPS_TESTS,
+    ),
+    (
+        # Precedence inverted. The table is a price someone read on a date and the
+        # report is a measurement of this call, so trusting the table means a price
+        # change nobody has noticed yet makes the ledger quietly wrong while every
+        # test about "is it priced" stays green.
+        "capabilities: prefer the price table over the provider's own figure",
+        CAPS,
+        '            reported_usable = cost_micro >= 0\n',
+        '            reported_usable = False\n',
+        "test_a_reported_cost_beats_the_table",
+        CAPS_TESTS,
+    ),
+    (
+        # The disagreement this branch was written to remove. The embedding adapter
+        # returns None for an unusable report and so lands on the table; if this
+        # layer recorded unknown instead, the same garbled response would be costed
+        # differently depending on which layer noticed it, and only one of the two
+        # is covered by any caller's tests.
+        "capabilities: record an unusable report as unknown instead of using the table",
+        CAPS,
+        '    if not reported_usable:\n        cost_micro = price_micro_usd('
+        'kind, provider, units, model=model)\n',
+        '    if reported_cost_usd is None:\n        cost_micro = price_micro_usd('
+        'kind, provider, units, model=model)\n',
+        "test_an_unusable_report_falls_back_to_the_table_not_to_unknown",
+        CAPS_TESTS,
+    ),
+    (
+        # "Fall back to the table" implemented as "fall back to zero" - the shape
+        # that passes every priced-provider test in the suite and silently reports
+        # unpriced image spend as free.
+        "capabilities: fall back to zero rather than to the table",
+        CAPS,
+        '    if not reported_usable:\n        cost_micro = price_micro_usd('
+        'kind, provider, units, model=model)\n',
+        '    if not reported_usable:\n        cost_micro = price_micro_usd('
+        'kind, provider, units, model=model) or 0\n',
+        "test_an_unusable_report_on_an_unpriced_provider_is_still_unknown",
+        CAPS_TESTS,
+    ),
+    (
+        # The state this adapter was in before this phase: the provider reports what
+        # it charged and the adapter throws it away, pricing from a table instead.
+        "embedding: discard the provider's reported cost again",
+        EMBED,
+        '                reported_cost_usd=_reported_cost_usd(body),\n',
+        '',
+        "test_the_provider_reported_cost_beats_the_price_table",
+        EMBED_TESTS,
+    ),
+    (
+        # Not "stop metering" - meter under the wrong kind. Dropping the call is
+        # obvious in a report that suddenly has no embedding row; folding it into
+        # chat is invisible, because chat is the number everyone already reads and
+        # it is supposed to be the large one.
+        "embedding: meter the call as chat",
+        EMBED,
+        '                undx_capabilities.CALL_KIND_EMBEDDING,\n',
+        '                undx_capabilities.CALL_KIND_CHAT,\n',
+        "test_a_successful_batch_is_recorded_as_embedding_not_chat",
+        EMBED_TESTS,
+    ),
+    (
+        # Meter a different number from the one the budget restrains on. Both
+        # figures exist at this line and they agree today only because the same
+        # variable is passed to both, which is the point.
+        "embedding: meter the batch size instead of the billed tokens",
+        EMBED,
+        '                input_tokens=billed,\n',
+        '                input_tokens=len(indices),\n',
+        "test_the_metered_token_count_is_the_one_the_budget_restrains_on",
+        EMBED_TESTS,
     ),
 ]
 

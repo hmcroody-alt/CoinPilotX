@@ -25,10 +25,14 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import struct
+import tempfile
 import unittest
 from unittest.mock import patch
 
+from services import undx_capabilities as cap
+from services import undx_cost
 from services import undx_embedding_service as embed
 
 
@@ -262,6 +266,145 @@ class StatusClassificationIsUnchanged(unittest.TestCase):
 
     def test_non_json_body_is_named(self):
         self.assertIn("non-JSON", expect_failure(FakeResponse(200, "<html>gateway</html>")).reason)
+
+
+class SpendIsMetered(unittest.TestCase):
+    """Embedding calls must land in the shared cost ledger under `embedding`.
+
+    §22: no unclassified AI spend. Until this was wired, the only record that a
+    Perplexity embedding batch had been paid for was a counter and a per-process
+    budget dict that resets on deploy — so the month's spend report showed chat
+    only, and showed it as the total.
+
+    **Every test here pins `DATABASE_URL` at a temp file**, and that is not
+    boilerplate. `services.db` falls back to the relative path `coinpilotx.db`
+    when the variable is unset, so a ledger test without this writes into the
+    developer's own dev database. That is how it was discovered: wiring the
+    metering and running the four embedding suites left 461 `embedding` rows and
+    851 `chat` rows of test data in the local `coinpilotx.db`. It proved the
+    wiring reached the ledger, and it also means any assertion on a month total
+    without this isolation is really an assertion about how many times the suite
+    has been run.
+    """
+
+    #: Big enough that the reported figure and the table figure cannot be confused
+    #: at micro-USD resolution. The published example's 4.8e-08 is a *sub*-micro
+    #: charge, which floors to 0 — correct behaviour, but useless for telling which
+    #: of the two sources was consulted.
+    MANY_TOKENS = 1_000_000
+    REPORTED_USD = 0.02          # 20,000 micro-USD
+    TABLE_MICRO_FOR_MANY = 4_000  # pplx-embed-v1-0.6b at $0.004/M
+
+    def setUp(self):
+        self._dir = tempfile.TemporaryDirectory()
+        undx_cost.reset_for_tests()
+        env = patch.dict(
+            "os.environ",
+            {"DATABASE_URL": "sqlite:///" + os.path.join(self._dir.name, "ledger.db")},
+        )
+        env.start()
+        self.addCleanup(env.stop)
+        self.addCleanup(self._dir.cleanup)
+        self.addCleanup(undx_cost.reset_for_tests)
+
+    def _row(self):
+        snapshot = undx_cost.month_snapshot()
+        self.assertEqual(snapshot["source"], "ledger")
+        return snapshot["kinds"].get(cap.CALL_KIND_EMBEDDING)
+
+    def test_a_successful_batch_is_recorded_as_embedding_not_chat(self):
+        """The specific laundering §22 is about: this spend must not arrive in the
+        chat bucket, where it would be invisible because chat is the number
+        everyone already reads."""
+        run_with(FakeResponse(200, wire_response([int8_vector(1)])))
+        snapshot = undx_cost.month_snapshot()
+        self.assertEqual(snapshot["kinds"][cap.CALL_KIND_EMBEDDING]["calls"], 1)
+        self.assertNotIn(undx_cost.CALL_KIND_CHAT, snapshot["kinds"])
+        self.assertIn("perplexity", snapshot["providers"])
+
+    def test_the_provider_reported_cost_beats_the_price_table(self):
+        """A table is a price someone read on a date; a reported cost is a
+        measurement of the call that just happened. Asserted by making the two
+        disagree by 5x, so a green result cannot mean "both happened to match"."""
+        body = wire_response([int8_vector(2)], tokens=self.MANY_TOKENS)
+        body["usage"]["cost"]["total_cost"] = self.REPORTED_USD
+        run_with(FakeResponse(200, body))
+
+        row = self._row()
+        self.assertEqual(row["cost_micro_usd"], 20_000)
+        self.assertNotEqual(row["cost_micro_usd"], self.TABLE_MICRO_FOR_MANY)
+        self.assertEqual(row["uncosted_calls"], 0)
+
+    def test_the_price_table_is_used_when_the_provider_says_nothing(self):
+        """The fallback has to still work, or preferring the report would have
+        traded one blind spot for another. Same token count as the test above, so
+        the two figures are directly comparable and the 5x gap is the only
+        difference between them."""
+        body = wire_response([int8_vector(3)], tokens=self.MANY_TOKENS)
+        del body["usage"]["cost"]
+        run_with(FakeResponse(200, body))
+
+        row = self._row()
+        self.assertEqual(row["cost_micro_usd"], self.TABLE_MICRO_FOR_MANY)
+        self.assertEqual(row["uncosted_calls"], 0)
+
+    def test_a_negative_reported_cost_falls_back_rather_than_crediting_the_month(self):
+        """A refund is not something this ledger can represent, and subtracting it
+        would understate the month. Treated as no report at all."""
+        body = wire_response([int8_vector(4)], tokens=self.MANY_TOKENS)
+        body["usage"]["cost"]["total_cost"] = -5.0
+        run_with(FakeResponse(200, body))
+
+        self.assertEqual(self._row()["cost_micro_usd"], self.TABLE_MICRO_FOR_MANY)
+
+    def test_an_unparseable_reported_cost_falls_back_to_the_table(self):
+        """A garbled cost block is not a reason to refuse a usable embedding, and
+        it is also not a reason to forget the price.
+
+        The first version of this test asserted the opposite — `(0, 1)`, unknown —
+        on the reasoning that a provider contradicting the table makes neither
+        figure trustworthy. It failed, and the failure was right. An unreadable
+        cost block is evidence about the provider's serialization, not about
+        whether $0.004 per million tokens is still the price; dropping a sourced
+        estimate on that basis *understates* the month, which is the outcome §34
+        exists to prevent rather than an instance of obeying it. And
+        `uncosted_calls` is the number that enumerates the pricing gap, so putting
+        a call with a perfectly good table price into it would make that number
+        stop meaning what `unpriced_providers()` says it means.
+
+        The parse problem is not swallowed: both layers log a warning.
+        """
+        body = wire_response([int8_vector(5)], tokens=self.MANY_TOKENS)
+        body["usage"]["cost"]["total_cost"] = "quite a lot"
+        batch, _ = run_with(FakeResponse(200, body))
+
+        self.assertEqual(len(batch.vectors), 1)
+        row = self._row()
+        self.assertEqual((row["cost_micro_usd"], row["uncosted_calls"]),
+                         (self.TABLE_MICRO_FOR_MANY, 0))
+
+    def test_the_metered_token_count_is_the_one_the_budget_restrains_on(self):
+        """If these two ever diverge, the in-process budget and the durable ledger
+        disagree about how much was bought, and the one that blocks spend is not
+        the one anybody reads in a report."""
+        body = wire_response([int8_vector(6)], tokens=4_242)
+        run_with(FakeResponse(200, body))
+        self.assertEqual(self._row()["input_tokens"], 4_242)
+
+    def test_a_failed_call_is_not_recorded_as_spend(self):
+        """A 500 is not a charge. Recording it would inflate the month and could
+        trip a budget on money that was never taken — and the retry loop means one
+        logical call can produce several of these."""
+        expect_failure(FakeResponse(503, {"error": "unavailable"}))
+        self.assertIsNone(self._row())
+
+    def test_an_empty_input_list_records_nothing(self):
+        """`embed_texts([])` short-circuits before the provider. A row here would
+        mean the ledger counts calls that were never made."""
+        with patch.dict("os.environ", BASE_ENV, clear=False):
+            batch = embed.embed_texts(["", "   "], purpose="test")
+        self.assertEqual(batch.vectors, ())
+        self.assertIsNone(self._row())
 
 
 if __name__ == "__main__":

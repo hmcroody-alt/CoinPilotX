@@ -57,6 +57,7 @@ which credential decides whether the call can happen at all.
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field
 from typing import Any
@@ -72,6 +73,8 @@ from services.undx_cost import (
     CALL_KIND_TRANSLATION,
     MICRO_PER_USD,
 )
+
+log = logging.getLogger(__name__)
 
 # --------------------------------------------------------------- pricing units
 
@@ -343,7 +346,8 @@ def unpriced_providers() -> tuple[tuple[str, str], ...]:
 
 
 def record_spend(kind: str, provider: str, *, units: float = 0, model: str = "",
-                 input_tokens: int = 0, output_tokens: int = 0) -> dict[str, Any]:
+                 input_tokens: int = 0, output_tokens: int = 0,
+                 reported_cost_usd: float | None = None) -> dict[str, Any]:
     """Record one non-chat call in the shared ledger under its own `call_kind`.
 
     This is the whole point of the table: an adapter calls it with the count it
@@ -357,13 +361,54 @@ def record_spend(kind: str, provider: str, *, units: float = 0, model: str = "",
     `_UNITS_PER_PRICED_UNIT`'s job, so a per-image charge cannot be read as
     per-token.
 
+    `reported_cost_usd` wins over the table when the provider states what it
+    charged. The table is a price someone read on a date; a reported cost is a
+    measurement of this call, and it stays correct through a price change that
+    nobody has noticed yet. This mirrors what `undx_router._normalise_usage`
+    already does for chat, where a reported cost sets `cost_reported` and skips
+    the estimate entirely - the two paths should not disagree about which source
+    of truth ranks higher. Perplexity's embeddings response carries a
+    `usage.cost.total_cost` block, so this is a real input and not a hypothetical.
+
     Never raises. `undx_cost.record` already guarantees that a bookkeeping failure
     does not fail a request that succeeded - the money is spent either way - and
     this adds nothing that could throw on top of it. Specifically: an unknown price
     is not an error, it is a recorded call with `cost_micro_usd=0` and
     `uncosted_calls=1`.
     """
-    cost_micro = price_micro_usd(kind, provider, units, model=model)
+    cost_micro: int | None = None
+    reported_usable = False
+    if reported_cost_usd is not None:
+        try:
+            # Converted here rather than handed to `undx_cost` as `cost_usd`, so that
+            # `_cost_fields` sees one input form from this module and not two.
+            cost_micro = int(round(float(reported_cost_usd) * MICRO_PER_USD))
+            reported_usable = cost_micro >= 0
+        except (TypeError, ValueError):
+            reported_usable = False
+        if not reported_usable:
+            # Falls through to the table rather than recording unknown, and the
+            # choice matters. An unreadable cost block is evidence about the
+            # provider's serialization, not about whether $0.004 per million
+            # tokens is still the right price - so discarding a sourced estimate
+            # here would *understate* the month's dollar total, which is the
+            # failure §34 exists to prevent rather than an instance of obeying it.
+            # `uncosted_calls` is for spend with no price at all; conflating it
+            # with "we have an estimate and the report was garbled" would make the
+            # one number that enumerates the pricing gap stop meaning that.
+            #
+            # This branch also exists to keep one answer to the question. The
+            # embedding adapter's `_reported_cost_usd` already returns None for an
+            # unparseable or negative figure, so it reaches this function as "no
+            # report" and gets the table. If this branch recorded unknown instead,
+            # the same garbled response would be costed differently depending on
+            # which of the two layers noticed - and only one of them is covered by
+            # any caller's tests.
+            log.warning("UNDX capability spend: unusable reported cost kind=%s "
+                        "provider=%s value=%r - pricing from the table instead",
+                        kind, provider, reported_cost_usd)
+    if not reported_usable:
+        cost_micro = price_micro_usd(kind, provider, units, model=model)
     return undx_cost.record({
         "provider": provider,
         "model": model,

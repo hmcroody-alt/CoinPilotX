@@ -1053,3 +1053,129 @@ not one: `services.db.CompatRow` is a `Mapping` that *also* accepts integer subs
 `tuple(row)` yields column **names** on Postgres and **values** on SQLite. `undx_cost` is safe
 because `record()` and `month_snapshot()` both index positionally; any code that unpacks or
 casts a whole row would not be. The first version of this probe made that mistake.
+
+## 9. Metering the first non-chat call site, and two things found by doing it
+
+`services/undx_embedding_service.py` now records every successful batch through
+`undx_capabilities.record_spend(CALL_KIND_EMBEDDING, ...)`. This is the first of the four
+non-chat sites in section 3 to be wired, and it was chosen first because it is the only one
+whose provider is priced — so it is the only one where the ledger can be checked against a
+figure rather than against a row count.
+
+The call sits beside the existing `_budget_record(billed)` and is handed the *same* token
+number, deliberately. `billed` is the provider's own count when it reports one and an estimate
+otherwise; using the estimate in both places is honest, using it in one would mean the
+in-process budget that blocks spend and the durable ledger that anyone reads disagree about how
+much was bought. Metering is per batch, not per `embed_texts` call, because a batch is the unit
+the provider charges for and a run that fails on batch three has still paid for one and two.
+
+### The provider was reporting its own cost and the adapter was discarding it
+
+Perplexity's embeddings response carries a `usage.cost.total_cost` block — the same shape the
+chat completions response uses, and already visible in this repo's own wire fixture at
+`tests/undx_agent/test_embedding_wire_contract.py::wire_response`. `_parse()` read
+`total_tokens` out of `usage` and dropped `cost` on the floor, so the one non-chat provider that
+tells us what it charged was being priced from a table instead.
+
+`undx_router._normalise_usage` has preferred a reported cost over an estimate for chat since
+before this mission, setting `cost_reported=True` and skipping the estimate entirely. The two
+accounting paths should not disagree about which source of truth ranks higher, so
+`record_spend` now takes `reported_cost_usd` and prefers it. The table remains the fallback,
+and the fallback is tested, because preferring the report would otherwise have traded one blind
+spot for another.
+
+Why this matters beyond tidiness: the table's prices were read on 2026-08-30 and nothing in the
+repo can detect that they have changed. A reported cost stays correct through a price rise that
+nobody has noticed. The table is now the estimate of last resort rather than the primary.
+
+> Not done, and worth doing: the two figures are both available on a priced call, so a
+> divergence between them is a *measurable* signal that the table has gone stale. Nothing
+> compares them today.
+
+### "The report is unusable" had two different answers, one layer apart
+
+Writing the test found a real disagreement between the two pieces of code added in the same
+change. `_reported_cost_usd()` returned `None` for a garbled figure, which reaches `record_spend`
+as *no report* and lands on the price table. `record_spend`'s own `except` branch recorded the
+same garbled figure as **unknown**, contributing `uncosted_calls=1`. Identical input, two
+answers, decided by which layer happened to notice first — and only one of the two is reachable
+from any caller's tests.
+
+The table fallback is the correct answer and `record_spend` was changed to match it. An
+unreadable cost block is evidence about the provider's serialization, not about whether $0.004
+per million tokens is still the price; discarding a sourced estimate on that basis *understates*
+the month, which is the outcome §34 exists to prevent rather than an instance of obeying it.
+`uncosted_calls` is also the number that enumerates the pricing gap that
+`unpriced_providers()` reports, so putting a call with a perfectly good table price into it
+would make that number stop meaning what it says.
+
+A redundant negative-cost guard in `_reported_cost_usd` was removed in the same pass. It was
+correct and unfalsifiable: `record_spend` rejects a negative figure and falls back to the table,
+so every test written to exercise the adapter's copy would pass whether or not the copy existed.
+By this repo's own standard that is a comment with a code shape, so the rule now lives in one
+place — the place that decides what gets recorded.
+
+### The test suite has been writing into the developer's database
+
+Measured while checking that the new metering reached the ledger at all. `services/db.py`
+falls back to the *relative* path `coinpilotx.db` when `DATABASE_URL` is unset, and
+`undx_cost.ledger_enabled()` defaults to true, so any test that reaches `record()` without
+pinning `DATABASE_URL` writes a real row into the local dev database. After one run of the four
+embedding suites, the worktree's `coinpilotx.db` held **461 `embedding` rows and 851 `chat`
+rows** of accumulated test data.
+
+Two consequences, only the first of which is about this phase:
+
+* Any assertion on a month total without temp-file isolation is really an assertion about how
+  many times the suite has been run on this machine. Every test in the new `SpendIsMetered`
+  class pins `DATABASE_URL` at a `TemporaryDirectory`, and the class docstring says why so the
+  next person does not read it as boilerplate and drop it.
+* `reset_for_tests()` clears the in-process mirror and **not** the ledger file, which is a
+  related trap one level down: three subtests sharing one temp database accumulate, so a fixed
+  expectation passes only on the first iteration. The first version of
+  `test_an_unusable_report_falls_back_to_the_table_not_to_unknown` failed exactly that way and
+  now asserts a delta.
+
+Not fixed globally. An autouse fixture pointing `DATABASE_URL` at a temp file would be the real
+answer, but it would change the database under every suite that currently relies on the dev
+database having schema and data, against a baseline that already has ~325 failures — so it is a
+change to make deliberately with a measured before/after, not as a side effect of a metering
+phase. Recorded here rather than fixed quietly.
+
+### Mutation coverage
+
+`scripts/undx_spend_accounting_mutation_check.py`, 15 mutations, all behaved as specified.
+A separate harness from the classification one on purpose: that script's subject is which
+provider a request reaches, this one's is what a month's spend report says, and a shared list
+would mean every accounting change reran fourteen routing suites to learn nothing.
+`build_sandbox` is shared by import rather than copy, for the reason in its own docstring.
+
+Five of the fifteen are shapes that would plausibly survive code review:
+
+| Mutation | Why it reads as harmless |
+|---|---|
+| `cost_micro or 0` before recording | reads as defensive coercion; converts every unknown price into a measured $0.00 and changes no dollar total |
+| early `return {}` when the price is unknown | reads as "do not write garbage rows"; makes image and translation spend report as *no calls made* |
+| dollar branch delegates to `to_micro_usd` | reads as removing duplication; makes an unparseable price free in one input form and unknown in the other |
+| `if reported_cost_usd:` instead of `is not None` | visually identical; differs on exactly one value, and moves a provider-stated $0 into the unpriced column |
+| fall back to `price_micro_usd(...) or 0` | reads as satisfying the type checker; reports unpriced image spend as free |
+
+One mutation must stay **GREEN**: rewording the comment above the load-bearing `None`. Prose
+cannot fail, so if rewording it turns anything red, a test is matching on a comment instead of
+on behaviour.
+
+### Corrections made to tests written in this phase
+
+Recorded because three of them were mine and the code was right each time.
+
+| Claim asserted | What actually happened |
+|---|---|
+| 1,000 tokens at $0.004/M rounds away to nothing under integer micro-USD | it is exactly 4 micro-USD; "the unit is too coarse for our smallest call" does not hold |
+| a Perplexity embedding call costs money | every money assertion used a model name that is not in the table, so all of them recorded as uncosted — a priced *provider* does not make its models priced |
+| a garbled cost block should record as unknown | it should fall back to the table; recording unknown understates the month and overloads the pricing-gap counter |
+
+The second is now pinned as its own test, `test_an_unknown_model_on_a_priced_provider_is_uncosted`,
+because the mistake generalises: a real model rename — a new Perplexity generation, or a typo in
+`UNDX_EMBEDDING_MODEL` — moves spend into the unpriced column with no error, and
+`unpriced_providers()` will not list it either, since the provider *is* priced. The only signal
+is `uncosted_calls` going up on a provider that should never produce one.

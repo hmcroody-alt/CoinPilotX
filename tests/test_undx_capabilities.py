@@ -422,6 +422,65 @@ class RecordSpendTest(unittest.TestCase):
         self.assertEqual(undx_cost.month_snapshot()["providers"]["openai"]["calls"], 3,
                          "the provider axis must still be the total across kinds")
 
+    def test_a_reported_cost_beats_the_table(self):
+        """The table is a price someone read on a date; a report is a measurement
+        of the call. Perplexity's embeddings response carries one, so this is a
+        real input. Asserted with a figure the table cannot produce for these
+        units, so a green result cannot mean the two happened to agree."""
+        cap.record_spend(cap.CALL_KIND_EMBEDDING, "perplexity",
+                         units=1_000_000, model=self.PRICED_MODEL,
+                         reported_cost_usd=0.02)
+        row = self._kinds()[cap.CALL_KIND_EMBEDDING]
+        self.assertEqual((row["cost_micro_usd"], row["uncosted_calls"]), (20_000, 0))
+
+    def test_a_reported_zero_is_a_measured_zero(self):
+        """Distinct from the table returning None. A provider stating it charged
+        nothing has told us something, and it must not be laundered into the
+        unpriced column — nor must `0.0` be mistaken for "no report" by a falsy
+        check, which is the bug this pins."""
+        cap.record_spend(cap.CALL_KIND_IMAGE, "openai", units=1,
+                         model="gpt-image-1", reported_cost_usd=0.0)
+        row = self._kinds()[cap.CALL_KIND_IMAGE]
+        self.assertEqual((row["cost_micro_usd"], row["uncosted_calls"]), (0, 0),
+                         "an unpriced provider that reports $0 is costed, not unknown")
+
+    def test_an_unusable_report_falls_back_to_the_table_not_to_unknown(self):
+        """One answer to "the report is unusable", shared with the embedding
+        adapter's `_reported_cost_usd`, which returns None for the same inputs and
+        so arrives here as no report at all. If this recorded unknown instead, the
+        same garbled response would cost differently depending on which of the two
+        layers noticed it first.
+
+        Negative is in the list because a refund is not representable here and
+        subtracting it would understate the month.
+
+        Asserted as a *delta* per subtest. `reset_for_tests()` clears the process
+        mirror but not the ledger file, so the absolute figure grows by 50,000 each
+        time round and a fixed expectation would pass only on the first iteration —
+        which is how the first version of this test failed.
+        """
+        for bad in ("not a number", object(), -5.0):
+            with self.subTest(reported=bad):
+                before = self._kinds().get(cap.CALL_KIND_EMBEDDING) or {}
+                cap.record_spend(cap.CALL_KIND_EMBEDDING, "perplexity",
+                                 units=1_000_000, model=self.PRICED_MODEL,
+                                 reported_cost_usd=bad)
+                after = self._kinds()[cap.CALL_KIND_EMBEDDING]
+                self.assertEqual(
+                    after["cost_micro_usd"] - before.get("cost_micro_usd", 0), 50_000)
+                self.assertEqual(
+                    after["uncosted_calls"] - before.get("uncosted_calls", 0), 0)
+
+    def test_an_unusable_report_on_an_unpriced_provider_is_still_unknown(self):
+        """The fallback is to the table, not to zero — so when the table has
+        nothing either, the call is unknown. Both halves of the rule in one place,
+        because "fall back to the table" read on its own could be implemented as
+        "fall back to 0" and pass every other test in this class."""
+        cap.record_spend(cap.CALL_KIND_IMAGE, "openai", units=1,
+                         model="gpt-image-1", reported_cost_usd="???")
+        row = self._kinds()[cap.CALL_KIND_IMAGE]
+        self.assertEqual((row["cost_micro_usd"], row["uncosted_calls"]), (0, 1))
+
     def test_a_bookkeeping_failure_does_not_raise_into_the_caller(self):
         """Adapters call this after the provider has already been paid. If it
         could throw, metering a working request would be a way to break it."""
