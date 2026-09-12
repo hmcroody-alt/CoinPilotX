@@ -50,9 +50,12 @@ import {
   DROPSHIPPING_DATA_GAPS,
   IMPORT_OUTCOMES,
   PUBLISH_PROBLEMS,
+  bindConnectionShop,
   centsOrNull,
+  connectionCanFulfil,
   connectionIsUsable,
   connectionNeedsAttention,
+  listConnectionShops,
   getImportCart,
   getSupplierProduct,
   importNeedsReview,
@@ -436,6 +439,44 @@ describe("stateForError separates causes that have different fixes", () => {
       .not.toBe("ERROR");
   });
 
+  /**
+   * The five shop-binding refusals, each with its own next move.
+   *
+   * These were the whole reason the shop picker could not simply be built: every
+   * refusal it can produce landed somewhere wrong. `shop_not_authorized` is a
+   * 403, so it read as "you're not signed in to this store any more" — a
+   * merchant with a healthy session sent to sign in again over a stale shop
+   * list. The rest are 400s and 409s, which match none of the status classes at
+   * the bottom of `stateForError`, so they arrived as a bare "Something went
+   * wrong": no cause, and no hint that the fix is one tap away.
+   *
+   * `shop_binding_required` is the one most accounts will actually meet. It is
+   * what an order against an unbound connection answers, and before the picker
+   * existed there was no screen it could send anybody to.
+   */
+  it.each([
+    ["shop_binding_required", 409, "SHOP_BINDING_REQUIRED"],
+    ["shop_required", 400, "SHOP_BINDING_REQUIRED"],
+    ["shop_not_authorized", 403, "SHOP_NOT_AUTHORIZED"],
+    ["connection_binding_conflict", 409, "SHOP_BINDING_CONFLICT"],
+    ["api_shop_binding_required", 409, "SHOP_CANNOT_FULFIL"],
+    ["ambiguous_shop_name", 409, "SHOP_NAME_AMBIGUOUS"]
+  ])("reads %s as a binding problem with its own fix", (code, status, state) => {
+    expect(stateForError(new PulseApiError("no", status as number, code as string))).toBe(state);
+  });
+
+  /**
+   * The anti-vacuity half: each of those statuses is wrong on its own, so the
+   * named code has to be doing the work. Without this a mapper that classified
+   * 403 and 409 correctly by luck would keep the test above green while the
+   * merchant still read "sign in again".
+   */
+  it("does not let the status decide a binding problem", () => {
+    expect(stateForError(new PulseApiError("x", 403))).toBe("UNAUTHORIZED");
+    expect(stateForError(new PulseApiError("x", 409))).toBe("ERROR");
+    expect(stateForError(new PulseApiError("x", 400))).toBe("ERROR");
+  });
+
   it("does not classify an unknown failure as anything specific", () => {
     expect(stateForError(new Error("boom"))).toBe("ERROR");
     expect(stateForError(new PulseApiError("x", 500))).toBe("ERROR");
@@ -465,6 +506,154 @@ describe("connection usability is one predicate, not a guess per screen", () => 
     // The failure this prevents: a new provider status renders as "Connected",
     // the merchant browses a catalogue, and every search fails.
     expect(connectionIsUsable(connection("SOMETHING_NEW"))).toBe(false);
+  });
+
+  /**
+   * Usable and able-to-fulfil are two questions, and one predicate was
+   * answering both.
+   *
+   * A supplier "shop" is an external storefront authorized inside the
+   * merchant's supplier account. Importing, pricing and publishing need none —
+   * PulseSoc is the storefront — which is why connecting without one is allowed
+   * and why `connectionIsUsable` must keep saying yes here. Placing an order
+   * does need one: `create_intent` refuses an unbound connection outright.
+   *
+   * So "CONNECTED" alone was reported to the merchant as "Connected and
+   * working" over a connection that would refuse every order it ever received.
+   */
+  it("separates a connection that can import from one that can also fulfil", () => {
+    const unbound = { status: "CONNECTED", provider: "cj", externalShopId: null } as any;
+    const bound = { status: "CONNECTED", provider: "cj", externalShopId: "shop-1" } as any;
+
+    expect(connectionIsUsable(unbound)).toBe(true);
+    expect(connectionCanFulfil(unbound)).toBe(false);
+    expect(connectionCanFulfil(bound)).toBe(true);
+  });
+
+  it("does not call a broken connection fulfilling just because a shop is recorded", () => {
+    // A shop id outlives the credential that proved it. Reading only the shop
+    // would report an expired connection as ready to ship.
+    const expired = { status: "AUTH_EXPIRED", provider: "cj", externalShopId: "shop-1" } as any;
+    expect(connectionCanFulfil(expired)).toBe(false);
+  });
+
+  it("treats an empty shop id as no shop, because that is how the server records none", () => {
+    // The server writes "" rather than NULL, deliberately: every downstream
+    // binding check compares the column as a string. A truthiness test that
+    // only knew about null would call this connection ready to fulfil.
+    const unbound = { status: "CONNECTED", provider: "cj", externalShopId: "" } as any;
+    expect(connectionCanFulfil(unbound)).toBe(false);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 4b. The shop list, and the choice made from it
+ * ------------------------------------------------------------------ */
+
+/**
+ * Reading and binding are the two calls that had a route, a service and tests
+ * on the server, and nothing on any client that could reach them. A merchant
+ * could connect, import, publish and sell, then refuse every one of their own
+ * orders with no recorded way out.
+ */
+describe("the fulfilment shop can be read and chosen", () => {
+  it("asks the connection's own endpoint, sending nothing but the scope", async () => {
+    mockPulseApi.mockResolvedValue({ data: { shops: [], external_shop_id: "" } });
+    await listConnectionShops(SCOPE, "conn 1/2");
+
+    const [url, options] = mockPulseApi.mock.calls[0];
+    // Encoded, because a connection id travels in the path here.
+    expect(url).toBe("/api/business-os/suppliers/cj/connections/conn%201%2F2/shops");
+    expect(options.method).toBe("POST");
+    // POST rather than GET so nothing about the merchant's supplier account
+    // lands in an access log's query string.
+    expect(bodyOf(0)).toEqual({ business_id: "biz-1", store_id: 42 });
+  });
+
+  it("keeps the server's fulfillable verdict instead of re-deriving one", async () => {
+    // The client has `platform` and `status` in hand and could compute this.
+    // It must not: the rule lives in the fulfilment layer, the server applies
+    // it per row, and a second copy here would drift from the check the choice
+    // is actually spent against.
+    mockPulseApi.mockResolvedValue({
+      data: {
+        shops: [
+          { shop_id: "s1", name: "Main", platform: "API", status: 1, fulfillable: true,
+            unfulfillable_reason: "" },
+          { shop_id: "s2", name: "Storefront", platform: "Shopify", status: 1, fulfillable: false,
+            unfulfillable_reason: "api_shop_binding_required" }
+        ],
+        external_shop_id: ""
+      }
+    });
+    const result = await listConnectionShops(SCOPE, "c1");
+
+    expect(result.shops.map((shop) => [shop.externalShopId, shop.fulfillable])).toEqual([
+      ["s1", true],
+      ["s2", false]
+    ]);
+    expect(result.shops[0].unfulfillableReason).toBeNull();
+    expect(result.shops[1].unfulfillableReason).toBe("api_shop_binding_required");
+  });
+
+  it("reads a missing or non-boolean verdict as cannot fulfil", async () => {
+    // `Boolean(raw.fulfillable)` would read the string "false" as true, which
+    // offers the merchant a shop the server is about to refuse. The safe
+    // direction is the only one this field is allowed to fail in.
+    mockPulseApi.mockResolvedValue({
+      data: {
+        shops: [
+          { shop_id: "s1", name: "A" },
+          { shop_id: "s2", name: "B", fulfillable: "false" },
+          { shop_id: "s3", name: "C", fulfillable: 1 }
+        ]
+      }
+    });
+    const result = await listConnectionShops(SCOPE, "c1");
+    expect(result.shops.map((shop) => shop.fulfillable)).toEqual([false, false, false]);
+  });
+
+  it("reports an account with no shops as an empty list, not as a failure", async () => {
+    // The normal shape for selling here, and the state of most accounts: no
+    // external storefront at all. The screen turns this into an instruction,
+    // so it must arrive as data rather than as a thrown error.
+    mockPulseApi.mockResolvedValue({ data: { shops: [], external_shop_id: "" } });
+    const result = await listConnectionShops(SCOPE, "c1");
+    expect(result.shops).toEqual([]);
+    expect(result.boundShopId).toBeNull();
+  });
+
+  it("reads the empty string the server writes for 'no shop' as no shop", async () => {
+    mockPulseApi.mockResolvedValue({ data: { shops: [], external_shop_id: "   " } });
+    expect((await listConnectionShops(SCOPE, "c1")).boundShopId).toBeNull();
+  });
+
+  it("drops a shop with no id, because nothing could be bound to it", async () => {
+    mockPulseApi.mockResolvedValue({
+      data: { shops: [{ name: "Nameless", fulfillable: true }, { shop_id: "s1", fulfillable: true }] }
+    });
+    expect((await listConnectionShops(SCOPE, "c1")).shops.map((s) => s.externalShopId)).toEqual(["s1"]);
+  });
+
+  it("survives a server that sends no shops key at all", async () => {
+    mockPulseApi.mockResolvedValue({});
+    const result = await listConnectionShops(SCOPE, "c1");
+    expect(result).toEqual({ shops: [], boundShopId: null });
+  });
+
+  it("sends the chosen shop to the bind endpoint", async () => {
+    mockPulseApi.mockResolvedValue({ data: {} });
+    await bindConnectionShop(SCOPE, "c1", "s1");
+
+    const [url, options] = mockPulseApi.mock.calls[0];
+    expect(url).toBe("/api/business-os/suppliers/cj/connections/c1/bind-shop");
+    expect(options.method).toBe("POST");
+    expect(bodyOf(0)).toEqual({ business_id: "biz-1", store_id: 42, external_shop_id: "s1" });
+  });
+
+  it("lets the server's refusal through rather than reporting a bind that did not happen", async () => {
+    mockPulseApi.mockRejectedValue(new PulseApiError("no", 403, "shop_not_authorized"));
+    await expect(bindConnectionShop(SCOPE, "c1", "s1")).rejects.toBeInstanceOf(PulseApiError);
   });
 });
 

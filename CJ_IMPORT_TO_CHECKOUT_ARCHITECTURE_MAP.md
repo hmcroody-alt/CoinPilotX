@@ -512,7 +512,8 @@ is no persisted intent whose `external_shop_id` a first bind could invalidate.
 
 `tests/business_os/test_cj_shop_binding.py` asserts the whole path — refusal,
 the failed reconnect that proves the trap was closed, bind, order, dispatch —
-because that is the claim. Eleven tests; six mutations, six killed.
+because that is the claim. Seventeen tests, four of them added with the screen
+below, which is what forced the shop *list* to be read as carefully as the bind.
 
 ### Reachability, applied to the fix itself
 
@@ -527,7 +528,8 @@ is the same dead end one layer up.
 write, scope from argparse or environment and never a literal. It lists shops
 with the dispatch predicate's verdict already applied, refuses locally before
 calling `bind_shop` if the chosen shop is not fulfillable, and places no
-supplier order. A merchant-facing screen is still owed; this is what exists now.
+supplier order. A merchant-facing screen was still owed; the section after next
+is that screen.
 
 ### What production actually answers
 
@@ -550,6 +552,56 @@ account owns no API-platform shop. Creating it is the same CJ console path the
 API key came from — Apps → install **API** → Add API — and it is a merchant
 action, not a deploy. Until it exists, `create_intent` will keep answering
 `shop_binding_required`, and that answer is now correct rather than terminal.
+
+### The screen, and the four defects shipping it naively would have added
+
+Building the merchant surface meant measuring what a merchant would actually
+meet on the way to it, not just wiring two routes to two buttons. Four things
+were wrong, and three of them were only reachable *because* the screen existed.
+
+**One: the ordinary case rendered as "Something went wrong."** `connection_shops`
+re-raised CJ's no-storefront refusal as a 422. That is this merchant's exact live
+state and so the most likely outcome of anyone opening the picker — and 422
+matches none of `stateForError`'s status classes, so it fell to the bare error
+copy. `connection_shops` now softens exactly one code, `SUPPLIER_REJECTED`, into
+an empty list: CJ answered, and the answer was not a list. A throttle, an outage
+or a dead credential keeps its own meaning, because "you own no shops" is an
+instruction and printing it falsely sends the merchant to the wrong console.
+`SupplierConnectionError` — *our* refusal of a list that was unsafe or malformed,
+including one echoing the vaulted secret back at us — is never softened. This is
+deliberately narrower than `_verify`'s rule in the same file: there the shop is
+irrelevant to connecting, so any `SupplierError` is survivable; here the shop
+list *is* the answer.
+
+**Two through four: every binding refusal read as something else.**
+`shop_not_authorized` is a 403 and so read as "you're not signed in to this store
+any more". `shop_binding_required`, `shop_required`, `connection_binding_conflict`,
+`api_shop_binding_required` and `ambiguous_shop_name` are 400s and 409s, which
+match no status class at all, so all five read as the generic error. Each now has
+a state and a sentence. They sit *ahead* of the status classes in `stateForError`,
+which is the existing ordering rule and the whole reason the 403 case works.
+
+And `connectionIsUsable` was true for an unbound connection, so the row said
+"Connected and working" over a connection that refuses every order. That predicate
+is unchanged — importing genuinely needs no shop, and narrowing it would brick
+import for every account CJ has no storefront for. The new `connectionCanFulfil`
+is the narrower question, and the row now distinguishes them in words: *"Connected.
+Importing and publishing work; orders need a fulfilment shop."*
+
+Two shapes in the picker itself are worth naming. A shop the server marks
+unfulfillable renders with **no control at all**, not a disabled one — the verdict
+is structural, so there is no state in which the row is tappable and the refusal
+arrives afterwards, which is what used to happen one lost order later. And
+`SHOP_BINDING_REQUIRED` is the one new state with no "Try again": it is a fact
+about the connection, not a verdict on a list, so a second attempt returns the
+identical answer forever. It routes to Suppliers instead.
+
+`scripts/mutation_cj_shop_binding.py` holds the whole claim up: eleven mutations,
+eleven killed. Each removes one invariant above — re-raise the no-storefront
+rejection, soften every failure, soften our own refusal, drop either half of
+`connectionCanFulfil`, trust a truthy `fulfillable`, forget a code mapping, let
+the status decide first, offer a button on an unfulfillable shop, offer the picker
+on a bound connection, give `SHOP_BINDING_REQUIRED` a retry.
 
 ---
 

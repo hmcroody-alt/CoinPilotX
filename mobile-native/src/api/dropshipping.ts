@@ -419,6 +419,87 @@ export async function checkConnectionHealth(
 }
 
 /**
+ * One shop on an existing connection, with the server's verdict attached.
+ *
+ * `fulfillable` is not computed here and must not be. It is the fulfilment
+ * layer's own `dispatch_shop` answer for that shop, returned per row, so the
+ * list a merchant chooses from and the check the choice is spent against cannot
+ * disagree. A client that re-derived it from `platform` and `status` would be a
+ * second copy of a rule that already exists, and the copies drift.
+ */
+export type ConnectionShop = {
+  externalShopId: string;
+  name: string | null;
+  platform: string | null;
+  fulfillable: boolean;
+  /** Why not, when not. Null whenever `fulfillable` is true. */
+  unfulfillableReason: string | null;
+};
+
+export type ConnectionShopList = {
+  shops: ConnectionShop[];
+  /** The shop already bound, or null. A connection may legitimately have none. */
+  boundShopId: string | null;
+};
+
+/**
+ * The shops an *existing* connection can see, read through its stored key.
+ *
+ * `discoverSupplierShops` cannot answer this. It takes an API key, and the key
+ * only exists while the connect form is on screen — afterwards it is in the
+ * server's vault and the merchant has no copy to retype. Without this call
+ * there was no way to see the list a second time, and therefore no way to
+ * choose from it, which is precisely why `bindConnectionShop` below had a
+ * route, a service and tests but nothing that could ever reach it.
+ *
+ * An empty list is a real answer, not a failure. A supplier account that owns
+ * no external storefront is the normal shape for selling here, because PulseSoc
+ * *is* the storefront.
+ */
+export async function listConnectionShops(
+  scope: DropshippingScope,
+  connectionId: string
+): Promise<ConnectionShopList> {
+  const response = await pulseApi<{ data?: Record<string, unknown> }>(
+    `${SUPPLIERS_BASE}/connections/${encodeURIComponent(connectionId)}/shops`,
+    { method: "POST", body: scopeBody(scope) }
+  );
+  const data = response.data || {};
+  return {
+    shops: list<Record<string, unknown>>(data.shops).map((raw) => ({
+      externalShopId: text(raw.shop_id ?? raw.external_shop_id),
+      name: textOrNull(raw.name),
+      platform: textOrNull(raw.platform),
+      // `=== true` rather than truthiness: a server that omitted the field
+      // would otherwise read as "cannot fulfil", which is the safe direction,
+      // but a string "false" would read as "can", which is not.
+      fulfillable: raw.fulfillable === true,
+      unfulfillableReason: textOrNull(raw.unfulfillable_reason)
+    })).filter((shop) => Boolean(shop.externalShopId)),
+    boundShopId: textOrNull(data.external_shop_id)
+  };
+}
+
+/**
+ * Choose the shop this connection fulfils through.
+ *
+ * None-to-one only; the server refuses to replace an existing binding, because
+ * orders already created carry the shop they were created against. Callers
+ * re-list afterwards rather than trusting the response, for the same reason
+ * `connectSupplier` does: the list is what every other surface reads.
+ */
+export async function bindConnectionShop(
+  scope: DropshippingScope,
+  connectionId: string,
+  externalShopId: string
+): Promise<void> {
+  await pulseApi(`${SUPPLIERS_BASE}/connections/${encodeURIComponent(connectionId)}/bind-shop`, {
+    method: "POST",
+    body: scopeBody(scope, { external_shop_id: externalShopId })
+  });
+}
+
+/**
  * Statuses that mean the merchant has to do something before this connection
  * can serve a catalogue. Shared so the Suppliers list, the Find Products empty
  * state and the draft banner cannot disagree about what "connected" means.
@@ -439,6 +520,23 @@ export function connectionNeedsAttention(connection: SupplierConnection): boolea
 
 export function connectionIsUsable(connection: SupplierConnection): boolean {
   return connection.status.toUpperCase() === "CONNECTED";
+}
+
+/**
+ * Whether this connection can actually place a supplier order.
+ *
+ * Deliberately separate from `connectionIsUsable`, and deliberately narrower.
+ * Importing, pricing and publishing need no supplier shop at all — that is why
+ * connecting without one is allowed, and collapsing the two would re-break the
+ * account shape that decision exists to support. Fulfilling does need one:
+ * `create_intent` refuses an unbound connection outright.
+ *
+ * Which means "CONNECTED" was, on its own, answering a question it had not been
+ * asked. A merchant read "Connected and working" off a connection that would
+ * refuse every order it ever received, and found out at the first one.
+ */
+export function connectionCanFulfil(connection: SupplierConnection): boolean {
+  return connectionIsUsable(connection) && Boolean(connection.externalShopId);
 }
 
 /* ------------------------------------------------------------------ *
@@ -1225,6 +1323,17 @@ export const DROPSHIPPING_STATES = [
   "SESSION_EXPIRED",
   "INVALID_CREDENTIAL",
   "SUPPLIER_DISCONNECTED",
+  // The shop-binding conditions. They are separate states rather than one
+  // "binding problem" because the merchant's next move differs in every one:
+  // choose a shop, choose a *different* shop, wait for whoever already bound
+  // this connection, go and create an API app in the supplier console, or go and
+  // rename a storefront there. A single state would have to pick one of those
+  // sentences and be wrong the rest of the time.
+  "SHOP_BINDING_REQUIRED",
+  "SHOP_NOT_AUTHORIZED",
+  "SHOP_BINDING_CONFLICT",
+  "SHOP_CANNOT_FULFIL",
+  "SHOP_NAME_AMBIGUOUS",
   "PROVIDER_UNAVAILABLE",
   "UNAUTHORIZED",
   "ERROR"
@@ -1320,6 +1429,32 @@ export function stateForError(error: unknown): DropshippingState {
   if (code === "merchant_identity_unresolved") return "STORE_MAPPING_MISSING";
   if (code === "store_not_found") return "STORE_NOT_FOUND";
   if (code === "forbidden") return "SUPPLIER_CONNECTION_FORBIDDEN";
+
+  // Every shop-binding code, matched here for the same reason `credential_unusable`
+  // is matched above: their statuses lead the merchant somewhere else entirely.
+  // `shop_not_authorized` is a 403 and so was rendered as "you're not signed in
+  // to this store any more" — a merchant with a perfectly healthy session sent
+  // to sign in again over a stale shop list. The other three are 400s and 409s,
+  // which match none of the status classes at the bottom of this function and so
+  // arrived as a bare "Something went wrong": no cause, and no hint that the fix
+  // is one tap away on the Suppliers screen.
+  //
+  // `shop_binding_required` is the one a merchant meets by accident. It is what
+  // an order against an unbound connection answers, so it is the first time most
+  // accounts will hear that a shop was ever needed. `shop_required` joins it
+  // because the move is identical — go and choose one — and it is what the
+  // connect form gets for a shop field that is not a usable string.
+  //
+  // The rest are reachable from a shop list that has gone stale under the
+  // merchant: the picker marks unfulfillable shops before they are chosen, so
+  // the only way to choose one is for the account to have changed since the list
+  // was drawn. Stale is the normal state of a list left open, so none of them is
+  // hypothetical.
+  if (code === "shop_binding_required" || code === "shop_required") return "SHOP_BINDING_REQUIRED";
+  if (code === "shop_not_authorized") return "SHOP_NOT_AUTHORIZED";
+  if (code === "connection_binding_conflict") return "SHOP_BINDING_CONFLICT";
+  if (code === "api_shop_binding_required") return "SHOP_CANNOT_FULFIL";
+  if (code === "ambiguous_shop_name") return "SHOP_NAME_AMBIGUOUS";
 
   // Both lists are matched ahead of the bare status classes for the same reason
   // the block above is: a named code is the server being specific, and a status

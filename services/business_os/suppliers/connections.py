@@ -672,9 +672,39 @@ def connection_shops(connection_id, business_id, store_id, actor_user_id, *, con
     ``fulfillable`` is not decoration. It is ``fulfillment.dispatch_shop``'s own
     verdict, so a merchant reading this list learns which choice will work
     before making it rather than at the first order they lose.
+
+    An account that owns no shop is the *expected* answer here, not an error.
+    CJ replies to ``shop/getShops`` for such an account with a business code its
+    own documentation does not list, which the transport correctly refuses to
+    interpret and reports as ``SUPPLIER_REJECTED`` (422). That is the state the
+    live connection is in today. Left to propagate it reaches the app as a bare
+    "Something went wrong" -- 422 matches none of the client's status classes --
+    for the single most likely outcome of opening this screen.
+
+    ``_verify`` already made this decision for connecting: an unreadable shop
+    list is survivable when nothing was selected. This is the same rule for
+    reading, and it is narrower on purpose. ``_verify`` survives *any*
+    ``SupplierError`` because there the shop is irrelevant -- importing needs
+    none, so connecting should not fail on it. Here the shop list *is* the
+    answer, so collapsing a throttle or a dead credential into "you have no
+    shops" would print a false instruction: it tells a merchant to go create a
+    storefront when the truth is "ask again in a minute" or "your key is
+    rejected". Only a rejection -- CJ answered, and the answer was not a list --
+    is reported as an empty list. Everything else keeps its own meaning.
+
+    Binding is unaffected. ``bind_shop`` selects, so it goes through
+    ``_live_shops`` directly and an unreadable list stays fatal there, exactly
+    as ``_verify`` requires when something was chosen.
     """
-    _, shops = _live_shops(connection_id, business_id, store_id, actor_user_id,
-                           context=context, adapter=adapter)
+    try:
+        _, shops = _live_shops(connection_id, business_id, store_id, actor_user_id,
+                               context=context, adapter=adapter)
+    except SupplierConnectionError:
+        raise  # Our own refusal of an unsafe or malformed list is never survivable.
+    except SupplierError as exc:
+        if str(getattr(exc, "code", "")).upper() != "SUPPLIER_REJECTED":
+            raise
+        shops = []
     current = get_connection(connection_id, business_id, store_id, actor_user_id, context=context)
     return {"shops": _annotated_shops(shops), "external_shop_id": current["external_shop_id"]}
 

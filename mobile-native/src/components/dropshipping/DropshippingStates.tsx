@@ -1,8 +1,8 @@
 /**
- * The eight states a dropshipping screen can be in, and the pills that render
+ * The states a dropshipping screen can be in, and the pills that render
  * supplier facts without flattening them.
  *
- * ## Why one component owns all eight states
+ * ## Why one component owns every state
  *
  * `DropshippingStateView` returns `null` for `READY` and renders a block for
  * every other state. A screen calls it once, and when it returns a block the
@@ -304,6 +304,65 @@ export function DropshippingStateView({
           // goes to the place that can actually fix it.
           onRetry={onFixConnection || onRetry}
           actionLabel={onFixConnection ? "Check suppliers" : "Try again"}
+          reducedMotion={reducedMotion}
+        />
+      );
+
+    // The shop-binding family. Every one of these used to land on `default:` or,
+    // worse, on "you're not signed in" — `shop_not_authorized` is a 403 — and a
+    // merchant reading either of those has no way to learn that the fix is a
+    // one-tap choice on the Suppliers screen. They are five sentences because
+    // they are five different next moves.
+    case "SHOP_BINDING_REQUIRED":
+      return (
+        <StoreSectionError
+          message="Choose which of your supplier's shops this store sends orders to. Importing and publishing work without one; placing an order doesn't."
+          // No plain retry fallback, unlike its neighbours. The other four are
+          // answers about a shop list that may have moved on, so asking again
+          // can genuinely return something else. This one is a fact about the
+          // connection: until a shop is chosen the answer is identical every
+          // time, and a "Try again" that cannot ever work is an invitation to
+          // keep tapping instead of going to the one screen that fixes it.
+          onRetry={onFixConnection || null}
+          actionLabel="Check suppliers"
+          reducedMotion={reducedMotion}
+        />
+      );
+
+    case "SHOP_NOT_AUTHORIZED":
+      return (
+        <StoreSectionError
+          message="That shop isn't on your supplier account any more, so it can't be chosen."
+          // Retrying re-reads the live list, which is the fix: the list this
+          // screen was showing is the thing that went out of date.
+          onRetry={onRetry}
+          reducedMotion={reducedMotion}
+        />
+      );
+
+    case "SHOP_BINDING_CONFLICT":
+      return (
+        <StoreSectionError
+          message="This supplier connection already sends orders to a different shop, and that can't be changed here — orders already placed are addressed to it."
+          onRetry={onRetry}
+          reducedMotion={reducedMotion}
+        />
+      );
+
+    case "SHOP_CANNOT_FULFIL":
+      return (
+        <StoreSectionError
+          message="Your supplier won't accept orders for that shop from an outside app like PulseSoc. Set one up in your supplier's console that does, then choose it here."
+          onRetry={onRetry}
+          reducedMotion={reducedMotion}
+        />
+      );
+
+    case "SHOP_NAME_AMBIGUOUS":
+      return (
+        <StoreSectionError
+          message="Two shops on your supplier account share a name, so an order has no single destination. Rename one of them in your supplier's console."
+          onRetry={onRetry}
           reducedMotion={reducedMotion}
         />
       );

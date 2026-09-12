@@ -20,17 +20,38 @@
  * and the actions are the same for every provider. The one CJ-specific thing in
  * this feature — that `listSupplierConnections` currently only returns CJ rows —
  * is a filter in the connection layer beneath this screen, not a shape in it.
+ *
+ * ## Connected is two questions, and this screen was answering one
+ *
+ * Importing needs no supplier shop; sending an order does. Connecting without
+ * one is allowed on purpose, because a supplier "shop" is an external storefront
+ * and selling here means PulseSoc *is* the storefront. So a connection can be
+ * perfectly healthy and still refuse every order it receives.
+ *
+ * The server has always known that — `create_intent` answers
+ * `shop_binding_required` — and `bind_shop` has always been the way out. What
+ * did not exist was any way to reach it: no screen called it, and the shop list
+ * it reads from can only be fetched server-side, because the merchant's key
+ * lives in the vault and they have no copy to retype. A routed, tested service
+ * function nothing can call is the same dead end one layer up.
+ *
+ * This screen is that reach. Until it existed the row said "Connected and
+ * working" over a connection that could not ship anything.
  */
 
 import { useCallback, useEffect, useState } from "react";
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
+  bindConnectionShop,
   checkConnectionHealth,
+  connectionCanFulfil,
   connectionIsUsable,
   connectionNeedsAttention,
+  listConnectionShops,
   listSupplierConnections,
   stateForError,
+  type ConnectionShop,
   type DropshippingState,
   type SupplierConnection
 } from "../../api/dropshipping";
@@ -71,6 +92,29 @@ const STATUS_COPY: Record<string, string> = {
   REVOKED: "This credential was revoked."
 };
 
+/**
+ * Why a shop on the list cannot be chosen, in the merchant's words.
+ *
+ * The reason itself is the server's — it is `dispatch_shop`'s own refusal code,
+ * returned per row — so the list and the bind cannot disagree about what is
+ * choosable. This map only translates it.
+ *
+ * An unrecognised reason falls to a flat "can't take orders" rather than to
+ * silence. Silence would leave the row looking ordinary while it is the one row
+ * with no button, which reads as a rendering bug rather than as a verdict.
+ */
+const SHOP_REASON_COPY: Record<string, string> = {
+  api_shop_binding_required: "Your supplier won't take orders for this shop from an outside app.",
+  ambiguous_shop_name: "Shares its name with another shop, so an order has no single destination."
+};
+
+/** An open shop picker: which connection it belongs to, and what it has to show. */
+type ShopPickerState = {
+  connectionId: string;
+  state: DropshippingState;
+  shops: ConnectionShop[];
+};
+
 export function SuppliersScreen({ route, navigation }: Props) {
   const formatters = useFormatters();
   const reducedMotion = useLogiNexusReducedMotion();
@@ -81,6 +125,10 @@ export function SuppliersScreen({ route, navigation }: Props) {
   const [state, setState] = useState<DropshippingState>("LOADING");
   const [refreshing, setRefreshing] = useState(false);
   const [checking, setChecking] = useState<string | null>(null);
+  // At most one picker is open, so there is no arrangement in which two
+  // connections are being bound at once and the second overwrites the first.
+  const [picker, setPicker] = useState<ShopPickerState | null>(null);
+  const [binding, setBinding] = useState<string | null>(null);
 
   const scope = scopeStatus.status.phase === "ready" ? scopeStatus.status.scope : null;
 
@@ -134,6 +182,64 @@ export function SuppliersScreen({ route, navigation }: Props) {
   const openConnect = useCallback(
     () => navigation.navigate("DropshippingConnect", { title: "Connect a supplier" }),
     [navigation]
+  );
+
+  /**
+   * Read the live shop list for one connection.
+   *
+   * Read every time rather than cached with the connection list: the answer is
+   * the supplier's, not ours, and a shop can be renamed, disabled or removed in
+   * their console between two taps. A stale list here is the one thing that
+   * makes the refusals below reachable at all.
+   */
+  const openPicker = useCallback(
+    async (connection: SupplierConnection) => {
+      if (!scope) return;
+      setPicker({ connectionId: connection.id, state: "LOADING", shops: [] });
+      try {
+        const result = await listConnectionShops(scope, connection.id);
+        setPicker({
+          connectionId: connection.id,
+          // EMPTY is a real answer here and says something specific: the
+          // supplier account owns no shop at all. It is not a failure, and the
+          // copy below must not read as one, because the merchant's next move
+          // is in their supplier's console and nothing in this app can do it.
+          state: result.shops.length === 0 ? "EMPTY" : "READY",
+          shops: result.shops
+        });
+      } catch (error) {
+        setPicker({ connectionId: connection.id, state: stateForError(error), shops: [] });
+      }
+    },
+    [scope]
+  );
+
+  const chooseShop = useCallback(
+    async (connectionId: string, externalShopId: string) => {
+      if (!scope) return;
+      setBinding(externalShopId);
+      try {
+        await bindConnectionShop(scope, connectionId, externalShopId);
+        setPicker(null);
+        // The connection list is what every other surface reads, so the binding
+        // is confirmed by re-reading it rather than by trusting this response.
+        await load("refresh");
+      } catch (error) {
+        // The refusal belongs on the picker, where the choice was made — not on
+        // the connection list, which loaded perfectly well. The shops are
+        // cleared with it: every one of these refusals means the list that was
+        // on screen is out of date, so leaving it up beside the explanation
+        // would invite the merchant to tap the same wrong row again.
+        setPicker((current) =>
+          current && current.connectionId === connectionId
+            ? { connectionId, state: stateForError(error), shops: [] }
+            : current
+        );
+      } finally {
+        setBinding(null);
+      }
+    },
+    [load, scope]
   );
 
   const stateBlock = stateOwnsScreen(state) ? (
@@ -190,6 +296,18 @@ export function SuppliersScreen({ route, navigation }: Props) {
                     })
                 : null
             }
+            // Offered only where it can succeed. A connection whose credential
+            // is expired cannot read a shop list either, so a picker on it would
+            // open straight onto a reauth error.
+            onChooseShop={
+              connectionIsUsable(item) && !connectionCanFulfil(item) ? () => openPicker(item) : null
+            }
+            picker={picker && picker.connectionId === item.id ? picker : null}
+            binding={binding}
+            reducedMotion={reducedMotion}
+            onReloadShops={() => openPicker(item)}
+            onClosePicker={() => setPicker(null)}
+            onPickShop={(shopId) => chooseShop(item.id, shopId)}
           />
         )}
         ListFooterComponent={
@@ -214,20 +332,47 @@ function SupplierRow({
   checking,
   lastVerifiedText,
   onCheck,
-  onBrowse
+  onBrowse,
+  onChooseShop,
+  picker,
+  binding,
+  reducedMotion,
+  onReloadShops,
+  onClosePicker,
+  onPickShop
 }: {
   connection: SupplierConnection;
   checking: boolean;
   lastVerifiedText: string | null;
   onCheck: () => void;
   onBrowse: (() => void) | null;
+  /** Absent when this connection already has a shop, or cannot read a list. */
+  onChooseShop: (() => void) | null;
+  /** The open picker, when it is this row's. */
+  picker: ShopPickerState | null;
+  binding: string | null;
+  reducedMotion: boolean;
+  onReloadShops: () => void;
+  onClosePicker: () => void;
+  onPickShop: (externalShopId: string) => void;
 }) {
   const needsAttention = connectionNeedsAttention(connection);
   const status = connection.status.toUpperCase();
+  const canFulfil = connectionCanFulfil(connection);
   // The provider's own message wins when it sent one — it is more specific than
   // anything this table can say — but it is only ever shown to the merchant who
   // owns the connection, never logged.
-  const detail = connection.message || STATUS_COPY[status] || connection.status;
+  //
+  // "Connected and working" is withheld from a connection with no fulfilment
+  // shop, because it is not true of one: every order it receives is refused.
+  // That sentence is what this row said before the picker below existed, and a
+  // merchant who reads it has no reason to look for anything else to do.
+  const detail =
+    connection.message ||
+    (status === "CONNECTED" && !canFulfil
+      ? "Connected. Importing and publishing work; orders need a fulfilment shop."
+      : STATUS_COPY[status]) ||
+    connection.status;
 
   return (
     <View style={styles.row}>
@@ -275,6 +420,16 @@ function SupplierRow({
         >
           <Text style={styles.secondaryText}>{checking ? "Checking…" : "Check connection"}</Text>
         </Pressable>
+        {onChooseShop && !picker ? (
+          <Pressable
+            style={styles.secondary}
+            onPress={onChooseShop}
+            accessibilityRole="button"
+            accessibilityLabel="Choose a fulfilment shop for this supplier"
+          >
+            <Text style={styles.secondaryText}>Choose fulfilment shop</Text>
+          </Pressable>
+        ) : null}
         {onBrowse ? (
           <Pressable
             style={styles.primary}
@@ -286,6 +441,105 @@ function SupplierRow({
           </Pressable>
         ) : null}
       </View>
+
+      {picker ? (
+        <ShopPicker
+          picker={picker}
+          binding={binding}
+          reducedMotion={reducedMotion}
+          onReload={onReloadShops}
+          onClose={onClosePicker}
+          onPick={onPickShop}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * The shop list, and the choice.
+ *
+ * A shop the supplier will not accept an order for renders with no control at
+ * all, not with a disabled one. The verdict is structural rather than a prop,
+ * so there is no state in which the row is tappable and the refusal arrives
+ * afterwards — which is exactly what happened before the list carried
+ * `fulfillable`: binding said yes, and the merchant found out at the first
+ * order that the shop was never a destination.
+ */
+function ShopPicker({
+  picker,
+  binding,
+  reducedMotion,
+  onReload,
+  onClose,
+  onPick
+}: {
+  picker: ShopPickerState;
+  binding: string | null;
+  reducedMotion: boolean;
+  onReload: () => void;
+  onClose: () => void;
+  onPick: (externalShopId: string) => void;
+}) {
+  const block = stateOwnsScreen(picker.state) ? (
+    <DropshippingStateView
+      state={picker.state}
+      subject="Fulfilment shops"
+      onRetry={onReload}
+      reducedMotion={reducedMotion}
+      skeletonRows={2}
+      empty={{
+        title: "This supplier account has no shops.",
+        body:
+          "Orders go to a shop your supplier's console sets up to accept them from outside apps. Create one there, then reopen this list. Importing and publishing keep working in the meantime."
+      }}
+    />
+  ) : null;
+
+  return (
+    <View style={styles.picker}>
+      <View style={styles.pickerTop}>
+        <Text style={styles.pickerTitle}>Choose a fulfilment shop</Text>
+        <View style={styles.spacer} />
+        <Pressable
+          onPress={onClose}
+          accessibilityRole="button"
+          accessibilityLabel="Close the fulfilment shop list"
+          style={styles.pickerClose}
+        >
+          <Text style={styles.secondaryText}>Close</Text>
+        </Pressable>
+      </View>
+
+      {block}
+      {block
+        ? null
+        : picker.shops.map((shop) => {
+            const label = shop.name || shop.externalShopId;
+            const reason = shop.fulfillable
+              ? null
+              : SHOP_REASON_COPY[String(shop.unfulfillableReason || "")] || "Can't take orders.";
+            const busy = binding === shop.externalShopId;
+            return (
+              <View key={shop.externalShopId} style={styles.shop}>
+                <View style={styles.shopBody}>
+                  <Text style={styles.shopName}>{label}</Text>
+                  {shop.platform ? <Text style={styles.rowMeta}>{shop.platform}</Text> : null}
+                  {reason ? <Text style={styles.shopReason}>{reason}</Text> : null}
+                </View>
+                {shop.fulfillable ? (
+                  <Pressable
+                    style={styles.primary}
+                    onPress={() => onPick(shop.externalShopId)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Send orders to ${label}${busy ? ", choosing" : ""}`}
+                  >
+                    <Text style={styles.primaryText}>{busy ? "Choosing…" : "Use this shop"}</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            );
+          })}
     </View>
   );
 }
@@ -328,6 +582,24 @@ const styles = StyleSheet.create({
     backgroundColor: storeLight.cta.from
   },
   primaryText: { fontSize: 13, fontWeight: "800", color: storeLight.cta.text },
+  picker: {
+    marginTop: 10,
+    paddingTop: 10,
+    gap: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: storeLight.border.hairline
+  },
+  pickerTop: { flexDirection: "row", alignItems: "center" },
+  pickerTitle: { fontSize: 13, fontWeight: "700", color: storeLight.text.primary },
+  pickerClose: {
+    minHeight: storeLight.size.tapTarget,
+    justifyContent: "center",
+    paddingHorizontal: 8
+  },
+  shop: { flexDirection: "row", alignItems: "center", gap: 10 },
+  shopBody: { flex: 1, gap: 2 },
+  shopName: { fontSize: 13, fontWeight: "600", color: storeLight.text.primary },
+  shopReason: { fontSize: 11, color: storeLight.status.warning, lineHeight: 15 },
   footer: { padding: storeLight.space.card },
   addButton: {
     minHeight: storeLight.size.tapTarget,

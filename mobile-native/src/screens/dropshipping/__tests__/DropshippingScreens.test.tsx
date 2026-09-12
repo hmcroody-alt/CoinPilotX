@@ -70,6 +70,8 @@ const mockGetImportedProduct = jest.fn();
 const mockListImportedProducts = jest.fn();
 const mockPreviewPricing = jest.fn();
 const mockDiscoverShops = jest.fn();
+const mockListConnectionShops = jest.fn();
+const mockBindConnectionShop = jest.fn();
 const mockConnectSupplier = jest.fn();
 const mockSearchProducts = jest.fn();
 
@@ -83,6 +85,8 @@ jest.mock("../../../api/dropshipping", () => ({
   listImportedProducts: (...args: unknown[]) => mockListImportedProducts(...args),
   previewPricing: (...args: unknown[]) => mockPreviewPricing(...args),
   discoverSupplierShops: (...args: unknown[]) => mockDiscoverShops(...args),
+  listConnectionShops: (...args: unknown[]) => mockListConnectionShops(...args),
+  bindConnectionShop: (...args: unknown[]) => mockBindConnectionShop(...args),
   connectSupplier: (...args: unknown[]) => mockConnectSupplier(...args),
   searchSupplierProducts: (...args: unknown[]) => mockSearchProducts(...args)
 }));
@@ -309,6 +313,14 @@ describe("DropshippingStateView", () => {
    * was withdrawn, or one with no seller record behind it — those need a person,
    * not a second request. A refused write token or a store context that moved on
    * *are* worth another attempt, and they keep theirs.
+   *
+   * The shop-binding states split along the same line, and the split is the
+   * point. Four of them are verdicts on a live list that can move under the
+   * merchant — a shop renamed, re-platformed or removed in the supplier's own
+   * console — so re-reading it genuinely can answer differently. The fifth,
+   * `SHOP_BINDING_REQUIRED`, is a fact about the connection itself: no shop is
+   * chosen. Asking again returns the same answer forever, so it gets a route to
+   * the screen that fixes it or no button at all, never a "Try again".
    */
   it("offers a retry only where a second attempt could answer differently", () => {
     const retryable = new Set<DropshippingState>([
@@ -318,6 +330,10 @@ describe("DropshippingStateView", () => {
       "STALE_STORE_CONTEXT",
       "INVALID_CREDENTIAL",
       "SUPPLIER_DISCONNECTED",
+      "SHOP_NOT_AUTHORIZED",
+      "SHOP_BINDING_CONFLICT",
+      "SHOP_CANNOT_FULFIL",
+      "SHOP_NAME_AMBIGUOUS",
       "PROVIDER_UNAVAILABLE",
       "ERROR"
     ]);
@@ -1059,6 +1075,219 @@ describe("SuppliersScreen", () => {
     await settle();
 
     await waitFor(() => expect(view.getByText(/not signed in to this store/i)).toBeTruthy());
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 2b — Suppliers: choosing the shop orders are sent to
+ * ------------------------------------------------------------------ */
+
+/**
+ * The transition that had a server and no door.
+ *
+ * `bind_shop` was routed, serviced and tested; `connection_shops` was routed
+ * and tested. Nothing in this app called either, and nothing could: the shop
+ * list can only be read with the merchant's stored credential, which lives in
+ * the vault with no copy on the device. So a connection that connected without
+ * a shop — the normal shape, because selling here means PulseSoc *is* the
+ * storefront — could import, publish and sell, and then refuse every one of its
+ * own orders with `shop_binding_required` forever.
+ *
+ * These tests are written from the surface that was missing, so the first one
+ * asserts the whole path: the honest status, the list, the choice, and the
+ * re-read that confirms it. Asserting that a button calls a mock would not have
+ * been the claim.
+ */
+describe("SuppliersScreen — choosing a fulfilment shop", () => {
+  const UNBOUND = connection({ externalShopId: null });
+
+  function shop(over: Record<string, unknown> = {}) {
+    return {
+      externalShopId: "shop-a",
+      name: "Main shop",
+      platform: "API",
+      fulfillable: true,
+      unfulfillableReason: null,
+      ...over
+    };
+  }
+
+  async function suppliers(rows = [UNBOUND]) {
+    mockListConnections.mockResolvedValue(rows);
+    const view = render(<SuppliersScreen navigation={navigation()} route={{ params: {} }} />);
+    await settle();
+    return view;
+  }
+
+  async function openPicker(rows = [UNBOUND]) {
+    const view = await suppliers(rows);
+    await waitFor(() => expect(view.getByLabelText(/Choose a fulfilment shop/)).toBeTruthy());
+    await act(async () => {
+      fireEvent.press(view.getByLabelText(/Choose a fulfilment shop/));
+    });
+    await settle();
+    return view;
+  }
+
+  it("takes a connection with no shop from refusal through to a recorded choice", async () => {
+    mockListConnectionShops.mockResolvedValue({ shops: [shop()], boundShopId: null });
+    mockBindConnectionShop.mockResolvedValue(undefined);
+
+    const view = await suppliers();
+
+    // It does not claim to be working. That sentence is what this row said
+    // before any of this existed, over a connection that could not ship.
+    await waitFor(() => expect(view.getByText(/orders need a fulfilment shop/i)).toBeTruthy());
+    expect(view.queryByText("Connected and working")).toBeNull();
+    // And importing is untouched, which is the whole reason a shopless
+    // connection is allowed in the first place.
+    expect(view.getByText("Find products")).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.press(view.getByLabelText(/Choose a fulfilment shop/));
+    });
+    await settle();
+    await waitFor(() => expect(view.getByText("Main shop")).toBeTruthy());
+
+    await act(async () => {
+      fireEvent.press(view.getByLabelText(/Send orders to Main shop/));
+    });
+    await settle();
+
+    expect(mockBindConnectionShop).toHaveBeenCalledWith(expect.anything(), "conn-1", "shop-a");
+    // The connection list is re-read rather than patched locally: it is what
+    // every other surface reads, and one source for "what is bound" is worth
+    // the extra call.
+    await waitFor(() => expect(mockListConnections).toHaveBeenCalledTimes(2));
+  });
+
+  it("offers no shop picker to a connection that already has one", async () => {
+    // `connection()` is bound by default, as most fixtures here are.
+    const view = await suppliers([connection()]);
+    await waitFor(() => expect(view.getByText("Connected and working")).toBeTruthy());
+    expect(view.queryByLabelText(/Choose a fulfilment shop/)).toBeNull();
+  });
+
+  it("offers no shop picker to a connection that could not read a list anyway", async () => {
+    // An expired credential cannot fetch shops, so a picker on it would open
+    // straight onto a reauth error the merchant did not ask for.
+    const view = await suppliers([connection({ status: "AUTH_EXPIRED", externalShopId: null })]);
+    await waitFor(() => expect(view.getByText(/credential expired/i)).toBeTruthy());
+    expect(view.queryByLabelText(/Choose a fulfilment shop/)).toBeNull();
+  });
+
+  /**
+   * The state of this merchant's live account, and the most likely outcome of
+   * anyone opening this list. The server used to answer it with a 422 — CJ
+   * refuses the call for an account that owns no storefront — which matches
+   * none of the client's status classes and so rendered as "Something went
+   * wrong" for the ordinary case.
+   */
+  it("says an account with no shops has none, and where to make one", async () => {
+    mockListConnectionShops.mockResolvedValue({ shops: [], boundShopId: null });
+    const view = await openPicker();
+
+    await waitFor(() => expect(view.getByText("This supplier account has no shops.")).toBeTruthy());
+    expect(view.getByText(/Create one there, then reopen this list/)).toBeTruthy();
+    expect(view.queryByText(/didn't load/)).toBeNull();
+  });
+
+  it("does not read a failed shop read as an account with no shops", async () => {
+    mockListConnectionShops.mockRejectedValue(new PulseApiError("x", 503, "provider_unavailable"));
+    const view = await openPicker();
+
+    await waitFor(() => expect(view.getByText(/supplier isn't responding/i)).toBeTruthy());
+    expect(view.queryByText("This supplier account has no shops.")).toBeNull();
+  });
+
+  /**
+   * A shop that cannot take an API order gets no control at all, not a disabled
+   * one. The verdict is the server's — `dispatch_shop`'s own answer, returned
+   * per row — and it is rendered structurally so there is no state in which the
+   * row is tappable and the refusal arrives afterwards. That is exactly what
+   * used to happen: binding said yes, and the merchant found out one lost order
+   * later that the shop was never a destination.
+   */
+  it("shows why an unusable shop cannot be chosen, and offers no way to choose it", async () => {
+    mockListConnectionShops.mockResolvedValue({
+      shops: [
+        shop({ externalShopId: "shop-b", name: "Storefront", platform: "Shopify",
+               fulfillable: false, unfulfillableReason: "api_shop_binding_required" }),
+        shop()
+      ],
+      boundShopId: null
+    });
+    const view = await openPicker();
+
+    await waitFor(() => expect(view.getByText("Storefront")).toBeTruthy());
+    expect(view.getByText(/won't take orders for this shop from an outside app/)).toBeTruthy();
+    expect(view.queryByLabelText(/Send orders to Storefront/)).toBeNull();
+    // And the shop that can take one is still choosable, so this is not just a
+    // list with every button removed.
+    expect(view.getByLabelText(/Send orders to Main shop/)).toBeTruthy();
+  });
+
+  it("says an unrecognised refusal is a refusal rather than saying nothing", async () => {
+    // Silence would leave the row looking ordinary while being the one row with
+    // no button — which reads as a rendering bug, not as a verdict.
+    mockListConnectionShops.mockResolvedValue({
+      shops: [shop({ fulfillable: false, unfulfillableReason: "something_new" })],
+      boundShopId: null
+    });
+    const view = await openPicker();
+
+    await waitFor(() => expect(view.getByText("Can't take orders.")).toBeTruthy());
+    expect(view.queryByLabelText(/Send orders to Main shop/)).toBeNull();
+  });
+
+  /**
+   * A refusal at bind time means the list on screen has gone stale — the shop
+   * was renamed, re-platformed or removed in the supplier's console since it
+   * was drawn. So the list comes down with the explanation: leaving it up would
+   * invite the merchant to tap the same wrong row again.
+   */
+  it("explains a refused choice in its own terms and takes the stale list down", async () => {
+    mockListConnectionShops.mockResolvedValue({ shops: [shop()], boundShopId: null });
+    mockBindConnectionShop.mockRejectedValue(new PulseApiError("x", 403, "shop_not_authorized"));
+    const view = await openPicker();
+    await waitFor(() => expect(view.getByText("Main shop")).toBeTruthy());
+
+    await act(async () => {
+      fireEvent.press(view.getByLabelText(/Send orders to Main shop/));
+    });
+    await settle();
+
+    await waitFor(() => expect(view.getByText(/isn't on your supplier account any more/i)).toBeTruthy());
+    // The specific misreading this replaces: `shop_not_authorized` is a 403, so
+    // it used to reach a merchant with a perfectly healthy session as "you're
+    // not signed in to this store any more".
+    expect(view.queryByText(/not signed in to this store/i)).toBeNull();
+    expect(view.queryByText("Main shop")).toBeNull();
+  });
+
+  it("does not report a refused bind as a bound shop", async () => {
+    mockListConnectionShops.mockResolvedValue({ shops: [shop()], boundShopId: null });
+    mockBindConnectionShop.mockRejectedValue(new PulseApiError("x", 409, "connection_binding_conflict"));
+    const view = await openPicker();
+    await waitFor(() => expect(view.getByText("Main shop")).toBeTruthy());
+
+    await act(async () => {
+      fireEvent.press(view.getByLabelText(/Send orders to Main shop/));
+    });
+    await settle();
+
+    await waitFor(() =>
+      expect(view.getByText(/already sends orders to a different shop/i)).toBeTruthy());
+    // The row behind it still says what it said: nothing was bound, so nothing
+    // about the connection changed.
+    expect(view.getByText(/orders need a fulfilment shop/i)).toBeTruthy();
+    expect(mockListConnections).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads the shop list for the connection whose picker was opened", async () => {
+    mockListConnectionShops.mockResolvedValue({ shops: [shop()], boundShopId: null });
+    await openPicker([connection({ id: "conn-7", externalShopId: null })]);
+    expect(mockListConnectionShops).toHaveBeenCalledWith(expect.anything(), "conn-7");
   });
 });
 

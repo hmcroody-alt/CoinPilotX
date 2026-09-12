@@ -237,6 +237,82 @@ def test_the_shop_list_marks_which_shops_can_take_orders(ready):
     assert not any(secret in rendered for secret in SECRETS.values())
 
 
+def test_an_account_that_owns_no_storefront_reads_as_no_shops_not_as_an_error(ready):
+    """The most likely outcome of opening this screen, and it used to be a 500.
+
+    A CJ account with no external storefront is the normal shape for selling
+    through PulseSoc -- PulseSoc *is* the storefront -- and it is the state of
+    the live connection today. CJ answers ``shop/getShops`` for such an account
+    with a business code its own documentation does not list; the transport
+    correctly refuses to interpret it and reports ``SUPPLIER_REJECTED`` (422).
+
+    ``_verify`` already decided this for connecting. Reading the list had never
+    been asked, because nothing called it. Left as it was, shipping the merchant
+    screen would have shipped "Something went wrong" as the *ordinary* answer:
+    422 matches none of the client's status classes, so it renders bare.
+    """
+    adapter, connection, _ = ready
+    adapter.shops_error = svc.SupplierError("SUPPLIER_REJECTED", http_status=422)
+    result = svc.connection_shops(connection["id"], "biz-a", "store-a", "100", adapter=adapter)
+    assert result["shops"] == []
+    # And the merchant's own binding still reads back. An unreadable live list
+    # says nothing about what this connection already chose.
+    assert result["external_shop_id"] == SHOP
+
+
+@pytest.mark.parametrize("code,status", [("RATE_LIMITED", 429), ("PROVIDER_UNAVAILABLE", 503),
+                                         ("REAUTH_REQUIRED", 401)])
+def test_a_list_we_could_not_read_is_not_reported_as_a_list_with_nothing_in_it(ready, code, status):
+    """"We could not ask" and "you own none" are different, and the fix is narrow.
+
+    ``_verify`` survives *any* ``SupplierError`` because there the shop list is
+    irrelevant -- importing needs none. Here the list is the entire answer, so
+    collapsing a throttle, an outage or a dead credential into "no shops" prints
+    a false instruction: it sends a merchant to the CJ console to create a
+    storefront when the truth is "ask again in a minute" or "your key is being
+    refused". Only a rejection -- CJ answered, and the answer was not a list --
+    is an empty list.
+    """
+    adapter, connection, _ = ready
+    adapter.shops_error = svc.SupplierError(code, http_status=status)
+    with pytest.raises(svc.SupplierError) as failure:
+        svc.connection_shops(connection["id"], "biz-a", "store-a", "100", adapter=adapter)
+    assert failure.value.code == code
+
+
+def test_a_shop_list_that_echoes_our_own_secret_is_never_softened_into_no_shops(ready):
+    """The leak guard is ours, not CJ's, and survivability does not reach it.
+
+    ``_safe_shops`` raises ``SupplierConnectionError`` for a response that echoes
+    a credential back inside a shop name. That is not a provider verdict to be
+    interpreted -- it is our refusal to render the response at all -- so it must
+    propagate even though the softened path sits right beside it.
+    """
+    adapter, connection, _ = ready
+    adapter.shops = [shop(name="leaked=" + SECRETS["access_token"])]
+    with pytest.raises(svc.SupplierConnectionError) as failure:
+        svc.connection_shops(connection["id"], "biz-a", "store-a", "100", adapter=adapter)
+    assert failure.value.code == "unsafe_provider_response"
+    assert SECRETS["access_token"] not in str(failure.value)
+
+
+def test_binding_still_refuses_a_shop_list_it_cannot_read(ready):
+    """The security half, restated where the softening could have leaked into it.
+
+    Reading may survive a rejection because nothing is authorized by looking.
+    Choosing may not: an unreadable list that bound anyway would be treating "we
+    could not ask" as "you are allowed", which is the tenant check ``bind_shop``
+    exists to perform. This is the same rule ``_verify`` follows for a connect
+    that names a shop.
+    """
+    adapter, connection, _ = ready
+    unbind(connection["id"])
+    adapter.shops_error = svc.SupplierError("SUPPLIER_REJECTED", http_status=422)
+    with pytest.raises(svc.SupplierError):
+        bind(connection, adapter)
+    assert bound(connection["id"]) == ""
+
+
 def test_a_member_without_write_access_cannot_bind(ready):
     """Binding decides where this store's money goes; viewers do not decide it."""
     adapter, connection, _ = ready
