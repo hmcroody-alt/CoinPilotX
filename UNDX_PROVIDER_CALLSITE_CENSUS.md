@@ -976,3 +976,80 @@ naming a test that did not exist, an anchor on a docstring this phase had rewrit
 one no pre-flight can catch — an expectation pointing at a test that *does* exist but is the
 wrong one, on the adjacent entry of a pair. A pre-flight can verify that a name resolves; only
 running it can verify the name is the right one.
+
+## 8. Widening the cost ledger's key, and why Postgres had to be tested separately
+
+§22 asks for no unclassified AI spend, which the ledger could not express: its unique key was
+`(month, provider)`, so a provider had exactly one row per month and every call kind summed
+into it. The key is now `(month, provider, call_kind)` over the nine kinds in §20–27, plus
+`unknown`.
+
+Three decisions in that migration are worth recording because each one is a place where the
+obvious choice is wrong:
+
+- **Absent and unrecognised are different inputs.** A missing `call_kind` becomes `chat`, which
+  is a compatibility statement about the rows already in production — they were all chat, and
+  any other default would make history disagree with the code that wrote it. A `call_kind` that
+  is *present but unrecognised* becomes `unknown`, never `chat`: mapping a typo onto the largest
+  existing bucket is precisely how embedding spend would get laundered into the chat total, and
+  `unknown` is ugly in a report, which is the right amount of ugly for spend nobody classified.
+- **Adding a dimension must not change the measurement.** `month_snapshot()["providers"]` is
+  still summed *across* kinds, so no budget silently gains headroom the day embeddings start
+  being recorded. The new `kinds` axis is reported alongside it, never instead of it. A budget
+  reporting more room than exists, *caused by better instrumentation*, is the failure this
+  avoids.
+- **The narrow index is dropped after the wide one is created, not before.** If creating the
+  replacement fails, the table must still have *an* index — without one every write is a
+  runtime error, which is worse than writes that fail only for the new kinds.
+
+### The Postgres verification, and why it is a script
+
+The pytest suite (59 tests, green) runs on SQLite, so it exercises `PRAGMA table_info` and
+SQLite's forgiving `ON CONFLICT`. Production is Postgres, where three things differ and none
+are visible from the SQLite run: `_ledger_columns` takes the `information_schema` branch,
+`ON CONFLICT (month, provider, call_kind)` resolves against a real unique index, and
+`INTEGER PRIMARY KEY AUTOINCREMENT` / `datetime('now')` are rewritten on the way out by
+`services/db.py`. `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` is *Postgres-only*, which is why
+the guard is an introspection rather than a keyword — the SQLite run is the one that proves the
+keyword would not have worked.
+
+`scripts/undx_cost_ledger_pg_migration_probe.py` builds the ledger in its **old** shape — no
+`call_kind`, narrow unique index — carrying a replica of the single row production actually
+holds (R-e), then migrates it. Against `postgres:18` (production is 18.6) all checks pass: the
+column is appended and backfilled `chat`, the row survives, the narrow index is gone, the wide
+one exists, `ensure_schema` is idempotent across three runs, and one provider carries chat and
+embedding rows whose provider total still sums to both.
+
+It is a script and not a test because it needs a container, and it is **manually triggered**,
+which is the honest description and also a liability — this census criticises
+`pulse_ai_web_search.provider_status()` for having no caller, and a probe nobody runs is the
+same shape of dead assurance. Its trigger is recorded here so the next schema change to this
+table has a documented reason to run it:
+
+```
+docker run -d --name undx_pg_probe -e POSTGRES_PASSWORD=probe -e POSTGRES_DB=probe \
+    -p 55433:5432 postgres:18
+DATABASE_URL='postgresql://postgres:probe@127.0.0.1:55433/probe' \
+    python3 scripts/undx_cost_ledger_pg_migration_probe.py
+```
+
+The probe refuses to run unless `DATABASE_URL` names a loopback host, so it cannot be pointed
+at production by a copied shell line.
+
+**The green was checked against two neutered variants**, because a passing probe proves nothing
+until it has been shown capable of failing:
+
+| Mutation | Result |
+|---|---|
+| `_LEDGER_COLUMNS = ()` — never add the column to an old table | red: `UndefinedColumn: column "call_kind" does not exist` |
+| drop the `DROP INDEX` statement — leave the narrow index standing | red: `UniqueViolation ... Key (month, provider)=(2026-09, openai) already exists` |
+
+The second is the one worth reading: it reproduces, as a measured Postgres error, the exact
+claim the source comment makes in prose about why the old index has to go. The comment could
+not fail; this can.
+
+One incidental finding from the Postgres run, recorded because it reads as a data bug and is
+not one: `services.db.CompatRow` is a `Mapping` that *also* accepts integer subscripts, so
+`tuple(row)` yields column **names** on Postgres and **values** on SQLite. `undx_cost` is safe
+because `record()` and `month_snapshot()` both index positionally; any code that unpacks or
+casts a whole row would not be. The first version of this probe made that mistake.
