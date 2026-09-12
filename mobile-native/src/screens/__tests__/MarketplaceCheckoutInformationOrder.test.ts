@@ -30,6 +30,19 @@ describe("checkout asks before it charges", () => {
     expect(forwarded).toHaveLength(lanes.length);
   });
 
+  it("sends how many the buyer chose to every buy-now lane", () => {
+    // Counted the same way, and for the same reason. The card lane is currently
+    // unreachable — `MARKETPLACE_CARD_PAYMENTS_PAUSED` returns before it — so no
+    // test that drives the UI can reach its call site, and a quantity added to
+    // the cash lane alone would look complete right up until card payments
+    // resume. Buy Now is the only lane that carries a quantity as an argument:
+    // the cart's quantities live on the cart lines.
+    const buyNow = source.match(/\bopenMarketplaceCheckout\(/g) ?? [];
+    const carried = source.match(/Number\(params\.quantity \|\| 1\)/g) ?? [];
+    expect(buyNow.length).toBeGreaterThanOrEqual(2);
+    expect(carried).toHaveLength(buyNow.length);
+  });
+
   it("returns to the details step to edit rather than restarting checkout", () => {
     expect(source).toContain('setStage("details")');
     expect(source).toContain("Edit order details");

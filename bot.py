@@ -81,6 +81,13 @@ _load_local_environment()
 import undx_router
 import undx_execution_kernel
 
+# Imported for the constants, not for behaviour. A routed call site declares its
+# privacy class and its call domain by name so a misspelling is an AttributeError
+# here rather than a value the router has to interpret — which is the shape of the
+# `UNDX_SHADOW_MAX_PRIVACY_CLASS=PUBIC` bug, where a typo ranked as SECRET and
+# cleared traffic it should have refused.
+from services import undx_call_domain, undx_privacy
+
 COINPILOTX_ENV_MODE = os.getenv("ENV") or os.getenv("FLASK_ENV") or os.getenv("RAILWAY_ENVIRONMENT") or ("production" if _deployment_environment_enabled() else "local")
 COINPILOTX_CONFIGURED_SECRET_KEY = os.getenv("FLASK_SECRET_KEY") or os.getenv("SECRET_KEY") or os.getenv("SESSION_SECRET")
 COINPILOTX_RANDOM_SECRET_USED = not bool(COINPILOTX_CONFIGURED_SECRET_KEY)
@@ -384,7 +391,13 @@ TELEGRAM_RUNTIME_STATE = {
     "last_handler": "",
     "last_handler_latency_ms": "",
     "last_webhook_status": "",
-    "last_openai_reply_status": "",
+    # Renamed from `last_openai_reply_status`. Typed Telegram questions now go through
+    # `undx_router`, so the answer can come from any of seven providers and a field named
+    # after one of them is a claim the value cannot keep. `last_ai_reply_source` records
+    # who actually answered, which is the fact the old name was pretending to carry.
+    "last_ai_reply_status": "",
+    "last_ai_reply_source": "",
+    "last_ai_reply_reason": "",
     "openai_key_present": bool(os.getenv("OPENAI_API_KEY")),
     "last_error": "",
 }
@@ -1286,6 +1299,14 @@ _load_route_pack("undx_agent_run_control", "services.undx_agent_run_control_rout
 # Unauthenticated by design and therefore counts only; kept out of both packs above so
 # neither loses its "every route here is owner-scoped" guarantee.
 _load_route_pack("undx_run_health", "services.undx_run_health_routes")
+# GET /health/undx/fabric — provider states, month-to-date spend and live config
+# drift, composed so the contradictions between them become visible (a provider
+# the breaker remembers as healthy whose key has since been removed reads as
+# fine on either surface alone). Same gate and same secret-free rules as the
+# route above. Contacts no provider: model availability is undx_model_audit, it
+# spends real money, and an endpoint anyone can GET on a 30-second interval is
+# the last place to put a paid call.
+_load_route_pack("undx_fabric_health", "services.undx_fabric_health_routes")
 # Market Pulse: GET-only read surface over the market foundation the dashboard
 # board and Pulse Briefings already poll. It adds no CoinGecko networking of its
 # own — every write (watchlist rows, alert rules) still goes through the
@@ -4373,23 +4394,53 @@ def save_teacher_private_document(user_id, file_storage, document_type):
     }
 
 
+#: Labels a seller may deliberately choose that name no price. Mirrored in
+#: `mobile-native/src/api/marketplaceBuyerPresentation.ts` as `UNPRICED_LABELS`;
+#: the two are pinned against each other by
+#: `mobile-native/src/api/__tests__/fixtures/priceLabelParity.json`, which both
+#: languages' suites read.
 PRICE_LABEL_UNPRICED = {"free", "request access", "paid later", "premium later"}
+
+#: The checkout ceiling. Note that `parse_price_label_to_cents` **clamps** to
+#: this rather than refusing above it, while `drafts._set_prices` accepts ten
+#: times as much (`pricing.MAX_PRICE_CENTS`, 1_000_000_000) -- so between the
+#: two limits a card would be charged $999,999.99 for a listing priced higher.
+#:
+#: Three write paths close that window, and all three were checked rather than
+#: assumed: `PRICE_ABOVE_CHECKOUT_LIMIT` in `suppliers/drafts._validate` at
+#: publication, `_live_price_label` on a supplier reprice, and
+#: `marketplace_normalize_price_label` below on the seller edit path. The
+#: TypeScript twin's `MAX_PRICE_LABEL_MINOR` holds the same number and is
+#: pinned by fixture cases either side of it.
 MAX_PRICE_LABEL_CENTS = 99_999_999
 
-# What the web shows a buyer when a listing carries no price.
+# A comment describing a constant that no longer exists stood here, claiming
+# among other things that native "already says 'Price at checkout' on the same
+# card" -- which native had stopped doing. Its replacement then made the
+# opposite mistake: it listed, in prose, the surfaces that print nothing rather
+# than prose for an unpriced listing, and the list was six long and correct.
 #
-# This is presentation, not data, and the difference is the whole point. The
-# serializer deliberately hands out "" for an unpriced listing, because a phrase
-# invented there is stored-looking -- indistinguishable downstream from one the
-# seller typed. A card still has to put something in the pill, so the fallback
-# lives here, at the last possible moment, where it cannot be mistaken for the
-# seller's own words or read back in.
+# It was also incomplete, and incomplete in the way a hand-written list always
+# is: it could not notice the surface that was never on it.
+# `MarketplaceCheckoutScreen` was the seventh, filling its amount slot with
+# `params.priceLabel || "Shown at checkout"` -- a unit price under a row
+# labelled "Item total", or a promise naming the screen the buyer was already
+# standing on, rendered on the confirmation view as the value of "Amount paid".
 #
-# The wording matters as much as the placement. The web said "Request access",
-# which describes a gated product the buyer must apply for -- a flow that does
-# not exist. The listing is simply not priced yet. Native already says "Price at
-# checkout" on the same card, so web saying anything else was a split-brain the
-# buyer could see by opening the same product twice.
+# So the claim is no longer an enumeration. The app suite walks its own source
+# tree and fails on any rendered copy containing one of these phrases, and
+# separately fails on any catalog key whose name offers to stand in for a
+# missing price -- by key rather than by phrase, because `priceFallback` shipped
+# "Price at checkout" in eleven languages and ten of them were invisible to a
+# search for the English. Both live in
+# `mobile-native/src/screens/__tests__/MarketplacePriceLabelRendering.test.tsx`;
+# the checkout screen's own behaviour is pinned next to it in
+# `MarketplaceCheckoutAmountRendering.test.tsx`.
+#
+# The history is kept because this is the failure mode that let the price-label
+# parser claim parity with its TypeScript twin in a docstring for as long as it
+# did. A comment outlives the code it describes and then gets believed; a list
+# of surfaces outlives the surface it never had. Prefer the check that runs.
 
 
 def parse_price_label_to_cents(value, default_currency="USD"):
@@ -5828,6 +5879,39 @@ def upsert_failed_login_control(cur, control_type, control_value, reason, source
     )
 
 
+def create_security_alert_task(title, priority, source_type, source_id, description=""):
+    """Queue a security-department admin task on its own connection.
+
+    Separate connection on purpose: the caller is mid-transaction on the failed
+    login write, and on Postgres a failure here would abort that transaction and
+    lose the auth event.
+    """
+    try:
+        conn = db()
+        cur = conn.cursor()
+        now = datetime.now().isoformat()
+        cur.execute(
+            """
+            INSERT INTO admin_tasks
+            (department, title, description, priority, status, source_type, source_id, created_at, updated_at)
+            VALUES ('security', ?, ?, ?, 'open', ?, ?, ?, ?)
+            """,
+            (
+                clean_html(title)[:180],
+                clean_html(description or title)[:1200],
+                clean_html(priority)[:40],
+                clean_html(source_type)[:80],
+                str(source_id or "")[:120],
+                now,
+                now,
+            ),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as exc:
+        logging.warning("FAILED_LOGIN_ALERT_TASK_SKIPPED error=%s: %s", exc.__class__.__name__, exc)
+
+
 def create_failed_login_alert(cur, email, user_id, counts, latest_event_id=0):
     burst_count = max(int(counts.get("ip") or 0), int(counts.get("email") or 0), int(counts.get("domain") or 0))
     if burst_count < FAILED_LOGIN_CHALLENGE_AFTER:
@@ -5859,10 +5943,13 @@ def create_failed_login_alert(cur, email, user_id, counts, latest_event_id=0):
         "counts": counts,
         "window_seconds": FAILED_LOGIN_ALERT_WINDOW_SECONDS,
     })
-    try:
-        create_task("security", f"Failed login burst from {auth_email_domain(email) or 'unknown domain'}", "critical" if severity == "Critical" else "high", "auth_event", latest_event_id)
-    except Exception as exc:
-        logging.info("FAILED_LOGIN_ALERT_TASK_SKIPPED error=%s", exc)
+    create_security_alert_task(
+        f"Failed login burst from {auth_email_domain(email) or 'unknown domain'}",
+        "critical" if severity == "Critical" else "high",
+        "auth_event",
+        latest_event_id,
+        description=f"{burst_count} failed logins for {mask_email(email)} from {ip or 'unknown IP'} within {FAILED_LOGIN_ALERT_WINDOW_SECONDS}s.",
+    )
 
 
 def register_failed_login(email, user_id=0, reason="invalid_credentials"):
@@ -27748,8 +27835,21 @@ def admin_telegram_health_page():
         {"name": "Last successful reply", "value": metadata.get("last_successful_reply_at") or TELEGRAM_RUNTIME_STATE.get("last_successful_reply_at") or "", "detail": "Silent-bot protection heartbeat"},
         {"name": "Polling status", "value": "fresh polling" if not stale else "stale or offline", "detail": metadata.get("bot_username") or ""},
         {"name": "Webhook status", "value": metadata.get("webhook_status") or TELEGRAM_RUNTIME_STATE.get("last_webhook_status") or "unknown", "detail": "Webhook is cleared before polling"},
-        {"name": "OpenAI key loaded", "value": bool(os.getenv("OPENAI_API_KEY")), "detail": "Normal typed questions use OpenAI fallback"},
-        {"name": "Last OpenAI reply status", "value": metadata.get("last_openai_reply_status") or TELEGRAM_RUNTIME_STATE.get("last_openai_reply_status") or "", "detail": "success/fallback"},
+        # This row used to read "Normal typed questions use OpenAI fallback", which is no
+        # longer true: typed questions go through undx_router and any of its providers can
+        # answer, so an absent OPENAI_API_KEY no longer means the bot cannot think. The row
+        # stays because the key's presence is still worth seeing; the claim about what it
+        # gates is the part that had to go.
+        {"name": "OpenAI key loaded", "value": bool(os.getenv("OPENAI_API_KEY")), "detail": "One of several router providers; not required for typed questions"},
+        # Also renamed: this status is the router's own `ok`, not a substring search of the
+        # user-facing apology. `last_openai_reply_status` is read as a fallback so a heartbeat
+        # row written before this deploy still renders instead of blanking.
+        # The detail is the router's own reason when there is one. Without it the row says
+        # "fallback" and an operator has no way to tell a dead provider from an exhausted
+        # budget from a privacy refusal — three different problems with three different
+        # owners, which is exactly what a health panel is for.
+        {"name": "Last AI reply status", "value": metadata.get("last_ai_reply_status") or metadata.get("last_openai_reply_status") or TELEGRAM_RUNTIME_STATE.get("last_ai_reply_status") or "", "detail": TELEGRAM_RUNTIME_STATE.get("last_ai_reply_reason") or "success/fallback"},
+        {"name": "Last AI reply provider", "value": metadata.get("last_ai_reply_source") or TELEGRAM_RUNTIME_STATE.get("last_ai_reply_source") or "", "detail": "Which provider actually answered"},
         {"name": "Last error", "value": heartbeat.get("last_error") or TELEGRAM_RUNTIME_STATE.get("last_error") or "", "detail": ""},
         {"name": "Linked Telegram users", "value": linked_count, "detail": ""},
         {"name": "Pending link codes", "value": pending_codes, "detail": ""},
@@ -30444,7 +30544,13 @@ def website_ai_assistant_api():
     allowed, limit_message = consume_ai_usage(user_id, "website_ai_assistant") if user_id else (True, "")
     if not allowed:
         return jsonify({"ok": False, "response": limit_message}), 429
-    response = intelligence_service.assistant_response(user_id, question, pro=pro_access_service.has_pro_access(account or {}))
+    # GENERAL (§5): this is the website's own API route, not a message relayed from a
+    # third party. TELEGRAM is reserved for the handler at bot.py:118848.
+    response = intelligence_service.assistant_response(
+        user_id, question,
+        pro=pro_access_service.has_pro_access(account or {}),
+        call_domain=undx_call_domain.CALL_DOMAIN_GENERAL,
+    )
     user_context_service.log_interaction(user_id, "ai_assistant_used", question, response, "website")
     return jsonify({
         "ok": True,
@@ -53869,7 +53975,20 @@ def pulse_marketplace_page():
         # reads as a price the seller set to nothing.
         price_label = clean_html(row.get("price_label"))
         price_pill = f"<span class='pill'>{price_label}</span> " if price_label else ""
-        return f"<article class='card'><h2><a href='/pulse/marketplace/{listing_id}'>{clean_html(row.get('title'))}</a></h2><p>{clean_html(row.get('description'))}</p><p><span class='pill'>{clean_html(row.get('category') or 'Education')}</span> {price_pill}<span class='pill'>Safety {int(row.get('safety_score') or 0)}</span></p><p>Seller: {clean_html(marketplace_seller_identity.display_store_name(row))}</p><p>Safety notice: educational products only. Payments and payout release are staged for compliance.</p><div class='actions'><button data-contact-seller='{seller_id}'>Contact Seller</button><button data-save-listing='{listing_id}'>Save</button><button data-report-listing='{listing_id}'>Report</button>{promote}</div></article>"
+        # No "Safety N" pill. `marketplace_listings.safety_score` is written by
+        # the submit-for-review route as the *risk* score `score_text` returns
+        # (`safety_score=int(review["risk_score"])`), where 0 is clean and 100 is
+        # "guaranteed profit, risk free, 100x". Printed as safety it was exactly
+        # inverted: the worst listing the engine can score advertised
+        # "Safety 100" and every honest one read "Safety 0". Measured over the
+        # real engine, not inferred from the name.
+        #
+        # Restored polarity is not the fix. A raw moderation integer is not a
+        # buyer concept in either direction, and a listing is only on this page
+        # because moderation approved it -- that approval is the signal. The
+        # reviewer's working number stays with the reviewer (§27/§95); the admin
+        # queue reads the same column as risk and is already correct.
+        return f"<article class='card'><h2><a href='/pulse/marketplace/{listing_id}'>{clean_html(row.get('title'))}</a></h2><p>{clean_html(row.get('description'))}</p><p><span class='pill'>{clean_html(row.get('category') or 'Education')}</span> {price_pill}</p><p>Seller: {clean_html(marketplace_seller_identity.display_store_name(row))}</p><p>Safety notice: educational products only. Payments and payout release are staged for compliance.</p><div class='actions'><button data-contact-seller='{seller_id}'>Contact Seller</button><button data-save-listing='{listing_id}'>Save</button><button data-report-listing='{listing_id}'>Report</button>{promote}</div></article>"
 
     listing_html = "".join(marketplace_card(row) for row in listings)
     seller_form = "<section class='card'><h2>Merchant Access</h2><p class='muted'>Apply, verify, and wait for approval before listing products.</p><div class='actions'><a class='button primary' href='/pulse/merchant/apply'>Apply as Merchant</a><a class='button' href='/pulse/merchant/dashboard'>Merchant Dashboard</a></div></section>"
@@ -53883,7 +54002,7 @@ def pulse_marketplace_page():
     const marketplaceSearch=document.querySelector('[data-marketplace-search]');
     const marketplaceCurrentUserId=%d;
     const marketplaceEsc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-    function marketplaceListingHtml(row){const listingId=Number(row.id||0),owned=Number(row.seller_user_id||0)===marketplaceCurrentUserId;const promote=owned?`<button data-promote-content="marketplace_listing" data-content-id="${listingId}" data-content-label="${marketplaceEsc(row.title||'Marketplace listing')}">Promote Listing</button>`:'';const priceText=String(row.price_label||'').trim();return `<article class="card"><h2><a href="/pulse/marketplace/${listingId}">${marketplaceEsc(row.title||'Marketplace listing')}</a></h2><p>${marketplaceEsc(row.description||row.short_description||'')}</p><p><span class="pill">${marketplaceEsc(row.category||'Education')}</span> ${priceText?`<span class="pill">${marketplaceEsc(priceText)}</span> `:''}<span class="pill">Safety ${Number(row.safety_score||0)}</span></p><p>Seller: ${marketplaceEsc(row.seller_store_name||row.seller_name||'PulseSoc Store')}</p><p>Safety notice: educational products only. Payments and payout release are staged for compliance.</p><div class="actions"><button data-contact-seller="${Number(row.seller_user_id||0)}">Contact Seller</button><button data-save-listing="${listingId}">Save</button><button data-report-listing="${listingId}">Report</button>${promote}</div></article>`}
+    function marketplaceListingHtml(row){const listingId=Number(row.id||0),owned=Number(row.seller_user_id||0)===marketplaceCurrentUserId;const promote=owned?`<button data-promote-content="marketplace_listing" data-content-id="${listingId}" data-content-label="${marketplaceEsc(row.title||'Marketplace listing')}">Promote Listing</button>`:'';const priceText=String(row.price_label||'').trim();return `<article class="card"><h2><a href="/pulse/marketplace/${listingId}">${marketplaceEsc(row.title||'Marketplace listing')}</a></h2><p>${marketplaceEsc(row.description||row.short_description||'')}</p><p><span class="pill">${marketplaceEsc(row.category||'Education')}</span> ${priceText?`<span class="pill">${marketplaceEsc(priceText)}</span> `:''}</p><p>Seller: ${marketplaceEsc(row.seller_store_name||row.seller_name||'PulseSoc Store')}</p><p>Safety notice: educational products only. Payments and payout release are staged for compliance.</p><div class="actions"><button data-contact-seller="${Number(row.seller_user_id||0)}">Contact Seller</button><button data-save-listing="${listingId}">Save</button><button data-report-listing="${listingId}">Report</button>${promote}</div></article>`}
     let marketplaceSearchTimer=0;
     async function runMarketplaceSearch(query=''){if(!marketplaceResults)return;marketplaceResults.innerHTML='<article class="card"><p class="muted">Searching marketplace...</p></article>';try{const d=await pulseApi('/api/pulse/marketplace/search?q='+encodeURIComponent(query||''));marketplaceResults.innerHTML=(d.items||[]).map(marketplaceListingHtml).join('')||'<article class="card"><h2>No marketplace matches.</h2><p class="muted">Try another item, category, or seller.</p></article>'}catch(err){marketplaceResults.innerHTML=`<article class="card"><p class="muted">${marketplaceEsc(err.message||'Marketplace search failed.')}</p></article>`}}
     marketplaceSearch?.addEventListener('submit',e=>{e.preventDefault();runMarketplaceSearch(e.target.q.value.trim())});
@@ -53944,6 +54063,7 @@ def pulse_marketplace_listing_page(listing_id):
     cur = conn.cursor()
     cur.execute(
         f"""SELECT l.*, {marketplace_seller_identity.store_name_select('ms')},
+                   COALESCE(ms.status,'missing') AS seller_status,
                    COALESCE(u.username,'') AS seller_username
             FROM marketplace_listings l
             LEFT JOIN users u ON u.user_id=l.seller_user_id
@@ -53991,8 +54111,11 @@ def pulse_marketplace_listing_page(listing_id):
         f"<p><a href='/pulse/marketplace'>&larr; Marketplace</a></p>"
         f"<h1>{clean_html(row.get('title'))}</h1>"
         f"<p><span class='pill'>{clean_html(row.get('category') or 'Education')}</span> "
-        f"{price_pill}"
-        f"<span class='pill'>Safety {int(row.get('safety_score') or 0)}</span></p>"
+        # No "Safety N" pill here either -- see `marketplace_card` on the grid
+        # for the measurement. The two surfaces printed the same inverted number
+        # for the same row, so fixing one would have moved the lie rather than
+        # removed it.
+        f"{price_pill}</p>"
         f"<p>Seller: {clean_html(marketplace_seller_identity.display_store_name(row))}</p>"
         f"{gallery_block}"
         f"<p>{clean_html(row.get('description') or row.get('short_description') or '')}</p>"
@@ -54083,8 +54206,30 @@ def pulse_marketplace_media_payload(row):
     }
 
 
+#: Columns of `marketplace_listings` that belong to moderation and must not be
+#: serialized to a client. Stripped rather than simply not-listed, because the
+#: payload below is built with `{**item, ...}`: the explicit keys are additions
+#: to the database row, not a whitelist of it. Every column a caller's SELECT
+#: names reaches the buyer by default, so the only durable place to say "not
+#: this one" is here.
+#:
+#: `safety_score` is the one that shipped. It holds the reviewer's *risk* number
+#: despite its name -- 0 clean, 100 for "guaranteed profit, risk free, 100x" --
+#: and the web cards printed it as "Safety N", exactly inverted. The rest are
+#: named now because they are one `SELECT *` away from the same trip.
+MARKETPLACE_REVIEWER_ONLY_FIELDS = (
+    "safety_score",
+    "safety_flags_json",
+    "moderation_reason",
+    "moderation_category",
+    "review_version",
+    "moderation_notes",
+)
+
+
 def pulse_marketplace_listing_payload(listing, media_rows=None):
-    item = dict(listing or {})
+    item = {key: value for key, value in dict(listing or {}).items()
+            if key not in MARKETPLACE_REVIEWER_ONLY_FIELDS}
     listing_id = safe_int(item.get("id"), 0)
     media = []
     seen = set()
@@ -54170,7 +54315,11 @@ def pulse_marketplace_listing_payload(listing, media_rows=None):
         "price_label": str(item.get("price_label") or ""),
         "listing_type": marketplace_listing_types_service.effective_listing_type(item.get("listing_type"), item.get("product_type")),
         "listing_metadata": marketplace_listing_types_service.parse_metadata(item.get("listing_metadata_json")),
-        "safety_score": safe_int(item.get("safety_score"), 0),
+        # `safety_score` used to be emitted here. It is gone via
+        # `MARKETPLACE_REVIEWER_ONLY_FIELDS` above, not by deleting this line:
+        # the row is spread into this dict, so dropping the explicit key left
+        # the column on the wire and changed nothing at all. Measured against
+        # the served response, which is the only reason that was noticed.
         "cover_image_url": cover.get("media_url") or cover_url,
         "image_url": cover.get("media_url") or cover_url,
         "thumbnail_url": cover.get("thumbnail_url") or cover.get("media_url") or cover_url,
@@ -54180,6 +54329,16 @@ def pulse_marketplace_listing_payload(listing, media_rows=None):
         "media_assets": media,
         "publication_state": str(item.get("status") or "draft").lower(),
         "publication_label": publication_label,
+        # `publication_state` is one column and cannot answer "can a buyer reach
+        # this". The seller store screen used to re-derive publication from it
+        # and got "published" for a suspended seller, an unnamed store and an
+        # empty shelf alike -- the same neutral chip a genuinely live listing
+        # got, so nothing in the app distinguished sellable from unsellable.
+        # This is the stable key for the one blocker that is a surprise: the
+        # merchant published it, a moderator approved it, and it still is not
+        # reachable. "" for everything else, including drafts, which are
+        # described perfectly well by their own status.
+        "publication_blocker": marketplace_listing_lifecycle.live_blocker(item),
         "buyer_visible": marketplace_listing_lifecycle.is_public(item),
         "inventory_state": "available" if inventory_available else "out_of_stock",
     }
@@ -54289,6 +54448,12 @@ def pulse_marketplace_owned_listing_response(cur, listing_id, user_id):
                l.subcategory, l.created_at, l.updated_at, l.featured, l.delivery_type, l.listing_type, l.listing_metadata_json,
                l.tags_json, l.refund_policy, l.estimated_delivery, l.seller_notes,
                COALESCE(NULLIF(TRIM(ms.display_name),''), NULLIF(TRIM(ms.business_name),'')) AS seller_store_name,
+               -- Selected for `seller_label`, which answers "Live" from the
+               -- publication rules and not from the merchant's own two columns.
+               -- The seller-listings query beside this one already joined it;
+               -- without it here the same listing could read "Live" on the
+               -- detail view and "Store offline" in the list.
+               COALESCE(ms.status,'missing') AS seller_status,
                COALESCE(u.username,'') AS seller_username
         FROM marketplace_listings l
         LEFT JOIN users u ON u.user_id=l.seller_user_id
@@ -54475,6 +54640,30 @@ def pulse_emit_payment_checkout_event(
         )
 
 
+def marketplace_order_line(details, amount_cents):
+    """How many units a paid transaction is for, and what one of them cost.
+
+    Both facts are stated exactly by the commercial quote frozen onto the
+    transaction at checkout, so they are read from it rather than derived a
+    second time. The previous pair — ``details["qty"]`` and
+    ``amount_cents // quantity`` — was the same fact computed twice and wrong
+    both ways: the division is not the unit price for any order carrying
+    shipping or tax, and ``qty`` is a key only the cart lane has ever written,
+    so every Buy Now order in the ledger claims a quantity of one.
+
+    Falls back to the old pair for transactions written before quotes existed.
+    An absent ``qty`` must keep meaning "one" rather than "unknown", because
+    that is what every single-unit order already in the ledger relies on.
+    """
+    quote = details.get("commercial_quote")
+    if isinstance(quote, dict):
+        quantity, unit = quote.get("quantity"), quote.get("unit_price_minor")
+        if (type(quantity) is int and quantity > 0 and type(unit) is int and unit >= 0):
+            return quantity, unit
+    quantity = max(1, safe_int(details.get("qty"), 1))
+    return quantity, int(amount_cents or 0) // quantity
+
+
 def pulse_upsert_marketplace_order(cur, tx, provider_payment_id="", now="", provider="stripe"):
     """Project one paid Marketplace transaction into exactly one order."""
     tx = dict(tx or {})
@@ -54484,9 +54673,9 @@ def pulse_upsert_marketplace_order(cur, tx, provider_payment_id="", now="", prov
         details = json.loads(tx.get("metadata_json") or "{}")
     except Exception:
         details = {}
-    quantity = max(1, safe_int(details.get("qty"), 1))
     timestamp = now or datetime.utcnow().isoformat(timespec="seconds")
     amount = int(tx.get("amount_cents") or 0)
+    quantity, unit_price_cents = marketplace_order_line(details, amount)
     cur.execute("""INSERT INTO marketplace_orders
         (seller_transaction_id,buyer_user_id,seller_user_id,listing_id,quantity,unit_price_cents,
          amount_cents,currency,status,payment_provider,provider_payment_id,created_at,paid_at,updated_at)
@@ -54494,7 +54683,7 @@ def pulse_upsert_marketplace_order(cur, tx, provider_payment_id="", now="", prov
         ON CONFLICT(seller_transaction_id) DO UPDATE SET status='paid',provider_payment_id=excluded.provider_payment_id,
             paid_at=COALESCE(marketplace_orders.paid_at,excluded.paid_at),updated_at=excluded.updated_at""",
         (int(tx["id"]), tx.get("buyer_user_id"), tx.get("seller_user_id"), tx.get("item_id"), quantity,
-         amount // quantity, amount, tx.get("currency") or "USD", str(provider or "stripe")[:40], provider_payment_id,
+         unit_price_cents, amount, tx.get("currency") or "USD", str(provider or "stripe")[:40], provider_payment_id,
          tx.get("created_at") or timestamp, timestamp, timestamp))
 
 
@@ -55711,7 +55900,7 @@ def pulse_merchant_dashboard_page():
             msg = "Apply and complete verification before merchant tools unlock."
         return pulse_social_shell("Merchant Dashboard", "Merchant approval is required before seller tools unlock.", f"<section class='card'><h2>{status_text}</h2><p>{clean_html(msg)}</p><a class='button primary' href='/pulse/merchant/apply'>Open Merchant Application</a></section>")
     rows = "".join(f"<tr><td>{l.get('id')}</td><td>{clean_html(l.get('title') or '')}</td><td>{clean_html(l.get('status') or '')}</td><td>{int(l.get('safety_score') or 0)}</td></tr>" for l in listings)
-    main = f"<section class='grid'><div class='card'><h2>Status</h2><p class='metric'>{clean_html(seller.get('status') or 'not applied')}</p></div><div class='card'><h2>Products</h2><p class='metric'>{len(listings)}</p></div><div class='card'><h2>Risk Score</h2><p class='metric'>{int(seller.get('risk_score') or 0)}</p></div></section><section class='card'><h2>Merchant Tools</h2><div class='actions'><a class='button primary' href='/pulse/marketplace/create'>Create Product</a><a class='button' href='/pulse/merchant/payouts'>Payouts</a><a class='button' href='/pulse/merchant/apply'>Update Application</a></div></section><section class='card'><h2>Listings</h2><table class='table'><tr><th>ID</th><th>Title</th><th>Status</th><th>Safety</th></tr>{rows or '<tr><td colspan=4>No listings yet.</td></tr>'}</table></section>"
+    main = f"<section class='grid'><div class='card'><h2>Status</h2><p class='metric'>{clean_html(seller.get('status') or 'not applied')}</p></div><div class='card'><h2>Products</h2><p class='metric'>{len(listings)}</p></div><div class='card'><h2>Risk Score</h2><p class='metric'>{int(seller.get('risk_score') or 0)}</p></div></section><section class='card'><h2>Merchant Tools</h2><div class='actions'><a class='button primary' href='/pulse/marketplace/create'>Create Product</a><a class='button' href='/pulse/merchant/payouts'>Payouts</a><a class='button' href='/pulse/merchant/apply'>Update Application</a></div></section><section class='card'><h2>Listings</h2><table class='table'><tr><th>ID</th><th>Title</th><th>Status</th><th>Review risk</th></tr>{rows or '<tr><td colspan=4>No listings yet.</td></tr>'}</table></section>"
     return pulse_social_shell("Merchant Dashboard", "Manage approved listings, safety review, buyer messages, and merchant readiness.", main)
 
 
@@ -92506,11 +92695,31 @@ def api_pulse_payments_checkout():
             fee_bps,
             marketplace_payment_mode,
         )
+    # How many units the buyer actually asked for. This lane used to price
+    # exactly one, always: the request body had no quantity field at all, while
+    # the product screen's stepper multiplied the unit price out for display and
+    # the checkout summary showed the multiplied total. A buyer who picked three
+    # saw $75.00, was charged $25.00, and got an order row saying quantity 1 —
+    # which is also the number `fulfillment.create_intent` compares a supplier
+    # line against, so no multi-unit dropship order could ever be dispatched.
+    # The cart lane has always carried its quantity; only Buy Now guessed.
+    buy_quantity = 1
+    if item_type == "marketplace_product":
+        buy_quantity = max(1, min(safe_int(payload.get("quantity"), 1),
+                                  marketplace_cart_service.MAX_QTY_PER_LINE))
+        # Asked of the same function the cart and the buy button ask, so a
+        # quantity the shelf cannot cover is refused before anything is held.
+        if not marketplace_listing_lifecycle.inventory_available(item, buy_quantity):
+            conn.close()
+            return api_error("There are not that many left.", 409,
+                             error_code="OUT_OF_STOCK",
+                             requested_quantity=buy_quantity,
+                             available_quantity=safe_int(item.get("quantity"), 0))
     commercial_quote = None
     if item_type == "marketplace_product":
         from services import marketplace_quote_service
         commercial_quote = marketplace_quote_service.create_quote(
-            listing_id=item_id, seller_id=seller_user_id, quantity=1,
+            listing_id=item_id, seller_id=seller_user_id, quantity=buy_quantity,
             unit_price_minor=amount_cents, currency=currency, live_fee_bps=fee_bps,
         )
         amount_cents = commercial_quote["buyer_total_minor"]
@@ -92579,6 +92788,9 @@ def api_pulse_payments_checkout():
     transaction_details = {"title": title}
     if item_type == "marketplace_product":
         transaction_details["payment_method"] = marketplace_payment_mode
+        # The cart lane writes this key; Buy Now never did, which is how the
+        # order projection came to read an absent key and call it one.
+        transaction_details["qty"] = buy_quantity
     if fulfillment_snapshot:
         transaction_details["fulfillment"] = fulfillment_snapshot
     initial_status = "cash_pending" if marketplace_cash_payment else "created"
@@ -92622,9 +92834,11 @@ def api_pulse_payments_checkout():
     if item_type == "marketplace_product":
         inventory_limited = fulfillment_kind not in marketplace_fulfillment.STOCKLESS_KINDS
         if inventory_limited:
+            # Conditional on the whole amount, not on one unit: a shelf of two
+            # must refuse an order for three rather than go negative or ship short.
             cur.execute(
-                "UPDATE marketplace_listings SET quantity=quantity-1, updated_at=? WHERE id=? AND quantity>=1",
-                (now, item_id),
+                "UPDATE marketplace_listings SET quantity=quantity-?, updated_at=? WHERE id=? AND quantity>=?",
+                (buy_quantity, now, item_id, buy_quantity),
             )
             if not cur.rowcount:
                 cur.execute("UPDATE seller_transactions SET status='checkout_failed', updated_at=? WHERE id=?", (now, tx_id))
@@ -92634,7 +92848,7 @@ def api_pulse_payments_checkout():
                 """INSERT INTO marketplace_inventory_reservations
                 (seller_transaction_id,buyer_user_id,listing_id,quantity,status,created_at,updated_at)
                 VALUES (?,?,?,?, 'held',?,?) ON CONFLICT(seller_transaction_id) DO NOTHING""",
-                (tx_id, int(buyer["user_id"]), item_id, 1, now, now),
+                (tx_id, int(buyer["user_id"]), item_id, buy_quantity, now, now),
             )
     if marketplace_cash_payment and marketplace_payment_pause is not None:
         response_payload = marketplace_payment_pause.cash_checkout_payload(
@@ -92671,7 +92885,11 @@ def api_pulse_payments_checkout():
                 "cart_checkout": "1",
                 "seller_transaction_ids": str(tx_id),
                 "listing_ids": str(item_id),
-                "quantities": "1",
+                # Nothing reads this back — checked, three writers and no
+                # readers — so it is a record for the Stripe dashboard, not a
+                # control. The number a failed payment actually returns to the
+                # shelf comes from marketplace_inventory_reservations.quantity.
+                "quantities": str(buy_quantity),
                 "idempotency_key": idempotency_key,
             })
         payment_intent_data = {"metadata": checkout_metadata}
@@ -93153,6 +93371,13 @@ def pulse_buyer_order_response(cur, order, source_table="seller_transactions",
     digital_files = []
     if listing and payment_status == "paid" and (listing.get("listing_type") or "") == "digital":
         digital_files = marketplace_listing_types_service.buyer_digital_files_payload(listing.get("listing_metadata") or {})
+    # The lane this order was placed on, served as a field rather than left
+    # buried in `metadata_json`. Checkout already froze the *settled* kind here
+    # — post-`resolve_choice`, so a listing that offered both lanes carries the
+    # one the buyer picked — and this function has been parsing that metadata
+    # all along without ever reading the key. The app, having no lane field to
+    # read, defaulted every order's timeline to shipping.
+    fulfillment_kind = marketplace_fulfillment.order_kind(metadata, listing)
     return {
         **raw,
         "id": tx_id,
@@ -93182,6 +93407,7 @@ def pulse_buyer_order_response(cur, order, source_table="seller_transactions",
             "avatar_url": seller.get("avatar_url") or "",
         },
         "listing": listing,
+        "fulfillment_kind": fulfillment_kind,
         "digital_files": digital_files,
         "marketplace_listing_id": numeric_item_id if item_type in {"marketplace_product", "product"} else 0,
         "receipt_url": receipt_url,
@@ -93408,6 +93634,18 @@ def api_payments_list_seller_orders():
         (int(user["user_id"]),),
     )
     seller_orders = [dict(row) for row in cur.fetchall()]
+    # The lane each order was placed on, from the kind checkout froze onto the
+    # row. No listing join is needed and none is wanted: the seller may have
+    # edited or delisted the item since, and the order still has to say whether
+    # that unit is being collected or posted. Served as a field because the
+    # seller's order list has no other way to tell the two apart — it was
+    # reading `item_type`, which is "marketplace_product" on every row.
+    for order in seller_orders:
+        try:
+            order_metadata = json.loads(order.get("metadata_json") or "{}")
+        except Exception:
+            order_metadata = {}
+        order["fulfillment_kind"] = marketplace_fulfillment.order_kind(order_metadata)
     try:
         from services import marketplace_commercial_operations as commercial_ops
         # `ensure_schema(conn)` used to run here, and it was stalling this route.
@@ -94339,6 +94577,20 @@ def api_pulse_marketplace_seller_listing_submit(listing_id):
     if int(dict(cur.fetchone() or {}).get("total") or 0) < 1:
         conn.close(); return api_error("Add a cover photo before submitting.", 400)
     review = revenue_safety_engine.marketplace_listing_review({"title": listing.get("title"), "description": listing.get("description"), "category": listing.get("category")})
+    # `marketplace_listings.safety_score` holds RISK, not safety: 0 is clean and
+    # 100 is "guaranteed profit, risk free, 100x". All three writers of this
+    # column (here, the edit route, the resume route) store `risk_score`
+    # unchanged, the column defaults to 0, and the admin queue counts
+    # `safety_score>=30` as risky -- so the storage side is consistent and must
+    # not be "corrected" by inverting it. The teacher application route stores
+    # `100 - risk_score` under the same column name on another table, which is
+    # where the confusion came from.
+    #
+    # It was the readers that lied: three buyer surfaces printed this as
+    # "Safety N", so the worst listing the engine can score advertised
+    # "Safety 100". They no longer print it at all. If you need a number a
+    # buyer can read, derive it here and give it a name that says which way up
+    # it is -- do not repoint a reader at this one.
     cur.execute("""UPDATE marketplace_listings SET status='pending_review', approval_status='pending_review',
         submitted_at=?, moderation_reason='', moderation_category='', safety_score=?, safety_flags_json=?,
         review_version=COALESCE(review_version,0)+1, updated_at=? WHERE id=? AND seller_user_id=?""",
@@ -98537,6 +98789,49 @@ def admin_merchant_document_review(doc_id):
     return jsonify({"ok": True, "message": f"Document marked {allowed[action]}.", "document_id": doc_id, "status": allowed[action]})
 
 
+def admin_marketplace_decision_message(cur, action, listing_id):
+    """What to tell the moderator after their decision was written.
+
+    Approving is not publishing. The write this route performs sets ``status``
+    and ``approval_status``, which is two of the five conditions
+    ``marketplace_listing_lifecycle`` requires before a buyer can reach a
+    listing; the other three belong to the seller record and to stock. So
+    "Listing updated." was true and useless. Three of four approvals in the
+    measurement that produced this function returned 200, wrote an audit entry,
+    and left the listing invisible to every buyer -- one because the seller was
+    suspended, one because the seller had never named their storefront, one
+    because quantity was 0. Nothing on the page said so, and the moderator's
+    next signal would have been a merchant asking why an approved listing has no
+    orders.
+
+    The reason is not recomputed here. It comes from the same rule table that
+    decides discovery, so the sentence cannot drift away from the predicate that
+    actually hides the row.
+
+    Only the publishing actions get a visibility verdict. After a reject or a
+    suspend the listing is invisible on purpose, and reporting that as though it
+    were a problem would train reviewers to ignore the line.
+    """
+    if action not in {"approve", "feature"}:
+        return "Listing updated."
+    cur.execute(
+        f"""SELECT l.*, COALESCE(ms.status,'missing') AS seller_status,
+                   {marketplace_seller_identity.store_name_select('ms')}
+            FROM marketplace_listings l
+            LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
+            WHERE l.id=? LIMIT 1""",
+        (int(listing_id or 0),),
+    )
+    decided = dict(cur.fetchone() or {})
+    if not decided:
+        return "Listing updated."
+    blocker = marketplace_listing_lifecycle.publication_blocker(decided)
+    if not blocker:
+        return "Listing updated. It is now visible to buyers."
+    return ("Listing updated, but it is still not visible to buyers: "
+            + marketplace_listing_lifecycle.blocker_note(blocker) + ".")
+
+
 @webhook_app.route("/admin/marketplace-command", methods=["GET", "POST"])
 def admin_marketplace_command_page():
     admin, denied = require_admin_page("monetization.manage")
@@ -98568,7 +98863,7 @@ def admin_marketplace_command_page():
             previous_approval = str(listing_row.get("approval_status") or "").lower()
             if not listing_row:
                 conn.close(); return api_error("Listing not found.", 404)
-            if action in {"approve", "reject", "request_changes"} and previous_status not in {"pending_review", "review_ready"}:
+            if action in {"approve", "reject", "request_changes"} and not marketplace_listing_lifecycle.awaiting_moderation(listing_row):
                 conn.close(); return api_error("Listing review state changed. Reload before deciding.", 409)
             if action == "feature" and (previous_status not in marketplace_listing_lifecycle.PUBLIC_STATUSES or previous_approval != "approved"):
                 conn.close(); return api_error("Only an approved published listing can be featured.", 409)
@@ -98597,7 +98892,7 @@ def admin_marketplace_command_page():
                 {"previous_status": previous_status, "previous_approval_status": previous_approval,
                  "new_status": status, "new_approval_status": approval, "reason": reason,
                  "reason_category": reason_category, "trace_id": request.headers.get("X-Request-ID") or request.environ.get("request_id") or ""})
-            message = "Listing updated."
+            message = admin_marketplace_decision_message(cur, action, listing_id)
         elif listing_id and action in reason_required and not reason:
             message = "A moderation reason is required for this action."
         conn.close()
@@ -98605,7 +98900,13 @@ def admin_marketplace_command_page():
     counts = {}
     for key, sql in {
         "pending_merchants": "SELECT COUNT(*) AS total FROM marketplace_merchant_applications WHERE status IN ('pending_review','under_review')",
-        "pending_products": "SELECT COUNT(*) AS total FROM marketplace_listings WHERE status IN ('pending_review','review_ready')",
+        # Counted with the same predicate the Approve button is gated on, so the
+        # queue cannot advertise zero work while holding a listing it would
+        # accept a decision for. A dropship listing sits at
+        # status='published'/approval='pending_review' and the old count, which
+        # asked `status` alone, could not see it.
+        "pending_products": "SELECT COUNT(*) AS total FROM marketplace_listings l WHERE "
+                            + marketplace_listing_lifecycle.awaiting_moderation_sql("l"),
         "approved_merchants": "SELECT COUNT(*) AS total FROM marketplace_sellers WHERE status='approved'",
         "risky_products": "SELECT COUNT(*) AS total FROM marketplace_listings WHERE COALESCE(safety_score,0)>=30",
         "saved_products": "SELECT COUNT(*) AS total FROM marketplace_saved_products",
@@ -98624,7 +98925,8 @@ def admin_marketplace_command_page():
         COALESCE(ms.status,'missing') AS seller_status, COALESCE(ms.verification_status,'unverified') AS seller_verification_status
         FROM marketplace_listings l LEFT JOIN users u ON u.user_id=l.seller_user_id
         LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
-        ORDER BY CASE l.status WHEN 'pending_review' THEN 0 WHEN 'changes_requested' THEN 1 ELSE 2 END, l.id DESC LIMIT 100""")
+        ORDER BY CASE WHEN {marketplace_listing_lifecycle.awaiting_moderation_sql('l')} THEN 0
+            WHEN LOWER(COALESCE(l.status,''))='changes_requested' THEN 1 ELSE 2 END, l.id DESC LIMIT 100""")
     listings = [dict(row) for row in cur.fetchall()]
     listing_ids = [int(l.get("id") or 0) for l in listings]
     media_by_listing = {}
@@ -108374,9 +108676,55 @@ def sports_edge_summary(user_id=None):
     return "\n".join(lines)
 
 
-def openai_sports_edge_analysis(user_id, game, base_text):
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key or not user_id or not is_pro(user_id):
+#: Hoisted out of the call below so a test can assert it survived the migration.
+#:
+#: The instruction is the whole safety posture of this feature — "never
+#: certainty-based" is what stops a model from turning a risk read into a tip — and
+#: an inline literal is the kind of thing a reformat quietly rewords.
+SPORTS_EDGE_SYSTEM_PROMPT = (
+    "You are CoinPilotX Sports Edge: cautious, ethical, analytical, and never "
+    "certainty-based."
+)
+
+
+def sports_edge_ai_analysis(user_id, game, base_text):
+    """Deepen a Sports Edge read, or return None and let the deterministic text stand.
+
+    Routed instead of posted to OpenAI directly. Renamed with it: a function called
+    `openai_*` that does not call OpenAI is a false positive in every future call-site
+    census and, worse, a false sense that a direct call still lives here.
+
+    Three things genuinely change. The `OPENAI_API_KEY` gate is gone, because
+    availability is the router's question — a deployment holding a Claude key and no
+    OpenAI key used to get no analysis at all, which is the duplication this mission
+    exists to remove. `OPENAI_MODEL` goes with it: `undx_router.PROVIDERS` is the
+    authority on which model a provider uses, and this was one of four competing
+    defaults. And the failure log no longer blames OpenAI for a failure that may have
+    come from any of seven providers.
+
+    Deliberately unchanged: the `is_pro` gate, the prompt text, the system
+    instruction, temperature 0.32, the 700-token budget, the 20s timeout, the
+    safety-line guarantee, and the graceful `None`. That `None` must stay cheap — the
+    caller renders a complete deterministic read without it, so there is nothing here
+    worth failing a Telegram reply over, including a router that refused every
+    provider.
+
+    PUBLIC (§4). The prompt carries a public scoreboard feed, generated analysis of a
+    public game, and a subscription footer that is invariant here because the `is_pro`
+    gate above means only the "Premium active" branch can reach it. It carries no
+    identifier: `user_id` is passed to the router for budgeting and attribution, never
+    interpolated into the text. Stated as a reviewable claim rather than a label,
+    because PUBLIC admits all seven providers where CONFIDENTIAL admits three, and
+    that gap is exactly where §4's "do not lower a classification to make routing
+    possible" gets violated.
+
+    TELEGRAM (§5). Both callers are Telegram handlers. Provenance is the honest basis
+    for a domain — calling this GENERAL because today's prompt happens to contain no
+    stranger-supplied text would be a claim about the prompt, and the next edit could
+    invalidate it silently. The domain can only reorder providers, never widen them,
+    so labelling it accurately costs nothing.
+    """
+    if not user_id or not is_pro(user_id):
         return None
     prompt = (
         "Deepen this CoinPilotX Sports Edge read without guaranteeing outcomes. "
@@ -108385,28 +108733,31 @@ def openai_sports_edge_analysis(user_id, game, base_text):
         f"Required safety line: {SPORTS_SAFETY_LINE}"
     )
     try:
-        response = requests.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            json={
-                "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-                "messages": [
-                    {"role": "system", "content": "You are CoinPilotX Sports Edge: cautious, ethical, analytical, and never certainty-based."},
-                    {"role": "user", "content": prompt},
-                ],
-                "max_tokens": 700,
-                "temperature": 0.32,
-            },
+        envelope = undx_router.route_structured_request(
+            user_id,
+            SPORTS_EDGE_SYSTEM_PROMPT,
+            prompt,
             timeout=20,
+            temperature=0.32,
+            max_tokens=700,
+            privacy_class=undx_privacy.SENSITIVITY_PUBLIC,
+            call_domain=undx_call_domain.CALL_DOMAIN_TELEGRAM,
         )
-        response.raise_for_status()
-        text = response.json()["choices"][0]["message"]["content"].strip()
-        if SPORTS_SAFETY_LINE not in text:
-            text += f"\n\n{SPORTS_SAFETY_LINE}"
-        return text
     except Exception as exc:
-        logging.info("Sports Edge OpenAI analysis failed: %s", exc)
+        # The router is not supposed to raise — it returns a typed miss. If it does,
+        # that is a bug in the router and not a reason to drop a Telegram reply.
+        logging.info("Sports Edge analysis transport failed: %s", exc)
         return None
+    if not envelope.get("ok"):
+        logging.info("Sports Edge analysis unavailable: %s attempts=%s",
+                     envelope.get("error"), envelope.get("attempts"))
+        return None
+    text = str(envelope.get("response") or "").strip()
+    if not text:
+        return None
+    if SPORTS_SAFETY_LINE not in text:
+        text += f"\n\n{SPORTS_SAFETY_LINE}"
+    return text
 
 
 def sports_edge_game_summary(game_id, user_id=None):
@@ -108469,7 +108820,7 @@ def sports_edge_game_summary(game_id, user_id=None):
         ])
     lines.extend(["", analysis["final_caution"], "", sports_edge_footer(user_id)])
     deterministic = "\n".join(lines)
-    ai_text = openai_sports_edge_analysis(user_id, game, deterministic)
+    ai_text = sports_edge_ai_analysis(user_id, game, deterministic)
     return f"{ai_text}\n\n{sports_edge_footer(user_id)}" if ai_text else deterministic
 
 
@@ -109152,7 +109503,8 @@ async def telegram_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, tex
             "last_inbound_update_at": TELEGRAM_RUNTIME_STATE.get("last_inbound_update_at"),
             "last_outbound_reply_at": now_iso,
             "last_successful_reply_at": now_iso,
-            "last_openai_reply_status": TELEGRAM_RUNTIME_STATE.get("last_openai_reply_status"),
+            "last_ai_reply_status": TELEGRAM_RUNTIME_STATE.get("last_ai_reply_status"),
+            "last_ai_reply_source": TELEGRAM_RUNTIME_STATE.get("last_ai_reply_source"),
             "chat_id_masked": _mask_telegram_id(chat_id),
         })
         return result
@@ -109217,12 +109569,34 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if intent == "reply" and routed.get("message"):
             await telegram_reply(update, context, routed["message"], reply_markup=account_reply_markup(update.effective_user.id))
             return
-        if intent == "openai":
-            telegram_trace("TELEGRAM_OPENAI_FALLBACK_START", update, handler=f"text:{intent}")
-            answer = telegram_text_router.answer_telegram_with_openai(original_text, {"linked_user": linked_user})
-            TELEGRAM_RUNTIME_STATE["last_openai_reply_status"] = "success" if "temporarily unavailable" not in answer.lower() else "fallback"
-            telegram_trace("TELEGRAM_OPENAI_RESPONSE_OK", update, handler=f"text:{intent}")
-            await telegram_reply(update, context, answer, reply_markup=account_reply_markup(update.effective_user.id))
+        if intent == telegram_text_router.INTENT_AI_REPLY:
+            telegram_trace("TELEGRAM_AI_REPLY_START", update, handler=f"text:{intent}")
+            answer = telegram_text_router.answer_telegram_question(original_text, {"linked_user": linked_user})
+            # `ok` is the router's own verdict. This line used to read
+            # `"temporarily unavailable" not in answer.lower()` — an admin health status
+            # derived from a substring of the user-facing apology, so rewording that
+            # sentence would have reported every failure as a success.
+            TELEGRAM_RUNTIME_STATE["last_ai_reply_status"] = "success" if answer.get("ok") else "fallback"
+            TELEGRAM_RUNTIME_STATE["last_ai_reply_source"] = answer.get("source") or ""
+            TELEGRAM_RUNTIME_STATE["last_ai_reply_reason"] = answer.get("reason") or ""
+            # Two event names rather than one. The old trace was `TELEGRAM_OPENAI_RESPONSE_OK`
+            # and was emitted whether or not a provider had answered, so a log search for
+            # failures found nothing and a search for successes found everything.
+            telegram_trace(
+                "TELEGRAM_AI_REPLY_OK" if answer.get("ok") else "TELEGRAM_AI_REPLY_UNAVAILABLE",
+                update, handler=f"text:{intent}",
+                # The router's own wording for why no provider answered. `exception_text` is
+                # the trace's only detail channel and is what carries `str(exc)` elsewhere;
+                # it is passed only on the failure path so the field never describes a
+                # success.
+                exception_text="" if answer.get("ok") else (answer.get("reason") or ""),
+            )
+            # Falls back to the sentence, not to "". If the envelope contract is ever broken
+            # the user should see an apology, not have `reply_text("")` raise inside a `try`
+            # whose `except` sends a different apology and logs an exception.
+            await telegram_reply(update, context,
+                                 answer.get("message") or telegram_text_router.AI_UNAVAILABLE_MESSAGE,
+                                 reply_markup=account_reply_markup(update.effective_user.id))
             return
     except Exception as exc:
         logging.exception("Telegram text router failed for user=%s: %s", update.effective_user.id, exc)
@@ -118558,18 +118932,29 @@ def openai_chat_completion(user_id, question):
     linked = get_linked_website_account(user_id)
     logging.info("linked account found: %s", bool(linked))
     logging.info("Premium access: %s", is_pro(user_id))
-    openai_key_loaded = bool(os.getenv("OPENAI_API_KEY"))
-    logging.info("OpenAI key loaded: %s", openai_key_loaded)
+    # `OPENAI_API_KEY` is no longer read here. It used to be logged as "OpenAI key
+    # loaded" and then gate a "OpenAI response success" line, which made this log say
+    # OpenAI answered whenever the key merely existed. Routing turned that from
+    # imprecise into wrong — any of seven providers can answer now — so the provider is
+    # read off the envelope instead of guessed from a credential.
     allowed, limit_message = consume_ai_usage(user_id, "telegram_ai_assistant")
     if not allowed:
         return append_plan_footer(user_id, limit_message)
     try:
-        response = intelligence_service.assistant_response(user_id, question, pro=is_pro(user_id))
-        if openai_key_loaded:
-            logging.info("OpenAI response success")
+        # TELEGRAM (§5). Provenance: `question` is text an arbitrary stranger sent to a
+        # bot, which is the one domain `undx_call_domain` singles out as
+        # attacker-influenced. Declaring it accurately is safe precisely because a
+        # domain cannot widen what the call may do.
+        answer = intelligence_service.assistant_response_envelope(
+            user_id, question, pro=is_pro(user_id),
+            call_domain=undx_call_domain.CALL_DOMAIN_TELEGRAM,
+        )
+        response = answer["text"]
+        logging.info("Telegram AI answered routed=%s provider=%s",
+                     answer["routed"], answer["provider"])
     except Exception as exc:
-        logging.warning("OpenAI error message: %s", exc)
-        log_product_event(user_id, "openai_error", {"error": str(exc)[:300], "surface": "telegram"})
+        logging.warning("Telegram AI assistant failed: %s", exc)
+        log_product_event(user_id, "telegram_ai_error", {"error": str(exc)[:300], "surface": "telegram"})
         response = (
             "💬 AI Crypto Assistant\n\n"
             "AI intelligence is temporarily unavailable. Please try again shortly.\n\n"

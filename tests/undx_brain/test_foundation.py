@@ -149,12 +149,34 @@ class TheMapCannotBeMadeVague(unittest.TestCase):
                 self.assertTrue(item.owners)
 
     def test_owner_pairs_are_well_formed(self):
+        """An owner names a module that exists in this repository, and a symbol.
+
+        This used to assert ``module_name.startswith("services.")``, which was never the
+        property — it was a summary of the entries that happened to exist when it was
+        written. Every owner lived under ``services`` because nothing in the map had yet
+        been owned by one of the root-level modules, and this repository has a pile of
+        them: ``bot.py``, ``undx_router.py``, ``undx_execution_kernel.py``. The assertion
+        failed the moment ``provider_routing`` named ``undx_router`` as the half that
+        chooses and calls a provider, which is a true claim about where the authority now
+        lives. A shape check that forbids recording a fact is worse than no shape check,
+        because the cheapest way to green is to stop recording the fact.
+
+        Asking the filesystem instead is both honest about layout and stricter than the
+        prefix: ``services.does_not_exist`` passed the old form. ``verify()`` catches that
+        too, by importing, but it is the only thing that did — and an import-based check
+        goes quiet when a third-party dependency is missing (see ``unavailable``), which
+        is precisely when a typo would slip through.
+        """
         for item in f.FOUNDATION:
             for pair in item.owners:
                 with self.subTest(key=item.key, pair=pair):
                     self.assertEqual(len(pair), 2)
                     module_name, symbol = pair
-                    self.assertTrue(module_name.startswith("services."))
+                    parts = module_name.split(".")
+                    self.assertTrue(
+                        (ROOT.joinpath(*parts).with_suffix(".py").is_file()
+                         or ROOT.joinpath(*parts, "__init__.py").is_file()),
+                        f"{module_name} is not a module in this repository")
                     self.assertTrue(symbol.strip())
 
 

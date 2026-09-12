@@ -46,12 +46,54 @@ export type FulfillmentField = {
   options?: string[];
 };
 
-const PICKUP_OR_SHIPPING = ["both", "pickup_or_shipping", "shipping_or_pickup"];
+/**
+ * Every spelling of a delivery lane that has ever been stored, folded onto the
+ * four this module reasons about. Mirrors `_LANE_WORDS` on the server.
+ */
+const LANE_WORDS: Record<string, "pickup" | "shipping" | "both" | "digital"> = {
+  pickup: "pickup",
+  local: "pickup",
+  meetup: "pickup",
+  shipping: "shipping",
+  delivery: "shipping",
+  both: "both",
+  pickup_or_shipping: "both",
+  shipping_or_pickup: "both",
+  digital: "digital",
+  download: "digital"
+};
+
+/**
+ * The delivery lane the seller declared, or `""` if they declared none.
+ *
+ * `delivery_type` does not hold one. Every backend writer of that column stores
+ * the *product type* in it — the publish route's INSERT lists
+ * `delivery_type, product_type` against `product_type, product_type`, the CJ
+ * importer hardcodes `'physical','physical'`, and the column's own default is
+ * `'digital'` — so it reads `physical` for every physical listing in the table
+ * and it can never read `pickup`, `shipping` or `both`.
+ *
+ * The seller's actual answer is `listing_metadata.delivery_options`, validated
+ * server-side against exactly those three words, and it is read first here. The
+ * column is consulted only for a row that declared no listing type at all,
+ * where it is the only signal there is.
+ *
+ * Reading the column first is what made this module answer `shipping` for every
+ * physical listing — one tap after the product screen printed "Local pickup"
+ * from the metadata, and while the same screen's grid card offered no buy
+ * button at all because `physical` matched none of its lane words either.
+ */
+export function deliveryLane(listing: MarketplaceListing): "" | "pickup" | "shipping" | "both" | "digital" {
+  const metadata = (listing.listing_metadata || {}) as Record<string, unknown>;
+  const declared = LANE_WORDS[String(metadata.delivery_options || "").trim().toLowerCase()];
+  if (declared) return declared;
+  if (String(listing.listing_type || listing.product_type || "").trim()) return "";
+  return LANE_WORDS[String(listing.delivery_type || "").trim().toLowerCase()] || "";
+}
 
 export function resolveFulfillmentKind(listing: MarketplaceListing): MarketplaceFulfillmentKind {
   const metadata = (listing.listing_metadata || {}) as Record<string, unknown>;
   const kind = String(listing.listing_type || listing.product_type || "").trim().toLowerCase();
-  const delivery = String(listing.delivery_type || "").trim().toLowerCase();
 
   if (kind === "digital") return "digital";
   if (kind === "service") {
@@ -70,10 +112,11 @@ export function resolveFulfillmentKind(listing: MarketplaceListing): Marketplace
       : "booking_remote";
   }
 
-  const option = delivery || String(metadata.delivery_options || "").trim().toLowerCase();
-  if (option === "digital") return "digital";
-  if (PICKUP_OR_SHIPPING.includes(option)) return "shipping_or_pickup";
-  if (option === "pickup") return "pickup";
+  // Physical, and anything legacy that never declared a type.
+  const lane = deliveryLane(listing);
+  if (lane === "digital") return "digital";
+  if (lane === "both") return "shipping_or_pickup";
+  if (lane === "pickup") return "pickup";
   return "shipping";
 }
 
@@ -281,6 +324,24 @@ export function groupFulfillmentKind(
 /** Whether this kind happens at a time the buyer has to name. */
 export function isScheduledKind(kind: MarketplaceFulfillmentKind) {
   return kind.startsWith("service_") || kind.startsWith("booking_") || kind.startsWith("event_");
+}
+
+/**
+ * Whether buyer and seller end up in the same room.
+ *
+ * This is the question the escrow/safety presentation is actually about — it is
+ * advice about meeting a stranger — and it is NOT the same question as "which
+ * progress strip does this order get". `ordersDashboard` used to answer both
+ * with one set, which meant an in-person haircut could only get the safety panel
+ * by also being described to the buyer as a parcel awaiting collection.
+ */
+export function isInPersonKind(kind: MarketplaceFulfillmentKind) {
+  return (
+    kind === "pickup" ||
+    kind === "service_in_person" ||
+    kind === "booking_in_person" ||
+    kind === "event_in_person"
+  );
 }
 
 /** One-line destination for the review step: where this order is actually going. */

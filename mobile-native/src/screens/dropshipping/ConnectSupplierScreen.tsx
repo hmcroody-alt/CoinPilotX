@@ -158,6 +158,18 @@ export function ConnectSupplierScreen({ route, navigation }: Props) {
         message: "PulseSoc isn't cleared to talk to this supplier from this server yet. Your key wasn't the problem."
       };
     }
+    if (state === "CREDENTIAL_STORAGE_UNAVAILABLE") {
+      return {
+        state,
+        // Deliberately says the supplier was not contacted. The server checks it
+        // can encrypt a credential before it spends one of the three account
+        // slots this egress IP is allowed, so on this failure the key never left
+        // PulseSoc -- and a merchant who is told their supplier is down goes and
+        // waits for a supplier that is perfectly healthy.
+        message:
+          "PulseSoc can't store supplier credentials securely on this server yet, so it didn't send your key anywhere. Your key wasn't the problem and retrying won't help until this server is configured."
+      };
+    }
     const storeAuthority = STORE_AUTHORITY_MESSAGES[state];
     if (storeAuthority) return { state, message: storeAuthority };
     if (state === "INVALID_CREDENTIAL") {

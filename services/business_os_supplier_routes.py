@@ -245,6 +245,33 @@ def cj_connection_inactivity(connection_id):
         return _error(exc)
 
 
+@supplier_blueprint.route(PREFIX + "/connections/<connection_id>/obligations", methods=["GET"])
+def cj_connection_obligations(connection_id):
+    """The merchant's paid sales that still owe a purchase from the supplier.
+
+    GET, and with the scope in the query string, matching `/inactivity` above:
+    the only identifiers here are the merchant's own tenancy ids, which already
+    appear in that route's URL. Nothing about the *supplier* account travels --
+    no credential, no shop id, no buyer destination -- which is what the POST
+    reads further down exist to keep out of access logs.
+
+    Merchant-scoped only. The payload carries `supplier_cost_cents`, the number
+    §27 forbids a buyer from ever seeing; `list_obligations` authorizes through
+    `connections.get_connection` before it reads anything, and no buyer-facing
+    route may reach this.
+    """
+    try:
+        from services.business_os.suppliers import fulfillment
+        actor, context = _request_context()
+        result = fulfillment.list_obligations(
+            connection_id, _required(request.args, "business_id"),
+            _required(request.args, "store_id"), actor,
+            limit=request.args.get("limit", 100), context=context)
+        return _respond({"ok": True, **result})
+    except Exception as exc:
+        return _error(exc)
+
+
 @supplier_blueprint.route(PREFIX + "/connections/<connection_id>/<action>", methods=["POST"])
 def cj_scoped_action(connection_id, action):
     try:
@@ -253,6 +280,13 @@ def cj_scoped_action(connection_id, action):
         business_id, store_id = _required(body, "business_id"), _required(body, "store_id")
         if action == "health":
             result = connections.health_connection(connection_id, business_id, store_id, actor, context=context)
+        elif action == "shops":
+            # POST, like the other provider reads here, so nothing about the
+            # merchant's CJ account lands in an access log's query string.
+            result = connections.connection_shops(connection_id, business_id, store_id, actor, context=context)
+        elif action == "bind-shop":
+            result = connections.bind_shop(connection_id, business_id, store_id, actor,
+                                           _required(body, "external_shop_id"), context=context)
         elif action == "bind-product":
             result = gateway.bind_product(connection_id=connection_id, business_id=business_id, store_id=store_id,
                                           actor_user_id=actor, canonical_product_id=_required(body, "canonical_product_id"),
@@ -260,12 +294,28 @@ def cj_scoped_action(connection_id, action):
         elif action == "import-drafts":
             result = gateway.create_import_draft(_required(body, "snapshot_id"), connection_id, business_id, store_id, actor,
                                                  body.get("merchant_fields", {}), context=context)
+        elif action == "fulfillment-quotes":
+            # Freight for one paid order. A read: it spends nothing with the
+            # supplier and writes no intent, which is why it is not behind
+            # `require_sandbox` like the action below it. It exists because the
+            # snapshot `fulfillment-intents` demands could not be produced by
+            # any caller -- the request has to be built out of the frozen order,
+            # so the server builds it.
+            from services.business_os.suppliers import fulfillment
+            result = fulfillment.quote_for_order(connection_id=connection_id, business_id=business_id,
+                store_id=store_id, actor_user_id=actor, order_id=_required(body, "order_id"),
+                context=context)
         elif action == "fulfillment-intents":
             from services.business_os.suppliers import fulfillment
             policy.require_sandbox(body)
+            # No `shipping_destination`. It used to be read straight from this
+            # body, which let a merchant-authenticated request name any address
+            # while the one the buyer paid to ship to sat frozen on the
+            # transaction with nothing comparing the two. `order_destination`
+            # states it now, from that record.
             result = fulfillment.create_intent(connection_id=connection_id, business_id=business_id, store_id=store_id,
                 actor_user_id=actor, order_id=_required(body, "order_id"), items=body.get("items"),
-                shipping_destination=body.get("shipping_destination"), shipping_quote=body.get("shipping_quote"),
+                shipping_quote=body.get("shipping_quote"),
                 expected_supplier_cost_cents=body.get("expected_supplier_cost_cents"), isSandbox=body.get("isSandbox"),
                 idempotency_key=_required(body, "idempotency_key"), context=context)
         elif action in {"subscribe", "unsubscribe"}:

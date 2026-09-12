@@ -1106,7 +1106,6 @@
       "listingFallbackText": "PulseSoc-Anzeige",
       "listingTitleFallback": "Marketplace-Anzeige",
       "categoryFallback": "Bildung",
-      "priceFallback": "Preis an der Kasse",
       "safetyScore": "Sicherheit {{score}}",
       "noMediaLoaded": "Keine Medien geladen",
       "noDescription": "Keine Beschreibung geladen.",

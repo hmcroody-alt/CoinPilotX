@@ -469,14 +469,19 @@ RECONCILIATION_MUTATIONS: list[tuple] = [
 ]
 
 
-def _overlay(root: str) -> str:
+#: Directories the overlay materialises as real directories rather than symlinks.
+#: Every *ancestor* of a mutable directory has to be listed: the walk prunes at the
+#: first directory it does not recognise, so omitting "services/business_os" would
+#: leave "services/business_os/suppliers" unreachable and every gateway mutation
+#: silently unapplied.
+REAL_DIRS = {"services", "services/business_os", "services/business_os/suppliers",
+             "tests", "tests/marketplace", "tests/dropshipping",
+             "scripts", "scripts/marketplace"}
+
+
+def _overlay(root: str, real_dirs: set[str] | None = None) -> str:
     """A symlink mirror of the repo, deep only where we need to write."""
-    # Every *ancestor* of a mutable directory has to be listed: the walk prunes at
-    # the first directory it does not recognise, so omitting "services/business_os"
-    # would leave "services/business_os/suppliers" unreachable and every gateway
-    # mutation silently unapplied.
-    real_dirs = {"services", "services/business_os", "services/business_os/suppliers",
-                 "tests", "tests/marketplace", "scripts", "scripts/marketplace"}
+    real_dirs = REAL_DIRS if real_dirs is None else real_dirs
     for base, dirs, files in os.walk(REPO):
         rel = os.path.relpath(base, REPO)
         rel = "" if rel == "." else rel.replace(os.sep, "/")

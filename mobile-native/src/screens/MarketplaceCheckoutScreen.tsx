@@ -219,11 +219,30 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
   // from `price × quantity` alone — no shipping options, no automatic tax — so
   // that number *is* the charge, not a running estimate.
   const knowsFinalAmount = params.subtotalMinor != null;
+  // The charge, or "" when this screen does not know it. Never a sentence
+  // standing in for one.
+  //
+  // This used to fall back to `params.priceLabel || "Shown at checkout"`, and
+  // both halves of that fallback were wrong in the same way — each printed
+  // something in the amount slot that was not the amount:
+  //
+  //   - The label is the *unit* price. `handleBuyNow` multiplies it out for
+  //     exactly this reason ("passing the bare label would have let the
+  //     checkout CTA read '$5.00' on an order for two"), and then this screen
+  //     put the bare label back under "Item total", "Total" and "Amount paid".
+  //   - "Shown at checkout" is a promise that names this screen. The buyer is
+  //     already at checkout, and on the confirmation view it rendered as the
+  //     value of **Amount paid**, after the money moved.
+  //
+  // Empty is the rule every other price surface in the product already follows:
+  // an amount nobody can see renders as no amount, not as prose about one. The
+  // rows below are omitted rather than printed blank, and the muted sentence
+  // under the total already tells the buyer where the figure does come from.
   const amount = useMemo(
     () => params.subtotalMinor != null
       ? formatMinor(params.subtotalMinor, params.currency || "USD")
-      : params.priceLabel || "Shown at checkout",
-    [params.currency, params.priceLabel, params.subtotalMinor]
+      : "",
+    [params.currency, params.subtotalMinor]
   );
   const typeLabel = params.listingTypeLabel || fulfillmentTypeLabel(kind);
   const timezoneLabel = useMemo(() => timezoneDisplayLabel(timezone), [timezone]);
@@ -323,7 +342,10 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
             intentKey.current,
             mustChooseLane ? lane : "",
             paymentMode,
-            details
+            details,
+            // The same number this screen already prints as "x3" and already
+            // multiplied into the amount above. It was displayed and never sent.
+            Number(params.quantity || 1)
           );
           url = result.handoff.checkoutUrl;
           ids = [...result.handoff.transactionIds];
@@ -378,7 +400,10 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
             intentKey.current,
             mustChooseLane ? lane : "",
             paymentMode,
-            details
+            details,
+            // The same number this screen already prints as "x3" and already
+            // multiplied into the amount above. It was displayed and never sent.
+            Number(params.quantity || 1)
           );
           url = result.handoff.checkoutUrl;
           ids = [...result.handoff.transactionIds];
@@ -463,8 +488,14 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
           {isScheduled(kind) && details.scheduled_date ? (
             <SummaryRow label="When" value={scheduleSentence(details, timezoneLabel)} />
           ) : null}
-          <View style={styles.rule} />
-          <SummaryRow label={paymentMethod === "cash" ? "Amount due to seller" : "Amount paid"} value={amount} strong />
+          {knowsFinalAmount || paymentMethod === "cash" ? <View style={styles.rule} /> : null}
+          {/* Omitted rather than filled when this screen never knew the charge.
+              The order detail behind "View order and receipt" reads the amount
+              the server actually settled, which is the only figure worth
+              printing under this label. */}
+          {knowsFinalAmount ? (
+            <SummaryRow label={paymentMethod === "cash" ? "Amount due to seller" : "Amount paid"} value={amount} strong />
+          ) : null}
           {paymentMethod === "cash" ? <SummaryRow label="PulseSoc platform fee" value="$0.00" /> : null}
         </Section>
         <PrimaryButton
@@ -583,7 +614,7 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
       <Section title="Order summary">
         <SummaryRow label={params.itemTitle || "Marketplace items"} value={params.quantity ? `×${params.quantity}` : ""} />
         <SummaryRow label="Seller" value={params.sellerName || "PulseSoc seller"} />
-        <SummaryRow label="Item total" value={amount} />
+        {knowsFinalAmount ? <SummaryRow label="Item total" value={amount} /> : null}
         {/* Not "added at payment". The Stripe session is built from item price ×
             quantity with no shipping options and no automatic tax, so there is
             no second number waiting at the payment page. Saying otherwise made
@@ -592,9 +623,25 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
         <SummaryRow label="Delivery" value={kind === "pickup" ? "Free — you collect" : "No delivery charge"} />
         <SummaryRow label="PulseSoc platform fee" value={paymentMethod === "cash" ? "$0.00" : "Temporarily unavailable"} />
         <View style={styles.rule} />
-        <SummaryRow label={knowsFinalAmount ? (paymentMethod === "cash" ? "Total due to seller" : "Total to pay") : "Total"} value={amount} strong />
+        {/* The label used to soften to a bare "Total" when the amount was
+            unknown while the value went on printing prose beside it — the row
+            was careful on the left and not on the right. One condition now
+            owns both halves, so there is no "Total" with a sentence after it. */}
+        {knowsFinalAmount ? (
+          <SummaryRow label={paymentMethod === "cash" ? "Total due to seller" : "Total to pay"} value={amount} strong />
+        ) : null}
+        {/* Something always says where the money is settled, including when the
+            total row above is omitted. The card branch's sentence used to be
+            the only one that covered an unknown amount, and card is the branch
+            that is currently paused — so on the one lane a buyer can actually
+            use, an order with no subtotal said nothing about the amount at all.
+            A row removed for honesty still owes the buyer the reason. */}
         {paymentMethod === "cash" ? (
-          <Text style={styles.muted}>No card or Stripe charge will start. Pay the seller directly when you pick up or meet in person.</Text>
+          <Text style={styles.muted}>
+            {knowsFinalAmount
+              ? "No card or Stripe charge will start. Pay the seller directly when you pick up or meet in person."
+              : "No card or Stripe charge will start. The amount isn't set here — agree it with the seller when you pick up or meet in person."}
+          </Text>
         ) : knowsFinalAmount ? (
           <Text style={styles.muted}>Marketplace card payments are temporarily unavailable.</Text>
         ) : (

@@ -6,6 +6,7 @@ import {
 import { buyerErrorCopy } from "../marketplaceErrors";
 import { PulseApiError } from "../pulseApi";
 import type { MarketplaceListing } from "../marketplace";
+import parity from "./fixtures/priceLabelParity.json";
 
 const listing = (over: Partial<MarketplaceListing>): MarketplaceListing =>
   ({ id: 1, title: "Ball", ...over }) as MarketplaceListing;
@@ -32,9 +33,19 @@ describe("what the buyer reads about delivery matches what checkout does", () =>
 });
 
 describe("the amount on the Pay button", () => {
-  it("reads a price label the same way the server does", () => {
-    expect(marketplaceListingPriceMinor(listing({ price_label: "$5.00" }))).toBe(500);
-    expect(marketplaceListingPriceMinor(listing({ price_label: "USD 12.5" }))).toBe(1250);
+  // This suite used to make the parity claim in its own name and then check two
+  // labels, both under $1,000 — below the point where the server starts writing
+  // a thousands separator, which was exactly the case the app misread. The
+  // claim is now checked against the table the server is checked against, in
+  // tests/test_marketplace_price_label_parity.py.
+  it.each(parity.cases)("reads $label the way the server does — $why", ({ label, minor }) => {
+    expect(marketplaceListingPriceMinor(listing({ price_label: label }))).toBe(minor);
+  });
+
+  it("understates nothing on a label carrying a thousands separator", () => {
+    // The regression in its own words: the digit run stopped at the comma, so
+    // this listing offered to charge $12.00 and charged $12,345.67.
+    expect(marketplaceListingPriceMinor(listing({ price_label: "$12,345.67" }))).toBe(1234567);
   });
 
   it("returns null rather than zero when the label is not a price", () => {

@@ -118,3 +118,145 @@ def test_successful_selected_read_persists_snapshot_and_sync_time(ready, monkeyp
     assert conn.execute("SELECT last_sync_at FROM business_os_supplier_connections").fetchone()[0]
     conn.close()
     assert ready[0].background is True
+
+
+# ---------------------------------------------------------------------------
+# Is anything draining the outbox?
+#
+# `run_once` is the only caller of `fulfillment.claim`/`dispatch`. Its only
+# entry point is `supplier_worker.py`, which is not in the Procfile -- so in
+# this deployment nothing drains, every intent stays at READY forever, and the
+# merchant reads "Queued to send to your supplier" permanently.
+#
+# The tests above could not have caught that, and neither could any test, for a
+# reason worth naming: `run_once` returned its counts to the caller and
+# persisted nothing about itself. "A drain ran" was not a fact in the database,
+# so no read path could assert on it and no copy could be checked against it.
+# These tests exist because the tick is now recorded.
+# ---------------------------------------------------------------------------
+
+
+def test_a_deployment_that_has_never_drained_says_so(ready):
+    """The state this repo is actually in, asserted rather than assumed.
+
+    No `run_once` call anywhere above this line in the fixture, which is exactly
+    production's situation: the worker is not in the Procfile. Before the drain
+    latch existed this was indistinguishable from a healthy queue.
+    """
+    status = fulfillment.drain_status()
+    assert status["state"] == "NO_DRAIN_HAS_EVER_RUN"
+    # Not 0, and not `now`. A default would make "never" look like "just now",
+    # which is the whole failure.
+    assert status["started_at"] is None and status["completed_at"] is None
+
+
+def test_a_queued_order_is_not_called_queued_to_send_when_nothing_sends(ready):
+    """The defect, end to end, on the payload the merchant's screen reads.
+
+    A paid order with a live intent sits at READY. READY renders as "Queued to
+    send to your supplier". This asserts the same payload also carries the fact
+    that contradicts it, because a merchant acting on the row without that fact
+    waits on a dispatch that cannot happen.
+    """
+    fulfillment.create_intent(**ready[2])
+    result = fulfillment.list_obligations(ready[1]["id"], "biz-a", "store-a", MERCHANT)
+    assert [row["state"] for row in result["obligations"]] == ["READY"]
+    assert result["drain"]["state"] == "NO_DRAIN_HAS_EVER_RUN"
+
+
+def test_a_completed_tick_is_what_makes_the_queue_moving(ready, monkeypatch):
+    monkeypatch.setenv("CJ_NETWORK_ENABLED", "true")
+    now = time.time()
+    worker.run_once(adapter_factory=lambda _: ready[0], limit=1, now=now)
+    status = fulfillment.drain_status(now=now)
+    assert status["state"] == "DRAINING"
+    assert status["started_at"] == now and status["completed_at"] == now
+
+
+def test_a_worker_that_dies_every_tick_is_not_reported_as_healthy(ready, monkeypatch):
+    """The reason two timestamps are kept instead of one.
+
+    `_seed_jobs` runs after the latch and before any item is handled, so a
+    failure there aborts the tick without completing it. That deployment has a
+    worker -- it is deployed, it is running, it is broken -- and reporting it as
+    `NO_DRAIN_HAS_EVER_RUN` would send the owner to look for a missing process
+    that is in fact present, while reporting `DRAINING` would hide an incident.
+    """
+    monkeypatch.setenv("CJ_NETWORK_ENABLED", "true")
+    def explode(*args, **kwargs):
+        raise RuntimeError("seeding failed")
+    monkeypatch.setattr(worker, "_seed_jobs", explode)
+    now = time.time()
+    with pytest.raises(RuntimeError):
+        worker.run_once(adapter_factory=lambda _: ready[0], limit=1, now=now)
+    status = fulfillment.drain_status(now=now)
+    assert status["state"] == "TICKING_BUT_NOT_COMPLETING"
+    assert status["started_at"] == now and status["completed_at"] is None
+
+
+def test_a_drain_that_stopped_completing_stops_being_called_draining(ready, monkeypatch):
+    monkeypatch.setenv("CJ_NETWORK_ENABLED", "true")
+    now = time.time()
+    worker.run_once(adapter_factory=lambda _: ready[0], limit=1, now=now)
+    fresh = fulfillment.drain_status(now=now + fulfillment.DRAIN_STALL_SECONDS)
+    assert fresh["state"] == "DRAINING", "the boundary itself is not yet a stall"
+    stale = fulfillment.drain_status(now=now + fulfillment.DRAIN_STALL_SECONDS + 1)
+    assert stale["state"] == "DRAIN_STALLED"
+
+
+def test_a_looping_crash_cannot_keep_a_stalled_drain_looking_fresh(ready, monkeypatch):
+    """Staleness is measured on the completion, not on the start.
+
+    A worker crashing inside every tick refreshes `started_at` forever. If the
+    stall window were measured against that, the most alarming failure mode --
+    a live process draining nothing, indefinitely -- would be the one that never
+    raised a notice.
+    """
+    monkeypatch.setenv("CJ_NETWORK_ENABLED", "true")
+    now = time.time()
+    worker.run_once(adapter_factory=lambda _: ready[0], limit=1, now=now)
+    def explode(*args, **kwargs):
+        raise RuntimeError("seeding failed")
+    monkeypatch.setattr(worker, "_seed_jobs", explode)
+    much_later = now + fulfillment.DRAIN_STALL_SECONDS * 10
+    with pytest.raises(RuntimeError):
+        worker.run_once(adapter_factory=lambda _: ready[0], limit=1, now=much_later)
+    status = fulfillment.drain_status(now=much_later)
+    assert status["started_at"] == much_later, "the crash did refresh the start"
+    assert status["state"] == "DRAIN_STALLED"
+
+
+def test_the_stall_window_is_two_of_the_workers_own_slowest_ticks():
+    """An absolute pin, for the reason `test_cj_fulfillment` learned the hard way.
+
+    Every test above is written *relative* to `DRAIN_STALL_SECONDS`, so widening
+    it leaves all of them green -- a test written relative to a constant cannot
+    detect a change to that constant. This one states the number, and states
+    where the number comes from: `supplier_worker.main` clamps its sleep to at
+    most 3600s, so two missed ticks at that ceiling is 7200s, and anything
+    shorter would cry wolf at a legally-configured slow deployment.
+    """
+    assert fulfillment.DRAIN_STALL_SECONDS == 7200
+    import supplier_worker
+    source = open(supplier_worker.__file__, encoding="utf-8").read()
+    assert "min(args.interval, 3600)" in source, (
+        "the worker's sleep clamp changed, so the stall window is no longer two "
+        "of its slowest ticks -- re-derive DRAIN_STALL_SECONDS from the new one")
+
+
+def test_the_drain_latch_carries_no_credential_or_provider_data(ready, monkeypatch):
+    """It is reported on a merchant payload, so §27 applies to it too.
+
+    Timestamps and one word from a closed set. The latch has no connection,
+    business, store or provider column at all -- a per-connection latch would
+    have needed one, which is a second reason the row is a single global one.
+    """
+    monkeypatch.setenv("CJ_NETWORK_ENABLED", "true")
+    worker.run_once(adapter_factory=lambda _: ready[0], limit=1, now=time.time())
+    conn = db.connect()
+    rows = [dict(r) for r in conn.execute("SELECT * FROM business_os_supplier_drain_ticks")]
+    conn.close()
+    assert len(rows) == 1, "the latch is one row for the deployment, not one per connection"
+    assert set(rows[0]) == {"scope", "started_at", "completed_at"}
+    status = fulfillment.drain_status()
+    assert status["state"] in fulfillment.DRAIN_STATES

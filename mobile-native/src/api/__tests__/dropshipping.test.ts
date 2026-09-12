@@ -25,8 +25,17 @@
  *    provider and a signed-out session produce different states, because they
  *    have different fixes and only one of them is the merchant's to make.
  *
- * 5. THE GAP LEDGER IS COUNTED. Faking supplier orders would shorten this list,
- *    and this test says so.
+ * 5. THE GAP LEDGER IS NAMED, AND ITS WORDS ARE MERCHANT-READABLE. Faking a
+ *    surface changes the names, and the change is reviewed. It was counted
+ *    before, which went red on the repair that closed two of them and never
+ *    noticed that one `needs` string named a table the repo does not contain.
+ *
+ * 6. A SUPPLIER ORDER'S STATE IS NEVER GUESSED. `AWAITING_SUPPLIER_ORDER` and
+ *    `UNKNOWN` are different facts: the first means no supplier order exists,
+ *    the second means one may exist and could not be confirmed. Collapsing
+ *    them invites a merchant to place a duplicate supplier order, which is real
+ *    money. A state this build has not heard of says so rather than defaulting
+ *    to either.
  */
 
 const mockPulseApi = jest.fn();
@@ -50,10 +59,21 @@ import {
   DROPSHIPPING_DATA_GAPS,
   IMPORT_OUTCOMES,
   PUBLISH_PROBLEMS,
+  SUPPLIER_OBLIGATION_BLOCKERS,
+  SUPPLIER_OBLIGATION_BLOCKER_COPY,
+  SUPPLIER_ORDER_STATES,
+  SUPPLIER_ORDER_STATE_COPY,
+  bindConnectionShop,
+  listSupplierObligations,
+  supplierObligationBlockerCopy,
+  supplierOrderStateCopy,
   centsOrNull,
+  connectionCanFulfil,
   connectionIsUsable,
   connectionNeedsAttention,
+  listConnectionShops,
   getImportCart,
+  getImportedProduct,
   getSupplierProduct,
   importNeedsReview,
   importSelected,
@@ -356,6 +376,124 @@ describe("stateForError separates causes that have different fixes", () => {
     }
   });
 
+  /**
+   * A server that cannot store a credential has not talked to the supplier.
+   *
+   * `vault.require_available()` runs in `_bootstrap()` *before*
+   * `adapter.authenticate(api_key)`, deliberately: authenticating claims one of
+   * the three CJ account slots this egress IP is allowed, and a deployment that
+   * cannot persist the result must not spend one. So `credential_vault_unavailable`
+   * is proof the key never left PulseSoc.
+   *
+   * It arrives as a 503, and a 503 is in the catch-all on the last line of
+   * `stateForError`, so it used to land on PROVIDER_UNAVAILABLE and the connect
+   * screen said "Your supplier isn't responding ... try again shortly". Both
+   * halves were false: the supplier was never asked, and retrying could not
+   * help, because the missing thing was three environment variables on our own
+   * server. That is what a real merchant hit on production, where
+   * SUPPLIER_CREDENTIAL_KEYS / _KEY_ACTIVE / SUPPLIER_ACCOUNT_INDEX_KEY are all
+   * unset while staging has them.
+   *
+   * The second assertion is the one that fails if someone "simplifies" the fix
+   * by adding the code to PROVIDER_CODES instead — that would restore exactly
+   * the wrong answer while keeping the first assertion green.
+   */
+  it("does not blame the supplier when our own credential storage is the problem", () => {
+    expect(stateForError(new PulseApiError("x", 503, "credential_vault_unavailable")))
+      .toBe("CREDENTIAL_STORAGE_UNAVAILABLE");
+    expect(stateForError(new PulseApiError("x", 503, "credential_vault_unavailable")))
+      .not.toBe("PROVIDER_UNAVAILABLE");
+  });
+
+  /**
+   * The named code has to outrank the status even if the status changes.
+   * Pinning only the 503 spelling would let a server that answered 500 or 502
+   * for the same condition fall back through to a generic ERROR.
+   */
+  it("reads the named cause regardless of the status it rides in on", () => {
+    for (const status of [500, 502, 503]) {
+      expect(stateForError(new PulseApiError("x", status, "credential_vault_unavailable")))
+        .toBe("CREDENTIAL_STORAGE_UNAVAILABLE");
+    }
+  });
+
+  /**
+   * The vault's three answers are three different sentences.
+   *
+   * The server used to answer `credential_vault_unavailable` 503 for every way
+   * a credential could fail, including two that are not outages at all: a call
+   * site handing the vault something malformed, and a stored row that will not
+   * open under this scope. Splitting them server-side is only half the fix —
+   * the half a merchant sees is here, and adding a status the mapper has never
+   * met is how a fix becomes a regression.
+   *
+   * 409 matches none of the status classes at the bottom of `stateForError`, so
+   * without an entry in DISCONNECTED_CODES an unusable credential reads as a
+   * bare "Something went wrong". The merchant would be one button away from the
+   * fix — reconnect — and be shown no button at all.
+   *
+   * The 500 is deliberately generic and this test says so, so that a later
+   * reader does not "complete the set" by giving it a screen of its own. It
+   * means the bug is ours; there is nothing for the merchant to do.
+   */
+  it("tells the three credential failures apart the way the merchant acts on them", () => {
+    expect(stateForError(new PulseApiError("x", 503, "credential_vault_unavailable")))
+      .toBe("CREDENTIAL_STORAGE_UNAVAILABLE");
+    expect(stateForError(new PulseApiError("x", 409, "credential_unusable")))
+      .toBe("SUPPLIER_DISCONNECTED");
+    expect(stateForError(new PulseApiError("x", 500, "credential_request_invalid")))
+      .toBe("ERROR");
+  });
+
+  /**
+   * The anti-vacuity half of the test above: it is the *status* that has no
+   * answer, so the named code has to be what rescues it. A mapper that happened
+   * to classify 409 correctly by accident would keep the previous test green.
+   */
+  it("does not leave a 409 to the status classes, which have no case for it", () => {
+    expect(stateForError(new PulseApiError("x", 409))).toBe("ERROR");
+    expect(stateForError(new PulseApiError("x", 409, "credential_unusable")))
+      .not.toBe("ERROR");
+  });
+
+  /**
+   * The five shop-binding refusals, each with its own next move.
+   *
+   * These were the whole reason the shop picker could not simply be built: every
+   * refusal it can produce landed somewhere wrong. `shop_not_authorized` is a
+   * 403, so it read as "you're not signed in to this store any more" — a
+   * merchant with a healthy session sent to sign in again over a stale shop
+   * list. The rest are 400s and 409s, which match none of the status classes at
+   * the bottom of `stateForError`, so they arrived as a bare "Something went
+   * wrong": no cause, and no hint that the fix is one tap away.
+   *
+   * `shop_binding_required` is the one most accounts will actually meet. It is
+   * what an order against an unbound connection answers, and before the picker
+   * existed there was no screen it could send anybody to.
+   */
+  it.each([
+    ["shop_binding_required", 409, "SHOP_BINDING_REQUIRED"],
+    ["shop_required", 400, "SHOP_BINDING_REQUIRED"],
+    ["shop_not_authorized", 403, "SHOP_NOT_AUTHORIZED"],
+    ["connection_binding_conflict", 409, "SHOP_BINDING_CONFLICT"],
+    ["api_shop_binding_required", 409, "SHOP_CANNOT_FULFIL"],
+    ["ambiguous_shop_name", 409, "SHOP_NAME_AMBIGUOUS"]
+  ])("reads %s as a binding problem with its own fix", (code, status, state) => {
+    expect(stateForError(new PulseApiError("no", status as number, code as string))).toBe(state);
+  });
+
+  /**
+   * The anti-vacuity half: each of those statuses is wrong on its own, so the
+   * named code has to be doing the work. Without this a mapper that classified
+   * 403 and 409 correctly by luck would keep the test above green while the
+   * merchant still read "sign in again".
+   */
+  it("does not let the status decide a binding problem", () => {
+    expect(stateForError(new PulseApiError("x", 403))).toBe("UNAUTHORIZED");
+    expect(stateForError(new PulseApiError("x", 409))).toBe("ERROR");
+    expect(stateForError(new PulseApiError("x", 400))).toBe("ERROR");
+  });
+
   it("does not classify an unknown failure as anything specific", () => {
     expect(stateForError(new Error("boom"))).toBe("ERROR");
     expect(stateForError(new PulseApiError("x", 500))).toBe("ERROR");
@@ -385,6 +523,154 @@ describe("connection usability is one predicate, not a guess per screen", () => 
     // The failure this prevents: a new provider status renders as "Connected",
     // the merchant browses a catalogue, and every search fails.
     expect(connectionIsUsable(connection("SOMETHING_NEW"))).toBe(false);
+  });
+
+  /**
+   * Usable and able-to-fulfil are two questions, and one predicate was
+   * answering both.
+   *
+   * A supplier "shop" is an external storefront authorized inside the
+   * merchant's supplier account. Importing, pricing and publishing need none —
+   * PulseSoc is the storefront — which is why connecting without one is allowed
+   * and why `connectionIsUsable` must keep saying yes here. Placing an order
+   * does need one: `create_intent` refuses an unbound connection outright.
+   *
+   * So "CONNECTED" alone was reported to the merchant as "Connected and
+   * working" over a connection that would refuse every order it ever received.
+   */
+  it("separates a connection that can import from one that can also fulfil", () => {
+    const unbound = { status: "CONNECTED", provider: "cj", externalShopId: null } as any;
+    const bound = { status: "CONNECTED", provider: "cj", externalShopId: "shop-1" } as any;
+
+    expect(connectionIsUsable(unbound)).toBe(true);
+    expect(connectionCanFulfil(unbound)).toBe(false);
+    expect(connectionCanFulfil(bound)).toBe(true);
+  });
+
+  it("does not call a broken connection fulfilling just because a shop is recorded", () => {
+    // A shop id outlives the credential that proved it. Reading only the shop
+    // would report an expired connection as ready to ship.
+    const expired = { status: "AUTH_EXPIRED", provider: "cj", externalShopId: "shop-1" } as any;
+    expect(connectionCanFulfil(expired)).toBe(false);
+  });
+
+  it("treats an empty shop id as no shop, because that is how the server records none", () => {
+    // The server writes "" rather than NULL, deliberately: every downstream
+    // binding check compares the column as a string. A truthiness test that
+    // only knew about null would call this connection ready to fulfil.
+    const unbound = { status: "CONNECTED", provider: "cj", externalShopId: "" } as any;
+    expect(connectionCanFulfil(unbound)).toBe(false);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 4b. The shop list, and the choice made from it
+ * ------------------------------------------------------------------ */
+
+/**
+ * Reading and binding are the two calls that had a route, a service and tests
+ * on the server, and nothing on any client that could reach them. A merchant
+ * could connect, import, publish and sell, then refuse every one of their own
+ * orders with no recorded way out.
+ */
+describe("the fulfilment shop can be read and chosen", () => {
+  it("asks the connection's own endpoint, sending nothing but the scope", async () => {
+    mockPulseApi.mockResolvedValue({ data: { shops: [], external_shop_id: "" } });
+    await listConnectionShops(SCOPE, "conn 1/2");
+
+    const [url, options] = mockPulseApi.mock.calls[0];
+    // Encoded, because a connection id travels in the path here.
+    expect(url).toBe("/api/business-os/suppliers/cj/connections/conn%201%2F2/shops");
+    expect(options.method).toBe("POST");
+    // POST rather than GET so nothing about the merchant's supplier account
+    // lands in an access log's query string.
+    expect(bodyOf(0)).toEqual({ business_id: "biz-1", store_id: 42 });
+  });
+
+  it("keeps the server's fulfillable verdict instead of re-deriving one", async () => {
+    // The client has `platform` and `status` in hand and could compute this.
+    // It must not: the rule lives in the fulfilment layer, the server applies
+    // it per row, and a second copy here would drift from the check the choice
+    // is actually spent against.
+    mockPulseApi.mockResolvedValue({
+      data: {
+        shops: [
+          { shop_id: "s1", name: "Main", platform: "API", status: 1, fulfillable: true,
+            unfulfillable_reason: "" },
+          { shop_id: "s2", name: "Storefront", platform: "Shopify", status: 1, fulfillable: false,
+            unfulfillable_reason: "api_shop_binding_required" }
+        ],
+        external_shop_id: ""
+      }
+    });
+    const result = await listConnectionShops(SCOPE, "c1");
+
+    expect(result.shops.map((shop) => [shop.externalShopId, shop.fulfillable])).toEqual([
+      ["s1", true],
+      ["s2", false]
+    ]);
+    expect(result.shops[0].unfulfillableReason).toBeNull();
+    expect(result.shops[1].unfulfillableReason).toBe("api_shop_binding_required");
+  });
+
+  it("reads a missing or non-boolean verdict as cannot fulfil", async () => {
+    // `Boolean(raw.fulfillable)` would read the string "false" as true, which
+    // offers the merchant a shop the server is about to refuse. The safe
+    // direction is the only one this field is allowed to fail in.
+    mockPulseApi.mockResolvedValue({
+      data: {
+        shops: [
+          { shop_id: "s1", name: "A" },
+          { shop_id: "s2", name: "B", fulfillable: "false" },
+          { shop_id: "s3", name: "C", fulfillable: 1 }
+        ]
+      }
+    });
+    const result = await listConnectionShops(SCOPE, "c1");
+    expect(result.shops.map((shop) => shop.fulfillable)).toEqual([false, false, false]);
+  });
+
+  it("reports an account with no shops as an empty list, not as a failure", async () => {
+    // The normal shape for selling here, and the state of most accounts: no
+    // external storefront at all. The screen turns this into an instruction,
+    // so it must arrive as data rather than as a thrown error.
+    mockPulseApi.mockResolvedValue({ data: { shops: [], external_shop_id: "" } });
+    const result = await listConnectionShops(SCOPE, "c1");
+    expect(result.shops).toEqual([]);
+    expect(result.boundShopId).toBeNull();
+  });
+
+  it("reads the empty string the server writes for 'no shop' as no shop", async () => {
+    mockPulseApi.mockResolvedValue({ data: { shops: [], external_shop_id: "   " } });
+    expect((await listConnectionShops(SCOPE, "c1")).boundShopId).toBeNull();
+  });
+
+  it("drops a shop with no id, because nothing could be bound to it", async () => {
+    mockPulseApi.mockResolvedValue({
+      data: { shops: [{ name: "Nameless", fulfillable: true }, { shop_id: "s1", fulfillable: true }] }
+    });
+    expect((await listConnectionShops(SCOPE, "c1")).shops.map((s) => s.externalShopId)).toEqual(["s1"]);
+  });
+
+  it("survives a server that sends no shops key at all", async () => {
+    mockPulseApi.mockResolvedValue({});
+    const result = await listConnectionShops(SCOPE, "c1");
+    expect(result).toEqual({ shops: [], boundShopId: null });
+  });
+
+  it("sends the chosen shop to the bind endpoint", async () => {
+    mockPulseApi.mockResolvedValue({ data: {} });
+    await bindConnectionShop(SCOPE, "c1", "s1");
+
+    const [url, options] = mockPulseApi.mock.calls[0];
+    expect(url).toBe("/api/business-os/suppliers/cj/connections/c1/bind-shop");
+    expect(options.method).toBe("POST");
+    expect(bodyOf(0)).toEqual({ business_id: "biz-1", store_id: 42, external_shop_id: "s1" });
+  });
+
+  it("lets the server's refusal through rather than reporting a bind that did not happen", async () => {
+    mockPulseApi.mockRejectedValue(new PulseApiError("no", 403, "shop_not_authorized"));
+    await expect(bindConnectionShop(SCOPE, "c1", "s1")).rejects.toBeInstanceOf(PulseApiError);
   });
 });
 
@@ -503,19 +789,297 @@ describe("the vocabularies are closed and complete", () => {
     ]);
   });
 
-  it("covers every publish problem, so none is silently swallowed", () => {
-    expect(PUBLISH_PROBLEMS).toHaveLength(10);
-    expect([...PUBLISH_PROBLEMS]).toContain("NEGATIVE_MARGIN");
-    expect([...PUBLISH_PROBLEMS]).toContain("UNKNOWN_INVENTORY");
+  // This used to be `expect(PUBLISH_PROBLEMS).toHaveLength(10)` under the title
+  // "covers every publish problem". A count cannot make that claim: the list was
+  // ten long and three codes short, so the assertion passed for the whole time
+  // the defect existed — and then failed on the fix, reporting the repair as the
+  // regression. The claim it was reaching for spans Python and TypeScript and
+  // cannot be made from inside this file at all; it lives in
+  // `tests/dropshipping/test_publish_problem_copy.py`, which reads the codes
+  // `drafts._validate` can actually emit and checks this list names each one.
+  //
+  // What is left here are the two things this file can honestly measure.
+  it("names each publish problem once, so no entry is dead", () => {
+    // A duplicate is not cosmetic: `PROBLEM_COPY` is keyed by the union, so the
+    // second entry can never be reached and will be maintained anyway.
+    expect([...new Set(PUBLISH_PROBLEMS)]).toHaveLength(PUBLISH_PROBLEMS.length);
   });
 
-  it("counts the surfaces this app has no data for", () => {
-    // Two. If someone fakes supplier orders, this number changes and the change
-    // is reviewed rather than shipped quietly.
-    expect(DROPSHIPPING_DATA_GAPS).toHaveLength(2);
+  it("passes a problem it has never heard of through rather than swallowing it", async () => {
+    // The real "none is silently swallowed" claim, and the reason the screen
+    // keeps a runtime fallback beside a total `Record`: a server ahead of this
+    // build can name a code the union does not have. Dropping it here would
+    // leave the merchant a refusal with an empty reason list, which reads as a
+    // bug in the button rather than as something to fix about the product.
+    mockPulseApi.mockResolvedValue({
+      listing_id: 1,
+      validation: { publishable: false, problems: ["A_CODE_FROM_A_NEWER_SERVER"] }
+    });
+    const draft = await getImportedProduct(SCOPE, "c1", 1);
+    expect(draft.validation.problems).toEqual(["A_CODE_FROM_A_NEWER_SERVER"]);
+  });
+
+  describe("supplier obligations", () => {
+    const OBLIGATION = {
+      order_id: 91,
+      listing_id: 14,
+      title: "Cotton Tee",
+      quantity: 2,
+      amount_cents: 4000,
+      currency: "USD",
+      order_status: "paid",
+      paid_at: "2026-09-12T00:00:00",
+      ordered_at: "2026-09-12T00:00:00",
+      provider: "CJ",
+      provider_product_id: "P1",
+      provider_variant_id: "P1-V1",
+      supplier_sku: "P1-V1-SKU",
+      supplier_cost_cents: 820,
+      supplier_cost_currency: "USD",
+      intent_id: null,
+      intent_created_at: null,
+      blockers: [],
+      can_place_supplier_order: true,
+      state: "AWAITING_SUPPLIER_ORDER",
+      supplier_order_placed: false,
+      provider_order_id: null,
+      supplier_order_status: null,
+      last_error: null,
+      intent_updated_at: null
+    };
+
+    it("asks the supplier route, with the scope in the query string", async () => {
+      mockPulseApi.mockResolvedValue({ obligations: [], isSandbox: 1 });
+      await listSupplierObligations(SCOPE, "conn a/b", { limit: 50 });
+      const [url] = mockPulseApi.mock.calls[0];
+      // Encoded, because a connection id is server-chosen and this one has a
+      // slash in it purely to prove the call site encodes rather than trusts.
+      expect(url).toContain("/suppliers/cj/connections/conn%20a%2Fb/obligations");
+      expect(url).toContain("business_id=");
+      expect(url).toContain("limit=50");
+      // No body, no method: a merchant opening this screen must not be able to
+      // generate a write, and a GET is what makes that structural.
+      expect(mockPulseApi.mock.calls[0][1]).toBeUndefined();
+    });
+
+    it("keeps an unplaced supplier order unplaced", async () => {
+      mockPulseApi.mockResolvedValue({ obligations: [OBLIGATION], isSandbox: 1 });
+      const { obligations, isSandbox } = await listSupplierObligations(SCOPE, "c1");
+      expect(obligations).toHaveLength(1);
+      expect(obligations[0].intentId).toBeNull();
+      expect(obligations[0].supplierOrderPlaced).toBe(false);
+      expect(obligations[0].state).toBe("AWAITING_SUPPLIER_ORDER");
+      expect(obligations[0].supplierCostCents).toBe(820);
+      expect(obligations[0].provider).toBe("cj");
+      expect(isSandbox).toBe(true);
+    });
+
+    it("does not infer that a supplier order was placed from a present state", async () => {
+      // The trap: an intent whose outbox row is missing. `state` falls back to
+      // AWAITING, but the row does have an `intent_id`, and the server says so.
+      // Re-deriving `supplierOrderPlaced` on this device from either field
+      // would answer differently depending on which field it chose.
+      mockPulseApi.mockResolvedValue({
+        obligations: [{ ...OBLIGATION, intent_id: "cjf_1", supplier_order_placed: true, state: "" }],
+        isSandbox: 1
+      });
+      const { obligations } = await listSupplierObligations(SCOPE, "c1");
+      expect(obligations[0].supplierOrderPlaced).toBe(true);
+      expect(obligations[0].state).toBe("AWAITING_SUPPLIER_ORDER");
+    });
+
+    it("reads sandbox from the server and not from a build flag", async () => {
+      // Absent, not false: a server that stopped stating it must not be read as
+      // "fulfilment is live" or as "fulfilment is off". The screen only shows
+      // the sandbox promise on an explicit 1.
+      mockPulseApi.mockResolvedValue({ obligations: [OBLIGATION] });
+      expect((await listSupplierObligations(SCOPE, "c1")).isSandbox).toBe(false);
+      mockPulseApi.mockResolvedValue({ obligations: [OBLIGATION], isSandbox: 0 });
+      expect((await listSupplierObligations(SCOPE, "c1")).isSandbox).toBe(false);
+    });
+
+    it("has words for every state it can name", () => {
+      // The `Record` is total, so this cannot fail by omission — it is a
+      // compile error first. What it catches is an entry present but empty,
+      // which renders as a blank chip beside a paid order.
+      SUPPLIER_ORDER_STATES.forEach((state) => {
+        expect(SUPPLIER_ORDER_STATE_COPY[state].length).toBeGreaterThan(4);
+        expect(SUPPLIER_ORDER_STATE_COPY[state]).not.toBe(state);
+      });
+    });
+
+    it("never tells a merchant an unconfirmed supplier order was not placed", () => {
+      // The most expensive confusion in this feature. UNKNOWN means the write
+      // may have landed; copy that reads like AWAITING invites a second
+      // supplier order for the same sale.
+      expect(SUPPLIER_ORDER_STATE_COPY.UNKNOWN).not.toEqual(
+        SUPPLIER_ORDER_STATE_COPY.AWAITING_SUPPLIER_ORDER
+      );
+      expect(SUPPLIER_ORDER_STATE_COPY.UNKNOWN.toLowerCase()).toContain("do not re-order");
+    });
+
+    it("says so about a state from a newer server rather than guessing", () => {
+      // The `SUPPLIER_VARIANT_UNBOUND` failure, one subsystem over: the screen
+      // rendered a raw backend identifier because the union had not caught up.
+      const copy = supplierOrderStateCopy("PARTIALLY_SHIPPED_FROM_A_NEWER_SERVER");
+      expect(copy).not.toContain("PARTIALLY_SHIPPED");
+      expect(copy).toContain("does not recognise");
+      // And a known one still gets its own words, so the fallback has not
+      // swallowed the whole map.
+      expect(supplierOrderStateCopy("LINKED")).toBe(SUPPLIER_ORDER_STATE_COPY.LINKED);
+    });
+
+    it("reads the bound variant's SKU, not the product's", async () => {
+      // The gap-15 defect, on the wire. The obligation used to carry
+      // `external_sku` from `marketplace_product_sources`, which is the
+      // *product*-level column and is normally empty, while the supplier order
+      // is matched on the *variant*'s. The two columns sit one table apart and
+      // the wrong one was sent, so the honest case looked like a missing SKU and
+      // a populated one looked like a binding bug.
+      //
+      // The legacy key is supplied here alongside the new one, deliberately: a
+      // client that still preferred `external_sku` would pick the product's and
+      // pass this test's absence of a compile error while failing here.
+      mockPulseApi.mockResolvedValue({
+        obligations: [{ ...OBLIGATION, supplier_sku: "VARIANT-SKU", external_sku: "PRODUCT-SKU" }],
+        isSandbox: 1
+      });
+      const { obligations } = await listSupplierObligations(SCOPE, "c1");
+      expect(obligations[0].supplierSku).toBe("VARIANT-SKU");
+      expect(JSON.stringify(obligations[0])).not.toContain("PRODUCT-SKU");
+    });
+
+    it("carries the blockers and the server's own verdict on them", async () => {
+      mockPulseApi.mockResolvedValue({
+        obligations: [{
+          ...OBLIGATION,
+          supplier_sku: null,
+          blockers: ["SUPPLIER_SKU_MISSING", "SUPPLIER_COST_UNKNOWN"],
+          can_place_supplier_order: false
+        }],
+        isSandbox: 1
+      });
+      const { obligations } = await listSupplierObligations(SCOPE, "c1");
+      expect(obligations[0].blockers).toEqual(["SUPPLIER_SKU_MISSING", "SUPPLIER_COST_UNKNOWN"]);
+      expect(obligations[0].canPlaceSupplierOrder).toBe(false);
+    });
+
+    it("does not re-derive whether an order can be placed from the blocker list", async () => {
+      // A server that names no blocker but still refuses — because the reason is
+      // one this list does not model — must not be read as "ready". Recomputing
+      // `blockers.length === 0` on the device is the copy that can disagree, and
+      // the field it disagrees with is the one a merchant would act on.
+      mockPulseApi.mockResolvedValue({
+        obligations: [{ ...OBLIGATION, blockers: [], can_place_supplier_order: false }],
+        isSandbox: 1
+      });
+      const { obligations } = await listSupplierObligations(SCOPE, "c1");
+      expect(obligations[0].blockers).toEqual([]);
+      expect(obligations[0].canPlaceSupplierOrder).toBe(false);
+      // And the absent case is not read as permission either.
+      mockPulseApi.mockResolvedValue({ obligations: [OBLIGATION], isSandbox: 1 });
+      delete (OBLIGATION as Record<string, unknown>).can_place_supplier_order;
+      expect((await listSupplierObligations(SCOPE, "c1")).obligations[0].canPlaceSupplierOrder)
+        .toBe(false);
+      (OBLIGATION as Record<string, unknown>).can_place_supplier_order = true;
+    });
+
+    it("drops nothing but blanks out of a blocker list", async () => {
+      // Passed through, not narrowed: a blocker a newer server names has to
+      // reach the copy function, which says it does not recognise it. Empty
+      // strings are the one thing removed, because they render as a blank
+      // warning line under a paid order.
+      mockPulseApi.mockResolvedValue({
+        obligations: [{
+          ...OBLIGATION,
+          blockers: ["A_BLOCKER_FROM_A_NEWER_SERVER", "", null, 7],
+          can_place_supplier_order: false
+        }],
+        isSandbox: 1
+      });
+      const { obligations } = await listSupplierObligations(SCOPE, "c1");
+      expect(obligations[0].blockers).toEqual(["A_BLOCKER_FROM_A_NEWER_SERVER", "7"]);
+    });
+
+    it("has words for every blocker it can name, and none of them is the identifier", () => {
+      SUPPLIER_OBLIGATION_BLOCKERS.forEach((blocker) => {
+        expect(SUPPLIER_OBLIGATION_BLOCKER_COPY[blocker].length).toBeGreaterThan(20);
+        expect(SUPPLIER_OBLIGATION_BLOCKER_COPY[blocker]).not.toBe(blocker);
+        // Prose, not an identifier: these render as a warning line a merchant
+        // reads. Same check the data-gap copy gets, for the same reason.
+        expect(SUPPLIER_OBLIGATION_BLOCKER_COPY[blocker]).not.toMatch(/[a-z]_[a-z]|\(\)|[A-Z]{3}/);
+      });
+    });
+
+    it("says so about a blocker from a newer server rather than guessing", () => {
+      const copy = supplierObligationBlockerCopy("CUSTOMS_DECLARATION_MISSING_FROM_A_NEWER_SERVER");
+      expect(copy).not.toContain("CUSTOMS");
+      expect(copy).toBe(
+        "Something about this order stops it being sent to your supplier"
+      );
+      expect(supplierObligationBlockerCopy("SHOP_BINDING_REQUIRED"))
+        .toBe(SUPPLIER_OBLIGATION_BLOCKER_COPY.SHOP_BINDING_REQUIRED);
+    });
+
+    it("never asks a merchant to supply a buyer's address", () => {
+      // `DESTINATION_MISSING` and `DESTINATION_INCOMPLETE` are the two blockers a
+      // merchant cannot act on: the address belongs to the buyer and this screen
+      // is not shown one. Copy that read like a prompt would send merchants
+      // inventing delivery addresses for other people's parcels.
+      [SUPPLIER_OBLIGATION_BLOCKER_COPY.DESTINATION_MISSING,
+       SUPPLIER_OBLIGATION_BLOCKER_COPY.DESTINATION_INCOMPLETE].forEach((copy) => {
+        expect(copy.toLowerCase()).not.toMatch(/\b(enter|add|type|provide|fill)\b/);
+      });
+    });
+
+    it("carries no part of the buyer's address, however the server answers", async () => {
+      // §27/§95, on the field the fix reads. The server derives the destination
+      // to decide the blockers and must not forward it; this proves the client
+      // would not surface one even if a later server did.
+      mockPulseApi.mockResolvedValue({
+        obligations: [{
+          ...OBLIGATION,
+          metadata_json: '{"fulfillment":{"details":{"address_line1":"1 Leak Street"}}}',
+          seller_transaction_id: 7001,
+          shipping_destination: { shippingAddress: "1 Leak Street", shippingCity: "Leakville" }
+        }],
+        isSandbox: 1
+      });
+      const { obligations } = await listSupplierObligations(SCOPE, "c1");
+      const encoded = JSON.stringify(obligations[0]);
+      ["1 Leak Street", "Leakville", "7001", "metadata_json", "address_line1"].forEach((leak) => {
+        expect(encoded).not.toContain(leak);
+      });
+    });
+  });
+
+  it("names the surfaces this app has no data for", () => {
+    // Named rather than counted. "Supplier orders list" and "Shipment tracking"
+    // left this list when `listSupplierObligations` arrived; a length assertion
+    // would have gone red on that repair and said nothing about which surfaces
+    // were declared, which is the claim worth making. If someone fakes one of
+    // these, the names change and the change is reviewed rather than shipped.
     expect(DROPSHIPPING_DATA_GAPS.map((gap) => gap.surface)).toEqual([
-      "Supplier orders list",
-      "Shipment tracking"
+      "Cancelling a supplier order"
     ]);
+  });
+
+  it("states each gap in words a merchant can read", () => {
+    // Both screens that render this list render `needs` directly, so `needs` is
+    // merchant-facing copy. It used to be an implementation note, and one entry
+    // named `business_os_supplier_fulfillment_intents` — a table that exists
+    // nowhere in the repo. That string was wrong for two years' worth of
+    // readers in two different ways at once: it was shown to merchants, and the
+    // implementer it was written for could not grep it.
+    //
+    // An identifier is the tell, so that is what this looks for: snake_case,
+    // camelCase runs, or a `()` call. Not a spell-check — a check that the
+    // field holding merchant copy holds prose.
+    DROPSHIPPING_DATA_GAPS.forEach((gap) => {
+      expect(gap.needs).not.toMatch(/[a-z]_[a-z]|\(\)|[a-z][A-Z]/);
+      // A sentence, not a fragment: these render as the body of a card.
+      expect(gap.needs.length).toBeGreaterThan(40);
+      expect(gap.needs.trim()).toMatch(/[.!]$/);
+    });
   });
 });

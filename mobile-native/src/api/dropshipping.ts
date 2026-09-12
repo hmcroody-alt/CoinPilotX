@@ -290,7 +290,22 @@ export const IMPORT_OUTCOMES = [
 ] as const;
 export type ImportOutcome = (typeof IMPORT_OUTCOMES)[number];
 
-/** Why a draft cannot be published yet. Every reason, not the first one. */
+/**
+ * Why a draft cannot be published yet. Every reason, not the first one.
+ *
+ * This is the second copy of an enumeration whose first copy is
+ * `services/business_os/suppliers/drafts.py`. The two are in different
+ * languages, so no compiler spans them, and they drifted: the backend grew
+ * `VARIANT_PRICE_SPREAD`, `PRICE_ABOVE_CHECKOUT_LIMIT` and
+ * `SUPPLIER_VARIANT_UNBOUND` and this list did not. A problem missing from here
+ * is missing from `PROBLEM_COPY` too, and `ReviewImportedProductScreen` renders
+ * an unknown code verbatim — so the merchant whose default import could not be
+ * published read the words "SUPPLIER_VARIANT_UNBOUND" and nothing else.
+ *
+ * `tests/dropshipping/test_publish_problem_copy.py` pins this list against the
+ * Python one, because a list only the backend can grow needs a check on the
+ * side that cannot see it growing.
+ */
 export const PUBLISH_PROBLEMS = [
   "MISSING_TITLE",
   "MISSING_CATEGORY",
@@ -301,7 +316,10 @@ export const PUBLISH_PROBLEMS = [
   "UNKNOWN_INVENTORY",
   "SUPPLIER_DISCONNECTED",
   "PROVIDER_PRODUCT_UNAVAILABLE",
-  "RESTRICTED_PRODUCT"
+  "RESTRICTED_PRODUCT",
+  "VARIANT_PRICE_SPREAD",
+  "PRICE_ABOVE_CHECKOUT_LIMIT",
+  "SUPPLIER_VARIANT_UNBOUND"
 ] as const;
 export type PublishProblem = (typeof PUBLISH_PROBLEMS)[number];
 
@@ -419,6 +437,87 @@ export async function checkConnectionHealth(
 }
 
 /**
+ * One shop on an existing connection, with the server's verdict attached.
+ *
+ * `fulfillable` is not computed here and must not be. It is the fulfilment
+ * layer's own `dispatch_shop` answer for that shop, returned per row, so the
+ * list a merchant chooses from and the check the choice is spent against cannot
+ * disagree. A client that re-derived it from `platform` and `status` would be a
+ * second copy of a rule that already exists, and the copies drift.
+ */
+export type ConnectionShop = {
+  externalShopId: string;
+  name: string | null;
+  platform: string | null;
+  fulfillable: boolean;
+  /** Why not, when not. Null whenever `fulfillable` is true. */
+  unfulfillableReason: string | null;
+};
+
+export type ConnectionShopList = {
+  shops: ConnectionShop[];
+  /** The shop already bound, or null. A connection may legitimately have none. */
+  boundShopId: string | null;
+};
+
+/**
+ * The shops an *existing* connection can see, read through its stored key.
+ *
+ * `discoverSupplierShops` cannot answer this. It takes an API key, and the key
+ * only exists while the connect form is on screen — afterwards it is in the
+ * server's vault and the merchant has no copy to retype. Without this call
+ * there was no way to see the list a second time, and therefore no way to
+ * choose from it, which is precisely why `bindConnectionShop` below had a
+ * route, a service and tests but nothing that could ever reach it.
+ *
+ * An empty list is a real answer, not a failure. A supplier account that owns
+ * no external storefront is the normal shape for selling here, because PulseSoc
+ * *is* the storefront.
+ */
+export async function listConnectionShops(
+  scope: DropshippingScope,
+  connectionId: string
+): Promise<ConnectionShopList> {
+  const response = await pulseApi<{ data?: Record<string, unknown> }>(
+    `${SUPPLIERS_BASE}/connections/${encodeURIComponent(connectionId)}/shops`,
+    { method: "POST", body: scopeBody(scope) }
+  );
+  const data = response.data || {};
+  return {
+    shops: list<Record<string, unknown>>(data.shops).map((raw) => ({
+      externalShopId: text(raw.shop_id ?? raw.external_shop_id),
+      name: textOrNull(raw.name),
+      platform: textOrNull(raw.platform),
+      // `=== true` rather than truthiness: a server that omitted the field
+      // would otherwise read as "cannot fulfil", which is the safe direction,
+      // but a string "false" would read as "can", which is not.
+      fulfillable: raw.fulfillable === true,
+      unfulfillableReason: textOrNull(raw.unfulfillable_reason)
+    })).filter((shop) => Boolean(shop.externalShopId)),
+    boundShopId: textOrNull(data.external_shop_id)
+  };
+}
+
+/**
+ * Choose the shop this connection fulfils through.
+ *
+ * None-to-one only; the server refuses to replace an existing binding, because
+ * orders already created carry the shop they were created against. Callers
+ * re-list afterwards rather than trusting the response, for the same reason
+ * `connectSupplier` does: the list is what every other surface reads.
+ */
+export async function bindConnectionShop(
+  scope: DropshippingScope,
+  connectionId: string,
+  externalShopId: string
+): Promise<void> {
+  await pulseApi(`${SUPPLIERS_BASE}/connections/${encodeURIComponent(connectionId)}/bind-shop`, {
+    method: "POST",
+    body: scopeBody(scope, { external_shop_id: externalShopId })
+  });
+}
+
+/**
  * Statuses that mean the merchant has to do something before this connection
  * can serve a catalogue. Shared so the Suppliers list, the Find Products empty
  * state and the draft banner cannot disagree about what "connected" means.
@@ -439,6 +538,23 @@ export function connectionNeedsAttention(connection: SupplierConnection): boolea
 
 export function connectionIsUsable(connection: SupplierConnection): boolean {
   return connection.status.toUpperCase() === "CONNECTED";
+}
+
+/**
+ * Whether this connection can actually place a supplier order.
+ *
+ * Deliberately separate from `connectionIsUsable`, and deliberately narrower.
+ * Importing, pricing and publishing need no supplier shop at all — that is why
+ * connecting without one is allowed, and collapsing the two would re-break the
+ * account shape that decision exists to support. Fulfilling does need one:
+ * `create_intent` refuses an unbound connection outright.
+ *
+ * Which means "CONNECTED" was, on its own, answering a question it had not been
+ * asked. A merchant read "Connected and working" off a connection that would
+ * refuse every order it ever received, and found out at the first one.
+ */
+export function connectionCanFulfil(connection: SupplierConnection): boolean {
+  return connectionIsUsable(connection) && Boolean(connection.externalShopId);
 }
 
 /* ------------------------------------------------------------------ *
@@ -922,6 +1038,23 @@ export type DraftSupplier = {
   supplierCostCurrency: string | null;
   externalSku: string | null;
   /**
+   * The supplier product this listing was imported from — the `pid` half of a
+   * binding. `null` should not happen for a dropship draft; treat it as "cannot
+   * bind from here" rather than substituting anything.
+   */
+  providerProductId: string | null;
+  /**
+   * The one supplier variant an order for this listing is placed for, or `null`
+   * while nothing is bound.
+   *
+   * A dropship listing does not sell "its variants". The buyer's checkout has no
+   * variant selector, so it sells exactly this one and the rest of the variant
+   * list is catalogue. `null` is why `SUPPLIER_VARIANT_UNBOUND` refuses
+   * publication, and it is the ordinary outcome of importing a product with more
+   * than one in-stock variant, which is what the supplier screen pre-selects.
+   */
+  providerVariantId: string | null;
+  /**
    * Fields the merchant has edited. A provider sync must not overwrite these —
    * this list is the mechanism, not a record of one.
    */
@@ -990,6 +1123,8 @@ function normalizeDraft(raw: Record<string, unknown>): ImportedDraft {
       supplierCostCents: centsOrNull(supplier.supplier_cost_cents),
       supplierCostCurrency: textOrNull(supplier.supplier_cost_currency),
       externalSku: textOrNull(supplier.external_sku),
+      providerProductId: textOrNull(supplier.provider_product_id),
+      providerVariantId: textOrNull(supplier.provider_variant_id),
       merchantOwnedFields: list<unknown>(supplier.merchant_owned_fields).map(text).filter(Boolean)
     },
     pricingRule: normalizePricingRule(raw.pricing_rule),
@@ -1108,6 +1243,41 @@ export async function updateImportedProduct(
   return normalizeDraft(response);
 }
 
+/**
+ * Name the one supplier variant this listing sells.
+ *
+ * The answer to `SUPPLIER_VARIANT_UNBOUND`. Without this call that problem code
+ * was a refusal nothing in the app could satisfy: `bind-product` existed on the
+ * server and had no caller on any screen, so a merchant whose import selected
+ * more than one in-stock variant — the supplier screen's own default — held a
+ * draft that could never be published.
+ *
+ * Binding is close to one-way. `marketplace_variants.link_source` accepts NULL →
+ * a variant and refuses variant A → variant B with `binding_conflict`, because a
+ * published listing that silently changed what it ships would keep selling a
+ * page describing the old product. So the caller must present this as a choice
+ * being made, not a setting being adjusted.
+ *
+ * Returns nothing, for the same reason `bindConnectionShop` does: the draft is
+ * what every surface reads, and re-reading it is how the caller learns that
+ * `SUPPLIER_VARIANT_UNBOUND` has cleared. Trusting this response instead would
+ * be trusting a second copy of the verdict.
+ */
+export async function bindDraftVariant(
+  scope: DropshippingScope,
+  connectionId: string,
+  input: { listingId: number | string; providerProductId: string; providerVariantId: string }
+): Promise<void> {
+  await pulseApi(`${SUPPLIERS_BASE}/connections/${encodeURIComponent(connectionId)}/bind-product`, {
+    method: "POST",
+    body: scopeBody(scope, {
+      canonical_product_id: String(input.listingId),
+      pid: input.providerProductId,
+      vid: input.providerVariantId
+    })
+  });
+}
+
 /** Dry-run the publish gate. Changes nothing. */
 export async function validateImportedProduct(
   scope: DropshippingScope,
@@ -1195,6 +1365,444 @@ export async function previewPricing(
 }
 
 /* ------------------------------------------------------------------ *
+ * Supplier obligations
+ * ------------------------------------------------------------------ */
+
+/**
+ * Where a paid sale has got to on the supplier's side of the transaction.
+ *
+ * `AWAITING_SUPPLIER_ORDER` is this app's own name for "there is no supplier
+ * order yet", and it is deliberately not one of the outbox's states: the outbox
+ * describes the delivery of a supplier order, and in this case there is not one
+ * to deliver. Every other member is an outbox state, spelled exactly as
+ * `fulfillment.dispatch` and `webhooks` write it.
+ *
+ * This is the second copy of an enumeration whose first copy is Python, which is
+ * the same shape as the `PUBLISH_PROBLEMS` drift above: no compiler spans the
+ * two, the backend grows one and this list does not, and the merchant reads a
+ * raw identifier. So `tests/dropshipping/test_supplier_obligation_copy.py` pins
+ * this list against the state literals the Python writers actually emit, rather
+ * than against a Python list that could drift from them in turn.
+ */
+export const SUPPLIER_ORDER_STATES = [
+  "AWAITING_SUPPLIER_ORDER",
+  "READY",
+  "SENDING",
+  "UNKNOWN",
+  "RECONCILE",
+  "LINKED",
+  "BLOCKED"
+] as const;
+export type SupplierOrderState = (typeof SUPPLIER_ORDER_STATES)[number];
+
+/**
+ * What each state means to a merchant, in their words rather than the outbox's.
+ *
+ * A total `Record` rather than a `Set` or a partial map, so that adding a state
+ * above without writing copy for it is a compile error here — the one place a
+ * compiler *can* span, because both halves are TypeScript.
+ *
+ * `UNKNOWN` is the load-bearing one. It does not mean "we don't know the state";
+ * it means the supplier order may or may not exist because a write could not be
+ * confirmed. Telling a merchant "not placed" there would invite them to place a
+ * second one, and duplicate supplier orders are real money.
+ */
+export const SUPPLIER_ORDER_STATE_COPY: Record<SupplierOrderState, string> = {
+  AWAITING_SUPPLIER_ORDER: "No supplier order yet",
+  READY: "Queued to send to your supplier",
+  SENDING: "Sending to your supplier",
+  UNKNOWN: "Unconfirmed — do not re-order",
+  RECONCILE: "Checking with your supplier",
+  LINKED: "Placed with your supplier",
+  // Not "your supplier refused this order", which is what this said. `BLOCKED`
+  // is reached overwhelmingly by *this* deployment refusing to send — an
+  // expired quote, a changed cost, a connection that moved — and on every one
+  // of those paths `dispatch` raises before `_sending`, so the supplier was
+  // never contacted and has no opinion to report. The reason line rendered
+  // underneath now names which refusal it was; this line's only job is to say
+  // that nothing was sent and that it is waiting on the merchant.
+  BLOCKED: "Not sent — needs your attention"
+};
+
+/**
+ * Merchant-readable words for a state, including one this build has never heard
+ * of.
+ *
+ * The fallback exists for the same reason the one on publish problems does: a
+ * server ahead of this build can name a state that is not in the union above,
+ * and rendering the raw identifier is what put `SUPPLIER_VARIANT_UNBOUND` on a
+ * merchant's screen. The unknown case says what is true — that this app cannot
+ * interpret it — instead of guessing a side.
+ */
+export function supplierOrderStateCopy(state: string): string {
+  return (
+    SUPPLIER_ORDER_STATE_COPY[state as SupplierOrderState] ||
+    "Your supplier order is in a state this app does not recognise yet"
+  );
+}
+
+/**
+ * Why a paid sale cannot yet be turned into a supplier purchase.
+ *
+ * Third copy of a Python enumeration, same shape and same risk as
+ * `SUPPLIER_ORDER_STATES` above, and pinned the same way — against the literals
+ * `fulfillment.BLOCKERS` actually holds, in
+ * `tests/dropshipping/test_supplier_obligation_copy.py`.
+ *
+ * `SHOP_BINDING_REQUIRED` is the one that is true of the connection rather than
+ * of any one sale, so it appears on every obligation at once. That is not a
+ * duplication bug: each obligation is separately unfulfillable, and hiding it
+ * from all but the first would leave a merchant fixing the sales one at a time.
+ */
+export const SUPPLIER_OBLIGATION_BLOCKERS = [
+  "SUPPLIER_ORDER_ALREADY_PLACED",
+  "SHOP_BINDING_REQUIRED",
+  "NOT_SHIPPING_LANE",
+  "DESTINATION_MISSING",
+  "DESTINATION_INCOMPLETE",
+  "SUPPLIER_SKU_MISSING",
+  "SUPPLIER_COST_UNKNOWN"
+] as const;
+export type SupplierObligationBlocker = (typeof SUPPLIER_OBLIGATION_BLOCKERS)[number];
+
+/**
+ * What each blocker means, and — where there is one — what the merchant can do.
+ *
+ * A total `Record` for the reason the state copy above is one: adding a blocker
+ * to the list without writing words for it has to fail the compiler here.
+ *
+ * Two of these have no merchant action at all. `NOT_SHIPPING_LANE` means the
+ * buyer chose collection or a digital delivery, so there is nothing to buy from
+ * a supplier and the sale is already complete — it is an explanation, not a
+ * problem. `DESTINATION_MISSING` means the address the buyer paid against is not
+ * on the record, which a merchant cannot supply on their behalf; asking them to
+ * type one would be inventing a delivery address for somebody else's parcel.
+ */
+export const SUPPLIER_OBLIGATION_BLOCKER_COPY: Record<SupplierObligationBlocker, string> = {
+  SUPPLIER_ORDER_ALREADY_PLACED: "You have already ordered this from your supplier",
+  SHOP_BINDING_REQUIRED: "Choose which of your supplier shops to order through in Connection settings",
+  NOT_SHIPPING_LANE: "This sale is not being shipped, so there is nothing to order",
+  DESTINATION_MISSING: "This order has no delivery address on record",
+  DESTINATION_INCOMPLETE: "The delivery address is missing something your supplier requires",
+  SUPPLIER_SKU_MISSING: "This listing is not linked to a supplier product code",
+  SUPPLIER_COST_UNKNOWN: "Your supplier has not quoted a cost for this variant"
+};
+
+/**
+ * Merchant-readable words for a blocker, including one this build has never
+ * heard of. Same fallback as `supplierOrderStateCopy`, same reason.
+ */
+export function supplierObligationBlockerCopy(blocker: string): string {
+  return (
+    SUPPLIER_OBLIGATION_BLOCKER_COPY[blocker as SupplierObligationBlocker] ||
+    "Something about this order stops it being sent to your supplier"
+  );
+}
+
+/**
+ * Every reason the outbox records for a supplier order that has not gone out.
+ *
+ * Fourth copy of a Python enumeration — `fulfillment.OUTBOX_REASONS` — and
+ * pinned against it the same way as the two above.
+ *
+ * This one existed only as a rendering accident until now. The backend column is
+ * `last_error`; `DropshippingOrdersScreen` printed its value verbatim under a
+ * comment saying it was "the supplier's own refusal text ... the words their
+ * supplier used". It was never either of those. No provider string can reach
+ * that column by construction (`services/business_os/suppliers/errors.py` exists
+ * to guarantee it), and the value is an identifier written in Python — so what a
+ * merchant actually read on a blocked order was `preflight_blocked`.
+ *
+ * Worse, it was one word for about a dozen causes, because `dispatch` flattened
+ * them all before storing. Half of those a merchant can fix. So the fix is on
+ * both sides: the backend keeps the cause, and this map turns it into words.
+ */
+export const SUPPLIER_ORDER_REASONS = [
+  "dispatch_lease_expired",
+  "absence_not_proven",
+  "awaiting_create_readback",
+  "readback_required",
+  "preflight_deferred",
+  "preflight_blocked",
+  "connection_unavailable",
+  "supplier_quote_expired",
+  "supplier_cost_changed",
+  "supplier_connection_changed",
+  "supplier_shop_unbound",
+  "supplier_item_changed",
+  "supplier_cost_unknown",
+  "supplier_stock_unconfirmed",
+  "order_no_longer_eligible",
+  "supplier_ordering_disabled",
+  "supplier_order_needs_support"
+] as const;
+export type SupplierOrderReason = (typeof SUPPLIER_ORDER_REASONS)[number];
+
+/**
+ * What each reason means, and what — if anything — the merchant does next.
+ *
+ * A total `Record`, for the third time and the same reason: a reason added to
+ * the list without words has to be a compile error here.
+ *
+ * The first five say "this worker has not finished", not "something is wrong",
+ * and they are phrased so a merchant does not go looking for a problem that is
+ * not theirs. In particular none of them may imply the order failed:
+ * `awaiting_create_readback` and `readback_required` are written *after* a send
+ * whose outcome is unconfirmed, so telling a merchant it did not go would invite
+ * the one mistake that costs real money — ordering the same goods twice.
+ *
+ * They also do not repeat "do not re-order". All four of the read-back reasons
+ * are only ever stored alongside state `UNKNOWN`, whose own copy carries that
+ * instruction, and the screen renders both lines. This line's job is the part
+ * the state cannot express — that a send was attempted and is being confirmed.
+ */
+export const SUPPLIER_ORDER_REASON_COPY: Record<SupplierOrderReason, string> = {
+  dispatch_lease_expired: "A send was interrupted — checking whether it went through",
+  absence_not_proven: "Checking with your supplier whether this order exists",
+  awaiting_create_readback: "Sent to your supplier — waiting for them to confirm it",
+  readback_required: "Waiting for your supplier to confirm this order",
+  preflight_deferred: "Your supplier is busy — this will be retried automatically",
+  connection_unavailable: "Your supplier connection could not be loaded — this will be retried",
+  preflight_blocked: "This could not be sent to your supplier. Contact support",
+  supplier_quote_expired: "The shipping quote expired before this was sent. Get a new quote and approve it",
+  supplier_cost_changed: "Your supplier cost changed before this was sent. Review and approve the new cost",
+  supplier_connection_changed: "Your supplier connection changed after this was queued. Reconnect, then try again",
+  supplier_shop_unbound: "Choose which of your supplier shops to order through in Connection settings",
+  supplier_item_changed: "This product no longer matches what your supplier lists. Import it again",
+  supplier_cost_unknown: "Your supplier did not state a usable cost for this item",
+  supplier_stock_unconfirmed: "Your supplier has not confirmed stock for this order",
+  order_no_longer_eligible: "This sale was cancelled, refunded or disputed, so nothing was ordered",
+  supplier_ordering_disabled: "Supplier ordering is not switched on for this account yet",
+  supplier_order_needs_support: "This order needs support before it can be sent to your supplier"
+};
+
+/**
+ * Merchant-readable words for an outbox reason, including one this build has
+ * never heard of. Same fallback as the two above, and it matters more here:
+ * falling through used to mean printing the identifier itself.
+ */
+export function supplierOrderReasonCopy(reason: string): string {
+  return (
+    SUPPLIER_ORDER_REASON_COPY[reason as SupplierOrderReason] ||
+    "Your supplier order is waiting on something this app cannot name yet"
+  );
+}
+
+/**
+ * Whether anything on the server is turning queued supplier orders into real
+ * ones — fifth copy of a Python enumeration, `fulfillment.DRAIN_STATES`.
+ *
+ * Why a screen needs to know this at all: `READY` renders as "Queued to send to
+ * your supplier", and in this deployment nothing sends them. The only caller of
+ * the dispatch path is a worker that is not in the `Procfile`, so a paid order
+ * sits at that reassuring sentence permanently.
+ *
+ * The wording was not the bug. The claim was unfalsifiable — the worker printed
+ * its counts to stdout and recorded nothing, so no payload could distinguish a
+ * queue that is moving from a queue with nothing attached to it. The server now
+ * records each tick and states what it found, and this map turns that into the
+ * one sentence that stops a merchant waiting on something that will never come.
+ */
+export const SUPPLIER_DRAIN_STATES = [
+  "DRAINING",
+  "DRAIN_STALLED",
+  "TICKING_BUT_NOT_COMPLETING",
+  "NO_DRAIN_HAS_EVER_RUN"
+] as const;
+export type SupplierDrainState = (typeof SUPPLIER_DRAIN_STATES)[number];
+
+/**
+ * What to tell a merchant about the drain, or `null` when there is nothing to
+ * say.
+ *
+ * `DRAINING` maps to `null` on purpose. A healthy queue needs no banner, and the
+ * per-row copy already says "Queued to send to your supplier" — which is true
+ * exactly then, and is the reason this is a separate notice rather than a change
+ * to that sentence. Folding it in would make one row's `state` mean two
+ * different things depending on a fact about the server.
+ *
+ * None of these blame the merchant, because none of them are the merchant's
+ * fault, and none promise a time — the server states what it last observed and
+ * this copy says no more than that.
+ */
+export const SUPPLIER_DRAIN_NOTICE: Record<SupplierDrainState, string | null> = {
+  DRAINING: null,
+  NO_DRAIN_HAS_EVER_RUN:
+    "Supplier ordering is not running on this account yet, so queued orders are not being sent. Contact support before promising a dispatch date",
+  TICKING_BUT_NOT_COMPLETING:
+    "Supplier ordering is failing on this account, so queued orders are not being sent. Contact support",
+  DRAIN_STALLED:
+    "Queued orders have not been sent for some time. Contact support before promising a dispatch date"
+};
+
+export function supplierDrainNotice(state: string | null | undefined): string | null {
+  if (!state) {
+    // An older server sends no `drain` at all. Saying nothing is right here and
+    // is not the same mistake as before: the old screen made a positive promise
+    // with no evidence, whereas a build talking to a server that cannot answer
+    // has genuinely not been told anything.
+    return null;
+  }
+  return SUPPLIER_DRAIN_NOTICE[state as SupplierDrainState] ?? null;
+}
+
+/**
+ * One paid sale and the supplier purchase it owes.
+ *
+ * Two orders, deliberately: `orderId` is the customer's order, `intentId` is
+ * the merchant's order with the supplier, and `intentId` being `null` is the
+ * normal state of a sale nobody has fulfilled yet rather than an error.
+ *
+ * `supplierCostCents` is on this type because every route in this module is
+ * merchant-authenticated (see the file header). It must never reach a buyer
+ * surface.
+ *
+ * There is no delivery address on this type, and there must not be. The server
+ * reads one to decide `blockers`, and deliberately does not send it: a merchant
+ * needs to know whether the parcel can be shipped, not where to, and the
+ * address belongs to the buyer.
+ */
+export type SupplierObligation = {
+  orderId: number;
+  listingId: number;
+  title: string;
+  quantity: number;
+  amountCents: number | null;
+  currency: string | null;
+  orderStatus: string;
+  paidAt: string | null;
+  orderedAt: string | null;
+  provider: string;
+  providerProductId: string | null;
+  providerVariantId: string | null;
+  /**
+   * The supplier's code for the *bound variant*, not for the product.
+   *
+   * It used to be `externalSku`, read from `marketplace_product_sources`, which
+   * is the product-level column and is usually empty. The two live one table
+   * apart and the one that was sent was never the one the supplier order is
+   * matched on, so the honest case looked like a missing SKU and the populated
+   * case looked like a binding bug.
+   */
+  supplierSku: string | null;
+  supplierCostCents: number | null;
+  supplierCostCurrency: string | null;
+  intentId: string | null;
+  /**
+   * Everything standing between this sale and a supplier purchase, empty when
+   * nothing is.
+   *
+   * Passed through as `string[]` rather than narrowed to the union for the same
+   * reason `state` is: a server ahead of this build can name a blocker this one
+   * has never heard of, and `supplierObligationBlockerCopy` says so rather than
+   * rendering the identifier.
+   */
+  blockers: string[];
+  /**
+   * The server's own answer, not `blockers.length === 0` recomputed here.
+   *
+   * It means every precondition an obligation can carry is satisfied — not that
+   * the order will certainly go through. Freight still has to be quoted, and
+   * that step can refuse on its own grounds.
+   */
+  canPlaceSupplierOrder: boolean;
+  state: SupplierOrderState | string;
+  supplierOrderPlaced: boolean;
+  providerOrderId: string | null;
+  /**
+   * The supplier's own word for where the order stands, verbatim.
+   *
+   * Named `supplierOrderStatus` rather than `providerStatus` because on this
+   * platform `provider_status` is the payment provider's subscription status —
+   * a membership field the entitlement drift guard keeps off unlisted files.
+   * The backend aliases the outbox column on the way out for the same reason.
+   */
+  supplierOrderStatus: string | null;
+  lastError: string | null;
+  updatedAt: string | null;
+};
+
+function normalizeObligation(raw: Record<string, unknown>): SupplierObligation {
+  const intentId = textOrNull(raw.intent_id);
+  return {
+    orderId: centsOrNull(raw.order_id) ?? 0,
+    listingId: centsOrNull(raw.listing_id) ?? 0,
+    title: text(raw.title),
+    quantity: centsOrNull(raw.quantity) ?? 0,
+    amountCents: centsOrNull(raw.amount_cents),
+    currency: textOrNull(raw.currency),
+    orderStatus: text(raw.order_status),
+    paidAt: textOrNull(raw.paid_at),
+    orderedAt: textOrNull(raw.ordered_at),
+    provider: text(raw.provider).toLowerCase(),
+    providerProductId: textOrNull(raw.provider_product_id),
+    providerVariantId: textOrNull(raw.provider_variant_id),
+    supplierSku: textOrNull(raw.supplier_sku),
+    supplierCostCents: centsOrNull(raw.supplier_cost_cents),
+    supplierCostCurrency: textOrNull(raw.supplier_cost_currency),
+    intentId,
+    blockers: list<unknown>(raw.blockers)
+      .map((entry) => text(entry))
+      .filter((entry) => entry.length > 0),
+    canPlaceSupplierOrder: raw.can_place_supplier_order === true,
+    // Passed through, not narrowed to the union: a state this build has not
+    // heard of must survive to `supplierOrderStateCopy`, which says so.
+    state: text(raw.state) || "AWAITING_SUPPLIER_ORDER",
+    // Read from the server's own field rather than re-derived here as
+    // `intentId !== null`. The server already decided; deriving it a second
+    // time is one more copy that can disagree, and this is the field a merchant
+    // would act on.
+    supplierOrderPlaced: raw.supplier_order_placed === true,
+    providerOrderId: textOrNull(raw.provider_order_id),
+    supplierOrderStatus: textOrNull(raw.supplier_order_status),
+    lastError: textOrNull(raw.last_error),
+    updatedAt: textOrNull(raw.intent_updated_at)
+  };
+}
+
+/**
+ * Paid sales through this connection that still owe a purchase from the
+ * supplier, newest first.
+ *
+ * This is the endpoint the supplier-orders screen had no source for. Before it,
+ * a buyer could pay for a published, bound dropship listing and the merchant's
+ * only record was a customer order indistinguishable from a hand-stocked sale —
+ * the fulfilment layer could create one supplier order and read one back by id,
+ * but nothing could tell a merchant which of their sales needed one.
+ *
+ * The server derives the list on read by joining paid orders to the supplier
+ * mapping of the listing they were placed on, so a merchant's hand-stocked
+ * products cannot appear here and nothing has to be kept in step.
+ */
+export async function listSupplierObligations(
+  scope: DropshippingScope,
+  connectionId: string,
+  options: { limit?: number } = {}
+): Promise<{
+  obligations: SupplierObligation[];
+  isSandbox: boolean;
+  drainState: string | null;
+}> {
+  const response = await pulseApi<Record<string, unknown>>(
+    `${SUPPLIERS_BASE}/connections/${encodeURIComponent(connectionId)}/obligations` +
+      scopeQuery(scope, { limit: options.limit })
+  );
+  const drain = (response.drain ?? null) as Record<string, unknown> | null;
+  return {
+    obligations: list<Record<string, unknown>>(response.obligations).map(normalizeObligation),
+    // The server states this; it is not assumed from a build flag. A screen
+    // that promises "nothing is sent to your supplier" on its own authority
+    // would keep promising it after the platform switched fulfilment on.
+    isSandbox: centsOrNull(response.isSandbox) === 1,
+    // Same rule, and the reason the field is here rather than derived: whether
+    // a drain exists is a fact only the server can observe. `null` when an
+    // older server does not report one — not narrowed to the union, so a state
+    // this build has never heard of reaches `supplierDrainNotice` intact.
+    drainState: drain ? textOrNull(drain.state) : null
+  };
+}
+
+/* ------------------------------------------------------------------ *
  * Screen states
  * ------------------------------------------------------------------ */
 
@@ -1214,6 +1822,7 @@ export const DROPSHIPPING_STATES = [
   "STALE",
   "SUPPLIER_DISABLED",
   "PROVIDER_NETWORK_DISABLED",
+  "CREDENTIAL_STORAGE_UNAVAILABLE",
   "STORE_NOT_APPROVED",
   "STORE_NOT_FOUND",
   "STORE_ACCESS_REVOKED",
@@ -1224,6 +1833,17 @@ export const DROPSHIPPING_STATES = [
   "SESSION_EXPIRED",
   "INVALID_CREDENTIAL",
   "SUPPLIER_DISCONNECTED",
+  // The shop-binding conditions. They are separate states rather than one
+  // "binding problem" because the merchant's next move differs in every one:
+  // choose a shop, choose a *different* shop, wait for whoever already bound
+  // this connection, go and create an API app in the supplier console, or go and
+  // rename a storefront there. A single state would have to pick one of those
+  // sentences and be wrong the rest of the time.
+  "SHOP_BINDING_REQUIRED",
+  "SHOP_NOT_AUTHORIZED",
+  "SHOP_BINDING_CONFLICT",
+  "SHOP_CANNOT_FULFIL",
+  "SHOP_NAME_AMBIGUOUS",
   "PROVIDER_UNAVAILABLE",
   "UNAUTHORIZED",
   "ERROR"
@@ -1235,6 +1855,16 @@ const DISCONNECTED_CODES = [
   "supplier_disconnected",
   "connection_not_found",
   "credential_missing",
+  // A stored credential the server cannot open: sealed under a key rotation has
+  // since retired, or written under a different store than the one asking. It
+  // sits beside `credential_missing` because the merchant's move is identical —
+  // reconnect the supplier account — and because the alternative is worse than
+  // it looks. It arrives as a 409, which matches none of the status classes
+  // below, so without this entry it reaches the merchant as "Something went
+  // wrong": no cause, no button, and no hint that reconnecting fixes it. That
+  // is the failure this whole function exists to prevent, and it would have
+  // been introduced by the server-side change that made 409 possible.
+  "credential_unusable",
   "auth_expired",
   "reauth_required",
   "not_connected"
@@ -1273,6 +1903,26 @@ export function stateForError(error: unknown): DropshippingState {
   if (code === "provider_network_disabled" || code === "provider_approval_required") {
     return "PROVIDER_NETWORK_DISABLED";
   }
+  // Third condition of the deployment, and the one that hid the longest. The
+  // server refuses to store a credential it cannot encrypt, and it checks that
+  // *before* it calls the supplier -- `vault.require_available()` runs ahead of
+  // `adapter.authenticate()` precisely so a broken deployment cannot spend one
+  // of the egress IP's three account slots. So when this code arrives, the
+  // supplier was never contacted at all.
+  //
+  // It used to fall through to the `status === 503` catch-all below and reach
+  // the merchant as "Your supplier isn't responding ... try again shortly" --
+  // wrong about who failed, and wrong that waiting helps, since nothing about a
+  // missing key on our own server changes with time. It is the same mistake the
+  // two codes above exist to prevent, on a third deployment condition that was
+  // missed, so it is matched here beside them rather than added to
+  // PROVIDER_CODES.
+  if (code === "credential_vault_unavailable") return "CREDENTIAL_STORAGE_UNAVAILABLE";
+  // Its two siblings are deliberately elsewhere, because "the vault is down" is
+  // the only one of the three the merchant can wait out. `credential_unusable`
+  // is in DISCONNECTED_CODES (reconnect), and `credential_request_invalid` is a
+  // 500 that falls through to "ERROR" on purpose — it means the bug is ours, and
+  // there is no action to offer someone for a mistake they did not make.
   if (code === "store_not_approved") return "STORE_NOT_APPROVED";
   if (code === "invalid_api_key") return "INVALID_CREDENTIAL";
 
@@ -1289,6 +1939,32 @@ export function stateForError(error: unknown): DropshippingState {
   if (code === "merchant_identity_unresolved") return "STORE_MAPPING_MISSING";
   if (code === "store_not_found") return "STORE_NOT_FOUND";
   if (code === "forbidden") return "SUPPLIER_CONNECTION_FORBIDDEN";
+
+  // Every shop-binding code, matched here for the same reason `credential_unusable`
+  // is matched above: their statuses lead the merchant somewhere else entirely.
+  // `shop_not_authorized` is a 403 and so was rendered as "you're not signed in
+  // to this store any more" — a merchant with a perfectly healthy session sent
+  // to sign in again over a stale shop list. The other three are 400s and 409s,
+  // which match none of the status classes at the bottom of this function and so
+  // arrived as a bare "Something went wrong": no cause, and no hint that the fix
+  // is one tap away on the Suppliers screen.
+  //
+  // `shop_binding_required` is the one a merchant meets by accident. It is what
+  // an order against an unbound connection answers, so it is the first time most
+  // accounts will hear that a shop was ever needed. `shop_required` joins it
+  // because the move is identical — go and choose one — and it is what the
+  // connect form gets for a shop field that is not a usable string.
+  //
+  // The rest are reachable from a shop list that has gone stale under the
+  // merchant: the picker marks unfulfillable shops before they are chosen, so
+  // the only way to choose one is for the account to have changed since the list
+  // was drawn. Stale is the normal state of a list left open, so none of them is
+  // hypothetical.
+  if (code === "shop_binding_required" || code === "shop_required") return "SHOP_BINDING_REQUIRED";
+  if (code === "shop_not_authorized") return "SHOP_NOT_AUTHORIZED";
+  if (code === "connection_binding_conflict") return "SHOP_BINDING_CONFLICT";
+  if (code === "api_shop_binding_required") return "SHOP_CANNOT_FULFIL";
+  if (code === "ambiguous_shop_name") return "SHOP_NAME_AMBIGUOUS";
 
   // Both lists are matched ahead of the bare status classes for the same reason
   // the block above is: a named code is the server being specific, and a status
@@ -1330,19 +2006,29 @@ export type DropshippingDataGap = { surface: string; needs: string };
  * Listed rather than mocked. A supplier-orders screen populated with invented
  * rows would be read as "these orders were placed with your supplier", which is
  * the one claim in this whole feature a merchant would act on financially.
- * Exported so a test can assert the count: if someone later fakes one of these,
- * the list changes and the test says so.
+ *
+ * `needs` is merchant-readable, because `DropshippingOrdersScreen` renders it.
+ * It used to be an implementation note, and one of them named a table
+ * (`business_os_supplier_fulfillment_intents`) that does not exist anywhere in
+ * the repo — so the note meant to tell the next implementer where to look sent
+ * them to a name nothing has. A gap note is a claim about the system like any
+ * other, and this one had never been checked against it.
+ *
+ * Two entries left this list when `listSupplierObligations` arrived. They said
+ * the fulfilment layer "can create and read a single supplier order by id" and
+ * only lacked an enumeration; in fact nothing reachable created one either, so
+ * both the stated gap and the capability it assumed were wrong. The entry that
+ * remains is the one that is still true.
  */
 export const DROPSHIPPING_DATA_GAPS: readonly DropshippingDataGap[] = [
   {
-    // The fulfillment layer can create and read a single intent by id, but
-    // nothing enumerates a merchant's supplier orders.
-    surface: "Supplier orders list",
-    needs: "a merchant-scoped list endpoint over business_os_supplier_fulfillment_intents"
-  },
-  {
-    // Tracking numbers land on the intent, which the same gap hides.
-    surface: "Shipment tracking",
-    needs: "tracking numbers surfaced on the same supplier-orders list"
+    // `list_obligations` enumerates paid orders that owe a supplier purchase.
+    // It deliberately does not enumerate an order refunded or cancelled *after*
+    // a supplier order was placed: the merchant needs to cancel with the
+    // supplier, and that is a different action from placing one. There is no
+    // cancellation path, so listing those rows here would imply one exists.
+    surface: "Cancelling a supplier order",
+    needs:
+      "When a customer refunds an order you've already bought from your supplier, you'll be able to cancel it with them from here."
   }
 ] as const;

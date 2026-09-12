@@ -41,17 +41,73 @@ class TestResolveKind:
         assert mf.resolve_kind("event", "event", {"venue_mode": venue}) == expected
 
     @pytest.mark.parametrize(
-        "delivery,expected",
+        "option,expected",
         [("shipping", "shipping"), ("pickup", "pickup"), ("both", "shipping_or_pickup"), ("", "shipping")],
     )
-    def test_physical_reads_its_delivery_option(self, delivery, expected):
-        assert mf.resolve_kind("physical", delivery, {}) == expected
+    def test_physical_reads_its_delivery_option(self, option, expected):
+        """The delivery option is a metadata field, not the delivery column.
 
-    def test_physical_falls_back_to_metadata_when_the_column_is_empty(self):
-        assert mf.resolve_kind("physical", "", {"delivery_options": "pickup"}) == "pickup"
+        These four cases used to pass ``option`` as the ``delivery_type``
+        argument — a slot the database fills with the *product type* and never
+        with a lane, so the fixture described a row that cannot exist and the
+        suite stayed green on inputs production never produces. The seller's
+        answer is ``listing_metadata.delivery_options``, so that is where it is
+        asserted, beside the column value a real row carries.
+        """
+        assert mf.resolve_kind("physical", "physical", {"delivery_options": option}) == expected
+
+    def test_the_delivery_column_cannot_override_the_sellers_own_answer(self):
+        # `delivery_type` reads "physical" for every physical row in the table.
+        # Letting it win is what answered `shipping` for every pickup-only
+        # listing ever published.
+        assert mf.resolve_kind("physical", "physical", {"delivery_options": "pickup"}) == "pickup"
+        assert mf.resolve_kind("physical", "shipping", {"delivery_options": "pickup"}) == "pickup"
+        # Including the column's own DDL default, which would otherwise turn a
+        # crate of hoodies into a download: no address asked, no stock reserved.
+        assert mf.resolve_kind("physical", "digital", {"delivery_options": "pickup"}) == "pickup"
+        assert mf.resolve_kind("physical", "digital", {}) == "shipping"
 
     def test_a_legacy_row_with_no_type_at_all_ships(self):
         assert mf.resolve_kind(None, None, None) == "shipping"
+
+    @pytest.mark.parametrize(
+        "column,expected",
+        [("pickup", "pickup"), ("local", "pickup"), ("meetup", "pickup"), ("shipping", "shipping"),
+         ("both", "shipping_or_pickup"), ("pickup_or_shipping", "shipping_or_pickup"),
+         ("digital", "digital"), ("download", "digital"), ("", "shipping")],
+    )
+    def test_a_legacy_row_that_declared_no_type_still_reads_its_column(self, column, expected):
+        # Rows written before listing types existed have nothing else to go on,
+        # so the column stays readable for them — and only for them.
+        assert mf.resolve_kind("", column, {}) == expected
+
+
+class TestDeliveryLane:
+    """The one rule every other lane derivation in the codebase folds down from."""
+
+    def test_the_sellers_declaration_is_the_answer(self):
+        assert mf.delivery_lane("physical", {"delivery_options": "pickup"}, "physical") == "pickup"
+        assert mf.delivery_lane("physical", {"delivery_options": "both"}, "physical") == "both"
+
+    def test_a_typed_row_never_reads_the_column(self):
+        for column in ("physical", "digital", "pickup", "shipping", "both"):
+            assert mf.delivery_lane(column, {}, "physical") == ""
+
+    def test_an_untyped_row_reads_the_column_because_it_has_nothing_else(self):
+        assert mf.delivery_lane("pickup", {}, "") == "pickup"
+        assert mf.delivery_lane("pickup", {}, None) == "pickup"
+
+    def test_a_word_that_is_not_a_lane_is_not_a_lane(self):
+        # The single most important case in this file. `physical` is what the
+        # column actually contains, and it has to read as "no lane declared"
+        # rather than as anything at all.
+        assert mf.delivery_lane("physical", {}, "") == ""
+        assert mf.delivery_lane("service", {}, "") == ""
+        assert mf.delivery_lane("nonsense", {}, "") == ""
+
+    def test_junk_in_the_metadata_is_not_a_lane_either(self):
+        for junk in (None, "", " ", "yes", 3, True, [], {}):
+            assert mf.delivery_lane("", {"delivery_options": junk}, "") == ""
 
 
 class TestResolveChoice:
@@ -270,6 +326,35 @@ class TestClientServerAgreement:
         client = self._client_fields()
         for kind in mf.UNDECIDED_KINDS:
             assert client[kind] == []
+
+    def test_both_sides_fold_the_same_words_onto_the_same_lanes(self):
+        """A spelling one side reads as a lane and the other does not is silent.
+
+        It produces a listing whose page reads "Local pickup" and whose checkout
+        asks for a delivery address — the exact two-derivations-one-fact failure
+        this module was consolidated to prevent, only split across languages.
+        """
+        source = (pathlib.Path(__file__).resolve().parents[1]
+                  / "mobile-native/src/api/marketplaceFulfillment.ts").read_text()
+        body = re.search(r"const LANE_WORDS: Record<[^>]*> = \{(.*?)^\};", source, re.S | re.M).group(1)
+        client = dict(re.findall(r'(\w+): "(\w+)"', body))
+        assert client == mf._LANE_WORDS
+
+    def test_the_client_reads_the_sellers_declaration_first_too(self):
+        """Field *order* is the whole defect, so it is pinned rather than the fields.
+
+        Both implementations consult ``listing_metadata.delivery_options`` and
+        ``delivery_type``. Reading them in the other order is what made a column
+        holding the product type outrank the seller's own answer, and a test
+        that only checked "it reads both fields" would have passed throughout.
+        """
+        source = (pathlib.Path(__file__).resolve().parents[1]
+                  / "mobile-native/src/api/marketplaceFulfillment.ts").read_text()
+        body = re.search(r"export function deliveryLane\(.*?\n\}", source, re.S).group(0)
+        assert body.index("delivery_options") < body.index("listing.delivery_type")
+        # And the guard between them: a row that declared a type must return
+        # before the column is reached at all.
+        assert body.index("listing.listing_type || listing.product_type") < body.index("listing.delivery_type")
 
 
 class TestEveryLaneIsWiredTheSameWay:

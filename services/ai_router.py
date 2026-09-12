@@ -1,9 +1,12 @@
 """AI orchestration layer for concise, live-data-aware CoinPlotXAI answers."""
 
-import os
 import time
 
-from . import intelligence, live_market_service, predictions_service, scam_shield, wallet_intel
+# `os` used to be imported for one thing: reading `OPENAI_API_KEY` to decide what to
+# tell the user about where their answer came from. Routing removed the question, so
+# the import goes with it rather than staying as a hint that this module still has an
+# opinion about a specific vendor's credentials.
+from . import intelligence, live_market_service, predictions_service, scam_shield, undx_call_domain, wallet_intel
 
 
 SYSTEM_RULES = (
@@ -81,8 +84,23 @@ def route(user_id, message, pro=False, memory=None, timeout_seconds=12):
         source = "Predictions provider"
     else:
         prompt = f"{SYSTEM_RULES}\n\nUser question:\n{message}"
-        response = intelligence.assistant_response(user_id, prompt, pro=pro)
-        source = "OpenAI + CoinPlotXAI context" if os.getenv("OPENAI_API_KEY") else "CoinPlotXAI fallback"
+        # GENERAL (§5): both callers of `route` are website chat routes
+        # (`bot.py:29535`, `bot.py:29590`). Declared here rather than threaded through
+        # the signature because there is no second provenance to distinguish, and an
+        # argument every caller passes the same value to is a default with extra steps.
+        answer = intelligence.assistant_response_envelope(
+            user_id, prompt, pro=pro,
+            call_domain=undx_call_domain.CALL_DOMAIN_GENERAL,
+        )
+        response = answer["text"]
+        # Reports who actually answered. This line used to read `OPENAI_API_KEY` and
+        # print "OpenAI + CoinPlotXAI context" if it was set — a test of *configuration*
+        # standing in for a fact about *execution*. Routing is what made that false
+        # rather than merely fragile: the key can be present while Gemini answers, and
+        # absent while Claude answers perfectly well. `source` is user-visible, so it
+        # now comes from the envelope or says plainly that no provider was involved.
+        source = (f"{answer['source']} + CoinPlotXAI context" if answer["routed"]
+                  else intelligence.FALLBACK_SOURCE_LABEL)
 
     if not response:
         response = f"{_live_prefix()}\n\nI could not produce a reliable answer from the available providers."

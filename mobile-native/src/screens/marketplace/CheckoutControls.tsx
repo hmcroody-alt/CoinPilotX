@@ -140,7 +140,12 @@ export function ProductSummaryCard({
         ) : null}
       </View>
       <View style={styles.summaryPriceCol}>
-        <Text style={styles.summaryPrice}>{price}</Text>
+        {/* Guarded like `seller` and `typeLabel` above, and for the same reason:
+            an empty string is this card being told the value is not known, not
+            being told to print an empty line. The caller passes "" when the
+            checkout has no subtotal to show, and a card that renders no price
+            is the product-wide rule for that. */}
+        {price ? <Text testID="checkout-summary-price" style={styles.summaryPrice}>{price}</Text> : null}
         {quantity && quantity > 1 ? <Text style={styles.summaryQty}>×{quantity}</Text> : null}
       </View>
     </View>

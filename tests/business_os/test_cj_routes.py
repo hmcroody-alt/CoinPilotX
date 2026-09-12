@@ -260,6 +260,54 @@ def test_subscribe_and_read_routes_require_csrf_and_real_tenant_scope(client, mo
     assert calls == []
 
 
+def test_shop_binding_routes_require_csrf_and_real_tenant_scope(client, monkeypatch):
+    """Reachable, and only by the merchant who owns the connection.
+
+    Listed beside `subscribe` and `read/product` rather than trusted to the
+    service tests, because the service function being right is not the same
+    claim as the route existing -- the admin moderation defect earlier in this
+    chain was a route nobody had ever posted to.
+    """
+    row = connect()
+    calls = []
+    # The real handlers run; only the credential hydration is stubbed, so a
+    # refusal reaching CJ at all would show up as a non-empty `calls`.
+    monkeypatch.setattr(connections, "_hydrate", lambda *a, **k: calls.append(a))
+    body = {"business_id": "biz-a", "store_id": "store-a", "external_shop_id": "cj-shop-a"}
+    for suffix in ("bind-shop", "shops"):
+        url = BASE + "/connections/" + row["id"] + "/" + suffix
+        login(client, "100")
+        assert client.post(url, json=body).status_code == 403  # no CSRF header
+        login(client, "200")
+        assert post(client, url, body).status_code == 404  # foreign merchant
+    assert calls == []
+
+
+def test_binding_a_shop_over_http_answers_with_the_binding_and_no_secret(client, monkeypatch):
+    """The one route that turns a shopless connection into a fulfilling one."""
+    from services import db
+    from tests.business_os.test_cj_connections import FakeAdapter, SECRETS
+
+    row = connect()
+    conn = db.connect()
+    conn.execute("UPDATE business_os_supplier_connections SET external_shop_id='' WHERE id=?", (row["id"],))
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(connections, "_hydrate", lambda *a, **k: FakeAdapter())
+    login(client, "100")
+    response = post(client, BASE + "/connections/" + row["id"] + "/bind-shop",
+                    {"business_id": "biz-a", "store_id": "store-a", "external_shop_id": "cj-shop-a"})
+    assert response.status_code == 200
+    assert response.get_json()["data"]["external_shop_id"] == "cj-shop-a"
+    text = response.get_data(as_text=True)
+    assert not any(secret in text for secret in SECRETS.values())
+
+    listed = post(client, BASE + "/connections/" + row["id"] + "/shops",
+                  {"business_id": "biz-a", "store_id": "store-a"}).get_json()["data"]
+    assert listed["external_shop_id"] == "cj-shop-a"
+    assert [(s["shop_id"], s["fulfillable"]) for s in listed["shops"]] == [("cj-shop-a", True)]
+
+
 def test_admin_health_requires_existing_admin_authority(client):
     login(client)
     url = "/api/admin/business-os/suppliers/cj/health"

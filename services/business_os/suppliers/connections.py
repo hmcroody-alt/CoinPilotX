@@ -635,6 +635,148 @@ def worker_adapter(connection_id, business_id, store_id, *, adapter=None):
     return _hydrate(connection_id, business_id, store_id, adapter=adapter)
 
 
+def _live_shops(connection_id, business_id, store_id, actor_user_id, *, context=None,
+                adapter=None, write=False):
+    """The shop list as this connection's stored credential sees it right now.
+
+    ``discover_shops`` answers the same question from an API key, which only
+    exists while the connect form is on screen. Afterwards the key is in the
+    vault and the merchant has no copy to retype, so without this there was no
+    way to see the list again -- and therefore no way to choose from it.
+
+    Same cleaning as connect-time (``_safe_shops``), including the check that CJ
+    has not echoed one of this connection's own secrets back inside a shop name.
+    """
+    cj = adapter_for(business_id, store_id, actor_user_id, connection_id,
+                     context=context, adapter=adapter, write=write)
+    credentials = worker_connection(connection_id, business_id, store_id)["credentials"]
+    return cj, _safe_shops(cj.get_shops(), credentials.values())
+
+
+def _annotated_shops(shops):
+    from services.business_os.suppliers import fulfillment
+    annotated = []
+    for shop in shops:
+        try:
+            fulfillment.dispatch_shop(shops, shop["shop_id"])
+            reason = ""
+        except fulfillment.FulfillmentError as exc:
+            reason = exc.code
+        annotated.append(shop | {"fulfillable": not reason, "unfulfillable_reason": reason})
+    return annotated
+
+
+def connection_shops(connection_id, business_id, store_id, actor_user_id, *, context=None, adapter=None):
+    """CJ shops visible to an existing connection, and which can take orders.
+
+    ``fulfillable`` is not decoration. It is ``fulfillment.dispatch_shop``'s own
+    verdict, so a merchant reading this list learns which choice will work
+    before making it rather than at the first order they lose.
+
+    An account that owns no shop is the *expected* answer here, not an error.
+    CJ replies to ``shop/getShops`` for such an account with a business code its
+    own documentation does not list, which the transport correctly refuses to
+    interpret and reports as ``SUPPLIER_REJECTED`` (422). That is the state the
+    live connection is in today. Left to propagate it reaches the app as a bare
+    "Something went wrong" -- 422 matches none of the client's status classes --
+    for the single most likely outcome of opening this screen.
+
+    ``_verify`` already made this decision for connecting: an unreadable shop
+    list is survivable when nothing was selected. This is the same rule for
+    reading, and it is narrower on purpose. ``_verify`` survives *any*
+    ``SupplierError`` because there the shop is irrelevant -- importing needs
+    none, so connecting should not fail on it. Here the shop list *is* the
+    answer, so collapsing a throttle or a dead credential into "you have no
+    shops" would print a false instruction: it tells a merchant to go create a
+    storefront when the truth is "ask again in a minute" or "your key is
+    rejected". Only a rejection -- CJ answered, and the answer was not a list --
+    is reported as an empty list. Everything else keeps its own meaning.
+
+    Binding is unaffected. ``bind_shop`` selects, so it goes through
+    ``_live_shops`` directly and an unreadable list stays fatal there, exactly
+    as ``_verify`` requires when something was chosen.
+    """
+    try:
+        _, shops = _live_shops(connection_id, business_id, store_id, actor_user_id,
+                               context=context, adapter=adapter)
+    except SupplierConnectionError:
+        raise  # Our own refusal of an unsafe or malformed list is never survivable.
+    except SupplierError as exc:
+        if str(getattr(exc, "code", "")).upper() != "SUPPLIER_REJECTED":
+            raise
+        shops = []
+    current = get_connection(connection_id, business_id, store_id, actor_user_id, context=context)
+    return {"shops": _annotated_shops(shops), "external_shop_id": current["external_shop_id"]}
+
+
+def bind_shop(connection_id, business_id, store_id, actor_user_id, external_shop_id,
+              *, context=None, adapter=None):
+    """Choose the CJ shop this connection fulfils through, after connecting.
+
+    Connecting without a shop is normal and deliberate -- importing products
+    needs none, and demanding one made an ordinary CJ account unconnectable.
+    Fulfilment does need one. Until this function existed there was no
+    transition between those two states: ``connect_cj`` refuses to change an
+    existing binding, and "none" is a binding for that purpose, so reconnecting
+    with a shop returns ``connection_binding_conflict``. The only account that
+    could ever fulfil was one that named its shop in the connect form, before it
+    had any reason to know which shop it wanted. Every other connection could
+    import, publish and sell, then refuse its own orders with
+    ``shop_binding_required`` permanently.
+
+    None of this relaxes that refusal. This is its other half: the provenance
+    ``create_intent`` demands, established on purpose instead of assumed away.
+
+    Binding only ever goes from none to one. Replacing a shop is a different
+    operation with different consequences -- persisted intents carry the shop
+    they were created against and ``_validate_binding`` compares it -- and this
+    is not that operation. Going from none to one is safe precisely because the
+    refusal guarantees no intent can exist yet.
+    """
+    if not isinstance(external_shop_id, str) or not external_shop_id.strip() or len(external_shop_id) > 256:
+        raise SupplierConnectionError("Choose an explicit CJ shop.", 400, "shop_required")
+    external_shop_id = external_shop_id.strip()
+    from services.business_os.suppliers import fulfillment
+    # Hydrating first proves the credential still resolves to this account, and
+    # returns the live list the choice is checked against. A shop the merchant
+    # names but CJ does not list under this credential is refused here.
+    _, shops = _live_shops(connection_id, business_id, store_id, actor_user_id,
+                           context=context, adapter=adapter, write=True)
+    if external_shop_id not in {shop["shop_id"] for shop in shops}:
+        raise SupplierConnectionError("Select a shop belonging to this CJ connection.", 403,
+                                      "shop_not_authorized")
+    fulfillment.dispatch_shop(shops, external_shop_id)
+    conn = db.connect()
+    try:
+        merchant = _authorize(conn, business_id, store_id, actor_user_id, context=context, write=True)
+        row = _row(conn, connection_id, business_id, store_id, merchant)
+        if row["external_shop_id"] == external_shop_id:
+            return _public(row)  # The same choice, already recorded.
+        # Conditional on the column still being empty, so two concurrent binds
+        # cannot both believe they won. The loser reads as a conflict, which is
+        # what it is.
+        cursor = conn.execute(
+            "UPDATE business_os_supplier_connections SET external_shop_id=?, updated_at=?, "
+            "version=version+1 WHERE id=? AND merchant_id=? AND business_id=? AND store_id=? "
+            "AND provider='CJ' AND COALESCE(external_shop_id,'')=''",
+            (external_shop_id, _iso(), connection_id, merchant, business_id, store_id))
+        if cursor.rowcount != 1:
+            raise SupplierConnectionError("Existing CJ shop cannot be silently replaced.",
+                                          409, "connection_binding_conflict")
+        store_service._audit(conn, business_id=business_id, subject_type="supplier_connection",
+                             subject_ref=connection_id, action="supplier.cj.bind_shop",
+                             actor=actor_user_id, before={"external_shop_id": row["external_shop_id"]},
+                             after={"external_shop_id": external_shop_id})
+        result = _public(_row(conn, connection_id, business_id, store_id, merchant))
+        conn.commit()
+        return result
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 INACTIVITY_WARNING_DAYS = 7
 INACTIVITY_DISABLE_DAYS = 30
 

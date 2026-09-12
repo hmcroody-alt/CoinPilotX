@@ -94,6 +94,13 @@ def cj_product(pid="PID-1", *, title="Cotton Tee", variants_=None, media=True,
              "variantQuantity": 12, "variantSku": f"{pid}-SKU-2"},
         ],
     }
+    # CJ stamps the parent pid onto every variant, and `gateway.bind_product`
+    # checks it -- `any(v["vid"] == vid and v["pid"] == pid ...)` -- so a fake
+    # that omitted it made every binding answer `variant_mismatch`. Filled in
+    # rather than required of each caller: a variant without its own pid is not a
+    # payload CJ produces, so no test should be able to construct one by accident.
+    for variant in payload["variants"]:
+        variant.setdefault("pid", pid)
     if media:
         payload["productImage"] = f"https://cdn.example.com/{pid}.jpg"
         payload["productImageSet"] = [f"https://cdn.example.com/{pid}-2.jpg"]
@@ -333,6 +340,43 @@ def test_import_does_not_seed_the_public_price_label_with_supplier_cost(provider
     assert "8.20" not in str(label)
 
 
+def test_import_persists_the_cover_image_on_the_listing_row(provider):
+    # `_validate` refuses a product with no media because a listing with no
+    # image is a black card in the grid. That guard was defeated by the insert
+    # it protects: media went only into listing_metadata_json, so every reader
+    # of the cover_image_url *column* -- the dropshipping products list, the
+    # merchant's store list, the buyer grid -- got NULL and drew the black card
+    # anyway. Only readers that derive the cover from the metadata, like
+    # get_draft, ever saw an image.
+    provider.add(cj_product("PID-1"))
+    add_to_cart("PID-1")
+    run_import()
+
+    listing = rows("SELECT cover_image_url, listing_metadata_json "
+                   "FROM marketplace_listings")[0]
+    assert listing["cover_image_url"], "imported listing has no cover image"
+    # The column and the metadata are two copies of one fact; a reader must not
+    # be able to pick the one that disagrees.
+    media = json.loads(listing["listing_metadata_json"])["media"]
+    assert listing["cover_image_url"] == media[0]
+
+
+def test_the_imported_products_list_shows_a_cover_image(provider):
+    # The assertion that actually matches what the merchant sees. `list_drafts`
+    # now falls back to the metadata media when the column is empty, so this no
+    # longer doubles as the column's guard -- the test above is the one that
+    # fails if `_insert_listing` stops writing `cover_image_url`. What this one
+    # still defends is the surface: whatever the import wrote, the products list
+    # must be able to find it.
+    provider.add(cj_product("PID-1"))
+    add_to_cart("PID-1")
+    run_import()
+
+    listed = drafts.list_drafts(BUSINESS, STORE, OWNER_ID, CONNECTION,
+                                context=CONTEXT)["items"][0]
+    assert listed["cover_image_url"], "products list would render a blank tile"
+
+
 def test_import_writes_one_variant_row_per_provider_variant(provider):
     provider.add(cj_product("PID-1", variants_=[
         {"vid": f"PID-1-V{i}", "variantKey": f"Black-{size}", "variantSellPrice": "8.20",
@@ -357,6 +401,35 @@ def test_import_maps_the_listing_to_its_supplier_product(provider):
     assert source[0]["supplier_connection_id"] == CONNECTION
     listing_id = rows("SELECT id FROM marketplace_listings")[0]["id"]
     assert source[0]["listing_id"] == listing_id
+
+
+def test_one_selected_variant_is_recorded_as_the_variant_orders_are_placed_for(provider):
+    # `fulfillment.create_intent` resolves every line through
+    # `gateway.get_product_binding`, which raises `product_binding_required` when
+    # `provider_variant_id` is NULL. Until this was written the importer never set
+    # it, so every imported listing was one nothing could ship -- measured on
+    # production listing 14, live and moderator-approved with the column NULL.
+    #
+    # One chosen variant is not a choice made on the merchant's behalf. It is the
+    # only thing this listing can be.
+    provider.add(cj_product("PID-1"))
+    add_to_cart("PID-1", selected=["PID-1-V2"])
+    run_import()
+    assert rows("SELECT provider_variant_id FROM marketplace_product_sources")[0] \
+        == {"provider_variant_id": "PID-1-V2"}
+
+
+def test_several_selected_variants_leave_the_binding_unmade(provider):
+    # With two chosen there genuinely is a question about which variant a buyer
+    # receives, this import has no answer to it, and inventing one would ship a
+    # stranger whichever variant we guessed. Left NULL, and publication refuses
+    # the listing by name (`SUPPLIER_VARIANT_UNBOUND`) rather than putting an
+    # unshippable product on sale.
+    provider.add(cj_product("PID-1"))
+    add_to_cart("PID-1")
+    run_import()
+    assert rows("SELECT provider_variant_id FROM marketplace_product_sources")[0] \
+        == {"provider_variant_id": None}
 
 
 def test_a_successful_import_clears_its_cart_row(provider):

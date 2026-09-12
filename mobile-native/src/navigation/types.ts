@@ -203,7 +203,11 @@ export type RootStackParamList = {
     sellerName?: string;
     listingId?: number;
     itemTitle?: string;
-    priceLabel?: string;
+    // No `priceLabel`. It carried the *unit* price and the checkout screen was
+    // the only reader, which used it to fill the amount slot when no subtotal
+    // was passed — printing one item's price as the total of an order for two.
+    // The amount is `subtotalMinor`, already multiplied out, or it is unknown
+    // and no amount is shown. A label here would only offer that mistake again.
     subtotalMinor?: number;
     currency?: string;
     quantity?: number;
@@ -380,7 +384,13 @@ export type RootStackParamList = {
   DropshippingProducts: { connectionId: string; title?: string };
   /** `listingId` is a PulseSoc listing id — the draft, not the supplier product. */
   DropshippingDraft: { connectionId: string; listingId: number; title?: string };
-  DropshippingOrders: { title?: string } | undefined;
+  // `connectionId` is optional rather than required because the supplier
+  // obligations list is per connection, but this screen is still reachable
+  // before a supplier is chosen — from a deep link, or from the hub with none
+  // connected. It renders EMPTY with its own copy in that case, which is the
+  // honest answer. Making the param required would turn the reachable state
+  // into a runtime surprise instead of a handled one.
+  DropshippingOrders: { connectionId?: string; title?: string } | undefined;
   DropshippingSync: { connectionId: string; title?: string };
   BuyerOrders: { orderId?: number; source?: string; title?: string } | undefined;
   BuyerOrderDetail: { orderId: number; source?: string; title?: string };

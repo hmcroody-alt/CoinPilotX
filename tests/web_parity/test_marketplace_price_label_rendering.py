@@ -94,12 +94,12 @@ with app.app_context():
                 "VALUES (9101,'approved','Seller9101 Store')")
     for lid, label in %(rows)r:
         cur.execute(
-            # `safety_score` is named so every seeded card renders the same
-            # Safety pill, which is what lets the client-side card below be fed
-            # a row that reproduces the server's markup exactly.
+            # `safety_score` is still named, and deliberately: it is seeded
+            # non-default so that a card which started printing it again would
+            # show up here rather than blend into a column of zeroes.
             "INSERT INTO marketplace_listings (id, seller_user_id, title, description, "
             "category, price_label, currency, approval_status, status, quantity, "
-            "safety_score) VALUES (?,?,?,?,?,?,?,'approved','active',5,0)",
+            "safety_score) VALUES (?,?,?,?,?,?,?,'approved','active',5,44)",
             (lid, 9101, "Listing %%d" %% lid, "Body of listing %%d" %% lid,
              "Education", label, "USD"))
     conn.commit()
@@ -119,14 +119,21 @@ CARD = re.compile(r"<article class='card'>.*?</article>", re.S)
 
 
 def pill_paragraph(html):
-    '''The raw paragraph carrying the Safety pill, or None.
+    '''The first paragraph carrying any pill, or None.
 
-    Keyed off the Safety pill because that is the one element of the row that
-    is always present, so "the price paragraph is gone" and "the price pill is
-    gone" stay distinguishable.
+    This used to key off the Safety pill, on the grounds that it was the one
+    element of the row always present -- which kept "the price paragraph is
+    gone" and "the price pill is gone" distinguishable. That pill has been
+    removed: it printed `marketplace_listings.safety_score`, which holds the
+    reviewer's *risk* number, so the worst listing the engine can score read
+    "Safety 100" to a buyer.
+
+    The category pill inherits the job. It is emitted unconditionally by both
+    surfaces (`row.get('category') or 'Education'`), so a None here still means
+    the paragraph itself is missing rather than the price within it.
     '''
     for para in re.findall(r"<p>.*?</p>", html, re.S):
-        if re.search(r"class=['\"]pill['\"]>Safety", para):
+        if re.search(r"class=['\"]pill['\"]>", para):
             return para
     return None
 
@@ -219,7 +226,7 @@ def _render_client_side(price_probe, rows):
 def _paragraph(html):
     """The pill paragraph of a rendered card, mirroring the probe's extraction."""
     for para in re.findall(r"<p>.*?</p>", html, re.S):
-        if re.search(r"class=['\"]pill['\"]>Safety", para):
+        if re.search(r"class=['\"]pill['\"]>", para):
             return para
     return None
 
@@ -366,22 +373,22 @@ def test_the_client_side_card_agrees_with_the_server_rendered_one(price_probe):
     """
     rows = [
         {"id": PRICED, "title": "Listing", "category": "Education",
-         "price_label": PRICED_LABEL, "safety_score": 0},
+         "price_label": PRICED_LABEL, "safety_score": 44},
         {"id": BLANK, "title": "Listing", "category": "Education",
-         "price_label": "", "safety_score": 0},
+         "price_label": "", "safety_score": 44},
         {"id": WHITESPACE, "title": "Listing", "category": "Education",
-         "price_label": "   ", "safety_score": 0},
+         "price_label": "   ", "safety_score": 44},
         # A row from a serializer that does not send the key at all.
-        {"id": 0, "title": "Listing", "category": "Education", "safety_score": 0},
+        {"id": 0, "title": "Listing", "category": "Education", "safety_score": 44},
     ]
     rendered = [_pills(_paragraph(h))
                 for h in _render_client_side(price_probe, rows)]
     priced, blank, whitespace, missing = rendered
-    assert priced == ["Education", PRICED_LABEL, "Safety 0"], (
+    assert priced == ["Education", PRICED_LABEL], (
         "the client-side card does not render a price it was given: %r" % (priced,))
     for name, pills in (("blank", blank), ("whitespace", whitespace),
                         ("missing", missing)):
-        assert pills == ["Education", "Safety 0"], (
+        assert pills == ["Education"], (
             "the client-side card rendered %r for a %s price_label; search "
             "results would price a listing the grid leaves unpriced"
             % (pills, name))
@@ -400,9 +407,9 @@ def test_the_client_side_card_emits_the_same_markup_as_the_server(price_probe):
     string does when a pill is added to the card.
     """
     rows = [{"id": PRICED, "title": "Listing", "category": "Education",
-             "price_label": PRICED_LABEL, "safety_score": 0},
+             "price_label": PRICED_LABEL, "safety_score": 44},
             {"id": BLANK, "title": "Listing", "category": "Education",
-             "price_label": "", "safety_score": 0}]
+             "price_label": "", "safety_score": 44}]
     rendered = _render_client_side(price_probe, rows)
     for listing_id, html in zip((PRICED, BLANK), rendered):
         served = _normalized(price_probe["grid_paragraphs"].get(str(listing_id)))

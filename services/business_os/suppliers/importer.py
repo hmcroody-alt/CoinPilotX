@@ -222,17 +222,30 @@ def _create_draft_listing(cur, seller_user_id, product):
     ``price_label`` is left empty on purpose. It is the listing's public price
     prose and the merchant has not set a price yet; seeding it with the supplier
     cost would print the merchant's own cost on their storefront.
+
+    ``cover_image_url`` is written from the same list that goes into the
+    metadata, rather than left for a reader to derive. `_validate` already
+    refuses a product with no media — "better to refuse than to ship a black
+    card" — but that guard only held for readers that derive the cover from
+    ``listing_metadata_json`` the way ``get_draft`` does. Every reader of the
+    *column* (the products list, the merchant's store list, the buyer grid) got
+    NULL, so the black card the guard exists to prevent shipped anyway on every
+    import. Deriving both from one local list is what keeps the column and the
+    metadata from disagreeing later.
     """
     now = _iso()
+    media = [m for m in (product.get("media") or []) if isinstance(m, str)]
     cur.execute(
         "INSERT INTO marketplace_listings "
         "(seller_user_id, title, description, category, price_label, status, "
         " created_at, updated_at, approval_status, currency, quantity, "
-        " delivery_type, product_type, listing_type, listing_metadata_json) "
-        "VALUES (?,?,?,?,?,'draft',?,?,'pending_review',?,?,'physical','physical','',?)",
+        " delivery_type, product_type, listing_type, cover_image_url, "
+        " listing_metadata_json) "
+        "VALUES (?,?,?,?,?,'draft',?,?,'pending_review',?,?,'physical','physical','',?,?)",
         (int(seller_user_id), product.get("title"), product.get("description"),
          product.get("category"), "", now, now, product.get("currency") or "USD", 0,
-         json.dumps({"source": "dropship", "media": product.get("media") or []},
+         media[0] if media else None,
+         json.dumps({"source": "dropship", "media": media},
                     separators=(",", ":"))))
     cur.execute(
         "SELECT id FROM marketplace_listings WHERE seller_user_id=? AND status='draft' "
@@ -283,10 +296,25 @@ def _write_variants(cur, listing_id, seller_user_id, chosen, rule):
     return written
 
 
-def _import_one(conn, *, merchant_id, seller_user_id, business_id, store_id,
+def _import_one(conn, *, seller_user_id, business_id, store_id,
                 actor_user_id, connection_id, provider, external_product_id,
                 selection, rule, context, adapter):
-    """One cart item, one transaction. Returns (outcome, payload)."""
+    """One cart item, one transaction. Returns (outcome, payload).
+
+    No `merchant_id`. It used to take one and never read it: `merchant_id` is
+    `business_os_business.owner_user_id` and `seller_user_id` is `int()` of the
+    same value, resolved once by the caller so an unparseable identity refuses
+    with `merchant_identity_unresolved` before any import begins.
+
+    Benign as it stood, and removed anyway, because carrying two spellings of
+    one identity into a function is how the next edit reads the one that cannot
+    work -- the same hazard `list_obligations` names about the two spellings of
+    "the SKU". Found by grepping for parameters a body never loads, which is the
+    mechanical tell for the nineteenth corollary: `dispatch` took a clock it
+    ignored, and that made a real rule unexecutable. This was the same shape
+    with nothing behind it, which is the answer the tell is supposed to be able
+    to give.
+    """
     product, snapshot_id = _authoritative(
         business_id, store_id, actor_user_id, connection_id, provider,
         external_product_id, context=context, adapter=adapter)
@@ -316,6 +344,20 @@ def _import_one(conn, *, merchant_id, seller_user_id, business_id, store_id,
         store_id=store_id,
         external_sku=product.get("external_sku"),
         source_snapshot_id=snapshot_id,
+        # The supplier variant an order for this listing will actually be placed
+        # for. `fulfillment.create_intent` can only order the variant named here
+        # (`gateway.get_product_binding` refuses outright when it is NULL), so a
+        # listing without one is a listing nothing can ship.
+        #
+        # Recorded here, and only when the merchant's selection leaves no room
+        # for interpretation. One chosen variant is not a choice we are making on
+        # their behalf -- it is the only thing this listing can be. With several
+        # chosen there genuinely is a question, this import has no answer to it,
+        # and inventing one would ship a buyer whichever variant we guessed.
+        # `link_source` refuses to re-point an existing binding, so this cannot
+        # silently override a merchant's later explicit choice either.
+        provider_variant_id=(chosen[0].get("external_variant_id")
+                             if len(chosen) == 1 else None),
         # The low end of the range, and ``None`` when no variant had a readable
         # cost. Never 0 — see ``normalize.cost_range``.
         supplier_cost_cents=low,
@@ -397,7 +439,7 @@ def import_selected(business_id, store_id, actor_user_id, connection_id, *,
         conn = db.connect()
         try:
             outcome, payload = _import_one(
-                conn, merchant_id=merchant_id, seller_user_id=seller_user_id,
+                conn, seller_user_id=seller_user_id,
                 business_id=business_id, store_id=store_id, actor_user_id=actor_user_id,
                 connection_id=connection_id, provider=provider,
                 external_product_id=external_product_id, selection=selection,
