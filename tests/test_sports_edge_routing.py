@@ -19,7 +19,6 @@ Run: python3 -m pytest tests/test_sports_edge_routing.py
 
 import ast
 import os
-import pathlib
 import sys
 import tempfile
 import unittest
@@ -36,6 +35,7 @@ os.environ["COINPILOTX_INIT_DB_ON_IMPORT"] = "0"
 import bot  # noqa: E402
 
 from services import undx_call_domain, undx_privacy  # noqa: E402
+from tests import undx_source_probe as probe  # noqa: E402
 
 GAME = {"home_team": "Home", "away_team": "Away", "home_score": 1, "away_score": 2,
         "league_label": "Test League", "status": "Q3", "state": "in"}
@@ -50,56 +50,45 @@ def _envelope(text, **extra):
 
 
 class RoutedNotPostedTest(unittest.TestCase):
-    """§11-12, read off the source: no direct provider transport survives here."""
+    """§11-12, read off the source: no direct provider transport survives here.
 
-    SOURCE = pathlib.Path(bot.__file__).read_text(encoding="utf-8")
+    Every check in this class asks what the module *does* — via
+    `tests/undx_source_probe.py` — rather than what words appear in it. The first
+    draft of this file did not, and three of its checks passed only because
+    `bot.py`'s new docstring happened not to repeat one particular string. See the
+    probe's own module docstring: a protection test that fires on the paragraph
+    explaining the rule makes deleting that paragraph the cheapest way to green.
+    """
 
     @classmethod
     def setUpClass(cls):
-        tree = ast.parse(cls.SOURCE)
-        cls.func = next(node for node in ast.walk(tree)
-                        if isinstance(node, ast.FunctionDef)
-                        and node.name == "sports_edge_ai_analysis")
+        cls.tree = probe.parse(bot.__file__)
+        cls.func = probe.function(cls.tree, "sports_edge_ai_analysis")
+        cls.literals = probe.string_literals(cls.tree)
+
+    def test_the_probe_can_see_this_module_at_all(self):
+        """Guards the `assertNotIn` loops below: a broken walk finds nothing either way.
+
+        `bot.py` is 120k lines, so if the literal list came back empty the absence
+        checks would all pass while proving precisely nothing. Anchored on a constant
+        this migration introduced, so the guard also fails if the wrong file is parsed.
+        """
+        self.assertGreater(len(self.literals), 1000)
+        self.assertIn(bot.SPORTS_SAFETY_LINE, self.literals)
 
     def test_the_function_routes_through_undx_router(self):
-        attributes = [node.func.attr for node in ast.walk(self.func)
-                      if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)]
-        self.assertIn("route_structured_request", attributes)
+        self.assertIn("route_structured_request", probe.attribute_calls(self.func))
 
     def test_the_function_performs_no_http_of_its_own(self):
         """`requests.post`, `urlopen`, or anything else that could reach a vendor.
 
-        Checked by AST inside this one function rather than by grepping the file,
-        because `bot.py` legitimately posts to Stripe, Telegram, Brevo and Mux
-        elsewhere and a file-wide grep would either pass vacuously or forbid those.
-
-        The check is on the *receiver*, not the verb. The first draft banned the bare
-        attribute name `get` and caught four `envelope.get(...)` dict reads, which is
-        the same mistake as a test that fires on prose: `get` is not a transport, it is
-        a word transports happen to use. `requests` is a transport, and it is the only
-        one `bot.py` imports, so naming the receiver is both narrower and stricter —
-        `requests.post` is caught whichever verb it uses, and a dict is never caught.
+        Scoped to this one function rather than to the file, because `bot.py`
+        legitimately posts to Stripe, Telegram, Brevo and Mux elsewhere and a
+        file-wide check would either pass vacuously or forbid four working
+        integrations. The probe checks the *receiver*, not the verb — see its
+        docstring for why banning the attribute name `get` was the wrong shape.
         """
-        transports = {"requests", "httpx", "urllib", "http", "aiohttp", "session",
-                      "undx_router_http", "openai", "anthropic"}
-        found = []
-        for node in ast.walk(self.func):
-            if not isinstance(node, ast.Call):
-                continue
-            target = node.func
-            if isinstance(target, ast.Name) and target.id in {"urlopen", "Request"}:
-                found.append(target.id)
-                continue
-            if not isinstance(target, ast.Attribute):
-                continue
-            if target.attr in {"urlopen", "Session"}:
-                found.append(target.attr)
-                continue
-            root = target
-            while isinstance(root, ast.Attribute):
-                root = root.value
-            if isinstance(root, ast.Name) and root.id.lower() in transports:
-                found.append(f"{root.id}.{target.attr}")
+        found = probe.transport_calls(self.func)
         self.assertEqual(found, [], f"direct transport survived the migration: {found}")
 
     def test_no_provider_credential_or_model_default_is_read_here(self):
@@ -108,20 +97,51 @@ class RoutedNotPostedTest(unittest.TestCase):
         The second is one of the four competing model defaults §25-27 removes:
         `undx_router.PROVIDERS` is the authority, and a second default that agrees
         today is a second default that drifts tomorrow.
+
+        Asserted as "reads *no* environment variable", not as "does not read these
+        two names". Stronger, shorter, and it needs no edit when somebody invents a
+        fifth model default — this function has no business reading configuration at
+        all now that the router owns provider selection.
         """
-        read = [arg.value for node in ast.walk(self.func)
-                if isinstance(node, ast.Call)
-                for arg in node.args
-                if isinstance(arg, ast.Constant) and isinstance(arg.value, str)
-                and arg.value.isupper() and "_" in arg.value]
+        read = probe.environment_reads(self.func)
         self.assertEqual(read, [], f"environment read at the call site: {read}")
 
     def test_the_old_openai_named_function_is_gone_everywhere(self):
-        self.assertNotIn("openai_sports_edge_analysis", self.SOURCE)
+        """No definition and no reference — the rename left nothing dangling.
 
-    def test_bot_py_no_longer_names_the_openai_chat_endpoint(self):
-        """The census's U1 was the only `api.openai.com` literal in this file."""
-        self.assertNotIn("api.openai.com", self.SOURCE)
+        Was `assertNotIn("openai_sports_edge_analysis", SOURCE)`, which would fire on
+        a docstring recording the rename. What actually matters is that no code path
+        can still reach the old name, so that is what is checked: no `def`, no call,
+        no attribute access.
+        """
+        old = "openai_sports_edge_analysis"
+        defined = [node.name for node in ast.walk(self.tree)
+                   if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                   and node.name == old]
+        referenced = [node for node in ast.walk(self.tree)
+                      if (isinstance(node, ast.Name) and node.id == old)
+                      or (isinstance(node, ast.Attribute) and node.attr == old)]
+        self.assertEqual(defined, [], "the pre-migration function is still defined")
+        self.assertEqual(referenced, [], f"{len(referenced)} live references to the old name")
+
+    def test_no_vendor_chat_endpoint_survives_as_a_string_it_could_request(self):
+        """The census's U1 held the only vendor chat URL in this file.
+
+        Checked against evaluated string literals rather than raw file text, so the
+        module stays free to *name* the endpoint it no longer calls. `bot.py` has to
+        keep talking about this migration somewhere, and the docstring is the right
+        place for it.
+
+        One assertion rather than a `subTest` per literal: `bot.py` evaluates ~26k
+        strings, and 78k subtests cost 26 seconds to prove a single absence. The
+        offenders list carries the same diagnostic information the subTest name would
+        have, and only when there is something to diagnose.
+        """
+        endpoints = ("api.openai.com", "api.anthropic.com", "api.deepseek.com")
+        offenders = [f"{endpoint} in {literal[:60]!r}"
+                     for literal in self.literals
+                     for endpoint in endpoints if endpoint in literal]
+        self.assertEqual(offenders, [], f"vendor chat endpoint still requestable: {offenders}")
 
 
 class DeclaredIntentTest(unittest.TestCase):
@@ -158,10 +178,7 @@ class DeclaredIntentTest(unittest.TestCase):
         should have refused. A literal `"PUBILC"` here would fail the same way: silently,
         and in the safe-looking direction for a request while being wrong.
         """
-        tree = ast.parse(pathlib.Path(bot.__file__).read_text(encoding="utf-8"))
-        func = next(node for node in ast.walk(tree)
-                    if isinstance(node, ast.FunctionDef)
-                    and node.name == "sports_edge_ai_analysis")
+        func = probe.function(probe.parse(bot.__file__), "sports_edge_ai_analysis")
         call = next(node for node in ast.walk(func)
                     if isinstance(node, ast.Call)
                     and isinstance(node.func, ast.Attribute)

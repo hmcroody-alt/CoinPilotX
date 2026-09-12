@@ -10,12 +10,34 @@ from . import (
     pro_access,
     scam_shield,
     sports_data,
+    undx_call_domain,
     user_context,
     wallet_intel,
 )
 
 
 DISCLAIMER = "Educational information only. Not financial, betting, investment, or legal advice."
+
+
+def _call_domain_for(channel):
+    """Translate this module's `channel` vocabulary into a routing call domain.
+
+    Every caller of `execute_menu_action` already declares where the request came
+    from — "web", "web_chat", "pulse_assistant" today. That is provenance the caller
+    holds for certain, just recorded in a different vocabulary, so translating it is
+    not the same thing as `undx_router.classify_request` guessing a category from
+    message text. One is a rename, the other is a hypothesis.
+
+    Derived rather than tabulated. A `{"telegram": TELEGRAM}` table with a GENERAL
+    default looks safer and rots the same way: a new `telegram_menu` channel would get
+    GENERAL and nobody would notice, because a wrong domain produces no symptom — §5
+    means it cannot widen anything, which is exactly why it needs a test rather than a
+    reviewer. `tests/test_assistant_response_routing.py` pins both directions.
+    """
+    name = str(channel or "").lower()
+    if "telegram" in name:
+        return undx_call_domain.CALL_DOMAIN_TELEGRAM
+    return undx_call_domain.CALL_DOMAIN_GENERAL
 
 
 MENU_SECTIONS = [
@@ -192,9 +214,17 @@ def execute_menu_action(user_id, action_key, channel="web", payload=None):
         return _card(action_key, title_map[action_key], summary, source, "Low" if action_key != "scam_stories" else "High")
     if action_key in {"ai_analysis", "ai_crypto_assistant", "chat_assistant"}:
         question = payload.get("question") or "Analyze BTC and the current crypto market."
-        response = intelligence.assistant_response(user_id, question, pro=pro)
+        answer = intelligence.assistant_response_envelope(
+            user_id, question, pro=pro, call_domain=_call_domain_for(channel))
+        response = answer["text"]
         user_context.log_interaction(user_id or 0, "website_ai_used", question, response, channel)
-        return _card(action_key, "AI Crypto Assistant", response, "OpenAI + public market context", "Medium" if response else "Low", ["Ask follow-up", "Save insight", "PulseSoc Premium"])
+        # The card's source line used to read "OpenAI + public market context"
+        # unconditionally — including when OpenAI was never contacted, and including
+        # when the deterministic fallback produced the whole card. It is shown to the
+        # user, so it now names whoever answered, or says that nobody did.
+        source = (f"{answer['source']} + public market context" if answer["routed"]
+                  else intelligence.FALLBACK_SOURCE_LABEL)
+        return _card(action_key, "AI Crypto Assistant", response, source, "Medium" if response else "Low", ["Ask follow-up", "Save insight", "PulseSoc Premium"])
     if action_key == "scam_shield":
         text = payload.get("text") or payload.get("query") or "Paste suspicious text or a URL to scan."
         result = scam_shield.analyze_text(text)

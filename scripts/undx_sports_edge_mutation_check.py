@@ -21,6 +21,16 @@ so, and one of those was caught only by running it:
   is that a misspelt class is a *value*, not an error. A literal that happens to be
   spelt correctly today passes every behavioural assertion in the file.
 
+The last two mutations are the opposite shape and they are the important ones. Every
+other mutation here *adds mechanism*; none of them add prose. A check that fires on the
+paragraph explaining the rule is therefore indistinguishable, from in here, from a
+correct one — it catches all nineteen and would also catch a reviewer writing a
+sentence. Three checks in the test file passed only because `bot.py`'s docstring
+happened to say `openai_*` rather than the full old name; the sibling file for the next
+call site failed five times on exactly that. So the docstring and comment mutations
+spell every removed mechanism out in full and demand GREEN, because the cheapest way to
+silence a prose-sensitive test is to delete the explanation it sits next to.
+
 Never mutates the working tree: builds a sandbox of symlinks to the real repo and
 replaces `bot.py` with a mutated copy. Shares `build_sandbox` with
 `undx_call_domain_mutation_check.py` rather than reimplementing it.
@@ -87,9 +97,16 @@ MUTATIONS = [
         "test_both_declarations_are_constants_and_not_string_literals",
     ),
     (
+        # Anchored on the privacy line above it, because `bot.py` now declares
+        # `CALL_DOMAIN_TELEGRAM` twice: this call site and the Telegram assistant
+        # handler migrated in the following phase. Two Telegram handlers both telling
+        # the router they are Telegram handlers is the system working — it just means a
+        # one-line anchor here stopped being unique. The pair is unique: U1 is the only
+        # PUBLIC-classified call in the file.
         "stop declaring a call domain",
+        '            privacy_class=undx_privacy.SENSITIVITY_PUBLIC,\n'
         '            call_domain=undx_call_domain.CALL_DOMAIN_TELEGRAM,\n',
-        '',
+        '            privacy_class=undx_privacy.SENSITIVITY_PUBLIC,\n',
         "test_the_call_domain_is_declared_and_is_telegram",
     ),
     (
@@ -175,6 +192,43 @@ MUTATIONS = [
         '    if not user_id or not is_pro(user_id):\n        return None',
         '    if user_id is None:\n        return None',
         "test_an_anonymous_caller_is_not_routed_at_all",
+    ),
+    (
+        # The mutation class this harness could not express, and therefore the one that
+        # got through. Every mutation above *adds mechanism*; none of them add prose. So
+        # a check that fires on prose rather than on mechanism looks identical to a
+        # correct one from in here — it catches all nineteen and would also catch a
+        # reviewer writing a sentence.
+        #
+        # That is not hypothetical. Three checks in the test file passed only because
+        # this docstring happened to say `openai_*` rather than the full old name, and
+        # never to spell the endpoint out. The sibling file for the next call site
+        # failed five times on exactly this, in the paragraphs explaining the removal.
+        #
+        # The cost of getting it wrong is worse than a false failure: the cheapest way
+        # to make a prose-sensitive test green is to delete the paragraph that says why
+        # the rule exists, so the test quietly eats its own documentation. Naming every
+        # removed mechanism in full here, and requiring GREEN, is what forbids that.
+        "spell out every removed mechanism in the docstring (must stay GREEN)",
+        '    Three things genuinely change.',
+        '    This function used to be `openai_sports_edge_analysis` and used to POST to\n'
+        '    https://api.openai.com/v1/chat/completions with `OPENAI_API_KEY`, defaulting\n'
+        '    its model from `OPENAI_MODEL`. None of those four things happen here now.\n'
+        '\n'
+        '    Three things genuinely change.',
+        None,
+    ),
+    (
+        # Same rule one level down, and the reason a comment is worth its own mutation:
+        # `ast.parse` drops comments entirely, so a comment passes every AST check for
+        # free and fails a substring check exactly as hard as a docstring does. A file
+        # protected only by AST checks can be broken by a substring check added later in
+        # good faith, and this is the mutation that would say so.
+        "spell them out in a comment instead (must stay GREEN)",
+        '    if not user_id or not is_pro(user_id):\n        return None',
+        '    # No OPENAI_API_KEY read, no OPENAI_MODEL default, no api.openai.com request.\n'
+        '    if not user_id or not is_pro(user_id):\n        return None',
+        None,
     ),
 ]
 

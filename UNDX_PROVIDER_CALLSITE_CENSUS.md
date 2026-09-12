@@ -57,7 +57,7 @@ Seven distinct call expressions across five modules, carrying ten URL literals, 
 Each one is outside the cost ledger, the circuit breaker, provider health, and the privacy
 ceilings.
 
-**Six remain.** The census is kept as found and annotated with status, rather than shrunk
+**Five remain.** The census is kept as found and annotated with status, rather than shrunk
 as sites are migrated: a table that only lists what is still broken cannot answer "was this
 ever a direct call, and when did it stop being one", which is the question an incident
 review asks.
@@ -65,7 +65,7 @@ review asks.
 | # | Call expression | Function | URL literals | Privacy | Domain | Status |
 |---|---|---|---|---|---|---|
 | U1 | ~~`bot.py:108625`~~ | `sports_edge_ai_analysis` | — | PUBLIC | **TELEGRAM** | **MIGRATED** |
-| U2 | `services/intelligence.py:50` | `assistant_response` | 51 | CONFIDENTIAL | GENERAL | pending |
+| U2 | ~~`services/intelligence.py:50`~~ | `assistant_response` | — | CONFIDENTIAL | *per caller* | **MIGRATED** |
 | U3 | `services/scam_shield.py:184` | `_openai_assessment` | 185 | CONFIDENTIAL | SCAM_SHIELD | pending |
 | U4 | `services/telegram_text_router.py:121` | `answer_telegram_with_openai` | 122 | CONFIDENTIAL | TELEGRAM | pending |
 | U5 | `services/pulse_ai_provider_router.py:264` | `_post_openai_compatible` | 251, 253, **258**, 260 | CONFIDENTIAL | GENERAL | pending |
@@ -89,10 +89,57 @@ domain cannot widen anything — §5's rule is what made a wrong label cheap.
 
 U1's migration is covered by `tests/test_sports_edge_routing.py` (21 tests) and each of its
 protections is proven to fail under mutation by
-`scripts/undx_sports_edge_mutation_check.py` (19 mutations, 2 of which must stay green).
+`scripts/undx_sports_edge_mutation_check.py` (21 mutations, 4 of which must stay green).
+Three of U1's checks were substring checks that passed only because `bot.py`'s new docstring
+happened to say `openai_*` rather than the full old name, and never to spell the endpoint
+out; they have been retrofitted onto `tests/undx_source_probe.py` so they ask what the module
+*does* instead. The two mutations added with the retrofit spell every removed mechanism out
+in full — one in a docstring, one in a comment — and must stay green, because the cheapest
+way to silence a prose-sensitive protection test is to delete the paragraph explaining why
+the rule exists.
 That test file is deliberately the template for U2-U7: declared privacy class, declared
 call domain, both as named constants rather than literals, preserved sampling parameters,
 preserved safety post-processing, and a failure that costs a paragraph rather than a reply.
+
+U2's migration is covered by `tests/test_assistant_response_routing.py` (38 tests) and
+proven by `scripts/undx_assistant_response_mutation_check.py` (34 mutations, 3 of which must
+stay green). Five of those mutations survived the first run and each one named a real hole:
+every refusal fixture in the suite had an empty `response`, so the `ok` guard could be
+deleted unnoticed; `assistant_response`'s own forwarding was never exercised because every
+other assertion went through the envelope form, leaving the four callers that matter most
+unwatched; the call site was free to ignore `_call_domain_for` while the helper itself was
+tested in both directions; and two assertions about `bot.py` read the wrong file entirely
+because `pathlib.Path(intelligence.__file__).resolve()` walks out of the mutation sandbox
+and back into the real tree. The last is the one worth remembering: `.resolve()` in a test
+that reads source turns "this file is correct" into "some file is correct."
+
+**Recorded while migrating U2, since a census is the right place for facts nobody asked
+for.** Four things found at its call sites:
+
+* `services/ai_service.py run_ai_assistant` has **zero callers** anywhere in the repo. It
+  was migrated rather than deleted: removing a public name from a package whose modules are
+  imported by name throughout `bot.py` is a bigger decision than this phase is making, and
+  an unrouted call site nobody exercises is precisely the one that survives a migration
+  unnoticed. It forwards `call_domain` rather than declaring one, because a wrapper with no
+  callers has no provenance to declare.
+* **U2 could not declare a constant domain the way U1 did.** U1 has two callers and both are
+  Telegram handlers, so the function itself can state the fact. U2 has five callers of five
+  kinds, so the declaration had to move outward to every one of them — which is why the
+  protection test for U2 is mostly about whether each caller remembered.
+* **Two callers published a user-visible `source` derived from `os.getenv("OPENAI_API_KEY")`**
+  (`services/ai_router.py`, `services/command_router.py`). That was imprecise before routing
+  and wrong after it: the key can be set while Gemini answers, and unset while Claude answers
+  perfectly well. Attribution is a fact about execution, not about configuration.
+  `assistant_response_envelope` exists to supply it without changing what
+  `assistant_response` returns.
+* `services/ai_router.py:83` passes `f"{SYSTEM_RULES}\n\nUser question:\n{message}"` as the
+  *question*, so its rules are nested inside `assistant_response`'s own system prompt rather
+  than sent as a system instruction. Pre-existing, unchanged here, out of §14 scope — but it
+  means one caller's rules arrive as user text, which is a weaker position than it looks.
+* `bot.py`'s `openai_chat_completion` is still named after a vendor it no longer contacts. It
+  is a *caller* of U2, not the call site, so renaming it is outside §14's "exact call sites
+  only". Its logging was fixed: it used to log "OpenAI key loaded" and then "OpenAI response
+  success", which claimed OpenAI had answered whenever the key merely existed.
 
 **Finding U-a — the detector misses `pulse_ai_provider_router.py:258`.**
 `scripts/undx_config_drift.py` reports nine unrouted chat calls and lines 251, 253, 260,

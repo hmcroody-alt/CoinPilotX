@@ -30512,7 +30512,13 @@ def website_ai_assistant_api():
     allowed, limit_message = consume_ai_usage(user_id, "website_ai_assistant") if user_id else (True, "")
     if not allowed:
         return jsonify({"ok": False, "response": limit_message}), 429
-    response = intelligence_service.assistant_response(user_id, question, pro=pro_access_service.has_pro_access(account or {}))
+    # GENERAL (§5): this is the website's own API route, not a message relayed from a
+    # third party. TELEGRAM is reserved for the handler at bot.py:118848.
+    response = intelligence_service.assistant_response(
+        user_id, question,
+        pro=pro_access_service.has_pro_access(account or {}),
+        call_domain=undx_call_domain.CALL_DOMAIN_GENERAL,
+    )
     user_context_service.log_interaction(user_id, "ai_assistant_used", question, response, "website")
     return jsonify({
         "ok": True,
@@ -118851,18 +118857,29 @@ def openai_chat_completion(user_id, question):
     linked = get_linked_website_account(user_id)
     logging.info("linked account found: %s", bool(linked))
     logging.info("Premium access: %s", is_pro(user_id))
-    openai_key_loaded = bool(os.getenv("OPENAI_API_KEY"))
-    logging.info("OpenAI key loaded: %s", openai_key_loaded)
+    # `OPENAI_API_KEY` is no longer read here. It used to be logged as "OpenAI key
+    # loaded" and then gate a "OpenAI response success" line, which made this log say
+    # OpenAI answered whenever the key merely existed. Routing turned that from
+    # imprecise into wrong — any of seven providers can answer now — so the provider is
+    # read off the envelope instead of guessed from a credential.
     allowed, limit_message = consume_ai_usage(user_id, "telegram_ai_assistant")
     if not allowed:
         return append_plan_footer(user_id, limit_message)
     try:
-        response = intelligence_service.assistant_response(user_id, question, pro=is_pro(user_id))
-        if openai_key_loaded:
-            logging.info("OpenAI response success")
+        # TELEGRAM (§5). Provenance: `question` is text an arbitrary stranger sent to a
+        # bot, which is the one domain `undx_call_domain` singles out as
+        # attacker-influenced. Declaring it accurately is safe precisely because a
+        # domain cannot widen what the call may do.
+        answer = intelligence_service.assistant_response_envelope(
+            user_id, question, pro=is_pro(user_id),
+            call_domain=undx_call_domain.CALL_DOMAIN_TELEGRAM,
+        )
+        response = answer["text"]
+        logging.info("Telegram AI answered routed=%s provider=%s",
+                     answer["routed"], answer["provider"])
     except Exception as exc:
-        logging.warning("OpenAI error message: %s", exc)
-        log_product_event(user_id, "openai_error", {"error": str(exc)[:300], "surface": "telegram"})
+        logging.warning("Telegram AI assistant failed: %s", exc)
+        log_product_event(user_id, "telegram_ai_error", {"error": str(exc)[:300], "surface": "telegram"})
         response = (
             "💬 AI Crypto Assistant\n\n"
             "AI intelligence is temporarily unavailable. Please try again shortly.\n\n"
