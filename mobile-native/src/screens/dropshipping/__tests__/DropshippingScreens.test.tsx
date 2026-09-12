@@ -20,10 +20,15 @@
  *    the provider. An input beside them implies the merchant can change them,
  *    and an unknown cost drawn as a zero is the number they would price
  *    against.
+ * 5. **A promise about fulfilment comes from the server, not the build.** The
+ *    "nothing is sent to your supplier" card is the most reassuring thing on
+ *    the supplier-orders screen, and the only thing on it that could become a
+ *    lie without any code changing. It is drawn from the response, so a screen
+ *    that hardcodes it fails here.
  */
 
 import React from "react";
-import { Text } from "react-native";
+import { FlatList, Text } from "react-native";
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 
 jest.mock("react-native-safe-area-context", () => ({
@@ -75,6 +80,7 @@ const mockBindConnectionShop = jest.fn();
 const mockConnectSupplier = jest.fn();
 const mockSearchProducts = jest.fn();
 const mockBindDraftVariant = jest.fn();
+const mockListSupplierObligations = jest.fn();
 
 jest.mock("../../../api/dropshipping", () => ({
   ...jest.requireActual("../../../api/dropshipping"),
@@ -90,21 +96,27 @@ jest.mock("../../../api/dropshipping", () => ({
   bindConnectionShop: (...args: unknown[]) => mockBindConnectionShop(...args),
   connectSupplier: (...args: unknown[]) => mockConnectSupplier(...args),
   searchSupplierProducts: (...args: unknown[]) => mockSearchProducts(...args),
-  bindDraftVariant: (...args: unknown[]) => mockBindDraftVariant(...args)
+  bindDraftVariant: (...args: unknown[]) => mockBindDraftVariant(...args),
+  listSupplierObligations: (...args: unknown[]) => mockListSupplierObligations(...args)
 }));
 
 import { PulseApiError } from "../../../api/pulseApi";
 import {
+  DROPSHIPPING_DATA_GAPS,
   DROPSHIPPING_STATES,
+  connectionNeedsAttention,
   type DropshippingState,
   type ImportCartItem,
   type ImportedDraft,
-  type SupplierConnection
+  type SupplierConnection,
+  type SupplierObligation
 } from "../../../api/dropshipping";
 import { DropshippingStateView } from "../../../components/dropshipping/DropshippingStates";
 import { ConnectSupplierScreen } from "../ConnectSupplierScreen";
 import { DropshippingHubScreen } from "../DropshippingHubScreen";
+import { DropshippingOrdersScreen } from "../DropshippingOrdersScreen";
 import { DropshippingProductsScreen } from "../DropshippingProductsScreen";
+import { DropshippingSyncScreen } from "../DropshippingSyncScreen";
 import { ImportCartScreen } from "../ImportCartScreen";
 import { ReviewImportedProductScreen } from "../ReviewImportedProductScreen";
 import { SupplierCatalogScreen } from "../SupplierCatalogScreen";
@@ -1905,5 +1917,293 @@ describe("DropshippingProductsScreen", () => {
     await waitFor(() =>
       expect(view.getByText("Last sync from your supplier failed")).toBeTruthy()
     );
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 9 — supplier orders: the sale that owes a supplier purchase
+ * ------------------------------------------------------------------ */
+
+describe("DropshippingOrdersScreen", () => {
+  const route = { params: { connectionId: "conn-1" } };
+
+  function obligation(over: Partial<SupplierObligation> = {}): SupplierObligation {
+    return {
+      orderId: 41,
+      listingId: 14,
+      title: "Ceramic Mug",
+      quantity: 2,
+      amountCents: 4000,
+      currency: "USD",
+      orderStatus: "paid",
+      paidAt: null,
+      orderedAt: null,
+      provider: "cj",
+      providerProductId: "ext-1",
+      providerVariantId: "pv-1",
+      externalSku: "CJ-1",
+      supplierCostCents: 820,
+      supplierCostCurrency: "USD",
+      intentId: null,
+      state: "AWAITING_SUPPLIER_ORDER",
+      supplierOrderPlaced: false,
+      providerOrderId: null,
+      supplierOrderStatus: null,
+      lastError: null,
+      updatedAt: null,
+      ...over
+    };
+  }
+
+  async function renderOrders(
+    obligations: SupplierObligation[],
+    options: { isSandbox?: boolean; params?: Record<string, unknown> | undefined } = {}
+  ) {
+    mockListSupplierObligations.mockResolvedValue({
+      obligations,
+      isSandbox: options.isSandbox ?? true
+    });
+    const nav = navigation();
+    const view = render(
+      <DropshippingOrdersScreen
+        navigation={nav}
+        route={"params" in options ? ({ params: options.params } as any) : route}
+      />
+    );
+    await settle();
+    return { view, nav };
+  }
+
+  it("renders a row for each sale that owes a supplier purchase", async () => {
+    // The test that would have caught gap 14 at the screen. Before this list
+    // existed the screen rendered a permanent "no data" note, so every
+    // assertion about its other states passed over an empty surface.
+    const { view } = await renderOrders([obligation()]);
+    await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
+    expect(view.getByText(/Order #41 · 2 ×/)).toBeTruthy();
+  });
+
+  it("says no supplier order has been placed rather than leaving the row blank", async () => {
+    const { view } = await renderOrders([obligation()]);
+    await waitFor(() => expect(view.getByText("No supplier order yet")).toBeTruthy());
+  });
+
+  it("shows the merchant what the supplier purchase will cost them", async () => {
+    const { view } = await renderOrders([obligation()]);
+    await waitFor(() => expect(view.getByText(/Your supplier cost/)).toBeTruthy());
+  });
+
+  it("reports an unknown supplier cost as unavailable rather than as zero", async () => {
+    // A merchant reading $0.00 here concludes the supplier purchase is free.
+    const { view } = await renderOrders([obligation({ supplierCostCents: null })]);
+    await waitFor(() => expect(view.getByText(/not available/)).toBeTruthy());
+    expect(view.queryByText(/\$0\.00/)).toBeNull();
+  });
+
+  it("never tells a merchant an unconfirmed order was not placed", async () => {
+    // UNKNOWN means the write to the supplier could not be confirmed, so a
+    // purchase may already exist. "No supplier order yet" here would invite a
+    // second one, and duplicate supplier orders are real money.
+    const { view } = await renderOrders([
+      obligation({ state: "UNKNOWN", supplierOrderPlaced: true, intentId: "cjf_1" })
+    ]);
+    await waitFor(() => expect(view.getByText(/do not re-order/i)).toBeTruthy());
+    expect(view.queryByText("No supplier order yet")).toBeNull();
+  });
+
+  it("shows a supplier's refusal in the supplier's own words", async () => {
+    const { view } = await renderOrders([
+      obligation({
+        state: "BLOCKED",
+        supplierOrderPlaced: true,
+        intentId: "cjf_2",
+        lastError: "preflight_blocked"
+      })
+    ]);
+    await waitFor(() => expect(view.getByText("preflight_blocked")).toBeTruthy());
+  });
+
+  it("renders a state it has never heard of as unrecognised, not as good news", async () => {
+    // The gap-13 failure mode at a new seam: a state added on the Python side
+    // that this build predates. It must not read as "placed".
+    const { view } = await renderOrders([obligation({ state: "TELEPORTED" })]);
+    await waitFor(() => expect(view.getByText(/does not recognise/)).toBeTruthy());
+    expect(view.queryByText("Placed with your supplier")).toBeNull();
+  });
+
+  it("promises nothing is sent to the supplier only when the server says so", async () => {
+    const { view } = await renderOrders([obligation()], { isSandbox: true });
+    await waitFor(() => expect(view.getByText("Sandbox fulfilment")).toBeTruthy());
+  });
+
+  it("makes no sandbox promise the server did not make", async () => {
+    // The whole point of reading this from the payload. A hardcoded card would
+    // keep reassuring merchants after production fulfilment was switched on.
+    const { view } = await renderOrders([obligation()], { isSandbox: false });
+    await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
+    expect(view.queryByText("Sandbox fulfilment")).toBeNull();
+  });
+
+  it("asks for a supplier before claiming there are no sales to fulfil", async () => {
+    // Reached from a hub tile with no connection bound. "No sales to fulfil
+    // yet" would be a claim about the merchant's sales that this screen never
+    // checked, and it points them nowhere.
+    const { view } = await renderOrders([], { params: undefined });
+    await waitFor(() => expect(view.getByText("Connect a supplier first.")).toBeTruthy());
+    expect(mockListSupplierObligations).not.toHaveBeenCalled();
+  });
+
+  it("distinguishes an empty backlog from an unasked question", async () => {
+    const { view } = await renderOrders([]);
+    await waitFor(() => expect(view.getByText("No sales to fulfil yet.")).toBeTruthy());
+  });
+
+  it("never draws a failed request as an empty backlog", async () => {
+    // Rule 1 at the most expensive seam in the app: a merchant who reads "no
+    // sales to fulfil" through a failed request ships nothing.
+    mockListSupplierObligations.mockRejectedValue(new PulseApiError("nope", 500));
+    const view = render(<DropshippingOrdersScreen navigation={navigation()} route={route} />);
+    await settle();
+    await waitFor(() => expect(view.queryByText("No sales to fulfil yet.")).toBeNull());
+    expect(view.queryByText("Ceramic Mug")).toBeNull();
+  });
+
+  it("clears a stale backlog when a refresh fails", async () => {
+    // The rows on screen are money the merchant owes. Leaving them under a
+    // failed refresh is a backlog they may already have handled, or one that
+    // has grown without them being told.
+    const { view } = await renderOrders([obligation()]);
+    await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
+
+    mockListSupplierObligations.mockRejectedValue(new PulseApiError("nope", 500));
+    const list = view.UNSAFE_getByType(FlatList as any);
+    await act(async () => {
+      await list.props.refreshControl.props.onRefresh();
+    });
+    await waitFor(() => expect(view.queryByText("Ceramic Mug")).toBeNull());
+    // The sandbox card is the part a mutation battery caught this test missing.
+    // The rows themselves also disappear because an error state owns the list's
+    // `data`, so asserting only on the rows passes whether or not the state was
+    // cleared. This card is drawn from the header regardless of that state, so
+    // it is the one thing on screen that reveals a stale response still held.
+    expect(view.queryByText("Sandbox fulfilment")).toBeNull();
+  });
+
+  it("states its remaining gap in the words the gap list holds", async () => {
+    // Not a sentence written here. A screen that renders its own prose beside a
+    // mapped gap entry is the enumeration copied twice, with the copy in prose.
+    const { view } = await renderOrders([obligation()]);
+    await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
+    DROPSHIPPING_DATA_GAPS.forEach((gap) => {
+      expect(view.getByText(gap.needs)).toBeTruthy();
+    });
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 10 — sync & issues
+ *
+ * Added because a mutation battery found this screen had no tests at all
+ * while rendering the same gap list the supplier-orders screen does. Every
+ * defect that list was introduced to prevent could be reintroduced here and
+ * nothing would have said so — which is the same shape as the supplier-orders
+ * screen passing every assertion in this file over an empty surface.
+ * ------------------------------------------------------------------ */
+
+describe("DropshippingSyncScreen", () => {
+  const route = { params: { connectionId: "conn-1", title: "Sync & issues" } };
+
+  function product(over: Record<string, unknown> = {}) {
+    return {
+      listingId: 77,
+      title: "Ceramic Mug",
+      status: "draft",
+      approvalStatus: "pending",
+      currency: "USD",
+      coverImageUrl: null,
+      updatedAt: null,
+      provider: "cj",
+      syncState: "OK",
+      supplierCostCents: 450,
+      providerProductId: "ext-1",
+      ...over
+    };
+  }
+
+  async function renderSync(
+    options: {
+      items?: Record<string, unknown>[];
+      connections?: SupplierConnection[];
+      failProducts?: boolean;
+    } = {}
+  ) {
+    const items = options.items ?? [product()];
+    mockListConnections.mockResolvedValue(options.connections ?? [connection()]);
+    if (options.failProducts) {
+      mockListImportedProducts.mockRejectedValue(new PulseApiError("nope", 500));
+    } else {
+      mockListImportedProducts.mockResolvedValue({ items, count: items.length });
+    }
+    const nav = navigation();
+    const view = render(<DropshippingSyncScreen navigation={nav} route={route as any} />);
+    await settle();
+    return { view, nav };
+  }
+
+  it("says nothing is wrong only when both sources actually loaded", async () => {
+    const { view } = await renderSync();
+    await waitFor(() => expect(view.getByText("Nothing needs your attention")).toBeTruthy());
+  });
+
+  it("never claims a healthy catalogue when one of the two reads failed", async () => {
+    // The screen's own header comment promises this. A merchant who reads
+    // "nothing needs your attention" through a failed product read believes a
+    // catalogue is healthy while every import is silently broken.
+    const { view } = await renderSync({ failProducts: true });
+    await waitFor(() => expect(view.queryByText("Nothing needs your attention")).toBeNull());
+  });
+
+  it("puts the fixable problem in words rather than leaving its code on screen", async () => {
+    const { view } = await renderSync({ items: [product({ syncState: "UNAVAILABLE" })] });
+    await waitFor(() =>
+      expect(view.getByText("Your supplier no longer offers this product")).toBeTruthy()
+    );
+    expect(view.queryByText("UNAVAILABLE")).toBeNull();
+  });
+
+  it("reports no problem for a sync state it has never seen", async () => {
+    // An unrecognised state is not evidence of a problem. Reporting one would
+    // fill this screen with noise the day a provider adds a value.
+    const { view } = await renderSync({ items: [product({ syncState: "TELEPORTED" })] });
+    await waitFor(() => expect(view.getByText("Nothing needs your attention")).toBeTruthy());
+  });
+
+  it("states its remaining gap in the words the gap list holds", async () => {
+    // The mutation this test exists for: `body={gap.needs}` replaced by prose
+    // written here. The same defect was already fixed on the supplier-orders
+    // screen; leaving the second copy unpinned is how a ledger of recurring
+    // defects grows.
+    const { view } = await renderSync();
+    await waitFor(() => expect(view.getByText("Nothing needs your attention")).toBeTruthy());
+    DROPSHIPPING_DATA_GAPS.forEach((gap) => {
+      expect(view.getByText(gap.needs)).toBeTruthy();
+    });
+  });
+
+  it("says a broken connection needs attention instead of showing it as working", async () => {
+    const broken = connection({ status: "REAUTH_REQUIRED", message: "Key rejected by CJ" });
+    // The first draft of this test invented `NEEDS_REAUTH`, which is not a
+    // status the app knows, so the screen read the connection as healthy and
+    // the test asserted the wrong branch. Asking the shared predicate first
+    // means a renamed status fails here instead of quietly moving this test
+    // onto the happy path.
+    expect(connectionNeedsAttention(broken)).toBe(true);
+
+    const { view } = await renderSync({ connections: [broken] });
+    await waitFor(() =>
+      expect(view.getByText("Your supplier connection needs attention")).toBeTruthy()
+    );
+    expect(view.getByText("Key rejected by CJ")).toBeTruthy();
+    expect(view.queryByText("Connection is working")).toBeNull();
   });
 });

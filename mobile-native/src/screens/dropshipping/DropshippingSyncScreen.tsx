@@ -258,11 +258,19 @@ export function DropshippingSyncScreen({ route, navigation }: Props) {
               />
             ) : null}
 
+            {/* `gap.needs` rather than one sentence covering whatever is in the
+                list. The hardcoded body here used to say supplier order and
+                tracking problems would appear once fulfilment was switched on —
+                which described the two entries that existed when it was
+                written, and would have gone on describing them after the list
+                changed underneath it. Mapping over a list and then rendering
+                words unrelated to the entry is the enumeration copied twice
+                again, just with prose as the second copy. */}
             {DROPSHIPPING_DATA_GAPS.map((gap) => (
               <DropshippingGapNote
                 key={gap.surface}
                 title={`${gap.surface} isn't available yet`}
-                body="Supplier order and tracking problems will appear here once fulfilment is switched on."
+                body={gap.needs}
               />
             ))}
           </>

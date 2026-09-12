@@ -384,7 +384,13 @@ export type RootStackParamList = {
   DropshippingProducts: { connectionId: string; title?: string };
   /** `listingId` is a PulseSoc listing id — the draft, not the supplier product. */
   DropshippingDraft: { connectionId: string; listingId: number; title?: string };
-  DropshippingOrders: { title?: string } | undefined;
+  // `connectionId` is optional rather than required because the supplier
+  // obligations list is per connection, but this screen is still reachable
+  // before a supplier is chosen — from a deep link, or from the hub with none
+  // connected. It renders EMPTY with its own copy in that case, which is the
+  // honest answer. Making the param required would turn the reachable state
+  // into a runtime surprise instead of a handled one.
+  DropshippingOrders: { connectionId?: string; title?: string } | undefined;
   DropshippingSync: { connectionId: string; title?: string };
   BuyerOrders: { orderId?: number; source?: string; title?: string } | undefined;
   BuyerOrderDetail: { orderId: number; source?: string; title?: string };

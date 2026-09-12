@@ -260,8 +260,15 @@ export function DropshippingHubScreen({ route, navigation }: Props) {
         {
           icon: "receipt-outline",
           label: "Supplier orders",
-          subtitle: "Orders sent to your supplier",
-          onPress: () => navigation.navigate("DropshippingOrders", { title: "Supplier orders" }),
+          // Not "Orders sent to your supplier". Nothing is sent — fulfilment is
+          // off platform-wide — and that subtitle told a merchant their sales
+          // were already on their way. What the screen actually lists is the
+          // sales that still owe a supplier purchase.
+          subtitle: "Sales waiting on a supplier purchase",
+          // Connection-scoped now, like every other entry here: the obligations
+          // list is per supplier connection, so this must go through
+          // `withConnection` or it lands on a screen that can only say EMPTY.
+          onPress: withConnection("DropshippingOrders", "Supplier orders"),
           reducedMotion
         },
         {

@@ -570,3 +570,167 @@ def get_intent(intent_id, connection_id, business_id, store_id, actor_user_id, *
         return dict(row) | {"isSandbox": 1, "production_fulfillment_enabled": False}
     finally:
         conn.close()
+
+
+#: The state of one obligation when no intent exists for it yet. Deliberately
+#: not a member of the outbox's vocabulary: the outbox describes the delivery of
+#: an intent, and there is no intent here. Every other value this field can take
+#: is an outbox state passed through verbatim rather than re-spelled, because a
+#: second copy of that vocabulary would be one more thing to keep in step with
+#: `dispatch`, which is the only code that decides those names.
+AWAITING_SUPPLIER_ORDER = "AWAITING_SUPPLIER_ORDER"
+
+
+def list_obligations(connection_id, business_id, store_id, actor_user_id, *,
+                     limit=100, context=None):
+    """Which paid sales still owe a purchase from the supplier.
+
+    Why this exists
+    ---------------
+    Before this function, the module could create one intent, read one intent
+    by id, and claim one for the worker. Nothing could answer the merchant's
+    actual question -- "which of my orders needs a supplier order placed?" --
+    so a buyer could pay for a published, bound dropship listing and the only
+    record of the obligation was a `marketplace_orders` row indistinguishable
+    from a hand-stocked sale. The supplier-orders screen rendered the absence
+    of a list it had no endpoint for, and its machine-readable gap note named a
+    table (`business_os_supplier_fulfillment_intents`) that does not exist, so
+    anyone implementing it grepped for a name nothing in the repo has.
+
+    Derived, not stored
+    -------------------
+    An obligation is not a row. It is the join of a paid order to the supplier
+    source of the listing it was placed on, and it is computed on read. A
+    `needs_supplier_order` column on `marketplace_orders` would be a second copy
+    of a fact the source row already states, and the two would disagree the
+    first time a merchant switched a listing from DROPSHIP to STOCKED. Nothing
+    here writes anything.
+
+    The order id join is a cast, on purpose
+    ---------------------------------------
+    `marketplace_orders.id` is INTEGER; `business_os_supplier_intents.order_id`
+    is TEXT, because `create_intent` writes `str(order_id)`. On PostgreSQL
+    `i.order_id = o.id` is a type error; on SQLite it is worse -- it silently
+    matches nothing, so the list would come back with every obligation looking
+    unplaced and no test would fail. `CAST(o.id AS TEXT)` is correct on both.
+
+    Merchant-only payload
+    ---------------------
+    Every row carries `supplier_cost_cents`, which is the merchant's buying
+    price and the number a buyer must never see. That is safe here and only
+    here: the caller is authorized through `connections.get_connection`, which
+    is a merchant-scope read. Nothing on a buyer-facing route may call this, and
+    no field of it may be forwarded into a buyer payload.
+
+    What is deliberately not enumerated
+    -----------------------------------
+    An order that was refunded or cancelled *after* a supplier order was placed
+    is a real situation with real money in it, and it is not in this list: the
+    merchant needs to cancel with the supplier, which is a different action from
+    placing one. Answering it needs a cancellation path that does not exist yet,
+    so it stays a declared gap rather than a row here that implies it is handled.
+    """
+    from services.marketplace_listing_types import effective_listing_type
+
+    from . import connections
+
+    # Same authorization as `get_intent`: the connection read is what proves the
+    # actor may see this scope at all. Nothing below re-derives ownership.
+    connections.get_connection(connection_id, business_id, store_id, actor_user_id,
+                               context=context)
+    try:
+        capped = min(max(int(limit), 1), 200)
+    except (TypeError, ValueError):
+        raise FulfillmentError("invalid_limit", 400) from None
+
+    ensure_schema()
+    conn = db.connect()
+    try:
+        # `LOWER(o.status) = 'paid'` is the whole paid vocabulary of *this*
+        # table, measured rather than assumed: `pulse_upsert_marketplace_order`
+        # (bot.py) is the only writer of `marketplace_orders`, and it hardcodes
+        # 'paid' in both the INSERT and its ON CONFLICT update. The column's
+        # DDL default 'pending_payment' is the only other value it can hold.
+        #
+        # Do not widen this to `marketplace_listing_types.PAID_ORDER_STATUSES`
+        # ({paid, checkout_completed, succeeded}). That set is the vocabulary of
+        # `seller_transactions` / `creator_transactions`, which is upstream of
+        # this table, not in it -- see `buyer_paid_marketplace_listing_ids`.
+        # Widening would add two statuses this column never holds and imply the
+        # two vocabularies are one.
+        #
+        # What *would* break this: a second writer of `marketplace_orders` that
+        # spells paid differently. Then an obligation goes invisible, which is
+        # exactly the defect this function exists to fix. `test_supplier_obligations.py`
+        # pins the writer count for that reason.
+        rows = conn.execute(
+            "SELECT o.id AS order_id, o.listing_id, o.quantity, o.status AS order_status, "
+            "o.amount_cents, o.currency, o.paid_at, o.created_at AS ordered_at, "
+            "l.title, l.listing_type, l.product_type, "
+            "s.provider AS provider, s.provider_product_id, s.provider_variant_id, "
+            "s.external_sku, s.supplier_cost_cents, s.supplier_cost_currency, "
+            "i.id AS intent_id, i.created_at AS intent_created_at, "
+            # `supplier_order_status`, not `provider_status`, on the way out.
+            # The column keeps its name; the wire field does not, because
+            # "provider status" is already Stripe's subscription status on this
+            # platform, and the mobile entitlement drift guard
+            # (`noClientTierInference.test.ts`) lists `provider_status` among the
+            # raw membership fields no unlisted file may hold. Two unrelated
+            # meanings under one name is how a guard ends up either exempting a
+            # file it should not or being weakened to let one through.
+            "b.state AS outbox_state, b.provider_order_id, "
+            "b.provider_status AS supplier_order_status, "
+            "b.funding_state, b.last_error, b.updated_at AS intent_updated_at "
+            "FROM marketplace_orders o "
+            "JOIN marketplace_listings l ON l.id = o.listing_id "
+            "JOIN marketplace_product_sources s ON s.listing_id = o.listing_id "
+            "LEFT JOIN business_os_supplier_intents i ON i.order_id = CAST(o.id AS TEXT) "
+            "LEFT JOIN business_os_supplier_outbox b ON b.intent_id = i.id "
+            "WHERE s.supplier_connection_id = ? AND s.business_id = ? AND s.store_id = ? "
+            "AND s.fulfillment_mode = ? AND LOWER(o.status) = 'paid' "
+            "ORDER BY o.paid_at DESC, o.id DESC LIMIT ?",
+            (connection_id, business_id, store_id, "DROPSHIP", capped)).fetchall()
+    finally:
+        conn.close()
+
+    obligations = []
+    for row in rows:
+        item = dict(row)
+        # Resolved through the app's own rule rather than by reading the raw
+        # column, exactly as `_canonical_order` does. A listing that predates
+        # `listing_type` and only has `product_type` set must classify the same
+        # way here as it does on the listing page, and as it does in the guard
+        # inside `create_intent` that will refuse a non-physical order.
+        listing_type = effective_listing_type(item.pop("listing_type"),
+                                              item.pop("product_type"))
+        if listing_type != "physical":
+            continue
+        # Popped unconditionally, so the raw column cannot also travel in the
+        # payload beside the field derived from it -- two spellings of one fact,
+        # and a caller free to read the one that is None.
+        outbox_state = item.pop("outbox_state")
+        intent_id = item.get("intent_id")
+        obligations.append({
+            **item,
+            "listing_type": listing_type,
+            # One field, derived once, in one place. A `placed` boolean *beside*
+            # a state would be the same fact twice; `supplier_order_placed`
+            # below is instead a restatement of `intent_id is not None`, which
+            # `state` cannot express without the caller knowing which outbox
+            # names mean "already sent".
+            #
+            # An intent with no outbox row should be impossible -- `create_intent`
+            # writes both in one transaction, and rolls both back together --
+            # but the LEFT JOIN can express it, so it needs an answer.
+            #
+            # That answer is `UNKNOWN`, not `AWAITING_SUPPLIER_ORDER`. An intent
+            # exists, so a purchase may already have been made; saying "no
+            # supplier order yet" beside `supplier_order_placed: true` is both a
+            # contradiction and the one error that costs money, because it
+            # invites a merchant to order the same goods twice. `UNKNOWN` is
+            # exactly the state whose copy tells them not to.
+            "state": outbox_state or ("UNKNOWN" if intent_id else AWAITING_SUPPLIER_ORDER),
+            "supplier_order_placed": intent_id is not None,
+        })
+    return {"obligations": obligations, "isSandbox": 1,
+            "production_fulfillment_enabled": False}

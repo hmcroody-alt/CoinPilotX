@@ -33,7 +33,7 @@ broken at the seam where the merchant's world hands off to the buyer's.
 | 9 | Buyer discovery | `lifecycle.is_public` / `public_sql` | `marketplace_listing_lifecycle.py` | `marketplace_listings` ⋈ `marketplace_sellers` |
 | 10 | Cart | `price_label` | `marketplace_cart_routes.py` | `marketplace_cart_items` |
 | 11 | Checkout → order | Stripe + `pulse_upsert_marketplace_order` | `bot.py`, `marketplace_cart_routes.py` | `seller_transactions` → `marketplace_orders` |
-| 12 | Supplier fulfillment | merchant-initiated | `services/business_os/suppliers/fulfillment.py` | `business_os_supplier_fulfillment_intents` |
+| 12 | Supplier fulfillment | merchant-initiated | `services/business_os/suppliers/fulfillment.py` | `business_os_supplier_intents` + `business_os_supplier_outbox` |
 
 ---
 
@@ -1890,9 +1890,194 @@ Two survived the first run, and both were worth the run:
 
 ---
 
+## The seventeenth seam: the sale that owed a supplier purchase to nobody
+
+Gap 13 left a merchant able to bind a variant and publish a dropship listing.
+That listing is for sale. This seam is the next question, and it is the one the
+whole feature exists to answer: somebody buys it — then what?
+
+`scripts/probe_dropship_paid_order_fulfillment.py` publishes a bound,
+single-variant dropship listing through the real importer and the real publish
+evaluator, then writes the paid `marketplace_orders` row exactly as
+`bot.pulse_upsert_marketplace_order` projects one from a paid transaction, and
+prints every supplier-side record that exists afterwards:
+
+| after a paid sale | rows |
+| --- | --- |
+| `marketplace_orders` (`status='paid'`, `amount_cents=2000`) | 1 |
+| `marketplace_product_sources` (`fulfillment_mode='DROPSHIP'`, variant bound) | 1 |
+| `business_os_supplier_intents` | **0** |
+| `business_os_supplier_outbox` | **0** |
+| intents naming that order | **0** |
+
+Nothing was missing from the sale. The binding a checkout path would need to
+resolve is right there in the same probe output, holding every field a supplier
+order requires — `supplier_connection_id`, `business_id`, `store_id`,
+`provider_product_id`, `provider_variant_id`, and `supplier_cost_cents: 820`
+against the buyer's `2000`. The money is collected, the margin is known, the
+supplier is identified, and no record anywhere says a purchase is owed.
+
+Six greps say why, and none of them is a bug on its own:
+
+1. `fulfillment.create_intent` is the only writer of
+   `business_os_supplier_intents`.
+2. Its one production call site is the `fulfillment-intents` action in
+   `services/business_os_supplier_routes.py`.
+3. That action has zero callers in `mobile-native/src`, `templates/` or
+   `static/` — the seventh corollary's second sub-tell, one seam after it was
+   written: a writer reachable only from pytest is not reachable.
+4. `worker.py` only claims intents that already exist; `supplier_worker.py` is
+   not in the Procfile.
+5. `bot.py` — where checkout lives — contains no reference to
+   `marketplace_product_sources`, `supplier_binding`, `get_product_binding` or
+   `fulfillment_mode`. The paid-order writer cannot see that a listing is
+   dropshipped.
+6. And the module could not be *asked*. Of what `fulfillment` exposes,
+   `get_intent`, `dispatch` and `settle` are each keyed on an intent that
+   already exists, and `claim` takes a lease over the same table. There was no
+   function answering "which of my orders needs a supplier order placed?", so
+   the absence was not observable from inside the layer that had it.
+
+### Why the obligation is derived on read
+
+The obvious fix is to call `create_intent` from the payment webhook. Measured
+off its own bytecode, it will not go: `__code__.co_consts` holds a `300`-second
+freshness window on the shipping quote, and the cost check is an exact
+`int(total) != expected_supplier_cost_cents`, with `invalid_quote`,
+`supplier_cost_unverified` and `supplier_cost_reapproval_required` among its
+refusals. A webhook holds none of that. It has an order id and a payment; it has
+no fresh quote and no merchant who has agreed to a number.
+
+That is not an oversight in `create_intent` — it is what the function is.
+It is a merchant *approval* action, and approval requires a merchant. So the
+obligation is not written at payment time at all; it is **derived on read**, by
+`list_obligations`, from the three records that already exist: the paid order,
+the dropship binding, and the intent if one has been made. This is the
+fifteenth corollary applied before the fact rather than after — the answer was
+already in the data, unread — and it keeps the approval where it belongs
+instead of manufacturing a fake one at checkout.
+
+Two things in that query are only correct because they were measured:
+
+- **`CAST(o.id AS TEXT)` on the join.** `marketplace_orders.id` is `INTEGER`;
+  `business_os_supplier_intents.order_id` is `TEXT`, because `create_intent`
+  writes `str(order_id)`. On PostgreSQL `i.order_id = o.id` is a type error; on
+  SQLite it is worse — it silently matches nothing, so every obligation would
+  read as never placed and the list would look right. No behavioural test on
+  SQLite can see that, which is why two tests in this seam read the SQL literal
+  rather than the result.
+- **`LOWER(o.status) = 'paid'` is the whole paid vocabulary.**
+  `pulse_upsert_marketplace_order` hardcodes `'paid'` in both its `VALUES` and
+  its `ON CONFLICT … DO UPDATE`, and the DDL default `'pending_payment'` is the
+  only other value the column has ever held. The tempting import was
+  `marketplace_listing_types.PAID_ORDER_STATUSES`, three states wide — and that
+  constant is the vocabulary of `seller_transactions` and
+  `creator_transactions`, not of this table. A shared constant that belongs to a
+  different table is the eighth corollary wearing a helpful name.
+
+The state a merchant reads is
+`outbox_state or ("UNKNOWN" if intent_id else "AWAITING_SUPPLIER_ORDER")`,
+deliberately outside the outbox's own six-state vocabulary, because "no
+supplier order has been placed" is not a state the outbox can hold — there is
+no row. An intent with no outbox row reads `UNKNOWN`, which is the honest answer
+and not the same answer.
+
+### A name collision, and the fix that was not an exemption
+
+The supplier's own word for where an order stands lives in the outbox column
+`provider_status`. Shipping it to the client under that name failed
+`mobile-native/src/entitlements/__tests__/noClientTierInference.test.ts`, which
+lists `provider_status` among the raw membership fields no unlisted file may
+hold — because on this platform that name means Stripe's *subscription* status.
+
+Both obvious repairs were refused. Allowlisting `api/dropshipping.ts` would
+exempt it for `premium_status` too, and narrowing the guard would trade a
+permanent hole for a naming convenience. The wire field was renamed instead:
+the column is still `provider_status`, the payload carries
+`supplier_order_status`, and the SELECT aliases it with the reason written
+above it. It is now pinned from three directions — the entitlement guard, a
+backend test asserting `provider_status` is absent from the obligation, and a
+battery mutation that removes the alias.
+
+### The comment that asserted a failure mode its own code could not exhibit
+
+The battery aimed a mutation at the `!connectionId` check in
+`DropshippingOrdersScreen`, which a comment of mine said "must be checked
+before the scope phases" or the screen would skeleton for ever. The mutation
+survived, and the comment was the thing that was wrong: `useDropshippingScope`
+always initialises to `{ phase: "loading" }` and reaches `ready` a microtask
+later, so the first effect pass cannot see `ready` and the reordering is
+behaviour-preserving in all four phases.
+
+The remedy was not a test. Catching that mutation would require the hook to
+answer synchronously, which it does not, and a test asserting the *order of
+lines* would be the thirteenth corollary. So the mutation is recorded as
+inverted with its reasoning, and the comment now says what is true — that the
+ordering is currently cosmetic, that it stops being cosmetic the day the hook
+answers from its cache, and that no test can hold it there meanwhile.
+
+### The screen that made every assertion in the file pass over nothing
+
+`DropshippingSyncScreen` had zero tests, while rendering the same gap list the
+supplier-orders screen does. Every defect that list was introduced to prevent
+could have been reintroduced there and nothing would have said so. It is the
+same shape the supplier-orders screen had before this seam — a surface over
+which a suite's assertions are all vacuously true — and the battery found it
+by mutating the gap prose and watching nothing fail.
+
+The gap note itself was the third root cause. `DROPSHIPPING_DATA_GAPS` claimed
+this layer "can create and read a single intent by id" and merely lacked an
+enumeration, when nothing reachable had ever created one; and it named the
+table `business_os_supplier_fulfillment_intents`, which does not exist. The real
+tables are `business_os_supplier_intents` and `business_os_supplier_outbox`. A
+gap note is a claim like any other, and this one had never been read against the
+schema.
+
+**And neither had this document.** The first draft of this section said that
+string "occurs exactly once in this repository — in that note", which was itself
+asserted rather than measured: the grep returns row 12 of the stage table at the
+top of this file, wrong since 2026-09-10 and propagated from the same note. The
+sixteenth corollary says a comment whose subject lives elsewhere is a
+hypothesis; a *count* of occurrences is the same kind of claim, and the cost of
+checking it is one grep. Row 12 now names both real tables.
+
+### What the battery measured
+
+`scripts/mutation_dropship_supplier_obligations.py`, 20 mutations against four
+checks: the cross-language copy pin, the backend obligation suite, the two jest
+suites, and `tsc --noEmit`. **16 real mutations caught, 3 inverted correctly
+ignored, 1 no-op control survived.** Four checks again because the distribution
+is the argument: the join cast and the four filters are caught only by the
+backend suite, the state enumeration only by the copy pin, the merchant-visible
+behaviour only by jest.
+
+Four findings the three suites had missed, and only two of them were test gaps:
+
+- The stale-backlog test was vacuous. It asserted a row was gone after a failed
+  refresh, but the list is rendered `data={stateBlock ? [] : rows}`, so the rows
+  disappear whenever an error owns the screen whether or not the state was
+  cleared. It now asserts the sandbox card — drawn from the header regardless of
+  state — is gone too.
+- `DropshippingSyncScreen`'s missing suite, above.
+- Two of my own comments overstating the code beside them: the `!connectionId`
+  ordering, and a client-side re-derivation of `supplier_order_placed`. The
+  second cannot be caught honestly either — the server writes
+  `supplier_order_placed = intent_id is not None`, so catching the mutation
+  needs a fixture with `intent_id` set and the flag false, a row the backend
+  cannot emit. The fourteenth corollary forbids exactly that fixture.
+
+The battery's own metadata was a defect of the same family. The inverted set was
+keyed by mutation *index*, so inserting the alias mutation mid-list renumbered
+everything after it and silently relabelled two real mutations as inverted —
+which is to say, stopped demanding that anything catch them. It is keyed by name
+now, with assertions that the names are unique and that every declared name
+exists.
+
+---
+
 ## What kept coming back
 
-Seventeen defects in this chain, seventeen different subsystems, one shape: **a
+Eighteen defects in this chain, eighteen different subsystems, one shape: **a
 number was asserted rather than measured.**
 
 - `publish()` never wrote `price_label`, and the publish test asserted `status`
@@ -1971,6 +2156,14 @@ number was asserted rather than measured.**
   copy of the problem enumeration, so the refusal reached the merchant as its own
   identifier — and the only operation that could have answered it had no caller
   on any surface.
+- A note listing this layer's remaining gaps asserted that it "can create and
+  read a single intent by id" and only lacked an enumeration. Nothing reachable
+  had ever created one: the sole writer's only route had zero callers on any
+  surface, the dispatch worker is not in the Procfile, and checkout cannot see
+  that a listing is dropshipped at all. So a buyer's money was collected against
+  a known supplier cost and no record anywhere said a purchase was owed. The note
+  also named a table that does not exist — and so, until this seam was written,
+  did the stage table at the top of this document.
 
 In all of them the suite was green, and in all of them the green was about the
 halves rather than the seam. Where a claim spans two components, this document now
@@ -2206,3 +2399,38 @@ reachable from nothing. The seventh corollary says to grep for the writers of th
 column a guard reads; the addition here is to then grep for the *callers of those
 writers on a surface a user can touch*, because a writer reachable only from
 pytest is not reachable.
+
+The seventeenth turns the document on itself, because the last two seams were
+caught by a battery aimed at prose I had written: **a comment that asserts a
+failure mode its own code cannot exhibit is the same defect as a comment that
+asserts a screen it cannot import.** The sixteenth corollary caught a Python
+comment describing TypeScript. This one needs no second language — the
+`!connectionId` ordering comment described a skeleton-for-ever that
+`useDropshippingScope` makes unreachable, because the hook always initialises to
+`loading`. Both are hypotheses in the imperative mood. The tell is that the
+sentence contains a consequence: **if a comment says what *would* happen, either
+a test can produce it or the sentence is a guess** — and the honest third option,
+where no test can produce it because the code cannot, is to say so. Which is why
+three mutations in this seam's battery are recorded as inverted with their
+reasoning rather than deleted. A battery that quietly drops the mutations it
+cannot catch is reporting a pass rate, not a measurement; one that keeps them and
+explains each is the only kind whose "16 of 16" means anything.
+
+Its sub-tell is about the instrument again, and it is the eighth corollary
+reappearing inside a test harness: **metadata keyed by position silently
+relabels its subjects when one is inserted.** The inverted set was a set of
+indices; adding a mutation mid-list moved two real mutations into it, which is
+not a cosmetic bookkeeping error — it is the battery ceasing to demand that
+anything catch them, while still printing a clean report. Keyed by name, with
+assertions that names are unique and that every declared name exists, the same
+insertion is a no-op. **Anything that names a test's subjects by ordinal is one
+edit away from asserting about the wrong one.**
+
+And a small one worth its line because it cost a red suite: **a fixture value
+invented rather than looked up puts the test on the branch you were not
+testing.** A connection status of `NEEDS_REAUTH` is not a status this app knows
+— `REAUTH_REQUIRED` is — so the screen read the connection as healthy and the
+assertion landed on the happy path. The fourteenth corollary says to name the
+writer of every field a fixture sets; the cheap version for an enumerated field
+is to **ask the shared predicate about the fixture first**, in the test, so a
+renamed status fails where it is wrong instead of quietly relocating the test.

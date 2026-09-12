@@ -245,6 +245,33 @@ def cj_connection_inactivity(connection_id):
         return _error(exc)
 
 
+@supplier_blueprint.route(PREFIX + "/connections/<connection_id>/obligations", methods=["GET"])
+def cj_connection_obligations(connection_id):
+    """The merchant's paid sales that still owe a purchase from the supplier.
+
+    GET, and with the scope in the query string, matching `/inactivity` above:
+    the only identifiers here are the merchant's own tenancy ids, which already
+    appear in that route's URL. Nothing about the *supplier* account travels --
+    no credential, no shop id, no buyer destination -- which is what the POST
+    reads further down exist to keep out of access logs.
+
+    Merchant-scoped only. The payload carries `supplier_cost_cents`, the number
+    §27 forbids a buyer from ever seeing; `list_obligations` authorizes through
+    `connections.get_connection` before it reads anything, and no buyer-facing
+    route may reach this.
+    """
+    try:
+        from services.business_os.suppliers import fulfillment
+        actor, context = _request_context()
+        result = fulfillment.list_obligations(
+            connection_id, _required(request.args, "business_id"),
+            _required(request.args, "store_id"), actor,
+            limit=request.args.get("limit", 100), context=context)
+        return _respond({"ok": True, **result})
+    except Exception as exc:
+        return _error(exc)
+
+
 @supplier_blueprint.route(PREFIX + "/connections/<connection_id>/<action>", methods=["POST"])
 def cj_scoped_action(connection_id, action):
     try:

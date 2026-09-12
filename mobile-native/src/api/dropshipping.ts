@@ -1365,6 +1365,186 @@ export async function previewPricing(
 }
 
 /* ------------------------------------------------------------------ *
+ * Supplier obligations
+ * ------------------------------------------------------------------ */
+
+/**
+ * Where a paid sale has got to on the supplier's side of the transaction.
+ *
+ * `AWAITING_SUPPLIER_ORDER` is this app's own name for "there is no supplier
+ * order yet", and it is deliberately not one of the outbox's states: the outbox
+ * describes the delivery of a supplier order, and in this case there is not one
+ * to deliver. Every other member is an outbox state, spelled exactly as
+ * `fulfillment.dispatch` and `webhooks` write it.
+ *
+ * This is the second copy of an enumeration whose first copy is Python, which is
+ * the same shape as the `PUBLISH_PROBLEMS` drift above: no compiler spans the
+ * two, the backend grows one and this list does not, and the merchant reads a
+ * raw identifier. So `tests/dropshipping/test_supplier_obligation_copy.py` pins
+ * this list against the state literals the Python writers actually emit, rather
+ * than against a Python list that could drift from them in turn.
+ */
+export const SUPPLIER_ORDER_STATES = [
+  "AWAITING_SUPPLIER_ORDER",
+  "READY",
+  "SENDING",
+  "UNKNOWN",
+  "RECONCILE",
+  "LINKED",
+  "BLOCKED"
+] as const;
+export type SupplierOrderState = (typeof SUPPLIER_ORDER_STATES)[number];
+
+/**
+ * What each state means to a merchant, in their words rather than the outbox's.
+ *
+ * A total `Record` rather than a `Set` or a partial map, so that adding a state
+ * above without writing copy for it is a compile error here — the one place a
+ * compiler *can* span, because both halves are TypeScript.
+ *
+ * `UNKNOWN` is the load-bearing one. It does not mean "we don't know the state";
+ * it means the supplier order may or may not exist because a write could not be
+ * confirmed. Telling a merchant "not placed" there would invite them to place a
+ * second one, and duplicate supplier orders are real money.
+ */
+export const SUPPLIER_ORDER_STATE_COPY: Record<SupplierOrderState, string> = {
+  AWAITING_SUPPLIER_ORDER: "No supplier order yet",
+  READY: "Queued to send to your supplier",
+  SENDING: "Sending to your supplier",
+  UNKNOWN: "Unconfirmed — do not re-order",
+  RECONCILE: "Checking with your supplier",
+  LINKED: "Placed with your supplier",
+  BLOCKED: "Your supplier refused this order"
+};
+
+/**
+ * Merchant-readable words for a state, including one this build has never heard
+ * of.
+ *
+ * The fallback exists for the same reason the one on publish problems does: a
+ * server ahead of this build can name a state that is not in the union above,
+ * and rendering the raw identifier is what put `SUPPLIER_VARIANT_UNBOUND` on a
+ * merchant's screen. The unknown case says what is true — that this app cannot
+ * interpret it — instead of guessing a side.
+ */
+export function supplierOrderStateCopy(state: string): string {
+  return (
+    SUPPLIER_ORDER_STATE_COPY[state as SupplierOrderState] ||
+    "Your supplier order is in a state this app does not recognise yet"
+  );
+}
+
+/**
+ * One paid sale and the supplier purchase it owes.
+ *
+ * Two orders, deliberately: `orderId` is the customer's order, `intentId` is
+ * the merchant's order with the supplier, and `intentId` being `null` is the
+ * normal state of a sale nobody has fulfilled yet rather than an error.
+ *
+ * `supplierCostCents` is on this type because every route in this module is
+ * merchant-authenticated (see the file header). It must never reach a buyer
+ * surface.
+ */
+export type SupplierObligation = {
+  orderId: number;
+  listingId: number;
+  title: string;
+  quantity: number;
+  amountCents: number | null;
+  currency: string | null;
+  orderStatus: string;
+  paidAt: string | null;
+  orderedAt: string | null;
+  provider: string;
+  providerProductId: string | null;
+  providerVariantId: string | null;
+  externalSku: string | null;
+  supplierCostCents: number | null;
+  supplierCostCurrency: string | null;
+  intentId: string | null;
+  state: SupplierOrderState | string;
+  supplierOrderPlaced: boolean;
+  providerOrderId: string | null;
+  /**
+   * The supplier's own word for where the order stands, verbatim.
+   *
+   * Named `supplierOrderStatus` rather than `providerStatus` because on this
+   * platform `provider_status` is the payment provider's subscription status —
+   * a membership field the entitlement drift guard keeps off unlisted files.
+   * The backend aliases the outbox column on the way out for the same reason.
+   */
+  supplierOrderStatus: string | null;
+  lastError: string | null;
+  updatedAt: string | null;
+};
+
+function normalizeObligation(raw: Record<string, unknown>): SupplierObligation {
+  const intentId = textOrNull(raw.intent_id);
+  return {
+    orderId: centsOrNull(raw.order_id) ?? 0,
+    listingId: centsOrNull(raw.listing_id) ?? 0,
+    title: text(raw.title),
+    quantity: centsOrNull(raw.quantity) ?? 0,
+    amountCents: centsOrNull(raw.amount_cents),
+    currency: textOrNull(raw.currency),
+    orderStatus: text(raw.order_status),
+    paidAt: textOrNull(raw.paid_at),
+    orderedAt: textOrNull(raw.ordered_at),
+    provider: text(raw.provider).toLowerCase(),
+    providerProductId: textOrNull(raw.provider_product_id),
+    providerVariantId: textOrNull(raw.provider_variant_id),
+    externalSku: textOrNull(raw.external_sku),
+    supplierCostCents: centsOrNull(raw.supplier_cost_cents),
+    supplierCostCurrency: textOrNull(raw.supplier_cost_currency),
+    intentId,
+    // Passed through, not narrowed to the union: a state this build has not
+    // heard of must survive to `supplierOrderStateCopy`, which says so.
+    state: text(raw.state) || "AWAITING_SUPPLIER_ORDER",
+    // Read from the server's own field rather than re-derived here as
+    // `intentId !== null`. The server already decided; deriving it a second
+    // time is one more copy that can disagree, and this is the field a merchant
+    // would act on.
+    supplierOrderPlaced: raw.supplier_order_placed === true,
+    providerOrderId: textOrNull(raw.provider_order_id),
+    supplierOrderStatus: textOrNull(raw.supplier_order_status),
+    lastError: textOrNull(raw.last_error),
+    updatedAt: textOrNull(raw.intent_updated_at)
+  };
+}
+
+/**
+ * Paid sales through this connection that still owe a purchase from the
+ * supplier, newest first.
+ *
+ * This is the endpoint the supplier-orders screen had no source for. Before it,
+ * a buyer could pay for a published, bound dropship listing and the merchant's
+ * only record was a customer order indistinguishable from a hand-stocked sale —
+ * the fulfilment layer could create one supplier order and read one back by id,
+ * but nothing could tell a merchant which of their sales needed one.
+ *
+ * The server derives the list on read by joining paid orders to the supplier
+ * mapping of the listing they were placed on, so a merchant's hand-stocked
+ * products cannot appear here and nothing has to be kept in step.
+ */
+export async function listSupplierObligations(
+  scope: DropshippingScope,
+  connectionId: string,
+  options: { limit?: number } = {}
+): Promise<{ obligations: SupplierObligation[]; isSandbox: boolean }> {
+  const response = await pulseApi<Record<string, unknown>>(
+    `${SUPPLIERS_BASE}/connections/${encodeURIComponent(connectionId)}/obligations` +
+      scopeQuery(scope, { limit: options.limit })
+  );
+  return {
+    obligations: list<Record<string, unknown>>(response.obligations).map(normalizeObligation),
+    // The server states this; it is not assumed from a build flag. A screen
+    // that promises "nothing is sent to your supplier" on its own authority
+    // would keep promising it after the platform switched fulfilment on.
+    isSandbox: centsOrNull(response.isSandbox) === 1
+  };
+}
+
+/* ------------------------------------------------------------------ *
  * Screen states
  * ------------------------------------------------------------------ */
 
@@ -1568,19 +1748,29 @@ export type DropshippingDataGap = { surface: string; needs: string };
  * Listed rather than mocked. A supplier-orders screen populated with invented
  * rows would be read as "these orders were placed with your supplier", which is
  * the one claim in this whole feature a merchant would act on financially.
- * Exported so a test can assert the count: if someone later fakes one of these,
- * the list changes and the test says so.
+ *
+ * `needs` is merchant-readable, because `DropshippingOrdersScreen` renders it.
+ * It used to be an implementation note, and one of them named a table
+ * (`business_os_supplier_fulfillment_intents`) that does not exist anywhere in
+ * the repo — so the note meant to tell the next implementer where to look sent
+ * them to a name nothing has. A gap note is a claim about the system like any
+ * other, and this one had never been checked against it.
+ *
+ * Two entries left this list when `listSupplierObligations` arrived. They said
+ * the fulfilment layer "can create and read a single supplier order by id" and
+ * only lacked an enumeration; in fact nothing reachable created one either, so
+ * both the stated gap and the capability it assumed were wrong. The entry that
+ * remains is the one that is still true.
  */
 export const DROPSHIPPING_DATA_GAPS: readonly DropshippingDataGap[] = [
   {
-    // The fulfillment layer can create and read a single intent by id, but
-    // nothing enumerates a merchant's supplier orders.
-    surface: "Supplier orders list",
-    needs: "a merchant-scoped list endpoint over business_os_supplier_fulfillment_intents"
-  },
-  {
-    // Tracking numbers land on the intent, which the same gap hides.
-    surface: "Shipment tracking",
-    needs: "tracking numbers surfaced on the same supplier-orders list"
+    // `list_obligations` enumerates paid orders that owe a supplier purchase.
+    // It deliberately does not enumerate an order refunded or cancelled *after*
+    // a supplier order was placed: the merchant needs to cancel with the
+    // supplier, and that is a different action from placing one. There is no
+    // cancellation path, so listing those rows here would imply one exists.
+    surface: "Cancelling a supplier order",
+    needs:
+      "When a customer refunds an order you've already bought from your supplier, you'll be able to cancel it with them from here."
   }
 ] as const;

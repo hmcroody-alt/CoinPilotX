@@ -25,8 +25,17 @@
  *    provider and a signed-out session produce different states, because they
  *    have different fixes and only one of them is the merchant's to make.
  *
- * 5. THE GAP LEDGER IS COUNTED. Faking supplier orders would shorten this list,
- *    and this test says so.
+ * 5. THE GAP LEDGER IS NAMED, AND ITS WORDS ARE MERCHANT-READABLE. Faking a
+ *    surface changes the names, and the change is reviewed. It was counted
+ *    before, which went red on the repair that closed two of them and never
+ *    noticed that one `needs` string named a table the repo does not contain.
+ *
+ * 6. A SUPPLIER ORDER'S STATE IS NEVER GUESSED. `AWAITING_SUPPLIER_ORDER` and
+ *    `UNKNOWN` are different facts: the first means no supplier order exists,
+ *    the second means one may exist and could not be confirmed. Collapsing
+ *    them invites a merchant to place a duplicate supplier order, which is real
+ *    money. A state this build has not heard of says so rather than defaulting
+ *    to either.
  */
 
 const mockPulseApi = jest.fn();
@@ -50,7 +59,11 @@ import {
   DROPSHIPPING_DATA_GAPS,
   IMPORT_OUTCOMES,
   PUBLISH_PROBLEMS,
+  SUPPLIER_ORDER_STATES,
+  SUPPLIER_ORDER_STATE_COPY,
   bindConnectionShop,
+  listSupplierObligations,
+  supplierOrderStateCopy,
   centsOrNull,
   connectionCanFulfil,
   connectionIsUsable,
@@ -803,13 +816,142 @@ describe("the vocabularies are closed and complete", () => {
     expect(draft.validation.problems).toEqual(["A_CODE_FROM_A_NEWER_SERVER"]);
   });
 
-  it("counts the surfaces this app has no data for", () => {
-    // Two. If someone fakes supplier orders, this number changes and the change
-    // is reviewed rather than shipped quietly.
-    expect(DROPSHIPPING_DATA_GAPS).toHaveLength(2);
+  describe("supplier obligations", () => {
+    const OBLIGATION = {
+      order_id: 91,
+      listing_id: 14,
+      title: "Cotton Tee",
+      quantity: 2,
+      amount_cents: 4000,
+      currency: "USD",
+      order_status: "paid",
+      paid_at: "2026-09-12T00:00:00",
+      ordered_at: "2026-09-12T00:00:00",
+      provider: "CJ",
+      provider_product_id: "P1",
+      provider_variant_id: "P1-V1",
+      external_sku: null,
+      supplier_cost_cents: 820,
+      supplier_cost_currency: "USD",
+      intent_id: null,
+      intent_created_at: null,
+      state: "AWAITING_SUPPLIER_ORDER",
+      supplier_order_placed: false,
+      provider_order_id: null,
+      supplier_order_status: null,
+      last_error: null,
+      intent_updated_at: null
+    };
+
+    it("asks the supplier route, with the scope in the query string", async () => {
+      mockPulseApi.mockResolvedValue({ obligations: [], isSandbox: 1 });
+      await listSupplierObligations(SCOPE, "conn a/b", { limit: 50 });
+      const [url] = mockPulseApi.mock.calls[0];
+      // Encoded, because a connection id is server-chosen and this one has a
+      // slash in it purely to prove the call site encodes rather than trusts.
+      expect(url).toContain("/suppliers/cj/connections/conn%20a%2Fb/obligations");
+      expect(url).toContain("business_id=");
+      expect(url).toContain("limit=50");
+      // No body, no method: a merchant opening this screen must not be able to
+      // generate a write, and a GET is what makes that structural.
+      expect(mockPulseApi.mock.calls[0][1]).toBeUndefined();
+    });
+
+    it("keeps an unplaced supplier order unplaced", async () => {
+      mockPulseApi.mockResolvedValue({ obligations: [OBLIGATION], isSandbox: 1 });
+      const { obligations, isSandbox } = await listSupplierObligations(SCOPE, "c1");
+      expect(obligations).toHaveLength(1);
+      expect(obligations[0].intentId).toBeNull();
+      expect(obligations[0].supplierOrderPlaced).toBe(false);
+      expect(obligations[0].state).toBe("AWAITING_SUPPLIER_ORDER");
+      expect(obligations[0].supplierCostCents).toBe(820);
+      expect(obligations[0].provider).toBe("cj");
+      expect(isSandbox).toBe(true);
+    });
+
+    it("does not infer that a supplier order was placed from a present state", async () => {
+      // The trap: an intent whose outbox row is missing. `state` falls back to
+      // AWAITING, but the row does have an `intent_id`, and the server says so.
+      // Re-deriving `supplierOrderPlaced` on this device from either field
+      // would answer differently depending on which field it chose.
+      mockPulseApi.mockResolvedValue({
+        obligations: [{ ...OBLIGATION, intent_id: "cjf_1", supplier_order_placed: true, state: "" }],
+        isSandbox: 1
+      });
+      const { obligations } = await listSupplierObligations(SCOPE, "c1");
+      expect(obligations[0].supplierOrderPlaced).toBe(true);
+      expect(obligations[0].state).toBe("AWAITING_SUPPLIER_ORDER");
+    });
+
+    it("reads sandbox from the server and not from a build flag", async () => {
+      // Absent, not false: a server that stopped stating it must not be read as
+      // "fulfilment is live" or as "fulfilment is off". The screen only shows
+      // the sandbox promise on an explicit 1.
+      mockPulseApi.mockResolvedValue({ obligations: [OBLIGATION] });
+      expect((await listSupplierObligations(SCOPE, "c1")).isSandbox).toBe(false);
+      mockPulseApi.mockResolvedValue({ obligations: [OBLIGATION], isSandbox: 0 });
+      expect((await listSupplierObligations(SCOPE, "c1")).isSandbox).toBe(false);
+    });
+
+    it("has words for every state it can name", () => {
+      // The `Record` is total, so this cannot fail by omission — it is a
+      // compile error first. What it catches is an entry present but empty,
+      // which renders as a blank chip beside a paid order.
+      SUPPLIER_ORDER_STATES.forEach((state) => {
+        expect(SUPPLIER_ORDER_STATE_COPY[state].length).toBeGreaterThan(4);
+        expect(SUPPLIER_ORDER_STATE_COPY[state]).not.toBe(state);
+      });
+    });
+
+    it("never tells a merchant an unconfirmed supplier order was not placed", () => {
+      // The most expensive confusion in this feature. UNKNOWN means the write
+      // may have landed; copy that reads like AWAITING invites a second
+      // supplier order for the same sale.
+      expect(SUPPLIER_ORDER_STATE_COPY.UNKNOWN).not.toEqual(
+        SUPPLIER_ORDER_STATE_COPY.AWAITING_SUPPLIER_ORDER
+      );
+      expect(SUPPLIER_ORDER_STATE_COPY.UNKNOWN.toLowerCase()).toContain("do not re-order");
+    });
+
+    it("says so about a state from a newer server rather than guessing", () => {
+      // The `SUPPLIER_VARIANT_UNBOUND` failure, one subsystem over: the screen
+      // rendered a raw backend identifier because the union had not caught up.
+      const copy = supplierOrderStateCopy("PARTIALLY_SHIPPED_FROM_A_NEWER_SERVER");
+      expect(copy).not.toContain("PARTIALLY_SHIPPED");
+      expect(copy).toContain("does not recognise");
+      // And a known one still gets its own words, so the fallback has not
+      // swallowed the whole map.
+      expect(supplierOrderStateCopy("LINKED")).toBe(SUPPLIER_ORDER_STATE_COPY.LINKED);
+    });
+  });
+
+  it("names the surfaces this app has no data for", () => {
+    // Named rather than counted. "Supplier orders list" and "Shipment tracking"
+    // left this list when `listSupplierObligations` arrived; a length assertion
+    // would have gone red on that repair and said nothing about which surfaces
+    // were declared, which is the claim worth making. If someone fakes one of
+    // these, the names change and the change is reviewed rather than shipped.
     expect(DROPSHIPPING_DATA_GAPS.map((gap) => gap.surface)).toEqual([
-      "Supplier orders list",
-      "Shipment tracking"
+      "Cancelling a supplier order"
     ]);
+  });
+
+  it("states each gap in words a merchant can read", () => {
+    // Both screens that render this list render `needs` directly, so `needs` is
+    // merchant-facing copy. It used to be an implementation note, and one entry
+    // named `business_os_supplier_fulfillment_intents` — a table that exists
+    // nowhere in the repo. That string was wrong for two years' worth of
+    // readers in two different ways at once: it was shown to merchants, and the
+    // implementer it was written for could not grep it.
+    //
+    // An identifier is the tell, so that is what this looks for: snake_case,
+    // camelCase runs, or a `()` call. Not a spell-check — a check that the
+    // field holding merchant copy holds prose.
+    DROPSHIPPING_DATA_GAPS.forEach((gap) => {
+      expect(gap.needs).not.toMatch(/[a-z]_[a-z]|\(\)|[a-z][A-Z]/);
+      // A sentence, not a fragment: these render as the body of a card.
+      expect(gap.needs.length).toBeGreaterThan(40);
+      expect(gap.needs.trim()).toMatch(/[.!]$/);
+    });
   });
 });
