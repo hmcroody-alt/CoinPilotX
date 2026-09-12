@@ -32,7 +32,8 @@ than filled in with a plausible sentence.
 | **Meta Muse — Standard** (`muse-spark-1.3`) | **No** — console states prompts and completions are not used to train Meta models | Not independently verified | `SYNTHETIC`, `PLATFORM_PUBLIC`, `PLATFORM_PRIVATE` |
 | **Meta Muse — Contributor** (`muse-spark-1.3-contributor`) | **Yes** — console states inputs and outputs are used to train and improve Meta's AI models | Training corpus | `SYNTHETIC` **only** |
 | Perplexity (`sonar`) | Not independently verified | Not independently verified | `SYNTHETIC`, `PLATFORM_PUBLIC` |
-| Gemini / DeepSeek / Groq | Not independently verified | Not independently verified | Currently unreachable — see `UNDX_RAILWAY_PROVIDER_CONFIG.md` |
+| Gemini (`gemini-flash-lite-latest`) | Not independently verified | Not independently verified | `SYNTHETIC`, `PLATFORM_PUBLIC` |
+| DeepSeek / Groq | Not independently verified | Not independently verified | Currently unreachable — see `UNDX_RAILWAY_PROVIDER_CONFIG.md` |
 
 "Not independently verified" means exactly that. It is not a claim that the
 provider trains on our data, and not a claim that it does not. Where a cell below

@@ -71,7 +71,31 @@ PROVIDERS = {
     # claude-haiku-4-5-20251001; verified against GET /v1/models, not guessed.
     "claude": ProviderConfig("claude", "Claude", "CLAUDE_AI_API", "CLAUDE_MODEL", "claude-haiku-4-5",
                              enable_env="UNDX_CLAUDE_ENABLED"),
-    "gemini": ProviderConfig("gemini", "Gemini", "Gemini_AI_API", "GEMINI_MODEL", "gemini-1.5-flash"),
+    # `gemini-1.5-flash` was retired upstream and 404s. That part is fixed here.
+    #
+    # Replacement chosen by measurement rather than by taking the newest ID. Two
+    # samples, minutes apart, of six calls to each candidate:
+    #
+    #   gemini-flash-latest        5/6 then 6/6,  ~3.9s then ~11.0s
+    #   gemini-flash-lite-latest   6/6 then 6/6,  ~0.9s then ~2.9s
+    #
+    # Read honestly, that says the HTTP 503s are transient upstream capacity and
+    # hit both models - the first sample's 5/6-vs-6/6 split is not a real
+    # difference, and a later health-check run 503'd on flash-lite too. What did
+    # hold across both samples is latency: flash-lite is consistently ~4x faster.
+    # Gemini is never first in any chain in `provider_priority`, so it is only
+    # reached once another provider has already failed and the caller has already
+    # spent that budget. The cheaper, faster model is the better tail. An operator
+    # who wants the stronger one sets GEMINI_MODEL.
+    #
+    # So Gemini may still intermittently fail the health check. That is upstream
+    # availability, not configuration, and failover covers it - it should not be
+    # mistaken for the retired-model bug returning.
+    #
+    # Note also that ListModels is not an availability list: `gemini-2.5-flash`
+    # and `gemini-2.5-flash-lite` are both advertised to this key and both 404 on
+    # generateContent. Every candidate above was confirmed by a live call.
+    "gemini": ProviderConfig("gemini", "Gemini", "Gemini_AI_API", "GEMINI_MODEL", "gemini-flash-lite-latest"),
     "deepseek": ProviderConfig("deepseek", "DeepSeek", "DEEPSEEK_AI_API", "DEEPSEEK_MODEL", "deepseek-chat"),
     "groq": ProviderConfig("groq", "Groq", "GROQ_AI_API", "GROQ_MODEL", "llama-3.1-8b-instant"),
     # Meta Model API. Model IDs, base URL, reasoning enum and the 1M context are
@@ -319,10 +343,14 @@ def _provider_text(provider: str, content: Any, finish_reason: Any = None) -> st
     if isinstance(content, str) and content.strip():
         return content.strip()
     reason = str(finish_reason or "").strip() or "unspecified"
-    if reason == "length":
+    # Each vendor spells budget exhaustion differently - OpenAI-shaped APIs say
+    # `length`, Gemini says `MAX_TOKENS`. Same fault, same one-line fix, so it
+    # gets the same actionable message rather than a generic one that sends the
+    # reader looking for an outage.
+    if reason.lower() in {"length", "max_tokens"}:
         raise ValueError(
             f"{PROVIDERS[provider].label} returned no text: the token budget was "
-            f"consumed before the answer began (finish_reason=length)"
+            f"consumed before the answer began (finish_reason={reason})"
         )
     raise ValueError(f"{PROVIDERS[provider].label} returned no text (finish_reason={reason})")
 
@@ -724,9 +752,12 @@ def _call_gemini(system_prompt: str, message: str, history: Any, timeout: int,
         json={
             "systemInstruction": {"parts": [{"text": system_prompt}]},
             "contents": contents,
-            "generationConfig": {"temperature": temperature, "maxOutputTokens": max_tokens},
+            "generationConfig": {
+                "temperature": temperature,
+                "maxOutputTokens": _effective_max_tokens("gemini", max_tokens),
+            },
         },
-        timeout=timeout,
+        timeout=_timeout("gemini", timeout),
     )
     response.raise_for_status()
     data = response.json()

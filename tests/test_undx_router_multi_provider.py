@@ -487,5 +487,68 @@ class ClaudeEndpointTest(unittest.TestCase):
         self.assertEqual(post.call_args.kwargs["json"]["model"], "claude-sonnet-4-5")
 
 
+class GeminiModelTest(unittest.TestCase):
+    """Gemini's default must be a model that answers, on a budget it can finish in.
+
+    `gemini-1.5-flash` was retired upstream, which is why Gemini 404'd. The
+    replacement was picked by measurement rather than by taking the newest ID.
+    Across two samples minutes apart, `gemini-flash-lite-latest` ran ~4x faster
+    than `gemini-flash-latest` (0.9s/2.9s against 3.9s/11.0s). Both suffer the
+    same transient HTTP 503s, so availability did not separate them and is not
+    claimed to. Gemini is never first in any chain in `provider_priority`, so it
+    is only reached once another provider has already failed and that budget is
+    already spent; the faster model is the better tail.
+
+    The trap underneath: ListModels advertises models this key cannot call.
+    `gemini-2.5-flash` and `gemini-2.5-flash-lite` are both listed and both 404
+    on generateContent, so "it is in the list" is not evidence of anything.
+    """
+
+    ANSWER = {"candidates": [{"content": {"parts": [{"text": "ok"}]}, "finishReason": "STOP"}]}
+
+    def test_default_model_is_not_the_retired_one(self):
+        self.assertNotIn("1.5", undx_router.PROVIDERS["gemini"].default_model)
+        self.assertEqual(undx_router.PROVIDERS["gemini"].default_model, "gemini-flash-lite-latest")
+
+    def test_gemini_budget_exhaustion_is_named_not_crashed_on(self):
+        """Gemini spells it MAX_TOKENS where OpenAI spells it length.
+
+        Both mean the budget ran out before the answer started, and both used to
+        reach `None.strip()`. The message has to point at the budget, or the next
+        person reads `response_failed` and goes looking for an outage.
+        """
+        with self.assertRaises(ValueError) as caught:
+            undx_router._provider_text("gemini", None, "MAX_TOKENS")
+        message = str(caught.exception)
+        self.assertIn("token budget", message)
+        self.assertIn("MAX_TOKENS", message)
+
+    def test_openai_style_length_is_still_named(self):
+        with self.assertRaises(ValueError) as caught:
+            undx_router._provider_text("meta", None, "length")
+        self.assertIn("token budget", str(caught.exception))
+
+    def test_a_real_answer_is_untouched_by_the_budget_branch(self):
+        self.assertEqual(undx_router._provider_text("gemini", " ok ", "MAX_TOKENS"), "ok")
+
+    def test_the_key_travels_as_a_header_never_as_a_query_parameter(self):
+        """A `?key=` lands in proxy logs and in the text of request exceptions."""
+        with _env(Gemini_AI_API="AIza" + "q" * 35), mock.patch.object(
+                undx_router.requests, "post", return_value=_FakeResponse(self.ANSWER)) as post:
+            undx_router._call_gemini("sys", "hello", [], 30)
+        url = post.call_args.args[0] if post.call_args.args else post.call_args.kwargs["url"]
+        self.assertNotIn("key=", url)
+        self.assertIn("x-goog-api-key", post.call_args.kwargs["headers"])
+        self.assertIsNone(post.call_args.kwargs.get("params"))
+
+    def test_the_model_id_is_interpolated_into_the_path(self):
+        with _env(Gemini_AI_API="AIza" + "q" * 35, GEMINI_MODEL="gemini-flash-latest"), \
+                mock.patch.object(undx_router.requests, "post",
+                                  return_value=_FakeResponse(self.ANSWER)) as post:
+            undx_router._call_gemini("sys", "hello", [], 30)
+        url = post.call_args.args[0] if post.call_args.args else post.call_args.kwargs["url"]
+        self.assertIn("gemini-flash-latest:generateContent", url)
+
+
 if __name__ == "__main__":
     unittest.main()

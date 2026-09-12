@@ -19,7 +19,7 @@ railway variables --service CoinPilotX --json \
 | `CLAUDE_AI_API` | PRESENT | Claude | Verified live. The earlier 404 was a retired model ID, not the credential — see "Resolved". |
 | `META_MODEL_API_KEY` | PRESENT | Meta Muse | Verified live. Not `MODEL_API_KEY`. |
 | `PERPLEXITY_API_KEY` | PRESENT | Perplexity | Verified live. Also used by `services/undx_embedding_service.py`. |
-| `Gemini_AI_API` | PRESENT | Gemini | Set, live check fails 404 — stale model ID. |
+| `Gemini_AI_API` | PRESENT | Gemini | Verified live. Stale model ID fixed — see "Resolved". |
 | `DEEPSEEK_AI_API` | PRESENT | DeepSeek | Set, live check fails 402 — no credit. |
 | `GROQ_AI_API` | PRESENT | Groq | **Malformed.** See "Known-broken". |
 
@@ -57,7 +57,7 @@ tried, and the kill switch reads as a failure.
 | `PERPLEXITY_MODEL` | not set | `sonar` |
 | `OPENAI_MODEL` | not set | `gpt-4o-mini` |
 | `CLAUDE_MODEL` | not set | `claude-haiku-4-5` — live-verified; resolves to `claude-haiku-4-5-20251001` |
-| `GEMINI_MODEL` | not set | `gemini-1.5-flash` — **retired upstream, returns 404** |
+| `GEMINI_MODEL` | not set | `gemini-flash-lite-latest` — live-verified |
 
 A provider's declared timeout can only raise the caller's, never shorten it.
 
@@ -105,16 +105,45 @@ configured value, not only the whole value. Pinned by
 stops future leaks; it does not un-log what was already written. Rotation and
 resetting the variable to a bare key are account changes and are not done here.
 
-### Gemini — 404, retired model
-
-`gemini-1.5-flash` no longer resolves. Needs a current model ID in
-`GEMINI_MODEL`.
-
 ### DeepSeek — 402 Payment Required
 
 Out of credit. A billing matter, not a configuration one.
 
 ## Resolved
+
+### Gemini — was 404, now resolves; intermittent 503 remains upstream
+
+`gemini-1.5-flash` was retired and no longer resolves. Default is now
+`gemini-flash-lite-latest`, confirmed by a live call.
+
+Candidates were measured, not ranked by version number. Two samples of six calls
+each, minutes apart:
+
+| Model | Sample 1 | Sample 2 | Latency |
+|---|---|---|---|
+| `gemini-flash-latest` | 5/6 | 6/6 | ~3.9s → ~11.0s |
+| `gemini-flash-lite-latest` | 6/6 | 6/6 | ~0.9s → ~2.9s |
+
+The 503s are transient upstream capacity and hit **both** models — a later health
+check 503'd on flash-lite as well. Availability did not separate the candidates.
+Latency did, consistently, by ~4x. Since Gemini is never first in any chain in
+`provider_priority`, it is only reached after another provider has already failed
+and spent that budget, so the faster model is the better tail. `GEMINI_MODEL`
+overrides.
+
+**Gemini may still fail the health check intermittently.** That is upstream
+availability, covered by failover — not the retired-model bug returning.
+
+Two traps worth recording:
+
+- **ListModels is not an availability list.** `gemini-2.5-flash` and
+  `gemini-2.5-flash-lite` are both advertised to this key and both 404 on
+  `generateContent`. Every candidate above was confirmed by an actual call.
+- **Gemini now reports `thoughtsTokenCount`** — it is a reasoning model, and
+  reasoning is billed against `maxOutputTokens` exactly as on Meta. Gemini is
+  therefore routed through `_effective_max_tokens()`, and `_provider_text()` now
+  recognises Gemini's `MAX_TOKENS` alongside the OpenAI-shaped `length` so budget
+  exhaustion is reported as a budget, not as a generic failure.
 
 ### Claude — was 404, now CONNECTED
 
