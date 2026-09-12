@@ -111,13 +111,21 @@ def python_states():
     found = set()
     for relative_path in STATE_MODULES:
         found |= set(re.findall(r"[\"']([A-Z][A-Z_]{2,})[\"']", _source(relative_path)))
-    # Both subtracted sets are *read* rather than retyped, for the same reason:
-    # a vocabulary transcribed into this file is a copy that can drift from the
-    # one it describes, which is the defect the whole file exists to catch.
-    # `BLOCKERS` says why an order cannot be placed; the outbox's states say
-    # where one that was placed has got to. They share a module and nothing else.
+    # All three subtracted sets are *read* rather than retyped, for the same
+    # reason: a vocabulary transcribed into this file is a copy that can drift
+    # from the one it describes, which is the defect the whole file exists to
+    # catch. `BLOCKERS` says why an order cannot be placed; the outbox's states
+    # say where one that was placed has got to. They share a module and nothing
+    # else.
+    #
+    # `DRAIN_STATES` is the third because it describes the *worker*, not any
+    # order: whether anything is emptying the outbox at all. Adding it here was
+    # not a choice — declaring those constants in `fulfillment.py` failed this
+    # test immediately, which is this collect-everything-and-subtract method
+    # doing precisely what its docstring claims, on a vocabulary it had never
+    # seen. They are pinned in their own right further down this file.
     return (found - set(fulfillment.FUNDING_STATES) - set(fulfillment.BLOCKERS)
-            - set(NOT_A_STATE))
+            - set(fulfillment.DRAIN_STATES) - set(NOT_A_STATE))
 
 
 def mobile_states():
@@ -615,3 +623,119 @@ def test_every_country_this_platform_can_name_is_keyed_by_an_alpha_2_code():
         "drops anything that is not two characters. Either way the entry names "
         "a country nobody can order to.")
     assert not misshapen(picker_country_names())
+
+
+# ---------------------------------------------------------------------------
+# The sixth copy of a Python enumeration: whether anything drains the outbox.
+#
+# `fulfillment.DRAIN_STATES` on one side, `SUPPLIER_DRAIN_STATES` on the other,
+# and the same seam as every block above. This one guards a claim rather than a
+# vocabulary: each queued row says "Queued to send to your supplier", and
+# `run_once` -- the only thing that sends them -- has no entry point in the
+# Procfile. The notice these states drive is the only thing on the screen that
+# can contradict that sentence, so a drain state the backend can report and
+# mobile cannot name is a merchant left waiting on nothing.
+# ---------------------------------------------------------------------------
+
+
+def mobile_drain_states():
+    source = open(MOBILE_API, encoding="utf-8").read()
+    block = re.search(
+        r"export const SUPPLIER_DRAIN_STATES = \[(.*?)\] as const;", source, re.S)
+    assert block, ("SUPPLIER_DRAIN_STATES is no longer a literal array — this "
+                   "test can no longer read it")
+    return re.findall(r'"([A-Z_]+)"', block.group(1))
+
+
+def mobile_drain_notice():
+    source = open(MOBILE_API, encoding="utf-8").read()
+    block = re.search(
+        r"export const SUPPLIER_DRAIN_NOTICE: "
+        r"Record<SupplierDrainState, string \| null> = \{(.*?)\n\};", source, re.S)
+    assert block, (
+        "SUPPLIER_DRAIN_NOTICE is no longer a total Record over "
+        "SupplierDrainState. That annotation is the compile error that catches a "
+        "drain state added without an answer; widening it removes it.")
+    entries = dict(re.findall(r'^  ([A-Z_]+):\s*(null|"[^"]*"|\n?\s*"[^"]*")',
+                              block.group(1), re.M))
+    return {name: (None if value.strip() == "null" else value.strip().strip('"'))
+            for name, value in entries.items()}
+
+
+def test_mobile_names_every_drain_state_the_backend_can_report():
+    missing = set(fulfillment.DRAIN_STATES) - set(mobile_drain_states())
+    assert not missing, (
+        f"the backend can report drain states mobile has never heard of: "
+        f"{sorted(missing)}. Each one falls through to no notice at all, which "
+        "leaves every queued row claiming it is about to be sent.")
+
+
+def test_mobile_invents_no_drain_state_the_backend_cannot_report():
+    extra = set(mobile_drain_states()) - set(fulfillment.DRAIN_STATES)
+    assert not extra, (
+        f"mobile answers drain states the backend cannot report: {sorted(extra)}")
+
+
+def test_every_drain_state_has_an_answer_and_only_the_healthy_one_is_silent():
+    """Silence is a decision here, so it is asserted rather than allowed.
+
+    `DRAINING` is the one state with no notice, because the per-row copy is
+    already correct then. Every other state means queued orders are not moving,
+    and a `null` against one of those would restore the exact defect: a screen
+    that says "Queued to send to your supplier" and nothing else, forever.
+    """
+    notice = mobile_drain_notice()
+    assert set(notice) == set(fulfillment.DRAIN_STATES), (
+        f"notice map covers {sorted(notice)}, backend reports "
+        f"{sorted(fulfillment.DRAIN_STATES)}")
+    assert notice["DRAINING"] is None, (
+        "a healthy drain now raises a banner, which will teach merchants to "
+        "ignore the banner that matters")
+    for state, words in notice.items():
+        if state == "DRAINING":
+            continue
+        assert words, f"{state} means queued orders are not being sent and says nothing"
+        assert not re.search(r"[a-z]_[a-z]|[a-z][A-Z]", words), (
+            f"{state} renders an identifier rather than words: {words!r}")
+        assert state.lower() not in words.lower(), (
+            f"{state} copy contains its own code: {words!r}")
+        # The notice contradicts a promise, so it has to say what is not
+        # happening. Without this the copy could drift into something
+        # reassuring and the row's own sentence would win.
+        assert "not being sent" in words.lower() or "not been sent" in words.lower(), (
+            f"{state} does not tell the merchant their queued orders are not "
+            f"going out, which is the only thing this notice exists to say: {words!r}")
+
+
+def test_the_drain_state_reaches_the_envelope_the_screen_reads():
+    """Pins the two ends of the wire, since neither compiler sees the other.
+
+    `list_obligations` returns the fact and `listSupplierObligations` reads it.
+    A field renamed on one side alone leaves mobile permanently silent — and
+    silent is indistinguishable, on screen, from healthy.
+    """
+    source = _source("services/business_os/suppliers/fulfillment.py")
+    assert '"drain": drain_status()' in source, (
+        "list_obligations no longer reports the drain on its envelope")
+    mobile = open(MOBILE_API, encoding="utf-8").read()
+    assert "response.drain" in mobile and "drain.state" in mobile, (
+        "listSupplierObligations no longer reads the drain the server reports")
+
+
+def test_the_worker_records_a_tick_even_when_it_cannot_finish_one():
+    """Read off the worker, because the notice's honesty depends on it.
+
+    `TICKING_BUT_NOT_COMPLETING` exists only if the latch is written before the
+    work. Move `record_drain_tick` below the body and a broken worker becomes
+    indistinguishable from an absent one, which sends the owner hunting a
+    process that is already running.
+    """
+    source = _source("services/business_os/suppliers/worker.py")
+    body = source.split("def run_once(", 1)[-1]
+    started = body.find("record_drain_tick(now=now)")
+    seeded = body.find("_seed_jobs(limit, now)")
+    completed = body.find("record_drain_tick(now=now, completed=True)")
+    assert 0 <= started < seeded < completed, (
+        "run_once no longer latches the start of a tick before doing the work "
+        "and the completion after it; drain_status can only tell a crashing "
+        "worker from a missing one while it does")

@@ -2383,10 +2383,169 @@ protection suite 327 checks across 28 suites.
 
 ---
 
+## The twentieth seam: the queue nothing drains
+
+Gap 16 made a *blocked* supplier order explain itself. The obvious next question
+is what happens to one that is not blocked, and the answer is nothing at all.
+
+`worker.run_once` is the only caller of `fulfillment.claim` and
+`fulfillment.dispatch`. Its only entry point is `supplier_worker.py`. That file
+is not in the `Procfile`. So no intent this platform has ever created can leave
+`READY` — and `SUPPLIER_ORDER_STATE_COPY` renders `READY` to the merchant as
+**"Queued to send to your supplier"**.
+
+That sentence is not wrong the way a miscalculation is wrong. It is a promise
+about a background process, made by a screen that cannot see whether the process
+exists, and it had no expiry: a merchant reading it on a paid order would read
+the same words a week later.
+
+### Why nothing could have caught it
+
+`run_once` returned its counts to its caller and persisted **nothing about
+itself**. "A drain ran" was not a fact in the database. So no read path could
+contradict the copy, no payload could carry the contradiction, and no test could
+assert one — there was no observable to assert against.
+
+This is gap 19's defect with the subject changed. There, a function took a clock
+and read the wall one, which made a real rule unexecutable; a rule nothing can
+execute has never been true or false. Here, a process reported its work to
+stdout, which made a real claim unmeasurable; and **a claim nothing can measure
+has never been right or wrong.** In both cases the missing thing is not a
+correct answer but an askable question.
+
+Note what this means about the previous nineteen seams: several of them were
+found by asking "who calls this?" and the Procfile absence was *recorded in the
+map itself* while deferring gap 16's recovery work. It was known. It was written
+down. It still reached the merchant as a reassuring sentence, because a fact in a
+document is not a fact in a payload.
+
+### The fix is a latch, not a rewording
+
+Rewording `READY` would be wrong in the other direction: once a worker *is*
+deployed, "Queued to send to your supplier" is exactly right. What was missing
+is the measurement, so that is what was added.
+
+`business_os_supplier_drain_ticks` is one row — `scope`, `started_at`,
+`completed_at`. `run_once` writes the start after its policy gates and before
+any work, and the completion after the loop. `drain_status()` reads the pair and
+returns one of four states, and `list_obligations` puts it on the envelope
+beside `isSandbox`, which is the precedent: a deployment-level fact the screen
+must be *told* rather than assume.
+
+**Two timestamps, not one**, and this is the load-bearing decision. A worker that
+starts every tick and dies inside it keeps `started_at` fresh forever. With one
+column that deployment reports as healthy — a live process draining nothing,
+indefinitely, with no notice — and it is the single most expensive failure this
+table can have, because it looks like success. With two, it reports
+`TICKING_BUT_NOT_COMPLETING`, which is distinct from `NO_DRAIN_HAS_EVER_RUN` for
+a reason a merchant does not care about but an operator does: one is an incident
+on a running process, the other is setup nobody finished, and collapsing them
+sends whoever reads it hunting for a process that is already there.
+
+Staleness is therefore judged on `completed_at`, never `started_at`. The
+mutation battery attacks that line directly.
+
+Both columns are nullable with no default. A `0` or a `now()` default would make
+a deployment that has never drained anything look exactly like one that just
+drained successfully, which is the entire fact the table exists to record —
+and is `UNKNOWN cost ≠ $0` (§8) in a new column.
+
+### Where the number came from
+
+`DRAIN_STALL_SECONDS = 7200` is derived, not chosen. `supplier_worker.main`
+clamps its sleep to `max(60, min(interval, 3600))`, so the slowest drain a
+deployment can legally configure completes a tick every 3600s; one missed tick at
+that ceiling is 3600s and two is 7200s. Below that, a stopped worker and a slow
+one are genuinely indistinguishable from outside, so the notice waits until they
+are not. The test states the number *and* greps the worker for the clamp it was
+derived from, so changing the clamp fails the test that owns the constant.
+
+### The copy, and the one state that stays silent
+
+`DRAINING` maps to no notice. A banner on a healthy queue is worse than none: it
+trains merchants to treat the card as furniture, and the card exists only for
+the case where it is the one true thing on the page. That silence is asserted
+rather than merely permitted, and so is its converse — every other state must
+contain "not being sent" or "have not been sent", because the notice's only job
+is to contradict the row above it and reassuring drift would let the row win.
+
+The notice is rendered above the list, since it qualifies every row in it, and
+it is cleared on a failed refresh. That last part is the battery's own find,
+below.
+
+### What the battery measured, including in itself
+
+24 mutations: 21 real, 2 inverted, 1 no-op control. All 21 caught, the control
+survived.
+
+One mutation survived the first run: **"a failed request leaves the last drain
+answer on screen."** Dropping `setDrainState(null)` from the error path broke
+nothing. The banner from a previous load would survive a failed refresh, so a
+merchant would read a drain verdict no live response was making — error and
+stale data co-rendering, which is a standing rule in this repo.
+
+The test that should have caught it already existed and already carried the
+lesson. `"clears a stale backlog when a refresh fails"` has a comment explaining
+that the *sandbox card* is the thing to assert on, because the rows themselves
+disappear whenever an error state owns the list's `data` — so asserting on rows
+passes whether or not the state was cleared. That comment was written because an
+earlier battery caught that same test missing that same case. One gap later, a
+second header-drawn card appeared and the test did not grow to cover it.
+
+Worth keeping: **a test hardened against a defect covers the surface it was
+hardened on, not the class.** The comment named the mechanism precisely and
+still did not generalise, because the assertion is a list of names and a list
+cannot notice an addition. The fix was to render the initial state with an
+unhealthy drain — asserting a card is absent after an error proves nothing
+unless it was present before — and then assert both cards.
+
+The two inverted mutations: the latch's `scope` key (a private single-row key,
+written and read in one module, pinned by no test on purpose) and a reworded
+notice that keeps its meaning and its "have not been sent". Copy has to stay
+editable; a test that pins exact prose makes every improvement a failure and
+teaches the next person to delete the test.
+
+### What the tests had to be
+
+The drain vocabulary is the *sixth* cross-language enumeration in this
+subsystem. Adding it produced the most useful failure of the session: declaring
+`DRAIN_STATES` in `fulfillment.py` immediately turned
+`test_mobile_names_every_state_the_backend_can_store` red, listing all four new
+names as outbox states mobile could not explain.
+
+That test collects every upper-case literal in the three outbox modules and
+subtracts what is provably something else. Its docstring claims this is why "a
+state added tomorrow needs no help from this file to be noticed: it will simply
+appear, unaccounted for, and fail. An enumeration cannot notice what was never on
+it, so this file does not keep an enumeration." It had never been tested against
+a genuinely new vocabulary. It was, and it worked. `DRAIN_STATES` joins
+`FUNDING_STATES` and `BLOCKERS` in the subtraction — *read*, never retyped, by
+the file's own rule.
+
+### What this does not do, and must be surfaced rather than landed
+
+**It does not deploy the worker.** The notice now tells the truth about a
+platform that cannot send supplier orders; it does not make it able to. Adding
+`supplier_worker` to the `Procfile` is a Railway process change that would start
+a loop whose purpose is to place orders with a supplier, and that decision is the
+user's, not this session's. It stays surfaced, not landed.
+
+What bounds the risk meanwhile is unchanged and independent of this seam:
+`run_tick` is gated on `CJ_RECONCILIATION_ENABLED`, `run_once` calls
+`policy.require_enabled()` and `policy.require_network()`, and
+`fund_fulfillment` raises `supplier_funding_locked` unconditionally.
+
+`tests/dropshipping/test_supplier_obligation_copy.py` 27,
+`tests/business_os/test_cj_worker.py` 15. Directory total 395 with one file per
+process, zero files with failures; `npm run verify` 383 suites / 6578 tests;
+protection suite 327 checks across 28 suites; RTC changes 0.
+
+---
+
 ## What kept coming back
 
-Twenty defects in this chain, twenty different subsystems, one shape: **a
-number was asserted rather than measured.**
+Twenty-one defects in this chain, twenty-one different subsystems, one shape:
+**a number was asserted rather than measured.**
 
 - `publish()` never wrote `price_label`, and the publish test asserted `status`
   and `published_at` and stopped one column short.
@@ -2492,6 +2651,13 @@ number was asserted rather than measured.**
   by construction. The jest test covering that line was named "shows a
   supplier's refusal in the supplier's own words" and asserted
   `getByText("preflight_blocked")`.
+- Every queued supplier order asserted "Queued to send to your supplier" — a
+  promise about a worker with no entry point in the `Procfile`, so no intent can
+  ever leave `READY`. Nothing could have caught it: `run_once` returned its
+  counts to its caller and persisted nothing about itself, so "a drain ran" was
+  not a fact anything could read, contradict or test. The Procfile absence was
+  already recorded in this very document, and still reached the merchant as a
+  reassuring sentence, because a fact in a document is not a fact in a payload.
 
 In all of them the suite was green, and in all of them the green was about the
 halves rather than the seam. Where a claim spans two components, this document now
@@ -2832,3 +2998,39 @@ so it expires.** One exemption in this battery became a genuine defect the
 moment an unrelated test was written, and the battery reported it as `PINNED`
 rather than as a failure — which is the only reason it was re-examined instead of
 quietly protecting the thing it was meant to exclude.
+
+The twentieth is the nineteenth with the subject changed from a rule to a claim:
+**a process that reports its work only to its caller has made every claim about
+it unmeasurable, and a claim nothing can measure has never been right or wrong.**
+`run_once` returned counts and persisted nothing, so "queued orders are being
+sent" could not be contradicted by a payload or asserted by a test — while the
+only thing that sends them had no entry point in the `Procfile`. The tell is
+worth grepping for and is the mirror of the previous one: **a background process
+whose only output is its return value, read by a `print`.** If the sole evidence
+a job ran is a log line, then every user-facing sentence that depends on it is
+prose. Fixing it is a latch, not a rewording — and the latch needs *two*
+moments, because one timestamp cannot distinguish a process that never started
+from one that starts and dies every cycle, and the second of those is the
+expensive one precisely because it looks like success.
+
+Its corollary is the harder half, and it is about this document. The Procfile
+absence was not undiscovered — it is written down twice in the seams above,
+noted while deferring other work. It was known, recorded, and still reached the
+merchant as "Queued to send to your supplier". **A fact in a document is not a
+fact in a payload.** The eleventh corollary said an enumeration of surfaces
+cannot notice the surface it never had; this is its companion for findings
+rather than surfaces: a deferral written into a map protects the next engineer
+and nobody else. If a known gap has a user-visible consequence, the deferral has
+to land as an observable — a column, a field, a failing test — or it is a
+comment that the product contradicts.
+
+And one more from the battery, about test maintenance rather than code: **a test
+hardened against a defect covers the surface it was hardened on, not the class.**
+`"clears a stale backlog when a refresh fails"` carried a comment, written after
+an earlier battery caught it, explaining exactly why the sandbox card is the
+thing to assert on — that the rows vanish whenever an error state owns the
+list's `data`, so asserting on rows passes either way. The reasoning was
+correct, specific, and preserved. One gap later a second header-drawn card
+appeared and the test did not cover it, because the assertion is a list of names
+and a list cannot notice an addition. This is the eleventh corollary recurring
+inside a test suite, which is the last place it is looked for.

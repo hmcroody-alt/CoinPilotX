@@ -1961,11 +1961,19 @@ describe("DropshippingOrdersScreen", () => {
 
   async function renderOrders(
     obligations: SupplierObligation[],
-    options: { isSandbox?: boolean; params?: Record<string, unknown> | undefined } = {}
+    options: {
+      isSandbox?: boolean;
+      // Defaults to a healthy drain so the tests written before the drain
+      // existed keep asserting what they were written to assert. The banner is
+      // opt-in here, and its absence is itself asserted below.
+      drainState?: string | null;
+      params?: Record<string, unknown> | undefined;
+    } = {}
   ) {
     mockListSupplierObligations.mockResolvedValue({
       obligations,
-      isSandbox: options.isSandbox ?? true
+      isSandbox: options.isSandbox ?? true,
+      drainState: options.drainState ?? "DRAINING"
     });
     const nav = navigation();
     const view = render(
@@ -1990,6 +1998,54 @@ describe("DropshippingOrdersScreen", () => {
   it("says no supplier order has been placed rather than leaving the row blank", async () => {
     const { view } = await renderOrders([obligation()]);
     await waitFor(() => expect(view.getByText("No supplier order yet")).toBeTruthy());
+  });
+
+  it("does not leave a queued order claiming it is about to be sent when nothing sends", async () => {
+    // The gap-17 defect at the screen. `READY` renders "Queued to send to your
+    // supplier" — a promise about a background worker that has no entry point
+    // in the Procfile, so the order sits there permanently. Nothing on the
+    // screen could contradict it, and nothing could even observe it: the worker
+    // returned its counts to stdout and recorded nothing, so the claim was
+    // unfalsifiable rather than merely wrong.
+    const { view } = await renderOrders([obligation({ state: "READY", supplierOrderPlaced: true })], {
+      drainState: "NO_DRAIN_HAS_EVER_RUN"
+    });
+    await waitFor(() => expect(view.getByText("Queued to send to your supplier")).toBeTruthy());
+    expect(view.getByText("Queued orders are not being sent")).toBeTruthy();
+    expect(view.getByText(/not running on this account yet/i)).toBeTruthy();
+  });
+
+  it("does not raise the banner when the server says the queue is moving", async () => {
+    // A banner on a healthy queue is worse than none: it teaches the merchant
+    // that this card is noise, and the card only exists for the case where it
+    // is the one true thing on the screen.
+    const { view } = await renderOrders([obligation({ state: "READY" })], {
+      drainState: "DRAINING"
+    });
+    await waitFor(() => expect(view.getByText("Queued to send to your supplier")).toBeTruthy());
+    expect(view.queryByText("Queued orders are not being sent")).toBeNull();
+  });
+
+  it("distinguishes a worker that is failing from one that was never started", async () => {
+    // Different next actions: one is an incident on a process that is running,
+    // the other is setup that was never finished. Collapsing them sends whoever
+    // reads this hunting for a process that is already there.
+    const { view } = await renderOrders([obligation({ state: "READY" })], {
+      drainState: "TICKING_BUT_NOT_COMPLETING"
+    });
+    await waitFor(() => expect(view.getByText(/failing on this account/i)).toBeTruthy());
+    expect(view.queryByText(/not running on this account yet/i)).toBeNull();
+  });
+
+  it("says nothing about the drain when the server does not report one", async () => {
+    // An older server sends no `drain`. Silence is correct — this build has
+    // genuinely not been told anything, which is not the same as the old defect
+    // of making a positive promise on no evidence.
+    const { view } = await renderOrders([obligation({ state: "READY" })], {
+      drainState: null
+    });
+    await waitFor(() => expect(view.getByText("Queued to send to your supplier")).toBeTruthy());
+    expect(view.queryByText("Queued orders are not being sent")).toBeNull();
   });
 
   it("shows the merchant what the supplier purchase will cost them", async () => {
@@ -2140,8 +2196,14 @@ describe("DropshippingOrdersScreen", () => {
     // The rows on screen are money the merchant owes. Leaving them under a
     // failed refresh is a backlog they may already have handled, or one that
     // has grown without them being told.
-    const { view } = await renderOrders([obligation()]);
+    // Rendered with an unhealthy drain on purpose, so the banner is genuinely
+    // on screen before the refresh fails. Asserting that a card is absent after
+    // an error proves nothing unless it was present beforehand.
+    const { view } = await renderOrders([obligation()], {
+      drainState: "NO_DRAIN_HAS_EVER_RUN"
+    });
     await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
+    expect(view.getByText("Queued orders are not being sent")).toBeTruthy();
 
     mockListSupplierObligations.mockRejectedValue(new PulseApiError("nope", 500));
     const list = view.UNSAFE_getByType(FlatList as any);
@@ -2155,6 +2217,11 @@ describe("DropshippingOrdersScreen", () => {
     // cleared. This card is drawn from the header regardless of that state, so
     // it is the one thing on screen that reveals a stale response still held.
     expect(view.queryByText("Sandbox fulfilment")).toBeNull();
+    // And the drain banner, which the next battery caught this test missing for
+    // exactly the same reason one gap later. A drain verdict is a claim about
+    // the server sourced from one response; holding it through a failed refresh
+    // tells the merchant something no live response is saying.
+    expect(view.queryByText("Queued orders are not being sent")).toBeNull();
   });
 
   it("states its remaining gap in the words the gap list holds", async () => {

@@ -43,6 +43,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   DROPSHIPPING_DATA_GAPS,
   listSupplierObligations,
+  supplierDrainNotice,
   stateForError,
   supplierObligationBlockerCopy,
   supplierOrderReasonCopy,
@@ -85,6 +86,10 @@ export function DropshippingOrdersScreen({ route, navigation }: Props) {
   // `null` until a response arrives, so the screen never promises "nothing is
   // sent to your supplier" on its own authority.
   const [isSandbox, setIsSandbox] = useState<boolean | null>(null);
+  // Same rule as `isSandbox`, for the same reason: whether anything is actually
+  // sending queued supplier orders is observable only on the server, and every
+  // row below claims "Queued to send to your supplier" without knowing it.
+  const [drainState, setDrainState] = useState<string | null>(null);
 
   const scope = scopeStatus.status.phase === "ready" ? scopeStatus.status.scope : null;
 
@@ -97,6 +102,7 @@ export function DropshippingOrdersScreen({ route, navigation }: Props) {
         const result = await listSupplierObligations(scope, connectionId, { limit: 100 });
         setRows(result.obligations);
         setIsSandbox(result.isSandbox);
+        setDrainState(result.drainState);
         setState(result.obligations.length === 0 ? "EMPTY" : "READY");
       } catch (error) {
         // Cleared on failure. A stale list of supplier obligations under a
@@ -105,6 +111,7 @@ export function DropshippingOrdersScreen({ route, navigation }: Props) {
         // misses one that is not.
         setRows([]);
         setIsSandbox(null);
+        setDrainState(null);
         setState(stateForError(error));
       } finally {
         setRefreshing(false);
@@ -212,6 +219,23 @@ export function DropshippingOrdersScreen({ route, navigation }: Props) {
                   are real and your customers have paid — but no purchase has been placed with your
                   supplier and nothing ships yet.
                 </Text>
+              </View>
+            ) : null}
+
+            {/* Above the list, because it qualifies every row in it.
+
+                Each queued row reads "Queued to send to your supplier", which
+                is a promise about a background process. Whether that process
+                exists is not something this screen can see, and until the
+                server started recording its ticks it was not something anything
+                could see — so the sentence was true-sounding and unfalsifiable,
+                and a merchant could wait on it forever. Rendered only when the
+                server reports a drain that is not running; a healthy one needs
+                no banner and `supplierDrainNotice` returns null for it. */}
+            {supplierDrainNotice(drainState) ? (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Queued orders are not being sent</Text>
+                <Text style={styles.cardBody}>{supplierDrainNotice(drainState)}</Text>
               </View>
             ) : null}
 

@@ -109,6 +109,99 @@ OUTBOX_REASONS = frozenset({
     "connection_unavailable",
 } | set(PREFLIGHT_REASONS.values()))
 
+#: How long the outbox may go undrained before this deployment stops calling a
+#: queued order "queued to send".
+#:
+#: Measured against the drain's own clamp rather than chosen. `supplier_worker`'s
+#: loop sleeps `max(60, min(interval, 3600))`, so a healthy drain completes a
+#: tick every 60s and the slowest one a deployment can legally configure
+#: completes every 3600s. One missed tick at that ceiling is 3600s; two is 7200.
+#: Below 7200 a stopped worker and a slow one are genuinely indistinguishable
+#: from the outside, so the notice waits until they are not.
+DRAIN_STALL_SECONDS = 7200
+
+#: What is known about the process that turns a queued supplier order into a
+#: real one.
+#:
+#: ``NO_DRAIN_HAS_EVER_RUN`` is the state this deployment is actually in, and it
+#: is the reason this enumeration exists. `worker.run_once` is the only caller
+#: of `claim`/`dispatch`, its only entry point is `supplier_worker.py`, and that
+#: is absent from the `Procfile` -- so every intent ever created here sits at
+#: ``READY`` forever while the merchant reads "Queued to send to your supplier".
+#:
+#: That copy was not a bug in the wording. It was unfalsifiable: `run_once`
+#: returned its counts to stdout and persisted nothing about itself, so no read
+#: path could tell a queue that is moving from a queue nothing is attached to,
+#: and neither could a test. The fix is not to reword the promise -- it is to
+#: record the tick, which is what makes the promise a measurement.
+#:
+#: ``TICKING_BUT_NOT_COMPLETING`` is why two timestamps are kept instead of one.
+#: A drain that starts every tick and dies inside it would otherwise be
+#: indistinguishable from one that was never deployed, and those call for
+#: opposite responses: the first is an incident, the second is unfinished setup.
+DRAIN_STATES = ("DRAINING", "DRAIN_STALLED", "TICKING_BUT_NOT_COMPLETING",
+                "NO_DRAIN_HAS_EVER_RUN")
+
+
+def record_drain_tick(*, now=None, completed=False):
+    """Record that a drain process reached this line. Called only by the worker.
+
+    Two columns, written at two moments, because "a tick began" and "a tick
+    finished" are different facts and the gap between them is the only evidence
+    of a drain that is running and failing.
+
+    One row for the whole deployment, not one per connection: `run_once` drains
+    every connection in one pass, so per-connection rows would be the same fact
+    copied N times and would disagree the first time the worker died midway.
+    """
+    now = time.time() if now is None else float(now)
+    ensure_schema()
+    conn = db.connect()
+    try:
+        # `started_at` is never overwritten by a completion, and `completed_at`
+        # is only ever moved forward, so the two cannot be read as a pair that
+        # never happened.
+        column = "completed_at" if completed else "started_at"
+        conn.execute(
+            f"INSERT INTO business_os_supplier_drain_ticks (scope,{column}) VALUES(?,?) "
+            f"ON CONFLICT(scope) DO UPDATE SET {column}=?",
+            ("worker", now, now))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def drain_status(*, now=None):
+    """Whether anything is turning queued supplier orders into real ones.
+
+    Read, never inferred. Returns ``None`` for both timestamps when no tick has
+    ever been recorded, which is a fact about this deployment and not a missing
+    value to be defaulted away.
+    """
+    now = time.time() if now is None else float(now)
+    ensure_schema()
+    conn = db.connect()
+    try:
+        row = conn.execute("SELECT started_at, completed_at FROM "
+                           "business_os_supplier_drain_ticks WHERE scope='worker'").fetchone()
+    finally:
+        conn.close()
+    started = row["started_at"] if row else None
+    completed = row["completed_at"] if row else None
+    if not started:
+        state = "NO_DRAIN_HAS_EVER_RUN"
+    elif not completed:
+        state = "TICKING_BUT_NOT_COMPLETING"
+    elif now - completed > DRAIN_STALL_SECONDS:
+        # Stalled on the *completion*, not the start. A worker looping on a
+        # crash keeps `started_at` fresh forever, and treating that as healthy
+        # is the failure this column pair exists to catch.
+        state = "DRAIN_STALLED"
+    else:
+        state = "DRAINING"
+    return {"state": state, "started_at": started, "completed_at": completed,
+            "stall_after_seconds": DRAIN_STALL_SECONDS}
+
 
 def assert_sandbox(value):
     if (os.getenv("CJ_ENVIRONMENT_MODE", "SANDBOX").upper() != "SANDBOX"
@@ -143,6 +236,19 @@ def ensure_schema(conn=None):
             last_error TEXT, updated_at DOUBLE PRECISION NOT NULL)""")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_supplier_outbox_due "
                      "ON business_os_supplier_outbox(state, available_at, lease_until)")
+        # Proof that something drains the outbox. `scope` is a fixed single-row
+        # key ('worker') rather than an autoincrement id: the row is a latch, not
+        # a log, and a TEXT primary key upserts identically on SQLite and
+        # PostgreSQL where an INTEGER PRIMARY KEY singleton needs a CHECK on one
+        # and a sequence on the other.
+        #
+        # Both timestamps are nullable with no default. A zero or a `now()`
+        # default would make a deployment that has never drained anything look
+        # exactly like one that just drained successfully, which is the entire
+        # fact this table exists to record.
+        conn.execute("""CREATE TABLE IF NOT EXISTS business_os_supplier_drain_ticks (
+            scope TEXT PRIMARY KEY, started_at DOUBLE PRECISION,
+            completed_at DOUBLE PRECISION)""")
         if owned:
             conn.commit()
     finally:
@@ -1231,5 +1337,12 @@ def list_obligations(connection_id, business_id, store_id, actor_user_id, *,
             "state": outbox_state or ("UNKNOWN" if intent_id else AWAITING_SUPPLIER_ORDER),
             "supplier_order_placed": intent_id is not None,
         })
+    # Envelope-level, not per row, because it is one fact about the deployment
+    # rather than a property of any sale -- the same reason `isSandbox` sits
+    # here. Deliberately *not* folded into each row's `state`: a queued order's
+    # state is READY whether or not a drain exists, and a `state` that changed
+    # meaning depending on the worker would be two facts under one name, which
+    # is the drift this module keeps paying for elsewhere.
     return {"obligations": obligations, "isSandbox": 1,
-            "production_fulfillment_enabled": False}
+            "production_fulfillment_enabled": False,
+            "drain": drain_status()}

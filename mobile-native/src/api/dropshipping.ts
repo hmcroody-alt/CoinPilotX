@@ -1589,6 +1589,64 @@ export function supplierOrderReasonCopy(reason: string): string {
 }
 
 /**
+ * Whether anything on the server is turning queued supplier orders into real
+ * ones — fifth copy of a Python enumeration, `fulfillment.DRAIN_STATES`.
+ *
+ * Why a screen needs to know this at all: `READY` renders as "Queued to send to
+ * your supplier", and in this deployment nothing sends them. The only caller of
+ * the dispatch path is a worker that is not in the `Procfile`, so a paid order
+ * sits at that reassuring sentence permanently.
+ *
+ * The wording was not the bug. The claim was unfalsifiable — the worker printed
+ * its counts to stdout and recorded nothing, so no payload could distinguish a
+ * queue that is moving from a queue with nothing attached to it. The server now
+ * records each tick and states what it found, and this map turns that into the
+ * one sentence that stops a merchant waiting on something that will never come.
+ */
+export const SUPPLIER_DRAIN_STATES = [
+  "DRAINING",
+  "DRAIN_STALLED",
+  "TICKING_BUT_NOT_COMPLETING",
+  "NO_DRAIN_HAS_EVER_RUN"
+] as const;
+export type SupplierDrainState = (typeof SUPPLIER_DRAIN_STATES)[number];
+
+/**
+ * What to tell a merchant about the drain, or `null` when there is nothing to
+ * say.
+ *
+ * `DRAINING` maps to `null` on purpose. A healthy queue needs no banner, and the
+ * per-row copy already says "Queued to send to your supplier" — which is true
+ * exactly then, and is the reason this is a separate notice rather than a change
+ * to that sentence. Folding it in would make one row's `state` mean two
+ * different things depending on a fact about the server.
+ *
+ * None of these blame the merchant, because none of them are the merchant's
+ * fault, and none promise a time — the server states what it last observed and
+ * this copy says no more than that.
+ */
+export const SUPPLIER_DRAIN_NOTICE: Record<SupplierDrainState, string | null> = {
+  DRAINING: null,
+  NO_DRAIN_HAS_EVER_RUN:
+    "Supplier ordering is not running on this account yet, so queued orders are not being sent. Contact support before promising a dispatch date",
+  TICKING_BUT_NOT_COMPLETING:
+    "Supplier ordering is failing on this account, so queued orders are not being sent. Contact support",
+  DRAIN_STALLED:
+    "Queued orders have not been sent for some time. Contact support before promising a dispatch date"
+};
+
+export function supplierDrainNotice(state: string | null | undefined): string | null {
+  if (!state) {
+    // An older server sends no `drain` at all. Saying nothing is right here and
+    // is not the same mistake as before: the old screen made a positive promise
+    // with no evidence, whereas a build talking to a server that cannot answer
+    // has genuinely not been told anything.
+    return null;
+  }
+  return SUPPLIER_DRAIN_NOTICE[state as SupplierDrainState] ?? null;
+}
+
+/**
  * One paid sale and the supplier purchase it owes.
  *
  * Two orders, deliberately: `orderId` is the customer's order, `intentId` is
@@ -1720,17 +1778,27 @@ export async function listSupplierObligations(
   scope: DropshippingScope,
   connectionId: string,
   options: { limit?: number } = {}
-): Promise<{ obligations: SupplierObligation[]; isSandbox: boolean }> {
+): Promise<{
+  obligations: SupplierObligation[];
+  isSandbox: boolean;
+  drainState: string | null;
+}> {
   const response = await pulseApi<Record<string, unknown>>(
     `${SUPPLIERS_BASE}/connections/${encodeURIComponent(connectionId)}/obligations` +
       scopeQuery(scope, { limit: options.limit })
   );
+  const drain = (response.drain ?? null) as Record<string, unknown> | null;
   return {
     obligations: list<Record<string, unknown>>(response.obligations).map(normalizeObligation),
     // The server states this; it is not assumed from a build flag. A screen
     // that promises "nothing is sent to your supplier" on its own authority
     // would keep promising it after the platform switched fulfilment on.
-    isSandbox: centsOrNull(response.isSandbox) === 1
+    isSandbox: centsOrNull(response.isSandbox) === 1,
+    // Same rule, and the reason the field is here rather than derived: whether
+    // a drain exists is a fact only the server can observe. `null` when an
+    // older server does not report one — not narrowed to the union, so a state
+    // this build has never heard of reaches `supplierDrainNotice` intact.
+    drainState: drain ? textOrNull(drain.state) : null
   };
 }
 
