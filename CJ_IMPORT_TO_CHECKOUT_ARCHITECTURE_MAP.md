@@ -300,12 +300,13 @@ query names is buyer-visible by default, so the strip now lives in
    still NULL, but recording it that way described a symptom and hid the seam
    underneath it; see "The fourth seam" below. The structural half is fixed:
    `publish` now writes the column, so no dropship listing can become
-   buyer-visible with a cover the buyer cannot see. What remains is the window
-   *before* publication — `list_drafts` selects `l.cover_image_url` with no
-   fallback, so the merchant's own Dropshipping products list shows a blank tile
-   for a product that has five photos. `scripts/backfill_dropship_cover_image.py`
-   closes that, dry-run by default; the dry run reports exactly one affected row
-   in all of production. **Not run — it is a production write.**
+   buyer-visible with a cover the buyer cannot see. The window *before*
+   publication is now closed too; see "The ninth seam" below. The backfill script
+   turned out to be moot — run dry against production it reports
+   `0 listing(s) with metadata media and no cover column`, because the listing-14
+   repair re-ran `publish`, which writes the column. **No production write was
+   made, and none is needed.** What the backfill would have papered over was a
+   reader disagreement, and that is what got fixed instead.
 4. ~~**`vault.seal`/`unseal` wrap everything in `except Exception: raise
    VaultError() from None`**~~, which turned a caller's mistake into what looked
    like an infrastructure failure. Cost me a false alarm already — and the false
@@ -754,9 +755,89 @@ was corrected rather than the judge widened.
 
 ---
 
+## The ninth seam: two readers of one fact, and only one of them was right
+
+The fourth seam was about a *gate* reading the wrong one of media's two stores.
+This is the same two stores, one layer out: two **readers**, both merchant-facing,
+both correct in isolation, disagreeing about the same product.
+
+| Surface | Function | How it answered "what is the cover" |
+| --- | --- | --- |
+| Review Product (detail) | `drafts.get_draft` | `media[0] if media else None`, derived from `listing_metadata_json` |
+| Dropshipping products (list) | `drafts.list_drafts` | `SELECT l.cover_image_url` — the column, raw |
+
+Nothing forced the two to agree. Production listing 14 is what that looks like:
+five `cf.cjdropshipping.com` URLs in the metadata, `cover_image_url` NULL,
+so the merchant's own list drew a blank tile for a product that opened with five
+photos. Nothing raised, nothing logged, and each reader was individually right.
+
+The measurement that matters is that the gap had **four** places to reappear.
+`media[0] if media else None` was written out independently in `get_draft`,
+`update_draft`, `publish` and `importer._insert_listing`. All four agreed at the
+time of writing, which is precisely why no test could tell.
+
+### The invariant is not "the stores are equal"
+
+That was the tempting fix and it is wrong, because the stores have writers
+outside this package. `bot.py`'s seller listing-update route sets
+`cover_image_url` from `marketplace_product_media` rows (`bot.py:54858`) and
+writes `listing_metadata_json` from a separately validated payload
+(`bot.py:54944`) — two independent writes, and a dropship listing is
+seller-owned, so that route is reachable for it. A dropship listing can
+legitimately end up with its picture in the column only.
+
+So the fix is a single **reader** — `drafts._cover_of(listing)` — that prefers
+the metadata (the store this package owns, and the list `get_draft` returns as
+`media`, so the two fields of one payload cannot contradict each other) and falls
+back to the column (the store the buyer renders), ending in `None` only when
+there is genuinely no picture. `get_draft` and `list_drafts` both call it.
+
+### The half that had to be refused
+
+`_cover_of` is deliberately **not** used by the writers. `publish` still computes
+`cover = media[0]` directly. A writer that "reconciles" with the column it is
+about to overwrite preserves whatever stale value was already there — which is
+the eighth seam's lesson applied to a function instead of a variable: *what to
+store* and *what to show* are different questions, and one function answering
+both is how a name acquires two meanings.
+
+`list_drafts` now selects `l.listing_metadata_json` to answer the question and
+`pop`s it before returning. The route is `{"ok": True, **result}` — it serialises
+the row dicts verbatim — so under §27/§95 that `pop` is load-bearing, not tidiness.
+
+### What the tests had to be
+
+Every assertion is on the *disagreement*, never on one surface's value: a test
+that the list is non-empty passes while showing a different picture than the
+detail screen. So the suite pins list-and-detail agreement with the column
+blanked, with the metadata blanked, and with the two stores deliberately set to
+different URLs.
+
+`scripts/marketplace/dropship_cover_mutation_battery.py` runs 12 plausible
+tidy-ups; all 12 are caught. Five survived the first run and every one was a real
+hole rather than a bad pairing — including three in `_media_of`, pre-existing code
+no test had ever exercised: an unreadable metadata blob (which, had it raised,
+would have blanked *every other product* on the merchant's list, because this read
+is a list), and a JSON `null` inside the media array, which reaches the renderer
+as a cover while satisfying every "is media non-empty" check in the package.
+
+Two survivors were the run earning its keep in the other direction. The mutation
+named "a merchant reorder stops moving the tile" survived because the *claim* was
+wrong: every writer here keeps both stores equal, so after a reorder both
+orderings of the fallback return the same value and no reorder test can separate
+them. The name was corrected to what actually separates them — an outside writer
+moving one store only. And "a non-string column is handed to the renderer" was
+behaviour-preserving: the column is `TEXT`, so SQLite's affinity turns an integer
+`0` into `'0'` and Postgres refuses it outright. It was replaced by the reachable
+half of the same guard, whitespace — which is not hypothetical either, since a
+whitespace-only column passes every "is the cover set" check written here,
+including the `COALESCE(cover_image_url,'')` in the backfill script.
+
+---
+
 ## What kept coming back
 
-Nine defects in this chain, nine different subsystems, one shape: **a number
+Ten defects in this chain, ten different subsystems, one shape: **a number
 was asserted rather than measured.**
 
 - `publish()` never wrote `price_label`, and the publish test asserted `status`
@@ -789,6 +870,11 @@ was asserted rather than measured.**
   `pytest.raises(VaultError)`, which the defect satisfies. The number here is a
   status code: 503, "try again later", returned for six causes of which four
   were not outages and two could never succeed on retry.
+- `get_draft` and `list_drafts` each asserted the cover by deriving it, one from
+  the metadata and one from the column, and every test of either asserted that a
+  reader returns what that reader computes — which it always did. Four
+  independent copies of `media[0] if media else None` agreed at the time of
+  writing, and nothing ever asked two of them the same question.
 
 In all of them the suite was green, and in all of them the green was about the
 halves rather than the seam. Where a claim spans two components, this document now
@@ -862,3 +948,16 @@ one module that had it worst. A test that only asserts `pytest.raises(SomeError)
 cannot notice either tell — it is satisfied by the defect — so the assertion has
 to be on the pair the reader actually consumes: **the verdict and the
 coordinate.**
+
+The tenth closes the loop back to the fifth, which said a *gate* must read the
+spelling that ships. Its sibling: **when two surfaces answer the same question,
+the assertion is that they agree — never what either one returns.** Any test of
+`get_draft`'s cover, or of `list_drafts`'s, is satisfied by the defect, because
+each reader does return what it computes. The greppable tell needs no runtime at
+all: **count the copies of a derivation.** Four spellings of
+`media[0] if media else None` across one package is not duplication to tidy up
+later, it is four places for the same fact to diverge, and the ones that agree
+today are the ones nobody will notice diverging. Corollary to the corollary,
+learned from the battery: **do not make the writers share the reader's
+reconciliation.** A reader may consult both stores; a writer that does has merely
+made "preserve the stale value" its default.

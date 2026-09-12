@@ -782,6 +782,186 @@ def test_publishing_does_not_overwrite_a_cover_the_merchant_reordered(provider):
     assert listing["cover_image_url"] == reordered[0] != original[0]
 
 
+def _blank_column(listing_id):
+    conn = db.connect()
+    try:
+        conn.execute("UPDATE marketplace_listings SET cover_image_url=NULL WHERE id=?",
+                     (listing_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _listed(listing_id):
+    items = drafts.list_drafts(BUSINESS, STORE, OWNER_ID, CONNECTION,
+                               context=CONTEXT)["items"]
+    for item in items:
+        if int(item["id"]) == int(listing_id):
+            return item
+    raise AssertionError("listing %s is not in the merchant's own list" % listing_id)
+
+
+def test_the_list_tile_and_the_detail_screen_agree_about_the_cover(provider):
+    """Two merchant surfaces, one fact, and they used to spell it differently.
+
+    ``get_draft`` derives the cover from ``listing_metadata_json.media``;
+    ``list_drafts`` selected ``l.cover_image_url`` raw. Nothing forced the two
+    stores to agree, so the Dropshipping products list could draw a blank tile
+    for a product that opens with five photos -- the merchant's own report of
+    production listing 14 before its column was repaired.
+
+    The disagreement is what is asserted, not the column's value: a test that
+    only checked the list was non-empty would pass while showing a different
+    picture than the detail screen.
+    """
+    listing_id = sellable(provider)
+    _blank_column(listing_id)
+
+    detail = draft_of(listing_id)
+    assert detail["media"], "fixture no longer carries metadata media"
+    assert _listed(listing_id)["cover_image_url"] == detail["cover_image_url"] \
+        == detail["media"][0]
+
+
+def test_a_cover_that_lives_only_in_the_column_reaches_the_list(provider):
+    """The other direction, and the reason the fallback is not one-way.
+
+    ``bot.py``'s seller listing-update route writes ``cover_image_url`` from
+    ``marketplace_product_media`` rows and the metadata blob from a separately
+    validated payload. A dropship listing is seller-owned, so that route is
+    reachable for it and can leave the picture in the column only. Deriving the
+    cover purely from the metadata would have turned this into a new blank tile
+    while fixing the old one.
+    """
+    listing_id = sellable(provider)
+    conn = db.connect()
+    try:
+        conn.execute(
+            "UPDATE marketplace_listings SET listing_metadata_json=?, cover_image_url=? "
+            "WHERE id=?",
+            (json.dumps({"source": "dropship", "media": []}),
+             "https://cdn.example/seller-uploaded.jpg", listing_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+    detail = draft_of(listing_id)
+    assert detail["media"] == []
+    # Both surfaces, again: the detail screen used to answer `None` here, so a
+    # merchant could open a product from a tile that showed a picture and be
+    # told it had no cover.
+    assert _listed(listing_id)["cover_image_url"] == detail["cover_image_url"] \
+        == "https://cdn.example/seller-uploaded.jpg"
+
+
+def _set_stores(listing_id, *, media, column):
+    conn = db.connect()
+    try:
+        conn.execute(
+            "UPDATE marketplace_listings SET listing_metadata_json=?, cover_image_url=? "
+            "WHERE id=?",
+            (media if isinstance(media, str)
+             else json.dumps({"source": "dropship", "media": media}),
+             column, listing_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def test_when_the_two_stores_disagree_the_merchant_sees_their_own_media(provider):
+    """Which store wins, asserted rather than assumed.
+
+    Every writer in this package keeps the column and the metadata equal, so a
+    reorder test cannot tell the two orderings of the fallback apart -- both
+    answer the same thing. The case that separates them only arises when an
+    outside writer moves one store without the other, which is exactly the
+    ``bot.py`` seller-route shape this fallback exists for.
+
+    The metadata has to win. It is the list ``get_draft`` returns as ``media``,
+    so preferring the column would let one payload's own two fields contradict
+    each other: a cover that is not the first picture in the gallery beside it.
+    """
+    listing_id = sellable(provider)
+    ours = draft_of(listing_id)["media"]
+    assert len(ours) > 1, "fixture needs more than one image"
+    _set_stores(listing_id, media=ours, column="https://cdn.example/someone-elses.jpg")
+
+    detail = draft_of(listing_id)
+    assert detail["cover_image_url"] == detail["media"][0] == ours[0]
+    assert _listed(listing_id)["cover_image_url"] == ours[0]
+
+
+@pytest.mark.parametrize("column", ["", "   ", "\n\t ", None])
+def test_a_column_that_holds_no_usable_url_is_not_a_picture(provider, column):
+    # `None` is the only honest answer for a product with no image, and a
+    # fallback that ends in whatever the column happens to contain reports every
+    # product as having one. The empty string is not hypothetical: it is the
+    # state `scripts/backfill_dropship_cover_image.py` COALESCEs for, so it is
+    # what production rows actually hold.
+    #
+    # Only strings and NULL are listed. The column is declared TEXT, so SQLite's
+    # affinity turns an integer 0 into '0' on the way in and Postgres refuses it
+    # outright -- a non-string is not a state this reader can be handed, and a
+    # case for it would be asserting about something that cannot happen.
+    listing_id = sellable(provider)
+    _set_stores(listing_id, media=[], column=column)
+    assert _listed(listing_id)["cover_image_url"] is None
+    assert draft_of(listing_id)["cover_image_url"] is None
+
+
+def test_one_unreadable_metadata_blob_does_not_take_down_the_whole_list(provider):
+    # `_media_of` swallows a bad blob and reports "no media". That is a load
+    # bearing decision, not defensiveness: this read is a *list*, so raising
+    # would mean one corrupt row blanking every other product the merchant has.
+    # The column still answers, which is the point of having two stores.
+    listing_id = sellable(provider)
+    other = sellable(provider, pid="PID-2")
+    _set_stores(listing_id, media="{not json at all",
+                column="https://cdn.example/still-here.jpg")
+
+    assert _listed(listing_id)["cover_image_url"] == "https://cdn.example/still-here.jpg"
+    assert _listed(other)["cover_image_url"], "a neighbour lost its cover to a bad blob"
+    assert draft_of(listing_id)["media"] == []
+
+
+def test_a_non_url_entry_in_the_media_list_is_not_offered_as_the_cover(provider):
+    # A JSON null or a number in the media array would reach the renderer as the
+    # cover and draw nothing, while every check that only asks "is media
+    # non-empty" reports the product as having pictures.
+    listing_id = sellable(provider)
+    real = draft_of(listing_id)["media"][0]
+    _set_stores(listing_id, media=[None, 7, real], column=None)
+
+    assert draft_of(listing_id)["media"] == [real]
+    assert _listed(listing_id)["cover_image_url"] == real
+    assert draft_of(listing_id)["cover_image_url"] == real
+
+
+def test_the_products_list_does_not_ship_the_raw_metadata_blob(provider):
+    # The metadata is selected now so the list can answer the cover question. It
+    # is a merchant-scoped internal store and no tile needs it, so it must not
+    # leave the function -- the row dict is what the route serialises verbatim.
+    listing_id = sellable(provider)
+    assert "listing_metadata_json" not in _listed(listing_id)
+
+
+def test_the_list_reports_no_cover_only_when_there_is_none(provider):
+    # A fallback chain that ends in something non-empty would report every
+    # product as having a picture, which is the same lie as reporting none.
+    listing_id = sellable(provider)
+    conn = db.connect()
+    try:
+        conn.execute(
+            "UPDATE marketplace_listings SET listing_metadata_json=?, cover_image_url=NULL "
+            "WHERE id=?", (json.dumps({"source": "dropship", "media": []}), listing_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+    assert _listed(listing_id)["cover_image_url"] is None
+    assert draft_of(listing_id)["cover_image_url"] is None
+
+
 def test_the_published_label_charges_exactly_what_the_merchant_set(provider):
     """The contract between this package and the monolith's checkout parser.
 

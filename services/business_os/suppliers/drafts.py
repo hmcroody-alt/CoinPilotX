@@ -133,6 +133,39 @@ def _media_of(listing):
     return [m for m in (media or []) if isinstance(m, str)]
 
 
+def _cover_of(listing):
+    """The one answer to "does this product have a picture", for readers only.
+
+    Two stores hold that fact and they are written by different people.
+    ``listing_metadata_json.media`` is the merchant's ordered list and is the
+    store this package owns -- import, edit and publish all write it. The
+    ``cover_image_url`` column is what every buyer surface renders, and it has
+    writers outside this package: ``bot.py``'s seller listing-update route sets
+    it from ``marketplace_product_media`` rows while writing the metadata blob
+    from a separately validated payload, so the two can disagree for a listing
+    that is both dropshipped and seller-owned.
+
+    Preferring the metadata keeps the detail screen answering exactly what it
+    answered before; falling back to the column means a listing whose media
+    lives only in the other store still shows a picture instead of a blank
+    tile. ``None`` is reserved for a product that genuinely has no image.
+
+    This is deliberately not used by the writers. What to *store* and what to
+    *show* are different questions, and answering both with one function is how
+    a variable ends up with two meanings.
+    """
+    media = _media_of(listing)
+    if media:
+        return media[0]
+    # Stripped, because a whitespace-only column is not a URL. It draws a broken
+    # image everywhere and passes every "is the cover set" check ever written --
+    # including the COALESCE in `scripts/backfill_dropship_cover_image.py`, which
+    # only recognises the empty string.
+    column = listing.get("cover_image_url")
+    column = column.strip() if isinstance(column, str) else ""
+    return column or None
+
+
 def _retail_of(variant):
     return variant.get("price_cents")
 
@@ -192,7 +225,7 @@ def get_draft(business_id, store_id, actor_user_id, connection_id, listing_id, *
         "category": listing.get("category"),
         "currency": listing.get("currency"),
         "media": media,
-        "cover_image_url": media[0] if media else None,
+        "cover_image_url": _cover_of(listing),
         "variants": priced,
         "supplier": {
             "provider": source.get("provider"),
@@ -620,9 +653,12 @@ def publish(business_id, store_id, actor_user_id, connection_id, listing_id, *, 
         label = _checkout_price_label(offered[0]["retail_cents"],
                                       listing.get("currency"))
         # `_validate` has just established `media` is non-empty. `media[0]` is the
-        # cover by this package's own definition -- `get_draft` reports exactly
-        # this expression as `cover_image_url` -- so nothing is being chosen on
-        # the merchant's behalf here either.
+        # cover by this package's own definition, and it is what `_cover_of`
+        # answers for a listing with media -- so nothing is being chosen on the
+        # merchant's behalf here either. This does *not* go through `_cover_of`:
+        # that function exists to reconcile two stores for a reader, and a writer
+        # reconciling with the store it is about to overwrite would preserve
+        # whatever stale value was already there.
         cover = media[0]
         cur.execute(
             "UPDATE marketplace_listings SET status='published', quantity=?, "
@@ -684,10 +720,23 @@ def list_drafts(business_id, store_id, actor_user_id, connection_id, *,
         cur = conn.cursor()
         cur.execute(
             "SELECT l.id, l.title, l.status, l.approval_status, l.currency, "
-            "l.cover_image_url, l.updated_at, s.provider, s.sync_state, "
+            "l.cover_image_url, l.listing_metadata_json, l.updated_at, "
+            "s.provider, s.sync_state, "
             "s.supplier_cost_cents, s.provider_product_id " + source +
             " ORDER BY l.id DESC LIMIT ?", tuple(params) + (limit,))
-        rows = [dict(row) for row in cur.fetchall()]
+        rows = []
+        for row in cur.fetchall():
+            row = dict(row)
+            # The list tile and the detail screen have to agree about the cover,
+            # so they have to ask the same question. This read used to take the
+            # column raw while `get_draft` derived it from the metadata media,
+            # which meant a product with five photos could open from a blank
+            # tile. The metadata blob is selected only to answer that question
+            # and is dropped before the row leaves: it is a merchant-scoped
+            # internal store and nothing on this list needs it.
+            row["cover_image_url"] = _cover_of(row)
+            row.pop("listing_metadata_json", None)
+            rows.append(row)
         # `count` is how many match, not how many were just returned. It used to
         # be len(rows) -- computed after the LIMIT -- which made it a restatement
         # of the page size rather than a measurement of anything. The hub tile

@@ -362,9 +362,12 @@ def test_import_persists_the_cover_image_on_the_listing_row(provider):
 
 
 def test_the_imported_products_list_shows_a_cover_image(provider):
-    # The assertion that actually matches what the merchant sees. list_drafts
-    # selects l.cover_image_url straight from the column, so this fails for as
-    # long as the import path leaves it NULL -- no matter what get_draft says.
+    # The assertion that actually matches what the merchant sees. `list_drafts`
+    # now falls back to the metadata media when the column is empty, so this no
+    # longer doubles as the column's guard -- the test above is the one that
+    # fails if `_insert_listing` stops writing `cover_image_url`. What this one
+    # still defends is the surface: whatever the import wrote, the products list
+    # must be able to find it.
     provider.add(cj_product("PID-1"))
     add_to_cart("PID-1")
     run_import()
