@@ -18,16 +18,26 @@ The three that are not hypothetical happened here:
   Anthropic environment — a library, a future contributor, a copied snippet —
   gets that tier instead of the one the privacy matrix believes is in use.
 
-  Nine chat calls in six modules go straight to a vendor's API, with their own
+  Nine chat calls in six modules went straight to a vendor's API, with their own
   model defaults, outside the router entirely — including a second provider
-  router in `services/pulse_ai_provider_router.py` that reimplements five
-  adapters. This was found by writing the check, not before it. The
-  consequences are the ones every control here assumes away: their spend is
-  invisible to the ledger, so a budget is a budget over part of the spend;
+  router in `services/pulse_ai_provider_router.py` that reimplemented five
+  adapters and three transports. This was found by writing the check, not before
+  it. The consequences are the ones every control here assumes away: their spend
+  is invisible to the ledger, so a budget is a budget over part of the spend;
   their failures never reach the breaker, so they keep paying full timeouts
   into a provider the router has already rested; and nothing classifies what
   they send, so a user's pasted message being screened for fraud reaches
   OpenAI without a privacy ceiling ever being consulted.
+
+  Two are left, in `services/scam_shield.py` and
+  `services/telegram_text_router.py`. The count is kept here rather than in a
+  commit message because it is the number this check exists to drive to zero,
+  and a stale "nine" reads as either a fixed problem or an unfixed one depending
+  on which the reader is hoping for. The second router is gone: it now grounds
+  and verifies, and delegates execution, which is why both of its
+  `PULSE_AI_*_MODEL` defaults stopped appearing below — they were the pair that
+  disagreed with `undx_router.PROVIDERS` about Claude and Gemini, naming two
+  models that had been retired upstream and were 404ing on every request.
 
 Two kinds of check, kept apart on purpose
 -----------------------------------------

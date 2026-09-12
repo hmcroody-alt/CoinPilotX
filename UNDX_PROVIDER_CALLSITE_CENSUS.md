@@ -57,7 +57,7 @@ Seven distinct call expressions across five modules, carrying ten URL literals, 
 Each one is outside the cost ledger, the circuit breaker, provider health, and the privacy
 ceilings.
 
-**Five remain.** The census is kept as found and annotated with status, rather than shrunk
+**Two remain.** The census is kept as found and annotated with status, rather than shrunk
 as sites are migrated: a table that only lists what is still broken cannot answer "was this
 ever a direct call, and when did it stop being one", which is the question an incident
 review asks.
@@ -68,9 +68,9 @@ review asks.
 | U2 | ~~`services/intelligence.py:50`~~ | `assistant_response` | — | CONFIDENTIAL | *per caller* | **MIGRATED** |
 | U3 | `services/scam_shield.py:184` | `_openai_assessment` | 185 | CONFIDENTIAL | SCAM_SHIELD | pending |
 | U4 | `services/telegram_text_router.py:121` | `answer_telegram_with_openai` | 122 | CONFIDENTIAL | TELEGRAM | pending |
-| U5 | `services/pulse_ai_provider_router.py:264` | `_post_openai_compatible` | 251, 253, **258**, 260 | CONFIDENTIAL | GENERAL | pending |
-| U6 | `services/pulse_ai_provider_router.py:282` | `_post_anthropic` | 283 | CONFIDENTIAL | GENERAL | pending |
-| U7 | `services/pulse_ai_provider_router.py:312` | `_post_gemini` | 313 | CONFIDENTIAL | GENERAL | pending |
+| U5 | ~~`services/pulse_ai_provider_router.py:264`~~ | `_post_openai_compatible` | — | CONFIDENTIAL | **MESSAGING** | **MIGRATED** |
+| U6 | ~~`services/pulse_ai_provider_router.py:282`~~ | `_post_anthropic` | — | CONFIDENTIAL | **MESSAGING** | **MIGRATED** |
+| U7 | ~~`services/pulse_ai_provider_router.py:312`~~ | `_post_gemini` | — | CONFIDENTIAL | **MESSAGING** | **MIGRATED** |
 
 Privacy classes are assigned by what the prompt actually carries, not by what would be
 convenient to route (§4). U1 is PUBLIC because the payload is public scoreboard data and a
@@ -141,6 +141,65 @@ for.** Four things found at its call sites:
   only". Its logging was fixed: it used to log "OpenAI key loaded" and then "OpenAI response
   success", which claimed OpenAI had answered whenever the key merely existed.
 
+**U5-U7's domain was also wrong when first written, for the same reason U1's was.** The
+table said GENERAL, read off the payload: the function takes a system prompt and a message
+and looks like generic chat. Its one production caller is
+`services/pulse_ai_service.py`'s messenger turn, so the provenance is MESSAGING, and that is
+what `MESSENGER_CALL_DOMAIN` now declares. Twice now a content-derived domain has been
+wrong and a caller-derived one right; the rule in `services/undx_call_domain.py` is not a
+style preference.
+
+U5-U7's migration is covered by `tests/test_pulse_ai_provider_reconciliation.py`
+(60 tests, 47 subtests) and proven by
+`scripts/undx_pulse_ai_provider_mutation_check.py` (60 mutations, 4 of which must stay
+green). The module now performs no HTTP, reads no provider credential, and names no vendor
+endpoint or model; what remains of it is the grounding and the two verification seams from
+finding U-e, sitting above a single call into `undx_router.route_structured_request`.
+
+Two of those mutations survived the first run, and both named a real hole:
+
+* Rebuilding `PROVIDER_ORDER = ["openai", "claude", "gemini"]` at module scope survived,
+  because a scan of string literals cannot tell a resurrected provider table from
+  `_task_preference`'s ordering hints — those names legitimately appear in both. Closed with
+  a structural scan for a *module-level* collection of provider names, which is what a table
+  is and what a function-local list is not.
+* Reading `OPENAI_API_KEY` survived, because this module reads every variable through its own
+  `_env_text` helper and `tests/undx_source_probe.py`'s `environment_reads` only understood
+  `os.getenv` at the call site. Three absence assertions were therefore measuring nothing at
+  all. Closed in the probe, by *detecting* env wrappers — a function that forwards its own
+  first parameter to `os.getenv` — rather than by naming `_env_text` in a test, so a second
+  wrapper added later is covered without anyone having to remember that a test depends on it.
+
+**Recorded while migrating U5-U7.** Five things found that nobody asked about:
+
+* **`route_structured_request` had no way to carry a conversation.** It hardcoded
+  `history = []`. Every adapter in `CALLERS` already accepted history positionally, so the
+  capability was present and unreachable — a caller with prior turns could not be migrated
+  without silently amnesiac replies. Fixed by threading a keyword-only `history=None`;
+  defaulting to `None` keeps every existing call byte-identical. The caps that stop this
+  being a way to smuggle an unbounded prompt past a token budget live in each adapter, not in
+  `route_structured_request`, because the normalisation is dialect-specific (Gemini renames
+  `assistant` to `model`). A test that asserts those caps against a fake `CALLERS` entry
+  passes while measuring nothing — which is how the first draft of the protection test failed
+  twice against correct code.
+* **The ledger stored two spellings of the same provider.** The old module wrote display
+  labels (`"Meta Muse"`) where the router writes keys (`"meta"`), and labels do not lowercase
+  into keys. The usage dashboard does `GROUP BY provider`, so one provider would have shown up
+  as two rows. `_provider_key` translates through `undx_router.PROVIDERS` rather than calling
+  `.lower()`.
+* **Per-attempt latency does not exist on the router's side of the boundary.** The old
+  module timed each attempt; the router reports one total. `_translate_attempts` therefore
+  records the total once rather than attributing it to every attempt — a plausible-looking
+  lie in a column somebody will eventually average is worse than a gap.
+* **The `name in known` typo filter in `configured_providers_for_task` is load-bearing in a
+  way that reads like tidiness.** `undx_router._api_key` raises `KeyError` for a name
+  `PROVIDERS` does not have, and the comprehension calls it on everything that survives the
+  filter. So one transposed character in `PULSE_AI_PROVIDER_ORDER` — a variable an operator
+  edits during an incident — does not degrade the ordering, it throws out of the messenger
+  turn and UNDX stops answering at all.
+* `services/undx_capability_planner.py:468` calls `route_structured_request` with no
+  `privacy_class`. That is a §4 gap, found here, not introduced here, and not fixed here.
+
 **Finding U-a — the detector misses `pulse_ai_provider_router.py:258`.**
 `scripts/undx_config_drift.py` reports nine unrouted chat calls and lines 251, 253, 260,
 283 and 313 in this file. It does not report 258:
@@ -156,6 +215,14 @@ chat endpoint in the repo that an operator can point anywhere with an environmen
 variable, and it is the one the URL-literal detector cannot see. A hostname-based detector
 is structurally blind to exactly the call site that most needs watching. **The true count
 is ten URL literals, not nine.**
+
+**Resolved with U5-U7, but the resolution is a recording obligation rather than a deletion.**
+`UNDX_CANDIDATE` is gone: there is no composed URL and no `UNDX_CANDIDATE_BASE_URL` read left
+in the module, and `test_the_retired_candidate_left_no_pointable_endpoint_behind` asserts the
+absence structurally. What is *not* resolved is the class of bug: a detector that looks for
+hostnames still cannot see `f"{base}/chat/completions"`, and the next self-hosted provider
+someone adds will be invisible to it again. §9's gate has to be structural for this reason,
+and this finding is why.
 
 **Finding U-b — `services/intelligence.py` has five callers, so it is one change point
 worth five.** `assistant_response` is called from `bot.py:30508`, `bot.py:118804`,
@@ -188,6 +255,17 @@ own task-preference ordering (`_task_preference`) that is unrelated to the route
 policy, its own timeout (`PULSE_AI_PROVIDER_TIMEOUT_SECONDS`), and its own fallback loop.
 This is §13's "two routers" in the concrete.
 
+**Resolved, and the disagreement was not cosmetic.** Both of the two models this table
+disagreed about were the *stale* side: `claude-3-5-haiku-latest` and `gemini-1.5-flash` are
+retired upstream and return 404, while `undx_router` held working replacements for both. So
+whenever the messenger turn failed over to Claude or Gemini it failed, fell through to the
+next provider, and the only symptom a user could report was that UNDX felt slow. Two routers
+is not redundancy; it is two answers to the question of which model the product is using,
+and one of them was wrong in production. The module now has no model table, no timeout
+constant and no fallback loop of its own — `undx_router.PROVIDERS` is the authority, which is
+what §26 asks for. `_task_preference` survives as an *ordering hint* that maps onto
+`providers=`; it names no model and grants no permission.
+
 **Finding U-e — the two routers harden identity in different, non-overlapping ways.**
 My first reading of this was wrong and is worth recording, because the correction changes
 what reconciliation means. `undx_router` is *not* missing identity handling: it has
@@ -213,6 +291,16 @@ applied at three call sites because Claude and Gemini use different fields, and 
 test rather than the structure that holds the line." A runtime check like the one
 `prepare_undx_model_request` already performs would close that honestly.
 
+**Resolved by carrying all six guarantees across, not by picking a winner.** All four
+grounding blocks and both verification seams stayed in `services/pulse_ai_provider_router.py`,
+now sitting *above* one call into the router rather than above a fallback loop of its own:
+`prepare_undx_model_request` still fails closed if a required phrase is missing from the
+system prompt, and `undx_identity_violation` still runs on the reply with one regeneration
+attempt and a fixed safe answer. That ordering matters and is asserted: a refusal must not be
+recorded as a provider outage. The module kept the parts that are about *what UNDX is* and
+gave up the parts that are about *which provider answers*, which is the only split that
+leaves one router.
+
 **Finding U-f — `generate_task_response` is dead code held up by a vacuous audit.**
 It has zero production callers. Its docstring justifies its existence by naming content
 translation — and `services/content_translation.py` makes no outbound call at all and does
@@ -227,6 +315,15 @@ The audit substring-matches the function's *name* in the file's source text. It 
 whether or not anything calls it, and it has been passing while the feature it claims to
 verify has no caller. A green audit asserting a dead function exists is worse than no
 audit, because it occupies the space where a real check would go.
+
+**Resolved on the audit's side, and the function was migrated rather than deleted.**
+`scripts/pulsesoc_content_translation_audit.py` now walks the AST for an actual call rather
+than matching a name in the source text, so it can no longer be satisfied by a mention. The
+function itself was routed for the same reason `run_ai_assistant` was in Phase 4: an unrouted
+call site nobody exercises is exactly the one that survives a migration unnoticed, and
+deleting a public name from a module imported by name across `bot.py` is a bigger decision
+than this phase is making. It now goes through the same single seam as the live caller, so if
+it ever acquires one it is already governed.
 
 ## 3. Non-chat AI — governed by nothing, but not chat either
 

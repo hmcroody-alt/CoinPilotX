@@ -1343,6 +1343,7 @@ def route_structured_request(
     providers: list[str] | None = None,
     privacy_class: str | None = None,
     call_domain: str | None = None,
+    history: Any = None,
 ) -> dict[str, Any]:
     """One model turn whose answer is meant to be parsed, not read.
 
@@ -1359,8 +1360,24 @@ def route_structured_request(
     Returns the same envelope shape as :func:`route_undx_request`. It deliberately
     does not parse or validate the text: this function knows about transport, and
     the caller knows what the answer is supposed to mean.
+
+    ``history`` was a hardcoded empty list until Phase 5. That single line was the
+    whole reason a *second* provider router existed in this repo: a caller holding a
+    multi-turn conversation could not express it here, so it grew its own five-provider
+    table, its own model defaults and its own three HTTP transports rather than lose
+    the turns. Every adapter in ``CALLERS`` already took history positionally, so
+    nothing needed inventing — the capability was present and unreachable. Defaulting
+    to ``None`` keeps every existing call byte-identical.
+
+    The value is forwarded to the adapter raw, and each adapter runs it through
+    :func:`clean_history` itself. That is deliberate rather than an omission here: the
+    normalisation is dialect-specific, because Gemini has to rename ``assistant`` to
+    ``model`` and builds ``contents`` instead of ``messages``. So the ten-turn and
+    1800-character caps that stop this parameter being a way to smuggle an unbounded
+    prompt past a token budget are enforced one layer down, in every adapter, and a
+    test that asserts them against a fake ``CALLERS`` entry will pass while measuring
+    nothing.
     """
-    history: list[dict[str, str]] = []
     ordered = [p for p in (providers or []) if p in PROVIDERS and provider_enabled(p)]
     if not ordered:
         ordered = provider_priority(classify_request(user_content)) if router_enabled() \

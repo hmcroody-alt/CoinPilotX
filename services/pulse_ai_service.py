@@ -1134,7 +1134,13 @@ def send_message(user_id: int, payload: dict | None = None) -> dict:
         if search_result and not search_result.get("ok"):
             prompt_messages.insert(1, {"role": "system", "content": search_result.get("message") or "Live search was unavailable; answer with general guidance only and be clear that live facts may have changed."})
         task = "cybersecurity" if safety.get("category") == "cyber" else "web_search" if search_result else route.get("task") or "pulse_ai_messenger"
-        result = pulse_ai_provider_router.generate_response(prompt_messages, correlation_id=correlation_id, task=task)
+        # `user_id` is passed because the provider boundary now delegates execution to
+        # `undx_router`, which attributes spend and logs per user. Omitting it would
+        # bill the busiest chat surface in the product to nobody — the router's cost
+        # ledger would still total correctly and no per-user figure would ever be wrong,
+        # which is the shape of gap nobody notices until someone asks who spent it.
+        result = pulse_ai_provider_router.generate_response(
+            prompt_messages, correlation_id=correlation_id, task=task, user_id=int(user_id))
         _record_provider_events(cur, int(user_id), task, result, correlation_id)
         if result.get("ok"):
             reply = _enforce_undx_reply_identity(result.get("reply") or "", body)

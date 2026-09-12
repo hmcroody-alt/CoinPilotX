@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 
@@ -18,6 +19,26 @@ def require(condition: bool, message: str) -> None:
 
 def text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
+
+
+def _called_names(source: str, function: str) -> set[str]:
+    """Every function name called inside ``function``, from the parsed tree.
+
+    Comments and docstrings are not calls, so this cannot be satisfied — or broken —
+    by writing prose. Raises if the function is missing rather than returning an empty
+    set, because "it calls nothing" and "it is not there" must not look alike to the
+    absence assertion above.
+    """
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == function:
+            names: set[str] = set()
+            for call in (n for n in ast.walk(node) if isinstance(n, ast.Call)):
+                target = call.func
+                names.add(target.id if isinstance(target, ast.Name)
+                          else target.attr if isinstance(target, ast.Attribute) else "")
+            return names
+    raise AssertionError(f"{function} is not defined")
 
 
 def main() -> None:
@@ -40,8 +61,16 @@ def main() -> None:
         require(f'"{content_type}"' in service, f"{content_type} is an allowed translation content type")
 
     require("generate_task_response" in provider, "translation reuses the existing provider pool")
-    task_router = provider[provider.index("def generate_task_response"):]
-    require("_call_provider(config, bounded_messages)" in task_router, "infrastructure translation does not inject an assistant identity")
+    # Checked against the parsed function body rather than as a substring of the text
+    # from `def generate_task_response` onward. The old form pinned the literal
+    # `_call_provider(config, bounded_messages)`, which broke the moment execution moved
+    # into `undx_router` even though the property it was protecting was untouched — and,
+    # worse, a substring check over that slice fires on the docstring, so the cheapest
+    # way to make it pass would have been to stop explaining the rule.
+    called = _called_names(provider, "generate_task_response")
+    require("_route" in called, "infrastructure translation reaches a model only through the router")
+    require("prepare_undx_model_request" not in called,
+            "infrastructure translation does not wear the UNDX assistant identity")
     require('@webhook_app.route("/api/pulse/translations", methods=["POST"])' in routes, "authenticated translation route is registered")
     require('api_account_user()' in routes[routes.index('def api_pulse_translate_content'):], "translation routes require an authenticated account")
     require("translation_unavailable" in routes, "provider failures return a curated service error")

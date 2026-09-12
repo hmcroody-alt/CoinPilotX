@@ -957,16 +957,27 @@ FOUNDATION: tuple[Responsibility, ...] = (
         summary="Choosing and calling a model provider, with fallback and identity enforcement.",
         ownership=Ownership.OWNED,
         owners=(
+            ("undx_router", "route_structured_request"),
             ("services.pulse_ai_provider_router", "generate_response"),
             ("services.pulse_ai_provider_router", "configured_providers_for_task"),
             ("services.pulse_ai_provider_router", "prepare_undx_model_request"),
             ("services.pulse_ai_provider_router", "undx_identity_violation"),
         ),
         note=(
-            "Outside the ``undx_*`` namespace, which is why it was easy to miss when "
-            "cataloguing. ``prepare_undx_model_request`` and ``undx_identity_violation`` "
-            "put the identity guarantee at the provider boundary so it holds for every "
-            "provider rather than once per call site."
+            "Split deliberately, and the split is the §13 consolidation: ``undx_router`` "
+            "chooses and calls — provider order, keys, failover, privacy ceiling, spend "
+            "budget, circuit breaker, usage ledger — and ``pulse_ai_provider_router`` "
+            "grounds and verifies. It used to do both, with its own five-provider table "
+            "and its own model defaults, and the two tables disagreed: this one still "
+            "named ``claude-3-5-haiku-latest`` and ``gemini-1.5-flash`` long after both "
+            "were retired upstream and 404ing. Two routers is not redundancy, it is two "
+            "answers to which model the product is using.\n\n"
+            "``prepare_undx_model_request`` and ``undx_identity_violation`` stay outside "
+            "the ``undx_*`` namespace, which is why this entry was easy to miss when "
+            "cataloguing. They put the identity guarantee at the provider boundary so it "
+            "holds for every provider rather than once per call site — and grounding a "
+            "request is not transport, which is why consolidating execution did not "
+            "absorb them."
         ),
     ),
     Responsibility(

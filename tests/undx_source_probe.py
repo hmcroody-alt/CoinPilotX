@@ -86,14 +86,64 @@ def attribute_calls(tree: ast.AST) -> list[str]:
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)]
 
 
+def env_wrappers(tree: ast.AST) -> set[str]:
+    """Functions in this tree that are themselves an environment read.
+
+    A function qualifies when it forwards its own first parameter to `os.getenv` or
+    `os.environ.get` — `def _env_text(key, default=""): return os.getenv(key, default)`.
+    Calling one *is* reading an environment variable, and the name read is the literal
+    the caller passed in.
+
+    This exists because :func:`environment_reads` was silently blind to exactly that
+    shape. `services/pulse_ai_provider_router.py` reads three variables and every one of
+    them goes through a local `_env_text`, so the probe reported zero — which made three
+    absence assertions in `tests/test_pulse_ai_provider_reconciliation.py` pass while
+    measuring nothing at all. Restoring an `OPENAI_API_KEY` read through the wrapper
+    would have been invisible to the test written to forbid it.
+
+    Detected rather than declared, so a second wrapper added later is covered without
+    anyone having to remember that a test depends on it.
+    """
+    wrappers: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        positional = [arg.arg for arg in node.args.posonlyargs + node.args.args]
+        if not positional:
+            continue
+        first = positional[0]
+        for call in (n for n in ast.walk(node) if isinstance(n, ast.Call)):
+            target = call.func
+            if not isinstance(target, ast.Attribute):
+                continue
+            reads_env = target.attr == "getenv" or (
+                target.attr == "get" and isinstance(target.value, ast.Attribute)
+                and target.value.attr == "environ")
+            if reads_env and call.args and isinstance(call.args[0], ast.Name) \
+                    and call.args[0].id == first:
+                wrappers.add(node.name)
+                break
+    return wrappers
+
+
 def environment_reads(tree: ast.AST) -> list[str]:
     """Names passed to `os.getenv` / `os.environ.get` / `os.environ[...]`.
+
+    Also follows the tree's own environment wrappers — see :func:`env_wrappers` — so a
+    module that reads everything through a local helper is not reported as reading
+    nothing.
 
     Returns the names rather than a boolean so a failure message can say *which*
     variable came back, which is the difference between a one-line fix and a hunt.
     """
     names: list[str] = []
+    wrappers = env_wrappers(tree)
     for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) \
+                and node.func.id in wrappers and node.args \
+                and isinstance(node.args[0], ast.Constant):
+            names.append(str(node.args[0].value))
+            continue
         if isinstance(node, ast.Subscript):
             value = node.value
             if isinstance(value, ast.Attribute) and value.attr == "environ" \
