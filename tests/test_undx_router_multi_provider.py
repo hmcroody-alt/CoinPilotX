@@ -29,6 +29,7 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import undx_router  # noqa: E402
+from services import undx_health  # noqa: E402
 
 
 class _FakeResponse:
@@ -235,9 +236,9 @@ class KillSwitchTest(unittest.TestCase):
     def test_health_distinguishes_switched_off_from_never_configured(self):
         """They call for opposite fixes, so they must not share one label."""
         with _env(META_MODEL_API_KEY="k" * 48, META_MUSE_ENABLED="false"):
-            self.assertEqual(undx_router.provider_health("meta"), "Disabled")
+            self.assertEqual(undx_router.provider_configuration("meta"), "Disabled")
         with _env(META_MUSE_ENABLED="true"):
-            self.assertEqual(undx_router.provider_health("meta"), "Missing API Key")
+            self.assertEqual(undx_router.provider_configuration("meta"), "Missing API Key")
 
 
 class FreshnessRoutingTest(unittest.TestCase):
@@ -405,7 +406,7 @@ class MalformedCredentialTest(unittest.TestCase):
     def test_health_says_malformed_rather_than_missing(self):
         """Otherwise the fix looks like "set the variable" - and it is set."""
         with _env(GROQ_AI_API=self.BLOB):
-            self.assertEqual(undx_router.provider_health("groq"), "Malformed API Key")
+            self.assertEqual(undx_router.provider_configuration("groq"), "Malformed API Key")
 
     def test_a_key_embedded_in_a_larger_value_is_redacted_from_logs(self):
         with _env(GROQ_AI_API=self.BLOB):
@@ -435,7 +436,7 @@ class MalformedCredentialTest(unittest.TestCase):
     def test_a_well_formed_key_still_works(self):
         with _env(GROQ_AI_API="gsk_" + "z" * 48):
             self.assertTrue(undx_router._api_key("groq"))
-            self.assertEqual(undx_router.provider_health("groq"), "Online")
+            self.assertEqual(undx_router.provider_configuration("groq"), "Online")
 
 
 class ClaudeEndpointTest(unittest.TestCase):
@@ -924,7 +925,7 @@ class CircuitBreakerTest(unittest.TestCase):
         health = undx_router.provider_runtime_health()["meta"]
         self.assertEqual(health["failures"], 20)
         self.assertEqual(health["consecutive_failures"], 0)
-        self.assertEqual(health["state"], "closed")
+        self.assertEqual(health["circuit"], "closed")
 
     def test_a_recovery_reports_itself(self):
         self._fail(times=undx_router.BREAKER_THRESHOLD)
@@ -951,9 +952,8 @@ class CircuitBreakerTest(unittest.TestCase):
 
     def _open_and_expire(self, provider="meta"):
         self._fail(provider=provider, times=undx_router.BREAKER_THRESHOLD)
-        with undx_router._HEALTH_LOCK:
-            undx_router._health_state[provider]["opened_at"] -= (
-                undx_router.BREAKER_COOLDOWN_SECONDS + 1)
+        undx_health.rewind_for_tests(
+            provider, undx_router.BREAKER_COOLDOWN_SECONDS + 1, ("opened_at",))
 
     def test_the_expired_cooldown_admits_exactly_one_caller(self):
         """Closing outright on expiry would hand the whole herd to a dead provider.
@@ -997,9 +997,8 @@ class CircuitBreakerTest(unittest.TestCase):
         self.assertFalse(undx_router._breaker_should_skip("meta"))
         self.assertTrue(undx_router._breaker_should_skip("meta"))
 
-        with undx_router._HEALTH_LOCK:
-            undx_router._health_state["meta"]["probing_since"] -= (
-                undx_router._probe_timeout_seconds() + 1)
+        undx_health.rewind_for_tests(
+            "meta", undx_router._probe_timeout_seconds() + 1, ("probe_started_at",))
         self.assertFalse(undx_router._breaker_should_skip("meta"))
 
     def test_the_probe_deadline_clears_the_longest_provider_timeout(self):
@@ -1018,7 +1017,7 @@ class CircuitBreakerTest(unittest.TestCase):
         self._open_and_expire()
         with _env(META_MODEL_API_KEY="k" * 40, META_MUSE_ENABLED="true"):
             for _ in range(20):
-                self.assertEqual(undx_router.provider_health("meta"), "Circuit Open")
+                self.assertEqual(undx_router.provider_configuration("meta"), "Circuit Open")
         self.assertFalse(undx_router.provider_runtime_health()["meta"]["probing"])
         self.assertFalse(undx_router._breaker_should_skip("meta"))
 
@@ -1026,11 +1025,11 @@ class CircuitBreakerTest(unittest.TestCase):
         """A rested provider whose key is also missing is a key problem first."""
         self._fail(times=undx_router.BREAKER_THRESHOLD)
         with _env():
-            self.assertEqual(undx_router.provider_health("meta"), "Missing API Key")
+            self.assertEqual(undx_router.provider_configuration("meta"), "Missing API Key")
         with _env(META_MODEL_API_KEY="k" * 40, META_MUSE_ENABLED="false"):
-            self.assertEqual(undx_router.provider_health("meta"), "Disabled")
+            self.assertEqual(undx_router.provider_configuration("meta"), "Disabled")
         with _env(META_MODEL_API_KEY="k" * 40, META_MUSE_ENABLED="true"):
-            self.assertEqual(undx_router.provider_health("meta"), "Circuit Open")
+            self.assertEqual(undx_router.provider_configuration("meta"), "Circuit Open")
 
     # -- behaviour through the router --------------------------------------
 
@@ -1079,7 +1078,7 @@ class CircuitBreakerTest(unittest.TestCase):
                     "t", "sys", "hi", providers=["meta"], max_tokens=256)
 
         health = undx_router.provider_runtime_health()["meta"]
-        self.assertEqual(health["state"], "open")
+        self.assertEqual(health["circuit"], "open")
         self.assertEqual(health["last_status"], "request_failed")
 
     def test_a_success_through_the_router_closes_the_breaker(self):
@@ -1092,7 +1091,7 @@ class CircuitBreakerTest(unittest.TestCase):
                 "t", "sys", "hi", providers=["meta"], max_tokens=256)
 
         self.assertTrue(result["ok"])
-        self.assertEqual(undx_router.provider_runtime_health()["meta"]["state"], "closed")
+        self.assertEqual(undx_router.provider_runtime_health()["meta"]["circuit"], "closed")
 
     def test_the_recorded_error_is_the_redacted_one(self):
         """Runtime health is read by operators and may be surfaced. It is not a log exemption.

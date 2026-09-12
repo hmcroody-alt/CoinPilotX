@@ -16,7 +16,7 @@ from typing import Any
 
 import requests
 
-from services import undx_cost, undx_privacy
+from services import undx_cost, undx_health, undx_privacy
 
 
 DEFAULT_UNDX_SYSTEM_PROMPT = (
@@ -362,7 +362,20 @@ def provider_status() -> dict[str, bool]:
     return {provider: bool(_api_key(provider)) for provider in PROVIDERS}
 
 
-def provider_health(provider: str, routing_available: bool = True) -> str:
+def provider_configuration(provider: str, routing_available: bool = True) -> str:
+    """Whether this provider *could* be called: key present, switch on, not rested.
+
+    This used to be called `provider_health`, and the name was the bug. It
+    answers a question about configuration, and Claude and Gemini both answered
+    "Online" here for the entire period they were returning 404 to every single
+    request — because a key was present and no switch was off. Nothing about
+    that string was ever a claim that the provider works.
+
+    It keeps its old return values because they are the right answers to the
+    question it actually asks, and because routing availability is decided from
+    them. The *health* question now has its own function and its own vocabulary;
+    see `provider_health()`.
+    """
     provider = _normalize_provider(provider)
     if not _api_key(provider):
         # "Set, but not to something sendable" is a different problem from "not
@@ -371,13 +384,42 @@ def provider_health(provider: str, routing_available: bool = True) -> str:
         return "Malformed API Key" if _raw_api_key(provider) else "Missing API Key"
     if not provider_enabled(provider):
         return "Disabled"
-    # Configuration is not health. Claude and Gemini both read "Online" here
-    # throughout the entire period they were returning 404 to every request,
-    # because a key was present and no switch was off. If the breaker has taken
-    # a provider out, say so - that is the state an operator needs.
     if _breaker_is_open(provider):
         return "Circuit Open"
     return "Online" if routing_available else "Offline"
+
+
+def provider_health(provider: str, routing_available: bool = True) -> str:
+    """The observed state of a provider, as one of `undx_health.HEALTH_STATES`.
+
+    Never returns a generic "Online" for a provider that has never answered.
+    A provider that is configured and untried is `UNKNOWN`, which is the true
+    state of a provider nobody has called and the answer this function could
+    not previously give.
+
+    Configuration faults still surface here, because a provider with no usable
+    key is not going to become healthy by being called: a missing or malformed
+    key reads `AUTH_FAILED`, and a provider switched off or unreachable for
+    routing reads `UNAVAILABLE`. Both are true statements about whether the
+    provider can serve a request, which is what a caller reads this for.
+    """
+    provider = _normalize_provider(provider)
+    if not _api_key(provider):
+        return undx_health.AUTH_FAILED
+    if not provider_enabled(provider) or not routing_available:
+        return undx_health.UNAVAILABLE
+    return provider_health_state(provider)
+
+
+def provider_available(provider: str, routing_available: bool = True) -> bool:
+    """Can this request be routed here right now?
+
+    Split out from the status string so that no caller has to compare against a
+    literal to make a routing decision. `== "Online"` was doing that job in
+    `council_agent_provider_plan`, which meant changing the wording of a status
+    would silently change routing.
+    """
+    return provider_configuration(provider, routing_available) == "Online"
 
 
 def provider_label(provider: str) -> str:
@@ -395,17 +437,21 @@ def council_agent_provider_plan(message: str = "") -> dict[str, Any]:
     status = provider_status()
     classification = classify_request(message)
     routing_available = True
-    openai_health = provider_health("openai", routing_available)
-    openai_available = openai_health == "Online"
+    # Configuration, not health: this decides whether a provider *may* be
+    # called, and a provider that has simply never been called must still be
+    # routable. The observed state travels alongside as `provider_health`, so
+    # the surface reports both without either one deciding the other.
+    openai_health = provider_configuration("openai", routing_available)
+    openai_available = provider_available("openai", routing_available)
     agents: list[dict[str, Any]] = []
 
     for agent in COUNCIL_AGENT_PROVIDER_MAP:
         preferred = _normalize_provider(agent["preferred_provider"])
-        preferred_health = provider_health(preferred, routing_available)
-        preferred_available = preferred_health == "Online"
+        preferred_health = provider_configuration(preferred, routing_available)
+        preferred_available = provider_available(preferred, routing_available)
         selected = preferred if preferred_available else "openai"
         fallback_used = selected != preferred
-        selected_health = provider_health(selected, routing_available)
+        selected_health = provider_configuration(selected, routing_available)
         if fallback_used:
             fallback_status = "Fallback Active" if openai_available else openai_health
             display_status = "Fallback Active" if openai_available else preferred_health
@@ -421,8 +467,13 @@ def council_agent_provider_plan(message: str = "") -> dict[str, Any]:
                 "preferred_provider": preferred,
                 "preferred_provider_label": provider_label(preferred),
                 "preferred_provider_status": preferred_health,
+                # Observed, not configured. `UNKNOWN` here beside an "Online"
+                # status is not a contradiction — it is the pair of facts that
+                # were previously collapsed into one reassuring word.
+                "preferred_provider_health": provider_health_state(preferred),
                 "selected_provider": selected,
                 "selected_provider_label": provider_label(selected),
+                "selected_provider_health": provider_health_state(selected),
                 "provider_status": display_status,
                 "selected_provider_status": selected_health,
                 "fallback_provider": "openai",
@@ -912,16 +963,23 @@ def reset_spend() -> None:
 
 
 # ------------------------------------------------------------- circuit breaker
+#
+# The state itself lives in `services.undx_health`, shared by every worker.
+# It used to live in a module-level dict here, which made "three consecutive
+# failures" mean up to twenty-seven across four gunicorn workers and five
+# background workers, and gave each of the nine its own half-open probe. The
+# functions below are the router's side of that: the call sites, the
+# thresholds, and the probe timeout, which is the one quantity that depends on
+# provider configuration and so cannot live in the store module.
 
 #: Consecutive failures before a provider is rested, and for how long.
 #: Deliberately not aggressive: three strikes tolerates the transient upstream
 #: 503s that Gemini demonstrably produces, while still catching a provider that
-#: is genuinely down.
-BREAKER_THRESHOLD = 3
-BREAKER_COOLDOWN_SECONDS = 120
-
-_HEALTH_LOCK = threading.Lock()
-_health_state: dict[str, dict[str, Any]] = {}
+#: is genuinely down. These are the defaults; `UNDX_BREAKER_THRESHOLD` and
+#: `UNDX_BREAKER_COOLDOWN_S` are the live settings, and the constants remain so
+#: that a caller reading them gets the shipped value rather than a stale copy.
+BREAKER_THRESHOLD = undx_health.DEFAULT_BREAKER_THRESHOLD
+BREAKER_COOLDOWN_SECONDS = undx_health.DEFAULT_BREAKER_COOLDOWN_SECONDS
 
 
 def _probe_timeout_seconds() -> float:
@@ -938,57 +996,12 @@ def _probe_timeout_seconds() -> float:
     return max(_timeout(provider, 25) for provider in PROVIDERS) + 15
 
 
-def _health_bucket(provider: str) -> dict[str, Any]:
-    return _health_state.setdefault(
-        provider, {"consecutive_failures": 0, "last_status": "", "last_error": "",
-                   "opened_at": 0.0, "last_success_at": 0.0, "successes": 0, "failures": 0,
-                   "probing": False, "probing_since": 0.0})
-
-
 def _record_provider_success(provider: str) -> None:
-    with _HEALTH_LOCK:
-        bucket = _health_bucket(provider)
-        was_open = bucket["opened_at"] > 0
-        bucket["consecutive_failures"] = 0
-        bucket["opened_at"] = 0.0
-        bucket["probing"] = False
-        bucket["probing_since"] = 0.0
-        bucket["last_status"] = "success"
-        bucket["last_error"] = ""
-        bucket["last_success_at"] = time.time()
-        bucket["successes"] += 1
-    if was_open:
-        logging.warning("UNDX provider recovered provider=%s", provider)
+    undx_health.record_success(provider)
 
 
 def _record_provider_failure(provider: str, status: str, error: str = "") -> None:
-    with _HEALTH_LOCK:
-        bucket = _health_bucket(provider)
-        bucket["consecutive_failures"] += 1
-        bucket["failures"] += 1
-        bucket["last_status"] = status
-        bucket["last_error"] = error[:200]
-        was_probe = bucket["probing"]
-        bucket["probing"] = False
-        bucket["probing_since"] = 0.0
-        if was_probe:
-            # The trial request failed, so the provider is still down. Start the
-            # cooldown again from now instead of leaving the original timestamp,
-            # which is already expired and would admit the next caller instantly.
-            bucket["opened_at"] = time.time()
-        tripped = (bucket["consecutive_failures"] >= BREAKER_THRESHOLD
-                   and bucket["opened_at"] == 0.0)
-        if tripped:
-            bucket["opened_at"] = time.time()
-        count = bucket["consecutive_failures"]
-    if tripped:
-        # Louder than the per-request warning, and the only line that says a
-        # provider is *out*. Claude and Gemini were each dead in production for
-        # an unknown period behind nothing but repeated per-request warnings,
-        # because failover meant every request still returned 200.
-        logging.error(
-            "UNDX provider circuit opened provider=%s consecutive_failures=%s "
-            "last_status=%s cooldown_s=%s", provider, count, status, BREAKER_COOLDOWN_SECONDS)
+    undx_health.record_failure(provider, status, error)
 
 
 def _breaker_is_open(provider: str) -> bool:
@@ -999,71 +1012,54 @@ def _breaker_is_open(provider: str) -> bool:
     the breaker allows, every other caller would go on resting behind a probe
     nobody is going to resolve, and recovery would be delayed by the act of
     looking at the dashboard.
-
-    "Open" here means the breaker took this provider out and has not yet seen it
-    answer - including while the cooldown has expired and a trial is pending.
-    Reporting that as closed would show an operator a provider back in service
-    before anything had confirmed it.
     """
-    with _HEALTH_LOCK:
-        bucket = _health_state.get(provider)
-        return bool(bucket and bucket["opened_at"])
+    return undx_health.is_open(provider)
 
 
 def _breaker_should_skip(provider: str) -> bool:
     """True if this request must not try the provider. Mutates: claims the probe.
 
-    When the cooldown expires the breaker does not simply close. It hands the
-    *first* caller a single trial request and keeps resting everyone else until
-    that trial resolves. Closing outright would let every request that happens to
-    arrive in that instant hit a provider nobody has yet confirmed is back - and
-    on Meta, where `META_MUSE_TIMEOUT_MS` is 60000, each of those pays a full
-    minute before failing over. The herd is the specific harm the breaker exists
-    to prevent, so it must not be reintroduced at the moment of recovery.
+    The probe is claimed in the shared store, so "the first caller" now means
+    the first caller in the deployment rather than the first in each of nine
+    processes. That distinction is the whole point: on Meta, where
+    `META_MUSE_TIMEOUT_MS` is 60000, nine simultaneous trial requests into a
+    provider nobody has confirmed is back cost nine minutes of wall time spread
+    across nine workers, which is the herd the breaker exists to prevent,
+    arriving at the exact moment it was supposed to be preventing it.
     """
-    with _HEALTH_LOCK:
-        bucket = _health_state.get(provider)
-        if not bucket or not bucket["opened_at"]:
-            return False
-        now = time.time()
-        if now - bucket["opened_at"] < BREAKER_COOLDOWN_SECONDS:
-            return True
-        if bucket["probing"] and now - bucket["probing_since"] < _probe_timeout_seconds():
-            return True
-        bucket["probing"] = True
-        bucket["probing_since"] = now
-        return False
+    return undx_health.should_skip(provider, _probe_timeout_seconds())
 
 
 def provider_runtime_health() -> dict[str, dict[str, Any]]:
     """What each provider has actually been doing, as opposed to how it is configured.
 
-    `provider_health()` answers "is there a key and is it switched on", which was
-    true of Claude and Gemini throughout the entire period both were returning
-    404 to every request. This answers the different question.
+    `provider_configuration()` answers "is there a key and is it switched on",
+    which was true of Claude and Gemini throughout the entire period both were
+    returning 404 to every request. This answers the different question, in the
+    vocabulary of `undx_health.HEALTH_STATES`.
+
+    Note the two keys that look redundant and are not: `state` is what the
+    router is doing (`CIRCUIT_OPEN` while a provider is rested) and
+    `underlying_state` is why (`BILLING_FAILED`, which no amount of waiting
+    fixes). `circuit` keeps the older open/closed vocabulary for anything that
+    only wants the breaker position.
     """
-    now = time.time()
-    with _HEALTH_LOCK:
-        out = {}
-        for provider, bucket in _health_state.items():
-            open_for = now - bucket["opened_at"] if bucket["opened_at"] else 0.0
-            out[provider] = {
-                "state": "open" if bucket["opened_at"] else "closed",
-                "probing": bool(bucket["probing"]),
-                "consecutive_failures": bucket["consecutive_failures"],
-                "successes": bucket["successes"],
-                "failures": bucket["failures"],
-                "last_status": bucket["last_status"],
-                "last_error": bucket["last_error"],
-                "cooldown_remaining_s": max(0, int(BREAKER_COOLDOWN_SECONDS - open_for)) if open_for else 0,
-            }
-    return out
+    return undx_health.snapshot()
+
+
+def provider_health_state(provider: str) -> str:
+    """One provider's observed state, as one of `undx_health.HEALTH_STATES`.
+
+    `UNKNOWN` for a provider nothing has called yet — which is the answer that
+    did not exist before, and whose absence is why a never-contacted provider
+    could read as healthy.
+    """
+    return undx_health.state_for(undx_health.read(_normalize_provider(provider)))
 
 
 def reset_provider_health() -> None:
     """Test-only."""
-    with _HEALTH_LOCK:
-        _health_state.clear()
+    undx_health.reset_for_tests()
 
 
 def _openai_compatible(provider: str, endpoint: str, system_prompt: str, message: str, history: Any, timeout: int,
@@ -1353,19 +1349,19 @@ def route_structured_request(
             }
         except requests.Timeout:
             logging.warning("UNDX structured provider timeout user_id=%s provider=%s", user_id, provider)
-            _record_provider_failure(provider, "timeout")
+            _record_provider_failure(provider, undx_health.STATUS_TIMEOUT)
             attempts.append({"provider": config.label, "status": "timeout"})
         except requests.RequestException as exc:
             detail = _safe_error(exc)
             logging.warning("UNDX structured provider request failed provider=%s error=%s",
                             provider, detail)
-            _record_provider_failure(provider, "request_failed", detail)
+            _record_provider_failure(provider, undx_health.classify_failure(exc), detail)
             attempts.append({"provider": config.label, "status": "request_failed"})
         except Exception as exc:  # noqa: BLE001 - a transport fault must stay a typed miss
             detail = _safe_error(exc)
             logging.warning("UNDX structured provider response failed provider=%s error=%s",
                             provider, detail)
-            _record_provider_failure(provider, "response_failed", detail)
+            _record_provider_failure(provider, undx_health.classify_failure(exc), detail)
             attempts.append({"provider": config.label, "status": "response_failed"})
 
     return {
@@ -1480,17 +1476,17 @@ def route_undx_request(user_id: Any, message: str, history: Any = None, system_p
             }
         except requests.Timeout:
             logging.warning("UNDX router provider timeout user_id=%s provider=%s", user_id, provider)
-            _record_provider_failure(provider, "timeout")
+            _record_provider_failure(provider, undx_health.STATUS_TIMEOUT)
             attempts.append({"provider": config.label, "status": "timeout"})
         except requests.RequestException as exc:
             detail = _safe_error(exc)
             logging.warning("UNDX router provider request failed provider=%s error=%s", provider, detail)
-            _record_provider_failure(provider, "request_failed", detail)
+            _record_provider_failure(provider, undx_health.classify_failure(exc), detail)
             attempts.append({"provider": config.label, "status": "request_failed"})
         except Exception as exc:
             detail = _safe_error(exc)
             logging.warning("UNDX router provider response failed provider=%s error=%s", provider, detail)
-            _record_provider_failure(provider, "response_failed", detail)
+            _record_provider_failure(provider, undx_health.classify_failure(exc), detail)
             attempts.append({"provider": config.label, "status": "response_failed"})
 
     if _only(attempts, "privacy_refused"):
