@@ -16,6 +16,8 @@ from typing import Any
 
 import requests
 
+from services import undx_privacy
+
 
 DEFAULT_UNDX_SYSTEM_PROMPT = (
     "You are UNDX Core, the premium intelligence layer inside CoinPlotXAI. "
@@ -563,6 +565,52 @@ def provider_priority(classification: dict[str, Any]) -> list[str]:
         provider for provider in ordered
         if provider in PROVIDERS and provider_enabled(provider)
     ))
+
+
+def _privacy_refusal(provider: str, privacy_class: str | None) -> str:
+    """Empty if this provider may receive this class, else why not.
+
+    Checked inside the routing loop rather than inside `provider_priority`,
+    which looks like the tidier home for it and is the wrong one. Three separate
+    paths decide `ordered`, and only one of them is `provider_priority`:
+
+      * `route_structured_request(providers=["perplexity"])` names providers
+        explicitly and never calls it - that is how the health check works, and
+        it would be how a caller accidentally routed private text to a
+        search-grounded provider.
+      * with `UNDX_ROUTER_ENABLED` off, the plan collapses to
+        `[default_provider()]` without consulting it either.
+
+    A control that only covers the path its author had in mind is not a control.
+    The loop is the one place every request passes through on its way to
+    `CALLERS[provider]`, so the check goes there and no caller can route around
+    it by being more specific about what it wants.
+
+    Deliberately *not* behind `UNDX_OMNI_ROUTER_ENABLED`. That kill switch exists
+    to drop new agentic behaviour - shadow traffic, canary selection - back to
+    the routing that ran before this work. Putting a data-protection ceiling
+    behind the same switch would mean the documented way to recover from an
+    incident is to start sending user content to providers that may train on it.
+    """
+    if undx_privacy.provider_accepts(provider, privacy_class, _model(provider)):
+        return ""
+    return undx_privacy.refusal_reason(provider, privacy_class, _model(provider))
+
+
+def _exhausted_reason(attempts: list[dict[str, str]], privacy_class: str | None) -> str:
+    """What to say when the chain ran out, distinguishing refusal from failure.
+
+    "No configured provider answered" is true of both and useful for neither. A
+    request refused on every provider because it carries RESTRICTED content is
+    working exactly as designed and needs a classification decision; a request
+    that nobody answered is an outage and needs a pager. Collapsing the two
+    means the first gets escalated as the second, and the second eventually gets
+    ignored as the first.
+    """
+    if attempts and all(a.get("status") == "privacy_refused" for a in attempts):
+        return (f"no provider may receive {undx_privacy.normalise(privacy_class)} content; "
+                f"{len(attempts)} refused on privacy ceiling")
+    return "no configured provider answered"
 
 
 #: Appended to every system prompt, for every provider, by `_system_prompt()`.
@@ -1166,6 +1214,7 @@ def route_structured_request(
     temperature: float = 0.0,
     max_tokens: int = 320,
     providers: list[str] | None = None,
+    privacy_class: str | None = None,
 ) -> dict[str, Any]:
     """One model turn whose answer is meant to be parsed, not read.
 
@@ -1193,6 +1242,14 @@ def route_structured_request(
 
     for provider in ordered:
         config = PROVIDERS[provider]
+        refusal = _privacy_refusal(provider, privacy_class)
+        if refusal:
+            # Refused, not deprioritised. Checked before the credential so that a
+            # provider which must not see this content is not consulted about
+            # whether it could have.
+            attempts.append({"provider": config.label, "status": "privacy_refused",
+                             "detail": refusal})
+            continue
         if not _api_key(provider):
             attempts.append({"provider": config.label, "status": "not_configured"})
             continue
@@ -1244,13 +1301,13 @@ def route_structured_request(
     return {
         "ok": False,
         "response": "",
-        "error": "no configured provider answered",
+        "error": _exhausted_reason(attempts, privacy_class),
         "attempts": attempts,
         "latency_ms": int((time.time() - started) * 1000),
     }
 
 
-def route_undx_request(user_id: Any, message: str, history: Any = None, system_prompt: str = DEFAULT_UNDX_SYSTEM_PROMPT, timeout: int = 25) -> dict[str, Any]:
+def route_undx_request(user_id: Any, message: str, history: Any = None, system_prompt: str = DEFAULT_UNDX_SYSTEM_PROMPT, timeout: int = 25, privacy_class: str | None = None) -> dict[str, Any]:
     started = time.time()
     message = _clean_text(message, 2200)
     log_provider_status()
@@ -1260,6 +1317,14 @@ def route_undx_request(user_id: Any, message: str, history: Any = None, system_p
 
     for provider in ordered:
         config = PROVIDERS[provider]
+        refusal = _privacy_refusal(provider, privacy_class)
+        if refusal:
+            # Refused, not deprioritised. Checked before the credential so that a
+            # provider which must not see this content is not consulted about
+            # whether it could have.
+            attempts.append({"provider": config.label, "status": "privacy_refused",
+                             "detail": refusal})
+            continue
         if not _api_key(provider):
             attempts.append({"provider": config.label, "status": "not_configured"})
             continue
@@ -1290,6 +1355,27 @@ def route_undx_request(user_id: Any, message: str, history: Any = None, system_p
                 "citations": result.get("citations") or [],
                 "usage": usage,
                 "classification": classification,
+                # Freshness that the privacy ceiling took away, stated rather
+                # than left to be inferred from an empty citation list.
+                #
+                # These are two correct controls in direct conflict. Perplexity
+                # leads the `current_web` lane because it is the only provider
+                # that can see today's answer, and its ceiling is PUBLIC because
+                # the prompt becomes a live search query. So a freshness question
+                # carrying anything private is refused there and served by a
+                # provider answering from training data - which is exactly the
+                # failure `classify_request` was built to avoid: "a confident,
+                # well-formed, stale answer, and the only reader able to detect
+                # it is the one who already knew."
+                #
+                # The resolution is not to lower the ceiling. It is to stop the
+                # degradation being silent, so a caller can say "I could not
+                # check this" instead of presenting stale text as current.
+                "freshness_degraded": bool(
+                    classification.get("category") == "current_web"
+                    and not (result.get("citations") or [])
+                    and any(a.get("status") == "privacy_refused" for a in attempts)
+                ),
                 "router": {
                     "name": "UNDX Intelligence Router",
                     "enabled": router_enabled(),
@@ -1298,6 +1384,12 @@ def route_undx_request(user_id: Any, message: str, history: Any = None, system_p
                     "selected_provider": provider,
                     "fallback_provider": "openai",
                     "attempts": attempts + [{"provider": config.label, "status": "success"}],
+                    "privacy": {
+                        "class": undx_privacy.normalise(privacy_class),
+                        "declared_by_caller": bool(privacy_class),
+                        "refused": [a["provider"] for a in attempts
+                                    if a.get("status") == "privacy_refused"],
+                    },
                 },
                 "latency_ms": int((time.time() - started) * 1000),
             }
@@ -1316,9 +1408,20 @@ def route_undx_request(user_id: Any, message: str, history: Any = None, system_p
             _record_provider_failure(provider, "response_failed", detail)
             attempts.append({"provider": config.label, "status": "response_failed"})
 
-    openai_configured = bool(_api_key("openai"))
-    status = 502 if openai_configured else 503
-    error = "UNDX OpenAI bridge is temporarily unavailable." if openai_configured else "OpenAI intelligence bridge is not configured on this server."
+    if attempts and all(a.get("status") == "privacy_refused" for a in attempts):
+        # Not 502 and not 503. Nothing is unavailable and nothing is misconfigured:
+        # the router did what it was built to do. Reporting a refusal as a
+        # transient outage would send an operator to look at provider uptime, and
+        # worse, would make the failure look like something failover should have
+        # papered over - which is exactly the reflex that ends with someone
+        # widening a ceiling to clear an alert.
+        status = 403
+        error = (f"No provider is permitted to receive "
+                 f"{undx_privacy.normalise(privacy_class)} content.")
+    else:
+        openai_configured = bool(_api_key("openai"))
+        status = 502 if openai_configured else 503
+        error = "UNDX OpenAI bridge is temporarily unavailable." if openai_configured else "OpenAI intelligence bridge is not configured on this server."
     return {
         "ok": False,
         "status": status,

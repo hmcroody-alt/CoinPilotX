@@ -32,6 +32,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import undx_router  # noqa: E402
+from services import undx_privacy  # noqa: E402
 
 PROMPT = "Reply with exactly the two letters: ok"
 SYSTEM = "You are a connectivity probe. Answer with the two letters requested and nothing else."
@@ -54,6 +55,12 @@ def check(provider: str, timeout: int) -> dict:
     result = undx_router.route_structured_request(
         "provider-health-check", SYSTEM, PROMPT,
         timeout=timeout, max_tokens=256, providers=[provider],
+        # Two letters and no real content, so this is the one caller entitled to
+        # reach every provider including the ones capped at SYNTHETIC. Stated
+        # rather than inherited: the default class is CONFIDENTIAL, which would
+        # refuse Perplexity and Gemini and report a privacy decision as though
+        # the provider were down.
+        privacy_class=undx_privacy.PRIVACY_SYNTHETIC,
     )
     elapsed = int((time.time() - started) * 1000)
 

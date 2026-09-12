@@ -292,7 +292,12 @@ class PerplexityCitationTest(unittest.TestCase):
         with _env(PERPLEXITY_API_KEY="p" * 53, UNDX_ROUTER_ENABLED="1", UNDX_MULTI_MODEL_MODE="1",
                   UNDX_DEFAULT_AI_PROVIDER="perplexity"), \
                 mock.patch.object(undx_router.requests, "post", return_value=_FakeResponse(self.PAYLOAD)):
-            result = undx_router.route_undx_request(1, "what is the latest on stablecoin regulation")
+            # PUBLIC, stated. Perplexity's ceiling is PUBLIC because it searches
+            # the live web at request time, so the default CONFIDENTIAL refuses
+            # it - and this test would then pass or fail on the privacy ceiling
+            # rather than on whether the envelope carries citations.
+            result = undx_router.route_undx_request(
+                1, "what is the latest on stablecoin regulation", privacy_class="PUBLIC")
         self.assertTrue(result["ok"])
         self.assertEqual(result["provider"], "perplexity")
         self.assertEqual(len(result["citations"]), 2)
@@ -374,6 +379,12 @@ class MalformedCredentialTest(unittest.TestCase):
         This is the property that matters. `requests` is what quoted the header
         value into an exception, so a credential that is never handed to
         `requests` cannot be leaked by it however the routing plan is built.
+
+        Sent as PUBLIC on purpose. Groq's privacy ceiling is PUBLIC, so the
+        default CONFIDENTIAL would refuse it one check *earlier* than the
+        credential guard and this test would pass without ever exercising the
+        thing it is named after. Two independent defences have to be provable
+        independently, or the outer one silently becomes the only one.
         """
         calls = []
 
@@ -384,7 +395,7 @@ class MalformedCredentialTest(unittest.TestCase):
         with _env(GROQ_AI_API=self.BLOB, UNDX_ROUTER_ENABLED="1", UNDX_MULTI_MODEL_MODE="1",
                   UNDX_DEFAULT_AI_PROVIDER="groq"), \
                 mock.patch.object(undx_router.requests, "post", fake_post):
-            result = undx_router.route_undx_request(1, "quick status")
+            result = undx_router.route_undx_request(1, "quick status", privacy_class="PUBLIC")
 
         self.assertFalse(result["ok"], "no provider was configured, so nothing should have answered")
         self.assertEqual(calls, [], "a malformed credential was sent to the HTTP layer")
