@@ -288,6 +288,182 @@ def test_queued_cost_change_blocks_create(ready, monkeypatch):
     state = f.dispatch(intent, ready[0], connections.worker_connection(ready[1]["id"], "biz-a", "store-a")["connection"])
     assert state == "BLOCKED" and outbox(result["intent_id"])["state"] == "BLOCKED"
     assert ready[0].created == []
+    # Which refusal it was, not just that there was one. `dispatch` used to store
+    # the single word `preflight_blocked` for about a dozen distinct causes, and
+    # that word is rendered to the merchant, so half a dozen fixable problems
+    # arrived as one unactionable sentence.
+    assert outbox(result["intent_id"])["last_error"] == "supplier_cost_changed"
+
+
+def test_dispatch_measures_quote_age_against_the_clock_it_was_given(ready):
+    """The freshness rule, executed for the first time.
+
+    `dispatch` takes a `now`, and the line comparing the frozen `quoted_at`
+    against it read `datetime.now(timezone.utc)` instead. That made the
+    300-second window unreachable from a test by any means other than waiting
+    300 real seconds: the snapshot is pinned by `snapshot_hash`, so `quoted_at`
+    cannot be edited, and the only other input is the clock the function was
+    ignoring.
+
+    Nothing waited. So neither side of the reapproval rule standing between a
+    merchant and a price CJ has since changed had ever been executed -- the
+    existing coverage
+    (`test_queued_cost_change_blocks_create`) exercises the cost half of what
+    used to be one compound condition, and an expired quote and a changed cost
+    are different things to tell a merchant.
+    """
+    result = f.create_intent(**ready[2])
+    meta = connections.worker_connection(ready[1]["id"], "biz-a", "store-a")["connection"]
+    stale = time.time() + f.QUOTE_MAX_AGE_SECONDS + 1
+    claimed = f.claim(now=stale)
+
+    assert f.dispatch(claimed, ready[0], meta, now=stale) == "BLOCKED"
+    row = outbox(result["intent_id"])
+    assert row["state"] == "BLOCKED"
+    # Named as the expiry it is. A merchant told "your cost changed" goes looking
+    # for a price difference that is not there; the action here is to re-quote.
+    assert row["last_error"] == "supplier_quote_expired"
+    # And nothing was bought. This is the assertion that entitles BLOCKED's copy
+    # to say the order was not sent.
+    assert ready[0].created == []
+    assert row["provider_order_id"] is None
+
+
+def test_a_quote_inside_the_window_is_not_refused_for_age(ready):
+    """The other side of the same condition, which had also never run.
+
+    A guard that cannot be made to fire and a guard that fires always are the
+    same class of defect, and one test proves neither. Same injected clock, one
+    second inside the window instead of one second outside it.
+    """
+    result = f.create_intent(**ready[2])
+    meta = connections.worker_connection(ready[1]["id"], "biz-a", "store-a")["connection"]
+    fresh = time.time() + f.QUOTE_MAX_AGE_SECONDS - 1
+    claimed = f.claim(now=fresh)
+
+    assert f.dispatch(claimed, ready[0], meta, now=fresh) == "UNKNOWN"
+    row = outbox(result["intent_id"])
+    assert row["last_error"] == "awaiting_create_readback"
+    assert len(ready[0].created) == 1
+
+
+def test_the_freshness_window_is_five_minutes_and_is_the_same_window_twice():
+    """The one assertion the tests above structurally cannot make.
+
+    Every other test here is written *relative* to `QUOTE_MAX_AGE_SECONDS` --
+    `now + MAX + 1`, `now + MAX - 1` -- which is what makes them tests of the
+    mechanism rather than of the number. It also means they move with the
+    constant: widening the window to fifty minutes leaves all of them green.
+    The mutation battery found that by widening it tenfold and watching nothing
+    fail.
+
+    So the size is pinned here, once, with the reason. It is a policy about
+    money: how stale a freight price this deployment will spend real funds
+    against. And it is pinned as *one* window, because `create_intent` refuses
+    to freeze a quote older than this and `dispatch` refuses to spend one --
+    the merchant's review time is subtracted from the worker's budget, and two
+    separate numbers would mean a quote could be frozen that the worker would
+    never accept, or accepted long after the merchant approved it.
+    """
+    assert f.QUOTE_MAX_AGE_SECONDS == 300, (
+        "The freshness window changed. It is how stale a freight price this "
+        "deployment will place a real order against, so it is a deliberate "
+        "number rather than a tunable -- if it is meant to move, move it here "
+        "too and say why.")
+    source = open(f.__file__, encoding="utf-8").read()
+    for function in ("create_intent", "dispatch"):
+        body = source.split(f"def {function}(", 1)[-1].split("\ndef ", 1)[0]
+        assert "QUOTE_MAX_AGE_SECONDS" in body, (
+            f"{function} no longer measures quote age against the shared "
+            "constant, so the two halves of one window can now drift apart")
+
+
+def test_a_quote_dated_in_the_future_is_refused_too(ready):
+    """The lower bound of the window, which the compound condition also hid.
+
+    `0 <= age` is not decoration. `create_intent` refuses a future-dated quote,
+    but that check runs on the web process's clock and this one runs on the
+    worker's; a worker whose clock is behind sees every quote as being from the
+    future. Accepting that would mean spending against a price on the strength
+    of a disagreement between two machines.
+    """
+    result = f.create_intent(**ready[2])
+    meta = connections.worker_connection(ready[1]["id"], "biz-a", "store-a")["connection"]
+    # Claimed on a sane clock, dispatched on a skewed one -- the two `now`s are
+    # independent arguments, which is the only reason this is reachable.
+    claimed = f.claim(now=time.time() + .1)
+
+    assert f.dispatch(claimed, ready[0], meta, now=time.time() - 600) == "BLOCKED"
+    assert outbox(result["intent_id"])["last_error"] == "supplier_quote_expired"
+    assert ready[0].created == []
+
+
+def test_a_failure_after_the_write_is_never_reported_as_not_sent(ready, monkeypatch):
+    """What entitles BLOCKED's copy to say nothing went out.
+
+    `dispatch`'s handler tests `sent` first, so any exception raised after the
+    POST becomes `UNKNOWN` -- "may or may not exist, do not re-order" -- and
+    never `BLOCKED`. Without that ordering a network failure on the way back
+    from a successful create would tell a merchant the order was not sent, and
+    they would place it again.
+    """
+    result = f.create_intent(**ready[2])
+    def explode(payload):
+        raise RuntimeError("connection reset after POST")
+    monkeypatch.setattr(ready[0], "create_sandbox_fulfillment", explode)
+    meta = connections.worker_connection(ready[1]["id"], "biz-a", "store-a")["connection"]
+    claimed = f.claim(now=time.time() + .1)
+
+    assert f.dispatch(claimed, ready[0], meta) == "UNKNOWN"
+    row = outbox(result["intent_id"])
+    assert row["state"] == "UNKNOWN"
+    assert row["last_error"] == "readback_required"
+    assert row["provider_order_id"] is None
+
+
+def test_a_refusal_this_module_did_not_choose_is_never_stored_verbatim(ready, monkeypatch):
+    """The flattening existed for a real reason and the fix must not undo it.
+
+    No provider message, code or body may become persisted state. Replacing
+    `preflight_blocked` with `exc.code` outright would have done exactly that,
+    because a `SupplierError`'s code is provider-shaped. `PREFLIGHT_REASONS` is
+    a closed dict keyed by this module's own constants, so a code from anywhere
+    else can only miss it.
+    """
+    result = f.create_intent(**ready[2])
+    def refuse(pid):
+        raise SupplierError("CJ_SAYS_ACCOUNT_SUSPENDED_FOR_user_at_example_com")
+    monkeypatch.setattr(ready[0], "get_variants", refuse)
+    meta = connections.worker_connection(ready[1]["id"], "biz-a", "store-a")["connection"]
+    claimed = f.claim(now=time.time() + .1)
+
+    assert f.dispatch(claimed, ready[0], meta) == "BLOCKED"
+    stored = outbox(result["intent_id"])["last_error"]
+    assert stored == "preflight_blocked"
+    assert stored in f.OUTBOX_REASONS
+    assert ready[0].created == []
+
+
+def test_every_stored_refusal_is_one_the_merchant_can_be_shown(ready, monkeypatch):
+    """Whatever reaches the column is in the declared vocabulary.
+
+    The column is rendered on the orders screen, so an undeclared value is a
+    raw identifier on a merchant's phone. Parametrising the causes would test
+    the ones I thought of; this walks the mapping itself, so a cause added to
+    `PREFLIGHT_REASONS` without copy is caught by the pairing of this with
+    `tests/dropshipping/test_supplier_obligation_copy.py`.
+    """
+    assert set(f.PREFLIGHT_REASONS.values()) <= set(f.OUTBOX_REASONS)
+    result = f.create_intent(**ready[2])
+    monkeypatch.setattr(ready[0], "get_inventory",
+                        lambda pid, vid=None: {"variants": [{"pid": pid, "vid": vid, "warehouses": [
+                            {"country": "CN", "state": "OUT_OF_STOCK", "verified": 1, "total": 0}]}]})
+    meta = connections.worker_connection(ready[1]["id"], "biz-a", "store-a")["connection"]
+    claimed = f.claim(now=time.time() + .1)
+
+    assert f.dispatch(claimed, ready[0], meta) == "BLOCKED"
+    assert outbox(result["intent_id"])["last_error"] == "supplier_stock_unconfirmed"
+    assert ready[0].created == []
 
 
 @pytest.mark.parametrize("override", [{"shop_id": "other-shop"}, {"is_sandbox": 0}, {"is_sandbox": True},

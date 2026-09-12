@@ -296,10 +296,25 @@ def _write_variants(cur, listing_id, seller_user_id, chosen, rule):
     return written
 
 
-def _import_one(conn, *, merchant_id, seller_user_id, business_id, store_id,
+def _import_one(conn, *, seller_user_id, business_id, store_id,
                 actor_user_id, connection_id, provider, external_product_id,
                 selection, rule, context, adapter):
-    """One cart item, one transaction. Returns (outcome, payload)."""
+    """One cart item, one transaction. Returns (outcome, payload).
+
+    No `merchant_id`. It used to take one and never read it: `merchant_id` is
+    `business_os_business.owner_user_id` and `seller_user_id` is `int()` of the
+    same value, resolved once by the caller so an unparseable identity refuses
+    with `merchant_identity_unresolved` before any import begins.
+
+    Benign as it stood, and removed anyway, because carrying two spellings of
+    one identity into a function is how the next edit reads the one that cannot
+    work -- the same hazard `list_obligations` names about the two spellings of
+    "the SKU". Found by grepping for parameters a body never loads, which is the
+    mechanical tell for the nineteenth corollary: `dispatch` took a clock it
+    ignored, and that made a real rule unexecutable. This was the same shape
+    with nothing behind it, which is the answer the tell is supposed to be able
+    to give.
+    """
     product, snapshot_id = _authoritative(
         business_id, store_id, actor_user_id, connection_id, provider,
         external_product_id, context=context, adapter=adapter)
@@ -424,7 +439,7 @@ def import_selected(business_id, store_id, actor_user_id, connection_id, *,
         conn = db.connect()
         try:
             outcome, payload = _import_one(
-                conn, merchant_id=merchant_id, seller_user_id=seller_user_id,
+                conn, seller_user_id=seller_user_id,
                 business_id=business_id, store_id=store_id, actor_user_id=actor_user_id,
                 connection_id=connection_id, provider=provider,
                 external_product_id=external_product_id, selection=selection,

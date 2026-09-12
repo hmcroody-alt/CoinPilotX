@@ -27,6 +27,88 @@ class FulfillmentError(ValueError):
 FUNDING_STATES = frozenset({"FUNDING_NOT_READY", "FUNDING_APPROVAL_REQUIRED",
                           "FUNDING_REAPPROVAL_REQUIRED", "FUNDED", "FUNDING_FAILED"})
 
+#: How long a freight quote may be acted on. CJ prices a route at a moment, and
+#: this deployment will not place an order against a price it cannot still see.
+#:
+#: Enforced twice, which is not duplication: `create_intent` refuses to *freeze*
+#: a quote older than this, and `dispatch` refuses to *spend* one. The window is
+#: shared between the two -- the merchant's review time is subtracted from the
+#: worker's budget -- which is exactly why a quote can expire between them and
+#: why `supplier_quote_expired` is a state a paid order really reaches.
+QUOTE_MAX_AGE_SECONDS = 300
+
+#: Why this deployment did not send a supplier order, keyed by the internal code
+#: that refused it.
+#:
+#: :func:`dispatch` used to collapse every non-retryable preflight failure into
+#: the single word ``preflight_blocked`` -- roughly a dozen distinct causes, at
+#: least half of which a merchant can actually act on, all stored as one. The
+#: reason the flattening existed is real and still holds: no provider message,
+#: body or URL may ever be persisted, which is what :mod:`.errors` is for.
+#:
+#: But the codes being flattened were never the provider's. They are this
+#: module's own :class:`FulfillmentError` constants, chosen locally on the lines
+#: that raise them -- the same class of fact as a line number. A *closed dict* is
+#: what keeps it that way: a ``SupplierError`` code that originated at CJ cannot
+#: be a key here, so it falls through to ``preflight_blocked`` and nothing
+#: provider-derived is ever written. Dropping the flattening entirely and
+#: persisting ``exc.code`` would have been the leak the flattening prevented.
+#:
+#: Several internal codes deliberately share one reason. The grouping is by what
+#: the merchant can do about it, not by which line raised it: a merchant told
+#: "the product no longer matches what your supplier lists" re-imports the
+#: product whether the mismatch was found in our binding or in CJ's variant
+#: list, and splitting that into two messages would be describing our control
+#: flow to someone who cannot see it.
+PREFLIGHT_REASONS = {
+    # The number the merchant approved is no longer the number CJ would charge.
+    # Two codes, not one: an expired quote needs a fresh quote, a changed cost
+    # needs a fresh approval, and those are different next actions.
+    "supplier_quote_expired": "supplier_quote_expired",
+    "supplier_cost_reapproval_required": "supplier_cost_changed",
+    # The connection this order was queued against is not the connection that
+    # would now receive it.
+    "connection_binding_changed": "supplier_connection_changed",
+    "connection_not_ready": "supplier_connection_changed",
+    "api_shop_binding_required": "supplier_shop_unbound",
+    "ambiguous_shop_name": "supplier_shop_unbound",
+    # What CJ lists is no longer what was imported.
+    "product_binding_mismatch": "supplier_item_changed",
+    "provider_variant_mismatch": "supplier_item_changed",
+    "supplier_cost_unverified": "supplier_cost_unknown",
+    "inventory_quantity_not_verified": "supplier_stock_unconfirmed",
+    # The sale stopped being a sale after the order was queued.
+    "order_not_eligible": "order_no_longer_eligible",
+    # Neither of these is about this order at all.
+    "production_fulfillment_locked": "supplier_ordering_disabled",
+    "explicit_sandbox_required": "supplier_ordering_disabled",
+    "intent_integrity_failed": "supplier_order_needs_support",
+}
+
+#: Every value this package will ever write to
+#: ``business_os_supplier_outbox.last_error``.
+#:
+#: It is a closed set because the column is *rendered to the merchant*, which is
+#: not what its name suggests and was not what the screen showing it believed.
+#: ``DropshippingOrdersScreen`` printed this value verbatim under a comment
+#: calling it "the supplier's own refusal text ... a merchant chasing a blocked
+#: order needs the words their supplier used". It is neither: it cannot be the
+#: supplier's text (see :mod:`.errors`), and it is not words -- it is an
+#: identifier from this file. So a merchant was shown ``preflight_blocked``.
+#:
+#: Enumerating the set here is what lets a test prove the mobile copy map covers
+#: all of it, rather than the screen falling back to the identifier again.
+OUTBOX_REASONS = frozenset({
+    # Written by `claim` when a lease expires mid-send.
+    "dispatch_lease_expired",
+    # Written by `dispatch` on the read-back paths.
+    "absence_not_proven", "awaiting_create_readback", "readback_required",
+    # Written by `dispatch`'s handler for the retryable and the unclassified.
+    "preflight_deferred", "preflight_blocked",
+    # Written by `worker.run_once` when the connection cannot be loaded.
+    "connection_unavailable",
+} | set(PREFLIGHT_REASONS.values()))
+
 
 def assert_sandbox(value):
     if (os.getenv("CJ_ENVIRONMENT_MODE", "SANDBOX").upper() != "SANDBOX"
@@ -207,7 +289,7 @@ def create_intent(*, connection_id, business_id, store_id, actor_user_id, order_
         age = (datetime.now(timezone.utc) - quoted).total_seconds()
         freight = Decimal(option["provider_total"])
         total = (supplier_items_cost + freight) * 100
-        if age < 0 or age > 300 or not freight.is_finite() or freight < 0 or total != total.to_integral_value():
+        if age < 0 or age > QUOTE_MAX_AGE_SECONDS or not freight.is_finite() or freight < 0 or total != total.to_integral_value():
             raise ValueError
         if int(total) != expected_supplier_cost_cents:
             raise ValueError
@@ -466,8 +548,17 @@ def dispatch(intent, adapter, meta, *, now=None):
             if not any(w.get("state") == "IN_STOCK" and w.get("verified") == 1 and type(w.get("total")) is int and w["total"] >= item["quantity"] for w in warehouses):
                 raise FulfillmentError("inventory_quantity_not_verified")
         quoted_at = datetime.fromisoformat(snapshot["shipping_quote"]["quoted_at"].replace("Z", "+00:00"))
-        age = (datetime.now(timezone.utc) - quoted_at).total_seconds()
-        if not 0 <= age <= 300 or (item_total + Decimal(snapshot["shipping_quote"]["provider_total"])) * 100 != snapshot["expected_supplier_cost_cents"]:
+        # `now`, not `datetime.now()`. The snapshot is pinned by `snapshot_hash`,
+        # so `quoted_at` cannot be edited to reach this branch -- which meant that
+        # while this read the wall clock, the only way to make the quote stale was
+        # to let 300 real seconds pass. No test did, so the age half of the
+        # condition below had never been true in either direction, and the
+        # reapproval rule standing between a merchant and a price CJ has since
+        # changed was the one rule nothing had ever executed.
+        age = (datetime.fromtimestamp(now, timezone.utc) - quoted_at).total_seconds()
+        if not 0 <= age <= QUOTE_MAX_AGE_SECONDS:
+            raise FulfillmentError("supplier_quote_expired")
+        if (item_total + Decimal(snapshot["shipping_quote"]["provider_total"])) * 100 != snapshot["expected_supplier_cost_cents"]:
             raise FulfillmentError("supplier_cost_reapproval_required")
         payload = dict(snapshot["shipping_destination"])
         payload.update({"orderNumber": intent["external_order_ref"], "isSandbox": snapshot["isSandbox"],
@@ -478,7 +569,7 @@ def dispatch(intent, adapter, meta, *, now=None):
                         "products": [{"vid": item["vid"], "quantity": item["quantity"]}
                                      for item in snapshot["items"]]})
         assert_sandbox(payload.get("isSandbox"))
-        _sending(intent, time.time())
+        _sending(intent, now)
         sent = True
         adapter.create_sandbox_fulfillment(payload)
         # Always prove identity/sandbox through independent read-back, not POST payload echo.
@@ -497,8 +588,22 @@ def dispatch(intent, adapter, meta, *, now=None):
             state = "READY"
         else:
             state = "BLOCKED"
-        # Codes are chosen locally; no arbitrary provider/transport exceptions copied.
-        safe_error = "readback_required" if state == "UNKNOWN" else "preflight_deferred" if state == "READY" else "preflight_blocked"
+        # Codes are chosen locally; no arbitrary provider/transport exceptions
+        # copied. `PREFLIGHT_REASONS` is a closed dict keyed by this module's own
+        # `FulfillmentError` constants, so a provider-originated `SupplierError`
+        # code can only miss and fall through to `preflight_blocked` -- which is
+        # how the merchant gets told which of a dozen causes it was without any
+        # provider-derived string reaching the column.
+        #
+        # The two non-BLOCKED branches keep one word each on purpose: they are
+        # not refusals a merchant acts on, they are this worker saying "later".
+        safe_error = ("readback_required" if state == "UNKNOWN"
+                      else "preflight_deferred" if state == "READY"
+                      # `str(...)` so a code that is somehow not a string misses
+                      # the dict instead of raising `TypeError` on an unhashable
+                      # key -- inside the one handler whose job is to make sure
+                      # the row is always settled.
+                      else PREFLIGHT_REASONS.get(str(getattr(exc, "code", "")), "preflight_blocked"))
         settle(intent, state, now=now, delay=delay, error=safe_error)
         return state
     finally:

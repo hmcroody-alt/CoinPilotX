@@ -2015,16 +2015,80 @@ describe("DropshippingOrdersScreen", () => {
     expect(view.queryByText("No supplier order yet")).toBeNull();
   });
 
-  it("shows a supplier's refusal in the supplier's own words", async () => {
+  it("says what the merchant can do about a refusal, not which code we raised", async () => {
+    // This test used to be called "shows a supplier's refusal in the supplier's
+    // own words" and asserted `getByText("preflight_blocked")`. Both halves of
+    // that name were false and the assertion pinned the falsehood: nothing a
+    // provider says can reach `last_error` — `suppliers/errors.py` exists to
+    // guarantee it — and the value is an identifier written in Python. The
+    // screen was showing a merchant `preflight_blocked`, and a green test was
+    // the reason nobody noticed.
+    //
+    // It was also one word for about a dozen causes, because `dispatch`
+    // flattened them before storing. So both halves of the fix are checked
+    // together: a distinguished cause arrives distinguished, and as a sentence.
     const { view } = await renderOrders([
       obligation({
         state: "BLOCKED",
         supplierOrderPlaced: true,
         intentId: "cjf_2",
-        lastError: "preflight_blocked"
+        lastError: "supplier_quote_expired"
       })
     ]);
-    await waitFor(() => expect(view.getByText("preflight_blocked")).toBeTruthy());
+    await waitFor(() => expect(view.getByText(/shipping quote expired/i)).toBeTruthy());
+    expect(view.queryByText("supplier_quote_expired")).toBeNull();
+  });
+
+  it("does not tell a merchant their supplier refused an order it never saw", async () => {
+    // Every cause `PREFLIGHT_REASONS` names is raised before `dispatch` calls
+    // `_sending`, and the handler turns anything already sent into `UNKNOWN`
+    // first — so `BLOCKED` means nothing went out. The copy said "Your supplier
+    // refused this order", which sends a merchant to argue with their supplier
+    // about a message the supplier never sent.
+    const { view } = await renderOrders([
+      obligation({
+        state: "BLOCKED",
+        supplierOrderPlaced: true,
+        intentId: "cjf_3",
+        lastError: "supplier_cost_changed"
+      })
+    ]);
+    await waitFor(() => expect(view.getByText(/review and approve the new cost/i)).toBeTruthy());
+    expect(view.queryByText(/refused/i)).toBeNull();
+  });
+
+  it("does not report an unconfirmed send as a failure", async () => {
+    // `awaiting_create_readback` is written *after* the write, when the outcome
+    // is unknown. Reason copy that reads like a failure here is an instruction
+    // to order the same goods twice, which is the one mistake in this subsystem
+    // that costs real money.
+    const { view } = await renderOrders([
+      obligation({
+        state: "UNKNOWN",
+        supplierOrderPlaced: true,
+        intentId: "cjf_4",
+        lastError: "awaiting_create_readback"
+      })
+    ]);
+    // The reason line says a send happened; the state line above it carries the
+    // "do not re-order" instruction. Two lines, one each, and neither repeating
+    // the other — the first version of this copy said "do not re-order" twice,
+    // which this assertion caught as an ambiguous match.
+    await waitFor(() =>
+      expect(view.getByText(/waiting for them to confirm it/i)).toBeTruthy()
+    );
+    expect(view.getByText(/do not re-order/i)).toBeTruthy();
+    expect(view.queryByText(/could not|failed|refused/i)).toBeNull();
+  });
+
+  it("renders a reason it has never heard of as unnamed, not as the code", async () => {
+    // The fallback that matters more than the state one: falling through here
+    // used to mean printing the identifier itself.
+    const { view } = await renderOrders([
+      obligation({ state: "BLOCKED", lastError: "supplier_ate_the_parcel" })
+    ]);
+    await waitFor(() => expect(view.getByText(/cannot name yet/i)).toBeTruthy());
+    expect(view.queryByText("supplier_ate_the_parcel")).toBeNull();
   });
 
   it("renders a state it has never heard of as unrecognised, not as good news", async () => {

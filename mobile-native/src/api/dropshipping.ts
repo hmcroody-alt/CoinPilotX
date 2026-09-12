@@ -1414,7 +1414,14 @@ export const SUPPLIER_ORDER_STATE_COPY: Record<SupplierOrderState, string> = {
   UNKNOWN: "Unconfirmed — do not re-order",
   RECONCILE: "Checking with your supplier",
   LINKED: "Placed with your supplier",
-  BLOCKED: "Your supplier refused this order"
+  // Not "your supplier refused this order", which is what this said. `BLOCKED`
+  // is reached overwhelmingly by *this* deployment refusing to send — an
+  // expired quote, a changed cost, a connection that moved — and on every one
+  // of those paths `dispatch` raises before `_sending`, so the supplier was
+  // never contacted and has no opinion to report. The reason line rendered
+  // underneath now names which refusal it was; this line's only job is to say
+  // that nothing was sent and that it is waiting on the merchant.
+  BLOCKED: "Not sent — needs your attention"
 };
 
 /**
@@ -1489,6 +1496,95 @@ export function supplierObligationBlockerCopy(blocker: string): string {
   return (
     SUPPLIER_OBLIGATION_BLOCKER_COPY[blocker as SupplierObligationBlocker] ||
     "Something about this order stops it being sent to your supplier"
+  );
+}
+
+/**
+ * Every reason the outbox records for a supplier order that has not gone out.
+ *
+ * Fourth copy of a Python enumeration — `fulfillment.OUTBOX_REASONS` — and
+ * pinned against it the same way as the two above.
+ *
+ * This one existed only as a rendering accident until now. The backend column is
+ * `last_error`; `DropshippingOrdersScreen` printed its value verbatim under a
+ * comment saying it was "the supplier's own refusal text ... the words their
+ * supplier used". It was never either of those. No provider string can reach
+ * that column by construction (`services/business_os/suppliers/errors.py` exists
+ * to guarantee it), and the value is an identifier written in Python — so what a
+ * merchant actually read on a blocked order was `preflight_blocked`.
+ *
+ * Worse, it was one word for about a dozen causes, because `dispatch` flattened
+ * them all before storing. Half of those a merchant can fix. So the fix is on
+ * both sides: the backend keeps the cause, and this map turns it into words.
+ */
+export const SUPPLIER_ORDER_REASONS = [
+  "dispatch_lease_expired",
+  "absence_not_proven",
+  "awaiting_create_readback",
+  "readback_required",
+  "preflight_deferred",
+  "preflight_blocked",
+  "connection_unavailable",
+  "supplier_quote_expired",
+  "supplier_cost_changed",
+  "supplier_connection_changed",
+  "supplier_shop_unbound",
+  "supplier_item_changed",
+  "supplier_cost_unknown",
+  "supplier_stock_unconfirmed",
+  "order_no_longer_eligible",
+  "supplier_ordering_disabled",
+  "supplier_order_needs_support"
+] as const;
+export type SupplierOrderReason = (typeof SUPPLIER_ORDER_REASONS)[number];
+
+/**
+ * What each reason means, and what — if anything — the merchant does next.
+ *
+ * A total `Record`, for the third time and the same reason: a reason added to
+ * the list without words has to be a compile error here.
+ *
+ * The first five say "this worker has not finished", not "something is wrong",
+ * and they are phrased so a merchant does not go looking for a problem that is
+ * not theirs. In particular none of them may imply the order failed:
+ * `awaiting_create_readback` and `readback_required` are written *after* a send
+ * whose outcome is unconfirmed, so telling a merchant it did not go would invite
+ * the one mistake that costs real money — ordering the same goods twice.
+ *
+ * They also do not repeat "do not re-order". All four of the read-back reasons
+ * are only ever stored alongside state `UNKNOWN`, whose own copy carries that
+ * instruction, and the screen renders both lines. This line's job is the part
+ * the state cannot express — that a send was attempted and is being confirmed.
+ */
+export const SUPPLIER_ORDER_REASON_COPY: Record<SupplierOrderReason, string> = {
+  dispatch_lease_expired: "A send was interrupted — checking whether it went through",
+  absence_not_proven: "Checking with your supplier whether this order exists",
+  awaiting_create_readback: "Sent to your supplier — waiting for them to confirm it",
+  readback_required: "Waiting for your supplier to confirm this order",
+  preflight_deferred: "Your supplier is busy — this will be retried automatically",
+  connection_unavailable: "Your supplier connection could not be loaded — this will be retried",
+  preflight_blocked: "This could not be sent to your supplier. Contact support",
+  supplier_quote_expired: "The shipping quote expired before this was sent. Get a new quote and approve it",
+  supplier_cost_changed: "Your supplier cost changed before this was sent. Review and approve the new cost",
+  supplier_connection_changed: "Your supplier connection changed after this was queued. Reconnect, then try again",
+  supplier_shop_unbound: "Choose which of your supplier shops to order through in Connection settings",
+  supplier_item_changed: "This product no longer matches what your supplier lists. Import it again",
+  supplier_cost_unknown: "Your supplier did not state a usable cost for this item",
+  supplier_stock_unconfirmed: "Your supplier has not confirmed stock for this order",
+  order_no_longer_eligible: "This sale was cancelled, refunded or disputed, so nothing was ordered",
+  supplier_ordering_disabled: "Supplier ordering is not switched on for this account yet",
+  supplier_order_needs_support: "This order needs support before it can be sent to your supplier"
+};
+
+/**
+ * Merchant-readable words for an outbox reason, including one this build has
+ * never heard of. Same fallback as the two above, and it matters more here:
+ * falling through used to mean printing the identifier itself.
+ */
+export function supplierOrderReasonCopy(reason: string): string {
+  return (
+    SUPPLIER_ORDER_REASON_COPY[reason as SupplierOrderReason] ||
+    "Your supplier order is waiting on something this app cannot name yet"
   );
 }
 

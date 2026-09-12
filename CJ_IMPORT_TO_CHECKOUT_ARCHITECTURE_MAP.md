@@ -2202,9 +2202,190 @@ checks across 28 suites.
 
 ---
 
+## The nineteenth seam: the rule that could only be executed by waiting
+
+Gap 18 let a merchant place the supplier order a paid sale owes. Following that
+order through — claim it, dispatch it, read the outbox and the obligation back —
+found four defects, and the first one is the reason the other three survived.
+
+**`dispatch` accepted a clock and then read the wall one.** The signature is
+`dispatch(intent, adapter, meta, *, now=None)`, and every write inside it
+settles against that `now`. One line did not: the comparison of the frozen
+`quoted_at` against the present called `datetime.now(timezone.utc)`. The
+snapshot is pinned by `snapshot_hash`, so `quoted_at` cannot be edited to reach
+the branch, and the clock was the only other input. The consequence is not that
+the test was weak; it is that **the 300-second reapproval rule was executable
+only by letting 300 real seconds pass.** Nothing ever did. Neither side of the
+rule standing between a merchant and a freight price CJ has since changed had
+ever run — in either direction, once, in any environment.
+
+The existing coverage looked like it covered this. `test_queued_cost_change_blocks_create`
+exercises the *cost* half of what was one compound condition:
+
+```python
+if (datetime.now(timezone.utc) - quoted_at).total_seconds() > 300 or (item_total + freight) * 100 != expected:
+```
+
+Two rules sharing an `or`, one test, and the passing test belongs to the second
+rule. Splitting the condition is what made the first one testable; injecting the
+clock is what made it reachable.
+
+**A dozen causes were stored as one word.** `dispatch`'s handler resolved every
+non-retryable preflight failure to the single string `preflight_blocked`. The
+reason for the flattening is real and still holds — no provider message, body or
+URL may become persisted state, which is the entire purpose of
+`suppliers/errors.py`. But the codes being flattened were never the provider's.
+They are this module's own `FulfillmentError` constants, chosen on the lines that
+raise them: the same class of fact as a line number. At least six of them are
+things a merchant can act on — re-quote, re-approve a cost, re-bind a shop,
+re-import a product, wait for stock, nothing-to-do-because-the-sale-was-refunded
+— and all six arrived indistinguishable from the ones nobody can act on.
+
+`PREFLIGHT_REASONS` is a closed dict keyed by those constants. Closedness is the
+whole design: a `SupplierError` code that originated at CJ cannot be a key, so it
+can only miss and fall through to `preflight_blocked`. Persisting `exc.code`
+directly would have been the leak the flattening prevented, which is why the
+battery attacks that specific edit.
+
+**That word was rendered to the merchant.** `DropshippingOrdersScreen` printed
+`row.lastError` verbatim:
+
+```tsx
+{/* The supplier's own refusal text, when there is one. Shown verbatim
+    rather than summarised — a merchant chasing a blocked order needs the
+    words their supplier used. */}
+{row.lastError ? <Text style={styles.rowWarning}>{row.lastError}</Text> : null}
+```
+
+Neither half of that comment is true, and neither had ever been checked. It
+cannot be the supplier's text, by construction, in this package specifically. And
+it is not words — it is an identifier from a Python file. So a merchant with a
+blocked order read `preflight_blocked`, eight lines below a `blockers.map` that
+carefully translates every one of its own codes, and thirty lines below a
+`supplierOrderStateCopy` whose docstring says in as many words that *"rendering
+the raw identifier is what put `SUPPLIER_VARIANT_UNBOUND` on a merchant's
+screen."* The lesson was written down, in the same file, one component away.
+
+### The test that pinned the belief instead of the behaviour
+
+The jest coverage for that line was:
+
+```tsx
+it("shows a supplier's refusal in the supplier's own words", async () => {
+  ...  lastError: "preflight_blocked"
+  await waitFor(() => expect(view.getByText("preflight_blocked")).toBeTruthy());
+});
+```
+
+The name states the false belief and the assertion pins it. It is green, it has
+always been green, and it is the reason nobody looked: a reviewer scanning for
+untested rendering finds a test with a sentence for a name and moves on. This is
+the thirteenth corollary at its sharpest — the test reads back exactly what the
+code does, so it can never disagree with it — with the twist that the *name*
+carried the claim and the name is not executable.
+
+**`BLOCKED` said "Your supplier refused this order".** Every cause in
+`PREFLIGHT_REASONS` is raised before `_sending`, and the handler tests `sent`
+first, so anything already written becomes `UNKNOWN`. `BLOCKED` therefore means
+the supplier was never contacted and has no opinion about the order. The copy
+sent merchants to argue with their supplier about a message the supplier never
+sent. Measured, not reasoned: `PROVIDER CONTACTED: []` beside
+`{'state': 'BLOCKED', 'last_error': 'preflight_blocked'}`.
+
+Note where the fix's justification lives. It is tempting to defend the new copy
+by arguing which causes are common; the real guarantee is a branch ordering, so
+that is what the test asserts — `if sent or …` resolves before `BLOCKED` is
+reachable at all. An earlier version of that test tried to prove it by checking
+which codes appear textually before `_sending` in `dispatch`, and it was both
+wrong (four of them are raised in helpers `dispatch` calls) and a proxy for the
+thing that actually holds.
+
+### What was deliberately not fixed here
+
+`BLOCKED` is terminal by construction, and a paid order that reaches it is
+permanently unfulfillable. `claim` selects only `state IN ('READY','UNKNOWN','RECONCILE')`;
+`settle` requires a `lease_token` a blocked row can never obtain;
+`webhooks._mark_dirty`'s `RECONCILE` write is gated on `state='LINKED'`. And
+`create_intent` refuses a replacement twice over — the `prior` lookup raises
+`immutable_intent_conflict`, and `uq_supplier_canonical_order ON business_os_supplier_intents(order_id)`
+would refuse the insert anyway. Gap 18's `SUPPLIER_ORDER_ALREADY_PLACED` then
+removes the row from the merchant's actionable list entirely.
+
+An expired quote cannot self-heal: the snapshot is frozen with the stale price,
+so retrying dispatch expires again. Recovery needs a *new* intent against a new
+quote, which means superseding the old one. That is provably safe for exactly
+this failure — it occurs strictly before `_sending`, so the outbox state is
+itself the proof nothing was sent — but it needs the uniqueness constraint to
+become conditional, and the blocking one is an inline `UNIQUE(connection_id, order_id)`
+on the table rather than a standalone index. There is no migration framework
+here; schema is hand-rolled and idempotent. A table rebuild is not a thing to
+bundle into a copy fix, and the recovery path is a separate seam with its own
+tests. It is the next gap, not this one.
+
+The reason it is safe to defer at all: nothing drains the outbox in production.
+`fulfillment.dispatch` has exactly one caller, `suppliers/worker.py:215`,
+reachable only from `supplier_worker.py`, which is absent from the `Procfile` and
+gated on `CJ_RECONCILIATION_ENABLED`. So no order can reach `BLOCKED` today.
+That is a deployment change with real-money blast radius and belongs to the
+operator, not to a commit.
+
+### What the battery measured, including in itself
+
+Twenty real mutations, two inverted, one no-op control. Three groups, because a
+fix that is right in one place and absent in the next leaves the merchant where
+they were: the freshness window (its clock, both bounds, its size), the mapping
+(its closedness, its keys, its distinctions), and the rendering.
+
+One survivor on the first run, and it was a defect in my own tests:
+**"the freshness window is widened tenfold" — `QUOTE_MAX_AGE_SECONDS = 300` →
+`3000` — survived.** Every test of the window is written relative to the
+constant (`now + MAX + 1`, `now + MAX - 1`), which is what makes them tests of
+the mechanism rather than of the number, and also what makes them move with it.
+Widening the window to fifty minutes left all of them green. **A test written
+against a constant cannot detect a change to that constant** — so the size is
+now pinned once, absolutely, with the reason it is a policy rather than a
+tunable: it is how stale a freight price this deployment will spend real funds
+against.
+
+The second finding was about the battery's own bookkeeping.
+**"create_intent's window is spelled as a literal"** was written into the
+inverted set — behaviour-preserving today, because the constant *is* 300 — and
+the next run reported it `PINNED`, by the test written an hour earlier for the
+survivor above. That test asserts both enforcement sites read the shared
+constant, so the mutation now removes a real guarantee. It was moved out of the
+inverted set. Worth keeping: **a mutation's classification is a property of the
+current suite, not of the edit, so an inverted set is a claim that expires.** A
+battery that never re-examines its own exemptions will eventually be exempting
+the thing it exists to catch.
+
+### What the tests had to be
+
+The reason vocabulary is the *fourth* cross-language enumeration in this
+subsystem, and the only one that was being rendered before anyone decided it was
+an enumeration. It is pinned the same way as the other three, with one addition:
+`persisted_reasons()` collects every literal actually handed to a `last_error=`
+column or an `error=` keyword across the three modules that write the outbox, and
+checks it against the declared `OUTBOX_REASONS`. Reading the declaration alone
+would be checking mobile against a list that can drift from the writers — which
+is the defect the whole file exists to catch, one level up.
+
+`test_every_internal_code_mapped_to_a_reason_is_one_something_raises` is the
+guard against the eighteenth corollary's sub-tell recurring inside the fix
+itself: a `PREFLIGHT_REASONS` key with a typo, or one left behind after a rename,
+is an entry that can never match. The cause silently falls back to
+`preflight_blocked`, the map still appears to handle it, and nothing fails —
+because nothing raises. The keys are checked against the raises.
+
+`tests/dropshipping/test_supplier_obligation_copy.py` 22,
+`tests/business_os/test_cj_fulfillment.py` 53. Directory total 390 with one file
+per process, zero files with failures; `npm run verify` 383 suites / 6574 tests;
+protection suite 327 checks across 28 suites.
+
+---
+
 ## What kept coming back
 
-Nineteen defects in this chain, nineteen different subsystems, one shape: **a
+Twenty defects in this chain, twenty different subsystems, one shape: **a
 number was asserted rather than measured.**
 
 - `publish()` never wrote `price_label`, and the publish test asserted `status`
@@ -2300,6 +2481,17 @@ number was asserted rather than measured.**
   because its request could only be assembled on the server and no server-side
   assembler existed. Every test was green: they asserted that a reader returns
   what that reader reads.
+- `dispatch` took a clock as an argument and then read the wall clock on the one
+  line that decided whether a frozen freight price was still spendable. The
+  snapshot is hash-pinned, so the injected clock was the only remaining input,
+  and the 300-second reapproval rule could be executed only by letting 300 real
+  seconds pass. It never had been, in either direction. The same handler stored
+  a dozen distinct refusals as the single word `preflight_blocked`, and the
+  orders screen printed that word to the merchant under a comment calling it
+  "the supplier's own refusal text" — a field that cannot contain provider text
+  by construction. The jest test covering that line was named "shows a
+  supplier's refusal in the supplier's own words" and asserted
+  `getByText("preflight_blocked")`.
 
 In all of them the suite was green, and in all of them the green was about the
 halves rather than the seam. Where a claim spans two components, this document now
@@ -2601,3 +2793,42 @@ instance of this same family, three files away. **The instrument that measures
 whether an assertion is load-bearing is the only instrument that can tell you a
 guard is decoration**, which is the argument for running the battery over code
 written in the same commit rather than only over the code it was aimed at.
+
+The nineteenth is the sub-tell's opposite number and it is about the *inputs* a
+rule is allowed to read: **a function that takes a clock and then reads the wall
+one has made its own rule unexecutable, and a rule nothing can execute has never
+been true or false.** `dispatch` accepted `now` and compared a hash-pinned
+`quoted_at` against `datetime.now(timezone.utc)`, which left "was this price
+still current?" answerable only by letting the window elapse in real time. No
+suite waits 300 seconds, so nothing did, so the reapproval rule standing between
+a merchant and a changed freight price had never run in either direction. This
+generalises past clocks — it is any rule whose only remaining variable is
+something the function was handed and then ignored: an injected clock, an
+injected connection, a passed-in config. The tell is mechanical and worth
+grepping for: **a parameter that appears in the signature more times than it
+appears in the body.** The eighteenth corollary says a fact the server owns must
+not arrive as a parameter. This one says the reverse failure is equally silent —
+a parameter that arrives and is then not used is a rule that compiles, reads
+correctly, tests green, and has never fired.
+
+Its sub-tell is about the shape the rule was hiding in. The window check and the
+cost check shared an `or`, and one test covered the second disjunct:
+`test_queued_cost_change_blocks_create` passes, has always passed, and belongs
+entirely to the half that was reachable. **A compound condition is covered when
+every disjunct has failed a test on its own, and a suite cannot tell you which
+disjunct earned the green.** Splitting the condition is what made the dead half
+visible; the clock is what made it reachable. Both were needed, and neither
+would have been found by reading the function, because the function reads
+correctly.
+
+And a third note, on the instrument rather than the code, because the battery
+produced it about itself twice in two seams. First: **a test written relative to
+a constant cannot detect a change to that constant** — every window test here is
+`now + MAX ± 1`, which is right for testing the mechanism and blind to widening
+the window tenfold. Policy numbers with money attached need one absolute
+assertion, stated as a policy, beside the relative ones. Second: **a mutation's
+inverted classification is a claim about the current suite, not about the edit,
+so it expires.** One exemption in this battery became a genuine defect the
+moment an unrelated test was written, and the battery reported it as `PINNED`
+rather than as a failure — which is the only reason it was re-examined instead of
+quietly protecting the thing it was meant to exclude.

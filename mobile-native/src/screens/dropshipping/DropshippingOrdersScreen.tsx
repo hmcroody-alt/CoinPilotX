@@ -45,6 +45,7 @@ import {
   listSupplierObligations,
   stateForError,
   supplierObligationBlockerCopy,
+  supplierOrderReasonCopy,
   supplierOrderStateCopy,
   type DropshippingState,
   type SupplierObligation
@@ -319,10 +320,19 @@ function ObligationRow({
         </Text>
       ))}
 
-      {/* The supplier's own refusal text, when there is one. Shown verbatim
-          rather than summarised — a merchant chasing a blocked order needs the
-          words their supplier used. */}
-      {row.lastError ? <Text style={styles.rowWarning}>{row.lastError}</Text> : null}
+      {/* Why the supplier order has not gone out, when the outbox recorded a
+          reason.
+
+          This rendered `row.lastError` verbatim, under a comment calling it
+          "the supplier's own refusal text ... the words their supplier used".
+          It was neither. Nothing a provider says can reach that column — the
+          whole of `suppliers/errors.py` exists to stop it — and the value is an
+          identifier written in Python, so what a merchant actually read was
+          `preflight_blocked`. Translated now, and the backend keeps which of a
+          dozen causes it was instead of flattening them into that one word. */}
+      {row.lastError ? (
+        <Text style={styles.rowWarning}>{supplierOrderReasonCopy(row.lastError)}</Text>
+      ) : null}
       {row.providerOrderId ? (
         <Text style={styles.rowMeta}>Supplier order {row.providerOrderId}</Text>
       ) : null}

@@ -321,7 +321,192 @@ def test_the_worker_only_speaks_in_outbox_states():
 
 
 # --------------------------------------------------------------------------
-# The country table: a fourth cross-language enumeration, and the one that
+# The reason vocabulary: the enumeration that was being rendered before anyone
+# decided it was an enumeration
+# --------------------------------------------------------------------------
+#
+# `business_os_supplier_outbox.last_error` is named like a diagnostic and used
+# like one. It was also being *printed to the merchant* — `DropshippingOrdersScreen`
+# rendered it verbatim under a comment calling it "the supplier's own refusal
+# text ... the words their supplier used".
+#
+# Both halves of that comment were false, and neither had ever been checked:
+# `suppliers/errors.py` exists precisely to guarantee no provider string reaches
+# this package's persisted state, and the values are identifiers written in
+# Python. A merchant with a blocked order read `preflight_blocked`.
+#
+# And it was one word for about a dozen causes, because `dispatch` flattened
+# every non-retryable preflight failure before storing it. So these tests pin
+# three separate things: that every reason the Python can write has words, that
+# the mapping from internal code to reason cannot name a code nothing raises,
+# and that the flattening does not come back.
+
+
+def mobile_reasons():
+    source = open(MOBILE_API, encoding="utf-8").read()
+    block = re.search(
+        r"export const SUPPLIER_ORDER_REASONS = \[(.*?)\] as const;", source, re.S)
+    assert block, ("SUPPLIER_ORDER_REASONS is no longer a literal array — this "
+                   "test can no longer read it")
+    return re.findall(r'"([a-z_]+)"', block.group(1))
+
+
+def mobile_reason_copy():
+    source = open(MOBILE_API, encoding="utf-8").read()
+    block = re.search(
+        r"export const SUPPLIER_ORDER_REASON_COPY: "
+        r"Record<SupplierOrderReason, string> = \{(.*?)\n\};", source, re.S)
+    assert block, (
+        "SUPPLIER_ORDER_REASON_COPY is no longer a total Record over "
+        "SupplierOrderReason. That annotation is the compile error that catches "
+        "a reason added without copy; widening it removes it.")
+    return dict(re.findall(r'^  ([a-z_]+): "([^"]*)"', block.group(1), re.M))
+
+
+def persisted_reasons():
+    """Every reason the Python *code* can put in `last_error`, read off the code.
+
+    Not `fulfillment.OUTBOX_REASONS`. That constant is the declaration, and a
+    declaration is the thing that drifts — the whole file is about enumerations
+    that stopped matching what was written. What is collected here is every
+    literal actually handed to a `last_error=` column or an `error=` keyword
+    across the three modules that write the outbox.
+    """
+    found = set()
+    for relative_path in STATE_MODULES:
+        source = _source(relative_path)
+        found |= set(re.findall(r"last_error='([a-z_]+)'", source))
+        found |= set(re.findall(r'\berror="([a-z_]+)"', source))
+    return found
+
+
+def test_the_declared_reason_set_is_what_the_code_actually_writes():
+    # `OUTBOX_REASONS` exists so mobile can be checked against something; that
+    # is only worth anything if it is also checked against the writers. A
+    # `settle(..., error="something_new")` added without touching the constant
+    # would otherwise reach a merchant as a raw identifier, which is exactly the
+    # failure this subsystem has already shipped once.
+    written = persisted_reasons()
+    undeclared = written - set(fulfillment.OUTBOX_REASONS)
+    assert not undeclared, (
+        "These reasons are written to business_os_supplier_outbox.last_error but "
+        f"are not in fulfillment.OUTBOX_REASONS: {sorted(undeclared)}")
+
+
+def test_every_reason_a_merchant_can_be_shown_has_words():
+    # The direction that costs something. A reason mobile has never heard of
+    # used to render as the identifier itself; it now renders a fallback that
+    # admits it cannot name the cause. Either way the merchant is not told what
+    # to do, so the set has to be complete.
+    missing = set(fulfillment.OUTBOX_REASONS) - set(mobile_reasons())
+    assert not missing, (
+        "These outbox reasons are written by the backend but absent from "
+        f"SUPPLIER_ORDER_REASONS, so the app cannot explain them: {sorted(missing)}")
+    copy = mobile_reason_copy()
+    uncopied = set(mobile_reasons()) - set(copy)
+    assert not uncopied, f"No merchant-readable copy for: {sorted(uncopied)}"
+    for reason, words in copy.items():
+        assert words.strip(), f"{reason} has empty copy"
+        # Same rule as the state copy: the identifier must not survive into the
+        # prose, in either spelling, and must not *be* the prose.
+        assert not re.search(r"[a-z]_[a-z]|[a-z][A-Z]", words), (
+            f"{reason} copy reads like an identifier, not a sentence: {words!r}")
+        assert reason not in words, f"{reason} copy is just the code: {words!r}"
+
+
+def test_mobile_invents_no_reason_the_backend_cannot_write():
+    invented = set(mobile_reasons()) - set(fulfillment.OUTBOX_REASONS)
+    assert not invented, (
+        "SUPPLIER_ORDER_REASONS names reasons nothing in the backend writes: "
+        f"{sorted(invented)}")
+    reasons = mobile_reasons()
+    assert len(reasons) == len(set(reasons)), "SUPPLIER_ORDER_REASONS lists a reason twice"
+
+
+def test_every_internal_code_mapped_to_a_reason_is_one_something_raises():
+    """The mapping cannot name a code no line raises.
+
+    `PREFLIGHT_REASONS` is keyed by this module's own `FulfillmentError` codes.
+    A key with a typo, or one left behind after the code that raised it was
+    renamed, is an entry that can never match — so the cause it was written for
+    silently falls back to `preflight_blocked` and every test still passes,
+    because nothing failed. That is this repo's recurring defect in its purest
+    form and the only way to catch it is to check the keys against the raises.
+    """
+    raised = set()
+    for relative_path in STATE_MODULES + ("services/business_os/suppliers/gateway.py",):
+        source = _source(relative_path)
+        raised |= set(re.findall(r'(?:FulfillmentError|SupplierError|GatewayError)\("([a-z_]+)"',
+                                 source))
+    unraisable = set(fulfillment.PREFLIGHT_REASONS) - raised
+    assert not unraisable, (
+        "PREFLIGHT_REASONS maps internal codes that nothing raises, so these "
+        f"entries can never match and their causes stay unnamed: {sorted(unraisable)}")
+
+
+def test_dispatch_does_not_flatten_every_refusal_into_one_word():
+    """The regression guard on the fix itself.
+
+    `dispatch`'s handler chose between three constants and threw the exception's
+    own code away. Restoring that -- by editing the expression back, or by
+    emptying `PREFLIGHT_REASONS` -- would leave every test above green: the
+    declared set would still be covered by copy, and a merchant would still be
+    told something. They would just all be told the same thing.
+
+    So this asserts the property rather than the wording: the BLOCKED branch
+    resolves through the map, and the map distinguishes the causes a merchant
+    can actually act on.
+    """
+    source = _source("services/business_os/suppliers/fulfillment.py")
+    handler = source.split("def dispatch(", 1)[-1].split("\ndef ", 1)[0]
+    assert "PREFLIGHT_REASONS.get(" in handler, (
+        "dispatch no longer resolves its BLOCKED reason through "
+        "PREFLIGHT_REASONS, so every preflight refusal is being stored as one "
+        "word again")
+    actionable = {"supplier_quote_expired", "supplier_cost_changed",
+                  "supplier_connection_changed", "supplier_shop_unbound",
+                  "supplier_item_changed", "supplier_stock_unconfirmed"}
+    distinct = set(fulfillment.PREFLIGHT_REASONS.values())
+    assert actionable <= distinct, (
+        "These are the refusals a merchant can do something about, and "
+        f"PREFLIGHT_REASONS no longer distinguishes: {sorted(actionable - distinct)}")
+    assert "preflight_blocked" not in distinct, (
+        "preflight_blocked is the fallback for a cause this module did not "
+        "choose; mapping a known code onto it re-flattens that cause")
+
+
+def test_the_blocked_copy_does_not_blame_a_supplier_that_was_never_asked():
+    """BLOCKED means *this* deployment did not send, not that CJ said no.
+
+    The copy said "Your supplier refused this order" — a sentence that sends a
+    merchant to argue with their supplier about a message the supplier never
+    sent. What makes it wrong is not a judgement about which causes are common;
+    it is a branch. `dispatch`'s handler tests `sent` **first**, and anything
+    sent becomes `UNKNOWN`. So `BLOCKED` is unreachable once the write has been
+    attempted, and the copy is entitled to say nothing went out — as long as
+    that ordering holds, which is what is asserted here.
+
+    Deliberately not asserted by checking where each code is raised. An earlier
+    version of this test did that, textually, and it was both wrong (four of the
+    codes are raised in helpers `dispatch` calls) and a proxy for the thing that
+    actually guarantees the claim.
+    """
+    words = mobile_copy()["BLOCKED"].lower()
+    assert "refus" not in words and "declin" not in words and "reject" not in words, (
+        f"BLOCKED copy attributes a refusal to the supplier: {words!r}")
+    handler = _source("services/business_os/suppliers/fulfillment.py")
+    handler = handler.split("except Exception as exc:", 1)[-1].split("\n    finally:", 1)[0]
+    unknown = handler.find('state = "UNKNOWN"')
+    blocked = handler.find('state = "BLOCKED"')
+    sent_test = handler.find("if sent or ")
+    assert 0 <= sent_test < unknown < blocked, (
+        "dispatch's handler no longer decides UNKNOWN-because-sent before it "
+        "can reach BLOCKED. BLOCKED's copy claims nothing was sent to the "
+        "supplier, and that claim rests entirely on this ordering.")
+
+
+# --------------------------------------------------------------------------
+# The country table: a fifth cross-language enumeration, and the one that
 # existed in TypeScript only
 # --------------------------------------------------------------------------
 
