@@ -38,6 +38,7 @@ import {
   type MarketplaceSellerOrder,
   type SellerStoreSnapshot
 } from "./marketplace";
+import { deliveryLane, resolveFulfillmentKind } from "./marketplaceFulfillment";
 import { sellerStoreName } from "./sellerIdentity";
 import { listingHealth, type StoreListingHealth } from "./storeDashboard";
 
@@ -354,29 +355,32 @@ export type MarketplaceFulfillment = "platform" | "local" | "both" | "unknown";
 /**
  * Whether a card gets "Add to cart", "Make offer", both, or neither.
  *
- * Driven by `delivery_type` and `product_type`, per the brief's instruction to
- * drive the split from fulfillment data rather than from category guesses. A
- * listing whose fulfillment is unrecorded returns `unknown` and gets no action
- * button at all — it routes to the detail page instead. Defaulting an unknown
- * to "Add to cart" would put an item the platform may not be able to ship
- * behind a checkout, which is the one failure here that costs a buyer money.
+ * Driven from fulfillment data rather than from category guesses, per the
+ * brief. A listing whose fulfillment is unrecorded returns `unknown` and gets no
+ * action button at all — it routes to the detail page instead. Defaulting an
+ * unknown to "Add to cart" would put an item the platform may not be able to
+ * ship behind a checkout, which is the one failure here that costs a buyer
+ * money.
+ *
+ * `unknown` was doing far more than that. This function used to substring-match
+ * `delivery_type` for "pickup"/"ship"/"digital" and `product_type` for
+ * "digital"/"course" — and `delivery_type` holds the *product type*, so a
+ * physical listing read `"physical"`, which contains none of those words, and
+ * `product_type` read `"physical"` too. Every physical listing in the grid was
+ * therefore `unknown`, and every physical card in the marketplace offered
+ * neither Add to cart nor Make offer. The guard against guessing was firing on
+ * the entire catalogue.
+ *
+ * It now folds down from `resolveFulfillmentKind`, and `unknown` means what its
+ * comment says: a row that declared neither a listing type nor a lane.
  */
 export function listingFulfillment(listing: MarketplaceListing): MarketplaceFulfillment {
-  const delivery = String(listing.delivery_type || "").toLowerCase();
-  const product = String(listing.product_type || "").toLowerCase();
-
-  const local = delivery.includes("pickup") || delivery.includes("local") || delivery.includes("meetup");
-  const platform =
-    delivery.includes("ship") ||
-    delivery.includes("digital") ||
-    delivery.includes("download") ||
-    product.includes("digital") ||
-    product.includes("course");
-
-  if (local && platform) return "both";
-  if (local) return "local";
-  if (platform) return "platform";
-  return "unknown";
+  const declared = String(listing.listing_type || listing.product_type || "").trim();
+  if (!declared && !deliveryLane(listing)) return "unknown";
+  const kind = resolveFulfillmentKind(listing);
+  if (kind === "shipping_or_pickup") return "both";
+  if (kind === "pickup") return "local";
+  return "platform";
 }
 
 /**

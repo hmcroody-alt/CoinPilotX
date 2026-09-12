@@ -252,16 +252,26 @@ def _line_state(line: dict, listing: dict, price_now_minor: int) -> str:
 
 
 def _fulfillment(listing: dict) -> str:
-    delivery = (listing.get("delivery_type") or "").lower()
-    if delivery in {"digital", "download"}:
+    """The cart payload's legacy four-value lane, folded down from the one rule.
+
+    A seller who offers both is reported as ``both`` rather than being silently
+    resolved to shipping. Collapsing it here is how a buyer ends up entering a
+    delivery address for an item they intended to collect in person — the choice
+    is theirs to make, so it has to survive to the checkout screen.
+
+    That comment was here before this function could honour it. It used to read
+    ``delivery_type`` directly, and that column holds the product type rather
+    than a lane, so ``both`` and ``pickup`` were both unreachable and every
+    physical line in every cart reported ``shipping``. It now derives from
+    :func:`_fulfillment_kind`, so the cart line and the checkout screen cannot
+    answer the same question differently.
+    """
+    kind = _fulfillment_kind(listing)
+    if kind == "digital":
         return "digital"
-    if delivery in {"pickup", "local", "meetup"}:
+    if kind == "pickup":
         return "pickup"
-    # A seller who offers both is reported as ``both`` rather than being silently
-    # resolved to shipping. Collapsing it here is how a buyer ends up entering a
-    # delivery address for an item they intended to collect in person — the
-    # choice is theirs to make, so it has to survive to the checkout screen.
-    if delivery in {"both", "pickup_or_shipping", "shipping_or_pickup"}:
+    if kind == "shipping_or_pickup":
         return "both"
     return "shipping"
 

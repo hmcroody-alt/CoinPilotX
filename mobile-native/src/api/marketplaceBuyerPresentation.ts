@@ -1,4 +1,5 @@
 import type { MarketplaceListing } from "./marketplace";
+import { resolveFulfillmentKind } from "./marketplaceFulfillment";
 
 export function isStocklessMarketplaceListing(listing: MarketplaceListing) {
   return ["digital", "course", "service", "event", "booking"].includes(
@@ -85,13 +86,17 @@ export type MarketplaceFulfillment = "digital" | "pickup" | "shipping" | "both";
 export function marketplaceListingFulfillment(
   listing: MarketplaceListing
 ): MarketplaceFulfillment {
-  const value = String(listing.delivery_type || listing.product_type || "").toLowerCase();
-  const metadata = (listing.listing_metadata || {}) as Record<string, unknown>;
-  const delivery = String(metadata.delivery_options || "").toLowerCase();
-  if (value === "digital" || listing.listing_type === "digital") return "digital";
-  if (value === "pickup" || delivery === "pickup") return "pickup";
-  if (["both", "pickup_or_shipping", "shipping_or_pickup"].includes(value)) return "both";
-  if (["both", "pickup_or_shipping", "shipping_or_pickup"].includes(delivery)) return "both";
+  // Folded down from the one rule rather than derived again here. The promise
+  // above — that a listing reading "Local pickup" must not check out as
+  // "shipping" — was not kept while this function and `resolveFulfillmentKind`
+  // read different fields: this one consulted `listing_metadata` and answered
+  // "pickup", the checkout screen's consulted `delivery_type` and answered
+  // "shipping", and the product screen sent both of them to checkout in the
+  // same navigation payload, two lines apart.
+  const kind = resolveFulfillmentKind(listing);
+  if (kind === "digital") return "digital";
+  if (kind === "pickup") return "pickup";
+  if (kind === "shipping_or_pickup") return "both";
   return "shipping";
 }
 
@@ -142,14 +147,27 @@ export function marketplaceListingPriceMinor(listing: MarketplaceListing): numbe
 }
 
 export function marketplaceFulfillmentCopy(listing: MarketplaceListing) {
-  const metadata = (listing.listing_metadata || {}) as Record<string, unknown>;
-  const raw = metadata.delivery_options;
-  const configured = (typeof raw === "string" ? raw.trim() : "") || String(listing.delivery_type || "");
-  if (configured === "both") return "Local pickup or shipping";
-  if (configured === "pickup") return "Local pickup";
-  if (configured === "shipping" || configured === "physical") return "Shipping";
-  const kind = String(listing.product_type || listing.listing_type || "");
+  // The sentence and the lane come from the same derivation, so the sentence
+  // cannot promise a lane the checkout will not honour. This function used to
+  // read `listing_metadata.delivery_options` first and special-case the literal
+  // `"physical"` in `delivery_type` — someone writing the *label* noticed the
+  // column held a product type and worked around it here, while the function
+  // deciding what the buyer is actually charged for never got the same
+  // treatment. That asymmetry was the whole defect.
+  const kind = resolveFulfillmentKind(listing);
+  if (kind === "shipping_or_pickup") return "Local pickup or shipping";
+  if (kind === "pickup") return "Local pickup";
   if (kind === "digital") return "Digital delivery";
-  if (kind === "service") return "Service fulfillment";
+  if (kind.startsWith("service")) return "Service fulfillment";
+  if (kind === "shipping") {
+    // A row that declared nothing at all is not a shipping order, it is an
+    // unknown one. Saying "Shipping" for it would state a lane no seller chose.
+    const declared = String(listing.listing_type || listing.product_type || "").trim().toLowerCase();
+    const metadata = (listing.listing_metadata || {}) as Record<string, unknown>;
+    if (!declared && !String(metadata.delivery_options || "").trim()) {
+      return "Delivery details shown at checkout";
+    }
+    return "Shipping";
+  }
   return "Delivery details shown at checkout";
 }
