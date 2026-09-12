@@ -30,7 +30,12 @@ PROVIDER_ALIASES = {
     "gemini": "gemini",
     "google": "gemini",
     "groq": "groq",
+    "meta": "meta",
+    "muse": "meta",
     "openai": "openai",
+    "perplexity": "perplexity",
+    "pplx": "perplexity",
+    "sonar": "perplexity",
 }
 
 
@@ -41,14 +46,45 @@ class ProviderConfig:
     key_env: str
     model_env: str
     default_model: str
+    #: Env flag that must not be false for this provider to be tried at all.
+    #: A key alone is not consent - §73 of the multi-provider brief requires a
+    #: per-provider kill switch that takes a provider out of rotation without
+    #: deleting the credential. Empty means "no switch, key presence decides".
+    enable_env: str = ""
+    #: Env var holding a per-provider timeout in milliseconds, and the fallback
+    #: used when it is unset. Meta's first call on a cold route measured 26.7s,
+    #: which the module-wide 25s default would have cut off.
+    timeout_ms_env: str = ""
+    default_timeout_ms: int = 0
+    #: Tokens this provider spends thinking before it emits any answer, which on
+    #: a reasoning model come out of the same `max_tokens` budget as the answer.
+    #: See `_effective_max_tokens`.
+    reasoning_overhead_tokens: int = 0
 
 
 PROVIDERS = {
-    "openai": ProviderConfig("openai", "OpenAI", "OPENAI_API_KEY", "OPENAI_MODEL", "gpt-4o-mini"),
-    "claude": ProviderConfig("claude", "Claude", "CLAUDE_AI_API", "CLAUDE_MODEL", "claude-3-5-haiku-latest"),
+    "openai": ProviderConfig("openai", "OpenAI", "OPENAI_API_KEY", "OPENAI_MODEL", "gpt-4o-mini",
+                             enable_env="UNDX_OPENAI_ENABLED"),
+    "claude": ProviderConfig("claude", "Claude", "CLAUDE_AI_API", "CLAUDE_MODEL", "claude-3-5-haiku-latest",
+                             enable_env="UNDX_CLAUDE_ENABLED"),
     "gemini": ProviderConfig("gemini", "Gemini", "Gemini_AI_API", "GEMINI_MODEL", "gemini-1.5-flash"),
     "deepseek": ProviderConfig("deepseek", "DeepSeek", "DEEPSEEK_AI_API", "DEEPSEEK_MODEL", "deepseek-chat"),
     "groq": ProviderConfig("groq", "Groq", "GROQ_AI_API", "GROQ_MODEL", "llama-3.1-8b-instant"),
+    # Meta Model API. Model IDs, base URL, reasoning enum and the 1M context are
+    # from the live console for project 1656198352782001, not from documentation:
+    # see UNDX_META_MUSE_CONFIGURATION.md. The default is the Standard-tier model
+    # deliberately - the Contributor variant is 95% cheaper because Meta trains on
+    # its inputs and outputs, which is not a trade PulseSoc user content can make.
+    "meta": ProviderConfig("meta", "Meta Muse", "META_MODEL_API_KEY", "META_MUSE_MODEL", "muse-spark-1.3",
+                           enable_env="META_MUSE_ENABLED",
+                           timeout_ms_env="META_MUSE_TIMEOUT_MS", default_timeout_ms=60000,
+                           reasoning_overhead_tokens=3000),
+    # Perplexity is the grounded-research lane: it answers from a live search and
+    # returns the sources alongside the prose (§20/§59). `sonar-reasoning` is
+    # retired upstream and 400s; `sonar` and `sonar-pro` are current.
+    "perplexity": ProviderConfig("perplexity", "Perplexity", "PERPLEXITY_API_KEY", "PERPLEXITY_MODEL", "sonar",
+                                 enable_env="UNDX_PERPLEXITY_ENABLED",
+                                 timeout_ms_env="PERPLEXITY_TIMEOUT_MS", default_timeout_ms=45000),
 }
 
 COUNCIL_AGENT_PROVIDER_MAP = [
@@ -127,11 +163,57 @@ def default_provider() -> str:
     return _normalize_provider(os.getenv("UNDX_DEFAULT_AI_PROVIDER") or "openai")
 
 
-def _api_key(provider: str) -> str:
+def _raw_api_key(provider: str) -> str:
+    """The configured value exactly as set, valid or not.
+
+    Redaction needs this: a malformed value is still secret-bearing, and is in
+    fact the value most likely to end up in a log, because it is the one that
+    makes the HTTP layer raise.
+    """
     config = PROVIDERS[provider]
     if provider == "gemini":
         return (os.getenv("Gemini_AI_API") or os.getenv("GEMINI_AI_API") or "").strip()
     return (os.getenv(config.key_env) or "").strip()
+
+
+def _api_key(provider: str) -> str:
+    """The configured credential, or empty if it cannot safely be sent.
+
+    A key is sent as an HTTP header value, and a header value containing a
+    newline is rejected by the HTTP layer - which raises an exception quoting the
+    offending value. That is how a credential reaches the application log: not
+    through a successful request, but through a malformed one.
+
+    This is not hypothetical. A provider variable in this project was set to a
+    JSON configuration document that contained a key, rather than to the key.
+    Every call raised, and every raise logged a slice of that document.
+
+    Returning empty here means the provider is reported unconfigured and skipped
+    before anything touches the credential, so a misconfigured variable costs one
+    provider rather than leaking its contents once per request.
+    """
+    raw = _raw_api_key(provider)
+    if not raw or any(char in raw for char in "\r\n\t") or " " in raw:
+        return ""
+    return raw
+
+
+def _credential_fragments(secret: str) -> list[str]:
+    """Credential-shaped substrings of a configured value.
+
+    Redacting only the whole value assumes the variable holds exactly one key.
+    A Railway variable in this project holds a JSON document that *contains* a
+    key, and `requests` reproduced a slice of that document - key included - in
+    its exception text. The slice never equalled the variable, so whole-value
+    matching found nothing and the key was logged.
+
+    Splitting on characters that cannot appear inside a token, then keeping the
+    long fragments, catches the key whatever wrapper it arrived in. The floor is
+    high enough that ordinary words in a config blob are not redacted out of
+    error messages.
+    """
+    fragments = re.split(r"[^A-Za-z0-9_\-.~+/=]+", secret)
+    return sorted({f for f in fragments if len(f) >= 20}, key=len, reverse=True)
 
 
 def _safe_error(exc: Exception) -> str:
@@ -150,17 +232,95 @@ def _safe_error(exc: Exception) -> str:
     """
     text = str(exc)
     text = re.sub(r"([?&])(key|api_key|access_token|token)=[^&\s\"']+", r"\1\2=***", text, flags=re.I)
+    # A JSON-embedded credential names itself: `"api_key": "gsk_..."`. Redact by
+    # position before the value-matching below, which catches the same thing only
+    # when the exact configured value is present.
+    text = re.sub(r'("?(?:api[_-]?key|secret|token|password)"?\s*[:=]\s*"?)([A-Za-z0-9_\-.~+/=]{16,})',
+                  r"\1***", text, flags=re.I)
     for provider in PROVIDERS:
-        secret = _api_key(provider)
+        secret = _raw_api_key(provider)
         # Short values are not credentials and would redact ordinary words.
         if secret and len(secret) >= 8:
             text = text.replace(secret, "***")
+            for fragment in _credential_fragments(secret):
+                text = text.replace(fragment, "***")
     return text[:400]
 
 
 def _model(provider: str) -> str:
     config = PROVIDERS[provider]
     return (os.getenv(config.model_env) or config.default_model).strip()
+
+
+def provider_enabled(provider: str) -> bool:
+    """Whether this provider may be tried, ignoring whether it is configured.
+
+    Separate from key presence so a provider can be pulled out of rotation
+    without deleting its credential - the difference between "we are not using
+    Meta right now" and "we have lost the ability to use Meta". Defaults to
+    enabled: a provider with a key and no switch behaves exactly as before.
+    """
+    config = PROVIDERS[provider]
+    return _flag(config.enable_env, True) if config.enable_env else True
+
+
+def _timeout(provider: str, fallback_seconds: int) -> int:
+    """Seconds to allow this provider, preferring its own configured budget.
+
+    The caller's number is a module-wide default chosen for chat completions.
+    A reasoning model on a cold route takes considerably longer than that - the
+    first Meta call measured against the live API took 26.7s against a 25s
+    default - so a provider that declares its own budget wins, and the caller's
+    number is only ever used to raise it, never to cut it short.
+    """
+    config = PROVIDERS[provider]
+    declared_ms = 0
+    if config.timeout_ms_env:
+        raw = (os.getenv(config.timeout_ms_env) or "").strip()
+        if raw.isdigit():
+            declared_ms = int(raw)
+    declared_ms = declared_ms or config.default_timeout_ms
+    if not declared_ms:
+        return fallback_seconds
+    return max(fallback_seconds, (declared_ms + 999) // 1000)
+
+
+def _effective_max_tokens(provider: str, max_tokens: int) -> int:
+    """Raise the output budget to cover a reasoning model's hidden spend.
+
+    On Meta's Muse Spark, `max_tokens` bounds reasoning *and* answer together.
+    Measured against the live API: a two-letter answer at `reasoning_effort=high`
+    consumed 381 completion tokens, 370 of them reasoning. So this module's 900
+    token chat default leaves a real task almost nothing, and the 320 that
+    `route_structured_request` asks for can be spent entirely on thinking - the
+    provider then returns `content: null` with `finish_reason: "length"`, which
+    reads as a broken provider rather than as a budget that was too small.
+
+    Non-reasoning providers declare no overhead and are returned untouched.
+    """
+    overhead = PROVIDERS[provider].reasoning_overhead_tokens
+    return max_tokens + overhead if overhead else max_tokens
+
+
+def _provider_text(provider: str, content: Any, finish_reason: Any = None) -> str:
+    """Text from a completion, with an empty answer named rather than crashed on.
+
+    `content` is not always a string. A reasoning model that spends its whole
+    budget thinking returns JSON `null` here, and `None.strip()` raises
+    AttributeError inside the per-provider `try`, where it is caught, logged as a
+    generic `response_failed` and silently failed over. The provider is fine; the
+    request was under-budgeted. Distinguishing the two is the difference between
+    a one-line config fix and a provider that appears permanently broken.
+    """
+    if isinstance(content, str) and content.strip():
+        return content.strip()
+    reason = str(finish_reason or "").strip() or "unspecified"
+    if reason == "length":
+        raise ValueError(
+            f"{PROVIDERS[provider].label} returned no text: the token budget was "
+            f"consumed before the answer began (finish_reason=length)"
+        )
+    raise ValueError(f"{PROVIDERS[provider].label} returned no text (finish_reason={reason})")
 
 
 def provider_status() -> dict[str, bool]:
@@ -170,7 +330,12 @@ def provider_status() -> dict[str, bool]:
 def provider_health(provider: str, routing_available: bool = True) -> str:
     provider = _normalize_provider(provider)
     if not _api_key(provider):
-        return "Missing API Key"
+        # "Set, but not to something sendable" is a different problem from "not
+        # set", and reporting both as missing sends whoever investigates looking
+        # for an absent variable that is right there in the dashboard.
+        return "Malformed API Key" if _raw_api_key(provider) else "Missing API Key"
+    if not provider_enabled(provider):
+        return "Disabled"
     return "Online" if routing_available else "Offline"
 
 
@@ -241,15 +406,22 @@ def council_agent_provider_plan(message: str = "") -> dict[str, Any]:
 
 
 def log_provider_status() -> None:
+    """One line naming what the router can currently reach.
+
+    Derived from PROVIDERS rather than written out, because the hardcoded
+    five-provider version of this line kept reporting five providers after a
+    sixth was added - it did not fail, it just quietly stopped being the whole
+    picture, which is worse in the one place that exists to give the whole
+    picture. Reports keys and switches separately: "configured but switched off"
+    and "never configured" call for opposite fixes.
+    """
     status = provider_status()
-    logging.info(
-        "UNDX provider keys configured: openai=%s claude=%s gemini=%s deepseek=%s groq=%s",
-        "yes" if status["openai"] else "no",
-        "yes" if status["claude"] else "no",
-        "yes" if status["gemini"] else "no",
-        "yes" if status["deepseek"] else "no",
-        "yes" if status["groq"] else "no",
+    summary = " ".join(
+        f"{provider}={'yes' if status[provider] else 'no'}"
+        f"{'' if provider_enabled(provider) else '(disabled)'}"
+        for provider in sorted(PROVIDERS)
     )
+    logging.info("UNDX provider keys configured: %s", summary)
 
 
 def _clean_text(value: Any, limit: int = 2200) -> str:
@@ -278,6 +450,14 @@ def clean_history(history: Any) -> list[dict[str, str]]:
 def classify_request(message: str) -> dict[str, Any]:
     text = _clean_text(message, 2600).lower()
     rules = [
+        # Freshness is checked before every other category. A question about what
+        # is true *now* routed to a model answering from training data does not
+        # fail loudly - it returns a confident, well-formed, stale answer, and the
+        # only reader able to detect it is the one who already knew. Every other
+        # category here can be served acceptably by any provider; this one cannot.
+        ("current_web", ["today", "right now", "latest", "current", "currently", "news", "this week",
+                         "this month", "recent", "as of", "up to date", "breaking", "announced",
+                         "price of", "stock", "who won", "release date", "2026", "2027"]),
         ("security", ["security", "secure", "scam", "risk", "wallet", "auth", "token", "secret", ".env", "credential"]),
         ("repository", ["repo", "repository", "folder", "file", "code", "debug", "bug", "diff", "commit", "git", "python", "javascript"]),
         ("automation", ["automation", "agent", "workflow", "memory", "schedule", "mission control", "autonomous"]),
@@ -290,7 +470,12 @@ def classify_request(message: str) -> dict[str, Any]:
         if found:
             matches[category] = found[:6]
 
-    if not matches and len(text) < 160:
+    if "current_web" in matches:
+        # Deliberately not decided by signal count. "What is the latest Stripe
+        # webhook version" carries one freshness term against several repository
+        # ones, and counting hands it to a provider with no access to the answer.
+        category = "current_web"
+    elif not matches and len(text) < 160:
         category = "fast_directive"
     elif matches:
         category = max(matches, key=lambda key: len(matches[key]))
@@ -307,10 +492,21 @@ def classify_request(message: str) -> dict[str, Any]:
 def provider_priority(classification: dict[str, Any]) -> list[str]:
     category = classification.get("category")
     priorities = {
-        "security": ["claude", "openai", "deepseek", "gemini", "groq"],
-        "repository": ["deepseek", "openai", "claude", "gemini", "groq"],
-        "automation": ["openai", "groq", "claude", "deepseek", "gemini"],
-        "research": ["gemini", "openai", "claude", "deepseek", "groq"],
+        # Perplexity leads exactly one lane, and leads it because it is the only
+        # provider here that can see the answer - it searches at request time and
+        # returns its sources. That is a structural difference, not a quality
+        # judgement, so it does not wait on benchmark evidence.
+        "current_web": ["perplexity", "openai", "claude", "gemini", "meta", "groq"],
+        "security": ["claude", "openai", "deepseek", "gemini", "meta", "groq"],
+        # Meta Muse is built for long-horizon multi-step work over a 1M-token
+        # context, which is what the repository and automation lanes are. It sits
+        # behind the incumbents on purpose: §7 of the integration brief admits it
+        # as an available specialist, and promoting it past a provider already
+        # serving production is a decision for benchmark evidence, not for the
+        # commit that first makes it reachable.
+        "repository": ["deepseek", "openai", "claude", "meta", "gemini", "groq"],
+        "automation": ["openai", "groq", "claude", "meta", "deepseek", "gemini"],
+        "research": ["perplexity", "gemini", "openai", "claude", "meta", "deepseek"],
         "product": ["openai", "claude", "gemini", "groq", "deepseek"],
         "fast_directive": ["groq", "openai", "claude", "gemini", "deepseek"],
         "general_builder": ["openai", "claude", "gemini", "deepseek", "groq"],
@@ -321,7 +517,13 @@ def provider_priority(classification: dict[str, Any]) -> list[str]:
     ordered = [preferred, *ordered] if preferred not in ordered else ordered
     if "openai" not in ordered:
         ordered.append("openai")
-    return list(dict.fromkeys(provider for provider in ordered if provider in PROVIDERS))
+    # A provider switched off must not merely be skipped when the loop reaches
+    # it: it must not be planned for. Otherwise `attempts` reports a provider
+    # that was never going to be tried, and the kill switch looks like a failure.
+    return list(dict.fromkeys(
+        provider for provider in ordered
+        if provider in PROVIDERS and provider_enabled(provider)
+    ))
 
 
 def _messages(system_prompt: str, message: str, history: Any,
@@ -354,22 +556,25 @@ def _messages(system_prompt: str, message: str, history: Any,
 
 def _openai_compatible(provider: str, endpoint: str, system_prompt: str, message: str, history: Any, timeout: int,
                        *, user_content: str | None = None,
-                       temperature: float = 0.35, max_tokens: int = 900) -> dict[str, Any]:
+                       temperature: float = 0.35, max_tokens: int = 900,
+                       extra_payload: dict[str, Any] | None = None) -> dict[str, Any]:
     config = PROVIDERS[provider]
     payload = {
         "model": _model(provider),
         "messages": _messages(system_prompt, message, history, user_content=user_content),
-        "max_tokens": max_tokens,
+        "max_tokens": _effective_max_tokens(provider, max_tokens),
         "temperature": temperature,
     }
+    payload.update(extra_payload or {})
     response = requests.post(
         endpoint,
         headers={"Authorization": f"Bearer {_api_key(provider)}", "Content-Type": "application/json"},
         json=payload,
-        timeout=timeout,
+        timeout=_timeout(provider, timeout),
     )
     response.raise_for_status()
-    text = response.json()["choices"][0]["message"]["content"].strip()
+    choice = (response.json().get("choices") or [{}])[0]
+    text = _provider_text(provider, (choice.get("message") or {}).get("content"), choice.get("finish_reason"))
     return {"text": text, "model": payload["model"], "source": config.label}
 
 
@@ -383,6 +588,76 @@ def _call_deepseek(system_prompt: str, message: str, history: Any, timeout: int,
 
 def _call_groq(system_prompt: str, message: str, history: Any, timeout: int, **kwargs: Any) -> dict[str, Any]:
     return _openai_compatible("groq", "https://api.groq.com/openai/v1/chat/completions", system_prompt, message, history, timeout, **kwargs)
+
+
+META_BASE_URL = "https://api.meta.ai/v1"
+
+#: Accepted by the live API; anything else is rejected with HTTP 400 naming the
+#: full set, which is how this list was obtained rather than guessed. `max` is
+#: Standard-tier muse-spark-1.3 only.
+META_REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
+
+
+def _meta_reasoning_effort() -> str:
+    value = (os.getenv("META_MUSE_REASONING_EFFORT") or "high").strip().lower()
+    return value if value in META_REASONING_EFFORTS else "high"
+
+
+def _call_meta(system_prompt: str, message: str, history: Any, timeout: int, **kwargs: Any) -> dict[str, Any]:
+    """Meta Model API, over its OpenAI-compatible chat surface.
+
+    Meta also exposes a Responses API, and the configuration this integration
+    started from named it. Chat completions is used instead because it is the
+    shape every other provider in this module already speaks, so Muse joins the
+    existing failover loop rather than needing a second response-parsing path -
+    and because the one thing Responses offers that matters here, reasoning
+    summaries, is not actually delivered: asked with `summary: "auto"` the live
+    API returned an empty summary list. A parsing branch maintained for a field
+    that arrives empty is a liability, not a capability.
+
+    `reasoning_effort` is sent on every call. The model reasons whether or not it
+    is asked to, so the choice is between a budget this module sets deliberately
+    and whatever the default happens to become.
+    """
+    return _openai_compatible(
+        "meta", f"{META_BASE_URL}/chat/completions", system_prompt, message, history, timeout,
+        extra_payload={"reasoning_effort": _meta_reasoning_effort()}, **kwargs,
+    )
+
+
+def _call_perplexity(system_prompt: str, message: str, history: Any, timeout: int, **kwargs: Any) -> dict[str, Any]:
+    """Perplexity, whose answer is only half the payload.
+
+    Every response carries the pages it was grounded in. Those are the reason to
+    route a question here at all: a research answer whose sources were dropped in
+    transit is indistinguishable from the same sentence invented by a model that
+    has never seen the web, and UNDX cannot attribute what it was not handed.
+    So the citations ride back in the envelope.
+    """
+    config = PROVIDERS["perplexity"]
+    payload = {
+        "model": _model("perplexity"),
+        "messages": _messages(system_prompt, message, history, user_content=kwargs.get("user_content")),
+        "max_tokens": kwargs.get("max_tokens", 900),
+        "temperature": kwargs.get("temperature", 0.35),
+    }
+    response = requests.post(
+        "https://api.perplexity.ai/chat/completions",
+        headers={"Authorization": f"Bearer {_api_key('perplexity')}", "Content-Type": "application/json"},
+        json=payload,
+        timeout=_timeout("perplexity", timeout),
+    )
+    response.raise_for_status()
+    data = response.json()
+    choice = (data.get("choices") or [{}])[0]
+    text = _provider_text("perplexity", (choice.get("message") or {}).get("content"), choice.get("finish_reason"))
+    sources = data.get("search_results") or data.get("citations") or []
+    return {
+        "text": text,
+        "model": payload["model"],
+        "source": config.label,
+        "citations": sources if isinstance(sources, list) else [],
+    }
 
 
 def _call_claude(system_prompt: str, message: str, history: Any, timeout: int,
@@ -405,11 +680,12 @@ def _call_claude(system_prompt: str, message: str, history: Any, timeout: int,
             "Content-Type": "application/json",
         },
         json=payload,
-        timeout=timeout,
+        timeout=_timeout("claude", timeout),
     )
     response.raise_for_status()
     data = response.json()
-    text = "".join(part.get("text", "") for part in data.get("content", []) if part.get("type") == "text").strip()
+    joined = "".join(part.get("text") or "" for part in (data.get("content") or []) if part.get("type") == "text")
+    text = _provider_text("claude", joined, data.get("stop_reason"))
     return {"text": text, "model": payload["model"], "source": "Claude"}
 
 
@@ -439,8 +715,10 @@ def _call_gemini(system_prompt: str, message: str, history: Any, timeout: int,
     )
     response.raise_for_status()
     data = response.json()
-    parts = data["candidates"][0]["content"].get("parts", [])
-    text = "".join(part.get("text", "") for part in parts).strip()
+    candidate = (data.get("candidates") or [{}])[0]
+    parts = (candidate.get("content") or {}).get("parts") or []
+    joined = "".join(part.get("text") or "" for part in parts)
+    text = _provider_text("gemini", joined, candidate.get("finishReason"))
     return {"text": text, "model": model, "source": "Gemini"}
 
 
@@ -450,6 +728,8 @@ CALLERS = {
     "gemini": _call_gemini,
     "deepseek": _call_deepseek,
     "groq": _call_groq,
+    "meta": _call_meta,
+    "perplexity": _call_perplexity,
 }
 
 
@@ -480,7 +760,7 @@ def route_structured_request(
     the caller knows what the answer is supposed to mean.
     """
     history: list[dict[str, str]] = []
-    ordered = [p for p in (providers or []) if p in PROVIDERS]
+    ordered = [p for p in (providers or []) if p in PROVIDERS and provider_enabled(p)]
     if not ordered:
         ordered = provider_priority(classify_request(user_content)) if router_enabled() \
             else [default_provider()]
@@ -506,6 +786,7 @@ def route_structured_request(
                 "provider": provider,
                 "source": result.get("source") or config.label,
                 "model": result.get("model") or _model(provider),
+                "citations": result.get("citations") or [],
                 "attempts": attempts + [{"provider": config.label, "status": "success"}],
                 "latency_ms": int((time.time() - started) * 1000),
             }
@@ -555,6 +836,10 @@ def route_undx_request(user_id: Any, message: str, history: Any = None, system_p
                 "source": result.get("source") or config.label,
                 "provider": provider,
                 "model": result.get("model") or _model(provider),
+                # Present and empty for every provider that does not ground its
+                # answer, so a caller can render attribution without first
+                # knowing which provider served the request.
+                "citations": result.get("citations") or [],
                 "classification": classification,
                 "router": {
                     "name": "UNDX Intelligence Router",
