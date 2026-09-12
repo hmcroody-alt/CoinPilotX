@@ -93318,6 +93318,13 @@ def pulse_buyer_order_response(cur, order, source_table="seller_transactions",
     digital_files = []
     if listing and payment_status == "paid" and (listing.get("listing_type") or "") == "digital":
         digital_files = marketplace_listing_types_service.buyer_digital_files_payload(listing.get("listing_metadata") or {})
+    # The lane this order was placed on, served as a field rather than left
+    # buried in `metadata_json`. Checkout already froze the *settled* kind here
+    # — post-`resolve_choice`, so a listing that offered both lanes carries the
+    # one the buyer picked — and this function has been parsing that metadata
+    # all along without ever reading the key. The app, having no lane field to
+    # read, defaulted every order's timeline to shipping.
+    fulfillment_kind = marketplace_fulfillment.order_kind(metadata, listing)
     return {
         **raw,
         "id": tx_id,
@@ -93347,6 +93354,7 @@ def pulse_buyer_order_response(cur, order, source_table="seller_transactions",
             "avatar_url": seller.get("avatar_url") or "",
         },
         "listing": listing,
+        "fulfillment_kind": fulfillment_kind,
         "digital_files": digital_files,
         "marketplace_listing_id": numeric_item_id if item_type in {"marketplace_product", "product"} else 0,
         "receipt_url": receipt_url,
@@ -93573,6 +93581,18 @@ def api_payments_list_seller_orders():
         (int(user["user_id"]),),
     )
     seller_orders = [dict(row) for row in cur.fetchall()]
+    # The lane each order was placed on, from the kind checkout froze onto the
+    # row. No listing join is needed and none is wanted: the seller may have
+    # edited or delisted the item since, and the order still has to say whether
+    # that unit is being collected or posted. Served as a field because the
+    # seller's order list has no other way to tell the two apart — it was
+    # reading `item_type`, which is "marketplace_product" on every row.
+    for order in seller_orders:
+        try:
+            order_metadata = json.loads(order.get("metadata_json") or "{}")
+        except Exception:
+            order_metadata = {}
+        order["fulfillment_kind"] = marketplace_fulfillment.order_kind(order_metadata)
     try:
         from services import marketplace_commercial_operations as commercial_ops
         # `ensure_schema(conn)` used to run here, and it was stalling this route.

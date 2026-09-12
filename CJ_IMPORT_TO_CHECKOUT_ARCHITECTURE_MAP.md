@@ -363,14 +363,20 @@ query names is buyer-visible by default, so the strip now lives in
     alone", which the code could not do. `mobile-native/src/api/marketplaceFulfillment.ts`
     mirrored the bug faithfully. Fixed in lockstep across both languages and all
     six derivations; see "The thirteenth seam" below.
-11. **The buyer's order timeline reads the same column.**
+11. ~~**The buyer's order timeline reads a field that is never served.**~~
     `mobile-native/src/api/ordersDashboard.ts:216-234` — `variantOf(deliveryType)`
-    switches on a `delivery_type` taken off the *order* payload, served from
-    `services/marketplace_returns_routes.py:295`, so every order's progress
-    strip reads as shipped whatever lane it was actually placed on. Not folded
-    into gap 10: the order payload does not carry a resolved lane, and inventing
-    one on the client would be a seventh derivation of the fact the thirteenth
-    seam exists to stop having seven of. The fix is a server field.
+    switched on a `delivery_type` taken off the *order* payload. Measurement
+    (`scripts/probe_order_lane.py`) showed the field is absent at the top level
+    *and* on the joined listing: `pulse_buyer_order_response` names its listing
+    columns explicitly and `delivery_type` is not among them. So the argument was
+    always `undefined`, the `"pickup"` branch was unreachable, every order in the
+    app rendered the shipping strip, and `escrowPresentable` — which is
+    `variant === "pickup"` — was permanently false, making the escrow safety
+    panel unreachable UI. The seller's copy had its own version:
+    `variantOf(String(order.item_type || ""))` passed a row kind into a parameter
+    named `deliveryType`. Fixed by serving the lane checkout had already frozen
+    onto the order, not by adding a seventh derivation; see "The fourteenth seam"
+    below.
 
 ---
 
@@ -1477,9 +1483,160 @@ ignored, the no-op control correctly survived.
 
 ---
 
+## The fourteenth seam: the order forgot which lane it was placed on
+
+The thirteenth seam fixed how a *listing* declares its lane. This is the order
+side, and it is a different mistake with the same shape — with one twist that
+makes it worse: the answer was already on the wire.
+
+`mobile-native/src/api/ordersDashboard.ts` picks which progress strip a buyer
+reads:
+
+```ts
+function variantOf(deliveryType?: string): OrderTimelineVariant {
+  const d = String(deliveryType || "").toLowerCase();
+  return d === "pickup" || d === "local" ? "pickup" : "shipping";
+}
+```
+
+and fed it `order.delivery_type || order.listing?.delivery_type`. Its own comment
+said the payloads "do not always carry" the field. `scripts/probe_order_lane.py`
+replaced *always* with a number. Publishing a pickup-only listing through
+`/api/pulse/marketplace/listings/create`, buying it through
+`/api/pulse/payments/checkout`, and reading `/api/pulse/orders`:
+
+| what the app asks for | what the payload has |
+| --- | --- |
+| `order.delivery_type` | absent |
+| `order.listing.delivery_type` | absent |
+| `order.fulfillment_kind` | absent |
+| `order.listing.listing_type` | `physical` |
+| `order.listing.listing_metadata.delivery_options` | `pickup` |
+| `metadata_json.fulfillment.kind` | `pickup` |
+
+Not "not always". Never. `pulse_buyer_order_response` names its listing columns
+explicitly and `delivery_type` is not among them, and nothing adds a top-level
+one. The argument was `undefined` for every order the app has ever rendered.
+
+So `variantOf` had one reachable branch. Three consequences, in increasing order
+of seriousness:
+
+1. Every order — pickup, shipping, digital, booking — drew the shipping strip.
+   A buyer who arranged to collect an item in person was told it was "Being
+   packed", then "On its way", and never that it was ready.
+2. `escrowPresentable` is `ordersEscrowIsLive() && variant === "pickup"`. With
+   the flag fully on it was still false for every order, so the escrow safety
+   panel was **unreachable UI** and the flag gating it gated nothing. The
+   seventh corollary again: a guard nothing can satisfy.
+3. The seller's copy was broken independently:
+   `variantOf(String(order.item_type || ""))` — a row kind passed into a
+   parameter named `deliveryType`. `item_type` reads `marketplace_product` on
+   every marketplace row, so that path was shipping-only by construction too.
+
+### Why the existing test could not have caught it
+
+`ordersDashboard.test.ts` had a whole `describe` block for escrow gating, built
+on this fixture:
+
+```ts
+const pickupBuyer = { id: 1, amount_cents: 100, status: "paid",
+                      listing: { delivery_type: "pickup" } };
+```
+
+The fourteenth corollary, unchanged and now on a second subsystem: a payload the
+server cannot produce. The block was green while the feature it covered was
+unreachable.
+
+The `cross-view consistency` test is the more interesting failure. It asserts
+that a buyer order and a seller order with the same id resolve to the same
+variant — exactly the right property — and it passed because *both* derivations
+were shipping-only. Two broken readers agreeing on the wrong answer is what it
+was measuring. An agreement assertion is only worth its name on an input that
+could make the two disagree, which is why the replacement iterates the lanes and
+also pins that the two sides differ where they must (`counterpartyName`,
+`raw.seller` vs `raw.buyer`) — otherwise the fix for the agreement is to have one
+function call the other, which the battery duly proposes as mutation 15.
+
+Nor was this on the ledger. `ORDERS_MOCK_DATA_GAPS` enumerates seven things the
+live payload cannot answer, and names "pickup lifecycle states" among them — the
+sub-phases *within* the pickup strip. That the strip itself could never be
+selected was not on the list. The eleventh corollary, exactly: an enumeration
+cannot notice what was never on it.
+
+### The fix is a read, not a derivation
+
+The obvious repair — send the listing's lane on the order — would have been a
+seventh derivation of the fact the thirteenth seam exists to stop having seven
+of, and it would have been wrong twice over.
+
+Checkout already freezes the answer. `bot.py` resolves the kind, then calls
+`resolve_choice` to settle it against the buyer's answer, then
+`marketplace_fulfillment.snapshot(kind, details)` into
+`seller_transactions.metadata_json`. That function's docstring already said why
+it exists: so an order read back next year "still says where it was going ...
+even if the seller has since edited the listing." `services/marketplace_cart_routes.py`
+writes the identical key from the cart lane.
+
+And `pulse_buyer_order_response` parses that metadata — `json.loads(raw["metadata_json"])`
+— and had never read the key.
+
+The frozen value is better than a fresh derivation on two counts that a listing
+lookup cannot recover:
+
+- **It is settled.** A listing offering both lanes resolves to
+  `shipping_or_pickup`; only the buyer's answer at checkout narrows it.
+  Re-deriving recovers the ambiguity, not the choice.
+- **It is historical.** The seller can edit, relist, or delete the item
+  afterwards. The order still has to say where that parcel went.
+
+So `marketplace_fulfillment.order_kind(metadata, listing)` is the inverse of
+`snapshot`: frozen kind first, validated against `KINDS` so a corrupt snapshot
+falls through rather than being echoed as fact; then the listing, for rows
+written before the snapshot existed; then `""` — *not* `"shipping"`, because an
+order that never recorded a lane should not have one invented for it at the
+server, which is how the client came to trust a field that meant nothing.
+
+Both serializers serve it as `fulfillment_kind`, and `variantOf` folds down from
+it. The in-person kinds — `pickup`, `service_in_person`, `booking_in_person`,
+`event_in_person` — take the pickup strip, because those are the orders whose
+goods change hands rather than travelling, and they are exactly the orders for
+which the escrow panel's advice about meeting a stranger is meaningful. Anything
+undecided or unrecognised stays on shipping: the original comment had one sound
+instinct, that pickup unlocks the safety panel and is therefore the worst thing
+to guess, and that is kept.
+
+One field was deliberately *not* added. `delivery_type` is still not selected for
+the order's listing join, and `order_kind`'s docstring says why: an order
+serializer normalises the listing type first, `effective_listing_type` never
+returns empty, so `delivery_lane` cannot reach its column branch for any row a
+serializer can hand over. Selecting it would put the misleading field back on the
+wire for a branch that cannot execute — and back within reach of the next reader.
+
+### What the battery measured
+
+`scripts/mutation_order_lane.py`, 15 real mutations plus one inverted rename and
+a no-op control. Two survived the first run, and unlike the thirteenth seam's two
+survivors these were gaps in the assertions, not errors in the battery:
+
+- **The client keeping `"local"` as a fallback survived.** No test passed a lane
+  word as a `fulfillment_kind`. `order_kind` only ever emits a member of `KINDS`,
+  and `local`/`meetup` are listing vocabulary, not kinds — so a client that
+  accepts them is still speaking the old language, and a payload that regressed
+  to sending them would be honoured silently instead of failing. Closed by
+  pinning the vocabulary boundary.
+- **Making `unifySellerOrder` delegate to `unifyBuyerOrder` survived**, which is
+  the mutation described above: it satisfies an agreement assertion by removing
+  one of the two things being compared. Closed by asserting the two sides still
+  differ where a perspective must.
+
+Final run: 15 of 15 real mutations caught, the inverted rename correctly ignored,
+the no-op control correctly survived.
+
+---
+
 ## What kept coming back
 
-Fourteen defects in this chain, fourteen different subsystems, one shape: **a
+Fifteen defects in this chain, fifteen different subsystems, one shape: **a
 number was asserted rather than measured.**
 
 - `publish()` never wrote `price_label`, and the publish test asserted `status`
@@ -1542,6 +1699,14 @@ number was asserted rather than measured.**
   that column, describing a row the database cannot produce, and one fixture
   contradicted itself so quietly that it pinned whichever field the bug read
   first.
+- The order timeline asserted a buyer's lane from `order.delivery_type`, a field
+  no order endpoint has ever served — so the pickup branch was unreachable, every
+  order rendered as shipped, and the escrow safety panel could not be reached at
+  all. The settled lane was already frozen on the order, in the metadata the
+  serializer was parsing and not reading. The test covering it supplied
+  `listing: { delivery_type: "pickup" }`, and the cross-view test that should
+  have caught the disagreement passed because both perspectives were broken in
+  the same direction.
 
 In all of them the suite was green, and in all of them the green was about the
 halves rather than the seam. Where a claim spans two components, this document now
@@ -1710,3 +1875,36 @@ client mutations came back "survived" without a single assertion having run.
 Survival and never-ran are the same observation unless something distinguishes
 them, which is what the no-op control is for in one direction; the other
 direction needs the runner to prove it executed the suite it named.
+
+The fifteenth is the one that pays for all the others, because it turns the
+whole list from a catalogue of mistakes into a place to look first: **before
+adding a field, search the payload for the answer — it is often already there,
+unread.** The order's settled lane had been written to `metadata_json` at
+checkout by a function whose docstring existed to explain why, carried over the
+wire on every order, and parsed by the very serializer that did not surface it.
+The client, meanwhile, read a field that has never existed. Two components each
+doing their half of the job correctly, joined by a key nobody read.
+
+The greppable tell is a pair: **find the writer of a frozen record and count its
+readers.** `snapshot()` had one writer per checkout lane and zero readers — a
+value persisted for posterity that nothing had ever retrieved. A write with no
+read is either dead code or a missing feature, and the docstring usually says
+which; this one said, in as many words, that it was for reading an order back
+later.
+
+Its sub-tell is about the repair rather than the defect, and it is the reason
+this seam did not become a seventh derivation: **the inverse of a freeze is a
+read, not a recomputation.** Re-deriving a stored fact from its source looks
+equivalent and is strictly weaker, because a freeze captures two things a source
+cannot return — a *choice* that narrowed an ambiguity, and a *moment* before the
+source was edited. When the two disagree, the frozen value is not the stale one.
+It is the only one that was ever true.
+
+An agreement assertion earns its own line here, because the cross-view test is
+the second one in this document to pass for the wrong reason: **two readers
+agreeing proves nothing on an input that cannot make them disagree.** The tenth
+corollary said to assert that two surfaces agree rather than what either returns.
+This is its necessary companion — vary the input across the axis the two readers
+are supposed to be reading, and separately pin that they still differ where they
+must. Otherwise the cheapest way to satisfy the agreement is to delete one of the
+readers, which is a fix the suite will accept.

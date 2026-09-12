@@ -247,6 +247,8 @@ export type MarketplaceSellerOrder = {
   gross_amount_cents?: number;
   currency?: string;
   status?: string;
+  /** The lane this order was placed on — see `BuyerOrder.fulfillment_kind`. */
+  fulfillment_kind?: string;
   created_at?: string;
   commercial_economics?: MarketplaceOrderEconomics | null;
 };

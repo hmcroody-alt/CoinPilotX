@@ -208,14 +208,45 @@ function referenceFor(id: number, explicit?: string): string {
 }
 
 /**
- * Pickup vs shipping is a listing property (`delivery_type`) the live order
- * payloads do not always carry. When it is present we honour it; when it is not
- * we default to shipping and do not fabricate a pickup order (pickup unlocks the
- * escrow/safety presentation, so guessing it would be the worst place to guess).
+ * The kinds whose goods change hands in person rather than travelling.
+ *
+ * These get the pickup strip — Reserved, Pickup scheduled, Handed off — and
+ * they are also exactly the orders for which the escrow/safety presentation is
+ * meaningful, because that panel is advice about meeting a stranger.
  */
-function variantOf(deliveryType?: string): OrderTimelineVariant {
-  const d = String(deliveryType || "").toLowerCase();
-  return d === "pickup" || d === "local" ? "pickup" : "shipping";
+const IN_PERSON_KINDS = new Set([
+  "pickup",
+  "service_in_person",
+  "booking_in_person",
+  "event_in_person"
+]);
+
+/**
+ * Which timeline an order gets, from the lane it was actually placed on.
+ *
+ * This used to read `delivery_type` off the order payload. Two measurements
+ * (see `scripts/probe_order_lane.py`) retired that:
+ *
+ * 1. No order serializer has ever served a `delivery_type`, at the top level or
+ *    on the joined listing. The parameter was always `undefined`, so the
+ *    `"pickup"` branch was unreachable, every order in the app rendered the
+ *    shipping strip, and `escrowPresentable` was permanently false — the
+ *    escrow panel was unreachable UI.
+ * 2. The column would not have helped if it were served. It holds the *product
+ *    type* for every row in the table, never a lane. See `deliveryLane`.
+ *
+ * The server now sends `fulfillment_kind`: the settled kind checkout froze onto
+ * the transaction, after the buyer answered for a listing that offered both
+ * lanes. It is the only field that can distinguish these orders, and it is an
+ * order fact rather than a listing lookup, so it survives the seller editing or
+ * delisting the item.
+ *
+ * An order with no kind still falls to shipping. That is the original comment's
+ * one sound instinct, kept: pickup unlocks the safety panel, so it is the worst
+ * possible thing to guess.
+ */
+function variantOf(fulfillmentKind?: string): OrderTimelineVariant {
+  return IN_PERSON_KINDS.has(String(fulfillmentKind || "").toLowerCase()) ? "pickup" : "shipping";
 }
 
 function sourceOf(order: BuyerOrder | MarketplaceSellerOrder): OrderSource {
@@ -228,10 +259,7 @@ function sourceOf(order: BuyerOrder | MarketplaceSellerOrder): OrderSource {
 
 export function unifyBuyerOrder(order: BuyerOrder): UnifiedOrder {
   const id = Number(order.id || order.transaction_id || 0);
-  const deliveryType = (order as BuyerOrder & { delivery_type?: string; listing?: { delivery_type?: string } })
-    .delivery_type
-    || (order.listing as { delivery_type?: string } | undefined)?.delivery_type;
-  const variant = variantOf(deliveryType);
+  const variant = variantOf(order.fulfillment_kind);
   const status = normalizeStatus(order.status_group || order.status || order.payment_status);
   return {
     id,
@@ -265,7 +293,12 @@ export function unifyBuyerOrder(order: BuyerOrder): UnifiedOrder {
 
 export function unifySellerOrder(order: MarketplaceSellerOrder): UnifiedOrder {
   const id = Number(order.id || 0);
-  const variant = variantOf(String(order.item_type || ""));
+  // This passed `item_type` into a parameter named `deliveryType`. The two are
+  // different facts and the values never overlapped: `item_type` reads
+  // "marketplace_product" on every marketplace row, which is neither "pickup"
+  // nor "local", so the seller's copy of the timeline was shipping-only by
+  // construction — a seller could not see that the buyer was coming to collect.
+  const variant = variantOf(order.fulfillment_kind);
   const status = normalizeStatus(order.status);
   const cents = Number(order.amount_cents || order.gross_amount_cents || 0);
   const currency = String(order.currency || "USD").toUpperCase();

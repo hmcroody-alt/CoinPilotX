@@ -100,14 +100,16 @@ describe("cross-view consistency", () => {
       item_title: "Walnut side table",
       amount_cents: 9500,
       currency: "USD",
-      status: "shipped"
+      status: "shipped",
+      fulfillment_kind: "shipping"
     } as never);
     const seller = unifySellerOrder({
       id: 2384,
       item_type: "marketplace_listing",
       amount_cents: 9500,
       currency: "USD",
-      status: "shipped"
+      status: "shipped",
+      fulfillment_kind: "shipping"
     } as never);
 
     // One order, two ends: id, status, variant and overlay must agree.
@@ -121,6 +123,77 @@ describe("cross-view consistency", () => {
     );
   });
 
+  it("agrees on a pickup order, which is the only case that could disagree", () => {
+    // The test above passes a shipping order to both ends. That could not have
+    // caught the real defect, because both ends were shipping-*only*: the buyer
+    // path read `order.delivery_type`, which is never served, and the seller
+    // path passed `item_type` — "marketplace_product" on every row — into a
+    // parameter named `deliveryType`. Two broken derivations agreeing on the
+    // wrong answer is what "cross-view consistency" was measuring.
+    //
+    // So this asserts the same property on the lane that distinguishes them.
+    for (const kind of ["pickup", "shipping", "digital", "booking_in_person"]) {
+      const buyer = unifyBuyerOrder({ id: 9, amount_cents: 100, status: "paid", fulfillment_kind: kind } as never);
+      const seller = unifySellerOrder({
+        id: 9, item_type: "marketplace_product", amount_cents: 100, status: "paid", fulfillment_kind: kind
+      } as never);
+      expect(seller.variant).toBe(buyer.variant);
+      // ...and they agree because two separate derivations reached the same
+      // answer, not because one delegated to the other. These fields are
+      // perspective-specific by definition, so if they ever match, the
+      // agreement above is measuring nothing.
+      expect(seller.counterpartyName).toBe("Buyer");
+      expect(buyer.counterpartyName).not.toBe("Buyer");
+      expect(seller.raw.seller).toBeDefined();
+      expect(seller.raw.buyer).toBeUndefined();
+      expect(buyer.raw.buyer).toBeDefined();
+      expect(buyer.raw.seller).toBeUndefined();
+    }
+  });
+
+  it("speaks fulfilment kinds, not the listing's lane vocabulary", () => {
+    // `deliveryLane` folds "local" and "meetup" onto pickup — that is the
+    // vocabulary a *listing* uses. `order_kind` only ever emits a member of
+    // `KINDS`, and neither word is one. Honouring them here would mean the
+    // client still understands the old language, so a payload that regressed to
+    // sending lane words would be silently accepted instead of failing loudly.
+    for (const laneWord of ["local", "meetup", "both", "delivery", "pickup_or_shipping"]) {
+      expect(unifyBuyerOrder({ id: 1, fulfillment_kind: laneWord } as never).variant).toBe("shipping");
+    }
+  });
+
+  it("puts a collected order on the pickup timeline and a posted one on shipping", () => {
+    // `variant` selects which strip of step labels the buyer reads. Getting it
+    // wrong tells someone waiting to collect an item in person that it is "On
+    // its way", and never that it is ready.
+    expect(unifyBuyerOrder({ id: 1, fulfillment_kind: "pickup" } as never).variant).toBe("pickup");
+    expect(unifyBuyerOrder({ id: 1, fulfillment_kind: "shipping" } as never).variant).toBe("shipping");
+    // The in-person kinds are collected too — the goods change hands rather
+    // than travelling — so they get the same strip.
+    expect(unifyBuyerOrder({ id: 1, fulfillment_kind: "service_in_person" } as never).variant).toBe("pickup");
+    expect(unifyBuyerOrder({ id: 1, fulfillment_kind: "booking_in_person" } as never).variant).toBe("pickup");
+    expect(unifyBuyerOrder({ id: 1, fulfillment_kind: "event_in_person" } as never).variant).toBe("pickup");
+  });
+
+  it("does not invent a pickup from an order that declared no lane", () => {
+    // Pickup unlocks the escrow/safety panel, so it is the worst thing to
+    // guess. A legacy row the server could not resolve stays on shipping.
+    for (const kind of [undefined, "", "  ", "marketplace_product", "shipping_or_pickup", "digital"]) {
+      expect(unifyBuyerOrder({ id: 1, fulfillment_kind: kind } as never).variant).toBe("shipping");
+      expect(unifySellerOrder({ id: 1, item_type: "marketplace_product", fulfillment_kind: kind } as never).variant)
+        .toBe("shipping");
+    }
+  });
+
+  it("no longer answers from a field the server does not send", () => {
+    // Both of these were the old inputs. Honouring either now would mean the
+    // lane could be set by something other than the order's own frozen kind.
+    expect(unifyBuyerOrder({ id: 1, delivery_type: "pickup" } as never).variant).toBe("shipping");
+    expect(unifyBuyerOrder({ id: 1, listing: { delivery_type: "pickup" } } as never).variant).toBe("shipping");
+    // And the seller path can no longer be steered by the row kind.
+    expect(unifySellerOrder({ id: 1, item_type: "pickup" } as never).variant).toBe("shipping");
+  });
+
   it("keeps the human reference stable across perspectives", () => {
     const buyer = unifyBuyerOrder({ id: 2384, order_id: "#PL-2384", amount_cents: 100 } as never);
     const seller = unifySellerOrder({ id: 2384, item_type: "listing", amount_cents: 100 } as never);
@@ -130,11 +203,22 @@ describe("cross-view consistency", () => {
 });
 
 describe("escrow gating (money-critical)", () => {
+  // This fixture used to read `listing: { delivery_type: "pickup" }`. No order
+  // endpoint has ever served that field — not at the top level and not on the
+  // joined listing, whose columns are named explicitly — so the fixture
+  // described a payload the server cannot produce, and the test passed on an
+  // input production never sends. In production the argument was always
+  // `undefined`, `variant` was always "shipping", and `escrowPresentable` was
+  // therefore always false: this whole block was green while the feature it
+  // gates was unreachable.
+  //
+  // `fulfillment_kind` is what the server sends: the settled lane, frozen onto
+  // the transaction at checkout.
   const pickupBuyer = {
     id: 1,
     amount_cents: 100,
     status: "paid",
-    listing: { delivery_type: "pickup" }
+    fulfillment_kind: "pickup"
   };
 
   it("withholds the escrow presentation by default", () => {
@@ -149,6 +233,19 @@ describe("escrow gating (money-critical)", () => {
     const shipping = unifyBuyerOrder({ id: 2, amount_cents: 100, status: "paid" } as never);
     expect(pickup.escrowPresentable).toBe(true);
     expect(shipping.escrowPresentable).toBe(false);
+  });
+
+  it("is reachable at all, which it was not", () => {
+    // `escrowPresentable` is `flag && variant === "pickup"`, and no served
+    // payload could make `variant` pickup. So with the flag fully on, this was
+    // false for every order the app had ever rendered: the escrow panel was an
+    // unreachable screen, and the flag gating it gated nothing.
+    process.env.EXPO_PUBLIC_ORDERS_ESCROW = "1";
+    const seller = unifySellerOrder({
+      id: 3, item_type: "marketplace_product", amount_cents: 100, status: "paid",
+      fulfillment_kind: "pickup"
+    } as never);
+    expect(seller.escrowPresentable).toBe(true);
   });
 });
 

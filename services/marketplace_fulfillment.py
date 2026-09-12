@@ -33,6 +33,7 @@ rules, so the form the buyer fills in is the form the server will accept.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from typing import Any
@@ -396,6 +397,56 @@ def snapshot(kind: str, cleaned: Any) -> dict[str, Any]:
     when it was booked for, even if the seller has since edited the listing.
     """
     return {"kind": kind, "details": dict(cleaned or {})}
+
+
+def order_kind(metadata: Any, listing: Any = None) -> str:
+    """The lane an order was actually placed on.
+
+    The inverse of :func:`snapshot`, and the only function any order serializer
+    should ask. Two things make the frozen value the right answer rather than a
+    convenient one:
+
+    * it is *settled*. A listing offering both lanes resolves to
+      ``shipping_or_pickup``, and only the buyer's answer at checkout narrows
+      it. Re-deriving from the listing recovers the ambiguity, not the choice.
+    * it is *historical*. The listing can be edited, relisted, or deleted after
+      the sale; the order still has to say where that parcel went.
+
+    ``listing`` is consulted only for rows written before the snapshot existed,
+    and can still only reach an undecided kind — which is honest, because such a
+    row genuinely never recorded which lane was picked.
+
+    Note that ``listing["delivery_type"]`` is not worth selecting for this: an
+    order serializer normalises the listing type first, and
+    ``effective_listing_type`` never returns empty, so ``delivery_lane`` reaches
+    its column branch for no row a serializer can hand over. The seller's
+    ``delivery_options`` is the whole of the answer here.
+    """
+    frozen = metadata.get("fulfillment") if isinstance(metadata, dict) else None
+    if isinstance(frozen, dict):
+        kind = str(frozen.get("kind") or "").strip().lower()
+        if kind in KINDS:
+            return kind
+    if isinstance(listing, dict) and listing:
+        # The serializer may hand over either the parsed metadata or the raw
+        # column. `resolve_kind` ignores a string silently — and ignoring it
+        # here means losing `delivery_options`, which is the seller's entire
+        # declaration, and answering "shipping" for a pickup-only listing. So
+        # the string case is parsed rather than passed through.
+        meta = listing.get("listing_metadata")
+        if not isinstance(meta, dict):
+            try:
+                meta = json.loads(listing.get("listing_metadata_json") or "{}")
+            except Exception:
+                meta = {}
+            if not isinstance(meta, dict):
+                meta = {}
+        return resolve_kind(
+            listing.get("listing_type") or listing.get("product_type"),
+            listing.get("delivery_type"),
+            meta,
+        )
+    return ""
 
 
 def stripe_shipping(cleaned: Any) -> dict[str, Any]:
