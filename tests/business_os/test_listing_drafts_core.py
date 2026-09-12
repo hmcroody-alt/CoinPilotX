@@ -188,6 +188,125 @@ def test_discard_and_lists():
     _expect("invalid_status", lambda: ld.list_drafts(SELLER, status="weird"))
 
 
+def _draft_with(uid, *, fulfillment, inventory_qty):
+    """A draft satisfying every field requirement, parameterised on the two
+    fields the catalog engine has an opinion about beyond the field list."""
+    did = ld.create_draft(uid, context=_ctx())["draft_id"]
+    ld.update_section(did, uid, "identity", {"title": "Lamp"}, context=_ctx())
+    ld.update_section(did, uid, "media", {"items": ["r2:img1"]}, context=_ctx())
+    ld.update_section(did, uid, "offer", {"price_cents": 2500}, context=_ctx())
+    ld.update_section(did, uid, "fulfillment", {"fulfillment_type": fulfillment},
+                      context=_ctx())
+    if inventory_qty is not None:
+        ld.update_section(did, uid, "inventory", {"inventory_qty": inventory_qty},
+                          context=_ctx())
+    ld.update_section(did, uid, "compliance", {"acknowledged": True}, context=_ctx())
+    return did
+
+
+def test_the_checklist_and_publish_agree_about_every_draft():
+    """The checklist promises honesty. Honesty is not a property of its output,
+    it is agreement with the verb it is describing -- so this asks both.
+
+    Deliberately NOT a restatement of the inventory rule. It never says what
+    the answer should be for a given quantity; it says the two answers have to
+    match. A test that repeated the rule would pass against a checklist that
+    repeated the rule too, which is exactly how the zero case shipped: the
+    checklist tested `is None`, the verb tested `(x or 0) <= 0`, and a truthful
+    zero was called complete and then refused.
+    """
+    _approve(SELLER)
+    cases = [
+        ("physical", None, "a seller who never answered the stock question"),
+        ("physical", 0, "a seller who answered it truthfully with none left"),
+        ("physical", 4, "a seller with stock on hand"),
+        ("digital", None, "a download, which needs no stock at all"),
+    ]
+    for fulfillment, qty, described_as in cases:
+        did = _draft_with(SELLER, fulfillment=fulfillment, inventory_qty=qty)
+        promised = ld.get_draft(did, SELLER)["completeness"]
+        try:
+            ld.publish_draft(did, SELLER, context=_ctx())
+            refused = None
+        except MarketplaceError as exc:
+            refused = exc.code
+        assert promised["ready"] is (refused is None), (
+            f"{described_as}: the checklist said ready={promised['ready']} and "
+            f"publish said {refused or 'OK'}. A checklist that disagrees with "
+            f"the verb is worse than no checklist, because the seller acts on it")
+
+    # And the specific case that was broken, pinned by name so a regression
+    # reads as itself rather than as an arithmetic surprise.
+    did = _draft_with(SELLER, fulfillment="physical", inventory_qty=0)
+    assert ld.get_draft(did, SELLER)["completeness"] == {
+        "ready": False, "missing": ["inventory.inventory_qty"]}
+
+
+def test_the_checklist_asks_the_engine_rather_than_restating_it():
+    """The guard against the same defect coming back in a different rule.
+
+    The two tests above would still pass if someone re-inlined the inventory
+    rule into `_completeness`, because the rule would agree with itself. What
+    must hold is stronger: the checklist has no opinion of its own, it reports
+    whatever the publish verb refuses. So invent a refusal the checklist has
+    never heard of and require it to appear.
+    """
+    _approve(SELLER)
+    did = _draft_with(SELLER, fulfillment="physical", inventory_qty=4)
+    assert ld.get_draft(did, SELLER)["completeness"]["ready"] is True
+
+    real = mkt.publish_blockers
+    try:
+        mkt.publish_blockers = lambda **_: ["a_rule_invented_by_this_test"]
+        verdict = ld.get_draft(did, SELLER)["completeness"]
+    finally:
+        mkt.publish_blockers = real
+
+    assert verdict == {"ready": False, "missing": ["a_rule_invented_by_this_test"]}, (
+        "the checklist has to follow the engine even for a refusal it has no "
+        "label for -- an unmapped code travels as itself rather than being "
+        "dropped, because dropping it would report a draft ready that publish "
+        f"will refuse. Got {verdict}")
+
+    # Restoring the engine restores the verdict: the checklist cached nothing.
+    assert ld.get_draft(did, SELLER)["completeness"]["ready"] is True
+
+
+def test_the_engine_itself_refuses_a_physical_product_with_no_stock():
+    """The cost of unifying the two authorities, paid deliberately.
+
+    Once the checklist asks the engine, the two can no longer disagree -- which
+    also means a wrong answer in the engine is echoed by the checklist instead
+    of being contradicted by it. The agreement test above would stay green if
+    `publish_blockers` started allowing zero stock, because both sides would
+    move together and a product with nothing behind it would go live.
+
+    So the rule gets pinned directly here. Restating a rule is only worthless
+    when the thing under test is a *forecast* of it; the engine IS the rule, and
+    an oracle for the rule is the honest way to hold it.
+    """
+    assert mkt.publish_blockers(fulfillment_type="physical", inventory_qty=0) == \
+        ["no_inventory"], "nothing on the shelf cannot be offered for sale"
+    assert mkt.publish_blockers(fulfillment_type="physical", inventory_qty=None) == \
+        ["no_inventory"], "an unanswered stock question is not a yes"
+    assert mkt.publish_blockers(fulfillment_type="physical", inventory_qty=1) == []
+    assert mkt.publish_blockers(fulfillment_type="digital", inventory_qty=None) == [], \
+        "a download has no shelf to be empty"
+
+    # And the verb enforces it, not just the predicate: a product that reached
+    # draft with zero stock cannot be transitioned live.
+    _approve(SELLER)
+    product = mkt.create_product(SELLER, title="Lamp", price_cents=2500,
+                                 fulfillment_type="physical", inventory_qty=0,
+                                 context=_ctx())
+    exc = _expect("no_inventory",
+                  lambda: mkt.transition_product(SELLER, product["product_id"],
+                                                 "publish", context=_ctx()))
+    assert str(exc) == mkt.PUBLISH_BLOCKER_MESSAGES["no_inventory"], (
+        "the verb has to raise the sentence the code maps to, or a caller "
+        "holding only the code cannot render what the verb would have said")
+
+
 def _run_standalone():
     setup_module()
     tests = [
@@ -196,6 +315,9 @@ def _run_standalone():
         test_section_writes_and_completeness,
         test_publish_paths,
         test_discard_and_lists,
+        test_the_checklist_and_publish_agree_about_every_draft,
+        test_the_checklist_asks_the_engine_rather_than_restating_it,
+        test_the_engine_itself_refuses_a_physical_product_with_no_stock,
     ]
     passed = 0
     for t in tests:

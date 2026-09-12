@@ -265,6 +265,39 @@ def _validate_product_input(*, title, price_cents, fulfillment_type, inventory_q
             raise MarketplaceError("inventory_qty cannot be negative.", 400, "invalid_inventory")
 
 
+#: The message the publish verb raises for each refusal code, so a caller that
+#: only has the code can render the same sentence the verb would have raised.
+PUBLISH_BLOCKER_MESSAGES = {
+    "no_inventory": "Cannot publish a physical product with no inventory.",
+}
+
+
+def publish_blockers(*, fulfillment_type: Optional[str],
+                     inventory_qty: Optional[int]) -> list:
+    """Every reason the publish verb will refuse to take this product live.
+
+    Empty list means publish would succeed. ``transition_product`` raises the
+    first of these; a readiness checklist asks for all of them.
+
+    This exists as ONE function with two callers because the alternative — a
+    checklist that predicts what publish will do — was tried and drifted. The
+    checklist tested ``inventory_qty is None`` while the verb tested
+    ``(inventory_qty or 0) <= 0``, so a physical draft holding a truthful zero
+    was reported complete and then refused on publish. The comment above the
+    forecast described the exact failure it was written to prevent, which is
+    the tell: a predictor kept in sync by hand is a defect with a delay on it.
+
+    Callers pass fields rather than a row so that the dependency is explicit
+    and a differently-shaped dict cannot be mistaken for a product.
+    """
+    blockers = []
+    # Physical goods need stock on hand. `or 0` folds a missing answer and a
+    # zero answer together deliberately: neither one can ship.
+    if fulfillment_type == "physical" and (inventory_qty or 0) <= 0:
+        blockers.append("no_inventory")
+    return blockers
+
+
 def create_product(user_id: Any, *, title: str, price_cents: int,
                    description: Optional[str] = None, currency: str = "usd",
                    fulfillment_type: str = "physical",
@@ -400,12 +433,13 @@ def transition_product(user_id: Any, product_id: Any, action: str, *,
         if target not in PRODUCT_TRANSITIONS.get(cur_status, set()):
             raise MarketplaceError(
                 f"Illegal transition {cur_status} -> {target}.", 409, "illegal_transition")
-        # Publishing a physical product with zero inventory is refused early.
-        if target == "active" and product.get("fulfillment_type") == "physical" \
-                and (product.get("inventory_qty") or 0) <= 0:
-            raise MarketplaceError(
-                "Cannot publish a physical product with no inventory.",
-                409, "no_inventory")
+        # Publishing is refused early, through the same predicate a readiness
+        # checklist reads, so the two cannot disagree about the same product.
+        if target == "active":
+            for code in publish_blockers(
+                    fulfillment_type=product.get("fulfillment_type"),
+                    inventory_qty=product.get("inventory_qty")):
+                raise MarketplaceError(PUBLISH_BLOCKER_MESSAGES[code], 409, code)
         conn.execute(
             "UPDATE business_os_mkt_products SET status = ?, updated_at = ? "
             "WHERE product_id = ?", (target, _now_iso(), str(product_id)))

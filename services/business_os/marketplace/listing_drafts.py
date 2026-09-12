@@ -165,6 +165,15 @@ def _validate_section(section: str, fields: dict) -> None:
                                    "invalid_compliance")
 
 
+#: A refusal code from the catalog engine, in this checklist's own vocabulary.
+#: The checklist speaks in `section.field` because that is what the composer
+#: navigates by; the verb speaks in codes. Translating here keeps one vocabulary
+#: on the wire without giving the checklist a second opinion.
+_BLOCKER_LABELS = {
+    "no_inventory": "inventory.inventory_qty",
+}
+
+
 def _completeness(sections: dict) -> dict:
     """Honest checklist: which publish requirements are satisfied, which are
     missing. The client renders this verbatim — no client-side guessing."""
@@ -174,13 +183,18 @@ def _completeness(sections: dict) -> dict:
         satisfied = val is not None and val != "" and val != [] and val is not False
         if not satisfied:
             missing.append(label)
-    # Conditional: the catalog engine refuses to publish a PHYSICAL product
-    # with no inventory, so the checklist must say so up front rather than
-    # claiming ready and letting publish fail.
-    ful = (sections.get("fulfillment") or {}).get("fulfillment_type")
-    if ful == "physical" and \
-            (sections.get("inventory") or {}).get("inventory_qty") is None:
-        missing.append("inventory.inventory_qty")
+    # The catalog engine has refusals of its own beyond the field list above.
+    # ASK it rather than restating it: this checklist used to carry its own copy
+    # of the physical-inventory rule, tested `is None` where the engine tests
+    # `(x or 0) <= 0`, and so called a draft holding a truthful zero complete
+    # and then watched publish refuse it. `publish_blockers` is the engine's
+    # predicate, not a forecast of it, so the two can no longer drift apart.
+    for code in _svc.publish_blockers(
+            fulfillment_type=(sections.get("fulfillment") or {}).get("fulfillment_type"),
+            inventory_qty=(sections.get("inventory") or {}).get("inventory_qty")):
+        label = _BLOCKER_LABELS.get(code, code)
+        if label not in missing:
+            missing.append(label)
     return {"ready": not missing, "missing": missing}
 
 
