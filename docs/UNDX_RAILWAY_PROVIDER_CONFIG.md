@@ -69,6 +69,37 @@ A provider's declared timeout can only raise the caller's, never shorten it.
 | `UNDX_MULTI_MODEL_MODE` | PRESENT | Off ⇒ the fallback chain collapses to the default provider. |
 | `UNDX_DEFAULT_AI_PROVIDER` | PRESENT | `openai`. Meta is deliberately **not** the default (§7). |
 
+## The circuit breaker is not configurable, on purpose
+
+Three consecutive failures rest a provider for 120 seconds
+(`undx_router.BREAKER_THRESHOLD` / `BREAKER_COOLDOWN_SECONDS`). There is no
+environment variable for either, and adding one would mean a production incident
+could be "fixed" by editing a threshold instead of by finding out why a provider
+stopped answering.
+
+What it is for is narrower than it sounds. Failover already made these requests
+succeed — Claude and Gemini each returned 404 to every request for an unknown
+period and every user-visible response was still a 200. The breaker exists to
+stop *paying* for a provider that has stopped working (`META_MUSE_TIMEOUT_MS` is
+60000, so one hung provider adds a minute to every request that reaches it) and
+to emit the one log line that says a provider is out rather than that a request
+missed:
+
+```
+UNDX provider circuit opened provider=... consecutive_failures=3 last_status=... cooldown_s=120
+```
+
+Three, not one, because Gemini demonstrably returns transient upstream 503s and
+a breaker that rested it on the first would manufacture the outage it is meant
+to detect. `provider_health()` reports `Circuit Open`, and
+`provider_runtime_health()` returns per-provider counts, the last **redacted**
+error, and the cooldown remaining.
+
+State is in-memory per process, like `spend_state()`. With several gunicorn
+workers each keeps its own view, so a dead provider is rested by each worker
+separately. That is a real limitation, not an oversight: a shared store is the
+right fix and is not built.
+
 ## Account-level intent flags
 
 `META_MODEL_API_ENABLED` and `META_MUSE_FALLBACK_ENABLED` are PRESENT and set to

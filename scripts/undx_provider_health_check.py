@@ -106,12 +106,63 @@ def main() -> int:
             print(f"  {label:12} FAILED     {outcome['reason']} ({outcome.get('ms')}ms)")
             failures.append(label)
 
+    _print_spend()
+    _print_open_circuits()
+
     print()
     if failures:
         print(f"UNDX_PROVIDER_HEALTH_FAIL configured providers that did not answer: {', '.join(failures)}")
         return 1
     print("UNDX_PROVIDER_HEALTH_PASS")
     return 0
+
+
+def _print_spend() -> None:
+    """What this run cost, per provider.
+
+    A connectivity check that reports only reachability hides the fact that it
+    just bought seven completions. It also makes the reasoning overhead visible:
+    Meta bills ~95% of its output tokens for thinking nobody reads, and that is
+    invisible from the length of the two-letter reply above.
+    """
+    state = undx_router.spend_state()
+    if not state["providers"]:
+        return
+    print()
+    print(f"  spend this run (month {state['month']})")
+    for provider, bucket in sorted(state["providers"].items()):
+        label = undx_router.PROVIDERS[provider].label
+        # A total that silently omits unpriced calls reads as complete. Only
+        # models whose rate was read from the vendor's own console are priced;
+        # everything else is a floor, and has to say so.
+        cost = f"${bucket['cost_usd']:.6f}" if bucket["cost_known"] else "unpriced"
+        reasoning = bucket.get("reasoning_tokens") or 0
+        share = f" ({reasoning * 100 // max(bucket['output_tokens'], 1)}% reasoning)" if reasoning else ""
+        print(f"    {label:12} in={bucket['input_tokens']:<6} out={bucket['output_tokens']:<6}"
+              f"{share:<18} {cost}")
+
+
+def _print_open_circuits() -> None:
+    """Providers the breaker has taken out, if any.
+
+    Normally empty: this script probes each provider once, and the breaker needs
+    three consecutive failures. It is printed because a non-empty section here
+    means the failure above is not the provider refusing one request - it is a
+    provider the router has stopped sending traffic to at all, which is a
+    different sentence to put in an incident channel.
+    """
+    health = undx_router.provider_runtime_health()
+    rested = {p: h for p, h in health.items() if h["state"] == "open"}
+    if not rested:
+        return
+    print()
+    print("  circuit breaker")
+    for provider, bucket in sorted(rested.items()):
+        label = undx_router.PROVIDERS[provider].label
+        probing = " probe in flight" if bucket["probing"] else ""
+        print(f"    {label:12} OPEN  consecutive_failures={bucket['consecutive_failures']} "
+              f"cooldown_remaining={bucket['cooldown_remaining_s']}s "
+              f"last={bucket['last_status']}{probing}")
 
 
 if __name__ == "__main__":

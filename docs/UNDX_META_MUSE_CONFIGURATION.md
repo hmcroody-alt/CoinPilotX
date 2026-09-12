@@ -199,8 +199,15 @@ railway run --service CoinPilotX -- .venv/bin/python3 scripts/undx_provider_heal
 Last run, 2026-09-11:
 
 ```
-Meta Muse    CONNECTED  model=muse-spark-1.3 3527ms reply='ok'
+Meta Muse    CONNECTED  model=muse-spark-1.3 4096ms reply='ok'
+
+  spend this run (month 2026-09)
+    Meta Muse    in=35     out=226    (95% reasoning)   $0.001004
 ```
+
+The 95% figure is not carried over from the table above — the check recomputes
+it from that run's own `usage` payload, and it came out at 95% again on a
+different day against a different two-letter prompt.
 
 The check routes through `undx_router.route_structured_request`, not through a
 hand-written HTTP call. A smoke test that builds its own request verifies the

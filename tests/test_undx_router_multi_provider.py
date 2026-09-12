@@ -783,5 +783,251 @@ class SpendAccountingTest(unittest.TestCase):
         self.assertEqual(undx_router.spend_state()["providers"]["meta"]["calls"], 1)
 
 
+class CircuitBreakerTest(unittest.TestCase):
+    """Runtime provider health, and the cost of getting the half-open case wrong.
+
+    This exists because of what the Claude and Gemini outages actually looked
+    like from the outside: nothing. Both providers 404'd every request for an
+    unknown period, failover answered from the next provider in the chain, and
+    every user-visible response was a 200. `provider_health()` reported "Online"
+    throughout, because a key was present and no switch was off.
+
+    The breaker's job is not to make those requests succeed - failover already
+    did that. It is to stop paying for a provider that has stopped working
+    (`META_MUSE_TIMEOUT_MS` is 60000, so one hung provider adds a minute to every
+    request that reaches it) and to produce a signal that says a provider is out.
+    """
+
+    def setUp(self):
+        undx_router.reset_provider_health()
+
+    tearDown = setUp
+
+    def _fail(self, provider="meta", times=1, status="response_failed"):
+        for _ in range(times):
+            undx_router._record_provider_failure(provider, status)
+
+    def test_the_breaker_does_not_trip_before_the_threshold(self):
+        self._fail(times=undx_router.BREAKER_THRESHOLD - 1)
+        self.assertFalse(undx_router._breaker_is_open("meta"))
+        self.assertFalse(undx_router._breaker_should_skip("meta"))
+
+    def test_consecutive_failures_at_the_threshold_open_it(self):
+        self._fail(times=undx_router.BREAKER_THRESHOLD)
+        self.assertTrue(undx_router._breaker_is_open("meta"))
+        self.assertTrue(undx_router._breaker_should_skip("meta"))
+
+    def test_a_success_between_failures_keeps_the_breaker_closed(self):
+        """Intermittent is not down, and the router must not confuse the two.
+
+        Gemini demonstrably returns transient 503s from upstream capacity - a
+        later health-check run 503'd on the model that had just gone 6/6. A
+        breaker that counted total failures rather than consecutive ones would
+        eventually rest a provider that is working, and the rest would look
+        exactly like the outage it was supposed to detect.
+        """
+        for _ in range(10):
+            self._fail(times=undx_router.BREAKER_THRESHOLD - 1)
+            undx_router._record_provider_success("meta")
+        self.assertFalse(undx_router._breaker_is_open("meta"))
+        health = undx_router.provider_runtime_health()["meta"]
+        self.assertEqual(health["failures"], 20)
+        self.assertEqual(health["consecutive_failures"], 0)
+        self.assertEqual(health["state"], "closed")
+
+    def test_a_recovery_reports_itself(self):
+        self._fail(times=undx_router.BREAKER_THRESHOLD)
+        with self.assertLogs(level="WARNING") as logs:
+            undx_router._record_provider_success("meta")
+        self.assertTrue(any("provider recovered" in line for line in logs.output))
+        self.assertFalse(undx_router._breaker_is_open("meta"))
+
+    def test_opening_is_logged_at_error_once_not_per_request(self):
+        """The one line that says a provider is *out*, rather than that a request missed.
+
+        Per-request warnings existed all through both outages and nobody read
+        them, because with failover in front of them they are indistinguishable
+        from ordinary noise.
+        """
+        with self.assertLogs(level="ERROR") as logs:
+            self._fail(times=undx_router.BREAKER_THRESHOLD)
+        self.assertEqual(sum("circuit opened" in line for line in logs.output), 1)
+
+        with self.assertNoLogs(level="ERROR"):
+            self._fail(times=5)
+
+    # -- the half-open probe ------------------------------------------------
+
+    def _open_and_expire(self, provider="meta"):
+        self._fail(provider=provider, times=undx_router.BREAKER_THRESHOLD)
+        with undx_router._HEALTH_LOCK:
+            undx_router._health_state[provider]["opened_at"] -= (
+                undx_router.BREAKER_COOLDOWN_SECONDS + 1)
+
+    def test_the_expired_cooldown_admits_exactly_one_caller(self):
+        """Closing outright on expiry would hand the whole herd to a dead provider.
+
+        Every request that arrives in that instant would pay Meta's full 60s
+        timeout before failing over - which is the precise cost the breaker was
+        built to stop, reintroduced at the moment of recovery.
+        """
+        self._open_and_expire()
+        self.assertFalse(undx_router._breaker_should_skip("meta"))
+        for _ in range(20):
+            self.assertTrue(undx_router._breaker_should_skip("meta"))
+
+    def test_a_failed_probe_restarts_the_cooldown_rather_than_reopening_expired(self):
+        """The original `opened_at` is already expired; reusing it admits the next caller at once."""
+        self._open_and_expire()
+        self.assertFalse(undx_router._breaker_should_skip("meta"))
+        undx_router._record_provider_failure("meta", "timeout")
+
+        self.assertTrue(undx_router._breaker_should_skip("meta"))
+        remaining = undx_router.provider_runtime_health()["meta"]["cooldown_remaining_s"]
+        self.assertGreater(remaining, undx_router.BREAKER_COOLDOWN_SECONDS - 5)
+
+    def test_a_successful_probe_closes_the_breaker(self):
+        self._open_and_expire()
+        self.assertFalse(undx_router._breaker_should_skip("meta"))
+        undx_router._record_provider_success("meta")
+
+        self.assertFalse(undx_router._breaker_should_skip("meta"))
+        self.assertFalse(undx_router._breaker_is_open("meta"))
+        self.assertFalse(undx_router.provider_runtime_health()["meta"]["probing"])
+
+    def test_an_abandoned_probe_expires_instead_of_resting_the_provider_forever(self):
+        """A probe holder killed mid-request - deploy, OOM, worker restart.
+
+        If `probing` were only ever cleared by the holder, the breaker would
+        become a permanent outage of its own making: strictly worse than the
+        intermittent failures it exists to absorb.
+        """
+        self._open_and_expire()
+        self.assertFalse(undx_router._breaker_should_skip("meta"))
+        self.assertTrue(undx_router._breaker_should_skip("meta"))
+
+        with undx_router._HEALTH_LOCK:
+            undx_router._health_state["meta"]["probing_since"] -= (
+                undx_router._probe_timeout_seconds() + 1)
+        self.assertFalse(undx_router._breaker_should_skip("meta"))
+
+    def test_the_probe_deadline_clears_the_longest_provider_timeout(self):
+        """Derived, not hardcoded: raising a provider's own budget must not shorten it."""
+        with _env(META_MUSE_TIMEOUT_MS="120000"):
+            self.assertGreater(undx_router._probe_timeout_seconds(), 120)
+
+    def test_reading_provider_health_does_not_spend_the_probe(self):
+        """The bug this split was made to prevent.
+
+        `provider_health()` is what a status page calls. Wiring it to the
+        mutating predicate would let a dashboard refresh claim the single trial
+        request, and every real caller would keep resting behind a probe that
+        nobody was ever going to resolve. Looking at the outage would extend it.
+        """
+        self._open_and_expire()
+        with _env(META_MODEL_API_KEY="k" * 40, META_MUSE_ENABLED="true"):
+            for _ in range(20):
+                self.assertEqual(undx_router.provider_health("meta"), "Circuit Open")
+        self.assertFalse(undx_router.provider_runtime_health()["meta"]["probing"])
+        self.assertFalse(undx_router._breaker_should_skip("meta"))
+
+    def test_provider_health_still_prefers_configuration_faults(self):
+        """A rested provider whose key is also missing is a key problem first."""
+        self._fail(times=undx_router.BREAKER_THRESHOLD)
+        with _env():
+            self.assertEqual(undx_router.provider_health("meta"), "Missing API Key")
+        with _env(META_MODEL_API_KEY="k" * 40, META_MUSE_ENABLED="false"):
+            self.assertEqual(undx_router.provider_health("meta"), "Disabled")
+        with _env(META_MODEL_API_KEY="k" * 40, META_MUSE_ENABLED="true"):
+            self.assertEqual(undx_router.provider_health("meta"), "Circuit Open")
+
+    # -- behaviour through the router --------------------------------------
+
+    def test_a_rested_provider_is_reported_in_attempts_not_skipped_silently(self):
+        """`attempts` has to describe the request that ran.
+
+        Dropping the provider from the chain would make the breaker read as a
+        configuration change, and the next person debugging a latency spike would
+        be looking for a provider that was never going to be tried.
+        """
+        self._fail(times=undx_router.BREAKER_THRESHOLD)
+        with _env(META_MODEL_API_KEY="k" * 40, OPENAI_API_KEY="o" * 40,
+                  UNDX_ROUTER_ENABLED="true", UNDX_MULTI_MODEL_MODE="true"), \
+                mock.patch.object(undx_router.requests, "post",
+                                  return_value=_FakeResponse(_chat("hello"))) as post:
+            result = undx_router.route_structured_request(
+                "t", "sys", "hi", providers=["meta", "openai"], max_tokens=256)
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["provider"], "openai")
+        self.assertEqual([a["status"] for a in result["attempts"]],
+                         ["circuit_open", "success"])
+        self.assertEqual(post.call_count, 1, "the rested provider was still called")
+
+    def test_a_rested_provider_costs_no_request_at_all(self):
+        """Not 'fails fast' - not called. A skipped call is the entire saving."""
+        self._fail(times=undx_router.BREAKER_THRESHOLD)
+        with _env(META_MODEL_API_KEY="k" * 40, UNDX_ROUTER_ENABLED="true",
+                  UNDX_MULTI_MODEL_MODE="true"), \
+                mock.patch.object(undx_router.requests, "post") as post:
+            result = undx_router.route_structured_request(
+                "t", "sys", "hi", providers=["meta"], max_tokens=256)
+
+        self.assertFalse(result["ok"])
+        post.assert_not_called()
+        self.assertEqual([a["status"] for a in result["attempts"]], ["circuit_open"])
+
+    def test_live_failures_through_the_router_open_the_breaker(self):
+        """End to end, through the code production runs, not through the helper."""
+        with _env(META_MODEL_API_KEY="k" * 40, UNDX_ROUTER_ENABLED="true",
+                  UNDX_MULTI_MODEL_MODE="true"), \
+                mock.patch.object(undx_router.requests, "post",
+                                  return_value=_FakeResponse({"error": "gone"}, status=404)):
+            for _ in range(undx_router.BREAKER_THRESHOLD):
+                undx_router.route_structured_request(
+                    "t", "sys", "hi", providers=["meta"], max_tokens=256)
+
+        health = undx_router.provider_runtime_health()["meta"]
+        self.assertEqual(health["state"], "open")
+        self.assertEqual(health["last_status"], "request_failed")
+
+    def test_a_success_through_the_router_closes_the_breaker(self):
+        self._open_and_expire()
+        with _env(META_MODEL_API_KEY="k" * 40, UNDX_ROUTER_ENABLED="true",
+                  UNDX_MULTI_MODEL_MODE="true"), \
+                mock.patch.object(undx_router.requests, "post",
+                                  return_value=_FakeResponse(_chat("hello"))):
+            result = undx_router.route_structured_request(
+                "t", "sys", "hi", providers=["meta"], max_tokens=256)
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(undx_router.provider_runtime_health()["meta"]["state"], "closed")
+
+    def test_the_recorded_error_is_the_redacted_one(self):
+        """Runtime health is read by operators and may be surfaced. It is not a log exemption.
+
+        `GROQ_AI_API` is set to a JSON document containing a key, and the
+        transport exception quoted it. Anything that stores an error string has
+        to store the redacted string.
+        """
+        secret = "sk-" + "z" * 40
+        with _env(META_MODEL_API_KEY=secret, UNDX_ROUTER_ENABLED="true",
+                  UNDX_MULTI_MODEL_MODE="true"), \
+                mock.patch.object(undx_router.requests, "post",
+                                  side_effect=undx_router.requests.RequestException(
+                                      f"401 for header Bearer {secret}")):
+            undx_router.route_structured_request(
+                "t", "sys", "hi", providers=["meta"], max_tokens=256)
+
+        recorded = undx_router.provider_runtime_health()["meta"]["last_error"]
+        self.assertNotIn(secret, recorded)
+        self.assertIn("401", recorded)
+
+    def test_runtime_health_reports_nothing_before_anything_has_been_tried(self):
+        """Absence of data is not health. An empty report must not read as green."""
+        self.assertEqual(undx_router.provider_runtime_health(), {})
+        self.assertFalse(undx_router._breaker_is_open("meta"))
+
+
 if __name__ == "__main__":
     unittest.main()
