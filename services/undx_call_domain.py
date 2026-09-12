@@ -160,7 +160,16 @@ def is_known(call_domain: str | None) -> bool:
 #: Until then `routing_preference` returns `()` for everything, which means every
 #: routing decision is still made by content classification and privacy ceilings —
 #: the same two inputs as before this module existed. Nothing routes differently
-#: because of a domain, and the cost ledger gains an attribution it did not have.
+#: because of a domain today.
+#:
+#: What the domain does buy immediately is attribution: `undx_router` echoes it back
+#: on every envelope as `call_domain`, alongside `call_domain_known` so a misspelling
+#: is visible rather than merely ineffective. That is per-response attribution, not
+#: per-dollar. The cost ledger upserts one row per (month, provider), so answering
+#: "what did SCAM_SHIELD spend" needs that key widened to include the domain — a
+#: change to the table the *budget refusal* reads, which is not something to do in
+#: passing while migrating call sites. Recorded here as the next honest step rather
+#: than implied by the fact that a domain is now being passed around.
 _PREFERENCE: dict[str, tuple[str, ...]] = {}
 
 

@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import ast
+import inspect
 import pathlib
 import unittest
+from unittest import mock
+
+import undx_router
 
 from services import undx_call_domain as cd
 
@@ -250,6 +254,121 @@ class VocabularyTest(unittest.TestCase):
         self.assertEqual(report["default_call_domain"], "GENERAL")
         self.assertEqual(len(report["call_domains"]), 8)
         self.assertIsInstance(report["declared_preferences"], int)
+
+
+class DomainReorderIsNotWideningTest(unittest.TestCase):
+    """`undx_router._domain_ordered` is where §5's rule is honoured or lost.
+
+    The tests above keep the *vocabulary* of permissions out of the domain module.
+    These keep the *effect* out of the router: they populate `_PREFERENCE` with
+    entries the real table does not have yet, because the invariant has to be proven
+    against a table with contents, and the shipped table is empty. When the first
+    benchmarked entry lands, these tests already cover it.
+    """
+
+    ADMITTED = ["openai", "claude", "gemini"]
+
+    def _ordered(self, preference, domain, admitted=None):
+        with mock.patch.dict(cd._PREFERENCE, preference, clear=True):
+            return undx_router._domain_ordered(
+                list(self.ADMITTED if admitted is None else admitted), domain)
+
+    def test_a_preference_moves_an_admitted_provider_to_the_front(self):
+        self.assertEqual(
+            self._ordered({"SECURITY": ("gemini",)}, "SECURITY"),
+            ["gemini", "openai", "claude"])
+
+    def test_a_preference_cannot_add_a_provider_that_privacy_refused(self):
+        """The test this whole module exists for.
+
+        `perplexity` is capped at PUBLIC because its prompt becomes a live search
+        query, so a request carrying anything private reaches `_domain_ordered` with
+        perplexity already absent from the admitted list. A preference naming it must
+        find nothing to move rather than put it back.
+        """
+        self.assertEqual(
+            self._ordered({"RESEARCH": ("perplexity",)}, "RESEARCH"),
+            self.ADMITTED)
+
+    def test_a_preference_naming_an_unknown_provider_is_inert(self):
+        self.assertEqual(
+            self._ordered({"SECURITY": ("nonesuch", "gemini")}, "SECURITY"),
+            ["gemini", "openai", "claude"])
+
+    def test_no_preference_leaves_the_plan_exactly_as_it_was(self):
+        self.assertEqual(self._ordered({}, "SECURITY"), self.ADMITTED)
+        self.assertEqual(self._ordered({}, None), self.ADMITTED)
+
+    def test_an_empty_admitted_list_stays_empty(self):
+        """Nothing admitted means nothing to reorder, not a chance to supply one."""
+        self.assertEqual(
+            self._ordered({"SECURITY": ("openai", "claude")}, "SECURITY", admitted=[]),
+            [])
+
+    def test_the_result_is_always_a_permutation_of_what_was_admitted(self):
+        """The property, checked against every provider name the router knows.
+
+        A preference listing *all seven* providers for *every* domain is the most
+        widening table that could be written. It still cannot widen anything, because
+        the result is assembled by partitioning the admitted list rather than by
+        concatenating the preference onto it.
+        """
+        everything = tuple(undx_router.PROVIDERS)
+        greedy = {domain: everything for domain in cd.CALL_DOMAINS}
+        for domain in list(cd.CALL_DOMAINS) + ["SCAM_SHEILD", "", None]:
+            for admitted in ([], ["openai"], ["claude", "openai"], self.ADMITTED):
+                with self.subTest(domain=domain, admitted=admitted):
+                    result = self._ordered(greedy, domain, admitted=admitted)
+                    self.assertEqual(sorted(result), sorted(admitted))
+                    self.assertEqual(len(result), len(set(result)))
+
+    def test_a_stranger_choosing_the_domain_can_only_choose_an_order(self):
+        """TELEGRAM is the attacker-influenced domain, so it gets its own test.
+
+        Not because the code path differs — it does not — but because "an attacker
+        picks this value" is the reason the rule exists, and a test named after the
+        threat survives a refactor that a test named after the function might not.
+        """
+        greedy = {domain: tuple(undx_router.PROVIDERS) for domain in cd.CALL_DOMAINS}
+        for attacker_choice in ["TELEGRAM", "PRIVATE_OFFICE", "SECURITY", "../../etc", "*"]:
+            with self.subTest(claimed=attacker_choice):
+                self.assertEqual(
+                    sorted(self._ordered(greedy, attacker_choice)),
+                    sorted(self.ADMITTED))
+
+    def test_both_router_entry_points_accept_a_declared_domain(self):
+        """A signature check, so a caller declaring a domain cannot be silently dropped."""
+        for func in (undx_router.route_undx_request, undx_router.route_structured_request):
+            with self.subTest(func=func.__name__):
+                self.assertIn("call_domain", inspect.signature(func).parameters)
+
+    def test_the_domain_is_consulted_after_the_privacy_ceiling(self):
+        """Order of operations, read off the source rather than assumed.
+
+        `_domain_ordered` must run on a plan the kill switch and any explicit
+        `providers=` list have already settled, and before the loop that refuses
+        providers — so the list it partitions is the list that will actually be
+        tried. Ordering is compared by line number, not by position in `ast.walk`,
+        which is breadth-first and would have made this assertion pass for reasons
+        unrelated to source order.
+        """
+        source = pathlib.Path(undx_router.__file__).read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        for name in ("route_undx_request", "route_structured_request"):
+            func = next(node for node in tree.body
+                        if isinstance(node, ast.FunctionDef) and node.name == name)
+            lines: dict[str, list[int]] = {}
+            for node in ast.walk(func):
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                    lines.setdefault(node.func.id, []).append(node.lineno)
+            with self.subTest(func=name):
+                self.assertIn("_domain_ordered", lines,
+                              f"{name} does not reorder by declared domain at all")
+                self.assertIn("_privacy_refusal", lines)
+                self.assertLess(min(lines["_domain_ordered"]),
+                                min(lines["_privacy_refusal"]),
+                                "the plan must be reordered before the loop that "
+                                "refuses providers, not after it")
 
 
 if __name__ == "__main__":

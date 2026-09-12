@@ -23,28 +23,37 @@ import tempfile
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 TARGET = "services/undx_call_domain.py"
+ROUTER = "undx_router.py"
 TESTS = "tests/test_undx_call_domain.py"
 
-#: Each mutation is (label, old, new, test that must fail).
+#: Each mutation is (label, file, old, new, test that must fail).
 #:
 #: `expect` is the point of the exercise. A mutation that fails *some* test proves
 #: the suite is not empty; a mutation that fails *the named* test proves the
 #: assertion written for it is the one doing the work.
+#:
+#: The rule spans two files, so the mutations do too. Keeping the vocabulary out of
+#: `undx_call_domain` is worth nothing if `undx_router` reads a preference and
+#: concatenates it onto the admitted list, so the `ROUTER` mutations below break the
+#: reorder-only property directly.
 MUTATIONS = [
     (
         "promote a provider in the preference table",
+        TARGET,
         '_PREFERENCE: dict[str, tuple[str, ...]] = {}',
         '_PREFERENCE: dict[str, tuple[str, ...]] = {"SCAM_SHIELD": ("openai",)}',
         "test_no_provider_name_reaches_the_module_as_data",
     ),
     (
         "name a provider in a docstring only (must stay GREEN)",
+        TARGET,
         '    """Provider names this domain would rather try first, possibly none.',
         '    """Provider names this domain would rather try first, e.g. openai.',
         None,
     ),
     (
         "add a rank table",
+        TARGET,
         '_KNOWN: frozenset[str] = frozenset(CALL_DOMAINS)',
         '_KNOWN: frozenset[str] = frozenset(CALL_DOMAINS)\n'
         'DOMAIN_RANK = {name: i for i, name in enumerate(CALL_DOMAINS)}',
@@ -52,6 +61,7 @@ MUTATIONS = [
     ),
     (
         "add a rank function",
+        TARGET,
         'def is_known(call_domain: str | None) -> bool:',
         'def rank(call_domain: str | None) -> int:\n'
         '    return CALL_DOMAINS.index(normalise(call_domain))\n\n\n'
@@ -60,48 +70,62 @@ MUTATIONS = [
     ),
     (
         "read a domain's tuple position as an ordinal",
+        TARGET,
         '    return normalise(call_domain) in _KNOWN',
         '    return CALL_DOMAINS.index(normalise(call_domain)) >= 0',
         "test_domains_do_not_rank",
     ),
     (
         "map a domain to a number",
+        TARGET,
         '_PREFERENCE: dict[str, tuple[str, ...]] = {}',
         '_PREFERENCE: dict[str, tuple[str, ...]] = {"GENERAL": 3}',
         "test_domains_do_not_rank",
     ),
     (
         "import privacy the way every other module in this repo does",
+        TARGET,
         'from __future__ import annotations',
         'from __future__ import annotations\n\nfrom services import undx_privacy',
         "test_the_module_does_not_import_privacy",
     ),
     (
         "import privacy relatively",
+        TARGET,
         'from __future__ import annotations',
         'from __future__ import annotations\n\nfrom . import undx_privacy',
         "test_the_module_does_not_import_privacy",
     ),
     (
         "import privacy under an innocent alias",
+        TARGET,
         'from __future__ import annotations',
         'from __future__ import annotations\n\nimport services.undx_privacy as policy',
         "test_the_module_does_not_import_privacy",
     ),
     (
-        "reach the lane table through the router",
+        "reach the lane table through the router (blocked by the import graph, not the test)",
+        TARGET,
         'from __future__ import annotations',
         'from __future__ import annotations\n\nfrom undx_router import PROVIDERS',
-        "test_the_module_does_not_import_privacy",
+        # Not the test name, and that is the finding. `undx_router` imports
+        # `undx_call_domain`, so importing the router back is a cycle Python refuses
+        # before any test runs. The ban is now enforced twice, and the stronger of
+        # the two is the dependency direction. The test still earns its place: it
+        # covers `undx_privacy` (three mutations above), and it is what would catch
+        # this if the router ever stopped importing the domain module.
+        "ImportError",
     ),
     (
         "name a privacy class in prose",
+        TARGET,
         '#: Unordered on purpose: there is no ladder here.',
         '#: Unordered on purpose: unlike CONFIDENTIAL, there is no ladder here.',
         "test_the_module_names_no_privacy_class_anywhere",
     ),
     (
         "expose a permission question",
+        TARGET,
         'def readiness() -> dict[str, object]:',
         'def may_route(call_domain: str | None) -> bool:\n    return True\n\n\n'
         'def readiness() -> dict[str, object]:',
@@ -109,38 +133,95 @@ MUTATIONS = [
     ),
     (
         "fold a typo into the default",
+        TARGET,
         '    return str(call_domain).strip().upper().replace("-", "_").replace(" ", "_")',
         '    cleaned = str(call_domain).strip().upper().replace("-", "_").replace(" ", "_")\n'
         '    return cleaned if cleaned in _KNOWN else DEFAULT_CALL_DOMAIN',
         "test_a_typo_is_visible_rather_than_silently_default",
     ),
+    (
+        "let a preference add a provider instead of moving one",
+        ROUTER,
+        '    front = [provider for provider in preferred if provider in ordered]',
+        '    front = list(preferred)',
+        "test_a_preference_cannot_add_a_provider_that_privacy_refused",
+    ),
+    (
+        "let a preference replace the admitted list outright",
+        ROUTER,
+        '    front = [provider for provider in preferred if provider in ordered]\n'
+        '    return front + [provider for provider in ordered if provider not in front]',
+        '    return list(preferred)',
+        "test_the_result_is_always_a_permutation_of_what_was_admitted",
+    ),
+    (
+        "keep a preferred provider in both positions",
+        ROUTER,
+        '    return front + [provider for provider in ordered if provider not in front]',
+        '    return front + list(ordered)',
+        "test_the_result_is_always_a_permutation_of_what_was_admitted",
+    ),
+    (
+        "stop consulting the declared domain in the structured path",
+        ROUTER,
+        '            else [default_provider()]\n'
+        '    ordered = _domain_ordered(ordered, call_domain)\n',
+        '            else [default_provider()]\n',
+        "test_the_domain_is_consulted_after_the_privacy_ceiling",
+    ),
+    (
+        "stop consulting the declared domain in the mission path",
+        ROUTER,
+        '    ordered = provider_priority(classification) if router_enabled() else ["openai"]\n'
+        '    ordered = _domain_ordered(ordered, call_domain)\n',
+        '    ordered = provider_priority(classification) if router_enabled() else ["openai"]\n',
+        "test_the_domain_is_consulted_after_the_privacy_ceiling",
+    ),
+    (
+        "drop the declared domain from the structured signature",
+        ROUTER,
+        '    privacy_class: str | None = None,\n    call_domain: str | None = None,\n) -> dict[str, Any]:',
+        '    privacy_class: str | None = None,\n) -> dict[str, Any]:',
+        "test_both_router_entry_points_accept_a_declared_domain",
+    ),
 ]
 
 
-def build_sandbox(root: pathlib.Path) -> pathlib.Path:
-    """Symlink the repo, except the one file that gets mutated."""
+def build_sandbox(root: pathlib.Path, target: str) -> pathlib.Path:
+    """Symlink the repo, except the one file that gets mutated.
+
+    Works for a root-level module and for one inside a package: the directory on the
+    path to the target becomes real, everything beside it stays a symlink. Nothing
+    under the repo is opened for writing at any point.
+    """
     sandbox = root / "repo"
     sandbox.mkdir()
+    parts = pathlib.Path(target).parts
     for entry in REPO.iterdir():
-        if entry.name in {"services", ".git"}:
+        if entry.name in {".git", parts[0]}:
             continue
         (sandbox / entry.name).symlink_to(entry)
-    services = sandbox / "services"
-    services.mkdir()
-    for entry in (REPO / "services").iterdir():
-        if entry.name == "undx_call_domain.py":
+
+    if len(parts) == 1:
+        shutil.copy2(REPO / target, sandbox / parts[0])
+        return sandbox
+
+    package = sandbox / parts[0]
+    package.mkdir()
+    for entry in (REPO / parts[0]).iterdir():
+        if entry.name == parts[-1]:
             continue
-        (services / entry.name).symlink_to(entry)
-    shutil.copy2(REPO / TARGET, services / "undx_call_domain.py")
+        (package / entry.name).symlink_to(entry)
+    shutil.copy2(REPO / target, package / parts[-1])
     return sandbox
 
 
 def main() -> int:
     failures = []
-    for label, old, new, expect in MUTATIONS:
+    for label, target, old, new, expect in MUTATIONS:
         with tempfile.TemporaryDirectory() as tmp:
-            sandbox = build_sandbox(pathlib.Path(tmp))
-            path = sandbox / TARGET
+            sandbox = build_sandbox(pathlib.Path(tmp), target)
+            path = sandbox / target
             source = path.read_text(encoding="utf-8")
             if source.count(old) != 1:
                 failures.append(f"{label}: anchor matched {source.count(old)}x, expected 1")

@@ -16,7 +16,7 @@ from typing import Any
 
 import requests
 
-from services import undx_cost, undx_health, undx_privacy
+from services import undx_call_domain, undx_cost, undx_health, undx_privacy
 
 
 DEFAULT_UNDX_SYSTEM_PROMPT = (
@@ -657,6 +657,32 @@ def provider_priority(classification: dict[str, Any]) -> list[str]:
         provider for provider in ordered
         if provider in PROVIDERS and provider_enabled(provider)
     ))
+
+
+def _domain_ordered(ordered: list[str], call_domain: str | None) -> list[str]:
+    """Move a declared domain's preferred providers to the front of a settled plan.
+
+    The one rule `services/undx_call_domain` exists to keep is that routing may use
+    a domain and permissions may not, and this function is where that rule is either
+    honoured or lost. So it is written to make widening unexpressible rather than
+    merely unintended: the result is built by partitioning `ordered`, so it is always
+    a permutation of its input. A preference naming a provider that privacy refused,
+    a kill switch disabled, or that does not exist cannot put that provider back —
+    the name simply finds nothing to move.
+
+    That matters most for `TELEGRAM`, which is the one domain an attacker influences:
+    it carries text a stranger sent to a bot. A stranger who could choose the domain
+    can therefore choose the order of an already-admitted list, and nothing else.
+
+    Applied after `provider_priority`, after an explicit `providers=` list, and after
+    the kill switch has collapsed the plan — deliberately last, so there is no path
+    where a domain is consulted before the question of who is *allowed* is settled.
+    """
+    preferred = undx_call_domain.routing_preference(call_domain)
+    if not preferred:
+        return ordered
+    front = [provider for provider in preferred if provider in ordered]
+    return front + [provider for provider in ordered if provider not in front]
 
 
 def _privacy_refusal(provider: str, privacy_class: str | None) -> str:
@@ -1316,6 +1342,7 @@ def route_structured_request(
     max_tokens: int = 320,
     providers: list[str] | None = None,
     privacy_class: str | None = None,
+    call_domain: str | None = None,
 ) -> dict[str, Any]:
     """One model turn whose answer is meant to be parsed, not read.
 
@@ -1338,6 +1365,7 @@ def route_structured_request(
     if not ordered:
         ordered = provider_priority(classify_request(user_content)) if router_enabled() \
             else [default_provider()]
+    ordered = _domain_ordered(ordered, call_domain)
     attempts: list[dict[str, str]] = []
     started = time.time()
     budget = _budget_snapshot()
@@ -1386,6 +1414,12 @@ def route_structured_request(
                 "citations": result.get("citations") or [],
                 "usage": usage,
                 "attempts": attempts + [{"provider": config.label, "status": "success"}],
+                # Reported, not merely accepted. A caller that declared a domain can
+                # confirm the router saw the name it sent, and `call_domain_known`
+                # separates a deliberate GENERAL from a misspelling that silently
+                # lost its preference.
+                "call_domain": undx_call_domain.normalise(call_domain),
+                "call_domain_known": undx_call_domain.is_known(call_domain),
                 "latency_ms": int((time.time() - started) * 1000),
             }
         except requests.Timeout:
@@ -1410,16 +1444,19 @@ def route_structured_request(
         "response": "",
         "error": _exhausted_reason(attempts, privacy_class),
         "attempts": attempts,
+        "call_domain": undx_call_domain.normalise(call_domain),
+        "call_domain_known": undx_call_domain.is_known(call_domain),
         "latency_ms": int((time.time() - started) * 1000),
     }
 
 
-def route_undx_request(user_id: Any, message: str, history: Any = None, system_prompt: str = DEFAULT_UNDX_SYSTEM_PROMPT, timeout: int = 25, privacy_class: str | None = None) -> dict[str, Any]:
+def route_undx_request(user_id: Any, message: str, history: Any = None, system_prompt: str = DEFAULT_UNDX_SYSTEM_PROMPT, timeout: int = 25, privacy_class: str | None = None, call_domain: str | None = None) -> dict[str, Any]:
     started = time.time()
     message = _clean_text(message, 2200)
     log_provider_status()
     classification = classify_request(message)
     ordered = provider_priority(classification) if router_enabled() else ["openai"]
+    ordered = _domain_ordered(ordered, call_domain)
     attempts: list[dict[str, str]] = []
     budget = _budget_snapshot()
 
@@ -1513,6 +1550,8 @@ def route_undx_request(user_id: Any, message: str, history: Any = None, system_p
                                     if a.get("status") == "budget_exceeded"],
                     },
                 },
+                "call_domain": undx_call_domain.normalise(call_domain),
+                "call_domain_known": undx_call_domain.is_known(call_domain),
                 "latency_ms": int((time.time() - started) * 1000),
             }
         except requests.Timeout:
@@ -1561,6 +1600,8 @@ def route_undx_request(user_id: Any, message: str, history: Any = None, system_p
         "source": "OpenAI",
         "provider": "openai",
         "classification": classification,
+        "call_domain": undx_call_domain.normalise(call_domain),
+        "call_domain_known": undx_call_domain.is_known(call_domain),
         "router": {
             "name": "UNDX Intelligence Router",
             "enabled": router_enabled(),
