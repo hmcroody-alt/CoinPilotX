@@ -92229,6 +92229,9 @@ def api_pulse_messages_upload():
     }), 200
 
 
+from services.route_auth import auth_required
+
+
 @schema_guard.run_once_per_process
 def _messenger_media_ensure_schema(cur, conn):
     """Run the messenger-media DDL once per worker, not once per request.
@@ -92505,21 +92508,25 @@ def _messenger_media_resumable(handler):
 
 
 @webhook_app.route("/api/messages/media/upload/parts", methods=["POST"])
+@auth_required
 def api_messages_media_upload_parts():
     return _messenger_media_resumable(messenger_media_foundation.sign_upload_parts)
 
 
 @webhook_app.route("/api/messages/media/upload/state", methods=["POST"])
+@auth_required
 def api_messages_media_upload_state():
     return _messenger_media_resumable(messenger_media_foundation.resumable_upload_state)
 
 
 @webhook_app.route("/api/messages/media/upload/finish", methods=["POST"])
+@auth_required
 def api_messages_media_upload_finish():
     return _messenger_media_resumable(messenger_media_foundation.finish_resumable_upload)
 
 
 @webhook_app.route("/api/messages/media/upload/abort", methods=["POST"])
+@auth_required
 def api_messages_media_upload_abort():
     return _messenger_media_resumable(messenger_media_foundation.abort_resumable_upload)
 
@@ -92659,6 +92666,7 @@ def api_messages_media_download(attachment_id):
 
 
 @webhook_app.route("/api/messages/media/<int:attachment_id>/thumbnail", methods=["GET"])
+@auth_required
 def api_messages_media_thumbnail(attachment_id):
     """Serve the small derived preview for one attachment.
 
