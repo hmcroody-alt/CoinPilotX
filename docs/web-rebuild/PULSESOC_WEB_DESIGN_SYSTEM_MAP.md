@@ -1137,44 +1137,64 @@ breakpoint.
 
 | Name | Range | Chrome | Content |
 |---|---|---|---|
-| `phone` | `< 768px` | Bottom tab bar (5 tabs), top app bar | Single column, full-bleed |
-| `tablet` | `768–1119px` | Left icon rail (collapsed), top bar | Single column, max 720px, centred |
-| `desktop` | `1120–1599px` | Left nav rail (labelled) + right context column | 2-col: feed 640px + rail 320px |
-| `wide` | `≥ 1600px` | Left nav + right context, both wider | 3-col: nav 280 / feed 680 / context 380, centred with max 1800px |
+| `phone` | `< 900px` | Bottom tab bar (5 tabs), top app bar | Single column, full-bleed |
+| `desktop` | `900–1479px` | Command rail (labelled) + top bar | 2-col: rail 226 + feed (fills the rest) |
+| `wide` | `≥ 1480px` | Command rail + side context rail | 3-col: 226 / 884 / 314, centred in a 1480 shell |
 
-These are content-derived, not device-derived: 640px is where a `PostCard` stops needing to
-compromise, and 1120px is the first width that fits 640 + 320 + both gutters + a labelled rail.
+**Corrected in Phase 1c — this table used to read `768 / 1120 / 1600` with a 640–680px feed, and
+the app contains none of those five numbers.** See §12.2 † for the full trace. In summary:
+`mobile-native/src/screens/HomeScreen.tsx` caps its content at 1480 with 12px padding, fixes the
+two rails at 226 and 314 with a 16px gap, and gives the feed `flex: 1` — so the feed has no
+declared width at all and 884 is the residual, `1480 − (2×12) − 226 − 314 − (2×16)`.
+
+Both breakpoints are structural rather than taste calls, which is why there are two and not four:
+
+- **900** is native's own `wideCanvas` threshold (`HomeScreen.tsx:1168`), where the app brings
+  the command rail in. Honoured rather than replaced. At 900 the feed is `900 − 24 − 226 − 16 =
+  634px`, still comfortable; the old plan's 768 would have seated the rail against a 502px feed —
+  a *narrower* feed than the 744px it had one pixel earlier.
+- **1480** is where all three columns fit at once, and is the same width the shell caps at. Below
+  it, the side rail could only appear by stealing from the feed.
+
+Adding a rail always costs the feed something at the moment it appears; the only real choice is
+where to spend it, and both of these spend it at a width the app itself already picked.
+Intermediate breakpoints would step type or gutters — worth doing once there is content to
+measure, not before.
 
 ### 10.2 The rule that prevents "stretched mobile"
 
-> **The feed column never exceeds 680px at any breakpoint.** Extra width buys *additional
+> **The feed column never exceeds 884px at any breakpoint.** Extra width buys *additional
 > columns*, never *wider rows*.
+
+The rule is unchanged; only the number moved, and it moved because it stopped being a guess.
+884px is `--measure-feed-max`, traced from the app rather than chosen here, and
+`scripts/ops/web_token_authority_gate.py` holds the marketing stylesheet and the client to the
+same value. The measure is identical at 1920px as at 1480px.
 
 A 1920px-wide post is unreadable and instantly signals a mobile app stretched onto a monitor.
 What desktop earns instead is persistent context that the phone has to navigate away to reach:
 
 | Breakpoint | What the extra space is spent on |
 |---|---|
-| tablet | Nav rail becomes persistent (no drawer round-trip) |
-| desktop | Right column: trending, suggested people, active live, cart summary |
-| wide | Nav labels + a third column for the open detail (post → its thread stays in place) |
+| desktop (≥ 900) | The command rail becomes persistent — no drawer round-trip |
+| wide (≥ 1480) | A side rail for standing context: trending, suggested people, active live, cart summary |
 
 ### 10.3 Per-area adaptation
 
 | Area | Phone | Desktop |
 |---|---|---|
-| Feed | Full-bleed cards | 640px column + right context rail |
+| Feed | Full-bleed cards | 884px column; command rail from 900, side context rail from 1480 |
 | Reels | Full-screen vertical, swipe | Centred 9:16 player, max 560px tall, arrow/scroll nav, comments in a side panel rather than an overlay sheet |
 | Messages | List → conversation (two screens) | Persistent two-pane: list 320px + thread; the native "back" has no desktop equivalent |
 | Marketplace | 1-col grid | 3-col at desktop, 4-col at wide; filters move from a sheet to a persistent left facet panel |
 | Profile | Stacked | Header full-width, then 2-col: posts + about/details sidebar |
 | Settings | Drilldown list | Two-pane master/detail — the `settings/<id>` registry maps cleanly onto this |
-| Composer | Full-screen modal | Centred dialog, max 680px; inline on desktop feed for short posts |
+| Composer | Full-screen modal | Centred dialog tracking `--measure-feed-max` (884px) — a composer wider than the column it posts into reads wrong. **Not independently traced**; confirm against the native composer in Phase 3. Inline on desktop feed for short posts |
 | Live / calls | *Inventory only — out of scope* | *Inventory only — out of scope* |
 
 ### 10.4 Things that must not be ported literally
 
-- **Bottom tab bar above 768px.** It is a thumb-reach solution to a problem desktop does not have.
+- **Bottom tab bar above 900px.** It is a thumb-reach solution to a problem desktop does not have.
 - **Swipe-only affordances.** Reels, stories and carousels need visible keyboard and pointer
   controls on desktop. Native's gesture is an addition on touch, not the only path.
 - **Pull-to-refresh as the only refresh.** Needs an explicit control plus polling on web.
@@ -1346,7 +1366,7 @@ the design, not about the grid.
 | | `--spacing-2xl` | 6 | 48 |
 | | `--spacing-section` | 8 | 64 |
 | Radius | `--radius-xs` | 1 | 8 |
-| | `--radius-sm` | 1.5 | 12 |
+| | `--pulse-radius-sm` ‡ | 1.5 | 12 |
 | | `--radius-card` | 2 | 16 |
 | | `--radius-lg` | 3 | 24 |
 | | `--radius-pill` | — | 999 |
@@ -1354,20 +1374,42 @@ the design, not about the grid.
 | Shell | `--topbar-h` | 8 | 64 |
 | | `--sidebar-w` | 33 | 264 |
 | | `--bottom-nav-h` | 10 | 80 |
-| Measures † | `--measure-feed-max` | 85 | 680 |
-| | `--measure-container-max` | 161 | 1288 |
+| Measures † | `--measure-feed-max` | 110.5 | 884 |
+| | `--measure-container-max` | 185 | 1480 |
 | Motion | `--motion-fast` | 11 | 88ms |
 | | `--motion-base` | 21 | 168ms |
 | | `--motion-slow` | 36 | 288ms |
-| Stacking | `--z-nav` / `--z-fab` | — | 80 / 88 |
-| | `--z-overlay` / `--z-modal` / `--z-toast` | — | 800 / 888 / 8888 |
+| Stacking ‡ | `--z-pulse-nav` / `--z-pulse-fab` | — | 80 / 88 |
+| | `--z-pulse-overlay` / `--z-pulse-modal` / `--z-pulse-toast` | — | 800 / 888 / 8888 |
 
-† The two measures are the only rows written as literal `px` rather than `calc()`. They land on
-the grid (85 and 161 units) but are deliberately not derived from it: a measure is a
-*line-length* constraint, so it should track the reader's font size, not a spacing-density
-setting. Tying them to `--pulse-base-unit` would make a future compact mode narrow the reading
-column, which is the opposite of what compact mode is for. They are correspondingly not in
-`GRID_TOKENS` and not covered by §12.5's grid assertion.
+† The two measures are the only rows written as literal `px` rather than `calc()`, and they are
+no longer chosen numbers. They read 680 and 1288 until Phase 1c traced
+`mobile-native/src/screens/HomeScreen.tsx` and found neither: the app caps content at 1480 with
+12px padding, fixes its rails at 226 and 314 with a 16px gap, and gives the feed `flex: 1`. So
+the feed has no declared width in native at all, and 884 is the residual —
+`1480 − (2×12) − 226 − 314 − (2×16)`. They are the same two bounds the web client uses
+(`--shell-max` / `--feed-max`) rather than a second opinion held only by the marketing surface;
+`scripts/ops/web_token_authority_gate.py` holds the two files to one number each.
+
+Note the honest consequence: 884 is **110.5 units, not a whole multiple of 8**. Every other row
+in this table lands on the grid because it was picked; this one was measured, and a measured
+number does not owe the grid anything. Rounding it to 880 or 888 to make the table tidier would
+be changing the product's proportions to flatter a document. The grid governs values we choose.
+
+Both stay literal for the original reason too: a measure is a *line-length* constraint, so it
+should track the reader's font size, not a spacing-density setting. Tying them to
+`--pulse-base-unit` would make a future compact mode narrow the reading column, which is the
+opposite of what compact mode is for. They are correspondingly not in `GRID_TOKENS` and not
+covered by §12.5's grid assertion.
+
+‡ Prefixed, and not merely by taste. `--radius-sm`, `--z-modal` and `--z-toast` are the names a
+second stylesheet reaches for first, and `web/src/styles/tokens.css` had already taken all three
+at different values — 8 against 12, 40 against 888, 48 against 8888. Two stylesheets that both
+load on one document and disagree about `--z-modal` do not fail; whichever loads last wins, so a
+modal quietly renders beneath a toast on exactly the pages where both happen to be linked, in
+whichever order the template links them. The z-family was previously declared unprefixed here and
+re-exported as `--z-pulse-*`; the indirection is gone and the exported names are now the declared
+ones, which is also what every consumer outside the file already read.
 
 Three of these deserve their reasoning stated rather than inferred:
 

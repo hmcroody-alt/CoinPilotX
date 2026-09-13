@@ -156,7 +156,11 @@
   --spacing-section: calc(var(--pulse-base-unit) * 8); /* 64px — desktop rhythm */
 
   --radius-xs:   var(--pulse-base-unit);               /*  8px */
-  --radius-sm:   calc(var(--pulse-base-unit) * 1.5);   /* 12px */
+  /* Prefixed for the same reason as the z-scale below: the web client's token
+     file declares `--radius-sm` as 8px, traced from native, where this one has
+     always meant 12. Same name, two meanings, no failure — just a control that
+     is 4px rounder or squarer depending on stylesheet order. */
+  --pulse-radius-sm: calc(var(--pulse-base-unit) * 1.5);   /* 12px */
   --radius-card: calc(var(--pulse-base-unit) * 2);     /* 16px — legacy --pulse-radius */
   --radius-lg:   calc(var(--pulse-base-unit) * 3);     /* 24px */
   --radius-pill: 999px;
@@ -199,21 +203,45 @@
   --touch-target-min: calc(var(--pulse-base-unit) * 6);
 
   /* Stacking order, also base-8. Gaps are wide enough that a feature can
-     insert a layer without renumbering the scale. */
-  --z-nav:     80;
-  --z-fab:     88;
-  --z-overlay: 800;
-  --z-modal:   888;
-  --z-toast:   8888;
+     insert a layer without renumbering the scale.
+
+     Namespaced, and not merely by taste. `--z-modal` and `--z-toast` are the
+     names a second stylesheet reaches for first, and the web client's own
+     token file (web/src/styles/tokens.css) had already taken both with a
+     different scale — 40 and 48 against 888 and 8888. Two stylesheets that
+     both load on one document and disagree about `--z-modal` do not fail:
+     whichever loads last wins, and a modal quietly renders beneath a toast on
+     exactly the pages where both happen to be linked. These used to be
+     declared unprefixed and then re-exported as `--z-pulse-*`; the
+     indirection is gone and the exported names are the declared ones, which
+     is also what every consumer outside this file already reads.
+     `scripts/ops/web_token_authority_gate.py` keeps the two files apart. */
+  --z-pulse-nav:     80;
+  --z-pulse-fab:     88;
+  --z-pulse-overlay: 800;
+  --z-pulse-modal:   888;
+  --z-pulse-toast:   8888;
 
   /* ---------------------------------------------------------------------
      3.1 LAYOUT MEASURES
-     The responsive contract from the design system map: the reading column
-     never widens, extra viewport buys extra columns. Both bounds are on
-     the grid — 680 = 85 units, 1288 = 161 units.
+
+     These are the app's numbers, not this stylesheet's. They read 680 and
+     1288 until Phase 1c traced `mobile-native/src/screens/HomeScreen.tsx`
+     and found neither: the app caps content at 1480 with 12px padding, fixes
+     its rails at 226 and 314 with a 16px gap, and gives the feed `flex: 1` —
+     so the feed has no declared width in native at all, and 884 is what the
+     shell leaves once it has capped.
+
+       1480 - (2 x 12) - 226 - 314 - (2 x 16) = 884
+
+     The governing rule is unchanged and is still the point: extra viewport
+     buys extra columns, never wider rows. What changed is that the two
+     bounds are now measured rather than chosen, and they are the same two
+     bounds the web client uses (`--feed-max` / `--shell-max`) rather than a
+     second opinion held only by the marketing surface.
      --------------------------------------------------------------------- */
-  --measure-feed-max:      680px;   /* reading column ceiling, all breakpoints */
-  --measure-container-max: 1288px;  /* outer shell ceiling */
+  --measure-feed-max:      884px;   /* reading column ceiling, all breakpoints */
+  --measure-container-max: 1480px;  /* outer shell ceiling */
   --measure-gutter:        var(--spacing-lg);
 }
 
@@ -328,12 +356,9 @@
   --bottom-nav-h: calc(var(--pulse-base-unit) * 10);   /* was --pulse-bottom-nav-height */
   --pulse-bottom-nav-height: var(--bottom-nav-h);
 
-  /* z-index family */
-  --z-pulse-nav:     var(--z-nav);
-  --z-pulse-fab:     var(--z-fab);
-  --z-pulse-overlay: var(--z-overlay);
-  --z-pulse-modal:   var(--z-modal);
-  --z-pulse-toast:   var(--z-toast);
+  /* The z-index family used to be re-exported here from unprefixed names.
+     It is declared under its exported names in section 3 now, so there is
+     nothing left to alias. */
 }
 
 /* -------------------------------------------------------------------------
@@ -372,7 +397,7 @@
 .pulse-action {
   min-height: var(--touch-target-min);
   padding: 0 var(--spacing-md);
-  border-radius: var(--radius-sm);
+  border-radius: var(--pulse-radius-sm);
   border: 1px solid transparent;
   font-weight: var(--font-weight-medium);
   cursor: pointer;
@@ -399,10 +424,10 @@
 .pulse-skip-link {
   position: absolute;
   left: -9999px;
-  z-index: var(--z-toast);
+  z-index: var(--z-pulse-toast);
   padding: var(--spacing-xs) var(--spacing-md);
   background: var(--surface-elevated);
   color: var(--text-primary);
-  border-radius: var(--radius-sm);
+  border-radius: var(--pulse-radius-sm);
 }
 .pulse-skip-link:focus { left: var(--spacing-md); top: var(--spacing-md); }

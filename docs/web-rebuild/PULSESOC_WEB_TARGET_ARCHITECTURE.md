@@ -510,11 +510,19 @@ Full detail: `PULSESOC_DATABASE_GAP_ANALYSIS.md`.
 ## 10. Responsive architecture
 
 The mission requires desktop to be a premium experience, not a stretched phone. The design
-system map §10 sets the breakpoints (phone <768 / tablet 768–1119 / desktop 1120–1599 /
-wide ≥1600) and one governing rule:
+system map §10 sets the breakpoints (phone <900 / desktop 900–1479 / wide ≥1480) and one
+governing rule:
 
-> **The feed column never exceeds 680px at any breakpoint. Extra width buys additional
+> **The feed column never exceeds 884px at any breakpoint. Extra width buys additional
 > columns, never wider rows.**
+
+Both the breakpoints and the measure were corrected in Phase 1c. This section used to read
+`768 / 1119 / 1599 / 1600` with a 680px feed, and tracing
+`mobile-native/src/screens/HomeScreen.tsx` found none of those numbers in the app: it caps
+content at 1480 with 12px padding, fixes its rails at 226 and 314 with a 16px gap, and gives the
+feed `flex: 1`. 884 is the residual. 900 is the app's own `wideCanvas` threshold. Keeping the
+originals would have made the website a second opinion about the product's proportions, which is
+precisely what "the native app is the source of truth" rules out.
 
 Where desktop should deliberately *exceed* native: the ads campaign wizard (native's is a
 1,985-line multi-step drilldown; desktop wants side-by-side targeting + estimate + persistent

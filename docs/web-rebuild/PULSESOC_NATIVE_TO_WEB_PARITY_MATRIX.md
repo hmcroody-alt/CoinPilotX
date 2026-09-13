@@ -160,8 +160,14 @@ places where the *native* app is the constrained one:
 | Private Office | Document + record review benefits most from screen area |
 | Post + thread | Third column keeps the thread open beside the feed |
 
-**The governing rule** (from the design system map §10.2): *the feed column never exceeds 680px
+**The governing rule** (from the design system map §10.2): *the feed column never exceeds 884px
 at any breakpoint. Extra width buys additional columns, never wider rows.*
+
+884px, not the 680 this line carried before Phase 1c. The rule never changed; the number stopped
+being a guess. It is the residual of the app's own wide canvas —
+`1480 − (2×12) − 226 − 314 − (2×16)` — traced from `HomeScreen.tsx`, where the feed is `flex: 1`
+and has no declared width at all. Breakpoints are 900 and 1480, both taken from the app rather
+than chosen for the web.
 
 ---
 

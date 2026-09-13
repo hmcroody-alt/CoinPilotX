@@ -93,7 +93,7 @@ are ✅.
 |---:|---|
 | 1.1 | Tokens match native `colors.ts` exactly across all 5 themes — assert values, not "looks right" |
 | 1.2 | The 14-node mesh SVG is byte-comparable to `pulseBackground.ts:117-155` |
-| 1.3 | Feed column ≤ 680px at **every** breakpoint including ≥1600 |
+| 1.3 | Feed column ≤ **884px** at **every** breakpoint including ≥1920 — the traced residual, not the plan's original 680; breakpoints are 900 / 1480 |
 | 1.4 | Reduced-motion and high-contrast blocks mirror native `theme.duration()` / `HIGH_CONTRAST_*` |
 | 1.5 | Exactly **one** service worker is registered; `safeNotificationUrl()` is present |
 | 1.6 | CSP on the SPA route contains **no `'unsafe-inline'`** in `script-src`; `connect-src` is not `https:` |

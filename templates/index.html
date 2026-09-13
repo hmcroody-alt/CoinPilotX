@@ -171,7 +171,16 @@
 
     .button.primary {
       border: 0;
-      color: #06101b;
+      /* Was #06101b. Both gradient stops resolve through --action-primary /
+         --action-secondary to --pulse-palette-accent*, which the token
+         authority gate ties to mobile-native/src/theme/colors.ts -- so the
+         background follows the app while a literal foreground would not. That
+         is not a hypothetical: the contrast here passes AA by luck of the
+         current accent, and the day colors.ts moves the accent the background
+         follows it and the literal stays put. --text-on-action is the token
+         declared for exactly this job ("reads on accent fills"), and is what
+         .pulse-action--primary already uses. */
+      color: var(--text-on-action, #06101b);
       background: linear-gradient(135deg, var(--green), var(--cyan));
       box-shadow: 0 0 32px rgba(54, 229, 143, 0.24);
     }

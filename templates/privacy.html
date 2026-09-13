@@ -1,3 +1,4 @@
+{% from "_app_link_cta.html" import app_cta, app_store_badge with context %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -29,6 +30,7 @@
   <link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=parity-20260806a" />
   <link rel="stylesheet" href="/static/css/pulse_design_system.css" />
   <link rel="stylesheet" href="/static/css/pulse_mobile_system.css" />
+  <link rel="stylesheet" href="/static/css/pulse_app_cta.css" />
   {% if ga_measurement_id %}
   <script async src="https://www.googletagmanager.com/gtag/js?id={{ ga_measurement_id }}"></script>
   <script>
@@ -301,6 +303,39 @@
 
         <div class="notice">CoinPlotXAI Inc. provides educational AI intelligence only and does not provide financial, betting, investment, or legal advice.</div>
       </article>
+
+      {#
+        App promotion, one designated block per page.
+
+        Built from the macros rather than hand-written: `app_link()` resolves
+        the destination against what the released binary actually opens, and
+        `app_store_url()` is the only place the App Store id lives. A literal
+        href here would be a second copy of both, free to drift.
+
+        Placed after the policy, not before it. A visitor who navigated to
+        /privacy came to read the policy, and a CTA above the text would be an
+        interstitial in front of a legal document. Same reason there is no
+        banner, no overlay, and no redirect: this is a link at the end of the
+        page, which is the form of promotion that still lets the page do its
+        job.
+
+        `source="web"`, and it is not a free-text label. APP_LINK_SOURCES in
+        services/app_links.py is a closed set of eight *channels* — email,
+        push, sms, share, qr, web, system, invite — and `normalize_source()`
+        replaces anything outside it with "system" rather than raising. So
+        `source="privacy"` renders a perfectly valid-looking link that has
+        quietly lost its attribution; it was written that way here first and
+        the rendered href read `pulse_src=system`. If per-page attribution is
+        wanted later it belongs in a separate parameter, not in this one.
+      #}
+      <aside class="app-cta" aria-label="Get PulseSoc for iPhone">
+        <p class="app-cta-title">PulseSoc for iPhone</p>
+        <p class="app-cta-note">Same account, same data, and the same policy above — the app is covered by this privacy policy exactly as the website is.</p>
+        <div class="app-cta-actions">
+          {{ app_cta("home", source="web", classes="button primary") }}
+          {{ app_store_badge() }}
+        </div>
+      </aside>
     </div>
   </main>
 

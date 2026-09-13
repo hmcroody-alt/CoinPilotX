@@ -327,8 +327,14 @@ marketplace browsing with a persistent facet panel; two-pane messages; two-pane 
 `settings/<id>` registry; Private Office document review; and a third column that keeps a thread
 open beside the feed.
 
-**The governing constraint:** *the feed column never exceeds 680px at any breakpoint. Extra width
+**The governing constraint:** *the feed column never exceeds 884px at any breakpoint. Extra width
 buys additional columns, never wider rows.*
+
+The constraint is unchanged from the original plan; the figure was corrected in Phase 1c from 680,
+which the app turned out not to contain. 884 is the residual of native's own wide canvas
+(`1480 − (2×12) − 226 − 314 − (2×16)`), and the breakpoints are 900 and 1480 rather than
+768/1120/1600 for the same reason. `scripts/ops/web_token_authority_gate.py` holds the two
+stylesheets to one value each.
 
 ### Q16 — What technical debt blocks the rebuild?
 

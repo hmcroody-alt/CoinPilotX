@@ -1,0 +1,120 @@
+/* =========================================================================
+   PulseSoc — app call-to-action row
+   Phase 1d. The visual half of the app-promotion requirement; the link half
+   lives in services/app_links.py and templates/_app_link_cta.html, which this
+   file does not touch and must not duplicate.
+
+   WHY A SEPARATE FILE, AND WHY EVERY RULE IS SCOPED
+   -------------------------------------------------
+   `.button` is not a design-system class on this site. It is declared three
+   times, independently, in three page-local <style> blocks — templates/
+   index.html:155, templates/support.html:30, and nothing at all in
+   templates/privacy.html or templates/terms.html, which is why an unstyled
+   macro call looks like a bare blue-ish link there.
+
+   The obvious fix — promote `.button` into static/css/pulse_design_system.css
+   — is the wrong one. That stylesheet is linked by dozens of templates and by
+   the inline-HTML route handlers in bot.py, and a bare `.button { }` rule
+   there would restyle every one of them at specificity (0,1,0), silently, on
+   pages nobody in this phase has looked at. So every rule below is scoped
+   under `.app-cta`. Outside that wrapper this file changes nothing, which
+   makes it safe to link from a page that already styles `.button` itself:
+   `.app-cta .button` is (0,2,0) and wins inside the row, while that page's
+   own buttons elsewhere are untouched.
+
+   THE CONTRAST RULE IS A TOKEN, NOT A LITERAL
+   -------------------------------------------
+   Text on an accent fill reads `--text-on-action`, the token
+   pulsesoc-tokens.css:85 declares for exactly this ("reads on accent fills").
+   index.html hardcodes #06101b for the same purpose; that passes AA today by
+   luck of the current accent, and stops passing the moment colors.ts moves the
+   accent and the token follows it while the literal does not.
+
+   Every var() carries a literal fallback because support.html does not link
+   pulsesoc-tokens.css. The fallbacks are the current token values, so an
+   unlinked page renders identically rather than falling back to the browser's
+   initial value and losing the text entirely.
+
+   Spacing is the 8px grid from pulsesoc-tokens.css (--pulse-base-unit), the
+   same scale as the rest of the site.
+   ========================================================================= */
+
+.app-cta {
+  margin-top: var(--spacing-lg, 24px);
+  padding: var(--spacing-md, 16px);
+  border: 1px solid var(--border-subtle, #203746);
+  border-radius: var(--radius-card, 16px);
+  background: var(--surface-raised, #0b141c);
+  display: grid;
+  gap: var(--spacing-sm, 12px);
+}
+
+/* The row is a plain flex wrap rather than a grid with fixed columns: the two
+   labels are long ("Open PulseSoc", "Download on the App Store") and a fixed
+   two-column layout truncates the second one at 320px. */
+.app-cta-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm, 12px);
+}
+
+.app-cta-title {
+  margin: 0;
+  color: var(--text-primary, #f4f7fb);
+  font-size: 1rem;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.app-cta-note {
+  margin: 0;
+  color: var(--text-secondary, #9aa8b7);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+/* 44px floor is the HIG touch target, and it is a floor rather than a fixed
+   height so a wrapped two-line label still gets its padding. */
+.app-cta .button {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs, 8px);
+  padding: var(--spacing-sm, 12px) var(--spacing-md, 16px);
+  border: 1px solid var(--border-subtle, #203746);
+  border-radius: var(--pulse-radius-sm, 12px);
+  background: var(--surface-elevated, #111f2a);
+  color: var(--text-primary, #f4f7fb);
+  font: inherit;
+  font-weight: 900;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.app-cta .button.primary {
+  border-color: transparent;
+  background: var(--action-primary, #32e6b3);
+  color: var(--text-on-action, #04121a);
+}
+
+.app-cta .button.ghost {
+  background: transparent;
+}
+
+.app-cta .button:hover {
+  border-color: var(--border-strong, #2e4d60);
+}
+
+/* Never remove the ring without replacing it — these are the only two
+   controls on a legal page, so keyboard users have nothing else to orient by. */
+.app-cta .button:focus-visible {
+  outline: 2px solid var(--border-focus, #8df7ff);
+  outline-offset: 2px;
+}
+
+@media (max-width: 520px) {
+  .app-cta .button {
+    width: 100%;
+  }
+}
