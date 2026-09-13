@@ -175,6 +175,29 @@ const JSX_TEXT_CHILD = />([^<>{}]+)<\//g;
 
 type Finding = { file: string; line: number; term: string; text: string };
 
+/**
+ * Is this line the opening of a block comment that runs past its own end?
+ *
+ * The single-line skip above catches `/*` and `*`, which covers JSDoc, and
+ * missed the two shapes a JSX file actually uses: the brace-wrapped JSX comment,
+ * whose trimmed line starts with `{` rather than a slash, and either form
+ * wrapped over several lines, whose continuation lines start with an ordinary
+ * word.
+ *
+ * It cost a false positive rather than a false negative — a code comment about a
+ * "payload action" read as copy — but a guard that fires on correct code is how
+ * the next person ends up adding an exemption entry instead of a fix.
+ *
+ * Deliberately conservative: only a line whose *first* characters open the
+ * comment can start a skip run. A `/*` appearing mid-line, inside a string, must
+ * not be able to silence everything after it — that direction is a false
+ * negative, and this gate exists to have none of those.
+ */
+function opensBlockComment(trimmed: string): boolean {
+  if (!trimmed.startsWith("/*") && !trimmed.startsWith("{/*")) return false;
+  return !trimmed.includes("*/");
+}
+
 function scan(): Finding[] {
   const findings: Finding[] = [];
   for (const file of sourceFiles(SRC)) {
@@ -182,9 +205,19 @@ function scan(): Finding[] {
     if (NON_USER_SURFACES.includes(rel)) continue;
     const source = readFileSync(file, "utf8");
     const lines = source.split("\n");
+    let inBlockComment = false;
     lines.forEach((line, index) => {
       const trimmed = line.trim();
+      if (inBlockComment) {
+        if (trimmed.includes("*/")) inBlockComment = false;
+        return;
+      }
+      if (opensBlockComment(trimmed)) {
+        inBlockComment = true;
+        return;
+      }
       if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) return;
+      if (trimmed.startsWith("{/*")) return;
       if (CONSOLE_CALL.test(line) || FIXTURE_BUILDER.test(line)) return;
       // A note field, or a console call, may put its value on the next line.
       const previous = (lines[index - 1] || "").trim();
@@ -304,6 +337,28 @@ describe("user-facing copy", () => {
     // type annotation, not a rendered sentence, and no closing tag follows it.
     const generic = "function postUndxAction<T>(path: string, payload: Record<string, unknown>) {";
     expect([...generic.matchAll(JSX_TEXT_CHILD)]).toEqual([]);
+  });
+
+  /**
+   * The comment skip has to be exactly wide enough: every shape of comment, and
+   * nothing that is not one. Too narrow and the gate fires on correct code, which
+   * is how an exemption entry gets added instead of a fix. Too wide and a `/*`
+   * inside a sentence silences the rest of the file.
+   */
+  it("treats every comment opener as a comment, and a mid-line one as code", () => {
+    expect(opensBlockComment("/* A note that keeps going")).toBe(true);
+    // The shape that slipped through: a JSX comment's line starts with a brace.
+    expect(opensBlockComment("{/* A note that keeps going")).toBe(true);
+
+    // Self-closing on its own line is already handled by the single-line skip,
+    // and must not start a run that swallows the code beneath it.
+    expect(opensBlockComment("{/* A one-line note */}")).toBe(false);
+    expect(opensBlockComment("/* A one-line note */")).toBe(false);
+
+    // The direction that would be a false negative: a comment opener buried in a
+    // string cannot be allowed to skip anything.
+    expect(opensBlockComment('label="Pricing /* is not a comment here"')).toBe(false);
+    expect(opensBlockComment("const ratio = a /* inline */ / b;")).toBe(false);
   });
 
   it("still recognises the copy it was built to catch", () => {

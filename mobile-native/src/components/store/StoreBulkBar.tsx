@@ -6,10 +6,10 @@
  * it", which is a different question and deserves the thumb-reachable half of
  * the screen:
  *
- *   [ Publish | Hide | Price ]
+ *   [ Publish | Hide | Price | Category ]
  *   [        Publish 14 · 4 blocked        ]
  *
- * Four decisions:
+ * Five decisions:
  *
  * 1. **The count is on the button.** §34 asks for the shape of the outcome
  *    before the seller commits, and the button is the last thing they read. A
@@ -37,6 +37,22 @@
  *    `eligibleCount === 0` — which is what the shared `disabled` used to do —
  *    would have made the feature permanently unreachable, because `partition`
  *    refuses to answer for `price` and every row would have been "blocked".
+ *
+ * 5. **There is no "Set visibility" face.** §33 names visibility alongside
+ *    pricing and category, and it is deliberately *not* built as a third payload
+ *    action with a Live/Hidden picker. The two directions are not symmetrical:
+ *    hiding always works, and publishing is gated per row by readiness. A single
+ *    picker would present them as one choice with two settings, when choosing
+ *    "Live" for fourteen rows of which four have blockers behaves nothing like
+ *    choosing "Hidden" for the same fourteen.
+ *
+ *    Modelling it as a payload action would also *lose* information. Publish and
+ *    Hide are precomputed: the list payload already carries a verdict per row, so
+ *    the bar can say "Publish 14 · 4 blocked" and grey the four before the seller
+ *    commits to anything. A payload face has no counts until the server has been
+ *    asked — which is the right trade for a rule or an aisle, whose eligibility
+ *    genuinely cannot be known in advance, and a pure loss for a verdict already
+ *    in hand. Two honest buttons beat one that has to ask.
  */
 
 import { ActivityIndicator, Animated, Pressable, StyleSheet, Text, View } from "react-native";
