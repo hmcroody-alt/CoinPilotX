@@ -158,9 +158,11 @@ CAPABILITIES: dict[str, Capability] = {
         CALL_KIND_EMBEDDING, "Embeddings",
         (
             # The only entry in this table with real prices, and the only one whose
-            # spend is currently bounded by anything: `undx_embedding_service`
-            # carries a monthly budget. That budget is per-process and therefore
-            # per gunicorn worker, which is a separate defect from this one.
+            # spend is bounded by anything: `undx_embedding_service` carries a
+            # monthly budget, and since the ledger gained a `call_kind` column that
+            # budget reads its month-to-date from `month_spend` below rather than
+            # from a module-level dict - so the ceiling in the env var is now the
+            # ceiling across every process that embeds, not one of them.
             CapabilityProvider(
                 "perplexity", "Perplexity Embeddings",
                 key_envs=("PERPLEXITY_API_KEY",),
@@ -345,6 +347,60 @@ def unpriced_providers() -> tuple[tuple[str, str], ...]:
     return tuple(out)
 
 
+def month_spend(kind: str, month: str | None = None) -> dict[str, Any]:
+    """What the shared ledger has recorded for one call kind this month.
+
+    The read half of `record_spend`, and the thing an adapter needs in order to
+    enforce a budget across processes rather than inside one. `undx_embedding_service`
+    carried a monthly cost guard whose month-to-date lived in a module-level dict,
+    which meant the real ceiling was the configured one multiplied by the number of
+    gunicorn workers - four in production - and that it reset to zero on every
+    deploy. A budget that a restart clears is not a budget in the month it matters.
+
+    Keyed on the **kind**, not on a provider. `UNDX_EMBEDDING_MONTHLY_BUDGET_USD`
+    names a class of work, so the figure it is compared against has to cover every
+    provider serving that work, including one added after the budget was written.
+    Embedding happens to have exactly one provider today, so this is presently the
+    same number either way - which is the reason to get it right now, while the
+    choice is free.
+
+    Returns the components, deliberately, and not a single dollar figure:
+
+    * `spend_usd` is what the table priced, summed. It is a **floor** whenever
+      `uncosted_calls` is non-zero, and the caller is told so rather than left to
+      infer it.
+    * `uncosted_calls` is how many calls that floor excludes.
+    * `input_tokens` is the volume, which is what a caller has to use if it wants a
+      worst-case figure for an unpriced model.
+    * `source` is `"ledger"` or `"process"`. A caller that cannot tell those apart
+      cannot tell a quiet month from an unreachable database, and a budget guard in
+      particular must not read the second as the first.
+
+    No worst-case number is offered here, for the reason in this module's docstring:
+    this side serves *reporting*, where a pessimistic figure is indistinguishable
+    from a measurement. Rounding an unknown upward is correct only for the caller
+    deciding whether to *block*, so that caller does it - see
+    `undx_embedding_service._UNKNOWN_MODEL_PRICE_USD`, which is documented as the
+    one place in the non-chat accounting where an unknown rounds up.
+
+    Never raises: `undx_cost.month_snapshot` degrades to the process mirror rather
+    than propagating a database fault, and an absent row is a zeroed row.
+    """
+    snapshot = undx_cost.month_snapshot(month)
+    row = (snapshot.get("kinds") or {}).get(str(kind or "").strip().lower()) or {}
+    uncosted = int(row.get("uncosted_calls") or 0)
+    return {
+        "kind": str(kind or "").strip().lower(),
+        "month": snapshot.get("month"),
+        "source": snapshot.get("source"),
+        "calls": int(row.get("calls") or 0),
+        "input_tokens": int(row.get("input_tokens") or 0),
+        "spend_usd": undx_cost.from_micro_usd(int(row.get("cost_micro_usd") or 0)),
+        "spend_is_a_floor": uncosted > 0,
+        "uncosted_calls": uncosted,
+    }
+
+
 def record_spend(kind: str, provider: str, *, units: float = 0, model: str = "",
                  input_tokens: int = 0, output_tokens: int = 0,
                  reported_cost_usd: float | None = None) -> dict[str, Any]:
@@ -452,7 +508,7 @@ __all__ = [
     "CAPABILITIES", "Capability", "CapabilityProvider",
     "UNIT_MILLION_TOKENS", "UNIT_MILLION_CHARACTERS", "UNIT_IMAGE", "UNIT_QUERY",
     "capability", "provider_for", "price_micro_usd", "configured_providers",
-    "unpriced_providers", "describe_for_report",
+    "unpriced_providers", "describe_for_report", "month_spend", "record_spend",
     # Re-exported, not redefined. Adapters need to name their own call kind when
     # they meter, and importing it from here rather than from `undx_cost` keeps a
     # call site's imports to the one module it is already talking to - while the

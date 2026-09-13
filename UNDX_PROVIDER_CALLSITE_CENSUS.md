@@ -1558,3 +1558,210 @@ found by trying to assert against the ledger rather than by reading its schema, 
 both are recorded as open rather than worked around: the first is a pending schema
 change on the table §8 already had to widen, the second resolves itself the day a rate
 makes the volume visible as dollars.
+
+---
+
+## §13 — The one budget that existed, and the eight copies of it
+
+Metering makes spend visible. It does not make it *bounded*. The only enforcement
+anywhere in the AI layer was a single monthly ceiling on embeddings,
+`UNDX_EMBEDDING_MONTHLY_BUDGET_USD`, and the census would have recorded it as
+present and working. It was present. Reading it against the Procfile is what showed
+what it enforced.
+
+```python
+_budget_state: dict[str, Any] = {"month": "", "tokens": 0}
+```
+
+A module-level dict. The month-to-date it compared against the ceiling was the
+tokens embedded by **the process holding that dict**, which produced two failures
+that compound:
+
+* **It was per-process.** The ceiling that was actually enforced was the configured
+  one multiplied by the number of processes that can reach this module.
+* **It reset on deploy.** A fresh process starts at `{"month": "", "tokens": 0}`,
+  so the month-to-date went to zero on every release.
+
+Both point the same way. A runaway indexing loop is exactly the situation where
+somebody redeploys repeatedly to fix it, and every redeploy refunded the month.
+
+### Counting the copies, rather than estimating them
+
+The multiplier is not "four workers." The Procfile has six entries:
+
+```
+web: sh -c 'gunicorn bot:app --bind 0.0.0.0:${PORT:-8080} --workers ${WEB_CONCURRENCY:-4} ...'
+undx_worker / email_worker / ads_worker / alert_worker / media_worker
+```
+
+Nine OS processes. The question is how many of them *import the embedding module*,
+which is a different question, and the answer had to be traced rather than assumed —
+including the detail that the `ads_worker` entry runs `pulse_ads_worker.py`, so
+grepping for `ads_worker.py` finds nothing and would have undercounted:
+
+| Process | Reaches `undx_embedding_service` | How |
+|---|---|---|
+| `web` × 4 | yes | `bot:app` |
+| `email_worker` | yes | `email_worker.py:13 import bot` |
+| `ads_worker` | yes | `pulse_ads_worker.py:29 import bot` |
+| `alert_worker` | yes | `bot`, and directly at `:79 from services import undx_embedding_diagnostic` |
+| `media_worker` | yes | `media_worker.py:66 import bot` |
+| `undx_worker` | **no** | imports `undx_router` and `services.*`, never `bot` |
+
+**Eight.** So a configured $5.00/month ceiling was, in the worst case, $40.00/month
+— and `undx_worker` being the sole exception is worth naming, because it is the one
+process whose entire job is UNDX work. The process that looks most likely to embed
+is the one that cannot.
+
+### Reporting and blocking want the same unknown rounded in opposite directions
+
+The ledger already held the answer. Wiring it in ran straight into §34 pointing the
+wrong way.
+
+An embedding call against a model the price table does not know is recorded as
+`cost_micro_usd = 0` with `uncosted_calls = 1`. That is correct for a *report*:
+inventing a number would report money nobody was charged, which is the exact claim
+§34 exists to forbid. Feeding that same $0.00 to a *ceiling* inverts it — an
+unrecognised model becomes free to spend without limit, and a model rename is the
+likeliest way for one to appear.
+
+So the two directions are separated deliberately, in two different modules:
+
+* `undx_capabilities.month_spend()` serves reporting. It returns the components and
+  **refuses to produce a single worst-case dollar figure**: `spend_usd`,
+  `spend_is_a_floor`, `uncosted_calls`, `input_tokens`, `source`. A pessimistic
+  figure handed out here would be indistinguishable, at the call site, from a
+  measurement.
+* `services/undx_embedding_service._month_to_date()` serves blocking. It applies
+  `_UNKNOWN_MODEL_PRICE_USD` — the *highest* rate in the table, $0.05/M — to every
+  recorded token whenever `spend_is_a_floor` is set.
+
+The same row, priced $0.80 in one place and $10.00 in the other, on purpose. Which
+of the two a reader is looking at is answered by the module they are in.
+
+### `max(ledger, local)`, so the wiring can only tighten
+
+The ledger is not simply better than the dict. It is better *almost always*, and
+worse in a specific way:
+
+| | Ledger | Process dict |
+|---|---|---|
+| Covers other workers | yes | no |
+| Survives a deploy | yes | no |
+| When the database is unreachable | reports **zero** | unaffected |
+| When a write was lost | missing that call | still counted it |
+
+Replacing one with the other would have made the guard *weaker* than what it
+replaced in exactly the states where a guard matters. `max()` of the two means the
+shared figure can only ever move the ceiling down.
+
+`budget_state()` reports its own provenance for the same reason — `source` is
+`"ledger"` or `"process"`, and `shared` is the question a reader actually has. A
+figure covering one worker because the database was unreachable and a figure
+covering the deployment are different claims, and `remaining_usd` is fiction in the
+first case. A dashboard showing only the numbers would look identical either way.
+
+### A latent arithmetic bug, found by rewriting the projection
+
+The old check summed tokens and priced the total:
+
+```python
+estimated_cost_usd(month_tokens + new_tokens) > limit
+```
+
+Which re-prices every call already made at whatever `UNDX_EMBEDDING_MODEL` is set to
+*now*. Changing the model mid-month moved the recorded past, and because the
+configured model is the cheap one, it moved it downwards. The projection now prices
+only the new tokens and adds them to a month-to-date that is already in dollars.
+
+No test caught this, because with one process and one model the two forms are
+identical. It is only visible once the month-to-date can come from somewhere that
+priced it differently.
+
+### Mutation coverage
+
+Eight mutations added to `scripts/undx_spend_accounting_mutation_check.py` (44 total,
+all verified). The three worth reading are the ones that pass code review:
+
+| Mutation | Reads as | Does |
+|---|---|---|
+| `recorded = {}` | "why round-trip the database, we track our own tokens" | restores the ÷8 defect, invisible to every single-process test |
+| `"spend_usd": ledger_usd` | removing a redundant `max` | lets an empty or unreachable ledger loosen the ceiling |
+| `if False:` on the floor branch | deleting a guess | makes an unpriced model unlimited |
+| `if limit < 0` | closing a zero-ceiling loophole | refuses every call in a deployment that never set the variable |
+
+Every test in `BudgetIsSharedNotPerProcess` proves the figure came from the ledger
+**and not from this process**, by clearing the in-process mirror after seeding the
+row. Without that step a green result would be indistinguishable from the old
+behaviour, since the local dict would have held the same spend. The property under
+test is *whose* spend counts, and the only way to see it is to make this process's
+own count empty while the shared figure is not.
+
+The refusal is paired: $6.00 recorded against a $5.00 ceiling must refuse, and
+$4.00 against the same ceiling must succeed and reach the provider. A guard that
+refused everything — or that crashed on the ledger read and was swallowed — passes
+the first and fails the second.
+
+### What the guard still is not
+
+`configured_monthly_budget_usd()` now bounds *recorded* spend, which is not quite
+spend. A call already in flight when the ledger crossed the line still completes,
+and a single `embed_texts` is checked once and may then buy several batches. The
+overshoot is bounded by one call's worth of tokens rather than by nothing, and that
+is the honest claim.
+
+The ledger read is deliberately **not** cached behind a TTL. The check gates an HTTP
+round trip of hundreds of milliseconds, so one aggregated single-row read costs a
+fraction of a percent of the operation it protects — and a TTL would reintroduce, in
+miniature, the same "spend recorded elsewhere is invisible for a while" hole this
+replaces.
+
+### The test suite was writing into the developer's own ledger
+
+Making the guard read the ledger turned an untidiness into a defect.
+
+`services/db.py:23` is `LOCAL_SQLITE_FILE = "coinpilotx.db"` — a **relative** path —
+and `connect()` falls back to it whenever `DATABASE_URL` is unset. Several UNDX
+suites drive their subject under `patch.dict(os.environ, ..., clear=True)` with no
+`DATABASE_URL`, so every `embed_texts` in them recorded a row in the repository
+working directory. The accumulated total, when finally queried:
+
+```
+('2026-09', 'perplexity', 'embedding', calls=1012, input_tokens=1291304, ...)
+```
+
+Plus `chat` rows for four providers. Immaterial as money — 1.29M tokens is half a
+cent — and not immaterial as a mechanism: once the budget guard reads that table,
+test residue is spend the guard counts, and any test asserting a call is *allowed*
+becomes a test of how many times the suite has been run. Green until the total
+crosses the ceiling, then failing for a reason nothing in the test mentions.
+
+**It stayed invisible because the obvious check does not work.** `ls -l
+coinpilotx.db` reported exactly 5,971,968 bytes before and after every run across an
+entire working session, because SQLite reuses free pages. Only `md5 -q` shows it.
+Every verification in this section is now bracketed by a checksum rather than a size.
+
+The fix is one assignment, in `tests/conftest.py`:
+
+```python
+platform_db.LOCAL_SQLITE_FILE = _FALLBACK_DB_PATH
+```
+
+Patched as a module **attribute** and not by setting `DATABASE_URL`, which is the
+whole reason it works: an environment variable set in a fixture does not survive
+`patch.dict(..., clear=True)` inside the test. A Python global does. One file per
+pytest process rather than per test, deliberately — that preserves the previous
+semantics exactly, minus the part where the file was the developer's.
+
+It does not cover the SQLAlchemy engine, which resolves its URL once at import of
+`services.db`. Suites that go through a session rather than `connect()` are
+unaffected; the cost ledger, which is what prompted this, uses `connect()`.
+
+And because that assignment has no observable effect on any passing test — the
+definition of §50's "a comment with a test runner attached" —
+`tests/test_dev_database_isolation.py` exists to make it falsifiable. Neutering the
+single line fails three of its five assertions, including one that asks SQLite
+itself which file it opened rather than trusting the module attribute. The other
+two are the pairing: they reproduce the pre-fixture behaviour on purpose and assert
+that the same checks catch it, so the file demonstrates sensitivity rather than
+merely truth.

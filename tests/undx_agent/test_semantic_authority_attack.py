@@ -35,6 +35,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from services import undx_cost
 from services import undx_embedding_service as embed
 from services import undx_platform_knowledge as lexical
 from services import undx_semantic_retrieval as semantic
@@ -97,6 +98,12 @@ class _LiveIndex:
     """A real on-disk index over the real canonical corpus, in a throwaway sqlite file."""
 
     def __init__(self, env: dict | None = None, documents: int = 200):
+        # `DATABASE_URL` pinned inside the throwaway directory, because the env is
+        # cleared below and `services.db` then falls back to the relative path
+        # `coinpilotx.db` - so indexing 200 documents here would record 200 embedding
+        # calls in the developer's own dev database. That was harmless while nothing
+        # read the ledger; the embedding budget guard now does, so the pollution is
+        # spend it counts against a real ceiling.
         self.env = {**MOST_PERMISSIVE, **(env or {})}
         self.documents = documents
         self._dir = None
@@ -105,8 +112,11 @@ class _LiveIndex:
     def __enter__(self):
         self._dir = tempfile.TemporaryDirectory()
         path = str(Path(self._dir.name) / "semantic.db")
+        self.env.setdefault("DATABASE_URL",
+                            "sqlite:///" + str(Path(self._dir.name) / "ledger.db"))
         embed.reset_telemetry()
         embed.reset_budget()
+        undx_cost.reset_for_tests()
         semantic.invalidate_cache()
         self._patches = [
             patch.dict(os.environ, self.env, clear=True),
@@ -122,6 +132,7 @@ class _LiveIndex:
         for item in reversed(self._patches):
             item.stop()
         semantic.invalidate_cache()
+        undx_cost.reset_for_tests()
         self._dir.cleanup()
         return False
 

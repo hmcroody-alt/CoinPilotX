@@ -531,6 +531,119 @@ MUTATIONS = [
         "test_an_unconfigured_provider_is_not_billed",
         TRANS_TESTS,
     ),
+    (
+        # The defect the shared budget replaced, restored in one line. Reads like a
+        # simplification - "we already track our own tokens, why round-trip the
+        # database" - and it is invisible in any single-process test, which is every
+        # test that existed before. In production it divides the ceiling by the number
+        # of processes that embed: eight.
+        "budget: go back to counting only this process's own tokens",
+        EMBED,
+        '    recorded = undx_capabilities.month_spend(undx_capabilities.CALL_KIND_EMBEDDING)\n',
+        '    recorded = {}\n',
+        "test_spend_by_another_worker_counts_against_this_workers_budget",
+        EMBED_TESTS,
+    ),
+    (
+        # `max` looks like belt-and-braces once the ledger is trusted, so taking the
+        # ledger figure alone reads as removing a redundant guard. It is the one
+        # direction that can make the budget *weaker* than the dict it replaced: a
+        # write that failed still bumped the local count, and an empty or
+        # mid-rollover ledger then reports less than this worker knows it spent.
+        "budget: let the ledger figure win outright instead of the larger of the two",
+        EMBED,
+        '        "spend_usd": max(ledger_usd, local_usd),\n'
+        '        "tokens_embedded": max(ledger_tokens, local_tokens),\n',
+        '        "spend_usd": ledger_usd,\n'
+        '        "tokens_embedded": ledger_tokens,\n',
+        "test_the_ledger_can_tighten_the_budget_but_never_loosen_it",
+        EMBED_TESTS,
+    ),
+    (
+        # §34 pointed the other way, which is exactly why this one is dangerous. The
+        # ledger reports an unpriced call as $0.00 plus `uncosted_calls=1` because
+        # inventing a cost would report money nobody was charged - correct for a
+        # report, catastrophic for a ceiling. Deleting the uplift reads as deleting a
+        # guess; what it does is make an unrecognised model free to spend without
+        # limit, and a model rename is the likeliest way for one to appear.
+        "budget: trust the ledger's $0.00 for a model with no published price",
+        EMBED,
+        '    if recorded.get("spend_is_a_floor"):\n',
+        '    if False:\n',
+        "test_an_unpriced_model_is_charged_at_the_highest_known_rate",
+        EMBED_TESTS,
+    ),
+    (
+        # The arithmetic the rewrite fixed, reinstated. Summing tokens and pricing the
+        # total at one rate is the obvious way to write this and reads as tidier than
+        # adding two dollar figures. It re-prices every call already made at whatever
+        # `UNDX_EMBEDDING_MODEL` is set to now, so a mid-month model switch moves the
+        # recorded past - and because the configured model is the cheap one, it moves
+        # it downwards.
+        "budget: price the whole month's tokens at the currently configured rate",
+        EMBED,
+        '    return position["spend_usd"] + estimated_cost_usd(tokens) > limit\n',
+        '    return estimated_cost_usd(position["tokens_embedded"] + tokens) > limit\n',
+        "test_spend_by_another_worker_counts_against_this_workers_budget",
+        EMBED_TESTS,
+    ),
+    (
+        # Provenance, dropped. A figure covering one worker because the database was
+        # unreachable and a figure covering the deployment are different claims, and
+        # `remaining_usd` is fiction in the first case. Hard-coding the reassuring
+        # answer reads as a tidy-up of a field nothing appears to branch on.
+        "budget: report a degraded per-process figure as the shared one",
+        EMBED,
+        '        "shared": position["source"] == "ledger",\n',
+        '        "shared": True,\n',
+        "test_an_unreachable_ledger_falls_back_to_this_processs_own_count",
+        EMBED_TESTS,
+    ),
+    (
+        # The reporting side of the same pair, mutated instead of the blocking side.
+        # `month_spend` is the only thing that tells the guard its dollar figure is a
+        # floor; asserting it never is reads as simplifying a flag, and silently
+        # disables the uplift above without touching the guard at all.
+        "capabilities: stop telling the caller the spend figure is a floor",
+        CAPS,
+        '        "spend_is_a_floor": uncosted > 0,\n',
+        '        "spend_is_a_floor": False,\n',
+        "test_an_unpriced_model_is_charged_at_the_highest_known_rate",
+        EMBED_TESTS,
+    ),
+    (
+        # Zero as "no budget configured" is the documented opt-out and the default.
+        # Treating it as a $0.00 ceiling reads like closing a loophole and would
+        # refuse every embedding call in a deployment that never set the variable.
+        "budget: read an unset budget as a ceiling of zero",
+        EMBED,
+        '    if limit <= 0:\n        return False\n',
+        '    if limit < 0:\n        return False\n',
+        "test_a_zero_budget_is_still_an_opt_out",
+        EMBED_TESTS,
+    ),
+    (
+        # The isolation that stops this whole subsystem's tests from writing into the
+        # developer's own database. It is one assignment with no effect on any passing
+        # test, so nothing but this pairing keeps it from being deleted - and once the
+        # budget reads the ledger, the residue it prevents is spend the guard counts.
+        #
+        # Anchored on the absolute-path assertion rather than the more pointed
+        # "outside the repository" one, because that second check cannot see the
+        # mutation *from inside this harness*: `build_sandbox` symlinks
+        # `tests/test_dev_database_isolation.py` back at the real repo, so the
+        # `realpath(__file__)` that test derives its repo root from resolves to the
+        # real checkout while pytest's working directory is the sandbox. The
+        # containment check is the one that matters in a normal run and it does fail
+        # there — verified by hand — but in here it would be a false pass, and a
+        # mutation harness that reports a false pass is worse than one that skips.
+        "conftest: stop redirecting the unconfigured-SQLite fallback",
+        "tests/conftest.py",
+        '    platform_db.LOCAL_SQLITE_FILE = _FALLBACK_DB_PATH\n',
+        '    pass\n',
+        "test_the_fallback_is_absolute",
+        "tests/test_dev_database_isolation.py",
+    ),
 ]
 
 
