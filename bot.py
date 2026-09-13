@@ -55715,7 +55715,15 @@ def _marketplace_batch_apply_price(cur, listing, user_id, now, plan):
     applied = ["price_label"]
     if next_status != old_status:
         applied += ["status", "approval_status"]
+    # ``returns_to_review`` is the same key, spelled the same way, that the
+    # preview puts on the row it warned about. The phone renders it in both
+    # places from one field, so a seller who tapped past the warning still reads
+    # "Back in review" against the product afterwards. Deriving it client-side
+    # from ``status == "pending_review"`` was the alternative and is wrong for a
+    # listing that was already in the queue before the reprice: nothing *went*
+    # back, and saying so would invent a consequence.
     return {"price_label": label, "price_cents": cents, "status": next_status,
+            "returns_to_review": bool(outcome["rereviews"]),
             "changes_applied": applied}
 
 
