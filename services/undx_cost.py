@@ -299,12 +299,27 @@ _SCHEMA_STATEMENTS: tuple[str, ...] = (
         month TEXT NOT NULL,
         provider TEXT NOT NULL,
         call_kind TEXT NOT NULL DEFAULT '{CALL_KIND_CHAT}',
-        -- `NOT NULL DEFAULT ''` is load-bearing, not defensive. PostgreSQL treats
-        -- NULLs as distinct in a unique index, so a nullable `model` would make
-        -- every upsert for an unnamed model miss its own conflict target and
-        -- INSERT a fresh row instead of incrementing - the ledger would grow one
-        -- row per call and every total would still be right, so nothing would look
-        -- broken until someone counted the rows. SQLite is the same for indexes.
+        -- `NOT NULL DEFAULT ''` is load-bearing, and the measured reason is not the
+        -- one it looks like. Dropping it and re-running
+        -- `scripts/undx_cost_ledger_pg_migration_probe.py` against a real Postgres
+        -- fails eight checks, and not one of them is a row count: `normalize_model`
+        -- never returns None, so no *write* ever puts a NULL here and the upsert's
+        -- conflict target is never missed. What breaks is the migration. `ADD COLUMN
+        -- model TEXT` with no default leaves every pre-existing row NULL, the
+        -- backfill's `WHERE model = ''` cannot match a NULL, and those rows are
+        -- stranded unattributed for good - then `month_snapshot`'s
+        -- `str(row[8] or "")` quietly maps them to `''` and drops them off the
+        -- models axis, so the history stops reading as *missing* and starts reading
+        -- as *absent by nature*, which is what `''` means for research and
+        -- translation. A gap disguised as a fact.
+        --
+        -- The conflict-target hazard is real but latent: it needs a writer that
+        -- bypasses `normalize_model` - raw SQL, a migration, another service - and
+        -- then every call INSERTs a fresh row while every total stays exactly
+        -- correct, so nothing looks broken until someone counts rows. NOT NULL
+        -- closes that door before anyone opens it. PostgreSQL is the database that
+        -- treats NULLs as distinct in a unique index; SQLite does too, which is why
+        -- neither hazard is visible from the pytest suite.
         model TEXT NOT NULL DEFAULT '',
         calls INTEGER NOT NULL DEFAULT 0,
         input_tokens INTEGER NOT NULL DEFAULT 0,
@@ -455,9 +470,15 @@ def ensure_schema(conn=None) -> int:
     route hung on Postgres, and it read as a query problem for a long time.
 
     Statement order matters and is asserted by
-    `test_the_narrow_index_is_dropped_only_after_the_wide_one_exists`: the
-    `call_kind` column is added before the index that references it, and the old
-    narrow index is dropped only after the wide one is in place.
+    `test_the_narrow_indexes_are_dropped_only_after_the_wide_one_exists`: the
+    `call_kind` and `model` columns are added before the index that references
+    them, and the two older, narrower indexes are dropped only after the wide one
+    is in place.
+
+    The historical backfill runs last and is the only statement here wrapped in its
+    own `try`. Postgres-specific behaviour that the SQLite suite cannot reach is
+    verified by `scripts/undx_cost_ledger_pg_migration_probe.py`, which exercises
+    three migration origins - pre-`call_kind`, pre-`model`, and fresh.
     """
     own = conn is None
     if own:

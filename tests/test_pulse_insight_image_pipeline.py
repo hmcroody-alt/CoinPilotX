@@ -349,16 +349,17 @@ def test_an_image_with_no_published_price_is_uncosted_not_free(monkeypatch, ledg
 
 def test_the_model_priced_is_the_effective_model_not_the_default(monkeypatch, ledger):
     """An env override changes what OpenAI bills for, so it has to be the model
-    the pricing lookup sees.
+    the pricing lookup sees — and now also the model the ledger row carries.
 
-    Asserted on the arguments handed to `record_spend` rather than on a ledger
-    row, because `undx_cost_ledger` has no model column — it keys on
-    (month, provider, call_kind) only. So per-model attribution does not survive
-    into the durable record at all, and the call site's arguments are the only
-    place the distinction is observable. That is a gap, noted in the census;
-    pinning it here at least means the day a price is published for one image
-    model and not another, the lookup is already being given the right name
-    instead of the default.
+    This test used to assert only on the arguments handed to `record_spend`, and
+    said so, because `undx_cost_ledger` keyed on (month, provider, call_kind) and
+    per-model attribution did not survive into the durable record at all. The call
+    site's arguments were the only place the distinction was observable. That gap
+    is closed: the ledger has a `model` column, `record_spend` was already
+    threading the name through, and the value was simply being discarded on
+    arrival. So the assertion moves down a layer to where the money is actually
+    remembered, and the argument check stays — one of them would pass with the
+    other broken.
     """
     monkeypatch.setenv("PULSE_INSIGHT_IMAGE_MODEL", "gpt-image-1-mini")
     monkeypatch.setattr(pipeline.urllib.request, "urlopen", _image_response())
@@ -374,7 +375,15 @@ def test_the_model_priced_is_the_effective_model_not_the_default(monkeypatch, le
 
     assert result["model"] == "gpt-image-1-mini"
     assert seen == [(("image", "openai"), {"units": 1, "model": "gpt-image-1-mini"})]
-    assert _image_row(ledger)["kinds"]["image"]["calls"] == 1
+
+    snapshot = _image_row(ledger)
+    assert snapshot["kinds"]["image"]["calls"] == 1
+    # Keyed `provider/model`: model names are not globally unique across providers,
+    # so a bare model key would produce a total belonging to no bill anyone gets.
+    assert snapshot["models"]["openai/gpt-image-1-mini"]["calls"] == 1
+    # The override is the point. `gpt-image-1` is the default, and a row under that
+    # name would mean the ledger recorded a model nobody was billed for.
+    assert "openai/gpt-image-1" not in snapshot["models"]
 
 
 @pytest.mark.parametrize(
