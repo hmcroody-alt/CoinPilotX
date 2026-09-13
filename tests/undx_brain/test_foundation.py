@@ -77,6 +77,67 @@ def _importers_of(module_name: str) -> list[str]:
     return sorted(found)
 
 
+#: Enough number words to read the map's own prose back as integers. The entries spell
+#: their counts out, so a test that wants to check an entry's *claim* rather than a
+#: literal it keeps itself has to convert. Deliberately small: a count that outgrows
+#: this table is a count with no business being asserted in prose.
+_NUMBER_WORDS = {
+    "no": 0, "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11,
+    "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15, "sixteen": 16,
+    "seventeen": 17, "eighteen": 18, "nineteen": 19, "twenty": 20, "thirty": 30,
+    "forty": 40, "fifty": 50, "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90,
+}
+
+
+def _counted_in(text: str, noun: str) -> int | None:
+    """The number a piece of prose puts in front of ``noun``, or ``None``.
+
+    ``None`` covers both "the noun is not there" and "the word in front of it is not a
+    number" — "every other capability" and "most capabilities" land here, which is the
+    point: callers use this in both directions, to read a count an entry is supposed to
+    state and to assert that an entry states no count at all.
+
+    Compounds are summed so that ``eighty-two`` reads as 82 rather than falling through
+    as unrecognised, because the guard below is worthless if the one spelling a stale
+    total is most likely to use is the spelling it cannot see.
+    """
+    match = re.search(rf"([\w-]+)[\s-]+{noun}\b", text, re.IGNORECASE)
+    if match is None:
+        return None
+    word = match.group(1).lower()
+    if word.isdigit():
+        return int(word)
+    parts = [part for part in word.split("-") if part]
+    values = [_NUMBER_WORDS[part] for part in parts if part in _NUMBER_WORDS]
+    return sum(values) if parts and len(values) == len(parts) else None
+
+
+def _tool_result(capability_id: str):
+    """A successful one-record result, for asking an analyser what it does with input.
+
+    Carries a real record rather than an empty list, because an empty result produces an
+    empty reading from every capability in the registry and would make the fallback
+    assertion below pass without testing anything.
+    """
+    from services.undx_agent_contracts import ToolResult
+
+    return ToolResult(
+        ok=True,
+        tool_name="",
+        capability_id=capability_id,
+        data={},
+        records=[{
+            "kind": "item",
+            "title": "a record",
+            "detail": "one row the shape layer can count",
+            "source": "test",
+            "data": {},
+        }],
+        degraded_sources=[],
+    )
+
+
 class TheMapMatchesTheCode(unittest.TestCase):
     def test_every_claimed_owner_still_exists(self):
         self.assertTrue(
@@ -340,17 +401,87 @@ class TheCognitiveEntriesSayTrueThings(unittest.TestCase):
         )
         self.assertIn("COUNT(*)", service)
 
-    def test_the_specialist_coverage_numbers_are_the_real_ones(self):
+    def test_the_specialist_coverage_claim_is_the_one_the_code_supports(self):
+        # This asserted ``len(REGISTRY) == 82`` and had been red on a clean tree for six
+        # weeks: the registry grows whenever anyone ships anything, and eighty-two was
+        # last true in August. Crying wolf was not the worst of it. The assertion fired
+        # on the *first* of the entry's three numbers, so nobody read past it to notice
+        # the other two had drifted as well — forty-four product areas against forty-six,
+        # seventy capabilities answering with arithmetic against a hundred and thirty.
+        # A test that goes red for a reason nobody believes stops being read, and the
+        # claims behind it rot in the shade.
+        #
+        # Two kinds of number were mixed into one sentence. The analyser count is a fact
+        # about this subsystem: it moves only when somebody writes an analyser, and that
+        # somebody has this entry open already. The capability and area totals are
+        # ambient facts about the whole product, and freezing them made the entry wrong
+        # by default. So the totals came out of the prose, and the count that stayed is
+        # read back out of it — the entry states it once, this checks the entry against
+        # the code, and what goes red is a stale *claim* rather than a shipped feature.
         from services import undx_capability_registry as registry
         from services import undx_domain_reasoning as domain
 
         item = f.by_key("specialist_domains")
         self.assertIsNotNone(item)
-        self.assertEqual(len(domain.ANALYSERS), 10, "the analyser count moved")
-        self.assertEqual(len(registry.REGISTRY), 82, "the capability count moved")
-        self.assertIn("Ten analysers", item.gap)
-        self.assertIn("eighty-two capabilities", item.gap)
-        self.assertIn("forty-four product areas", item.gap)
+
+        claimed = _counted_in(item.gap, "analysers")
+        self.assertIsNotNone(
+            claimed,
+            "the entry no longer opens with an analyser count, so there is nothing "
+            "here to check it against; this must not be fixed by moving the number "
+            "back into the test",
+        )
+        self.assertEqual(
+            claimed, len(domain.ANALYSERS),
+            "the entry's analyser count and ANALYSERS disagree",
+        )
+
+        # The totals stay out. Without this the next person to find the paragraph vague
+        # helpfully writes "a hundred and forty capabilities" back into it and the whole
+        # cycle restarts — which is why the entry says in prose that their absence is
+        # deliberate, and why this names the reverting edit rather than the count.
+        for noun in ("capabilities", "product areas"):
+            with self.subTest(noun=noun):
+                self.assertIsNone(
+                    _counted_in(item.gap, noun),
+                    f"the entry has put a {noun} total back into its prose; that total "
+                    f"moves with unrelated feature work, so it is stale on arrival",
+                )
+
+        # What is left of the claim once the totals are gone is a proportion, and it is
+        # asserted as one: a floor that fails when coverage collapses or when the
+        # registry is gutted, not when either grows.
+        uncovered = [key for key in registry.REGISTRY if key not in domain.ANALYSERS]
+        self.assertGreater(
+            len(uncovered), len(domain.ANALYSERS),
+            "the entry says most capabilities answer with arithmetic; they no longer do",
+        )
+
+        # And "falls back to the shape-only layer" is a claim about behaviour, so one
+        # uncovered capability goes through the real entry point rather than through the
+        # lookup table the prose is really describing. An empty reading is what leaves
+        # the shape-only layer as the only thing that spoke.
+        #
+        # Empty is also what a probe record no analyser can read would produce, which
+        # would make the assertion below pass while checking nothing — each analyser is
+        # written against its own record contract, and this one is generic. So the probe
+        # is first shown to reach *some* analyser. Which ones is not pinned: the point is
+        # that a covered capability and an uncovered one answer differently when handed
+        # the same record, and an empty list here means that difference went untested.
+        reaching = [
+            key for key in sorted(domain.ANALYSERS)
+            if domain.build_reading(key, _tool_result(key))
+        ]
+        self.assertTrue(
+            reaching,
+            "the probe record reaches no analyser, so an empty reading from an "
+            "uncovered capability proves nothing",
+        )
+
+        sample = sorted(uncovered)[0]
+        self.assertEqual(domain.domain_for(sample), "")
+        reading = domain.build_reading(sample, _tool_result(sample))
+        self.assertFalse(reading, f"{sample} has no analyser but produced a reading")
 
     def test_every_analyser_is_keyed_by_a_capability_that_exists(self):
         # The entry claims analysers are bound to capability ids rather than to areas,
