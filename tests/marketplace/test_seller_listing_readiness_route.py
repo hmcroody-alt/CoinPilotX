@@ -119,7 +119,8 @@ class SellerListingReadinessRouteTestCase(unittest.TestCase):
         item = self.seller_item(self.insert_listing())
         self.assertEqual(item["readiness"], {
             "publishable": True, "checkout_ready": True,
-            "blockers": [], "warnings": []})
+            "blockers": [], "warnings": [],
+            "summary": "Ready to publish", "fixes": []})
 
     def test_the_verdict_names_the_gap_the_row_renders_as_silence(self):
         """§12: a listing with no price must say so.
@@ -194,7 +195,8 @@ class SellerListingReadinessRouteTestCase(unittest.TestCase):
     def test_the_verdict_carries_no_money_or_supplier_facts(self):
         item = self.seller_item(self.insert_listing(quantity=0, price_label=""))
         verdict = item["readiness"]
-        self.assertEqual(set(verdict), {"publishable", "checkout_ready", "blockers", "warnings"})
+        self.assertEqual(set(verdict), {"publishable", "checkout_ready", "blockers",
+                                        "warnings", "summary", "fixes"})
         flat = repr(verdict).lower()
         for word in ("cost", "margin", "supplier", "token", "openid", "connection", "cents"):
             self.assertNotIn(word, flat, f"{word!r} has no business in a readiness verdict")
@@ -213,7 +215,8 @@ class SellerListingReadinessRouteTestCase(unittest.TestCase):
         for item in items:
             self.assertIn("readiness", item, f"listing {item.get('id')} has no verdict")
             self.assertEqual(set(item["readiness"]),
-                             {"publishable", "checkout_ready", "blockers", "warnings"})
+                             {"publishable", "checkout_ready", "blockers",
+                              "warnings", "summary", "fixes"})
 
 
 if __name__ == "__main__":

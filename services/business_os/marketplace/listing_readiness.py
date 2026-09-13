@@ -42,6 +42,19 @@ Two honesty rules this module exists to enforce
   It must never reach a buyer as "Free" or "$0.00", and it must not reach the
   merchant as silence either: ``MISSING_PRICE`` is what the row has to say.
 
+One gate, not two
+-----------------
+The submit route used to carry three checks of its own — a description, a
+prohibited-goods decision, and a cover row of type image/gif — that this module
+knew nothing about. That was survivable while submitting was the only way to
+publish, because the route was the last word. Bulk publish removes that safety
+net: it acts on a verdict, so anything the verdict cannot see is a gate that
+does not exist. All three now live here, and the route asks rather than repeats.
+
+The visible symptom, before: a listing in a prohibited category read
+"Ready to publish" on the seller's own row and was refused the moment they
+tapped it.
+
 What this module does NOT decide
 -------------------------------
 Whether a row is physical or a download. That question already has an owner in
@@ -67,6 +80,7 @@ from typing import Any, Optional
 
 from services import marketplace_listing_types as _types
 from services import marketplace_listing_lifecycle as _life
+from services import marketplace_goods_policy as _goods
 
 # --- vocabulary --------------------------------------------------------------
 # Spelled to match services/business_os/suppliers/drafts.py. See
@@ -84,6 +98,18 @@ UNKNOWN_INVENTORY = "UNKNOWN_INVENTORY"
 # single listing-level quantity.
 OUT_OF_STOCK = "OUT_OF_STOCK"
 LOW_STOCK = "LOW_STOCK"
+
+#: Also without a supplier counterpart: a supplier draft inherits the provider's
+#: copy, so it cannot reach the evaluator with no description at all. A
+#: merchant-authored draft can, and the submit route has always refused it.
+MISSING_DESCRIPTION = "MISSING_DESCRIPTION"
+
+#: Media kinds that can stand as a listing's cover. A video is media but it is
+#: not a cover: the still frame a buyer sees in a grid comes from an image, and
+#: a video-only listing renders as the black placeholder ``NO_VALID_MEDIA``
+#: exists to prevent. Matches the ``media_type IN ('image','gif')`` the submit
+#: route requires of its cover row.
+COVER_MEDIA_TYPES = frozenset({"image", "gif"})
 
 #: At or below this quantity a listing is low. The threshold lives here because
 #: the client used to own a copy of it, which meant the number a merchant saw and
@@ -140,6 +166,48 @@ def _has_price(price_label: Any) -> bool:
     """
     label = _text(price_label)
     return any(ch.isdigit() for ch in label)
+
+
+def _has_cover(listing: dict, media: Optional[list]) -> bool:
+    """Whether something will render where the buyer expects a photograph.
+
+    Two sources, either alone sufficient. The cover columns count because the
+    shared serializer draws from them even with no media rows attached, so
+    demanding rows would print ``NO_VALID_MEDIA`` underneath a visible picture.
+
+    Attached rows count only when at least one is an image. ``bool(media)`` was
+    the previous test and it passed a listing whose only attachment was a video:
+    media, but not a cover. The media type is defaulted to "image" when absent
+    because ``pulse_marketplace_media_payload`` defaults it the same way, and a
+    verdict that read a blank column as "not an image" would disagree with the
+    thumbnail the seller is looking at.
+    """
+    if _text(listing.get("cover_image_url")) or _text(listing.get("media_url")):
+        return True
+    for row in media or []:
+        kind = _text((row or {}).get("media_type")).lower() or "image"
+        if kind in COVER_MEDIA_TYPES and _text((row or {}).get("media_url")):
+            return True
+    return False
+
+
+def _restricted(listing: dict) -> bool:
+    """Whether policy refuses this product, under either of the two authorities.
+
+    ``approval_status`` is a moderator's verdict on this particular row.
+    ``marketplace_goods_policy`` is the standing rule about the *category* and
+    about prohibited signals in the copy, and it is what the submit route has
+    always consulted before letting a listing through.
+
+    Asked here so that both survive one question. Before this, readiness knew
+    only the first and the submit route knew only the second, so a weapons
+    listing read "Ready to publish" on the seller's row and was refused the
+    moment they tapped it -- and a bulk publish, which had no second gate to
+    fall back on, would have taken it live.
+    """
+    if _text(listing.get("approval_status")).lower() in {"rejected", "suspended"}:
+        return True
+    return _goods.evaluate(listing).get("decision") != "ALLOWED"
 
 
 def _stockless_at_checkout(listing: dict) -> bool:
@@ -246,18 +314,18 @@ def evaluate(listing: dict, *, media: Optional[list] = None) -> dict:
 
     if not _text(listing.get("title")):
         blockers.append(MISSING_TITLE)
+    if not _text(listing.get("description")):
+        blockers.append(MISSING_DESCRIPTION)
     if not _text(listing.get("category")):
         blockers.append(MISSING_CATEGORY)
 
-    has_media = bool(media) or bool(_text(listing.get("cover_image_url"))
-                                    or _text(listing.get("media_url")))
-    if not has_media:
+    if not _has_cover(listing, media):
         blockers.append(NO_VALID_MEDIA)
 
     if not _has_price(listing.get("price_label")):
         blockers.append(MISSING_PRICE)
 
-    if _text(listing.get("approval_status")).lower() in {"rejected", "suspended"}:
+    if _restricted(listing):
         blockers.append(RESTRICTED_PRODUCT)
 
     # Stock never blocks publication. A merchant restocking a live listing is
@@ -273,4 +341,68 @@ def evaluate(listing: dict, *, media: Optional[list] = None) -> dict:
         "checkout_ready": checkout_ready,
         "blockers": blockers,
         "warnings": warnings,
+        "summary": summary(blockers),
+        "fixes": [fix(code) for code in blockers],
     }
+
+
+# --- saying it in words -------------------------------------------------------
+#
+# The verdict carries its own prose because the alternative is a lookup table on
+# every surface that renders it. There are already three (the seller row, the
+# edit workspace, the bulk preview) and a fourth on the web dashboard, and a
+# code with no entry in one of them renders as the raw CODE or as nothing.
+#
+# Codes stay in the payload. Clients that want to branch on a specific fault
+# still can; they just no longer have to own the English.
+
+#: What the merchant should go and do, in the imperative. Deliberately an
+#: instruction and not a restatement of the fault: "MISSING_PRICE" tells a
+#: seller what is wrong, "Add a price" tells them what to do about it.
+FIXES = {
+    MISSING_TITLE: "Add a title",
+    MISSING_DESCRIPTION: "Add a description",
+    MISSING_CATEGORY: "Choose a category",
+    NO_VALID_MEDIA: "Add a photo",
+    MISSING_PRICE: "Add a price",
+    RESTRICTED_PRODUCT: "Resolve a policy review",
+    OUT_OF_STOCK: "Restock this listing",
+    LOW_STOCK: "Running low on stock",
+    UNKNOWN_INVENTORY: "Set a stock count",
+}
+
+#: Which section of the edit workspace fixes each code, so a blocker on the
+#: Ready to Sell screen can be tapped and land somewhere useful. An unmapped
+#: code sends the seller to the overview rather than nowhere.
+SECTIONS = {
+    MISSING_TITLE: "details",
+    MISSING_DESCRIPTION: "details",
+    MISSING_CATEGORY: "details",
+    NO_VALID_MEDIA: "media",
+    MISSING_PRICE: "pricing",
+    RESTRICTED_PRODUCT: "policies",
+    OUT_OF_STOCK: "inventory",
+    LOW_STOCK: "inventory",
+    UNKNOWN_INVENTORY: "inventory",
+}
+
+
+def fix(code: str) -> dict:
+    """One blocker as something a seller can read and tap."""
+    return {
+        "code": code,
+        "label": FIXES.get(code, "Review this listing"),
+        "section": SECTIONS.get(code, "overview"),
+    }
+
+
+def summary(blockers: list) -> str:
+    """The one-line count that goes on a store row.
+
+    "2 things left" rather than "Draft — not published", which tells a seller
+    the state they can already see and nothing about how to leave it.
+    """
+    count = len(blockers or [])
+    if not count:
+        return "Ready to publish"
+    return f"{count} thing{'' if count == 1 else 's'} left"

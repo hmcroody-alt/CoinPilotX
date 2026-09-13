@@ -37,6 +37,10 @@ def listing(**overrides):
     """
     base = {
         "title": "Brass desk lamp",
+        # Required since readiness absorbed the submit route's own gates. A
+        # fixture without one would report MISSING_DESCRIPTION in every test
+        # below, and each of them would then be asserting about the wrong fault.
+        "description": "A weighted brass lamp with a linen shade.",
         "category": "Home",
         "cover_image_url": "https://cdn.example/lamp.jpg",
         "price_label": "$24.00",
@@ -59,7 +63,8 @@ def listing(**overrides):
 def test_the_fixture_is_actually_ready():
     assert r.evaluate(listing()) == {
         "publishable": True, "checkout_ready": True,
-        "blockers": [], "warnings": []}
+        "blockers": [], "warnings": [],
+        "summary": "Ready to publish", "fixes": []}
 
 
 # --- the anti-drift test ------------------------------------------------------
@@ -213,7 +218,8 @@ def test_a_listing_with_no_stock_concept_reports_no_stock_state(product_type):
     verdict = r.evaluate(listing(listing_type=product_type,
                                  product_type=product_type, quantity=None))
     assert verdict == {"publishable": True, "checkout_ready": True,
-                       "blockers": [], "warnings": []}
+                       "blockers": [], "warnings": [],
+                       "summary": "Ready to publish", "fixes": []}
 
 
 # --- the columns a real row actually carries ----------------------------------
@@ -370,6 +376,8 @@ def test_a_missing_price_is_never_reported_as_a_price():
 @pytest.mark.parametrize("field,value,code", [
     ("title", "", "MISSING_TITLE"),
     ("title", "   ", "MISSING_TITLE"),
+    ("description", "", "MISSING_DESCRIPTION"),
+    ("description", "   ", "MISSING_DESCRIPTION"),
     ("category", None, "MISSING_CATEGORY"),
     ("approval_status", "rejected", "RESTRICTED_PRODUCT"),
     ("approval_status", "suspended", "RESTRICTED_PRODUCT"),
@@ -395,14 +403,93 @@ def test_media_counts_from_either_the_cover_column_or_the_attached_rows():
                       media=[{"media_url": "https://cdn/z.jpg"}])["blockers"] == []
 
 
+def test_a_video_is_media_but_it_is_not_a_cover():
+    """`bool(media)` was the old test and it cleared a video-only listing.
+
+    The grid draws a still frame, so that listing publishes as the black
+    placeholder NO_VALID_MEDIA exists to prevent -- and the submit route would
+    have refused it anyway, asking for `media_type IN ('image','gif')`.
+    """
+    bare = dict(cover_image_url="", media_url="")
+    video = r.evaluate(listing(**bare),
+                       media=[{"media_url": "https://cdn/clip.mp4", "media_type": "video"}])
+    assert video["blockers"] == [r.NO_VALID_MEDIA]
+
+    # A still alongside the video is a cover, and the video no longer matters.
+    both = r.evaluate(listing(**bare), media=[
+        {"media_url": "https://cdn/clip.mp4", "media_type": "video"},
+        {"media_url": "https://cdn/still.jpg", "media_type": "image"},
+    ])
+    assert both["blockers"] == []
+
+    # A row with no media_type is an image, because that is what the payload
+    # serializer defaults it to. Reading a blank column as "not an image" would
+    # disagree with the thumbnail the seller can see.
+    assert r.evaluate(listing(**bare),
+                      media=[{"media_url": "https://cdn/z.jpg", "media_type": ""}]
+                      )["blockers"] == []
+    # ...but a row with no URL is nothing at all.
+    assert r.evaluate(listing(**bare), media=[{"media_url": "", "media_type": "image"}]
+                      )["blockers"] == [r.NO_VALID_MEDIA]
+
+
+def test_a_category_policy_refuses_is_restricted_here_too():
+    """The gate that used to live only in the submit route.
+
+    A seller with a prohibited category saw "Ready to publish" on the row and
+    was refused the instant they tapped it. Bulk publish had no second gate at
+    all, so the same row would have gone live in a batch.
+    """
+    from services import marketplace_goods_policy as goods
+
+    weapons = listing(category="Weapons")
+    assert goods.evaluate(weapons)["decision"] != "ALLOWED", (
+        "fixture no longer trips the policy engine; pick another category")
+    assert r.evaluate(weapons)["blockers"] == [r.RESTRICTED_PRODUCT]
+    assert r.evaluate(weapons)["publishable"] is False
+
+    # Prohibited signals in the copy, not just the category key.
+    counterfeit = listing(description="Counterfeit handbags, best quality.")
+    assert r.evaluate(counterfeit)["blockers"] == [r.RESTRICTED_PRODUCT]
+
+    # And the ordinary case still passes, so this is not blocking everything.
+    assert r.evaluate(listing())["blockers"] == []
+
+
+def test_readiness_asks_the_policy_engine_rather_than_restating_it():
+    """Pins the delegation, not the answer.
+
+    A copy of the prohibited-category list here would drift away from
+    `marketplace_goods_policy` silently, and the drift would show up as a
+    listing that publishes in bulk and is refused at checkout.
+    """
+    seen = []
+
+    def spy(row):
+        seen.append(row)
+        return {"decision": "PROHIBITED", "reason_code": "spy", "category_key": "x",
+                "policy_version": 0, "compliance_ready": False}
+
+    original = r._goods.evaluate
+    r._goods.evaluate = spy
+    try:
+        verdict = r.evaluate(listing())
+    finally:
+        r._goods.evaluate = original
+
+    assert seen, "readiness never consulted the goods policy engine"
+    assert verdict["blockers"] == [r.RESTRICTED_PRODUCT]
+
+
 def test_every_blocker_is_reported_at_once():
     """A merchant fixing one problem, re-submitting, and discovering the next is
     the experience this avoids -- the same reason the supplier evaluator returns
     a list rather than the first failure."""
-    verdict = r.evaluate(listing(title="", category="", cover_image_url="",
-                                 media_url="", price_label=""))
+    verdict = r.evaluate(listing(title="", description="", category="",
+                                 cover_image_url="", media_url="", price_label=""))
     assert set(verdict["blockers"]) == {
-        r.MISSING_TITLE, r.MISSING_CATEGORY, r.NO_VALID_MEDIA, r.MISSING_PRICE}
+        r.MISSING_TITLE, r.MISSING_DESCRIPTION, r.MISSING_CATEGORY,
+        r.NO_VALID_MEDIA, r.MISSING_PRICE}
     assert verdict["publishable"] is False
 
 
@@ -461,7 +548,9 @@ def test_a_verdict_carries_no_money_and_no_supplier_facts():
     margin, a token, an openId or a connection id, because none of those are in
     the object at all -- which is what makes it safe to render anywhere."""
     verdict = r.evaluate(listing(quantity=0, price_label=""))
-    assert set(verdict) == {"publishable", "checkout_ready", "blockers", "warnings"}
+    assert set(verdict) == {"publishable", "checkout_ready", "blockers",
+                            "warnings", "summary", "fixes"}
+    assert all(set(entry) == {"code", "label", "section"} for entry in verdict["fixes"])
     assert all(isinstance(code, str) for code in
                verdict["blockers"] + verdict["warnings"])
     forbidden = ("cost", "margin", "supplier", "token", "openid", "connection",

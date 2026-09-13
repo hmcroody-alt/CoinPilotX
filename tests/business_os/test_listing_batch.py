@@ -35,15 +35,21 @@ from services.business_os.marketplace import listing_readiness as r  # noqa: E40
 
 
 def listing(**overrides):
-    """A publishable, live listing, so each test breaks exactly one thing."""
+    """A draft that is ready to publish, so each test breaks exactly one thing.
+
+    A *draft*, not a live listing. Publishing is a transition out of one of the
+    `PUBLISHABLE_FROM` states, so a fixture in the state publishing leads to is
+    not the input to the action under test -- it is the output.
+    """
     base = {
         "id": 1,
         "title": "Brass desk lamp",
+        "description": "A weighted brass lamp with a linen shade.",
         "category": "Home",
         "cover_image_url": "https://cdn.example/lamp.jpg",
         "price_label": "$24.00",
         "approval_status": "approved",
-        "status": "active",
+        "status": "draft",
         "listing_type": "physical",
         "product_type": "physical",
         "quantity": 40,
@@ -153,6 +159,40 @@ def test_a_ready_listing_publishes():
     assert b.block_reason(listing(), "publish", READY) is None
 
 
+@pytest.mark.parametrize("status", list(b.PUBLISHABLE_FROM))
+def test_every_state_publishing_leads_out_of_is_publishable(status):
+    assert b.block_reason(listing(status=status), "publish", READY) is None
+
+
+@pytest.mark.parametrize("status,code", [
+    ("active", "ALREADY_PUBLISHED"),
+    ("pending_review", "ALREADY_SUBMITTED"),
+    ("seller_deleted", "DELETED"),
+])
+def test_a_listing_already_past_publication_is_blocked_not_republished(status, code):
+    """"Select all" then Publish must not cost a seller their storefront.
+
+    A live listing re-submitted goes back to `pending_review` and stays there
+    until a moderator clears the queue. The write succeeds, so the batch would
+    have counted it under `successful_count` -- a number that says the seller
+    got what they asked for while their shop is dark.
+    """
+    block = b.block_reason(listing(status=status), "publish", READY)
+    assert block is not None, f"{status!r} was re-published"
+    assert block["code"] == code
+
+
+def test_the_state_gate_runs_before_readiness_is_consulted():
+    """An already-live listing reads "Already published", not "2 things left".
+
+    Order matters for what the seller is told. A live listing that has since
+    lost its price is not a draft with work outstanding; asking them to fix it
+    would send them to repair a listing that is already selling.
+    """
+    block = b.block_reason(listing(status="active"), "publish", None)
+    assert block["code"] == "ALREADY_PUBLISHED"
+
+
 def test_a_listing_nobody_checked_does_not_publish():
     # The rule the mission turns on. `None` here means no verdict was obtained,
     # which is not a verdict of yes — and a bulk publish is the most expensive
@@ -234,6 +274,18 @@ def test_hiding_never_consults_the_readiness_engine(monkeypatch):
     # would mean the verdict is coming from somewhere else.
     b.evaluate_rows([listing(id=1), listing(id=2)], "publish")
     assert calls == [1, 2]
+
+
+def test_media_rows_reach_the_verdict():
+    # A listing whose only image is a media row, not a cover column, is ready in
+    # the seller's list — that route passes `media=` into `evaluate`. If the
+    # batch omitted it, the same listing would read "Ready to publish" on the
+    # row and come back NO_VALID_MEDIA from the action taken on it.
+    row = listing(id=7, cover_image_url="", media_url="")
+    assert b.evaluate_rows([row], "publish")[0][1]["blockers"] == ["NO_VALID_MEDIA"]
+
+    media = {7: [{"media_url": "https://cdn.example/lamp.jpg", "media_type": "image"}]}
+    assert b.evaluate_rows([row], "publish", media)[0][1] is None
 
 
 def test_evaluate_rows_decides_every_row():

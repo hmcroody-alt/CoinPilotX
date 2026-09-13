@@ -79,6 +79,17 @@ FAILED = "failed"
 #: not the product.
 NOT_FOUND = "NOT_FOUND"
 
+#: Statuses a listing can be published *from*. Mirrors the single submit route's
+#: own gate, widened by the two states the resume route already treats as
+#: republishable.
+#:
+#: Without this a seller who taps "select all" and publishes sends every live
+#: listing in their store back to `pending_review` -- an action that reads as a
+#: no-op, costs them their storefront until a moderator clears the queue, and is
+#: reported as `successful_count` because the write did succeed. The empty
+#: string is included because a legacy row can carry no status at all.
+PUBLISHABLE_FROM = ("", "draft", "changes_requested", "rejected", "paused", "hidden")
+
 
 class BatchError(Exception):
     """A request that cannot be attempted at all.
@@ -208,6 +219,14 @@ def block_reason(listing: dict, action: str, verdict: Optional[dict] = None) -> 
 
     if status == "seller_deleted":
         return {"code": "DELETED", "reason": "Removed from your store"}
+
+    if status == "pending_review":
+        return {"code": "ALREADY_SUBMITTED", "reason": "Already in review"}
+    if status not in PUBLISHABLE_FROM:
+        # "active", and anything a later migration adds. Blocked rather than
+        # quietly skipped: a seller who selected it meant something by it, and
+        # "already published" is the answer to what they meant.
+        return {"code": "ALREADY_PUBLISHED", "reason": "Already published"}
 
     if verdict is None:
         return {"code": "NO_READINESS", "reason": "No readiness check yet"}

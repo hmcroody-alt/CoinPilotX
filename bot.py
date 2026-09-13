@@ -55264,6 +55264,143 @@ def api_pulse_marketplace_seller_listing_delete(listing_id):
     return jsonify({"ok": True, "message": "Listing removed from seller inventory.", "listing": item})
 
 
+def _marketplace_batch_apply(cur, action, listing, user_id, now):
+    """Move one row for a bulk action. Returns the fields the result reports.
+
+    Every rule about *whether* this row should move has already been decided by
+    ``listing_batch``; this is only the write. The two publish statements are
+    the single submit route's, verbatim, for the reason §21 exists: a seller who
+    publishes one listing and a seller who publishes eighteen must end up with
+    rows in the same state, or the store's own filters start disagreeing with
+    themselves.
+    """
+    listing_id = int(listing.get("id") or 0)
+    if action == "hide":
+        cur.execute(
+            "UPDATE marketplace_listings SET status='paused', updated_at=? "
+            "WHERE id=? AND seller_user_id=?",
+            (now, listing_id, int(user_id)),
+        )
+        pulse_emit_marketplace_inventory_event(
+            cur, user_id, "seller_listing_paused", listing_id=listing_id,
+            actor_user_id=user_id, status="paused",
+            approval_status=listing.get("approval_status") or "",
+            title=listing.get("title") or "")
+        return {"status": "paused", "changes_applied": ["status"]}
+
+    review = revenue_safety_engine.marketplace_listing_review({
+        "title": listing.get("title") or "",
+        "description": listing.get("description") or "",
+        "category": listing.get("category") or "",
+    })
+    cur.execute(
+        """UPDATE marketplace_listings SET status='pending_review', approval_status='pending_review',
+           submitted_at=?, moderation_reason='', moderation_category='', safety_score=?,
+           safety_flags_json=?, review_version=COALESCE(review_version,0)+1, updated_at=?
+           WHERE id=? AND seller_user_id=?""",
+        (now, int(review.get("risk_score") or 0),
+         json.dumps(review.get("flags") or [], default=str), now, listing_id, int(user_id)),
+    )
+    pulse_emit_marketplace_inventory_event(
+        cur, user_id, "seller_listing_submitted", listing_id=listing_id,
+        actor_user_id=user_id, status="pending_review", approval_status="pending_review",
+        title=listing.get("title") or "")
+    return {"status": "pending_review", "changes_applied": ["status", "approval_status"]}
+
+
+@webhook_app.route("/api/pulse/marketplace/seller/listings/batch", methods=["POST"])
+def api_pulse_marketplace_seller_listings_batch():
+    """§38–§41. One request, one batch, one verdict per listing.
+
+    The alternative — the client looping over the single-listing routes — is
+    what this exists instead of. Eighteen requests have eighteen outcomes and no
+    batch: nothing to retry safely, nothing to ask about afterwards, and a
+    "14 published, 4 blocked" summary assembled on the phone out of whatever
+    replies happened to arrive.
+
+    Ownership is enforced by the `seller_user_id=?` in the SELECT below and
+    nowhere else. Ids the seller does not own simply do not come back, and the
+    loop reports them `NOT_FOUND` — the same answer a deleted id gets, so the
+    endpoint cannot be used to discover which listing ids exist.
+    """
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+
+    from services.business_os.marketplace import listing_batch as _batch
+    from services.business_os.marketplace import listing_readiness as _readiness
+
+    payload = request.get_json(silent=True) or {}
+    try:
+        normalized = _batch.normalize_request(
+            payload.get("action"), payload.get("listing_ids"),
+            payload.get("idempotency_key"))
+    except _batch.BatchError as err:
+        return jsonify({"ok": False, "error": err.code, "message": err.message}), err.status
+
+    _batch.ensure_schema()
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+
+    if normalized["action"] == "publish" and not approved_marketplace_seller_for_user(cur, user["user_id"]):
+        conn.close()
+        return api_error("Merchant approval is required before publishing listings.", 403)
+
+    try:
+        claim = _batch.claim(cur, user["user_id"], normalized)
+    except _batch.BatchError as err:
+        conn.close()
+        return jsonify({"ok": False, "error": err.code, "message": err.message}), err.status
+    if claim["state"] == "replayed":
+        conn.close()
+        return jsonify({"ok": True, "replayed": True, **claim["response"]})
+    # Committed before any listing moves. The claim is what stops a retry
+    # through a timeout from publishing everything twice, and a claim that is
+    # still sitting uncommitted in this transaction protects nothing.
+    conn.commit()
+
+    ids = normalized["listing_ids"]
+    placeholders = ",".join(["?"] * len(ids))
+    cur.execute(
+        f"SELECT * FROM marketplace_listings WHERE id IN ({placeholders}) AND seller_user_id=?",
+        (*ids, int(user["user_id"])),
+    )
+    owned = {int(dict(row)["id"]): dict(row) for row in cur.fetchall()}
+    media_by_listing = pulse_marketplace_media_rows_for_listings(cur, list(owned))
+
+    decided = _batch.evaluate_rows(owned.values(), normalized["action"], media_by_listing)
+    blocks = {int(row["id"]): block for row, block in decided}
+
+    results = []
+    for listing_id in ids:
+        row = owned.get(listing_id)
+        if row is None:
+            results.append(_batch.result_entry(
+                listing_id, _batch.FAILED, error_code=_batch.NOT_FOUND,
+                reason="Listing not found"))
+            continue
+        block = blocks.get(listing_id)
+        if block is not None:
+            results.append(_batch.result_entry(
+                listing_id, _batch.BLOCKED, reason=block.get("reason"),
+                error_code=block.get("code"), blockers=block.get("blockers"),
+                fixes=[_readiness.fix(code) for code in (block.get("blockers") or [])],
+                title=row.get("title") or ""))
+            continue
+        applied = _marketplace_batch_apply(cur, normalized["action"], row, user["user_id"], now)
+        results.append(_batch.result_entry(
+            listing_id, _batch.SUCCEEDED, title=row.get("title") or "", **applied))
+
+    response = _batch.summarize(claim["batch_id"], normalized["action"], results)
+    _batch.finalize(cur, claim["batch_id"], response)
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, **response})
+
+
 @webhook_app.route("/pulse/assistant", methods=["GET"])
 def pulse_assistant_page():
     init_db()
@@ -94607,19 +94744,21 @@ def api_pulse_marketplace_seller_listing_submit(listing_id):
         conn.close(); return api_error("Listing not found.", 404)
     if str(listing.get("status") or "").lower() not in {"draft", "changes_requested", "rejected"}:
         conn.close(); return api_error("This listing cannot be submitted from its current state.", 409)
-    if not str(listing.get("title") or "").strip() or not str(listing.get("description") or "").strip():
-        conn.close(); return api_error("Add a title and description before submitting.", 400)
-    from services import marketplace_goods_policy
-    goods_decision = marketplace_goods_policy.evaluate(listing)
-    if goods_decision["decision"] != "ALLOWED":
+    # One readiness authority, asked here exactly as the bulk route asks it.
+    # This route used to carry its own title/description check, its own goods
+    # policy call and its own cover-row query, so "can this publish" had two
+    # answers -- the one the seller was shown on their row, and this one. They
+    # disagreed, and the row's answer was the optimistic one.
+    from services.business_os.marketplace import listing_readiness as _readiness
+    _media = pulse_marketplace_media_rows_for_listings(cur, [listing_id])
+    verdict = _readiness.evaluate(listing, media=_media.get(int(listing_id), []))
+    if not verdict["publishable"]:
         conn.close()
-        return jsonify({"ok": False, "error": "LISTING_POLICY_BLOCKED",
-                        "message": "This category cannot be submitted without Marketplace policy clearance.",
-                        "goods_policy": goods_decision}), 409
-    cur.execute("SELECT COUNT(*) AS total FROM marketplace_product_media WHERE product_id=? AND is_cover=1 AND media_type IN ('image','gif')",
-                (listing_id,))
-    if int(dict(cur.fetchone() or {}).get("total") or 0) < 1:
-        conn.close(); return api_error("Add a cover photo before submitting.", 400)
+        return jsonify({"ok": False, "error": "LISTING_NOT_READY",
+                        "message": "{}. {}.".format(
+                            verdict["summary"],
+                            ", ".join(f["label"] for f in verdict["fixes"])),
+                        "readiness": verdict}), 409
     review = revenue_safety_engine.marketplace_listing_review({"title": listing.get("title"), "description": listing.get("description"), "category": listing.get("category")})
     # `marketplace_listings.safety_score` holds RISK, not safety: 0 is clean and
     # 100 is "guaranteed profit, risk free, 100x". All three writers of this
