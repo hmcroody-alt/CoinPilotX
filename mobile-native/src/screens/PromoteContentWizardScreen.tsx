@@ -287,7 +287,7 @@ export function PromoteContentWizardScreen({ route, navigation }: Props) {
       <View style={[styles.root, styles.centerFill]}>
         <View style={styles.successBlock}>
           <View style={styles.successBadge}>
-            <Ionicons name="checkmark" size={30} color={adsLight.post.onViolet} />
+            <Ionicons name="checkmark" size={30} color={adsLight.post.onPromotion} />
           </View>
           <Text style={styles.successTitle}>Promotion submitted</Text>
           <View style={styles.statusPill}>
@@ -682,7 +682,7 @@ function PrimaryButton({
         end={{ x: 1, y: 1 }}
         style={styles.primaryFill}
       >
-        {busy ? <ActivityIndicator color={adsLight.post.onViolet} /> : <Text style={styles.primaryText}>{label}</Text>}
+        {busy ? <ActivityIndicator color={adsLight.post.onPromotion} /> : <Text style={styles.primaryText}>{label}</Text>}
       </LinearGradient>
     </Pressable>
   );
@@ -868,7 +868,7 @@ const styles = StyleSheet.create({
   primaryWrap: { borderRadius: adsLight.radius.control, overflow: "hidden" },
   primaryDisabled: { opacity: 0.5 },
   primaryFill: { paddingVertical: 16, alignItems: "center", justifyContent: "center" },
-  primaryText: { fontSize: 16, fontWeight: "800", color: adsLight.post.onViolet },
+  primaryText: { fontSize: 16, fontWeight: "800", color: adsLight.post.onPromotion },
 
   secondaryButton: {
     paddingVertical: 12,

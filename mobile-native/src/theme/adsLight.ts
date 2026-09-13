@@ -5,21 +5,28 @@
  * Advertising is one screen holding two ad products — Marketplace ads (commerce
  * campaigns, listing boosts) and Post ads (promoting feed posts, Reels, live
  * replays) — switched by a header ModeToggle. It extends `storeLight` rather
- * than forking it: every neutral (page, card, hairline, header navy, muted text,
+ * than forking it: every neutral (page, card, hairline, black header, muted text,
  * tap targets, radii, spacing) is inherited so the surface reads as the same
  * family as Store and Marketplace. Only the ad-specific accents live here.
  *
  * One semantic rule governs every colour choice on the screen, and it is worth
  * stating because it is what keeps a dense money surface legible:
  *
- *   • gold / yellow  → money            (wallet, budget, spend, today's bar)
- *   • violet         → content promotion (the Post-ads product)
- *   • blue           → analytics         (charts, delivery, measurement)
+ *   • gold / yellow  → money             (wallet, budget, spend, today's bar)
+ *   • green          → analytics          (charts, delivery, measurement)
+ *   • neutral gray   → content promotion  (the Post-ads product)
  *
- * A control never uses a colour that contradicts its job. Green stays reserved
- * for "delivering / healthy" status (inherited from `storeLight.status.success`)
- * and red for "error / rejected", so the three accents above never have to also
- * mean "good" or "bad".
+ * Analytics was blue and content promotion was violet. Under the black/white/
+ * green lock analytics took green and promotion fell back to gray, which has one
+ * consequence worth knowing before editing this file: green now does double duty
+ * as "analytics" AND as the inherited "delivering / healthy" status. They do not
+ * collide in practice — status green only appears inside a labelled status pill,
+ * chart green only inside the plot — but a new component that puts a bare green
+ * dot beside a chart would be genuinely ambiguous. Label it.
+ *
+ * Gold is untouched by the lock. It is not an accent here, it is the money
+ * channel, and it is the one hue on this screen that still means exactly one
+ * thing. Red stays reserved for "error / rejected".
  */
 
 import { storeLight } from "./storeLight";
@@ -62,8 +69,8 @@ export const adsLight = {
     strip: storeLight.bg.strip,
     warning: storeLight.bg.warning,
     skeleton: storeLight.bg.skeleton,
-    /** Post-ads product wash — the faintest violet, behind promotion cards. */
-    postSurface: "#F7F4FC"
+    /** Post-ads product wash — the faintest neutral, behind promotion cards. */
+    postSurface: "#F6F7F7"
   },
   border: {
     hairline: storeLight.border.hairline,
@@ -85,37 +92,37 @@ export const adsLight = {
     neutral: storeLight.status.neutral
   },
   /**
-   * ANALYTICS — blue. Every chart, delivery figure and measurement element.
+   * ANALYTICS — green. Every chart, delivery figure and measurement element.
    * The bar fill is a top-to-bottom gradient; the flat/axis line is the darker
    * end so a single bar still reads against the card.
    */
   chart: {
-    barFrom: "#3FA3D1",
-    barTo: "#2B6DA8",
-    axis: "#2B6DA8",
-    grid: "#E3E8EC",
-    /** Today's column is money, so it breaks blue and goes gold (see below). */
-    trackEmpty: "#EDF1F4"
+    barFrom: "#2EA47C",
+    barTo: "#0A7050",
+    axis: "#0A7050",
+    grid: "#E7E9E9",
+    /** Today's column is money, so it breaks green and goes gold (see below). */
+    trackEmpty: "#EFF1F1"
   },
   /**
-   * CONTENT PROMOTION — violet. The Post-ads product's signature. Solid for
+   * CONTENT PROMOTION — neutral gray. The Post-ads product's signature. Solid for
    * chrome (tab, promoted badge), the gradient for the promote CTA.
    */
   post: {
-    base: "#6B4FA3",
-    from: "#7C5DB8",
-    to: "#5C3F94",
-    /** Text/icons on a violet fill. */
-    onViolet: "#FFFFFF",
-    /** Faint violet used for the promoted-post ring and chips. */
-    tint: "#EFE9F8"
+    base: "#4A5250",
+    from: "#5C6663",
+    to: "#39413F",
+    /** Text/icons on the gray promotion fill. */
+    onPromotion: "#FFFFFF",
+    /** Faint gray used for the promoted-post ring and chips. */
+    tint: "#EFF1F0"
   },
   /**
    * MONEY — gold. The wallet chip, budget pacing, spend, and the "today" bar in
    * the spend chart. Gold is never used for anything that is not money.
    */
   money: {
-    /** Today's spend bar — a warm gradient so the live day stands out in blue. */
+    /** Today's spend bar — a warm gradient so the live day stands out in green. */
     todayFrom: "#FFD97A",
     todayTo: "#FFA41C",
     /** Budget pacing fill, on-track. */
@@ -124,31 +131,31 @@ export const adsLight = {
     budgetHot: storeLight.status.warning
   },
   /**
-   * The wallet chip sits on the navy header, so its surface and border are
+   * The wallet chip sits on the black header, so its surface and border are
    * expressed as light-on-dark rather than the light-palette hairline.
    */
   wallet: {
     chipBg: "rgba(255,255,255,0.07)",
-    chipBorder: "#37475A",
+    chipBorder: "#3A3D40",
     /** The balance figure itself — gold, because it is money. */
     amount: "#FFD97A",
     label: storeLight.text.onDarkMuted
   },
   /**
    * The post-performance suggestion card ("This Reel is outperforming — promote
-   * it?"). A soft violet-to-white so it reads as a content nudge, not a warning.
+   * it?"). A soft green-to-white so it reads as a content nudge, not a warning.
    */
   suggestion: {
-    from: "#F2EEFB",
+    from: "#EEF6F2",
     to: "#FFFFFF",
-    border: "#D9CDF0"
+    border: "#CBE3D9"
   },
   /** Content-type badges on promoted posts, paired with a text label always. */
   content: {
-    postBg: "#EDEFF2",
-    postText: "#3A4A5C",
-    reelBg: "#F0E9FA",
-    reelText: "#5C3F94",
+    postBg: "#EFF1F1",
+    postText: "#3D4043",
+    reelBg: "#EFF7F3",
+    reelText: "#39413F",
     liveBg: "#FBE9EC",
     liveText: "#B12704"
   },

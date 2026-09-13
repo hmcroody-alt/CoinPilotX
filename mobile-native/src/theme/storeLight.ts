@@ -45,11 +45,22 @@ export const storeLight = {
     /** Page behind the cards. */
     page: "#EAEDED",
     card: "#FFFFFF",
-    /** Navy header gradient, top to bottom. */
-    headerFrom: "#131A22",
-    headerTo: "#232F3E",
-    /** The status strip sitting directly under the header. */
-    strip: "#232F3E",
+    /**
+     * The header. Both ends are the same value on purpose.
+     *
+     * These were a navy gradient (#131A22 -> #232F3E). The business surfaces are
+     * locked to black / white / green, and that rules out both the navy and the
+     * gradient. Keeping two keys with one value means the header component does
+     * not have to change shape to become flat, and the pair is still here if a
+     * future design earns a gradient back.
+     */
+    headerFrom: "#0B0B0C",
+    headerTo: "#0B0B0C",
+    /**
+     * The status strip sitting directly under the header. One step lighter than
+     * the header so the seam is still readable as two surfaces rather than one.
+     */
+    strip: "#141518",
     /** Attention banner fill. */
     warning: "#FCF5EE",
     /** Skeleton blocks and pressed-tile wash. */
@@ -63,9 +74,16 @@ export const storeLight = {
   text: {
     primary: "#0F1111",
     muted: "#565959",
-    link: "#007185",
-    /** Pressed state for links. */
-    linkActive: "#C7511F",
+    /**
+     * Link text on a white card ("Manage all", "Finish listing").
+     *
+     * Was the reference design's teal #007185. Green is the only accent the
+     * business surfaces are allowed, and this value is not a compromise to get
+     * there: it measures 6.09:1 on the card against the teal's 5.67:1.
+     */
+    link: "#0A7050",
+    /** Pressed state for links: the same green driven deeper, 8.82:1 on the card. */
+    linkActive: "#08553F",
     /** Text on the navy header and status strip. */
     onDark: "#FFFFFF",
     onDarkMuted: "#C7CDD3"

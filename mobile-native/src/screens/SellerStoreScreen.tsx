@@ -403,7 +403,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
   const shows = (panel: SellerStorePanel) => sellerStoreShowsPanel(mode, panel);
 
   return (
-    <Screen title={heading.title} subtitle={heading.subtitle}>
+    <Screen surface="business" title={heading.title} subtitle={heading.subtitle}>
       {offline ? <Text style={styles.warning}>Showing saved seller/store metadata.</Text> : null}
       {message ? <Text style={message.toLowerCase().includes("required") || message.toLowerCase().includes("failed") ? styles.error : styles.notice}>{message}</Text> : null}
 
@@ -783,7 +783,8 @@ const styles = createThemedStyles(() => ({
     marginTop: 10
   },
   chevron: {
-    color: colors.accentStrong,
+    // Green, not `accentStrong` (a cyan). Business surfaces carry one accent.
+    color: colors.accent,
     fontSize: 12,
     fontWeight: "900"
   },
@@ -842,8 +843,9 @@ const styles = createThemedStyles(() => ({
     padding: 12
   },
   hero: {
-    backgroundColor: "rgba(79, 140, 255, 0.08)",
-    borderColor: "rgba(79, 140, 255, 0.28)",
+    // Was a blue wash. Green, matching `editorBox`, so the screen has one accent.
+    backgroundColor: "rgba(37, 208, 167, 0.08)",
+    borderColor: "rgba(37, 208, 167, 0.28)",
     borderRadius: 8,
     borderWidth: 1,
     gap: 8,

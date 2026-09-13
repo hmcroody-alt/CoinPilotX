@@ -68,7 +68,7 @@ export function BusinessOsSectionScreen({ navigation, route }: Props) {
    */
   if (!section || available.length + upcoming.length === 0) {
     return (
-      <Screen title={t("commerce:launch.sectionFallbackTitle")}>
+      <Screen surface="business" title={t("commerce:launch.sectionFallbackTitle")}>
         <Panel>
           <Text style={styles.muted}>{t("commerce:launch.sectionFallbackBody")}</Text>
         </Panel>
@@ -97,7 +97,7 @@ export function BusinessOsSectionScreen({ navigation, route }: Props) {
   }
 
   return (
-    <Screen title={section.label} subtitle={section.blurb}>
+    <Screen surface="business" title={section.label} subtitle={section.blurb}>
       {available.length ? (
         <Panel>
           <Text style={styles.panelTitle}>{t("commerce:launch.availableTitle")}</Text>

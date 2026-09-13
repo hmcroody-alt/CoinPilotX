@@ -446,7 +446,7 @@ export function AdsEmpty({
   const press = useStorePress(reducedMotion, 0.97);
   const secondaryPress = useStorePress(reducedMotion, 0.97);
   const fill = tone === "post" ? adsLight.post.base : adsLight.cta.from;
-  const text = tone === "post" ? adsLight.post.onViolet : adsLight.cta.text;
+  const text = tone === "post" ? adsLight.post.onPromotion : adsLight.cta.text;
   const accent = tone === "post" ? adsLight.post.base : adsLight.cta.from;
   return (
     <View style={styles.empty}>

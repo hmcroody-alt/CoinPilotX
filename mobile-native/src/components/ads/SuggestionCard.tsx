@@ -148,7 +148,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 22,
     borderRadius: adsLight.radius.pill
   },
-  promoteText: { fontSize: 14, fontWeight: "800", color: adsLight.post.onViolet },
+  promoteText: { fontSize: 14, fontWeight: "800", color: adsLight.post.onPromotion },
   dismiss: { minHeight: adsLight.size.tapTarget, justifyContent: "center", paddingHorizontal: 8 },
   dismissText: { fontSize: 13, fontWeight: "700", color: adsLight.text.muted }
 });

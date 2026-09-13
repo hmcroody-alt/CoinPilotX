@@ -1,4 +1,4 @@
-import { readFileSync } from "fs";
+import { readdirSync, readFileSync } from "fs";
 import { join } from "path";
 
 /**
@@ -147,13 +147,71 @@ describe("the background is mounted once, at the root", () => {
 });
 
 describe("the shared shells defer to it", () => {
-  it("makes both shells in components/Screen.tsx transparent", () => {
+  it("makes the two general-purpose shells in components/Screen.tsx transparent", () => {
     const flattened = flat(screenShells);
-    // `root` backs `Screen` and `LogiNexusScrollContainer`; `shell` backs
+    // `root` backs `LogiNexusScrollContainer`; `shell` backs
     // `LogiNexusScreenShell`. Between them they cover thirteen screens.
     expect(flattened).toMatch(/root: \{ flex: 1, backgroundColor: "transparent" \}/);
     expect(flattened).toMatch(/shell: \{ backgroundColor: "transparent", flex: 1 \}/);
     expect(flattened).not.toMatch(/(root|shell): \{[^}]*backgroundColor: colors\.background/);
+  });
+
+  /**
+   * `Screen` can paint over the shared background, and that is the deliberate
+   * exception in a file whose every other assertion says not to.
+   *
+   * The business surfaces are locked to black, white and green;
+   * `PulseBackground` is an indigo-to-violet field. A transparent business
+   * screen shows a purple gradient behind and below its cards. So `Screen` takes
+   * a `surface` prop, and the business callers pass `"business"`.
+   *
+   * The default is `"shared"`, and it matters which way round that is. `Screen`
+   * has a non-business caller — `RegionTimeScreen` — so a fill applied to the
+   * shell itself blacks out a settings screen. Opt-in fails safe; opt-out does
+   * not.
+   */
+  it("offers the business fill as an opt-in, defaulting to the shared background", () => {
+    const flattened = flat(screenShells);
+    expect(flattened).toMatch(/businessRoot: \{ flex: 1, backgroundColor: BUSINESS_SURFACE \}/);
+    expect(flattened).toMatch(/const BUSINESS_SURFACE = storeLight\.bg\.headerFrom/);
+    // Default `"shared"`, and the ScrollView actually branches on it.
+    expect(flattened).toContain('surface = "shared"');
+    expect(flattened).toContain('style={surface === "business" ? styles.businessRoot : styles.root}');
+  });
+
+  /**
+   * Every caller of `Screen`, classified. The list is pinned rather than
+   * described because the failure it guards is silent in both directions: a
+   * business screen that forgets the prop shows purple, and a non-business
+   * screen that gains it goes black. Neither breaks a render test.
+   *
+   * A new entry here is not necessarily a bug — it is a question this test
+   * forces someone to answer, in the file, before it ships.
+   */
+  it("has every business caller opted in, and the one non-business caller not", () => {
+    const screensDir = join(SRC, "screens");
+    const byScreen = readdirSync(screensDir)
+      .filter((name) => name.endsWith(".tsx"))
+      .map((name) => ({ name, source: read(screensDir, name) }))
+      .filter(({ source }) => /<Screen[\s>]/.test(source))
+      .map(({ name, source }) => {
+        const opens = source.match(/<Screen[\s>]/g) ?? [];
+        const business = source.match(/<Screen surface="business"[\s>]/g) ?? [];
+        return { name, opens: opens.length, business: business.length };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    expect(byScreen).toEqual([
+      // Business surfaces: every branch opted in, including the loading and
+      // fallback returns — a purple flash on the way to a black screen is still
+      // purple.
+      { name: "BusinessOsScreen.tsx", opens: 2, business: 2 },
+      { name: "BusinessOsSectionScreen.tsx", opens: 2, business: 2 },
+      // Language / region / time. Not a business surface: keeps the shared field.
+      { name: "RegionTimeScreen.tsx", opens: 1, business: 0 },
+      { name: "SellerApplicationScreen.tsx", opens: 4, business: 4 },
+      { name: "SellerStoreScreen.tsx", opens: 1, business: 1 }
+    ]);
   });
 
   /**

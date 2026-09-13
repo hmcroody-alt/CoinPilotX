@@ -322,7 +322,7 @@ export function BusinessOsScreen({ navigation, route }: Props) {
   // viewer's business under another person's name. All hooks have already run.
   if (!routeContext.isOwnProfile) {
     return (
-      <Screen title="Business OS">
+      <Screen surface="business" title="Business OS">
         <Panel>
           <Text style={styles.muted}>{PRIVATE_CONTENT_MESSAGE}</Text>
         </Panel>
@@ -331,7 +331,7 @@ export function BusinessOsScreen({ navigation, route }: Props) {
   }
 
   return (
-    <Screen title="Business OS" subtitle="Run your store, marketplace listings and advertising in one place.">
+    <Screen surface="business" title="Business OS" subtitle="Run your store, marketplace listings and advertising in one place.">
       {offline ? (
         <Panel>
           <Text style={styles.panelTitle}>Showing saved data</Text>

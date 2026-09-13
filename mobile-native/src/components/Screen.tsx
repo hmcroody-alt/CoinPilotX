@@ -4,22 +4,57 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BOTTOM_NAV_CONTENT_CLEARANCE, useBottomNavScrollVisibility } from "../navigation/BottomNavVisibility";
 import { colors } from "../theme/colors";
 import { logiNexus, LogiNexusTone, toneColor } from "../theme/logiNexus";
+import { storeLight } from "../theme/storeLight";
 import { createThemedStyles } from "../theme/themedStyles";
 
 type Props = {
   title: string;
   subtitle?: string;
   children: ReactNode;
+  /**
+   * Which backdrop this screen sits on. Defaults to `"shared"` — the app's root
+   * `PulseBackground` — because that is right for every screen that is not
+   * subject to the business palette lock.
+   *
+   * See `BUSINESS_SURFACE` below for why the business surfaces need the other
+   * one, and why the default has to be `"shared"` rather than the reverse.
+   */
+  surface?: "shared" | "business";
 };
 
 type StatePanelKind = "loading" | "empty" | "offline" | "error" | "success" | "permission" | "unsupported" | "maintenance";
 
-export function Screen({ title, subtitle, children }: Props) {
+/**
+ * The opaque near-black the business surfaces sit on, instead of the shared
+ * `PulseBackground`.
+ *
+ * The seller-facing screens are locked to black, white and green, and
+ * `PulseBackground` is an indigo-to-violet field. Left transparent, each of them
+ * shows a purple gradient behind and below its cards — which is the violation
+ * the lock exists to prevent, and it is the one the user reported.
+ *
+ * The fill is here rather than in `PulseBackground` because that component is
+ * mounted once at the app root (asserted by `navigation/__tests__/
+ * backgroundSurfaces.test.ts`) and its gradient is app-wide: recolouring it to
+ * satisfy the business screens would repaint all ninety-eight.
+ *
+ * It is opt-in per caller rather than a property of this shell, and that is not
+ * defensiveness — `Screen` genuinely has a non-business caller. `RegionTimeScreen`
+ * (language, region and time preferences) uses it too and must keep the shared
+ * backdrop. Making the fill unconditional silently blacked that screen out; the
+ * caller-list assertion in `backgroundSurfaces.test.ts` is what caught it.
+ *
+ * The value is `storeLight.bg.headerFrom`, not a new near-black, so these screens
+ * match the header of the rebuilt Store rather than approximating it.
+ */
+const BUSINESS_SURFACE = storeLight.bg.headerFrom;
+
+export function Screen({ title, subtitle, children, surface = "shared" }: Props) {
   const insets = useSafeAreaInsets();
   const bottomNavScroll = useBottomNavScrollVisibility();
   return (
     <ScrollView
-      style={styles.root}
+      style={surface === "business" ? styles.businessRoot : styles.root}
       contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom, 18) + BOTTOM_NAV_CONTENT_CLEARANCE }]}
       keyboardShouldPersistTaps="handled"
       onScroll={bottomNavScroll.onScroll}
@@ -163,6 +198,16 @@ const styles = createThemedStyles(() => ({
   root: {
     flex: 1,
     backgroundColor: "transparent"
+  },
+  /**
+   * `root` plus the opaque business fill — see `BUSINESS_SURFACE` above. Kept as
+   * a separate key rather than a fill on `root` because `root` also backs
+   * `LogiNexusScrollContainer` and `Screen`'s own default, both of which must
+   * stay transparent for the reasons in the note on `root`.
+   */
+  businessRoot: {
+    flex: 1,
+    backgroundColor: BUSINESS_SURFACE
   },
   content: {
     padding: 18,

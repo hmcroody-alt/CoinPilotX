@@ -109,7 +109,7 @@ const styles = StyleSheet.create({
     borderRadius: adsLight.radius.pill,
     backgroundColor: adsLight.post.base
   },
-  hotText: { fontSize: 9, fontWeight: "900", color: adsLight.post.onViolet, letterSpacing: 0.3 },
+  hotText: { fontSize: 9, fontWeight: "900", color: adsLight.post.onPromotion, letterSpacing: 0.3 },
   title: { fontSize: 12, fontWeight: "700", color: adsLight.text.primary, lineHeight: 16 },
   reach: { fontSize: 11, color: adsLight.text.muted },
   action: { fontSize: 11, fontWeight: "800", color: adsLight.post.base, marginTop: 2 }

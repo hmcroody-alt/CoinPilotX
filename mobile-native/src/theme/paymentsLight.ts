@@ -10,11 +10,17 @@
  * The colour system on this screen is not decoration; it is a claim about the
  * state of the seller's money, and each hue means exactly one thing:
  *
- *   • green  → cleared income          (money that is theirs, settled)
- *   • violet → held / escrow           (theirs, not yet released — NOT a loss)
- *   • blue   → movement to their bank  (a payout in transit)
- *   • amber  → ad spend                (money leaving for advertising)
- *   • red    → refunds and disputes    (money going back to a buyer)
+ *   • green, settled  → cleared income         (money that is theirs, settled)
+ *   • green, lighter  → held / escrow          (theirs, not yet released — NOT a loss)
+ *   • green, deepest  → movement to their bank (a payout in transit)
+ *   • amber           → ad spend               (money leaving for advertising)
+ *   • red             → refunds and disputes   (money going back to a buyer)
+ *
+ * The first three used to be three different hues (green / violet / blue). The
+ * business surfaces are now locked to black, white and green, so they are three
+ * weights of one hue instead. That is a real loss of separation — they are far
+ * closer to each other than the hues were — and the mitigation is the rule
+ * immediately below: not one of these states is ever signalled by colour alone.
  *
  * Two consequences follow, and both are enforced by how the tokens are shaped
  * rather than left to a reviewer's memory.
@@ -25,11 +31,14 @@
  * difference, or a screen-reader user, receives the same information from the
  * text that a sighted user receives from the hue.
  *
- * Second, **violet is deliberately not red and deliberately not grey.** An
+ * Second, **escrow is deliberately not red and deliberately not grey.** An
  * escrow hold is the most misreadable state on the screen: it is the seller's
  * money, sitting still. Rendering it in a warning colour tells them something
  * is wrong, and rendering it in the neutral outflow ink tells them it is gone.
- * It gets its own hue and its own word, "held", and the amount carries no sign.
+ * The repaint above nearly made exactly that mistake — the obvious way to keep
+ * escrow distinct from cleared income, once violet was gone, was to reach for
+ * grey. It gets its own weight of green and its own word, "held", and the
+ * amount carries no sign.
  */
 
 import { storeLight } from "./storeLight";
@@ -90,16 +99,16 @@ export const LEDGER_KIND_COLOR = {
     circleBorder: "#F0D8B6",
     amount: storeLight.text.primary
   },
-  /** Held in escrow — violet. Unsigned amount; see the module docstring. */
+  /** Held in escrow — the lighter green. Unsigned amount; see the module docstring. */
   escrow: {
-    circleBg: "#F6F3FB",
-    circleBorder: "#DDD2F0",
-    amount: "#6B4FA3"
+    circleBg: "#F1F8F5",
+    circleBorder: "#D6E9E0",
+    amount: "#2A8168"
   },
-  /** Movement to the seller's bank — blue. */
+  /** Movement to the seller's bank — the deep green. */
   payout: {
-    circleBg: "#EEF3F8",
-    circleBorder: "#CFDEEA",
+    circleBg: "#ECF6F2",
+    circleBorder: "#C9E2D8",
     amount: storeLight.text.primary
   },
   /** Refunds and disputes — red. */
@@ -153,18 +162,18 @@ export const paymentsLight = {
     warning: storeLight.bg.warning,
     skeleton: storeLight.bg.skeleton,
     /**
-     * The escrow balance card's surface — a violet so faint it barely reads as
+     * The escrow balance card's surface — a green so faint it barely reads as
      * a tint, which is the point. It should distinguish the card from its
      * neighbours without dressing held money up as an alert.
      */
-    escrowCard: "#FBFAFD"
+    escrowCard: "#FAFCFB"
   },
   border: {
     hairline: storeLight.border.hairline,
     secondaryButton: storeLight.border.secondaryButton,
     warning: storeLight.border.warning,
     /** The escrow card's edge, one step darker than its fill. */
-    escrowCard: "#E6E0F2"
+    escrowCard: "#DCEDE5"
   },
   text: {
     primary: storeLight.text.primary,
@@ -198,7 +207,7 @@ export const paymentsLight = {
     subline: storeLight.text.onDarkMuted,
     unavailable: storeLight.text.onDarkMuted,
     /** The pinging dot beside "next payout" — only while genuinely scheduled. */
-    scheduledDot: "#4FC3F7",
+    scheduledDot: "#2A8168",
     /** A caption stating the figure is cached, e.g. "as of 09:14". */
     staleLabel: "#FFB74D"
   },
@@ -208,8 +217,8 @@ export const paymentsLight = {
    * indicator, never the figure, for the same reason the hero's figure is white.
    */
   balance: {
-    processingAccent: "#2B6DA8",
-    escrowAccent: "#6B4FA3",
+    processingAccent: "#0A7050",
+    escrowAccent: "#2A8168",
     adWalletAccent: "#F0A93B",
     label: storeLight.text.muted,
     value: storeLight.text.primary

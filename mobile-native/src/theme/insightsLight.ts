@@ -6,12 +6,18 @@
  * background or the hairline reaches this screen too and Insights cannot drift
  * into being a second design system.
  *
- * The source colours are not decorative. Across this app blue means Store,
- * violet means Marketplace, and gold means ads or money — the same three
- * meanings the Advertising and Marketplace screens already use. A seller who has
- * learned that violet is Marketplace should not have to relearn it here, so the
+ * The source colours are not decorative. Across the business surfaces green
+ * means Store, neutral gray means Marketplace, and gold means ads or money — the
+ * same three meanings the Advertising and Orders screens use. A seller who has
+ * learned that gray is Marketplace should not have to relearn it here, so the
  * breakdown bars and the ranked-row accents take their colour from the source,
  * never from position in the list.
+ *
+ * Store and Marketplace were blue and violet before the black/white/green lock.
+ * A two-colour breakdown bar is the one place that collapse actually costs
+ * something, because a stacked bar has no room for a label inside each segment.
+ * The legend beside it names both sources, and the ranked rows underneath state
+ * the source in words, so the bar is never the only place the split is readable.
  */
 
 import { storeLight } from "./storeLight";
@@ -31,7 +37,7 @@ export const insightsLight = {
      * Orders sit behind revenue at reduced opacity. Two lines at equal weight
      * read as a competition; the second series is context for the first.
      */
-    orders: "#2B6DA8",
+    orders: "#0A7050",
     ordersOpacity: 0.85,
     /** Three of these. Any more and the plot becomes a grid with a line on it. */
     gridline: "#ECEEEE",
@@ -41,10 +47,10 @@ export const insightsLight = {
   },
 
   source: {
-    /** Blue — Store, app-wide. */
-    store: { from: "#3FA3D1", to: "#2B6DA8" },
-    /** Violet — Marketplace, app-wide. */
-    marketplace: { from: "#9B7FD4", to: "#6B4FA3" },
+    /** Green — Store, app-wide. */
+    store: { from: "#2EA47C", to: "#0A7050" },
+    /** Neutral gray — Marketplace, app-wide. */
+    marketplace: { from: "#8A9691", to: "#4A5250" },
     /** Gold — ads and money, app-wide. Reserved; no ads row ships today. */
     ads: { from: "#FFD97A", to: "#FFA41C" },
     track: "#EFF1F1"
@@ -54,7 +60,7 @@ export const insightsLight = {
     track: "#EFF1F1",
     /** Bands, not a gradient: a ring's colour states which band it is in. */
     excellent: storeLight.status.success,
-    good: "#2B6DA8",
+    good: "#0A7050",
     warn: storeLight.accent.star
   },
 

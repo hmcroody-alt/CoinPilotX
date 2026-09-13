@@ -1314,7 +1314,7 @@ const styles = StyleSheet.create({
   ctaDisabled: { opacity: 0.5 },
   ctaText: { fontSize: 15, fontWeight: "800", color: adsLight.cta.text },
   ctaPost: { backgroundColor: adsLight.post.base },
-  ctaPostText: { fontSize: 15, fontWeight: "800", color: adsLight.post.onViolet },
+  ctaPostText: { fontSize: 15, fontWeight: "800", color: adsLight.post.onPromotion },
   footnote: {
     paddingHorizontal: adsLight.space.card,
     fontSize: 11,

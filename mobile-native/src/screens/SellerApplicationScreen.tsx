@@ -271,7 +271,7 @@ export function SellerApplicationScreen({ navigation }: Props) {
 
   if (loading) {
     return (
-      <Screen title="Sell on PulseSoc" subtitle="Loading your application">
+      <Screen surface="business" title="Sell on PulseSoc" subtitle="Loading your application">
         <Panel>
           <ActivityIndicator color={colors.accent} />
         </Panel>
@@ -284,7 +284,7 @@ export function SellerApplicationScreen({ navigation }: Props) {
   // editing it underneath the reviewer is the thing we are preventing.
   if (isPending || view.status === "approved" || view.status === "suspended" || view.status === "withdrawn" || view.status === "expired") {
     return (
-      <Screen title="Sell on PulseSoc" subtitle={view.status_title}>
+      <Screen surface="business" title="Sell on PulseSoc" subtitle={view.status_title}>
         {offline ? <Panel><Text style={styles.notice}>Showing your last saved copy. Reconnect to refresh.</Text></Panel> : null}
         <StatusCentre
           view={view}
@@ -301,7 +301,7 @@ export function SellerApplicationScreen({ navigation }: Props) {
 
   if (!started && view.status === "draft" && !view.application_id) {
     return (
-      <Screen title="Sell on PulseSoc" subtitle="Apply to open your store">
+      <Screen surface="business" title="Sell on PulseSoc" subtitle="Apply to open your store">
         <Introduction onBegin={beginApplication} busy={busy === "start"} />
         {message ? <Panel><Text style={styles.notice}>{message}</Text></Panel> : null}
       </Screen>
@@ -309,7 +309,7 @@ export function SellerApplicationScreen({ navigation }: Props) {
   }
 
   return (
-    <Screen title="Sell on PulseSoc" subtitle={editable ? "Your application" : view.status_title}>
+    <Screen surface="business" title="Sell on PulseSoc" subtitle={editable ? "Your application" : view.status_title}>
       {offline ? <Panel><Text style={styles.notice}>Showing your last saved copy. Reconnect to refresh.</Text></Panel> : null}
 
       {/*

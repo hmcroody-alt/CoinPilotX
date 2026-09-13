@@ -7,7 +7,7 @@
  * the SAME underlying order object, so both must speak the same colour language —
  * a state that is green on the seller's card is green on the buyer's, because it
  * is the same fact. This palette extends `storeLight` rather than forking it:
- * every neutral (page, card, hairline, header navy, muted text, tap targets,
+ * every neutral (page, card, hairline, black header, muted text, tap targets,
  * radii, spacing) is inherited so Orders reads as the same family as Store,
  * Marketplace and Advertising. Only the order-specific accents live here.
  *
@@ -16,19 +16,26 @@
  *
  *   • green   → progress / arrival        (timeline fills, delivered, handed off)
  *   • amber   → deadline pressure         (ship-by countdown, overdue)
- *   • violet  → local pickup / Marketplace (pickup status, Marketplace source)
- *   • blue    → in transit / Store         (shipped/tracking, Store source)
+ *   • green   → in transit / Store        (shipped/tracking, Store source)
+ *   • gray    → local pickup / Marketplace (pickup status, Marketplace source)
+ *
+ * The last two were separate hues (blue for transit, violet for pickup). The
+ * business surfaces are locked to black, white and green, so transit joined the
+ * green family and pickup fell back to neutral gray. Those two states are now
+ * much less separable by colour than they were, and the thing that carries the
+ * distinction is the status word beside them — every badge and timeline step
+ * renders its label, so none of these states is signalled by colour alone.
  *
  * A control never uses a colour that contradicts its job. Red stays reserved for
- * "issue / cancelled / refunded" so the four accents above never also have to
- * mean "bad".
+ * "issue / cancelled / refunded" so the accents above never also have to mean
+ * "bad".
  */
 
 import { storeLight } from "./storeLight";
 
 /**
  * The primary call-to-action fill (Buy again, Mark shipped, View payout). The
- * reference design specifies a yellow gradient against the navy header. Following
+ * reference design specifies a yellow gradient against a navy header. Following
  * that mock verbatim lands close to a well-known marketplace's trade dress, so
  * the default shipped here is PulseSoc's own green — the same deliberate decision
  * `STORE_CTA` and `ADS_CTA` make, kept consistent across every Business surface.
@@ -86,18 +93,20 @@ export const ordersLight = {
     neutral: storeLight.status.neutral
   },
   /**
-   * SOURCE BADGES — where the order came from. STORE is blue (the Store product,
-   * in-transit family); MARKETPLACE is violet (the Marketplace product, local-
-   * pickup family). Each badge is always paired with its text label so the
-   * colour is a reinforcement, never the sole signal.
+   * SOURCE BADGES — where the order came from. STORE is green (the Store product,
+   * in-transit family); MARKETPLACE is neutral gray (the Marketplace product,
+   * local-pickup family). These were blue and violet, which is why the two tints
+   * are now so close: the badge's text label is what actually distinguishes them,
+   * and every badge renders one, so the colour is a reinforcement and never the
+   * sole signal.
    */
   source: {
-    storeBg: "#EEF3F8",
-    storeText: "#2B6DA8",
-    storeBorder: "#CFDEEA",
-    marketplaceBg: "#F2EEFB",
-    marketplaceText: "#6B4FA3",
-    marketplaceBorder: "#D9CDF0"
+    storeBg: "#ECF6F2",
+    storeText: "#0A7050",
+    storeBorder: "#C9E2D8",
+    marketplaceBg: "#EEF6F2",
+    marketplaceText: "#4A5250",
+    marketplaceBorder: "#CBE3D9"
   },
   /**
    * TIMELINE — green progress. The filled portion of the order timeline (paid →
@@ -112,20 +121,25 @@ export const ordersLight = {
     pending: storeLight.text.muted
   },
   /**
-   * IN TRANSIT — blue. Shipped orders, tracking links, the "on its way" strip.
-   * Shares the Store blue so "shipping / Store" is one visual idea.
+   * IN TRANSIT — green. Shipped orders, tracking links, the "on its way" strip.
+   * Shares the Store green so "shipping / Store" is one visual idea.
    */
   transit: {
-    base: "#2B6DA8",
-    tint: "#EEF3F8"
+    base: "#0A7050",
+    tint: "#ECF6F2"
   },
   /**
-   * LOCAL PICKUP — violet. The buyer's pickup status, the pickup handoff step,
-   * and Marketplace-sourced local orders. Shares the Marketplace violet.
+   * LOCAL PICKUP — neutral gray. The buyer's pickup status, the pickup handoff
+   * step, and Marketplace-sourced local orders. Shares the Marketplace gray.
+   *
+   * Gray rather than a second green on purpose. Transit and pickup are mutually
+   * exclusive outcomes for the same order, so giving both a green would make the
+   * two most confusable states on the card the two most similar in colour. Gray
+   * is not "worse than shipped" here, it is simply "not the shipping path".
    */
   pickup: {
-    status: "#6B4FA3",
-    tint: "#F2EEFB"
+    status: "#4A5250",
+    tint: "#EEF6F2"
   },
   /**
    * DEADLINE PRESSURE — amber. The ship-by countdown line and its overdue
@@ -138,29 +152,31 @@ export const ordersLight = {
     overdue: storeLight.status.warning
   },
   /**
-   * QUANTITY BADGE — navy pill on a thumbnail ("×2"). Matches the header navy so
-   * it reads as chrome rather than a status.
+   * QUANTITY BADGE — near-black pill on a thumbnail ("×2"). Matches the header
+   * so it reads as chrome rather than a status.
    */
   quantity: {
-    badge: "#232F3E",
+    badge: "#141518",
     text: "#FFFFFF"
   },
   /**
    * ESCROW / SAFETY PANEL — the "your payment is held until you confirm handoff"
    * reassurance on pickup orders. Rendered ONLY when the backend actually holds
    * the funds (canonical escrow present); otherwise the whole panel is withheld
-   * rather than claiming a hold that does not exist. Soft violet so it reads as
-   * a trust note, not a warning.
+   * rather than claiming a hold that does not exist. A soft green so it reads as
+   * a trust note, not a warning — and matching `paymentsLight.bg.escrowCard`,
+   * since a held payment must not look like one thing on Orders and another on
+   * Payments.
    */
   safety: {
-    panelBg: "#F6F3FB",
-    panelBorder: "#DDD2F0",
-    panelText: "#5B4B80"
+    panelBg: "#F4FAF7",
+    panelBorder: "#D6E9E0",
+    panelText: "#4A5250"
   },
   /**
-   * URGENCY STRIP — the attention band on the navy header. Seller sees a warm
-   * peach (orders needing action / overdue); buyer sees a cool mint (an order is
-   * moving / arriving). Both sit on the header navy.
+   * URGENCY STRIP — the attention band under the black header. Seller sees a
+   * warm peach (orders needing action / overdue); buyer sees a cool mint (an
+   * order is moving / arriving). Both sit on the near-black strip.
    */
   urgency: {
     seller: "#FFD9B8",

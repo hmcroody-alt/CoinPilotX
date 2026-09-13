@@ -44,7 +44,34 @@ const isGreenish = (hex: string): boolean => {
   return g > r && g > b;
 };
 
+/**
+ * Relative luminance and contrast ratio, WCAG 2.1.
+ *
+ * Deliberately a local copy of the pair in `storeLightContrast.test.ts` rather
+ * than an import. Sharing them would mean a helper module inside `__tests__/`,
+ * which jest-expo's default `testMatch` collects as a suite and then fails for
+ * containing no tests. Six lines of arithmetic duplicated in a second test file
+ * is the cheaper of the two problems — and the fixed-point check below means a
+ * wrong copy cannot pass quietly.
+ */
+function luminance(hex: string): number {
+  const channels = (hex.replace("#", "").match(/../g) as string[])
+    .map((pair) => parseInt(pair, 16) / 255)
+    .map((v) => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)));
+  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+}
+
+function contrast(a: string, b: string): number {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
 describe("the yellow detector the other tests rely on", () => {
+  it("measures contrast correctly, so the plate assertion means something", () => {
+    expect(contrast("#000000", "#FFFFFF")).toBeCloseTo(21, 1);
+    expect(contrast("#567890", "#567890")).toBeCloseTo(1, 5);
+  });
+
   it("recognises the three colours this change removed", () => {
     expect(isYellowish("#FF9900")).toBe(true);
     expect(isYellowish("#FFA41C")).toBe(true);
@@ -88,10 +115,24 @@ describe("the Marketplace FEATURED badge is the brand green", () => {
     expect(isYellowish(marketplaceLight.badge.featuredText)).toBe(false);
   });
 
-  /** Green text on the navy plate, not green on green. */
+  /**
+   * Green text on a dark plate, not green on green.
+   *
+   * This used to pin the plate to the literal `#131A22`, the reference design's
+   * navy. That was the wrong assertion: the literal was never the requirement,
+   * it was a stand-in for one, and when the business surfaces were locked to
+   * black/white/green the plate moved to the header's near-black and this test
+   * failed for a change it should have passed. It now asserts the thing the
+   * comment always claimed — that the badge's text is legible on its plate —
+   * which holds for the navy, holds for the near-black, and would fail for the
+   * mistake actually worth catching: someone setting the plate to a green.
+   */
   it("still contrasts against its plate", () => {
-    expect(marketplaceLight.badge.featuredBg).toBe("#131A22");
     expect(marketplaceLight.badge.featuredText).not.toBe(marketplaceLight.badge.featuredBg);
+    // The plate is chrome, and it is the header's — one dark, not two.
+    expect(marketplaceLight.badge.featuredBg).toBe(storeLight.bg.headerFrom);
+    expect(isGreenish(marketplaceLight.badge.featuredBg)).toBe(false);
+    expect(contrast(marketplaceLight.badge.featuredText, marketplaceLight.badge.featuredBg)).toBeGreaterThanOrEqual(4.5);
   });
 });
 

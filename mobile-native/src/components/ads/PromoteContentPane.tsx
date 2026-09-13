@@ -438,7 +438,7 @@ export function PromoteContentPane({ visible, accountId, navigation }: Props) {
             >
               {isSelected ? (
                 <>
-                  <Ionicons name="checkmark" size={14} color={adsLight.post.onViolet} />
+                  <Ionicons name="checkmark" size={14} color={adsLight.post.onPromotion} />
                   <Text style={styles.selectBtnActiveText}>Selected</Text>
                 </>
               ) : (
@@ -485,7 +485,7 @@ export function PromoteContentPane({ visible, accountId, navigation }: Props) {
           <Ionicons name="cloud-offline-outline" size={22} color={adsLight.text.muted} />
           <Text style={styles.stateBody}>Couldn't load your content.</Text>
           <Pressable onPress={onRefresh} style={styles.retryBtn} accessibilityRole="button" accessibilityLabel="Retry loading content">
-            <Ionicons name="refresh" size={15} color={adsLight.post.onViolet} />
+            <Ionicons name="refresh" size={15} color={adsLight.post.onPromotion} />
             <Text style={styles.retryBtnText}>Retry</Text>
           </Pressable>
         </View>
@@ -637,7 +637,7 @@ export function PromoteContentPane({ visible, accountId, navigation }: Props) {
               <Ionicons name="megaphone-outline" size={30} color={adsLight.post.base} />
             </View>
             <View style={styles.heroArtBadge}>
-              <Ionicons name="trending-up" size={14} color={adsLight.post.onViolet} />
+              <Ionicons name="trending-up" size={14} color={adsLight.post.onPromotion} />
             </View>
           </View>
         </View>
@@ -723,7 +723,7 @@ export function PromoteContentPane({ visible, accountId, navigation }: Props) {
             accessibilityState={{ disabled: !canContinue }}
           >
             <Text style={styles.continueText}>Continue</Text>
-            <Ionicons name="arrow-forward" size={18} color={adsLight.post.onViolet} />
+            <Ionicons name="arrow-forward" size={18} color={adsLight.post.onPromotion} />
           </Pressable>
           <Text style={styles.continueHint}>Review and confirm your promotion.</Text>
         </View>
@@ -1118,7 +1118,7 @@ const styles = StyleSheet.create({
     fontWeight: "700"
   },
   selectBtnActiveText: {
-    color: adsLight.post.onViolet,
+    color: adsLight.post.onPromotion,
     fontSize: 13,
     fontWeight: "700"
   },
@@ -1175,7 +1175,7 @@ const styles = StyleSheet.create({
     backgroundColor: adsLight.post.base
   },
   retryBtnText: {
-    color: adsLight.post.onViolet,
+    color: adsLight.post.onPromotion,
     fontSize: 14,
     fontWeight: "700"
   },
@@ -1433,7 +1433,7 @@ const styles = StyleSheet.create({
     color: adsLight.text.primary
   },
   presetTextActive: {
-    color: adsLight.post.onViolet
+    color: adsLight.post.onPromotion
   },
   stepper: {
     flexDirection: "row",
@@ -1536,7 +1536,7 @@ const styles = StyleSheet.create({
     opacity: 0.45
   },
   continueText: {
-    color: adsLight.post.onViolet,
+    color: adsLight.post.onPromotion,
     fontSize: 16,
     fontWeight: "800"
   },

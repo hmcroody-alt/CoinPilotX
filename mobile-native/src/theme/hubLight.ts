@@ -10,7 +10,7 @@
  *
  * What the hub introduces is exactly three things: the tone colours the state
  * lines speak in, the urgent-card treatment, and the grid metrics. Everything
- * else — page background, card white, navy header, radii, tap targets — is
+ * else — page background, card white, black header, radii, tap targets — is
  * inherited, so a token change in the Store rebuild reaches the hub for free.
  */
 
@@ -28,15 +28,29 @@ export const hubLight = {
    * error red, and only `review` (verification in progress) and `violet`
    * (offers) are introduced — because no existing surface had a "we are looking
    * at it" state or an offer state to borrow from.
+   *
+   * `violet` keeps its name even though it is now gray. The name is not ours to
+   * change: `HubTone` in `api/businessHub.ts` is the wire contract and the server
+   * emits the literal string `"violet"`. Renaming the key here would silently
+   * drop the tone for every already-deployed backend.
    */
   tone: {
     green: storeLight.status.success,
     warn: storeLight.status.warning,
     critical: storeLight.status.error,
-    /** Verification in review. Blue rather than amber: it needs nothing from the seller. */
-    review: "#3E6DB5",
-    /** Marketplace offers. Matches the Marketplace card tint. */
-    violet: "#7C4DDB",
+    /**
+     * Verification in review — a held green, not amber, because the state needs
+     * nothing from the seller.
+     *
+     * This was a blue, which made it plainly distinct from `green`. Under the
+     * black/white/green lock the honest options were a second weight of green or
+     * gray, and gray was already taken by `violet`. It shares the exact value
+     * `paymentsLight` uses for escrow, which is the same idea in a different
+     * place: yours, in progress, nothing to do.
+     */
+    review: "#2A8168",
+    /** Marketplace offers. Matches the Marketplace card tint (now gray, see above). */
+    violet: "#4A5250",
     muted: storeLight.text.muted
   } satisfies Record<HubTone, string>,
 
