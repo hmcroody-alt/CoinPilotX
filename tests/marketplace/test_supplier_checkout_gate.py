@@ -31,6 +31,21 @@ below exists:
   once and died reads as healthy forever, so freshness gets demanded of a
   reconciler that stopped. That is
   ``test_a_stalled_reconciler_does_not_refuse_every_checkout``.
+
+  This suite shipped a version that got the *same* answer wrong a second way, and
+  the second way is worth naming because the first fix hid it. Reading the latch
+  fixed "is anything re-reading"; it did not fix "has anything re-read *this*".
+  The latch flips to DRAINING within seconds of the first tick — ``run_once``
+  records completion as its last statement even on a tick that claimed no work —
+  while confirmations land one listing at a time, twenty jobs a tick, hourly. So
+  the whole catalogue sits in "reconciler up, this listing never confirmed" for
+  hours, and this file asserted REFUSE for that combination. Measured against
+  production: 22 of 22 drop-shipped sources have ``last_synced_at IS NULL``, all
+  reading ``sync_state='SYNCED'``, so the data looked healthy and enabling the
+  worker would have refused every drop-shipped checkout. Now
+  ``test_a_running_reconciler_allows_a_listing_it_has_not_reached_yet``, with
+  ``test_a_confirmation_that_existed_and_went_stale_still_refuses`` holding the
+  other half so the fix cannot degrade into "allow everything".
 * **It fails open silently.** ``reconciliation_evidence`` catches every exception
   and reports "never drained", which is correct for a deployment that has not
   initialised the supplier subsystem and catastrophic if a column simply got
@@ -348,20 +363,162 @@ def test_a_deployment_that_never_reconciled_allows_and_says_so(cur):
     assert decision["evidence_state"] == "NO_DRAIN_HAS_EVER_RUN"
 
 
-def test_a_running_reconciler_refuses_a_listing_it_has_never_confirmed(cur):
-    """Once something *is* re-reading, silence means a break rather than an absence.
+def test_a_running_reconciler_allows_a_listing_it_has_not_reached_yet(cur):
+    """The inverted assertion, and the reason it inverted.
 
-    ``link_source`` never writes ``last_synced_at``, so a NULL here is the state
-    every listing starts in. What changes its meaning is the reconciler being up:
-    a listing it should have confirmed and has not is a listing whose supplier
-    state is unknown for a reason.
+    This test asserted REFUSE for one draft, on the argument that once something is
+    re-reading, silence means a break. The argument is wrong about *when* the
+    silence starts. ``worker.run_once`` writes its completion latch as the last
+    statement of a tick and reaches it even having claimed zero jobs, so the latch
+    reads DRAINING seconds after the worker boots; ``revisions`` writes
+    ``last_synced_at`` one listing at a time, twenty jobs a tick, on an hourly
+    product cadence. Every listing therefore spends hours in exactly this state,
+    and it is not a break — it is a queue.
+
+    Measured on production before this changed: 22 of 22 drop-shipped sources have
+    ``last_synced_at IS NULL``, because ``link_source`` never writes the column and
+    both ``importer`` and ``gateway`` create sources through it. The REFUSE version
+    of this test was therefore a specification for taking 100% of the drop-shipped
+    catalogue off sale the moment the worker was enabled, while telling every buyer
+    to "try again shortly".
+
+    Allowed and marked, then — the annotation says ``NEVER``, so the sale is
+    distinguishable afterwards from one made under a stalled reconciler.
     """
     bind(cur)
     add_variant(cur)
     decision = gate.evaluate(cur, listing_id=DROPSHIP, evidence=draining(cur), now=NOW)
+    assert decision["decision"] == gate.DECISION_ALLOW
+    assert decision["unverified"] is True
+    assert decision["confirmation"] == gate.CONFIRMATION_NEVER
+    assert decision["confirmation_age_seconds"] is None
+    # The latch is not misreported to make the allow look clean: the annotation
+    # says a reconciler *was* running and this listing still had no confirmation,
+    # which is the pair a post-mortem needs.
+    assert decision["evidence_state"] == "DRAINING"
+
+
+def test_a_never_confirmed_listing_still_refuses_when_the_supplier_said_sold_out(cur):
+    """The allow above is about absent evidence, not about ignoring evidence.
+
+    The danger in widening the never-confirmed case is that it becomes a blanket
+    pass. It must not: positively-bad state is orthogonal to freshness, and a
+    supplier that said "none left" has not become less sold out by nobody asking
+    again since. This is the line between "we have no reason to refuse" and "we
+    have a reason and chose not to look at it".
+    """
+    bind(cur)
+    add_variant(cur, stock_state=schema.STOCK_OUT_OF_STOCK)
+    decision = gate.evaluate(cur, listing_id=DROPSHIP, evidence=draining(cur), now=NOW)
+    assert decision["decision"] == gate.DECISION_REFUSE
+    assert decision["reason"] == gate.REASON_SOLD_OUT
+
+
+def test_a_confirmation_that_existed_and_went_stale_still_refuses(cur):
+    """The other half of the distinction, and the half that keeps §22 worth having.
+
+    Never-confirmed and went-stale produce the same ``confirmation_age_seconds``
+    answer under the old code — ``None`` — and opposite decisions under the new
+    one. A fix that allowed the first by accidentally allowing both would leave
+    this gate unable to catch the thing it was built for: a listing whose supplier
+    state was known and has since gone unverifiable.
+    """
+    bind(cur)
+    add_variant(cur)
+    confirm(cur, age_seconds=gate.CONFIRMATION_MAX_AGE_SECONDS + 600)
+    decision = gate.evaluate(cur, listing_id=DROPSHIP, evidence=draining(cur), now=NOW)
     assert decision["decision"] == gate.DECISION_REFUSE
     assert decision["reason"] == gate.REASON_STALE_CONFIRMATION
-    assert decision["confirmation_age_seconds"] is None
+    assert decision["confirmation"] == gate.CONFIRMATION_KNOWN
+
+
+def test_absent_and_unreadable_confirmations_are_told_apart(cur):
+    """The exact conflation that caused the bug, pinned at the helper.
+
+    One comparison — ``age is None`` — stood for both "no stamp was ever written"
+    and "a stamp was written and cannot be parsed". They are opposite facts: the
+    first is the normal state of a listing awaiting its first reconciliation, the
+    second means something is broken. Asserted on the helper rather than only
+    through ``evaluate`` so that a future refactor which re-merges them fails here,
+    at the cause, instead of in whichever behavioural test happens to notice.
+    """
+    assert gate._confirmation(None, NOW)[0] == gate.CONFIRMATION_NEVER
+    assert gate._confirmation("", NOW)[0] == gate.CONFIRMATION_NEVER
+    assert gate._confirmation("   ", NOW)[0] == gate.CONFIRMATION_NEVER
+    assert gate._confirmation("whenever", NOW)[0] == gate.CONFIRMATION_UNREADABLE
+    assert gate._confirmation("2026-13-45T99:00:00", NOW)[0] == gate.CONFIRMATION_UNREADABLE
+
+
+@pytest.mark.parametrize("stamp", [
+    None, "", "   ", "whenever", "2026-13-45T99:00:00", "2026-09-13T12:00:00",
+    "2026-09-13T12:00:00Z", "2026-09-13T12:00:00+00:00", 0, 12345])
+def test_a_confirmation_has_an_age_exactly_when_it_is_readable(stamp):
+    """The invariant ``evaluate`` compares ages without a None guard *because of*.
+
+    ``evaluate`` runs ``age > CONFIRMATION_MAX_AGE_SECONDS`` with no
+    ``age is None`` check, having returned on the two states that produce no age.
+    That is only safe while ``_confirmation`` pairs KNOWN with a float and every
+    other state with None. A defensive guard in ``evaluate`` would be dead code
+    that reads as load-bearing, so the invariant is asserted here instead — if it
+    is ever broken, a checkout raises ``TypeError`` on a buyer.
+    """
+    state, age = gate._confirmation(stamp, NOW)
+    assert state in gate.CONFIRMATION_STATES
+    if state == gate.CONFIRMATION_KNOWN:
+        assert isinstance(age, float)
+    else:
+        assert age is None
+
+
+@pytest.mark.parametrize("sync_state", list(gate.FAILED_SYNC_STATES))
+def test_a_failed_read_refuses_even_with_no_confirmation_and_no_reconciler(cur, sync_state):
+    """Affirmative failure outranks the never-confirmed allow, and the latch.
+
+    This is the ordering hazard the widened allow created, and it was found by a
+    test that tried to *document* the hazard instead of removing it. The first
+    arrangement checked these states below the never-confirmed allow, which made
+    the outcome depend on whether the failed state happened to carry a timestamp.
+    It does today — ``revisions`` sets ``sync_state`` and ``last_synced_at`` in one
+    UPDATE — so the bug was unobservable, and the test guarding it was a source
+    scan for future writers. That scan went off immediately on ``drafts.py``
+    *reading* these constants, which is the tell that the guard was the wrong
+    shape: a heuristic over the whole tree, protecting an ordering that did not
+    need to exist.
+
+    So these are now checked in the same tier as a sold-out variant, on the same
+    principle: an affirmative report of failure is evidence, it does not expire,
+    and it does not need a reconciler to be running to still be true. DISCONNECTED
+    in particular means the merchant's credential stopped working — charging a
+    buyer against it cannot be right no matter what the latch says.
+
+    No confirmation and no latch row here, which is the combination that previously
+    allowed.
+    """
+    bind(cur, sync_state=sync_state)
+    add_variant(cur)
+    decision = gate.evaluate(cur, listing_id=DROPSHIP,
+                             evidence=gate.reconciliation_evidence(cur, now=NOW), now=NOW)
+    assert decision["decision"] == gate.DECISION_REFUSE
+    assert decision["reason"] == gate.REASON_STALE_CONFIRMATION
+    assert decision["confirmation"] == gate.CONFIRMATION_NEVER
+
+
+def test_the_default_sync_state_is_not_treated_as_a_failure(cur):
+    """PENDING is the column DEFAULT, so including it would refuse every import.
+
+    ``marketplace_product_sources.sync_state`` defaults to PENDING, and a source
+    exists from the moment ``link_source`` runs — before any read. Adding PENDING
+    to :data:`FAILED_SYNC_STATES` would therefore refuse every freshly imported
+    listing: the same catalogue-wide refusal this suite's docstring is about,
+    arriving through the failure tier instead of the freshness one, and it would
+    look like correctness because PENDING is not SYNCED.
+    """
+    assert schema.SYNC_PENDING not in gate.FAILED_SYNC_STATES
+    bind(cur, sync_state=schema.SYNC_PENDING)
+    add_variant(cur)
+    confirm(cur, age_seconds=60, sync_state=schema.SYNC_PENDING)
+    decision = gate.evaluate(cur, listing_id=DROPSHIP, evidence=draining(cur), now=NOW)
+    assert decision["decision"] == gate.DECISION_ALLOW
 
 
 def test_a_freshly_confirmed_listing_is_allowed_without_reservation(cur):
@@ -522,7 +679,7 @@ def test_the_timestamp_format_the_reconciler_writes_is_one_this_gate_can_read(cu
     """
     stamp = revisions._row_time(NOW.replace(tzinfo=timezone.utc).timestamp())
     assert gate._parse(stamp) == NOW
-    assert gate._age_seconds(stamp, NOW) == 0
+    assert gate._confirmation(stamp, NOW) == (gate.CONFIRMATION_KNOWN, 0)
 
 
 @pytest.mark.parametrize("stamp", [
@@ -753,3 +910,35 @@ def test_audit_records_the_unverified_sale_and_nothing_else(cur):
     assert confirmed["unverified"] is False
     assert gate.audit(confirmed) == {}
     assert gate.audit({"decision": gate.DECISION_REFUSE, "unverified": True}) == {}
+
+
+def test_the_audit_separates_a_queued_listing_from_a_broken_reconciler(cur):
+    """Two unverified sales, two different incidents, and the row has to say which.
+
+    Widening the allow means more ``unverified`` sales, and they are no longer all
+    the same event. "The reconciler was up and had not reached this listing yet" is
+    expected and self-clearing — it should appear in bulk for a few hours after the
+    worker is enabled and then stop. "Nothing was re-reading at all" is an outage.
+    Both write an annotation, and a count of annotations that cannot tell them apart
+    is a metric that alarms on the normal case and hides the abnormal one.
+
+    This is what makes the widening auditable rather than merely permissive: the
+    trade was "allow and mark", and a mark that omits the distinguishing fact has
+    not held up the second half.
+    """
+    bind(cur)
+    add_variant(cur)
+
+    queued = gate.audit(gate.evaluate(cur, listing_id=DROPSHIP,
+                                      evidence=draining(cur), now=NOW))
+    assert queued["supplier_unverified"]["reconciliation"] == "DRAINING"
+    assert queued["supplier_unverified"]["confirmation"] == gate.CONFIRMATION_NEVER
+
+    dark = gate.audit(gate.evaluate(
+        cur, listing_id=DROPSHIP,
+        evidence={"state": "NO_DRAIN_HAS_EVER_RUN", "running": False}, now=NOW))
+    assert dark["supplier_unverified"]["reconciliation"] == "NO_DRAIN_HAS_EVER_RUN"
+
+    assert queued["supplier_unverified"] != dark["supplier_unverified"], (
+        "both unverified cases produce the same annotation, so a post-mortem "
+        "cannot tell a queued listing from a reconciler that never ran")
