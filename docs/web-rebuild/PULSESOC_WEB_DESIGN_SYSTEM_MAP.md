@@ -1261,9 +1261,18 @@ regression in the whole app-promotion surface, and it is prevented by using the 
   privacy, terms, support, login, checkout and `/dashboard`. A signed-in member clicking a nav
   item wants the web page.
 - **Never place a CTA on a path the shipped binary cannot resolve.** The iOS entitlement claims
-  only `pulsesoc.com`, and the published AASA claims only `/pulse/*` and `/search*`. Check the
-  `native_supported` flag before writing button copy — `build_app_link()` raises `AppLinkError`
-  rather than shipping a button whose label promises a destination the binary lands nowhere near.
+  only `pulsesoc.com`. The AASA claims a scoped set of components — `APPLE_LINK_COMPONENTS` in
+  `services/native_app_links.py`, checked against the app's own route table by
+  `scripts/web_rebuild/aasa_health.py` and locked by `tests/web_parity/test_aasa_claims.py`.
+  Read that list, do not memorise it; it grows as the rebuild claims more of what the app
+  already declares. Two things about it are stable and worth knowing here:
+  **`/pulse` and `/pulse/*` are separate entries** (Apple's `*` still needs the literal `/` in
+  front of it, so the pattern that claims every object in the product misses its own front
+  door), and **`/help`, `/trust-center`, `/security`, `/privacy-center` and `/scam-shield` are
+  deliberately withheld** — they are the surfaces someone reaches *because* the app is the
+  problem, so an app CTA there is worse than no CTA. Check the `native_supported` flag before
+  writing button copy — `build_app_link()` raises `AppLinkError` rather than shipping a button
+  whose label promises a destination the binary lands nowhere near.
 - **The label must state the destination.** "Open this listing in PulseSoc", not "Open" — the
   accessible name has to be meaningful out of context.
 - Never hover-revealed, never an overlay, never absolutely positioned. It must not shift layout
@@ -1275,3 +1284,160 @@ At most **two** app-promotion elements per viewport, and never two of the same k
 requirement is that promotion is *present throughout*, which is satisfied by a persistent footer
 badge plus one contextual CTA. Repeating the badge in header, sidebar, inline and footer reads
 as a nag and measurably depresses conversion on the pages that matter.
+
+---
+
+## 12 — The dimensional system, as built
+
+Sections 2 and 9 describe native's dimensions and *propose* a web translation. This section
+documents what actually shipped in `static/css/pulsesoc-tokens.css`, because the proposal and
+the artefact have diverged in one respect that matters: **the web scale is not a copy of
+native's, it is a single base unit with everything derived from it.**
+
+### 12.1 One unit, and why
+
+```css
+--pulse-base-unit: 8px;
+```
+
+Every spacing value, every radius, every control height and the whole shell geometry is a
+`calc()` expression over that one declaration. The two families where `calc()` does not apply —
+motion, which is time, and the stacking order, which is unitless — are still counted in the same
+unit: 8ms steps and 80/88/800/888/8888. Nothing is hand-picked. This is the eight-point grid
+that Material Design and the Apple HIG both standardise on, and it is load-bearing here for
+three reasons:
+
+1. **Native parity is arithmetic, not judgement.** `logiNexus.spacing`
+   (`src/theme/logiNexus.ts:116-126`, §2.4) is `4 · 8 · 12 · 16 · 20 · 24 · 32 · 40 · 48`.
+   Read as eighths that is `0.5 · 1 · 1.5 · 2 · 2.5 · 3 · 4 · 5 · 6` — **all nine entries are
+   already whole or half multiples of 8.** Native is on this grid; it simply never named the
+   unit. So a control that is six units tall on the phone is six units tall in the browser,
+   with no one converting by hand and no one choosing 46px because it looked right.
+   §2.5 makes the same point from the other direction:
+   the token set nominates radius `12/16/18`, but the measured reality across
+   `src/components` + `src/screens` is **`8` at 309 uses** — more than twice the next value.
+   The grid is what the codebase already does; the token layer just stops it being accidental.
+
+2. **Desktop density becomes one declaration.** The mission forbids stretched mobile UI (§10).
+   The eventual compact/comfortable toggle — and any per-breakpoint tightening — is a single
+   override of `--pulse-base-unit` inside a media query, not a stylesheet rewrite. That is only
+   true while every dimension stays a `calc()` off the unit; the first raw `14px` in a
+   stylesheet is the one that does not move when the unit does, and it will not announce
+   itself.
+
+3. **It collapses a real source of drift.** The pre-existing web had 159 custom-property names
+   across 19 stylesheets with 45 of them defined at conflicting values. Dimensions drifted the
+   same way colours did.
+
+**The rule:** never write a raw px dimension in a stylesheet or an inline `style=` handler.
+Derive it here. If a value genuinely cannot be expressed on the grid, that is a signal about
+the design, not about the grid.
+
+### 12.2 The derived scale
+
+| Family | Token | Units | px |
+|---|---|---|---|
+| Spacing | `--spacing-2xs` | 0.5 | 4 |
+| | `--spacing-xs` | 1 | 8 |
+| | `--spacing-sm` | 1.5 | 12 |
+| | `--spacing-md` | 2 | 16 |
+| | `--spacing-lg` | 3 | 24 |
+| | `--spacing-xl` | 4 | 32 |
+| | `--spacing-2xl` | 6 | 48 |
+| | `--spacing-section` | 8 | 64 |
+| Radius | `--radius-xs` | 1 | 8 |
+| | `--radius-sm` | 1.5 | 12 |
+| | `--radius-card` | 2 | 16 |
+| | `--radius-lg` | 3 | 24 |
+| | `--radius-pill` | — | 999 |
+| Controls | `--touch-target-min` | 6 | 48 |
+| Shell | `--topbar-h` | 8 | 64 |
+| | `--sidebar-w` | 33 | 264 |
+| | `--bottom-nav-h` | 10 | 80 |
+| Measures † | `--measure-feed-max` | 85 | 680 |
+| | `--measure-container-max` | 161 | 1288 |
+| Motion | `--motion-fast` | 11 | 88ms |
+| | `--motion-base` | 21 | 168ms |
+| | `--motion-slow` | 36 | 288ms |
+| Stacking | `--z-nav` / `--z-fab` | — | 80 / 88 |
+| | `--z-overlay` / `--z-modal` / `--z-toast` | — | 800 / 888 / 8888 |
+
+† The two measures are the only rows written as literal `px` rather than `calc()`. They land on
+the grid (85 and 161 units) but are deliberately not derived from it: a measure is a
+*line-length* constraint, so it should track the reader's font size, not a spacing-density
+setting. Tying them to `--pulse-base-unit` would make a future compact mode narrow the reading
+column, which is the opposite of what compact mode is for. They are correspondingly not in
+`GRID_TOKENS` and not covered by §12.5's grid assertion.
+
+Three of these deserve their reasoning stated rather than inferred:
+
+**`--touch-target-min: 48px` (6 units).** WCAG 2.5.5 asks for 44px and §2.4 records native's
+floor as 44pt. 48 is the next grid stop above it, so the compliant value and the grid value are
+the same number — controls stack without sub-pixel drift and without anyone having to choose
+between the two constraints. Do not "correct" this down to 44.
+
+**Motion is the grid expressed in time: 8ms steps.** At 120Hz a frame is 8.33ms, so a whole
+number of 8ms steps keeps a staggered sequence landing near frame boundaries instead of
+accumulating a fractional offset across a list. The three durations preserve native's ratio
+curve (§6.2); they are not arbitrary round numbers.
+
+**Elevation sits on the grid too.** `--elevation-card` and `--elevation-overlay` take their
+offsets and blur radii from the spacing tokens rather than from literals, so a shadow scales
+with the surface it belongs to.
+
+### 12.3 What is deliberately *off* the grid
+
+Documented so nobody "fixes" it:
+
+- **Type sizes** (`12/14/16/18/22/28/36`) are a modular scale, not multiples of 8. Forcing them
+  onto the grid yields `8/16/24/32` — four usable sizes with a 2× jump between body and
+  subhead. Type needs finer resolution than layout. What lands on the grid is the *box* around
+  the text — padding, gaps, row heights — not the glyph size.
+- **`--radius-pill: 999px`** is a sentinel meaning "fully round", not a dimension.
+- **Line heights** are unitless ratios by design, so they scale with the user's font-size
+  preference. A px line-height would break browser zoom and text scaling.
+- **`env(safe-area-inset-*)`** is device geometry. It is whatever the notch is.
+
+### 12.4 The cascade rule that makes it hold
+
+The token layer is injected as the **first** stylesheet on every HTML response —
+`pulse_inject_design_tokens()`, an `after_request` hook at `bot.py:2618` that inserts
+`PULSESOC_TOKENS_LINK` immediately after `<head>` unless the page already links it. That hook
+exists because 151 page routes build HTML inline inside `bot.py` and cannot be restyled by
+editing a template.
+
+Loading first is also the weakness. `:root` declarations of equal specificity are won by
+whichever loads **last**, so any later stylesheet that re-declares a token-layer name silently
+overrides it. **72 declarations did**, which had made the token layer's own alias section inert
+— present in the file, doing nothing in the browser.
+
+The fix is a form, not a ban. A later stylesheet may still declare the name, but only as:
+
+```css
+--x: var(--token, <the old literal>);
+```
+
+which keeps that file usable standalone while deferring to the token layer whenever it is
+present. `test_no_stylesheet_shadows_the_token_layer` in `tests/web_parity/test_design_tokens.py`
+enforces exactly that shape and prints each offender with the rewrite.
+
+### 12.5 Enforcement
+
+The grid is not a convention in a document; it is asserted in CI.
+
+| Test | What it locks |
+|---|---|
+| `test_base_unit_is_eight` | The single seed value. Changing it rescales the whole site at once — which is the point, and is never the fix for one control being the wrong size. |
+| `test_dimension_is_on_the_grid` (parametrized over 16 tokens) | Each dimension resolves to a whole or half multiple of the base unit. Anything finer is drift. |
+| `test_motion_durations_are_on_the_grid` | 8ms steps. |
+| `test_touch_target_minimum_is_defined` | The control floor exists at all. |
+| `test_no_dangling_var_references` | Every `var()` inside the token layer resolves to a token it defines — a typo'd reference silently falls back to nothing. |
+| `test_no_stylesheet_shadows_the_token_layer` | §12.4's self-healing form. |
+| `test_conflicting_css_vars_do_not_increase` | A ratchet on the 45 conflicting names. May only go down. |
+
+```
+python3 -m pytest tests/web_parity/test_design_tokens.py
+```
+
+Adding a dimension means adding it to `GRID_TOKENS` in that file. A token that is not in the
+list is not checked, which is the quiet way the grid would come apart.
