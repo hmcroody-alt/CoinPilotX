@@ -96,8 +96,8 @@ _OMITTED = object()
 
 
 def _usage(provider="meta", cost_usd=0.001873, input_tokens=100, output_tokens=200,
-           call_kind=_OMITTED):
-    usage = {"provider": provider, "model": "muse-spark-1.3",
+           call_kind=_OMITTED, model="muse-spark-1.3"):
+    usage = {"provider": provider, "model": model,
              "input_tokens": input_tokens, "output_tokens": output_tokens,
              "total_tokens": input_tokens + output_tokens,
              "reasoning_tokens": 0, "cached_tokens": 0,
@@ -230,41 +230,50 @@ class LedgerTest(_LedgerCase):
             conn.close()
 
     def test_the_unique_index_exists_so_the_upsert_can_work(self):
-        """`ON CONFLICT (month, provider, call_kind) DO UPDATE` is not a hint;
-        without the index it is a syntax error at runtime and every write fails.
+        """`ON CONFLICT (month, provider, call_kind, model) DO UPDATE` is not a
+        hint; without the index it is a syntax error at runtime and every write
+        fails.
 
-        Asserted as set membership rather than a substring check on purpose. The
-        new name contains the old one as a prefix — `..._month_provider_kind`
-        starts with `..._month_provider` — so an `in` against the joined names
-        would have passed unchanged through this whole migration and proved
-        nothing. Same trap as `"available" in "unavailable"`.
+        Asserted as set membership rather than a substring check on purpose, and
+        the choice has now paid off twice. Each generation of this name contains
+        the previous one as a **prefix** — `..._month_provider`, then
+        `..._month_provider_kind`, now `..._month_provider_kind_model` — so an
+        `in` against the joined names would have passed unchanged through both
+        migrations while asserting nothing. Same trap as
+        `"available" in "unavailable"`. This test failed on the `model` widening,
+        which is what a name assertion is supposed to do.
         """
         undx_cost.ensure_schema()
-        self.assertIn(f"ux_{undx_cost.LEDGER_TABLE}_month_provider_kind", self._indexes())
+        self.assertIn(f"ux_{undx_cost.LEDGER_TABLE}_month_provider_kind_model",
+                      self._indexes())
 
-    def test_the_narrow_index_is_dropped_only_after_the_wide_one_exists(self):
-        """The old `(month, provider)` index must go, and must go last.
+    def test_the_narrow_indexes_are_dropped_only_after_the_wide_one_exists(self):
+        """Both narrower predecessors must go, and must go last.
 
-        It is strictly narrower than its replacement, so while it stands the
-        first embedding row for a provider that already has a chat row collides
-        and the write fails — the exact case this column was added for. Dropping
-        it is therefore part of the migration, not tidying.
+        Each is strictly narrower than the current index, so while one stands the
+        first row differing only in the newest column collides and the write
+        fails: `(month, provider)` blocked the first embedding row for a provider
+        that already had a chat row, and `(month, provider, call_kind)` blocks the
+        second *model* for a provider's chat spend. Dropping them is part of the
+        migration, not tidying.
 
         The ordering half matters too: if the wide index failed to create and the
-        narrow one were already gone, the table would have no unique index at
+        narrow ones were already gone, the table would have no unique index at
         all, and `ON CONFLICT` against a non-existent constraint is a runtime
-        error on *every* write rather than only the new kinds. Verified by
+        error on *every* write rather than only on the new dimension. Verified by
         reading the statement order rather than by trusting the comment, since a
         comment cannot fail.
         """
         undx_cost.ensure_schema()
         names = self._indexes()
         self.assertNotIn(f"ux_{undx_cost.LEDGER_TABLE}_month_provider", names)
+        self.assertNotIn(f"ux_{undx_cost.LEDGER_TABLE}_month_provider_kind", names)
         statements = list(undx_cost._SCHEMA_STATEMENTS)
         creates = next(i for i, s in enumerate(statements) if "CREATE UNIQUE INDEX" in s)
-        drops = next(i for i, s in enumerate(statements) if "DROP INDEX" in s)
-        self.assertLess(creates, drops,
-                        "the narrow index is dropped before its replacement exists")
+        drops = [i for i, s in enumerate(statements) if "DROP INDEX" in s]
+        self.assertEqual(len(drops), 2, "both predecessors should be dropped")
+        self.assertLess(creates, min(drops),
+                        "a narrow index is dropped before its replacement exists")
 
     def test_an_old_table_is_migrated_and_its_rows_are_backfilled_as_chat(self):
         """Production had rows before this column existed; they are chat.
@@ -415,6 +424,222 @@ class CallKindTest(_LedgerCase):
         undx_cost.ensure_schema()
         undx_cost.record(_usage())
         self.assertEqual(undx_cost.month_snapshot()["providers"]["meta"]["calls"], 1)
+
+
+class ModelDimensionTest(_LedgerCase):
+    """Which model the money went to, which the ledger used to discard.
+
+    `record()` has always been handed a `model` — `undx_router` puts it in the usage
+    dict, the image pipeline and the embedding adapter pass it explicitly — and the
+    table had nowhere to put it. So `gpt-image-1` and whatever replaces it at a
+    different price were the same row, and a report could say OpenAI's image spend
+    without being able to say what produced it.
+
+    The risk in widening the key is not the new column, it is the old readings. Each
+    dimension turns one row into several, and a per-provider total is now a sum over
+    rows rather than a row. That invariant gets the first test.
+    """
+
+    def _rows(self):
+        conn = sqlite3.connect(self.db_path)
+        try:
+            return conn.execute(
+                f"SELECT provider, call_kind, model, calls FROM {undx_cost.LEDGER_TABLE} "
+                "ORDER BY provider, call_kind, model").fetchall()
+        finally:
+            conn.close()
+
+    def test_a_providers_total_survives_the_model_split(self):
+        """Adding a dimension to a measurement must not change the measurement.
+
+        Two models, one provider, one kind. The provider's total has to be the sum
+        of both rows — a reader that assigned instead of accumulating would report
+        whichever row the database returned last, and with two rows of equal size
+        that is a 50% understatement that looks like a plausible number.
+        """
+        undx_cost.record(_usage(model="muse-spark-1.3"))
+        undx_cost.record(_usage(model="muse-ember-2.0"))
+
+        snapshot = undx_cost.month_snapshot()
+        self.assertEqual(len(self._rows()), 2, "two models are two rows")
+        self.assertEqual(snapshot["providers"]["meta"]["calls"], 2)
+        self.assertEqual(snapshot["providers"]["meta"]["cost_micro_usd"], 3746)
+        self.assertEqual(snapshot["kinds"]["chat"]["calls"], 2)
+
+    def test_the_same_model_twice_is_one_row(self):
+        """The pairing. Without it the test above is satisfied by a ledger that
+        inserts a fresh row per call and never updates anything — every total would
+        still be right, and nothing would look wrong until someone counted rows."""
+        undx_cost.record(_usage(model="muse-spark-1.3"))
+        undx_cost.record(_usage(model="muse-spark-1.3"))
+
+        self.assertEqual(self._rows(), [("meta", "chat", "muse-spark-1.3", 2)])
+
+    def test_casing_does_not_split_a_models_spend(self):
+        """`GPT-4o` and `gpt-4o` are one model and must be one row.
+
+        The `provider` column has always been lowercased, so a call site writing the
+        model as the provider's docs spell it and another writing it as the config
+        holds it would otherwise halve one model's apparent spend into two
+        affordable-looking halves. Casing is the difference most likely to vary
+        between two call sites recording the same thing.
+        """
+        undx_cost.record(_usage(provider="openai", model="GPT-4o"))
+        undx_cost.record(_usage(provider="openai", model="gpt-4o"))
+
+        self.assertEqual(self._rows(), [("openai", "chat", "gpt-4o", 2)])
+
+    def test_the_column_is_not_nullable(self):
+        """Nullable would multiply rows on PostgreSQL and nowhere else.
+
+        PostgreSQL treats NULLs as distinct in a unique index, so an upsert for an
+        unnamed model would miss its own conflict target and INSERT every time. The
+        totals would stay correct, so the only symptom is unbounded row growth in
+        production and nothing at all in the SQLite tests. Asserted against the
+        column metadata because that is where the protection lives.
+        """
+        undx_cost.ensure_schema()
+        conn = sqlite3.connect(self.db_path)
+        try:
+            columns = {row[1]: row for row in
+                       conn.execute(f"PRAGMA table_info({undx_cost.LEDGER_TABLE})")}
+        finally:
+            conn.close()
+        self.assertEqual(columns["model"][3], 1, "model must be NOT NULL")
+        self.assertEqual(columns["model"][4], "''", "and must default to the empty string")
+
+    def test_a_kind_with_no_models_records_an_empty_model(self):
+        """A Brave query bills against an endpoint. There is no model to name, and
+        `undeclared` would be a false accusation."""
+        undx_cost.record({"provider": "brave", "call_kind": "research",
+                          "cost_micro_usd": None})
+        self.assertEqual(self._rows(), [("brave", "research", "", 1)])
+
+    def test_a_model_bearing_kind_with_no_model_is_undeclared(self):
+        """The other half of the same distinction. Something chose a model here and
+        did not say which, which is a gap in the accounting rather than an absence
+        of the question — same shape as `call_kind` becoming `unknown` rather than
+        `chat`."""
+        undx_cost.record({"provider": "openai", "call_kind": "image",
+                          "cost_micro_usd": None})
+        self.assertEqual(self._rows(), [("openai", "image", "undeclared", 1)])
+
+    def test_normalize_model_answers_the_two_absences_differently(self):
+        """Read directly, because the distinction is the design and a test that only
+        went through `record()` would pass on a function that returned `''` for both
+        if nothing happened to look at a research row that day."""
+        self.assertEqual(undx_cost.normalize_model("", "research"), "")
+        self.assertEqual(undx_cost.normalize_model("", "translation"), "")
+        self.assertEqual(undx_cost.normalize_model(None, "chat"), "undeclared")
+        self.assertEqual(undx_cost.normalize_model(None, "embedding"), "undeclared")
+        self.assertEqual(undx_cost.normalize_model("  Sonar-Pro ", "chat"), "sonar-pro")
+
+    def test_an_unrecognised_kind_still_gets_a_model(self):
+        """`unknown` is not in `MODEL_BEARING_CALL_KINDS`, so a typo'd kind with no
+        model records `''`. That is the right answer — we do not know whether that
+        kind has models — but a typo'd kind *with* a model must still keep it, or
+        the one row that reads as a defect would also lose its only clue."""
+        undx_cost.record({"provider": "openai", "call_kind": "emmbedding",
+                          "model": "text-embedding-3-large", "cost_micro_usd": None})
+        self.assertEqual(self._rows(),
+                         [("openai", "unknown", "text-embedding-3-large", 1)])
+
+    def test_a_long_model_name_is_bounded(self):
+        """`record()` is a public entry point and the value becomes an index key."""
+        undx_cost.record(_usage(model="x" * 500))
+        self.assertEqual(len(self._rows()[0][2]), 120)
+
+    def test_the_models_axis_is_keyed_by_provider_and_model(self):
+        """A model name is not globally unique. An open-weights model served by two
+        providers at two prices merged under one key would produce a total that
+        belongs to no invoice anyone receives."""
+        undx_cost.record(_usage(provider="groq", model="llama-3.3-70b", cost_usd=0.001))
+        undx_cost.record(_usage(provider="meta", model="llama-3.3-70b", cost_usd=0.002))
+
+        models = undx_cost.month_snapshot()["models"]
+        self.assertEqual(sorted(models), ["groq/llama-3.3-70b", "meta/llama-3.3-70b"])
+        self.assertEqual(models["groq/llama-3.3-70b"]["cost_micro_usd"], 1000)
+        self.assertEqual(models["meta/llama-3.3-70b"]["cost_micro_usd"], 2000)
+
+    def test_the_models_axis_omits_kinds_with_no_model_but_keeps_undeclared(self):
+        """A per-model report that hides unattributed spend is the report that lets
+        it stay unattributed. An endpoint-billed call is a different case and does
+        not belong in a per-model view at all."""
+        undx_cost.record({"provider": "brave", "call_kind": "research",
+                          "cost_micro_usd": None})
+        undx_cost.record({"provider": "openai", "call_kind": "image",
+                          "cost_micro_usd": None})
+
+        models = undx_cost.month_snapshot()["models"]
+        self.assertEqual(sorted(models), ["openai/undeclared"])
+
+    def test_the_degraded_snapshot_still_has_the_key(self):
+        """Empty, not missing. The process mirror carries no per-model tally — no
+        budget in this module is per-model — but a caller must not get an
+        AttributeError only during a database incident. `source` is how it tells
+        empty from unavailable."""
+        def boom():
+            raise sqlite3.OperationalError("no such database")
+        with mock.patch.object(undx_cost, "_connect", side_effect=boom):
+            undx_cost.record(_usage())
+            snapshot = undx_cost.month_snapshot()
+        self.assertEqual(snapshot["source"], "process")
+        self.assertEqual(snapshot["models"], {})
+        self.assertEqual(snapshot["providers"]["meta"]["calls"], 1)
+
+    def test_an_old_table_is_migrated_and_model_bearing_rows_are_backfilled(self):
+        """Rows written before this column had a model and nowhere to put it.
+
+        `ADD COLUMN ... DEFAULT ''` gives them the empty string, which in this
+        scheme claims something false: that those kinds have no model dimension. So
+        the model-bearing ones are moved to `undeclared`, and the research row —
+        which genuinely has no model, and which exists because research metering
+        shipped before this column — is left alone. That asymmetry is the whole
+        reason the backfill is a separate statement rather than a different
+        `ADD COLUMN` default.
+        """
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.executescript(f"""
+                DROP TABLE IF EXISTS {undx_cost.LEDGER_TABLE};
+                CREATE TABLE {undx_cost.LEDGER_TABLE} (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT, month TEXT NOT NULL,
+                  provider TEXT NOT NULL,
+                  call_kind TEXT NOT NULL DEFAULT 'chat',
+                  calls INTEGER NOT NULL DEFAULT 0,
+                  input_tokens INTEGER NOT NULL DEFAULT 0,
+                  output_tokens INTEGER NOT NULL DEFAULT 0,
+                  reasoning_tokens INTEGER NOT NULL DEFAULT 0,
+                  cost_micro_usd INTEGER NOT NULL DEFAULT 0,
+                  uncosted_calls INTEGER NOT NULL DEFAULT 0,
+                  updated_at TEXT NOT NULL DEFAULT (datetime('now')));
+                CREATE UNIQUE INDEX ux_{undx_cost.LEDGER_TABLE}_month_provider_kind
+                  ON {undx_cost.LEDGER_TABLE}(month, provider, call_kind);
+                INSERT INTO {undx_cost.LEDGER_TABLE} (month, provider, call_kind, calls)
+                  VALUES ('{undx_cost.current_month()}', 'openai', 'chat', 13),
+                         ('{undx_cost.current_month()}', 'brave', 'research', 4);
+            """)
+            conn.commit()
+        finally:
+            conn.close()
+
+        undx_cost.ensure_schema()
+        self.assertEqual(self._rows(), [("brave", "research", "", 4),
+                                        ("openai", "chat", "undeclared", 13)])
+
+    def test_the_backfill_is_idempotent_and_does_not_touch_new_rows(self):
+        """It runs on every boot. A second pass has nothing to match, because a new
+        write never produces `''` for a model-bearing kind — which is also why the
+        `UPDATE` cannot collide with a row it is about to duplicate."""
+        undx_cost.record(_usage(model="muse-spark-1.3"))
+        undx_cost.record({"provider": "openai", "call_kind": "image",
+                          "cost_micro_usd": None})
+        before = self._rows()
+
+        undx_cost.ensure_schema()
+        undx_cost.ensure_schema()
+
+        self.assertEqual(self._rows(), before)
 
 
 class LedgerFailureTest(_LedgerCase):
