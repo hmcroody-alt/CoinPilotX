@@ -100,7 +100,12 @@ export function StoreBulkPriceRule({
             editable={!busy}
             keyboardType="decimal-pad"
             placeholder="0"
-            placeholderTextColor={storeLight.select.disabledReason}
+            // See `StoreBulkCategoryPicker`: `select.disabledReason` is the rust
+            // amber for *why a row is blocked*, and this field starts empty on
+            // every open. There is a real error colour two lines below for when
+            // the typed value is bad; an amber placeholder pre-empts it, so the
+            // field looks the same before the seller types as after they typo.
+            placeholderTextColor={storeLight.text.muted}
             accessibilityLabel={`${pricingRuleLabel(draft.type)} value`}
             accessibilityHint={pricingRuleHint(draft.type)}
           />
@@ -176,7 +181,13 @@ const styles = StyleSheet.create({
   unit: { fontSize: 16, fontWeight: "800", color: storeLight.text.muted },
   input: { flex: 1, fontSize: 16, fontWeight: "700", color: storeLight.text.primary, paddingVertical: 8 },
   error: { fontSize: 12, fontWeight: "600", color: storeLight.status.error, marginTop: 6 },
-  note: { fontSize: 12, color: storeLight.select.disabledReason, marginTop: 14 },
+  /**
+   * "Products without a supplier cost can't be priced by a rule." The same class
+   * of sentence as the category face's notes: the field explaining which rows it
+   * will skip, not a hazard. Gray, so that `status.error` above and the review
+   * face's warnings stay the only coloured text in the flow.
+   */
+  note: { fontSize: 12, color: storeLight.text.muted, marginTop: 14 },
   primary: {
     marginTop: 14,
     minHeight: storeLight.size.tapTarget,

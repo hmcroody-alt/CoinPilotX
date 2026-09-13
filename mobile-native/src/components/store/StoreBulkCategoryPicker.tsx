@@ -104,7 +104,12 @@ export function StoreBulkCategoryPicker({
             maxLength={CATEGORY_MAX}
             autoCapitalize="words"
             placeholder="Home & Kitchen"
-            placeholderTextColor={storeLight.select.disabledReason}
+            // `text.muted`, not `select.disabledReason`: that token's own
+            // docstring scopes it to "the *reason* a row is blocked", and it is a
+            // rust amber. An empty field the seller has not touched yet is the
+            // opening state of this face, not a fault, and an amber placeholder
+            // makes the picker open looking like it is already complaining.
+            placeholderTextColor={storeLight.text.muted}
             // "New", where the heading above says only "Category", because the
             // selection arrives here filed under several different aisles and
             // there is no single current one this box could be showing. A field
@@ -124,7 +129,7 @@ export function StoreBulkCategoryPicker({
             maxLength={CATEGORY_MAX}
             autoCapitalize="words"
             placeholder="Lighting"
-            placeholderTextColor={storeLight.select.disabledReason}
+            placeholderTextColor={storeLight.text.muted}
             accessibilityLabel="New subcategory, optional"
           />
         </View>
@@ -144,7 +149,7 @@ export function StoreBulkCategoryPicker({
             in the per-row preview: a category change is material, so any live
             product in the selection goes back to the review queue and off sale
             until a moderator clears it. */}
-        <Text style={styles.note}>
+        <Text style={styles.noteWarn}>
           Products that are live will go back to review after moving.
         </Text>
       </ScrollView>
@@ -208,7 +213,16 @@ const styles = StyleSheet.create({
     backgroundColor: storeLight.bg.card
   },
   input: { flex: 1, fontSize: 16, fontWeight: "700", color: storeLight.text.primary, paddingVertical: 8 },
-  note: { fontSize: 12, color: storeLight.select.disabledReason, marginTop: 12 },
+  // Two weights, because these lines are not all the same kind of sentence.
+  // "Leaving this empty clears the subcategory" and "3 are already filed there"
+  // are the field telling the seller how it behaves — gray. "Live products go
+  // back to review" is the one that costs them a storefront — amber, the same
+  // amber `subtitleWarn`/`lineWarning` use in `StoreBulkSheet`, so a warning
+  // looks the same everywhere in this flow. Painting all three amber (which is
+  // what `select.disabledReason` did here) spends the warning colour on hints
+  // and leaves the real hazard indistinguishable from them.
+  note: { fontSize: 12, color: storeLight.text.muted, marginTop: 12 },
+  noteWarn: { fontSize: 12, fontWeight: "700", color: storeLight.status.warning, marginTop: 12 },
   primary: {
     marginTop: 14,
     minHeight: storeLight.size.tapTarget,

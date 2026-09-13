@@ -126,7 +126,17 @@ function Line({
         <Text style={styles.lineTitle} numberOfLines={1}>
           {title}
         </Text>
-        {detail ? <Text style={styles.lineDetail}>{detail}</Text> : null}
+        {/* The same slot carries two different kinds of sentence, told apart by
+            `tone`: on a row that is changing it is the read-back — "$24.00 →
+            $28.80", "Home & Kitchen" — and on a row that is not, it is the
+            reason it was left alone. Gray for the first, the warning colour for
+            the second. One colour for both (this used to be
+            `select.disabledReason` either way) painted every successful
+            reprice's new figure in the same rust as the refusals, so a batch
+            where nothing went wrong still read as a screen of problems. */}
+        {detail ? (
+          <Text style={tone === "warn" ? styles.lineDetailWarn : styles.lineDetail}>{detail}</Text>
+        ) : null}
         {/* Its own line, in the warning colour, on a row that is otherwise fine.
             "Goes back to review" is a consequence of the change, not a reason
             the change will not happen, and putting it in `detail` would dress a
@@ -468,7 +478,13 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 18, fontWeight: "800", color: storeLight.text.primary },
   subtitle: { fontSize: 13, color: storeLight.text.muted, marginTop: 4 },
-  subtitleQuiet: { fontSize: 12, color: storeLight.select.disabledReason, marginTop: 8 },
+  /**
+   * "Trying again won't repeat anything that already went through." The one
+   * calming line on the failure face, so it is the last text that should be
+   * coloured like an alarm — it was in the rust amber, directly under a red
+   * error title, which made the reassurance read as a second problem.
+   */
+  subtitleQuiet: { fontSize: 12, color: storeLight.text.muted, marginTop: 8 },
   subtitleWarn: { fontSize: 13, fontWeight: "700", color: storeLight.status.warning, marginTop: 4 },
   list: { marginTop: 12, maxHeight: 260 },
   listBody: { gap: 10, paddingBottom: 4 },
@@ -485,7 +501,17 @@ const styles = StyleSheet.create({
   dotWarn: { backgroundColor: storeLight.status.warning },
   lineBody: { flex: 1 },
   lineTitle: { fontSize: 14, fontWeight: "600", color: storeLight.text.primary },
-  lineDetail: { fontSize: 12, color: storeLight.select.disabledReason, marginTop: 1 },
+  lineDetail: { fontSize: 12, color: storeLight.text.muted, marginTop: 1 },
+  /**
+   * Why this row is staying as it is. `status.warning` rather than
+   * `select.disabledReason`, because this line sits on the white card: the rust
+   * hue exists to clear AA against the *disabled wash* in the list behind the
+   * sheet (see `storeLightContrast.test.ts`), and here it would be a third
+   * near-amber beside `lineWarning` and `subtitleWarn` on the same face. Not
+   * bold — `lineWarning` is the consequence of a change that did happen, and
+   * this is a change that did not, so they must not compete.
+   */
+  lineDetailWarn: { fontSize: 12, color: storeLight.status.warning, marginTop: 1 },
   lineWarning: { fontSize: 12, fontWeight: "700", color: storeLight.status.warning, marginTop: 1 },
   waiting: { paddingVertical: 36, alignItems: "center", gap: 10 },
   primary: {
